@@ -65,15 +65,47 @@ def make_zip(files, top="quark-windows"):
     return buf.getvalue()
 
 
+TEST_SEED = bytes(range(32))
+
+
+def ph_sign(msg, seed=TEST_SEED):
+    """Ed25519ph signature (hex) of msg and the public key (hex): RFC 8032 signing, for the fake GitHub only."""
+    h = hashlib.sha512(seed).digest()
+    a = (int.from_bytes(h[:32], "little") & ((1 << 254) - 8)) | (1 << 254)
+    pub = play._encode_pt(play._pt_mul(a, play._G))
+    ph = hashlib.sha512(msg).digest()
+    r = int.from_bytes(hashlib.sha512(play._DOM2_PH + h[32:] + ph).digest(), "little") % play._L
+    big_r = play._encode_pt(play._pt_mul(r, play._G))
+    k = int.from_bytes(hashlib.sha512(play._DOM2_PH + big_r + pub + ph).digest(), "little") % play._L
+    return (big_r + ((r + k * a) % play._L).to_bytes(32, "little")).hex(), pub.hex()
+
+
+TEST_PUB = ph_sign(b"")[1]
+
+
+def signed_release(zipped, tag="test-1.18.14-test.240", channel="testing", version=None, zip_sha=None):
+    """The fake GitHub's signature files for a release: {path: body} (zip .sig, manifest, manifest .sig)."""
+    man = ("quark release\nchannel %s\ntag %s\nversion %s\ncommit %s\nsha256 quark-windows.qpak %s\n"
+           "sha256 quark-windows.zip %s\n" % (channel, tag, version or play.version_from_tag(tag), "c" * 40, "0" * 64,
+                                               zip_sha or hashlib.sha256(zipped).hexdigest()))
+    return {"/dl/test.zip.sig": (200, ph_sign(zipped)[0] + "\n"), "/dl/rel.txt": (200, man),
+            "/dl/rel.txt.sig": (200, ph_sign(man.encode())[0])}
+
+
 def releases_fixture(base, sha_line=True):
     return [
         {"tag_name": "test-1.18.14-test.240", "name": "Testing 1.18.14", "prerelease": True, "draft": False,
          "published_at": "2026-10-24T05:00:00Z", "html_url": "https://github.com/floration/quark/releases/tag/x",
          "assets": [{"name": "quark-windows.zip", "size": 1234, "browser_download_url": base + "/dl/test.zip"},
+                    {"name": "quark-windows.zip.sig", "size": 128, "browser_download_url": base + "/dl/test.zip.sig"},
+                    {"name": "quark-release.txt", "size": 200, "browser_download_url": base + "/dl/rel.txt"},
+                    {"name": "quark-release.txt.sig", "size": 128, "browser_download_url": base + "/dl/rel.txt.sig"},
                     {"name": "SHA256SUMS", "size": 99, "browser_download_url": base + "/dl/SHA256SUMS"}]},
         {"tag_name": "v1.18.3", "name": "1.18.3", "prerelease": False, "draft": False,
          "published_at": "2026-10-20T05:00:00Z",
          "assets": [{"name": "quark-windows.zip", "size": 1234, "browser_download_url": base + "/dl/v.zip"}]},
+        {"tag_name": "v1.16.0", "name": "Before signing", "prerelease": False, "published_at": "2026-01-02T00:00:00Z",
+         "assets": [{"name": "quark-windows.zip", "size": 1234, "browser_download_url": base + "/dl/old.zip"}]},
         {"tag_name": "v0.9.0", "prerelease": False, "published_at": "2026-01-01T00:00:00Z",
          "assets": [{"name": "quark-linux.tar.gz", "browser_download_url": base + "/dl/l.tgz"}]},
         {"tag_name": "v9.9.9", "draft": True, "published_at": "2027-01-01T00:00:00Z", "assets": []},
@@ -86,14 +118,19 @@ def releases_fixture(base, sha_line=True):
 class TestPure(unittest.TestCase):
     def test_parse_releases(self):
         r = play.parse_releases(releases_fixture("http://127.0.0.1:1"))
-        self.assertEqual([x["tag"] for x in r], ["test-1.18.14-test.240", "v1.18.4", "v1.18.3", "v0.9.0"])
-        self.assertEqual([x["channel"] for x in r], ["testing", "production", "production", "production"])
+        self.assertEqual([x["tag"] for x in r], ["test-1.18.14-test.240", "v1.18.4", "v1.18.3", "v1.16.0", "v0.9.0"])
+        self.assertEqual([x["channel"] for x in r], ["testing", "production", "production", "production", "production"])
         self.assertEqual(r[0]["version"], "1.18.14-test.240")
         self.assertEqual(r[0]["zip"]["size"], 1234)
         self.assertTrue(r[0]["sums"].endswith("/dl/SHA256SUMS"))
         self.assertIsNone(r[1]["zip"])  # (not https: refused)
-        self.assertIsNone(r[3]["zip"])  # (no Windows zip: shown greyed)
+        self.assertIsNone(r[4]["zip"])  # (no Windows zip: shown greyed)
         self.assertIsNone(r[2]["sums"])
+        # signed releases: from 1.17.0 on (or with a .sig) the signature and signed manifest are needed
+        self.assertTrue(r[0]["sig"].endswith("/dl/test.zip.sig") and r[0]["manifest"] and r[0]["manifestSig"])
+        self.assertEqual([x["needsSig"] for x in r], [True, True, True, False, False])
+        self.assertFalse(r[0]["nameSaysMore"])  # ("Testing 1.18.14" only repeats the tag)
+        self.assertTrue(r[3]["nameSaysMore"])
         self.assertEqual(play.parse_releases({"message": "rate limit"}), [])
 
     def test_parse_sums(self):
@@ -138,7 +175,8 @@ class TestPure(unittest.TestCase):
              "args": "--host ffa `x`", "exitCode": 0}
         line = play.format_note(s, {"did": "two FFA rounds\non bastion", "noticed": "stutter at spawn!",
                                     "change": "", "other": "nice"}, "2026-10-24 14:05 CT")
-        self.assertEqual(line, "- **Play note: testing 1.18.14-test.240** Did: two FFA rounds on bastion. Noticed: "
+        # (q's line breaks become " / ": an entry is one line)
+        self.assertEqual(line, "- **Play note: testing 1.18.14-test.240** Did: two FFA rounds / on bastion. Noticed: "
                                "stutter at spawn! Also: nice. Played 23 min, commit 9c2e1f0abc, options "
                                "`--host ffa 'x'`. _2026-10-24 14:05 CT, q, open_")
         self.assertEqual(play.note_title({"label": "v1.18.3", "version": "1.18.3"}), "Play note: v1.18.3")
@@ -157,6 +195,95 @@ class TestPure(unittest.TestCase):
         self.assertEqual(play.parse_doc(line), [{"title": "Play note: testing 1.18.14-test.240",
                                                  "stamp": "2026-10-24 14:05 CT", "thread": "q", "status": "open"}])
         self.assertEqual(play.parse_doc(line.replace(", open_", ", in-progress: on it_"))[0]["status"], "in-progress")
+
+    def test_ed25519ph(self):
+        # RFC 8032 section 7.3 (Ed25519ph, "abc"), the signer the fake GitHub uses, and a tampered message
+        pub = "ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf"
+        sig = ("98a70222f0b8121aa9d30f813d683f809e462b469c7ff87639499bb94e6dae4131f85042463c2a355a2003d062adf5aaa10b8c61e"
+               "636062aaad11c2a26083406")
+        self.assertTrue(play.ed25519ph_verify(hashlib.sha512(b"abc").digest(), sig, pub))
+        self.assertFalse(play.ed25519ph_verify(hashlib.sha512(b"abd").digest(), sig, pub))
+        self.assertFalse(play.ed25519ph_verify(hashlib.sha512(b"abc").digest(), "zz" + sig[2:], pub))
+        seed = bytes.fromhex("833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42")
+        self.assertEqual(ph_sign(b"abc", seed), (sig, pub))
+        # the key is the one built into the launcher
+        sign_cpp = os.path.join(os.path.dirname(os.path.dirname(PM_ROOT)), "src", "common", "sign.cpp")
+        if os.path.isfile(sign_cpp):
+            with open(sign_cpp, encoding="utf-8") as f:
+                self.assertIn('kReleasePublicKey = "%s"' % play.RELEASE_PUBLIC_KEY, f.read())
+
+    @unittest.skipUnless(os.environ.get("QUARK_SIGN"), "set QUARK_SIGN=<build>/quark_sign to check against it")
+    def test_against_quark_sign(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = subprocess.run([os.environ["QUARK_SIGN"], "keygen"], stdout=subprocess.PIPE, check=True).stdout.decode()
+            priv = next(l.split()[-1] for l in out.splitlines() if l.startswith("private"))
+            pub = next(l.split()[-1] for l in out.splitlines() if l.startswith("public"))
+            f = os.path.join(d, "x.zip")
+            write(f, "zip bytes " * 1000)
+            subprocess.run([os.environ["QUARK_SIGN"], "sign", f], env=dict(os.environ, QUARK_SIGNING_KEY=priv),
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            with open(f, "rb") as a, open(f + ".sig") as b:
+                h, sig = hashlib.sha512(a.read()).digest(), b.read()
+            self.assertTrue(play.ed25519ph_verify(h, sig, pub))
+            self.assertFalse(play.ed25519ph_verify(h, sig, play.RELEASE_PUBLIC_KEY))
+
+    def test_versions_and_manifest(self):
+        self.assertEqual(play.version_from_tag("test-1.18.6-test.231"), "1.18.6-test.231")
+        for a, b in (("1.17.0", "1.17.0-test.3"), ("1.17.0-test.3", "1.17.0-test.2"), ("1.17.0-test.10", "1.17.0-test.9"),
+                     ("1.17.0-test.0", "1.17.0-0"), ("1.17.0-0", "1.16.9"), ("2.0", "1.99.99")):
+            self.assertGreater(play.version_cmp(a, b), 0, (a, b))
+            self.assertLess(play.version_cmp(b, a), 0, (a, b))
+        self.assertEqual(play.version_cmp("1.2.3", "1.2.3"), 0)
+        self.assertFalse(play.needs_signature({"tag": "v1.16.0"}))
+        self.assertTrue(play.needs_signature({"tag": "test-1.17.0-test.1"}))
+        self.assertTrue(play.needs_signature({"tag": "v1.0.0", "sig": "https://x/y.sig"}))
+        self.assertIsNone(play.parse_manifest("not one"))
+        m = play.parse_manifest("quark release\r\nchannel testing\ntag t-1.0.0\nversion 1.0.0\nsha256 quark-windows.zip AB\n")
+        self.assertEqual((m["channel"], m["sha256"]), ("testing", {"quark-windows.zip": "ab"}))
+        rel = {"tag": "t-1.0.0", "prerelease": True}
+        self.assertIsNone(play.check_manifest(m, rel, "AB"))
+        self.assertIn("not the one", play.check_manifest(m, rel, "cd"))
+        self.assertIn("production", play.check_manifest(m, dict(rel, prerelease=False), "ab"))
+
+    def test_note_fields_and_exit(self):
+        self.assertEqual(play.clean_field("  a  \r\nb\n\n\n\nc\t d "), "a\nb\n\nc  d")
+        with self.assertRaises(play.PlayError):
+            play.clean_field({"a": 1}, "Did")  # (not text: refused, never stored as "{'a': 1}")
+        with self.assertRaises(play.PlayError) as cm:
+            play.clean_field("x" * 4001, "Did")  # (too long: refused, never cut)
+        self.assertIn("4000", cm.exception.message)
+        self.assertEqual(len(play.clean_field("x" * 4000)), 4000)
+        self.assertEqual(play.flat("- one\n- two\n\nthree"), "- one / - two / three")
+        self.assertEqual(play.exit_info(0)["kind"], "ok")
+        self.assertEqual(play.exit_info(-11), {"kind": "crash", "text": "exit code -11 (SIGSEGV)"})
+        self.assertEqual(play.exit_info(3221225477), {"kind": "crash", "text": "exit code 0xC0000005 (access violation)"})
+        self.assertEqual(play.exit_info(3)["kind"], "error")
+        self.assertEqual(play.exit_info(-15, stopped=True)["kind"], "stopped")
+        self.assertEqual(play.exit_info(None)["kind"], "unknown")
+        s = {"label": "testing", "version": "1.0.0", "durationSec": 60, "stopped": True, "exitCode": -15,
+             "logTail": "a `b`\nboom"}
+        line = play.format_note(s, {"did": "x"}, "2026-10-24 14:05 CT")
+        self.assertIn("stopped from the Play tab. Log's last lines: `a 'b' / boom`.", line)
+        self.assertNotIn("exit code", line)
+        self.assertIn("Played outside the Supervisor Board", play.format_note({"label": "launcher", "freeform": True},
+                                                                              {"did": "x"}, "2026-10-24 14:05 CT"))
+
+    def test_change_entry(self):
+        a = "- **Play note: a** x. _2026-10-24 14:05 CT, q, open_"
+        b = "- **Play note: b** y. _2026-10-24 15:05 CT, q, open_"
+        t = play.add_note_lines(None, [b, a])
+        t2, what = play.change_entry(t, ("Play note: a", "2026-10-24 14:05 CT"), a.replace(" x.", " z."))
+        self.assertEqual(what, "changed")
+        self.assertIn(" z.", t2)
+        self.assertEqual(play.change_entry(t2, ("Play note: a", "2026-10-24 14:05 CT"), a.replace(" x.", " z."))[1], "same")
+        t3, what = play.change_entry(t, ("Play note: b", "2026-10-24 15:05 CT"), None)
+        self.assertEqual(what, "removed")
+        self.assertTrue(t3.endswith("## Notes\n\n" + a + "\n"), t3)
+        t4, what = play.change_entry(t, ("Play note: a", "2026-10-24 14:05 CT"), None)
+        self.assertTrue(t4.endswith("## Notes\n\n" + b + "\n"), t4)
+        done = t.replace("14:05 CT, q, open_", "14:05 CT, q, in-progress_")
+        self.assertEqual(play.change_entry(done, ("Play note: a", "2026-10-24 14:05 CT"), None), (done, "in-progress"))
+        self.assertEqual(play.change_entry(t, ("Play note: c", "x"), None)[1], "gone")
 
     def test_add_note_lines(self):
         t = play.add_note_lines(None, ["- **a** x. _2026-10-24 14:05 CT, q, open_"])
@@ -383,6 +510,76 @@ class TestPlay(unittest.TestCase):
         self.assertEqual(p2.pending()["pending"], [])
         self.assertTrue(p2.skip(s["id"])["noop"])  # (skipped twice: a no-op)
 
+    def test_stop_log_open(self):
+        fake_game(os.path.join(self.quark, "testing"), seconds=30, code=0)
+        opened = []
+        p = self.new(opener=opened.append)
+        p.start()
+        s = p.launch("testing", "--host ffa")
+        self.assertTrue(wait_for(lambda: "started" in p.game_log(s["id"])["text"]))
+        lg = p.game_log(s["id"])
+        self.assertEqual((lg["state"], lg["exit"]), ("running", None))
+        t0 = time.time()
+        st = p.stop_game(s["id"])
+        self.assertTrue(st["stopping"])
+        self.assertTrue(p.stop_game(s["id"])["noop"])
+        self.assertTrue(wait_for(lambda: p._session(s["id"])["state"] == "needsNote", 8))
+        self.assertLess(time.time() - t0, 4)  # (SIGTERM to its group: the script and its sleep end at once)
+        got = p._session(s["id"])
+        self.assertTrue(got["stopped"])
+        self.assertNotIn("stopping", got)
+        v = {x["id"]: x for x in p.view()["sessions"]}[s["id"]]
+        self.assertEqual((v["exit"]["kind"], v["hasLog"]), ("stopped", True))
+        with self.assertRaises(play.PlayError) as cm:
+            p.stop_game(s["id"])
+        self.assertEqual(cm.exception.reason, "not-running")
+        # the note can carry the log's last lines, and says it was stopped (not a crash)
+        n = p.save_note(s["id"], {"noticed": "line one\nline two", "attachLog": True})
+        self.assertEqual(n["fields"]["noticed"], "line one\nline two")  # (line breaks kept in the local copy)
+        self.assertIn("Noticed: line one / line two.", n["line"])
+        self.assertIn("stopped from the Play tab", n["line"])
+        self.assertIn("Log's last lines: `started --host ffa", n["line"])
+        self.assertIn("started --host ffa", n["logTail"])
+        # opening: a build's folder, the logs, a game's log, never a path the page sends
+        p.open_path("build", "testing")
+        p.open_path("logs")
+        p.open_path("log", s["id"])
+        self.assertEqual(opened, [os.path.join(self.quark, "testing"), self.paths.pm("logs"), got["log"]])
+        for what, ref in (("build", "../.."), ("file", "/etc/passwd"), ("notes-file", None), ("log", "nope")):
+            with self.assertRaises(play.PlayError):
+                p.open_path(what, ref)
+        self.assertEqual(len(opened), 3)
+        # a log that is gone, or a session whose log path points elsewhere
+        os.remove(got["log"])
+        with self.assertRaises(play.PlayError) as cm:
+            p.game_log(s["id"])
+        self.assertEqual(cm.exception.reason, "no-log")
+        got["log"] = "/etc/passwd"
+        self.assertIsNone(p._log_path(got))
+
+    def test_crash_flag_and_freeform_note(self):
+        fake_game(os.path.join(self.quark, "testing"), seconds=0.1, code=139)
+        p = self.new()
+        s = p.launch("testing")
+        self.assertTrue(wait_for(lambda: p._session(s["id"])["state"] == "needsNote"))
+        v = {x["id"]: x for x in p.view()["sessions"]}[s["id"]]
+        self.assertEqual(v["exit"], {"kind": "error", "text": "exit code 139"})
+        # a note without a session: for a listed build, or for whatever q played through the launcher
+        n = p.save_note(None, {"build": "testing", "did": "ranked through the launcher"})
+        self.assertTrue(n["id"].startswith("n") and play.NOTE_RE.match(n["id"]))
+        self.assertEqual((n["title"], n["session"]), ("Play note: testing 1.18.14-test.240", None))
+        self.assertIn("Played outside the Supervisor Board", n["line"])
+        n2 = p.save_note("", {"label": "launcher", "version": "1.18.31", "did": "x"})
+        self.assertEqual(n2["title"], "Play note: launcher 1.18.31")
+        for bad in ({"build": "nope", "did": "x"}, {"build": 5, "did": "x"}, {"did": ["x"]}, {"did": "x" * 4001}):
+            with self.assertRaises(play.PlayError):
+                p.save_note(None, bad)
+        self.assertEqual(len(p.notes()), 2)
+        v = p.view()
+        self.assertEqual(v["notesTotal"], 2)
+        self.assertTrue(v["notes"][0]["freeform"])
+        self.assertEqual(v["notes"][0]["where"], "kept on this PC only (no Claude Documents folder)")
+
     def test_injected_spawner_and_adoption(self):
         # any command can stand in for the game (cross-platform): it runs, exits, the session wants a note
         def spawner(argv, cwd, log):
@@ -420,22 +617,27 @@ class TestPlay(unittest.TestCase):
         def rel_route(path):
             etag["n"] += 1
             return (200, releases_fixture(fake.url))
-        fake = FakeHTTP({"/releases": rel_route, "/dl/test.zip": (200, zipped), "/dl/v.zip": (200, b"not a zip"),
-                         "/dl/SHA256SUMS": (200, sums)})
+        routes = {"/releases": rel_route, "/dl/test.zip": (200, zipped), "/dl/v.zip": (200, b"not a zip"),
+                  "/dl/old.zip": (200, b"not a zip"), "/dl/SHA256SUMS": (200, sums)}
+        routes.update(signed_release(zipped))
+        fake = FakeHTTP(routes)
         try:
-            p = self.new(releases_url=fake.url + "/releases")
+            p = self.new(releases_url=fake.url + "/releases", public_key=TEST_PUB)
             r = p.releases()
             self.assertTrue(r["busy"] or r["ok"])
             self.assertTrue(wait_for(lambda: p.releases()["ok"] is True))
             self.assertEqual(p.releases()["list"][0]["tag"], "test-1.18.14-test.240")
             self.assertEqual(etag["n"], 1)  # (cached: no second request within 10 min)
+            self.assertTrue(p.releases()["complete"])
             with self.assertRaises(play.PlayError):
                 p.install("v0.9.0")  # (no Windows zip)
+            with self.assertRaises(play.PlayError) as cm:
+                p.install("v1.18.3")  # (claims 1.18.3 with no signature: can't be genuine, like the launcher)
+            self.assertEqual(cm.exception.reason, "unsigned")
             p.install("test-1.18.14-test.240")
-            st = wait_for(lambda: p.installs["test-1.18.14-test.240"]["state"] in ("done", "failed") and
-                          p.installs["test-1.18.14-test.240"])
+            st = self.wait_install(p, "test-1.18.14-test.240")
             self.assertEqual(st["state"], "done", st)
-            self.assertTrue(st["verified"])
+            self.assertEqual((st["verified"], st["check"]), (True, "signed"))
             dest = os.path.join(self.quark, "versions", "test-1.18.14-test.240")
             self.assertTrue(os.path.isfile(os.path.join(dest, "quark.exe")))
             self.assertTrue(os.path.isfile(os.path.join(dest, "maps", "a.qmap")))
@@ -444,27 +646,159 @@ class TestPlay(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(os.path.join(self.quark, "versions"))), ["test-1.18.14-test.240"])
             b = {x["id"]: x for x in p.builds()}["versions/test-1.18.14-test.240"]
             self.assertEqual((b["kind"], b["version"], b["label"]), ("version", "1.18.14-test.240", "test-1.18.14-test.240"))
+            self.assertEqual(b["check"], "signed")  # (kept in play-install.json: still known after a restart)
             v = p.view()
-            self.assertTrue(v["releases"]["list"][0]["installed"])
-            # a broken zip (no SHA256SUMS for it): fails, leaves nothing behind
-            p.install("v1.18.3")
-            st = wait_for(lambda: p.installs["v1.18.3"]["state"] in ("done", "failed") and p.installs["v1.18.3"])
+            row = v["releases"]["list"][0]
+            self.assertTrue(row["installed"])
+            self.assertEqual(row["check"], "signed")
+            self.assertEqual(row["folders"], ["testing"])  # (the testing folder holds this release)
+            self.assertIsNone(p.view(rel_sig=v["releases"]["sig"])["releases"]["list"])  # (unchanged: not sent again)
+            # a broken zip from before signing (no SHA256SUMS): fails, leaves nothing behind
+            p.install("v1.16.0")
+            st = self.wait_install(p, "v1.16.0")
             self.assertEqual(st["state"], "failed")
-            self.assertFalse(os.path.exists(os.path.join(self.quark, "versions", "v1.18.3")))
-            # a checksum mismatch fails too
+            self.assertFalse(os.path.exists(os.path.join(self.quark, "versions", "v1.16.0")))
+            # an old release whose SHA256SUMS doesn't match fails too
+            fx = releases_fixture(fake.url)
+            fx[2]["assets"].append({"name": "SHA256SUMS", "browser_download_url": fake.url + "/dl/SHA256SUMS"})
+            fake.routes["/releases"] = (200, fx)
+            fake.routes["/dl/old.zip"] = (200, zipped)
             fake.routes["/dl/SHA256SUMS"] = (200, "%s  quark-windows.zip\n" % ("f" * 64))
             p.remove("test-1.18.14-test.240")
             self.assertFalse(os.path.exists(dest))
-            p.install("test-1.18.14-test.240")
-            st = wait_for(lambda: p.installs["test-1.18.14-test.240"]["state"] in ("done", "failed") and
-                          p.installs["test-1.18.14-test.240"])
+            p.releases(force=True)
+            self.assertTrue(wait_for(lambda: next(x for x in p.releases()["list"] if x["tag"] == "v1.16.0").get("sums")))
+            p.install("v1.16.0")
+            st = self.wait_install(p, "v1.16.0")
             self.assertEqual(st["state"], "failed")
             self.assertIn("SHA256SUMS", st["error"])
             self.assertEqual(os.listdir(os.path.join(self.quark, "versions")), [])
+            fake.routes["/dl/SHA256SUMS"] = (200, sums)  # (and installs when it matches)
+            p.install("v1.16.0")
+            self.assertEqual(self.wait_install(p, "v1.16.0")["check"], "sha256")
             for bad in ("..", "../testing", "nope"):
                 with self.assertRaises(play.PlayError):
                     p.remove(bad)
             self.assertTrue(os.path.isdir(os.path.join(self.quark, "testing")))
+        finally:
+            fake.close()
+
+    def wait_install(self, p, tag):
+        return wait_for(lambda: p.installs[tag]["state"] not in play.ACTIVE and dict(p.installs[tag]))
+
+    def test_signature_checks(self):
+        # like the launcher: a signature that doesn't verify, a manifest for another release or another zip, or a
+        # manifest signed by another key: nothing is installed
+        zipped = make_zip({"quark.exe": "#!/bin/sh\nexit 0\n"})
+        tag = "test-1.18.14-test.240"
+        fake = FakeHTTP({"/releases": (200, releases_fixture("")), "/dl/test.zip": (200, zipped)})
+        try:
+            fake.routes["/releases"] = (200, releases_fixture(fake.url))
+            p = self.new(releases_url=fake.url + "/releases", public_key=TEST_PUB)
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] is True))
+            cases = [
+                (dict(signed_release(zipped), **{"/dl/test.zip.sig": (200, ph_sign(b"other")[0])}), "signature does not verify"),
+                (signed_release(zipped, tag="test-1.18.14-test.239"), "manifest is for test-1.18.14-test.239"),
+                (signed_release(zipped, channel="production"), "production channel"),
+                (signed_release(zipped, zip_sha="e" * 64), "not the one its signed manifest names"),
+                (dict(signed_release(zipped), **{"/dl/rel.txt.sig": (200, ph_sign(b"x", bytes(32))[0])}), "manifest's signature"),
+            ]
+            for routes, why in cases:
+                fake.routes.update(routes)
+                p.install(tag)
+                st = self.wait_install(p, tag)
+                self.assertEqual(st["state"], "failed", why)
+                self.assertIn(why, st["error"])
+                self.assertFalse(os.path.exists(os.path.join(self.quark, "versions", tag)))
+            # and with everything right it installs; another key (the real release key) refuses it
+            fake.routes.update(signed_release(zipped))
+            p.install(tag)
+            self.assertEqual(self.wait_install(p, tag)["check"], "signed")
+            p.remove(tag)
+            p2 = self.new(releases_url=fake.url + "/releases")  # (default: the release key)
+            p2.releases()
+            self.assertTrue(wait_for(lambda: p2.releases()["ok"] is True))
+            p2.install(tag)
+            self.assertIn("signature does not verify", self.wait_install(p2, tag)["error"])
+        finally:
+            fake.close()
+
+    def test_unsigned_old_release_and_cancel(self):
+        zipped = make_zip({"quark.exe": "#!/bin/sh\nexit 0\n"})
+        gate = threading.Event()
+
+        def slow(path):
+            gate.wait(5)
+            return (200, zipped)
+        fake = FakeHTTP({"/releases": (200, []), "/dl/old.zip": (200, zipped)})
+        try:
+            fake.routes["/releases"] = (200, releases_fixture(fake.url))
+            p = self.new(releases_url=fake.url + "/releases", public_key=TEST_PUB)
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] is True))
+            # from before signing, no SHA256SUMS: installs without a prompt (owner decision B6), marked unchecked
+            p.install("v1.16.0")
+            st = self.wait_install(p, "v1.16.0")
+            self.assertEqual((st["state"], st["check"], st["verified"]), ("done", "none", False))
+            b = {x["id"]: x for x in play.Play(self.paths).builds()}["versions/v1.16.0"]
+            self.assertEqual(b["check"], "none")  # (after a restart too)
+            self.assertIn("before signing", b["checkNote"])
+            p.remove("v1.16.0")
+            # Cancel during the download: nothing is left
+            fake.routes["/dl/old.zip"] = slow
+            p.install("v1.16.0")
+            with self.assertRaises(play.PlayError):
+                p.cancel_install("v1.18.3")  # (not being installed)
+            self.assertEqual(p.cancel_install("v1.16.0"), {"cancelling": "v1.16.0"})
+            gate.set()
+            st = self.wait_install(p, "v1.16.0")
+            self.assertEqual(st["state"], "cancelled", st)
+            self.assertEqual(os.listdir(os.path.join(self.quark, "versions")), [])
+        finally:
+            gate.set()
+            fake.close()
+
+    def test_release_pages(self):
+        # 149 releases: every page is read (like the launcher), not just the first 100
+        def rel(i):
+            return {"tag_name": "test-1.18.%d-test.%d" % (i // 10, i), "prerelease": True,
+                    "published_at": "2026-%02d-%02dT00:00:00Z" % (1 + i // 28, 1 + i % 28), "assets": []}
+        all_rel = [rel(i) for i in range(149)][::-1]
+        hits = []
+
+        def route(path):
+            q = dict(x.split("=") for x in path.split("?", 1)[1].split("&"))
+            hits.append(q["page"])
+            n, per = int(q["page"]), int(q["per_page"])
+            return (200, all_rel[(n - 1) * per:n * per])
+        fake = FakeHTTP({"/releases": route})
+        try:
+            p = self.new(releases_url=fake.url + "/releases")
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] is True and not p.releases()["busy"]))
+            r = p.releases()
+            self.assertEqual((len(r["list"]), r["complete"], hits), (149, True, ["1", "2"]))
+            self.assertEqual(r["list"][-1]["tag"], "test-1.18.0-test.0")
+            # page 2 fails: the newest 100 plus the older ones of the last list, and a note why
+            fake.routes["/releases"] = lambda path: (500, "x") if "page=2" in path else route(path)
+            p.rel["etag"] = None
+            self.assertEqual(p.releases(force=True)["refreshIn"], 30)
+            self.assertTrue(wait_for(lambda: not p.releases()["busy"]))
+            r = p.releases()
+            self.assertEqual((len(r["list"]), r["complete"], r["ok"]), (149, False, True))
+            self.assertIn("only the newest 100", r["error"])
+            # a second Refresh within 30 s is not taken: the page shows when it is
+            n = len(hits)
+            self.assertGreater(p.releases(force=True)["refreshIn"], 0)
+            time.sleep(0.2)
+            self.assertEqual(len(hits), n)
+            # page 1 answering 304 to its ETag: nothing new, the list stays
+            p.rel.update(etag='"abc"', complete=True, forcedAt=-1e9)
+            fake.routes["/releases"] = (304, "")
+            p.releases(force=True)
+            self.assertTrue(wait_for(lambda: not p.releases()["busy"]))
+            self.assertEqual((len(p.releases()["list"]), p.releases()["ok"]), (149, True))
         finally:
             fake.close()
 
@@ -607,6 +941,56 @@ class TestNotesToDocs(unittest.TestCase):
         p.sync_docs()
         self.assertNotIn("v1.18.3", self.remote_file())
 
+    def test_edit_and_remove(self):
+        p = self.play
+        self.session("p20261024190000-aaaa")
+        self.session("p20261024190500-bbbb", label="v1.18.3", version="1.18.3")
+        n = p.save_note("p20261024190000-aaaa", {"did": "FFA", "noticed": "typo hree"})
+        # before it is written: the local copy changes, the file gets the edited text
+        e = p.edit_note(n["id"], {"did": "FFA", "noticed": "typo here"})
+        self.assertIn("typo here", e["line"])
+        self.assertTrue(p.edit_note(n["id"], {"did": "FFA", "noticed": "typo here"})["noop"])
+        self.assertTrue(p.sync_docs()["pushed"])
+        text = self.remote_file()
+        self.assertIn("typo here", text)
+        self.assertNotIn("hree", text)
+        self.assertFalse(p.needs_sync())
+        # after it is pushed, while still open: changed in place, one commit, same title and stamp
+        p.edit_note(n["id"], {"did": "FFA on bastion", "noticed": "typo here"})
+        self.assertTrue(p.needs_sync())
+        self.assertEqual(p.view()["notes"][0]["where"], "your edit is waiting to go into Claude Documents")
+        self.assertTrue(p.sync_docs()["pushed"])
+        text = self.remote_file()
+        self.assertIn("Did: FFA on bastion.", text)
+        self.assertEqual(text.count("Play note: testing"), 1)
+        self.assertIn("(edited)", git(self.docs, "log", "-1", "--format=%s"))
+        self.assertFalse(p.needs_sync())
+        self.assertEqual(len(p.notes()), 1)
+        # remove a second note: its entry leaves the file
+        n2 = p.save_note("p20261024190500-bbbb", {"change": "louder"})
+        p.sync_docs()
+        self.assertIn("v1.18.3", self.remote_file())
+        p.delete_note(n2["id"])
+        self.assertEqual([x["id"] for x in p.notes()], [n["id"]])
+        self.assertTrue(p.sync_docs()["pushed"])
+        self.assertNotIn("v1.18.3", self.remote_file())
+        self.assertIn("Play note: testing", self.remote_file())
+        with self.assertRaises(play.PlayError):
+            p.delete_note(n2["id"])  # (gone)
+        # an agent takes the first note: no more edits from here
+        git(self.seed, "pull", "-q", "origin", "main")
+        path = os.path.join(self.seed, play.DOCS_FILE)
+        with open(path, encoding="utf-8") as f:
+            write(path, f.read().replace(", q, open_", ", q, in-progress_"))
+        git(self.seed, "commit", "-q", "-am", "on it")
+        git(self.seed, "push", "-q", "origin", "HEAD:main")
+        p.sync_docs()
+        with self.assertRaises(play.PlayError) as cm:
+            p.edit_note(n["id"], {"did": "late"})
+        self.assertEqual(cm.exception.reason, "locked")
+        self.assertIn("in-progress", cm.exception.message)
+        self.assertEqual(p.view()["notes"][0]["locked"], "an agent set it to in-progress")
+
     def test_no_docs_folder(self):
         shutil.rmtree(self.docs)
         self.session("p20261024190000-aaaa")
@@ -616,6 +1000,8 @@ class TestNotesToDocs(unittest.TestCase):
         self.assertFalse(st["ok"])
         self.assertIn("No Claude Documents folder", st["error"])
         self.assertEqual(len(p.notes()), 1)  # (kept on this PC)
+        v = p.view()["notes"][0]
+        self.assertEqual((v["status"], v["where"]), (None, "kept on this PC only (no Claude Documents folder)"))
 
 
 @unittest.skipIf(util.IS_WINDOWS, "the fake quark.exe is a shell script")
@@ -627,8 +1013,9 @@ class TestPlayServer(unittest.TestCase):
         write(os.path.join(cls.quark, "testing", "BUILD.txt"), "test-1.18.14-test.240 (GitHub release, published x)\n")
         fake_game(os.path.join(cls.quark, "testing"), seconds=0.2, code=0)
         paths = config.Paths(PM_ROOT, cls.quark)
+        cls.opened = []
         cls.app = server.App(paths, port=0, modules=[], prober=lambda p: False,
-                             play_opts={"releases_url": "http://127.0.0.1:9/releases"})
+                             play_opts={"releases_url": "http://127.0.0.1:9/releases", "opener": cls.opened.append})
         cls.httpd = server.make_server(cls.app, 0)
         cls.port = cls.httpd.server_address[1]
         cls.app.port = cls.app.tabs.own_port = cls.port
@@ -702,6 +1089,30 @@ class TestPlayServer(unittest.TestCase):
         code, body = self.req("/api/play/remove", "POST", body={"tag": "../testing"})
         self.assertEqual(code, 400)
         self.assertEqual(self.req("/api/play/sync", "POST", body={})[0], 200)
+        # the routes pm/play.py answers: the game's log, Stop, Open, editing and removing a note, Cancel
+        code, body = self.req("/api/play/log?session=" + sid)
+        self.assertEqual(code, 200, body)
+        self.assertIn("started --host ffa", json.loads(body)["text"])
+        self.assertEqual(self.req("/api/play/log?session=nope")[0], 404)
+        self.assertEqual(self.req("/api/play/nothing")[0], 404)
+        code, body = self.req("/api/play/stop", "POST", body={"session": sid})
+        self.assertEqual((code, json.loads(body)["reason"]), (409, "not-running"))
+        code, body = self.req("/api/play/open", "POST", body={"what": "build", "build": "testing"})
+        self.assertEqual(code, 200, body)
+        self.assertEqual(self.opened, [os.path.join(self.quark, "testing")])
+        self.assertEqual(self.req("/api/play/open", "POST", body={"what": "path", "build": "/"})[0], 400)
+        nid = self.app.play.notes()[0]["id"]
+        code, body = self.req("/api/play/note-edit", "POST", body={"id": nid, "did": "a long FFA"})
+        self.assertEqual(code, 200, body)
+        self.assertEqual(self.app.play.notes()[0]["fields"]["did"], "a long FFA")
+        self.assertEqual(self.req("/api/play/note-edit", "POST", body={"id": nid, "did": {"a": 1}})[0], 400)
+        self.assertEqual(self.req("/api/play/install-cancel", "POST", body={"tag": "v1.0.0"})[0], 409)
+        code, body = self.req("/api/play/note-delete", "POST", body={"id": nid})
+        self.assertEqual(code, 200, body)
+        self.assertEqual(self.app.play.notes(), [])
+        # the release list is sent once; a poll that names its sig gets it left out
+        v = json.loads(self.req("/api/play")[1])
+        self.assertIsNone(json.loads(self.req("/api/play?rel=" + v["releases"]["sig"])[1])["releases"]["list"])
 
 
 if __name__ == "__main__":

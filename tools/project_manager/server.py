@@ -12,7 +12,7 @@ and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?r
 /api/updates/ack?id=<restart request id>.
 The Play tab (pm/play.py): GET /play  /api/play[?refresh=1]  /api/play/pending;  POST (JSON body) /api/play/launch
 {build, args}  /api/play/note {session, did, noticed, change, other}  /api/play/skip {session}  /api/play/install {tag}
-/api/play/remove {tag}  /api/play/sync.
+/api/play/remove {tag}  /api/play/sync; and the routes pm/play.py answers itself (Play.api_get / api_post, SPEC.md 3b).
 """
 import argparse
 import json
@@ -183,7 +183,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/play":
                 if q.get("refresh", ["0"])[0] not in ("", "0", "false"):
                     self.app.play.releases(force=True)
-                return self._json(self.app.play.view())
+                return self._json(self.app.play.view(rel_sig=q.get("rel", [None])[0]))
+            if p.startswith("/api/play/"):  # (the newer Play routes live in pm/play.py: log)
+                code, obj = self.app.play.api_get(p[len("/api/play/"):], q)
+                return self._json(obj, code)
             if p == "/api/health":
                 return self._send(200, "ok", "text/plain; charset=utf-8")
             if p == "/api/pm":
@@ -264,6 +267,9 @@ class Handler(BaseHTTPRequestHandler):
             if what == "sync":
                 pl.wake.set()
                 return self._json({"ok": True})
+            res = pl.api_post(what, req)  # (the newer routes: stop, open, note-edit, note-delete, install-cancel)
+            if res is not None:
+                return self._json(dict(res, ok=True))
         except play.PlayError as e:
             return self._json({"ok": False, "message": e.message, "reason": e.reason}, e.code)
         return self._send(404, "not found", "text/plain; charset=utf-8")

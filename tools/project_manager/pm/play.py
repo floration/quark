@@ -1,33 +1,47 @@
 """The Play tab (http://127.0.0.1:8768/play): start a game build, and when it closes ask q for a play note.
 
 Builds: the local game folders (Quark\\production, testing, working, testing-f3; BUILD.txt parsed by builds.py) and
-older GitHub releases installed into Quark\\versions\\<tag>\\ (the release's quark-windows.zip, checked against its
-SHA256SUMS, BUILD.txt written like tools/fetch_release.ps1). The release list comes from the public GitHub API
-without signing in (60 requests an hour), cached 10 min with an ETag (a 304 does not count against the limit) and
-refreshed in the background, so a page request never waits on GitHub.
+older GitHub releases installed into Quark\\versions\\<tag>\\ (the release's quark-windows.zip, BUILD.txt written like
+tools/fetch_release.ps1, and play-install.json: how the download was checked). The release list comes from the public
+GitHub API without signing in (60 requests an hour), every page of it (100 a page, until a short page, like the
+launcher: production releases stay listed behind any number of test builds), cached 10 min with page 1's ETag (a 304
+does not count against the limit and means nothing new was published) and refreshed in the background, so a page
+request never waits on GitHub.
+
+Install checks a release the way the launcher does (docs/SIGNING.md): from 1.17.0 on (and any release that has a
+signature) the zip's Ed25519ph signature (quark-windows.zip.sig) must verify against the release key
+(RELEASE_PUBLIC_KEY = kReleasePublicKey in src/common/sign.cpp), and the release's signed manifest
+(quark-release.txt + .sig) must verify and name this tag, version, channel and the zip's sha256, or nothing is
+installed. A release from before signing (<= 1.16.x) has neither: it installs without a prompt (owner decision B6),
+checked against its SHA256SUMS when it has one, and is marked "unsigned" on its card. A download can be cancelled.
 
 Launching: the game's exe (quark.exe; it is a GUI-subsystem program, CMakeLists `add_executable(quark WIN32 ...)`)
 starts with its folder as working folder, normal priority, never elevated, stdout/stderr into
-Quark\\project-manager\\logs\\play-<session>.log. On Windows it is started through a short-lived hidden python
-process (HANDOFF below) that starts the game and exits at once, so the game's parent is gone: the shell's
-`taskkill /T` of the Supervisor Board server (window closed, app updated) never reaches the game, and the game is
-started with CREATE_BREAKAWAY_FROM_JOB (when the job allows it) and CREATE_NO_WINDOW (no console; its own window
-shows). This process then opens the game by pid (OpenProcess) and waits for it in a thread.
+Quark\\project-manager\\logs\\play-<session>.log (the page shows its tail; a crash is flagged). On Windows it is
+started through a short-lived hidden python process (HANDOFF below) that starts the game and exits at once, so the
+game's parent is gone: the shell's `taskkill /T` of the Supervisor Board server (window closed, app updated) never
+reaches the game, and the game is started with CREATE_BREAKAWAY_FROM_JOB (when the job allows it) and
+CREATE_NO_WINDOW (no console; its own window shows). This process then opens the game by pid (OpenProcess) and waits
+for it in a thread. Stop asks the game to close (Windows: WM_CLOSE through taskkill without /F; elsewhere SIGTERM to
+its process group) and ends it after STOP_GRACE seconds if it is still there.
 
 Sessions (Quark\\project-manager\\play-sessions.json): {id, build, label, version, commit, folder, exe, args,
-startedAt, endedAt, exitCode, durationSec, state: running | needsNote | noted | skipped, pid, pidCreated}. When the
-game exits the session becomes needsNote (the page opens the note form; the shell brings the window up). When this
-server restarts while a game runs, the session is picked up again by pid: on Windows only when the process at that
-pid was created when the game was (GetProcessTimes, within 2 s; a reused pid is not the game), elsewhere when it is
-alive and its command line names the exe. A game that ended while the server was down still gets a note
-(`endApprox`: the end time is when the server noticed).
+startedAt, endedAt, exitCode, durationSec, state: running | needsNote | noted | skipped, pid, pidCreated, log,
+stopped}. When the game exits the session becomes needsNote (the page opens the note form; the shell brings the
+window up). When this server restarts while a game runs, the session is picked up again by pid: on Windows only when
+the process at that pid was created when the game was (GetProcessTimes, within 2 s; a reused pid is not the game),
+elsewhere when it is alive and its command line names the exe. A game that ended while the server was down still
+gets a note (`endApprox`: the end time is when the server noticed).
 
-Notes: each saved note is appended to Quark\\project-manager\\play-notes.jsonl (the local copy, kept forever) and
-written as one entry at the top of `## Notes` in Quark\\Claude Documents\\12-play-notes.md (the Claude Manager's
-entry shape: `- **Play note: <build> <version>** ... _YYYY-MM-DD HH:MM CT, q, open_`), then committed (that file
-only) and pushed the way tools/docs_manager/docsedit.py does (fetch + rebase --autostash first; git never prompts,
-no console window). Offline, it stays committed on this PC and goes up on the next save or the retry every 5 min.
-A note written once is never written again, even when an agent moves or removes it.
+Notes: each saved note is appended to Quark\\project-manager\\play-notes.jsonl (the local copy, kept forever; an
+edit or a removal is appended as its own record, newest wins) and written as one entry at the top of `## Notes` in
+Quark\\Claude Documents\\12-play-notes.md (the Claude Manager's entry shape: `- **Play note: <build> <version>** ...
+_YYYY-MM-DD HH:MM CT, q, open_`; line breaks q typed become " / "), then committed (that file only) and pushed the way
+tools/docs_manager/docsedit.py does (fetch + rebase --autostash first; git never prompts, no console window).
+Offline, it stays committed on this PC and goes up on the next save or the retry every 5 min. A note can also be
+written without a session (a game played through the launcher). q can edit or remove a note while its entry is still
+`open` (no agent has taken it): the entry is changed in place, or removed. A note written once is never written
+again, even when an agent moves or removes it.
 Python 3 standard library only.
 """
 import datetime
@@ -49,11 +63,19 @@ import zipfile
 
 from . import builds, util
 
-RELEASES_URL = "https://api.github.com/repos/floration/quark/releases?per_page=100"
+RELEASES_URL = "https://api.github.com/repos/floration/quark/releases"
+RELEASES_PER_PAGE = 100       # (GitHub's most; a shorter page is the last one)
+RELEASES_MAX_PAGES = 50       # (a server that never sends a short page stops here)
 RELEASES_TTL = 600            # s: the list is fetched again after 10 min (when the page asks)
 RELEASES_MIN_FORCE = 30       # s: a "Refresh" press at most this often
 ZIP_NAME = "quark-windows.zip"
+SIG_NAME = ZIP_NAME + ".sig"
 SUMS_NAME = "SHA256SUMS"
+MANIFEST_NAME = "quark-release.txt"
+# The release key's public half: kReleasePublicKey in src/common/sign.cpp (tests/test_play.py checks they match)
+RELEASE_PUBLIC_KEY = "0b059c406106eed2be15b6d840166ec6bcb72817450bfa2dcae561c07b6b8b7e"
+FIRST_SIGNED = "1.17.0-0"     # (releases.h kFirstSigned: below every 1.17.0 build, above every 1.16.x)
+INSTALL_INFO = "play-install.json"
 MAX_ZIP = 1 << 30             # bytes: a bigger download is refused
 MAX_UNZIPPED = 4 << 30
 LOCAL_FOLDERS = builds.FOLDERS  # production, testing, working, testing-f3
@@ -75,13 +97,17 @@ Agents: read this with 01-08; act on the `open` notes that touch your work, set 
 """
 KEEP_SESSIONS = 200
 KEEP_LOGS = 20
-MAX_FIELD = 4000
+LOG_VIEW_BYTES = 256 * 1024   # the log view shows this much of the end of a game's log
+NOTE_LOG_LINES, NOTE_LOG_CHARS = 12, 1200   # "add the log's last lines" to a note: at most this much
+STOP_GRACE = 5.0              # s: Stop asks the game to close, then ends it
+MAX_FIELD = 4000              # characters per note box (the form's maxlength; longer is refused, never cut)
 MAX_ARGS = 400
 RETRY_EVERY = 300             # s: a note not yet on GitHub is tried again this often
 GIT_NAME, GIT_EMAIL = "q (Supervisor Board)", "supervisor-board@localhost"
 VIA = " (q, via Supervisor Board)"   # (ends every commit message here: how a play-notes commit of ours is told apart)
 TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 SESSION_RE = re.compile(r"^p\d{14}-[0-9a-f]{4}$")
+NOTE_RE = re.compile(r"^[pn]\d{14}-[0-9a-f]{4}$")   # (a note's id: its session's, or n... for a note without one)
 NOT_GAME = ("quark_launcher", "quark_server", "quark_tests", "quark_sign", "quark_maptool", "fuzz_")
 FIELDS = (("did", "Did"), ("noticed", "Noticed"), ("change", "Wants changed"), ("other", "Also"))
 
@@ -212,6 +238,7 @@ class _Win:
             k.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
             k.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(ctypes.c_ulonglong)] * 4
             k.CloseHandle.argtypes = [wintypes.HANDLE]
+            k.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
             cls._k = k
         return cls._k
 
@@ -243,6 +270,20 @@ class _Win:
     @classmethod
     def close(cls, h):
         cls.k32().CloseHandle(h)
+
+    @classmethod
+    def terminate(cls, pid, created):
+        """End the process at pid, only when it was created when the game was (within 2 s)."""
+        h = cls.k32().OpenProcess(0x0001 | 0x1000, False, int(pid))  # PROCESS_TERMINATE | QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            c = cls.created(h)
+            if created is not None and (c is None or abs(c - created) > 2.0):
+                return False
+            return bool(cls.k32().TerminateProcess(h, 1))
+        finally:
+            cls.close(h)
 
 
 class Proc:
@@ -291,6 +332,49 @@ def pid_alive(pid, exe=None):
     except (OSError, IndexError):
         pass
     return True
+
+
+def terminate(proc, force):
+    """Ask a game to close (force False: Windows WM_CLOSE through `taskkill /PID` without /F, elsewhere SIGTERM) or
+    end it (force True: TerminateProcess / SIGKILL). Off Windows the signal goes to its process group (spawn starts
+    it in a new session, so whatever it started goes too), and a pid that is no longer the game is left alone."""
+    if util.IS_WINDOWS:
+        if force:
+            _Win.terminate(proc.pid, proc.created)
+        else:
+            subprocess.run(["taskkill", "/PID", str(int(proc.pid))], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=15, creationflags=CREATE_NO_WINDOW)
+        return
+    import signal
+    pid = int(proc.pid)
+    if pid <= 1 or (proc.popen is None and not pid_alive(pid, proc.exe)):
+        return
+    if proc.popen is not None and proc.popen.poll() is not None:
+        return  # (already ended: its pid may belong to something else now)
+    sig = signal.SIGKILL if force else signal.SIGTERM
+    try:
+        if os.getpgid(pid) == pid and pid != os.getpgid(0):
+            os.killpg(pid, sig)
+            return
+    except OSError:
+        pass
+    try:
+        os.kill(pid, sig)
+    except OSError:
+        pass
+
+
+def open_with_system(path):
+    """Open a folder in Explorer (Finder, the file manager) or a file in its default app. Raises PlayError."""
+    try:
+        if util.IS_WINDOWS:
+            os.startfile(path)  # (Explorer / the default app; no console)
+            return
+        cmd = ["open" if sys.platform == "darwin" else "xdg-open", path]
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, close_fds=True)
+    except OSError as e:
+        raise PlayError(500, "Couldn't open %s (%s)." % (path, e.strerror or type(e).__name__))
 
 
 def _python_for_handoff():
@@ -364,8 +448,9 @@ def _url_ok(u):
 
 
 def parse_releases(data):
-    """GitHub's /releases JSON -> [{tag, name, channel, prerelease, publishedAt, version, url, zip, sums}], newest
-    first. Drafts and odd tags are left out; a release without quark-windows.zip has zip None (shown greyed)."""
+    """GitHub's /releases JSON -> [{tag, name, channel, prerelease, publishedAt, version, url, zip, sums, sig,
+    manifest, manifestSig, needsSig}], newest first. Drafts and odd tags are left out; a release without
+    quark-windows.zip has zip None (shown greyed)."""
     out = []
     for r in data if isinstance(data, list) else []:
         if not isinstance(r, dict) or r.get("draft"):
@@ -374,18 +459,31 @@ def parse_releases(data):
         if not isinstance(tag, str) or not TAG_RE.match(tag):
             continue
         assets = {a.get("name"): a for a in r.get("assets") or [] if isinstance(a, dict)}
-        z, s = assets.get(ZIP_NAME), assets.get(SUMS_NAME)
+
+        def url(name):
+            u = (assets.get(name) or {}).get("browser_download_url")
+            return u if _url_ok(u) else None
+        z = assets.get(ZIP_NAME)
         pre = r.get("prerelease") is True
         channel = "production" if (tag.startswith("v") and not pre) else "testing" if tag.startswith("test-") else "other"
-        zurl = z.get("browser_download_url") if z else None
-        surl = s.get("browser_download_url") if s else None
-        out.append({"tag": tag, "name": str(r.get("name") or tag)[:200], "channel": channel, "prerelease": pre,
-                    "publishedAt": r.get("published_at") or r.get("created_at"),
-                    "version": util.parse_version(tag), "url": r.get("html_url") if _url_ok(r.get("html_url")) else None,
-                    "zip": {"url": zurl, "size": util.to_int(z.get("size"), 0)} if z and _url_ok(zurl) else None,
-                    "sums": surl if _url_ok(surl) else None})
+        name = str(r.get("name") or tag)[:200]
+        version = util.parse_version(tag)
+        rel = {"tag": tag, "name": name, "channel": channel, "prerelease": pre,
+               "publishedAt": r.get("published_at") or r.get("created_at"),
+               "version": version, "url": r.get("html_url") if _url_ok(r.get("html_url")) else None,
+               "zip": {"url": url(ZIP_NAME), "size": util.to_int(z.get("size"), 0)} if z and url(ZIP_NAME) else None,
+               "sums": url(SUMS_NAME), "sig": url(SIG_NAME), "manifest": url(MANIFEST_NAME),
+               "manifestSig": url(MANIFEST_NAME + ".sig")}
+        rel["needsSig"] = needs_signature(rel)
+        # (the page shows the name only when it says more than the tag: "quark 1.18.30-test.323 (testing)" doesn't)
+        rel["nameSaysMore"] = bool(name != tag and not (version and util.base_version(version) in name))
+        out.append(rel)
     out.sort(key=lambda x: (util.parse_time(x["publishedAt"]) or 0, util.version_key(x["tag"])), reverse=True)
     return out
+
+
+def page_url(base, n):
+    return "%s%sper_page=%d&page=%d" % (base, "&" if "?" in base else "?", RELEASES_PER_PAGE, n)
 
 
 def parse_sums(text, name=ZIP_NAME):
@@ -397,14 +495,162 @@ def parse_sums(text, name=ZIP_NAME):
     return None
 
 
+# ---- signatures (docs/SIGNING.md): Ed25519ph verification, the same check as `quark_sign verify` ---------------
+
+# RFC 8032 section 5.1 with the SHA-512 prehash (Ed25519ph, empty context), as Monocypher's crypto_ed25519_ph_check:
+# the signature (R, S) is good when [S]B - [h]A encodes to exactly R. Extended coordinates (X, Y, Z, T); a check takes
+# a few ms in pure Python and runs only in the install thread.
+_P = 2 ** 255 - 19
+_L = 2 ** 252 + 27742317777372353535851937790883648493
+_D = -121665 * pow(121666, _P - 2, _P) % _P
+_SQRT_M1 = pow(2, (_P - 1) // 4, _P)
+_DOM2_PH = b"SigEd25519 no Ed25519 collisions" + bytes([1, 0])   # dom2(phflag 1, context "")
+
+
+def _pt_add(a, b):
+    x1, y1, z1, t1 = a
+    x2, y2, z2, t2 = b
+    pa, pb = (y1 - x1) * (y2 - x2) % _P, (y1 + x1) * (y2 + x2) % _P
+    pc, pd = 2 * t1 * t2 * _D % _P, 2 * z1 * z2 % _P
+    e, f, g, h = pb - pa, pd - pc, pd + pc, pb + pa
+    return (e * f % _P, g * h % _P, f * g % _P, e * h % _P)
+
+
+def _pt_mul(k, a):
+    q = (0, 1, 1, 0)
+    while k:
+        if k & 1:
+            q = _pt_add(q, a)
+        a = _pt_add(a, a)
+        k >>= 1
+    return q
+
+
+def _recover_x(y, sign):
+    if y >= _P:
+        return None
+    x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (_P + 3) // 8, _P)
+    if (x * x - x2) % _P:
+        x = x * _SQRT_M1 % _P
+    if (x * x - x2) % _P:
+        return None
+    return _P - x if (x & 1) != sign else x
+
+
+def _decode_pt(b):
+    y = int.from_bytes(b, "little")
+    x = _recover_x(y & ((1 << 255) - 1), y >> 255)
+    return None if x is None else (x, y & ((1 << 255) - 1), 1, x * (y & ((1 << 255) - 1)) % _P)
+
+
+def _encode_pt(a):
+    x, y, z, _ = a
+    zi = pow(z, _P - 2, _P)
+    x, y = x * zi % _P, y * zi % _P
+    return (y | ((x & 1) << 255)).to_bytes(32, "little")
+
+
+_GY = 4 * pow(5, _P - 2, _P) % _P
+_G = (_recover_x(_GY, 0), _GY, 1, _recover_x(_GY, 0) * _GY % _P)
+
+
+def ed25519ph_verify(prehash, sig_hex, pub_hex):
+    """True when sig_hex (128 hex) is a signature by pub_hex (64 hex) of the message whose SHA-512 is `prehash`."""
+    try:
+        sig, pub = bytes.fromhex((sig_hex or "").strip()), bytes.fromhex((pub_hex or "").strip())
+    except ValueError:
+        return False
+    if len(sig) != 64 or len(pub) != 32 or len(prehash) != 64:
+        return False
+    a = _decode_pt(pub)
+    s = int.from_bytes(sig[32:], "little")
+    if a is None or s >= _L:
+        return False
+    h = int.from_bytes(hashlib.sha512(_DOM2_PH + sig[:32] + pub + prehash).digest(), "little") % _L
+    ha = _pt_mul(h, a)
+    return _encode_pt(_pt_add(_pt_mul(s, _G), ((-ha[0]) % _P, ha[1], ha[2], (-ha[3]) % _P))) == sig[:32]
+
+
+def version_from_tag(tag):
+    """The launcher's versionFromTag: the tag from its first digit on ('test-1.18.6-test.231' -> '1.18.6-test.231')."""
+    m = re.search(r"\d", tag or "")
+    return tag[m.start():] if m else ""
+
+
+def version_cmp(a, b):
+    """releases.cpp versionCmp: semver order, '1.17.0' > '1.17.0-test.3' > '1.17.0-test.2' > '1.16.9'; a missing part
+    counts as 0; prerelease identifiers compare dot by dot (numbers numerically, numbers before words). <0, 0, >0."""
+    def split(v):
+        core, _, pre = (v or "").partition("-")
+        nums = [int(x) if x.isdigit() else 0 for x in (core.split(".") + ["0", "0", "0"])[:3]]
+        return nums, pre
+    (na, pa), (nb, pb) = split(a), split(b)
+    if na != nb:
+        return -1 if na < nb else 1
+    if not pa or not pb:
+        return (1 if not pa else -1) if pa != pb else 0
+    ia, ib = pa.split("."), pb.split(".")
+    for x, y in zip(ia, ib):
+        if x == y:
+            continue
+        if x.isdigit() and y.isdigit():
+            return -1 if int(x) < int(y) else 1
+        if x.isdigit() != y.isdigit():
+            return -1 if x.isdigit() else 1
+        return -1 if x < y else 1
+    return (len(ia) > len(ib)) - (len(ia) < len(ib))
+
+
+def parse_manifest(text):
+    """quark-release.txt -> {channel, tag, version, commit, sha256: {name: hex}}, or None when it is not one
+    (releases.cpp parseManifest)."""
+    lines = (text or "").split("\n")
+    if not lines or lines[0].rstrip("\r ") != "quark release":
+        return None
+    m = {"channel": "", "tag": "", "version": "", "commit": "", "sha256": {}}
+    for line in lines[1:]:
+        key, _, val = line.rstrip("\r ").partition(" ")
+        if key in ("channel", "tag", "version", "commit"):
+            m[key] = val
+        elif key == "sha256" and " " in val:
+            name, _, hx = val.partition(" ")
+            m["sha256"].setdefault(name, hx.lower())
+    return m
+
+
+def check_manifest(m, rel, zip_sha256):
+    """releases.cpp checkManifest for the Windows zip: None when the signed manifest vouches for it, else why not."""
+    channel = "testing" if rel.get("prerelease") else "production"
+    version = version_from_tag(rel["tag"])
+    if m["tag"] != rel["tag"]:
+        return "its signed manifest is for %s, not %s" % (m["tag"] or "no tag", rel["tag"])
+    if m["version"] != version:
+        return "its signed manifest is for version %s, not %s" % (m["version"], version)
+    if m["channel"] != channel:
+        return "its signed manifest is for the %s channel, not %s" % (m["channel"], channel)
+    want = m["sha256"].get(ZIP_NAME)
+    if want is None:
+        return "its signed manifest doesn't name %s" % ZIP_NAME
+    return None if want == zip_sha256.lower() else "the zip is not the one its signed manifest names"
+
+
+def needs_signature(rel):
+    """releases.cpp needsSignature: a signed release, or any version from 1.17.0 on (one without a .sig can't be
+    genuine)."""
+    return bool(rel.get("sig")) or version_cmp(version_from_tag(rel.get("tag") or ""), FIRST_SIGNED) >= 0
+
+
 def _opener(url):
     host = urllib.parse.urlsplit(url).hostname or ""
     return util._LOCAL_OPENER if host in ("127.0.0.1", "localhost") else util._DEFAULT_OPENER
 
 
-def extract_zip(zip_path, dest):
+def extract_zip(zip_path, dest, check=None):
     """Unzip into dest (made here), dropping one top folder that holds everything (quark-windows/). Refuses names
-    that leave dest and more than MAX_UNZIPPED bytes."""
+    that leave dest and more than MAX_UNZIPPED bytes. `check()` runs before each file (it raises to stop: Cancel)."""
     with zipfile.ZipFile(zip_path) as zf:
         infos = zf.infolist()
         names = [i.filename.replace("\\", "/") for i in infos]
@@ -422,6 +668,8 @@ def extract_zip(zip_path, dest):
                 continue
             if any(p == ".." or ":" in p for p in parts) or rel.startswith("/"):
                 raise PlayError(500, "The zip holds a file outside its folder (%s); not installed." % name[:120])
+            if check:
+                check()
             target = os.path.join(dest, *parts)
             if name.endswith("/"):
                 os.makedirs(target, exist_ok=True)
@@ -452,6 +700,25 @@ def one_line(s, limit=MAX_FIELD):
     return s[:limit].rstrip()
 
 
+def clean_field(v, label="A"):
+    """A note box from the page -> its text with q's line breaks kept (trailing spaces and runs of blank lines
+    dropped). Raises PlayError for something that is not text or is longer than MAX_FIELD: never cut silently."""
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise PlayError(400, "The %s box must be text." % label.lower())
+    v = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", v.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " "))
+    v = re.sub(r"\n{3,}", "\n\n", "\n".join(l.rstrip() for l in v.split("\n"))).strip()
+    if len(v) > MAX_FIELD:
+        raise PlayError(400, "The %s box is longer than %d characters (%d); shorten it." % (label.lower(), MAX_FIELD, len(v)))
+    return v
+
+
+def flat(s, limit=MAX_FIELD):
+    """Text with line breaks -> one line for 12-play-notes.md (an entry is one line): the lines joined by " / "."""
+    return one_line(" / ".join(l.strip() for l in str(s or "").split("\n") if l.strip()), limit)
+
+
 def _sentence(s):
     return s if re.search(r"[.!?)`\"']$", s) else s + "."
 
@@ -462,24 +729,69 @@ def note_title(session):
     return "Play note: " + label + (" " + v if v and v not in label else "")
 
 
+_SIGNALS = {4: "SIGILL", 6: "SIGABRT", 7: "SIGBUS", 8: "SIGFPE", 9: "SIGKILL", 11: "SIGSEGV", 15: "SIGTERM"}
+_NTSTATUS = {0xC0000005: "access violation", 0xC0000409: "stack buffer overrun", 0xC00000FD: "stack overflow",
+             0xC0000374: "heap corruption", 0xC000001D: "illegal instruction", 0xC0000094: "integer divide by zero",
+             0xC0000135: "a DLL is missing", 0xC0000142: "a DLL failed to start", 0x40010004: "ended by Windows",
+             0xC000013A: "closed with Ctrl+C"}
+
+
+def exit_info(code, stopped=False):
+    """How a game ended -> {kind: ok | stopped | crash | error | unknown, text}. A crash is a signal (POSIX:
+    negative code) or a Windows exception status (0xC...); another non-zero code is an error exit."""
+    if stopped:
+        return {"kind": "stopped", "text": "stopped from the Play tab"}
+    if code is None:
+        return {"kind": "unknown", "text": "exit code unknown"}
+    code = util.to_int(code, 0)
+    if code == 0:
+        return {"kind": "ok", "text": "closed normally"}
+    if code < 0:
+        sig = _SIGNALS.get(-code, "signal %d" % -code)
+        return {"kind": "stopped" if -code in (9, 15) else "crash", "text": "exit code %d (%s)" % (code, sig)}
+    if code >= 0xC0000000 or code in _NTSTATUS:
+        name = _NTSTATUS.get(code)
+        return {"kind": "crash", "text": "exit code 0x%08X%s" % (code, " (%s)" % name if name else "")}
+    return {"kind": "error", "text": "exit code %d" % code}
+
+
 def format_note(session, fields, when):
     """One 12-play-notes.md entry (a single line). `when` is the trailer stamp ('2026-10-24 14:05 CT')."""
     parts = []
     for key, label in FIELDS:
-        v = one_line(fields.get(key))
+        v = flat(fields.get(key))
         if v:
             parts.append("%s: %s" % (label, _sentence(v)))
-    meta = "Played %s" % fmt_duration(session.get("durationSec"))
-    if session.get("endApprox"):
-        meta += " or less (it closed while the Supervisor Board was not running)"
+    if session.get("freeform"):
+        meta = "Played outside the Supervisor Board"
+    else:
+        meta = "Played %s" % fmt_duration(session.get("durationSec"))
+        if session.get("endApprox"):
+            meta += " or less (it closed while the Supervisor Board was not running)"
     if session.get("commit"):
         meta += ", commit %s" % one_line(session["commit"], 12)
     if session.get("args"):
         meta += ", options `%s`" % one_line(session["args"], MAX_ARGS).replace("`", "'")
     code = session.get("exitCode")
-    if code not in (None, 0):
-        meta += ", exit code %s" % code
+    if session.get("stopped"):
+        meta += ", stopped from the Play tab"
+    elif code not in (None, 0):
+        meta += ", " + exit_info(code)["text"]
+    if session.get("logTail"):
+        meta += ". Log's last lines: `%s`" % flat(session["logTail"], NOTE_LOG_CHARS).replace("`", "'")
     return "- **%s** %s %s. _%s, q, open_" % (session.get("noteTitle") or note_title(session), " ".join(parts), meta, when)
+
+
+def log_tail(path, max_bytes=LOG_VIEW_BYTES):
+    """The end of a log file -> (text, truncated). Raises OSError when it can't be read."""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - max_bytes))
+        data = f.read(max_bytes)
+    if size > max_bytes:
+        data = data.split(b"\n", 1)[-1]  # (from the first whole line)
+    return data.decode("utf-8", "replace"), size > max_bytes
 
 
 _DOC_ENTRY = re.compile(r"^\s{0,1}[-*]\s+\*\*(.+?)\*\*.*?\s_(\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2}(?:\s*[A-Z]{2,4})?)?)"
@@ -495,6 +807,32 @@ def parse_doc(text):
             out.append({"title": m.group(1).strip(), "stamp": m.group(2).strip(), "thread": m.group(3).strip(),
                         "status": m.group(4).strip().lower()})
     return out
+
+
+def change_entry(text, key, line):
+    """12-play-notes.md's text with the entry `key` (title, stamp) replaced by `line` (None: removed, with the blank
+    line before it) while its status is still `open` -> (text, what): "changed", "removed", "same", "gone" (not in
+    the file: an agent moved or archived it) or the entry's status when an agent has taken it (left as it is)."""
+    rows = text.split("\n")
+    for i, l in enumerate(rows):
+        m = _DOC_ENTRY.match(l)
+        if not m or (m.group(1).strip(), m.group(2).strip()) != key:
+            continue
+        status = m.group(4).strip().lower()
+        if status != "open":
+            return text, status
+        if line is None:
+            del rows[i]
+            if 0 < i < len(rows) and not rows[i - 1].strip() and not rows[i].strip():
+                del rows[i - 1]
+            elif i == len(rows) and i > 0 and not rows[i - 1].strip():
+                del rows[i - 1]
+            return "\n".join(rows), "removed"
+        if l == line:
+            return text, "same"
+        rows[i] = line
+        return "\n".join(rows), "changed"
+    return text, "gone"
 
 
 def add_note_lines(text, lines):
@@ -528,11 +866,18 @@ class _Ctx:
         self.paths = paths
 
 
+ACTIVE = ("downloading", "verifying", "extracting")
+
+
 class Play:
-    def __init__(self, paths, releases_url=RELEASES_URL, spawner=spawn, clock=time.time, docs_dir=None, git="git"):
+    def __init__(self, paths, releases_url=RELEASES_URL, spawner=spawn, clock=time.time, docs_dir=None, git="git",
+                 opener=open_with_system, killer=terminate, public_key=RELEASE_PUBLIC_KEY):
         self.paths = paths
         self.releases_url = releases_url
         self.spawner = spawner
+        self.opener = opener
+        self.killer = killer
+        self.public_key = public_key
         self.clock = clock
         self.docs_dir = docs_dir or paths.q(DOCS_FOLDER)
         self.git_cmd = git
@@ -544,13 +889,14 @@ class Play:
         self.procs = {}
         self.sessions = self._load_sessions()
         self.rel = {"ok": None, "fetchedAt": None, "error": None, "list": [], "etag": None, "busy": False,
-                    "forcedAt": 0.0, "fetchedTs": 0.0}
+                    "forcedAt": -1e9, "fetchedTs": 0.0, "complete": None}
         self.installs = {}
         self.sync = self._load_json(SYNC_FILE, {})
         if not isinstance(self.sync, dict):
             self.sync = {}
         self.sync.setdefault("written", [])
         self._doc_cache = (None, [])
+        self._notes_cache = (None, {})
 
     # -- files
     def _load_json(self, name, default):
@@ -581,21 +927,56 @@ class Play:
         except OSError:
             pass
 
-    def notes(self):
-        """Every note saved on this PC (play-notes.jsonl), oldest first."""
-        out = []
+    def _note_records(self):
+        """play-notes.jsonl -> {id: note}, oldest first, each with its edits applied (newest wins); a removed note
+        has deleted True; rev counts its edits and removals. Cached by the file's size + mtime (read every poll)."""
+        path = self.paths.pm(NOTES_FILE)
         try:
-            with open(self.paths.pm(NOTES_FILE), "rb") as f:
+            st = os.stat(path)
+            key = (st.st_size, st.st_mtime_ns)
+        except OSError:
+            return {}
+        if self._notes_cache[0] == key:
+            return self._notes_cache[1]
+        out = {}
+        try:
+            with open(path, "rb") as f:
                 for line in f:
                     try:
                         n = json.loads(line.decode("utf-8"))
                     except (ValueError, UnicodeDecodeError):
                         continue
-                    if isinstance(n, dict) and n.get("id") and n.get("line"):
-                        out.append(n)
+                    if not isinstance(n, dict) or not n.get("id"):
+                        continue
+                    op, cur = n.get("op"), out.get(n["id"])
+                    if op in ("edit", "delete"):
+                        if cur is None:
+                            continue
+                        cur = dict(cur, rev=cur.get("rev", 0) + 1)
+                        if op == "delete":
+                            cur.update(deleted=True, deletedAt=n.get("at"))
+                        elif isinstance(n.get("fields"), dict) and n.get("line"):
+                            cur.update(fields=n["fields"], line=n["line"], editedAt=n.get("at"))
+                        out[n["id"]] = cur
+                    elif n.get("line") and cur is None:
+                        out[n["id"]] = n
         except OSError:
-            pass
+            return {}
+        self._notes_cache = (key, out)
         return out
+
+    def notes(self, deleted=False):
+        """Every note saved on this PC (play-notes.jsonl, edits applied), oldest first; removed ones only with
+        deleted=True."""
+        return [n for n in self._note_records().values() if deleted or not n.get("deleted")]
+
+    def _append_note(self, rec):
+        try:
+            self.paths.ensure_pm_dir()
+            with open(self.paths.pm(NOTES_FILE), "ab") as f:
+                f.write((json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8"))
+        except OSError as e:
+            raise PlayError(500, "Could not save the note on this PC (%s)." % (e.strerror or type(e).__name__))
 
     # -- lifecycle
     def start(self):
@@ -642,11 +1023,20 @@ class Play:
         exe = find_exe(e["path"]) if e.get("present") else None
         with self.lock:
             running = [s["id"] for s in self.sessions if s.get("state") == "running" and s.get("build") == bid]
-        return {"id": bid, "label": label, "kind": kind, "folder": e["path"], "present": e.get("present"),
-                "version": e.get("version"), "tag": e.get("tag"), "commit": e.get("commit"), "dirty": e.get("dirty"),
-                "mtime": e.get("mtime"), "lines": e.get("lines") or [], "note": e.get("note"),
-                "exe": os.path.basename(exe) if exe else None, "playable": bool(exe), "running": running,
-                "missing": None if exe else ("folder missing" if not e.get("present") else "no quark.exe in it")}
+        b = {"id": bid, "label": label, "kind": kind, "folder": e["path"], "present": e.get("present"),
+             "version": e.get("version"), "tag": e.get("tag"), "commit": e.get("commit"), "dirty": e.get("dirty"),
+             "mtime": e.get("mtime"), "lines": e.get("lines") or [], "note": e.get("note"),
+             "exe": os.path.basename(exe) if exe else None, "playable": bool(exe), "running": running,
+             "missing": None if exe else ("folder missing" if not e.get("present") else "no quark.exe in it")}
+        if kind == "version" and e.get("present"):
+            # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded)
+            try:
+                info = util.read_json_file(os.path.join(e["path"], INSTALL_INFO))
+            except (OSError, ValueError):
+                info = None
+            if isinstance(info, dict) and info.get("check") in ("signed", "sha256", "none"):
+                b["check"], b["checkNote"] = info["check"], one_line(info.get("note") or "", 300)
+        return b
 
     def find_build(self, bid):
         for b in self.builds():
@@ -661,6 +1051,8 @@ class Play:
             raise PlayError(404, "That build is not on this PC.")
         if not b["playable"]:
             raise PlayError(409, "%s has no game in it (%s)." % (b["label"], b["missing"]))
+        if not isinstance(args_text, str):
+            raise PlayError(400, "The launch options must be text.")
         args = parse_args(args_text)
         now = self.clock()
         sid = "p%s-%s" % (datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%Y%m%d%H%M%S"),
@@ -719,6 +1111,7 @@ class Play:
             start = util.to_float(s.get("startedTs")) or util.parse_time(s.get("startedAt")) or now
             s.update(endedAt=util.iso(now), exitCode=code, durationSec=round(max(0.0, now - start), 1),
                      state="needsNote")
+            s.pop("stopping", None)
             if approx:
                 s["endApprox"] = True
         self._save_sessions()
@@ -728,6 +1121,112 @@ class Play:
             if s.get("id") == sid:
                 return s
         return None
+
+    # -- stopping a game, opening folders, the game's log
+    def stop_game(self, sid):
+        """Stop a running game: ask it to close, end it after STOP_GRACE s. Its note says it was stopped (not a
+        crash)."""
+        with self.lock:
+            s = self._session(str(sid or ""))
+            if not s:
+                raise PlayError(404, "No such game session.")
+            proc = self.procs.get(s["id"])
+            if s.get("state") != "running" or proc is None:
+                raise PlayError(409, "That game is not running.", "not-running")
+            if s.get("stopping"):
+                return dict(s, noop=True)
+            s.update(stopping=True, stopped=True)
+        self._save_sessions()
+        threading.Thread(target=self._stop, args=(s["id"], proc), name="pm-play-stop", daemon=True).start()
+        return dict(s)
+
+    def _stop(self, sid, proc):
+        for force in (False, True):
+            try:
+                self.killer(proc, force)
+            except Exception as e:  # (taskkill missing, a pid that went away: the next step or the wait decides)
+                util.log("play: stopping the game failed (%s)" % type(e).__name__)
+            end = time.monotonic() + STOP_GRACE
+            while time.monotonic() < end and not self.stop.is_set():
+                with self.lock:
+                    if sid not in self.procs:
+                        return
+                self.stop.wait(0.1)
+        with self.lock:  # (still there after being ended: say so instead of claiming it stopped)
+            s = self._session(sid)
+            if s and s.get("state") == "running":
+                s.pop("stopping", None)
+                s.pop("stopped", None)
+        self._save_sessions()
+
+    def _log_path(self, s):
+        """A session's log file, only when it is one of ours in project-manager\\logs."""
+        p = s.get("log") if s else None
+        if not isinstance(p, str) or not re.match(r"^play-p\d{14}-[0-9a-f]{4}\.log$", os.path.basename(p)):
+            return None
+        logs = os.path.realpath(self.paths.pm("logs"))
+        real = os.path.realpath(p)
+        return real if os.path.dirname(real) == logs else None
+
+    def game_log(self, sid):
+        with self.lock:
+            s = self._session(str(sid or ""))
+            s = dict(s) if s else None
+        if not s:
+            raise PlayError(404, "No such game session.")
+        path = self._log_path(s)
+        if not path or not os.path.isfile(path):
+            raise PlayError(404, "That game's log is gone (only the last %d are kept)." % KEEP_LOGS, "no-log")
+        try:
+            text, cut = log_tail(path)
+            size = os.path.getsize(path)
+        except OSError as e:
+            raise PlayError(500, "Can't read the log (%s)." % (e.strerror or type(e).__name__))
+        return {"session": s["id"], "label": s.get("label"), "version": s.get("version"), "path": path, "size": size,
+                "truncated": cut, "text": text, "state": s.get("state"),
+                "exit": None if s.get("state") == "running" else exit_info(s.get("exitCode"), s.get("stopped"))}
+
+    def _log_lines(self, s):
+        """The last lines of a session's log for a note (NOTE_LOG_LINES, at most NOTE_LOG_CHARS), or None."""
+        path = self._log_path(s)
+        if not path:
+            return None
+        try:
+            text, _ = log_tail(path, 64 * 1024)
+        except OSError:
+            return None
+        lines = [one_line(l, 300) for l in text.split("\n") if l.strip()][-NOTE_LOG_LINES:]
+        tail = "\n".join(lines)
+        return tail[-NOTE_LOG_CHARS:] or None
+
+    def open_path(self, what, ref=None):
+        """Open a build's folder, the logs folder, a game's log, the Claude Documents folder or 12-play-notes.md on
+        this PC (Explorer / the default app). Only those: never a path the page sends."""
+        what = str(what or "")
+        if what == "build":
+            b = self.find_build(str(ref or ""))
+            if not b:
+                raise PlayError(404, "That build is not on this PC.")
+            path = b["folder"]
+        elif what == "logs":
+            path = self.paths.pm("logs")
+            try:
+                os.makedirs(path, exist_ok=True)
+            except OSError:
+                pass
+        elif what == "log":
+            with self.lock:
+                path = self._log_path(self._session(str(ref or "")))
+        elif what == "docs":
+            path = self.docs_dir
+        elif what == "notes-file":
+            path = os.path.join(self.docs_dir, DOCS_FILE)
+        else:
+            raise PlayError(400, "Nothing to open.")
+        if not path or not os.path.exists(path):
+            raise PlayError(404, "%s is not on this PC." % (path or "That file"))
+        self.opener(path)
+        return {"opened": path}
 
     # -- notes
     def skip(self, sid):
@@ -746,45 +1245,116 @@ class Play:
         self._save_sessions()
         return dict(s)
 
-    def save_note(self, sid, fields):
+    def _fields(self, fields):
         if not isinstance(fields, dict):
             raise PlayError(400, "The page sent a note without its fields.")
-        clean = {k: one_line(fields.get(k)) for k, _ in FIELDS}
+        clean = {k: clean_field(fields.get(k), label) for k, label in FIELDS}
         if not any(clean.values()):
             raise PlayError(400, "Write something in at least one box, or press Skip.")
+        return clean
+
+    def _freeform(self, fields, now):
+        """What a note without a session is about: a listed build (`build`), or `label` + `version` as q typed them
+        (a game played through the launcher)."""
+        for k in ("build", "label", "version"):
+            if fields.get(k) is not None and not isinstance(fields.get(k), str):
+                raise PlayError(400, "The note's %s must be text." % k)
+        b = self.find_build(fields["build"]) if fields.get("build") else None
+        if fields.get("build") and not b:
+            raise PlayError(404, "That build is not on this PC.")
+        nid = "n%s-%s" % (datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%Y%m%d%H%M%S"),
+                          os.urandom(2).hex())
+        if b:
+            return {"id": nid, "build": b["id"], "label": b["label"], "version": b["version"], "commit": b["commit"],
+                    "freeform": True}
+        label = one_line(fields.get("label") or "launcher", 80)
+        return {"id": nid, "build": None, "label": label, "version": one_line(fields.get("version") or "", 60) or None,
+                "commit": None, "freeform": True}
+
+    def save_note(self, sid, fields):
+        """The note for a game session (sid), or without one (sid empty: see _freeform). `attachLog` true adds the
+        last lines of the game's log."""
+        clean = self._fields(fields)
         now = self.clock()
         when = stamp(now)
+        src = None if sid else self._freeform(fields, now)  # (find_build reads folders: outside the lock)
         with self.lock:
-            s = self._session(str(sid or ""))
-            if not s:
-                raise PlayError(404, "No such game session.")
-            if s.get("state") == "noted":  # (saved from another page already: never a second copy)
-                raise PlayError(409, "That game's note was already saved.", "already-noted")
-            if s.get("state") not in ("needsNote", "skipped"):
-                raise PlayError(409, "That game is still running.", "running")
-            base = title = note_title(s)
-            taken = {(n.get("title"), n.get("stamp")) for n in self.notes()}
+            s = None
+            if sid:
+                s = self._session(str(sid))
+                if not s:
+                    raise PlayError(404, "No such game session.")
+                if s.get("state") == "noted":  # (saved from another page already: never a second copy)
+                    raise PlayError(409, "That game's note was already saved.", "already-noted")
+                if s.get("state") not in ("needsNote", "skipped"):
+                    raise PlayError(409, "That game is still running.", "running")
+                src = s
+            base = title = note_title(src)
+            taken = {(n.get("title"), n.get("stamp")) for n in self.notes(deleted=True)}
             k = 2
             while (title, when) in taken:  # (two notes for one build in the same minute)
                 title = "%s #%d" % (base, k)
                 k += 1
-            s2 = dict(s, noteTitle=title)
-            line = format_note(s2, clean, when)
-            note = {"id": s["id"], "session": s["id"], "savedAt": util.iso(now), "stamp": when, "title": title,
-                    "line": line, "fields": clean, "build": s.get("build"), "label": s.get("label"),
-                    "version": s.get("version"), "commit": s.get("commit"), "args": s.get("args"),
-                    "durationSec": s.get("durationSec"), "startedAt": s.get("startedAt"), "endedAt": s.get("endedAt"),
-                    "exitCode": s.get("exitCode")}
-            try:
-                self.paths.ensure_pm_dir()
-                with open(self.paths.pm(NOTES_FILE), "ab") as f:
-                    f.write((json.dumps(note, ensure_ascii=False) + "\n").encode("utf-8"))
-            except OSError as e:
-                raise PlayError(500, "Could not save the note on this PC (%s)." % (e.strerror or type(e).__name__))
-            s.update(state="noted", notedAt=note["savedAt"], noteTitle=title)
-        self._save_sessions()
+            tail = self._log_lines(src) if s is not None and fields.get("attachLog") is True else None
+            line = format_note(dict(src, noteTitle=title, logTail=tail), clean, when)
+            note = {"id": src["id"], "session": s["id"] if s else None, "savedAt": util.iso(now), "stamp": when,
+                    "title": title, "line": line, "fields": clean, "build": src.get("build"), "label": src.get("label"),
+                    "version": src.get("version"), "commit": src.get("commit"), "args": src.get("args"),
+                    "durationSec": src.get("durationSec"), "startedAt": src.get("startedAt"),
+                    "endedAt": src.get("endedAt"), "exitCode": src.get("exitCode")}
+            for k in ("endApprox", "stopped", "freeform"):
+                if src.get(k):
+                    note[k] = True
+            if tail:
+                note["logTail"] = tail
+            self._append_note(note)
+            if s is not None:
+                s.update(state="noted", notedAt=note["savedAt"], noteTitle=title)
+        if s is not None:
+            self._save_sessions()
         self.wake.set()  # (written to Claude Documents and pushed in the background)
         return note
+
+    def _locked_why(self, n):
+        """Why a saved note can't be edited or removed any more (None: it can): an agent has taken its entry, or it
+        is no longer in 12-play-notes.md."""
+        if n["id"] not in set(self.sync.get("written") or []) or not os.path.isdir(self.docs_dir):
+            return None
+        status = {(e["title"], e["stamp"]): e["status"] for e in self.doc_entries()}.get((n.get("title"), n.get("stamp")))
+        if status is None:
+            return "That note is no longer in %s (an agent moved or archived it); write a new note instead." % DOCS_FILE
+        if status != "open":
+            return "An agent already set that note to %s; write a new note instead." % status
+        return None
+
+    def _editable_note(self, nid):
+        n = self._note_records().get(str(nid or ""))
+        if not n or n.get("deleted"):
+            raise PlayError(404, "No such play note.")
+        why = self._locked_why(n)
+        if why:
+            raise PlayError(409, why, "locked")
+        return n
+
+    def edit_note(self, nid, fields):
+        """Change a saved note's boxes. Its entry in 12-play-notes.md is changed in place while it is still `open`."""
+        clean = self._fields(fields)
+        with self.lock:
+            n = self._editable_note(nid)
+            line = format_note(dict(n, noteTitle=n["title"]), clean, n["stamp"])
+            if line == n["line"]:
+                return dict(n, noop=True)
+            self._append_note({"id": n["id"], "op": "edit", "at": util.iso(self.clock()), "fields": clean, "line": line})
+        self.wake.set()
+        return dict(n, fields=clean, line=line)
+
+    def delete_note(self, nid):
+        """Remove a saved note; its entry leaves 12-play-notes.md while it is still `open`."""
+        with self.lock:
+            n = self._editable_note(nid)
+            self._append_note({"id": n["id"], "op": "delete", "at": util.iso(self.clock())})
+        self.wake.set()
+        return {"removed": n["id"], "title": n.get("title")}
 
     # -- Claude Documents (git)
     def _git(self, *args, timeout=60):
@@ -861,7 +1431,8 @@ class Play:
         return None
 
     def sync_docs(self):
-        """Write the notes not yet in 12-play-notes.md, commit that file, push. Returns the sync state."""
+        """Write the notes not yet in 12-play-notes.md (and q's edits / removals of open ones), commit that file,
+        push. Returns the sync state."""
         with self.docs_lock:
             st = self._sync_once()
             st["at"] = util.now_iso()
@@ -870,7 +1441,7 @@ class Play:
             return dict(self.sync)
 
     def _sync_once(self):
-        notes = self.notes()
+        records = self.notes(deleted=True)
         if not os.path.isdir(self.docs_dir):
             return {"ok": False, "pushed": False, "error": "No Claude Documents folder at %s; the notes are kept in "
                     "project-manager\\%s." % (self.docs_dir, NOTES_FILE)}
@@ -881,10 +1452,13 @@ class Play:
             return {"ok": False, "pushed": False, "error": busy + "; trying again later."}
         online, why, conflict = self._pull()
         written = set(self.sync.get("written") or [])
+        applied = dict(self.sync.get("applied") or {})   # (id -> the rev of q's edits already put in the file)
+        blocked = dict(self.sync.get("blocked") or {})   # (id -> the status that kept an edit out of the file)
         if conflict:
             again = self._drop_own_commits()
             if again is not None:
-                written -= {n["id"] for n in notes if (n.get("title"), n.get("stamp")) in again}
+                written -= {n["id"] for n in records if (n.get("title"), n.get("stamp")) in again}
+                applied = {}  # (an edit commit may be gone too: check every edited note against the file again)
                 online, why, conflict = self._pull()
         path = os.path.join(self.docs_dir, DOCS_FILE)
         try:
@@ -899,12 +1473,26 @@ class Play:
         crlf = bool(text) and "\r\n" in text
         text = text.replace("\r\n", "\n") if text is not None else None
         present = {(e["title"], e["stamp"]) for e in parse_doc(text)}
-        todo = [n for n in notes if n["id"] not in written and (n.get("title"), n.get("stamp")) not in present]
-        for n in notes:  # (already in the file: an earlier write whose bookkeeping did not finish)
-            if n["id"] not in written and (n.get("title"), n.get("stamp")) in present:
+        todo = [n for n in records if not n.get("deleted") and n["id"] not in written
+                and (n.get("title"), n.get("stamp")) not in present]
+        for n in records:  # (already in the file: an earlier write whose bookkeeping did not finish; or removed)
+            if n["id"] not in written and ((n.get("title"), n.get("stamp")) in present or n.get("deleted")):
                 written.add(n["id"])
-        if todo:
-            new = add_note_lines(text, [n["line"] for n in reversed(todo)])  # (newest first)
+        # q's edits and removals of notes already in the file: only while the entry is still `open`
+        changes, done = [], {}
+        for n in records:
+            rev = n.get("rev", 0)
+            if not rev or n["id"] not in written or rev <= applied.get(n["id"], 0) or text is None:
+                continue
+            text, what = change_entry(text, (n.get("title"), n.get("stamp")), None if n.get("deleted") else n["line"])
+            if what in ("changed", "removed"):
+                changes.append("%s (%s)" % (n["title"], "edited" if what == "changed" else "removed"))
+                blocked.pop(n["id"], None)
+            elif what not in ("same", "gone"):
+                blocked[n["id"]] = what
+            done[n["id"]] = rev
+        if todo or changes:
+            new = add_note_lines(text, [n["line"] for n in reversed(todo)]) if todo else text  # (newest first)
             data = (new.replace("\n", "\r\n") if crlf else new).encode("utf-8")
             try:
                 with open(path, "wb") as f:
@@ -914,14 +1502,17 @@ class Play:
         result = {"ok": True, "error": None}
         code, _, err = self._git("add", "--", DOCS_FILE)
         if code == 0 and self._git("diff", "--cached", "--quiet", "--", DOCS_FILE)[0] != 0:
-            msg = todo[0]["title"] if len(todo) == 1 else "Play notes: %d" % max(len(todo), 1)
+            items = [n["title"] for n in todo] + changes
+            msg = items[0] if len(items) == 1 else "Play notes: %d" % max(len(items), 1)
             code, _, err = self._git(*(self._identity() + ["commit", "-q", "-m", msg + VIA, "--", DOCS_FILE]))
         if code != 0:
             self.sync["written"] = sorted(written)
             return {"ok": False, "pushed": False, "error": "Wrote the note into the file on this PC, but git couldn't "
                     "commit it: " + self._err(err, "commit failed")}
         written.update(n["id"] for n in todo)
-        self.sync["written"] = sorted(written)
+        applied.update(done)
+        applied.update({n["id"]: n.get("rev", 0) for n in todo if n.get("rev")})
+        self.sync.update(written=sorted(written), applied=applied, blocked=blocked)
         unpushed = util.to_int(self._git("rev-list", "--count", "@{u}..HEAD")[1], 0) or 0
         if unpushed and online:
             for attempt in (0, 1):
@@ -945,9 +1536,12 @@ class Play:
         return result
 
     def needs_sync(self):
-        """A note not yet written into Claude Documents, or a commit not yet pushed."""
+        """A note not yet written into Claude Documents, an edit or removal not yet put in the file, or a commit not
+        yet pushed."""
         written = set(self.sync.get("written") or [])
-        return bool(self.sync.get("unpushed")) or any(n["id"] not in written for n in self.notes())
+        applied = self.sync.get("applied") or {}
+        return bool(self.sync.get("unpushed")) or any(
+            n["id"] not in written or n.get("rev", 0) > applied.get(n["id"], 0) for n in self.notes(deleted=True))
 
     def _sync_loop(self):
         # (git runs only when there is something to send: a new note, or the retry every 5 min while one waits)
@@ -987,37 +1581,84 @@ class Play:
         with self.lock:
             r = self.rel
             stale = now - r["fetchedTs"] > RELEASES_TTL
-            if force and now - r["forcedAt"] >= RELEASES_MIN_FORCE:
+            if force and now - r["forcedAt"] >= RELEASES_MIN_FORCE and not r["busy"]:
                 r["forcedAt"] = now
                 stale = True
             if stale and not r["busy"]:
                 r["busy"] = True
                 threading.Thread(target=self._fetch_releases, name="pm-play-releases", daemon=True).start()
-            return {k: r[k] for k in ("ok", "fetchedAt", "error", "busy", "list")}
+            out = {k: r[k] for k in ("ok", "fetchedAt", "error", "busy", "list", "complete")}
+            # (seconds until a Refresh press is taken: the page counts down instead of ignoring a press)
+            out["refreshIn"] = max(0, int(round(RELEASES_MIN_FORCE - (now - r["forcedAt"]))))
+            return out
+
+    def _get_page(self, n, etag=None):
+        """One page of the release list -> (parsed JSON, ETag), or (None, None) for a 304 (nothing changed)."""
+        url = page_url(self.releases_url, n)
+        hdr = {"User-Agent": util.USER_AGENT, "Accept": "application/vnd.github+json"}
+        if etag:
+            hdr["If-None-Match"] = etag
+        req = urllib.request.Request(url, headers=hdr)
+        try:
+            with _opener(url).open(req, timeout=15) as resp:
+                body, tag = resp.read(8 << 20), resp.headers.get("ETag")
+            return json.loads(body.decode("utf-8-sig")), tag
+        except urllib.error.HTTPError as e:
+            if e.code == 304:
+                return None, None
+            if e.code in (403, 429) and (e.headers.get("X-RateLimit-Remaining") == "0" or e.code == 429):
+                reset = util.to_int(e.headers.get("X-RateLimit-Reset"))
+                at = (" until " + dallas(reset).strftime("%H:%M") + " Dallas") if reset else ""
+                raise util.SourceError("GitHub's limit for requests without signing in is used up%s" % at)
+            raise util.SourceError("GitHub answered HTTP %d" % e.code)
 
     def _fetch_releases(self):
+        """Every page of the list, like the launcher (releases.cpp fetchAll): until a short page, or one that only
+        repeats releases already read. Page 1 answering 304 to its ETag means nothing new: the list stays. A later
+        page that fails keeps what was read plus the older releases of the last list (`complete` False)."""
         r = self.rel
         try:
-            hdr = {"User-Agent": util.USER_AGENT, "Accept": "application/vnd.github+json"}
-            if r["etag"] and r["list"]:
-                hdr["If-None-Match"] = r["etag"]
-            req = urllib.request.Request(self.releases_url, headers=hdr)
-            try:
-                with _opener(self.releases_url).open(req, timeout=15) as resp:
-                    body, etag = resp.read(8 << 20), resp.headers.get("ETag")
-                lst = parse_releases(json.loads(body.decode("utf-8-sig")))
+            with self.lock:
+                etag = r["etag"] if r["list"] and r["complete"] else None
+            raw, seen, complete, first_etag, note = [], set(), False, None, None
+            for n in range(1, RELEASES_MAX_PAGES + 1):
+                try:
+                    data, tag = self._get_page(n, etag if n == 1 else None)
+                except (util.SourceError, urllib.error.URLError, OSError, ValueError, UnicodeDecodeError) as e:
+                    if n == 1:
+                        raise
+                    note = "only the newest %d releases could be read (%s)" % (
+                        len(raw), str(getattr(e, "reason", e))[:120])
+                    break
+                if n == 1:
+                    if data is None:  # (304: nothing published since)
+                        with self.lock:
+                            r.update(ok=True, error=None)
+                        return
+                    first_etag = tag
+                if not isinstance(data, list):
+                    if n == 1:
+                        raise util.SourceError("GitHub sent something that is not a release list")
+                    break
+                tags = {x.get("tag_name") for x in data if isinstance(x, dict)}
+                if data and tags <= seen:
+                    complete = True  # (the same releases again: a server that ignores ?page=)
+                    break
+                seen |= tags
+                raw += data
+                if len(data) < RELEASES_PER_PAGE:
+                    complete = True
+                    break
+            lst = parse_releases(raw)
+            if not complete:
+                have = {x["tag"] for x in lst}
                 with self.lock:
-                    r.update(list=lst, etag=etag, ok=True, error=None)
-            except urllib.error.HTTPError as e:
-                if e.code == 304:
-                    with self.lock:
-                        r.update(ok=True, error=None)
-                elif e.code in (403, 429) and (e.headers.get("X-RateLimit-Remaining") == "0" or e.code == 429):
-                    reset = util.to_int(e.headers.get("X-RateLimit-Reset"))
-                    at = (" until " + dallas(reset).strftime("%H:%M") + " Dallas") if reset else ""
-                    raise util.SourceError("GitHub's limit for requests without signing in is used up%s" % at)
-                else:
-                    raise util.SourceError("GitHub answered HTTP %d" % e.code)
+                    old = [x for x in r["list"] if x["tag"] not in have]
+                if old:
+                    lst = sorted(lst + old, key=lambda x: (util.parse_time(x["publishedAt"]) or 0,
+                                                           util.version_key(x["tag"])), reverse=True)
+            with self.lock:
+                r.update(list=lst, etag=first_etag if complete else None, ok=True, complete=complete, error=note)
         except util.SourceError as e:
             with self.lock:
                 r.update(ok=False, error=str(e))
@@ -1039,7 +1680,10 @@ class Play:
                 raise PlayError(404, "That release is not in the list (refresh it).")
             if not rel["zip"]:
                 raise PlayError(409, "%s has no %s." % (tag, ZIP_NAME))
-            if any(i.get("state") in ("downloading", "verifying", "extracting") for i in self.installs.values()):
+            if rel["needsSig"] and not (rel.get("sig") and rel.get("manifest") and rel.get("manifestSig")):
+                raise PlayError(409, "%s claims a version from 1.17.0 on but has no signature or signed manifest; it "
+                                "can't be a genuine release, so it is not installed." % tag, "unsigned")
+            if any(i.get("state") in ACTIVE for i in self.installs.values()):
                 raise PlayError(409, "Another version is being installed; wait for it.")
             if self._in_use(tag):
                 raise PlayError(409, "%s is running; close the game first." % tag)
@@ -1047,6 +1691,15 @@ class Play:
                                   "startedAt": util.now_iso(), "error": None}
         threading.Thread(target=self._install, args=(rel,), name="pm-play-install", daemon=True).start()
         return dict(self.installs[tag])
+
+    def cancel_install(self, tag):
+        tag = str(tag or "")
+        with self.lock:
+            i = self.installs.get(tag)
+            if not i or i.get("state") not in ACTIVE:
+                raise PlayError(409, "%s is not being installed." % (tag or "That version"), "not-installing")
+            i["cancel"] = True
+        return {"cancelling": tag}
 
     def _in_use(self, tag):
         bid = VERSIONS + "/" + tag
@@ -1056,6 +1709,44 @@ class Play:
         with self.lock:
             self.installs[tag].update(kw)
 
+    def _check_cancel(self, tag):
+        if self.stop.is_set():
+            raise PlayError(500, "The server stopped during the install.")
+        with self.lock:
+            if self.installs[tag].get("cancel"):
+                raise PlayError(499, "Cancelled.", "cancelled")
+
+    def _fetch_small(self, url, limit=1 << 20):
+        req = urllib.request.Request(url, headers={"User-Agent": util.USER_AGENT})
+        with _opener(url).open(req, timeout=30) as resp:
+            return resp.read(limit).decode("utf-8", "replace")
+
+    def _verify(self, rel, sha256_hex, sha512):
+        """The launcher's checks for this zip -> (check, note): "signed" (its signature and the signed manifest
+        verify and name it; the manifest's sha256 makes SHA256SUMS redundant), "sha256" (unsigned, from before
+        signing, matches SHA256SUMS) or "none" (unsigned, no SHA256SUMS line). Raises PlayError when a check fails:
+        nothing is installed."""
+        if rel["needsSig"]:
+            sig = self._fetch_small(rel["sig"], 4096)
+            if not ed25519ph_verify(sha512, sig, self.public_key):
+                raise PlayError(500, "The zip's signature does not verify against the release key; not installed.")
+            text = self._fetch_small(rel["manifest"], 256 * 1024)
+            msig = self._fetch_small(rel["manifestSig"], 4096)
+            if not ed25519ph_verify(hashlib.sha512(text.encode("utf-8")).digest(), msig, self.public_key):
+                raise PlayError(500, "Its release manifest's signature does not verify; not installed.")
+            m = parse_manifest(text)
+            why = "its release manifest is unreadable" if m is None else check_manifest(m, rel, sha256_hex)
+            if why:
+                raise PlayError(500, "Not installed: %s." % why)
+            return "signed", "signature and signed release manifest verified (release key)"
+        # (from before signing: SHA256SUMS, fetched over the same HTTPS as the zip, is all there is)
+        want = parse_sums(self._fetch_small(rel["sums"])) if rel.get("sums") else None
+        if want and sha256_hex != want:
+            raise PlayError(500, "The download does not match the release's SHA256SUMS; not installed.")
+        if want:
+            return "sha256", "from before signing (1.16.x or older): matches its SHA256SUMS, no signature to check"
+        return "none", "from before signing (1.16.x or older): no signature and no SHA256SUMS to check it against"
+
     def _install(self, rel):
         tag = rel["tag"]
         vdir = self.paths.q(VERSIONS)
@@ -1063,7 +1754,7 @@ class Play:
         partial = os.path.join(vdir, ".partial-%s" % tag)
         try:
             os.makedirs(vdir, exist_ok=True)
-            h = hashlib.sha256()
+            h, h512 = hashlib.sha256(), hashlib.sha512()  # (sha512: the signature is over the zip's SHA-512)
             req = urllib.request.Request(rel["zip"]["url"], headers={"User-Agent": util.USER_AGENT,
                                                                      "Accept": "application/octet-stream"})
             got = 0
@@ -1071,8 +1762,7 @@ class Play:
                 total = util.to_int(resp.headers.get("Content-Length"), 0) or rel["zip"]["size"] or 0
                 self._set_install(tag, total=total)
                 while True:
-                    if self.stop.is_set():
-                        raise PlayError(500, "The server stopped during the download.")
+                    self._check_cancel(tag)
                     chunk = resp.read(256 * 1024)
                     if not chunk:
                         break
@@ -1080,42 +1770,40 @@ class Play:
                     if got > MAX_ZIP:
                         raise PlayError(500, "The download is bigger than 1 GB; stopped.")
                     h.update(chunk)
+                    h512.update(chunk)
                     f.write(chunk)
                     self._set_install(tag, got=got)
             self._set_install(tag, state="verifying")
-            want, verified = None, False
-            if rel.get("sums"):
-                sreq = urllib.request.Request(rel["sums"], headers={"User-Agent": util.USER_AGENT})
-                with _opener(rel["sums"]).open(sreq, timeout=30) as resp:
-                    want = parse_sums(resp.read(1 << 20).decode("utf-8", "replace"))
-            if want:
-                if h.hexdigest() != want:
-                    raise PlayError(500, "The download does not match the release's SHA256SUMS; not installed.")
-                verified = True
+            self._check_cancel(tag)
+            check, note = self._verify(rel, h.hexdigest(), h512.digest())
             self._set_install(tag, state="extracting")
             _rmtree(partial)
-            extract_zip(tmp, partial)
+            extract_zip(tmp, partial, check=lambda: self._check_cancel(tag))
             if not find_exe(partial):
                 raise PlayError(500, "The zip has no quark.exe; not installed.")
             with open(os.path.join(partial, "BUILD.txt"), "w", encoding="utf-8") as f:
                 f.write("%s (GitHub release, published %s)\n" % (tag, rel.get("publishedAt") or "unknown"))
+            util.write_json_atomic(os.path.join(partial, INSTALL_INFO), {
+                "tag": tag, "publishedAt": rel.get("publishedAt"), "installedAt": util.now_iso(), "check": check,
+                "note": note, "sha256": h.hexdigest()})
             dest = os.path.join(vdir, tag)
             if self._in_use(tag):
                 raise PlayError(409, "%s started while installing; close it and install again." % tag)
+            self._check_cancel(tag)
             _rmtree(dest)
             os.replace(partial, dest)
-            self._set_install(tag, state="done", verified=verified, doneAt=util.now_iso(),
-                              note=None if verified else "not checked: the release has no SHA256SUMS line for the zip")
+            self._set_install(tag, state="done", verified=check != "none", check=check, doneAt=util.now_iso(),
+                              note=note)
         except PlayError as e:
-            self._set_install(tag, state="failed", error=e.message)
+            self._set_install(tag, state="cancelled" if e.reason == "cancelled" else "failed",
+                              error=None if e.reason == "cancelled" else e.message)
         except (urllib.error.URLError, OSError, ValueError, zipfile.BadZipFile) as e:
             self._set_install(tag, state="failed", error="%s (%s)" % (type(e).__name__, str(getattr(e, "reason", e))[:160]))
         finally:
-            for p in (tmp,):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
             _rmtree(partial)
 
     def remove(self, tag):
@@ -1129,7 +1817,7 @@ class Play:
         with self.lock:
             if self._in_use(tag):
                 raise PlayError(409, "%s is running; close the game first." % tag)
-            if (self.installs.get(tag) or {}).get("state") in ("downloading", "verifying", "extracting"):
+            if (self.installs.get(tag) or {}).get("state") in ACTIVE:
                 raise PlayError(409, "%s is being installed." % tag)
             self.installs.pop(tag, None)
         _rmtree(dest)
@@ -1149,29 +1837,108 @@ class Play:
         p = self.pending()
         return {"running": p["running"], "pending": len(p["pending"]), "openNotes": p["openNotes"]}
 
-    def view(self):
+    def _release_rows(self, lst, blist):
+        """The release list with what this PC has: installed (and how it was checked), which local folder holds
+        that release, and whether it is newer than the local folder of its channel."""
+        inst = {b["label"]: b for b in blist if b["kind"] == "version" and b["playable"]}
+        local = {b["id"]: b for b in blist if b["kind"] == "local" and b.get("present")}
+        rows = []
+        for x in lst:
+            b = inst.get(x["tag"])
+            row = dict(x, installed=b is not None)
+            if b is not None and b.get("check"):
+                row["check"] = b["check"]
+            row["folders"] = [f for f, lb in local.items() if (lb.get("tag") and lb["tag"] == x["tag"]) or
+                              (x["version"] and lb.get("version") == x["version"])]
+            mine = local.get(x["channel"])  # (production / testing: the folder that follows that channel)
+            if mine and mine.get("version") and x["version"] and version_cmp(x["version"], mine["version"]) > 0:
+                row["newer"] = x["channel"]
+            rows.append(row)
+        return rows
+
+    def view(self, rel_sig=None):
+        """Everything the page shows. The release list is left out (`list` None, `same` True) when the page already
+        has it (rel_sig: the `sig` it got last), which is almost every poll."""
         rel = self.releases()
-        installed = {b["id"][len(VERSIONS) + 1:] for b in self.builds() if b["kind"] == "version" and b["playable"]}
-        lst = [dict(x, installed=x["tag"] in installed) for x in rel["list"]]
+        blist = self.builds()
+        lst = self._release_rows(rel["list"], blist)
+        sig = hashlib.sha1(json.dumps(lst, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        releases = dict(rel, list=None if rel_sig == sig else lst, same=rel_sig == sig, sig=sig, total=len(lst))
         status = {(e["title"], e["stamp"]): e["status"] for e in self.doc_entries()}
         written = set(self.sync.get("written") or [])
+        applied, blocked = self.sync.get("applied") or {}, self.sync.get("blocked") or {}
         unpushed = bool(self.sync.get("unpushed"))
+        present = os.path.isdir(self.docs_dir)
+        all_notes = self.notes()
         notes = []
-        for n in reversed(self.notes()[-20:]):
-            st = status.get((n.get("title"), n.get("stamp")))
-            where = ("waiting to go into Claude Documents" if n["id"] not in written else
-                     "saved on this PC, will go up later" if unpushed else "in Claude Documents")
+        for n in reversed(all_notes[-20:]):
+            key = (n.get("title"), n.get("stamp"))
+            st = status.get(key)
+            mine = n["id"] in written
+            pending_edit = n.get("rev", 0) > applied.get(n["id"], 0)
+            if not present:
+                where = "kept on this PC only (no Claude Documents folder)"
+            elif not mine:
+                where = "waiting to go into Claude Documents"
+            elif pending_edit:
+                where = "your edit is waiting to go into Claude Documents"
+            elif n["id"] in blocked:
+                where = "your edit is not in the file: an agent set it to %s first" % blocked[n["id"]]
+            elif unpushed:
+                where = "saved on this PC, will go up later"
+            else:
+                where = "in Claude Documents"
+            locked = None
+            if present and mine:
+                locked = ("no longer in %s" % DOCS_FILE) if st is None else (None if st == "open" else "an agent set it to " + st)
             notes.append({"id": n["id"], "title": n.get("title"), "stamp": n.get("stamp"), "savedAt": n.get("savedAt"),
                           "fields": n.get("fields"), "label": n.get("label"), "version": n.get("version"),
-                          "durationSec": n.get("durationSec"), "args": n.get("args"), "status": st, "where": where})
+                          "build": n.get("build"), "durationSec": n.get("durationSec"), "args": n.get("args"),
+                          "status": st, "where": where, "editedAt": n.get("editedAt"), "freeform": bool(n.get("freeform")),
+                          "logTail": n.get("logTail"), "locked": locked,
+                          "exit": exit_info(n.get("exitCode"), n.get("stopped")) if n.get("session") else None})
         with self.lock:
             sessions = [dict(s) for s in reversed(self.sessions[-30:])]
             installs = {k: dict(v) for k, v in self.installs.items()}
         for s in sessions:
             s.pop("pidCreated", None)
+            if s.get("state") != "running":
+                s["exit"] = exit_info(s.get("exitCode"), s.get("stopped"))
+            path = self._log_path(s)
+            s["hasLog"] = bool(path and os.path.isfile(path))
         p = self.pending()
-        return {"now": util.now_iso(), "builds": self.builds(), "releases": dict(rel, list=lst), "installs": installs,
+        return {"now": util.now_iso(), "builds": blist, "releases": releases, "installs": installs,
                 "sessions": sessions, "running": p["running"], "pending": p["pending"], "openNotes": p["openNotes"],
-                "notes": notes, "docs": {"folder": self.docs_dir, "present": os.path.isdir(self.docs_dir),
-                                         "file": DOCS_FILE, "sync": {k: v for k, v in self.sync.items() if k != "written"}},
+                "notes": notes, "notesTotal": len(all_notes),
+                "docs": {"folder": self.docs_dir, "present": present, "file": DOCS_FILE,
+                         "filePresent": os.path.isfile(os.path.join(self.docs_dir, DOCS_FILE)),
+                         "sync": {k: v for k, v in self.sync.items() if k not in ("written", "applied", "blocked")}},
+                "limits": {"field": MAX_FIELD, "args": MAX_ARGS},
                 "platform": "windows" if util.IS_WINDOWS else sys.platform}
+
+    # -- the routes server.py hands over (GET /api/play/<what>, POST /api/play/<what>)
+    def api_get(self, what, query):
+        """-> (HTTP code, JSON object)."""
+        q = lambda k: (query.get(k) or [""])[0]
+        try:
+            if what == "log":
+                return 200, self.game_log(q("session"))
+        except PlayError as e:
+            return e.code, {"ok": False, "message": e.message, "reason": e.reason}
+        return 404, {"ok": False, "message": "not found"}
+
+    def api_post(self, what, req):
+        """-> the answer for the newer POST routes, or None (not one of them). Raises PlayError."""
+        if what == "stop":
+            return {"session": self.stop_game(req.get("session"))}
+        if what == "open":
+            return self.open_path(req.get("what"), req.get("build") or req.get("session"))
+        if what == "note-edit":
+            n = self.edit_note(req.get("id"), req)
+            return {"note": {k: n.get(k) for k in ("id", "title", "stamp", "line")}, "noop": bool(n.get("noop")),
+                    "message": "Saved. The entry in %s changes in a moment." % DOCS_FILE}
+        if what == "note-delete":
+            return dict(self.delete_note(req.get("id")), message="Removed. Its entry leaves %s in a moment." % DOCS_FILE)
+        if what == "install-cancel":
+            return self.cancel_install(req.get("tag"))
+        return None
