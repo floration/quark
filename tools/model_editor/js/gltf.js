@@ -5,7 +5,8 @@
    NORMAL (flat when missing), COLOR_0 (float / normalised u8 / u16, vec3 / vec4) times the material's baseColorFactor;
    alphaMode BLEND = translucent at baseColorFactor's alpha; the material name picks the tint slot. Textures ignored.
    Writing: a .glb laid out like the game's exporter (writeGltf): one primitive per material, POSITION / NORMAL /
-   COLOR_0 floats and uint32 indices. Boxes: the game's partsToMesh, and the way back (a box-shaped mesh to parts). */
+   COLOR_0 floats and uint32 indices. Boxes: the game's partsToMesh plus the box list it draws (extras.quark version 2,
+   docs/ASSETS.md "Box models": read with the game's checks, written with 9 significant digits), and the way back. */
 (function () {
   'use strict';
   const Q = window.Q;
@@ -275,9 +276,9 @@
     { n: [0, 0, -1], shade: 0.96, c: [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]] },
   ];
   B.matName = p => Q.SLOT_NAMES[p.slot | 0] + ((p.alpha == null ? 1 : p.alpha) < 1 ? '_translucent' : '');
-  // partsToMesh: one primitive per (slot, alpha), shades baked into the colours. extras: each box's flags and its
-  // place in the part list (the game ignores them; this page reads them back)
-  B.toMesh = function (parts) {
+  // partsToMesh: one primitive per (slot, alpha), each box's colour at the reference palette with the face shades
+  // baked in (what other viewers show), and the box list itself as extras.quark version 2: what the game draws.
+  B.toMesh = function (parts, ref) {
     const groups = [];
     parts.forEach((p, i) => {
       const a = p.alpha == null ? 1 : p.alpha;
@@ -285,36 +286,111 @@
       if (!g) groups.push(g = { slot: p.slot | 0, alpha: a, parts: [] });
       g.parts.push(i);
     });
-    const prims = [], extras = { version: 1, boxes: [] };
+    const prims = [];
     for (const g of groups) {
       const n = g.parts.length * 24, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), col = new Float32Array(n * 3), idx = new Uint32Array(g.parts.length * 36);
       let v = 0, ii = 0;
-      const meta = [];
       for (const pi of g.parts) {
-        const p = parts[pi];
-        meta.push({ i: pi, name: p.name || '', shadow: p.shadow !== false, visOnly: !!p.visOnly });
+        const p = parts[pi], c = B.shownColor(p, ref);
         for (const f of B.FACES) {
           const base = v;
           for (const k of f.c) {
             pos[v * 3] = p.c[0] + k[0] * p.h[0]; pos[v * 3 + 1] = p.c[1] + k[1] * p.h[1]; pos[v * 3 + 2] = p.c[2] + k[2] * p.h[2];
             nrm[v * 3] = f.n[0]; nrm[v * 3 + 1] = f.n[1]; nrm[v * 3 + 2] = f.n[2];
-            col[v * 3] = p.color[0] * f.shade; col[v * 3 + 1] = p.color[1] * f.shade; col[v * 3 + 2] = p.color[2] * f.shade;
+            col[v * 3] = c[0] * f.shade; col[v * 3 + 1] = c[1] * f.shade; col[v * 3 + 2] = c[2] * f.shade;
             v++;
           }
           idx[ii++] = base; idx[ii++] = base + 1; idx[ii++] = base + 2; idx[ii++] = base; idx[ii++] = base + 2; idx[ii++] = base + 3;
         }
       }
       prims.push({ material: B.matName({ slot: g.slot, alpha: g.alpha }), slot: g.slot, alpha: g.alpha, pos, nrm, col, idx });
-      extras.boxes.push(meta);
     }
-    return { prims, extras };
+    return { prims, extras: B.toExtras(parts, ref) };
+  };
+  // extras.quark version 2 (gltf.cpp boxModelJson): numbers as floats with 9 significant digits (they read back exactly)
+  const n9 = v => { const f = Math.fround(+v); return Math.abs(f) < 1e-30 ? 0 : +f.toPrecision(9); };
+  const v9 = a => [n9(a[0]), n9(a[1]), n9(a[2])];
+  // a box's colour at the reference (its own `color` when that agrees, so an unchanged default writes its numbers back)
+  B.shownColor = function (p, ref) {
+    if (!ref) return p.color;
+    const c = Q.colorAtRef(p, ref);
+    return c.every((v, k) => Math.abs(v - p.color[k]) <= 1e-6 * Math.max(1, v)) ? p.color : c;
+  };
+  B.toExtras = function (parts, ref) {
+    return { version: 2, boxes: parts.map(p => {
+      if ((p.slot | 0) && !p.mul && ref) p = Q.finishPart(Q.clonePart(p), ref);
+      const slot = p.slot | 0, o = { c: v9(p.c), h: v9(p.h), slot: Q.SLOT_NAMES[slot], color: v9(B.shownColor(p, ref)) };
+      if (slot) {
+        o.mul = v9(p.mul || [1, 1, 1]); o.add = v9(p.add || [0, 0, 0]);
+        if (slot !== 1 && p.teamMul && p.teamMul.some(x => n9(x) !== 0)) o.teamMul = v9(p.teamMul);
+      }
+      const a = p.alpha == null ? 1 : p.alpha;
+      if (n9(a) !== 1) o.alpha = n9(a);
+      o.shadow = p.shadow !== false; o.visOnly = !!p.visOnly; o.crouch = !!p.crouch;
+      if (p.name) o.name = String(p.name);
+      return o;
+    }) };
+  };
+  // extras.quark of a file -> parts, with the game's checks (gltf.cpp boxesFrom): null when it is not a box model
+  // (no extras, another version: the game draws the mesh), { error } when its box list fails them (the game logs it
+  // and keeps the default)
+  B.fromExtras = function (q, ref) {
+    if (!q || typeof q !== 'object' || Array.isArray(q) || q.version !== 2) return null;
+    const err = e => ({ error: e });
+    const list = q.boxes;
+    if (!Array.isArray(list) || !list.length) return err('no boxes');
+    if (list.length > Q.MAX_BOXES) return err(list.length + ' boxes (at most ' + Q.MAX_BOXES + ')');
+    const vec = (b, k, lo, hi, need) => {
+      const a = b[k];
+      if (a === undefined) return need ? false : null;
+      if (!Array.isArray(a) || a.length !== 3) return false;
+      for (const x of a) if (typeof x !== 'number' || !Number.isFinite(x) || x < lo || x > hi) return false;
+      return a.map(Math.fround);
+    };
+    const parts = [];
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i], where = 'box ' + (i + 1) + ': ';
+      if (!b || typeof b !== 'object' || Array.isArray(b)) return err(where + 'not an object');
+      const c = vec(b, 'c', -64, 64, true); if (!c) return err(where + 'c must be 3 numbers within 64 m');
+      const h = vec(b, 'h', 0, 32, true); if (!h || !(h[0] > 0 && h[1] > 0 && h[2] > 0)) return err(where + 'h must be 3 numbers, each over 0 and at most 32 m');
+      const color = vec(b, 'color', 0, 16, true); if (!color) return err(where + 'color must be 3 numbers from 0 to 16');
+      let slot = 0;
+      if (b.slot !== undefined) { slot = Q.SLOT_NAMES.indexOf(typeof b.slot === 'string' ? b.slot : ''); if (slot < 0) return err(where + 'unknown slot "' + b.slot + '"'); }
+      const add = vec(b, 'add', 0, 16, false); if (add === false) return err(where + 'add must be 3 numbers from 0 to 16');
+      const teamMul = vec(b, 'teamMul', 0, 16, false); if (teamMul === false) return err(where + 'teamMul must be 3 numbers from 0 to 16');
+      const mul = vec(b, 'mul', 0, 16, false); if (mul === false) return err(where + 'mul must be 3 numbers from 0 to 16');
+      const al = b.alpha;
+      if (al !== undefined && (typeof al !== 'number' || !Number.isFinite(al) || al <= 0 || al > 1)) return err(where + 'alpha must be over 0 and at most 1');
+      const flag = (k, def) => b[k] === undefined ? def : b[k];
+      const shadow = flag('shadow', true), visOnly = flag('visOnly', false), crouch = flag('crouch', false);
+      if (typeof shadow !== 'boolean' || typeof visOnly !== 'boolean' || typeof crouch !== 'boolean') return err(where + 'shadow / visOnly / crouch must be true or false');
+      const p = { c, h, color, slot, mul: slot ? mul : null, add: slot ? (add || [0, 0, 0]) : null, teamMul: slot ? (teamMul || [0, 0, 0]) : null,
+        alpha: al === undefined ? 1 : Math.fround(al), shadow, visOnly, crouch, name: typeof b.name === 'string' ? b.name : '' };
+      if (slot && !mul) { p.mul = null; p.add = [0, 0, 0]; p.teamMul = [0, 0, 0]; }   // (finishBoxModel: colour / reference)
+      if (slot === 1) p.teamMul = [0, 0, 0];   // (the game ignores a team box's teamMul: it is the team colour already)
+      parts.push(ref ? Q.finishPart(p, ref) : p);
+    }
+    return parts;
+  };
+  // the boxes of a parsed file: its box list (version 2), else (allowMesh) a mesh that is exactly boxes as the
+  // exporter writes them (an older export of this editor: its version 1 extras name them), else null.
+  // Returns parts, null, or { error } (a version 2 list the game refuses).
+  B.partsOf = function (mesh, key, defaults) {
+    const ref = Q.refOf(key);
+    const ex = B.fromExtras(mesh.extras, ref);
+    if (ex) return ex;
+    const parts = B.fromMesh(mesh);
+    if (!parts) return null;
+    for (const p of parts) Q.finishPart(p, ref);
+    void defaults;
+    return parts;
   };
   B.triangles = parts => parts.length * 12;
 
   // A mesh that is exactly boxes as partsToMesh writes them (36 corners each, faces in order or not, the face shades
   // in the colours) back to parts; null when it isn't (then it is edited as a whole, not box by box).
   B.fromMesh = function (mesh) {
-    const parts = [], ex = mesh.extras && mesh.extras.boxes;
+    const parts = [], ex = mesh.extras && mesh.extras.version === 1 && mesh.extras.boxes;
     for (let pi = 0; pi < mesh.prims.length; pi++) {
       const pr = mesh.prims[pi], nv = pr.pos.length / 3;
       if (nv % 36) return null;
@@ -322,7 +398,7 @@
         const part = boxAt(pr, b * 36);
         if (!part) return null;
         part.slot = pr.slot; part.alpha = pr.alpha;
-        const meta = ex && ex[pi] && ex[pi][b];
+        const meta = ex && Array.isArray(ex[pi]) && ex[pi][b];   // (version 1 extras: this editor's older exports)
         if (meta) { part.name = meta.name || ''; part.shadow = meta.shadow !== false; part.visOnly = !!meta.visOnly; part._i = meta.i; }
         parts.push(part);
       }
@@ -363,7 +439,7 @@
     const col = fc.x;
     for (const c of fc) for (let a = 0; a < 3; a++) if (Math.abs(c[a] - col[a]) > 2e-3 * Math.max(1, col[a])) return null;
     return { c: [r6((mn[0] + mx[0]) / 2), r6((mn[1] + mx[1]) / 2), r6((mn[2] + mx[2]) / 2)], h: [r6((mx[0] - mn[0]) / 2), r6((mx[1] - mn[1]) / 2), r6((mx[2] - mn[2]) / 2)],
-      color: col.map(r6), slot: 0, alpha: 1, shadow: true, visOnly: false, name: '' };
+      color: col.map(r6), slot: 0, mul: null, add: null, teamMul: null, alpha: 1, shadow: true, visOnly: false, crouch: false, name: '' };
   }
   function r6(v) { return Math.round(v * 1e6) / 1e6; }
 
@@ -371,7 +447,7 @@
   G.exportBytes = function (key) {
     const cur = Q.current(key), m = Q.models[key];
     const name = m ? m.name : key.split('/').pop();
-    if (cur.type === 'boxes') { const mesh = B.toMesh(cur.parts); return G.writeGlb(mesh, name, mesh.extras); }
+    if (cur.type === 'boxes') { const mesh = B.toMesh(cur.parts, Q.refOf(key)); return G.writeGlb(mesh, name, mesh.extras); }
     if (cur.type === 'mesh') return G.writeGlb(G.meshForWrite(cur.mesh), name, null);
     return null;
   };

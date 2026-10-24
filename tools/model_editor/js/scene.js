@@ -7,8 +7,9 @@
                boxes at 2x on the hand), the crown on the head; hitbox overlay
      flight    a projectile flying with its trail, spun / wobbled as the game does
      lineup    the screenshot lineup (quark --models): 5 players 5 m ahead, 1.5 m apart, facing you, your viewmodel
-   Draw as: "boxes" = the game's built-in box path (1 px outlines, the part animations), "override" = how a .glb in
-   the overrides folder is drawn (no outline, every triangle casts a shadow, only whole-model spins). */
+     track     a payload track: the cart, a checkpoint gate either side (reached / not), the track line
+   Draw as (S.drawMode): the game's own boxes, a box model file (extras.quark version 2: the same box path, without the
+   projectiles' flicker / blink / wobble) or a mesh (no outline, every triangle casts a shadow, squashed whole). */
 (function () {
   'use strict';
   const Q = window.Q, R = Q.R, M = R.mat;
@@ -17,7 +18,7 @@
   const DEFAULT_VIEW = { mode: 'orbit', palette: '', team: 'enemy', crouch: false, play: true, speed: 1, drawAs: 'auto', hitbox: false, grid: true,
     ground: true, shadows: true, sunVis: 1, outline: 'black', outlineW: 1, fov: 100, vmX: 0, vmY: 0, vmZ: 0, vmScale: 1, vmColor: '',
     yaw: 0, pitch: 0, fpWeapon: 'models/weapon/ROCKET', tpPlayer: 'models/player/STANDARD', holdIt: false, crown: false, crownPlace: 1,
-    landed: false, lineupTeams: false, bright: 1, fpLineup: true, noViewmodel: false };
+    landed: false, lineupTeams: false, bright: 1, fpLineup: true, noViewmodel: false, bombLineup: false, bombBlink: false, gateReached: false, cartNeutral: false };
   S.view = Object.assign({}, DEFAULT_VIEW);
   try { Object.assign(S.view, JSON.parse(localStorage.getItem('qme.view') || '{}')); } catch (e) { }
   S.saveView = () => { try { localStorage.setItem('qme.view', JSON.stringify(S.view)); } catch (e) { } };
@@ -34,93 +35,108 @@
     const c = Q.OUTLINE_COLORS[S.view.outline];
     return c || S.teamColor();   // "team": the outline in the team colour
   };
-  // how a model is drawn: 'boxes' (the game's box path) or 'override'
+  // how a model is drawn (game.cpp): 'builtin' (the game's own boxes: outlines, part animations), 'boxfile' (an
+  // override file with its box list, extras.quark version 2: the same box path, outlines, crouch per box, visOnly,
+  // shadows, but no flame flicker / core blink / wobble), 'mesh' (any other override: lit, every triangle casts, no
+  // outline, squashed whole when crouching)
+  const DRAW_AS = { boxes: 'builtin', override: 'mesh' };   // (older saved views)
+  if (DRAW_AS[S.view.drawAs]) S.view.drawAs = DRAW_AS[S.view.drawAs];
   S.drawMode = function (key) {
     const cur = Q.current(key);
-    if (cur.type !== 'boxes') return 'override';
-    if (S.view.drawAs === 'boxes' || S.view.drawAs === 'override') return S.view.drawAs;
-    return cur.edited || cur.shipped ? 'override' : 'boxes';
+    if (cur.type !== 'boxes') return 'mesh';
+    const d = S.view.drawAs;
+    if (d === 'builtin' || d === 'boxfile' || d === 'mesh') return d;
+    return cur.edited || cur.shipped ? 'boxfile' : 'builtin';
   };
 
-  // --- GPU meshes per (model, draw mode), refilled when the model changes -----------------------------------------------
+  // --- GPU meshes per (model, draw mode, crouch), refilled when the model changes -------------------------------------------
   const cache = new Map();
-  S.meshFor = function (key, mode) {
-    const id = key + '|' + mode, v = Q.ver[key] || 0;
+  const HS = Q.CROUCH_H / Q.PLAYER_H;   // kPlayerCrouchHeight / kPlayerHeight
+  S.meshFor = function (key, mode, crouch) {
+    const id = key + '|' + mode + '|' + (crouch || ''), v = Q.ver[key] || 0;
     let e = cache.get(id);
     if (!e) { e = { mesh: R.createMesh(), ver: -1 }; cache.set(id, e); }
-    if (e.ver !== v) { fill(e.mesh, key, mode, null); e.ver = v; }
+    if (e.ver !== v) { fill(e.mesh, key, mode, null, crouch); e.ver = v; }
     return e.mesh;
   };
-  function fill(mesh, key, mode, parts) {
-    const cur = Q.current(key), m = Q.models[key], kind = m ? m.kind : '';
+  // crouch: null, 'parts' (a player: centres times hs, half heights where the box says crouch), 'centres' (the bomb
+  // on a carrier's back); a mesh is squashed by its matrix instead
+  function fill(mesh, key, mode, parts, crouch) {
+    const cur = Q.current(key), m = Q.models[key], kind = m ? m.kind : '', ref = Q.refOf(key);
     if (cur.type === 'boxes') {
       const p = parts || cur.parts;
-      if (mode === 'boxes') R.fillBoxes(mesh, p, { outline: true, flatAlpha: kind === 'projectile', flatShaded: false });
-      else R.fillBoxes(mesh, p, { outline: false, flatAlpha: true, flatShaded: true, noShadowFlags: true });
-    } else if (cur.type === 'mesh') R.fillMesh(mesh, cur.mesh);
+      if (mode === 'mesh') R.fillMesh(mesh, Q.boxes.toMesh(p, ref), ref);
+      else R.fillBoxes(mesh, p, { outline: true, flatAlpha: kind === 'projectile', flatShaded: false, hs: crouch ? HS : 1, crouch });
+    } else if (cur.type === 'mesh') R.fillMesh(mesh, cur.mesh, ref);
     else R.fillBoxes(mesh, [], {});
   }
-  // the game's per-part animations (box path only; an override gets none of these)
-  function partAnim(key) {
+  // the game's per-part animations: the projectile ones on its own boxes only (a box override is drawn still), the
+  // locator's screen pulse on the viewmodel either way
+  const scaleCol = (d, s, k) => {
+    for (let q = 0; q < 3; q++) { d.color[q] = s.color[q] * k; if (s.mul) d.mul[q] = s.mul[q] * k; if (s.add) d.add[q] = s.add[q] * k; if (s.teamMul) d.teamMul[q] = s.teamMul[q] * k; }
+  };
+  function partAnim(key, mode, role) {
     const m = Q.models[key];
-    if (!m || Q.isEdited(key) || !m.defParts || Q.current(key).shipped) return null;
+    if (!m || mode === 'mesh') return null;
     const v = S.view;
+    if (m.kind === 'weapon' && m.name === 'LOCATOR' && role === 'viewmodel') return (t, src, dst) => {   // the screen pulses when it's ready
+      const g = 0.85 + 0.35 * Math.sin(t * 6);
+      for (let i = 0; i < src.length; i++) scaleCol(dst[i], src[i], src[i].slot === 2 ? g : 1);
+    };
+    if (mode !== 'builtin') return null;
     if (m.kind === 'projectile' && m.name === 'ROCKET') return (t, src, dst) => {   // the flame flickers (0.8 + 0.2 sin(60 t + id))
       const fl = 0.8 + 0.2 * Math.sin(t * 60 + 1);
-      for (let i = 0; i < src.length; i++) { const s = src[i], d = dst[i]; const flame = s.slot === 0 && Math.max(s.color[0], s.color[1], s.color[2]) > 1.5; for (let k = 0; k < 3; k++) d.h[k] = flame ? s.h[k] * fl : s.h[k]; }
+      for (let i = 0; i < src.length; i++) { const s = src[i], d = dst[i]; const flame = (s.slot | 0) === 0 && Math.max(s.color[0], s.color[1], s.color[2]) > 1.5; for (let k = 0; k < 3; k++) d.h[k] = flame ? s.h[k] * fl : s.h[k]; }
     };
     if (m.kind === 'projectile' && m.name === 'STICKY' && v.landed) return (t, src, dst) => {   // stuck: the core blinks
       const core = 0.6 + 0.4 * ((t * 2.5) % 1 < 0.5 ? 1 : 0);
-      for (let i = 0; i < src.length; i++) for (let k = 0; k < 3; k++) dst[i].color[k] = src[i].slot === 1 ? src[i].color[k] * core : src[i].color[k];
+      for (let i = 0; i < src.length; i++) scaleCol(dst[i], src[i], src[i].slot === 1 ? core : 1);
     };
     if (m.kind === 'projectile' && m.name === 'BUBBLE') return (t, src, dst) => {   // the shell wobbles (0.03 sin(14 t + id))
       const wob = 0.03 * Math.sin(t * 14 + 1);
       for (let i = 0; i < src.length; i++) { const s = src[i], d = dst[i]; const sh = (s.alpha == null ? 1 : s.alpha) < 1; d.h[0] = s.h[0] + (sh ? wob : 0); d.h[1] = s.h[1]; d.h[2] = s.h[2] + (sh ? wob : 0); }
-    };
-    if (m.kind === 'weapon' && m.name === 'LOCATOR') return (t, src, dst) => {   // the screen pulses when it's ready
-      const g = 0.85 + 0.35 * Math.sin(t * 6);
-      for (let i = 0; i < src.length; i++) for (let k = 0; k < 3; k++) dst[i].color[k] = src[i].slot === 2 ? src[i].color[k] * g : src[i].color[k];
     };
     return null;
   }
 
   // --- building the scene ----------------------------------------------------------------------------------------------
   const scene = { cam: { pos: [0, 1.6, 0], yaw: 0, pitch: 0, fov: 100 }, pal: Q.DEFAULT_PALETTE, sky: true, ground: { y: 0, grid: true }, shadows: true, bright: 1,
-    items: [], trails: { data: new Float32Array(8 * 6 * 8), count: 0 }, lines: { data: new Float32Array(7 * 8192), count: 0 }, overlay: { data: new Float32Array(7 * 4096), count: 0 } };
+    items: [], trails: { data: new Float32Array(R.FL * 6 * 16), count: 0 }, lines: { data: new Float32Array(7 * 8192), count: 0 }, overlay: { data: new Float32Array(7 * 4096), count: 0 } };
   S.current = scene;
   let pool = [];   // items, reused between rebuilds
   function item(i) {
-    if (!pool[i]) pool[i] = { mesh: null, model: new Float32Array(16), tint: new Float32Array(15), outlineW: 0, outline: null, sunVis: 1, view: false, castShadow: true,
-      key: null, kind: '', role: '', anim: null, ownMesh: null, src: null, scratch: null, spin: null, highlight: null, hidden: false };
+    if (!pool[i]) pool[i] = { mesh: null, model: new Float32Array(16), tint: new Float32Array(18), outlineW: 0, outline: null, sunVis: 1, view: false, castShadow: true,
+      key: null, kind: '', role: '', anim: null, ownMesh: null, src: null, scratch: null, spin: null, highlight: null, hidden: false, crouch: null };
     const it = pool[i];
-    it.anim = null; it.spin = null; it.highlight = null; it.hidden = false; it.castShadow = true; it.view = false; it.role = ''; it.key = null; it.trail = null;
+    it.anim = null; it.spin = null; it.highlight = null; it.hidden = false; it.castShadow = true; it.view = false; it.role = ''; it.key = null; it.trail = null; it.crouch = null;
     return it;
   }
-  // a model as an item: its mesh, tints, outline
+  // a model as an item: its mesh, slot colours, outline. ctx: the runtime palette's context (Q.runtimePalette) plus
+  // role, crouch ('parts' / 'centres' when crouching)
   function modelItem(it, key, ctx) {
-    const m = Q.models[key], kind = m ? m.kind : (ctx.kind || '');
+    const m = Q.models[key], kind = m ? m.kind : (ctx.kind || ''), name = m ? m.name : '';
     const mode = S.drawMode(key);
-    it.key = key; it.kind = kind; it.mode = mode;
-    const pal = Q.runtimePalette(Object.assign({ kind, team: S.teamColor(), map: scene.pal }, ctx));
-    Q.tints(kind, pal, it.tint);
-    it.outlineW = mode === 'boxes' ? S.view.outlineW : 0;
+    it.key = key; it.kind = kind; it.mode = mode; it.role = ctx.role || ''; it.crouch = mode === 'mesh' ? null : (ctx.crouch || null);
+    const pal = Q.runtimePalette(Object.assign({ team: S.teamColor(), map: scene.pal }, ctx, { kind, name }));
+    Q.slotColors(kind, name, pal, it.tint);
+    it.outlineW = mode === 'mesh' ? 0 : S.view.outlineW;
     it.outline = S.outlineColor();
     it.sunVis = S.view.sunVis;
-    const anim = mode === 'boxes' && S.view.play ? partAnim(key) : null;
+    const anim = S.view.play ? partAnim(key, mode, it.role) : null;
     if (anim) {   // its own mesh, refilled each frame from a scratch copy of the parts (no allocation per frame)
       const src = Q.current(key).parts;
       if (!it.ownMesh) it.ownMesh = R.createMesh();
       if (it.src !== src) { it.src = src; it.scratch = src.map(Q.clonePart); }
       it.anim = anim; it.mesh = it.ownMesh;
-      fill(it.mesh, key, mode, it.scratch);
-    } else it.mesh = S.meshFor(key, mode);
+      fill(it.mesh, key, mode, it.scratch, it.crouch);
+    } else it.mesh = S.meshFor(key, mode, it.crouch);
     return it;
   }
-  function boxItem(it, parts, color) {   // scene props drawn with the box path (the gun arm, the crown's letter)
+  function boxItem(it, parts) {   // scene boxes that are no model (the crown's letter; an arm when the export has none)
     if (!it.ownMesh) it.ownMesh = R.createMesh();
     it.mesh = it.ownMesh;
     R.fillBoxes(it.mesh, parts, { outline: true, flatAlpha: false });
-    it.tint.fill(1); it.outlineW = S.view.outlineW; it.outline = S.outlineColor(); it.sunVis = S.view.sunVis; it.kind = '';
+    it.tint.fill(1); it.outlineW = S.view.outlineW; it.outline = S.outlineColor(); it.sunVis = S.view.sunVis; it.kind = ''; it.mode = 'builtin';
     return it;
   }
   const players = () => Q.order.filter(k => Q.models[k].kind === 'player');
@@ -134,44 +150,62 @@
     return Q.models[S.view.tpPlayer] ? S.view.tpPlayer : players()[0];
   };
   S.crownKey = () => Q.order.find(k => Q.models[k].kind === 'crown');
+  const prop = name => Q.models['models/prop/' + name] ? 'models/prop/' + name : null;
+  S.prop = prop;
+  const selIs = (kind, name) => { const m = S.sel && Q.models[S.sel]; return !!m && m.kind === kind && (!name || m.name === name); };
   S.modesFor = function (key) {   // which views make sense for this model
-    const k = Q.models[key] ? Q.models[key].kind : '';
+    const m = Q.models[key], k = m ? m.kind : '';
     if (k === 'player') return ['orbit', 'tp', 'lineup'];
     if (k === 'weapon') return ['orbit', 'fp', 'tp', 'lineup'];
     if (k === 'projectile') return ['orbit', 'flight'];
     if (k === 'crown') return ['orbit', 'tp', 'lineup'];
+    if (k === 'prop') {
+      if (m.name === 'GUN_ARM' || m.name === 'ARM' || m.name === 'BOMB_PACK') return ['orbit', 'tp', 'lineup'];
+      if (m.name === 'BOMB') return ['orbit', 'lineup', 'track'];
+      if (m.name === 'CART' || m.name === 'GATE') return ['orbit', 'track'];
+    }
     return ['orbit'];
   };
+  // what the view shows besides the model (game modes): "it" holding the weapon, the bomb carried
+  S.holdIt = () => S.view.holdIt || selIs('prop', 'ARM');
+  S.bombMode = () => !S.holdIt() && (S.view.bombLineup || selIs('prop', 'BOMB_PACK') || selIs('prop', 'BOMB'));
 
-  // a player at feet `pos` facing yaw, with its gun arm (or held weapon), crown; returns the next item index
-  const PM = new Float32Array(16);
+  // a player at feet `pos` facing yaw, with its gun arm (or "it": the arm holding the weapon), the bomb on its back,
+  // the crown; returns the next item index (game.cpp drawWorld)
+  const PM = new Float32Array(16), TMP = new Float32Array(16);
   function addPlayer(n, pkey, px, py, pz, yaw, opts) {
-    const hs = S.view.crouch ? Q.CROUCH_H / Q.PLAYER_H : 1, bs = 1;
-    const it = modelItem(item(n++), pkey, { kind: 'player' });
-    it.role = 'player';
-    M.trs(it.model, px, py, pz, yaw, 0, bs, bs * hs, bs);
+    const crouch = !!S.view.crouch, hs = crouch ? HS : 1, bs = 1;
+    const it = modelItem(item(n++), pkey, { kind: 'player', role: 'player', crouch: crouch ? 'parts' : null });
+    M.trs(it.model, px, py, pz, yaw, 0, bs, it.mode === 'mesh' ? bs * hs : bs, bs);
     if (opts.highlight) it.highlight = opts.highlight;
     const at = h => py + h * hs * bs;
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);   // right
     const sx = px + rx * 0.3 * bs, sy = at(1.3), sz = pz + rz * 0.3 * bs;   // the shoulder
+    const arm = (name, fallback) => {   // the arm prop from the shoulder along the aim (pitch 0 here), at body scale
+      const k = prop(name), a = k ? modelItem(item(n++), k, { kind: 'prop', role: 'arm' }) : boxItem(item(n++), fallback);
+      a.role = 'arm';
+      M.trs(a.model, sx, sy, sz, yaw, 0, bs, bs, bs);
+    };
     if (opts.held) {   // "it": the arm and the weapon's own model at 2x on the hand
-      const arm = boxItem(item(n++), ARM_HELD, Q.GUN_ARM); arm.role = 'arm';
-      M.trs(arm.model, sx, sy, sz, yaw, 0, 1, 1, 1);
-      const w = modelItem(item(n++), opts.held, { kind: 'weapon', use: 'held', team: S.teamColor() });
-      w.role = 'held';
+      arm('ARM', ARM_HELD);
+      const w = modelItem(item(n++), opts.held, { kind: 'weapon', use: 'held', role: 'held', team: S.teamColor() });
       M.trs(PM, 0, 0.02 * bs, -0.5 * bs, 0, 0, 2 * bs, 2 * bs, 2 * bs);
       M.trs(TMP, sx, sy, sz, yaw, 0, 1, 1, 1);
       M.mul(w.model, TMP, PM);
     } else {
-      const arm = boxItem(item(n++), ARM_GUN, Q.GUN_ARM); arm.role = 'arm';
-      M.trs(arm.model, sx, sy, sz, yaw, 0, 1, 1, 1);
+      arm('GUN_ARM', ARM_GUN);
+      const pk = opts.pack && prop('BOMB_PACK');
+      if (pk) {   // the bomb on its carrier's back (player space; crouched: its height follows, its size doesn't)
+        const b = modelItem(item(n++), pk, { kind: 'prop', role: 'pack', crouch: crouch ? 'centres' : null });
+        M.trs(b.model, px, py, pz, yaw, 0, bs, b.mode === 'mesh' ? bs * hs : bs, bs);
+      }
     }
     if (opts.crown) {
       const ck = S.crownKey();
       if (ck) {
         const ty = py + Q.PLAYER_H * hs * bs + 0.04 * bs;
-        const c = modelItem(item(n++), ck, { kind: 'crown', crownPlace: S.view.crownPlace });
-        c.role = 'crown'; c.castShadow = false;
+        const c = modelItem(item(n++), ck, { kind: 'crown', role: 'crown', crownPlace: S.view.crownPlace });
+        c.castShadow = false;
         M.trs(c.model, px, ty, pz, yaw, 0, bs, bs, bs);
         const l = boxItem(item(n++), S.view.crownPlace === 1 ? LETTER_GOLD : LETTER_SILVER); l.role = 'letter'; l.castShadow = false;
         M.trs(l.model, px, ty, pz, yaw, 0, bs, bs, bs);
@@ -179,7 +213,6 @@
     }
     return n;
   }
-  const TMP = new Float32Array(16);
   const ARM_GUN = [{ c: [0, 0, -0.35], h: [0.06, 0.07, 0.35], color: Q.GUN_ARM, slot: 0, alpha: 1, shadow: true }];
   const ARM_HELD = [{ c: [0, 0, -0.22], h: [0.055, 0.06, 0.22], color: Q.GUN_ARM, slot: 0, alpha: 1, shadow: true }];
   // the crown's board letter (game.cpp: a 3x5 pixel font, "Q" for the main board), in crown space
@@ -190,13 +223,22 @@
     return out;
   }
   const LETTER_GOLD = letter([0.35, 0.18, 0.02]), LETTER_SILVER = letter([0.2, 0.22, 0.26]);
+  // a prop on the ground (drawProp): origin, turned by yaw; sunVis: the bomb and the gates are always lit
+  function addProp(n, name, x, y, z, yaw, ctx, lit) {
+    const k = prop(name);
+    if (!k) return n;
+    const it = modelItem(item(n++), k, Object.assign({ kind: 'prop', role: 'prop' }, ctx));
+    if (lit) it.sunVis = 1;
+    M.trs(it.model, x, y, z, yaw, 0, 1, 1, 1);
+    return n;
+  }
 
   // the viewmodel: camera space T(cam) Ry(yaw) Rx(pitch) T(at) S(scale)
   function addViewmodel(n, wkey, cam) {
     const v = S.view;
     const vmColor = v.vmColor ? Q.hexToLin(v.vmColor) : null;
-    const it = modelItem(item(n++), wkey, { kind: 'weapon', vmColor: vmColor || Q.TEAM.friendly });
-    it.role = 'viewmodel'; it.view = true; it.sunVis = 1; it.castShadow = false;
+    const it = modelItem(item(n++), wkey, { kind: 'weapon', role: 'viewmodel', vmColor: vmColor || Q.TEAM.friendly });
+    it.view = true; it.sunVis = 1; it.castShadow = false;
     const at = [0.2 + v.vmX * 0.0005, -0.17 - v.vmY * 0.0005, -0.55 - v.vmZ * 0.001];
     M.trs(TMP, cam.pos[0], cam.pos[1], cam.pos[2], cam.yaw, cam.pitch, 1, 1, 1);
     M.trs(PM, at[0], at[1], at[2], 0, 0, v.vmScale, v.vmScale, v.vmScale);
@@ -215,13 +257,16 @@
     let mn = [-0.5, 0, -0.5], mx = [0.5, 2, 0.5];
     if (v.mode === 'orbit' && key) { const b = S.bounds(key); if (b) { mn = b.mn; mx = b.mx; } }
     else if (v.mode === 'flight') { mn = [-0.5, 1, -2]; mx = [0.5, 2, 2]; }
+    else if (v.mode === 'track') { mn = [-2, 0, -3]; mx = [2, 2.8, 3]; }
     const c = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2], r = Math.max(0.05, Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2);
     o.target = c;
     const cv = document.getElementById('gl'), aspect = cv && cv.clientHeight ? cv.clientWidth / cv.clientHeight : 16 / 9;
     const hf = S.view.fov * Math.PI / 180, vf = 2 * Math.atan(Math.tan(hf / 2) / aspect);
     o.dist = Math.max(0.15, r / Math.sin(Math.min(hf, vf) / 2) * 1.08);
     if (v.mode === 'orbit' && m && m.kind === 'weapon') { o.yaw = 2.2; o.pitch = -0.3; }
+    else if (v.mode === 'tp' && m && m.name === 'BOMB_PACK') { o.yaw = 0.55; o.pitch = -0.2; }   // (from behind: the pack)
     else if (v.mode === 'orbit' || v.mode === 'tp') { o.yaw = Math.PI + 0.55; o.pitch = -0.2; }
+    else if (v.mode === 'track') { o.yaw = Math.PI * 0.75; o.pitch = -0.3; }
     else { o.yaw = 1.3; o.pitch = -0.15; }
     S.dirty = true;
   };
@@ -231,18 +276,14 @@
     for (const p of parts) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p.c[k] - p.h[k]); mx[k] = Math.max(mx[k], p.c[k] + p.h[k]); }
     return { mn, mx };
   };
+  // the part animations a box override loses (the locator's pulse it keeps)
   S.hasPartAnim = function (key) {
     const m = Q.models[key];
-    return !!m && ((m.kind === 'projectile' && (m.name === 'ROCKET' || m.name === 'STICKY' || m.name === 'BUBBLE')) || (m.kind === 'weapon' && m.name === 'LOCATOR'));
+    return !!m && m.kind === 'projectile' && (m.name === 'ROCKET' || m.name === 'STICKY' || m.name === 'BUBBLE');
   };
   S.bounds = function (key) {
     const cur = Q.current(key);
-    if (cur.type === 'boxes') {
-      if (!cur.parts.length) return null;
-      const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-      for (const p of cur.parts) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p.c[k] - p.h[k]); mx[k] = Math.max(mx[k], p.c[k] + p.h[k]); }
-      return { mn, mx };
-    }
+    if (cur.type === 'boxes') return S.boundsOf(cur.parts);
     if (cur.type === 'mesh') return Q.gltf.bounds(cur.mesh);
     return null;
   };
@@ -256,69 +297,72 @@
     let n = 0;
     const modes = key ? S.modesFor(key) : ['orbit'];
     if (!modes.includes(v.mode)) v.mode = 'orbit';
-    scene.ground = v.ground ? { y: 0, grid: v.grid && (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight') } : null;
+    scene.ground = v.ground ? { y: 0, grid: v.grid && (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight' || v.mode === 'track') } : null;
     S.focus = null;   // the item being edited (picking, gizmo)
+    S.trackLine = null;
     if (v.mode === 'orbit' && key) {
-      const it = modelItem(item(n++), key, { kind });
-      it.role = 'subject';
-      const hs = kind === 'player' && v.crouch ? Q.CROUCH_H / Q.PLAYER_H : 1;
-      M.trs(it.model, 0, 0, 0, 0, 0, 1, hs, 1);
+      const crouch = (kind === 'player' || (m && m.name === 'BOMB_PACK')) && v.crouch;
+      const it = modelItem(item(n++), key, { kind, role: 'subject', crouch: crouch ? (kind === 'player' ? 'parts' : 'centres') : null, gateReached: v.gateReached,
+        cartTeam: v.cartNeutral ? null : undefined, bombBlink: v.bombBlink });
+      M.trs(it.model, 0, 0, 0, 0, 0, 1, crouch && it.mode === 'mesh' ? HS : 1, 1);
       if (kind === 'projectile') it.spin = projSpin(key, false);
       S.focus = it;
       if (scene.ground) {
         const b = S.bounds(key);
-        scene.ground.y = kind === 'player' || kind === 'crown' || !b ? 0 : Math.min(0, b.mn[1] - 0.05);
+        scene.ground.y = kind === 'player' || kind === 'crown' || kind === 'prop' || !b ? (b && kind === 'prop' && (m.name === 'GUN_ARM' || m.name === 'ARM') ? Math.min(0, b.mn[1] - 0.05) : 0) : Math.min(0, b.mn[1] - 0.05);
       }
     } else if (v.mode === 'tp') {
       const pkey = S.playerKey();
-      const held = kind === 'weapon' ? key : (v.holdIt ? S.weaponKey() : null);
-      const before = n;
-      n = addPlayer(n, pkey, 0, 0, 0, 0, { held, crown: kind === 'crown' || v.crown });
-      for (let i = before; i < n; i++) {
-        const it = pool[i];
-        if (it.key === key && (it.role === 'player' || it.role === 'held' || it.role === 'crown')) S.focus = it;
-      }
+      const held = kind === 'weapon' ? key : (S.holdIt() ? S.weaponKey() : null);
+      n = addPlayer(n, pkey, 0, 0, 0, 0, { held, crown: kind === 'crown' || v.crown, pack: S.bombMode() });
     } else if (v.mode === 'fp') {
       const cam = scene.cam;
       cam.pos[0] = 0; cam.pos[1] = v.crouch ? Q.CROUCH_EYE : Q.EYE; cam.pos[2] = 0; cam.yaw = v.yaw * Math.PI / 180; cam.pitch = v.pitch * Math.PI / 180;
       if (v.fpLineup) n = lineup(n, cam, false);
-      if (!v.noViewmodel) { n = addViewmodel(n, S.weaponKey(), cam); S.focus = pool[n - 1]; }
+      if (!v.noViewmodel) n = addViewmodel(n, S.weaponKey(), cam);
     } else if (v.mode === 'lineup') {
       const cam = scene.cam;
       cam.pos[0] = 0; cam.pos[1] = Q.EYE; cam.pos[2] = 0; cam.yaw = v.yaw * Math.PI / 180; cam.pitch = v.pitch * Math.PI / 180;
       n = lineup(n, cam, true);
       n = addViewmodel(n, S.weaponKey(), cam);
-      for (let i = 0; i < n; i++) if (pool[i].key === key && pool[i].role !== 'crown') { S.focus = pool[i]; break; }
     } else if (v.mode === 'flight' && key) {
-      const it = modelItem(item(n++), key, { kind });
-      it.role = 'subject';
+      const it = modelItem(item(n++), key, { kind, role: 'subject' });
       it.spin = projSpin(key, true);
       it.trail = Q.PROJ[m.name] && Q.PROJ[m.name].trail || null;
       S.focus = it;
+    } else if (v.mode === 'track') {
+      // a payload track (game.cpp): the cart at the origin pushed toward -Z, a checkpoint gate ahead (not reached:
+      // grey) and one behind (reached: the attackers' colour), the track line; a dropped bomb beside it
+      n = addProp(n, 'CART', 0, 0, 0, 0, { cartTeam: v.cartNeutral ? null : undefined }, false);
+      n = addProp(n, 'GATE', 0, 0, -7, 0, { gateReached: false }, true);
+      n = addProp(n, 'GATE', 0, 0, 7, 0, { gateReached: true }, true);
+      if (kind === 'prop' && m.name === 'BOMB') n = addProp(n, 'BOMB', 3, 0, 0, 0, { bombBlink: v.bombBlink }, true);
+      S.trackLine = { col: v.cartNeutral ? [1, 1, 1] : S.teamColor() };
     }
+    if (!S.focus) for (let i = 0; i < n; i++) if (pool[i].key === key) { S.focus = pool[i]; break; }   // (the model being edited)
     scene.items.length = 0;
     for (let i = 0; i < n; i++) scene.items.push(pool[i]);
-    if (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight') orbitCam(scene.cam);
+    if (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight' || v.mode === 'track') orbitCam(scene.cam);
+    if (S.camOverride) { const c = S.camOverride; scene.cam.pos[0] = c.pos[0]; scene.cam.pos[1] = c.pos[1]; scene.cam.pos[2] = c.pos[2]; scene.cam.yaw = c.yaw; scene.cam.pitch = c.pitch; }
     S.animate(S.time, true);
     S.dirty = true;
   };
   // the lineup (game.cpp, --models): the players 5 m ahead, 1.5 m apart, facing you; in a team mode every other one
-  // is on team B. The model being edited takes its own slot.
+  // is on team B; "it" modes: each turned aside holding the weapon; bomb mode: turned away carrying the bomb, a
+  // dropped bomb 3 m ahead
   function lineup(n, cam, withCrowns) {
     const v = S.view, f = [-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw)], rt = [Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
     const list = players();
-    const sel = S.sel && Q.models[S.sel] && Q.models[S.sel].kind === 'player' ? S.sel : null;
-    const crownOn = withCrowns && (v.crown || (S.sel && Q.models[S.sel] && Q.models[S.sel].kind === 'crown'));
+    const crownOn = withCrowns && (v.crown || selIs('crown'));
+    const it = S.holdIt(), bomb = S.bombMode();
     const saveTeam = v.team;
     for (let k = 0; k < list.length; k++) {
       if (v.lineupTeams) v.team = k % 2 ? 'enemy' : 'friendly';
       const x = f[0] * 5 + rt[0] * ((k - 2) * 1.5), z = f[2] * 5 + rt[2] * ((k - 2) * 1.5);
-      // ("it": turned aside, the weapon side-on, game.cpp)
-      n = addPlayer(n, list[k], x, 0, z, cam.yaw + Math.PI - (v.holdIt ? 1.0 : 0), { held: v.holdIt ? S.weaponKey() : null, crown: crownOn,
-        highlight: null });
+      n = addPlayer(n, list[k], x, 0, z, cam.yaw + Math.PI - (it ? 1.0 : bomb ? 2.3 : 0), { held: it ? S.weaponKey() : null, crown: crownOn, pack: bomb });
       v.team = saveTeam;
     }
-    void sel;
+    if (bomb) n = addProp(n, 'BOMB', f[0] * 3, 0, f[2] * 3, 0, { bombBlink: v.bombBlink }, true);
     return n;
   }
   function projSpin(key, flying) {
@@ -335,10 +379,11 @@
     const v = S.view;
     let moved = !!force;
     scene.trails.count = 0;
+    if (S.trackLine) addLine(0, 0.05, 20, 0, 0.05, -20, 0.25, S.trackLine.col, 0.35);   // (Renderer::line along the track)
     for (const it of scene.items) {
       if (it.anim && v.play) {
         it.anim(t, Q.current(it.key).parts, it.scratch);
-        fill(it.mesh, it.key, it.mode, it.scratch);
+        fill(it.mesh, it.key, it.mode, it.scratch, it.crouch);
         moved = true;
       }
       if (v.mode === 'flight' && it.role === 'subject') {
@@ -349,7 +394,7 @@
         if (it.spin === 'stickySpin' && v.play) my = t * 6;
         if (it.spin === 'knifeSpin' && v.play) mp = t * 25;
         M.trs(it.model, 0, 1.5, z, my, mp, 1, 1, 1);
-        if (it.trail) addTrail(0, 1.5, z, it.trail);
+        if (it.trail) { const tr = it.trail; addLine(0, 1.5, z - tr.from, 0, 1.5, z + tr.len, tr.w, S.teamColor(), tr.a); }
         moved = true;
       } else if (v.mode === 'orbit' && it.role === 'subject' && it.spin && v.play) {
         M.trs(it.model, 0, 0, 0, it.spin === 'stickySpin' ? t * 6 : 0, it.spin === 'knifeSpin' ? t * 25 : 0, 1, 1, 1);
@@ -358,23 +403,25 @@
     }
     if (moved) S.dirty = true;
   };
-  // Renderer::line: a camera-facing quad from the projectile back along its path (direction -Z: the trail is +Z)
+  // Renderer::line: a camera-facing quad from a to b, w wide (projectile trails, the payload track)
   function trailVertex(x0, y0, z0, col, a) {
-    const T = scene.trails, d = T.data;
-    let o = T.count * 8;
+    const T = scene.trails, d = T.data, F = R.FL;
+    if ((T.count + 1) * F > d.length) return;
+    let o = T.count * F;
     d[o++] = x0; d[o++] = y0; d[o++] = z0; d[o++] = col[0]; d[o++] = col[1]; d[o++] = col[2]; d[o++] = a; d[o++] = 0;
+    for (let q = 0; q < 6; q++) d[o++] = 0;
     T.count++;
   }
-  function addTrail(x, y, z, tr) {
-    const cam = scene.cam.pos, col = S.teamColor();
-    const ax = x, ay = y, az = z - tr.from, bx = x, by = y, bz = z + tr.len;   // a = pos + dir * from (dir = -Z), b = pos - dir * len
-    let tx = cam[0] - (ax + bx) / 2, ty = cam[1] - (ay + by) / 2;
-    const tz = cam[2] - (az + bz) / 2, tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl;
-    // side = normalize(cross(d, toCam)) * w / 2 with d = (0, 0, 1)
-    let sx = -ty, sy = tx; const sl = Math.hypot(sx, sy) || 1; sx = sx / sl * tr.w / 2; sy = sy / sl * tr.w / 2;
+  function addLine(ax, ay, az, bx, by, bz, w, col, a) {
+    const cam = scene.cam.pos;
+    let dx = bx - ax, dy = by - ay, dz = bz - az; const dl = Math.hypot(dx, dy, dz) || 1; dx /= dl; dy /= dl; dz /= dl;
+    let tx = cam[0] - (ax + bx) / 2, ty = cam[1] - (ay + by) / 2, tz = cam[2] - (az + bz) / 2;
+    // side = normalize(cross(d, toCam)) * w / 2
+    let sx = dy * tz - dz * ty, sy = dz * tx - dx * tz, sz = dx * ty - dy * tx; const sl = Math.hypot(sx, sy, sz) || 1;
+    sx = sx / sl * w / 2; sy = sy / sl * w / 2; sz = sz / sl * w / 2;
     // quad a - side, b - side, b + side, a + side as triangles 0 1 2, 0 2 3
-    trailVertex(ax - sx, ay - sy, az, col, tr.a); trailVertex(bx - sx, by - sy, bz, col, tr.a); trailVertex(bx + sx, by + sy, bz, col, tr.a);
-    trailVertex(ax - sx, ay - sy, az, col, tr.a); trailVertex(bx + sx, by + sy, bz, col, tr.a); trailVertex(ax + sx, ay + sy, az, col, tr.a);
+    trailVertex(ax - sx, ay - sy, az - sz, col, a); trailVertex(bx - sx, by - sy, bz - sz, col, a); trailVertex(bx + sx, by + sy, bz + sz, col, a);
+    trailVertex(ax - sx, ay - sy, az - sz, col, a); trailVertex(bx + sx, by + sy, bz + sz, col, a); trailVertex(ax + sx, ay + sy, az + sz, col, a);
   }
 
   // --- overlays: hitbox, selection, gizmo ---------------------------------------------------------------------------------
@@ -407,7 +454,7 @@
     S.gizmoAxes = null;
     const f = S.focus;
     if (f && S.part >= 0 && S.editable()) {
-      const parts = Q.current(f.key).parts, p = parts && parts[S.part];
+      const parts = Q.current(f.key).parts, p0 = parts && parts[S.part], p = p0 && S.geom(p0, f);
       if (p) {
         boxLines(O, f.model, p.c, p.h.map(x => x + 0.0005), [0.3, 0.75, 1, 1]);
         const c = S.xf(f.model, p.c), len = Math.max(0.04, Math.max(p.h[0], p.h[1], p.h[2]) * 1.6 + 0.03);
@@ -428,6 +475,13 @@
     }
     S.dirty = true;
   };
+  // a box where the item draws it (a crouch moves its centre, squashes its height where it says so); yk: what a
+  // model-space y change becomes on screen (the gizmo divides by it)
+  S.geom = function (p, it) {
+    if (!it || !it.crouch) return p;
+    return { c: [p.c[0], p.c[1] * HS, p.c[2]], h: [p.h[0], it.crouch === 'parts' && p.crouch ? p.h[1] * HS : p.h[1], p.h[2]] };
+  };
+  S.yk = (p, it, size) => !it || !it.crouch ? 1 : size ? (it.crouch === 'parts' && p.crouch ? HS : 1) : HS;
   S.editable = function () {
     const f = S.focus;
     return !!(f && f.key === S.sel && Q.current(f.key).type === 'boxes');
@@ -448,7 +502,8 @@
     if (!M.invert(invM, f.model)) return -1;
     const o = S.xf(invM, ray.o), e = S.xf(invM, [ray.o[0] + ray.d[0], ray.o[1] + ray.d[1], ray.o[2] + ray.d[2]]), d = [e[0] - o[0], e[1] - o[1], e[2] - o[2]];
     let best = -1, bt = Infinity;
-    Q.current(f.key).parts.forEach((p, i) => {
+    Q.current(f.key).parts.forEach((p0, i) => {
+      const p = S.geom(p0, f);
       let t0 = -Infinity, t1 = Infinity;
       for (let k = 0; k < 3; k++) {
         const lo = p.c[k] - p.h[k], hi = p.c[k] + p.h[k];
@@ -495,7 +550,7 @@
     const m = Q.models[key];
     const it = modelItem(item(900), key, { kind: m ? m.kind : '' });
     M.ident(it.model);
-    it.anim = null; it.mesh = S.meshFor(key, S.drawMode(key));
+    it.anim = null; it.mesh = S.meshFor(key, S.drawMode(key), null);
     thumbScene.items = [it];
     thumbScene.pal = S.palette();
     const b = S.bounds(key) || { mn: [-0.5, -0.5, -0.5], mx: [0.5, 0.5, 0.5] };

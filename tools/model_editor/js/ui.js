@@ -124,7 +124,8 @@
     ['#vShadows', 'shadows', 'chk'], ['#vSun', 'sunVis', 'sun'], ['#vOutline', 'outline'], ['#vOutlineW', 'outlineW', 'num'], ['#vFov', 'fov', 'num'], ['#vBright', 'bright', 'num'],
     ['#vYaw', 'yaw', 'num'], ['#vPitch', 'pitch', 'num'], ['#vVmX', 'vmX', 'num'], ['#vVmY', 'vmY', 'num'], ['#vVmZ', 'vmZ', 'num'], ['#vVmScale', 'vmScale', 'num'],
     ['#vHoldIt', 'holdIt', 'chk'], ['#vCrown', 'crown', 'chk'], ['#vCrownPlace', 'crownPlace', 'int'], ['#vLineupTeams', 'lineupTeams', 'chk'], ['#vLanded', 'landed', 'chk'],
-    ['#vSpeed', 'speed', 'num'], ['#vGround', 'ground', 'chk'], ['#vFpLineup', 'fpLineup', 'chk'], ['#vPalette', 'palette']];
+    ['#vSpeed', 'speed', 'num'], ['#vGround', 'ground', 'chk'], ['#vFpLineup', 'fpLineup', 'chk'], ['#vPalette', 'palette'],
+    ['#vBombLineup', 'bombLineup', 'chk'], ['#vBombBlink', 'bombBlink', 'chk'], ['#vCartNeutral', 'cartNeutral', 'chk'], ['#vGateReached', 'gateReached', 'chk']];
   U.syncViewBar = function () {
     const v = S.view;
     for (const [sel, k, t] of binds) {
@@ -152,10 +153,11 @@
     if (!S.sel) return;
     const key = S.sel, cur = Q.current(key), mode = S.drawMode(key), m = Q.models[key];
     const tris = cur.type === 'boxes' ? cur.parts.length * 12 : cur.type === 'mesh' ? cur.mesh.tris : 0;
-    const what = mode === 'boxes' ? 'drawn as the built-in boxes (1 px outlines' + (S.hasPartAnim(key) ? ', part animation' : '') + ')'
-      : 'drawn as an override .glb (no outline: the game draws override meshes without one)';
+    const what = mode === 'builtin' ? 'drawn as the game\'s own boxes (1 px outlines' + (S.hasPartAnim(key) ? ', part animation' : '') + ')'
+      : mode === 'boxfile' ? 'drawn as a box model file (the game\'s box path: 1 px outlines, crouch per box' + (S.hasPartAnim(key) ? '; no flicker / blink / wobble' : '') + ')'
+        : 'drawn as a mesh override (no outline: the game draws meshes without one)';
     hud.append(h('div', m.kind + ' / ' + m.name + ': ' + tris + ' triangles, ' + what));
-    if (S.view.mode === 'lineup') hud.append(h('div', 'the game\'s lineup: quark --host ffa --map <map> --models --yaw ' + S.view.yaw + ' --pitch ' + S.view.pitch));
+    if (S.view.mode === 'lineup') hud.append(h('div', 'the game\'s lineup: quark --host ' + (S.holdIt() ? 'hide' : S.bombMode() ? 'bomb' : 'ffa') + ' --map <map> --models --yaw ' + S.view.yaw + ' --pitch ' + S.view.pitch));
     for (const p of Q.problems(key)) if (p.level !== 'info') hud.append(h('div.' + p.level, p.text));
   };
 
@@ -169,15 +171,16 @@
     panel.append(h('div.ph', h('h2', m.name), h('span.path', key + '.glb')));
     panel.append(h('div.desc', m.desc));
     let status = edited ? (cur.type === 'boxes' ? 'Edited boxes (' + cur.parts.length + ')' : 'Imported mesh: ' + (cur.name || '')) :
-      cur.shipped ? 'The shipped override (assets/overrides): ' + (cur.type === 'boxes' ? cur.parts.length + ' boxes' : 'a mesh') :
+      cur.shipped ? 'The shipped override (assets/overrides): ' + (cur.type === 'boxes' ? 'a box model, ' + cur.parts.length + ' boxes' : 'a mesh') :
         cur.type === 'boxes' ? 'Default: ' + cur.parts.length + ' boxes (AI-made)' : 'Default mesh';
     if (m.err) status = 'The export file could not be read: ' + m.err;
+    if (m.shipped && m.shipped.err) status += ' (the shipped override is refused by the game: ' + m.shipped.err + ')';
     panel.append(h('div.row', h('b', status)));
     const acts = h('div.row');
     if (edited) acts.append(h('button.danger', { type: 'button', title: 'Throw the edits away (undo brings them back)', onclick: () => {
       Q.beginChange(key); delete Q.state.edits[key]; Q.endChange(key, 'reset'); S.part = -1; U.toast('Back to the default (Ctrl+Z undoes it)');
     } }, 'Reset to default'));
-    if (cur.type === 'mesh' && Q.boxes.fromMesh(cur.mesh) === null && m.defParts) acts.append(h('span.faint', 'A mesh: edit it in a 3D program, or reset to edit the boxes.'));
+    if (cur.type === 'mesh' && m.defParts) acts.append(h('span.faint', 'A mesh: edit it in a 3D program, or reset to edit the boxes.'));
     acts.append(h('button', { type: 'button', title: 'Replace this model with a .glb / .gltf', onclick: () => $('#fileImport').click() }, 'Import replacement...'));
     acts.append(h('button', { type: 'button', title: 'Start from one box: a model you make yourself (origin: human)', onclick: () => {
       Q.beginChange(key); Q.state.edits[key] = { type: 'boxes', parts: [Object.assign(Q.newPart(), { name: 'box', c: [0, m.kind === 'player' ? 1 : 0, 0], h: m.kind === 'player' ? [0.3, 0.5, 0.2] : [0.03, 0.03, 0.1] })] };
@@ -196,7 +199,7 @@
       const mats = {};
       for (const p of cur.mesh.prims) { const k = p.material + ' -> ' + Q.SLOT_NAMES[p.slot] + (p.alpha < 0.999 ? ' (translucent ' + fmt(p.alpha, 2) + ')' : ''); mats[k] = (mats[k] || 0) + p.pos.length / 9; }
       panel.append(h('div.sect', h('h3', 'Materials -> tint slot'), h('div.mats', Object.entries(mats).map(([k, n]) => h('div', k + ': ' + n + ' triangles'))),
-        h('p.faint', 'The material name picks the colour that changes in game (prefix: team, glow, metal, base; anything else: drawn as authored).')));
+        h('p.faint', 'The material name picks the colour that changes in game (prefix: team, glow, metal, base, accent; anything else: drawn as authored). A slot the game does not colour for this model is drawn as authored too.')));
       return;
     }
     if (cur.type !== 'boxes') return;
@@ -219,13 +222,15 @@
       h('p.faint', 'human = made from scratch here; ai = a tweak of the AI-made default (the note says what changed); third-party = from a pack. Written to provenance.json on export, keyed ' + Q.provId(key) + '.'));
   }
 
-  // the swatch: the colour as drawn now (times the slot's tint for this view's team / map)
-  const swTint = new Float32Array(15);
+  // the swatch: the colour as drawn now (slot colour * mul + team * teamMul + add, this view's team / map)
+  const swCol = new Float32Array(18);
   function slotColorCss(p) {
-    const m = Q.models[S.sel], kind = m ? m.kind : '';
-    Q.tints(kind, Q.runtimePalette({ kind, team: S.teamColor(), map: S.palette() }), swTint);
+    const m = Q.models[S.sel], kind = m ? m.kind : '', name = m ? m.name : '';
+    Q.slotColors(kind, name, Q.runtimePalette({ kind, name, team: S.teamColor(), map: S.palette(), gateReached: S.view.gateReached, bombBlink: S.view.bombBlink, cartTeam: S.view.cartNeutral ? null : undefined }), swCol);
     const s = (p.slot | 0) * 3;
-    return Q.linToHex([p.color[0] * swTint[s], p.color[1] * swTint[s + 1], p.color[2] * swTint[s + 2]]);
+    if (!s) return Q.linToHex(p.color);
+    const mu = p.mul || [1, 1, 1], ad = p.add || [0, 0, 0], tm = p.teamMul || [0, 0, 0];
+    return Q.linToHex([0, 1, 2].map(k => swCol[s + k] * mu[k] + swCol[3 + k] * tm[k] + ad[k]));
   }
   function partsSection(key, parts) {
     const tbody = h('tbody');
@@ -277,29 +282,40 @@
       onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) on(v, false); } });
   }
   function partFields(key, p) {
-    const i = S.part;
+    const i = S.part, ref = Q.refOf(key), m = Q.models[key], slot = p.slot | 0;
     const set = (group, fn) => (v, typing) => U.change(key, 'f' + i + group, parts => fn(parts[i], v), typing ? 'typing' : 'field');
-    const intensity = Math.max(1, p.color[0], p.color[1], p.color[2]);
-    const picker = h('input', { type: 'color', value: Q.linToHex(p.color), title: 'sRGB colour (the game stores linear colour; over 1 = brighter, glowing)',
-      oninput: e => U.change(key, 'f' + i + 'col', parts => { const c = Q.hexToLin(e.target.value); parts[i].color = c.map(x => x * intensity); }, 'typing'),
+    const shown = Q.colorAtRef(p, ref);   // (the colour at the export's palette: what the fields edit)
+    const intensity = Math.max(1, shown[0], shown[1], shown[2]);
+    const recol = (q, D) => Q.recolor(q, D, ref);
+    const picker = h('input', { type: 'color', value: Q.linToHex(shown), title: 'sRGB colour (the game stores linear colour; over 1 = brighter, glowing)',
+      oninput: e => U.change(key, 'f' + i + 'col', parts => { const c = Q.hexToLin(e.target.value); recol(parts[i], c.map(x => x * intensity)); }, 'typing'),
       onchange: () => U.renderPanel() });
+    const formula = slot ? [
+      h('div.grid3', { style: { marginTop: '6px' } },
+        h('span', { title: 'drawn = ' + Q.SLOT_NAMES[slot] + ' colour * mul + team colour * teamMul + add' }, 'mul'), [0, 1, 2].map(k => num((p.mul || [1, 1, 1])[k], 0.01, set('mul' + k, (q, v) => { q.mul = (q.mul || [1, 1, 1]).slice(); q.mul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }), 'times the ' + Q.SLOT_NAMES[slot] + ' colour')),
+        h('span', 'add'), [0, 1, 2].map(k => num((p.add || [0, 0, 0])[k], 0.01, set('add' + k, (q, v) => { q.add = (q.add || [0, 0, 0]).slice(); q.add[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }), 'added, whatever the slot colour (a grey that stays light in a dark team colour)')),
+        slot !== 1 ? [h('span', 'teamMul'), [0, 1, 2].map(k => num((p.teamMul || [0, 0, 0])[k], 0.01, set('tm' + k, (q, v) => { q.teamMul = (q.teamMul || [0, 0, 0]).slice(); q.teamMul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }), 'times the team colour, on top (the cart\'s core)'))] : null),
+      h('p.faint', 'Drawn = ' + Q.SLOT_NAMES[slot] + ' colour x mul' + (slot !== 1 ? ' + team colour x teamMul' : '') + ' + add. Recolouring rewrites mul (and keeps add while it fits).')] : null;
     return h('div.sect', h('h3', 'Box ' + (i + 1)),
       h('div.kv', h('span', 'Name'), h('input', { type: 'text', value: p.name || '', onchange: e => U.change(key, null, parts => { parts[i].name = e.target.value; }, 'field') })),
       h('div.grid3', { style: { marginTop: '6px' } },
         h('span'), h('span.faint', 'x (right)'), h('span.faint', 'y (up)'), h('span.faint', 'z (back)'),
         h('span', 'Centre'), [0, 1, 2].map(k => num(p.c[k], 0.005, set('c' + k, (q, v) => { q.c[k] = v; }), 'metres')),
         h('span', 'Half size'), [0, 1, 2].map(k => num(p.h[k], 0.005, set('h' + k, (q, v) => { q.h[k] = Math.max(0, v); }), 'half the box\'s size, metres')),
-        h('span', 'Colour'), [0, 1, 2].map(k => num(p.color[k], 0.01, set('col' + k, (q, v) => { q.color[k] = Math.max(0, v); }), 'linear ' + 'rgb'[k] + ' (over 1: brighter than the light)'))),
+        h('span', 'Colour'), [0, 1, 2].map(k => num(shown[k], 0.01, set('col' + k, (q, v) => { const D = Q.colorAtRef(q, ref); D[k] = Math.max(0, v); recol(q, D); }),
+          'linear ' + 'rgb'[k] + (slot ? ' at the export\'s palette (team: white)' : '') + ' (over 1: brighter than the light)'))),
       h('div.kv', { style: { marginTop: '6px' } },
         h('span', 'Picker'), h('div.row', { style: { margin: 0 } }, picker,
-          h('span.faint', 'x'), num(intensity, 0.05, set('int', (q, v) => { const cur = Math.max(1, q.color[0], q.color[1], q.color[2]); q.color = q.color.map(x => x / cur * Math.max(0, v)); }), 'intensity: the colour times this (over 1 glows)'),
-          h('span.faint.num', 'sRGB ' + Q.linToHex(p.color))),
-        h('span', 'Tint slot'), h('select', { onchange: e => U.change(key, null, parts => { parts[i].slot = +e.target.value; }, 'field') },
-          Q.SLOT_TITLES.map((t, s) => h('option', { value: s, selected: (p.slot | 0) === s }, Q.SLOT_NAMES[s] + ': ' + t))),
-        h('span', 'Alpha'), num(p.alpha == null ? 1 : p.alpha, 0.05, set('a', (q, v) => { q.alpha = Math.max(0, Math.min(1, v)); }), 'under 1: see-through (drawn unlit, like the bubble)'),
-        h('span', 'Flags'), h('div', h('label.chk', { title: 'Casts a shadow (the game\'s box path; an override mesh always casts)' }, h('input', { type: 'checkbox', checked: p.shadow !== false, onchange: e => U.change(key, null, parts => { parts[i].shadow = e.target.checked; }, 'field') }), ' shadow '),
-          h('label.chk', { title: 'Only seen from outside (face plates: not drawn on your own body in first person; the box path only)' }, h('input', { type: 'checkbox', checked: !!p.visOnly, onchange: e => U.change(key, null, parts => { parts[i].visOnly = e.target.checked; }, 'field') }), ' outside only'))),
-      h('p.faint', 'Slot: team = the team / accent colour (draw it white for exactly that colour), glow / metal / base = the map\'s colours, relative to the export\'s. Shadow and "outside only" are kept in the .glb (extras) but the game draws an override with every triangle casting.'));
+          h('span.faint', 'x'), num(intensity, 0.05, set('int', (q, v) => { const D = Q.colorAtRef(q, ref), cur = Math.max(1, D[0], D[1], D[2]); recol(q, D.map(x => x / cur * Math.max(0, v))); }), 'intensity: the colour times this (over 1 glows)'),
+          h('span.faint.num', 'sRGB ' + Q.linToHex(shown))),
+        h('span', 'Tint slot'), h('select', { onchange: e => U.change(key, null, parts => { Q.setSlot(parts[i], +e.target.value, ref); }, 'field') },
+          Q.SLOT_TITLES.map((t, s2) => h('option', { value: s2, selected: slot === s2 }, Q.SLOT_NAMES[s2] + ': ' + t + (s2 && Q.drivenSlots(m.kind, m.name).indexOf(s2) < 0 ? ' (not set for this model)' : '')))),
+        h('span', 'Alpha'), num(p.alpha == null ? 1 : p.alpha, 0.05, set('a', (q, v) => { q.alpha = Math.max(0.01, Math.min(1, v)); }), 'under 1: see-through (projectiles only, drawn unlit, like the bubble)'),
+        h('span', 'Flags'), h('div', h('label.chk', { title: 'Casts a shadow' }, h('input', { type: 'checkbox', checked: p.shadow !== false, onchange: e => U.change(key, null, parts => { parts[i].shadow = e.target.checked; }, 'field') }), ' shadow '),
+          h('label.chk', { title: 'Only seen from outside (face plates: not drawn on your own body in first person)' }, h('input', { type: 'checkbox', checked: !!p.visOnly, onchange: e => U.change(key, null, parts => { parts[i].visOnly = e.target.checked; }, 'field') }), ' outside only '),
+          m.kind === 'player' ? h('label.chk', { title: 'A crouch squashes this box\'s height too (every box\'s centre height follows a crouch anyway; the default legs and body have it, the head not)' }, h('input', { type: 'checkbox', checked: !!p.crouch, onchange: e => U.change(key, null, parts => { parts[i].crouch = e.target.checked; }, 'field') }), ' crouch') : null)),
+      formula,
+      h('p.faint', 'Slot: team = the team / accent colour, glow / metal / base / accent = the map\'s colours; the colour here is at the export\'s palette (team white). Exported as a box model (extras.quark version 2), the game draws these boxes exactly like its own: outlines, shadows, crouch, outside-only.'));
   }
 
   // --- the viewport: camera, picking, gizmo -----------------------------------------------------------------------------
@@ -311,7 +327,7 @@
     cv.addEventListener('pointerdown', e => {
       cv.setPointerCapture(e.pointerId);
       const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-      const v = S.view, orbiting = v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight';
+      const v = S.view, orbiting = v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight' || v.mode === 'track';
       const ax = e.button === 0 && !e.shiftKey ? S.pickGizmo(x, y, r.width, r.height) : null;
       if (ax) {
         const f = S.focus, col = [f.model[ax.axis * 4], f.model[ax.axis * 4 + 1], f.model[ax.axis * 4 + 2]], s = Math.hypot(col[0], col[1], col[2]) || 1;
@@ -329,6 +345,7 @@
         const ray = S.ray(e.clientX - r.left, e.clientY - r.top, r.width, r.height), t = S.axisParam(drag.origin, drag.dir, ray);
         if (t == null || drag.t0 == null) return;
         let d = (t - drag.t0) / drag.scale;
+        if (drag.axis === 1) d /= S.yk(Q.current(S.sel).parts[S.part], S.focus, gmode !== 'move');   // (crouched: y on screen is squashed)
         const snap = e.shiftKey ? 0.01 : 0.001;
         d = Math.round(d / snap) * snap;
         const a = drag.axis, key = S.sel, i = S.part;
@@ -345,7 +362,7 @@
       const o = S.orbit;
       if (drag.kind === 'orbit') { o.yaw -= dx * 0.008; o.pitch = Math.max(-1.55, Math.min(1.55, o.pitch - dy * 0.008)); S.build(); S.updateOverlay(); }
       else if (drag.kind === 'look') { S.view.yaw = +(S.view.yaw - dx * 0.25).toFixed(2); S.view.pitch = +Math.max(-89, Math.min(89, S.view.pitch - dy * 0.25)).toFixed(2); S.build(); S.updateOverlay(); U.syncViewBar(); }
-      else if (drag.kind === 'pan' && (S.view.mode === 'orbit' || S.view.mode === 'tp' || S.view.mode === 'flight')) {
+      else if (drag.kind === 'pan' && (S.view.mode === 'orbit' || S.view.mode === 'tp' || S.view.mode === 'flight' || S.view.mode === 'track')) {
         const k = o.dist * 0.0015, cy = Math.cos(o.yaw), sy = Math.sin(o.yaw);
         o.target[0] -= cy * dx * k; o.target[2] -= -sy * dx * k; o.target[1] += dy * k;
         S.build(); S.updateOverlay();
@@ -365,7 +382,7 @@
     cv.addEventListener('wheel', e => {
       e.preventDefault();
       const v = S.view;
-      if (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight') { S.orbit.dist = Math.max(0.05, Math.min(60, S.orbit.dist * Math.exp(e.deltaY * 0.0012))); S.build(); S.updateOverlay(); }
+      if (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight' || v.mode === 'track') { S.orbit.dist = Math.max(0.05, Math.min(60, S.orbit.dist * Math.exp(e.deltaY * 0.0012))); S.build(); S.updateOverlay(); }
       else { v.fov = Math.max(40, Math.min(140, Math.round(v.fov + Math.sign(e.deltaY) * 2))); S.saveView(); S.build(); U.syncViewBar(); }
     }, { passive: false });
   }
@@ -385,7 +402,8 @@
     const bytes = new Uint8Array(await main.arrayBuffer());
     let mesh;
     try { mesh = Q.gltf.parse(bytes, main.name, extra); } catch (e) { U.dialog('Cannot read ' + main.name, h('p', String(e.message || e) + '. The game would not load it either (it keeps the default).')); return; }
-    const boxes = Q.boxes.fromMesh(mesh);
+    let boxes = Q.boxes.partsOf(mesh, key, false);
+    if (boxes && boxes.error) { U.dialog('Cannot use ' + main.name, h('p', 'Its box list (extras.quark version 2) fails the game\'s checks: ' + boxes.error + '. The game would log it and keep the default.')); return; }
     const fields = { origin: boxes ? ((Q.state.prov && Q.state.prov[key] && Q.state.prov[key].origin) || 'ai') : 'third-party', source: '', licence: '', note: '' };
     const originSel = h('select', ['third-party', 'human', 'ai'].map(o => h('option', { value: o, selected: fields.origin === o }, o)));
     const src = h('input', { type: 'text', placeholder: 'pack name, URL' }), lic = h('input', { type: 'text', placeholder: 'CC0, CC-BY 4.0 (author), ...' }), note = h('input', { type: 'text' });
@@ -393,7 +411,8 @@
     const ok = await U.dialog('Import ' + main.name, [
       h('div.kv', h('span', 'Replaces'), target),
       h('p', mesh.tris + ' triangles in ' + mesh.prims.length + ' material(s): ' + mesh.prims.map(p => p.material + ' -> ' + Q.SLOT_NAMES[p.slot]).join(', ') + '.'),
-      boxes ? h('p', 'It is made of ' + boxes.length + ' boxes: it opens as boxes you can edit.') : h('p', 'A mesh: shown as the game draws it (no outline, tinted by material name).'),
+      boxes ? h('p', (mesh.extras && mesh.extras.version === 2 ? 'A box model (' + boxes.length + ' boxes in its extras): the game draws it like its own boxes.' : 'It is made of ' + boxes.length + ' boxes') + ' It opens as boxes you can edit.')
+        : h('p', 'A mesh: shown as the game draws it (no outline, tinted by material name).'),
       mesh.tris > Q.MAX_TRIS ? h('p', { style: { color: '#ff8b8b' } }, 'Over the game\'s ' + Q.MAX_TRIS + ' triangle limit: the game would refuse it.') : null,
       h('div.kv', h('span', 'Origin'), originSel, h('span', 'Source'), src, h('span', 'Licence'), lic, h('span', 'Note'), note),
       h('p.faint', 'For provenance.json: a model from a pack is third-party (fill in where it is from and its licence); human = you made it yourself.')],
@@ -434,7 +453,7 @@
       } }, 'Choose the Quark\\model-editor folder...'),
       h('button.mini', { type: 'button', onclick: () => Q.downloadProvenance() }, 'Download provenance.json'));
     const content = [
-      h('p', 'Each model is written as ', h('code', 'models/<kind>/<NAME>.glb'), ', what the game loads in place of its box model. The game draws an override mesh lit and shadowed but without the 1 px outline, and without the part animations.'),
+      h('p', 'Each model is written as ', h('code', 'models/<kind>/<NAME>.glb'), ', what the game loads in place of its model. A box model carries its box list (extras.quark version 2): the game draws it like its own boxes (outlines, crouch, shadows, team colours), only the rocket\'s flame flicker, the sticky\'s blink and the bubble\'s wobble stay still. An imported mesh is drawn lit and shadowed but without the 1 px outline.'),
       list,
       h('p', h('b', 'Choose folder and write'), ' (Chrome / Edge): pick ', h('code', '%APPDATA%\\quark\\overrides'), ' to try them in the game (restart it), or the repository\'s ', h('code', 'assets\\overrides'), ' to ship them. Picking ', h('code', '%APPDATA%\\quark'), ' or the repository folder works too. A same-named .gltf there is moved to .bak.'),
       h('p', h('b', 'Download .zip'), ': the same layout plus provenance.json, to unzip into the overrides folder.'),
@@ -476,7 +495,7 @@
   };
 
   // --- keys -------------------------------------------------------------------------------------------------------------
-  const KEYS = [['Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y', 'undo / redo'], ['1 - 5', 'orbit, first person, third person, in flight, lineup'], ['F', 'frame the model'],
+  const KEYS = [['Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y', 'undo / redo'], ['1 - 6', 'orbit, first person, third person, in flight, lineup, track'], ['F', 'frame the model'],
     ['W / E', 'gizmo: move / resize (Alt: both sides; Shift: 1 cm steps)'], ['click', 'pick a box (orbit, third person; first person: the viewmodel)'],
     ['drag / right drag / wheel', 'orbit / pan / zoom (first person, lineup: look around / fov)'], ['arrows, PgUp / PgDn', 'nudge the box 1 mm in x / z, y (Shift: 1 cm)'],
     ['Ctrl+D, Delete', 'duplicate, delete the box'], ['M', 'mirror the box across x = 0'], ['Space', 'animations on / off'], ['Esc', 'deselect'], ['?', 'this list']];
@@ -490,7 +509,7 @@
     if (ctrl && (k === 'y' || k === 'Y')) { e.preventDefault(); const r = Q.redo(); if (r && r !== S.sel) U.select(r, true); return; }
     if (ctrl && (k === 'd' || k === 'D')) { e.preventDefault(); if (S.part >= 0) dupPart(key, false); return; }
     if (ctrl) return;
-    if (k >= '1' && k <= '5') { U.setMode(['orbit', 'fp', 'tp', 'flight', 'lineup'][+k - 1]); return; }
+    if (k >= '1' && k <= '6') { U.setMode(['orbit', 'fp', 'tp', 'flight', 'lineup', 'track'][+k - 1]); return; }
     if (k === 'f' || k === 'F') { S.frame(key); S.build(); S.updateOverlay(); return; }
     if (k === 'w' || k === 'W') { U.gizmoMode('move'); return; }
     if (k === 'e' || k === 'E') { U.gizmoMode('size'); return; }

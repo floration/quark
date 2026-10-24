@@ -26,13 +26,15 @@
     if (!m || cur.type !== 'boxes') return '';
     const base = m.defParts || [], parts = cur.parts;
     const same = (a, b) => a.c.every((v, i) => Math.abs(v - b.c[i]) < 1e-6) && a.h.every((v, i) => Math.abs(v - b.h[i]) < 1e-6);
-    const sameCol = (a, b) => a.color.every((v, i) => Math.abs(v - b.color[i]) < 1e-6) && (a.slot | 0) === (b.slot | 0) && (a.alpha == null ? 1 : a.alpha) === (b.alpha == null ? 1 : b.alpha);
+    const eq3 = (x, y) => (!x && !y) || (!!x && !!y && x.every((v, i) => Math.abs(v - y[i]) < 1e-6));
+    const sameCol = (a, b) => eq3(a.color, b.color) && eq3(a.mul, b.mul) && eq3(a.add, b.add) && eq3(a.teamMul, b.teamMul) && (a.slot | 0) === (b.slot | 0) &&
+      (a.alpha == null ? 1 : a.alpha) === (b.alpha == null ? 1 : b.alpha) && !!a.crouch === !!b.crouch && (a.shadow !== false) === (b.shadow !== false) && !!a.visOnly === !!b.visOnly;
     let moved = 0, recol = 0;
     const n = Math.min(base.length, parts.length);
     for (let i = 0; i < n; i++) { if (!same(base[i], parts[i])) moved++; if (!sameCol(base[i], parts[i])) recol++; }
     const bits = [];
     if (moved) bits.push(moved + ' box' + (moved > 1 ? 'es' : '') + ' moved / resized');
-    if (recol) bits.push(recol + ' recoloured');
+    if (recol) bits.push(recol + ' recoloured / re-flagged');
     if (parts.length > base.length) bits.push((parts.length - base.length) + ' added');
     if (parts.length < base.length) bits.push((base.length - parts.length) + ' removed');
     return 'tweak of the AI default box model in the model editor' + (bits.length ? ': ' + bits.join(', ') : '');
@@ -243,10 +245,13 @@
   };
 
   // --- import ---------------------------------------------------------------------------------------------------------
-  // a .glb / .gltf replaces model `key`: as boxes when it is exactly boxes (this editor's own export), else as a mesh
+  // a .glb / .gltf replaces model `key`: as boxes when it is a box model (extras.quark version 2, what the game draws
+  // as boxes) or exactly boxes as the exporter lays them out (an older export of this editor), else as a mesh. A box
+  // list the game would refuse is refused here too (the game logs it and keeps the default).
   Q.importInto = function (key, bytes, name, files, opts) {
     const mesh = Q.gltf.parse(bytes, name, files);   // (throws: shown to the user)
-    const parts = Q.boxes.fromMesh(mesh);
+    const parts = Q.boxes.partsOf(mesh, key, false);
+    if (parts && parts.error) throw new Error('box model: ' + parts.error + ' (the game would keep the default)');
     Q.beginChange(key);
     if (parts) Q.state.edits[key] = { type: 'boxes', parts };
     else {
@@ -266,28 +271,43 @@
   };
 
   // --- problems (warnings shown in the panel; errors block the export) ------------------------------------------------
+  // a box list against the game's checks (gltf.cpp boxesFrom), as it will be written
+  const inRange = (v, lo, hi) => Array.isArray(v) && v.length === 3 && v.every(x => Number.isFinite(x) && x >= lo && x <= hi);
+  Q.boxErrors = function (key, parts) {
+    const errs = [], ref = Q.refOf(key);
+    if (!parts.length) errs.push('no boxes: nothing to export');
+    if (parts.length > Q.MAX_BOXES) errs.push(parts.length + ' boxes: the game takes at most ' + Q.MAX_BOXES + ' in a box model');
+    parts.forEach((p, i) => {
+      const nm = 'box ' + (i + 1) + (p.name ? ' (' + p.name + ')' : '') + ': ';
+      if (!inRange(p.c, -64, 64)) errs.push(nm + 'its centre must be within 64 m');
+      if (!inRange(p.h, 0, 32) || !p.h.every(x => x > 0)) errs.push(nm + 'its half size must be over 0 and at most 32 m');
+      if (!inRange(Q.boxes.shownColor(p, ref), 0, 16)) errs.push(nm + 'its colour must be 0 to 16');
+      if ((p.slot | 0) && (!inRange(p.mul || [1, 1, 1], 0, 16) || !inRange(p.add || [0, 0, 0], 0, 16) || !inRange(p.teamMul || [0, 0, 0], 0, 16)))
+        errs.push(nm + 'its mul / add / teamMul must be 0 to 16 (a colour far from the slot\'s reference: try another slot)');
+      const a = p.alpha == null ? 1 : p.alpha;
+      if (!(a > 0 && a <= 1)) errs.push(nm + 'alpha must be over 0 and at most 1');
+    });
+    return errs;
+  };
   Q.problems = function (key) {
     const out = [], m = Q.models[key], cur = Q.current(key);
     if (!m) return out;
     let tris = 0, slots = new Set(), alphaLow = false;
     if (cur.type === 'boxes') {
       tris = cur.parts.length * 12;
-      for (const p of cur.parts) {
-        slots.add(p.slot | 0);
-        if ((p.alpha == null ? 1 : p.alpha) < 1) alphaLow = true;
-        if (![...p.c, ...p.h, ...p.color].every(Number.isFinite)) out.push({ level: 'error', text: 'a box has a value that is not a number' });
-        if (p.h.some(v => v <= 0)) out.push({ level: 'warn', text: 'a box has a zero or negative size (' + (p.name || 'part') + ')' });
-      }
-      if (!cur.parts.length) out.push({ level: 'error', text: 'no boxes: nothing to export' });
+      for (const p of cur.parts) { slots.add(p.slot | 0); if ((p.alpha == null ? 1 : p.alpha) < 1) alphaLow = true; }
+      const errs = Q.boxErrors(key, cur.parts);
+      if (errs.length) out.push({ level: 'error', text: errs.slice(0, 3).join('; ') + (errs.length > 3 ? ' (and ' + (errs.length - 3) + ' more)' : '') + ': the game refuses the file and keeps the default' });
     } else if (cur.type === 'mesh') {
       tris = cur.mesh.tris;
       for (const p of cur.mesh.prims) { slots.add(p.slot); if (p.alpha < 0.999) alphaLow = true; }
+      if (Q.isEdited(key) || cur.shipped) out.push({ level: 'info', text: 'a mesh (not a box model): the game draws it lit and shadowed but without the 1 px outline, and squashes it whole when crouching' });
     }
     if (tris > Q.MAX_TRIS) out.push({ level: 'error', text: tris + ' triangles: the game refuses more than ' + Q.MAX_TRIS + ' (it keeps the default)' });
     else if (tris > Q.MAX_TRIS * 0.5) out.push({ level: 'warn', text: tris + ' triangles: over half the game\'s limit of ' + Q.MAX_TRIS + ' (they stream every frame)' });
-    const und = Q.undrivenSlots(m.kind).filter(s => slots.has(s));
-    if (und.length) out.push({ level: 'warn', text: 'the game sets no ' + und.map(s => Q.SLOT_NAMES[s]).join(' / ') + ' colour for a ' + m.kind +
-      ': those parts are drawn at white / reference (glow: x1, x1.8, x6.7). Use "none" or "team" here.' });
+    const driven = Q.drivenSlots(m.kind, m.name), und = [...slots].filter(s => s && driven.indexOf(s) < 0);
+    if (und.length) out.push({ level: 'info', text: 'the game gives a ' + (m.kind === 'prop' ? m.name : m.kind) + ' no ' + und.map(s => Q.SLOT_NAMES[s]).join(' / ') +
+      ' colour: those parts are drawn as authored (they follow nothing)' });
     // bounds against the default
     const b = Q.scene.bounds(key), d = m.defParts ? Q.scene.boundsOf(m.defParts) : (m.defMesh ? Q.gltf.bounds(m.defMesh) : null);
     if (b && d && Q.isEdited(key)) {
@@ -296,7 +316,7 @@
         const over = Math.max(b.mx[k] - d.mx[k], d.mn[k] - b.mn[k]), size = d.mx[k] - d.mn[k];
         if (over > Math.max(0.05, size * 0.25)) grow.push('XYZ'[k] + ' by ' + Math.round(over * 100) + ' cm');
       }
-      if (grow.length) out.push({ level: 'warn', text: 'much bigger than the default (' + grow.join(', ') + ')' + (m.kind === 'player' ? ': the hitbox stays 0.8 x 1.8 x 0.8 m, shots at what sticks out miss' : '') });
+      if (grow.length) out.push({ level: 'warn', text: 'much bigger than the default (' + grow.join(', ') + ')' + (m.kind === 'player' ? ': the hitbox stays 0.8 x 1.8 x 0.8 m, shots at what sticks out miss' : m.name === 'CART' ? ': the cart\'s collision box does not grow with it' : '') });
     }
     if (m.kind === 'player' && b) {
       const out2 = [];
@@ -305,10 +325,12 @@
       if (b.mn[1] < -0.02) out2.push('below the feet');
       if (out2.length && Q.isEdited(key)) out.push({ level: 'info', text: out2.join(', ') + ' (hitboxes are not changed by models)' });
     }
-    if (alphaLow && m.kind !== 'projectile' && !Q.isEdited(key)) out.push({ level: 'info', text: 'translucent parts: the game\'s box path draws them opaque outside projectiles (an override draws them see-through)' });
-    if (Q.isEdited(key) && m.defParts && Q.scene.hasPartAnim(key)) out.push({ level: 'info', text: 'exported, this is drawn as an override: the game does not play its part animation (flame flicker / wobble / blink / pulse), only whole-model spins' });
+    if (alphaLow && cur.type === 'boxes' && m.kind !== 'projectile') out.push({ level: 'info', text: 'translucent boxes: the game\'s box path draws them opaque outside projectiles' });
+    if ((Q.isEdited(key) || cur.shipped) && cur.type === 'boxes' && S().hasPartAnim(key)) out.push({ level: 'info', text: 'as a box model the game draws this still: no flame flicker / core blink / wobble (it still spins and turns it)' });
+    if (m.refMismatch) out.push({ level: 'warn', text: 'this page\'s reference colours differ from this export\'s (a newer game?): colours may be off' });
     return out;
   };
+  const S = () => Q.scene;
 
   // --- project file / autosave --------------------------------------------------------------------------------------------
   Q.usedSources = function () { const s = new Set(); for (const e of Object.values(Q.state.edits)) if (e.src) s.add(e.src); return s; };
@@ -322,6 +344,7 @@
     if (p.format !== 'quark-model-editor') throw new Error('not a model editor project');
     for (const [id, s] of Object.entries(p.sources || {})) Q.sources[id] = { name: s.name, bytes: Q.b64ToBytes(s.file) };
     Q.state = Object.assign({ edits: {}, prov: {} }, p.state);
+    Q.normalizeEdits();
     for (const k of Object.keys(Q.state.edits)) Q.bump(k);
     Q.clearHistory();
     return p;

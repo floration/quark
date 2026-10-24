@@ -11,13 +11,16 @@
     for (const [id, src] of Object.entries(s.sources || {})) Q.sources[id] = { name: src.name, bytes: src.bytes };
     Q.state = Object.assign({ edits: {}, prov: {} }, s.state);
     for (const [k, e] of Object.entries(Q.state.edits)) if (!Q.models[k] || (e.type === 'mesh' && !Q.sources[e.src])) delete Q.state.edits[k];
+    Q.normalizeEdits();
     for (const k of Object.keys(Q.state.edits)) Q.bump(k);
     const n = Object.keys(Q.state.edits).length;
     if (n) U.banner('Restored your last session (' + n + ' edited model' + (n > 1 ? 's' : '') + '), saved ' + new Date(s.saved).toLocaleString() + '.', false,
       [h('button.mini', { type: 'button', onclick: async () => { Q.state = { edits: {}, prov: {} }; Q.sources = {}; Q.clearHistory(); await Q.clearAutosave(); U.$('#banner').hidden = true; U.afterLoad(); } }, 'start fresh instead')]);
   }
 
-  // a picture of a view at w x h: opts { mode, key, yaw, pitch, palette, team, weapon, w, h, ... any S.view field }
+  // a picture of a view at w x h: opts { mode, key, yaw, pitch, palette, team, weapon, w, h, ... any S.view field,
+  //   cam: { pos: [x, y, z], yaw, pitch } (degrees: the game's --cam, relative to the model / the cart),
+  //   only: [keys] (draw only these models) }
   Q.shot = function (opts) {
     opts = opts || {};
     const save = Object.assign({}, S.view), saveSel = S.sel, saveTime = S.time;
@@ -25,14 +28,16 @@
     if (opts.weapon) S.view.fpWeapon = opts.weapon;
     if (opts.key) S.sel = opts.key;
     if (opts.time != null) S.time = opts.time;
+    S.camOverride = opts.cam ? { pos: opts.cam.pos, yaw: opts.cam.yaw * Math.PI / 180, pitch: opts.cam.pitch * Math.PI / 180 } : null;
     S.build(); if (opts.frame) { S.frame(S.sel); S.build(); }
+    if (opts.only) for (const it of S.current.items) it.hidden = opts.only.indexOf(it.key) < 0;   // (comparisons: these models alone)
     S.updateOverlay();
     const w = opts.w || 1280, hh = opts.h || 720, t = R.cachedTarget(w, hh), cv = document.createElement('canvas');
     cv.width = w; cv.height = hh;
     R.draw(S.current, t);
     R.readTarget(t, cv.getContext('2d'));
     const url = cv.toDataURL('image/png');
-    Object.assign(S.view, save); S.sel = saveSel; S.time = saveTime; S.build(); S.updateOverlay();
+    Object.assign(S.view, save); S.sel = saveSel; S.time = saveTime; S.camOverride = null; S.build(); S.updateOverlay();
     return url;
   };
 

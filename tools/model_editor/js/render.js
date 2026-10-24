@@ -8,6 +8,8 @@
   'use strict';
   const Q = window.Q;
   const R = Q.R = {};
+  const OP = 20, FL = 14;   // floats per opaque / flat vertex (below)
+  R.FL = FL;
 
   // --- small math (column-major, out parameters: no allocation in the frame loop) ---------------------------------------
   const M = R.mat = {
@@ -87,16 +89,18 @@ float shadowAt(vec4 sc) {
   const DYN_VS = `#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
-layout(location=2) in vec4 aColor;   // rgb, tint slot
+layout(location=2) in vec4 aColor;   // mul (slot 0: the colour), tint slot
 layout(location=3) in vec4 aEdge;
+layout(location=4) in vec3 aAdd;
+layout(location=5) in vec3 aTeamMul;
 uniform mat4 uViewProj, uModel, uShadowMat;
-uniform vec3 uTint[5];
+uniform vec3 uTint[6];               // the slot colours (drivenPalette; slot 0 = 1)
 out vec3 vPos; out vec3 vN; out vec3 vColor; out vec4 vShadow; out vec4 vEdge;
 void main() {
     vec4 wp = uModel * vec4(aPos, 1.0);
     vec3 n = normalize(mat3(uModel) * aNormal);
     vPos = wp.xyz; vN = n; vEdge = aEdge;
-    vColor = aColor.rgb * uTint[int(aColor.a + 0.5)];
+    vColor = aColor.rgb * uTint[int(aColor.a + 0.5)] + aTeamMul * uTint[1] + aAdd;   // slot * mul + team * teamMul + add
     vShadow = uShadowMat * vec4(wp.xyz + n * 0.03, 1.0);
     gl_Position = uViewProj * wp;
 }`;
@@ -123,10 +127,12 @@ void main() {
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec4 aColor;
 layout(location=2) in float aSlot;
+layout(location=3) in vec3 aAdd;
+layout(location=4) in vec3 aTeamMul;
 uniform mat4 uViewProj, uModel;
-uniform vec3 uTint[5];
+uniform vec3 uTint[6];
 out vec4 vColor;
-void main() { vColor = vec4(aColor.rgb * uTint[int(aSlot + 0.5)], aColor.a); gl_Position = uViewProj * uModel * vec4(aPos, 1.0); }`;
+void main() { vColor = vec4(aColor.rgb * uTint[int(aSlot + 0.5)] + aTeamMul * uTint[1] + aAdd, aColor.a); gl_Position = uViewProj * uModel * vec4(aPos, 1.0); }`;
   const FLAT_FS = `#version 300 es
 precision highp float;
 in vec4 vColor;
@@ -275,16 +281,18 @@ void main() { fragColor = vColor; }`;
     return gl;
   };
   R.gl = () => gl;
-  function flatLayout() {
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 12);
-    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 32, 28);
+  function flatLayout() {   // pos 3, mul 3 + alpha, slot, add 3, teamMul 3 (FL floats)
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, FL * 4, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, FL * 4, 12);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, FL * 4, 28);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 3, gl.FLOAT, false, FL * 4, 32);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 3, gl.FLOAT, false, FL * 4, 44);
   }
 
   // --- GPU meshes ---------------------------------------------------------------------------------------------------
-  // Opaque vertex: pos 3, normal 3, colour 3 + slot, edge 4 (14 floats). Flat vertex: pos 3, colour 3 + alpha, slot (8).
-  // Casters first, so the shadow pass draws [0, casters).
-  const OP = 14, FL = 8;
+  // Opaque vertex: pos 3, normal 3, mul 3 + slot, edge 4, add 3, teamMul 3 (20 floats). Flat vertex: pos 3, mul 3 +
+  // alpha, slot, add 3, teamMul 3 (14). The colour is made in the shader: slot colour * mul + team * teamMul + add (the
+  // box model formula; a mesh: mul = its colour / the reference, add 0). Casters first: the shadow pass draws [0, casters).
   R.createMesh = function () {
     const m = { vao: gl.createVertexArray(), vbo: gl.createBuffer(), cap: 0, count: 0, casters: 0,
       fvao: gl.createVertexArray(), fvbo: gl.createBuffer(), fcap: 0, fcount: 0, op: new Float32Array(1024), fl: new Float32Array(256),
@@ -294,6 +302,8 @@ void main() { fragColor = vColor; }`;
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, OP * 4, 12);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, OP * 4, 24);
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, OP * 4, 40);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 3, gl.FLOAT, false, OP * 4, 56);
+    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 3, gl.FLOAT, false, OP * 4, 68);
     gl.bindVertexArray(m.fvao); gl.bindBuffer(gl.ARRAY_BUFFER, m.fvbo); flatLayout();
     gl.bindVertexArray(null);
     return m;
@@ -308,15 +318,16 @@ void main() { fragColor = vColor; }`;
     if (m.fcount * FL > m.fcap) { m.fcap = m.fl.length; gl.bufferData(gl.ARRAY_BUFFER, m.fcap * 4, gl.DYNAMIC_DRAW); }
     if (m.fcount) gl.bufferSubData(gl.ARRAY_BUFFER, 0, m.fl, 0, m.fcount * FL);
   }
-  // boxes. opts: { outline: edges for the 1 px outline (box look), flatAlpha: translucent parts go to the flat pass
-  // (else drawn opaque, as the game's box path does outside projectiles), flatShaded: their colour with the face shade
-  // (an override mesh: yes; the game's translucentBox: no), noShadowFlags: every part casts (an override) }
-  const FACES = () => Q.boxes.FACES;
+  // boxes. opts: { outline: edges for the 1 px outline (the box path), flatAlpha: translucent parts go to the flat pass
+  // (else drawn opaque, as the game's box path does outside projectiles), flatShaded: their colour with the face shade,
+  // noShadowFlags: every part casts, hs + crouch: a player's crouch ('parts': every centre's height times hs, a half
+  // height too where the part says crouch; 'centres': the centres only, the bomb on its carrier's back) }
+  const FACES = () => Q.boxes.FACES, Z3 = [0, 0, 0];
   R.fillBoxes = function (m, parts, opts) {
     let nOp = 0, nFl = 0;
     for (const p of parts) { if (opts.flatAlpha && (p.alpha == null ? 1 : p.alpha) < 0.999) nFl += 36; else nOp += 36; }
     m.op = grow(m.op, nOp * OP); m.fl = grow(m.fl, nFl * FL);
-    const op = m.op, fl = m.fl, F = FACES();
+    const op = m.op, fl = m.fl, F = FACES(), hs = opts.hs || 1, crouchParts = opts.crouch === 'parts';
     let o = 0, f = 0, casters = 0;
     const mn = m.mn, mx = m.mx; mn[0] = mn[1] = mn[2] = Infinity; mx[0] = mx[1] = mx[2] = -Infinity;
     for (let pass = 0; pass < 2; pass++) for (const p of parts) {
@@ -324,25 +335,30 @@ void main() { fragColor = vColor; }`;
       const casts = opts.noShadowFlags || p.shadow !== false;
       if (!isFlat && (pass === 0) !== casts) continue;
       if (isFlat && pass === 1) continue;
-      for (let k = 0; k < 3; k++) { const lo = p.c[k] - p.h[k], hi = p.c[k] + p.h[k]; if (lo < mn[k]) mn[k] = lo; if (hi > mx[k]) mx[k] = hi; }
+      const slot = p.slot | 0, mul = slot ? (p.mul || p.color) : p.color, add = slot && p.add ? p.add : Z3, tm = slot && p.teamMul ? p.teamMul : Z3;
+      const cx = p.c[0], cy = p.c[1] * hs, cz = p.c[2], hx = p.h[0], hy = crouchParts && p.crouch ? p.h[1] * hs : p.h[1], hz = p.h[2];
+      if (cx - hx < mn[0]) mn[0] = cx - hx; if (cy - hy < mn[1]) mn[1] = cy - hy; if (cz - hz < mn[2]) mn[2] = cz - hz;
+      if (cx + hx > mx[0]) mx[0] = cx + hx; if (cy + hy > mx[1]) mx[1] = cy + hy; if (cz + hz > mx[2]) mx[2] = cz + hz;
       for (const face of F) {
         const sh = isFlat && !opts.flatShaded ? 1 : face.shade;
         const c = face.c;
         // face size for the outline (addQuad: w = |c1 - c0|, h = |c3 - c0|)
-        let wx = (c[1][0] - c[0][0]) * p.h[0], wy = (c[1][1] - c[0][1]) * p.h[1], wz = (c[1][2] - c[0][2]) * p.h[2];
+        let wx = (c[1][0] - c[0][0]) * hx, wy = (c[1][1] - c[0][1]) * hy, wz = (c[1][2] - c[0][2]) * hz;
         const w = Math.hypot(wx, wy, wz);
-        wx = (c[3][0] - c[0][0]) * p.h[0]; wy = (c[3][1] - c[0][1]) * p.h[1]; wz = (c[3][2] - c[0][2]) * p.h[2];
+        wx = (c[3][0] - c[0][0]) * hx; wy = (c[3][1] - c[0][1]) * hy; wz = (c[3][2] - c[0][2]) * hz;
         const h = Math.hypot(wx, wy, wz);
         for (let t = 0; t < 6; t++) {
           const ci = t < 3 ? t : (t === 3 ? 0 : t === 4 ? 2 : 3), k = c[ci];
-          const x = p.c[0] + k[0] * p.h[0], y = p.c[1] + k[1] * p.h[1], z = p.c[2] + k[2] * p.h[2];
+          const x = cx + k[0] * hx, y = cy + k[1] * hy, z = cz + k[2] * hz;
           if (isFlat) {
-            fl[f++] = x; fl[f++] = y; fl[f++] = z; fl[f++] = p.color[0] * sh; fl[f++] = p.color[1] * sh; fl[f++] = p.color[2] * sh; fl[f++] = a; fl[f++] = p.slot | 0;
+            fl[f++] = x; fl[f++] = y; fl[f++] = z; fl[f++] = mul[0] * sh; fl[f++] = mul[1] * sh; fl[f++] = mul[2] * sh; fl[f++] = a; fl[f++] = slot;
+            fl[f++] = add[0] * sh; fl[f++] = add[1] * sh; fl[f++] = add[2] * sh; fl[f++] = tm[0] * sh; fl[f++] = tm[1] * sh; fl[f++] = tm[2] * sh;
           } else {
             op[o++] = x; op[o++] = y; op[o++] = z; op[o++] = face.n[0]; op[o++] = face.n[1]; op[o++] = face.n[2];
-            op[o++] = p.color[0] * sh; op[o++] = p.color[1] * sh; op[o++] = p.color[2] * sh; op[o++] = p.slot | 0;
+            op[o++] = mul[0] * sh; op[o++] = mul[1] * sh; op[o++] = mul[2] * sh; op[o++] = slot;
             if (opts.outline) { op[o++] = ci === 1 || ci === 2 ? w : 0; op[o++] = ci >= 2 ? h : 0; op[o++] = w; op[o++] = h; }
             else { op[o++] = 0.5; op[o++] = 0.5; op[o++] = 1; op[o++] = 1; }
+            op[o++] = add[0] * sh; op[o++] = add[1] * sh; op[o++] = add[2] * sh; op[o++] = tm[0] * sh; op[o++] = tm[1] * sh; op[o++] = tm[2] * sh;
           }
         }
       }
@@ -353,8 +369,9 @@ void main() { fragColor = vColor; }`;
     upload(m);
     return m;
   };
-  // a mesh as the game's loader made it (an override): every opaque triangle casts, no outline
-  R.fillMesh = function (m, mesh) {
+  // a mesh as the game's loader made it (an override): every opaque triangle casts, no outline; a slot's colours are
+  // tinted by current / reference (ref: the model's reference palette), the same as mul = colour / reference
+  R.fillMesh = function (m, mesh, ref) {
     let nOp = 0, nFl = 0;
     for (const p of mesh.prims) { if (p.alpha < 0.999) nFl += p.pos.length / 3; else nOp += p.pos.length / 3; }
     m.op = grow(m.op, nOp * OP); m.fl = grow(m.fl, nFl * FL);
@@ -362,16 +379,19 @@ void main() { fragColor = vColor; }`;
     let o = 0, f = 0;
     const mn = m.mn, mx = m.mx; mn[0] = mn[1] = mn[2] = Infinity; mx[0] = mx[1] = mx[2] = -Infinity;
     for (const p of mesh.prims) {
-      const n = p.pos.length / 3, isFlat = p.alpha < 0.999;
+      const n = p.pos.length / 3, isFlat = p.alpha < 0.999, r = p.slot && ref ? ref[p.slot] : null;
+      const k0 = r && r[0] > 1e-3 ? 1 / r[0] : 1, k1 = r && r[1] > 1e-3 ? 1 / r[1] : 1, k2 = r && r[2] > 1e-3 ? 1 / r[2] : 1;
       for (let i = 0; i < n; i++) {
         const x = p.pos[i * 3], y = p.pos[i * 3 + 1], z = p.pos[i * 3 + 2];
         if (x < mn[0]) mn[0] = x; if (y < mn[1]) mn[1] = y; if (z < mn[2]) mn[2] = z;
         if (x > mx[0]) mx[0] = x; if (y > mx[1]) mx[1] = y; if (z > mx[2]) mx[2] = z;
-        if (isFlat) { fl[f++] = x; fl[f++] = y; fl[f++] = z; fl[f++] = p.col[i * 3]; fl[f++] = p.col[i * 3 + 1]; fl[f++] = p.col[i * 3 + 2]; fl[f++] = p.alpha; fl[f++] = p.slot; }
+        const c0 = p.col[i * 3] * k0, c1 = p.col[i * 3 + 1] * k1, c2 = p.col[i * 3 + 2] * k2;
+        if (isFlat) { fl[f++] = x; fl[f++] = y; fl[f++] = z; fl[f++] = c0; fl[f++] = c1; fl[f++] = c2; fl[f++] = p.alpha; fl[f++] = p.slot; for (let q = 0; q < 6; q++) fl[f++] = 0; }
         else {
           op[o++] = x; op[o++] = y; op[o++] = z; op[o++] = p.nrm[i * 3]; op[o++] = p.nrm[i * 3 + 1]; op[o++] = p.nrm[i * 3 + 2];
-          op[o++] = p.col[i * 3]; op[o++] = p.col[i * 3 + 1]; op[o++] = p.col[i * 3 + 2]; op[o++] = p.slot;
+          op[o++] = c0; op[o++] = c1; op[o++] = c2; op[o++] = p.slot;
           op[o++] = 0.5; op[o++] = 0.5; op[o++] = 1; op[o++] = 1;
+          for (let q = 0; q < 6; q++) op[o++] = 0;
         }
       }
     }
@@ -383,10 +403,10 @@ void main() { fragColor = vColor; }`;
 
   // --- the frame -----------------------------------------------------------------------------------------------------
   // scene: { cam: { pos, yaw, pitch, fov }, pal (map palette), sky, ground: { y, grid } | null, shadows, bright,
-  //   items: [{ mesh, model (Float32Array 16), tint (Float32Array 15), outlineW, outline [3], sunVis, view (bool), highlight }],
+  //   items: [{ mesh, model (Float32Array 16), tint (Float32Array 18: the slot colours), outlineW, outline [3], sunVis, view (bool), highlight }],
   //   trails: { data: Float32Array, count }, lines: { data, count, depth } , overlay: { data, count } }
   const vp = new Float32Array(16), proj = new Float32Array(16), view = new Float32Array(16), shadowMat = new Float32Array(16), lv = new Float32Array(16);
-  const tmp = new Float32Array(16), fwd = [0, 0, 0], ID = M.ident(new Float32Array(16)), NOHL = new Float32Array(4), ONE_TINT = new Float32Array(15).fill(1);
+  const tmp = new Float32Array(16), fwd = [0, 0, 0], ID = M.ident(new Float32Array(16)), NOHL = new Float32Array(4), ONE_TINT = new Float32Array(18).fill(1);
   let gtrans = new Float32Array(16);
   R.viewProj = vp;
   R.camera = function (cam, w, h) {   // Renderer::setCamera

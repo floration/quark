@@ -15,6 +15,7 @@
     <button data-mode="tp" title="Third person: a player with the gun arm, holding a weapon, wearing the crown (3)">Third person</button>
     <button data-mode="flight" title="A projectile in flight with its trail (4)">In flight</button>
     <button data-mode="lineup" title="The game's screenshot lineup (quark --models) (5)">Lineup</button>
+    <button data-mode="track" title="A payload track: the cart, checkpoint gates, the track line (6)">Track</button>
   </nav>
   <div class="spacer"></div>
   <div class="tb">
@@ -51,8 +52,8 @@
     <div class="toolbar" id="viewBar">
       <label title="The map's palette: base / metal / glow colours, sky, sun direction">Map <select id="vPalette"></select></label>
       <label title="Team colour (config.h: friendly cyan, enemy red)">Team <select id="vTeam"><option value="enemy">enemy</option><option value="friendly">friendly</option></select></label>
-      <label title="How the model is drawn: the game's built-in box path (outlines, part animations) or as an override .glb (no outline)">Draw as <select id="vDrawAs">
-        <option value="auto">auto (as the game will)</option><option value="boxes">built-in boxes</option><option value="override">override .glb</option></select></label>
+      <label title="How the model is drawn: the game's own boxes (outlines, part animations), a box model file (the same box path; projectiles drawn still) or a mesh override (no outline)">Draw as <select id="vDrawAs">
+        <option value="auto">auto (as the game will)</option><option value="builtin">the game's own boxes</option><option value="boxfile">box model file (.glb)</option><option value="mesh">mesh (no box list)</option></select></label>
       <label class="chk"><input type="checkbox" id="vPlay"> animate</label>
       <label class="chk"><input type="checkbox" id="vCrouch"> crouch</label>
       <label class="chk"><input type="checkbox" id="vHitbox"> hitbox</label>
@@ -71,6 +72,8 @@
           <div class="mrow"><label class="chk"><input type="checkbox" id="vHoldIt"> players hold the weapon ("it" in hide and seek / tag)</label></div>
           <div class="mrow"><label class="chk"><input type="checkbox" id="vCrown"> crown on the head</label><select id="vCrownPlace"><option value="1">#1 gold</option><option value="2">2-10 silver</option></select></div>
           <div class="mrow"><label class="chk"><input type="checkbox" id="vLineupTeams"> lineup: alternate teams (a team mode)</label><label class="chk"><input type="checkbox" id="vLanded"> sticky: landed</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vBombLineup"> bomb mode: players carry the bomb, a dropped bomb ahead</label><label class="chk"><input type="checkbox" id="vBombBlink"> bomb: planted, blinking red</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vCartNeutral"> cart: neutral (no team pushing)</label><label class="chk"><input type="checkbox" id="vGateReached"> gate: reached (orbit)</label></div>
           <div class="mrow"><span>Flight speed</span><input type="number" id="vSpeed" step="0.25" min="0.25" max="4"><label class="chk"><input type="checkbox" id="vGround"> floor</label></div>
           <div class="mrow"><button id="vReset">Reset the view settings</button><button id="vShot">Save viewport as PNG</button></div>
         </div>
