@@ -33,6 +33,8 @@ Flags (or the same keys in `physics_editor.json` next to `serve.py`; `physics_ed
 | `--install [FOLDER]` | | copy the tool to FOLDER and stop (below) |
 
 Needs Python 3.8+ and a current Chrome, Edge or Firefox (WebGL for the Drive tab and the 3D path).
+The page follows the system's light or dark theme; the header's ◐ / ☀ / ☾ button forces one (remembered in the
+browser; `?theme=light|dark` in the address does the same).
 
 ### Install (the Quark Project app)
 
@@ -56,19 +58,32 @@ room, so the page can be tried before the helper is built. It agrees with the ga
 standing jump, 9.5 m/s, a 6.27 m running jump, a 1.21 m stop) but it is not the game: trust only the real helper.
 Build the helper: `cmake --build build --target quark_maptool`.
 
+`serve.py` keeps two `quark_maptool physserve --stream` running and sends them the page's runs, equation checks and
+exports as lines (a map sent as text is parsed once and kept): an edit's result comes back in about 7 ms instead of
+about 20 ms with a new process per request (Linux; a process costs more on Windows). An older `quark_maptool` without
+`physserve` gets a process per request, as before; a helper that dies, hangs or is rebuilt is restarted.
+`QPE_NO_WORKER=1` turns it off.
+
 ## The page
 
 The left panel is always there:
 
-- **Physics set**: open a saved custom mode (`(n changed)` and `· logic` show what it holds), give it a name,
-  **New** (the standard physics), **Save** / **Save as…** (writes `custom_modes/<name>.qmode`), **Open file** (any
-  .qmode from disk), **.qmode** (download it), **Reset all**. The line under it counts the changed values and says
-  whether the set is saved.
+- **Physics set**: open a saved custom mode (`(n changed)`: the settings it really changes, as the game reads it;
+  `· logic`: it has a gamemode logic section), give it a name, **New** (the standard physics), **Save** / **Save
+  as…** (writes `custom_modes/<name>.qmode`), **Open file** (any .qmode from disk), **.qmode** (download it), **Reset
+  all**, and **↶ / ↷** undo / redo (**Ctrl+Z**, **Ctrl+Shift+Z** or **Ctrl+Y**; in a text field the browser's own
+  undo). Every change to the set is a step (values, equations, the Code text, a game's values, a reset; a slider drag
+  or typing in one field is one step); opening another set starts a new history. Switching sets, New, Open file and
+  Reset all ask first when the set has unsaved changes (in the page). The line under it counts the changed values
+  and says whether the set is saved.
 - **Scenario**: a **Preset** (the helper's: standing / running jump, run-up, stop, bhop chains plain and with the
   strafe bot, dash, dash jump, super dash, dash into a wall, grapple swing, ladder climb, stairs, max gap, fall), the
   **Map** (the built-in test room, or any game or user map: then **Start at** picks a spawn), saved scenarios
-  (**Load…** / **Save**: `physics_editor/scenarios/<name>.json`), **Run**, and **re-run on every change** (on by
-  default: each edit re-runs the scenario, debounced, one run at a time; a run of every set takes a few ms).
+  (**Load…** / **Save**: `physics_editor/scenarios/<name>.json`, with its map), **Run**, and **re-run on every
+  change** (on by default: each edit re-runs the scenario, debounced, one run at a time; a run of every set takes a
+  few ms). The presets are made for the test room: on a real map the panel says so (a wall or a ledge ahead cuts them
+  short) and **aim along open floor** starts from the spawn and direction with the longest run of floor ahead (walls
+  and drops checked every 0.5 m, 40 m at most).
 - **Compare with**: the standard physics (always) and any of your saved sets, run side by side.
 - **Results**: the scenario's main numbers for the edited set, with the difference from the standard (green up,
   red down). The preset's own metrics come first.
@@ -104,7 +119,7 @@ sensible value), and it follows when a setting the equation reads changes. Expre
 has `physexpr` (it runs them on the server and the client alike); with an older helper the page says so and sends
 the fixed values only. The MOCK runs them too.
 
-**Compare with games**: a searchable picker of other games' default movement (`references/`: 22 games grouped by
+**Compare with games**: a searchable picker of other games' default movement (`references/`: 37 games grouped by
 engine family, or sorted **closest** to Quark's standard first). Each picked game adds a column: its value in
 Quark's unit and as a multiplier, a confidence dot (green exact: the game's code or config; amber measured; red
 estimated: derived here), ⚠ when the multiplier is outside what Quark allows (it is clamped when applied), and
@@ -127,8 +142,10 @@ Two views (the choice is remembered):
   `# imported from` line marked), the gamemode's other lines dim; problems (a number that isn't one, a value out of
   range and clamped, an unknown key, a duplicate that the game ignores, an expression that doesn't parse) are marked
   in the gutter and listed under the text (click one to jump to its line). From a `logic` line on, the file belongs
-  to the gamemode editor: it is shown read-only under the text and never changed. **Tidy** rewrites the movement
-  lines the way the game writes them.
+  to the gamemode editor (a line that is `logic` at its start, then nothing, a space or a tab: the game's own rule):
+  it is shown read-only under the text and never changed. **Tidy** rewrites the movement lines the way the game
+  writes them: one line per setting (the earlier duplicates the game ignores go), `move_` then `expr.` lines in the
+  game's order after `rounds=`; keys this build doesn't know, the other lines and the logic stay where they are.
 - **Movement code**: the game's real movement code, read-only (`src/game/pmove.cpp`, `pmove.h`, `gamedefs.h`, as
   they are in the checkout, served by `/api/source`), syntax-highlighted. Every line that reads a setting carries a
   chip: `kConstant base × multiplier = value unit` for the edited set (orange when changed; an equation shows `ƒ`,
@@ -193,10 +210,11 @@ Click the view to play (pointer lock): **WASD** + mouse, **Space** jump, **Left 
 game's default binds), **C** or **Ctrl** crouch (no bind in the game: it ignores crouch), **R** back to the start,
 **V** first person / chase camera, **Esc** lets go of the mouse. The real helper runs your input through the game's
 `pmove` (`physdrive --stream` over a WebSocket, or Server-Sent Events if WebSockets fail): commands are sent every
-frame in pieces of at most 8 ms, and the view runs a few ms ahead of the last answer. The side panel picks the
-physics (the edited set or the standard), the camera, mouse speed, FOV and the start (the scenario's, a room part,
-a map spawn); it shows the speed over the last 10 s, the events, and the frame rate (average and 1% low) and the
-helper's round trip. **→ Graph** sends the drive so far to the Movement graph and Path tabs as a run.
+frame in pieces of at most 8 ms, and the view runs a few ms ahead of the last answer. With the mouse let go the view
+is drawn only when something changes, and nothing is sent while the player stands still. The side panel picks the
+physics (the edited set or the standard), the camera, mouse speed (0.005..2 degrees per pixel), FOV (40..150) and the
+start (the scenario's, a room part, a map spawn); it shows the speed over the last 10 s, the events, and, while you
+play, the frame rate (average, 1% and 0.1% lows) and the helper's round trip. **→ Graph** sends the drive so far to the Movement graph and Path tabs as a run.
 
 ### Export
 
@@ -214,7 +232,8 @@ them):
 - a movement key already in the file is changed in place (the last one, if it is there twice: the game reads that
   one); a `move_` key back at 1 is removed (the game writes only changed ones); a changed key that is missing is
   added where the game would write it;
-- from a `logic` line to the end of the file is the gamemode editor's section and is never touched;
+- from a `logic` line to the end of the file is the gamemode editor's section and is never touched (`logic` at the
+  start of the line, then the end, a space or a tab: `isModeLogicLine` in `src/game/customrules.cpp`);
 - a new file gets only the game's header (`custommode=<name>`, `mode=ffa`) and the movement lines.
 
 The merge is done by `serve.py` on the file as it is on disk at save time (the old file is kept as `.bak`), so
@@ -255,9 +274,9 @@ Your data, all in the game's data folder: `custom_modes/<name>.qmode` (physics s
 
 ## Checks
 
-`node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only]` (Node 18+, Playwright
-already installed; it never installs browsers). It starts `serve.py` on a spare port with a temporary data folder and
-checks:
+`node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--port N]` (Node 18+,
+Playwright already installed; it never installs browsers). It starts `serve.py` on a spare port (or `--port`) with a
+temporary data folder and checks:
 
 - the page's .qmode merge against serve.py's on awkward files (CRLF, a logic section, duplicates, new files, `expr.`
   lines kept / dropped / added, an import line replaced in place);
@@ -273,7 +292,15 @@ checks:
   import line, reference facts), an equation (the expr line and its value at rest, static / dynamic, Tab completion,
   a live error), a curve (easing and bounds in the text, clamped to the range), Movement code chips and the jump to
   Values, the Code graph and a click to the code, the 3D view and its scrubber, lock units, A / B with a game as B,
-  B − A, side by side in curves and 3D.
+  B − A, side by side in curves and 3D;
+- the 1.18.31 fixes: the logic line against the game's rule, label / weaponset / wsline, Tidy (one line per key, the
+  same physics, idempotent), the Open list's count, physserve (the same answer as a process, a bad request), and in
+  Chromium undo / redo, Reset all and the unsaved-changes questions, the session written on pagehide, a filter that
+  matches nothing, a saved scenario loaded back, a preset on a map and "aim along open floor", the theme button and
+  Drive's key caps in light, Tidy, Export's debounce, two columns of lined-up groups at 2560 and nothing wider than
+  a 1280 window.
+
+`python3 tools/physics_editor/native/test_phys.py [quark_maptool]` checks the helper's commands, physserve included.
 
 Without `references/index.json` it writes a stub and passes it with `--references`. It saves a screenshot of each
 tab and view (default `/mnt/project-files/physics-editor/shots-v2/`).

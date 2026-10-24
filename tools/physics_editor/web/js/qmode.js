@@ -25,13 +25,15 @@ export function importLines(ph) {
         .map((i) => `${IMPORT_PREFIX}${clean(i.name || i.id)} (${clean(i.id)}): ${i.keys.map(clean).join(", ")}`);
 }
 const BOOL_KEYS = new Set(["dash", "grapple"]);
-// the non-movement keys fromText knows (kept, not edited here; the gamemode editor's)
+// the non-movement keys fromText knows (kept, not edited here; the gamemode editor's): customrules.cpp, and
+// weaponset= / wsline= (readWeaponSetRulesLine, weaponset.cpp)
 export const OTHER_KEYS = new Set(["custommode", "mode", "weapons", "knockback", "health", "selfdamage", "instagib", "vampire", "regen",
-    "timelimit", "scorelimit", "rounds", "weapon", "maps"]);
+    "timelimit", "scorelimit", "rounds", "weapon", "maps", "label", "weaponset", "wsline"]);
 
+// customrules.cpp isModeLogicLine, exactly: "logic" at column 0, then the end of the line, a space, a tab or a CR
+// (so "logic=x", "logic:" and " logic" are ordinary lines to the game, and so here)
 export function isLogicLine(line) {
-    const s = line.trim();
-    return s === "logic" || s.startsWith("logic=") || s.startsWith("logic ") || s.startsWith("logic:");
+    return line.startsWith("logic") && (line.length === 5 || line[5] === " " || line[5] === "\t" || line[5] === "\r");
 }
 
 // C++ `ostream << float` (6 significant digits, %g)
@@ -200,6 +202,45 @@ export function mergeQmode(text, ph, name, knownMove) {
         for (const kk of ["mode", "custommode"]) { for (let jj = out.length - 1; jj >= 0; jj--) if (keyof(out[jj]) === kk) { j = jj; break; } if (j >= 0) break; }
         const c = j >= 0 ? cr(out[j]) : cr(text.split("\n", 1)[0]);
         out.splice(j + 1, 0, ...imps.map((x) => x + c));
+    }
+    return out.concat(tail).join("\n") + (trailing ? "\n" : "");
+}
+
+// Tidy (the Code tab): the movement lines the way CustomRules::toText writes them. Each movement key the game knows
+// keeps one line (the last one: the one the game reads; the ignored earlier ones go), gravity / speed / jump / dash /
+// grapple where their last line was, and the move_ lines then the expr. lines as one block in toText's order after
+// rounds= (else the nearest key toText writes before it). Movement keys this build doesn't know (the game keeps them as
+// they are), other lines and the logic section stay where they are. Parses back to the same physics.
+export function tidyQmode(text, ph, name, knownMove) {
+    if (!text) return mergeQmode(text, ph, name, knownMove);
+    let lines = text.split("\n");
+    const trailing = lines[lines.length - 1] === "";
+    if (trailing) lines = lines.slice(0, -1);
+    let cut = lines.findIndex(isLogicLine);
+    if (cut < 0) cut = lines.length;
+    const head = lines.slice(0, cut), tail = lines.slice(cut);
+    const keyof = (l) => (l.includes("=") ? l.slice(0, l.indexOf("=")) : null);
+    const known = knownMove || new Set(MV_KEYS);
+    const isKnown = (k) => TOP_KEYS.includes(k) || (k.startsWith("move_") && known.has(k.slice(5))) || (k.startsWith("expr.") && EXPR_KEYS.includes(k.slice(5)));
+    const last = new Map();
+    head.forEach((l, i) => { const k = keyof(l); if (k !== null) last.set(k, i); });
+    // the top keys' last lines and every line that isn't a known movement line; then the top keys and the import record
+    // written by the ordinary merge (the set without its move_ / expr. values: those come next, as a block)
+    const kept = head.filter((l, i) => { const k = keyof(l); return k === null || !isKnown(k) || (TOP_KEYS.includes(k) && last.get(k) === i); });
+    const topOnly = { ...ph, move: {}, expr: {} };
+    const out = mergeQmode(kept.join("\n") + "\n", topOnly, name, known).split("\n").slice(0, -1);
+    const rank = (k) => { const i = MV_KEYS.indexOf(k.slice(5)); return i < 0 ? 1000 : i; };
+    const block = movementLines(ph).filter(([k]) => !TOP_KEYS.includes(k))
+        .sort((a, b) => (a[0].startsWith("expr.") - b[0].startsWith("expr.")) || (a[0].startsWith("move_") ? rank(a[0]) - rank(b[0]) : 0));
+    if (block.length) {
+        let j = -1;
+        for (const kk of ["rounds", "scorelimit", "timelimit", "regen", "vampire", "instagib", "selfdamage", "grapple", "dash", "health", "knockback", "jump", "speed", "gravity", "weapons", "mode", "custommode"]) {
+            if (j >= 0) break;
+            for (let jj = out.length - 1; jj >= 0; jj--) if (keyof(out[jj]) === kk) { j = jj; break; }
+        }
+        if (j < 0) out.forEach((l, jj) => { if (keyof(l) !== null) j = jj; });
+        const c = j >= 0 ? (out[j].endsWith("\r") ? "\r" : "") : (text.split("\n", 1)[0].endsWith("\r") ? "\r" : "");
+        out.splice(j + 1, 0, ...block.map(([k, v]) => `${k}=${v}${c}`));
     }
     return out.concat(tail).join("\n") + (trailing ? "\n" : "");
 }

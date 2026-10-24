@@ -213,9 +213,9 @@ def import_lines(phys):
 
 
 def is_logic_line(line):
-    """A `logic` line starts the gamemode editor's section (to the end of the file): never touched here."""
-    s = line.strip()
-    return s == "logic" or s.startswith("logic=") or s.startswith("logic ") or s.startswith("logic:")
+    """A `logic` line starts the gamemode editor's section (to the end of the file): never touched here. Exactly the
+    game's isModeLogicLine (customrules.cpp): "logic" at column 0, then the end of the line, a space, a tab or a CR."""
+    return line[:5] == "logic" and (len(line) == 5 or line[5] in " \t\r")
 
 
 def fmt_num(v):
@@ -336,23 +336,47 @@ def read_mode_file(name):
     with open(p, "rb") as f: return f.read().decode("utf-8", "replace")
 
 
+def scan_float(v):
+    """C's sscanf("%f"): the longest number at the start (after spaces), else 0 (what fromText reads)."""
+    m = re.match(r"\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[+-]?(?:inf(?:inity)?|nan))", v, re.I)
+    if not m: return 0.0
+    try: return float(m.group(1))
+    except ValueError: return 0.0
+
+
+def scan_int(v):
+    """C's atoi."""
+    m = re.match(r"\s*([+-]?\d+)", v)
+    return int(m.group(1)) if m else 0
+
+
 def mode_info(path):
+    """The Open list's line for a custom mode: its name, mode, a logic section, and how many movement settings it really
+    changes (as fromText reads it: the last line of a key counts, unknown keys and values back at the standard don't)."""
     info = {"custommode": "", "mode": "", "logic": False, "moved": 0}
+    vals = {}
     try:
-        with open(path, encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
             for line in f:
+                line = line.rstrip("\n")
                 if is_logic_line(line): info["logic"] = True; break
-                k, _, v = line.strip().partition("=")
+                k, eq, v = line.rstrip("\r").partition("=")
+                if not eq: continue
                 if k == "custommode": info["custommode"] = v
                 elif k == "mode": info["mode"] = v
-                elif k.startswith("move_") or k.startswith("expr."): info["moved"] += 1
-                elif k in ("gravity", "speed", "jump"):
-                    try:
-                        if float(v) != 1: info["moved"] += 1
-                    except ValueError: pass
-                elif k in BOOL_KEYS and v.strip() == "0": info["moved"] += 1
+                elif k in TOP_KEYS or (k.startswith("move_") and k[5:] in MV_KEYS) or (k.startswith("expr.") and k[5:] in EXPR_KEYS): vals[k] = v
     except OSError:
         pass
+    changed = set()
+    for k, v in vals.items():
+        if k in BOOL_KEYS:
+            if scan_int(v) == 0: changed.add(k)
+        elif k.startswith("expr."):
+            if v.strip(" \t"): changed.add(k[5:])
+        else:
+            f = scan_float(v)
+            if f == f and f not in (float("inf"), float("-inf")) and f != 1: changed.add(k[5:] if k.startswith("move_") else k)
+    info["moved"] = len(changed)
     return info
 
 
@@ -366,6 +390,15 @@ def source_path(name):
     for c in cands:
         if os.path.isfile(c): return c
     return None
+
+
+def source_label(path):
+    """How the Movement code header names a source file: src/game/pmove.cpp in a checkout, source/pmove.cpp in an
+    installed copy (next to serve.py), else the full path (another clone of the Quark folder)."""
+    for base, need in ((ROOT, os.path.isfile(os.path.join(ROOT, "CMakeLists.txt"))), (HERE, True)):
+        if need and os.path.normcase(path).startswith(os.path.normcase(base) + os.sep):
+            return os.path.relpath(path, base).replace(os.sep, "/")
+    return path.encode("latin-1", "replace").decode("latin-1")   # (an HTTP header: latin-1 only)
 
 
 # ---------------------------------------------------------------- maps
@@ -489,12 +522,15 @@ class Drive:
             if not line: break
             line = line.decode("utf-8", "replace").strip()
             if not line: continue
-            s = self.sink
+            with self.cond:      # (the sink is read under the lock: attach() hands over the lines kept until then, in order)
+                s = self.sink
+                if not s: self.lines.append(line)
             if s:
                 try: s(line); continue
-                except Exception: self.sink = None
+                except Exception:
+                    self.sink = None
+                    continue
             with self.cond:
-                self.lines.append(line)
                 if len(self.lines) > self.MAX_LINES:     # (a page that stopped reading: keep the newest)
                     drop = len(self.lines) - self.MAX_LINES
                     del self.lines[:drop]; self.base += drop
@@ -507,6 +543,15 @@ class Drive:
         if s:
             try: s(None)
             except Exception: pass
+
+    def attach(self, sink):
+        """Send the answer lines to sink from now on, after the ones that came before it was attached (physdrive's start
+        line is often written before the WebSocket's sink is set: it went to the SSE buffer and the page waited for it)."""
+        with self.cond:
+            backlog, self.lines = self.lines, []
+            self.base += len(backlog)
+            for l in backlog: sink(l)
+            self.sink = sink
 
     def _read_err(self):
         for line in self.proc.stderr:
@@ -532,6 +577,109 @@ class Drive:
 
 DRIVES = {}
 DRIVES_LOCK = threading.Lock()
+
+
+class Worker:
+    """One `quark_maptool physserve --stream` kept running: the page's physsim / physexpr / physexport requests go to it
+    as lines instead of a new process each (a process start is ~10 ms of the ~15 ms an edit took to come back on Linux,
+    more on Windows; the maps sent as text are parsed once). A quark_maptool without physserve (older than this
+    editor): the per-request process, as before. Restarted when it dies, times out or the binary is rebuilt."""
+    CMDS = {"physsim", "physexpr", "physexport", "physparams", "physpresets", "physroom"}
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.proc = None; self.exe = None; self.mtime = None; self.err = ""; self.seq = 0
+
+    def _stop(self):
+        if self.proc:
+            try: self.proc.kill()
+            except Exception: pass
+        self.proc = None
+
+    def _start(self):
+        """False: this quark_maptool has no physserve."""
+        if not CFG.maptool: return False
+        cmd = [CFG.maptool] + CFG.helper_args + ["physserve", "--stream"]   # (not through helper_cmd: the page can't start one)
+        self.exe = CFG.maptool
+        try: self.mtime = os.stat(self.exe).st_mtime
+        except OSError: self.mtime = None
+        self.err = ""
+        # (buffered pipes: an answer is up to a few hundred KB, and an unbuffered readline reads it a byte per call)
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1 << 16,
+                                     creationflags=subprocess.CREATE_NO_WINDOW if IS_WIN else 0)
+        threading.Thread(target=self._drain, args=(self.proc,), daemon=True).start()
+        self.proc.stdin.write(b"{}\n"); self.proc.stdin.flush()
+        first = self._readline(10)
+        try: ok = json.loads(first or b"null").get("type") == "ready"
+        except (ValueError, AttributeError): ok = False
+        if not ok: self._stop()
+        return ok
+
+    def _drain(self, proc):
+        for line in proc.stderr:
+            self.err = (self.err + line.decode("utf-8", "replace"))[-4000:]
+
+    def _readline(self, timeout):
+        """One answer line, or None when the process died or took longer than timeout (then it's killed)."""
+        p = self.proc
+        t = threading.Timer(timeout, lambda: p.kill())
+        t.daemon = True; t.start()
+        try: line = p.stdout.readline()
+        finally: t.cancel()
+        return line or None
+
+    def run(self, args, request, timeout):
+        """The helper's answer as /api/helper gives it (JSON bytes), or None: no physserve here, use a process."""
+        with self.lock:
+            if self.proc and (self.proc.poll() is not None or self.exe != CFG.maptool or self._changed()): self._stop()
+            if not self.proc and not self._start(): return None
+            self.seq += 1
+            t0 = time.time()
+            try:
+                self.proc.stdin.write((json.dumps({"id": self.seq, "cmd": args[0], "request": request}) + "\n").encode("utf-8"))
+                self.proc.stdin.flush()
+            except OSError:
+                self._stop(); raise RuntimeError("the helper stopped: " + self.err[-300:])
+            line = self._readline(timeout)
+            if line is None:
+                err = self.err; self._stop()
+                if time.time() - t0 >= timeout - 0.05: raise subprocess.TimeoutExpired(args[0], timeout)
+                raise RuntimeError("the helper stopped: " + err[-300:])
+            # {"id":N,"code":C,"answer":{...}} passed on as it is (no parse and dump of a few hundred KB of trace here)
+            m = re.match(rb'\{"id":(\d+),"code":(-?\d+),"answer":', line)
+            if not m or int(m.group(1)) != self.seq: self._stop(); raise RuntimeError("the helper answered out of turn")
+            head = '{"code":%s,"stderr":"","worker":true,"wallMs":%.1f,"answer":' % (m.group(2).decode(), (time.time() - t0) * 1000)
+            return head.encode() + line[m.end():].rstrip()
+
+    def _changed(self):
+        try: return os.stat(self.exe).st_mtime != self.mtime
+        except OSError: return True
+
+
+class Workers:
+    """Two physserve workers: a run and an equation check / export answer side by side, as separate processes did."""
+    def __init__(self): self.w = [Worker(), Worker()]; self.none = None
+
+    def run(self, args, request, timeout):
+        if not args or args[0] not in Worker.CMDS or len(args) != 1: return None
+        if self.none is not None:   # (no physserve in this quark_maptool: not asked again until it's rebuilt or replaced)
+            try: key = (CFG.maptool, os.stat(CFG.maptool).st_mtime)
+            except OSError: key = None
+            if key == self.none: return None
+            self.none = None
+        w = next((x for x in self.w if not x.lock.locked()), self.w[0])
+        r = w.run(args, request, timeout)
+        if r is None:
+            try: self.none = (CFG.maptool, os.stat(CFG.maptool).st_mtime)
+            except OSError: self.none = (CFG.maptool, None)
+        return r
+
+    def stop(self):
+        for x in self.w:
+            with x.lock: x._stop()
+
+
+WORKERS = Workers()
 
 
 def control_ok(line):
@@ -617,7 +765,7 @@ class Handler(BaseHTTPRequestHandler):
                 path = source_path(q.get("file", ""))
                 if not path: return self._err(404, "no such source file")
                 with open(path, encoding="utf-8", errors="replace") as f:
-                    return self._send(200, f.read(), MIME[".txt"], extra={"X-Source-Path": os.path.relpath(path, ROOT) if path.startswith(ROOT) else path})
+                    return self._send(200, f.read(), MIME[".txt"], extra={"X-Source-Path": source_label(path)})
             if p.startswith("/references/"): return self._static(p[len("/references/"):], CFG.refs)
             if p == "/api/ping": return self._send(200, {"ok": True, "tool": "physics-editor"}, extra={"Access-Control-Allow-Origin": "*"})
             if p == "/api/maps": return self._send(200, {"maps": list_maps(), "defaultDir": CFG.default_maps_dir()})
@@ -712,9 +860,12 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or [])
                 if not cmd: return self._err(501, "quark_maptool not found (or bad args)")
+                timeout = min(600.0, float(body.get("timeout") or 120))
+                ans = WORKERS.run(body["args"], body.get("request") or {}, timeout) if not os.environ.get("QPE_NO_WORKER") else None
+                if ans is not None: return self._send(200, ans, "application/json")
                 t0 = time.time()
                 r = subprocess.run(cmd, input=json.dumps(body.get("request") or {}), capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace", timeout=float(body.get("timeout") or 120),
+                                   encoding="utf-8", errors="replace", timeout=timeout,
                                    creationflags=subprocess.CREATE_NO_WINDOW if IS_WIN else 0)
                 return self._send(200, {"code": r.returncode, "answer": parse_answer(r.stdout), "stderr": r.stderr[-4000:],
                                         "wallMs": round((time.time() - t0) * 1000, 1)})
@@ -818,9 +969,14 @@ class Handler(BaseHTTPRequestHandler):
             hdr = bytes([0x81, n]) if n < 126 else (bytes([0x81, 126]) + struct.pack(">H", n) if n < 65536 else bytes([0x81, 127]) + struct.pack(">Q", n))
             with slock: sock.sendall(hdr + data)
 
-        def send_close():
+        closed = []
+
+        def send_close():   # (once: a second close frame is a protocol error the browser logs)
             try:
-                with slock: sock.sendall(b"\x88\x00")
+                with slock:
+                    if closed: return
+                    closed.append(1)
+                    sock.sendall(b"\x88\x00")
             except OSError: pass
 
         drive = None
@@ -846,8 +1002,8 @@ class Handler(BaseHTTPRequestHandler):
                             send_close()
                             return
                         send_text(l)
-                    drive.sink = sink
                     send_text(json.dumps({"type": "_ready", "id": drive.id}))
+                    drive.attach(sink)
                     continue
                 if not control_ok(line): continue
                 if not drive.send(line):
@@ -986,6 +1142,7 @@ def main():
         for d in list(DRIVES.values()):
             try: d.proc.kill()
             except Exception: pass
+        WORKERS.stop()
 
 
 if __name__ == "__main__":

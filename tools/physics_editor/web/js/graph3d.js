@@ -141,7 +141,7 @@ export class Graph3D {
         if (!this.dirty) return;
         this.dirty = false;
         const O = this.orbit, eye = [O.x + Math.cos(O.pitch) * Math.sin(O.yaw) * O.dist, O.y + Math.sin(O.pitch) * O.dist, O.z + Math.cos(O.pitch) * Math.cos(O.yaw) * O.dist];
-        const view = lookAt(eye, [O.x, O.y, O.z]), opt = { grid: 1, fogFar: Math.max(400, O.dist * 4) };
+        const view = lookAt(eye, [O.x, O.y, O.z]), opt = { grid: 1, fogFar: Math.max(400, O.dist * 4), lineWidth: 2 };
         this.sA.render(eye, view, 0.9, opt);
         if (side) this.sB.render(eye, view, 0.9, opt);
     }

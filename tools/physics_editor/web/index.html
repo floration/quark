@@ -21,7 +21,7 @@
       <button data-page="drive">Drive</button>
       <button data-page="export">Export</button>
     </nav>
-    <div id="status"><span id="helperBadge" class="badge"></span><span id="dataDir"></span></div>
+    <div id="status"><span id="helperBadge" class="badge"></span><span id="dataDir"></span><button id="themeBtn" class="icon" title="theme">◐</button></div>
   </header>
 
   <div id="body">
@@ -33,6 +33,8 @@
         <button id="setNew" title="a new set: the standard physics">New</button>
         <button id="setSave" class="primary" title="write the movement lines into custom_modes/&lt;name&gt;.qmode (Ctrl+S)">Save</button>
         <button id="setSaveAs">Save as…</button>
+        <span class="grow"></span>
+        <button id="setUndo" class="icon" title="undo (Ctrl+Z)" disabled>↶</button><button id="setRedo" class="icon" title="redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷</button>
       </div>
       <div class="row" style="margin-top:4px">
         <button id="setOpenFile" title="open a .qmode file">⇧ Open file</button>
@@ -45,6 +47,7 @@
       <h3>Scenario</h3>
       <div class="field"><span>Preset</span><select id="presetSel"></select></div>
       <div id="presetDesc" class="muted small"></div>
+      <div id="presetNote" class="small" style="display:none"></div>
       <div class="field"><span>Map</span><select id="mapSel"></select></div>
       <div class="field" id="spawnRow" style="display:none"><span>Start at</span><select id="spawnSel"></select></div>
       <div class="field"><span>Saved</span><div class="row"><select id="scLoad" class="grow"><option value="">Load…</option></select><button id="scSave" title="save the scenario">Save</button></div></div>

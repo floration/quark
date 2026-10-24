@@ -9,7 +9,10 @@
 //   gaps    z 160..180   platforms over a pit 4 m down, gaps 2, 3 ... 16 m wide
 //   stairs  z 190..210   0.5 m risers to 3 m, a landing, then 0.75 m risers to 6 m (over the 0.55 m step-up)
 //   grapple z 220..260   a ceiling at 12 m over a 140 m floor
+#include <algorithm>
 #include <cstdio>
+#include <memory>
+#include <vector>
 #include "maptool.h"
 #include "physics.h"
 
@@ -152,7 +155,30 @@ const RoomPart* roomPartAt(const Vec3& p) {
     return nullptr;
 }
 
+namespace {
+struct CachedMap { std::string key; std::unique_ptr<Map> map; };
+bool g_mapCache = false;
+std::vector<CachedMap> g_maps;   // (most recent first, 4 at most: the maps one editing session switches between)
+} // namespace
+
+void setMapCache(bool on) { g_mapCache = on; if (!on) g_maps.clear(); }
+
 bool requestMap(const Json& j, const Map*& out, Map& holder, bool& isRoom, std::string& label, std::string& err) {
+    if (g_mapCache && j.isObj() && j["text"].isStr() && !j.has("file") && !j.has("map")) {
+        std::string key = j["name"].str() + '\n' + j["text"].str();
+        for (size_t i = 0; i < g_maps.size(); i++)
+            if (g_maps[i].key == key) {
+                std::rotate(g_maps.begin(), g_maps.begin() + i, g_maps.begin() + i + 1);
+                out = g_maps[0].map.get(); isRoom = false; label = out->name;
+                return true;
+            }
+        auto m = std::make_unique<Map>();
+        if (!loadRequestMap(j, *m, err)) return false;
+        g_maps.insert(g_maps.begin(), CachedMap{std::move(key), std::move(m)});
+        if (g_maps.size() > 4) g_maps.pop_back();
+        out = g_maps[0].map.get(); isRoom = false; label = out->name;
+        return true;
+    }
     isRoom = false;
     if (j.isNull() || (j.isStr() && (j.str() == "room" || j.str().rfind("room:", 0) == 0))) {
         if (j.isStr() && j.str().size() > 5) {

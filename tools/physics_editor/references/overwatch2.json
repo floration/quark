@@ -18,47 +18,6 @@
    "confidence": "measured",
    "note": "most heroes; Genji and Tracer 6 m/s; backwards -10%"
   },
-  "dash_charges": {
-   "value": 3,
-   "unit": "",
-   "mult": 1.5,
-   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 3 charges)",
-   "confidence": "measured",
-   "note": "Tracer's Blink: a 7.5 m instant teleport, not a burst"
-  },
-  "dash_cooldown": {
-   "value": 0.1,
-   "unit": "s",
-   "mult": 0.1667,
-   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 0.1 s between uses)",
-   "confidence": "measured",
-   "note": "between blinks; each charge recharges in 3 s (Quark 1.2 s: x2.5), one multiplier can't express both"
-  },
-  "hook_range": {
-   "value": 20,
-   "unit": "m",
-   "mult": 0.4444,
-   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m)",
-   "confidence": "measured",
-   "note": "Widowmaker's Grappling Hook"
-  },
-  "hook_max": {
-   "value": 20,
-   "unit": "m/s",
-   "mult": 0.8333,
-   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m/s)",
-   "confidence": "measured",
-   "note": "pulls at a set speed, not an acceleration"
-  },
-  "hook_cooldown": {
-   "value": 10,
-   "unit": "s",
-   "mult": 10.0,
-   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 10 s)",
-   "confidence": "measured",
-   "outsideClamp": true,
-   "note": "(x10.0 is outside the editor's 0.1..5 range: applying it clamps.)"
-  },
   "gravity": {
    "value": 17.532,
    "unit": "m/s2",
@@ -109,14 +68,48 @@
    "unit": "m",
    "source": "https://overwatch.fandom.com/wiki/Tracer",
    "confidence": "measured",
-   "note": "Quark's dash covers 2.84 m"
+   "note": "Tracer's Blink: an instant teleport, not a burst; Quark's dash covers 2.84 m"
+  },
+  "blinkCharges": {
+   "value": 3,
+   "unit": "",
+   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 3 charges)",
+   "confidence": "measured",
+   "note": "Quark: 2 dash charges"
+  },
+  "blinkCooldown": {
+   "value": 0.1,
+   "unit": "s",
+   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 0.1 s between uses)",
+   "confidence": "measured",
+   "note": "between blinks; each charge recharges in 3 s (Quark's dash charge: 1.2 s)"
+  },
+  "grappleRange": {
+   "value": 20,
+   "unit": "m",
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m)",
+   "confidence": "measured",
+   "note": "Widowmaker's Grappling Hook"
+  },
+  "grappleSpeed": {
+   "value": 20,
+   "unit": "m/s",
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m/s)",
+   "confidence": "measured",
+   "note": "pulls at a set speed, not an acceleration"
+  },
+  "grappleCooldown": {
+   "value": 10,
+   "unit": "s",
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 10 s)",
+   "confidence": "measured"
   }
  },
  "extras": [
   "hero-specific movement abilities (blinks, dashes, wall-ride, jet packs, double jumps)",
   "no air strafing to speak of"
  ],
- "notes": "Acceleration isn't documented. Gravity is the Workshop community's counter-gravity figure (17.532 m/s2), and the jump take-off speed is derived from it and the wiki's 0.98 m jump, so both are estimates of a kind. The dash and hook rows are single heroes (Tracer, Widowmaker).",
+ "notes": "Acceleration isn't documented. Gravity is the Workshop community's counter-gravity figure (17.532 m/s2), and the jump take-off speed is derived from it and the wiki's 0.98 m jump, so both are estimates of a kind. Tracer's Blink and Widowmaker's Grappling Hook are listed as facts: single heroes' abilities, not the game's movement.",
  "sources": [
   {
    "title": "Overwatch Wiki: Character",

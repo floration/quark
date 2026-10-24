@@ -8,14 +8,20 @@ export class ExportView {
     constructor(app) {
         this.app = app;
         $("exSave").onclick = () => { const n = $("exName").value.trim(); if (n) $("setName").value = n; app.saveSet(n || undefined); };
-        $("exDownload").onclick = () => app.download(($("exName").value.trim() || "physics") + ".qmode", this.qmode || app.set.text);
-        $("exCopyQ").onclick = () => this.copy(this.qmode || app.set.text, "the .qmode text");
-        $("exCopyC").onclick = () => this.copy(this.cpp || "", "the C++ list");
-        $("exName").oninput = () => this.refresh();
+        // (a refresh still waiting runs first: what's copied is what the name and the set say now)
+        const fresh = async () => { if (this._t) await this.refresh(); };
+        $("exDownload").onclick = async () => { await fresh(); app.download(($("exName").value.trim() || "physics") + ".qmode", this.qmode || app.set.text); };
+        $("exCopyQ").onclick = async () => { await fresh(); this.copy(this.qmode || app.set.text, "the .qmode text"); };
+        $("exCopyC").onclick = async () => { await fresh(); this.copy(this.cpp || "", "the C++ list"); };
+        // (each refresh is a merge and a physexport through the helper: typing a name or dragging a slider waits for a
+        // 250 ms pause instead of starting one per keystroke / frame)
+        $("exName").oninput = () => this.schedule();
         app.on("page", (p) => { if (p === "export") this.refresh(); });
-        app.on("physics", () => { if (app.page === "export") this.refresh(); });
+        app.on("physics", () => { if (app.page === "export") this.schedule(); });
     }
+    schedule() { clearTimeout(this._t); this._t = setTimeout(() => this.refresh(), 250); }
     async refresh() {
+        clearTimeout(this._t); this._t = 0;
         const app = this.app;
         if (document.activeElement !== $("exName")) $("exName").value = app.set.name || app.set.saved || "";
         const name = $("exName").value.trim() || "my physics";

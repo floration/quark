@@ -286,6 +286,34 @@ finally:
     if p.poll() is None:
         p.kill()
 
+print("physserve --stream (the helper serve.py keeps running)")
+p = subprocess.Popen([EXE, "physserve", "--stream"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+try:
+    def ask(line):
+        p.stdin.write(((line if isinstance(line, str) else json.dumps(line)) + "\n").encode()); p.stdin.flush()
+        return json.loads(p.stdout.readline())
+    check(ask({}).get("type") == "ready", "ready after the options line")
+    one, _, _ = run("physsim", {"preset": "standing_jump", "physics": {"gravity": 0.5}})
+    a = ask({"id": 1, "cmd": "physsim", "request": {"preset": "standing_jump", "physics": {"gravity": 0.5}}})
+    check(a["id"] == 1 and a["code"] == 0 and a["answer"]["runs"][0]["metrics"] == one["runs"][0]["metrics"], "physsim through it = physsim on its own")
+    text = open(os.path.join(ROOT, "maps", "temple.qmap")).read() if os.path.isfile(os.path.join(ROOT, "maps", "temple.qmap")) else None
+    if text:
+        sc = run("physpresets", {})[0]["presets"][0]["scenario"]
+        req = {"scenario": sc, "map": {"text": text, "name": "temple"}}
+        r1 = ask({"id": 2, "cmd": "physsim", "request": req}); r2 = ask({"id": 3, "cmd": "physsim", "request": req})
+        check(r1["code"] == 0 and r1["answer"]["runs"][0]["metrics"] == r2["answer"]["runs"][0]["metrics"] and r2["answer"]["map"] == "temple", "a map sent twice (kept the second time) runs the same")
+    b = ask({"id": 4, "cmd": "physdrive", "request": {}})
+    check(b["code"] == 1 and "physserve runs" in b["answer"]["error"], "only the one-shot physics commands are served")
+    c = ask("not json")
+    check(c["code"] == 1 and "not a request line" in c["answer"]["error"], "a bad line answers an error and it carries on")
+    d = ask({"id": 5, "cmd": "physexpr", "request": {"expr": {"gravity": "2"}}})
+    check(d["id"] == 5 and d["code"] == 0 and d["answer"]["items"][0]["ok"], "physexpr through it")
+    p.stdin.write(b"stop\n"); p.stdin.flush(); p.wait(timeout=10)
+    check(p.returncode == 0, "stop: exit 0")
+finally:
+    if p.poll() is None:
+        p.kill()
+
 print()
 print("%d failed" % len(failures) if failures else "all passed")
 sys.exit(1 if failures else 0)

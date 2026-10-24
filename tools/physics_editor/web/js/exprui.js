@@ -5,7 +5,7 @@
 //   CurveEditor: builds curve(input, x0, x1, y0, y1, "ease") visually: the input (p.* or a setting), its bounds, the
 //   output bounds as multipliers (kept inside the setting's min..max), the easing, a live plot with draggable ends.
 // Both only hold the text; the Values tab stores it in the physics set (expr.<key>=) and re-runs.
-import { highlightExpr, completions, parseCurve, formatCurve, curveFn, ease, EASINGS, EASE_DOC, INPUTS, STANDARD_INPUTS, sweep, check } from "./expr.js";
+import { highlightExpr, completions, parseCurve, formatCurve, curveFn, ease, EASINGS, EASE_DOC, INPUTS, STANDARD_INPUTS, sweep, check, FUNCS } from "./expr.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 export const fmtV = (v) => (v == null || !Number.isFinite(v) ? "–" : Math.abs(v) >= 100 ? v.toFixed(1) : Math.abs(v) >= 10 ? v.toFixed(2) : (+v.toFixed(3)).toString());
@@ -70,7 +70,7 @@ export class ExprEditor {
         this.cat = cat; this.key = key; this.onText = onText; this.p = cat.byKey.get(key);
         host.innerHTML = `<div class="xed"><div class="xwrap"><pre class="xhl"></pre><input class="xin" spellcheck="false" autocomplete="off" placeholder="e.g. sqrt(speed) or 1 + p.hspeed / 40"></div>
             <div class="xac" style="display:none"></div><div class="xmsg"></div><canvas class="xplot" style="display:none"></canvas>
-            <div class="xhelp muted small">settings by key (<code>speed</code>, <code>friction</code>…: their multiplier) · <code>p.speed p.hspeed p.vspeed p.air p.ground p.charges p.dashing p.hooked p.height</code> · <code>sqrt abs min max pow exp log floor ceil sign clamp lerp step ease curve</code> · <code>+ - * / ^ &lt; &gt; == ?:</code> · Tab completes</div></div>`;
+            <div class="xhelp muted small">settings by key (<code>speed</code>, <code>friction</code>…: their multiplier), <code>base.speed</code> (its standard value), <code>pi</code> · <code>${INPUTS.map((i) => "p." + i.key).join(" ")}</code> · <code>${Object.keys(FUNCS).join(" ")}</code> · <code>+ - * / ^ ! &lt; &lt;= &gt; &gt;= == != &amp;&amp; || ?:</code> · Tab completes</div></div>`;
         this.el = host.firstElementChild;
         this.inp = this.el.querySelector(".xin"); this.hl = this.el.querySelector(".xhl"); this.ac = this.el.querySelector(".xac");
         this.msg = this.el.querySelector(".xmsg"); this.plot = this.el.querySelector(".xplot");
@@ -101,7 +101,8 @@ export class ExprEditor {
         let h = `<span class="xbadge ${info.dynamic ? "dyn" : "sta"}">${info.dynamic ? "dynamic" : "static"}</span> = <b>×${fmtV(info.value)}</b> → ${fmtV(abs)} ${esc(p.unit || "")}`;
         h += info.dynamic ? ` <span class="muted">standing still (${info.inputs.map((i) => "p." + i).join(", ") || "via " + info.deps.join(", ")}: worked out every 1 ms step in pmove)</span>`
             : ` <span class="muted">worked out once when the rules load${info.deps.length ? " (from " + info.deps.join(", ") + ")" : ""}</span>`;
-        if (info.clamped) h += ` <span class="warn">clamped from ×${fmtV(info.raw)} to ${p.min}..${p.max}</span>`;
+        if (info.clamped) h += Number.isFinite(info.raw) ? ` <span class="warn">clamped from ×${fmtV(info.raw)} to ${p.min}..${p.max}</span>`
+            : ` <span class="warn">infinite (${info.raw > 0 ? "+" : "−"}∞): clamped to ×${info.raw > 0 ? p.max : p.min}</span>`;
         if (info.nonFinite) h += ` <span class="warn">not a finite number here: the fixed value is used</span>`;
         if (game != null) h += ` <span class="${Math.abs(game - info.value) < 1e-4 ? "ok" : "warn"}">· the game's evaluator: ×${fmtV(game)}</span>`;
         this.msg.innerHTML = h;
