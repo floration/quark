@@ -251,6 +251,7 @@ class GitHub:
         self.calls = 0
         self.changed = 0
         self.fatal = None          # gh missing / signed out: no more calls this poll
+        self.escape_flag = None    # raw(): None = not known yet, True / False = whether gh takes the flag
 
     def _rate_from(self, headers):
         if headers.get("x-ratelimit-resource", "core") != "core":
@@ -314,13 +315,26 @@ class GitHub:
         return items, changed_any
 
     def raw(self, path, timeout=180):
-        """Non-JSON body (job logs). -> bytes. Raises GhError (status 404 / 410 when gone)."""
-        self.calls += 1
-        code, out, err = self.proc.run(["gh", "api", path], timeout=timeout, binary=True)
-        if code == 0:
-            return out
+        """Non-JSON body (job logs). -> bytes. Raises GhError (status 404 / 410 when gone).
+        Job logs contain terminal escape sequences, which newer gh (2.10x) refuses to print without
+        --allow-escape-sequences; older gh doesn't know that flag ("unknown flag"), so it is dropped once for good."""
+        while True:
+            use_flag = self.escape_flag is not False
+            args = ["gh", "api"] + (["--allow-escape-sequences"] if use_flag else []) + [path]
+            self.calls += 1
+            code, out, err = self.proc.run(args, timeout=timeout, binary=True)
+            if code == 0:
+                if use_flag:
+                    self.escape_flag = True
+                return out
+            if use_flag and self.escape_flag is None and "unknown flag" in (err or "") and \
+                    "allow-escape-sequences" in (err or ""):
+                self.escape_flag = False
+                continue
+            break
         m = re.search(r"HTTP (\d{3})", err or "")
-        raise GhError(int(m.group(1)) if m else None, "gh api %s: %s" % (path, (err or "failed").splitlines()[-1]))
+        first = next((l.strip() for l in (err or "").splitlines() if l.strip()), "failed (exit %s)" % code)
+        raise GhError(int(m.group(1)) if m else None, "gh api %s: %s" % (path, first[:300]))
 
     def check_rate(self):
         data, headers, _ = self.get("rate_limit", conditional=False)
@@ -1024,7 +1038,8 @@ class Manager:
         self.api_branches = None
         self.local_cache = {}   # (path, oid, testing, prod) -> derived fields
         self.saved_logs = set()
-        self.log_retry = {}     # (run, job) -> time before which a failed log download is not retried
+        self.log_retry = {}     # (run, job) -> no retry before this time; memory only, so a restart retries at once
+        self.last_log_error = None
         self._load_runs()
         self._scan_logs()
         self.prev = read_json(self._p("state-prev.json"))
@@ -1194,8 +1209,8 @@ class Manager:
                 if failures >= 2:
                     break
         if failures:
-            warnings.append("%s could not be downloaded (retrying in %d min)" % (
-                plural(failures, "failed-job log"), LOG_RETRY_SEC // 60))
+            warnings.append("%s could not be downloaded (retrying in %d min, or on restart): %s" % (
+                plural(failures, "failed-job log"), LOG_RETRY_SEC // 60, self.last_log_error or "unknown error"))
         return max(0, len(todo) - LOGS_BUDGET) if not failures else 0
 
     def download_log(self, run_id, job_id):
@@ -1212,6 +1227,7 @@ class Manager:
                 if e.status in (404, 410):
                     self._mark_log_gone(int(run_id), int(job_id))
                     return "gone"
+                self.last_log_error = str(e)
                 return "error"
             write_atomic(self.log_path(run_id, job_id), body)
             self.saved_logs.add(key)
@@ -1913,7 +1929,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             res = m.download_log(run_id, job_id)
             if res != "ok":
                 return self._send(404, "GitHub no longer has this log and it was never saved." if res == "gone"
-                                  else "Could not download the log from GitHub (try again later).",
+                                  else "Could not download the log from GitHub (try again later): %s"
+                                  % (m.last_log_error or "unknown error"),
                                   "text/plain; charset=utf-8", cors=True)
             m.republish()
         try:

@@ -322,6 +322,58 @@ class HistoryLog(unittest.TestCase):
         self.assertEqual(len(h3.query(limit=1)), 1)
 
 
+ESC_ERR = "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway\n"
+OLD_ERR = "unknown flag: --allow-escape-sequences\n\nUsage:  gh api <endpoint> [flags]\n"
+
+
+class RawProc:
+    """`gh api` for raw (log) calls, as a given gh version answers."""
+
+    def __init__(self, knows_flag, fail=None):
+        self.knows_flag, self.fail, self.args = knows_flag, fail, []
+
+    def run(self, args, cwd=None, timeout=90, binary=False):
+        self.args.append(args)
+        flag = "--allow-escape-sequences" in args
+        if self.fail:
+            return 1, b"", self.fail
+        if flag and not self.knows_flag:
+            return 1, b"", OLD_ERR
+        if not flag and self.knows_flag:
+            return 1, b"", ESC_ERR
+        return 0, b"\x1b[36;1mlog\x1b[0m\n", ""
+
+
+class RawLogs(unittest.TestCase):
+    def test_new_gh_needs_the_flag(self):
+        p = RawProc(knows_flag=True)
+        g = S.GitHub("o/r", p)
+        self.assertEqual(g.raw("repos/o/r/actions/jobs/1/logs"), b"\x1b[36;1mlog\x1b[0m\n")
+        self.assertIn("--allow-escape-sequences", p.args[0])
+        self.assertTrue(g.escape_flag)
+
+    def test_old_gh_drops_the_flag_once(self):
+        p = RawProc(knows_flag=False)
+        g = S.GitHub("o/r", p)
+        self.assertTrue(g.raw("a").endswith(b"\n"))
+        self.assertEqual(len(p.args), 2)  # tried with the flag, then without
+        g.raw("b")
+        self.assertEqual(len(p.args), 3)
+        self.assertNotIn("--allow-escape-sequences", p.args[2])
+        self.assertIs(g.escape_flag, False)
+
+    def test_error_keeps_the_first_stderr_line(self):
+        g = S.GitHub("o/r", RawProc(True, fail="  " + ESC_ERR + "more\n"))
+        with self.assertRaises(S.GhError) as cm:
+            g.raw("repos/o/r/actions/jobs/1/logs")
+        self.assertIn("the response contains terminal escape sequences", str(cm.exception))
+        self.assertIsNone(cm.exception.status)
+        g = S.GitHub("o/r", RawProc(True, fail="gh: Not Found (HTTP 404)\n"))
+        with self.assertRaises(S.GhError) as cm:
+            g.raw("x")
+        self.assertEqual(cm.exception.status, 404)
+
+
 class FakeGit:
     """Answers `git -C <dir> config --get remote.origin.url` and `worktree list` from a table."""
 
@@ -411,6 +463,7 @@ class FakeGh(S.Proc):
         self.routes = {}
         self.calls = []
         self.etag_seq = 0
+        self.raw_handler = None
 
     def run(self, args, cwd=None, timeout=90, binary=False):
         if args[0] != "gh":
@@ -426,6 +479,8 @@ class FakeGh(S.Proc):
         if callable(val):
             val = val(path)
         if binary:
+            if self.raw_handler:
+                return self.raw_handler(args)
             return (0, val, "") if isinstance(val, bytes) else (1, b"", "gh: Not Found (HTTP 404)")
         if val is None:
             return 1, 'HTTP/1.1 404 Not Found\r\n\r\n{"message":"Not Found"}', "gh: Not Found (HTTP 404)"
@@ -509,6 +564,26 @@ class EndToEnd(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_log_errors_are_shown_and_retried_on_restart(self):
+        gh_err = "gh: some systematic refusal\nsecond line\n"
+        self.gh.raw_handler = lambda args: (1, b"", gh_err)
+        m = self.manager()
+        st = m.poll(manual=True)
+        self.assertIsNone(st["poll"]["lastError"])
+        self.assertTrue(any("gh: some systematic refusal" in w and "second line" not in w
+                            for w in st["poll"]["warnings"]), st["poll"]["warnings"])
+        self.assertFalse(os.path.exists(os.path.join(self.data, "logs", "101", "9001.txt")))
+        self.assertFalse(m.runs[101]["jobs"][0].get("logGone"))  # not a 404: not given up on
+        m.poll()  # within the 30 min backoff: not asked again in this process
+        self.assertEqual(sum(1 for c in self.gh.calls if c.endswith("/9001/logs")), 1)
+        # the fix (a newer server / gh) takes effect on restart: no backoff is persisted
+        self.gh.raw_handler = None
+        m2 = self.manager()
+        st = m2.poll()
+        self.assertEqual(st["poll"]["warnings"], [])
+        with open(os.path.join(self.data, "logs", "101", "9001.txt"), "rb") as f:
+            self.assertEqual(f.read(), b"the windows log\n")
 
     def manager(self):
         return S.Manager(dict(self.cfg), self.data, os.path.dirname(os.path.abspath(S.__file__)), proc=self.gh,
