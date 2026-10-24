@@ -125,30 +125,48 @@ export function callScene(ix, root, expanded) {
     if (root.kind === "group") rootRows.push({ text: root.list === "par" ? "par: in parallel" : "alone: one at a time", cls: "muted" });
     if (shared) rootRows.push({ text: "⚠ shared port " + shared.map((s) => s.port).join(", "), cls: "warn" });
     nodes.push(mk("root", (root.kind === "group" ? "group " : "") + root.name, rootRows, { cls: "c-group", w: 240, sel: true, nav: null, badge: (ix.itemLint.get(itemKey(root)) || []).length ? "⚠ " + (ix.itemLint.get(itemKey(root)) || []).length : null }));
-    const addFn = (name, from, args, depth) => {
+    const addFn = (name, from, args, depth, via) => {
         const id = "f:" + name;
         if (!seen.has(id)) {
             seen.add(id);
             const f = fns[name];
             const rows = f ? [{ text: (f.checks || []).length + " checks · " + (f.calls || []).length + " calls · " + f.file.split("/").pop() + ":" + f.line, cls: "muted" }] : [{ text: "not defined in tests/", cls: "warn" }];
             if (args) rows.unshift({ text: "args " + clip(args, 30), cls: "mono" });
+            if (via) rows.unshift({ text: "inside " + via + "(…)", cls: "muted" });
             const lint = f ? (ix.fnLint.get(name) || []).length : 1;
             nodes.push(mk(id, name, rows, { cls: "c-fn" + (f ? "" : " missing") + (expanded.has(name) ? " open" : ""), fn: name, w: 250, badge: lint ? "⚠" : f && (f.calls || []).length ? (expanded.has(name) ? "−" : "+") : null, nav: f ? { kind: "fn", fn: f } : null }));
             if (f && expanded.has(name) && depth < 6) for (const c of f.calls || []) addFn(c, id, null, depth + 1);
         }
         edges.push({ from, to: id });
     };
-    for (const c of root.calls || []) addFn(c.fn, "root", c.args || null, 0);
+    for (const c of root.calls || []) addFn(c.fn, "root", c.args || null, 0, c.via);
     return { nodes, edges, layout: "layered" };
 }
 export function fnScene(ix, f, expanded) {
     const fns = ix.m.functions || {};
     const nodes = [], edges = [], seen = new Set();
-    for (const u of f.usedBy || []) {
-        const it = [...ix.items.values()].find((x) => x.id === u);
+    const itemOf = (u) => [...ix.items.values()].find((x) => x.id === u && x._suite.id === "quark_tests");
+    const caller = (u) => {
+        if (seen.has("u:" + u)) return;
+        seen.add("u:" + u);
+        const it = itemOf(u);
         nodes.push(mk("u:" + u, it ? (it.kind === "group" ? "group " : "") + it.name : u, [{ text: it && it.run ? it.run.cmd : "", cls: "mono muted" }], { cls: "c-group", w: 220, nav: it ? { kind: "item", item: it } : null, layer: 0 }));
-        edges.push({ from: "u:" + u, to: "f:" + f.name });
+    };
+    for (const u of f.usedBy || []) { caller(u); edges.push({ from: "u:" + u, to: "f:" + f.name }); }
+    // indirect: group -> the functions between -> this one (dashed), the first 12 chains
+    const chained = new Set();
+    for (const v of (f.runsVia || []).slice(0, 12)) {
+        caller(v.item);
+        let prev = "u:" + v.item;
+        for (const p of v.path) {
+            const id = "f:" + p;
+            if (!seen.has(id)) { seen.add(id); const g = fns[p]; nodes.push(mk(id, p, [{ text: g ? (g.checks || []).length + " checks" : "", cls: "muted" }], { cls: "c-fn", fn: p, w: 210, nav: g ? { kind: "fn", fn: g } : null })); }
+            if (!chained.has(prev + ">" + id)) { chained.add(prev + ">" + id); edges.push({ from: prev, to: id, cond: true }); }
+            prev = id;
+        }
+        if (!chained.has(prev + ">f:" + f.name)) { chained.add(prev + ">f:" + f.name); edges.push({ from: prev, to: "f:" + f.name, cond: true }); }
     }
+    seen.delete("f:" + f.name);
     const add = (name, from, depth) => {
         const id = "f:" + name;
         if (!seen.has(id)) {

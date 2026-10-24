@@ -18,7 +18,8 @@ export const api = {
     save: (path, text, baseSha256) => call("POST", "/api/file", { path, text, baseSha256 }),
     diff: (path) => call("GET", "/api/diff" + (path ? "?path=" + q(path) : "")),
     revert: (path) => call("POST", "/api/revert", { path }),
-    run: (cmd) => call("POST", "/api/run", { cmd }),
+    run: (cmd, extra) => call("POST", "/api/run", { cmd, ...(extra || {}) }),   // extra: {args: [...]} | {groups: [...]}
+    importLog: (text, name) => call("POST", "/api/import-log", { text, name }),
     runPoll: (id, from) => call("GET", `/api/run?id=${q(id)}&from=${from | 0}`),
     stop: (id) => call("POST", "/api/run/stop", { id }),
     runs: () => call("GET", "/api/runs"),

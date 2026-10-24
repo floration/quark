@@ -9,7 +9,8 @@
 </head>
 <body>
 <!-- Quark tests editor (tools/tests_editor): every test suite, when and how it runs, as Code / Graph / Blocks.
-     Served by serve.py on 127.0.0.1:8775 (data: tools/tests_editor/API.md). ?embed=1 hides the nav and the header. -->
+     Served by serve.py on 127.0.0.1:8775 (data: tools/tests_editor/API.md). ?embed=1 hides the tools nav and the
+     "Tests editor" name (the header bar with its buttons stays). -->
 <nav class="qt-nav" id="qtnav" aria-label="Quark tools">
   <a class="qt-brand" href="http://127.0.0.1:8765/">Quark</a>
   <a href="http://127.0.0.1:8765/" data-tool="dashboard">Editor Manager</a>
@@ -20,17 +21,21 @@
 </nav>
 <div id="app">
   <header id="top">
+    <button id="leftToggle" class="mini paneltog" title="hide / show the tree  ( [ )" aria-label="hide or show the tree">◧</button>
     <div class="brand">Tests editor</div>
     <button id="whenBtn" title="what runs at each moment, from an edit to a production tag">When</button>
     <div id="facts" class="facts"><span class="muted">loading…</span></div>
     <span id="dirtyNote" class="warn small"></span>
     <button id="allDiffBtn" title="every editable file vs git HEAD">Changes</button>
+    <button id="rightToggle" class="mini paneltog" title="hide / show the details  ( ] )" aria-label="hide or show the details">◨</button>
   </header>
   <aside id="left">
     <input id="search" type="search" placeholder="search tests, jobs, functions  ( / )" autocomplete="off">
     <div id="tree" role="tree"><div class="muted pad">loading…</div></div>
   </aside>
   <main id="main">
+    <div id="rzL" class="resizer" title="drag to resize the tree; double-click to hide it"></div>
+    <div id="rzR" class="resizer" title="drag to resize the details; double-click to hide them"></div>
     <div id="viewTabs">
       <button data-view="code" class="on">Code</button>
       <button data-view="graph">Graph</button>
@@ -44,7 +49,7 @@
       <div id="vWhen" class="view"></div>
     </div>
     <div id="dock">
-      <div id="dockBar"><button id="dockToggle" class="mini">▸ run output</button><b id="runTitle" class="mono small"></b><span id="runState" class="rstate"></span><span class="grow"></span><button id="runStop" class="mini" disabled>■ Stop</button></div>
+      <div id="dockBar"><button id="dockToggle" class="mini">▸ run output</button><b id="runTitle" class="mono small"></b><span id="runState" class="rstate"></span><button id="runFails" class="mini ofailbtn" hidden></button><span class="grow"></span><button id="runStop" class="mini" disabled>■ Stop</button></div>
       <pre id="runOut" class="mono"></pre>
     </div>
   </main>

@@ -16,6 +16,7 @@ export function renderWhen(root, app) {
     head.append(legend);
     wrap.append(head);
     const lanes = whenLanes(m);
+    let chartLane = null;   // (quark_tests runs in several lanes: the chart once, a pointer to it after that)
     for (const L of LANES) {
         const entries = lanes.get(L.id) || [];
         if (!entries.length && (L.id === "pr" || L.id === "sched")) continue;
@@ -29,7 +30,8 @@ export function renderWhen(root, app) {
         const suites = new Map();
         for (const e of entries) { if (!e.suite) continue; if (!suites.has(e.suite.id)) suites.set(e.suite.id, { suite: e.suite, items: [], whys: [] }); const s = suites.get(e.suite.id); if (e.item) s.items.push(e); else s.whys.push(e.why); }
         for (const { suite, items, whys } of suites.values()) {
-            if (suite.id === "quark_tests") body.append(gantt(app, suite));
+            if (suite.id === "quark_tests" && !chartLane) { body.append(gantt(app, suite)); chartLane = L; }
+            else if (suite.id === "quark_tests") body.append(again(app, suite, chartLane, whys));
             else if (suite.kind === "ci") body.append(ciLane(app, suite, items, L.id, whys));
             else body.append(stepsCard(app, suite, whys));
         }
@@ -69,27 +71,49 @@ function stepsCard(app, suite, whys) {
     return c;
 }
 
-// quark_tests: the par groups side by side in time (bar = its timing), then the alone groups one after another
+// a later lane that runs quark_tests again (release_check.sh): a line pointing at the chart
+function again(app, suite, chartLane, whys) {
+    const { c, h } = card("quark_tests", "w-local", () => app.select({ kind: "suite", suite }));
+    const a = el("span", "link small", "the same groups as the chart in “" + chartLane.title + "” ↑");
+    a.onclick = () => document.getElementById("lane-" + chartLane.id).scrollIntoView({ block: "start", behavior: "smooth" });
+    h.append(el("span", "muted small", whys.filter(Boolean).join("; ") + " · "), a);
+    return c;
+}
+
+// quark_tests: the par groups side by side in time (bar = its timing), then the alone groups one after another. A
+// group with no time yet (never run on this machine) gets the median time, hatched, so its name still shows.
 function gantt(app, suite) {
     const ix = app.ix;
     const groups = (suite.items || []).filter((g) => g.kind === "group");
     const par = groups.filter((g) => g.list === "par").sort((a, b) => a.order - b.order);
     const alone = groups.filter((g) => g.list !== "par").sort((a, b) => a.order - b.order);
-    const t = (g) => (g.timing && g.timing.sec) || 0;
+    const has = (g) => !!(g.timing && g.timing.sec != null);
+    const known = groups.filter(has).map((g) => g.timing.sec).sort((a, b) => a - b);
+    const guess = known.length ? Math.max(1, known[known.length >> 1]) : 10;
+    const t = (g) => (has(g) ? Math.max(g.timing.sec, 0.5) : guess);   // (a 0 s group: a sliver, not "no time")
+    const missing = groups.filter((g) => !has(g)).length;
     const parWall = Math.max(1, ...par.map(t));
     const total = parWall + alone.reduce((s, g) => s + Math.max(t(g), 1), 0);
     const { c, h } = card("quark_tests", "w-local", () => app.select({ kind: "suite", suite }));
     h.append(el("span", "muted small", `${par.length} par groups at once, then ${alone.length} alone · about ${secs(total)} with enough cores · ` + ((suite.when || [])[0] || {}).text));
+    if (missing) {
+        const n = el("span", "warn small", `${missing} group${missing > 1 ? "s have" : " has"} no time yet (hatched, drawn at the median): `);
+        const go = el("span", "link", "run the whole suite once");
+        go.onclick = () => app.select({ kind: "suite", suite });
+        n.append(go);
+        h.append(n);
+    }
     const shared = sharedPorts(ix);
     const g = el("div", "gantt");
     const rows = Math.max(par.length, 1);
     g.style.height = rows * 15 + 24 + "px";
     const pct = (x) => (100 * x) / total + "%";
     const bar = (grp, left, top, w, cls) => {
-        const b = el("div", "gbar " + cls + (shared.has(grp.name) || (ix.itemLint.get(itemKey(grp)) || []).length ? " warn" : ""));
+        const lr = grp.lastRun;
+        const b = el("div", "gbar " + cls + (shared.has(grp.name) || (ix.itemLint.get(itemKey(grp)) || []).length ? " warn" : "") + (has(grp) ? "" : " notime") + (lr && lr.status === "failed" ? " failed" : ""));
         b.style.left = pct(left); b.style.width = `calc(${pct(w)} - 2px)`; b.style.top = top + "px";
         b.textContent = grp.name;
-        b.title = `${grp.name}: ${grp.timing ? secs(t(grp)) + " (" + grp.timing.source + ")" : "no timing yet"}${grp.flaky ? "\nflaky: " + grp.flaky : ""}${shared.has(grp.name) ? "\nshares a TP() port" : ""}`;
+        b.title = `${grp.name}: ${grp.timing ? secs(grp.timing.sec) + " (" + grp.timing.source + ")" : "no time yet"}${lr ? "\nlast local run: " + lr.status + (lr.fails ? " (" + lr.fails + " failures)" : "") : ""}${grp.flaky ? "\nflaky: " + grp.flaky : ""}${shared.has(grp.name) ? "\nshares a TP() port" : ""}`;
         b.onclick = () => app.select({ kind: "item", item: grp });
         g.append(b);
     };
@@ -102,8 +126,8 @@ function gantt(app, suite) {
     ax.querySelector(".gmid").style.left = pct(parWall);
     g.append(ax);
     c.append(g);
-    const cmds = (suite.items || []).filter((x) => x.kind === "shortcut");
-    if (cmds.length) c.append(el("div", "muted small", `${cmds.length} shortcut commands (quark_tests <name>) run only by hand.`));
+    const cmds = (suite.items || []).filter((x) => x.kind === "shortcut" || x.kind === "tool");
+    if (cmds.length) c.append(el("div", "muted small", `${cmds.length} shortcut and tool commands (quark_tests <name>) run only by hand.`));
     return c;
 }
 

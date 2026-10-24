@@ -146,6 +146,7 @@ export class CodeView {
         this.hl = el("pre", "code-hl");
         this.ta = el("textarea", "code-ta");
         this.ta.spellcheck = false;
+        this.ta.title = "Tab indents; Esc then Tab leaves the editor";
         this.ta.setAttribute("wrap", "off");
         this.ta.setAttribute("autocomplete", "off");
         this.ta.setAttribute("autocapitalize", "off");
@@ -268,6 +269,9 @@ export class CodeView {
 
     _key(e) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.save(); return; }
+        const out = this._tabOut;   // (Esc, then Tab / Shift+Tab: leave the editor, as a keyboard user expects)
+        this._tabOut = e.key === "Escape";
+        if (e.key === "Tab" && out) return;
         if (e.key === "Tab" && !e.ctrlKey && !e.altKey) {
             e.preventDefault();
             const ind = this.lang === "cpp" ? "    " : "  ";
