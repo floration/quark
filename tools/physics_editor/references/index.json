@@ -1,6 +1,6 @@
 {
  "version": 1,
- "quark": "1.18.12",
+ "quark": "1.18.26",
  "units": "metres, seconds (Quark's); mult = value / Quark's base",
  "confidence": {
   "exact": "read from source code, a shipped config or a cvar default (converted by the stated scale)",
@@ -71,6 +71,24 @@
      "values": 13,
      "distance": 0.149,
      "distanceKeys": 9
+    },
+    {
+     "id": "quakelive",
+     "name": "Quake Live (VQL)",
+     "year": 2010,
+     "engine": "id Tech 3",
+     "file": "quakelive.json",
+     "values": 11,
+     "distance": 0.707,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quake-champions",
+     "name": "Quake Champions (Ranger, a medium)",
+     "year": 2017,
+     "engine": "Saber / id Software (id Tech derived)",
+     "file": "quake-champions.json",
+     "values": 3
     }
    ]
   },
@@ -157,12 +175,30 @@
      "values": 11,
      "distance": 0.551,
      "distanceKeys": 9
+    },
+    {
+     "id": "portal2",
+     "name": "Portal 2",
+     "year": 2011,
+     "engine": "Source",
+     "file": "portal2.json",
+     "values": 3
+    },
+    {
+     "id": "cs16-comp",
+     "name": "Counter-Strike 1.6 (server / competitive config)",
+     "year": 2003,
+     "engine": "GoldSrc",
+     "file": "cs16-comp.json",
+     "values": 11,
+     "distance": 0.56,
+     "distanceKeys": 9
     }
    ]
   },
   {
    "name": "arena shooters",
-   "desc": "other arena shooters (Unreal, Halo): different movement models, community-measured",
+   "desc": "other arena shooters (Unreal, Halo, Reflex): different movement models, from scripts or community measurements",
    "games": [
     {
      "id": "ut99",
@@ -170,7 +206,9 @@
      "year": 1999,
      "engine": "Unreal Engine 1",
      "file": "ut99.json",
-     "values": 2
+     "values": 8,
+     "distance": 0.734,
+     "distanceKeys": 7
     },
     {
      "id": "halo-ce",
@@ -179,6 +217,50 @@
      "engine": "Blam!",
      "file": "halo-ce.json",
      "values": 2
+    },
+    {
+     "id": "reflex",
+     "name": "Reflex Arena",
+     "year": 2017,
+     "engine": "Reflex (Turbo Pixel Studios)",
+     "file": "reflex.json",
+     "values": 1
+    },
+    {
+     "id": "ut2004",
+     "name": "Unreal Tournament 2004",
+     "year": 2004,
+     "engine": "Unreal Engine 2",
+     "file": "ut2004.json",
+     "values": 9,
+     "distance": 0.814,
+     "distanceKeys": 7
+    },
+    {
+     "id": "ut3",
+     "name": "Unreal Tournament 3",
+     "year": 2007,
+     "engine": "Unreal Engine 3",
+     "file": "ut3.json",
+     "values": 9,
+     "distance": 0.875,
+     "distanceKeys": 7
+    },
+    {
+     "id": "halo3",
+     "name": "Halo 3 (MCC)",
+     "year": 2007,
+     "engine": "Blam!",
+     "file": "halo3.json",
+     "values": 3
+    },
+    {
+     "id": "halo-reach",
+     "name": "Halo: Reach (MCC)",
+     "year": 2010,
+     "engine": "Blam!",
+     "file": "halo-reach.json",
+     "values": 3
     }
    ]
   },
@@ -192,7 +274,7 @@
      "year": 2022,
      "engine": "Overwatch engine",
      "file": "overwatch2.json",
-     "values": 6
+     "values": 8
     },
     {
      "id": "valorant",
@@ -206,7 +288,7 @@
   },
   {
    "name": "movement shooters",
-   "desc": "wallrun / slide / grapple shooters (Respawn)",
+   "desc": "wallrun / slide / dash / grapple shooters (Respawn, DOOM Eternal)",
    "games": [
     {
      "id": "titanfall2",
@@ -224,7 +306,39 @@
      "year": 2019,
      "engine": "Source (Respawn)",
      "file": "apex.json",
-     "values": 2
+     "values": 7,
+     "distance": 0.342,
+     "distanceKeys": 6
+    },
+    {
+     "id": "doom-eternal",
+     "name": "DOOM Eternal",
+     "year": 2020,
+     "engine": "id Tech 7",
+     "file": "doom-eternal.json",
+     "values": 5
+    }
+   ]
+  },
+  {
+   "name": "mainstream shooters",
+   "desc": "Call of Duty and Fortnite: config values and community measurements",
+   "games": [
+    {
+     "id": "cod4",
+     "name": "Call of Duty 4: Modern Warfare",
+     "year": 2007,
+     "engine": "IW 3.0 (id Tech 3 derived)",
+     "file": "cod4.json",
+     "values": 4
+    },
+    {
+     "id": "fortnite",
+     "name": "Fortnite (Battle Royale)",
+     "year": 2017,
+     "engine": "Unreal Engine 4/5",
+     "file": "fortnite.json",
+     "values": 1
     }
    ]
   },
@@ -238,7 +352,9 @@
      "year": 2011,
      "engine": "Minecraft",
      "file": "minecraft.json",
-     "values": 5
+     "values": 6,
+     "distance": 0.334,
+     "distanceKeys": 5
     },
     {
      "id": "celeste",

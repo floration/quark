@@ -1,0 +1,112 @@
+{
+ "id": "doom-eternal",
+ "name": "DOOM Eternal",
+ "year": 2020,
+ "engine": "id Tech 7",
+ "group": "movement shooters",
+ "scale": {
+  "unit": "m",
+  "metresPerUnit": 1.0,
+  "why": "id Tech 7's cvars are in metres (eye height pm_normalViewHeight 1.657 m, i.e. about a 1.8 m player): values as given"
+ },
+ "values": {
+  "gravity": {
+   "value": 20.3073,
+   "unit": "m/s2",
+   "mult": 0.9231,
+   "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600 (g_gravity 20.307301)",
+   "confidence": "exact",
+   "raw": "g_gravity 20.307301",
+   "note": "the cvar default (800 in/s2 in metres)"
+  },
+  "speed": {
+   "value": 9.525,
+   "unit": "m/s",
+   "mult": 1.0026,
+   "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600 (pm_runspeed 9.525; pm_sprintspeed 9.525)",
+   "confidence": "exact",
+   "raw": "pm_runspeed 9.525",
+   "note": "the run speed (375 in/s); backwards x0.9 (pm_backSpeedRatio)"
+  },
+  "jump": {
+   "value": 7.4637,
+   "unit": "m/s",
+   "mult": 1.0169,
+   "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600 (pm_jumpheight 1.3716 with g_gravity 20.307301)",
+   "confidence": "estimated",
+   "raw": "pm_jumpheight 1.3716 m",
+   "note": "take-off speed for the 1.3716 m jump height: sqrt(2 x 20.307 x 1.3716)"
+  },
+  "dash_cooldown": {
+   "value": 0.5,
+   "unit": "s",
+   "mult": 0.8333,
+   "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600 (envSuit_dashRetriggerTime 500 ms)",
+   "confidence": "exact",
+   "raw": "500 ms",
+   "note": "the delay between dashes; each charge recharges in about 2 s (1 s upgraded) per a mod page"
+  },
+  "dash_charges": {
+   "value": 2,
+   "unit": "",
+   "mult": 1.0,
+   "source": "https://doomwiki.org/wiki/Dash (two dashes in quick succession)",
+   "confidence": "measured"
+  },
+  "dash": {
+   "value": true,
+   "source": "https://doomwiki.org/wiki/Dash",
+   "confidence": "exact",
+   "note": "the dash (after the first missions)"
+  },
+  "grapple": {
+   "value": true,
+   "source": "https://www.nexusmods.com/doometernal/mods/36",
+   "confidence": "exact",
+   "note": "the Super Shotgun's Meat Hook pulls you to a demon (a weapon mod)"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.3716,
+   "unit": "m",
+   "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600 (pm_jumpheight 1.3716)",
+   "confidence": "exact",
+   "note": "Quark: 1.22 m; plus a double jump"
+  },
+  "eyeHeight": {
+   "value": 1.6574,
+   "unit": "m",
+   "source": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600 (pm_normalViewHeight 1.65735)",
+   "confidence": "exact"
+  },
+  "dashRecharge": {
+   "value": 2,
+   "unit": "s",
+   "source": "https://www.nexusmods.com/doometernal/mods/36 (vanilla dash cooldown 2 s, 1 s upgraded)",
+   "confidence": "measured"
+  }
+ },
+ "extras": [
+  "double jump",
+  "dash (2 charges)",
+  "monkey bars, wall climbing on climbable walls",
+  "Meat Hook grapple on the Super Shotgun",
+  "no bunny hopping or air strafing to speak of"
+ ],
+ "notes": "Cvar defaults from a console-command guide (the game's cvars are in metres): run 9.525 m/s, gravity 20.31 m/s2, jump height 1.37 m, all within 5% of Quark's 9.5 / 22 / 1.22. Acceleration and friction cvars weren't listed. DOOM (2016) is not covered: only stopwatch timings that disagree with each other (230 vs 440 u/s) were found.",
+ "sources": [
+  {
+   "title": "Steam guide: Console Commands for DOOM Eternal",
+   "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600"
+  },
+  {
+   "title": "Doom Wiki: Dash",
+   "url": "https://doomwiki.org/wiki/Dash"
+  },
+  {
+   "title": "Nexus Mods: Locomotive (vanilla values it changes)",
+   "url": "https://www.nexusmods.com/doometernal/mods/36"
+  }
+ ]
+}

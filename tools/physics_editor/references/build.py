@@ -443,6 +443,19 @@ g = Game("apex", "Apex Legends", 2019, "Source (Respawn)", "movement shooters", 
 AW = "https://apexlegends.wiki.gg/wiki/Sliding"
 g.u("speed", 299, AW + " (sprinting 299 u/s, 7.59 m/s)", conf="measured", rawname="sprint", per="/s", note="sprint; walk 199.53 u/s, crouch-walk 92 u/s; -13% holding a weapon")
 g.v("hook_range", 21, "https://apexlegends.wiki.gg/wiki/Pathfinder (grappling hook max length 21 m)", "measured", "Pathfinder's Grappling Hook (tactical); the wiki lists a 20 s cooldown and 2 charges")
+AMT = "https://apexmovement.tech/wiki/tech/"
+AMG = AMT + "General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article"
+AMA = AMT + "General_Tech%3EFundamentals%3EAir%3EFundamental_Air_Tech_article"
+# Apex Movement Wiki: a 56 u jump with 0.74 s airtime on flat ground. Rise time 0.37 s: g = 8h/T^2, take-off v = 4h/T.
+AJH, AJT = 56, 0.74
+g.u("gravity", 8 * AJH / AJT**2, AMG + " (jump height 56 u, airtime 0.74 s on flat ground)", conf="estimated", rawname="8 x 56 / 0.74^2 =", per="/s2",
+    note="derived from the measured jump: g = 8 x height / airtime^2 (Titanfall 2's pilots: 750 x 0.8 = 600 u/s2)")
+g.u("jump", 4 * AJH / AJT, AMG + " (jump height 56 u, airtime 0.74 s)", conf="estimated", rawname="4 x 56 / 0.74 =", per="/s",
+    note="derived from the measured jump: take-off speed = 4 x height / airtime")
+g.u("air_cap", 60, AMA + " (air speed 60)", conf="measured", rawname="air speed", per="/s", note="the movement wiki's core air value, read as Source's air wish cap (Titanfall 2's player dump has the same airSpeed 60)")
+g.v("air_accel", 500 / 60 / 10, AMA + " (air acceleration 500)", "estimated",
+    "as Titanfall 2: if the 500 is an absolute u/s2 push toward the 60 u/s cap, the Quark-equivalent is 500 / 60 / 10; the engine's formula isn't public", raw="air acceleration 500")
+g.u("step", 30, AMG + " (overwalkable ledge about 30 hu, higher on rounded or sloped ledges)", conf="measured", rawname="ledge", note="the highest ledge you walk over without jumping or mantling")
 g.toggle("dash", False, AW, "no dash for most legends (Octane / Horizon / Pathfinder have movement abilities)")
 g.toggle("grapple", False, "https://apexlegends.wiki.gg/wiki/Pathfinder", "Pathfinder only")
 g.fact("walkSpeed", 199.53 * S72, "m/s", AW + " (walking 199.53)", "measured")
@@ -450,10 +463,20 @@ g.fact("crouchSpeed", 92 * S72, "m/s", AW + " (crouchwalking 92)", "measured")
 g.fact("slideTime", 1, "s", AW + " (about 1 s on flat ground before it slows)", "measured")
 g.fact("superglideBoost", 10.3, "m/s", "https://apexlegends.fandom.com/wiki/Movement", "measured")
 g.fact("climbHeight", 6, "m", "https://apexlegends.fandom.com/wiki/Movement (wall climb about 6 m)", "measured")
-g.d["extras"] = ["slide (about 1 s on flat ground, longer downhill)", "wall climb about 6 m, mantle", "superglide (10.3 m/s), tap-strafe", "ziplines, jump pads"]
-g.d["notes"] = "Apex's data files aren't public; numbers are community measurements. The Fandom wiki converts the same 299 u/s at 1 u = 0.75 in (5.7 m/s); this file uses the player-height scale."
+g.fact("jumpHeight", AJH * S72, "m", AMG + " (56 units)", "measured", "Quark: 1.22 m")
+g.fact("airTime", AJT, "s", AMG + " (0.74 s on flat ground)", "measured", "Quark: 2 x 7.34 / 22 = 0.67 s")
+g.fact("jumpFatigue", "16.3 u for 0.15 s after landing, back to 56 u by 0.75 s", "", AMG + " (antiMultiJumpTimeMin 0.15, antiMultiJumpTimeMax 0.75, antiMultiJumpHeightFrac 0.3)", "measured",
+       "a jump right after landing is lower")
+g.d["extras"] = ["slide (about 1 s on flat ground, longer downhill)", "wall climb about 6 m, mantle", "superglide (10.3 m/s), tap-strafe", "ziplines, jump pads",
+                 "jump fatigue: a jump within 0.15 s of landing reaches only about 30% height, recovering by 0.75 s (Apex Movement Wiki)",
+                 "bunny hops above sprint speed lose up to 100 u/s each; no air friction (horizontal speed is kept in the air)",
+                 "legend hulls are 66, 72 or 80 u tall (16 u radius), so the 72 u scale here is the middle size"]
+g.d["notes"] = ("Apex's data files aren't public; numbers are community measurements. The Fandom wiki converts the same 299 u/s at 1 u = 0.75 in (5.7 m/s); this file uses the player-height scale. "
+                "Gravity and jump speed are derived from the Apex Movement Wiki's measured jump (56 u high, 0.74 s in the air), so they are estimates; the air values are the same 60 / 500 Titanfall 2 uses.")
 g.src("Apex Legends Wiki (wiki.gg): Sliding", AW); g.src("Apex Legends Wiki (wiki.gg): Pathfinder", "https://apexlegends.wiki.gg/wiki/Pathfinder")
 g.src("Apex Legends Wiki (Fandom): Movement", "https://apexlegends.fandom.com/wiki/Movement")
+g.src("Apex Movement Wiki: Fundamental Ground Movement", AMG); g.src("Apex Movement Wiki: Fundamental Air Tech", AMA)
+g.src("Apex Movement Wiki: How the Apex engine handles movement", "https://apexmovement.tech/wiki/articles/Wiki%20help%3EHow%20the%20Apex%20engine%20handles%20Movement")
 games.append(g.write())
 
 # ------------------------------------------------------------------ hero / tactical shooters
@@ -466,14 +489,21 @@ g.v("dash_cooldown", 0.1, OW + "Tracer (Blink: 0.1 s between uses)", "measured",
 g.v("hook_range", 20, OW + "Widowmaker (Grappling Hook: 20 m)", "measured", "Widowmaker's Grappling Hook")
 g.v("hook_max", 20, OW + "Widowmaker (Grappling Hook: 20 m/s)", "measured", "pulls at a set speed, not an acceleration")
 g.v("hook_cooldown", 10, OW + "Widowmaker (Grappling Hook: 10 s)", "measured")
+OWG = "https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645"
+g.v("gravity", 17.532, OWG + " (a Workshop 'start accelerating' up at 17.532 m/s2 cancels gravity)", "measured",
+    "found by Workshop users: the upward acceleration that holds a hero still in the air", raw="17.532 m/s2")
+g.v("jump", math.sqrt(2 * 17.532 * 0.98), OW + "Character (jump height 0.98 m) with " + OWG + " (gravity 17.532 m/s2)", "estimated",
+    "take-off speed for the wiki's 0.98 m jump at the Workshop-measured gravity: sqrt(2 x 17.532 x 0.98)", raw="sqrt(2 x 17.532 x 0.98)")
 g.toggle("dash", False, OW + "Character", "hero abilities only (Tracer, Genji...)")
 g.toggle("grapple", False, OW + "Widowmaker", "hero abilities only (Widowmaker, Ashe...)")
 g.fact("jumpHeight", 0.98, "m", OW + "Character (jump height 0.98 m)", "measured", "Quark: 1.22 m")
 g.fact("crouchSpeed", 3, "m/s", OW + "Character", "measured")
 g.fact("blinkDistance", 7.5, "m", OW + "Tracer", "measured", "Quark's dash covers 2.84 m")
 g.d["extras"] = ["hero-specific movement abilities (blinks, dashes, wall-ride, jet packs, double jumps)", "no air strafing to speak of"]
-g.d["notes"] = "Gravity and acceleration aren't documented, so jump take-off speed is left out (jump height only). The dash and hook rows are single heroes (Tracer, Widowmaker)."
+g.d["notes"] = ("Acceleration isn't documented. Gravity is the Workshop community's counter-gravity figure (17.532 m/s2), and the jump take-off speed is derived from it and the wiki's 0.98 m jump, so both are estimates of a kind. "
+                "The dash and hook rows are single heroes (Tracer, Widowmaker).")
 g.src("Overwatch Wiki: Character", OW + "Character"); g.src("Overwatch Wiki: Tracer", OW + "Tracer"); g.src("Overwatch Wiki: Widowmaker", OW + "Widowmaker")
+g.src("Overwatch Forums: how to counter gravity (Workshop)", OWG)
 games.append(g.write())
 
 g = Game("valorant", "Valorant", 2020, "Unreal Engine 4", "hero/tactical shooters", "m", 1.0, "the game documents metres; values as given")
@@ -493,15 +523,29 @@ g = Game("ut99", "Unreal Tournament (1999)", 1999, "Unreal Engine 1", "arena sho
          "player cylinder 78 UU tall (CollisionHeight 39 x 2, Unreal Wiki: General Scale And Dimensions), scaled to 1.8 m: 0.02308 m/UU")
 g.u("speed", 400, UTM + " (running 400 UU/s, Classic)", conf="measured", rawname="ground speed", per="/s", note="Classic speed; Hardcore (x1.1 game speed) 440, Turbo 560")
 g.u("dash_speed", 600, UTM + " (dodge speed 600 UU/s)", conf="estimated", rawname="dodge", per="/s", note="UT's dodge (double-tap): a fixed 600 UU/s hop, 23 UU high; mapped to Quark's dash burst")
+U99 = GH + "/Slipyx/UT99/blob/master/"
+g.u("gravity", 950, U99 + "Engine/ZoneInfo.uc#L187 (ZoneGravity Z=-950)", rawname="ZoneGravity", per="/s2")
+g.u("jump", 325, U99 + "Engine/Pawn.uc#L1877 (JumpZ=325; TournamentPlayer keeps it)", rawname="JumpZ", per="/s",
+    note="Classic; Hardcore (DeathMatchPlus's default, bHardCoreMode=True, DeathMatchPlus.uc#L1625) scales JumpZ x1.1 (#L1062-1063) and runs the game at x1.1 speed (#L139)")
+g.v("ground_accel", 2048 / 400, U99 + "Botpack/TournamentPlayer.uc#L1639 (AccelRate=2048) and #L1637 (GroundSpeed=400)", "estimated",
+    "Unreal adds a fixed AccelRate (2048 UU/s2) up to GroundSpeed; Quark adds ground_accel x wish speed per second, so the same push is 2048 / 400", raw="AccelRate 2048 UU/s2")
+g.v("air_accel", 0.35 * 2048 / 400 / 10, U99 + "Botpack/TournamentPlayer.uc#L1640 (AirControl=0.35) x AccelRate 2048, toward AirSpeed 400 (#L1638)", "estimated",
+    "if the air push is AirControl x AccelRate (717 UU/s2) toward AirSpeed: Quark-equivalent 0.35 x 2048 / 400 / 10; Unreal's native physics code isn't public", raw="AirControl 0.35")
+g.u("air_cap", 400, U99 + "Botpack/TournamentPlayer.uc#L1638 (AirSpeed=400)", conf="estimated", rawname="AirSpeed", per="/s", note="the air push aims at AirSpeed (the same as the run speed)")
+g.u("step", 25, U99 + "Engine/Pawn.uc#L1878 (MaxStepHeight=25)", rawname="MaxStepHeight")
 g.toggle("dash", True, UTM, "the dodge")
 g.toggle("grapple", False, UTM, "no grapple (the translocator teleports)")
+g.fact("jumpHeightFromCode", 325**2 / 1900 * SU, "m", "325^2 / (2 x 950) = 55.6 UU", "estimated", "v^2/2g from JumpZ and ZoneGravity: agrees with the measured 55 UU")
 g.fact("jumpHeight", 55 * SU, "m", UTM + " (55 UU, Classic running)", "measured", "Hardcore 67 UU; Quark: 1.22 m")
 g.fact("dodgeHeight", 23 * SU, "m", UTM + " (23 UU)", "measured")
 g.fact("dodgeDistance", 237 * SU, "m", UTM + " (237 UU)", "measured", "Quark's dash covers 2.84 m")
 g.fact("airControl", "35%", "", UTM, "measured", "UT's AirControl is a share of ground acceleration in the air; Quark's air_control isn't the same thing")
 g.d["extras"] = ["dodging (double-tap a direction)", "impact hammer jumps", "translocator", "jump boots"]
-g.d["notes"] = "Measured by the Unreal Wiki community (UnrealScript defaults not checked here). Gravity and JumpZ aren't on the page, so jump take-off speed is left out."
+g.d["notes"] = ("Speeds and heights measured by the Unreal Wiki community; gravity, JumpZ, AccelRate, AirControl and step from the UnrealScript defaults (UT 469b scripts, exported in Slipyx/UT99), "
+                "which match the measurements (325^2 / 1900 = 55.6 UU against the measured 55). Ground / air acceleration are Quark-equivalents of Unreal's fixed-rate acceleration (estimated). "
+                "UT's ground friction (ZoneGroundFriction 8, ZoneInfo.uc#L189) is a different formula and isn't mapped.")
 g.src("Unreal Wiki: Movement Metrics (UT)", UTM); g.src("Unreal Wiki: General Scale And Dimensions", "https://unrealarchive.org/wikis/unreal-wiki/Legacy:General_Scale_And_Dimensions.html")
+g.src("UT99 469b UnrealScript (Slipyx/UT99): Pawn.uc, TournamentPlayer.uc, ZoneInfo.uc, DeathMatchPlus.uc", U99 + "Engine/Pawn.uc")
 games.append(g.write())
 
 HWU = 1.8 / 0.70127
@@ -529,13 +573,16 @@ g.v("jump", 0.42 * 20, TC2 + " (jump adds 0.42 blocks/tick)", "exact", "0.42 b/t
 g.v("friction", -math.log(0.6 * 0.91) * 20, MC + "Player (ground friction 0.546 per tick)", "estimated",
     "Minecraft multiplies ground speed by 0.546 each tick (slipperiness 0.6 x 0.91): an exponential decay of 12.1/s, which is what Quark's friction is above stop_speed", raw="x0.546 per tick")
 g.v("ladder_speed", 2.35, MC + "Ladder (about 2.35 m/s up)", "measured", "down 3 m/s")
+NEO = "https://docs.neoforged.net/docs/entities/attributes"
+g.v("step", 0.6, NEO + " (step_height default 0.6 blocks)", "exact", "the vanilla attribute default (also lists jump_strength 0.42 and gravity 0.08, as above)", raw="step_height 0.6")
 g.toggle("dash", False, MC + "Player", "no dash"); g.toggle("grapple", False, MC + "Player", "no grapple")
 g.fact("jumpHeight", 1.2522, "m", MC + "Player (about 1.2522 blocks)", "measured", "Quark: 1.22 m")
 g.fact("walkSpeed", 4.317, "m/s", MC + "Walking", "measured")
 g.fact("sprintJumpSpeed", 7.127, "m/s", MC + "Sprinting (sprint-jumping average 7.127 m/s)", "measured")
 g.fact("terminalVelocity", 78.4, "m/s", MC + "Player", "measured")
 g.d["extras"] = ["air drag x0.91 per tick horizontally and x0.98 vertically (Quark has no drag)", "sprint jumping", "sneaking at 1.295 m/s, elytra, swimming"]
-g.d["notes"] = "Minecraft's player happens to be 1.8 m, Quark's height. Its 20 Hz tick model (per-tick velocity multipliers) differs from Quake's, so friction and gravity are equivalents. Step-up height isn't sourced here."
+g.d["notes"] = "Minecraft's player happens to be 1.8 m, Quark's height. Its 20 Hz tick model (per-tick velocity multipliers) differs from Quake's, so friction and gravity are equivalents. Step-up height is the vanilla step_height attribute (0.6 blocks)."
+g.src("NeoForged docs: attributes (vanilla defaults)", NEO)
 g.src("Minecraft Wiki: Player", MC + "Player"); g.src("Minecraft Wiki: Sprinting", MC + "Sprinting"); g.src("Minecraft Wiki: Ladder", MC + "Ladder")
 g.src("TrueCraft wiki: Entity Movement And Physics", TC2)
 games.append(g.write())
@@ -561,18 +608,293 @@ g.d["notes"] = "Celeste's Player.cs was published by its developers. A 2D game: 
 g.src("Celeste Player.cs (NoelFB/Celeste)", CEL)
 games.append(g.write())
 
+# ------------------------------------------------------------------ second pass: estimates and community numbers
+# Quake Live: a cvarlist dump from a Quake Live client (pastebin), the pmove_* cvars as the server ran them.
+QLD = "https://pastebin.com/zJ6XqCNq"
+QLF = "https://gist.github.com/cstewart90/a1163bad196977e351eb"
+g = Game("quakelive", "Quake Live (VQL)", 2010, "id Tech 3", "Quake family", "u", S,
+         "Quake III's hull (56 u tall: Quake Live is built on Quake III's code; its own hull isn't published), scaled to 1.8 m: 0.03214 m/u")
+g.u("gravity", 800, QLD + " (cvarlist line 649: g_gravity 800)", conf="measured", rawname="g_gravity", per="/s2")
+g.u("speed", 320, QLD + " (line 514: g_speed 320)", conf="measured", rawname="g_speed", per="/s")
+g.u("jump", 275, QLD + " (line 431: pmove_JumpVelocity 275)", conf="measured", rawname="pmove_JumpVelocity", per="/s",
+    note="Quake III's 270 raised to 275 (an ESReality thread says QL also raised the step from 18 to 22 in an Oct 2010 update)")
+g.v("ground_accel", 10, QLD + " (line 418: pmove_WalkAccel 10)", "measured", "Quake accelerate factor, as Quake III's pm_accelerate")
+g.v("friction", 6, QLD + " (line 417: pmove_WalkFriction 6; pmove_CircleStrafeFriction 6, line 438)", "measured")
+g.u("stop_speed", 100, P3 + "#L34 (Quake III's pm_stopspeed 100)", conf="estimated", rawname="pm_stopspeed", per="/s",
+    note="not a Quake Live cvar; assumed unchanged from Quake III")
+g.v("air_accel", 0.1, QLD + " (line 447: pmove_AirAccel 1; strafe-only pmove_StrafeAccel 1 toward pmove_WishSpeed 400, lines 420 / 412)", "measured",
+    "VQL air: accel 1 toward the full wish speed, Quake III's formula (Quark multiplies air_accel by 10, so 1 -> 0.1)", raw="pmove_AirAccel 1")
+g.u("air_cap", 320, QLD + " (g_speed 320: the VQL air push aims at the full wish speed)", conf="estimated", rawname="wish speed", per="/s")
+g.v("overstrafe", 1.0, P3 + "#L637 (Quake III's PM_Accelerate, which VQL keeps)", "estimated", "no overstrafe softening")
+g.u("step", 22, QLD + " (line 423: pmove_StepHeight 22)", conf="measured", rawname="pmove_StepHeight")
+g.u("hook_max", 800, QLD + " (line 419: pmove_velocity_gh 800)", conf="measured", rawname="pmove_velocity_gh", per="/s",
+    note="the grappling hook's speed; the hook is only given in some factories (e.g. race / CTF variants)")
+g.toggle("dash", False, QLD, "no dash")
+g.toggle("grapple", False, QLF, "the grappling hook is a factory option, not standard play")
+g.fact("jumpHeight", 275**2 / 1600 * S, "m", "275^2 / (2 x 800) = 47.3 u", "estimated", "v^2/2g; Quark: 1.22 m")
+g.fact("autoHop", "on", "", QLD + " (line 442: pmove_AutoHop 1; line 441: pmove_BunnyHop 1)", "measured", "holding jump re-jumps on landing, as in Quark (the default duel factory sets pmove_BunnyHop 0)")
+g.ground_facts(320 * S, 10, 6, 100 * S, "; stop speed assumed from Quake III")
+g.d["extras"] = ["chain jump: pmove_ChainJump 1, ChainJumpVelocity 110 (a jump soon after the last one adds height)",
+                 "step jump: pmove_StepJump 1, StepJumpVelocity 48 (jumping off a step goes higher); crouch step jump",
+                 "jump scaling: pmove_JumpVelocityScaleAdd 0.4 within pmove_JumpVelocityTimeThreshold 500 ms, capped at pmove_JumpVelocityMax 700",
+                 "air steps: pmove_AirSteps 1 (step-ups while airborne), AirStepFriction 0.03",
+                 "PQL (the 'Turbo' ruleset, e.g. the default race and vampiric CA factories): pmove_AirControl 1, pmove_RampJump 1, pmove_JumpTimeDeltaMin 50, weapon raise/drop 10 ms; CPM-like air control and crouch slide (pmove_CrouchSlide, 2 s, friction 0.5) are switched by these cvars"]
+g.d["notes"] = ("VQL (vanilla Quake Live) from a player's cvarlist dump: pmove_WalkAccel 10, WalkFriction 6, AirAccel 1, JumpVelocity 275, StepHeight 22, g_gravity 800, g_speed 320. "
+                "Quake Live's code isn't public, so these are 'measured' (a dump of what a server ran) and the stop speed is assumed from Quake III. PQL's CPM-style values (strafe accel and wish speed) weren't found published.")
+g.src("Quake Live cvarlist dump (pastebin)", QLD); g.src("Default Quake Live factories (formatted, gist)", QLF)
+g.src("ESReality: Question about QL/Q3 physics (VQL, PQL)", "https://www.esreality.com/post/2838908/questionaboutqlq3physicsvqlpql/")
+g.src("Quake III Arena bg_pmove.c", P3)
+games.append(g.write())
+
+QCN = "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU"
+QCF = "https://quake.bethesda.net/en/news/4ii1II7x0GWYdL28HEOJ34"
+QCR = "https://quake.fandom.com/wiki/Ranger_(QC)"
+g = Game("quake-champions", "Quake Champions (Ranger, a medium)", 2017, "Saber / id Software (id Tech derived)", "Quake family", "u", 1 / 40,
+         "the game's own metres: the patch notes write 2.5 m = 100 u and 0.5 m = 20 u, so 40 u = 1 m (0.025 m/u); champions vary in size, so not rescaled to 1.8 m")
+g.u("speed", 310, QCN + " (June 2018 patch: all mediums 310 base speed)", rawname="base speed", per="/s",
+    note="the developer's published number; lights 320 (Anarki, Nyx, Slash...), heavies 300; Ranger is a medium")
+g.v("air_accel", 0.9057232 / 10, QCN + " (all mediums 0.905723 air accel; lights 0.85, heavies 0.967111)", "estimated",
+    "if Quake Champions keeps Quake III's air formula (accel toward the wish speed; Quake III's is 1): Quark-equivalent 0.9057 / 10. The formula isn't published", raw="Air-Accel 0.905723")
+g.u("air_cap", 310, QCN + " (base speed 310: the wish speed a Quake III-style air push aims at)", conf="estimated", rawname="wish speed", per="/s")
+g.toggle("dash", False, QCN, "champion abilities only (several champions have dashes or blinks)")
+g.toggle("grapple", False, QCN, "no grapple")
+g.fact("maxSpeed", 600 / 40, "m/s", QCR + " (speed 310, max 600)", "measured", "Ranger's listed top speed (600 u/s); forum posts cite a 680 u/s cap for light champions")
+g.fact("lightSpeed", 320 / 40, "m/s", QCN + " (all lights 320 base speed)", "exact")
+g.fact("heavySpeed", 300 / 40, "m/s", QCN + " (all heavies 300 base speed)", "exact")
+g.fact("anarkiFriction", 8, "", QCN + " (Anarki and Sorlag: friction 9 -> 8; circle strafe friction 15 -> 12 / 14)", "exact",
+       "per-champion friction; the other champions' values aren't published (9 before this patch for these two)")
+g.fact("slayerDoubleJump", 6.875, "m/s", QCF + " (Fall 2021 update: DOOM Slayer double jump velocity 7.5 -> 6.875 m/s)", "exact")
+g.d["extras"] = ["per-champion base speed, air acceleration and friction (light / medium / heavy)", "bunny hopping and strafe jumping with a speed cap per champion",
+                 "champion active abilities (dashes, teleports, a hoverboard...)", "rocket jumping"]
+g.d["notes"] = ("Base speeds and air acceleration are the developer's published numbers (June 2018 patch notes, which also give the 40 u = 1 m scale). "
+                "Gravity, jump speed, ground acceleration and the air formula aren't published, so the air mapping is an estimate (assumes Quake III's formula).")
+g.src("Quake Champions June patch update 07.06.2018", QCN); g.src("Quake Champions Fall 2021 update", QCF); g.src("Quake Wiki: Ranger (QC)", QCR)
+g.src("Steam discussion: Quake Champions speed cap", "https://steamcommunity.com/app/611500/discussions/0/1694919808737834911")
+games.append(g.write())
+
+RFW = "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players"
+RFG = "https://steamcommunity.com/sharedfiles/filedetails?id=387675048"
+g = Game("reflex", "Reflex Arena", 2017, "Reflex (Turbo Pixel Studios)", "arena shooters", "u", S,
+         "assumed Quake's scale (a 56 u player, 0.03214 m/u): Reflex speeds follow Quake / CPM (320 ups), but its hull size isn't published")
+g.u("speed", 320, RFW + " (base running speed 320 UPS)", conf="estimated", rawname="base run", per="/s", note="the number is the wiki's; the metre conversion assumes Quake's player size")
+g.toggle("dash", False, RFW, "no dash")
+g.toggle("grapple", False, RFW, "no grapple")
+g.fact("wallrunMaxSpeed", 507 * S, "m/s", RFW + " (wall running / circle strafe max 507 UPS)", "estimated", "507 UPS at the assumed Quake scale")
+g.fact("circleJumpSpeed", 480 * S, "m/s", RFW + " (circle jump about 480 UPS or more)", "estimated")
+g.fact("doubleJumpWindow", 0.4, "s", RFW + " (second jump within 400 ms)", "measured", "a jump within 0.4 s of the last one goes higher (stackable up to a triple jump)")
+g.fact("doubleJumpBonus", 104 * S, "m", RFG + " (double jump height bonus 104 u)", "estimated", "104 u at the assumed Quake scale")
+g.d["extras"] = ["CPM-style air control and strafe jumping", "double and triple jumps (consecutive jumps within 0.4 s stack height)", "ramp jumps", "wall running (507 UPS cap)"]
+g.d["notes"] = ("Reflex's physics constants (jump, ground speed and acceleration, air control, bunny acceleration and wish speed, gravity) became server-editable in 0.47.3's Experimental Plus ruleset, "
+                "but their values weren't found published. Only the run speed and a few movement facts are here.")
+g.src("Reflex Wiki: Tutorial for New Players", RFW); g.src("Steam guide: Reflex Arena mechanics", RFG)
+g.src("Reflex Wiki: Changelog 0.47.x", "http://wiki.reflexfiles.com/index.php?title=Reflex_Changelog_0.47.x")
+games.append(g.write())
+
+# Unreal Engine 2 / 3: Unreal adds a fixed AccelRate (UU/s2) up to GroundSpeed; in the air AirControl x AccelRate toward AirSpeed.
+def ue_accel(g, accel, gspeed, airctl, aspeed, src_accel, src_air, src_aspeed):
+    g.v("ground_accel", accel / gspeed, src_accel, "estimated",
+        f"Unreal adds a fixed AccelRate ({accel:g} UU/s2) up to GroundSpeed; Quark adds ground_accel x wish speed per second, so the same push is {accel:g} / {gspeed:g}",
+        raw=f"AccelRate {accel:g} UU/s2")
+    g.v("air_accel", airctl * accel / aspeed / 10, src_air, "estimated",
+        f"if the air push is AirControl x AccelRate ({airctl * accel:g} UU/s2) toward AirSpeed: Quark-equivalent {airctl:g} x {accel:g} / {aspeed:g} / 10; Unreal's native physics code isn't public",
+        raw=f"AirControl {airctl:g}")
+    g.u("air_cap", aspeed, src_aspeed, conf="estimated", rawname="AirSpeed", per="/s", note="the air push aims at AirSpeed (the same as the run speed)")
+
+U4 = GH + "/Deaod/UT2004/blob/master/"
+SU2 = 1.8 / 88
+g = Game("ut2004", "Unreal Tournament 2004", 2004, "Unreal Engine 2", "arena shooters", "UU", SU2,
+         "player cylinder 88 UU tall (xPawn CollisionHeight 44 x 2, xPawn.uc#L2573), scaled to 1.8 m: 0.02045 m/UU")
+g.u("gravity", 950, U4 + "Engine/PhysicsVolume.uc#L307 (Gravity Z=-950); Engine/LevelInfo.uc#L523 (DefaultGravity -950)", rawname="Gravity", per="/s2")
+g.u("speed", 440, U4 + "XGame/xPawn.uc#L2493 (GroundSpeed=440)", rawname="GroundSpeed", per="/s")
+g.u("jump", 340, U4 + "XGame/xPawn.uc#L2496 (JumpZ=340)", rawname="JumpZ", per="/s")
+ue_accel(g, 2048, 440, 0.35, 440, U4 + "Engine/Pawn.uc#L2779 (AccelRate=2048) and XGame/xPawn.uc#L2493 (GroundSpeed=440)",
+         U4 + "UnrealGame/UnrealPawn.uc#L512 (AirControl=0.35) x AccelRate 2048, toward AirSpeed 440 (xPawn.uc#L2495)", U4 + "XGame/xPawn.uc#L2495 (AirSpeed=440)")
+g.u("step", 35, U4 + "Engine/Actor.uc#L523 (const MAXSTEPHEIGHT = 35)", rawname="MAXSTEPHEIGHT")
+g.u("ladder_speed", 200, U4 + "Engine/Pawn.uc#L2778 (LadderSpeed=200)", rawname="LadderSpeed", per="/s")
+g.u("dash_speed", 1.5 * 440, U4 + "XGame/xPawn.uc#L1986 (Velocity = DodgeSpeedFactor x GroundSpeed x Dir) and #L2512 (DodgeSpeedFactor=1.5)", conf="estimated",
+    rawname="1.5 x 440 =", per="/s", note="the dodge (double-tap) SETS your horizontal speed to 660 UU/s with a 210 UU/s hop; mapped to Quark's dash burst")
+g.toggle("dash", True, U4 + "XGame/xPawn.uc#L1986", "the dodge (and wall dodge, bCanWallDodge)")
+g.toggle("grapple", False, U4 + "XGame/xPawn.uc", "no grapple (the translocator teleports)")
+g.fact("jumpHeight", 340**2 / 1900 * SU2, "m", "340^2 / (2 x 950) = 60.8 UU", "estimated", "v^2/2g; the Unreal Wiki measures 54 UU (stats mutator); Quark: 1.22 m")
+g.fact("jumpHeightMeasured", 54 * SU2, "m", "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT2004).html (J: 54 UU high, 315 UU long)", "measured")
+g.fact("doubleJumpHeight", 126 * SU2, "m", "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT2004).html (J, DJ: 126 UU)", "measured", "jump then double jump")
+g.fact("doubleJumpUp", 365 * SU2, "m/s", U4 + "XGame/xPawn.uc#L2009 (Velocity.Z = JumpZ + MultiJumpBoost) and #L2455 (MultiJumpBoost=25)", "exact",
+       "the double jump sets 365 UU/s up, allowed within 100 UU/s of the apex (#L2031)")
+g.fact("dodgeUp", 210 * SU2, "m/s", U4 + "XGame/xPawn.uc#L2513 (DodgeSpeedZ=210)", "exact")
+g.fact("dodgeDistance", 292 * SU2, "m", "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT2004).html (D: 292 UU standing, 351 running)", "measured", "Quark's dash covers 2.84 m")
+g.d["extras"] = ["dodge (660 UU/s, 210 up) and wall dodge", "double jump near the apex (JumpZ + 25), dodge jump", "shield gun jumps", "translocator",
+                 "ground friction 8 (PhysicsVolume.uc#L308), a different formula from Quark's, not mapped"]
+g.d["notes"] = ("UnrealScript defaults from the UT2004 v3369 script dump (Deaod/UT2004): Engine.Pawn, UnrealGame.UnrealPawn, XGame.xPawn, PhysicsVolume. "
+                "Ground and air acceleration are Quark-equivalents of Unreal's fixed-rate acceleration (estimated). The measured jump (54 UU) is a little under v^2/2g's 60.8.")
+g.src("UT2004 UnrealScript (Deaod/UT2004): xPawn.uc", U4 + "XGame/xPawn.uc"); g.src("UT2004 Engine Pawn.uc / PhysicsVolume.uc / Actor.uc", U4 + "Engine/Pawn.uc")
+g.src("UnrealGame UnrealPawn.uc", U4 + "UnrealGame/UnrealPawn.uc"); g.src("Unreal Wiki: Movement Metrics (UT2004)", "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT2004).html")
+g.src("Unreal Wiki: Unreal Unit (player heights)", "https://unrealarchive.org/wikis/unreal-wiki/Unreal_Unit.html")
+games.append(g.write())
+
+UDK = GH + "/npruehs/hostile-worlds/blob/master/src/Hostile%20Worlds/Development/Src/"
+UTP = UDK + "UTGame/Classes/UTPawn.uc"
+UT3C = "https://xgamingserver.com/configs/ut3"
+g = Game("ut3", "Unreal Tournament 3", 2007, "Unreal Engine 3", "arena shooters", "UU", SU2,
+         "player cylinder 88 UU tall (UTPawn CollisionHeight 44 x 2, UTPawn.uc#L5529), scaled to 1.8 m: 0.02045 m/UU")
+g.u("gravity", 520, UT3C + " (UTGame.ini [Engine.WorldInfo] DefaultGravityZ=-520.0)", rawname="DefaultGravityZ", per="/s2",
+    note="the game's config default (UDK ships the same line); much lower than UT2004's 950")
+g.u("speed", 440, UTP + "#L5550 (GroundSpeed=440.0)", rawname="GroundSpeed", per="/s")
+g.u("jump", 322, UTP + "#L5556 (JumpZ=322.0)", rawname="JumpZ", per="/s")
+ue_accel(g, 2048, 440, 0.35, 440, UTP + "#L5555 (AccelRate=2048.0) and #L5550", UTP + "#L5573 (AirControl=+0.35) x AccelRate 2048, toward AirSpeed 440 (#L5551)", UTP + "#L5551 (AirSpeed=440.0)")
+g.u("step", 26, UTP + "#L5590 (MaxStepHeight=26.0)", rawname="MaxStepHeight")
+g.u("ladder_speed", 200, UDK + "Engine/Classes/Pawn.uc#L3552 (LadderSpeed=+200.0; UTPawn keeps it)", rawname="LadderSpeed", per="/s")
+g.u("dash_speed", 600, UTP + "#L5553 (DodgeSpeed=600.0) and #L3282 (Velocity = DodgeSpeed x Dir)", conf="estimated", rawname="DodgeSpeed", per="/s",
+    note="the dodge SETS your horizontal speed to 600 UU/s with a 295 UU/s hop; mapped to Quark's dash burst")
+g.toggle("dash", True, UTP + "#L3282", "the dodge and wall dodge")
+g.toggle("grapple", False, UTP, "no grapple (the translocator teleports)")
+g.fact("jumpHeight", 322**2 / 1040 * SU2, "m", "322^2 / (2 x 520) = 99.7 UU", "estimated",
+       "v^2/2g from JumpZ and the config gravity; the AI's MaxJumpHeight=49 / MaxDoubleJumpHeight=87 (UTPawn.uc#L5591-5592) suggest less, so treat this with care; Quark: 1.22 m")
+g.fact("doubleJumpUp", 277 * SU2, "m/s", UTP + "#L3303 (Velocity.Z = JumpZ + MultiJumpBoost) and #L5583 (MultiJumpBoost=-45.0)", "exact",
+       "the double jump sets 277 UU/s up, allowed within 160 UU/s of the apex (DoubleJumpThreshold, #L5627)")
+g.fact("dodgeUp", 295 * SU2, "m/s", UTP + "#L5554 (DodgeSpeedZ=295.0)", "exact")
+g.d["extras"] = ["dodge (600 UU/s, 295 up) and wall dodge; no dodge jump (Liandri Archives: Jumping)", "double jump near the apex (JumpZ - 45)", "impact hammer jumps", "translocator, hoverboard in vehicle modes",
+                 "ground friction 8 (PhysicsVolume.uc#L260), a different formula from Quark's, not mapped"]
+g.d["notes"] = ("UTGame defaults from UDK's copy of UT3's UnrealScript (the Hostile Worlds repository), which may differ in small ways from retail UT3; gravity from UT3's UTGame.ini. "
+                "Ground / air acceleration are Quark-equivalents of Unreal's fixed-rate acceleration (estimated).")
+g.src("UDK UTGame UTPawn.uc (npruehs/hostile-worlds)", UTP); g.src("UDK Engine Pawn.uc / PhysicsVolume.uc", UDK + "Engine/Classes/Pawn.uc")
+g.src("UT3 server config (UTGame.ini)", UT3C); g.src("UDK game ini (DefaultGravityZ -520)", "https://pastebin.com/Xt9y42L3")
+g.src("Liandri Archives: Jumping", "https://unrealarchive.org/wikis/the-liandri-archives/Jumping.html")
+games.append(g.write())
+
+# Halo 3 / Reach (MCC): one player's in-game measurements (bungie.net forum): speed in Forge metres, jump height in % of the Spartan's height
+# (standing foot to the top of the head at the apex), airtime. Rescaled to a 1.8 m player taking the Spartan as 7 ft (2.134 m, the H2EK reference).
+HFM = "https://www.bungie.net/en/Forums/Post/3291870"
+SPART = 7 * 0.3048
+for gid, name, year, run, jpct, air, extra in [
+        ("halo3", "Halo 3 (MCC)", 2007, 7.69, 245, 1.4, ["equipment (bubble shield, grav lift...)", "crouch jumping", "no sprint"]),
+        ("halo-reach", "Halo: Reach (MCC)", 2010, 6.82, 195, 1.2, ["armour abilities: sprint, evade (a dodge), jetpack, armour lock", "crouch jumping"])]:
+    g = Game(gid, name, year, "Blam!", "arena shooters", "Forge m", 1.8 / SPART,
+             "speeds measured in Forge metres; scaled to 1.8 m taking the Spartan as about 7 ft (2.134 m, the H2EK player reference): 0.8435 m per Forge metre")
+    rise = (jpct / 100 - 1) * 1.8
+    g.u("speed", run, HFM + f" (default Slayer movement speed {run} m/s)", conf="measured", rawname="run", per="/s",
+        note="one player's measurement over the Forge grid; the 1.8 m rescale is an assumption")
+    g.v("gravity", 8 * rise / air**2, HFM + f" (jump peak {jpct} % of the Spartan's height, {air} s in the air)", "estimated",
+        f"derived from the measured jump: rise = ({jpct} - 100) % of 1.8 m = {rise:.2f} m, g = 8 x rise / airtime^2", raw=f"{jpct} %, {air} s")
+    g.v("jump", 4 * rise / air, HFM + f" (jump peak {jpct} %, {air} s)", "estimated", f"take-off speed = 4 x rise / airtime = 4 x {rise:.2f} / {air}", raw=f"{jpct} %, {air} s")
+    g.toggle("dash", False, HFM, "no dash in the default loadouts (Reach's Evade armour ability is a dodge)" if gid == "halo-reach" else "no dash")
+    g.toggle("grapple", False, HFM, "no grapple (Halo Infinite adds the Grappleshot)")
+    g.fact("jumpHeight", rise, "m", HFM + f" ({jpct} % head height at the apex)", "estimated", f"{jpct - 100} % of the player's height, scaled to 1.8 m; Quark: 1.22 m")
+    g.fact("airTime", air, "s", HFM, "measured", "Quark: 0.67 s")
+    if gid == "halo3":
+        g.fact("mlgSpeed", 8.45 * 1.8 / SPART, "m/s", HFM + " (Halo 3 MLG settings 8.45 m/s)", "measured", "MLG settings; the post's percentages for it disagree (110% in the settings list, 90% beside the measurement)")
+    else:
+        g.fact("mlgSpeed", 7.5 * 1.8 / SPART, "m/s", HFM + " (Reach MLG 7.5 m/s, 110% speed, 150% gravity)", "measured")
+    g.d["extras"] = extra + ["slow, high jumps compared with arena shooters: the airtime (" + str(air) + " s) is about twice Quark's"]
+    g.d["notes"] = ("One player's measurements (bungie.net, 2011): run speed over the Forge grid, jump height in hundredths of the Spartan's height and airtime. "
+                    "Gravity and jump speed are derived from the height and airtime (estimates), and everything is rescaled to a 1.8 m player taking the Spartan as 7 ft.")
+    g.src("bungie.net: classic Halo movement speed, jump height, gravity", HFM); g.src("H2EK: Player Statistics and Metrics (Spartan about 7 ft)", "https://www.h2maps.net/editingkit/player%20statistics%20and%20metrics.html")
+    games.append(g.write())
+
+DE = "https://steamcommunity.com/sharedfiles/filedetails/?id=2214688600"
+g = Game("doom-eternal", "DOOM Eternal", 2020, "id Tech 7", "movement shooters", "m", 1.0,
+         "id Tech 7's cvars are in metres (eye height pm_normalViewHeight 1.657 m, i.e. about a 1.8 m player): values as given")
+g.v("gravity", 20.307301, DE + " (g_gravity 20.307301)", "exact", "the cvar default (800 in/s2 in metres)", raw="g_gravity 20.307301")
+g.v("speed", 9.525, DE + " (pm_runspeed 9.525; pm_sprintspeed 9.525)", "exact", "the run speed (375 in/s); backwards x0.9 (pm_backSpeedRatio)", raw="pm_runspeed 9.525")
+g.v("jump", math.sqrt(2 * 20.307301 * 1.3716), DE + " (pm_jumpheight 1.3716 with g_gravity 20.307301)", "estimated",
+    "take-off speed for the 1.3716 m jump height: sqrt(2 x 20.307 x 1.3716)", raw="pm_jumpheight 1.3716 m")
+g.v("dash_cooldown", 0.5, DE + " (envSuit_dashRetriggerTime 500 ms)", "exact", "the delay between dashes; each charge recharges in about 2 s (1 s upgraded) per a mod page", raw="500 ms")
+g.v("dash_charges", 2, "https://doomwiki.org/wiki/Dash (two dashes in quick succession)", "measured")
+g.toggle("dash", True, "https://doomwiki.org/wiki/Dash", "the dash (after the first missions)")
+g.toggle("grapple", True, "https://www.nexusmods.com/doometernal/mods/36", "the Super Shotgun's Meat Hook pulls you to a demon (a weapon mod)")
+g.fact("jumpHeight", 1.3716, "m", DE + " (pm_jumpheight 1.3716)", "exact", "Quark: 1.22 m; plus a double jump")
+g.fact("eyeHeight", 1.65735, "m", DE + " (pm_normalViewHeight 1.65735)", "exact")
+g.fact("dashRecharge", 2, "s", "https://www.nexusmods.com/doometernal/mods/36 (vanilla dash cooldown 2 s, 1 s upgraded)", "measured")
+g.d["extras"] = ["double jump", "dash (2 charges)", "monkey bars, wall climbing on climbable walls", "Meat Hook grapple on the Super Shotgun", "no bunny hopping or air strafing to speak of"]
+g.d["notes"] = ("Cvar defaults from a console-command guide (the game's cvars are in metres): run 9.525 m/s, gravity 20.31 m/s2, jump height 1.37 m, all within 5% of Quark's 9.5 / 22 / 1.22. "
+                "Acceleration and friction cvars weren't listed. DOOM (2016) is not covered: only stopwatch timings that disagree with each other (230 vs 440 u/s) were found.")
+g.src("Steam guide: Console Commands for DOOM Eternal", DE); g.src("Doom Wiki: Dash", "https://doomwiki.org/wiki/Dash"); g.src("Nexus Mods: Locomotive (vanilla values it changes)", "https://www.nexusmods.com/doometernal/mods/36")
+games.append(g.write())
+
+# ------------------------------------------------------------------ mainstream shooters
+COD = "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS"
+CJ = GH + "/callofduty4x/CoD4x_Server/blob/master/src/bg_jump.cpp"
+g = Game("cod4", "Call of Duty 4: Modern Warfare", 2007, "IW 3.0 (id Tech 3 derived)", "mainstream shooters", "u", 0.0254,
+         "1 unit = 1 inch (the CoD modding wiki's study), 0.0254 m/u; the player box height isn't published, so not rescaled to 1.8 m")
+g.u("gravity", 800, "https://xgamingserver.com/configs/cod4 (g_gravity: 'Default is 800')", rawname="g_gravity", per="/s2")
+g.u("speed", 190, COD + " (max forward run 190 u/s with an SMG, trench gun or sniper class)", conf="measured", rawname="run", per="/s",
+    note="weapon-dependent: assault class 180, machine gunner 166; strafe 152, back 133")
+g.u("jump", math.sqrt(2 * 800 * 39), CJ + "#L358 (jump_height 39) with g_gravity 800", conf="estimated", rawname="sqrt(2 x 800 x 39) =", per="/s",
+    note="CoD sets the jump by its height (jump_height), not a speed")
+g.v("friction", 5.5, "https://www.gamerconfig.eu/commands/call-of-duty-4-modern-warfare/ (friction 5.5)", "measured", "the dvar list's default; the Quake friction formula (CoD's movement is Quake III-derived)")
+g.toggle("dash", False, COD, "no dash")
+g.toggle("grapple", False, COD, "no grapple")
+g.fact("jumpHeight", 39 * 0.0254, "m", CJ + "#L358 (jump_height 39.0, 'the maximum height of a player's jump')", "exact", "measured 39.5-42 u depending on frame rate (125 fps: 41); Quark: 1.22 m")
+g.fact("strafeSpeed", 152 * 0.0254, "m/s", COD, "measured")
+g.fact("backSpeed", 133 * 0.0254, "m/s", COD, "measured")
+g.d["extras"] = ["jump slowdown: landing cuts speed to x0.65 (x0.5 after a high fall) for a moment (bg_jump.cpp#L330-350, jump_slowdownEnable 1)",
+                 "jump_stepSize 18: the step up allowed at the top of a jump arc", "sprint (limited time, scr_player_sprinttime 4 s)", "mantling, frame-rate dependent jump heights (the 125 / 250 / 333 fps tricks)"]
+g.d["notes"] = ("CoD4's game code isn't public; the CoD4x server (a reverse-engineered rewrite) gives jump_height, a dvar list gives friction, a host's config gives gravity, and the run speeds are a modder's measurements. "
+                "Modern Call of Duty (MW2019 / MWII / BO6) publishes no movement values; community testing (TrueGameData) gives sprint speeds (BO6 SMGs 6.6-6.7 m/s, pistols 6 m/s) but no base speed, gravity or jump, so those games aren't covered.")
+g.src("CoD modding wiki: A Study on FPS (run speeds, jump heights)", COD); g.src("CoD4x Server bg_jump.cpp", CJ)
+g.src("GAMERCONFIG: CoD4 console commands", "https://www.gamerconfig.eu/commands/call-of-duty-4-modern-warfare/"); g.src("XGamingServer: CoD4 server config", "https://xgamingserver.com/configs/cod4")
+g.src("WZ Stats (TrueGameData): BO6 close range stats", "https://wzstats.gg/bo6/meta/close-range-meta")
+games.append(g.write())
+
+FNM = "https://fortnite.fandom.com/wiki/Movement"
+g = Game("fortnite", "Fortnite (Battle Royale)", 2017, "Unreal Engine 4/5", "mainstream shooters", "m", 1.0, "the wiki gives metres; values as given (Unreal units are centimetres)")
+g.v("speed", 5.48, FNM + " (running 5.48 m/s)", "measured", "running; sprinting 6.47 m/s, crouch-running 4.18 m/s, slow jog 2 m/s")
+g.toggle("dash", False, FNM, "no dash (some seasons' items add one)")
+g.toggle("grapple", False, FNM, "grapples are seasonal items, not standard movement")
+g.fact("sprintSpeed", 6.47, "m/s", FNM + " (sprinting 6.47 m/s)", "measured")
+g.fact("crouchSpeed", 4.18, "m/s", FNM + " (crouch running 4.18 m/s)", "measured")
+g.fact("walkSpeed", 2, "m/s", FNM + " (jogging, slow 2 m/s)", "measured")
+g.d["extras"] = ["sprint, slide, mantle (Chapter 5 on)", "building", "seasonal mobility items (grapples, launch pads, shockwave grenades)"]
+g.d["notes"] = "Speeds from the Fortnite Wiki's movement-state table (a Pocket Tactics test over 1,836 m agreed: 5:39 actual against 5:35 predicted at 5.48 m/s). Gravity, jump and acceleration aren't published."
+g.src("Fortnite Wiki: Movement", FNM); g.src("Pocket Tactics: racing across the Fortnite map", "https://www.pockettactics.com/fortnite/map-speed")
+games.append(g.write())
+
+g = Game("portal2", "Portal 2", 2011, "Source", "Source family", "u", S72, "assumed Source's 72 u player (as Half-Life 2), scaled to 1.8 m: 0.025 m/u")
+g.u("gravity", 600, "https://developer.valvesoftware.com/wiki/Gravity (sv_gravity 600 in Half-Life 2, Portal and Portal 2)", rawname="sv_gravity", per="/s2")
+g.u("speed", 175, "https://rules.portal2.sr/ (cl_forwardspeed / cl_sidespeed / cl_backspeed allowed 0 .. 175)", conf="measured", rawname="cl_forwardspeed", per="/s",
+    note="the speedrun rules cap the move-speed cvars at 175, the game's default walk speed")
+g.u("step", 18, MV + "#L100 (Source's sv_stepsize 18)", conf="estimated", rawname="sv_stepsize", note="Source's default, assumed unchanged")
+g.toggle("dash", False, "https://rules.portal2.sr/", "no dash")
+g.toggle("grapple", False, "https://rules.portal2.sr/", "no grapple")
+g.d["extras"] = ["portals keep your momentum (flings)", "gels: repulsion (bounce) and propulsion (speed)", "aerial faith plates, excursion funnels", "air control is limited (a puzzle game, not a strafe game)"]
+g.d["notes"] = "Portal 2's game code isn't public; gravity from the Valve Developer wiki, walk speed from the speedrun rules' cvar limits. Acceleration, friction and jump weren't found."
+g.src("Valve Developer Community: Gravity", "https://developer.valvesoftware.com/wiki/Gravity"); g.src("Portal 2 speedrun rules (cvar limits)", "https://rules.portal2.sr/")
+games.append(g.write())
+
+CSI = GH + "/ValveSoftware/halflife/issues/1307"
+CSG = "https://gist.github.com/Log1x/b99213403bcbef9b5f32e0b11c419f19"
+g = Game("cs16-comp", "Counter-Strike 1.6 (server / competitive config)", 2003, "GoldSrc", "Source family", "u", S72, "player hull 72 u tall (as Half-Life), scaled to 1.8 m: 0.025 m/u")
+g.u("gravity", 800, CSG + " (sv_gravity 800)", conf="measured", rawname="sv_gravity", per="/s2")
+g.u("speed", 250, REGAME + "dlls/weapons.h#L1178 (KNIFE_MAX_SPEED 250)", rawname="knife max speed", per="/s", note="knife out, as the cs16 entry")
+g.u("jump", math.sqrt(2 * 800 * 45), RP + "#L2629 (sqrt(2 x 800 x 45))", rawname="jump", per="/s")
+g.v("ground_accel", 5, CSI + " (a Steam CS 1.6 server log: sv_accelerate 10 -> 5 once the game config runs); " + CSG + " (sv_accelerate 5)", "measured",
+    "what CS 1.6 servers actually run (the engine default is 10): the slower acceleration makes counter-strafing matter")
+g.v("friction", 4, CSI + " (sv_friction 4); " + CSG, "measured", "x2 near drops (edgefriction 2)")
+g.u("stop_speed", 75, CSI + " (sv_stopspeed 100 -> 75); " + CSG + " (sv_stopspeed 75)", conf="measured", rawname="sv_stopspeed", per="/s")
+air_uncapped(g, 10, 250, 30, CSI + " (sv_airaccelerate 10)", RP + " (air cap 30, as Half-Life)", "knife speed 250")
+g.u("step", 18, CSI + " (sv_stepsize 18)", conf="measured", rawname="sv_stepsize")
+g.u("ladder_speed", 200, REGAME + "pm_shared/pm_shared.h#L54 (MAX_CLIMB_SPEED 200)", rawname="MAX_CLIMB_SPEED", per="/s")
+g.toggle("dash", False, RP, "no dash"); g.toggle("grapple", False, RP, "no grapple")
+g.fact("jumpHeight", 45 * S72, "m", RP + "#L2629 (45 u)", "exact", "Quark: 1.22 m")
+g.ground_facts(250 * S72, 5, 4, 75 * S72, "; edge friction not modelled")
+g.d["extras"] = ["the jump penalty and bunny-hop limit of the cs16 entry", "fun / kreedz servers often raise sv_airaccelerate to 100 (as the cited server config does)"]
+g.d["notes"] = ("The movement CS 1.6 servers actually run: sv_accelerate 5 and sv_stopspeed 75 instead of the engine's 10 and 100 (cs16 has the engine defaults). "
+                "Sources: a server log in Valve's halflife issue tracker showing the values switching once the game's config runs, and a public server config. League configs weren't found published.")
+g.src("ValveSoftware/halflife issue 1307 (CS 1.6 server cvar log)", CSI); g.src("Counter-Strike 1.6 server config (gist)", CSG); g.src("ReGameDLL_CS pm_shared.cpp", RP)
+games.append(g.write())
+
 # ------------------------------------------------------------------ index
 CORE = ["gravity", "speed", "jump", "ground_accel", "friction", "stop_speed", "air_accel", "air_cap", "step"]
 def closeness(gd):
     ks = [k for k in CORE if k in gd["values"]]
     if not ks: return None, 0
     return round(sum(abs(math.log(gd["values"][k]["mult"])) for k in ks if gd["values"][k]["mult"] > 0) / len(ks), 3), len(ks)
-order = ["Quake family", "Source family", "arena shooters", "hero/tactical shooters", "movement shooters", "other"]
+order = ["Quake family", "Source family", "arena shooters", "hero/tactical shooters", "movement shooters", "mainstream shooters", "other"]
 descs = {"Quake family": "Quake-engine and id-derived games: Quake-style acceleration and friction, the model Quark's pmove uses",
          "Source family": "GoldSrc and Source: Quake-style movement with a 30 u air cap and full-wish-speed air acceleration",
-         "arena shooters": "other arena shooters (Unreal, Halo): different movement models, community-measured",
+         "arena shooters": "other arena shooters (Unreal, Halo, Reflex): different movement models, from scripts or community measurements",
          "hero/tactical shooters": "hero and tactical shooters with documented metric speeds",
-         "movement shooters": "wallrun / slide / grapple shooters (Respawn)",
+         "movement shooters": "wallrun / slide / dash / grapple shooters (Respawn, DOOM Eternal)",
+         "mainstream shooters": "Call of Duty and Fortnite: config values and community measurements",
          "other": "not shooters, for scale: Minecraft (a 1.8 m player) and Celeste (Quark's dash techs come from it)"}
 index = {"version": 1, "quark": PP.get("version"), "units": "metres, seconds (Quark's); mult = value / Quark's base",
          "confidence": {"exact": "read from source code, a shipped config or a cvar default (converted by the stated scale)",

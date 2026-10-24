@@ -53,6 +53,15 @@
    "confidence": "measured",
    "note": "down 3 m/s"
   },
+  "step": {
+   "value": 0.6,
+   "unit": "m",
+   "mult": 1.0909,
+   "source": "https://docs.neoforged.net/docs/entities/attributes (step_height default 0.6 blocks)",
+   "confidence": "exact",
+   "raw": "step_height 0.6",
+   "note": "the vanilla attribute default (also lists jump_strength 0.42 and gravity 0.08, as above)"
+  },
   "dash": {
    "value": false,
    "source": "https://minecraft.fandom.com/wiki/Player",
@@ -98,8 +107,12 @@
   "sprint jumping",
   "sneaking at 1.295 m/s, elytra, swimming"
  ],
- "notes": "Minecraft's player happens to be 1.8 m, Quark's height. Its 20 Hz tick model (per-tick velocity multipliers) differs from Quake's, so friction and gravity are equivalents. Step-up height isn't sourced here.",
+ "notes": "Minecraft's player happens to be 1.8 m, Quark's height. Its 20 Hz tick model (per-tick velocity multipliers) differs from Quake's, so friction and gravity are equivalents. Step-up height is the vanilla step_height attribute (0.6 blocks).",
  "sources": [
+  {
+   "title": "NeoForged docs: attributes (vanilla defaults)",
+   "url": "https://docs.neoforged.net/docs/entities/attributes"
+  },
   {
    "title": "Minecraft Wiki: Player",
    "url": "https://minecraft.fandom.com/wiki/Player"

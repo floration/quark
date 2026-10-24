@@ -1,0 +1,110 @@
+{
+ "id": "cod4",
+ "name": "Call of Duty 4: Modern Warfare",
+ "year": 2007,
+ "engine": "IW 3.0 (id Tech 3 derived)",
+ "group": "mainstream shooters",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.0254,
+  "why": "1 unit = 1 inch (the CoD modding wiki's study), 0.0254 m/u; the player box height isn't published, so not rescaled to 1.8 m"
+ },
+ "values": {
+  "gravity": {
+   "value": 20.32,
+   "unit": "m/s2",
+   "mult": 0.9236,
+   "source": "https://xgamingserver.com/configs/cod4 (g_gravity: 'Default is 800')",
+   "confidence": "exact",
+   "raw": "g_gravity 800 u/s2"
+  },
+  "speed": {
+   "value": 4.826,
+   "unit": "m/s",
+   "mult": 0.508,
+   "source": "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS (max forward run 190 u/s with an SMG, trench gun or sniper class)",
+   "confidence": "measured",
+   "raw": "run 190 u/s",
+   "note": "weapon-dependent: assault class 180, machine gunner 166; strafe 152, back 133"
+  },
+  "jump": {
+   "value": 6.3449,
+   "unit": "m/s",
+   "mult": 0.8644,
+   "source": "https://github.com/callofduty4x/CoD4x_Server/blob/master/src/bg_jump.cpp#L358 (jump_height 39) with g_gravity 800",
+   "confidence": "estimated",
+   "raw": "sqrt(2 x 800 x 39) = 249.8 u/s",
+   "note": "CoD sets the jump by its height (jump_height), not a speed"
+  },
+  "friction": {
+   "value": 5.5,
+   "unit": "",
+   "mult": 0.7857,
+   "source": "https://www.gamerconfig.eu/commands/call-of-duty-4-modern-warfare/ (friction 5.5)",
+   "confidence": "measured",
+   "note": "the dvar list's default; the Quake friction formula (CoD's movement is Quake III-derived)"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 0.9906,
+   "unit": "m",
+   "source": "https://github.com/callofduty4x/CoD4x_Server/blob/master/src/bg_jump.cpp#L358 (jump_height 39.0, 'the maximum height of a player's jump')",
+   "confidence": "exact",
+   "note": "measured 39.5-42 u depending on frame rate (125 fps: 41); Quark: 1.22 m"
+  },
+  "strafeSpeed": {
+   "value": 3.8608,
+   "unit": "m/s",
+   "source": "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS",
+   "confidence": "measured"
+  },
+  "backSpeed": {
+   "value": 3.3782,
+   "unit": "m/s",
+   "source": "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS",
+   "confidence": "measured"
+  }
+ },
+ "extras": [
+  "jump slowdown: landing cuts speed to x0.65 (x0.5 after a high fall) for a moment (bg_jump.cpp#L330-350, jump_slowdownEnable 1)",
+  "jump_stepSize 18: the step up allowed at the top of a jump arc",
+  "sprint (limited time, scr_player_sprinttime 4 s)",
+  "mantling, frame-rate dependent jump heights (the 125 / 250 / 333 fps tricks)"
+ ],
+ "notes": "CoD4's game code isn't public; the CoD4x server (a reverse-engineered rewrite) gives jump_height, a dvar list gives friction, a host's config gives gravity, and the run speeds are a modder's measurements. Modern Call of Duty (MW2019 / MWII / BO6) publishes no movement values; community testing (TrueGameData) gives sprint speeds (BO6 SMGs 6.6-6.7 m/s, pistols 6 m/s) but no base speed, gravity or jump, so those games aren't covered.",
+ "sources": [
+  {
+   "title": "CoD modding wiki: A Study on FPS (run speeds, jump heights)",
+   "url": "https://wiki.zeroy.com/index.php/Call_of_Duty_:_A_Study_on_FPS"
+  },
+  {
+   "title": "CoD4x Server bg_jump.cpp",
+   "url": "https://github.com/callofduty4x/CoD4x_Server/blob/master/src/bg_jump.cpp"
+  },
+  {
+   "title": "GAMERCONFIG: CoD4 console commands",
+   "url": "https://www.gamerconfig.eu/commands/call-of-duty-4-modern-warfare/"
+  },
+  {
+   "title": "XGamingServer: CoD4 server config",
+   "url": "https://xgamingserver.com/configs/cod4"
+  },
+  {
+   "title": "WZ Stats (TrueGameData): BO6 close range stats",
+   "url": "https://wzstats.gg/bo6/meta/close-range-meta"
+  }
+ ]
+}
