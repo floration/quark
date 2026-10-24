@@ -112,7 +112,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **The defenders' yard in the north: crate stacks, the wall down its middle, the perch and the screen wall.** Where the defence starts (the spawns in the yard's far corners, the screen wall keeping them out of the attackers' sight).
 - **The freight truck, with crates up onto it.** Cover and high ground in the open yard.
 - **The sunken trench and the loading canopy.** The low lane beside the dock, fought under a roof.
-- **The gatehouse.** Where the attackers stack before the push. Its front is walled (you leave round the sides): from the attackers' spawn you could see the defenders' 60 m away.
+- **The gatehouse.** Where the attackers stack before the push. Its front is walled (you leave round the sides): from the attackers' spawn you could see the defenders' 60 m away. Its front posts stand in the wall's ends (a post a step behind left a gap too narrow to walk, and bots stuck there).
 - **The barge basin, with a moored barge to cross on.** A lethal corner by the attackers' gate.
 - **The yard crane, up a ladder to its cab at 9.6 m.** The defenders' overwatch over both sites, exposed to everything.
 - **Pallet stacks and drums.** Cover on the way to the sites and in the defenders' yard.
@@ -262,7 +262,7 @@ It's offered in every mode but four and graded in each one it offers (decision B
 - **The mother lode (E).** Ringed by big crystals.
 - **The crystal grotto.** An underground lake (fall in and you die), crystal forests, and the shore point (D).
 - **Ledges at 12 m round both caverns, with stairs and ladders.** High ground over D and E, and the defenders' last spawns.
-- **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m.
+- **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m. The two by the cavern wall stop 2.5 m short of it (built against it, each made a dead-end corner bots stuck in on the way to the portals).
 - **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
 - **Crates, ore bins, rubble, timber cribs, rock falls and ore wagons on every floor and ledge.** Cover everywhere, and things to go round in the open bays (3.5 m apart since 1.17, and on the 12 m ledges too; 6 m before, and cover was on 28% of the floor: it's on 47% now).
 
