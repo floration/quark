@@ -61,10 +61,10 @@ bool any() {
     return kEmbeddedOverrides[0].path || !g_user.empty();
 }
 
-bool find(const std::string& base, std::initializer_list<const char*> exts, std::vector<uint8_t>& out, std::string* matched, std::string* where) {
+bool find(const std::string& base, std::initializer_list<const char*> exts, std::vector<uint8_t>& out, std::string* matched, std::string* where, From from) {
     if (!any()) return false;
     std::string b = lower(base);
-    for (int pass = 0; pass < 2; pass++)   // yours first, then the shipped ones
+    for (int pass = from == FROM_SHIPPED ? 1 : 0; pass < (from == FROM_USER ? 1 : 2); pass++)   // yours first, then the shipped ones
         for (const char* ext : exts) {
             std::string key = b + lower(ext);
             if (pass == 0) {
@@ -83,11 +83,14 @@ bool find(const std::string& base, std::initializer_list<const char*> exts, std:
     return false;
 }
 
-bool readRelative(const std::string& path, std::vector<uint8_t>& out) {
+bool readRelative(const std::string& path, std::vector<uint8_t>& out, From from) {
     if (!any()) return false;
     std::string key = lower(path);
-    auto it = g_user.find(key);
-    if (it != g_user.end() && readFile(it->second, out)) return true;
+    if (from != FROM_SHIPPED) {
+        auto it = g_user.find(key);
+        if (it != g_user.end() && readFile(it->second, out)) return true;
+    }
+    if (from == FROM_USER) return false;
     if (const EmbeddedOverride* e = embedded(key)) { out.assign(e->data, e->data + e->size); return true; }
     return false;
 }

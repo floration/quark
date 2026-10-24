@@ -100,6 +100,27 @@ const char* modelDesc(int kind) {
     }
     return "";
 }
+const char* propDesc(int prop) {
+    switch (prop) {
+        case PROP_GUN_ARM: return "the arm and gun other players hold out: metres, origin at the shoulder, reaching along -Z (turned with their aim, scaled with their body). No colour slots";
+        case PROP_ARM: return "the arm that holds out a weapon model (hide and seek / tag: whoever is it): origin at the shoulder, along -Z, the hand (the weapon's pivot) at z -0.5. No colour slots";
+        case PROP_BOMB_PACK: return "the bomb on its carrier's back: in the player's space (feet at the origin, facing -Z, the pack at +Z). Moves down with a crouch. No colour slots";
+        case PROP_BOMB: return "the bomb on the ground, dropped or planted: origin on the ground under it. Materials glow* blink red while a planted bomb ticks (drawn dark in the export)";
+        case PROP_CART: return "the payload cart: origin on the track under its middle, front (-Z) the way it is pushed. Materials team* = the pushing team (white = that colour; grey when neutral), metal* / accent* / glow* = the map's colours";
+        case PROP_GATE: return "a payload checkpoint: origin on the track, -Z the cart's way, posts either side (x +-1.8). Materials team* = grey, the attackers' colour once the cart has reached it";
+    }
+    return "";
+}
+// A model's default boxes with the export's colours (and each box's mul / add / crouch: a box model file)
+void defaultParts(int kind, int i, ModelParts& parts) { exportModelParts(kind, i, parts); }
+// The built-in model as drawn with this palette (and crouch: players)
+void builtIn(int kind, int i, const ModelPalette& pal, float hs, ModelParts& out) {
+    if (kind == MODEL_PLAYER) playerModelParts(i, hs, pal, out);
+    else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, out);
+    else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, out);
+    else if (kind == MODEL_PROP) propParts(i, pal, out);
+    else crownParts(pal, out);
+}
 
 struct Item { std::string id, category, kind, name, file, desc, kit; };
 std::string manifestJson(const std::vector<Item>& items) {
@@ -163,15 +184,12 @@ int exportAssets(const char* dirArg) {
     for (int kind = 0; kind < MODEL_KINDS; kind++)
         for (int i = 0; i < modelCount(kind); i++) {
             if (!modelExists(kind, i)) continue;
-            const ModelPalette& pal = referencePalette(kind);
-            if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-            else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-            else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-            else crownParts(pal, parts);
+            defaultParts(kind, i, parts);
             MeshData mesh;
             partsToMesh(parts, mesh);
             std::string path = modelPath(kind, i);
-            add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", modelDesc(kind), modelKindName(kind)}, writeGltf(mesh, modelName(kind, i)));
+            add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", kind == MODEL_PROP ? propDesc(i) : modelDesc(kind), modelKindName(kind)},
+                writeGltf(mesh, modelName(kind, i), &parts));
         }
     // maps: the shipped text (the generated map, or its override)
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
@@ -247,20 +265,47 @@ static void testModelExport() {
         for (int i = 0; i < modelCount(kind); i++) {
             if (!modelExists(kind, i)) continue;
             models++;
-            const ModelPalette& pal = referencePalette(kind);
-            if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-            else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-            else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-            else crownParts(pal, parts);
-            ACHECK(!parts.empty());
+            defaultParts(kind, i, parts);
+            ACHECK(!parts.empty() && parts.size() <= kMaxDefaultParts);
+            ACHECK(modelPath(kind, i).find("//") == std::string::npos && modelName(kind, i)[0]);
             MeshData a, b;
             partsToMesh(parts, a);
             ACHECK(a.triangleCount() == parts.size() * 12);
-            std::string g = writeGltf(a, modelName(kind, i));
+            std::string g = writeGltf(a, modelName(kind, i), &parts);
             std::string err;
-            bool ok = loadGltf((const uint8_t*)g.data(), g.size(), nullptr, b, &err);
+            ModelParts boxes;
+            bool ok = loadGltf((const uint8_t*)g.data(), g.size(), nullptr, b, &err, &boxes);
             if (!ok) printf("  %s: %s\n", modelPath(kind, i).c_str(), err.c_str());
             ACHECK(ok);
+            // the box model round trip: the file's boxes are the export's exactly (every float as written), and drawn
+            // with any palette (and crouched) they are the built-in model's boxes
+            ACHECK(boxes.size() == parts.size());
+            finishBoxModel(kind, i, boxes);
+            for (size_t k = 0; k < boxes.size() && k < parts.size(); k++) {
+                const ModelPart &p = parts[k], &q = boxes[k];
+                bool same = !memcmp(&p.c, &q.c, sizeof p.c) && !memcmp(&p.h, &q.h, sizeof p.h) && !memcmp(&p.color, &q.color, sizeof p.color) &&
+                            p.slot == q.slot && p.alpha == q.alpha && p.shadow == q.shadow && p.visOnly == q.visOnly && p.crouch == q.crouch &&
+                            (p.slot == TINT_NONE || (!memcmp(&p.mul, &q.mul, sizeof p.mul) && !memcmp(&p.add, &q.add, sizeof p.add) && !memcmp(&p.teamMul, &q.teamMul, sizeof p.teamMul)));
+                if (!same) printf("  %s box %zu differs after the round trip\n", modelPath(kind, i).c_str(), k);
+                ACHECK(same);
+            }
+            for (int v = 0; v < 3; v++) {
+                ModelPalette pal = referencePalette(kind, i);
+                const Vec3 cols[3] = {{0.2f, 0.4f, 0.8f}, {1.0f, 0.3f, 0.25f}, {0.05f, 0.9f, 0.1f}};
+                for (int s = 1; s < TINT_COUNT; s++) if (drivenSlots(kind, i) >> s & 1) pal.c[s] = cols[(v + s) % 3];
+                const float hs = kind == MODEL_PLAYER && v == 1 ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
+                ModelParts want, got;
+                builtIn(kind, i, pal, hs, want);
+                overrideBoxParts(kind, i, boxes, pal, hs, got);
+                ACHECK(want.size() == got.size());
+                for (size_t k = 0; k < want.size() && k < got.size(); k++) {
+                    const ModelPart &w = want[k], &o = got[k];
+                    bool geo = !memcmp(&w.c, &o.c, sizeof w.c) && !memcmp(&w.h, &o.h, sizeof w.h) && w.visOnly == o.visOnly && w.shadow == o.shadow && w.alpha == o.alpha;
+                    bool col = length(w.color - o.color) < 1e-5f * std::max(1.0f, length(w.color));   // (within float rounding)
+                    if (!geo || !col) printf("  %s box %zu drawn differently (palette %d)\n", modelPath(kind, i).c_str(), k, v);
+                    ACHECK(geo && col);
+                }
+            }
             ACHECK(b.triangleCount() == a.triangleCount());
             Vec3 amn, amx, bmn, bmx;
             ACHECK(a.bounds(amn, amx) && b.bounds(bmn, bmx));
@@ -271,13 +316,91 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 5 + 11 + 7 + 1);   // (weapons: 11 with the locator)
+    ACHECK(models == 5 + 11 + 7 + 1 + 6);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE)
+    ACHECK(modelPath(MODEL_PROP, PROP_CART) == "models/prop/CART" && modelPath(MODEL_PROP, PROP_BOMB_PACK) == "models/prop/BOMB_PACK");
+    // a prop's slot colours come from the palette (the cart: 11 boxes, its band the team colour, its rim the accent)
+    {
+        ModelPalette cp;
+        cp.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+        cp.c[TINT_ACCENT] = {0.5f, 0.1f, 0.1f};
+        propParts(PROP_CART, cp, parts);
+        ACHECK(parts.size() == 11 && parts[5].slot == TINT_TEAM && length(parts[5].color - cp.c[TINT_TEAM] * 0.9f) < 1e-6f);
+        ACHECK(parts[6].slot == TINT_ACCENT && length(parts[6].color - cp.c[TINT_ACCENT]) < 1e-6f);
+        ACHECK(tintSlotFromName("Accent_rim") == TINT_ACCENT);
+    }
     // the default parts are what drawWorld draws: a known box, the standard model's chest, team coloured
     ModelPalette pal;
     pal.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
     playerModelParts(0, 1.0f, pal, parts);
     ACHECK(parts.size() == 4 && std::fabs(parts[1].c.y - 1.15f) < 1e-6f && length(parts[1].color - pal.c[TINT_TEAM]) < 1e-6f && parts[3].visOnly);
     ACHECK(tintSlotFromName("Team_Armour.001") == TINT_TEAM && tintSlotFromName("GLOW") == TINT_GLOW && tintSlotFromName("skin") == TINT_NONE);
+}
+
+// Box model files: what the loader takes and what it refuses (a refused file keeps the default)
+static void testBoxModels() {
+    ModelParts p;
+    std::string err;
+    const std::string box = "{\"c\":[0,1,0],\"h\":[0.2,0.3,0.4],\"slot\":\"team\",\"color\":[0.5,0.5,0.5]";
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"mul\":[0.6,0.6,0.6],\"add\":[0.06,0.06,0.07],\"crouch\":true,\"name\":\"legs\"}]}", p, &err));
+    ACHECK(p.size() == 1 && p[0].slot == TINT_TEAM && p[0].crouch && p[0].shadow && !p[0].visOnly && std::fabs(p[0].add.z - 0.07f) < 1e-7f);
+    // no mul: the colour over the reference (team: white), as a mesh is tinted
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err));
+    finishBoxModel(MODEL_PLAYER, 0, p);
+    ACHECK(p.size() == 1 && std::fabs(p[0].mul.x - 0.5f) < 1e-7f && p[0].add.x == 0);
+    ModelPalette team;
+    team.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+    ModelParts drawn;
+    overrideBoxParts(MODEL_PLAYER, 0, p, team, 0.5f, drawn);
+    ACHECK(drawn.size() == 1 && std::fabs(drawn[0].color.z - 0.4f) < 1e-6f && std::fabs(drawn[0].c.y - 0.5f) < 1e-6f && drawn[0].h.y == 0.3f);
+    const char* bad[] = {
+        "{\"version\":2,\"boxes\":[]}",                                                              // no boxes
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1],\"h\":[1,1,1],\"color\":[1,1,1]}]}",                   // c: 2 numbers
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1e999,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",             // not finite
+        "{\"version\":2,\"boxes\":[{\"c\":[0,100,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",               // too far
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,0,1],\"color\":[1,1,1]}]}",                 // flat
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,-1,1],\"color\":[1,1,1]}]}",                // negative
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[40,1,1],\"color\":[1,1,1]}]}",                // huge
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,-1,1]}]}",               // colour < 0
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,99,1]}]}",               // colour > 16
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"slot\":\"neon\"}]}",  // unknown slot
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"alpha\":0}]}",     // invisible
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"shadow\":1}]}",    // not a bool
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"slot\":\"team\",\"mul\":[1,1]}]}",
+        "{\"version\":2,\"boxes\":[{\"c\":\"0 1 0\",\"h\":[1,1,1],\"color\":[1,1,1]}]}",
+        "{\"version\":1,\"boxes\":[]}",                                                              // not version 2
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0]",                                                     // cut off
+    };
+    for (const char* b : bad) {
+        bool ok = parseBoxModel(b, p, &err);
+        if (ok) printf("  box model accepted: %s\n", b);
+        ACHECK(!ok && p.empty());
+    }
+    std::string many = "{\"version\":2,\"boxes\":[";   // too many boxes
+    for (size_t i = 0; i <= kMaxOverrideBoxes; i++) many += std::string(i ? "," : "") + "{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1]}";
+    ACHECK(!parseBoxModel(many + "]}", p, &err));
+    // in a file: a bad box list fails the load (the default is kept); the model editor's older notes (version 1) and
+    // no extras at all are a plain mesh
+    ModelParts parts, boxes;
+    playerModelParts(0, 1.0f, referencePalette(MODEL_PLAYER), parts);
+    MeshData mesh, back;
+    partsToMesh(parts, mesh);
+    std::string g = writeGltf(mesh, "STANDARD");
+    ACHECK(loadGltf((const uint8_t*)g.data(), g.size(), nullptr, back, &err, &boxes) && boxes.empty());
+    parts[0].h.y = -1;
+    g = writeGltf(mesh, "STANDARD", &parts);
+    ACHECK(!loadGltf((const uint8_t*)g.data(), g.size(), nullptr, back, &err, &boxes) && boxes.empty() && err.find("box model") == 0);
+    std::string v1 = writeGltf(mesh, "STANDARD");
+    v1.replace(v1.find("\"primitives\""), 0, "\"extras\":{\"quark\":{\"version\":1,\"boxes\":[[{\"i\":0,\"name\":\"\",\"shadow\":true,\"visOnly\":false}]]}},");
+    ACHECK(loadGltf((const uint8_t*)v1.data(), v1.size(), nullptr, back, &err, &boxes) && boxes.empty());
+    // slots a model's drawing doesn't colour stay at the reference (an override's "glow" on a player: tint 1)
+    ModelPalette pl;
+    pl.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+    for (int kind : {MODEL_PLAYER, MODEL_CROWN, MODEL_PROJECTILE}) {
+        ModelPalette d = drivenPalette(kind, 0, pl);
+        ACHECK(length(d.c[TINT_TEAM] - pl.c[TINT_TEAM]) < 1e-7f);
+        for (int s : {(int)TINT_METAL, (int)TINT_BASE, (int)TINT_ACCENT}) ACHECK(length(d.c[s] - referencePalette(kind, 0).c[s]) < 1e-7f);
+        if (kind != MODEL_PROJECTILE) ACHECK(length(d.c[TINT_GLOW] - referencePalette(kind, 0).c[TINT_GLOW]) < 1e-7f);
+    }
 }
 
 static void testGltfLoader() {
@@ -524,12 +647,33 @@ static void testOverrides() {
     for (size_t i = 0; i < thud.size(); i++) thud[i] = 0.3f + 0.6f * std::sin(i * 0.012f) * (1.0f - (float)i / thud.size()) + 0.05f * std::sin(i * 0.4f);
     ACHECK(spit(root / "sounds/mouth/HIT_BRUTAL.wav", wavFile(thud, 48000)));
     ACHECK(spit(root / "models/player/HEAVY.gltf", "this is not glTF"));
+    {   // a player model of yours: a giant (the standard model, three times as wide)
+        ModelParts parts;
+        MeshData mesh;
+        playerModelParts(0, 1.0f, referencePalette(MODEL_PLAYER), parts);
+        for (ModelPart& q : parts) q.h = q.h * 3.0f;
+        partsToMesh(parts, mesh);
+        ACHECK(spit(root / "models/player/STANDARD.gltf", writeGltf(mesh, "STANDARD")));
+    }
     overrides::useUserFolder(true);   // (re-read the folder)
     ACHECK(overrides::any());
     std::vector<uint8_t> b;
     std::string matched, where;
     ACHECK(overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, &matched, &where) && where == "user" && matched == "sounds/default/hit.wav");
     ACHECK(!overrides::find("sounds/default/KILL", {".wav"}, b));
+    where.clear();   // (only the shipped ones / only yours)
+    if (overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, nullptr, &where, overrides::FROM_SHIPPED)) ACHECK(where == "shipped");
+    ACHECK(overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, nullptr, &where, overrides::FROM_USER) && where == "user");
+    ACHECK(!overrides::find("sounds/default/KILL", {".wav"}, b, nullptr, nullptr, overrides::FROM_USER));
+    // models: yours are drawn, but ranked draws only the shipped ones (or the box model): a giant or neon enemy model
+    // of your own would be an edge that nobody else has
+    ModelOverrides mo;
+    loadModelOverrides(mo);
+    ACHECK(mo.user[MODEL_PLAYER][0] && mo.get(MODEL_PLAYER, 0, false) == mo.user[MODEL_PLAYER][0].get());
+    ACHECK(mo.get(MODEL_PLAYER, 0, true) == mo.shipped[MODEL_PLAYER][0].get());
+    ACHECK(!mo.user[MODEL_PLAYER][1]);   // (HEAVY: not glTF, left out)
+    for (int kind = 0; kind < MODEL_KINDS; kind++)
+        for (int i = 0; i < kMaxModelsPerKind; i++) ACHECK(mo.get(kind, i, true) == mo.shipped[kind][i].get());
     Audio plain, mine;
     overrides::useUserFolder(false);
     plain.startOffline();
@@ -647,7 +791,7 @@ static void testExport() {
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) official++;
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
-    ACHECK(models == 24 && maps == official && missing == 0);
+    ACHECK(models == 30 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 6 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);
@@ -690,6 +834,7 @@ int assetTests() {
     g_afail = 0;
     testModelExport();
     testGltfLoader();
+    testBoxModels();
     testDecoders();
     testFontAtlas();
     testUiFonts();
