@@ -404,7 +404,7 @@ class TestSiblings(unittest.TestCase):
                 fake.close()
                 with self.assertRaises(util.SourceError) as e:
                     github.fetch(ctx)
-                self.assertEqual(str(e.exception), "GitHub manager not running")
+                self.assertEqual(str(e.exception), "GitHub Manager not running")
                 write(os.path.join(q, "github-manager", "cache", "github.json"), json.dumps({"testing": {"version": "1.0.0"}}))
                 data, meta = github.fetch(ctx)
                 self.assertEqual((data["testing"]["version"], meta["via"], meta["stale"]), ("1.0.0", "cache", True))
@@ -415,7 +415,7 @@ class TestSiblings(unittest.TestCase):
         orig = docs.URL, editors.URL
         docs.URL = editors.URL = "http://127.0.0.1:9/api/summary"
         try:
-            for m, msg in ((docs, "Claude Docs manager not running"), (editors, "Editor dashboard not running")):
+            for m, msg in ((docs, "Claude Manager not running"), (editors, "Editor Manager not running")):
                 with self.assertRaises(util.SourceError) as e:
                     m.fetch(None)
                 self.assertEqual(str(e.exception), msg)
@@ -475,6 +475,24 @@ class TestTabs(unittest.TestCase):
             self.assertEqual([x["up"] for x in r["tabs"]], [True, True, False])
             write(paths.pm("tabs.json"), "{broken")
             self.assertTrue(tb.resolved()["from"].startswith("built-in"))
+
+    def test_tree_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, tmp)
+            raw = [{"id": "a", "url": "http://127.0.0.1:1/"}, {"id": "c", "parent": "b"}, {"id": "b", "parent": "a"},
+                   {"id": "x", "parent": "nope"}, {"id": "y", "parent": "z"}, {"id": "z", "parent": "y"},
+                   {"id": "d", "parent": "a"}]
+            out = tabs.tree_order([tabs.resolve_tab(r, paths, i) for i, r in enumerate(raw)])
+            self.assertEqual([(t["id"], t["depth"]) for t in out],
+                             [("a", 0), ("b", 1), ("c", 2), ("d", 1), ("x", 0), ("y", 0), ("z", 1)])
+            self.assertIsNone(out[4]["parent"])
+
+    def test_builtin_mirrors_shell_default(self):
+        # (the built-in list is the last fallback; it must stay the same as the shell's tabs.default.json)
+        path = os.path.join(PM_ROOT, "shell", "tabs.default.json")
+        if not os.path.isfile(path):
+            self.skipTest("shell/tabs.default.json missing")
+        self.assertEqual(util.read_json_file(path), tabs.DEFAULT_TABS)
 
     def test_write_default(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -589,6 +607,105 @@ EDITORS_REAL = {
     "programs": [{"id": "map-editor", "name": "Map editor", "ahead_testing": 1, "ahead_production": 2, "uncommitted": 0,
                   "files_changed": 3}],
 }
+
+
+RUN = {"id": 123, "workflow": "build-and-release", "branch": "testing", "sha": "4fe65a7c3b1e", "event": "push",
+       "title": "Merge PR #9", "status": "completed", "conclusion": "failure", "createdAt": "2026-10-24T05:00:00Z",
+       "updatedAt": "2026-10-24T05:10:00Z", "durationSec": 600, "attempt": 1, "url": "https://github.com/x/actions/runs/123"}
+# tools/github_manager/API.md, GET /api/summary
+GH_SUMMARY_REAL = {
+    "generatedAt": "2026-10-24T05:20:00Z", "repo": "floration/quark",
+    "poll": {"lastOk": "2026-10-24T05:20:00Z", "lastError": None, "nextAt": "2026-10-24T05:21:00Z", "intervalSec": 60,
+             "rateRemaining": 4800},
+    "testing": {"sha": "4fe65a7c3b1e9d2a0f6e8c7b5a4d3c2b1a0f9e8d", "version": "1.18.6",
+                "prerelease": {"tag": "test-1.18.6-test.150", "publishedAt": "2026-10-24T05:31:09Z", "url": "u"}},
+    "production": {"tag": "v1.17.0", "version": "1.17.0"},
+    "openPulls": [{"number": 9, "title": "Release", "head": "testing", "checks": {"state": "pending"}, "url": "u9"},
+                  {"number": 8, "title": "Map editor", "head": "claude/x", "checks": {"state": "success"}, "url": "u8"}],
+    "running": [dict(RUN, id=124, status="in_progress", conclusion=None)], "lastFailed": RUN,
+    "local": [{"name": "working-repo", "branch": "testing", "aheadOfTesting": 2, "behindTesting": 1, "dirty": 3}],
+}
+# GET /api/state minus `local` (= cache/github.json)
+GH_STATE_REAL = {
+    "generatedAt": "2026-10-24T05:20:00Z", "repo": "floration/quark", "defaultBranch": "main",
+    "poll": {"lastOk": "x", "lastError": "HTTP 502 from api.github.com", "nextAt": "y", "intervalSec": 60},
+    "production": {"tag": "v1.17.0", "sha": "b81c0de9a7f6", "version": "1.17.0", "publishedAt": "2026-10-02T21:10:44Z", "url": "u"},
+    "testing": {"sha": "4fe65a7c3b1e", "version": "1.18.6", "date": "2026-10-24T04:57:48Z", "subject": "s", "prerelease": None,
+                "aheadOfProduction": 42, "commitsSinceProduction": []},
+    "branches": [{"name": "testing", "sha": "4fe65a7c3b1e", "kind": "testing", "ahead": 0, "behind": 0, "pr": None,
+                  "lastRun": dict(RUN, conclusion="success")}],
+    "pulls": [{"number": 9, "title": "Release", "state": "open", "head": "testing", "base": "main",
+               "checks": {"state": "failure", "runs": []}},
+              {"number": 7, "title": "Old", "state": "closed", "merged": True, "head": "claude/y", "base": "testing",
+               "checks": {"state": "success", "runs": []}}],
+    "runs": [dict(RUN, id=125, conclusion="success"), RUN],
+    "running": [], "releases": [{"tagName": "v1.17.0", "isPrerelease": False}],
+}
+
+
+class TestGitHubManagerShapes(unittest.TestCase):
+    def test_summary(self):
+        d = derive.derive({"github": env(GH_SUMMARY_REAL)})
+        v = d["versions"]
+        self.assertEqual((v["testing"], v["production"], v["testingPrerelease"], v["testingServer"]),
+                         ("1.18.6", "1.17.0", "test-1.18.6-test.150", "1.18.6-test.150"))
+        self.assertEqual([(p["number"], p["checks"], p["link"]) for p in d["prs"]],
+                         [(9, "pending", "http://127.0.0.1:8767/#pr=9"), (8, "success", "http://127.0.0.1:8767/#pr=8")])
+        self.assertEqual(d["arrows"][1]["label"], "PR #9 open")  # (openPulls has no base: head testing is enough)
+        self.assertEqual(d["runs"]["running"][0]["name"], "build-and-release")
+        self.assertEqual(d["runs"]["lastFailed"]["id"], 123)
+        self.assertIn("Last CI run on testing failed (build-and-release)", [a["text"] for a in d["attention"]])
+        w = d["localCopies"][0]
+        self.assertEqual((w["ahead"], w["behind"], w["dirty"], w["dirtyFiles"]), (2, 1, True, 3))
+        self.assertIn("working-repo has 2 commits not on testing", [s["text"] for s in d["nextSteps"]])
+        self.assertEqual(d["github"]["repo"], "floration/quark")
+        self.assertEqual(d["github"]["poll"]["rateRemaining"], 4800)
+
+    def test_cache_state(self):
+        d = derive.derive({"github": dict(env(GH_STATE_REAL), via="cache", stale=True)})
+        self.assertEqual([p["number"] for p in d["prs"]], [9])  # (closed PRs left out)
+        self.assertEqual(d["prs"][0]["checks"], "failure")
+        self.assertEqual(d["runs"]["lastTesting"]["conclusion"], "success")  # (branches[testing].lastRun)
+        att = [a["text"] for a in d["attention"]]
+        self.assertNotIn("Last CI run on testing failed (build-and-release)", att)
+        self.assertIn("GitHub Manager: last poll failed (HTTP 502 from api.github.com)", att)
+        self.assertEqual(d["pipeline"][2]["time"], "2026-10-02T21:10:44Z")
+
+    def test_gzip_and_etag(self):
+        import gzip as gz
+        body = json.dumps(GH_SUMMARY_REAL).encode()
+        seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                seen.append((self.headers.get("Accept-Encoding"), self.headers.get("If-None-Match")))
+                if self.headers.get("If-None-Match") == '"v1-gz"':
+                    self.send_response(304)
+                    self.send_header("ETag", '"v1-gz"')
+                    self.end_headers()
+                    return
+                z = gz.compress(body)
+                self.send_response(200)
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("ETag", '"v1-gz"')
+                self.send_header("Content-Length", str(len(z)))
+                self.end_headers()
+                self.wfile.write(z)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            c = util.CachedJSON()
+            url = "http://127.0.0.1:%d/api/summary" % httpd.server_address[1]
+            self.assertEqual(c.get(url)["repo"], "floration/quark")
+            self.assertEqual(c.get(url)["repo"], "floration/quark")  # (304: the last body)
+            self.assertEqual([n for _, n in seen], [None, '"v1-gz"'])
+            self.assertTrue(all("gzip" not in (a or "") for a, _ in seen))  # (gzip is never asked for, only decoded)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
 
 class TestRealSiblingShapes(unittest.TestCase):
@@ -816,7 +933,7 @@ class TestServer(unittest.TestCase):
         for k, s in d["sources"].items():
             self.assertTrue({"ok", "fetchedAt", "error", "data"} <= set(s), k)
         self.assertTrue(d["sources"]["github"]["ok"])
-        self.assertEqual(d["sources"]["editors"]["error"], "Editor dashboard not running")
+        self.assertEqual(d["sources"]["editors"]["error"], "Editor Manager not running")
         self.assertEqual(d["sources"]["oracle"]["error"], "SSH key not found")
         self.assertEqual(d["sources"]["servers"]["data"]["production"]["count"], 1)
         self.assertEqual(d["sources"]["checklist"]["data"]["headings"], ["0. Before you start", "1. Install", "16. Sign-off"])
@@ -832,7 +949,8 @@ class TestServer(unittest.TestCase):
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])
         ids = [t["id"] for t in d["tabs"]]
-        self.assertEqual(ids[:4], ["project", "dashboard", "docs", "github"])
+        self.assertEqual(ids[:4], ["project", "github", "docs", "dashboard"])
+        self.assertEqual([x["depth"] for x in d["tabs"]][:5], [0, 1, 1, 1, 2])
         self.assertTrue(all("installed" in t and "up" in t for t in d["tabs"]))
         self.assertEqual(json.loads(self.req("/api/history?limit=5")[2]), {"events": []})
 

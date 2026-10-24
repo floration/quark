@@ -19,22 +19,26 @@ import urllib.request
 
 from . import util
 
-# Used only when Quark\project-manager\tabs.json and shell\tabs.default.json are both missing.
+# Used only when Quark\project-manager\tabs.json and shell\tabs.default.json are both missing; kept identical to
+# shell/tabs.default.json (a test checks it).
 DEFAULT_TABS = {"tabs": [
-    {"id": "project", "name": "Project", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
+    {"id": "project", "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
      "start": "py -3 \"%PM%\\server.py\""},
-    {"id": "dashboard", "name": "Editors", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
-     "folder": "editor-dashboard"},
-    {"id": "docs", "name": "Claude Docs", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766, "folder": "docs-manager"},
-    {"id": "github", "name": "GitHub", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767, "folder": "github-manager"},
-    {"id": "ui", "name": "UI", "folder": "ui-customizer", "file": "ui-customizer.html"},
-    {"id": "ui-redesign", "name": "UI redesign", "folder": "ui-customizer", "file": "ui-customizer-redesign.html"},
-    {"id": "sound", "name": "Sound", "folder": "sound-editor", "file": "sound-editor.html"},
-    {"id": "model", "name": "Models", "folder": "model-editor"},
-    {"id": "map", "name": "Maps", "url": "http://127.0.0.1:8770/", "port": 8770, "folder": "map-editor",
-     "start": "py -3 serve.py --port 8770 --no-browser"},
-    {"id": "bot", "name": "Bots", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769, "folder": "bot-editor",
-     "start": "run.cmd"},
+    {"id": "github", "name": "GitHub Manager", "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767,
+     "folder": "github-manager"},
+    {"id": "docs", "name": "Claude Manager", "parent": "project", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766,
+     "folder": "docs-manager"},
+    {"id": "dashboard", "name": "Editor Manager", "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
+     "folder": "editor-dashboard", "childLabel": "Editors"},
+    {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
+    {"id": "ui", "name": "UI Editor", "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
+    {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
+     "file": "ui-customizer-redesign.html"},
+    {"id": "map", "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/", "port": 8770,
+     "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser"},
+    {"id": "bot", "name": "Bot Editor", "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769,
+     "folder": "bot-editor", "start": "run.cmd"},
+    {"id": "model", "name": "Model Editor", "parent": "dashboard", "folder": "model-editor"},
 ]}
 PROBE_INTERVAL = 5.0
 
@@ -91,6 +95,9 @@ def resolve_tab(raw, paths, index=0):
     t = {k: v for k, v in raw.items()}
     t["id"] = re.sub(r"[^A-Za-z0-9_-]", "-", str(raw.get("id") or "tab%d" % index))
     t["name"] = str(raw.get("name") or raw.get("id") or "Tab %d" % (index + 1))
+    t["parent"] = re.sub(r"[^A-Za-z0-9_-]", "-", str(raw["parent"])) if raw.get("parent") else None
+    t["childLabel"] = str(raw.get("childLabel") or "")
+    t["depth"] = 0
     folder_rel = expand(raw.get("folder"), paths)
     folder = os.path.normpath(os.path.join(paths.quark, folder_rel)) if folder_rel else None
     t["folderPath"] = folder
@@ -146,6 +153,36 @@ def resolve_tab(raw, paths, index=0):
     return t
 
 
+def tree_order(tabs):
+    """Depth-first through `parent` (siblings keep their tabs.json order), with `depth`; an unknown parent, a self
+    parent or a cycle makes a tab a root. Same as main.js treeOrder (Ctrl+1..9 follow this order)."""
+    by_id = {t["id"]: t for t in tabs}
+    kids = {}
+    for t in tabs:
+        if not t.get("parent") or t["parent"] == t["id"] or t["parent"] not in by_id:
+            t["parent"] = None
+            continue
+        kids.setdefault(t["parent"], []).append(t)
+    out, seen = [], set()
+
+    def visit(t, depth):
+        if t["id"] in seen:
+            return
+        seen.add(t["id"])
+        t["depth"] = depth
+        out.append(t)
+        for c in kids.get(t["id"], []):
+            visit(c, depth + 1)
+    for t in tabs:
+        if not t.get("parent"):
+            visit(t, 0)
+    for t in tabs:
+        if t["id"] not in seen:
+            t["parent"] = None
+            visit(t, 0)
+    return out
+
+
 def load_raw(paths):
     """(tabs list, where from). tabs.json, else shell\\tabs.default.json next to server.py, else the built-in list."""
     for path, where in ((paths.pm("tabs.json"), "tabs.json"),
@@ -187,7 +224,7 @@ class Tabs:
 
     def resolved(self):
         raw, where = load_raw(self.paths)
-        tabs = [resolve_tab(t, self.paths, i) for i, t in enumerate(raw)]
+        tabs = tree_order([resolve_tab(t, self.paths, i) for i, t in enumerate(raw)])
         with self.lock:
             for t in tabs:
                 if t["kind"] == "server" and t.get("local"):

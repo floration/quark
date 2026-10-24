@@ -1,5 +1,6 @@
 """Small helpers shared by the sources: time, tolerant field access, HTTP, subprocesses, versions."""
 import datetime
+import gzip
 import json
 import os
 import re
@@ -153,17 +154,28 @@ _LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 
 _DEFAULT_OPENER = urllib.request.build_opener()
 
 
-def http_get(url, timeout=3.0, local=None):
-    """GET -> (status, bytes). Raises SourceError with a short message on network failure / non-2xx."""
+def http_get(url, timeout=3.0, local=None, headers=None, with_headers=False):
+    """GET -> (status, bytes) (or (status, bytes, headers)). A 304 is returned, not raised. A gzip body (only if a
+    server sends one unasked: no Accept-Encoding goes out) is decoded. Raises SourceError with a short message on
+    network failure / other non-2xx."""
     if local is None:
         local = url.startswith("http://127.0.0.1") or url.startswith("http://localhost")
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json, text/plain, */*"})
+    h = {"User-Agent": USER_AGENT, "Accept": "application/json, text/plain, */*"}
+    h.update(headers or {})
+    req = urllib.request.Request(url, headers=h)
     opener = _LOCAL_OPENER if local else _DEFAULT_OPENER
     try:
         with opener.open(req, timeout=timeout) as r:
-            return r.status, r.read(8 * 1024 * 1024)
+            body = r.read(16 * 1024 * 1024)
+            if (r.headers.get("Content-Encoding") or "").lower() == "gzip":
+                body = gzip.decompress(body)
+            return (r.status, body, r.headers) if with_headers else (r.status, body)
     except urllib.error.HTTPError as e:
+        if e.code == 304:
+            return (304, b"", e.headers) if with_headers else (304, b"")
         raise SourceError("HTTP %d from %s" % (e.code, url.split("?")[0]))
+    except (EOFError, gzip.BadGzipFile):
+        raise SourceError("%s sent a broken gzip body" % url.split("?")[0])
     except (urllib.error.URLError, OSError, ValueError) as e:
         reason = getattr(e, "reason", e)
         raise SourceError("%s unreachable (%s)" % (url.split("?")[0], str(reason)[:120]))
@@ -175,6 +187,30 @@ def http_json(url, timeout=3.0):
         return json.loads(body.decode("utf-8-sig"))
     except (ValueError, UnicodeDecodeError):
         raise SourceError("%s did not return JSON" % url.split("?")[0])
+
+
+class CachedJSON:
+    """GET a sibling's JSON with If-None-Match: a 304 reuses the last body (no parse, no transfer)."""
+
+    def __init__(self):
+        self.etag = None
+        self.data = None
+        self.url = None
+
+    def get(self, url, timeout=3.0):
+        if url != self.url:
+            self.etag, self.data, self.url = None, None, url
+        hdr = {"If-None-Match": self.etag} if self.etag and self.data is not None else {}
+        status, body, headers = http_get(url, timeout, headers=hdr, with_headers=True)
+        if status == 304 and self.data is not None:
+            return self.data
+        try:
+            data = json.loads(body.decode("utf-8-sig"))
+        except (ValueError, UnicodeDecodeError):
+            raise SourceError("%s did not return JSON" % url.split("?")[0])
+        self.etag = headers.get("ETag") if headers is not None else None
+        self.data = data
+        return data
 
 
 def read_text(path, limit=4 * 1024 * 1024):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quark project manager server: http://127.0.0.1:8768 (tools/project_manager/SPEC.md section 2).
+"""Supervisor Board server (the Quark project manager): http://127.0.0.1:8768 (tools/project_manager/SPEC.md section 2).
 
     py -3 server.py [--quark C:\\Users\\user\\Desktop\\Quark] [--port 8768]
     py -3 server.py --init        write project-manager\\tabs.json / config.json if missing, then exit (setup.ps1)
@@ -28,8 +28,8 @@ ALLOWED_ORIGIN = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(?:876[5-9]|877
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
          ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".map": "application/json; charset=utf-8"}
-FALLBACK_PAGE = (b"<!doctype html><meta charset=utf-8><title>Quark Project</title>"
-                 b"<p>The PM page (web/index.html) is not installed next to server.py. The API is up: "
+FALLBACK_PAGE = (b"<!doctype html><meta charset=utf-8><title>Supervisor Board</title>"
+                 b"<p>The Supervisor Board page (web/index.html) is not installed next to server.py. The API is up: "
                  b"<a href=/api/pm>/api/pm</a>, <a href=/api/tabs>/api/tabs</a>.</p>")
 
 
@@ -215,7 +215,7 @@ def make_server(app, port):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Quark project manager server (127.0.0.1 only)")
+    ap = argparse.ArgumentParser(description="Supervisor Board server (127.0.0.1 only)")
     ap.add_argument("--quark", help="the Quark folder (default: the parent of the folder holding server.py)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--init", action="store_true", help="write tabs.json / config.json if missing, then exit")

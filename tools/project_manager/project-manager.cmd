@@ -1,5 +1,5 @@
 @echo off
-rem Quark Project: starts the PM server (127.0.0.1:8768) if it is not running, then the app window.
+rem Quark Project: starts the Supervisor Board server (127.0.0.1:8768) if it is not running, then the app window.
 rem   project-manager.cmd          Electron (electron\electron.exe, put there by setup.ps1)
 rem   project-manager.cmd --edge   Edge (else Chrome) as an --app window with its own profile (no Electron needed)
 rem Installed by tools\project_manager\setup.ps1 into Quark\project-manager\ (SPEC.md section 4).

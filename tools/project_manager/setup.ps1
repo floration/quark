@@ -1,4 +1,4 @@
-# Installs (or updates) the Quark project manager into Quark\project-manager\ (tools/project_manager/SPEC.md section 4).
+# Installs (or updates) the Supervisor Board (the Quark project manager) into Quark\project-manager\ (tools/project_manager/SPEC.md section 4).
 #   setup.cmd                       (double-click; runs this)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 [-Quark C:\Users\user\Desktop\Quark] [-NoElectron]
 # Copies server.py, pm\, web\, shell\, project-manager.cmd and quark.ico; writes tabs.json / config.json only when
@@ -25,7 +25,7 @@ if (-not (Test-Path $Quark)) { throw "The Quark folder $Quark does not exist (pa
 $Quark = (Resolve-Path $Quark).Path
 $Dest = Join-Path $Quark 'project-manager'
 New-Item -ItemType Directory -Force $Dest | Out-Null
-Write-Host "Installing the Quark project manager into $Dest"
+Write-Host "Installing the Supervisor Board into $Dest"
 
 # ---- code (replaced every time) --------------------------------------------------------------------------------
 Copy-Item -Force (Join-Path $Src 'server.py') $Dest
@@ -118,7 +118,7 @@ $ws = New-Object -ComObject WScript.Shell
 $lnk = $ws.CreateShortcut((Join-Path $desktop 'Quark Project.lnk'))
 $lnk.TargetPath = Join-Path $Dest 'project-manager.cmd'
 $lnk.WorkingDirectory = $Dest
-$lnk.Description = 'Quark Project'
+$lnk.Description = 'Quark Project (Supervisor Board)'
 $lnk.WindowStyle = 7   # (minimized: the .cmd only starts things and exits)
 if (Test-Path (Join-Path $Dest 'quark.ico')) { $lnk.IconLocation = (Join-Path $Dest 'quark.ico') + ',0' }
 $lnk.Save()
@@ -126,6 +126,6 @@ Write-Host "Desktop shortcut: $(Join-Path $desktop 'Quark Project.lnk')"
 Write-Host ''
 try {
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 'http://127.0.0.1:8768/api/health' | Out-Null
-  Write-Host 'The PM server is running the old code: close Quark Project (or end its py / pyw process) and start it again.'
+  Write-Host 'The Supervisor Board server is running the old code: close Quark Project (or end its py / pyw process) and start it again.'
 } catch { }
 Write-Host 'Done. Start it with the "Quark Project" shortcut (or project-manager.cmd --edge for the browser window).'

@@ -12,11 +12,11 @@ DOCS = "http://127.0.0.1:8766/"
 GH = "http://127.0.0.1:8767/"
 CHECKLIST_URL = "https://github.com/floration/quark/blob/testing/docs/RELEASE_CHECKLIST.md"
 FAILED = {"failure", "failed", "timed_out", "startup_failure", "error", "cancelled_failure"}
-SOURCE_LABELS = {"github": "GitHub manager", "docs": "Claude Docs manager", "editors": "Editor dashboard",
+SOURCE_LABELS = {"github": "GitHub Manager", "docs": "Claude Manager", "editors": "Editor Manager",
                  "builds": "Local builds", "repo": "Quark\\repository", "servers": "Server list (ranking Worker)",
                  "oracle": "Oracle box", "checklist": "Release checklist"}
-SOURCE_FIX = {"github": "start the GitHub manager", "docs": "start the Claude Docs manager",
-              "editors": "start the editor dashboard", "servers": "check the internet connection",
+SOURCE_FIX = {"github": "start the GitHub Manager", "docs": "start the Claude Manager",
+              "editors": "start the Editor Manager", "servers": "check the internet connection",
               "oracle": "check config.json's oracle key path and that ssh.exe works"}
 DAY = 86400.0
 
@@ -26,7 +26,7 @@ def ok_data(results, key):
     return r.get("data") if r.get("ok") and isinstance(r.get("data"), dict) else None
 
 
-# ---- GitHub manager -------------------------------------------------------------------------------------------
+# ---- GitHub Manager (8767) ----------------------------------------------------------------------------------------
 
 def _tag_of(p):
     if isinstance(p, str):
@@ -47,7 +47,8 @@ def gh_testing(d):
     pre = _tag_of(get(t, "prerelease", "latestPrerelease") or get(d, "prerelease", "testingPrerelease", "latestPrerelease"))
     return {"version": util.parse_version(get(t, "version") or get(d, "testingVersion", "versions.testing")),
             "sha": _str(get(t, "sha", "headSha", "commit")) or _str(get(d, "testingSha")),
-            "committedAt": get(t, "committedAt", "commitDate", "date", "time"),
+            "committedAt": get(t, "committedAt", "commitDate", "date", "time"), "subject": get(t, "subject"),
+            "aheadOfProduction": util.to_int(get(t, "aheadOfProduction")),
             "url": get(t, "url"), "prerelease": pre}
 
 
@@ -76,17 +77,22 @@ def norm_pr(p):
 
 
 def gh_prs(d):
-    return [norm_pr(p) for p in as_list(get(d, "prs", "pullRequests", "openPrs", "pulls", "openPRs")) if isinstance(p, dict)]
+    """Open PRs: the summary's openPulls, else the state's pulls (open + last 30 closed: only the open ones)."""
+    out = []
+    for p in as_list(get(d, "openPulls", "prs", "pullRequests", "openPrs", "pulls", "openPRs")):
+        if isinstance(p, dict) and str(get(p, "state", default="open")).lower() == "open":
+            out.append(norm_pr(p))
+    return out
 
 
 def norm_run(r):
     if not isinstance(r, dict):
         return None
     rid = get(r, "id", "runId", "databaseId")
-    return {"id": rid, "name": get(r, "name", "workflowName", "workflow"),
+    return {"id": rid, "name": get(r, "name", "workflowName", "workflow"), "title": get(r, "title"),
             "branch": get(r, "branch", "head_branch", "headBranch"), "sha": get(r, "sha", "head_sha", "headSha"),
             "status": get(r, "status", "state"), "conclusion": get(r, "conclusion", "result"),
-            "job": get(r, "job", "currentJob"), "event": get(r, "event"),
+            "job": get(r, "job", "currentJob"), "event": get(r, "event"), "durationSec": get(r, "durationSec"),
             "startedAt": get(r, "startedAt", "run_started_at", "created_at", "createdAt"),
             "finishedAt": get(r, "finishedAt", "updated_at", "updatedAt", "completedAt"),
             "url": get(r, "url", "html_url", "htmlUrl"),
@@ -107,6 +113,9 @@ def gh_runs(d):
     running = running or as_list(get(d, "running", "runningRuns", "activeRuns"))
     last_failed = last_failed or get(d, "lastFailedRun", "lastFailure", "lastFailed")
     last_testing = last_testing or get(d, "lastTestingRun", "testing.lastRun", "testing.ci", "testing.run")
+    if not last_testing:  # (the state / cache file: branches[name=testing].lastRun)
+        last_testing = next((get(b, "lastRun") for b in as_list(get(d, "branches"))
+                             if isinstance(b, dict) and b.get("name") == "testing"), None)
     running = [x for x in (norm_run(x) for x in running) if x]
     recent = [x for x in (norm_run(x) for x in recent) if x]
     last_failed, last_testing = norm_run(last_failed), norm_run(last_testing)
@@ -131,13 +140,18 @@ def testing_ci(runs, testing_sha):
 
 
 def norm_local(x, source):
-    dirty_files = util.to_int(get(x, "dirtyFiles", "uncommitted", "changes", "changedFiles", "modified"))
+    df = get(x, "dirtyFiles", "uncommitted", "changes", "changedFiles", "modified")
     dirty = get(x, "dirty", "isDirty")
+    dirty_files = len(df) if isinstance(df, list) else util.to_int(df)
+    if dirty_files is None and isinstance(dirty, int) and not isinstance(dirty, bool):
+        dirty_files = dirty  # (the GitHub Manager's dirty is a count)
     dirty = bool(dirty) if dirty is not None else (dirty_files or 0) > 0
     return {"name": get(x, "name", "id", default="?"), "path": get(x, "path"), "branch": get(x, "branch"),
             "sha": get(x, "sha", "head", "commit"),
-            "ahead": util.to_int(get(x, "ahead", "aheadTesting", "ahead_testing", "commitsAhead")),
-            "behind": util.to_int(get(x, "behind", "behindTesting", "behind_testing", "commitsBehind")),
+            "ahead": util.to_int(get(x, "aheadOfTesting", "ahead", "aheadTesting", "ahead_testing", "commitsAhead")),
+            "behind": util.to_int(get(x, "behindTesting", "behind", "behindOfTesting", "behind_testing", "commitsBehind")),
+            "aheadOfProduction": util.to_int(get(x, "aheadOfProduction")), "version": get(x, "version"),
+            "error": get(x, "error"),
             "dirty": dirty, "dirtyFiles": dirty_files,
             "dirtySince": get(x, "dirtySince", "uncommittedSince", "oldestChange", "oldestUncommitted", "dirtyAt"),
             "source": source, "link": GH + "#local=%s" % get(x, "name", "id", default="")}
@@ -156,7 +170,7 @@ def local_copies(results):
         if not x.get("present"):
             continue
         n = norm_local(x, "repo")
-        if n["name"] in seen:  # (the GitHub manager's view wins; fill what it left out)
+        if n["name"] in seen:  # (the GitHub Manager's view wins; fill what it left out)
             for k, v in n.items():
                 if seen[n["name"]].get(k) is None:
                     seen[n["name"]][k] = v
@@ -165,13 +179,13 @@ def local_copies(results):
     return out
 
 
-# ---- Claude Docs manager --------------------------------------------------------------------------------------
+# ---- Claude Manager (8766) -----------------------------------------------------------------------------------
 
 BUCKET_ORDER = ("push", "owner", "pr", "ci", "tests", "claude")  # (owner + push = "q needs to push": push)
 
 
 def bucket(waiting):
-    """One bucket for a waitingOn string or list (the docs manager sends a list, e.g. ["owner", "push"])."""
+    """One bucket for a waitingOn string or list (the Claude Manager sends a list, e.g. ["owner", "push"])."""
     if isinstance(waiting, (list, tuple)):
         found = {bucket(w) for w in waiting if isinstance(w, str)}
         return next((b for b in BUCKET_ORDER if b in found), "other")
@@ -198,8 +212,8 @@ def _waiting_text(w):
 
 
 def in_progress(d):
-    """The docs manager's inProgress (waitingOn may be a list), with `bucket` and a deep link to the entry."""
-    by_id = {}  # (the docs manager's waiting{bucket: [ids]}, used when an entry has no waitingOn of its own)
+    """The Claude Manager's inProgress (waitingOn may be a list), with `bucket` and a deep link to the entry."""
+    by_id = {}  # (the Claude Manager's waiting{bucket: [ids]}, used when an entry has no waitingOn of its own)
     waiting_map = get(d, "waiting")
     for b, ids in (waiting_map.items() if isinstance(waiting_map, dict) else []):
         for i in (ids if isinstance(ids, list) else []):
@@ -244,7 +258,7 @@ def questions(d):
     return out
 
 
-# ---- editor dashboard -----------------------------------------------------------------------------------------
+# ---- Editor Manager (8765) --------------------------------------------------------------------------------------
 
 def human_pct(d):
     v = util.to_float(get(d, "humanPct", "human_pct", "percentHuman", "provenance.pct_human", "provenance.humanPct",
@@ -259,7 +273,7 @@ def human_pct(d):
 
 
 def assets(d):
-    """The editor dashboard's provenance in one shape: by_category may be a dict or a list, snake or camel case."""
+    """The Editor Manager's provenance in one shape: by_category may be a dict or a list, snake or camel case."""
     p = get(d, "provenance") or {}
     cats = get(p, "by_category", "byCategory", "categories")
     rows = []
@@ -357,7 +371,7 @@ def derive(results, now=None):
     ci = testing_ci(runs, testing_sha)
     tkey, pkey = util.version_key(util.base_version(v["testing"])), util.version_key(v["production"])
     testing_ahead = None if not v["testing"] or not v["production"] else tkey > pkey
-    prod_pr = next((x for x in prs if x.get("head") == "testing" and x.get("base") not in (None, "testing")), None)
+    prod_pr = next((x for x in prs if x.get("head") == "testing" and x.get("base") != "testing"), None)
 
     # pipeline ---------------------------------------------------------------------------------------------------
     bw = _build(results, "working") or {}
@@ -417,7 +431,7 @@ def derive(results, now=None):
     steps = []
     for q in qs:
         steps.append({"text": "Answer: " + q["text"], "owner": "q", "link": q["link"], "source": "docs",
-                      "why": "open question in Claude Docs" + (" (%s)" % q["thread"] if q.get("thread") else "")})
+                      "why": "open question in the Claude Documents" + (" (%s)" % q["thread"] if q.get("thread") else "")})
     for e in ip:
         if e["bucket"] == "owner":
             steps.append({"text": e.get("waitingWhy") or e["title"], "owner": "q", "link": e["link"], "source": "docs",
@@ -466,6 +480,10 @@ def derive(results, now=None):
         elif r.get("stale"):
             att.append({"level": "amber", "text": "%s: %s" % (label, r.get("note") or "showing cached data"),
                         "fix": SOURCE_FIX.get(key), "link": None, "source": key})
+    poll_err = get(gh, "poll.lastError") if gh else None
+    if poll_err:
+        att.append({"level": "amber", "text": "GitHub Manager: last poll failed (%s)" % str(poll_err)[:160],
+                    "link": GH, "source": "github"})
     if srv and (srv.get("production") or {}).get("count") == 0:
         att.append({"level": "red", "text": "No production servers in the public list (%s)" % srv["production"].get("version"),
                     "link": None, "source": "servers"})
@@ -482,4 +500,6 @@ def derive(results, now=None):
             # normalized copies of what the page needs most (the raw data stays in `sources`)
             "questions": qs, "prs": prs, "runs": {"running": runs["running"], "lastFailed": runs["lastFailed"],
                                                   "lastTesting": ci or runs["lastTesting"]},
+            "github": {"repo": get(gh, "repo"), "poll": get(gh, "poll"), "via": (results.get("github") or {}).get("via")}
+            if gh else None,
             "localCopies": locs, "programs": programs(ed) if ed else [], "assets": assets(ed) if ed else None}
