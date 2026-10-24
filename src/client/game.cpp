@@ -6301,14 +6301,14 @@ void Game::drawBracket() {
 void Game::drawDamageArcs(float cx, float cy, float scale) {
     const Vec3 me = net_.predicted().pos;
     const Vec3 fwd = {-std::sin(yaw_), 0, -std::cos(yaw_)}, right = {std::cos(yaw_), 0, -std::sin(yaw_)};
-    const float rad = 70 * scale, px = std::max(2.0f, std::round(4 * scale));
+    const float rad = 70 * scale, px = std::max(3.0f, std::round(5 * scale));
     for (const DmgDir& d : dmgDirs_) {
         const double age = time_ - d.at;
         if (d.at <= 0 || age > kDmgDirTime) continue;
         const Vec3 to = d.pos - me;
         if (to.x * to.x + to.z * to.z < 0.01f) continue;   // (on top of you: no direction)
         const float th = std::atan2(dot(to, right), dot(to, fwd));   // 0: ahead (up on screen), + to the right
-        const float a = 0.85f * (float)(1.0 - age / kDmgDirTime);
+        const float a = (float)(1.0 - age / kDmgDirTime);
         for (int k = -6; k <= 6; k++) {
             const float t = th + k * 0.06f;
             const float w = 1.0f - std::fabs((float)k) / 8.0f;   // (thicker in the middle)
