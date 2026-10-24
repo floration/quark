@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 0.3.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 0.3.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Movement</h3>
+<ul>
+<li>Left Shift: dash in the direction you&#x27;re moving (or forward), 1.2 s cooldown. Keeps your speed if you&#x27;re already faster.
+</li>
+<li>Hold Space: automatic bunny hopping. You jump the moment you land, before ground friction slows you down.
+</li>
+<li>Q: momentum grapple (like TF2). Press to fire at what you&#x27;re aiming at (45 m range), hold to be pulled in. The pull adds to your momentum instead of replacing it, so you can swing. Everyone can see your rope.
+</li></ul>
+<h3>Server tick rate</h3>
+<ul>
+<li>The server now starts at 1000 Hz and sends a snapshot every tick.
+</li>
+<li>During warmup it checks whether it can keep up: late ticks, failed sends, and snapshot loss reported by every player. If not, it steps down to 500, then 250, then 125 Hz (the minimum) and tells everyone.
+</li>
+<li>quark_server --tickrate N sets the highest rate to try.
+</li>
+<li>Movement is simulated in fixed 1 ms steps, so it is exactly the same at every tick rate and every frame rate (checked by an automated test: identical positions at 1000/500/250/125 Hz with dashing, bhopping and grappling).
+</li>
+<li>Other players are drawn 3 snapshots + 10 ms behind: 13 ms at 1000 Hz (was 50 ms).
+</li>
+<li>Client prediction skips its replay when the server agrees with what was predicted (almost always), so high tick rates cost very little CPU.
+</li>
+<li>Windows: 1 ms timer precision for accurate ticks; the hosting thread runs at above-normal priority.
+</li></ul>
+<h3>Other</h3>
+<ul>
+<li>Servers are limited to 8 players (keeps 1000 Hz affordable on home connections).
+</li>
+<li>Protocol version 3: older clients and servers can&#x27;t connect to this version.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../0.2.1/">&larr; 0.2.1</a></span><span><a href="../0.4.0/">0.4.0 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

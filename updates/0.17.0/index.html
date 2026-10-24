@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 0.17.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 0.17.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>New mode: 1V1 rulesets</h3>
+<p>Pick <b>1V1</b> in the mode list, then choose a ruleset. Matches are rounds of one life each, first to 5. These are separate from DUEL (1v1 or 2v2 with a random modifier per life).</p>
+<div class="scroll"><table><tr><th>ruleset</th><th>weapons</th><th>twist</th></tr>
+<tr><td>Laser Vampire</td><td>laser</td><td>damage you deal heals you</td></tr>
+<tr><td>Classic</td><td>rocket, laser, knife</td><td></td></tr>
+<tr><td>Quirky</td><td>crossbow, sticky, rifle</td><td></td></tr>
+<tr><td>Hitscan</td><td>rifle, sniper, laser, shotgun, knife</td><td></td></tr>
+<tr><td>Instagib</td><td>sniper</td><td>any hit kills</td></tr>
+<tr><td>Boomers</td><td>rocket, sticky</td><td>no self damage</td></tr>
+<tr><td>Blades</td><td>knife</td><td>dash recharges 3x faster</td></tr>
+<tr><td>Moon Shotgun</td><td>shotgun</td><td>40% gravity</td></tr>
+</table></div>
+<p>Weapons outside the ruleset are greyed out in the weapon bar, and switching skips them.</p>
+<h3>New mode: TOURNEY</h3>
+<ul>
+<li>Everyone in the server goes into a single-elimination bracket, bots included. Byes fill odd numbers.
+</li>
+<li>Matches are 1v1, best of 3. Everyone else spectates the match in progress.
+</li>
+<li><b>The bracket</b> appears for everyone between rounds and matches, and on TAB. Eliminated players are struck through, and the current match is highlighted.
+</li>
+<li><b>Choosing the setup:</b> vote for TOURNEY like any mode (VOTE → MODE → TOURNEY → ruleset). Then, in warmup, vote <b>TOURNEY MAPS...</b> and <b>TOURNEY RULES...</b>. Pick several of each; matches rotate through them, and the server switches maps between matches.
+</li>
+<li><b>Dedicated servers:</b> <code>--mode tourney --tourney-maps colosseum,temple --tourney-modes classic,hitscan</code>.
+</li></ul>
+<h3>Wallbang walls</h3>
+<ul>
+<li>A new dark grey material. It&#x27;s solid to walk on, but hitscan weapons (rifle, sniper, laser, shotgun, knife) shoot through it for <b>half damage</b>. Tracers show the shot going through.
+</li></ul>
+<h3>New maps</h3>
+<ul>
+<li><b>Temple</b> (1v1): columns, side galleries, an altar, and wallbang screens across the middle.
+</li>
+<li><b>Colosseum</b> (tourney): tiered stands, corner towers, a central obelisk to grapple from, and wallbang shields.
+</li>
+<li><b>Harbor</b> (big free for all): a quay, shipping containers, crates, a crane to grapple from, and wallbang fences.
+</li></ul>
+<h3>Up to 32 players</h3>
+<ul>
+<li>Servers can now take <b>up to 32 players</b>. 8 is still the default; raise it with MAX PLAYERS in the Host menu, or <code>--max 32</code> on a dedicated server.
+</li>
+<li>Big servers start at a lower tick rate (500 Hz above 16 players, 250 Hz above 24) to keep bandwidth sane. Warmup can still step down further.
+</li>
+<li>The scoreboard shrinks its rows to fit.
+</li></ul>
+<h3>Other changes</h3>
+<ul>
+<li><b>Sniper zoom</b> is much milder: 45° instead of 24°.
+</li>
+<li><b>Race:</b> you can&#x27;t damage or push other racers anymore; your weapons only affect you.
+</li>
+<li><b>Menu backdrop</b> camera no longer clips into walls.
+</li></ul>
+<p>Online play needs everyone on 0.17.0 (protocol 11).</p>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../0.16.2/">&larr; 0.16.2</a></span><span><a href="../0.17.1/">0.17.1 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,1510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.17.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Latest update</p>
+<h1>quark 1.17.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<div class="prose">
+<p>1.17.0 is the biggest update so far, and most of it is fixes. Two reviews went through the whole project: a second adversarial review of 1.15.1 (over a hundred findings: crashes, cheats, latency bugs, broken mode rules, an unsafe update path) and a final review of everything going into this release. The owner then made the design calls the reviews raised, and those are in too: weapon balance, overtime, the syringe and throws, hide and seek scoring, tag, ranked rules. On top of that: rebuilt bots, a new font, signed updates, your files in your own user folder, and a new testing / production release process.</p>
+<ul>
+<li><b>Network protocol 42</b> (1.16 used 27; demos from earlier 1.17.0 builds still play). A 1.17.0 game only plays with a 1.17.0 server, so update games and servers together.
+</li>
+<li><b>Ranked needs the new ranking server</b>, deployed with this release. Older games can&#x27;t report ranked results to it.
+</li>
+<li><b>Demos from 1.11 on keep playing</b>: they are converted the first time you start 1.17.0.
+</li>
+<li><b>Your own maps keep working</b>: they are converted to the new map format at startup, and the originals are kept.
+</li></ul>
+<p>This page is the complete record: every change, however small, with what it was before, what it is now, and why. The short version is on the <a href="../">updates page</a>.</p>
+<p>Some words used below:</p>
+<ul>
+<li><b>Tick</b>: one step of the server&#x27;s simulation. Servers run at 1000 ticks a second and step down to 500, 250 or 125 if the machine can&#x27;t keep up.
+</li>
+<li><b>Snapshot</b>: the packet the server sends your game each tick, with where everyone is.
+</li>
+<li><b>Lag compensation (rewind)</b>: when you fire, the server checks your shot against where players were on your screen, not where they are now.
+</li>
+<li><b>Prediction</b>: your game moves you at once and corrects itself when the server&#x27;s answer arrives.
+</li></ul>
+<p>Codes in brackets point to the project&#x27;s review and decision documents: (NET-1), (CLI-2), (WEB-1), (PERF-9), (MAP-3) and similar are findings in <code>docs/REVIEW.md</code>; (review 2.1) and similar are rows in <code>FINAL_REVIEW.md</code>; (owner 5.1) is an answer in <code>docs/OWNER_ANSWERS.md</code>; (B1-B10) are in <code>docs/OWNER_DECISIONS_2.md</code> and (C1-C16) in <code>docs/JUDGMENT_CALLS.md</code>. Quotes are the owner&#x27;s own words.</p>
+<h3>Gameplay and weapons</h3>
+<h4>Weapon balance (owner B7)</h4>
+<div class="scroll"><table><tr><th>Weapon</th><th>Setting</th><th>1.16</th><th>1.17.0</th><th>Time to kill from 100 HP, perfect aim</th></tr>
+<tr><td>Rifle</td><td>Body damage</td><td>5.95</td><td><b>4.95</b></td><td>17 shots, 2.4 s → 21 shots, 3.0 s</td></tr>
+<tr><td>Rifle</td><td>Head damage</td><td>8.5</td><td><b>7.5</b></td><td>12 shots, 1.7 s → 14 shots, 2.0 s</td></tr>
+<tr><td>Laser</td><td>Range</td><td>32 m</td><td><b>24 m</b></td><td>unchanged: 2.5 s (0.04 damage every 1 ms)</td></tr>
+<tr><td>Sniper</td><td>Body damage</td><td>34</td><td><b>50</b></td><td>3 shots, 3.0 s → 2 shots, 1.5 s</td></tr>
+<tr><td>Sniper</td><td>Head damage</td><td>50</td><td>50</td><td>2 shots, 1.5 s</td></tr>
+<tr><td>Syringe</td><td>Healing yourself</td><td>1 HP every 0.1 s</td><td><b>10 HP a use, 1 s cooldown</b></td><td></td></tr>
+<tr><td>Rocket</td><td>Gravity</td><td>12 m/s²</td><td><b>0 (flies straight)</b>; lob <b>13.5 m/s²</b> (was 36)</td><td>unchanged</td></tr>
+</table></div>
+<ul>
+<li><b>Why the rifle and laser changed.</b> The review measured a flat time-to-kill band (1.5-3.0 s for every weapon) and a rifle that won everywhere past close range: hitscan to 300 m, no spread, no falloff. The owner&#x27;s call: &quot;decrease the rifle damage by 1 per shot overall&quot;, &quot;i dont want any spread&quot;, and &quot;make the laser 24m instead of 32… so the lg has more dps, but is shorter range, unless you can headshot enough then rifle overpowers it&quot;.
+<ul>
+<li>Against the laser&#x27;s 40 damage a second, the rifle now does 32.7 on the body (0.82 of the laser) and 49.5 on the head (1.24). So inside 24 m the laser wins unless you land headshots, and past 24 m only the rifle reaches.
+</li>
+<li>The rifle&#x27;s fire rate (a shot every 0.152 s), its range (300 m) and its lack of spread and falloff are unchanged.
+</li>
+<li><b>Shotgun knockback doubled</b>: each pellet that hits pushes 0.30 m/s instead of 0.15, so a full 20-pellet blast shoves a player 6 m/s (was 3), ricochets included. The owner&#x27;s call: a point-blank shotgun blast should move people.
+</li>
+<li><b>Scoped rifle fire rate: 25% slower -&gt; 10% slower</b> (a shot every 0.168 s instead of 0.202 s while scoped). The owner&#x27;s call: aiming down sights should cost a little, not a quarter of your damage output.
+</li></ul>
+</li>
+<li><b>Why the sniper changed.</b> The review found it strictly worse than the rifle: 3 shots and 3.0 s to kill, and a headshot never saved a shot. The owner: &quot;sniper should do a flat 50 damage&quot;. It&#x27;s now 50 on the head or the body: 2 shots, 1.5 s.
+</li>
+<li><b>Rockets fly straight; the lob arcs gently</b> (owner). The primary rocket had gravity 12 m/s² in 1.16 (briefly 10.8 during 1.17 testing) and now has none: it goes where you aim, like a Quake rocket, which makes direct hits and rocket jumps predictable. The alt-fire lob used 3x the rocket&#x27;s gravity (36 m/s² in 1.16) and fell steeply; it now drops at 13.5 m/s², the 10.8 primary plus 25%, at 70% speed, so it&#x27;s a usable arc over cover rather than a grenade at your feet. Damage, splash and speed are unchanged.
+</li>
+<li><b>Stickies inherit only forward / back and vertical speed</b> (owner). A sticky took 90% of your whole velocity, so strafing threw it sideways off your aim and made it hard to place. It now takes 90% of the part along where you face (running forward throws it further, backpedalling shorter) and of your vertical speed, never the sideways part. Aiming straight up or down, it takes only the vertical part.
+</li>
+<li><b>The syringe</b> now heals 10 HP a use on a 1 s cooldown, instead of 1 HP every 0.1 s (owner B4: &quot;change the self use syringe to 10hp, with a 1 second cooldown&quot;). It&#x27;s the same 10 HP a second at most, in steps. Which modes have it at all changed too (see Game modes).
+</li>
+<li>The website&#x27;s weapon table is generated from the game&#x27;s own table, so it shows the new numbers.
+</li></ul>
+<h4>Headshots</h4>
+<ul>
+<li><b>The head is the head, not the shoulders</b> (owner 5.5). The head zone was the top 20% of the hitbox at its full 0.8 m width, so a shot at the shoulder counted as a headshot. Now it is a head-sized box: the top 20% of the height and 45% of the width (0.36 m), centred. A shot is a headshot when its line passes through that box. This applies to the rifle, shotgun pellets, the sniper (including shots through a first player into a second) and crossbow bolts, and the box grows and shrinks with size modifiers.
+</li>
+<li><b>Headshot damage numbers are red</b> (owner 5.6: &quot;headshot damage should be red instead of white&quot;). The server now sends a headshot hit on its own, at once, instead of folding it into the batched white number. Big body hits (40 or more) are still gold, the rest white, and quick hits only merge with hits of the same kind.
+</li></ul>
+<h4>Weapon spread is a fixed pattern (NET-9)</h4>
+<ul>
+<li><b>Before:</b> the shotgun&#x27;s pellet spread (and the bubble gun&#x27;s) was seeded from a number the client chose, the command&#x27;s sequence number. A modified client could pick the best numbers. At 15 m an honest shot landed 5.8 of 20 pellets on average, the best of 16 picks 9.4, the best of 256 picks 11.7: about twice the damage.
+</li>
+<li><b>Now:</b> every shotgun blast uses the same layout: one pellet dead centre, 6 in a ring at 0.45 of the spread and 13 at 0.82. Each pellet covers an equal share of the spread circle, so the density is the same as the old random spread. Spread sizes are unchanged.
+</li>
+<li>The bubble gun&#x27;s single shots walk a fixed 16-step spiral, counted by the server, which starts over when you let go of fire or switch weapons.
+</li>
+<li><b>Your tracers now show exactly where the pellets go.</b> They used the same shared function as the server; before, local tracers and enemy shotgun tracers were drawn at random.
+</li></ul>
+<h4>Knives, bolts and syringes stay where they land</h4>
+<ul>
+<li><b>What:</b> a thrown knife, a crossbow bolt or a thrown syringe that misses stays stuck in the wall or floor until the match is over. One that hits a player stays stuck in them, moving with them, until they die, respawn or leave (owner, before release). It&#x27;s only for show: damage, heals, the thrown knife&#x27;s 4 s return and every cooldown are as before, and a prop never blocks anything.
+</li>
+<li><b>How, cheaply:</b> the server sends one small reliable event when such a projectile ends: where it is and which way it flew, or which player it&#x27;s in and where on them, on the same grid stickies use. The game keeps the props itself. Nothing rides in the snapshots, so a match full of them costs no bandwidth. The newest 256 are kept and older ones dropped.
+</li>
+<li><b>Clearing:</b> the server clears them at match end, match start (leaving warmup), <code>restart</code>, a map change and edit mode, and a player&#x27;s own props go when that player dies, respawns, leaves or spectates. Late joiners get the newest 48 world props, and demos record them.
+</li>
+<li><b>Hidden information:</b> props in the world go to everyone (they show roughly where someone threw from). Props in a player are only sent once that player is in your sight, so a hit out of sight is never revealed. Spectators see everything.
+</li>
+<li><b>Frame time:</b> props past 50 m or off screen aren&#x27;t drawn, past 10 m only their main box, and they cast no shadow. Shadows were most of the cost: props spread over the map widened the shadow pass for every pixel. Measured with 256 props under software GL: 0.1 ms in the prop drawing itself; whole frames lost 3 to 5 fps in the worst case (all 256 within 11 m), which should be far smaller on a real GPU. To check on real hardware with F3 (1% and 0.1% lows).
+</li>
+<li>No protocol change: it&#x27;s a new event type, which the event format already allows. A <code>--pulse</code> debug flag (fire released every other 0.3 s) was added for the screenshots.
+</li></ul>
+<h4>The knife&#x27;s slash</h4>
+<ul>
+<li><b>The slash comes out of the knife you hold</b> (owner, before release), like every other weapon&#x27;s shot comes out of its muzzle: the blade-width trail starts at the knife model&#x27;s tip instead of a spot by your eye, and the small box drawn at the far end of the slash is gone. Other players&#x27; slashes start from their knife hand as before.
+</li></ul>
+<h4>Knife and syringe throws (owner B4)</h4>
+<ul>
+<li><b>Before (1.16):</b> a knife throw had no cooldown, and the weapon you switched to could fire at once, so a thrown knife plus a crossbow headshot was an instant 105 damage (GAME-8). A syringe throw had its own 2 s cooldown.
+</li>
+<li><b>During this update&#x27;s development</b> a shared 2 s throw cooldown and a 0.75 s delay on the next weapon were tried. The owner replaced them: &quot;there is no special shared cooldown, just normal cooldowns with weapon disables&quot;.
+</li>
+<li><b>Now, knife throw:</b> the throw triggers the knife&#x27;s normal swing cooldown, 0.75 s, during which no weapon can be used. The knife is then disabled for 4 s: you switch to another weapon and can&#x27;t draw the knife until it&#x27;s back. The weapon list shows it greyed with the seconds left.
+</li>
+<li><b>Now, syringe throw:</b> the throw triggers the syringe&#x27;s normal cooldown, now 1 s, during which no weapon can be used, and the syringe is disabled for 4 s the same way.
+</li>
+<li><b>A teammate&#x27;s thrown syringe</b> still heals you 30 HP at once and resets your weapon, dash and grapple cooldowns. It now also brings back a thrown knife or syringe at once (owner 5.3: &quot;cooldown reduction timers should also work for these, which it previously didnt&quot;).
+</li>
+<li>Bots know a thrown syringe is away, as they already did for the knife. The INFO screen says the syringe heals 10 HP once a second and that a thrown knife or syringe is gone for 4 s.
+</li></ul>
+<h4>Projectiles fly in fixed 1 ms steps (C8)</h4>
+<ul>
+<li><b>Before:</b> rockets, stickies, knives, bolts, syringes and bubbles moved once per server tick, so the same shot followed a slightly different arc at 125 Hz than at 1000 Hz (8-283 mm apart in the new test). Player movement already ran in fixed 1 ms steps.
+</li>
+<li><b>Now:</b> projectiles also move in 1 ms steps, so every one lands on exactly the same spot at 125, 250, 500 and 1000 Hz. A projectile&#x27;s lifetime is checked at each step&#x27;s own time, and a spent one stays where it hit.
+</li>
+<li><b>Your screen draws them along the same arc, gravity included.</b> Before, the game drew a projectile between snapshots in a straight line, ignoring its drop (COR-8). The server sends whether a rocket is a lob or a sticky is stuck, in a byte it already sent.
+</li>
+<li>Cost: with 100 projectiles in flight, a 1000 Hz tick went from 9.6 to 6.3 µs (players&#x27; hitboxes are now worked out once a tick, not once per projectile). At 125 Hz a tick runs 8 steps (about 50 µs), the same cost per second of play.
+</li></ul>
+<h4>Movement</h4>
+<ul>
+<li><b>Movement retuned against other arena games</b> (the owner&#x27;s seven decisions, after a side-by-side comparison with VQ3, CPMA, Warfork and Cocaine Diesel scaled to a 1.8 m player):
+</li></ul>
+<div class="scroll"><table><tr><th></th><th>before</th><th>now</th></tr>
+<tr><td>run speed</td><td>8 m/s</td><td>9.5 m/s</td></tr>
+<tr><td>time to 90% / full speed</td><td>67 / 77 ms</td><td>72 / 83 ms (ground acceleration 16.8 → 16)</td></tr>
+<tr><td>running jump, flat</td><td>5.3 m</td><td>6.27 m</td></tr>
+<tr><td>standing jump holding W, speed at landing</td><td>2.3 m/s</td><td>7.27 m/s</td></tr>
+<tr><td>ladder up / sideways</td><td>4.5 / 3 m/s</td><td>6.75 / 4.5 m/s (the kick-off is unchanged)</td></tr>
+<tr><td>chained dashes from standing</td><td>11, 14, 17...</td><td>11, 12, 13, 14 (each keeps +1)</td></tr>
+<tr><td>W-only air control</td><td>229°/s at any speed</td><td>229°/s up to 12.65 m/s; 181 at 16, 145 at 20, 91 at 32</td></tr>
+<tr><td>A/D strafe push</td><td>x1.0</td><td>x1.0 at 12, x1.043 at 14, x1.1 from 15.8 m/s</td></tr>
+<tr><td>strafe-jumping for 4 s</td><td>8 → 22.4 m/s</td><td>9.5 → 23.9 m/s</td></tr>
+</table></div>
+<ul>
+<li><b>Run 8 → 9.5 m/s, ground acceleration 16.8 → 16:</b> quark ran slowest of the games compared (VQ3 / CPMA 10.3, Warfork 9.0, Cocaine Diesel 11.25 m/s). The lower acceleration keeps start-up about the same at the higher top speed (90% in 72 ms, full in 83).
+</li>
+<li><b>Air drift, 8 m/s² below run speed:</b> a standing jump could only drift 2.3 m/s, against about 6–7 elsewhere. Drift only applies below run speed and is clamped so it never pushes you past it, so it can&#x27;t be used to gain speed.
+</li>
+<li><b>W-only air control falls off above 9.5 m/s (run speed), and a strafe boost of x1.1</b> (ramping in from 12.65 to 15.8 m/s): at high speed, holding W alone steered as well as real air-strafing. Now A/D strafing wins from 9.5 m/s up, which is the skill the movement is built around. The crossover was first 12.65 m/s; the owner moved it to 9.5 before release &quot;by lowering w stafing power not increasing ad strafing&quot;, so W-only steering now turns 4 x 9.5 / speed rad/s (181°/s at 12 m/s, 136 at 16, against A/D&#x27;s 242 and 199) and the A/D boost is unchanged. Bots switch to strafe-key turns above 9.5 m/s too.
+</li>
+<li><b>Ladders 4.5 → 6.75 up, 3 → 4.5 sideways:</b> quark&#x27;s ladders were the slowest compared (Warfork 7.0, Cocaine Diesel 8.4 m/s). Coming over a ladder top now carries you about 5.6 m (was 2.0), so five maps got a stop at a narrow ladder top: Bastion (a tall stone on the outer wall top: its ladder threw you out of the map), Temple (a jagged back-wall piece on the tower stub), Furnace (a damper housing on the stack&#x27;s far edge, mirrored), Orbital (the gallery ladder now climbs a strut facing the hull) and Railyard (a filler pipe on the tank). Hightown&#x27;s stairwell lamps hung at head height, so jumping up the stairs bonked on them; they moved 4 m out.
+</li>
+<li><b>Dash keep 3 → 1 m/s</b> (the dash itself is still 11–32 m/s): chained dashes built +3 m/s each, up to 32, too quickly.
+</li>
+<li>Two new custom-mode values, <code>air_drift</code> and <code>strafe_boost</code>, with sliders on the MOVEMENT page; air control and the strafe crossover use the mode&#x27;s air acceleration, so custom modes scale together.
+</li></ul>
+<ul>
+<li><b>Two dash charges, on top of the 1.2 s dash cooldown</b> (owner: &quot;i didnt want the cooldown to be removed... i wanted charges on top of the cooldown&quot;). A dash needs a charge left <b>and</b> the cooldown run out. The cooldown is timed from when the previous dash <b>ends</b> (its burst running out, or a dash jump or super dash ending it), so two dashes are always at least the dash plus 1.2 s apart. A dash spends one charge. Holding jump refills only up to one charge (owner, before release: &quot;when holding space you should only be able to charge 1 dash&quot;): bunny hopping keeps one ready but never the second; landing without jump held refills both. Ending a step on the floor refills both; a bunny-hop landing gives one back. Pressing dash during a dash does nothing (it isn&#x27;t saved for later), so two presses in a row use both charges, one after the other. A dash jump leaves both charges; a super dash leaves exactly one, and a wall bounce leaves exactly one. There&#x27;s no refill during a dash&#x27;s own steps (so the super dash&#x27;s floor touch doesn&#x27;t count), on a ladder, or while grappling or being pulled. The duel and blade modes&#x27; quick dash is a third charge, and a syringe heal refills them. The HUD shows a pip per charge. Custom modes have both <code>dash_cooldown</code> (a multiplier on 1.2 s, as before) and <code>dash_charges</code> (a multiplier on 2, at least 1); an older file&#x27;s <code>dash_cooldown</code> works again. The HUD&#x27;s dash pips fill grey while the cooldown runs. Network protocol 42: the charge count and the cooldown (whole milliseconds, so prediction matches the server exactly) are sent when charges aren&#x27;t full or the cooldown is running. Demos from protocol 41 (charges only) and older (the old cooldown) still play. During development the charges briefly replaced the cooldown (protocol 41); the owner restored the cooldown before release.
+<ul>
+<li>With charges alone, a grounded player could dash every 0.12 s and one super dash per bunny hop never ran out. The owner chose the cooldown to balance both, rather than separate fixes: now it&#x27;s a dash every 1.2 s on the ground, and chained super dashes come at least 1.3 s apart. Bots dash a little less for the same reason. The quick-dash modifier (duel, blades) keeps its third charge with the same cooldown.
+</li></ul>
+</li>
+<li><b>Bots for the new movement:</b> above 12.65 m/s a hopping bot that needs a sharp turn (over 69°) now pushes square to its momentum like a strafing player instead of steering with W, because W-only steering is weaker at speed. Expert bots&#x27; kills per 40 s in FFA: 5.8 before the movement change, 4.6 after it, 5.7 with this fix. Their dash checks use &quot;a charge left and no dash running&quot;.
+</li>
+<li><b>The grapple no longer slows you down when it catches</b> (owner 5.4: &quot;grapple should NOT brake on catch, other than how it tries to bring you towards the connection point&quot;).
+<ul>
+<li>Before: while hooked, your whole speed was clamped to the grapple&#x27;s top speed of 24 m/s every step, so catching it at 40 m/s dropped you to 24 at once.
+</li>
+<li>Now: the pull only adds speed up to 24 m/s. If you were already faster, it bends your path toward the anchor and you keep your speed. Below 24 m/s nothing changes.
+</li></ul>
+</li>
+<li><b>Size modifiers scale your collision box</b> (owner 5.3, GAME-9).
+<ul>
+<li>Before: &quot;double size&quot;, &quot;giant snipers&quot; and &quot;tiny players&quot; scaled your hitbox and camera, but you still collided as a normal 1.8 m player. A giant&#x27;s camera (3.2 m up) went inside low ceilings; a tiny player&#x27;s sat at 0.96 m.
+</li>
+<li>Now: the collision box scales with you (2x or 0.6x): walls, ceilings, the ground check, ladders, and where the grapple fires from and pulls to. Step height isn&#x27;t scaled. Your hitbox is the same box. Prediction knows your size, so a giant doesn&#x27;t rubber-band.
+</li></ul>
+</li>
+<li><b>A giant never spawns inside a wall</b> (review 6.4). If no spawn had room for a giant, the game picked one anyway; on Anvil, 24 test giants spawned inside the geometry. Now it picks, in order: a spawn where a giant can stand, one where it fits crouched (it stands when there&#x27;s room), the nearest clear spot up to 1.5 m aside or 0.6 m up (never through a wall), and only then normal size for that life. The same test now puts 0 giants in walls.
+</li>
+<li><b>Kept as they are, by the owner&#x27;s choice:</b> auto bunny-hop, unlimited air-strafing speed and the dash&#x27;s speed limit (owner 5.4: &quot;intentional&quot;), and unlimited knockback (owner 5.3: &quot;knoickback should be unlimited its funny&quot;).
+</li></ul>
+<h4>Health</h4>
+<ul>
+<li><b>Heals stop at your life&#x27;s starting health</b> (GAME-2a). Syringe doses and throws, vampire healing and regeneration all stopped at 100, whatever the life started with. So in duel, &quot;1 HP&quot; and &quot;glass cannon&quot; lives healed back up to 100, and &quot;tanks&quot; (250) couldn&#x27;t heal past 100. Now every heal stops at the health that life spawned with.
+</li>
+<li><b>Regeneration waits 3 seconds</b>, measured in seconds. It counted ticks before, so the wait depended on the server&#x27;s tick rate.
+</li></ul>
+<h4>Health bars on for everyone, once</h4>
+<ul>
+<li>Health bars over players are on by default in 1.17. Players who had them off from an older default get them switched on once with this update (owner); anyone who turns them off again keeps them off. The config remembers it was done (<code>health_bars_117=1</code>).
+</li></ul>
+<h4>The grapple sticks to enemies</h4>
+<ul>
+<li><b>What:</b> when the tip of your grapple hits an enemy it latches on, deals 10 damage (15 if the hook passes through the head), and pulls the two of you together until you meet. The pull works like the normal hook: momentum kept, half gravity, the same speed limit, and the victim is pulled toward you just as hard, so you meet in the middle.
+</li>
+<li><b>Why:</b> the owner&#x27;s call (&quot;if your grapple hits a player, it should stick to them, do 10 damage, 15 if head, and then pull both players together in the middle&quot;): the hook becomes a close-range opener as well as movement.
+</li>
+<li>It lets go when you release, when you meet (1.2 m), when either of you dies, disconnects or respawns, when a wall comes between you, beyond the grapple&#x27;s 45 m range, or after 3 s; the usual 1 s cooldown follows. A hooked player sees HOOKED and can break free with a dash or by firing their own grapple (which can latch you back).
+</li>
+<li><b>Who:</b> enemies only; the hook passes through teammates to the wall behind, never hooks you, and passes through a player someone else already holds. No hooking in race, during a freeze or round end.
+</li>
+<li><b>Modes:</b> wherever the grapple exists. In instagib the hook only pulls (otherwise it would be a 45 m one-shot weapon); in hide and seek and tag it only pulls, between &quot;it&quot; and the others. The grapple-only duel modifier allows it.
+</li>
+<li><b>Netcode:</b> the hit is lag compensated like hitscan (you hook where you saw them). The victim&#x27;s pull runs in their own movement prediction from the server&#x27;s pull point, so it&#x27;s predicted rather than corrected (measured corrections: 1-2 mm). A rope to a player you can&#x27;t see isn&#x27;t sent (it would reveal them). It counts in the kill feed as &quot;grapple&quot; (a damage source of its own, not a weapon slot).
+</li>
+<li><b>Bots:</b> advanced and expert bots with a close-range weapon out sometimes hook you at 7-36 m, and dash sideways out of a hook when they want range.
+</li></ul>
+<h4>Stickies stick to enemies</h4>
+<ul>
+<li><b>What:</b> a sticky that hits an enemy sticks to them (2 cm inside where it hit) instead of dropping at their feet, rides along on them, and goes off right on them when you set it off (alt-fire or another blast): the full blast (29.8 of 29.75 in the test). No contact damage, as before.
+</li>
+<li><b>Why:</b> the owner&#x27;s call (&quot;the sticky should stick to players if it hits them&quot;). It&#x27;s drawn glued to their model on every screen; the victim gets a beep and a blinking STICKY ON YOU.
+</li>
+<li>Teammates and the shooter aren&#x27;t stuck to (it drops, as before). If the player dies, respawns or leaves, it falls and sticks where they were. The 6-per-player cap includes stickies on players. A sticky on a player you can&#x27;t see is hidden from you too, so it can&#x27;t track them through walls. Bots set off stickies that are on an enemy.
+</li></ul>
+<h4>Dash tech (from Celeste)</h4>
+<ul>
+<li><b>Sounds for the techs</b> (owner): a super (dash jump) plays a bright rising whoosh, a hyper (super dash) a lower, heavier one with an impact under it. They&#x27;re new sounds in every kit (SUPER, HYPER), replaceable like the rest. The game tells them from an ordinary dash&#x27;s end by the dash being cut short by a jump, and a hyper by the dash aimed down and the single charge it leaves.
+</li>
+<li><b>Dash jump:</b> jumping during a dash while on the floor (or up to 0.1 s before it) ends the dash and keeps its full burst speed (24 m/s, or more if you were faster, up to 32) through a normal jump. Before, the dash swallowed the jump. From a standstill that&#x27;s a 15.8 m leap at the normal 1.21 m height (11 m/s without the tech).
+</li>
+<li><b>Super dash:</b> a dash aimed down (14.5° or more below level) that meets the floor with jump held turns into 1.25x the dash speed (up to 36 m/s) with a half-height hop (0.31 m). These are Celeste&#x27;s hyper-to-super ratios. A bhop never bounces off a dash&#x27;s own push into the floor.
+</li>
+<li><b>Wall bounce:</b> a dash that hits a wall less than 45° from head-on reflects off it (like a mirror; vertical motion kept), finishes the dash the other way and leaves at full dash speed; at most 2 bounces per dash (a third wall slides). Glancing hits (45° or more) slide as before.
+</li>
+<li><b>Why:</b> the owner&#x27;s calls, after Celeste: dashes should carry momentum into jumps and off walls instead of stopping dead.
+</li>
+<li>All three are tunable in custom modes (dash jump window, super dash boost / hop / cap, bounce angle). The map report&#x27;s movement model now includes them (32 and 36 m/s tiers, standing reach 13.5 -&gt; 16 m); every map still scores 7+, nothing reaches out of bounds, and no race leg can be cut. Expert bots dash jump on long straight routes.
+</li></ul>
+<h4>Name colour</h4>
+<ul>
+<li><b>Pick the colour others see your name in</b> (owner): SETTINGS &gt; NAME COLOR, with R / G / B sliders (moving one turns it on). It shows on the scoreboard, in chat and in the kill feed for everyone. Name tags over teammates keep the team colour, so teams stay readable (owner&#x27;s call); in FFA there are no name tags over heads.
+</li>
+<li>Sent with your model and sound pack, as RGB565 in the player info event&#x27;s spare 16-bit field, so it needed no change to the network format; a server before 1.17 just ignores it. A late joiner and a demo get it too. A colour too dark to read on the HUD panels is lifted toward white on everyone&#x27;s screen (a minimum brightness), so nobody can hide their name.
+</li></ul>
+<h3>Game modes</h3>
+<h4>Overtime (owner 5.1; GAME-3, GAME-4)</h4>
+<ul>
+<li><b>Before:</b> payload and neutral payload had no overtime, so a cart being pushed at 0:00 lost. Multi point had overtime only while the point was contested, so attackers alone on the point at 0:00 lost, and the best defence at 0:00 was to step off the point. In neutral payload, whoever was a metre ahead at time-out won, so teams could take a small lead and turtle.
+</li>
+<li><b>Now:</b> in payload, neutral payload, multi point and bomb, when the clock runs out, overtime starts if the side that needs time is on the objective or touched it in the last 5 s. Each touch resets a 5 s timer, and overtime ends 5 s after their last touch. The owner: &quot;overtime should happen whenever the attacker is on the point at all when timer hits 0, it should also apply when someone had touched it within the last 5 seconds, overtime timer is 5 seconds; this applies for all gamemodes with a site or cart&quot;.
+<ul>
+<li>Payload: attackers at the cart, contested or not.
+</li>
+<li>Multi point: attackers on the current point.
+</li>
+<li>Bomb: an attacker on a bomb site, before the plant. A planted bomb&#x27;s fuse isn&#x27;t extended.
+</li>
+<li>Neutral payload: the team that would lose at time-out; both teams if the cart is dead centre.
+</li></ul>
+</li>
+<li>The HUD shows &quot;OVERTIME 0:05&quot; counting down. Free for all&#x27;s existing tie overtime now reads &quot;OVERTIME - NEXT KILL WINS&quot; on the HUD. King of the hill has no clock (first to the score wins), so nothing changed there.
+</li>
+<li><b>Fixed: checkpoint and point time bonuses during overtime</b> (review 6.3). Reaching a payload checkpoint or taking a point adds time, but in overtime it was added to a deadline already in the past: &quot;+60 s&quot; reached 20 s into overtime gave 40 s, and after 60 s of overtime nothing. Bonuses now count from now.
+</li></ul>
+<h4>The syringe only where the dead respawn (owner 5.2; GAME-2b)</h4>
+<ul>
+<li><b>Why:</b> in round modes the syringe out-healed VS&#x27;s stalemate drain (10 HP a second against 5), so a cornered last player holding it never died and the round never ended. The owner: &quot;syringe should only exist in respawn based gamemodes, unless otherwise limited&quot;.
+</li>
+<li><b>Now:</b> it&#x27;s in free for all, king of the hill, payload, neutral payload, multi point and race, and gone from VS, bomb, duel, 1v1 and tourney (hide and seek and tag are knife-only anyway). A custom mode keeps it only if its weapon list names it; &quot;all weapons&quot; isn&#x27;t enough. If you had it selected where it&#x27;s gone, you spawn with the first allowed weapon.
+</li></ul>
+<h4>Hide and seek (owner 5.6, B8)</h4>
+<ul>
+<li><b>Everyone seeks exactly once.</b> A match had <code>clamp(players, 3, 6)</code> rounds in slot order, so with 2 players one sought twice and with 7 or more some never sought. Now a match has as many rounds as players, and someone who joins mid-match gets a turn too.
+</li>
+<li><b>New scoring</b> (owner B8: &quot;if a hider survives the whole time they get 1 point&quot;, the seeker gets &quot;1 per person found&quot;):
+<ul>
+<li>A hider still unfound when the round ends scores 1 (also when the round ends because the seeker left).
+</li>
+<li>The seeker scores 1 for each hider found.
+</li>
+<li>A found hider scores 0. A hider who dies from a fall scores 0, and the seeker gets nothing for them.
+</li>
+<li>This replaces 1.16&#x27;s +2 for every survivor, +3 for a seeker who found everyone and +1 per find from the kill. (A time-share system, splitting 4 points per hider by how long they stayed hidden, was built during development and replaced by the owner&#x27;s rule before release.)
+</li></ul>
+</li>
+<li><b>Rock paper scissors tiebreak</b> (owner B8: it &quot;only happens if once every round is played there is a tie of points&quot;, &quot;best of 3, if more than 2, everyone who loses is out, unless everybody loses then nobody does&quot;).
+<ul>
+<li>Only players tied for first take part, after the last round.
+</li>
+<li>Two players: best of 3; a drawn throw is thrown again.
+</li>
+<li>Three or more: everyone throws at once. If exactly two shapes show, everyone with the losing shape is out. If one shape or all three show, nobody is out and they throw again. When two remain, it&#x27;s best of 3; if a throw leaves one clear winner, they win outright.
+</li>
+<li>Pick with 1 / 2 / 3 within 6 s; no pick means a random one. Each throw is shown for 3 s. Bots throw at random. Picks are hidden until the reveal, and anyone joining mid-tiebreak is sent the current state.
+</li>
+<li>A panel shows everyone&#x27;s card (choosing, ready, their shape, best-of-3 pips, out), with sounds for a new throw, the reveal, a throw won and being knocked out. The winner wins the match.
+</li></ul>
+</li>
+<li><b>The seeker is seen holding the knife</b> (owner B8: &quot;the seeker holds it, and the tagger only holds it&quot;). Others now see the seeker&#x27;s arm and real knife (or locator) model, aimed where they look and chopping on a swing, instead of a generic gun box; hiders hold nothing. Players who aren&#x27;t the seeker no longer get a local knife swing, slash trail or sound.
+</li>
+<li><b>Hiders are no longer shown where the seeker is</b> (owner B8: &quot;in HNS the hiders should not always be aware of the seeker location&quot;). The &quot;SEEKER&quot; label over the seeker was drawn through walls; it now needs a clear line of sight.
+</li>
+<li><b>The seeker gets nothing about the hiders during the head start.</b> The head-start blackout was only a black rectangle on the seeker&#x27;s screen, while hiders&#x27; positions and footsteps still arrived (NET-10). Now the server sends the seeker nothing about them until the round goes live (see Hidden information).
+</li></ul>
+<h4>The locator is a weapon (owner B8)</h4>
+<ul>
+<li><b>Before:</b> the seeker&#x27;s or tagger&#x27;s locator was an ability on the use key.
+</li>
+<li><b>Now:</b> it&#x27;s a weapon on key 0 with its own model: a handheld tracker with a radar screen and an antenna, whose screen dims while it recharges and pulses when ready. Others see it in the seeker&#x27;s or tagger&#x27;s hand.
+</li>
+<li>Fire it to see one random hider or runner through walls for 1 s; it then recharges for 5 s on its own clock, so switching back to the knife is instant. It does no damage. Only the seeker and the tagger hold it, and the seeker or tagger spawns (or is tagged) with the knife out.
+</li>
+<li>It exists only in hide and seek and tag: every other mode&#x27;s weapon pool strips it, custom modes and 1v1 rulesets included, the HUD&#x27;s weapon list only shows weapons the mode has, and the custom-mode editor doesn&#x27;t offer it. The old use-key path is removed.
+</li>
+<li>Bot seekers and taggers fire it when nobody is in sight and head for what it finds.
+</li>
+<li><b>It has its own sound</b> (owner, before release): a sonar-like ping with an echo, the new LOCATOR sound in every kit. It borrowed a pitched-up grapple sound before.
+</li></ul>
+<h4>Tag</h4>
+<ul>
+<li><b>Runners always see where the tagger is</b> (owner B8: &quot;in tag mode all runners should always be aware of the tagger location&quot;). The server never hides the tagger from anyone, and runners and spectators get a red marker over the tagger with the distance (&quot;TAGGER 31M&quot;) through walls, or an arrow at the screen edge when the tagger is off screen or behind.
+</li>
+<li><b>Going to spectator or leaving during a match eliminates you</b> (GAME-1). Before, the tagger could switch to spectator for a moment: the game handed &quot;it&quot; to a random runner, who was out when time ran out, and the original came back with nothing on their record.
+<ul>
+<li>Now, during a match, spectating or leaving is elimination. If the tagger does it, the round ends exactly as if time ran out.
+</li>
+<li>Nobody can join a side mid-match; a player who connects mid-match watches and joins at the next match.
+</li>
+<li>An elimination is kept if the player reconnects.
+</li></ul>
+</li>
+<li><b>Late joiners are placed properly</b> (review 6.2). Everyone who waited out a tag match was put on team A at the next match, skipping the 1v1 and duel seat limits and team balance: a vote to 1v1 could leave three players on one side. They&#x27;re now placed like any joining player.
+</li>
+<li><b>A bot added mid-match plays the next match</b> (review 6.5). An admin&#x27;s <code>addbot</code> during a live tag match put the bot straight on a side, past the lock every human respects; and a new bot reusing an eliminated bot&#x27;s name was marked out at once. Now the bot watches and joins at the next match, and eliminations are remembered for humans only.
+</li></ul>
+<h4>Bomb (GAME-5)</h4>
+<ul>
+<li><b>A dropped bomb falls to the floor.</b> A carrier killed in mid-air left the bomb hanging where they died, and an enemy&#x27;s blast can throw you about 11 m up. Picking it up needs your feet within 1.2 m, so it could end up out of reach (bots included) and the attack timed out. Now it drops straight down to the floor below; over the void or lava it goes where the carrier last stood, as before.
+</li>
+<li><b>An abandoned bomb goes back to the attack:</b> if nobody picks it up for 15 s, it goes to a random living attacker, with a message saying who.
+</li></ul>
+<h4>Other mode fixes</h4>
+<ul>
+<li><b>Balance bots stay until the round ends</b> (GAME-10). When a human joined, the balance bot on the other team was removed within a second, even mid-round when it was its team&#x27;s last player alive, which lost the round on the spot. In round modes a balance bot that&#x27;s alive now stays until it dies or the round ends.
+</li>
+<li><b>Colosseum&#x27;s tourney uses its opposite-end spawns</b> (MAP-7). The game only used tourney spawns if the map&#x27;s mode list offered VS; Colosseum&#x27;s doesn&#x27;t, so both finalists spawned at free-for-all spawns, maybe side by side. It now checks whether the map has the spawns. The same applies to race and staged multi point spawns.
+</li>
+<li><b>The server&#x27;s tick rate only changes between rounds</b> (GAME-11). It used to step up or down mid-round, against what the code itself promised, and race times and regeneration depend on it. Now it changes in warmup, at round end or at match end. A server that falls behind mid-round steps down at the next break; one that is truly overloaded (busy over 90% of the time) still steps down at once, because falling behind is worse for everyone.
+<ul>
+<li><b>A failed step up is undone at once</b> (review 6.1). The change above also removed the quick undo of a step up that didn&#x27;t hold, so a raise made in a break could run late ticks for a whole round (frame-time spikes). A step down within 3 measuring windows of the server&#x27;s own raise now happens in any phase.
+</li></ul>
+</li>
+<li><b>Tourneys are seeded by rating</b> (owner 5.6: &quot;seeding should be based on average of the 3 ranked modes (200 if not ranked)&quot;; kept as is in C14). Seeding was random. Now each player&#x27;s seed is the average of their three ladder ratings, counting 200 for a ladder with no games or a player with no ranked id. Ratings are fetched in the background when ranked players join a tourney server. Brackets use the standard order (1st plays last), so the top seeds get the byes; equal seeds are shuffled.
+<ul>
+<li><b>Rating lookups are merged</b> (review 2.8): every ranked join queued a lookup per ladder, so rotating keys could queue about 150 a second. Now new players join the lookup already waiting for that ladder, so at most one waits per ladder.
+</li>
+<li>A disconnect in a tourney is no longer an instant walkover (see Reconnecting).
+</li></ul>
+</li>
+<li><b>Fresh random numbers every start</b> (GAME-12). <code>rand()</code> was never seeded, so the duel modifier order, tourney seeding, the first bomb carrier and the first tagger came out the same on every fresh server start. Every thread now has its own generator seeded from the system&#x27;s random source and the clock, and bots seed from it too.
+</li>
+<li><b>King of the hill is unchanged</b> (B5): any enemy on the hill still freezes the clock for both teams.
+</li></ul>
+<h4>Custom modes</h4>
+<ul>
+<li><b>A host&#x27;s custom mode no longer leaks into its own game</b> (COR-6). The custom rules lived in globals shared by the hosted server&#x27;s thread and your game&#x27;s thread, and stopping the server reset them under your game. Each thread now has its own copy, and the server applies its rules on its own thread.
+</li>
+<li><b>Blank map names are dropped from a custom mode&#x27;s map list.</b> <code>maps= ,temple</code> kept an empty name, and a host whose list started with it switched its own map to a map with no name at start. Found by the new fuzz tests.
+</li>
+<li>Values that aren&#x27;t real numbers are refused (see Security).
+</li></ul>
+<h3>Bots</h3>
+<h4>Rebuilt from scratch (owner 5.6)</h4>
+<p>The owner: &quot;bots need to be redone&quot;. The review had found they had perfect information and a difficulty that depended on the tick rate.</p>
+<ul>
+<li><b>What they know.</b> Before, bots scanned 360° with exact positions, aimed with the target&#x27;s exact velocity and forgot a target the moment it broke line of sight. Now they only know what a player could:
+<ul>
+<li><b>Sight:</b> a view cone of about 89° / 97° / 106° / 115° by level, with a line-of-sight check from the eye, looked at 20 times a second.
+</li>
+<li><b>Hearing:</b> gunfire within 45-75 m and footsteps or dashes within 12-24 m, with a guessed position off by 10-30% of the distance.
+</li>
+<li><b>Memory:</b> a last-seen position that lasts 1.5-5 s. They hunt it and aim where you should be by now, but don&#x27;t fire at it. Between fights they turn toward fresh sounds and glance around.
+</li>
+<li>In hide and seek and tag, runners only flee from a seeker or tagger they&#x27;ve seen or heard.
+</li></ul>
+</li>
+<li><b>How they aim</b> (beginner / intermediate / advanced / expert):
+<ul>
+<li>Reaction time 450 / 300 / 200 / 150 ms, up to 1.5x slower at the edge of their vision and shorter for a target lost a moment ago.
+</li>
+<li>They see you as you were 160 / 120 / 90 / 60 ms ago and extrapolate from a speed they perceive, which lags behind jukes and misjudges it.
+</li>
+<li>Turning has a top speed and acceleration; flicks overshoot and then settle; tracking gets worse the faster you cross their view; projectile leads and drop are misjudged, re-rolled every 0.7-1.5 s.
+</li></ul>
+</li>
+<li><b>Levels are clearly apart.</b> Rifle damage a second against a target strafing and juking 14 m away, averaged over 1000, 250 and 125 Hz:
+</li></ul>
+<div class="scroll"><table><tr><th>Level</th><th>Old bots</th><th>New bots</th><th>Share of perfect aim</th><th>Owner&#x27;s target (C11)</th></tr>
+<tr><td>Beginner</td><td>3.3</td><td>3.0</td><td>8%</td><td>3</td></tr>
+<tr><td>Intermediate</td><td>7.3</td><td>6.1</td><td>15%</td><td>6</td></tr>
+<tr><td>Advanced</td><td>8.1</td><td>10.5</td><td>27%</td><td>10.5</td></tr>
+<tr><td>Expert</td><td>18.1</td><td>18.0</td><td>46%</td><td>18</td></tr>
+</table></div>
+<ul>
+<li>The old intermediate and advanced levels were barely apart. A later check measured experts at 16.7 (42-43% of perfect aim): strong but beatable. The tests now keep experts between 35% and 60% of perfect aim.
+</li></ul>
+<ul>
+<li><b>Difficulty no longer depends on the tick rate.</b> Bots used to decide per tick: an expert&#x27;s dash roll came within about 0.1 s at 1000 Hz but 0.8 s at 125 Hz, and lower rates hit up to 50% more. Now everything runs on game time in 1 ms steps, and each command carries the view at the moment the server tests the shot. Each level hits about the same at every rate.
+</li>
+<li><b>How they move:</b> beginners stand and shoot, intermediates strafe, advanced and expert bots bunny-hop with real air-strafing, dash in fights and on long straights, and grapple.
+</li>
+<li><b>Fixed: bots that never fired.</b> A bot holding fire through a weapon switch kept its trigger locked, and some bots never shot at all.
+</li>
+<li><b>Navigation is built in the background</b> (PERF-10). The route graph was built the first time a bot thought, on the server&#x27;s tick (about 4.6 ms, a visible hitch when the first bot spawned). It&#x27;s now built on a background thread at map load (the slowest, Lodestone and Midtown, take 24 ms) and rebuilt in the background after map edits. Route search uses A* with reused memory (2-6 µs a search, was 4.6-10.5), routes are kept between waypoints, and at most 2 searches run per tick. A test checks the fast build gives exactly the same graph as checking every pair, on every map.
+</li>
+<li>Thinking costs more per bot (0.52 → about 1 µs a tick; 24 bots ≈ 26 µs of a 1 ms tick), and the worst ticks are as good or better, because the graph-build spike is gone.
+</li></ul>
+<h4>Bots keep off the edges</h4>
+<ul>
+<li><b>Measured:</b> a new playtest ran every map in its own mode at advanced and expert level and sorted deaths by cause. Bots fell into the void or lava 56 times in 120 s per map and level, mostly while grappling.
+</li>
+<li><b>Why they fell, and the fixes:</b>
+<ul>
+<li><b>Grapple pulls across pits.</b> A hook was taken whenever it caught near the route, though the pull is a curve the bot can&#x27;t steer, it lets go at full speed and skids on, and it catches some time after it was planned. Now the whole pull is simulated first, from the bot&#x27;s real position and speed (pull, top speed, gravity, sliding along walls), plus the skid after letting go. Every point must be over ground that&#x27;s safe to land on, the anchor&#x27;s near side must be ground, and pulls stay under 22 m on maps with pits. It&#x27;s checked when planned and again when the hook catches. While hooked, the bot follows the pull, doesn&#x27;t air-strafe, and holds on through a fight instead of letting go at full speed.
+</li>
+<li><b>Hops and jumps off edges:</b> a bunny hop at a drop the bot had stopped at, a jump at speed after a grapple, the unstick hop on a narrow ledge. The brake now works on momentum alone too, looks 0.6 s ahead when fast, and the bot never hops or air-strafes toward a drop.
+</li>
+<li><b>Lava on a floor counted as ground.</b> It doesn&#x27;t any more.
+</li>
+<li><b>Fights at the rim:</b> bots look for edges at 1.5, 3 and 5 m; within 3 m they never strafe toward one and step away; within 5 m they drift away and don&#x27;t jump or dash (a laser or blast push in the air there is a fall).
+</li>
+<li><b>Self-kills:</b> no rocket into a wall inside its own blast; stickies only set off when the bot is clear of them.
+</li></ul>
+</li>
+<li><b>Falls in 120 s per map (advanced + expert), before → after</b> (falls caused by an enemy&#x27;s hit in brackets):
+</li></ul>
+<div class="scroll"><table><tr><th>Map</th><th>Before</th><th>After</th></tr>
+<tr><td>Dojo</td><td>17</td><td>2 (2)</td></tr>
+<tr><td>Bastion</td><td>10</td><td>0</td></tr>
+<tr><td>Foundry</td><td>9</td><td>1</td></tr>
+<tr><td>Canal</td><td>6</td><td>1 (1)</td></tr>
+<tr><td>Gantry</td><td>4</td><td>0</td></tr>
+<tr><td>Summit</td><td>3</td><td>0</td></tr>
+<tr><td>Clockwork</td><td>3</td><td>0</td></tr>
+<tr><td>Temple, Hightown, Viaduct</td><td>1 each</td><td>0</td></tr>
+<tr><td>Orbital</td><td>1</td><td>1</td></tr>
+<tr><td>All others</td><td>0</td><td>0</td></tr>
+<tr><td><b>Total</b></td><td><b>56</b></td><td><b>5 (3)</b></td></tr>
+</table></div>
+<ul>
+<li><b>Bots check objectives with their real size</b> (review 6.6). They tested bomb sites, hills and points with a normal standing box while the server used their real one, so a giant, tiny or crouching bot could disagree with the server about being on the objective.
+</li>
+<li><b>Hide and seek and tag bots no longer pick spots from the previous map</b> (review 6.6). After a map change, the old route graph stays until the new one is ready, and a hiding spot is kept for 90 s, so a bot could walk toward a spot from the last map. Goals now come only from a graph that matches the current map.
+</li></ul>
+<h3>Netcode and servers</h3>
+<h4>Reconnecting (owner 5.6)</h4>
+<ul>
+<li><b>10 s reconnect grace in every game</b> (the owner: &quot;all games should have a 10 second recoonect grace&quot;). If your connection drops or you disconnect, your slot, team, score and state are kept for 10 s (you stand still). Reconnecting gives it all back. You&#x27;re matched by your proven ranked id, or else by a reconnect token the server gives your game when you join. The same key reconnecting while the old session is still up takes the slot over. Players who are away don&#x27;t count in votes and get no snapshots.
+</li>
+<li>In a tourney a drop is no longer an instant walkover: it only counts after the grace.
+</li>
+<li><b>A reconnect can&#x27;t take over someone else&#x27;s ranked id</b> (review 2.11). A reconnect matched by token but proving a different ranked key (or none) got the slot back, replaced its key and kept the old ranked id. Now the token only restores a slot whose ranked id this connection proves; otherwise it&#x27;s a new session and the old slot runs out its grace.
+</li></ul>
+<h4>Lag compensation and prediction</h4>
+<ul>
+<li><b>How far back a hit is checked is capped by your real ping</b> (NET-5). Your game chose how far back the server rewound for your shots, up to 500 ms, including the knife (which decides tags and finds). Now the rewind is at most your measured ping + an interpolation allowance + 30 ms, never over 500 ms.
+</li>
+<li><b>Players with a high interpolation setting hit what they see</b> (review 2.5). The cap above didn&#x27;t cover <code>interp_ms</code> settings up to 200 ms, so those players&#x27; shots were clamped short and landed behind moving players. Your game now tells the server its fixed interpolation delay, and the cap covers it, up to 200 ms. In a test, a player with interp 200 aiming at someone moving at 10 m/s hits 17 of 17 rifle shots, against 1 of 17 when the server didn&#x27;t know the delay.
+</li>
+<li><b>High-ping players no longer rubber-band</b> (PERF-6). The game kept the last 256 commands for prediction: 256 ms at 1000 Hz. Above that round trip, every correction replayed from the wrong state. It now keeps 1024 (over a second), about 110 KB, and replays no more than before at normal pings.
+</li>
+<li><b>Fixed: a lasting input backlog</b> (PERF-1). The server refilled its command tokens at exactly the rate commands arrive, so after a stall on the network or server side, a backlog stayed queued for good: 3-7 commands measured (a few ms of extra input lag at 1000 Hz, up to about 96 ms at 125 Hz), invisible on F3. A queue deeper than 2 for 32 ticks in a row now runs one extra command a tick from a small allowance, so a backlog clears in about 45 ticks. A client sending commands faster than real time gains at most about 1%.
+</li>
+<li><b>Input still goes out every tick, on purpose</b> (PERF-12). Sending input once per frame was tried to save network calls. It was reverted because each command then rode in 2 packets instead of 4 (less protection against packet loss) and could wait up to a tick. Latency comes first.
+</li></ul>
+<h4>Hidden information (NET-10, C12)</h4>
+<ul>
+<li><b>Before:</b> players you couldn&#x27;t see still sent your game their health, weapon, firing, crouch and whether they carried the bomb (which in tag also marks the tagger). Ranked hid health bars on screen, yet every game knew every enemy&#x27;s exact health. Every projectile went to everyone, and dead players received everything.
+</li>
+<li><b>Now:</b>
+<ul>
+<li>Players out of your sight reach your game with only their scoreboard fields: no health, weapon, firing, crouch or bomb. The tag and hide-and-seek &quot;it&quot; flag stays, because those modes need it. The mode state also hides a bomb carrier, planter or defuser you can&#x27;t see.
+</li>
+<li>Projectiles get the same line-of-sight checks as players. One you never saw isn&#x27;t sent; your own always are. One that leaves your sight is sent as an id only, so your game doesn&#x27;t take it for an explosion. One that explodes out of sight is shown at that spot for 50 ms, so its explosion still sounds and flashes where it happened.
+</li>
+<li>While you&#x27;re dead you get what the player you watch sees (your killer first, then whoever you pick). In team modes that&#x27;s your living teammates&#x27; views; watching an enemy doesn&#x27;t count. Free spectators still get everything.
+</li>
+<li>In tag, the tagger is never hidden (see Tag). In hide and seek, the seeker gets nothing about the hiders during the head start.
+</li></ul>
+</li>
+<li>Hidden players&#x27; typing and quip sounds no longer play from the middle of the map, and the game no longer shows a fake explosion when a projectile leaves sight.
+</li>
+<li>See Known issues for the 20 m radius in which everyone is still sent.
+</li></ul>
+<h4>Clocks</h4>
+<ul>
+<li><b>Fixed: the laser did about 25x damage on servers that had been up for hours.</b> The server&#x27;s game clock was a float counting seconds since it started. After a few hours it could no longer tell 1 ms steps apart, and the laser&#x27;s 1 ms refire broke: a long-running server fired a burst of laser shots every command. The same rounding hit every timer: refire, cooldowns, respawns, votes (about 8 ms off after a day, 62 ms after a week).
+<ul>
+<li>The clock was first made a double, then a 64-bit count of milliseconds (NET-13, PERF-5). It never loses precision and never wraps (the old 32-bit count wrapped after 49.7 days).
+</li>
+<li>The wire format didn&#x27;t change: times still travel as 32 bits, and each side unwraps them against its own clock. Tests run the laser on a server 5 days up and play across the 2^32 ms wrap (17 of 17 rifle hits on a moving player).
+</li></ul>
+</li>
+<li><b>Your game&#x27;s clock too</b> (review 2.6). The game&#x27;s render time was also float seconds of the server&#x27;s uptime: 8 ms off after 18 hours, 31 ms after 3 days, so movement on screen stalled and jumped and the time your shots were checked at drifted. It&#x27;s a double now.
+</li></ul>
+<h4>Votes, admin and commands</h4>
+<ul>
+<li><b>Admin is the player hosting the game, nobody else</b> (NET-8, owner 4.1: &quot;b alone is fine&quot;). Admin was &quot;the packet comes from 127.x&quot;, so behind any local relay or tunnel every remote player became admin. Now only the in-process host&#x27;s own session is admin, plus a dedicated server&#x27;s console.
+</li>
+<li><b><code>kick</code> takes a player&#x27;s name or id</b> (review 4.1). The console completed <code>/kick</code> with names, but the server read a number: &quot;Bob&quot; read as 0, so <code>/kick Bob</code> kicked slot 0, usually the host. Now it takes an id, an exact name (any case, exact case first) or the start of exactly one name; nothing or several matches kick nobody and say why.
+</li>
+<li><b>Kicking can&#x27;t be voted</b> (owner B10: &quot;server OR hoster can kick people from server with command, but that shouldnt be votable&quot;).
+</li>
+<li><b>New vote: move a player to spectator</b> (owner B10: &quot;there should be a vote for remove player, like if they go afk or are being an ass or something, it will move them to spectator&quot;). <code>callvote spec &lt;name&gt;</code>, or the vote menu&#x27;s MOVE A PLAYER TO SPECTATOR.
+<ul>
+<li>It needs at least 3 connected human players, so never in a 1v1. The player it&#x27;s about can&#x27;t vote on it. Normal vote rules and the 30 s timer apply.
+</li>
+<li>If it passes, they&#x27;re moved to spectator and can&#x27;t rejoin play until the next map, not by switching teams or reconnecting either.
+</li>
+<li>Each caller can target a given player once per map.
+</li></ul>
+</li>
+<li><b><code>addbot</code> takes skill names</b> (review 4.2). Completion offered skill names first, but the server read <code>team skill-number</code>, so <code>/addbot EXPERT</code> added a default bot. It now takes <code>a</code> or <code>b</code>, then a skill as 0-3 or its name in any case, or a skill alone; an unknown skill adds nobody.
+</li>
+<li>Vote, chat and command limits that stop abuse are under Security.
+</li></ul>
+<h4>Hosting from the game</h4>
+<ul>
+<li><b>The pause menu shows whether friends can reach you.</b> Under &quot;HOSTING ON UDP PORT&quot;: the UPnP result, now green (mapped) or red (failed, no router), and a reachability line: green &quot;reachable from the internet - friends can join&quot;, red &quot;not reachable - forward UDP N on your router to this PC&quot;, or grey while checking. CHECK AGAIN re-checks; it also re-checks every 5 minutes and when UPnP finishes.
+<ul>
+<li>How: the game asks a public quark server from the list (preferring one on another address) to send one packet back to your public address, from a separate socket so your router has no mapping toward it. If your game port receives it within 3 s, you&#x27;re reachable.
+</li>
+<li>Every server answers these probes, statelessly and rate-limited (once per address per 0.5 s, 50 a second in all), with one 9-byte reply to the asking address only, so it can&#x27;t be used to flood anyone.
+</li>
+<li>It runs for games others can join, not for vs-bots, time trials or private map tests.
+</li>
+<li>The Host Game screen&#x27;s old hint (&quot;IF UPNP FAILS, FORWARD THAT UDP PORT ON YOUR ROUTER&quot;) now points to the pause menu, where the result is.
+</li></ul>
+</li>
+<li><b>Leaving or stopping a hosted game no longer freezes the screen for up to 15 s</b> (review 2.10). Stopping waited on the UI thread for the reachability check, the tourney rating lookups, the server-list announcer and UPnP. They now finish on a background thread; a late one never undoes a newer game&#x27;s port mapping or listing.
+</li>
+<li><b>The host screen says when ranked ids need <code>--own-addr</code></b> (C9). See Ranked.
+</li></ul>
+<h4>Dedicated servers</h4>
+<ul>
+<li><b>Auto-update follows signed releases only</b> (SUP-8, owner 2.4). Servers built whatever was on the branch, as root, with no signature check; a failed merge silently stopped all updates; and a hard-coded platform list froze every server on 1.14.1 for hours when a release had no macOS build. Now <code>tools/server/autoupdate.sh</code>:
+<ul>
+<li>takes only releases of the server&#x27;s channel (production releases for the production server; see the next section for the testing server), checks the release&#x27;s signed manifest and Linux package against the built-in key, builds exactly the signed commit, and never downgrades;
+</li>
+<li>works out which platforms to wait for from the release itself;
+</li>
+<li>restarts the server only when no match is being played;
+</li>
+<li>logs failed or stuck updates at critical priority (<code>journalctl -p crit -t quark-update</code>) and can post them to a Discord webhook (<code>QUARK_ALERT_WEBHOOK</code> in <code>/etc/quark/update.env</code>).
+</li></ul>
+</li>
+<li><b>Servers run as their own user, sandboxed.</b> <code>tools/server/install.sh</code> now installs a dedicated <code>quark</code> user, the code in <code>/opt/quark</code>, data in <code>/var/lib/quark</code>, and systemd sandboxing, so the server can&#x27;t rewrite the script that updates it. Re-running it upgrades an old install in place, keeping options and data.
+<ul>
+<li><b>Fixed in the final review:</b> an old install that updated its script would fail every minute with no alert (review 1.2); it now logs &quot;run install.sh once&quot; and waits. Re-running <code>install.sh</code> stopped the old server before building, so a failed build left it down (review 1.3); it now stops the old one only after the new build succeeds.
+</li></ul>
+</li>
+<li><b>Dedicated servers handle ranking-server replies</b> (review 2.3). Replies were only read in a loop dedicated servers don&#x27;t use: failed race tickets never cleared, &quot;no match ticket&quot; and leaderboard messages never reached players, and the reply queue grew forever. They&#x27;re read every frame now, and at most the newest 64 are kept.
+</li>
+<li><code>--data-dir DIR</code> (or <code>QUARK_DATA_DIR</code>) sets where a server keeps its data and logs (see Demos, files and updates).
+</li>
+<li><code>--own-addr host:port</code> is explained in the README (see Ranked).
+</li></ul>
+<h4>A production and a testing server on every box</h4>
+<ul>
+<li><b>Why:</b> new work now goes out as testing builds first (see Release process), and the owner wanted testers to have servers to play on, without taking capacity from production players or letting unfinished builds touch the ranked ladders.
+</li>
+<li><b>Every server box now runs two servers.</b> <code>tools/server/install.sh</code> turns the existing install into the <b>production</b> server (same unit, port, user and data, now started with <code>--channel prod</code>) and adds a <b>testing</b> server: its own user <code>quark-testing</code>, code in <code>/opt/quark-testing</code>, data in <code>/var/lib/quark-testing</code>, on the production port + 1 (<code>--testing-port N</code> to choose another), named &quot;&lt;name&gt; [TESTING]&quot;. <code>--no-testing</code> leaves it out, and the choice is remembered in <code>/etc/quark/install.conf</code>. Re-running <code>install.sh</code> with no options keeps the current settings.
+</li>
+<li><b>The testing server runs at a lower CPU priority</b> (systemd <code>Nice=5</code>, <code>CPUWeight=50</code>), so the operating system already favours production.
+</li>
+<li><b>Each server follows its own channel.</b> The production server takes the latest production release, as before. The testing server takes the newest testing prerelease every 2 minutes; neither ever downgrades.
+<ul>
+<li><b>The testing server runs only while there&#x27;s something to test</b> (owner: &quot;if the testing branch and main branch are on the same update, you dont need to run a testing server&quot;). When no testing build is newer than production, for example right after a release, it stops once its current match ends and leaves the box to production. It starts again by itself when a newer testing build comes out: the updater makes or removes a switch file, <code>/var/lib/quark-testing/active</code>, which a systemd path unit and the service&#x27;s start condition follow.
+</li>
+<li>The signed release manifest must now name the release&#x27;s channel, tag, version and commit, and a testing build is built as exactly the signed version (with its <code>-test.N</code> suffix), checked against the commit&#x27;s <code>VERSION</code>.
+</li>
+<li>The two updaters share one GitHub request a minute for the release list (unauthenticated GitHub allows 60 an hour per address; an optional read-only <code>GITHUB_TOKEN</code> in <code>/etc/quark/update.env</code> raises that) and take turns compiling (a lock, so two builds never run at once; the update unit may now run up to 4 hours).
+</li>
+<li>The update script is read in full before it runs, since updating the checkout replaces it.
+</li>
+<li>Alerts say which server&#x27;s update failed.
+</li></ul>
+</li></ul>
+<h4>The load governor</h4>
+<ul>
+<li><b>Why:</b> two servers on one machine can overload it, and a server that falls behind its ticks hurts everyone on it (frame-time spikes are what the 1% and 0.1% lows measure). Production players come first, and a live ranked match comes before casual play.
+</li>
+<li><b>How it decides:</b> each server writes a small status file about once a second to a shared folder (<code>--governor-dir</code>, <code>/var/lib/quark-governor</code>): its players, whether a ranked match is live and how many play in it, its tick rate and its own limit, and whether it&#x27;s overloaded now. Overloaded means the server&#x27;s existing check failed in its last window: it fell behind its ticks, its sends failed, or a player reported more than 2% snapshot loss; <i>severe</i> means it was more than 90% busy. Production makes the decision for both (it&#x27;s the one server that never closes) and testing follows it.
+</li>
+<li><b>What it does:</b>
+</li></ul>
+<div class="scroll"><table><tr><th>Situation</th><th>What happens</th><th>How fast</th></tr>
+<tr><td>The machine is overloaded</td><td>1. The server nobody is on is slowed, one step at a time (1000 → 500 → 250 → 125 Hz)</td><td>one step every 6 s</td></tr>
+<tr><td>Still overloaded, or neither server is empty</td><td>2. The server not playing a ranked match is slowed (a ranked match of 0-1 players doesn&#x27;t count; if both are alike, testing goes first)</td><td>one step every 6 s</td></tr>
+<tr><td>Still overloaded</td><td>3. The other server is slowed too</td><td>one step every 6 s</td></tr>
+<tr><td>Both at 125 Hz and production still overloaded</td><td>4. Testing closes: its players are told why and dropped, it leaves the server list, refuses connections and idles at about 0 CPU. <b>Production never closes.</b></td><td>after 30 s in a row</td></tr>
+<tr><td>Mid-round</td><td>A lower limit applies at once on an empty server; otherwise at the next break, as tick-rate changes always do. While one waits for a break, nothing else is lowered.</td><td>at once if the overload has lasted 20 s or is severe</td></tr>
+<tr><td>Calm again</td><td>Limits rise one step at a time, the most important server first (a live ranked match or players, then production)</td><td>after 60 s calm; the wait doubles, up to 15 min, if a raise brought the overload back</td></tr>
+<tr><td>Testing closed</td><td>Testing reopens at 125 Hz</td><td>after production has been calm for 5 min; doubles, up to 1 h, if it has to close again within 30 min</td></tr>
+<tr><td>Production restarts (an update)</td><td>A closed testing server stays closed, and production picks its last decision back up from its own status file</td><td>up to 60 s</td></tr>
+</table></div>
+<ul>
+<li><b>Cost on the server&#x27;s tick: none measurable.</b> The files are read and written, and the decision made, on the governor&#x27;s own thread once a second; the tick hands over a small status copy a few times a second and reads the decision from atomic variables, with no memory allocation or disk access per tick.
+</li>
+<li><b>Nothing changes elsewhere:</b> without <code>--governor-dir</code> (a game hosted from the menu, a plain <code>quark_server</code>) servers manage their own tick rate exactly as before, and so does each of the pair if the other&#x27;s status is more than 5 s old.
+</li>
+<li>In a test with two servers under simulated overload, testing reached 125 Hz at 4.1 s, before production&#x27;s first step down at 4.5 s; testing then closed and refused a connection with the reason, reopened later, and production climbed back first.
+</li></ul>
+<h4>Ranked on testing builds is never rated</h4>
+<ul>
+<li><b>Why:</b> testing builds are unfinished, and their results must not move anyone&#x27;s rating or race times.
+</li>
+<li><b>What:</b> a server started with <code>--channel testing</code>, or running any <code>-test.</code> build, plays ranked exactly as usual (queue and match lock included) but never opens a ticket, never asks players to sign, and never sends a result, a race run or the end-of-match ranked result, so players&#x27; games have nothing to report. A testing build hosting ranked from the menu is unrated too.
+</li>
+<li><b>What players see:</b> &quot;TESTING SERVER - RANKED NOT RATED&quot; on joining, at the start and at the end of a match; &quot;[RANKED … - NOT RATED]&quot; in the server list; &quot;RANKED - NOT RATED&quot; as the HUD tag; and a testing build&#x27;s host menu says ranked isn&#x27;t rated.
+</li>
+<li><b>The ranking server refuses them too:</b> tickets, results and race runs from a server whose announced version is a testing build (it contains &quot;-&quot;) get &quot;testing server: ranked not rated&quot;, and so does a player&#x27;s report under such a server&#x27;s ticket.
+</li></ul>
+<h3>Ranked and the ranking server</h3>
+<h4>Your ranked id is proven by your key (NET-12, owner 3.1)</h4>
+<ul>
+<li><b>Before:</b> a ranked id was a name your game claimed (<code>rankid</code>), first come first served, and ids were shown to everyone, so anyone could play under someone else&#x27;s id.
+</li>
+<li><b>Now:</b> your id is derived from a signing key made from your <code>quark.key</code> secret, and your game proves it by signing the server&#x27;s connection challenge. A wrong signature joins with no ranked id. The old <code>rankid</code> command is gone. Signature checks are rate-limited (50 a second) so a flood just waits.
+</li>
+<li><b>What you sign names the server you dialled</b> (review 2.2). A malicious server could pass your connection challenge on to a real ranked server, have your game sign it, and play there under your id. Anything the real server puts in its challenge, a relay can forward; the one thing it can&#x27;t is the address you chose to dial. So your game signs that address, and a server only accepts signatures for its own address: its port on its own network interfaces, its public IP, the address UPnP reports, or loopback from the same machine.
+<ul>
+<li><b>Server owners:</b> if players reach your server at an address it can&#x27;t see itself (a router forwarding a different external port, a container or VM), start it with <code>--own-addr host:port</code>, or those players join without a ranked id. The server log says so and names the address to use; the README explains it; and a game hosted from the menu shows it on the pause screen (C9).
+</li></ul>
+</li>
+<li><b>Your ratings move to your new id automatically.</b> The first time the ranking server sees your secret (your game sends it once at start-up), it moves your old id&#x27;s ratings, account, name, Discord link, lifetime stats and race times to the new id.
+<ul>
+<li><b>Fixed in the final review</b> (review 3.6): if a match was rated under the new id before that, the move dropped the old rating. Now both are merged (the rating from the row with more games, the games added up). Your game also retries until the ranking server confirms (10 s, doubling up to 15 minutes), then never sends it again.
+</li></ul>
+</li></ul>
+<h4>Match tickets (WEB-1, WEB-2, WEB-3)</h4>
+<ul>
+<li><b>Why:</b> the ranking server couldn&#x27;t tell whether a match had happened. In a local test, 160 fake reports took a fresh account to #1. Anyone who knew a match id could void it, and losers could void their own losses. The host decided results, and players&#x27; games just forwarded them.
+</li>
+<li><b>Now:</b>
+<ul>
+<li>A ranked match only counts if the game server opened it with the ranking server (a ticket) when it went live, with its list token. Servers that aren&#x27;t public register hidden; LAN-only servers can&#x27;t get tickets, so their matches aren&#x27;t rated.
+</li>
+<li>Each player&#x27;s game signs the ticket&#x27;s match id, so a server can only ticket players who are really in the match.
+</li>
+<li>Reports are accepted only from the ticket&#x27;s players, once each, with the same ladder and player set.
+</li>
+<li>Your game checks the host&#x27;s result against what it saw (who played, sides, scores and kills). If they differ it reports a <b>dispute</b> instead of agreeing. <b>Any dispute leaves the match unrated for good, and it&#x27;s logged</b> (owner: &quot;just logged and unrated&quot;). The owner can read the log, but nobody has to settle anything, so a match can&#x27;t sit waiting for a decision. A host who lies can at most get a match unrated, never a wrong result rated.
+</li>
+<li>A server can open at most one match ticket a minute.
+</li></ul>
+</li>
+<li><b>New accounts are provisional for 5 ticketed matches.</b> Until then they&#x27;re left off the leaderboards and crowns, and an established player&#x27;s rating doesn&#x27;t move in a match against them (their own rating still settles). This makes farming with fresh accounts pointless.
+</li>
+<li><b>One placement threshold everywhere: 5 games.</b> The game said 5 and the ranking server said 3 (GAME-7).
+</li></ul>
+<h4>Leaving a ranked match (owner 3.1)</h4>
+<ul>
+<li><b>The first player to leave a live ranked match loses it.</b> The owner: &quot;ensure that only the first leaver gets punished with a loss, the one who stayed, who then has to leave should also not be punished&quot;. Before, leaving was free: only connected players were counted, so a losing player could leave and the match went unrated.
+<ul>
+<li>The first player gone past the 10 s grace takes the loss. A 1v1 ends right there, and the player who stayed can leave freely.
+</li>
+<li>A leaver&#x27;s slot isn&#x27;t given to anyone else until the result is out.
+</li></ul>
+</li>
+<li><b>Every way of dropping out counts</b> (review 2.1). A leaver was only recorded when the reconnect grace ran out. Two other paths dropped a player without it: a new connection from the same address, and the cap on unanswered reliable messages. Now any drop of a live ranked player counts as leaving (except the server shutting down), each player once. New connections during a live ranked match watch as spectators, so a leaver coming back isn&#x27;t counted twice and can&#x27;t spoil the result.
+</li>
+<li><b>Leaving in the first minute counts too</b> (review 3.5). Results in a match&#x27;s first 60 s were voided, so leaving early escaped the loss. An early result that names a leaver now counts, and players&#x27; early reports are kept.
+</li>
+<li><b>A free-for-all leaver who rejoins counts once, as the leaver</b> (review 2.11).
+</li></ul>
+<h4>Live ranked matches are locked (owner 3.4, C15)</h4>
+<ul>
+<li>Once a ranked match is live, nobody can vote, change the map or mode, turn ranked off, restart, start editing, force a start or add bots, and nobody can kick a player of the match or switch teams, the host and console included, until it&#x27;s over. A vote already running is cancelled. The owner: &quot;when a 1v1 match has been started votes, gamemode changes, map changes, disabling ranked, etc should be disallowed until the match is over&quot;.
+<ul>
+<li>Why: in 1v1 a vote passed at timeout if yes beat no, so the caller&#x27;s own yes could change the map or turn ranked off mid-fight unless the opponent pressed F2 (GAME-7).
+</li></ul>
+</li>
+<li>It applies to exactly the three rated ladders: 1v1 vanilla, 1v1 laser vampire and free-for-all instagib (C15: &quot;are the only locked down ones&quot;). The Viaduct race isn&#x27;t locked: it has no rating, only best times, and quitting submits nothing.
+</li></ul>
+<h4>Race times (WEB-4)</h4>
+<ul>
+<li><b>Before:</b> players&#x27; games reported their own race times, and the only checks were &quot;at least 5 s&quot; and increasing splits.
+</li>
+<li><b>Now:</b> when a time trial on the official Viaduct goes live, the server opens a race ticket and posts each finished run itself, with its splits. Your game no longer sends race times; the old way answers &quot;update the game&quot;.
+</li>
+<li><b>Impossible splits are refused</b> by the server and again by the ranking server. No stretch between checkpoints may beat a minimum time: the straight-line gap between the checkpoints at 48 m/s (1.5x the fastest dash exit speed). A run longer than its ticket is old (plus 30 s) is refused too.
+</li>
+<li><b>Race tickets carry the racer&#x27;s signature</b> (review 3.2). Any listed server, even a hidden one, could open a race ticket for any id and post a run with a name: the name was saved before checking the run was faster, so it could rename any player on the boards and plant times under their id. Now the racer&#x27;s game signs the ticket, the ranking server checks it like a match ticket, and a run&#x27;s name is saved only when the run is kept.
+</li></ul>
+<h4>Discord links (WEB-9)</h4>
+<ul>
+<li><b>Before:</b> <code>/link</code> accepted any name, the bot also matched by nickname, so a member could take the crown role of a linked player who wasn&#x27;t in the Discord, and queue fills pinged every linked member.
+</li>
+<li><b>Now:</b> run <code>/link</code> in Discord; the bot shows you a one-time 6-digit code, valid for 10 minutes. Type it in SETTINGS &gt; DISCORD CODE and press BACK. Wrong codes are rate-limited. Crown roles and queue pings go only to verified links.
+</li>
+<li>Linking shows what becomes public: the Discord field reads &quot;PUBLIC&quot;, and a notice says your Discord name will show next to your game name and ranked id.
+</li></ul>
+<h4>Spectators of ranked matches see everything</h4>
+<ul>
+<li>In a ranked match, health bars, crowns, typing indicators, chosen player models and HUD extras were hidden for everyone in the game. Now they&#x27;re hidden only for the players in the match; spectators see them again.
+</li></ul>
+<h4>The ranking server (Cloudflare Worker)</h4>
+<ul>
+<li><b>Its address is built into the game</b> (WEB-11, owner 3.3). The game fetched it from the website&#x27;s <code>master.txt</code>, which any push redeployed, and whoever controlled that address would receive every player&#x27;s ranked secret. Now the address is pinned in the game. A <code>master.txt</code> on the website overrides it only with a valid release-key signature over the file plus the prefix <code>quark-master-v1</code> (so no other signed file can pass as one). The Discord bot uses the same built-in address and never reads <code>master.txt</code>.
+</li>
+<li><b>The server list can&#x27;t be taken over</b> (WEB-5). One address could announce unlimited ports and push every real server off the 200-entry list; an IPv6 caller could remove or list any address; and writes were plain GET links any web page could trigger.
+<ul>
+<li>At most 8 fresh servers per address.
+</li>
+<li>A server gets a token on its first announce and must show it to announce again or be removed; <code>?ip=</code> is only used over IPv6 with that token.
+</li>
+<li>Writes are POST only; a write from a web page (an <code>Origin</code> header) is refused; only reads allow other sites.
+</li></ul>
+</li>
+<li><b>Rate limits and caching</b> (WEB-6, WEB-10). The free plan allows 100,000 requests a day, and a modest flood could take every online feature down until midnight UTC.
+<ul>
+<li>Per address: any request 240 at once then 6 a second; writes 60 at once then 0.5 a second (sized for players sharing one address).
+</li>
+<li>Per player id: 10 writes at once, then one every 10 s.
+</li>
+<li>The Discord bot, with its key, has its own bucket (200, then 5 a second), so one &quot;Queue for all&quot; (16 requests) no longer uses up its address&#x27;s limit (review 3.1).
+</li>
+<li>Lifetime stats take at most 1200 kills and 1200 deaths per id per hour (they took 300 kills every 20 s, forever).
+</li>
+<li>Leaderboards and other reads are cached for 5-60 s, and reading the queue no longer deletes anything.
+</li></ul>
+</li>
+<li><b>Ratings and queue fills are written atomically</b> (WEB-7, WEB-8). Two matches for one player at once could overwrite each other and erase a loss, and a queue could fill twice, in about half of simulated races. Each write now checks a version number and retries on conflict.
+</li>
+<li><b>No match stays pending forever</b> (review 3.3). A match whose players never reported, or whose server never posted a result, stayed pending and was never cleaned up; the clean-up job could keep re-picking the same stuck rows; one failing match stopped the rest. A scheduled job (every 15 minutes) now rates or voids expired matches oldest first, keeps going past one that fails, and prunes old rows.
+</li>
+<li><b>A server&#x27;s next ticket only voids its last one if that has no result</b> (review 3.4); before, a late dispute on a finished match was silently dropped.
+</li>
+<li><b>Hardening</b> (review 3.9): keys are compared in constant time; the owner&#x27;s dispute log is read by POST with the key in the body (no key in URLs); the request size limit counts the bytes actually read; bad bodies no longer cause errors; a guard keeps non-numbers out of rating maths.
+</li>
+<li><b>Your ranked secret stays off the command line</b> (WEB-13). On Linux and macOS it was passed to <code>curl</code> as an argument, visible to other users&#x27; process lists. It now goes through standard input. <code>quark.key</code> is written with owner-only permissions (0600) and atomically.
+</li>
+<li><b>Decided against</b> (owner 3.4): no rating decay, and no rating-banded queues: &quot;anybody can play anybody&quot;.
+</li>
+<li><b>For the ranking server&#x27;s operator:</b> run the full SQL list in <code>tools/master/README.md</code> before deploying <code>worker.js</code>, add the cron trigger <code>*/15 * * * *</code> and an <code>ADMIN_KEY</code> secret, and deploy together with the game release.
+</li></ul>
+<h3>Security</h3>
+<h4>Attacks over the network</h4>
+<ul>
+<li><b>Joining does a quick address check</b> (NET-1). The handshake had no proof that a connect packet came from where it claimed. One tiny forged packet could open a session that streamed hundreds of snapshots a second at a victim, keep it alive, or fill every slot; a map request returned about 72 times its size.
+<ul>
+<li>Now a connect without a valid cookie gets one 13-byte challenge and nothing else; the server keeps no state. The cookie is a hash of a random server secret, your address and port, your session number and a 10 s time window.
+</li>
+<li>Your game echoes it straight back, so joining feels the same.
+</li>
+<li>Map download requests are limited to 400 a second per player (a download asks about 128).
+</li></ul>
+</li>
+<li><b>Forged packets can&#x27;t kick a player</b> (NET-2). A connect from a connected player&#x27;s address with a different session number dropped that player before any check. Now a new session only replaces an old one after passing the cookie check.
+</li>
+<li><b>Server-list queries can&#x27;t be used for amplification</b> (NET-4). A 5-byte info request got about 300 bytes back. Requests must now be padded to 160 bytes, and the reply (server name cut to 96 characters, map name to 40) is never bigger. The server browser and the Discord bot send padded requests.
+</li>
+<li><b>Version-mismatch replies aren&#x27;t bigger than the request</b> (review 2.9). The 34-byte &quot;version mismatch&quot; answered an 11-byte forgeable packet before the cookie check. The reply now uses the longest wording that fits in the request: real games still learn the server&#x27;s version, a bare probe gets nothing.
+</li>
+<li><b>Chat is filtered and rate-limited</b> (NET-7). Chat had no limit and no filtering: one player could flood everyone&#x27;s reliable messages (pushing out real game events) and put control and escape codes into the server console and log. Now: 5 messages at once, then one a second; printable characters only.
+</li>
+<li><b>Votes check map names and have a cooldown</b> (NET-6). Map and mode votes read and parsed map files on the server tick, and there was no cooldown. Map facts now come from a cache filled in the background, tourney map lists are capped at 32 names, and a player whose vote failed waits 5 s before calling another.
+<ul>
+<li><b>Fixed in the final review</b> (review 2.4): the cache stored an entry for any name a vote mentioned, so <code>callvote map &lt;random&gt;</code> grew it without limit; names with no file aren&#x27;t cached now and the cache is capped. It also checked the shipped map file while the game loads your maps folder first, so your own maps never refreshed and an edited copy of an official map kept the official map&#x27;s ranked flags.
+</li></ul>
+</li>
+<li><b>Command budget per tick.</b> Up to 16 text commands a packet ran with no limit. Now at most 8 commands a tick per player run (chat, votes, commands), plus up to 16 map edits within a 0.5 ms budget per tick for everyone; the rest wait and the game resends them, so nothing is lost.
+</li>
+<li><b>Too many unanswered reliable messages ends the connection with a reason</b> (NET-11). The server silently dropped reliable messages past 256 unacknowledged, so a lost &quot;ranked result&quot; or custom-rules message left a match unrated or the game predicting with the wrong rules. Now the client is disconnected with &quot;too many unacknowledged reliable messages (connection too lossy)&quot;.
+</li></ul>
+<h4>Hostile servers, maps and demos</h4>
+<ul>
+<li><b>A server or demo can&#x27;t write outside the game&#x27;s folders</b> (CLI-2). A server&#x27;s map name became a file path for the download cache (creating folders), the lighting cache and demo recording, and a shared demo set the map name with no check at all; watching one could write a file outside <code>maps/</code>. Map names are now 1-40 letters, digits, <code>-</code> and <code>_</code>, and not a Windows device name (<code>con</code>, <code>nul</code>, <code>com1</code> and so on, which open the device instead of a file). A server sending a bad name is disconnected before anything touches the disk.
+</li>
+<li><b>A server or demo can&#x27;t crash your game with player ids</b> (CLI-1). A snapshot&#x27;s player id was never range-checked, and the game wrote into a 32-entry array with it every frame (a crash from a 370-byte demo). Kill events, tourney brackets and the mode byte had the same problem. Every id, weapon and mode is now checked when a packet is read, and bad ones are refused.
+</li>
+<li><b>A map can&#x27;t crash or freeze your game or the server</b> (CLI-3, NET-3, NET-15). Map loading had no limits: a 42-byte map asked for a 240 GB grid, a box at the edge of the float range loaded a map whose floor wasn&#x27;t solid, and more than 65,535 boxes dropped out of collision. Edits could build boxes about 800 km out and crash the server, or produce a map that wouldn&#x27;t load, which an edit session then saved over the real file.
+<ul>
+<li>One validator now runs on every load, edit and download: coordinates finite and within ±4096 m; at most 60,000 boxes including generated ones; 256 spawns, ladders and groups; 1024 parts per group; 512 lights; ladders and groups at most 64 m tall; capped counts for sites, points, checkpoints and the cart path. The collision grid is refused over 16 million entries (32 MB).
+</li>
+<li>Map loading never throws; a bad map is an error message.
+</li>
+<li>A failed edit leaves the map exactly as it was. Every real box can no longer be deleted, and turning a custom group into a room clears its parts.
+</li>
+<li>An edit session keeps <code>&lt;name&gt;.qmap.bak</code> on its first save and checks the map loads before every save.
+</li></ul>
+</li>
+<li><b>A demo can&#x27;t freeze your game</b> (CLI-4). A crafted record length wrapped around and the length scan never ended (a 19-byte file froze the game). Lengths are checked safely now, and demos over 512 MB are refused.
+</li>
+<li><b>A server or demo can&#x27;t stall prediction</b> (CLI-5). Prediction replayed every command since the server&#x27;s acknowledgement, so a server or demo acknowledging something far behind cost millions of steps per snapshot. It&#x27;s capped at the command ring. And starting a demo didn&#x27;t reset prediction, so your own old commands were replayed onto the recorded player.
+</li>
+<li><b>Settings that aren&#x27;t real numbers fall back to defaults</b> (CLI-6). A server&#x27;s custom rules could set gravity, speed or weapon values to NaN (not a number), and a mode name of spaces made an active mode with a blank name. <code>quark.cfg</code> accepted NaN for sensitivity and field of view, any shadow resolution, and file paths as HUD names. Non-numbers now take the default, values are clamped, and HUD and control profile names must be plain file names. On Windows, &quot;nan&quot; and &quot;inf&quot; now read the same as on Linux.
+</li>
+<li><b>The queue menu can&#x27;t crash your game</b> (COR-1, CLI-7). When a ranked queue filled with a Discord user in it, every game that was queued or had the queue menu open crashed within 10 s (a Discord name was read as hex, which threw). The reply is now parsed safely.
+</li>
+<li><b>Nothing on these paths can end the game any more</b> (ENG-2). The code had no exception handling at all, so anything thrown on untrusted input ended the process. Opening and playing demos, packets on both sides, ranking-server and server-list replies, UPnP and the launcher&#x27;s package reader now catch errors and report them. A test makes every memory allocation fail in turn while a demo plays and a server takes connections: always an error or a dropped packet, never a crash.
+</li></ul>
+<h4>Your computer</h4>
+<ul>
+<li><b>No shell commands</b> (SUP-9). On Linux and macOS, downloads, opening links and restarting were shell commands built from paths. Programs are now started directly with an argument list; links starting with <code>-</code> are refused.
+</li>
+<li><b>Secure connections: TLS 1.2 and 1.3</b> (SUP-10). Windows connections allowed the old TLS 1.1 and never offered 1.3. Now 1.2 and 1.3, falling back to 1.2 alone where Windows refuses 1.3 (older than Windows 10 1903; Windows 7 needs the explicit 1.2 setting).
+</li>
+<li><b>Background programs no longer hold each other&#x27;s pipes</b> (review 2.7). Two downloads at once could deadlock, because each child program inherited the other&#x27;s pipe ends. Pipes are now closed for children, and the broken-pipe signal is ignored once at start instead of being swapped around every write (which raced between threads).
+</li>
+<li><b>Settings, keys and profiles are saved safely</b> (COR-2). <code>quark.cfg</code>, HUD and control profiles, <code>hud.cfg</code>, <code>quark.key</code> and custom modes were truncated and then written, so a crash or a full disk lost every bind, or your ranked identity. They&#x27;re now written to a temporary file and renamed over the old one.
+</li></ul>
+<h3>Maps and the map format</h3>
+<h4>Attackers and defenders reach every objective together (owner B2)</h4>
+<ul>
+<li><b>Why:</b> maps were designed for defenders to reach a bomb site or capture point 2-10 s first (3-10 s for bomb), and graded on the average over all sites or points, so one badly staged point could hide behind good ones. The owner: &quot;the game is very fast paced, so really they should probably reach the site nearly at the same time, as if the defenders take over the site its hard for the attackers to ever plant the bomb&quot;, &quot;target between -1 and +1&quot;, for &quot;all maps&quot;, and &quot;graded by the worst part&quot;.
+</li>
+<li><b>Now:</b> at every bomb site and capture point, the attackers&#x27; arrival minus the defenders&#x27; must be between −1 and +1 s (positive means defenders first). Maps are graded at their worst site or point, and a site or point outside the band, or one a side can&#x27;t walk to, fails the map. The map report lists every timing.
+</li>
+<li><b>Re-staged maps</b> (attackers&#x27; arrival minus defenders&#x27;, seconds):
+</li></ul>
+<div class="scroll"><table><tr><th>Map</th><th>Objective</th><th>Before</th><th>After</th></tr>
+<tr><td>Midtown</td><td>points A / B / C / D / E</td><td>+3.1 / +10.0 / +7.0 / +13.4 / +2.9</td><td>−0.2 / +0.5 / 0.0 / +0.7 / +0.1</td></tr>
+<tr><td>Lodestone</td><td>points A / B / C / D / E</td><td>+2.8 / +3.3 / +6.7 / +4.7 / +4.9</td><td>+0.3 / +0.7 / 0.0 / −0.3 / −0.5</td></tr>
+<tr><td>Lodestone</td><td>bomb sites 1 / 2</td><td>−10.8 / +5.4</td><td>+0.7 / −0.6</td></tr>
+<tr><td>Depot</td><td>bomb sites 1 / 2</td><td>+7.2 / +8.1</td><td>−0.4 / +0.1</td></tr>
+</table></div>
+<ul>
+<li><b>Midtown:</b> every stage&#x27;s spawns were re-staged. (The review had measured D at +12.7 s and E at +0.9 s; measured again just before the change they read +13.4 and +2.9.)
+</li>
+<li><b>Lodestone:</b> the points&#x27; spawns were re-staged, and the bomb sites moved from D and E (one in each team&#x27;s cavern, so attackers reached D 10.8 s first) to the two places both caverns reach in the same second: the loading bay and the pillar hall under the pithead.
+</li>
+<li><b>Depot:</b> a redesign. The sites moved to the middle of each flank: the west one among the warehouse racks, the east one on the dock between the containers, with a stair up each end of the dock. Defenders now spawn in the corners of the north yard, behind a screen wall.
+</li></ul>
+<ul>
+<li>The band is symmetric, so it still holds in bomb&#x27;s second half, when the sides swap spawns along with their roles. Payload and neutral payload have no site to arrive at, so the band doesn&#x27;t apply to them; neutral payload is graded on cart fairness instead.
+</li></ul>
+<h4>Stricter map grading (C1, MAP-4)</h4>
+<ul>
+<li><b>Why:</b> the review found the grading saturated, gameable or wrong, so the &quot;every map scores 7 or more&quot; bar proved little. The owner&#x27;s rule (C1): fix the metrics strictly, never loosen a metric or the bar to make a map pass, and fix the map instead. The bar of 7 is unchanged.
+</li>
+<li><b>What changed in <code>tests/mapreport.cpp</code></b> (documented in <code>docs/MAP_METRICS.md</code>):
+<ul>
+<li><b>Only reachable floor counts.</b> The collision-checked walk grid is now the playable floor for every measure (area, levels, height range, samples, footprint), so floor nobody can walk to earns nothing.
+</li>
+<li><b>Loops</b> count real ways round an obstacle on the walk grid (two-way moves only, averaged over four grid placements so an obstacle scores the same wherever it stands). The old count picked up fragments of floor: Dojo, a flat platform, had 112 loops, and 19 of 20 maps got full marks. Counts went from hundreds or thousands to 0-262 (Dojo 112 → 0, Viaduct 216 → 0, Midtown 3689 → 262). Full marks are now 3 per 1000 m² (rooms about 18 m across with four ways out).
+</li>
+<li><b>Vertical play</b> comes from the height range of the real floor levels (12 m for full marks), plus levels, jumps and ladders. It was 10 on every map but Viaduct; Dojo had 10 with a 0 m height range and now has 1.5. Scores now range 1.5-10.
+</li>
+<li><b>Balance</b> is per team, for every objective of every team mode the map offers, graded at the worst one (bomb sites and points on the B2 band). The report names the worst objective.
+</li>
+<li><b>The worst objective, not the average:</b> bomb is graded per site and multi point per point, and cover on a point or the hill is sampled every 1 m on it (the sparse samples could read a point as having no cover).
+</li>
+<li><b>Ways onto the hill or a point</b> are counted on the walk grid by direction and height; Downtown&#x27;s plaza read 110 before.
+</li>
+<li><b>Unreachable gets no credit:</b> a race leg the run can&#x27;t complete scores 0 (it read as no shortcut at all). Lodestone&#x27;s race legs that read &quot;−1 m&quot; were a sampling gap and now have real lengths.
+</li>
+<li><b>The long sightline band ends at the laser&#x27;s reach</b>, read from the weapon table: 24 m now, not a fixed 32.
+</li>
+<li><b>Smaller fixes:</b> decoration buried in solid on every side doesn&#x27;t count; materials aren&#x27;t clamped (trim was counted as lava); lethal drops and water or lava are measured on the map (water or lava needs 40 m², not a fountain); dead ends use floor you can stand on and reach; free for all uses its own spawn pool; out of bounds is measured against the playable surfaces&#x27; bounding box.
+</li>
+<li><b>No exemption by name:</b> Dojo&#x27;s exemption (its layout, movement and creativity are graded but not barred, since it is a single platform on purpose) now comes from a line in its own map file, not from its name in the test code.
+</li></ul>
+</li>
+<li><b>Maps fixed in the generator to get back over 7</b> (the score that dropped under the new metrics in brackets):
+<ul>
+<li><b>Harbor:</b> dusk lights (decor 6.5).
+</li>
+<li><b>Viaduct:</b> crowd barriers (layout 6.3).
+</li>
+<li><b>Hamlet:</b> head-high field walls (hiding spots 13% → 21% of the floor), a second ladder on the water tower, steps out of the creek at both ends (layout 6.9, creativity 6.8).
+</li>
+<li><b>Colosseum:</b> a ladder on every arched wall and piers in the ambulatory (layout 6.5, mode fit 6.9).
+</li>
+<li><b>Furnace and Temple:</b> a second ladder to each roof walk; Temple also a pagoda balcony and more cover in the court (layout 7.0 and 6.8).
+</li>
+<li><b>Depot:</b> a second warehouse ladder and more yard clutter. <b>Railyard:</b> more clutter.
+</li>
+<li><b>Foundry:</b> catwalk ladders and more tool cribs (tag fit 6.0).
+</li>
+<li><b>Midtown:</b> street furniture, skips, vans and crates down the avenues and on every block&#x27;s pavements and yards, and plant on every office roof: cover 30% → 45% of the floor, loops 148 → 262, layout 5.8 → 7.5.
+</li>
+<li><b>Lodestone:</b> much denser cover, on the 12 m ledges too, with rock falls and ore wagons on the cavern floors: cover 34% → 47%, loops 128 → 206, layout 6.2 → 7.5.
+</li>
+<li>Midtown and Lodestone grew from about 9,200 to 11,500 and from 8,000 to 10,600 boxes (the limit is 60,000). Every timing above is unchanged by the extra cover.
+</li></ul>
+</li>
+<li><b>Scores per map:</b> old metrics on the old maps → the new metrics on the old maps → final. One number means it didn&#x27;t change. Every map is at 7 or more in every graded category except Dojo&#x27;s exempt ones.
+</li></ul>
+<div class="scroll"><table><tr><th>Map</th><th>Decor</th><th>Layout</th><th>Movement</th><th>Creativity</th><th>Mode fit</th><th>Balance</th></tr>
+<tr><td>Anvil</td><td>9.1 → 8.0 → 8.0</td><td>7.4 → 7.2 → 7.2</td><td>9.1 → 8.7 → 8.7</td><td>7.5</td><td>8.4 → 8.5 → 8.5</td><td>10</td></tr>
+<tr><td>Bastion</td><td>7.6 → 7.1 → 7.1</td><td>8.0 → 7.7 → 7.7</td><td>8.9 → 8.8 → 8.8</td><td>8.2</td><td>7.5</td><td>10</td></tr>
+<tr><td>Canal</td><td>8.3 → 7.4 → 7.4</td><td>7.5 → 7.1 → 7.1</td><td>9.0 → 8.6 → 8.6</td><td>7.5</td><td>9.0</td><td>10</td></tr>
+<tr><td>Clockwork</td><td>8.5</td><td>8.8 → 8.5 → 8.5</td><td>8.4 → 8.0 → 8.0</td><td>7.2</td><td>10</td><td>10</td></tr>
+<tr><td>Colosseum</td><td>7.4 → 7.1 → 7.1</td><td>7.4 → 6.5 → <b>7.1</b></td><td>8.3 → 7.9 → 7.9</td><td>7.5</td><td>7.5 → 6.9 → <b>7.4</b></td><td>– → 10 → 10</td></tr>
+<tr><td>Depot</td><td>8.2 → 8.6 → 8.8</td><td>7.1 → 6.3 → <b>7.1</b></td><td>8.7 → 8.5 → 8.8</td><td>7.5</td><td>10 → 4.5 → <b>9.1</b></td><td>– → 0 → <b>10</b></td></tr>
+<tr><td>Dojo (exempt layout, movement, creativity)</td><td>8.8 → 8.4 → 8.4</td><td>3.8 → 1.7 → 1.7</td><td>6.8 → 5.4 → 5.4</td><td>4.5</td><td>9.7 → 7.7 → 7.7</td><td>10</td></tr>
+<tr><td>Downtown</td><td>9.5</td><td>9.4 → 9.1 → 9.1</td><td>8.4 → 8.3 → 8.3</td><td>7.5</td><td>8.1 → 7.6 → 7.6</td><td>10</td></tr>
+<tr><td>Foundry</td><td>7.5 → 7.4 → 7.7</td><td>7.6 → 6.9 → <b>7.3</b></td><td>8.5 → 7.8 → 8.0</td><td>7.5 → 7.5 → 8.2</td><td>7.1 → 6.0 → <b>7.1</b></td><td>–</td></tr>
+<tr><td>Furnace</td><td>8.4 → 8.1 → 8.2</td><td>7.2 → 7.0 → <b>7.4</b></td><td>9.3 → 9.0 → 9.0</td><td>7.5</td><td>8.4 → 8.6 → 9.0</td><td>10</td></tr>
+<tr><td>Gantry</td><td>8.9 → 8.6 → 8.6</td><td>8.0 → 7.6 → 7.6</td><td>9.1</td><td>7.5</td><td>7.7 → 7.6 → 7.6</td><td>–</td></tr>
+<tr><td>Hamlet</td><td>7.5 → 7.4 → 7.2</td><td>7.1 → 6.9 → <b>7.3</b></td><td>8.5 → 8.3 → 8.3</td><td>8.8 → 6.8 → <b>8.0</b></td><td>8.8 → 7.8 → 8.6</td><td>–</td></tr>
+<tr><td>Harbor</td><td>7.2 → 6.5 → <b>7.5</b></td><td>7.8 → 7.5 → 7.5</td><td>8.7 → 8.4 → 8.4</td><td>7.5</td><td>7.4</td><td>–</td></tr>
+<tr><td>Hightown</td><td>8.1</td><td>8.4 → 7.6 → 7.6</td><td>8.6 → 8.5 → 8.5</td><td>8.0</td><td>10 → 9.1 → 9.1</td><td>–</td></tr>
+<tr><td>Lodestone</td><td>7.5 → 7.0 → 7.4</td><td>7.3 → 5.8 → <b>7.5</b></td><td>9.4 → 7.7 → 9.4</td><td>8.8 → 8.0 → 8.0</td><td>9.2 → 5.6 → <b>8.6</b></td><td>9.4 → 0 → <b>8.7</b></td></tr>
+<tr><td>Midtown</td><td>7.1 → 7.0 → 7.4</td><td>7.0 → 5.7 → <b>7.5</b></td><td>8.0 → 8.1 → 8.1</td><td>8.8 → 8.0 → 8.0</td><td>8.5 → 5.7 → <b>8.7</b></td><td>– → 0 → <b>10</b></td></tr>
+<tr><td>Orbital</td><td>8.9</td><td>8.7 → 8.4 → 8.4</td><td>8.4 → 8.3 → 8.3</td><td>7.2</td><td>9.7 → 9.8 → 9.8</td><td>10</td></tr>
+<tr><td>Railyard</td><td>7.4 → 7.8 → 8.0</td><td>7.5 → 6.7 → <b>7.3</b></td><td>8.7 → 8.3 → 8.3</td><td>8.2 → 7.5 → 7.5</td><td>9.0 → 9.3 → 9.6</td><td>–</td></tr>
+<tr><td>Summit</td><td>7.6 → 7.3 → 7.3</td><td>8.2 → 7.9 → 7.9</td><td>9.7 → 9.3 → 9.3</td><td>7.5</td><td>9.9 → 10 → 10</td><td>10</td></tr>
+<tr><td>Temple</td><td>7.5 → 7.1 → 7.2</td><td>7.2 → 6.8 → <b>7.2</b></td><td>8.6</td><td>7.5</td><td>7.1 → 7.0 → 7.1</td><td>10</td></tr>
+<tr><td>Viaduct</td><td>9.4 → 9.3 → 9.3</td><td>8.6 → 6.9 → <b>7.1</b></td><td>8.3 → 8.6 → 8.6</td><td>8.8</td><td>7.3 → 7.5 → 7.5</td><td>–</td></tr>
+</table></div>
+<ul>
+<li>Bold marks a score fixed back over 7. A dash means the map had no balance grade before (bomb, multi point, tourney and free-for-all maps weren&#x27;t graded for it).
+</li>
+<li>Several maps clear 7 by about 0.1: Colosseum, Depot and Viaduct layout, Temple&#x27;s mode fit (7.1) and Foundry&#x27;s tag fit (7.1).
+</li></ul>
+<h4>Lodestone in every mode (owner B1)</h4>
+<ul>
+<li><b>Why:</b> Lodestone offers every mode but was graded only for multi point; in bomb, attackers reached site D 10.8 s first, so every round was an uncontested plant (MAP-6). The owner chose to keep every mode and fix the map for each.
+</li>
+<li><b>Now</b> it is graded in every mode it offers (the report lists each mode&#x27;s fit under it), and its timing and balance are held to the bar in all of them. Final mode fits: multi point 8.6, bomb 9.5, king of the hill 8.4, payload 9.2, neutral payload 8.8, free for all 9.1, hide and seek 9.3, tag 8.9, race 10.0.
+<ul>
+<li><b>Bomb:</b> the sites moved (see the timing table above).
+</li>
+<li><b>Race:</b> it scored 0, because the leg to the shaft station&#x27;s 12 m ledge could be cut 2.7x with movement tech (66 m leaping up against 179 m round by the stairs). The course now ends on the cage landing; the worst leg is cut 1.21x.
+</li>
+<li><b>Free for all:</b> 12 spawns spread over the whole mine (it had the 8 every pool is topped up to): fit 6.7 → 9.1.
+</li>
+<li><b>Payload and neutral payload:</b> sleeper stacks, crates and cribs on both sides of the ore-cart line, a step off its path: cover beside the track 5% → 27%.
+</li></ul>
+</li>
+<li><b>Lodestone is no longer offered for team VS, duel, 1v1 or tourney.</b> Those modes want a 300-3,000 m² arena; the mine is about 83,000 m², so they scored 4.5 of 10 on mode fit and no spawn placement could reach 7. The owner chose to stop offering them rather than ship a known-poor fit (they can still be started there, with the menus&#x27; &quot;may not work&quot; warning). Every mode it is offered in passes the bar, including its timing and balance.
+</li></ul>
+<h4>The generator is split into one file per map (C3, MAP-14)</h4>
+<ul>
+<li><b>Why:</b> <code>tools/make_maps.py</code> was one file in which Midtown used shapes defined in Lodestone&#x27;s section through shared globals, so changing one map could quietly change another.
+</li>
+<li><b>Now:</b> <code>tools/maps/prefabs.py</code> holds the map builder and the shapes several maps use, and each map is <code>tools/maps/&lt;name&gt;.py</code>. <code>make_maps.py</code> is still what the build runs, with a new <code>--map NAME</code> to make one map alone, and editing any map file regenerates the maps. The output is byte-for-byte the same as before the split, for all 21 maps together and each alone.
+</li></ul>
+<h4>Maps are built from the generator</h4>
+<ul>
+<li><b>Maps are a build artifact</b> (MAP-9, owner 6: &quot;generator output becomes a build artifact&quot;). The game&#x27;s maps are written by the generator (<code>tools/make_maps.py</code>, now with one file per map in <code>tools/maps/</code>) when the game is built, and the <code>.qmap</code> files are no longer stored in the repository. Before, the editor and edit sessions saved over the same files the generator owned, so the two overwrote each other. The shipped maps themselves didn&#x27;t change from this.
+</li>
+<li><b>Only real maps ship</b> (review 5.3). Any stray <code>.qmap</code> file in <code>maps/</code> was embedded as an official (even ranked) map, and maps the generator dropped stayed in builds forever. Now only generated maps, plus hand-made maps the repository declares, are embedded and copied. The retired map Crucible is removed from installs.
+</li>
+<li><b>Maps are identified by the SHA-256 of their content</b> (C2, MAP-13). They were identified by name plus a CRC32 checksum. Now the ranked map list matches by content alone, whatever the file is called; lighting caches are <code>cache/&lt;sha256&gt;.qlm</code> (the newest 32 kept); downloads are <code>maps/downloads/&lt;sha256&gt;.qmap</code>; and an edit session chains the id with each edit. A downloaded or edited map reusing an official name no longer evicts the official map&#x27;s lighting cache (up to 24 s of re-bake, CLI-8). Nothing about this is visible in play.
+</li></ul>
+<h4>Map file format, version 2 (C7; MAP-10, MAP-11)</h4>
+<ul>
+<li><b>Maps start with a <code>version</code> line.</b> A file without one is version 1.
+</li>
+<li><b>Staircases and the map&#x27;s setting are real keywords</b> (<code>stairs</code>, <code>setting</code>). They were comments, and the editor drops comments when it saves, so one editor-saved map lost all its stairs (6-42 per map) and its setting, and then failed the map tests.
+</li>
+<li><b>A map from a newer version still loads.</b> An unknown keyword, an unknown mode in <code>modes</code> or <code>for</code>, an unknown ranked ladder or palette colour is skipped with a warning instead of refusing the map, so an older game can still join a server on a newer map.
+</li>
+<li><b>Gameplay keys stay strict</b>, and two silent fallbacks are now errors: an unknown spawn team (it became &quot;any&quot;) and a second hill (it replaced the first).
+</li>
+<li><b>Every format change comes with a converter</b> (the owner&#x27;s rule for every future change). Each version has one upgrade step to the next; older maps are converted when they load, so the parser only reads the current format. Your own map files are converted on disk once at startup (game and dedicated server), with the originals kept in <code>maps/old/v&lt;N&gt;/</code> and a <code>convert.log</code>. A map that doesn&#x27;t load after converting is left as it is and not retried.
+</li>
+<li><b>Saved maps keep every digit an edit carries</b> (review 5.5). Saves wrote 6 significant digits while edits carried 9: an edit at x = 1000.125 saved as 1000.12, so a player who downloaded the saved map collided differently from one who applied the edit. Every number is now saved with the fewest digits (6 to 9) that read back exactly; shipped maps still save &quot;12.5&quot;. Spawn directions are no longer rounded to whole degrees.
+</li>
+<li><b>Loading a map starts from a clean slate</b> (review 5.6). A map that didn&#x27;t set its title, sun, palette, ceiling, void or hold-fire kept them from an earlier map or a failed load. One title rule now covers files and edits: at most 40 printable characters, no <code>#</code>.
+</li>
+<li>One set of map limits and one map-name rule everywhere (review 5.2, 5.7); a light with intensity 0 is refused everywhere (it lights nothing).
+</li></ul>
+<h4>Hand-made maps (the owner&#x27;s rule)</h4>
+<ul>
+<li>The owner will hand-make every map later. <b>Hand-made maps don&#x27;t have to pass the automated map checks</b>, but every check still runs on them and their scores are listed in the map report, marked HUMAN-MADE, for balancing. Generated maps keep the strict bar.
+</li>
+<li>A map counts as hand-made if it has a <code>handmade</code> line (the in-game editor writes one on every save), wasn&#x27;t written by the generator, or is an owner replacement in <code>assets/overrides/maps/</code>. A hand-made map ships by being declared in <code>.gitignore</code> (<code>!/maps/&lt;name&gt;.qmap</code>).
+</li></ul>
+<h4>Light and sight pass through invisible walls (MAP-1)</h4>
+<ul>
+<li><b>Before:</b> the rays for the baked sun and bounced light, the server&#x27;s line-of-sight checks and bots&#x27; sight all stopped at clip (the invisible walls). Every outer wall carries 80 m of clip, so most floors on 18 of 21 maps were in shadow: Dojo 85% shadowed by clip alone and 11% sunlit, Anvil 1% sunlit, Viaduct 0%. Players behind clip &quot;glass&quot; (Hightown&#x27;s and Orbital&#x27;s windows) were also hidden from each other.
+</li>
+<li><b>Now:</b> light and sight pass through clip. Bots still feel it when moving (clip blocks players). Lighting caches re-bake once.
+</li></ul>
+<h4>Spawns</h4>
+<ul>
+<li><b>A spawn for every player in every mode a map offers</b> (MAP-2). Free for all draws only from &quot;any&quot; spawns, and eight maps that offer it had 2: Anvil (which hosts the ranked 4-player instagib FFA, so players spawned inside each other), Canal, Clockwork, Depot, Furnace, Railyard, Summit and Temple. Dojo, Viaduct, Midtown and Lodestone had none and fell back to every spawn.
+<ul>
+<li>The generator now tops pools up to a full 8-player server: spread-out &quot;any&quot; spawns on open, reachable floor (mirrored pairs on ranked maps), and race start grids. 16 maps got more spawns.
+</li>
+<li>By hand: Downtown has 4 spawns a side for king of the hill (was 3); Viaduct has an 8-racer start grid and two turn spawns.
+</li>
+<li>A test checks the spawn pool the server really uses, for every mode, side and stage: at least 8 for free for all, hide and seek, tag, race and tourney warmup; 4 a side in team modes; 2 in duel; 1 in 1v1; at least 1.5 m apart.
+</li></ul>
+</li>
+<li><b>Spawns face open space and don&#x27;t see each other</b> (MAP-16). Every spawn now has 2 m clear ahead at eye height (Summit&#x27;s two faced rock 0.5 m away; Foundry 0.9 m, Harbor 1.1 m, Orbital 1.0-1.6 m, Midtown 1.5 m). Spawns used together are at least 1.5 m apart. In team modes no spawn sees an enemy spawn at any range. Dojo is exempt, since its hold-fire start puts both sides face to face on purpose. Sightlines closed:
+<ul>
+<li><b>Canal</b> (78 m down the causeway): spawn screens, rows moved back 1.2 m.
+</li>
+<li><b>Depot</b> (55 m): the gatehouse&#x27;s front walled.
+</li>
+<li><b>Downtown</b> (44 m down the avenue): a bus shelter in front of each row, a parked car moved 3 m.
+</li>
+<li><b>Railyard</b> (87 m down the track): a screen in front of the attackers&#x27; row, moved back 1.2 m.
+</li>
+<li><b>Lodestone</b>: a pit prop in the tunnel mouth (128 m) and a spoil wall on the surface (150 m).
+</li>
+<li><b>Midtown</b>: four staged spawn pads moved off the avenues&#x27; long lines.
+</li></ul>
+</li>
+<li><b>Ranked maps are checked for point symmetry and have the sun overhead</b> (MAP-17). The check compared spawn counts only. Now every spawn (with its direction), ladder, light, bomb site, point and checkpoint must have its mirrored twin. The sun on Anvil, Dojo, Furnace, Gantry and Temple is now straight overhead, because any other sun bakes the two halves&#x27; shadows differently. This is a visible lighting change.
+</li></ul>
+<h4>Routes and the payload track</h4>
+<ul>
+<li><b>Map tests check that every route can really be walked</b> (MAP-3). Reachability used the bots&#x27; route graph, which links box tops up to 2.6 m apart without checking for walls, so a spawn sealed inside a box read as reachable, and VS, duel, 1v1, free for all and tourney had no checks at all. Now a walk grid every 0.25 m with the real player box and real collision (step-ups of 0.55 m, jumps of 1.15 m, 2.5 m gaps, ladders, crouching) checks every route each offered mode needs. A missing route fails the map and scores 0 for mode fit. All 21 maps pass.
+</li>
+<li><b>The payload cart&#x27;s track is kept clear</b> (MAP-5). The cart drove through solid geometry and nothing tested it. The generator now has a keep-clear list checked against every box: generated decoration that lands on it is dropped, and a hand-placed box stops the build. A test sweeps the cart&#x27;s box along the track every 10 cm.
+<ul>
+<li><b>Railyard:</b> the 3 x 4 m box on the track at 102-106 m moved 3.1 m beside it.
+</li>
+<li><b>Lodestone:</b> the cart ran through the shaft station&#x27;s landing and two corner posts; the line now runs 2.5 m south, beside the landing, still through the tunnel. (Moving the station instead opened 440 m² of out-of-bounds roof.)
+</li>
+<li><b>Viaduct:</b> a decorative pillar beside leg 2&#x27;s third slalom opening left a gap the player couldn&#x27;t pass, so leg 2 of the race was blocked; the pillar is gone.
+</li></ul>
+</li></ul>
+<h4>Grading against what movement can really do (owner 5.4)</h4>
+<p>The review found the map grading ignored bunny-hops, strafing, dash-ups and the grapple, so it under-reported shortcuts and ways out of bounds. The owner: &quot;also yeah fix map metrics&quot;.</p>
+<ul>
+<li><b>Before:</b> the map report assumed a dash-jump of 16 m across and 3.5 m up, and nothing more.
+</li>
+<li><b>Now:</b> it measures the movement envelope with the game&#x27;s own movement code each run: the speed a good player builds from a standstill with bunny-hops, strafing and dashes (12 m/s after 4 m, 20 after 22 m, 28 after 58 m), every jump-plus-dash arc from each speed (standing: 13.5 m across or 4.2 m up; at 28 m/s: 61 m across or 12.5 m up), and what a grapple pull leaves you with (it keeps 28 m/s in and out, since it no longer brakes).
+</li>
+<li><b>New check: nobody can get out of bounds.</b> Any floor outside the playable area this movement can reach fails the map. It found that a running jump cleared <b>Dojo</b>&#x27;s 4.5 m moat, so Dojo has an invisible wall at the moat&#x27;s far edge.
+</li>
+<li>Score effects: Viaduct&#x27;s race challenge dropped from 8.2 to 7.3 (fast players leap the beams), still a pass.
+</li></ul>
+<h4>Other map changes</h4>
+<ul>
+<li><b>Hightown</b> has a colour palette (office concrete, glass blue, cool strip lights); it was the only map without one.
+</li>
+<li><b>Score changes from the fixes above</b>, at the time, under the old metrics (the final scores are in the table under Stricter map grading): Canal decor 8.1 → 8.3, layout 7.2 → 7.5, mode fit 7.8 → 9.0; Depot decor 8.1 → 8.2, layout 7.0 → 7.1; Downtown layout 9.2 → 9.4; Railyard mode fit 8.8 → 9.0; Lodestone layout 7.2 → 7.3, mode fit 9.0 → 9.2; Anvil movement 8.9 → 9.1; Furnace decor 8.5 → 8.4, layout 7.3 → 7.2; Midtown layout 7.1 → 7.0. Every map stayed at 7 or more in every graded category.
+</li>
+<li><b>Map documents brought up to date</b> (MAP-18): the map report regenerated (with a Hightown row and the grapple&#x27;s real speed), shot sheets for Dojo, Hightown and Midtown (there were none) and redone for the changed maps; <code>docs/MAP_STRUCTURES.md</code> fixed (Gantry is ranked free for all, not 1v1; Temple is 7,000 m², not 5,700; Lodestone&#x27;s &quot;neither side is closer&quot; doesn&#x27;t hold for its bomb sites). The 1.14.0 changelog now notes that its run speed of 12 m/s was reverted in 1.14.1.
+</li></ul>
+<h3>Editor</h3>
+<ul>
+<li><b>The grid goes down to 1/8 m</b> (owner, before release): 1/8, 1/4, 1/2, 1, 2 and 4 m, and the GRID button says them as fractions (it said 0.25 M and 0.5 M). <code>[</code> and <code>]</code> step through all six; new sessions start at 1/2 m as before. Map files are unchanged: coordinates were never limited to the old grid.
+</li>
+<li><b>Fixed: the crash when opening a map.</b> The OPEN button handed the editor a map name that the editor&#x27;s own map rescan freed before reading it.
+</li>
+<li><b>Fixed: maps saving as &quot;mymap&quot; whatever you typed.</b>
+<ul>
+<li>Characters that can&#x27;t be in a file name (spaces, dots) stayed in the name field, and every save was then refused. Now a space becomes <code>_</code> as you type and other invalid characters are dropped.
+</li>
+<li>A map that failed to open was silently renamed &quot;mymap&quot;.
+</li>
+<li>Edit sessions had no name field, so a session started from NEW always saved as &quot;mymap&quot;. The name field now shows in sessions too: the host gets SAVE AS (the new <code>editmode saveas NAME</code> command), others get SAVE A COPY AS.
+</li></ul>
+</li>
+<li><b>A broken or unnamed map opens under a free name</b> (review 4.7). A 40-character map that won&#x27;t load opened as <code>NAME_new</code> cut back to 40 characters, which was NAME again, so saving overwrote the file it meant to protect; an empty name became &quot;mymap&quot; and overwrote yours. Now it picks the first unused name: <code>mymap2</code>, <code>NAME_new2</code> and so on, kept within 40 characters.
+</li>
+<li><b>Editing a built-in map keeps your edits only as a new map, when you say so</b> (B3). The owner: &quot;edits on official shipped maps are not saved globally only locally&quot; and &quot;you should just ask the user if they want to keep a local save of the edits they made in a new map&quot;.
+<ul>
+<li>Before, edits to a built-in map were silently saved as a copy under its name, which then hid the real map, including its future updates.
+</li>
+<li>Now saving or leaving a built-in map you edited (Ctrl+S, SAVE, TEST, HOST EDIT SESSION, OPEN, NEW, EXIT, Esc) asks whether to keep your edits as a new map, with a suggested free name (<code>temple_edit</code>, <code>temple_edit2</code>...). Yes saves it in your maps folder, No drops the edits, Cancel goes back.
+</li>
+<li>Edit sessions on a built-in map are never autosaved, and <code>editmode saveas</code> refuses built-in names; after a save-as the map is yours and is autosaved.
+</li>
+<li>The in-game editor stays available to everyone (the owner: &quot;the in game editor should still stay in future updates&quot;).
+</li></ul>
+</li>
+<li><b>Trim and clip boxes can be edited</b> (review 5.1). Every shipped map has trim (decoration that isn&#x27;t solid) and clip (invisible walls) boxes, but edits only took the 8 ordinary materials: nudging a trim or clip box was refused, a deleted one couldn&#x27;t be undone (lost for good), and the material key turned them into ordinary boxes. Now every edit, undo and group takes all 10 materials; the material cycle includes TRIM (NOT SOLID) and CLIP (INVISIBLE WALL); and clip boxes are drawn see-through violet. Grouping a selection no longer turns trim, clip, water and lava into ordinary &quot;far&quot; material.
+</li>
+<li><b>Clip boxes can be selected from anywhere.</b>
+<ul>
+<li>From inside a box, every click selected that box: Viaduct&#x27;s editor view starts inside its invisible ceiling, so nothing else could be picked. A box you&#x27;re inside now comes last.
+</li>
+<li>Something behind another object couldn&#x27;t be picked at all. Now clicking the same spot again steps to the next thing along your view.
+</li>
+<li>With nothing selected, FIND CLIP BOXES (INVISIBLE WALLS): N selects each clip box in turn and moves the camera to it.
+</li></ul>
+</li>
+<li><b>Move and resize handles on all six faces</b>, drawn over the world so they can be seen and grabbed through other objects. Only three showed before (the far ones were hidden), and move arrows only pointed one way per axis. Dragging a face now moves only that side.
+</li>
+<li><b>When handles overlap, the nearest one is grabbed</b> (review 4.8). Looking down an axis, the far face&#x27;s handle won the click even though the near one was drawn on top.
+</li>
+<li><b>An edit with several parts applies whole or not at all, undo included</b> (COR-4). A step&#x27;s parts were applied one by one with the undo entry pushed first, so a failure part-way left half a step applied and an undo for something that never happened. Now a multi-part step is applied to a copy and kept only if every part succeeds, and the undo entry is added only then.
+</li>
+<li><b>Edits apply in place, and big group edits sync 4-5x faster</b> (MAP-12); see Performance for the numbers.
+</li></ul>
+<h3>Interface, settings and HUD</h3>
+<h4>Hitsounds in four tiers</h4>
+<ul>
+<li><b>What changed:</b> one hitsound pitched lower for bigger hits -&gt; four different sounds by the damage of the hit: under 10 a light tick, 10-24 a deeper knock, 25-50 a heavy crunch, over 50 a brutal crack with a sub drop and a tail. Each tier is a step louder (0.7 / 0.85 / 1.0 / 1.15 of the old tick, measured as heard loudness, never clipping).
+</li>
+<li><b>Why:</b> the owner wanted the sound to tell you how hard you hit, the way Quake Live&#x27;s tiered hitsounds do. A sniper body shot (50) is heavy; a crossbow headshot (75) or a direct rocket is brutal.
+</li>
+<li>Every sound pack (DEFAULT, RETRO, HEAVY METAL, MAGICAL, MOUTH) has its own four, in its style. Hits that land within 40 ms of each other make one sound, the heaviest (a shotgun blast on two players); laser ticks, which the server already batches every 50 ms, stay a light tick. Every tier plays at its natural pitch, so replacement files play as recorded.
+</li>
+<li>All four can be replaced in the Asset Studio (HIT, HIT_MED, HIT_HEAVY, HIT_BRUTAL). Sound startup also got a little faster (synthesis stops each layer once it has faded).
+</li>
+<li>Tests: a test group no longer starts with the failure count of the groups before it (a failing group used to make later groups report failures with no FAIL line).
+</li></ul>
+<h4>Health bars and the sniper scope</h4>
+<ul>
+<li><b>Health bars over other players are on by default</b> (was off). The owner&#x27;s call: seeing how hurt an enemy is matters in a fast game, and most new players never found the setting. They&#x27;re still never shown in ranked matches (to the players), and SETTINGS turns them off. Existing configs keep the value they have saved.
+</li>
+<li><b>Turning the sniper scope off now leaves your crosshair on.</b> With SCOPE OVERLAY at 0 the sniper still zoomed but drew neither the scope&#x27;s reticle nor your crosshair, so you aimed blind. Now, with the overlay off, the zoom shows your normal crosshair, exactly as the rifle&#x27;s and crossbow&#x27;s zoom do; with it on, the scope&#x27;s reticle replaces it as before.
+</li></ul>
+<h4>New font: Work Sans Bold</h4>
+<ul>
+<li>The 5x7 pixel font is replaced by <b>Work Sans Bold</b> (SIL Open Font License), with real lowercase, proper letter widths and kerning. Player names now show as typed, in lowercase too.
+</li>
+<li>It&#x27;s drawn from one distance-field texture: one texture read per pixel (the old outline took up to 10), with the edge and the black outline smoothed per screen pixel, so it&#x27;s sharp at every size. Frame rate measured the same within noise, the new font slightly ahead.
+</li>
+<li>The smallest text size is 1.3 (at 1, small labels were about 5 pixels tall and HOOK read as &quot;HOCK&quot;).
+</li>
+<li>Text that doesn&#x27;t fit shrinks to the smallest size and then clips with &quot;...&quot; instead of overflowing (review 4.6). Buttons, sliders, cyclers, leaderboard and time-trial names are clipped by measured width, and the launcher&#x27;s changelog wraps by width.
+</li></ul>
+<h4>Console and chat</h4>
+<ul>
+<li><b>The console is monospaced</b>: every character takes the same width (wide letters like M and W are narrowed).
+</li>
+<li><b>Tab no longer opens the scoreboard</b> while chat or the console is open.
+</li>
+<li><b>Tab completes everything</b>: every command, every setting (and its current value), and the server commands&#x27; arguments: teams, vote yes / no, vote types, maps, modes, ladders, bot skills, on / off, and player names. One match fills it in; several fill the common part and always list them all.
+</li>
+<li><b>A real text caret</b> in chat, the console, text fields and slider number entry: Left / Right / Home / End / Delete move and edit at the caret, which is a thin bar placed by measured width. Before, you could only add or delete at the end.
+</li>
+<li><b>Toggle chat and Disable chat</b> (owner B9: &quot;if there is no disable chat keybind there should be (toggle) and a disable chat option&quot;). A TOGGLE CHAT key (unbound by default; set it in Controls) hides or shows other players&#x27; chat with a short notice (&quot;CHAT OFF - &lt;key&gt; TO SHOW IT AGAIN&quot;), and SETTINGS has DISABLE CHAT, which is the same saved setting. While chat is off, other players&#x27; lines, typing dots and key clicks are hidden; server messages still show.
+</li>
+<li><b>Dead players&#x27; chat is unchanged</b> (B9): everyone keeps seeing everyone&#x27;s chat. The owner: &quot;this doesnt matter because ranked is either 1v1 or ffa instagib so everybody can see everybodies chat&quot;.
+</li>
+<li><b>A chat key bound to a letter no longer types that letter.</b> With chat on T, pressing T opened chat and typed &quot;t&quot; into it (and more with key repeat). The key that opens chat or the console now swallows its own character and repeats until released.
+</li></ul>
+<h4>Display and controls</h4>
+<ul>
+<li><b>Alt+Enter switches between borderless fullscreen and windowed</b>, saved to your settings. <b>Holding it no longer also presses Enter</b> (review 4.4): key repeats fell through as a plain Enter, sending chat or pressing the focused button.
+</li>
+<li><b>Crosshair hit flash</b>: SETTINGS &gt; CROSSHAIR has HIT FLASH on / off and HIT R / G / B colour sliders. It always flashed white before; white stays the default. The preview shows the crosshair as it is and as a hit flashes it.
+</li>
+<li><b>Outline thickness</b>: PLAYER OUTLINE and WORLD OUTLINE sliders, 0-4 px in quarter steps (0 = no outline), for the outlines around players and around world edges. The default 1.0 is exactly the old look. No measurable frame-rate cost.
+</li>
+<li><b>Your vs-bots mode is remembered</b> (COR-3). Picking duel, tourney, tag, hide and seek or multi point came back as free for all after a restart (the setting was clamped to the first 6 modes of 13).
+</li></ul>
+<h4>HUD and menus</h4>
+<ul>
+<li><b>The free-for-all scoreboard shows frags</b> (M6). It sorted by frags but showed damage/10 plus objective time as SCORE, so the list looked out of order and the number shown wasn&#x27;t what wins. The number shown and the sort are now the same everywhere: gibs in instagib, frags in free for all, wins in race, the score in hide and seek and tag, damage/10 plus objective time elsewhere as before.
+</li>
+<li><b>Long names no longer run into the next column</b> (review 4.9, 4.5). Scoreboard names are clipped where the next column starts, with &quot; (DEAD)&quot; always shown; the server list&#x27;s scrolling names are sized by their real width (it measured in &quot;M&quot; widths, but &quot;W&quot; is wider); and the Discord setting&#x27;s label shrinks to its half column, with &quot;(PUBLIC)&quot; always shown.
+</li>
+<li>The weapon list greys a thrown knife or syringe with its timer, and shows only weapons the mode has.
+</li></ul>
+<h3>Performance</h3>
+<h4>Your game</h4>
+<ul>
+<li><b>Big maps can be joined again, and loading never says &quot;Not Responding&quot;</b> (PERF-2, PERF-3).
+<ul>
+<li>Before: preparing a map&#x27;s lighting ran three passes that grew with the square of the map&#x27;s size on the main thread, before even checking the cache. Midtown took 13-14 s with a cached lighting file and 24 s without, and the server drops a silent player after 10 s: Midtown couldn&#x27;t be joined at all. Windows showed &quot;Not Responding&quot;, because window events weren&#x27;t processed.
+</li>
+<li>The edge passes now sort faces into buckets (by axis, side, material, plane and 8 m cell), with identical output: building the Midtown world went from 18.4 s to 3.7 s, Lodestone 12.1 → 3.2 s, Hightown 229 → 145 ms, Temple 110 → 47 ms.
+</li>
+<li>The bake now runs on a worker thread with its own copy of the map. The game keeps running: window events, the network and a loading bar at about 60 fps. The new world is swapped in when it&#x27;s done; a newer map cancels and restarts it; leaving cancels it. Tested: joining a remote Midtown server with an empty cache held the connection through a 200 s bake on a slow software renderer.
+</li></ul>
+</li>
+<li><b>The lighting atlas fits your graphics card</b> (PERF-13). The atlas was 2048 pixels wide and as tall as needed (Midtown 2048 x 4096), and the card&#x27;s maximum texture size was never asked; a card stopping at a smaller size got a black world. It now packs wider first, then with fewer texels per metre, until it fits. Atlases that already fitted are unchanged, so caches stay valid.
+</li>
+<li><b>The default &quot;low latency&quot; setting no longer costs a third of your frame rate</b> (PERF-4). <code>low_latency=1</code> waited for the GPU to finish the frame it had just submitted, exactly like &quot;ultra&quot;, for no latency gain. It now allows one frame in flight. On Bastion against bots (RTX 3090 Ti), average / 1% low / 0.1% low: 2708 / 962 / 770 fps → 4130 / 1041 / 760.
+</li>
+<li><b>A frame cap no longer stutters on Windows</b> (PERF-14). The cap slept in 1 ms steps, but the Windows build&#x27;s sleep took about 15 ms, so any cap above about 60 fps ran at about 66 fps with 15 ms spikes, exactly what the 1% and 0.1% lows measure. It now sleeps with Windows&#x27; own <code>Sleep()</code> (about 1.9 ms per 1 ms sleep, measured). Uncapped play wasn&#x27;t affected.
+</li>
+<li><b>Players and projectiles no longer vanish for a frame at the screen edge</b> (PERF-7). They were culled against the previous frame&#x27;s camera, so they disappeared for a frame on fast turns, after spawning and when switching who you spectate.
+</li>
+<li><b>Maps load 4-6x faster.</b> Reading a map built a text stream per line; a hand-written reader gives identical results (checked on 60,000 fuzzed maps): Midtown 11.7 → 2.2-3.1 ms, Lodestone 10.6 → 1.9-2.5 ms, Bastion 1.47 → 0.25 ms on the test machine (Midtown took about 100 ms and Bastion 13 ms on the owner&#x27;s machine before).
+</li>
+<li><b>Fewer hitches</b> (PERF-11):
+<ul>
+<li>Opening the host or vs-bots menus, the editor or the in-game map picker re-read every map file: 12.7 ms for the 21 shipped maps, more with your own. Map info is now cached until a file changes: 0.1-0.2 ms.
+</li>
+<li>Refreshing the server list while the previous fetch was still loading froze the game until it finished or timed out: 6 s measured. Now 0.1 ms.
+</li>
+<li>Changing the announcer voice copied every line under the lock the audio mixer uses, stalling the mixer: 24-48 ms → 17-20 ms, worst mixer stall 8.1 → 4.1 ms.
+</li>
+<li>Recording a demo wrote and flushed every snapshot from the frame loop, so a slow disk (antivirus, a network folder) stalled frames. A writer thread does it now.
+</li></ul>
+</li>
+<li><b>Less work per frame</b> (PERF-12): file lookups that checked up to 5 places on disk are remembered (2.1-2.7 µs → 0.05 µs a lookup); interpolated player positions are worked out once a frame instead of 3-4 times; the console&#x27;s word list is cached instead of rebuilt from the whole config every frame.
+</li>
+<li><b>The editor draws big maps faster</b> (PERF-12). The unbaked editor view streamed every map box to the GPU every frame (about 21 MB a frame on Midtown). The boxes are now one static batch, rebuilt only when the map changes. Midtown frame time 62.7 / 64.7 ms → 40.3 / 47.0 ms (on a software renderer), pixel-identical. After each edit, a redundant full rebuild is also gone (0.4-0.6 ms per nudge on Midtown).
+</li>
+<li><b>Map edits apply in place</b> (MAP-12, owner 1.4). Every edit copied the whole map, rebuilt its collision grid and re-saved it to text: about 10.7 ms per edit on Midtown, on the server&#x27;s tick and on every player&#x27;s frame. Now an edit changes one box and updates the grid in place (identical to a full rebuild, checked after 1500 random edits). On Midtown: moving a box 2.8 µs (30 µs at the edge), inserting or deleting one 23-37 µs, a group part about 39 µs. The text is only made when needed (downloads, saves, demos). A 200-part group syncs in 134 ms instead of 602 ms.
+</li></ul>
+<h4>Servers</h4>
+<ul>
+<li><b>No more tick spikes from line-of-sight checks</b> (PERF-9). Every viewer&#x27;s line of sight to every player was re-checked all at once 20 times a second: one tick in 50 cast about 31,000 rays on Midtown with 32 players (10.7-13.5 ms). Now the checks are spread evenly over every tick, each pair still about every 50 ms, with a cap per tick. Midtown with 32 players: worst tick 0.79 ms. Hamlet with 24 bots and 8 players: 99th-percentile tick 5.3 → 0.89 ms, 99.9th 8.5-9.6 → 1.6-1.8 ms.
+</li>
+<li><b>Sending snapshots allocates no memory</b> (PERF-8). Each client&#x27;s snapshot was copied about 3 times and its events copied too, with 32 memory allocations per send at 32 players; finding the base snapshot scanned up to 256. Now each snapshot is built straight into the slot that keeps it, events go out by reference, and bases are found directly: 0 allocations per send.
+</li>
+<li><b>Hosted edit sessions no longer hitch every 5 s.</b> The autosave serialized and checked the map on the tick (12.6 ms on Midtown); now the tick only copies it (0.1 ms) and a background thread does the rest.
+</li>
+<li><b>Votes and ranked switches no longer load maps on the tick</b> (NET-6): switching a server to ranked parsed and hashed map files until it found the ladder&#x27;s map (about 140 ms on the tick).
+</li>
+<li>Bot navigation and projectile costs are under Bots and Gameplay.
+</li></ul>
+<h3>Demos, files and updates</h3>
+<ul>
+<li><b>Your data lives in your user folder</b> (SUP-11, owner 2.5). Settings, your ranked key, demos, HUDs, controls, editor groups, custom modes, your maps, downloaded maps, lighting caches and logs lived in the install folder, and uninstalling deleted them, ranked identity included.
+<ul>
+<li>Now: Windows <code>%APPDATA%\quark</code>, Linux <code>~/.local/share/quark</code> (or <code>$XDG_DATA_HOME/quark</code>), macOS <code>~/Library/Application Support/quark</code>. <code>--data-dir</code> or <code>QUARK_DATA_DIR</code> choose another folder.
+</li>
+<li>The first start copies your old files over: each one checked byte for byte, nothing overwritten, the originals kept. Shipped maps you never edited aren&#x27;t copied, so they can&#x27;t hide future map updates; lighting caches are rebuilt instead.
+</li>
+<li>Shipped maps stay read-only in the install; your maps folder is searched first, and the editor&#x27;s MAPS FOLDER button opens yours.
+</li>
+<li>Uninstalling never deletes your data (owner 2.5: it &quot;should not be deleted via the uninstall button on launcher&quot;). Files an old version kept in the game folder are copied to your user folder first. On Windows the folders are recorded under <code>HKCU\Software\quark</code> (<code>DataDir</code>, <code>InstallDir</code>), so cleaning programs can find them.
+</li></ul>
+</li>
+<li><b>Folders with non-ASCII names work</b> (COR-5). On Windows, a user folder like <code>C:\Users\Zoë</code> or <code>C:\Users\Дмитрий</code> broke the data folder, settings, maps, lighting cache, demos, logs and keys, because the game opened files with the ANSI code page. Every file the game opens now goes through Unicode paths, and the game takes its arguments and its own location as Unicode. (Untested on real Windows; see Known issues.)
+</li>
+<li><b>Updates delete only retired game files</b> (C13). The owner: &quot;delete retired game files, dont delete configs, custom maps, demos, etc&quot;.
+<ul>
+<li>Before: every old file the new package lacked was copied into the new install, so retired files lived forever.
+</li>
+<li>Now every install records <code>installed-files.txt</code> (each file and its SHA-256), and every package carries the same list. An update deletes only files on that list that are unchanged, missing from the new package, and not player files (settings, keys, demos, screenshots, logs, lighting caches, downloaded maps, and your demos, screenshots, groups, custom modes, HUDs, controls and logs folders). When in doubt, a file is kept. Installs from before 1.17 have no list, so nothing is deleted from them.
+</li></ul>
+</li>
+<li><b>Old demos are converted</b> (C13: &quot;convert it to the new update, and leave an old original copy also&quot;). At the first start after an update, demos recorded with an older protocol are converted in the background (1.11, protocol 24, and later record the same way, so they convert cleanly). Each original is kept in <code>demos/old/&lt;version&gt;/</code>. A demo that can&#x27;t be converted is left as it is, logged in <code>demos/old/convert.log</code>, not retried, and says &quot;recorded with version X&quot; instead of failing. The game notes which version used which protocol (<code>versions.txt</code>) so later versions can name it.
+</li>
+<li><b>Lighting caches are rebuilt once</b>, because light now passes through clip and caches are named by content (see Maps).
+</li>
+<li><b>Replacement assets</b>: sounds, voices, models, the font and the icon can be replaced by files in <code>overrides/</code> in your user folder (see Asset Studio).
+</li></ul>
+<h3>Launcher and signing</h3>
+<h4>Antivirus-proof installs, REPAIR and CHECK FILES</h4>
+<ul>
+<li><b>The report:</b> one player&#x27;s PC removed quark.exe right after installing 1.15.1 and 1.16.0, while every other build, and those builds on every other PC (about ten players, dozens of updates), were fine. Their folder still had quark_server.exe and version.txt from the same install, written at the same minute.
+</li>
+<li><b>The cause:</b> not the launcher. The launcher code was identical from 1.14.2 to 1.16.0, writes each file in place and never deletes game files; the packages of both versions contain quark.exe. The pattern (one file, two exact builds, one PC) is an antivirus false positive: Windows Defender&#x27;s machine-learning detections sometimes quarantine a particular unsigned build.
+</li>
+<li><b>What the launcher does now:</b> every file of a new version is unpacked into <code>game.new</code>, read back and checked against the package (size and SHA-256) before the swap. A file that was removed, changed or blocked stops the update with your installed version untouched, names the file, and explains how to restore it (Windows Security &gt; Protection history &gt; Restore / Allow on device) and how to exclude the quark folder, with OPEN FOLDER and RETRY.
+</li>
+<li><b>Before every start</b> the installed files are checked against <code>installed-files.txt</code> (which now records sizes too: existence and size, cheap). A missing or changed quark.exe is never started; you get the same explanation and <b>REPAIR</b>, which downloads your version again, verifies it and swaps it in. <b>CHECK FILES</b> runs the full SHA-256 check on demand. A Windows &quot;virus&quot; refusal when starting the game shows the same screen.
+</li>
+<li>Updates retry their folder renames for 3 s (an antivirus scanning new files holds them open briefly), never drop a player file they can&#x27;t carry over, and put back a swap that was cut off halfway at the next start.
+</li>
+<li><b>A Windows copy bug fixed:</b> MinGW&#x27;s <code>copy_file</code> can&#x27;t overwrite an existing file on Windows (&quot;File exists&quot;). Because of it an update dropped your old quark.cfg in favour of a packaged one, and a newer downloaded launcher didn&#x27;t replace an older installed one. The launcher, the server&#x27;s log backup and the user-folder migration now remove the old file first.
+</li>
+<li><b>Fewer false positives:</b> quark.exe, quark_server.exe and quark_launcher.exe now carry Windows version information and an application manifest instead of being anonymous binaries, which antivirus heuristics flag most. Code signing is what would really prevent them (docs/SIGNING.md).
+</li></ul>
+<h4>Everything published is signed (SUP-1, owner 2.1, B6)</h4>
+<ul>
+<li><b>Why:</b> the launcher installed any download named <code>quark-&lt;platform&gt;.qpak</code> with no check at all, so a leaked token or a compromised account would run code on every player&#x27;s machine. The owner: &quot;yes, any update starting with 1.17.0 must be signed, including tests, site, launcher&quot;.
+</li>
+<li><b>Now:</b> releases are signed with an Ed25519 key (using the Monocypher library, vendored). Signed: every game package, the launcher inside each package, the standalone launcher downloads, the game zips and tarball, a release manifest (<code>quark-release.txt</code>) and <code>SHA256SUMS</code>, and the website&#x27;s file list.
+</li>
+<li><b>The launcher refuses any update whose signature doesn&#x27;t check out</b>: a missing, failed or wrong signature deletes the download and says &quot;refused version X&quot;. It verifies before extracting anything.
+</li>
+<li><b>A signed package can&#x27;t pass as another release</b> (review 1.6). A package&#x27;s signature only proved the release key signed some package. Now the signed manifest lists every package&#x27;s SHA-256, and the launcher installs a package only when the manifest verifies and names this release&#x27;s tag, version, channel and the downloaded file&#x27;s hash.
+</li>
+<li><b>The launcher only replaces itself with a signed launcher</b>: the game&#x27;s launcher update and the launcher&#x27;s self-update check the packaged launcher&#x27;s signature, on the very copy that goes in place.
+</li>
+<li><b>Versions from before signing</b> (1.16 and older) are listed and install like any other, with no warning (B6: &quot;you do not need to display in the launcher to regular users the old versions are unsigned&quot;). An unsigned release claiming to be 1.17.0 or later is never listed and is refused at install.
+</li>
+<li>Anyone can check a download by hand: <code>quark_sign verify &lt;file&gt;</code> (the website says how).
+</li></ul>
+<h4>Channels, versions and updates (owner 1.1, 2.6)</h4>
+<ul>
+<li><b>A CHANNEL button switches between PRODUCTION and TESTING builds</b>, and you can pick any version in either (owner 1.1: &quot;add a button that will toggle between testing branch and production branch where you can pick versions&quot;). Your choice and any pinned version are remembered.
+</li>
+<li><b>Every release stays listed</b> (review 1.4). The launcher read 50 releases (then 300 during development). It now reads every page until the list ends, both channels, and stops safely if a page repeats or fails.
+</li>
+<li><b>Pins on old versions are kept</b> (review 1.5). An old <code>launcher.cfg</code> pinned to a pre-1.17 version counted as &quot;latest&quot;, so the launcher silently moved you to the newest version. Now the pin is kept: if it&#x27;s installed you play it; a pinned version installs on its own only when nothing or an older version is installed, otherwise it waits for INSTALL.
+</li>
+<li><b>It never downgrades on its own</b> (SUP-6). Prereleases counted as &quot;latest&quot;, and any version different from the installed one was installed, so a newest release without your platform meant an automatic downgrade. Now startup only installs something newer; an older version only when you pick it. PLAY stays available next to INSTALL.
+</li>
+<li><b>The launcher updates itself</b>, and <b>the game brings every older launcher up to date</b> (owner 2.6: &quot;upgrade from all previous launcher iterations to the new one… therefore nobody has to download a new launcher to update it or the game&quot;). Each package carries the launcher. At start, the game replaces every older launcher it finds (from 0.1 on, under their various names and folders), installs the launcher where it belongs if missing, and repoints desktop and menu shortcuts. On Windows the running launcher renames itself aside and restarts once (never in a loop). On macOS the Applications app now starts the installed launcher instead of holding a stale copy.
+</li>
+<li><b>Quitting the game can&#x27;t leave a half-replaced launcher</b> (review 4.3). The update thread was detached, so quitting quickly could stop it between two renames and leave no launcher on Windows. Each swap now finishes as one step, and the game waits for the thread (at most 2 s) at exit.
+</li>
+<li><b>Safe package extraction</b> (SUP-5). On Windows the extractor accepted absolute paths, drive and network paths, alternate data streams, device names and trailing dots, so a hostile package could write outside the install; a bad entry size or a non-UTF-8 name crashed the launcher; and quitting mid-install left a half-updated game. Now only plain relative names are accepted (fuzzing also found <code>.</code>, <code>a/.</code> and <code>dir/</code> slipping through, now refused), sizes are checked before anything is allocated, and the update unpacks into <code>game.new</code> and is swapped in, with the old install restored if the swap fails.
+</li>
+<li><b>Downloads go through TLS 1.2 / 1.3</b> and start programs without a shell (see Security).
+</li></ul>
+<h3>Discord bot</h3>
+<ul>
+<li><b>No more mass pings from server names</b> (BOT-1). Server info was posted with no mention settings, and the bot&#x27;s invite granted Mention Everyone, so a game server named &quot;@everyone&quot; pinged the whole Discord, once per new port. Mentions are now off by default; only the bot&#x27;s own role pings, queue fills and the welcome opt in.
+</li>
+<li><b>Names can&#x27;t inject links or formatting</b> (BOT-2). Server, map, mode and player names were inserted as-is, so masked phishing links rendered in ping messages and leaderboard names could break out of their code block. Names are now made inert: one line, links replaced with <code>[link]</code>, <code>@</code> defused, markdown escaped.
+</li>
+<li><b>At most 5 live servers get channels</b> (BOT-3, owner 7: &quot;limit discord listed servers to 5&quot;). One text and one voice channel per listed server, up to 200, while a category holds 50, and one failed channel creation stopped every update. Now at most 5 are listed (listed ones keep their place; free slots go to the busiest new servers after 120 s of answers), and each server is handled on its own: a failure is logged and retried.
+</li>
+<li><b>Testing builds get their own channel and role</b> (owner 2.1). Prereleases are announced in #testing-updates with a &quot;Testing Updates&quot; ping role (a toggle in #get-pings); production stays in #updates. A prerelease is never announced as production.
+</li>
+<li><b><code>/changelog</code> understands testing builds</b> (review 3.8). Testing builds are tagged <code>test-1.17.0-test.N</code>; <code>/changelog 1.17.0-test.3</code> now finds that build (else the base version&#x27;s changelog), marked &quot;(testing)&quot;.
+</li>
+<li><b>#updates posts and <code>/changelog</code> link this website&#x27;s full changelog page.</b>
+</li>
+<li><b>The bot only manages its own roles</b> (BOT-5). Manage Roles is used only on its six configured roles (four ping roles, #1 and Top 10), and it refuses any role granting more than @everyone or sitting above its own. Roles it creates have no permissions. The invite needs fewer permissions (268528656, no Mention Everyone).
+</li>
+<li><b>Secrets stay off command lines</b> (BOT-4). The installer passed the bot token and key as command arguments (visible in process lists and sudo logs). Now they go in <code>/etc/quark-discord.env</code>, mode 600, owned by the service user; the service runs with basic systemd hardening; and the installer reminds you to rotate both.
+</li>
+<li><b>Pinned dependencies</b>: installed with exact hashes from a lock file, and the unhashed pip self-upgrade is gone.
+</li>
+<li><b>The bot uses the game&#x27;s built-in ranking-server address</b> and never follows <code>master.txt</code>, so its key can&#x27;t be sent elsewhere; if the ranking server ever moves, set <code>master_url</code> in its config. It has its own rate-limit bucket on the ranking server.
+</li>
+<li><b>Ready to move to its own branch</b> (owner 7): no paths into the game repository, and <code>tools/discordbot/MOVING.md</code> has the steps. Its test suite grew from 19 tests to over 30.
+</li>
+<li>Discord links now use one-time codes (see Ranked), and server-list queries are padded (see Security).
+</li></ul>
+<h3>Website</h3>
+<ul>
+<li><b>An updates page</b>: <code>/updates/</code> lists every version&#x27;s short changelog, newest first, and each version has its own page with its full changelog (this page, for 1.17.0 on; older versions show their short notes). The home page links to them.
+</li>
+<li><b>Signed file list</b>: the website publishes a signed <code>SHA256SUMS</code> of every site file, and says how to check downloads.
+</li>
+<li><b>Credits</b> for the Work Sans font.
+</li>
+<li><b>No <code>eval()</code> in the website build</b> (SUP-4). The step that reads the weapon table ran Python&#x27;s <code>eval()</code> on game source text with a write token available; it now does the arithmetic safely.
+</li>
+<li>The website is only redeployed by a production release (testing builds only replace the testing channel&#x27;s asset data, below), and owner replacements for website pictures are copied in at publish time.
+</li>
+<li><b>Assets and Sounds pages</b> (<code>/assets/</code>, <code>/sounds/</code>, linked from the menu and the home page). <b>What:</b> every model you can see in 3D (the 5 player models, 10 weapon viewmodels, 7 projectiles, the crown and all 21 maps; spin, zoom, pan, team colour), and every sound you can hear (150 kit sounds, 210 announcer lines, each with a waveform and a play button), with a PRODUCTION / TESTING switch. Each has a <b>make your own</b> mode: a box builder that exports a .glb (boxes marked team colour go out white in a <code>team</code> material, so the game tints them) and a small sfxr-style synth that saves a 48 kHz mono .wav, both saying where the file goes (<code>overrides/</code> in your user folder, or <code>assets/overrides/</code> in a checkout). <b>Why:</b> players asked what the kits and models look and sound like before picking one, and the override folders were only described in docs/ASSETS.md; now anyone can try a replacement in a few minutes without tools. <b>How:</b> the data is the Asset Studio&#x27;s own export (<code>quark_tests exportassets</code>, <code>tools/studio/build.py</code>), cut to models, maps, sounds and voices by <code>tools/site_assets.py</code> (about 33 MB: the site&#x27;s pictures, the font and the icon aren&#x27;t repeated); the viewer, map reader and waveform code are the studio&#x27;s. The Linux build exports it; the pages job publishes it as <code>assets/data/production/</code> and keeps the testing data already on the site, and each testing build replaces <code>assets/data/testing/</code> on gh-pages, re-signs <code>SHA256SUMS</code> over the whole site and leaves gh-pages one commit, so the branch doesn&#x27;t grow ~33 MB per testing build. Both jobs rewriting gh-pages run one at a time. Files are decoded only when their card scrolls into view, and only three.js (0.147.0, already used by the studio) is loaded, on the assets page alone. A channel with no data yet says so instead of breaking. Generated data is never committed.
+</li></ul>
+<h3>Release process and tests</h3>
+<h4>Testing and production releases (owner 1.1, 2.2; SUP-2, SUP-3)</h4>
+<ul>
+<li><b>Why:</b> every push to any branch published a release marked &quot;latest&quot; and redeployed the website, with no concurrency control. v0.26.1 and v0.26.3 shipped files built from other commits, and a stray push of an older branch would have downgraded every launcher.
+</li>
+<li><b>Now:</b>
+<ul>
+<li>New work goes to a <code>testing</code> branch. Each push there publishes a signed prerelease tagged <code>test-&lt;VERSION&gt;-test.&lt;N&gt;</code>, built as version <code>&lt;VERSION&gt;-test.&lt;N&gt;</code> (never &quot;latest&quot;; the website isn&#x27;t touched). The tag never starts with <code>v</code> and a digit, or older launchers (0.12-1.16) would install it. macOS is optional there and added when it builds (owner 2.4: &quot;testing shouldnt have this requirement&quot;).
+</li>
+<li>Production comes only from a tag <code>v&lt;VERSION&gt;</code> on the protected default branch, which only takes pull requests from <code>testing</code>. It needs Windows, Linux and macOS all green (owner 2.4: &quot;release version should always force all of the os options&quot;), fails if the release already exists, and needs both changelogs.
+</li>
+<li>Other branches only build and test.
+</li></ul>
+</li>
+<li><b>CI hardening</b> (SUP-3): read-only tokens by default, write access only for the release and website jobs; no credentials left in checkouts; every GitHub Action pinned by commit hash and kept current by Dependabot; one run at a time per branch; separate production and testing environments.
+</li>
+<li><b>A hand-test checklist</b> (<code>docs/RELEASE_CHECKLIST.md</code>) the owner goes through on each testing build before it goes to production.
+</li>
+<li><b>Every update now writes two changelogs</b>: the short notes and this full one; a production tag without either fails.
+</li></ul>
+<h4>Tests</h4>
+<ul>
+<li><b>Tests run on Windows in CI</b> (ENG-1, owner 2.7). The suite couldn&#x27;t pass on Windows, the main player platform: the 15 ms sleep (see Performance) made it time out with 26 failures. Fixed with the sleep fix, a 16 MB test stack, unbuffered output and a real-time test clock on Windows. The test job gets the generated maps too (review 1.1, a release blocker: without them every map test failed and production could never publish).
+</li>
+<li><b>Sanitizers and fuzzing</b> (ENG-3). New build options run the whole suite under AddressSanitizer and UndefinedBehaviorSanitizer, and five fuzzers throw random data at packet decoding, map loading, custom modes, the package reader and a live server. A CI job runs them on every work-branch push. They found two bugs, both fixed: package entry names that name a folder, and blank names in a custom mode&#x27;s map list.
+</li>
+<li><b>Many new tests</b> for what&#x27;s in this update: ranked rules and the ranking server (<code>test.mjs</code>), hidden information, hide and seek scoring and the tiebreak, overtime, throws, spread, projectile arcs at every tick rate, hull scaling, map limits, spawn pools, walkable routes, the cart sweep, the launcher (with a GitHub releases fixture), signatures, demo conversion, map conversion, Unicode paths, allocation failures and more.
+</li>
+<li><b>Tests checking the code against itself:</b> the queue sizes, protocol numbers, mode names, the ranking server&#x27;s address and race split floors must match across the game, the ranking server and the bot.
+</li>
+<li><b>CI runs every test group on its own machine.</b> The release waits for the tests, and Windows can only run them one group after another (no fork), so a release would have waited roughly an hour for the Windows tests. Now each of the 25 groups runs on its own Linux runner and its own Windows runner at the same time (<code>quark_tests groups</code> lists them; <code>quark_tests group NAME</code> runs exactly one). The slowest group sets the time instead of the sum of all of them. The timing-sensitive groups (netcode, tick rate, governor) also get a machine to themselves, which is what they need to measure reliably. The list comes from the source and the Linux build checks it matches the binary, so a new group can&#x27;t be skipped. A full local run now prints each group&#x27;s time. The asset tests also find the source tree on the Windows runner now (they used the build machine&#x27;s path, which doesn&#x27;t exist there). 1.17.0 itself was released without the CI tests, on a local test run of every group except the bot and map groups (both the owner&#x27;s one-off calls for this release: bots and maps are being replaced; every map was instead loaded and played headless). From 1.17.1 on, every release waits for all of them in CI.
+</li>
+<li><b>Steadier tests</b> (ENG-5): each run and each test group gets its own data folder and its own block of ports (outside the system&#x27;s temporary port range), fixed waits became &quot;wait until done&quot;, and a flaky ranked-vote check waits for the map switch.
+</li></ul>
+<h5>The click-every-button UI test</h5>
+<ul>
+<li><b><code>quark --uitest</code> clicks every button in the game, in every situation it shows up in, and checks each one does what it says</b> (owner: &quot;click every button&quot;). Every widget call now takes an expectation, a required argument: go to this screen, change this setting, send this command, edit the map (and undo must put it back exactly), capture a key, open a link, or nothing. A widget can&#x27;t be added without one, and the test fails on a widget nobody described. In normal play it costs one null check.
+</li>
+<li>It walks every reachable screen from 11 starting points (the menus with the offline editor, hosting FFA, VS, ranked and tourney, a spectating client, a demo, an online edit session as host and as guest, and hide and seek as seeker and in the rock-paper-scissors tiebreak), activates every widget the way a player would (a slider is dragged, then a number typed, then right-clicked back to its default), checks Esc from every screen goes back the way you came, and checks the layout at 1280x720, 1920x1080 and 1024x768: nothing off screen, overlapping or cut off.
+</li>
+<li>The last full run: 2,259 widgets on 109 screens, 113 Esc checks, all passing, in about 16 minutes. It runs with its own data folder and the network off, so your settings are never touched.
+</li>
+<li><b>What it found, all fixed:</b>
+<ul>
+<li>The HUD widget editor opened from the main menu crashed the game: it read the newest snapshot when there was none.
+</li>
+<li>Unbinding the knife, syringe or quip key (or chat on T / Y) came back after a restart, because the old-config migrations ran on every load. They now run once (<code>bind_version=2</code>).
+</li>
+<li>Editor:
+<ul>
+<li>ROTATE and MIRROR ran off the bottom of the panel at 720p, and MIRROR Y&#x27;s label was cut off.
+</li>
+<li>CTRL+ARROW on a box thinner than the grid grew it.
+</li>
+<li>Rotating or mirroring several objects took an undo step per object.
+</li>
+<li>GROUP on a map&#x27;s only box failed.
+</li>
+<li>In an online session the first edit lost its undo step.
+</li></ul>
+</li>
+<li>Settings labels were cut off at 720p (HITSOUND, VOICE, PLAYER SHADOWS, the HUD rule MODE, and the custom mode&#x27;s MOVEMENT and WEAPONS sliders); those grids use the screen width now.
+</li>
+<li>PRESET from custom colours skipped the first preset, and CHECK AGAIN (reachability) showed nothing while re-checking.
+</li>
+<li>Esc on &quot;save your copy?&quot; did nothing.
+</li>
+<li>Buttons that can&#x27;t do anything are now greyed out: CLEAR ALL, RESET, UNBIND, QUEUE FOR ALL / LEAVE ALL, GROUP and EXPORT GROUP with nothing to group, DUPLICATE on the hill, and others.
+</li></ul>
+</li>
+<li>In CI the UI test is the <code>linux-uitest</code> job, which every release waits for from 1.17.1 on (1.17.0 ships on the local run).
+</li></ul>
+<h5>Settings from the UI work</h5>
+<ul>
+<li><b>Type a number into any slider</b>: click its number and type, on every slider in the game, including the custom-mode MOVEMENT page (owner). A typed value isn&#x27;t snapped to the slider&#x27;s steps, only kept in range.
+</li>
+<li><b>Right-click a slider to reset it to its default</b> (owner): the default settings for settings, the standard rules for a custom mode.
+</li>
+<li><b>Damage-number size</b> (owner), <b>the damage flash</b> at the screen&#x27;s edges has a strength setting and is <b>off by default</b> (the owner&#x27;s call before release; turn it on in VISUALS), <b>zoom FOV sliders</b> for the sniper&#x27;s and the rifle&#x27;s alt-fire (owner), and <b>the fullbright map colour</b> when flat fullbright textures are on (owner).
+</li></ul>
+<h4>Build</h4>
+<ul>
+<li><b>The MSVC build is gone</b> (ENG-4, owner 2.7). It didn&#x27;t compile; releases are built with MinGW, which is now the only Windows toolchain.
+</li>
+<li><b>A version bump recompiles one file</b> instead of everything (the version lives in a generated file).
+</li>
+<li><b>The 20 MB announcer header is generated at build time</b> from the recorded voice files instead of being stored in the repository. The sound-effects header stays committed (C6: building it would need ffmpeg).
+</li>
+<li><b>Precise floating point everywhere</b>: MSVC&#x27;s fast-math was dropped and compilers may not fuse multiply-adds, which would make Apple ARM machines compute movement differently.
+</li>
+<li><b>CTest</b> support, stricter compiler warnings (<code>-Wextra</code>), and an LTO option, left off (C5: it measured no better here and &quot;needs a real pc to test&quot;).
+</li>
+<li>Two old compiler warnings fixed: an unused variable, and a map-report text buffer that could cut race lines short.
+</li></ul>
+<h4>Project documents</h4>
+<ul>
+<li>New documents in the repository record this update&#x27;s work: the second review (<code>docs/REVIEW.md</code>) and its fix plan and log (<code>docs/FIXES_HANDOFF.md</code>), the owner&#x27;s decisions (<code>docs/OWNER_DECISIONS.md</code>, <code>docs/OWNER_ANSWERS.md</code>, <code>docs/OWNER_DECISIONS_2.md</code>, <code>docs/JUDGMENT_CALLS.md</code>), the final review with each finding&#x27;s status (<code>FINAL_REVIEW.md</code>), what&#x27;s left (<code>REMAINING.md</code>), a handover (<code>docs/HANDOVER.md</code>), signing (<code>docs/SIGNING.md</code>), assets (<code>docs/ASSETS.md</code>) and the release checklist.
+</li></ul>
+<h3>Asset Studio</h3>
+<p>The owner is replacing AI-made assets with human-made ones through the Asset Studio page.</p>
+<ul>
+<li><b>Every default asset can be exported</b>: <code>quark_tests exportassets &lt;dir&gt;</code> writes 135 sound-kit sounds, 210 announcer lines (lines a voice hasn&#x27;t recorded are exported as short silence, marked &quot;not recorded yet&quot;), 24 glTF models (players, weapon viewmodels including the new locator, projectiles, the crown), every shipped map, the font, the icon and the website&#x27;s pictures, with a manifest. The game&#x27;s box models moved into one file that both the game and the export use; the game draws them pixel-identically.
+</li>
+<li><b>Replacements</b>: a file at an asset&#x27;s path in <code>assets/overrides/</code> (shipped, built into the game) or in <code>overrides/</code> in your user folder (read at start, wins) replaces it.
+<ul>
+<li>Sounds and voices: <code>.wav</code>, <code>.ogg</code>, <code>.flac</code>, <code>.mp3</code>. Leading silence is trimmed and each plays as loud as the sound it replaces.
+</li>
+<li>Models: <code>.glb</code> or <code>.gltf</code>, drawn in place of the box model (up to 20,000 triangles; materials named <code>team</code>, <code>glow</code>, <code>metal</code> or <code>base</code> follow team or map colours).
+</li>
+<li>The font (a static <code>.ttf</code> or <code>.otf</code>): the text atlas is rebuilt at start only when it&#x27;s replaced.
+</li>
+<li>The icon, maps (they must still pass the map checks; a per-user map replacement isn&#x27;t accepted for ranked) and website pictures (same file name and type).
+</li>
+<li>With no replacements, nothing is read or drawn differently.
+</li></ul>
+</li>
+<li>Decoders for these formats are vendored public-domain libraries (stb, dr_libs). Everything is documented in <code>docs/ASSETS.md</code>.
+</li>
+<li>The studio page&#x27;s font upload takes <code>.ttf</code> / <code>.otf</code> only (it mentioned a pixel-font PNG, which no longer exists).
+</li>
+<li>No owner replacements were waiting at release, so 1.17.0 ships the default assets. The studio page is rebuilt and republished after the release with the new defaults (the locator model, the new map hashes).
+</li></ul>
+<h3>Known issues / not in this version</h3>
+<ul>
+<li><b>Hidden information has a 20 m radius:</b> players within 20 m are always sent, without a line-of-sight check, so a hide-and-seek seeker is still sent hiders behind a wall within 20 m (NET-10). Whether hide and seek gets a smaller radius is open.
+</li>
+<li><b>Midtown and Lodestone have about 25-30% more boxes</b> (cover added to pass the stricter grading); their frame times haven&#x27;t been checked in game yet.
+</li>
+<li><b>The two-servers-per-box setup hasn&#x27;t run on a real server yet:</b> the systemd units, the shared governor folder&#x27;s permissions and the CPU weighting were tested only by script, not under systemd. And one player reporting heavy snapshot loss counts as overload, as it already did for the tick-rate fallback (closing testing still needs production itself to be overloaded).
+</li>
+<li><b>Knives-only modes:</b> a thrown knife is disabled for 4 s, so in a knives-only mode you can&#x27;t swing for 4 s after throwing (before, you could). This is the owner&#x27;s rule read literally; it may change.
+</li>
+<li><b>Expert bots</b> measure 16.7 rifle damage a second against a strafing target, a little under the 18 target.
+</li>
+<li><b>Bots</b> still fall about 3 times per full playtest run when an enemy&#x27;s laser or rocket pushes them (mostly Dojo), occasionally fall off Hightown&#x27;s roof, kill themselves slightly more often (8 → 10 over 42 runs, mostly rockets), and grapple less on Clockwork (0-9 times per 40 s, was 14-27) now that every pull is checked.
+</li>
+<li><b>Unicode folder names</b> are fixed for the game but untested on real Windows, and the dedicated server still reads its own command-line arguments in the ANSI code page.
+</li>
+<li><b>Giants:</b> the server&#x27;s line-of-sight rays aim at a normal-size player, not a giant&#x27;s bigger box.
+</li>
+<li><b>Old launchers (1.16 and older) only read the newest 50 releases.</b> Production 1.17.0 must ship before 50 testing builds pile up; after that, the game keeps launchers current.
+</li>
+<li><b>Hosting reachability</b> needs at least one public server running 1.17.0 to answer the check; until then hosts may see &quot;not reachable&quot; even with an open port.
+</li>
+<li><b>The ranking server&#x27;s read cache</b> does nothing on its current <code>workers.dev</code> address; it needs a custom domain.
+</li>
+<li><b>Generating the maps takes about 6 s</b> instead of 0.7 s, because of the spawn-spot search.
+</li>
+<li><b>Not in this version, planned:</b> the owner&#x27;s own advanced map editor (a separate developer build, uploading maps to a <code>map-tests</code> branch; B3), one GameMode interface per mode (C4), LTO after measuring on a real machine (C5), moving the launcher, website and Discord bot to their own branches, a map size budget and an entity system for objective markers.
+</li>
+<li><b>No licence file yet</b>, by the owner&#x27;s choice.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.16.0/">&larr; 1.16.0</a></span><span><a href="../">All updates &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

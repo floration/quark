@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 0.26.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 0.26.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<ul>
+<li><b>Servers update themselves.</b> <code>tools/server/install.sh</code> sets up a Linux server as a service: it starts on boot, restarts on crash, and checks for updates every minute.
+<ul>
+<li>When a new version is out, the server builds it in the background.
+</li>
+<li>It waits until no match is being played, says &quot;restarting for an update - rejoin in a few seconds&quot;, and comes back on the new version.
+</li>
+<li>Mid-match, players get &quot;an update is ready - the server restarts after this match&quot; instead.
+</li></ul>
+</li>
+<li><b>Vote ranked on or off.</b> In the vote menu, <b>RANKED ON...</b> lets anyone pick a ladder. On a ranked server you get <b>SWITCH LADDER...</b> and <b>RANKED OFF</b> instead.
+<ul>
+<li>A ranked server refuses bot votes, tourney votes, non-1v1 map votes and map editing, and says why.
+</li>
+<li>Hosts get the RANKED tile in <b>CHANGE MODE</b> too, and it applies straight away.
+</li></ul>
+</li>
+<li><b>Vote to edit the map together on any server.</b> <b>EDIT THE MAP TOGETHER</b> in the vote menu, or <b>EDIT MODE</b> in the host&#x27;s ESC menu.
+<ul>
+<li>On a normal server the edits are temporary: you can play the edited map (<b>VOTE: PLAY IT</b> or the host&#x27;s <b>PLAY MODE</b>), but the file is never touched, and the original comes back when the map changes.
+</li>
+<li><b>SAVE A COPY</b> keeps your own copy of the edited map.
+</li></ul>
+</li>
+<li><b>Maps redone:</b>
+<ul>
+<li>Random debris replaced with tidy crate stacks in the wall bays.
+</li>
+<li>New corner columns, chair rails and inset wall panels.
+</li>
+<li>New tiled floor seams in both directions.
+</li>
+<li>Wall lamps light every map.
+</li></ul>
+</li>
+<li><b>Fixed:</b> leaving a server sometimes opened the map editor. The click on DISCONNECT also landed on the MAP EDITOR button of the main menu that appeared under it. A click that changes screens no longer reaches the next screen.
+</li>
+<li><b>Menu fixes:</b>
+<ul>
+<li>The vote menu is shorter, and bot options are hidden on ranked servers.
+</li>
+<li>The pause menu panel now fits all its buttons.
+</li>
+<li>The server list shows <code>[RANKED &lt;ladder&gt;]</code> from the server itself, so it stays right after a vote.
+</li></ul>
+</li>
+<li>The network protocol changed, so servers and clients must both be on 0.26.0.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../0.25.0/">&larr; 0.25.0</a></span><span><a href="../0.26.1/">0.26.1 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

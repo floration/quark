@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark assets</title>
+<meta name="description" content="Every model and map in quark in 3D: players, weapons, projectiles, the crown and every map. Spin them, then build your own model and export it as .glb.">
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="../" aria-label="quark home"><img src="../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+    <nav aria-label="Main">
+      <ul class="nav">
+        <li><a href="../#modes">Modes</a></li>
+        <li><a href="../#maps">Maps</a></li>
+        <li><a href="../#weapons">Weapons</a></li>
+        <li><a href="./" aria-current="page">Assets</a></li>
+        <li><a href="../sounds/">Sounds</a></li>
+        <li><a href="../leaderboard/">Leaderboard</a></li>
+        <li><a href="../updates/">Updates</a></li>
+        <li><a href="../testing/">Testing</a></li>
+        <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+        <li><a href="https://github.com/floration/quark">GitHub</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm cta" href="../#download">Download</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Assets</p>
+    <h1>Every model, in 3D</h1>
+    <p class="lede">The player models, weapons, projectiles, the crown and every map, straight from the game's own build. Drag to spin, scroll or pinch to zoom, right-drag or two fingers to pan. Then make your own.</p>
+  </div>
+</div>
+
+<div class="page">
+  <div class="wrap">
+    <div class="toolrow">
+      <div class="seg" id="chsw" role="group" aria-label="Channel"></div>
+      <span class="chinfo" id="chinfo" aria-live="polite">Loading...</span>
+    </div>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Asset type"></div>
+
+    <section id="browse" aria-label="Viewer">
+      <div class="viewer">
+        <div class="stage">
+          <canvas class="view3d" id="cv" aria-label="3D view of the selected asset"></canvas>
+          <div class="vbar" id="vbar"></div>
+          <h3 id="vname">&nbsp;</h3>
+          <p class="what" id="vdesc"></p>
+        </div>
+        <ul class="picker" id="list" aria-label="Pick one"></ul>
+      </div>
+    </section>
+    <div id="nodata" hidden></div>
+
+    <section id="make" hidden aria-labelledby="make-title">
+      <h2 id="make-title" class="sr">Make your own model</h2>
+      <div class="maker">
+        <div class="stage">
+          <canvas class="view3d" id="bcv" aria-label="Your model: click a box to select it"></canvas>
+          <div class="vbar">
+            <button class="mini" type="button" id="badd">Add box</button>
+            <button class="mini" type="button" id="bdup">Duplicate</button>
+            <button class="mini" type="button" id="bdel">Delete</button>
+            <button class="mini" type="button" id="bteam">Team: Blue</button>
+            <button class="mini on" type="button" id="bghost" aria-pressed="true">Show the default</button>
+            <button class="mini" type="button" id="bnew">Start over</button>
+            <span class="hint">Click a box to select it. Front is -Z (the arrow).</span>
+          </div>
+        </div>
+        <div class="form">
+          <div class="grid2">
+            <label>Kind <select id="bkind"><option value="player">Player</option><option value="weapon">Weapon</option><option value="projectile">Projectile</option><option value="crown">Crown</option></select></label>
+            <label>Replaces <select id="bname"></select></label>
+          </div>
+          <label>Box <select id="bsel"></select></label>
+          <div class="lab">Position (m)<div class="grid3"><input type="number" step="0.01" id="px" aria-label="Position X"><input type="number" step="0.01" id="py" aria-label="Position Y"><input type="number" step="0.01" id="pz" aria-label="Position Z"></div></div>
+          <div class="lab">Size (m)<div class="grid3"><input type="number" step="0.01" min="0.01" id="sx" aria-label="Size X"><input type="number" step="0.01" min="0.01" id="sy" aria-label="Size Y"><input type="number" step="0.01" min="0.01" id="sz" aria-label="Size Z"></div></div>
+          <div class="grid2">
+            <label>Colour <input type="color" id="bcol" value="#8c96a3"></label>
+            <div class="lab">Material<label class="check"><input type="checkbox" id="bisteam"> Team colour</label></div>
+          </div>
+          <button class="btn btn-primary" type="button" id="bexport">Download .glb</button>
+          <p class="muted small" id="bmsg" role="status" style="margin:0"></p>
+        </div>
+      </div>
+      <div class="howto prose">
+        <h3>Use your model in the game</h3>
+        <p>Pick what it <b>replaces</b>; the download is named after it (for example <code id="hfile">STANDARD.glb</code>). Then put it in one of two places:</p>
+        <ul>
+          <li><b>Just for you:</b> <code id="huser">overrides/models/player/STANDARD.glb</code> in your user folder (Windows <code>%APPDATA%/quark</code>, macOS <code>~/Library/Application Support/quark</code>, Linux <code>~/.local/share/quark</code>). The game reads it at startup.</li>
+          <li><b>For everyone</b>, in a checkout of the game: <code id="hrepo">assets/overrides/models/player/STANDARD.glb</code>. It's built into the game and ships with the next release.</li>
+        </ul>
+        <p>Metres, +Y up, front at -Z. Players stand on the origin, 2 m tall, and share one hitbox: stay inside the default's outline. A box marked <b>team colour</b> is exported white in a material named <code>team</code>, which the game paints in the team colour (your accent colour on a weapon, gold or silver on the crown). Up to 20,000 triangles (each box is 12). The full rules are in <a href="https://github.com/floration/quark/blob/main/docs/ASSETS.md">docs/ASSETS.md</a>.</p>
+      </div>
+    </section>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <p>Free and open source. No ads, no tracking, no cookies.</p>
+      <p class="small">3D viewer: <a href="https://threejs.org">three.js</a> (MIT).</p>
+    </div>
+    <ul aria-label="Links">
+      <li><a href="../">Home</a></li>
+      <li><a href="./">Assets</a></li>
+      <li><a href="../sounds/">Sounds</a></li>
+      <li><a href="../leaderboard/">Leaderboard</a></li>
+      <li><a href="../updates/">Updates</a></li>
+      <li><a href="../testing/">Testing</a></li>
+      <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+      <li><a href="https://github.com/floration/quark">GitHub</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="../common.js"></script>
+<script>
+"use strict";
+// The viewer and the .qmap reader are the Asset Studio's (tools/studio/index.html); the data is its export too
+// (tools/site_assets.py). One three.js scene for browsing, one for the box builder (made when first opened).
+const $ = s => document.querySelector(s);
+const TABS = [["player", "Players"], ["weapon", "Weapons"], ["projectile", "Projectiles"], ["crown", "Crown"], ["map", "Maps"], ["make", "Make your own"]];
+const TEAMS = [["Blue", 0x3a8dff], ["Red", 0xff5a4a], ["Neutral", 0xb9c4cf]];
+const S = { ch: Q.channelOf(), data: null, tab: "player", sel: {}, team: 0 };
+try { const h = location.hash.slice(1); if (TABS.some(t => t[0] === h)) S.tab = h; } catch (e) { /* fine */ }
+const groupOf = it => it.kind === "map" ? "map" : (it.file.split("/")[1] || "");
+
+// ---------- 3D: a three.js scene on a canvas (orbit, zoom and pan with OrbitControls; spins until touched)
+function scene3d(cv) {
+  if (!window.THREE || !THREE.OrbitControls) return null;
+  const rd = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+  rd.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  const sc = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 4 / 3, 0.01, 5000);
+  sc.add(new THREE.HemisphereLight(0xdfefff, 0x23303d, 1.1));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.0); sun.position.set(3, 6, 4); sc.add(sun);
+  const ctl = new THREE.OrbitControls(cam, cv); ctl.enableDamping = true; ctl.autoRotate = true; ctl.screenSpacePanning = true;
+  const fit = () => { const w = cv.clientWidth, h = cv.clientHeight; if (w && h) { rd.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); } };
+  new ResizeObserver(fit).observe(cv); fit();
+  const loop = () => { requestAnimationFrame(loop); if (cv.offsetParent === null) return; ctl.update(); rd.render(sc, cam); };
+  loop();
+  cv.addEventListener("pointerdown", () => { v.spin(false); });
+  const v = { rd, sc, cam, ctl, onSpin: null,
+    spin(on) { ctl.autoRotate = on; if (v.onSpin) v.onSpin(on); },
+    frame(obj, dist = 1.6) {
+      const b = new THREE.Box3().setFromObject(obj); if (b.isEmpty()) return;
+      const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length() || 1;
+      ctl.target.copy(c); cam.position.copy(c).add(new THREE.Vector3(0.6, 0.45, 1).normalize().multiplyScalar(s * dist));
+      cam.near = s / 500; cam.far = s * 50; cam.updateProjectionMatrix(); ctl.update();
+    } };
+  return v;
+}
+const noGL = cv => cv.replaceWith(Object.assign(document.createElement("div"), { className: "state", innerHTML: "<div><b>The 3D viewer didn't load.</b> It needs WebGL and a connection to its library (three.js from cdn.jsdelivr.net).</div>" }));
+const disposeTree = o => o.traverse(x => { if (x.geometry) x.geometry.dispose(); if (x.material) [].concat(x.material).forEach(m => m.dispose()); });
+const tintTeam = (obj, hex) => obj && obj.traverse(o => { if (o.material && /^team/i.test(o.material.name || "")) o.material.color.setHex(hex); });
+
+// a .qmap: boxes by material (instanced), spawns as yellow cones (the studio's reader)
+const MAT_COL = { box: 0x8c96a3, accent: 0x5f7fa0, wallbang: 0x3b4048, metal: 0x9aa7b4, glow: 0x9ff0ff, far: 0x4a5560, water: 0x2f74c8, lava: 0xff6a1f, trim: 0x6d8fb0, ladder: 0xb08a55 };
+function qmapGroup(text, showFar) {
+  const group = new THREE.Group(), byMat = {}, spawns = [];
+  for (const line of text.split("\n")) {
+    const w = line.trim().split(/\s+/);
+    if (MAT_COL[w[0]] !== undefined && w.length >= 7) {
+      if (w[0] === "far" && !showFar) continue;
+      const n = w.slice(1, 7).map(Number); if (n.some(isNaN)) continue;
+      (byMat[w[0]] = byMat[w[0]] || []).push(n);
+    } else if (w[0] === "spawn" && w.length >= 5) spawns.push([+w[2], +w[3], +w[4]]);
+  }
+  const geo = new THREE.BoxGeometry(1, 1, 1), m4 = new THREE.Matrix4();
+  for (const [mat, boxes] of Object.entries(byMat)) {
+    const transparent = mat === "water" || mat === "lava";
+    const material = new THREE.MeshLambertMaterial({ color: MAT_COL[mat], transparent, opacity: transparent ? 0.75 : 1, emissive: mat === "glow" || mat === "lava" ? MAT_COL[mat] : 0x000000, emissiveIntensity: 0.6 });
+    const mesh = new THREE.InstancedMesh(geo, material, boxes.length);
+    boxes.forEach((b, i) => { m4.makeScale(Math.max(.01, b[3] - b[0]), Math.max(.01, b[4] - b[1]), Math.max(.01, b[5] - b[2])); m4.setPosition((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2); mesh.setMatrixAt(i, m4); });
+    group.add(mesh);
+  }
+  const sg = new THREE.ConeGeometry(0.5, 1.6, 8), sm = new THREE.MeshBasicMaterial({ color: 0xffb547 });
+  spawns.forEach(p => { const c = new THREE.Mesh(sg, sm); c.position.set(p[0], p[1] + 0.8, p[2]); group.add(c); });
+  group.userData.info = Object.values(byMat).reduce((a, b) => a + b.length, 0) + " blocks · " + spawns.length + " spawns (yellow)";
+  return group;
+}
+
+// ---------- browsing
+let V = null, shown = null, grid = null, loadSeq = 0, mapText = "", showFar = false;
+function initViewer() {
+  if (V !== null) return V;
+  V = scene3d($("#cv"));
+  if (!V) { noGL($("#cv")); return V; }
+  grid = new THREE.GridHelper(4, 16, 0x2c4257, 0x1a2633); V.sc.add(grid);
+  return V;
+}
+function mini(label, fn, cls = "") { const b = document.createElement("button"); b.type = "button"; b.className = "mini " + cls; b.textContent = label; b.onclick = fn; return b; }
+function setShown(obj) { if (shown) { V.sc.remove(shown); disposeTree(shown); } shown = obj; if (obj) V.sc.add(obj); }
+
+function showItem(it) {
+  S.sel[S.tab] = it.id;
+  document.querySelectorAll("#list .pick").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.id === it.id)));
+  $("#vname").textContent = it.name.charAt(0) + it.name.slice(1).toLowerCase().replace(/_/g, " ");
+  $("#vdesc").textContent = it.desc || "";
+  const bar = $("#vbar"); bar.innerHTML = "";
+  if (!initViewer()) return;
+  const seq = ++loadSeq, url = S.data.base + it.file;
+  const spinB = mini("Spin", () => V.spin(!V.ctl.autoRotate), "on"); bar.appendChild(spinB);
+  V.onSpin = on => spinB.classList.toggle("on", on);
+  const note = Object.assign(document.createElement("span"), { className: "hint" });
+  if (it.kind === "map") {
+    bar.appendChild(mini("Overview", () => shown && V.frame(shown, 1.1)));
+    const farB = mini("Distant scenery", () => { showFar = !showFar; farB.classList.toggle("on", showFar); setShown(qmapGroup(mapText, showFar)); }, showFar ? "on" : "");
+    bar.appendChild(farB); bar.appendChild(note);
+    grid.visible = false; setShown(null); note.textContent = "Loading the map...";
+    fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }).then(t => {
+      if (seq !== loadSeq) return;
+      mapText = t; const g = qmapGroup(t, showFar); setShown(g); V.frame(g, 1.1); V.spin(true); note.textContent = g.userData.info;
+    }).catch(() => { if (seq === loadSeq) note.textContent = "Couldn't read this map."; });
+  } else {
+    const tb = mini("Team: " + TEAMS[S.team][0], () => { S.team = (S.team + 1) % TEAMS.length; tb.textContent = "Team: " + TEAMS[S.team][0]; tintTeam(shown, TEAMS[S.team][1]); });
+    bar.appendChild(tb); bar.appendChild(mini("Reset view", () => shown && V.frame(shown))); bar.appendChild(note);
+    grid.visible = true; setShown(null); note.textContent = "Loading...";
+    new THREE.GLTFLoader().load(url, g => {
+      if (seq !== loadSeq) { disposeTree(g.scene); return; }
+      setShown(g.scene); tintTeam(g.scene, TEAMS[S.team][1]);
+      const b = new THREE.Box3().setFromObject(g.scene), s = b.getSize(new THREE.Vector3());
+      grid.position.y = b.min.y; grid.scale.setScalar(Math.max(0.1, Math.ceil(s.length() * 2) / 4));
+      V.frame(g.scene); V.spin(true);
+      note.textContent = s.x.toFixed(2) + " × " + s.y.toFixed(2) + " × " + s.z.toFixed(2) + " m";
+    }, undefined, () => { if (seq === loadSeq) note.textContent = "Couldn't read this model."; });
+  }
+}
+
+function renderTabs() {
+  $("#tabs").innerHTML = TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === S.tab}">${l}</button>`).join("");
+  $("#tabs").querySelectorAll("button").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; try { history.replaceState(null, "", "#" + S.tab); } catch (e) { /* fine */ } render(); });
+}
+function render() {
+  renderTabs();
+  const make = S.tab === "make", has = !!S.data;
+  $("#make").hidden = !make;
+  $("#browse").hidden = make || !has;
+  $("#nodata").hidden = make || has;
+  if (make) { Builder.open(); return; }
+  if (!has) return;
+  const items = S.data.items.filter(it => groupOf(it) === S.tab);
+  $("#list").innerHTML = items.map(it => `<li><button type="button" class="pick" data-id="${Q.esc(it.id)}" aria-pressed="false">${it.kind === "map" ? `<img src="../img/${Q.esc(it.file.split("/").pop().replace(/\.qmap$/, ""))}.jpg" alt="" loading="lazy" width="320" height="180" onerror="this.remove()">` : ""}<span>${Q.esc(it.name)}</span></button></li>`).join("")
+    || '<li class="empty">Nothing of this kind in this build.</li>';
+  $("#list").querySelectorAll(".pick").forEach(b => b.onclick = () => showItem(S.data.items.find(i => i.id === b.dataset.id)));
+  const pick = items.find(i => i.id === S.sel[S.tab]) || items[0];
+  if (pick) showItem(pick);
+}
+
+function load(ch) {
+  S.ch = ch; $("#chinfo").textContent = "Loading...";
+  Q.assetData(ch).then(d => {
+    if (S.ch !== ch) return;
+    S.data = d;
+    const n = k => d.items.filter(i => groupOf(i) === k).length;
+    $("#chinfo").innerHTML = `Version <b>${Q.esc(d.version)}</b> · ${n("player") + n("weapon") + n("projectile") + n("crown")} models · ${n("map")} maps`;
+    render(); Builder.names();
+  }).catch(() => {
+    if (S.ch !== ch) return;
+    S.data = null; $("#chinfo").textContent = "";
+    $("#nodata").innerHTML = Q.noData(ch);
+    render(); Builder.names();
+  });
+}
+Q.channelSwitch($("#chsw"), S.ch, load);
+
+// ---------- make your own: boxes in a list, edited with the form or picked in 3D, exported with GLTFExporter
+const Builder = (() => {
+  const STARTERS = {
+    player: [{ p: [0, 0.45, 0], s: [0.5, 0.9, 0.3], c: "#3b4250", team: false }, { p: [0, 1.25, 0], s: [0.7, 0.7, 0.4], c: "#ffffff", team: true }, { p: [0, 1.8, 0], s: [0.35, 0.35, 0.35], c: "#d9c7b0", team: false }],
+    weapon: [{ p: [0, 0, 0], s: [0.08, 0.12, 0.3], c: "#5a6270", team: false }, { p: [0, 0.02, -0.3], s: [0.04, 0.04, 0.35], c: "#ffffff", team: true }],
+    projectile: [{ p: [0, 0, 0], s: [0.1, 0.1, 0.3], c: "#ffffff", team: true }, { p: [0, 0, -0.18], s: [0.06, 0.06, 0.06], c: "#ffb547", team: false }],
+    crown: [{ p: [0, 0.05, 0], s: [0.3, 0.1, 0.3], c: "#ffffff", team: true }, { p: [0, 0.14, 0], s: [0.06, 0.08, 0.06], c: "#ffffff", team: true }],
+  };
+  const KEY = "quark-builder-v1", copy = x => JSON.parse(JSON.stringify(x));
+  let st = { kind: "player", name: {}, boxes: {} }, cur = 0, B = null, meshes = [], ghost = null, ghostOn = true, team = 0, ghostSeq = 0;
+  try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.boxes) st = Object.assign(st, s); } catch (e) { /* storage off: fine */ }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* fine */ } };
+  const boxes = () => (st.boxes[st.kind] = st.boxes[st.kind] || copy(STARTERS[st.kind]));
+  const geo = () => new THREE.BoxGeometry(1, 1, 1);
+
+  function open() {
+    if (B === null) {
+      B = scene3d($("#bcv"));
+      if (!B) { noGL($("#bcv")); return; }
+      B.grid = new THREE.GridHelper(4, 40, 0x2c4257, 0x1a2633); B.sc.add(B.grid);
+      B.arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.002, 0), 1, 0x40d9ff); B.sc.add(B.arrow);
+      B.spin(false);
+      pickWithClick();
+      $("#bkind").value = st.kind;
+      draw(true);
+    }
+    names();
+  }
+  // the models this kind can replace (the download's name)
+  function names() {
+    const list = S.data ? S.data.items.filter(i => i.kind === "model" && groupOf(i) === st.kind).map(i => i.name) : [];
+    const fallback = { player: ["STANDARD"], weapon: ["ROCKET"], projectile: ["ROCKET"], crown: ["CROWN"] }[st.kind];
+    const opts = list.length ? list : fallback;
+    $("#bname").innerHTML = opts.map(n => `<option>${Q.esc(n)}</option>`).join("");
+    if (opts.includes(st.name[st.kind])) $("#bname").value = st.name[st.kind];
+    st.name[st.kind] = $("#bname").value;
+    paths(); loadGhost();
+  }
+  function paths() {
+    const f = st.name[st.kind] + ".glb", p = "overrides/models/" + st.kind + "/" + f;
+    $("#hfile").textContent = f; $("#huser").textContent = p; $("#hrepo").textContent = "assets/" + p;
+  }
+  function loadGhost() {
+    if (!B) return;
+    if (ghost) { B.sc.remove(ghost); disposeTree(ghost); ghost = null; }
+    const it = S.data && S.data.items.find(i => i.kind === "model" && groupOf(i) === st.kind && i.name === st.name[st.kind]);
+    if (!it || !ghostOn) return;
+    const seq = ++ghostSeq;
+    new THREE.GLTFLoader().load(S.data.base + it.file, g => {
+      if (seq !== ghostSeq || !ghostOn) { disposeTree(g.scene); return; }
+      g.scene.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = 0.22; o.material.depthWrite = false; } o.raycast = () => {}; });
+      ghost = g.scene; B.sc.add(ghost);
+    }, undefined, () => {});
+  }
+  function draw(reframe) {
+    if (!B) return;
+    meshes.forEach(m => { B.sc.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    const bs = boxes();
+    cur = Math.min(cur, bs.length - 1);
+    meshes = bs.map((b, i) => {
+      const m = new THREE.Mesh(geo(), new THREE.MeshStandardMaterial({ color: b.team ? TEAMS[team][1] : b.c, roughness: 0.8, metalness: 0.05,
+        emissive: i === cur ? 0x0b3a48 : 0x000000 }));
+      m.position.fromArray(b.p); m.scale.fromArray(b.s.map(v => Math.max(0.001, v))); m.userData.i = i;
+      B.sc.add(m); return m;
+    });
+    if (reframe && meshes.length) { const g = new THREE.Group(); meshes.forEach(m => g.add(m.clone())); B.frame(g, 1.9); }
+    const scale = { player: 1, weapon: 0.25, projectile: 0.15, crown: 0.2 }[st.kind];
+    B.grid.scale.setScalar(scale); B.arrow.setLength(scale * 0.8, scale * 0.15, scale * 0.08);
+    $("#bsel").innerHTML = bs.map((b, i) => `<option value="${i}">Box ${i + 1}${b.team ? " (team)" : ""}</option>`).join("");
+    $("#bsel").value = String(cur);
+    form(); save();
+  }
+  function form() {
+    const b = boxes()[cur], dis = !b;
+    ["px", "py", "pz", "sx", "sy", "sz", "bcol", "bisteam"].forEach(id => $("#" + id).disabled = dis);
+    $("#bdel").disabled = $("#bdup").disabled = dis;
+    if (!b) return;
+    ["px", "py", "pz"].forEach((id, k) => $("#" + id).value = +b.p[k].toFixed(3));
+    ["sx", "sy", "sz"].forEach((id, k) => $("#" + id).value = +b.s[k].toFixed(3));
+    $("#bcol").value = b.c; $("#bisteam").checked = !!b.team; $("#bcol").disabled = !!b.team;
+  }
+  function edit() {
+    const b = boxes()[cur]; if (!b) return;
+    const num = (id, d) => { const v = parseFloat($("#" + id).value); return isFinite(v) ? v : d; };
+    b.p = ["px", "py", "pz"].map((id, k) => Math.max(-50, Math.min(50, num(id, b.p[k]))));
+    b.s = ["sx", "sy", "sz"].map((id, k) => Math.max(0.005, Math.min(50, num(id, b.s[k]))));
+    b.c = $("#bcol").value; b.team = $("#bisteam").checked;
+    draw(false);
+  }
+  function pickWithClick() {
+    const cv = $("#bcv"); let down = null;
+    cv.addEventListener("pointerdown", e => down = [e.clientX, e.clientY]);
+    cv.addEventListener("pointerup", e => {
+      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+      const r = cv.getBoundingClientRect(), ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), B.cam);
+      const hit = ray.intersectObjects(meshes)[0];
+      if (hit) { cur = hit.object.userData.i; draw(false); }
+    });
+  }
+  ["px", "py", "pz", "sx", "sy", "sz", "bcol", "bisteam"].forEach(id => $("#" + id).addEventListener("input", edit));
+  $("#bsel").onchange = () => { cur = +$("#bsel").value; draw(false); };
+  $("#bkind").onchange = () => { st.kind = $("#bkind").value; cur = 0; names(); draw(true); };
+  $("#bname").onchange = () => { st.name[st.kind] = $("#bname").value; paths(); loadGhost(); save(); };
+  $("#badd").onclick = () => {
+    const bs = boxes(); if (bs.length >= 500) { $("#bmsg").textContent = "500 boxes is the limit here."; return; }
+    const sc = { player: 1, weapon: 0.25, projectile: 0.15, crown: 0.2 }[st.kind];
+    bs.push({ p: [0, sc * 0.25, 0], s: [sc * 0.25, sc * 0.25, sc * 0.25], c: "#8c96a3", team: false }); cur = bs.length - 1; draw(false);
+  };
+  $("#bdup").onclick = () => { const bs = boxes(), b = bs[cur]; if (!b) return; const c = copy(b); c.p[0] += b.s[0]; bs.push(c); cur = bs.length - 1; draw(false); };
+  $("#bdel").onclick = () => { const bs = boxes(); if (!bs[cur]) return; bs.splice(cur, 1); cur = Math.max(0, cur - 1); draw(false); };
+  $("#bnew").onclick = () => {
+    const b = $("#bnew");
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Click again to start over"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Start over"; }, 3000); return; }
+    b.dataset.armed = ""; b.textContent = "Start over"; st.boxes[st.kind] = copy(STARTERS[st.kind]); cur = 0; draw(true);
+  };
+  $("#bteam").onclick = () => { team = (team + 1) % TEAMS.length; $("#bteam").textContent = "Team: " + TEAMS[team][0]; draw(false); };
+  $("#bghost").onclick = () => { ghostOn = !ghostOn; $("#bghost").classList.toggle("on", ghostOn); $("#bghost").setAttribute("aria-pressed", String(ghostOn)); loadGhost(); };
+  $("#bexport").onclick = () => {
+    const msg = $("#bmsg");
+    if (!window.THREE || !THREE.GLTFExporter) { msg.textContent = "The exporter didn't load (no connection to three.js)."; return; }
+    const bs = boxes(); if (!bs.length) { msg.textContent = "Add a box first."; return; }
+    // one material per colour; team boxes white in "team" (the game paints white as exactly the team colour)
+    const mats = {}, root = new THREE.Scene(); root.name = st.name[st.kind];
+    const matFor = b => { const k = b.team ? "team" : "paint_" + b.c.slice(1); return mats[k] = mats[k] || Object.assign(new THREE.MeshStandardMaterial({ color: b.team ? 0xffffff : b.c, roughness: 1, metalness: 0 }), { name: k }); };
+    bs.forEach((b, i) => { const m = new THREE.Mesh(new THREE.BoxGeometry(b.s[0], b.s[1], b.s[2]), matFor(b)); m.name = "box" + (i + 1); m.position.fromArray(b.p); root.add(m); });
+    new THREE.GLTFExporter().parse(root, glb => {
+      const a = document.createElement("a"), url = URL.createObjectURL(new Blob([glb], { type: "model/gltf-binary" }));
+      a.href = url; a.download = st.name[st.kind] + ".glb"; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      msg.textContent = `Saved ${a.download}: ${bs.length} boxes, ${bs.length * 12} triangles. Where it goes is below.`;
+      disposeTree(root);
+    }, err => { msg.textContent = "Export failed: " + (err && err.message || err); }, { binary: true });
+  };
+  return { open, names };
+})();
+
+renderTabs();
+load(S.ch);
+</script>
+</body>
+</html>

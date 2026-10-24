@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 0.32.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 0.32.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Every map reworked for gameplay</h3>
+<p>Each map now has its own layout idea and a centrepiece it&#x27;s named after:</p>
+<ul>
+<li><b>Crucible (duel):</b> a molten moat around a central island, reached by four narrow bridges. The crucible hangs above the island. Knock your opponent into the moat.
+</li>
+<li><b>Depot (bomb):</b> three different lanes:
+<ul>
+<li>West runs through a roofed warehouse full of racks.
+</li>
+<li>The middle crosses an open yard around a freight truck you can climb onto.
+</li>
+<li>East drops into a sunken loading trench under a raised dock.
+</li></ul>
+</li>
+<li><b>Summit (koth):</b> the hill is a mountain peak, three terraces up with a beacon on top. There are crevasses in the corners and two mountain huts.
+</li>
+<li><b>Railyard (payload):</b> the track runs through a roofed tunnel, past a station platform with a canopy and under a footbridge. A steam locomotive waits on the siding.
+</li>
+<li><b>Canal (neutral payload):</b> water channels either side of the causeway; fall in and you&#x27;re out. Each channel has three bridges. Lock gates stand at both ends, with houses on the banks.
+</li>
+<li><b>Harbor (FFA):</b>
+<ul>
+<li>The sea runs along the quay.
+</li>
+<li>A freighter is moored there that you can board and walk through.
+</li>
+<li>There are three piers and a lighthouse.
+</li></ul>
+</li>
+<li><b>Bastion (all modes):</b>
+<ul>
+<li>A keep stands on an island in a moat, with four drawbridges.
+</li>
+<li>Raised bastions on the flanks.
+</li>
+<li>Curtain walls with gates.
+</li>
+<li>Battlements along the walls.
+</li></ul>
+</li>
+<li><b>Foundry (all modes):</b> a giant ladle pours into a casting pit, with molten runners leading off it. There are furnaces in the walls.
+</li>
+<li><b>Colosseum (all modes):</b> a gladiator statue in the middle and two open beast pits in the arena floor.
+</li>
+<li><b>Ranked maps</b> (all still point-symmetric):
+<ul>
+<li><b>Temple:</b> reflecting pools and a pagoda shrine over a golden idol.
+</li>
+<li><b>Furnace:</b> glowing grates and molten trenches behind the inner walls.
+</li>
+<li><b>Gantry:</b> an open loading bay under the middle bridge, plus crane cabs with hanging containers.
+</li>
+<li><b>Anvil:</b> an anvil with horns, and two giant hammers.
+</li></ul>
+</li></ul>
+<h3>New race map: Viaduct</h3>
+<p>A long course over a chasm. It starts on a bridge on stone arches, then goes:</p>
+<ul>
+<li>up stepping stones,
+</li>
+<li>through a covered lane and up a climb,
+</li>
+<li>across a narrow beam (or grapple across the gap),
+</li>
+<li>through a slalom and down more stones,
+</li>
+<li>and home through the finish arch.
+</li></ul>
+<p>There are five checkpoints. If you fall, you restart from your last checkpoint.</p>
+<h3>Looks</h3>
+<ul>
+<li>Every map has distant scenery beyond its walls: a city skyline, mountains, smokestacks, harbour cranes, pagodas or ruins. It&#x27;s unlit and costs almost nothing to draw.
+</li>
+<li>Outdoor maps get yard-style walls with lamp posts. Bastion has battlements.
+</li>
+<li>The payload is now an armoured ore cart: metal chassis on wheels, a team-coloured band and a glowing core, all in the map&#x27;s colours.
+</li>
+<li>Weapons take their colours from the map: metal bodies, with the map&#x27;s glow on emitters, scopes and canisters.
+</li></ul>
+<h3>Under the hood</h3>
+<ul>
+<li>New map setting <code>void &lt;y&gt;</code>: falling below that height kills. Pits use it, so you&#x27;re out about a second after falling in, not after a 20 m drop.
+</li>
+<li>New <code>far</code> material for distant scenery: no collision, no lightmap and not counted in the map&#x27;s bounds. It&#x27;s available in the editor.
+</li>
+<li>Glow surfaces no longer take up lightmap space.
+</li>
+<li>Bots:
+<ul>
+<li>They follow the shared edge between surfaces instead of cutting corners across holes.
+</li>
+<li>On maps with pits, they brake at edges, even mid-hop.
+</li></ul>
+</li>
+<li>New <code>quark_tests playtest</code>: bots play every map in its own mode and report kills, falls and objective progress.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../0.31.2/">&larr; 0.31.2</a></span><span><a href="../0.33.0/">0.33.0 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,110 @@
+[
+ {
+  "name": "RIFLE",
+  "damage": 4.95,
+  "pellets": 1,
+  "refire": 0.15151515151515152,
+  "splash": false,
+  "beam": false,
+  "projectile": false,
+  "shots": 21,
+  "ttk": 3.03,
+  "scope": true
+ },
+ {
+  "name": "ROCKET",
+  "damage": 34.0,
+  "pellets": 1,
+  "refire": 1.2,
+  "splash": true,
+  "beam": false,
+  "projectile": true,
+  "shots": 3,
+  "ttk": 2.4,
+  "scope": false
+ },
+ {
+  "name": "KNIFE",
+  "damage": 30.0,
+  "pellets": 1,
+  "refire": 0.75,
+  "splash": false,
+  "beam": false,
+  "projectile": false,
+  "shots": 4,
+  "ttk": 2.25,
+  "scope": false
+ },
+ {
+  "name": "SNIPER",
+  "damage": 50.0,
+  "pellets": 1,
+  "refire": 1.5,
+  "splash": false,
+  "beam": false,
+  "projectile": false,
+  "shots": 2,
+  "ttk": 1.5,
+  "scope": true
+ },
+ {
+  "name": "LASER",
+  "damage": 0.04,
+  "pellets": 1,
+  "refire": 0.001,
+  "splash": false,
+  "beam": true,
+  "projectile": false,
+  "shots": 2500,
+  "ttk": 2.499,
+  "scope": false
+ },
+ {
+  "name": "SHOTGUN",
+  "damage": 1.7,
+  "pellets": 20,
+  "refire": 0.75,
+  "splash": false,
+  "beam": false,
+  "projectile": false,
+  "shots": 3,
+  "ttk": 1.5,
+  "scope": false
+ },
+ {
+  "name": "STICKY",
+  "damage": 29.75,
+  "pellets": 1,
+  "refire": 0.75,
+  "splash": true,
+  "beam": false,
+  "projectile": true,
+  "shots": 4,
+  "ttk": 2.25,
+  "scope": false
+ },
+ {
+  "name": "CROSSBOW",
+  "damage": 50.0,
+  "pellets": 1,
+  "refire": 2.0,
+  "splash": false,
+  "beam": false,
+  "projectile": true,
+  "shots": 2,
+  "ttk": 2.0,
+  "scope": true
+ },
+ {
+  "name": "BUBBLE",
+  "damage": 10.0,
+  "pellets": 1,
+  "refire": 0.2,
+  "splash": true,
+  "beam": false,
+  "projectile": true,
+  "shots": 10,
+  "ttk": 1.8,
+  "scope": false
+ }
+]

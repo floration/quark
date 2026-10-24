@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.9.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.9.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Release fix</h3>
+<ul>
+<li>The 1.8.0 Linux build stalled in its tests and the release never went out. This release includes everything from 1.8.0.
+</li>
+<li>A test run that hangs now fails after 25 minutes, and the log shows which test it stopped on. The time trial test also no longer fails on a slow machine.
+</li></ul>
+<h3>Scoreboard</h3>
+<ul>
+<li>SCORE is now total damage to enemies / 10 + seconds on the objective (on the hill or point, or by the cart).
+</li>
+<li>New DMG and OBJ columns show each part separately.
+</li>
+<li>Race, hide and seek, and tag keep their own scores.
+</li></ul>
+<h3>Players</h3>
+<ul>
+<li>Player outline colours: Settings &gt; TEAM OUTLINE / ENEMY OUTLINE. Choose black, white, team colour, red, yellow, green, cyan or magenta.
+</li>
+<li>Every player model is now mostly the team colour. The grey bodies on the robot, knight and heavy are gone.
+</li>
+<li>When you spectate someone, you see their health.
+</li></ul>
+<h3>Tag</h3>
+<ul>
+<li>The tagger is red on every screen, including their own. Everyone else is blue, and a new tagger turns red as soon as they&#x27;re tagged.
+</li>
+<li>&quot;IT&quot; is now &quot;TAGGER&quot;.
+</li></ul>
+<h3>Weapons</h3>
+<ul>
+<li>Sniper shots collateral: one shot hits every player in its line, up to the wall.
+</li>
+<li>Laser alt-fire pulls 40% harder.
+</li>
+<li>Rifle tracers last 20% less time.
+</li>
+<li>Enemy shotgun shots now show their pellet tracers.
+</li>
+<li>Hiding the weapon model also hides your own tracers and laser beam.
+</li>
+<li>An enemy&#x27;s shot sound no longer plays twice when their firing state flickers between snapshots.
+</li></ul>
+<h3>Other fixes</h3>
+<ul>
+<li>Tourney: a bye can no longer win. Balance bots were being removed while they waited as spectators, which forfeited their matches.
+</li>
+<li>Map editing by vote, then VOTE: PLAY IT: tested end to end. If the map can&#x27;t be played, everyone now sees why.
+</li>
+<li>Chat: pressing Enter shows the recent chat history while you type.
+</li>
+<li>Mouse DPI is a text field: click it and type any DPI.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.8.0/">&larr; 1.8.0</a></span><span><a href="../1.10.0/">1.10.0 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

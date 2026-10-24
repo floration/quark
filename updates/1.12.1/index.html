@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.12.1: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.12.1</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Fixes</h3>
+<ul>
+<li><b>Choppy audio on Windows.</b> Sound kept cutting to silence for a few milliseconds at a time.
+<ul>
+<li>The cause: the audio thread slept between buffers, and Windows rounds a short sleep up to about 15 ms, longer than the queued audio lasts.
+</li>
+<li>The fix: it now wakes exactly when the sound card finishes a buffer, and keeps 30 ms queued instead of 20.
+</li></ul>
+</li></ul>
+<h3>Announcer</h3>
+<ul>
+<li>All seven voices (male, female, British, old man, e-girl, India, spy) now have their own recordings of every mode call:
+<ul>
+<li>bomb planted and bomb defused;
+</li>
+<li>hill captured and hill lost;
+</li>
+<li>point captured and point lost;
+</li>
+<li>round won and round lost;
+</li>
+<li>overtime;
+</li>
+<li>new high score;
+</li>
+<li>new leader.
+</li></ul>
+</li>
+<li>The &quot;airborne&quot; and the 10 and 5 second calls are gone.
+</li></ul>
+<h3>Demos</h3>
+<ul>
+<li><b>OPEN FOLDER</b> button in the demo list.
+</li>
+<li>Record at 62.5 Hz or at full rate: every snapshot, up to 1000 Hz. Full rate is smoother but makes much bigger files.
+</li></ul>
+<h3>Temple</h3>
+<ul>
+<li>Opened up: no outer walls any more. It&#x27;s now a temple on a mountain top, with the courts ending at a cliff edge.
+</li>
+<li>Spread out more, with a lantern-lit balustrade along the edge (gaps to drop through).
+</li>
+<li>New cover and height: ruined cloister walls, two ruined towers (stairs, then a ladder to a 7 m perch) and raised offering plinths.
+</li></ul>
+<h3>New map: Dojo (ranked laser vampire)</h3>
+<ul>
+<li>A great training hall. Both fighters start across the tatami in sight of each other, facing each other.
+</li>
+<li>Nobody can fire for the first 5 seconds of a round; a HOLD FIRE countdown shows it.
+</li>
+<li>There&#x27;s a raised fighting ring, koi pools, galleries behind paper screens (the laser goes through them), and balconies at both ends.
+</li>
+<li>You can climb ladders up to the roof beams and a ridge walk 12 m up.
+</li></ul>
+<h3>Gantry (ranked instagib)</h3>
+<ul>
+<li>Rebuilt 1.5x longer, 2x wider and 2x taller.
+</li>
+<li>Two catwalk tiers, cranes 18 m up (ladders onto them), a container yard in the middle and a gangway across the flooded dock.
+</li>
+<li>Built for free for all now, the way ranked instagib is played: 14 spawns, mostly out of each other&#x27;s sight. Nobody has a shot from spawn to spawn.
+</li></ul>
+<h3>Midtown</h3>
+<ul>
+<li>Lights inside every office, on both floors.
+</li>
+<li>Doorways are clear: nothing stands in them, and the facade strips no longer cross the doors.
+</li></ul>
+<h3>Gameplay</h3>
+<ul>
+<li>Rockets and stickies inherit 90% of your velocity instead of 100%, so firing straight down while moving boosts you forward again.
+</li>
+<li>Multi point and payload: defenders on the point (or by the cart) only earn objective time while they&#x27;re contesting it, with an attacker there too.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.12.0/">&larr; 1.12.0</a></span><span><a href="../1.12.2/">1.12.2 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>

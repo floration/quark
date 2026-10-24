@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark 1.14.0: everything that changed</title>
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap">
+<a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+<nav aria-label="Main"><ul class="nav"><li><a href="../../#modes">Modes</a></li><li><a href="../../#maps">Maps</a></li><li><a href="../../#weapons">Weapons</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/" aria-current="page">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul></nav>
+<a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+</div></header>
+<main id="main">
+<div class="page-head"><div class="wrap">
+<p class="crumbs"><a href="../">&larr; All updates</a></p>
+<p class="eyebrow">Update</p>
+<h1>quark 1.14.0</h1>
+<p class="lede">Everything that changed in this version, and why.</p>
+</div></div>
+<div class="page"><div class="wrap">
+<p class="note">The full notes for this version are its short notes: that was all that was written then.</p>
+<div class="prose">
+<h3>Movement</h3>
+<ul>
+<li>Run speed 8 -&gt; <b>12 m/s</b>; gravity <b>+10%</b> (less floaty). The standing jump is still 1.22 m, so every ledge you could reach you still can. (The run speed went back to 8 m/s in 1.14.1.)
+</li>
+<li>Dashes out of fast strafes still add speed (exit cap 32 m/s); overstrafing loses about as much as before.
+</li></ul>
+<h3>Sound</h3>
+<ul>
+<li>New sound kits: <b>DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN</b>. Heavy Metal, Magical and Wooden use real recordings (Kenney.nl, CC0): steel hits and real explosions, glass chimes, wood knocks. Every sound has its own version in every kit, all mixed to the same loudness.
+</li>
+<li>Race: a ding at every checkpoint and a chime at the finish.
+</li></ul>
+<h3>Maps</h3>
+<ul>
+<li><b>Hightown</b>: two big switchback staircases along the outside walls instead of the lift shafts.
+</li>
+<li><b>Viaduct</b>: an invisible ceiling at the top of the big walls (no more going over them), and lava falls down the middle of every section so you can&#x27;t hook or dash around a leg.
+</li>
+<li><b>Temple</b>: the side staircases split either side of the bridge (no more cracking your head on it).
+</li>
+<li><b>Lodestone</b>: no lamp post in the middle of a staircase.
+</li>
+<li><b>Lava kills on touch</b> (everywhere, including editor maps).
+</li></ul>
+<h3>Map editor</h3>
+<ul>
+<li>New materials: <b>WATER</b> (wade in it) and <b>LAVA</b> (kills).
+</li>
+<li><b>Rotate 90 degrees</b> about any axis (R, Shift+R, Ctrl+R) and <b>mirror</b> across any plane (F, Shift+F, Ctrl+F), with buttons; works on everything selected.
+</li>
+<li>Editing together: <b>chat</b> (Enter) and <b>votes</b> (F1 / F2) work in the editor.
+</li>
+<li>Calling a vote that&#x27;s already running counts as a yes. &quot;Play it&quot; passes after 30 s unless someone votes no.
+</li></ul>
+<h3>Menus</h3>
+<ul>
+<li>Checked every menu: Esc now behaves consistently (settings pages, info, custom mode editor, race stats), menus reset when you leave a game, Controls / Settings / HUD layout fit on 720p and smaller screens, server and demo lists scroll, the pause menu dims the game, wording fixes.
+</li>
+<li>Menus no longer read files every frame.
+</li></ul>
+<h3>Discord bot</h3>
+<ul>
+<li>The live player count channel sits at the very top of the server.
+</li></ul>
+</div>
+<nav class="pager" aria-label="Other versions"><span><a href="../1.13.0/">&larr; 1.13.0</a></span><span><a href="../1.14.1/">1.14.1 &rarr;</a></span></nav>
+</div></div>
+</main>
+<footer class="foot"><div class="wrap">
+<div><p>Free and open source. No ads, no tracking, no cookies.</p><p class="small">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>
+<ul aria-label="Links"><li><a href="../../">Home</a></li><li><a href="../../assets/">Assets</a></li><li><a href="../../sounds/">Sounds</a></li><li><a href="../../leaderboard/">Leaderboard</a></li><li><a href="../../updates/">Updates</a></li><li><a href="../../testing/">Testing</a></li><li><a href="https://github.com/floration/quark/releases">Releases</a></li><li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li><li><a href="https://github.com/floration/quark">GitHub</a></li></ul>
+</div></footer>
+</body>
+</html>
