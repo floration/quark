@@ -1028,7 +1028,19 @@ void Game::handleEvents() {
                 if (nameColorOf(e.b, nc)) { size_t vn = net_.playerName(e.b).size(); f.spans.push_back({killer.empty() || e.a == e.b ? 0 : t.size() - vn, vn, nc}); }
                 killFeed_.push_back(f);
                 while (killFeed_.size() > 6) killFeed_.pop_front();
-                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) specTarget_ = e.a;
+                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) { specTarget_ = e.a; killCamUntil_ = time_ + kKillCamTime; }
+                if (e.b == net_.clientId()) {   // the death screen: the victim's copy carries "<killer hp> <respawn ms>"
+                    deathValid_ = true;
+                    deathKiller_ = e.a < kMaxPlayers && e.a != e.b ? e.a : -1;
+                    deathWeapon_ = wpn;
+                    deathKillerHp_ = -1;
+                    deathRespawnAt_ = -1;
+                    int hp = -1, ms = -1;
+                    if (!e.text.empty() && std::sscanf(e.text.c_str(), "%d %d", &hp, &ms) == 2) {
+                        deathKillerHp_ = hp >= 0 && hp <= 9999 ? hp : -1;
+                        if (ms >= 0 && ms <= 600000) deathRespawnAt_ = time_ + ms * 0.001;
+                    }
+                }
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
@@ -1475,12 +1487,13 @@ void Game::frame(double dt) {
         int hp = net_.selfHealth();
         if (hp < lastHealth_ && net_.selfAlive()) { damageUntil_ = time_ + 0.25; audio_.play(SND_HURT, 0.7f); }
         lastHealth_ = hp;
+        if (net_.selfAlive()) deathValid_ = false;   // (the death screen is this death's only)
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
             const auto& ps = framePlayers();
             for (int k = 1; k <= kMaxPlayers; k++) {
                 int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
-                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
+                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
             }
         }
         captureMouse(!paused_ && !chatting_ && !bake_);
@@ -1599,7 +1612,9 @@ void Game::drawWorld(float alpha) {
         bool crouch = net_.predicted().flags & MF_CROUCHED;
         eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
     } else {
-        if (specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
+        // team modes: an enemy (the killer) only for kKillCamTime, then a teammate (F11)
+        const bool enemyCam = specTarget_ >= 0 && modeIsTeamBased(ms.mode) && !isFriendly(specTarget_) && time_ >= killCamUntil_;
+        if (enemyCam || specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
             for (int i = 0; i < kMaxPlayers; i++)
                 if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && (isFriendly(i) || !modeIsTeamBased(ms.mode))) { specTarget_ = i; break; }
@@ -2700,9 +2715,24 @@ void Game::drawHud() {
             }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
-        std::string t = mep && (mep->flags & PS_SPECTATOR) ? "SPECTATING" : "DEAD";
+        const bool spectator = mep && (mep->flags & PS_SPECTATOR);
+        std::string t = spectator ? "SPECTATING" : "DEAD";
         if (specTarget_ >= 0) t += " - WATCHING " + net_.playerName(specTarget_) + " (CLICK TO CYCLE)";
         ui_.labelCentered(cx, H - 60 * s, t, kGrey);
+        if (!spectator && deathValid_) {   // X1: who, with what, their health; then the respawn countdown
+            const float lh = r_.textHeight(std::max(1.0f, std::round(ts))) + 6 * s;
+            float y = H - 60 * s - lh;
+            if (deathRespawnAt_ >= 0) {
+                char b[32];
+                std::snprintf(b, sizeof b, "RESPAWN IN %.1f", std::max(0.0, deathRespawnAt_ - time_));
+                ui_.labelCentered(cx, y, b, kWhite);
+                y -= lh;
+            }
+            std::string k = deathKiller_ >= 0 ? "KILLED BY " + net_.playerName(deathKiller_) + " [" + upper(weaponName(deathWeapon_)) + "]"
+                                              : std::string("YOU DIED [") + upper(weaponName(deathWeapon_)) + "]";
+            if (deathKiller_ >= 0 && deathKillerHp_ >= 0) k += " - " + std::to_string(deathKillerHp_) + " HP";
+            ui_.labelCentered(cx, y, k, rgba(cfg_.colorEnemy));
+        }
     }
 
     if (time_ < splitUntil_) { // race split, with the difference to your best run

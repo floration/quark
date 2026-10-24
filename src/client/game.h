@@ -435,6 +435,12 @@ private:
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
     int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
+    double killCamUntil_ = 0;   // team modes: the killer can be watched until then (kKillCamTime), then teammates only
+    // the death screen (X1): who killed you with what, their health then (-1: not shown, ranked or an old server), and
+    // when you respawn (-1: not known / not this round)
+    int deathKiller_ = -1, deathWeapon_ = -1, deathKillerHp_ = -1;
+    double deathRespawnAt_ = -1;
+    bool deathValid_ = false;
 
     // effects + feeds
     struct Span { size_t at, len; Color color; };   // part of a feed line in its own colour (a player's chosen name colour)

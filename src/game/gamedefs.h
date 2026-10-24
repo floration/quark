@@ -194,6 +194,8 @@ struct WeaponDef {
     bool semiAuto = false; // one shot per click (a click up to 0.15 s early is kept until it can fire)
 };
 constexpr float kFireBuffer = 0.15f;
+constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
+constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
 constexpr float kShotgunKnock = 0.30f;     // shotgun knockback per pellet's worth of damage (m/s; a full blast: 20 x 0.30 = 6 m/s; owner 1.17: doubled from 0.15)

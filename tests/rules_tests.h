@@ -215,7 +215,10 @@ static void testThrowCooldown(uint16_t port) {
     double t0 = pa.lastFire;
     printf("  after the knife throw: weapon %d ready in %.2f s, knife back in %.2f s\n", pa.weapon, pa.nextFire - t0, pa.knifeBackAt - t0);
     CHECK(pa.weapon != WPN_KNIFE);   // switched away
-    CHECK(std::fabs(pa.nextFire - (t0 + weaponDef(WPN_KNIFE).refire)) < 0.002);   // the knife's swing cooldown, no more
+    // the knife's swing cooldown, no more: from the throw's command, on the command clock (F22), which is the server
+    // clock or up to 0.1 s behind it (here the test's pauses between pumps leave the client's commands short)
+    auto fromCmd = [&](double next, double refire, double t) { double c = next - refire; return c <= t + 0.002 && c >= t - 0.1 - 0.002; };
+    CHECK(fromCmd(pa.nextFire, weaponDef(WPN_KNIFE).refire, t0));
     CHECK(std::fabs(pa.knifeBackAt - (t0 + 4.0)) < 0.002);                         // the knife: disabled 4 s
     int other = pa.weapon;
     ba = 0; wa = other; pump(s, cls, 0.05, in);              // let go, then fire the weapon we got: nothing until the cooldown is over
@@ -234,7 +237,7 @@ static void testThrowCooldown(uint16_t port) {
     double t1 = pa.lastFire;
     printf("  after the syringe throw: weapon %d ready in %.2f s, syringe back in %.2f s\n", pa.weapon, pa.nextFire - t1, pa.syringeBackAt - t1);
     CHECK(pa.weapon != WPN_SYRINGE && pa.weapon != WPN_KNIFE);
-    CHECK(std::fabs(pa.nextFire - (t1 + 1.0)) < 0.002);        // the syringe's normal cooldown, now 1 s
+    CHECK(fromCmd(pa.nextFire, 1.0, t1));                      // the syringe's normal cooldown, now 1 s
     CHECK(std::fabs(pa.syringeBackAt - (t1 + 4.0)) < 0.002);   // the syringe: disabled 4 s
     CHECK(pa.knifeBackAt > s.time());                          // (the knife is still away)
     ba = 0; wa = other; pump(s, cls, 0.05, in);
