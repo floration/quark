@@ -1651,7 +1651,20 @@ void Game::drawWorld(float alpha) {
         Vec3 p = demoView ? players[me].snap.pos : net_.smoothedPos(alpha);
         bool crouch = net_.predicted().flags & MF_CROUCHED;
         eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+        {   // X7: a stair step moves you up to 0.55 m in one tick: the camera (only: shots still leave from the real eye)
+            // starts where it was and closes the gap with an 8 ms time constant (95% in 25 ms), up and down
+            const bool gr = !demoView && (net_.predicted().flags & MF_ONGROUND);
+            stepCam_ *= (float)std::exp(-frameDt_ / 0.008);
+            if (gr && stepGround_) {
+                const float dy = p.y - stepFeetY_;
+                if (std::fabs(dy) > 0.02f && std::fabs(dy) < 0.6f * bodyScale()) stepCam_ = clampf(stepCam_ - dy, -0.6f, 0.6f);
+            }
+            if (std::fabs(stepCam_) < 1e-4f) stepCam_ = 0;
+            stepFeetY_ = p.y; stepGround_ = gr;
+            eye.y += stepCam_;
+        }
     } else {
+        stepCam_ = 0; stepGround_ = false;
         if (specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
             for (int i = 0; i < kMaxPlayers; i++)
