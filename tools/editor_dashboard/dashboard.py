@@ -55,6 +55,7 @@ EDITORS = [
     ("model-editor", "Model editor", "model-editor"),
     ("gamemode-editor", "Gamemode editor", "mode-editor"),   # (its page: http://127.0.0.1:8771/, tools/mode_editor/serve.py)
     ("physics-editor", "Physics editor", "physics-editor"),
+    ("weapons-editor", "Weapons editor", "weapons-editor"),
 ]
 PROGRAMS = [p for _, p, _ in EDITORS]
 PROGRAM_ID = {p: f for f, p, _ in EDITORS}
@@ -76,6 +77,7 @@ PATH_RULES = [
     ("Model editor", ["tools/model_editor/", "assets/overrides/models/", "src/client/models.*", "src/client/gltf.*"]),
     ("Gamemode editor", ["tools/mode_editor/", "tools/modes/"]),
     ("Physics editor", ["tools/physics_editor/", "src/game/pmove.*"]),
+    ("Weapons editor", ["tools/weapon_editor/", "src/game/weaponset.*"]),
 ]
 
 

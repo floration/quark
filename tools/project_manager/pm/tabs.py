@@ -51,6 +51,8 @@ DEFAULT_TABS = {"tabs": [
      "port": 8771, "folder": "gamemode-editor", "start": "py -3 serve.py --port 8771 --no-open", "keepAlive": True},
     {"id": "physics", "name": "Physics Editor", "parent": "dashboard", "url": "http://127.0.0.1:8772/?embed=1",
      "port": 8772, "folder": "physics-editor", "start": "py -3 serve.py --port 8772 --no-open", "keepAlive": True},
+    {"id": "weapons", "name": "Weapons Editor", "parent": "dashboard", "url": "http://127.0.0.1:8773/?embed=1",
+     "port": 8773, "folder": "weapons-editor", "start": "py -3 serve.py --port 8773 --no-open", "keepAlive": True},
 ]}
 PROBE_INTERVAL = 5.0
 

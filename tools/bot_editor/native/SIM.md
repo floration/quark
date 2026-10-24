@@ -46,6 +46,9 @@ On a bad request the answer is one line `{"error": "..."}` (with `"type":"error"
 | `realtime` | true | `sim`: pace the frames at real time × `speed`. false: as fast as it goes. |
 | `speed` | 1 | `sim`, with `realtime`: 0.25 is slow motion, 4 is four times real time, 0 is as fast as it goes. |
 | `paths` | true | `sim`: send each bot's nav route (`path`). It's sent only when it changes. |
+| `weapons` | | A weapon set (`.qweapons` text, or `{text}`): the match plays with it (see "Weapon sets"). |
+| `qmode` | | A custom mode text (`.qmode` key=value lines, or `{text}`): its rules; `weapons` goes on top of it. |
+| `weaponsAllowed` | every weapon | The weapon pool: `["rocket", "rifle"]` (names, a set's labels, or ids) or a bitmask. |
 
 ### A bot
 
@@ -133,10 +136,11 @@ state throughout.
 
 ```
 {"type":"start", map, mode, tickRate, rate, seconds, until, realtime, speed, seed, teams, brainSupport,
-   bots:[{id, name, team, skill, brain, brainLabel, brainStatus, start?, startYaw?, objective}]}
+   bots:[{id, name, team, skill, brain, brainLabel, brainStatus, start?, startYaw?, objective}],
+   weaponSet, weaponLogic, weaponsAllowed, qmode, weaponWarnings?}
 {"type":"warning", warning}
 {"type":"frame", t, bots:[...], events:[...]}            // every 1/rate s of game time
-{"type":"end", t, reason, winner, leader?, bots:[...], result, perf}
+{"type":"end", t, reason, winner, leader?, bots:[...], result, weapons:[...], perf}
 ```
 
 The fields of a frame bot:
@@ -236,13 +240,14 @@ numbers are the last match's: the game resets them when a new match starts.
 
 ```
 {"type":"start", map, mode, tickRate, matches, threads, seconds, until, seeds, teams, brainSupport,
-   bots:[{index, name, team, skill, brain, objective}]}
+   bots:[{index, name, team, skill, brain, objective}], weaponSet, weaponLogic, weaponsAllowed, qmode, weaponWarnings?}
 {"type":"match", done, total, index, seed, reason, t, winner, leader?, score:[a,b], wallSeconds, ticks,
    bots:[...the sim end line's bots]}                        // as each match finishes, in finishing order
 {"type":"progress", done, total, running, wallSeconds}      // every progressEvery s
 {"type":"end", reason: "done"|"stopped", matchesPlayed, errors, timeouts,
    bots:[{index, name, team, skill, brain, brainLabel, brainStatus, objective, ...the totals}],
    brains:[{brain, botMatches, ...the totals}],
+   weapons:[{weapon, kills, damage, shots, hits, accuracy, ttk, ttkSamples, deaths, heldSeconds, dps}],
    teamWins:{a, b, draws} | playerWins:[{player, wins}] + draws,
    matches:[{index, seed, reason, t, winner, leader?, score, wallSeconds}],
    perf:{wallSeconds, threads, matchesPerSecond, ticks, ticksPerSecondPerMatch, ticksPerSecondTotal}}
@@ -256,6 +261,35 @@ numbers are the last match's: the game resets them when a new match starts.
   `teamWins` / `playerWins`; their `leader` says who was ahead.
 - The only control is `stop`: no new matches start, and the running ones end within a game second
   (`reason: "stopped"`).
+
+## Weapon sets (`weapons`, `qmode`, `weaponsAllowed`)
+
+The weapons editor's keys (tools/weapon_editor/DESIGN.md section 4: its `wpnfight` is `sim` / `simbatch` with them;
+the code is tools/weapon_editor/native/wpn_rules.cpp). They make the match a custom mode, as hosting one does:
+
+- `qmode` is read with the game's `CustomRules::fromText` (clamped like a `.qmode` file; a text without a
+  `custommode=` line is named `wpn-editor`). Its `mode=` is the match's mode when the request has no `mode`, its
+  `timelimit` / `scorelimit` the limits when the request gives none. Its map pool is dropped (the request's map
+  plays). A `weaponset=<name>` in it loads `custom_weapons/<name>.qweapons` from your data folder unless `weapons` is
+  given.
+- `weapons` is compiled by the game (`compileWeaponSet`); a set with errors fails the request with
+  `"weapons line L:C: ..."`. Its warnings (clamped values) are the start line's `weaponWarnings`.
+- `weaponsAllowed` is `CustomRules::weapons` (the pool: bots pick from it, spawns swap a weapon it doesn't allow).
+- The rules go on the server right after BotSim starts it (`ServerConfig::custom`; the server thread applies them with
+  `setActiveRules` on its next tick, as `Server::frame` does). The warmup before the forced start played the standard
+  rules; the players alive then get the rules' health and an allowed weapon at once.
+- The start lines echo `weaponSet` (the set's `weapons "<name>"`, null without one), `weaponLogic` (it has hit / kill
+  slots), `weaponsAllowed` (names, null = all) and `qmode` (its name, null without one). The page tells a helper that
+  applies sets from an older one by `weaponSet` being there at all.
+
+Per weapon numbers (`sim`'s and `simbatch`'s end lines, `weapons`; the weapons used, every bot together, every match
+for `simbatch`): `kills` from the kill events (exact); `shots`, `hits` (shots that damaged an enemy) and `damage`
+(to enemies) are each player's counters, sampled between steps and put on the weapon the player held at the previous
+sample (every frame for `sim`, every 0.2 s of game time for `simbatch`: a weapon switched between two samples gets the
+shots of the other); `accuracy` = hits / shots; `ttk` = the mean time from the start of the victim's fight (its first
+damage after 3 s without any, as sampled) to the kill, over `ttkSamples` kills; `deaths` = deaths while holding it;
+`heldSeconds` = time alive holding it; `dps` = damage / heldSeconds. Sampling every 0.2 s costs `simbatch` about 5%
+(each step reads the game log once).
 
 ## `simcheck`
 

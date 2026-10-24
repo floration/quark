@@ -24,6 +24,7 @@
 #include "game/gamemodes.h"
 #include "game/map.h"
 #include "game/server.h"
+#include "../../weapon_editor/native/wpn.h"   // (weapons / qmode / weaponsAllowed: the weapons editor's rules and per weapon tally)
 
 namespace {
 namespace fs = std::filesystem;
@@ -55,6 +56,7 @@ struct Setup {
     double speed = 1;
     std::vector<Json> botEcho;     // per bot: what start lines report about it
     std::vector<std::string> warnings;
+    wpn::Rules wr;                 // weapons / qmode / weaponsAllowed (SIM.md "Weapon sets"): put on the server after the start
 };
 
 // "map": a name or a path, the page's {name, source, text}, or the map JSON; or text / file / name at the top level
@@ -134,15 +136,18 @@ Json overrideJson(const BotOverride& o) {
 bool parseSetup(const Json& req, Setup& S, bool batch, std::string& err) {
     Map m;
     if (!loadMap(req, m, err)) return false;
+    if (!wpn::requestRules(req, S.wr, err)) return false;
+    const bool qmode = S.wr.any && !S.wr.qmodeName.empty();
     BotSimConfig& cfg = S.cfg;
     S.mapLabel = m.name;
     cfg.mapText = m.sourceText();
-    cfg.mode = modeFromJson(req["mode"], m.preferredMode >= 0 ? m.preferredMode : MODE_FFA);
+    cfg.mode = modeFromJson(req["mode"], qmode ? S.wr.rules.baseMode : m.preferredMode >= 0 ? m.preferredMode : MODE_FFA);
     cfg.tickRate = req["tickRate"].i(125);
     if (cfg.tickRate != 1000 && cfg.tickRate != 500 && cfg.tickRate != 250 && cfg.tickRate != 125) { err = "tickRate is 1000, 500, 250 or 125"; return false; }
     cfg.seed = (uint32_t)req["seed"].num(1);
-    cfg.timeLimit = std::max(0, req["timeLimit"].i(0));
-    cfg.scoreLimit = std::max(0, req["scoreLimit"].i(0));
+    cfg.timeLimit = std::max(0, req["timeLimit"].i(qmode ? S.wr.rules.timeLimit : 0));
+    cfg.scoreLimit = std::max(0, req["scoreLimit"].i(qmode ? S.wr.rules.scoreLimit : 0));
+    S.wr.rules.baseMode = cfg.mode;
     cfg.applyBrains = true;
     S.seconds = std::clamp(req["seconds"].num(req["secs"].num(batch ? 900 : 120)), 0.1, 7200.0);
     std::string until = lower(req["until"].str("matchend"));
@@ -321,6 +326,9 @@ int runSim(const Json& req, Json& out, CmdCtx& ctx) {
     netInit();
     BotSim sim;
     if (!sim.start(S.cfg, &err)) return cmdError(out, err);
+    wpn::applyToServer(sim.server(), S.wr);
+    wpn::Tally tally;
+    tally.observe(sim.server(), sim.time());
     const double startSeconds = maptoolNow() - w0;   // (the map, the server, the nav graph, the warmup)
     const bool paths = req["paths"].boolean(true);
     const int ticksPer = std::max(1, (int)std::lround(sim.tickRate() / S.rate));
@@ -332,6 +340,7 @@ int runSim(const Json& req, Json& out, CmdCtx& ctx) {
         s.set("teams", modeIsTeamBased(S.cfg.mode));
         s.set("brainSupport", BotSim::brainsSupported());
         s.set("bots", botsStartJson(S, sim));
+        wpn::startJson(s, S.wr);
         ctx.emit(s);
         for (auto& w : S.warnings) { Json j = Json::object(); j.set("type", "warning"); j.set("warning", w); ctx.emit(j); }
     }
@@ -370,7 +379,8 @@ int runSim(const Json& req, Json& out, CmdCtx& ctx) {
         for (size_t k = 0; k < st.size(); k++) bs.push(frameBot(st[k], paths && k < lastPaths.size() ? &lastPaths[k] : nullptr));
         f.set("bots", std::move(bs));
         Json ev = Json::array();
-        for (auto& e : sim.takeEvents()) ev.push(e.json());
+        for (auto& e : sim.takeEvents()) { if (e.kind == "kill") tally.kill(e.who, e.victim, e.detail, e.t); ev.push(e.json()); }
+        tally.observe(sim.server(), sim.time());
         f.set("events", std::move(ev));
         ctx.emit(f);
         if (S.realtime && speed > 0 && !paused) {   // paced: sim seconds / speed of wall time
@@ -388,6 +398,7 @@ int runSim(const Json& req, Json& out, CmdCtx& ctx) {
     for (size_t k = 0; k < st.size(); k++) stats.push(botStats(sim, k, st[k], S));
     d.set("bots", std::move(stats));
     d.set("result", sim.summary());
+    d.set("weapons", tally.json());
     Json perf = Json::object();
     perf.set("wallSeconds", maptoolNow() - w0); perf.set("startSeconds", startSeconds); perf.set("simSeconds", simWall); perf.set("ticks", (double)ticks);
     perf.set("ticksPerSecond", simWall > 0 ? ticks / simWall : 0);
@@ -399,6 +410,7 @@ int runSim(const Json& req, Json& out, CmdCtx& ctx) {
 }
 
 // ---- simbatch -------------------------------------------------------------------------------------------------------
+constexpr double kTallyEvery = 0.2;   // s of game time per step: the per weapon tally's sample (a weapon held is counted per sample)
 struct MatchResult {
     int index = 0;
     uint32_t seed = 0;
@@ -407,6 +419,7 @@ struct MatchResult {
     long long ticks = 0;
     Json winner, leader, score, bots;   // bots: botStats per bot
     std::vector<Json> botRows;
+    wpn::Tally tally;                   // per weapon (the end line's `weapons`)
 };
 
 int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
@@ -445,6 +458,7 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
             bots.push(std::move(o));
         }
         s.set("bots", bots);
+        wpn::startJson(s, S.wr);
         ctx.emit(s);
         for (auto& w : S.warnings) { Json j = Json::object(); j.set("type", "warning"); j.set("warning", w); ctx.emit(j); }
     }
@@ -467,7 +481,9 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
         BotSim sim;
         std::string e;
         if (!sim.start(cfg, &e)) { R.error = e; R.reason = "error"; return; }
-        const int chunk = sim.ticksFor(1.0);
+        wpn::applyToServer(sim.server(), S.wr);
+        R.tally.observe(sim.server(), sim.time());
+        const int chunk = sim.ticksFor(kTallyEvery);   // (the per weapon tally samples between steps)
         std::string reason = "time";
         while (true) {
             if (cancel) { reason = "stopped"; break; }
@@ -476,7 +492,8 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
             if (sim.time() >= S.seconds - 1e-9) break;
             int want = std::min(chunk, std::max(1, sim.ticksFor(S.seconds - sim.time())));
             R.ticks += sim.step(want, S.untilMatchEnd);
-            sim.takeEvents();
+            for (auto& ev : sim.takeEvents()) if (ev.kind == "kill") R.tally.kill(ev.who, ev.victim, ev.detail, ev.t);
+            R.tally.observe(sim.server(), sim.time());
         }
         R.reason = reason; R.t = sim.time();
         R.winner = winnerJson(sim);
@@ -558,6 +575,7 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
         return o;
     };
     std::vector<Agg> perBot(S.cfg.bots.size());
+    wpn::Tally weapons;
     std::map<std::string, Agg> perBrain;
     std::vector<std::string> brainOrder;
     int winsA = 0, winsB = 0, draws = 0, timeouts = 0, errors = 0, played = 0;
@@ -568,6 +586,7 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
         if (!R.error.empty()) { errors++; continue; }
         played++;
         matchWall += R.wall; ticks += R.ticks;
+        weapons.merge(R.tally);
         if (R.reason != "matchEnd") timeouts++;
         else if (teams) {
             const Json& wt = R.winner["team"];
@@ -603,6 +622,7 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
     Json brj = Json::array();
     for (auto& name : brainOrder) { Json o = aggJson(perBrain[name], true); o.set("brain", name); brj.push(std::move(o)); }
     d.set("brains", std::move(brj));
+    d.set("weapons", weapons.json());
     if (teams) { Json t = Json::object(); t.set("a", winsA); t.set("b", winsB); t.set("draws", draws); d.set("teamWins", t); }
     else {
         Json pw = Json::array();
@@ -647,6 +667,6 @@ int runSimCheck(const Json& req, Json& out, CmdCtx&) {
 }
 }  // namespace
 
-MAPTOOL_COMMAND("sim", runSim, "{map, mode?, bots: [{team, skill, name, brain, pos, yaw, objective}], seconds?, until?, seed?, tickRate?, rate?, realtime?, speed?, brains?} [--stream] -> NDJSON start / frame / end (SIM.md)");
+MAPTOOL_COMMAND("sim", runSim, "{map, mode?, bots: [{team, skill, name, brain, pos, yaw, objective}], seconds?, until?, seed?, tickRate?, rate?, realtime?, speed?, brains?, weapons?, qmode?, weaponsAllowed?} [--stream] -> NDJSON start / frame / end (SIM.md)");
 MAPTOOL_COMMAND("simbatch", runSimBatch, "{...sim's setup, matches? | seeds?, threads?} [--stream] -> NDJSON start / match / progress / end, per bot / brain / match (SIM.md)");
 MAPTOOL_COMMAND("simcheck", runSimCheck, "{text | brain, brains?} -> {brainSupport, ok, label?, error?}: compiles a brain the way sim does");

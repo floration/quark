@@ -1,0 +1,112 @@
+/* quark-tools.css: the shared look of Quark's local tools (editor dashboard, Claude Documents manager, GitHub manager,
+   the editors). Self-contained: no external fonts, no imports. Copy it next to a tool's page and link it first, then the
+   tool's own stylesheet. Source: tools/editor_dashboard/quark-tools.css (keep the copies in step with it).
+
+   Theme: dark by default, light when the system prefers light; <html data-theme="light|dark"> forces one.
+   Tokens are --qt-*; components: .qt-nav (the shared top bar), button (.primary), input / select, .card, table.t,
+   .bar (stacked human / third-party / AI), .og-* (origin badges), .st-* (change-state badges), .seg (segmented
+   buttons), .chk (checkbox label), .toast, and the helpers .muted .small .mono .warn .err .grow .nowrap .ell. */
+
+:root {
+  /* colours (dark) */
+  --qt-bg: #111418; --qt-panel: #191d23; --qt-panel2: #20252c; --qt-line: #2c333c; --qt-text: #e3e7ec; --qt-muted: #8b95a1;
+  --qt-accent: #5aa9ff; --qt-accent-ink: #0b1a2b; --qt-ok: #3fbf7f; --qt-warn: #e08a3c; --qt-bad: #e0604a;
+  --qt-human: #3fbf7f; --qt-third: #36b3c4; --qt-ai: #c8664f; --qt-pending: #d9a93a;
+  --qt-st-local: #e08a3c; --qt-st-testing: #5aa9ff; --qt-st-both: #3fbf7f; --qt-st-branch: #a77ff0; --qt-st-none: #6b7480;
+  /* type */
+  --qt-font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --qt-mono: ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+  --qt-fs: 13px; --qt-fs-sm: 11px; --qt-fs-mono: 12px; --qt-fs-lg: 16px; --qt-lh: 1.4;
+  /* spacing, shape */
+  --qt-s1: 4px; --qt-s2: 8px; --qt-s3: 12px; --qt-s4: 16px; --qt-s5: 24px;
+  --qt-radius: 5px; --qt-radius-lg: 7px; --qt-nav-h: 34px;
+  --qt-shadow: 0 4px 20px rgba(0, 0, 0, .4);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --qt-bg: #f4f5f7; --qt-panel: #ffffff; --qt-panel2: #f0f2f5; --qt-line: #d9dde3; --qt-text: #1b2028; --qt-muted: #66707c;
+    --qt-accent: #1f6fd1; --qt-accent-ink: #ffffff; --qt-ok: #23935a; --qt-warn: #c4651a; --qt-bad: #c0392b;
+    --qt-human: #23935a; --qt-third: #1a8a9a; --qt-ai: #b5503a; --qt-pending: #a77a10;
+    --qt-st-local: #c4651a; --qt-st-testing: #1f6fd1; --qt-st-both: #23935a; --qt-st-branch: #7a4fd0; --qt-st-none: #8b95a1;
+    --qt-shadow: 0 4px 20px rgba(0, 0, 0, .15);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --qt-bg: #f4f5f7; --qt-panel: #ffffff; --qt-panel2: #f0f2f5; --qt-line: #d9dde3; --qt-text: #1b2028; --qt-muted: #66707c;
+  --qt-accent: #1f6fd1; --qt-accent-ink: #ffffff; --qt-ok: #23935a; --qt-warn: #c4651a; --qt-bad: #c0392b;
+  --qt-human: #23935a; --qt-third: #1a8a9a; --qt-ai: #b5503a; --qt-pending: #a77a10;
+  --qt-st-local: #c4651a; --qt-st-testing: #1f6fd1; --qt-st-both: #23935a; --qt-st-branch: #7a4fd0; --qt-st-none: #8b95a1;
+  --qt-shadow: 0 4px 20px rgba(0, 0, 0, .15);
+  color-scheme: light;
+}
+
+/* base */
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--qt-bg); color: var(--qt-text); font: var(--qt-fs)/var(--qt-lh) var(--qt-font); }
+a { color: var(--qt-accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: var(--qt-panel2); border: 1px solid var(--qt-line); border-radius: var(--qt-radius); padding: var(--qt-s1) 10px; cursor: pointer; }
+button:hover { border-color: var(--qt-accent); }
+button.primary { background: var(--qt-accent); color: var(--qt-accent-ink); border-color: var(--qt-accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text], input[type=search], select, textarea { background: var(--qt-panel2); border: 1px solid var(--qt-line); border-radius: var(--qt-radius); padding: var(--qt-s1) var(--qt-s2); }
+code, .mono { font-family: var(--qt-mono); font-size: var(--qt-fs-mono); }
+.muted { color: var(--qt-muted); }
+.small { font-size: var(--qt-fs-sm); }
+.warn { color: var(--qt-warn); }
+.err { color: var(--qt-bad); }
+.grow { flex: 1; }
+.nowrap { white-space: nowrap; }
+.ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chk { display: inline-flex; gap: var(--qt-s1); align-items: center; cursor: pointer; user-select: none; }
+
+/* the shared top bar: Dashboard · GitHub · Claude Documents · editors (the current tool has aria-current="page") */
+.qt-nav { display: flex; align-items: center; gap: 2px; height: var(--qt-nav-h); padding: 0 var(--qt-s3); background: var(--qt-bg);
+          border-bottom: 1px solid var(--qt-line); overflow-x: auto; scrollbar-width: none; flex: none; }
+.qt-nav a { color: var(--qt-muted); text-decoration: none; padding: 5px 10px; border-radius: var(--qt-radius); white-space: nowrap; font-size: 12.5px; }
+.qt-nav a:hover { color: var(--qt-text); background: var(--qt-panel2); }
+.qt-nav a[aria-current="page"] { color: var(--qt-text); background: var(--qt-panel2); box-shadow: inset 0 -2px var(--qt-accent); }
+.qt-nav a.down { opacity: .55; }
+.qt-nav .qt-brand { color: var(--qt-text); font-weight: 700; padding-left: 0; margin-right: var(--qt-s2); }
+.qt-nav .qt-brand:hover { background: none; }
+.qt-nav-sep { width: 1px; height: 16px; background: var(--qt-line); margin: 0 var(--qt-s2); flex: none; }
+.qt-nav-note { font-size: var(--qt-fs-sm); color: var(--qt-warn); white-space: nowrap; margin-left: var(--qt-s2); }
+
+/* cards and tables */
+.card { background: var(--qt-panel); border: 1px solid var(--qt-line); border-radius: var(--qt-radius-lg); padding: 10px var(--qt-s3); margin-bottom: 10px; }
+table.t { width: 100%; border-collapse: collapse; }
+table.t th { text-align: left; font-weight: 600; color: var(--qt-muted); font-size: var(--qt-fs-sm); padding: var(--qt-s1) var(--qt-s2); border-bottom: 1px solid var(--qt-line); white-space: nowrap; }
+table.t td { padding: var(--qt-s1) var(--qt-s2); border-bottom: 1px solid var(--qt-line); vertical-align: top; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* stacked bar: <div class="bar"><i class="h" style="width:20%"></i><i class="t" ...></i><i class="a" ...></i></div> */
+.bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--qt-panel2); border: 1px solid var(--qt-line); }
+.bar i { display: block; height: 100%; }
+.bar .h { background: var(--qt-human); } .bar .t { background: var(--qt-third); } .bar .a { background: var(--qt-ai); opacity: .55; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: var(--qt-s1); vertical-align: -1px; }
+
+/* badges: origin (.og og-human / og-third-party / og-ai / og-pending), change state (.st st-local / -testing / -both / -branch / -none) */
+.st, .og { display: inline-block; border-radius: 4px; padding: 0 6px; font-size: var(--qt-fs-sm); line-height: 18px; white-space: nowrap; border: 1px solid; }
+.st-local { color: var(--qt-st-local); border-color: var(--qt-st-local); }
+.st-testing { color: var(--qt-st-testing); border-color: var(--qt-st-testing); }
+.st-both { color: var(--qt-st-both); border-color: var(--qt-st-both); }
+.st-branch { color: var(--qt-st-branch); border-color: var(--qt-st-branch); }
+.st-none { color: var(--qt-st-none); border-color: var(--qt-st-none); }
+.og-human { color: var(--qt-human); border-color: var(--qt-human); }
+.og-third-party { color: var(--qt-third); border-color: var(--qt-third); }
+.og-ai { color: var(--qt-ai); border-color: var(--qt-ai); }
+.og-pending { color: var(--qt-pending); border-color: var(--qt-pending); border-style: dashed; }
+
+/* segmented buttons: <span class="seg"><button class="on">A</button><button>B</button></span> */
+.seg { display: inline-flex; border: 1px solid var(--qt-line); border-radius: var(--qt-radius); overflow: hidden; }
+.seg button { border: none; border-radius: 0; border-right: 1px solid var(--qt-line); }
+.seg button:last-child { border-right: none; }
+.seg button.on { background: var(--qt-accent); color: var(--qt-accent-ink); }
+
+/* a short message at the bottom: <div class="toast" hidden>...</div> (.bad for an error) */
+.toast { position: fixed; bottom: var(--qt-s4); left: 50%; transform: translateX(-50%); background: var(--qt-panel2); border: 1px solid var(--qt-accent);
+         border-radius: 6px; padding: var(--qt-s2) 14px; box-shadow: var(--qt-shadow); z-index: 10; }
+.toast.bad { border-color: var(--qt-bad); }

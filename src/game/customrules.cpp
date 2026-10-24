@@ -9,24 +9,47 @@
 #include <sstream>
 #include "map.h"
 #include "modelogic.h"
+#include "weaponset.h"
 
 namespace {
 // Per thread: a hosted server thread and the client each play by their own copy. One trivially initialised
 // thread_local pointer, so each accessor is a single TLS lookup: MinGW compiles thread_local as emutls (a call per
 // access, plus one per init guard), and moveTuning()/weaponDef() run in every 1 ms movement and projectile step.
-struct Tuned { CustomRules rules; WeaponDef weapons[WPN_COUNT]; MoveTuning move; };
+struct Tuned {
+    CustomRules rules; WeaponDef weapons[WPN_COUNT]; MoveTuning move;
+    WeaponExtra extra[WPN_COUNT]; WeaponAlt alt;    // (weaponset.h: the rest of each weapon's numbers)
+    std::shared_ptr<const WeaponSet> set;           // the rules' weapon set, compiled (null: the standard weapons)
+    const WeaponSet* logic = nullptr;               // set, when it has hit / kill slots (the server's per-hit check)
+    char labels[WPN_COUNT][32] = {};                // a set's weapon names (WeaponDef::name points here)
+};
 thread_local Tuned* g_t = nullptr;
 
 void rebuild(Tuned& t) {
+    // The weapon set first (absolute values: the standard ones where it writes none), then the mode's multipliers
+    // on top. Compiled here, once per rules change: nothing per shot. A set that doesn't compile: the standard weapons.
+    t.set.reset(); t.logic = nullptr;
+    if (t.rules.active() && !t.rules.weaponSetText.empty()) t.set = compileWeaponSet(t.rules.weaponSetText);
+    const WeaponValues& v = t.set ? weaponSetValues(*t.set) : standardWeaponValues();
+    if (t.set && weaponSetHasLogic(*t.set)) t.logic = t.set.get();
     for (int w = 0; w < WPN_COUNT; w++) {
-        WeaponDef d = baseWeaponDef(w);
+        WeaponDef d = v.def[w];
+        WeaponExtra e = v.ex[w];
+        if (t.set && !weaponSetLabel(*t.set, w).empty()) {
+            snprintf(t.labels[w], sizeof t.labels[w], "%s", weaponSetLabel(*t.set, w).c_str());
+            d.name = t.labels[w];
+        }
         if (t.rules.active()) {
             d.refire /= std::max(0.05f, t.rules.fireRate[w]);
             d.damage *= t.rules.damage[w];
             d.projSpeed *= t.rules.projSpeed[w];
+            e.headDamage *= t.rules.damage[w];     // (headshots and direct hits too: the multiplier is the weapon's damage)
+            e.directDamage *= t.rules.damage[w];
         }
         t.weapons[w] = d;
+        t.extra[w] = e;
     }
+    t.alt = v.alt;
+    if (t.rules.active()) t.alt.syringeHeal *= t.rules.damage[WPN_SYRINGE];
     t.move = MoveTuning();
     if (t.rules.active()) {
         t.move.gravity = t.rules.gravity; t.move.speed = t.rules.moveSpeed; t.move.jump = t.rules.jump;
@@ -58,6 +81,9 @@ CustomRules::CustomRules() {
 }
 
 const WeaponDef& weaponDef(int w) { return tuned().weapons[w < 0 || w >= WPN_COUNT ? 0 : w]; }
+const WeaponExtra& weaponExtra(int w) { return tuned().extra[w < 0 || w >= WPN_COUNT ? 0 : w]; }
+const WeaponAlt& weaponAlt() { return tuned().alt; }
+const WeaponSet* activeWeaponLogic() { return tuned().logic; }
 float tunedDamage(int w) { const Tuned& t = tuned(); return t.rules.active() && w >= 0 && w < WPN_COUNT ? t.rules.damage[w] : 1.0f; }
 const MoveTuning& moveTuning() { return tuned().move; }
 const CustomRules& activeRules() { return tuned().rules; }
@@ -79,6 +105,7 @@ std::string CustomRules::toNetText() const {
     for (int k = 0; k < MV_COUNT; k++) if (move[k] != 1) o << "\nmove_" << moveParamKey(k) << "=" << move[k];   // (only the changed ones)
     for (int w = 0; w < WPN_COUNT; w++)
         o << "\nweapon=" << w << "," << fireRate[w] << "," << damage[w] << "," << projSpeed[w];
+    o << weaponSetRulesLines(*this);   // (weaponset= / wsline=: weaponset.cpp)
     o << "\nmaps=";
     for (size_t i = 0; i < maps.size(); i++) o << (i ? "," : "") << maps[i];
     o << "\n";
@@ -116,7 +143,8 @@ bool CustomRules::fromText(const std::string& text) {
         float f = 0;   // (sscanf, not atof: the Windows CRT's atof reads "nan" / "inf" as 0, so a value meant to fall
         if (sscanf(v.c_str(), "%f", &f) != 1) f = 0;   //  back to the default was clamped instead, and differed from Linux)
         int i = atoi(v.c_str());
-        if (k == "custommode") { name = safeName(v); any = true; }
+        if (readWeaponSetRulesLine(*this, k, v)) {}   // weaponset= / wsline= (weaponset.cpp)
+        else if (k == "custommode") { name = safeName(v); any = true; }
         else if (k == "mode") { int m = modeFromName(v.c_str()); if (m >= 0 && m != MODE_TOURNEY) baseMode = m; }
         else if (k == "weapons") weapons = (uint16_t)(i & ((1 << WPN_COUNT) - 1));
         else if (k == "gravity") gravity = clampf_(f, 0.1f, 3, gravity);
@@ -194,14 +222,19 @@ bool loadCustomMode(const std::string& name, CustomRules& out) {
     std::ifstream f(utf8Path(customModesDir() + "/" + safeName(name) + ".qmode"));
     if (!f) return false;
     std::stringstream ss; ss << f.rdbuf();
-    return out.fromText(ss.str());
+    if (!out.fromText(ss.str())) return false;
+    std::string why;   // weaponset=<name>: its file's text (no file / not valid: the standard weapons, and why)
+    if (!resolveWeaponSet(out, &why) && !why.empty()) fprintf(stderr, "custom mode '%s': %s\n", out.name.c_str(), why.c_str());
+    return true;
 }
 
 bool saveCustomMode(const CustomRules& r) {
     if (!r.active()) return false;
     std::error_code ec;
     std::filesystem::create_directories(customModesDir(), ec);
-    return writeFileAtomic(customModesDir() + "/" + safeName(r.name) + ".qmode", r.toText());
+    CustomRules disk = r;
+    disk.weaponSetText.clear();   // (the file names its weapon set; the set's text stays in custom_weapons/)
+    return writeFileAtomic(customModesDir() + "/" + safeName(r.name) + ".qmode", disk.toText());
 }
 
 bool deleteCustomMode(const std::string& name) {

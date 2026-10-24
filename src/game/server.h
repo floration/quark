@@ -23,6 +23,7 @@
 #include "customrules.h"
 #include "modeparams.h"
 #include "ranked.h"
+#include "weaponset.h"
 
 // Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
 // them back by reconnecting (matched by their proven ranked id, else by the token from PKT_ACCEPT).
@@ -241,7 +242,8 @@ struct Projectile {
     Vec3 pos, vel;
     double dieAt = 0;
     double armAt = 0;    // stickies can't be detonated before this
-    float gravMul = 1;  // a rocket lob (alt-fire): kRocketLobGravity (it drops; the primary flies straight)
+    float gravMul = 1;  // a rocket lob (alt-fire): kRocketLobGravity, a marker (it drops at weaponAlt().lobGravity; the primary flies straight)
+    bool alt = false;   // fired with alt-fire (lob, throw, stream): the weapon set logic's `alt`
     bool stuck = false; // stickies: attached to a surface
     bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
     Vec3 cartOffset;
@@ -448,6 +450,8 @@ public:
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
     int ringOutKiller(int victim) const;
     void muffledGunfire(int shooter, int weapon);   // X9: EV_GUNFIRE to the players who can't see the shot but are near   // who a fall / lava / "kill" now credits (T21), or -1
+    // A weapon's hit on a player: the weapon set's hit / kill slots around damagePlayer (no set logic: damagePlayer)
+    void weaponHit(int victim, int attacker, float dmg, const Vec3& knock, int weapon, bool alt, float dist, bool direct, float splash);
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);
@@ -589,10 +593,13 @@ public:
     void stepTick() { simulate(); tick_++; timeMs_ += 1000 / tickRate(); if (tick_ % snapEvery() == 0) sendSnapshots(); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
+    Vec3 shooterEye(int i) const { const MoveState& m = players_[i].move; return m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0); }
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;
     bool headHit_[kMaxPlayers] = {};   // this shot hit that player in the head (for the kill event)
+    float hitDist_[kMaxPlayers] = {};  // ...and how far from the shooter's eye (hitscan; the weapon set logic's `dist`)
+    WsTracker wsTrack_;                // the weapon set logic's streak / kills-this-life counts
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
     uint8_t arenaRules() const {
         uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
@@ -698,8 +705,8 @@ private:
     int projTargets_ = 0;                  // tickProjectiles: the live players' hitboxes this tick
     uint8_t projTargetId_[kMaxPlayers] = {};
     AABB projTargetBox_[kMaxPlayers];
-    void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false, float* headPerPlayer = nullptr);
+    void explode(const Vec3& at, int owner, int weapon, int direct = -1, bool alt = false);   // direct: the player the projectile hit itself
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false, const WeaponExtra* ex = nullptr, float* headPerPlayer = nullptr);
     void sendSnapshots();
     void updateVisibility();
     uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)

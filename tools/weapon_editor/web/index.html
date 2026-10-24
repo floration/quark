@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Weapons Editor</title>
+<link rel="stylesheet" href="/web/quark-tools.css">
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="logo"><b>QUARK</b> weapons editor</div>
+    <nav id="tabs">
+      <button data-page="weapon" class="on">Weapon</button>
+      <button data-page="values">Values</button>
+      <button data-page="games">Other games</button>
+      <button data-page="code">Code</button>
+      <button data-page="blocks">Blocks</button>
+      <button data-page="graph">Graph</button>
+      <button data-page="range">Range</button>
+      <button data-page="fights">Fights</button>
+    </nav>
+    <div id="status"><span id="checkInfo" class="small"></span><span id="helperBadge" class="badge"></span><span id="dataDir"></span></div>
+  </header>
+
+  <div id="body">
+    <aside id="side" class="panel">
+      <h3>Weapon set</h3>
+      <div class="field"><span>Open</span><select id="setSel"></select></div>
+      <div class="field"><span>Name</span><input id="setName" placeholder="the set's name" maxlength="36"></div>
+      <div class="row">
+        <button id="setNew" title="a new set: the standard weapons">New</button>
+        <button id="setSave" class="primary" title="write custom_weapons/&lt;name&gt;.qweapons (Ctrl+S)">Save</button>
+        <button id="setSaveAs">Save as…</button>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <button id="setOpenFile" title="open a .qweapons file">⇧ Open file</button>
+        <button id="setDownload" title="download the .qweapons">⇩ .qweapons</button>
+        <button id="setDelete" class="danger" title="delete the saved file (kept as .bak)">Delete</button>
+        <button id="setResetAll" class="danger" title="every weapon back to the standard (keeps the logic)">Reset all</button>
+      </div>
+      <div id="setInfo" class="muted small" style="margin-top:6px"></div>
+      <input type="file" id="fileIn" accept=".qweapons,.txt" style="display:none">
+
+      <div class="sep"></div>
+      <h3>Weapons <span class="muted small" id="wCount" style="text-transform:none;letter-spacing:0"></span></h3>
+      <div id="wList"></div>
+
+      <div class="sep"></div>
+      <h3>Play in game</h3>
+      <div class="field"><span>Base mode</span><select id="baseMode"></select></div>
+      <div class="row"><button id="playBtn" title="write custom_modes/wpn-&lt;set&gt;.qmode: Host &gt; Custom modes can start it">Write wpn-<span id="playName">set</span>.qmode</button></div>
+      <div id="playInfo" class="muted small"></div>
+
+      <div class="sep"></div>
+      <h3>Compare with</h3>
+      <div class="field"><span>Against</span><select id="cmpSel"></select></div>
+      <div class="field"><span>Health</span><input id="healthIn" type="number" min="1" max="1000" value="100" title="the target's health for shots / time to kill"></div>
+      <div class="field"><span>At</span><select id="distSel" title="the distance the shots-to-kill columns use"><option value="0">every hit lands (0 m)</option><option value="10">10 m</option><option value="20">20 m</option><option value="40">40 m</option></select></div>
+
+      <div class="sep"></div>
+      <h3>Quick numbers <span class="muted" id="qnName" style="text-transform:none;letter-spacing:0"></span></h3>
+      <table class="mini" id="quick"></table>
+    </aside>
+
+    <main id="main">
+      <section id="pg-weapon" class="page on"><div id="weaponWrap" class="scrollpage"></div></section>
+      <section id="pg-values" class="page"><div id="valuesWrap" class="scrollpage"></div></section>
+      <section id="pg-games" class="page"><div id="gamesWrap" class="scrollpage"></div></section>
+
+      <section id="pg-code" class="page">
+        <div id="codeWrap">
+          <div class="cbar">
+            <span id="codeFile" class="muted"></span>
+            <span class="grow"></span>
+            <span class="muted">the text is the set (Blocks and Graph edit the same thing) · Tab indents · problems from <span id="codeVia">the page</span></span>
+            <button id="codeTidy" title="print the set in the game's own form">Tidy</button>
+          </div>
+          <div id="codeBody">
+            <div id="code">
+              <div id="gutter"></div>
+              <div id="codeScroll"><pre id="codeHl"></pre><textarea id="codeTa" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea></div>
+            </div>
+            <aside id="codeSide" class="panel right"></aside>
+          </div>
+          <div id="codeProblems"></div>
+        </div>
+      </section>
+
+      <section id="pg-blocks" class="page"><div id="vBlocks" class="view on"></div></section>
+      <section id="pg-graph" class="page"><div id="vGraph" class="view on"></div></section>
+
+      <section id="pg-range" class="page">
+        <div id="rangeWrap">
+          <div class="cbar" id="rangeBar"></div>
+          <div id="rangeBody">
+            <div id="rangeView">
+              <canvas id="rangeCanvas"></canvas><canvas id="range3d"></canvas>
+              <div id="rangeInfo" class="viewinfo"></div>
+              <div id="rangeMsg" class="viewmsg"></div>
+            </div>
+            <aside id="rangeSide" class="panel right"></aside>
+          </div>
+          <div class="runbar"><button id="rPlay">▶</button><input type="range" id="rTime" min="0" max="1000" value="0" class="grow"><span id="rTlabel" class="tlabel">0.00 s</span>
+            <select id="rSpeed"><option value="0.25">x0.25</option><option value="0.5">x0.5</option><option value="1" selected>x1</option><option value="2">x2</option><option value="4">x4</option></select></div>
+        </div>
+      </section>
+
+      <section id="pg-fights" class="page">
+        <div id="fightsWrap">
+          <div class="cbar" id="fightBar"></div>
+          <div id="fightBanner" class="banner"></div>
+          <div id="fightBody">
+            <div id="fightView">
+              <canvas id="fightCanvas"></canvas><canvas id="fight3d"></canvas>
+              <div id="fightInfo" class="viewinfo"></div>
+            </div>
+            <aside id="fightSide" class="panel right"></aside>
+          </div>
+          <div class="runbar"><button id="fPause">❚❚</button><input type="range" id="fTime" min="0" max="1000" value="1000" class="grow"><span id="fTlabel" class="tlabel">0.0 s</span>
+            <select id="fSpeed"><option value="1" selected>x1</option><option value="2">x2</option><option value="4">x4</option><option value="max">max</option></select></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div id="toast"></div>
+<script type="module" src="/web/js/app.js"></script>
+</body>
+</html>
