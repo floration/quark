@@ -1168,7 +1168,7 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
 
 void Server::sendRules(int id) {
     if (!cfg_.custom.active()) return;
-    std::string t = cfg_.custom.toText();
+    std::string t = cfg_.custom.toNetText();   // (not the logic or unknown keys: clients never run them)
     int n = (int)(t.size() + 239) / 240;
     for (int k = 0; k < n; k++) {
         GameEvent e; e.type = EV_RULES; e.a = (uint8_t)k; e.b = (uint8_t)n; e.text = t.substr(k * 240, 240);

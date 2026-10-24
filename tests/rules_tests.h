@@ -1699,6 +1699,52 @@ static void testWeaponPredict(uint16_t port) {
     s.stop();
 }
 
+// Phase 1a of the mode editor: a .qmode keeps what this build doesn't read. A save from Host > Custom modes
+// (load, edit the known keys, toText) must keep another editor's unknown keys and the logic block verbatim, and the
+// network text (EV_RULES) carries neither.
+static void testCustomRulesKeep() {
+    printf("custom rules: unknown keys and the logic block survive a save\n");
+    const std::string file =
+        "custommode=rush\nmode=bomb\nfuture_key=7\ngravity=0.8\nmove_newthing=2\r\nlabel=rush#1a2b3c4d\nmaps=depot\n"
+        "logic 1\n# Rush: a point for every plant\nparam bombFuse f32 = 25\ngravity=3\r\n\nslot plant:\n  x = 1";   // (no last \n)
+    CustomRules r;
+    CHECK(r.fromText(file));
+    CHECK(r.name == "rush" && r.baseMode == MODE_BOMB && std::fabs(r.gravity - 0.8f) < 1e-6f && r.maps == std::vector<std::string>({"depot"}));
+    CHECK(r.extraKeys == std::vector<std::string>({"future_key=7", "move_newthing=2"}));   // (label is never kept: it's recomputed)
+    CHECK(r.logic == file.substr(file.find("logic 1")));   // verbatim, \r and all; its `gravity=3` isn't a key
+    // the host screen's edit and save
+    r.gravity = 1.5f;
+    r.health = 120;
+    std::string saved = r.toText();
+    CHECK(saved.find("future_key=7\nmove_newthing=2\nlogic 1\n") != std::string::npos);
+    CHECK(saved.size() >= r.logic.size() && saved.compare(saved.size() - r.logic.size(), std::string::npos, r.logic) == 0);
+    CustomRules back;
+    CHECK(back.fromText(saved) && back.toText() == saved && back.extraKeys == r.extraKeys && back.logic == r.logic);
+    CHECK(std::fabs(back.gravity - 1.5f) < 1e-6f && back.health == 120);
+    // the network text: the known keys only
+    std::string net = r.toNetText();
+    CHECK(net.find("future_key") == std::string::npos && net.find("logic") == std::string::npos && net.find("label=") == std::string::npos);
+    CustomRules got;
+    CHECK(got.fromText(net) && got.extraKeys.empty() && got.logic.empty() && got.toNetText() == net);
+    // no extras, no logic: the same text as before phase 1a
+    CustomRules plain;
+    CHECK(plain.fromText("custommode=x\ngravity=2\n") && plain.toText() == plain.toNetText());
+    CHECK(plain.fromText("custommode=x\nzz=1\r\r\n") && plain.extraKeys == std::vector<std::string>({"zz=1"}));   // (every trailing CR stripped: it reads back the same)
+    // the logic starts at the FIRST `logic` line, whatever its version; `logical=1` is a key, not logic
+    CustomRules odd;
+    CHECK(odd.fromText("custommode=x\nlogical=1\nlogic\nlogic 2\nhealth=5\n") && odd.extraKeys == std::vector<std::string>({"logical=1"}));
+    CHECK(odd.logic == "logic\nlogic 2\nhealth=5\n" && odd.health == 100);
+    CHECK(!odd.fromText("logic 1\ncustommode=x\n"));   // a name only inside the logic: no mode
+    CHECK(isModeLogicLine("logic 1") && isModeLogicLine("logic\r") && !isModeLogicLine("logics 1") && !isModeLogicLine(" logic 1"));
+    // a file the game saves and loads from disk
+    CustomRules disk;
+    disk.name = "zz_keep_test"; disk.logic = "logic 1\nslot tick:\n  pass\n"; disk.extraKeys = {"physics_x=2"};
+    CHECK(saveCustomMode(disk));
+    CustomRules loaded;
+    CHECK(loadCustomMode("zz_keep_test", loaded) && loaded.logic == disk.logic && loaded.extraKeys == disk.extraKeys);
+    deleteCustomMode("zz_keep_test");
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1723,6 +1769,7 @@ static void testGameRules(const std::string& only) {
         {"scoreboard", [] { testScoreboardValue(); }},
         {"hudclock", [] { testHudClock(TP(29280)); }},
         {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
+        {"customkeep", [] { testCustomRulesKeep(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")
