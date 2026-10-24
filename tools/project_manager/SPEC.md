@@ -15,7 +15,9 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
   Electron is NOT installed with npm: `setup.ps1` downloads the official prebuilt zip
   (`electron-v<ver>-win32-x64.zip` from github.com/electron/electron releases; version = the latest stable release,
   resolved once at setup and written to `Quark\project-manager\electron\VERSION`), verifies it against that release's
-  `SHASUMS256.txt`, unzips to `Quark\project-manager\electron\`. Started as `electron.exe <app folder>`.
+  `SHASUMS256.txt`, unzips to `Quark\project-manager\electron\`. Started as `electron.exe <app folder>`. After that it
+  updates itself: the updater stages each newer stable release (same checks) in `electron.next\` and the shell swaps it
+  in after it exits (`shell/README.md`, "Electron updates").
 - Why Electron and not Edge `--app`: the editors are `file://` pages that use the File System Access API
   (Choose folder / Export to game). Chromium blocks file pickers in cross-origin iframes, and an `--app` window has no
   tab strip, so an iframe shell would break the editors. Electron gives one native window, one `WebContentsView` per
@@ -24,39 +26,44 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
 - **Fallback** (no Electron, or `--edge`): `project-manager.cmd --edge` opens Edge (else Chrome) as
   `--app=http://127.0.0.1:8768/ --user-data-dir=Quark\project-manager\profile`, the PM page, whose tab list then opens
   each tool in its own `--app` window with that profile.
-- **Tab bar**: a thin top strip (`tabbar.html`, 34 px) with the Q logo, one button per tab (name + status dot:
-  green = up, grey = not running, amber = starting), a reload button, and on the right the time in Dallas
-  (America/Chicago). Ctrl+1..9 switch tabs, Ctrl+Tab / Ctrl+Shift+Tab cycle, Ctrl+R / F5 reload the active tab,
-  F12 devtools for the active tab, Ctrl+Shift+R reload the tab list. Tabs are created lazily on first open and kept
-  alive (switching never loses an editor's state).
+- **Tab bar**: a thin top strip (`tabbar.html`, 34 px) with the Q logo, the tab tree (Supervisor Board → Play, Claude
+  Manager, GitHub Manager → Tests, Editor Manager → the editors), each with a status dot (green = up, red = not
+  running, amber = starting, amber ring = restarting by itself, grey = not checked yet), the Editor Manager's facts, a
+  reload button, and on the right the time in Dallas (America/Chicago). Ctrl+1..9 switch tabs, Ctrl+Tab /
+  Ctrl+Shift+Tab cycle, Ctrl+R / F5 reload the active tab, F12 devtools for the active tab, Ctrl+Shift+R reload the tab
+  list, Ctrl+F find; tabs can be dragged among their siblings (saved to tabs.json) and have a right-click menu. Tabs
+  are created lazily on first open and kept alive (switching never loses an editor's state). Closing the window or
+  restarting asks first when a tab has unsaved changes.
 - **Locked**: no menu bar; `window.open` / `target=_blank` / navigation to anything outside the tab's own origin
   (or, for a `file://` tab, outside its folder) is denied in-app and, if it is an `https://` link, opened in the
   default browser (`shell.openExternal`, only `https:`). No new BrowserWindows. Downloads go to a Save dialog.
   Permissions: grant `fileSystem` / `clipboard-sanitized-write` / `media` (audio playback) / `pointerLock` (physics editor Drive) to local tabs only; deny
   everything else. `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false` for every tab.
 - **Servers** (current behaviour, including the keepAlive supervisor and the watchdog: `shell/README.md`): before showing a server tab, main checks `http://127.0.0.1:<port>/` (500 ms timeout). If down and the
-  tab has `start`, it spawns that command hidden (`windowsHide`, detached, working dir = the tab's folder), shows
-  "starting" and polls up to 20 s, then loads it. The PM server (8768) is started the same way. Servers the shell
-  started are stopped when the window closes (kill the process tree with `taskkill /T /F /PID`); servers that were
-  already running are left alone.
-- **Window**: remembers size / position / last tab in `Quark\project-manager\state.json`. Title "Quark Project".
+  tab has `start`, it spawns that command hidden (`windowsHide`, never `detached` on Windows: that gives `python.exe` a
+  console window; working dir = the tab's folder), shows "starting" and polls up to 20 s, then loads it. keepAlive
+  servers start with the app and are restarted when they stop. The PM server (8768) is started the same way. Servers
+  the shell started are stopped when the window closes (kill the process tree with `taskkill /T /F /PID`), and by
+  `shell/guard.py` when the shell dies without closing; servers that were already running are left alone.
+- **Window**: remembers size / position / last tab in `state.json` (`%LOCALAPPDATA%\QuarkProject\` on Windows, off the
+  OneDrive-synced Desktop). Title "Quark Project".
   Icon `quark.ico` (copied from the repo's `assets/quark.ico`). Single instance (`requestSingleInstanceLock`; a second
   start focuses the window).
 
 ### tabs.json (`Quark\project-manager\tabs.json`; the default is written by setup, q may edit)
 
+The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). An excerpt:
+
 ```json
 {"tabs": [
-  {"id": "project",   "name": "Project",   "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
-   "start": "py -3 \"%PM%\\server.py\""},
-  {"id": "dashboard", "name": "Editors",   "url": "http://127.0.0.1:8765/?embed=1", "port": 8765, "folder": "editor-dashboard"},
-  {"id": "docs",      "name": "Claude Docs","url": "http://127.0.0.1:8766/?embed=1", "port": 8766, "folder": "docs-manager"},
-  {"id": "github",    "name": "GitHub",    "url": "http://127.0.0.1:8767/?embed=1", "port": 8767, "folder": "github-manager"},
-  {"id": "ui",    "name": "UI",     "folder": "ui-customizer", "file": "ui-customizer.html"},
-  {"id": "sound", "name": "Sound",  "folder": "sound-editor",  "file": "sound-editor.html"},
-  {"id": "model", "name": "Models", "folder": "model-editor"},
-  {"id": "map",   "name": "Maps",   "folder": "map-editor"},
-  {"id": "bot",   "name": "Bots",   "folder": "bot-editor"}
+  {"id": "project",   "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
+   "start": "py -3 \"%PM%\\server.py\"", "keepAlive": true},
+  {"id": "dashboard", "name": "Editor Manager", "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
+   "folder": "editor-dashboard", "start": "py -3 dashboard.py --quark \"%QUARK%\" --no-browser", "keepAlive": true,
+   "childLabel": "Editors"},
+  {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
+  {"id": "map",   "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/?embed=1", "port": 8770,
+   "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": true}
 ]}
 ```
 
@@ -267,5 +274,7 @@ which runs `project-manager.cmd --edge` hidden) with the icon. Re-running it upd
 
 After setup, nothing is installed by hand: on each app open the server pulls testing into `Quark\repository\`
 (fast-forward only) and runs the installer of every tool in `installs.json` whose sources changed, hidden; the shell
-restarts the affected servers and offers a restart when the app updated itself. Details: `shell/README.md`
-("Automatic installs and updates") and `pm/updater.py`.
+restarts the affected servers and offers a restart when the app updated itself (by itself right after opening, once
+the installs are done and no tab has unsaved changes). Electron updates itself too (latest stable, sha256-checked,
+swapped in after the app closes). Details: `shell/README.md` ("Automatic installs and updates", "Electron updates")
+and `pm/updater.py`.

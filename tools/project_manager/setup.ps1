@@ -3,7 +3,8 @@
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 [-Quark C:\Users\user\Desktop\Quark] [-NoElectron]
 # Copies server.py, pm\, web\, shell\, project-manager.cmd, project-manager-hidden.vbs, installs.json and quark.ico; writes tabs.json / config.json only when
 # missing (q's own tabs, config, history and window state are never touched); downloads the official Electron zip
-# (latest stable, verified against that release's SHASUMS256.txt) unless it is there or -NoElectron; makes the desktop
+# (latest stable, verified against that release's SHASUMS256.txt; afterwards the app keeps it current by itself,
+# installs.json builtin:electron-update) unless it is there or -NoElectron; makes the desktop
 # shortcut "Quark Project" (electron.exe directly, or wscript + project-manager-hidden.vbs without Electron: no console
 # window either way). Re-running it updates the code (and brings tabs.json's default tabs up to date, keeping
 # tabs.json.old). PowerShell 5.1 compatible, ASCII only.
@@ -73,7 +74,12 @@ if ($NoElectron) {
 } elseif (Test-Path (Join-Path $electronDir 'electron.exe')) {
   $have = ''
   if (Test-Path (Join-Path $electronDir 'VERSION')) { $have = (Get-Content (Join-Path $electronDir 'VERSION') -TotalCount 1).Trim() }
-  Write-Host "Electron $have is already installed (delete $electronDir to download the latest)"
+  Write-Host "Electron $have is already installed (the app updates it by itself: a newer one is staged in electron.next and swapped in when Quark Project closes)"
+  # (leftovers of an interrupted Electron update)
+  foreach ($left in 'electron.old', 'electron.next.tmp', 'electron.download') {
+    $p = Join-Path $Dest $left
+    if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
+  }
 } else {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $headers = @{ 'User-Agent' = 'quark-project-manager-setup'; 'Accept' = 'application/vnd.github+json' }

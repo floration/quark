@@ -602,7 +602,40 @@ class TestTabs(unittest.TestCase):
             self.assertTrue(tabs.write_default(paths))
             self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsSeen"], sorted(d))
             self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github-2"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsUpgraded"], ["map-embed"])
             self.assertEqual(tabs.upgrade(paths), [])
+
+    def test_upgrade_map_embed(self):
+        # URL_ONCE: q's saved Map Editor tab (the old default url) gets ?embed=1 once; then it is a default tab again
+        with tempfile.TemporaryDirectory() as tmp:
+            q = make_tree(tmp, with_git=False)
+            paths = config.Paths(PM_ROOT, q)
+            d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
+            self.assertEqual(d["map"]["url"], "http://127.0.0.1:8770/?embed=1")
+            old_map = dict(d["map"], url="http://127.0.0.1:8770/")
+            old_map.pop("keepAlive")
+            mine = {"id": "bot", "name": "Bots", "url": "http://127.0.0.1:8770/", "port": 8771, "folder": "bot-editor"}
+            saved = {"tabs": [dict(d["project"]), old_map, mine], "defaultsSeen": sorted(d)}
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            self.assertEqual(tabs.upgrade(paths), ["map"])
+            got = util.read_json_file(paths.pm("tabs.json"))
+            m = {t["id"]: t for t in got["tabs"]}
+            self.assertEqual(m["map"]["url"], d["map"]["url"])
+            self.assertTrue(m["map"]["keepAlive"])  # (a default tab again: missing defaults filled in)
+            self.assertEqual(m["bot"], mine)  # (not the map tab: left alone)
+            self.assertEqual(got["defaultsUpgraded"], ["map-embed"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"][1]["url"], "http://127.0.0.1:8770/")
+            self.assertEqual(tabs.upgrade(paths), [])
+            # q sets the old url back on purpose: it stays (the change ran once)
+            got["tabs"][1]["url"] = "http://127.0.0.1:8770/"
+            write(paths.pm("tabs.json"), json.dumps(got))
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["tabs"][1]["url"], "http://127.0.0.1:8770/")
+            # a map tab on another port or folder (q's own) is not touched
+            saved["tabs"][1] = dict(old_map, port=9000)
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            tabs.upgrade(paths)
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["tabs"][1]["url"], "http://127.0.0.1:8770/")
 
     def test_shell_supervisor(self):
         # main.js: a keepAlive watchdog, servers started at app start, never `start` / detached on Windows

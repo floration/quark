@@ -42,7 +42,7 @@ DEFAULT_TABS = {"tabs": [
      "childLabel": "Editors"},
     {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
     {"id": "ui", "name": "UI Editor", "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
-    {"id": "map", "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/", "port": 8770,
+    {"id": "map", "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/?embed=1", "port": 8770,
      "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": True},
     {"id": "bot", "name": "Bot Editor", "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769,
      "folder": "bot-editor", "start": "py -3 serve.py --port 8769 --no-open", "keepAlive": True},
@@ -278,7 +278,7 @@ def write_default(paths):
         data = DEFAULT_TABS
     if isinstance(data, dict):
         data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]), defaultsPlaced=list(PLACE_ONCE),
-                    defaultsMoved=sorted(MOVE_ONCE))
+                    defaultsMoved=sorted(MOVE_ONCE), defaultsUpgraded=sorted(URL_ONCE))
     util.write_json_atomic(path, data)
     return True
 
@@ -300,6 +300,11 @@ PLACE_ONCE = ("play",)
 # Manager. ("docs-before-github", the first try, compared every tab and skipped files where an older upgrade had appended
 # Tests after the editors, q's among them; this one compares siblings only, so it runs again where that one skipped.)
 MOVE_ONCE = {"docs-before-github-2": ("docs", "github", ("play", "github", "docs", "dashboard"))}
+# Default urls that changed: `upgrade` gives a tab the new default url once (`defaultsUpgraded` records it) while it still
+# has the old default url, port and folder; a url q set himself, or set back later, stays. name -> (tab id, old urls).
+# map-embed (2026-10-24): the Map Editor tab loads ?embed=1 like every other tool, so the page drops its own brand /
+# title row, which repeated the shell's tab name.
+URL_ONCE = {"map-embed": ("map", ("http://127.0.0.1:8770/",))}
 
 
 def _insert_in_default_place(lst, tab, order):
@@ -340,16 +345,37 @@ def _move_once(lst, moved):
     return out, moved
 
 
+def _url_once(lst, done, defaults):
+    """URL_ONCE: each url change runs once per tabs.json (`defaultsUpgraded` records it), only on a tab that still has
+    an old default url and the default port and folder. Returns (ids changed, the new defaultsUpgraded list)."""
+    out = []
+    for name, (tid, old_urls) in URL_ONCE.items():
+        if name in done:
+            continue
+        done = done + [name]
+        d = defaults.get(tid)
+        t = next((x for x in lst if isinstance(x, dict) and x.get("id") == tid), None)
+        if d is None or t is None or t.get("url") not in old_urls or any(t.get(k) != d.get(k) for k in ("port", "folder")):
+            continue
+        t["url"] = d["url"]
+        out.append(tid)
+    return out, done
+
+
 def upgrade(paths):
     """Bring q's tabs.json up to the current defaults without touching what q changed:
     - a default tab that is new since this file was written (its id is neither in the file nor in its `defaultsSeen`
-      list) is appended, so a new tool appears after setup; a default tab q removed stays removed;
+      list) is put in its default place (right after the nearest default tab before it that the file has), so a new
+      tool appears after setup; a default tab q removed stays removed;
     - a retired default tab (RETIRED_DEFAULTS, still pointing where it did) is removed;
+    - a default url that changed (URL_ONCE: the Map Editor's ?embed=1) is given once to a tab that still has the old
+      one, before the checks below, which tell default tabs by their url;
     - a default reorder (MOVE_ONCE: Claude Manager before GitHub Manager) is applied once while the file still has
       the older default order;
     - for a default tab (same id, url, port and folder as the default), a start command that an older default used
       (or none) becomes the new one, and keepAlive / lowPriority are added when the tab does not set them.
-    `defaultsSeen` (top level, next to `tabs`) lists the default ids already offered. The old file is kept as
+    `defaultsSeen` (top level, next to `tabs`) lists the default ids already offered; `defaultsPlaced`, `defaultsMoved`
+    and `defaultsUpgraded` the one-time fixes already done (PLACE_ONCE, MOVE_ONCE, URL_ONCE). The old file is kept as
     tabs.json.old. Returns the ids added or changed (empty when nothing changed or the file is missing / unreadable)."""
     path = paths.pm("tabs.json")
     try:
@@ -370,6 +396,9 @@ def upgrade(paths):
         if r and all(t.get(k) == v for k, v in r.items()):
             lst.remove(t)
             changed.append(t["id"])
+    upgraded = data.get("defaultsUpgraded") if isinstance(data.get("defaultsUpgraded"), list) else []
+    ids_url, upgraded = _url_once(lst, upgraded, defaults)
+    changed += ids_url
     have = {t.get("id") for t in lst if isinstance(t, dict)}
     for t in lst:
         d = defaults.get(t.get("id")) if isinstance(t, dict) else None
@@ -383,7 +412,7 @@ def upgrade(paths):
                 t[k] = d[k]
         if d["id"] in PLACE_ONCE and "parent" in d and not t.get("parent"):
             t["parent"] = d["parent"]  # (the Play tab belongs under the Supervisor Board; other tabs keep q's layout)
-        if t != before:
+        if t != before and t["id"] not in changed:
             changed.append(t["id"])
     moved = data.get("defaultsMoved") if isinstance(data.get("defaultsMoved"), list) else []
     ids_moved, moved = _move_once(lst, moved)
@@ -410,10 +439,12 @@ def upgrade(paths):
         if lst.index(t) != i and tid not in changed:
             changed.append(tid)
     all_seen = sorted((seen | set(defaults)) - set(RETIRED_DEFAULTS))
-    if changed or data.get("defaultsSeen") != all_seen or data.get("defaultsPlaced") != placed or data.get("defaultsMoved") != moved:
+    if changed or data.get("defaultsSeen") != all_seen or data.get("defaultsPlaced") != placed \
+            or data.get("defaultsMoved") != moved or data.get("defaultsUpgraded") != upgraded:
         data["defaultsSeen"] = all_seen
         data["defaultsPlaced"] = placed
         data["defaultsMoved"] = moved
+        data["defaultsUpgraded"] = upgraded
         try:
             with open(path, "rb") as f:
                 old = f.read()

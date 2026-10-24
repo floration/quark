@@ -16,7 +16,9 @@ Quark\project-manager\electron\electron.exe Quark\project-manager\shell [--tab=<
 | `preload.js` | `window.quarkShell` in every tab, `window.quarkTabbar` in the tab bar |
 | `tabbar.html` / `.css` / `.js` | the 34 px strip: Q logo, tabs with status dots, the Editor Manager's facts, reload, Dallas time |
 | `tabs.default.json` | used when `Quark\project-manager\tabs.json` is missing (setup can copy it there) |
-| `package.json` | app name / version (`quarkShell.version`), entry point |
+| `guard.py` | stops the servers the shell started when the shell dies without closing (see Supervisor) |
+| `electron-swap.ps1` | puts a downloaded Electron (`electron.next\`) in place after the app exits (see Electron updates) |
+| `package.json` | app name / version, entry point. `quarkShell.version` and `shell-status.json`'s `shellVersion` are this version plus a hash of the shell's files (`1.1.0+1a2b3c4d`), so they tell which copy runs; bump the version when the shell changes in a way q should notice |
 
 Next to the `shell` folder (`Quark\project-manager\`): `tabs.json` and `quark.ico`.
 
@@ -47,7 +49,7 @@ Same rules as SPEC.md, plus two optional fields:
   with the number of hidden tabs. An unknown parent or a cycle makes the tab top level.
 - `childLabel`: the small label in front of a parent's group of child tabs (default: the parent's name).
 - `keepAlive: true`: the shell keeps that local server running (see Supervisor below). Default tabs: every local server
-  (Supervisor Board, GitHub, Tests, Claude, Editor Manager and the Map, Bot, Gamemode and Physics editors), so every
+  (Supervisor Board, GitHub, Tests, Claude, Editor Manager and the Map, Bot, Gamemode, Physics and Weapons editors), so every
   dot is green without opening the tab (q, 2026-10-24). Each is an idle Python server, so running them all costs little.
 - `lowPriority: true`: the server runs at idle CPU priority (what `start /low` gave the GitHub manager).
 
@@ -55,8 +57,14 @@ Adding a tool is one entry: `id`, `name`, `parent`, then `url` + `port` + `folde
 (`"start": "py -3 serve.py --port <port> --no-open"`, run in the folder), or `folder` (+ `file`) for a page.
 `setup.ps1` (`server.py --init`) adds default tabs that are new since q's tabs.json was written (listed in its
 `defaultsSeen`), gives default tabs a new default start command only when they still have an older default one, and
-adds `keepAlive` / `lowPriority` when a default tab does not set them; q's own edits and removed tabs stay
-(the previous file is kept as `tabs.json.old`).
+adds `keepAlive` / `lowPriority` when a default tab does not set them; a default url that changed is given once to a
+tab that still has the old one (`URL_ONCE` in pm/tabs.py, recorded in `defaultsUpgraded`; so far the Map Editor's
+`?embed=1`); q's own edits and removed tabs stay (the previous file is kept as `tabs.json.old`).
+
+tabs.json is re-read when it changes (each update poll, 15 s) and with Ctrl+Shift+R. A tab whose url changed is
+reloaded, unless its page has unsaved changes: then it keeps its old entry and page until they are saved (tried again
+each poll). A tabs.json that cannot be read (a typo, a save half written) keeps the tabs already loaded and shows
+the error in the bar; only at app start does a bad file fall back to `tabs.default.json`.
 
 Server tabs (`url` on 127.0.0.1 / localhost): probed with `GET /` (500 ms). If down, `start` (or the first `*.cmd` in the
 folder whose name contains the folder name, else `start.cmd`) runs hidden in the tab's folder (`%PM%` for a tab without
@@ -64,7 +72,8 @@ a folder) with `QUARK_SHELL=1` in its environment; a relative program (`run.cmd`
 falls back to `python …` when the `py` launcher is missing; `%PM%` / `%QUARK%` are expanded in `start`. The tab shows
 "starting" and loads when the port answers (up to 20 s), else "not running" with the exit code and the last lines of
 output and a Start button. A "not running" tab loads by itself when its server comes up later. On window close the
-shell kills what it started (`taskkill /T /F /PID`); servers that were already running are left alone.
+shell kills what it started (`taskkill /T /F /PID`); servers that were already running are left alone. When the shell
+dies without closing (a crash, End task), `guard.py` stops them (Supervisor below).
 
 Hidden, always: commands run as `cmd.exe /d /s /c "<start>"` with `windowsHide` and piped output, never `detached`
 and never through `start` (with DETACHED_PROCESS, or a `start /min`, Windows gives `py.exe` → `python.exe` a console
@@ -83,12 +92,22 @@ cmd.exe the listening process is lowered as well once the port answers.
   the port is probed again (someone else may have started it); a server the shell started that is alive but not
   answering is killed first. Everything goes to `logs\<id>.log`.
 - A server that was already running when the app started and later stops is restarted too; the shell then owns it
-  (and stops it on window close).
-- Tab dots: green up, amber pulsing starting, amber ring = down and the watchdog restarts it shortly, grey down.
+  (and stops it on window close). One that hangs (holds the port, never answers) is stopped first on Windows when the
+  command line of the process listening on its port names the tool's folder (as for update restarts), else left alone.
+- Tab dots: green up, amber pulsing starting, amber ring = down and the watchdog restarts it shortly, red down (a
+  server that is not kept alive and is not running), grey not checked yet, hollow grey not installed.
   A tab showing the "not running" placeholder says when it restarts and loads the page when the server is back; a
   loaded page is left alone (the tools' pages poll their server and reconnect by themselves). The Start button
   restarts it at once.
 - Window close: only what the shell started is stopped; the watchdog stops with it.
+- The shell dies without closing: Electron's libuv puts each process it spawns in a kill-on-close job with silent
+  breakaway, so only the direct child (cmd.exe / py.exe) died and the real server (python.exe) kept serving old code
+  that the next open adopted. `guard.py` starts hidden at app start (python.exe under cmd.exe, so it outlives the shell
+  the same way) and gets `add <pid>` / `del <pid>` lines on its stdin for every server the shell starts or sees exit
+  (for a start command that hands off and exits, the process that listens). It sleeps in a blocking read; when the pipe
+  closes without `quit` (the shell's process is gone) it stops each listed server with its descendants, found by
+  parent pid in a process snapshot (the direct child is usually already gone, so `taskkill /T` would miss them) and
+  counted only when created after its parent (a reused pid never matches). Off Windows: each server's process group.
 
 ## Automatic installs and updates (`pm/updater.py`, `installs.json`)
 
@@ -124,10 +143,17 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    and the tab bar shows "Quark Project updated — reopen to finish" with a Restart button (it asks, then stops the old
    Supervisor Board server and the servers the shell started, and relaunches the app, whose supervisor starts the new
    server). When the update is found within 5 minutes of opening the app (the usual case: the pass runs at open), the
-   shell does that relaunch by itself without asking, so one open is enough; at most once every 10 minutes.
+   shell does that relaunch by itself without asking, so one open is enough; at most once every 10 minutes, only once
+   `/api/updates` says the install pass is over (`running: false`; a relaunch stops the Supervisor Board server and with
+   it the install under way, a 30 min build that would start again from zero), only within those 5 minutes, and never
+   while a tab has unsaved changes: otherwise the Restart button stays. Restart pressed while installs run offers
+   "Restart when the installs finish" (the banner then says so), "Restart now" or "Later". A Restart asks once more
+   when tabs have unsaved changes, naming them.
    A tool installed while the app is open starts right away too: each update poll (15 s) re-reads the tab list while
    a tab is not installed or tabs.json changed, and when anything differs reloads it, so the new tool's tab appears
    and its keepAlive server starts without another open.
+
+5. The `electron` entry (`"run": "builtin:electron-update"`, last, no sources): see Electron updates below.
 
 The Supervisor Board's "Tools & updates" card shows the repository state, each entry with a status pill (`ok`,
 `updating`, `failed`, `pending`, `waiting`, `disabled`), the last run time (Dallas) and the log's last lines, and an
@@ -146,8 +172,8 @@ The Supervisor Board's "Tools & updates" card shows the repository state, each e
 |---|---|
 | `id` | letters, digits, `_ . -` (names the log and the state) |
 | `name` | shown on the card |
-| `sources` | repo paths (folders or files); the first one is the tool's own folder |
-| `run` | the install command, run in `repository\`; `%QUARK%`, `%PM%`, `%REPO%` are expanded; `py -3` becomes `python` when the py launcher is missing; `builtin:self-update` is the app itself |
+| `sources` | repo paths (folders or files); the first one is the tool's own folder (none for `builtin:electron-update`) |
+| `run` | the install command, run in `repository\`; `%QUARK%`, `%PM%`, `%REPO%` are expanded; `py -3` becomes `python` when the py launcher is missing; `builtin:self-update` is the app itself, `builtin:electron-update` its Electron. Pass the Quark folder to installers that take an output folder (`install.cmd "%QUARK%\model-editor"`): their own default is `%USERPROFILE%\Desktop\Quark`, which is not always it |
 | `check` | optional: a file relative to `Quark\` that must exist (installs again when it is missing) |
 | `restartsPort` | optional: a port or a list of ports whose server is restarted after an install |
 | `timeoutSec` | optional, default 600 |
@@ -161,6 +187,25 @@ A new tool with an installer is one more line, e.g.
 {"id": "gamemode", "name": "Gamemode Editor", "sources": ["tools/<its folder>"], "run": "<its installer command>",
  "check": "gamemode-editor\\<a file it installs>", "restartsPort": 8771}
 ```
+
+## Electron updates (`builtin:electron-update`, `electron-swap.ps1`)
+
+`setup.ps1` installs the latest stable Electron once; after that the app keeps it current by itself. On an install
+pass, at most every 12 hours (a failed check is tried again on the next pass), the updater asks
+`api.github.com/repos/electron/electron/releases/latest` (the newest stable release: never a beta or a draft). When it
+is newer than `electron\VERSION`, it downloads `electron-v<ver>-win32-x64.zip` and that release's `SHASUMS256.txt`,
+checks the zip's sha256 (streamed, capped at 400 MB), unpacks it into `electron.next.tmp\`, writes its `VERSION` and
+renames it to `electron.next\`. `electron\` itself is never touched while the app runs (Windows cannot replace a
+running exe). With no `electron\` (setup `-NoElectron`) nothing is downloaded. The card shows the note ("Electron
+45.1.0 is downloaded; it replaces 44.9.2 when Quark Project next closes or restarts").
+
+When the window closes, or the app relaunches, and `electron.next\` is complete, the shell starts
+`electron-swap.ps1` hidden (through cmd.exe, so libuv's job does not take it down with the shell; paths and arguments
+go in `QUARK_SWAP_*` environment variables). It waits for the shell's process to end, renames `electron\` to
+`electron.old\` and `electron.next\` to `electron\` (each rename retried for 30 s while Electron's helper processes let
+go; the first is put back if the second fails), deletes `electron.old\` and, on a relaunch, starts the app with the
+same arguments. If the swap never works the old Electron stays and the next close tries again. Log:
+`logs\electron-swap.log`. `shell-status.json` shows `electron` (running) and `electronStaged`.
 
 ## Behaviour
 
@@ -177,9 +222,30 @@ A new tool with an installer is one more line, e.g.
   server tabs. Chromium refuses some folders (a whole user folder such as Desktop or Documents, the home folder,
   AppData, system folders): the shell then asks "Allow this folder / Choose another / Cancel" instead of failing silently.
 - Downloads open a Save dialog in the last folder used.
-- A page with unsaved changes (`beforeunload`) asks before Ctrl+R / F5 reloads it.
-- Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+R / F5 reload (Ctrl+F5
-  without cache), Ctrl+Shift+R re-read tabs.json, F11 full screen, Ctrl+= / Ctrl+- zoom every tab (Ctrl+0: back to 100%), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
+- A page with unsaved changes (`beforeunload`) asks before Ctrl+R / F5 reloads it. Closing the window or restarting
+  the app asks once, naming every tab with unsaved changes (Cancel shows the first). Each page is asked by running a
+  cancelable `beforeunload` event through its own handlers (nothing unloads; editors that save a draft on beforeunload
+  save it once more); a page that does not answer within 1.5 s counts as clean, so a hung page never blocks closing.
+- Right-click in a page: Undo, Redo, Cut, Copy, Paste, Paste as plain text, Select all (enabled by what the page
+  allows there), Open / Copy link for links, Find (the selection), Reload, Inspect element. Right-click on a tab: Open,
+  Reload, Move left / right, Open its log, Developer tools.
+- Tab order: drag a tab among its siblings (an accent line shows where it lands), Ctrl+Shift+PageUp / PageDown, or
+  Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none),
+  keeping every other field; a parent's children move with it.
+- Narrow windows: first the Editor Manager's facts shrink (below), then the tabs shorten (inactive tabs drop
+  "Editor" / "Manager", then end in an ellipsis; the active tab keeps its whole name; the full name is the tooltip),
+  then the tabs that still do not fit go behind a "+N" button (a list of them; the strip also fades out and scrolls
+  with the mouse wheel).
+- Zoom: Ctrl+= / Ctrl+- / Ctrl+mouse wheel (at most one 10 % step per 40 ms) for every tab, Ctrl+0 back to 100 %.
+  While the zoom is not 100 % a pill in the bar shows it; a click resets it.
+- Find: Ctrl+F opens a find box in the tab bar (no extra view): match count, Enter / F3 next, Shift+Enter / Shift+F3
+  previous, Esc closes; switching tabs closes it. A page that handles Ctrl+F itself (the GitHub Manager's log search)
+  keeps it: preload.js asks the shell only when the page did not call `preventDefault()`.
+- Hold Ctrl in any tab to see the Ctrl+N numbers on the tabs.
+- The taskbar button flashes when the Supervisor Board's halting count rises while the window is not focused.
+- Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+Shift+PageUp /
+  PageDown move the active tab, Ctrl+R / F5 reload (Ctrl+F5 without cache), Ctrl+Shift+R re-read tabs.json, Ctrl+F find,
+  F11 full screen, Ctrl+= / Ctrl+- / Ctrl+wheel zoom every tab (Ctrl+0: back to 100%), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).
 
 ## The Play tab
