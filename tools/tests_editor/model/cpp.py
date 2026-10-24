@@ -20,7 +20,8 @@ KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "sizeof", "declty
             "do", "else", "new", "delete", "throw", "case", "alignof", "noexcept", "typeid", "co_return", "co_await"}
 _CALLISH = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 _PARENS, _BRACKETS = re.compile(r"[()]"), re.compile(r"[\[\]]")
-_IDENT_CALL = re.compile(r"([A-Za-z_]\w*)(\s*)\(|\(|\)")
+_IDENT_CALL = re.compile(r"([A-Za-z_]\w*)(\s*)\(|[(){}]")
+_LAMBDA_HEAD = re.compile(r"\]\s*(?:\([^()]*\))?\s*(?:(?:mutable|constexpr|noexcept)\s*)*(?:->\s*[\w:<>,\s*&]+?)?\s*$")
 _TRAIL_QUAL = re.compile(r"\)\s*(?:(?:const|noexcept|override|final|mutable|&&|&)\s*)*(?:->[^;{}()]*)?\s*$")
 _NS_OPEN = re.compile(r"(?:\bnamespace\s*[\w:]*|\bextern\s*\"\s*\")\s*$")
 _TP = re.compile(r"\bTP\s*\(\s*(\d+)\s*\)")
@@ -39,6 +40,7 @@ class Source:
     def __init__(self, path, text):
         self.path, self.text = path, text
         out, last, self.strings = [], 0, {}                         # strings: start offset -> (end, value)
+        self.line_comments = []                                     # (start, end) of every // comment
         for m in _LEX.finditer(text):
             s, e = m.span()
             out.append(text[last:s])
@@ -52,6 +54,7 @@ class Source:
                     d = m.group("delim") or ""
                     self.strings[s + q] = (e, chunk[q + 2 + len(d):-(2 + len(d))])
             else:
+                if kind == "line": self.line_comments.append((s, e))
                 out.append(_blank(chunk))
             last = e
         out.append(text[last:])
@@ -218,22 +221,33 @@ def calls_in(src, a, b, known, keep_all=False):
     """Calls made at statement level between offsets a..b, in order: [{fn, args, line, start}].
 
     Statement level: not inside another call's argument list (an `if (...)`/`return`/grouping paren is transparent),
-    not a member call (x.f()), not qualified (std::f()), and not a plain initializer (`T p = TP(1)`). Only names in
-    `known` or that look like tests (test*, *Tests) count, unless keep_all."""
-    blank, out, stack = src.blank, [], []
+    not a member call (x.f()), not qualified (std::f()), and not a plain initializer (`T p = TP(1)`). The body of a
+    lambda passed as an argument is statement level again (`timingTest("x", [] { testX(TP(1)); })`): its calls count,
+    with `via` = the call that takes the lambda, and that call itself is left out when its lambdas made any. Only names
+    in `known` or that look like tests (test*, *Tests) count, unless keep_all."""
+    blank, out, stack = src.blank, [], []                         # stack: True (transparent paren), False (call args),
+    outer = []                                                    #   "L" (lambda body), "{" (other brace); outer: open calls
     for m in _IDENT_CALL.finditer(blank, a, b):
         g = m.group()
-        if g == "(":
-            stack.append(True); continue
-        if g == ")":
+        if g in "({":
+            if g == "{": stack.append("L" if _LAMBDA_HEAD.search(blank, max(a, m.start() - 200), m.start()) else "{")
+            else: stack.append(True)
+            continue
+        if g in ")}":
             if stack: stack.pop()
+            while outer and outer[-1]["depth"] > len(stack): outer.pop()
             continue
         name = m.group(1)
         kw = name in KEYWORDS
-        opaque = any(not t for t in stack)
+        opaque, via = False, None
+        for t in reversed(stack):                                 # inside call args, unless a lambda body is nearer
+            if t == "L": break
+            if t is False: opaque = True; break
         stack.append(kw)
         if kw or opaque: continue
-        if not (keep_all or name in known or is_test_name(name)): continue
+        if not (keep_all or name in known or is_test_name(name)):
+            outer.append({"depth": len(stack), "rec": None, "name": name})
+            continue
         pre = blank[max(a, m.start() - 3):m.start()].rstrip()
         if pre.endswith((".", "->", "::")): continue
         p2 = blank[max(a, m.start() - 40):m.start()].rstrip()
@@ -242,9 +256,13 @@ def calls_in(src, a, b, known, keep_all=False):
             continue                                                  # a declaration: `int f(...)`
         lp = m.end() - 1
         rp = src.match_paren(lp)
-        out.append({"fn": name, "args": collapse(src.text[lp + 1:min(rp, b)]), "line": src.line(m.start()),
-                    "start": m.start()})
-    return out
+        rec = {"fn": name, "args": collapse(src.text[lp + 1:min(rp, b)]), "line": src.line(m.start()), "start": m.start()}
+        if outer and "L" in stack[outer[-1]["depth"]:]:
+            rec["via"] = outer[-1]["name"]
+            if outer[-1]["rec"] is not None: outer[-1]["rec"]["_wrap"] = True
+        out.append(rec)
+        outer.append({"depth": len(stack), "rec": rec, "name": name})
+    return [c for c in out if not c.pop("_wrap", False)]
 
 
 def index_files(sources):
@@ -334,9 +352,37 @@ def main_layout(src, main_fn, known):
         inner = blank[body[0]:body[1]]
         if names and re.search(r"\b(?:%s)\b" % "|".join(map(re.escape, names)), inner): continue   # (groups / group NAME)
         calls = calls_in(src, body[0], body[1], known)
-        shortcuts.append({"name": name, "line": src.line(m.start() + a), "endLine": src.line(be), "calls": calls,
-                          "ports": _ports(src, body[0], body[1], calls), "locals": _locals(src, body[0], body[1])})
+        names_ = [n for n in (src.string_at(x.end() - 1) for x in _ARGV1.finditer(blank, lp, rp)) if n]
+        shortcuts.append({"name": name, "aliases": names_[1:], "line": src.line(m.start() + a), "endLine": src.line(be),
+                          "calls": calls, "ports": _ports(src, body[0], body[1], calls),
+                          "locals": _locals(src, body[0], body[1]), "argsSpec": _args_spec(src, lp, rp, body)})
     return lists, shortcuts
+
+
+def _args_spec(src, lp, rp, body):
+    """What a command takes after its name: {min, max (None: any), params: [{name, default}], hint} or None.
+
+    min from the condition's `argc >= N`, max from the highest argv[K] it reads (argv itself passed on: any), each
+    param's name and default from `T name = argc > K ? ...argv[K]... : default;`, the hint from the if line's comment."""
+    cond, text = src.blank[lp:rp], src.text[body[0]:body[1]]
+    m = re.search(r"\bargc\s*(>=|>)\s*(\d+)", cond)
+    lo = max(0, (int(m.group(2)) - (2 if m.group(1) == ">=" else 1)) if m else 0)
+    used = [int(k) for k in re.findall(r"\bargv\s*\[\s*(\d+)\s*\]", cond + src.blank[body[0]:body[1]])]
+    hi = max([k - 1 for k in used if k >= 2] + [lo])
+    if re.search(r"\bargv\s*[,)]", src.blank[body[0]:body[1]]): hi = None              # (argc, argv passed on whole)
+    params = []
+    for k in range(2, (hi if hi is not None else max([lo + 1] + used)) + 2):
+        nm = re.search(r"(\w+)\s*=\s*argc\s*>\s*%d\s*\?[^:;]*:\s*([^;]+?)\s*;" % k, text)
+        dm = nm or re.search(r"argc\s*>\s*%d\s*\?[^:;]*\bargv\s*\[\s*%d\s*\][^:;]*:\s*([^;,)]+)" % (k, k), text)
+        params.append({"name": nm.group(1) if nm else None,
+                       "default": collapse(dm.group(dm.lastindex)) if dm else None})
+    a = src.line_start(src.line(lp))
+    e = src.text.find("\n", a)
+    e = len(src.text) if e < 0 else e
+    hint = next((re.sub(r"^//+\s*", "", src.text[cs:ce]).strip() for cs, ce in src.line_comments
+                 if rp < cs < e and not re.search(r"\bif\s*\(", src.blank[rp:cs])), None)   # (not the next command's)
+    if not params and not lo: return {"min": 0, "max": 0, "params": [], "hint": hint}
+    return {"min": lo, "max": hi, "params": params[:max(lo, hi or len(params))], "hint": hint}
 
 
 def _statement_end(blank, i, b):

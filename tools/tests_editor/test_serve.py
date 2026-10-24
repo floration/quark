@@ -159,6 +159,26 @@ class Fixture(unittest.TestCase):
         self.assertEqual(f["testOther"]["calls"], ["testBraces"])
         self.assertEqual(f["testPorts"]["usedBy"], ["group:alpha", "group:beta", "group:gamma", "cmd:ports"])
 
+    def test_lambda_calls_and_runs_via(self):
+        d = self.items["group:delta"]
+        self.assertEqual([(c["fn"], c.get("via")) for c in d["calls"]], [("testBraces", "timed")])   # (the wrapper left out)
+        f = self.m["functions"]
+        self.assertEqual(f["testBraces"]["usedBy"], ["group:delta", "cmd:braces"])
+        via = {v["item"]: v["path"] for v in f["testBraces"]["runsVia"]}
+        self.assertEqual(via["group:alpha"], ["testOther"])                 # (alpha -> testOther -> testBraces)
+        self.assertEqual(via["cmd:named"], ["testNamed"])
+        self.assertNotIn("group:delta", via)                                 # (direct there: usedBy)
+        self.assertEqual(f["testNeverRun"]["runsVia"], [])
+
+    def test_args_spec(self):
+        n, b, s = self.items["cmd:named"], self.items["cmd:bench"], self.items["cmd:braces"]
+        self.assertEqual((n["argsSpec"]["min"], n["argsSpec"]["max"]), (1, 1))
+        self.assertEqual(n["argsSpec"]["choices"], ["one", "two"])
+        self.assertEqual(n["argsSpec"]["hint"], "NAME: one of testNamed's")
+        self.assertIsNone(self.items["cmd:toolish"]["argsSpec"]["hint"])    # (the comment is the next command's)
+        self.assertEqual(b["argsSpec"], {"min": 0, "max": 1, "params": [{"name": "secs", "default": "15"}], "hint": "[secs]"})
+        self.assertEqual((s["argsSpec"]["min"], s["argsSpec"]["max"]), (0, 0))
+
     def test_lint(self):
         rules = {(l["rule"], l["line"]) for l in self.m["lint"]}
         for want in [("ci-scope", 38), ("final", 39), ("needs", 41), ("missing-fn", 54), ("pin", 33), ("unused", 37),
@@ -180,6 +200,28 @@ class Fixture(unittest.TestCase):
         self.assertEqual(jobs["build"]["ifText"], "not when a manual run with 'final' ticked")
         self.assertEqual(jobs["meta"]["comment"].split("\n"), ["the first job", "a comment line under the key"])
         self.assertIn("[final]", ci["sanitizerTrigger"]["text"])
+
+
+class ParseLog(unittest.TestCase):
+    """Group times and results from a run's output (serve.parse_log)."""
+
+    def test_whole_suite(self):
+        log = ("weapons out\n  FAIL /home/q/quark/tests/tests.cpp:120: a == b\n  (group weapons: 12 s)\n  (group weapons: 1 failure(s))\n"
+               "  (group bots: 30 s)\n  FAIL C:\\q\\tests\\rules_tests.h:5: c\n  (group duel: 3 s)\n  FAIL duel: crashed (signal 11)\n"
+               "  (group duel: 2 failure(s))\n  FAIL vote refused: x\n  (group votes: 4 s)\n1 FAILURE(S)\n")
+        times, res = serve.parse_log(log)
+        self.assertEqual(times, {"weapons": 12.0, "bots": 30.0, "duel": 3.0, "votes": 4.0})
+        self.assertEqual(res["weapons"]["failLines"], [{"text": "FAIL /home/q/quark/tests/tests.cpp:120: a == b", "file": "tests/tests.cpp", "line": 120}])
+        self.assertEqual((res["bots"]["status"], res["duel"]["status"], res["duel"]["fails"]), ("passed", "failed", 2))
+        self.assertEqual([x.get("file") for x in res["duel"]["failLines"]], ["tests/rules_tests.h", None])
+        self.assertEqual(res["votes"]["status"], "failed")                   # (a FAIL line without a file is still one)
+
+    def test_one_group_and_release_check(self):
+        times, res = serve.parse_log("group bots: 3 s\nall tests passed\n", "bots")
+        self.assertEqual((times, res["bots"]["status"]), ({"bots": 3.0}, "passed"))
+        times, res = serve.parse_log("bots rc=0 group bots: 9 s\nduel rc=1 group duel: 2 s\nmap x ok\n")
+        self.assertEqual(times, {"bots": 9.0, "duel": 2.0})
+        self.assertEqual((res["bots"]["status"], res["duel"]["status"]), ("passed", "failed"))
 
 
 class Yaml(unittest.TestCase):
@@ -223,6 +265,13 @@ import os, subprocess, sys, time
 a = sys.argv[1:]
 if a == ["groups"]:
     print("bots\nduel"); sys.exit(0)
+if a == []:                               # the whole suite (QUARK_TEST_ONLY: just those)
+    only = os.environ.get("QUARK_TEST_ONLY", "")
+    print("only=" + only)
+    gs = only.split(",") if only else ["bots", "duel"]
+    if "bots" in gs: print("bots out\n  (group bots: 4 s)")
+    if "duel" in gs: print("  FAIL /src/quark/tests/tests.cpp:12: x == y\n  (group duel: 2 s)\n  (group duel: 1 failure(s))")
+    sys.exit(1 if "duel" in gs else 0)
 if a[:1] == ["group"]:
     g = a[1]
     if g == "tourney":                    # long: a child process too (stop must kill the tree)
@@ -458,6 +507,40 @@ class Server(unittest.TestCase):
         code, runs = self.j("/api/runs")
         self.assertEqual([x["cmd"] for x in runs[:4]], ["group:tourney", "cmd:signing", "group:duel", "group:bots"])
         self.assertEqual(json.loads(rd(os.path.join(self.state, "cache", "runs.json")))[-1]["status"], "stopped")
+        # the whole suite / a chosen set (QUARK_TEST_ONLY): each group's result and time, in the model and groups.json
+        code, r = self.j("/api/run", {"cmd": "suite", "groups": ["duel", "bots"]})
+        st = wait(r["id"])
+        self.assertEqual((st["status"], st["only"]), ("failed", ["duel", "bots"]))
+        self.assertIn("only=duel,bots", st["output"])
+        self.assertEqual(st["groupResults"]["duel"], {"status": "failed", "fails": 1})
+        m = json.loads(self.req("/api/model")[2])
+        g = {i["name"]: i for i in m["suites"][0]["items"] if i["kind"] == "group"}
+        self.assertEqual((g["bots"]["lastRun"]["status"], g["bots"]["timing"]["sec"]), ("passed", 4.0))
+        self.assertEqual(g["duel"]["lastRun"]["failLines"], [{"text": "FAIL /src/quark/tests/tests.cpp:12: x == y", "file": "tests/tests.cpp", "line": 12}])
+        self.assertIsNone(g["tourney"]["lastRun"])                           # (stopped: no result)
+        saved = json.loads(rd(os.path.join(self.state, "cache", "groups.json")))["groups"]
+        self.assertEqual((saved["bots"]["sec"], saved["duel"]["status"]), (4.0, "failed"))
+        self.assertEqual(self.j("/api/run", {"cmd": "suite", "groups": ["nope"]})[0], 404)
+        self.assertEqual(self.j("/api/run", {"cmd": "group:bots", "groups": ["bots"]})[0], 400)
+        # arguments: checked against the command's argsSpec; commands that write files are refused
+        code, r = self.j("/api/run", {"cmd": "cmd:serverbench", "args": ["2", "1"]})
+        self.assertEqual(code, 200)
+        self.assertIn("'serverbench', '2', '1'", wait(r["id"])["output"])
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:serverbench", "args": ["1", "2", "3"]})[0], 400)
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:rules"})[0], 400)                   # (NAME is required)
+        for bad in (["a b"], ["$(x)"], "overtime", [1]):
+            self.assertEqual(self.j("/api/run", {"cmd": "cmd:rules", "args": bad})[0], 400, bad)
+        code, r = self.j("/api/run", {"cmd": "cmd:rules", "args": ["overtime"]})
+        self.assertIn("'rules', 'overtime'", wait(r["id"])["output"])
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:exportassets"})[0], 403)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "assets_export")))
+        # a log from a terminal run feeds the times too
+        code, r = self.j("/api/import-log", {"text": "x\n  (group bots: 9 s)\n", "name": "pre-commit.log"})
+        self.assertEqual((code, r["groups"]), (200, 1))
+        m = json.loads(self.req("/api/model")[2])
+        bots = next(i for i in m["suites"][0]["items"] if i["id"] == "group:bots")
+        self.assertEqual(bots["timing"]["sec"], 9.0)
+        self.assertTrue(bots["timing"]["source"].startswith("imported log"))
         os.remove(b)
 
 
