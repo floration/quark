@@ -838,6 +838,27 @@ function sessionFor(tab) {
   return ses;
 }
 
+// ---------- page zoom ----------
+// The tool pages were laid out on a 1080p screen; on a taller one (q: 2560x1440) they looked small. Pages open at
+// the screen's work-area height / 1040 (rounded to 1/4, 1x..1.5x), so 1080p stays 1x and 1440p is 1.25x. Ctrl+= /
+// Ctrl+- change it for every tab (remembered in state.json), Ctrl+0 goes back to the automatic size.
+function autoZoom() {
+  try {
+    const d = win ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+    return Math.min(1.5, Math.max(1, Math.round(d.workAreaSize.height / 1040 * 4) / 4));
+  } catch { return 1; }
+}
+const zoom = () => (state.zoom >= 0.5 && state.zoom <= 3 ? state.zoom : autoZoom());
+function applyZoom() {
+  for (const e of views.values()) if (!e.view.webContents.isDestroyed()) e.view.webContents.setZoomFactor(zoom());
+}
+function stepZoom(dir) {
+  if (dir === 0) delete state.zoom;
+  else state.zoom = Math.min(3, Math.max(0.5, Math.round((zoom() + dir * 0.1) * 10) / 10));
+  saveState();
+  applyZoom();
+}
+
 function createView(tab) {
   const view = new WebContentsView({
     webPreferences: {
@@ -874,6 +895,7 @@ function createView(tab) {
     if (entry.tab.kind === 'server') { status.set(entry.tab.id, 'down'); showDown(entry, desc + ' (' + code + ')'); updateTabbar(); }
   });
   wc.on('did-finish-load', () => {
+    wc.setZoomFactor(zoom());
     if (entry.mode === 'page' && entry.pendingHash) { const h = entry.pendingHash; entry.pendingHash = ''; setHash(entry, h); }
   });
   wc.on('render-process-gone', (e, d) => {
@@ -1007,6 +1029,9 @@ function onKey(event, input) {
   else if (ctrl && !input.alt && (key === 'r' || key === 'R') && input.shift) reloadTabList();
   else if (ctrl && !input.alt && (key === 'r' || key === 'R')) reloadActive(false);
   else if (key === 'F5' && !input.alt) reloadActive(ctrl);
+  else if (ctrl && !input.alt && (key === '=' || key === '+')) stepZoom(1);
+  else if (ctrl && !input.alt && (key === '-' || key === '_')) stepZoom(-1);
+  else if (ctrl && !input.alt && key === '0') stepZoom(0);
   else if (key === 'F11') { if (win) win.setFullScreen(!win.isFullScreen()); }
   else if (key === 'F12') { const e = views.get(activeId); if (e) e.view.webContents.toggleDevTools(); }
   else if (ctrl && key === 'PageDown') cycle(1);
