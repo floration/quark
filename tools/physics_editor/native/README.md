@@ -12,7 +12,13 @@ quark_maptool physsim     [request.json]     runs a scenario under one or more p
 quark_maptool physdrive   --stream           drive the real pmove line by line (WASD + mouse from the page)
 quark_maptool physexport  [request.json]     a physics set as .qmode text and as a list of C++ constants
 quark_maptool physexpr    [request.json]     a set's movement equations: errors, static / dynamic, deps, sampled curves
+quark_maptool physserve   --stream           the commands above kept running: {id, cmd, request} lines in, {id, code, answer} out
 ```
+
+`physserve` (serve.cpp) is what serve.py keeps running for the page: first line `{}`, it answers `{"type":"ready"}`,
+then each `{"id": n, "cmd": "physsim", "request": {...}}` line gets `{"id": n, "code": 0, "answer": {...}}` (the
+one-shot command's answer exactly), in order; `stop` ends it. A map sent as `{text, name}` is parsed once and kept
+(the last 4). Only physsim, physexpr, physexport, physparams, physpresets and physroom are served.
 
 Every command runs the game's own `pmove()` (src/game/pmove.cpp) unchanged, one 1 ms command at a time like the
 1000 Hz server, with the physics set applied through `setActiveRules(CustomRules)` (per thread). Values go through
