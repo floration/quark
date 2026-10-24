@@ -579,6 +579,109 @@ DRIVES = {}
 DRIVES_LOCK = threading.Lock()
 
 
+class Worker:
+    """One `quark_maptool physserve --stream` kept running: the page's physsim / physexpr / physexport requests go to it
+    as lines instead of a new process each (a process start is ~10 ms of the ~15 ms an edit took to come back on Linux,
+    more on Windows; the maps sent as text are parsed once). A quark_maptool without physserve (older than this
+    editor): the per-request process, as before. Restarted when it dies, times out or the binary is rebuilt."""
+    CMDS = {"physsim", "physexpr", "physexport", "physparams", "physpresets", "physroom"}
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.proc = None; self.exe = None; self.mtime = None; self.err = ""; self.seq = 0
+
+    def _stop(self):
+        if self.proc:
+            try: self.proc.kill()
+            except Exception: pass
+        self.proc = None
+
+    def _start(self):
+        """False: this quark_maptool has no physserve."""
+        if not CFG.maptool: return False
+        cmd = [CFG.maptool] + CFG.helper_args + ["physserve", "--stream"]   # (not through helper_cmd: the page can't start one)
+        self.exe = CFG.maptool
+        try: self.mtime = os.stat(self.exe).st_mtime
+        except OSError: self.mtime = None
+        self.err = ""
+        # (buffered pipes: an answer is up to a few hundred KB, and an unbuffered readline reads it a byte per call)
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1 << 16,
+                                     creationflags=subprocess.CREATE_NO_WINDOW if IS_WIN else 0)
+        threading.Thread(target=self._drain, args=(self.proc,), daemon=True).start()
+        self.proc.stdin.write(b"{}\n"); self.proc.stdin.flush()
+        first = self._readline(10)
+        try: ok = json.loads(first or b"null").get("type") == "ready"
+        except (ValueError, AttributeError): ok = False
+        if not ok: self._stop()
+        return ok
+
+    def _drain(self, proc):
+        for line in proc.stderr:
+            self.err = (self.err + line.decode("utf-8", "replace"))[-4000:]
+
+    def _readline(self, timeout):
+        """One answer line, or None when the process died or took longer than timeout (then it's killed)."""
+        p = self.proc
+        t = threading.Timer(timeout, lambda: p.kill())
+        t.daemon = True; t.start()
+        try: line = p.stdout.readline()
+        finally: t.cancel()
+        return line or None
+
+    def run(self, args, request, timeout):
+        """The helper's answer as /api/helper gives it (JSON bytes), or None: no physserve here, use a process."""
+        with self.lock:
+            if self.proc and (self.proc.poll() is not None or self.exe != CFG.maptool or self._changed()): self._stop()
+            if not self.proc and not self._start(): return None
+            self.seq += 1
+            t0 = time.time()
+            try:
+                self.proc.stdin.write((json.dumps({"id": self.seq, "cmd": args[0], "request": request}) + "\n").encode("utf-8"))
+                self.proc.stdin.flush()
+            except OSError:
+                self._stop(); raise RuntimeError("the helper stopped: " + self.err[-300:])
+            line = self._readline(timeout)
+            if line is None:
+                err = self.err; self._stop()
+                if time.time() - t0 >= timeout - 0.05: raise subprocess.TimeoutExpired(args[0], timeout)
+                raise RuntimeError("the helper stopped: " + err[-300:])
+            # {"id":N,"code":C,"answer":{...}} passed on as it is (no parse and dump of a few hundred KB of trace here)
+            m = re.match(rb'\{"id":(\d+),"code":(-?\d+),"answer":', line)
+            if not m or int(m.group(1)) != self.seq: self._stop(); raise RuntimeError("the helper answered out of turn")
+            head = '{"code":%s,"stderr":"","worker":true,"wallMs":%.1f,"answer":' % (m.group(2).decode(), (time.time() - t0) * 1000)
+            return head.encode() + line[m.end():].rstrip()
+
+    def _changed(self):
+        try: return os.stat(self.exe).st_mtime != self.mtime
+        except OSError: return True
+
+
+class Workers:
+    """Two physserve workers: a run and an equation check / export answer side by side, as separate processes did."""
+    def __init__(self): self.w = [Worker(), Worker()]; self.none = None
+
+    def run(self, args, request, timeout):
+        if not args or args[0] not in Worker.CMDS or len(args) != 1: return None
+        if self.none is not None:   # (no physserve in this quark_maptool: not asked again until it's rebuilt or replaced)
+            try: key = (CFG.maptool, os.stat(CFG.maptool).st_mtime)
+            except OSError: key = None
+            if key == self.none: return None
+            self.none = None
+        w = next((x for x in self.w if not x.lock.locked()), self.w[0])
+        r = w.run(args, request, timeout)
+        if r is None:
+            try: self.none = (CFG.maptool, os.stat(CFG.maptool).st_mtime)
+            except OSError: self.none = (CFG.maptool, None)
+        return r
+
+    def stop(self):
+        for x in self.w:
+            with x.lock: x._stop()
+
+
+WORKERS = Workers()
+
+
 def control_ok(line):
     if line in ("reset", "stop"): return True
     try: o = json.loads(line)
@@ -757,9 +860,12 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or [])
                 if not cmd: return self._err(501, "quark_maptool not found (or bad args)")
+                timeout = min(600.0, float(body.get("timeout") or 120))
+                ans = WORKERS.run(body["args"], body.get("request") or {}, timeout) if not os.environ.get("QPE_NO_WORKER") else None
+                if ans is not None: return self._send(200, ans, "application/json")
                 t0 = time.time()
                 r = subprocess.run(cmd, input=json.dumps(body.get("request") or {}), capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace", timeout=float(body.get("timeout") or 120),
+                                   encoding="utf-8", errors="replace", timeout=timeout,
                                    creationflags=subprocess.CREATE_NO_WINDOW if IS_WIN else 0)
                 return self._send(200, {"code": r.returncode, "answer": parse_answer(r.stdout), "stderr": r.stderr[-4000:],
                                         "wallMs": round((time.time() - t0) * 1000, 1)})
@@ -1036,6 +1142,7 @@ def main():
         for d in list(DRIVES.values()):
             try: d.proc.kill()
             except Exception: pass
+        WORKERS.stop()
 
 
 if __name__ == "__main__":

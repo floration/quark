@@ -46,6 +46,9 @@ const RoomPart* roomPartAt(const Vec3& p);     // the part whose area holds p (n
 // A request's map: absent / "room" / "room:<part>" = the test room; another string = a map by name; an object =
 // {text|file|name|map} (loadRequestMap). `isRoom` says which. `holder` keeps a loaded map alive.
 bool requestMap(const Json& j, const Map*& out, Map& holder, bool& isRoom, std::string& label, std::string& err);
+// physserve (serve.cpp): a map sent as {text} is parsed once and kept (the last few), so a run on a real map after an
+// edit doesn't parse the map again. Off in the one-shot commands (one run per process: nothing to reuse).
+void setMapCache(bool on);
 
 // ---- the scenario runner (sim.cpp) --------------------------------------------------------------------------------
 // angles are degrees in requests and answers; yaw 0 faces -z, -90 faces +x (the game's: forward = (-sin, 0, -cos))
