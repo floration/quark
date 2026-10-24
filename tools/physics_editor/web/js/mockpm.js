@@ -304,12 +304,13 @@ export function pmoveStep(s, cmd, w, dt, mt, ev) {
     // grapple
     const hookHeld = (cmd.buttons & BTN_GRAPPLE) !== 0 && mt.grapple;
     const wasHooked = (s.flags & MF_HOOKED) !== 0;
+    let grabbed = false;   // (a grab let go of in its own step, against a wall, still starts the cooldown: pmove 1.18.32)
     if (!hookHeld) s.flags &= ~MF_HOOKHELD;
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && s.hookCooldown <= 0) {
         const eye = [s.pos[0], s.pos[1] + K.eye, s.pos[2]];
         const cp = Math.cos(cmd.pitch), dir = [-sy * cp, Math.sin(cmd.pitch), -cy * cp];
         const t = w.raycast(eye, dir, K.grappleRange * mt.m.hook_range);
-        if (t >= 0) { s.hookPoint = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t]; s.flags |= MF_HOOKED | MF_HOOKHELD; ev("hook", { point: [...s.hookPoint] }); }
+        if (t >= 0) { s.hookPoint = [eye[0] + dir[0] * t, eye[1] + dir[1] * t, eye[2] + dir[2] * t]; s.flags |= MF_HOOKED | MF_HOOKHELD; grabbed = true; ev("hook", { point: [...s.hookPoint] }); }
     }
     if (!hookHeld) s.flags &= ~MF_HOOKED;
     let hooked = (s.flags & MF_HOOKED) !== 0;
@@ -325,7 +326,7 @@ export function pmoveStep(s, cmd, w, dt, mt, ev) {
             onGround = false;
         }
     }
-    if (wasHooked && !(s.flags & MF_HOOKED)) { s.hookCooldown = K.hookCooldown * mt.m.hook_cooldown; ev("unhook", {}); }
+    if ((wasHooked || grabbed) && !(s.flags & MF_HOOKED)) { s.hookCooldown = K.hookCooldown * mt.m.hook_cooldown; ev("unhook", {}); }
     // ladders, ground, air
     const onLadder = !hooked && !dashing && w.onLadder(box(s.pos, crouched));
     if (onLadder && !s.onLadder) ev("ladder", {});
