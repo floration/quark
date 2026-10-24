@@ -80,13 +80,15 @@
       (e.waitingWhy || '') + ' ' + e.links.map(l => l.label).join(' ') + ' ' + DM.pill(e).label + ' ' + (e.priority || '')).toLowerCase();
     return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
   }
+  // Status filter groups use values no status word can take ('notdone' = open work, '__finished', '__ref').
   function matches(e, f) {
     f = f || st.prefs.entries;
     if (f.file && e.file !== f.file) return false;
-    if (f.status === 'notdone' && DM.isDone(e)) return false;
-    if (f.status === 'done' && !DM.isDone(e)) return false;
-    if (f.status && !['notdone', 'done'].includes(f.status) && e.status !== f.status) return false;
-    if (f.wait === 'none') { if (!DM.isDone(e)) return false; }
+    if (f.status === 'notdone') { if (!DM.isOpen(e)) return false; }
+    else if (f.status === '__finished') { if (!DM.isDone(e)) return false; }
+    else if (f.status === '__ref') { if (!DM.isRef(e)) return false; }
+    else if (f.status && e.status !== f.status) return false;
+    if (f.wait === 'none') { if (DM.isOpen(e)) return false; }
     else if (f.wait === 'q') { if (!DM.needsQ(e)) return false; }
     else if (f.wait === 'prci') { if (!DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')) return false; }
     else if (f.wait && !DM.waitKeys(e).includes(f.wait)) return false;
@@ -95,23 +97,42 @@
   }
   function entryFiles() { return st.data.files.filter(f => f.kind !== 'document').map(f => f.name); }
 
+  let selKeys = {};
   function fillSelect(sel, opts, value) {
-    clear(sel);
-    for (const [v, label] of opts) sel.appendChild(h('option', {value: v}, label));
+    const key = JSON.stringify(opts);
+    if (selKeys[sel.id] !== key) {                                   // (options unchanged: keep the element as it is)
+      selKeys[sel.id] = key;
+      clear(sel);
+      for (const [v, label] of opts) sel.appendChild(h('option', {value: v}, label));
+    }
     sel.value = opts.some(o => o[0] === value) ? value : '';
   }
+  // Every count the filter menus show, in one pass over the entries.
+  function counts() {
+    const c = {file: {}, status: {}, wait: {}, thread: {}, open: 0, done: 0, ref: 0, q: 0, prci: 0};
+    const inc = (o, k) => { o[k] = (o[k] || 0) + 1; };
+    for (const e of st.data.entries) {
+      inc(c.file, e.file); inc(c.status, e.status); inc(c.thread, e.thread || '__none');
+      if (DM.isDone(e)) c.done++; else if (DM.isRef(e)) c.ref++; else c.open++;
+      const keys = DM.waitKeys(e);
+      for (const k of keys) inc(c.wait, k);
+      if (keys.includes('pr') || keys.includes('ci')) c.prci++;
+      if (DM.needsQ(e)) c.q++;
+    }
+    return c;
+  }
   function syncControls() {
-    const f = st.prefs.entries, all = st.data.entries;
-    const cnt = pred => all.filter(pred).length;
-    fillSelect($('#eFile'), [['', 'All files']].concat(entryFiles().map(n => [n, DM.fileTitle(n) + ' (' + cnt(e => e.file === n) + ')'])), f.file);
-    const statuses = [...new Set(all.map(e => e.status))].sort((a, b) => order(a) - order(b));
-    fillSelect($('#eStatus'), [['', 'Any status'], ['notdone', 'Not finished (' + cnt(e => !DM.isDone(e)) + ')'], ['done', 'Finished (' + cnt(DM.isDone) + ')']]
-      .concat(statuses.map(s => [s, DM.statusWord(s) + ' (' + cnt(e => e.status === s) + ')'])), f.status);
-    fillSelect($('#eWait'), [['', 'Anyone'], ['q', 'q (decision or push) (' + cnt(DM.needsQ) + ')'],
-      ['prci', 'PR or CI (' + cnt(e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')) + ')']].concat(DM.WAIT.map(w => [w.key, w.label + ' (' + cnt(e => DM.waitKeys(e).includes(w.key)) + ')'])).concat([['none', 'Nothing, finished']]), f.wait);
-    const threads = [...new Set(all.map(e => e.thread).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    fillSelect($('#eThread'), [['', 'Any thread']].concat(threads.map(t => [t, t + ' (' + cnt(e => e.thread === t) + ')'])).concat(
-      all.some(e => !e.thread) ? [['__none', 'No thread (' + cnt(e => !e.thread) + ')']] : []), f.thread);
+    const f = st.prefs.entries, c = counts();
+    const n = (k, o) => ' (' + ((o || {})[k] || 0) + ')';
+    fillSelect($('#eFile'), [['', 'All files']].concat(entryFiles().map(x => [x, DM.fileTitle(x) + n(x, c.file)])), f.file);
+    const statuses = Object.keys(c.status).sort((a, b) => order(a) - order(b));
+    fillSelect($('#eStatus'), [['', 'Any status'], ['notdone', 'Not finished (' + c.open + ')'], ['__finished', 'Finished (' + c.done + ')'],
+      ['__ref', 'Reference or archived (' + c.ref + ')']].concat(statuses.map(x => [x, DM.statusWord(x) + n(x, c.status)])), f.status);
+    fillSelect($('#eWait'), [['', 'Anyone'], ['q', 'q (decision or push) (' + c.q + ')'], ['prci', 'PR or CI (' + c.prci + ')']]
+      .concat(DM.WAIT.map(w => [w.key, w.label + n(w.key, c.wait)])).concat([['none', 'Nothing: finished or reference (' + (c.done + c.ref) + ')']]), f.wait);
+    const threads = Object.keys(c.thread).filter(t => t !== '__none').sort((a, b) => a.localeCompare(b));
+    fillSelect($('#eThread'), [['', 'Any thread']].concat(threads.map(t => [t, t + n(t, c.thread)])).concat(
+      c.thread.__none ? [['__none', 'No thread (' + c.thread.__none + ')']] : []), f.thread);
     $('#eSort').value = f.sort;
     if (document.activeElement !== $('#eQ')) $('#eQ').value = f.q;
   }
@@ -119,34 +140,93 @@
 
   function sorted(list) {
     const t = e => (e.lastChanged && e.lastChanged.time) || (e.firstSeen && e.firstSeen.time) || '';
-    const byT = (a, b) => (Date.parse(t(b)) || 0) - (Date.parse(t(a)) || 0);
+    const tm = new Map(list.map(e => [e, Date.parse(t(e)) || 0]));
+    const byT = (a, b) => tm.get(b) - tm.get(a);
     const s = st.prefs.entries.sort;
-    const idx = new Map(st.data.entries.map((e, i) => [e, i]));
-    if (s === 'priority') return list.sort((a, b) => (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9) || (DM.isDone(a) - DM.isDone(b)) || byT(a, b));
+    if (s === 'priority') return list.sort((a, b) => (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9) || (DM.isOpen(b) - DM.isOpen(a)) || byT(a, b));
     if (s === 'date') return list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || byT(a, b));
-    if (s === 'file') return list.sort((a, b) => idx.get(a) - idx.get(b));
+    if (s === 'file') { const idx = new Map(st.data.entries.map((e, i) => [e, i])); return list.sort((a, b) => idx.get(a) - idx.get(b)); }
     return list.sort(byT);
   }
 
+  // ---------- the card list: cached cards, built in slices ----------
+  // A card is rebuilt only when its entry's data (or the page's edit mode) changed, so a refresh that touches two
+  // entries costs two cards, not 400. Cards that aren't cached yet are built in ~8 ms slices between frames
+  // (the first screenful at once), so showing every entry never blocks scrolling or typing.
+  const cache = new Map();          // entry id -> {key, el}
+  const sigs = new WeakMap();       // entry object -> its JSON (entry objects are new after each load)
+  let cacheMode = '', job = null, shownIds = '';
+  const SLICE_MS = 8, FIRST = 30;
+  function cardFor(e) {
+    let sig = sigs.get(e);
+    if (sig === undefined) { sig = JSON.stringify(e); sigs.set(e, sig); }
+    const key = (st.expanded.has(e.id) ? '1' : '0') + sig;
+    const hit = cache.get(e.id);
+    if (hit && hit.key === key) return hit.el;
+    const el = card(e);
+    cache.set(e.id, {key, el});
+    return el;
+  }
+  function isCached(e) { const hit = cache.get(e.id), sig = sigs.get(e); return !!(hit && sig !== undefined && hit.key === (st.expanded.has(e.id) ? '1' : '0') + sig); }
+
   function render() {
     syncControls();
+    const mode = DM.edit && DM.edit.canEdit() ? 'edit' : 'read';     // (cards carry Edit / Answer buttons only when editing)
+    if (mode !== cacheMode) { cache.clear(); cacheMode = mode; shownIds = ''; }
     const list = sorted(st.data.entries.filter(e => matches(e)));
-    const body = clear($('#eBody'));
+    const body = $('#eBody');
     $('#eCount').textContent = list.length + ' of ' + st.data.entries.length + ' entries';
+    if (job) { cancelAnimationFrame(job.raf); job = null; }
     if (!list.length) {
+      shownIds = '';
+      clear(body).classList.remove('cols');
       body.appendChild(h('div', {class: 'empty'}, 'No entries match these filters. ', h('button', {class: 'mini', onclick: reset}, 'Clear filters')));
       return;
     }
     // n balanced columns filled left to right in sort order (no grid holes under short cards)
     const n = colCount();
     lastCols = n;
-    body.classList.toggle('cols', n > 1);
-    const cols = n > 1 ? Array.from({length: n}, () => h('div', {class: 'col'})) : [body];
-    list.forEach((e, i) => cols[i % n].appendChild(card(e)));
-    if (n > 1) body.append(...cols);
+    // Same entries in the same order and columns (a refresh, a save): swap only the cards whose entry changed, so the
+    // browser restyles a couple of cards instead of all of them.
+    const ids = list.map(e => e.id).join('\n') + '|' + n;
+    if (ids === shownIds && body.classList.contains('cols') && body.children.length === n) {
+      const colEls = [...body.children];
+      list.forEach((e, i) => {
+        const el = cardFor(e), col = colEls[i % n], at = col.children[Math.floor(i / n)];
+        if (at !== el) { if (at) at.replaceWith(el); else col.appendChild(el); }
+      });
+      return;
+    }
+    shownIds = ids;
+    const cols = Array.from({length: n}, () => h('div', {class: 'col'}));
+    job = {list, cols, i: 0, raf: 0};
+    pump(job, true);
+    clear(body).classList.add('cols');
+    body.style.setProperty('--ecols', n);
+    body.append(...cols);
+    if (cache.size > 2 * st.data.entries.length) for (const id of cache.keys()) if (!st.entryById[id]) cache.delete(id);
+  }
+  function pump(j, first) {
+    const t0 = performance.now();
+    while (j.i < j.list.length) {
+      const e = j.list[j.i];
+      if (!(first && j.i < FIRST) && !isCached(e) && performance.now() - t0 > SLICE_MS) break;
+      j.cols[j.i % j.cols.length].appendChild(cardFor(e));
+      j.i++;
+    }
+    if (j.i < j.list.length) j.raf = requestAnimationFrame(() => { if (job === j) pump(j, false); });
+    else if (job === j) job = null;
+  }
+  // Build every card still waiting (before jumping to one).
+  function flush() {
+    const j = job;
+    if (!j) return;
+    cancelAnimationFrame(j.raf); job = null;
+    for (; j.i < j.list.length; j.i++) j.cols[j.i % j.cols.length].appendChild(cardFor(j.list[j.i]));
   }
   let lastCols = 0;
-  function colCount() { const w = $('#eScroll').clientWidth || innerWidth; return w < 1060 ? 1 : w < 1800 ? 2 : 3; }
+  const CARD_MIN = 400, GAP = 10;   // q's 2560 px screen: six cards across; 1280 px: three
+  function colCount() { const w = ($('#eScroll').clientWidth || innerWidth) - 24; return Math.max(1, Math.floor((w + GAP) / (CARD_MIN + GAP))); }
   new ResizeObserver(() => { if (st.data && st.prefs.tab === 'entries' && colCount() !== lastCols) DM.app.render('entries'); }).observe($('#eScroll'));
   function reset() { Object.assign(st.prefs.entries, st.DEF.entries, {status: '', sort: st.prefs.entries.sort}); DM.app.save(); render(); }
 
@@ -163,6 +243,6 @@
     $(id).addEventListener('change', () => { st.prefs.entries[key] = $(id).value; DM.app.save(); render(); $('#eScroll').scrollTop = 0; });
   $('#eReset').addEventListener('click', reset);
 
-  DM.entries = {card, matches, syncControls, filterTo, chipsFor, humanWhat, haltTime};
+  DM.entries = {card, matches, syncControls, filterTo, chipsFor, humanWhat, haltTime, flush};
   (DM.views = DM.views || {}).entries = {render};
 })(window.DM);
