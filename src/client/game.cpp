@@ -356,8 +356,11 @@ void Game::captureMouse(bool on) {
     // (Windows sends a process's raw mouse input to one window: GLFW registering its own would take it from the thread).
     if (rawMouse_.active()) {
         glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL);
-        rawMouse_.hold(win_, on);
-        mouseHeld_ = on;
+        // (only with the focus: captured behind another window, after a bake or a connect, it took the other
+        // program's cursor to the game's centre; readMouse holds it once the game is in front)
+        const bool hold = on && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0;
+        rawMouse_.hold(win_, hold);
+        mouseHeld_ = hold;
         mouseHeldAt_ = time_;
     } else {
         glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
@@ -465,6 +468,9 @@ void Game::rescanMaps() {
         if (maps_[i] == hostName) hostMapIdx_ = (int)i;
         if (maps_[i] == botName) botMapIdx_ = (int)i;
     }
+    // (a map that's gone: back to the first; the pickers index mapInfo_ with these unguarded)
+    if (hostMapIdx_ < 0 || hostMapIdx_ >= (int)maps_.size()) hostMapIdx_ = 0;
+    if (botMapIdx_ < 0 || botMapIdx_ >= (int)maps_.size()) botMapIdx_ = 0;
 }
 
 void Game::loadMenuBackdrop() {
@@ -543,8 +549,8 @@ bool Game::pressInput(int code) {
         return true;
     }
     const Binds& b = binds();
-    if (b.has(A_PERF, code)) { showPerf_ = !showPerf_; return true; }
-    if (b.has(A_PERFMINI, code)) { perfMini_ = !perfMini_; return true; }
+    if (b.has(A_PERF, code)) { const bool was = perfOn(); showPerf_ = !showPerf_; if (!was) pipeReset(); return true; }
+    if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
     if (b.has(A_SCREENSHOT, code)) {
         static int n = 0;
         r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
@@ -761,17 +767,23 @@ void Game::turn(double dx, double dy) {
 // The mouse's motion since the last frame, from the raw input thread (rawmouse.h): with a fast mouse GLFW's event
 // poll handled every report as its own message (60-80 us a frame at 8 kHz on the owner's PC). Called before that poll
 // and again just before the camera in ULTRA. Without the thread (not Windows), GLFW's raw motion comes via onCursor.
-void Game::readMouse() {
+// late: the late latch's and ULTRA's reads, inside the frame: only the motion (the focus can't change before the next
+// event poll, and the cursor hold's syscalls stay out of the stretch between the read and the swap).
+void Game::readMouse(bool late) {
     if (!rawMouse_.active()) return;
     double dx = 0, dy = 0, firstAt = 0;
     int n = 0;
     // The window must have the focus: the thread hears the mouse whatever's in front (alt-tabbed: nothing turns, and
-    // the cursor is let go; back: held again). Re-held twice a second in case the window moved or Windows let it go.
-    const bool focused = glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0;
-    if (mouseCaptured_ && focused && (!mouseHeld_ || time_ - mouseHeldAt_ > 0.5)) { rawMouse_.hold(win_, true); mouseHeld_ = true; mouseHeldAt_ = time_; }
-    else if (mouseHeld_ && (!mouseCaptured_ || !focused)) { rawMouse_.hold(win_, false); mouseHeld_ = false; }
-    if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !focused) return;   // (motion meanwhile: dropped)
-    if (pendingInput_ < 0 || firstAt < pendingInput_) pendingInput_ = firstAt;   // (F3: when it arrived)
+    // the cursor is let go; back: held again). Re-held twice a second in case the window moved or Windows let it go
+    // (and at once after a resize or a display mode change: mouseHeld_ cleared there).
+    if (!late) {
+        mouseFocused_ = glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0;
+        if (mouseCaptured_ && mouseFocused_ && (!mouseHeld_ || time_ - mouseHeldAt_ > 0.5)) { rawMouse_.hold(win_, true); mouseHeld_ = true; mouseHeldAt_ = time_; }
+        else if (mouseHeld_ && (!mouseCaptured_ || !mouseFocused_)) { rawMouse_.hold(win_, false); mouseHeld_ = false; }
+    }
+    if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !mouseFocused_) return;   // (motion meanwhile: dropped)
+    // (F3: when it arrived; 0: a report raced the take and lost its stamp, motion kept)
+    if (firstAt > 0 && (pendingInput_ < 0 || firstAt < pendingInput_)) pendingInput_ = firstAt;
     mouseEventsPoll_ += n;   // (F3: the mouse's report rate)
     turn(dx, dy);
 }
@@ -795,7 +807,7 @@ void Game::onCursor(double x, double y) {
     }
 }
 
-void Game::onResize(int w, int h) { r_.resize(w, h); }
+void Game::onResize(int w, int h) { r_.resize(w, h); mouseHeld_ = false; vmStale_ = true; }   // (the cursor held at the new centre; the mode read again)
 
 void Game::onScroll(double dy) {
     markInput();
@@ -826,6 +838,7 @@ UserCmd Game::buildCmd() {
     if (block) { // keep key edge tracking current, so keys held through a menu aren't fresh presses after it
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
         altPrev_ = isDown(A_ALTFIRE);
+        fireLatched_ = false;   // (a click just before Esc / chat / console fired on the first tick after it)
         return c;
     }
     // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
@@ -939,6 +952,12 @@ void Game::updateAnnouncer() {
     }
     if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
     else if (annLeader_ == -2) annLeader_ = -1;
+    // Killstreaks are per match and per player: a new match (back to warmup, or another mode) starts them again, and a
+    // slot's new player doesn't inherit the last one's (they only reset on leaving the server, so a spree carried over)
+    if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP)))
+        for (int& k : streak_) k = 0;
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (streak_[i] && !net_.findPlayer(i)) streak_[i] = 0;
     annPrev_ = ms;
     annPrevValid_ = true;
 }
@@ -1312,6 +1331,7 @@ void Game::frame(double dt) {
         QZONE("input + prediction ticks");
         while (tickAcc_ >= period) {
             if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
+                fireLatched_ = false;   // (no stray shot when the new map is ready)
                 UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
                 net_.tick(k);
                 tickAcc_ -= period;
@@ -1404,8 +1424,12 @@ void Game::frame(double dt) {
         pipeMark(PM_TICKS);
         framePlayersOk_ = false;   // (the ticks moved the render time on)
         scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
-        scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
-                  (isDown(A_ALTFIRE) || opts_.debugScope);
+        {   // the zoom follows what buildCmd sends: with ALT TOGGLE, the toggled scope (it zoomed only while held, so the
+            // view and the server's scoped spread disagreed after a tap)
+            const bool tog = (modeCtlActive_ ? modeAlt_ : cfg_.altToggle) && !fairRules();
+            scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
+                      ((tog ? altToggled_ : isDown(A_ALTFIRE)) || opts_.debugScope);
+        }
         // explosions: projectiles that vanished
         net_.interpolatedProjectiles(projScratch_);   // (projScratch_ and lastProjectiles_ trade memory: no allocations)
         const auto& projs = projScratch_;
@@ -1447,7 +1471,9 @@ void Game::frame(double dt) {
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
         drawBakeScreen(bake_->map.name, bake_->progress.load());
-        sleepMs(30);   // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them)
+        // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them. In 1 ms
+        // steps, ending as the bake does: a finished one waited up to 30 ms for the next frame, ~15 ms every load)
+        for (int k = 0; k < 30 && bake_ && !bake_->done.load(); k++) sleepMs(1);
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));   // (and the HUD, before its late read)
     } else {
@@ -1539,7 +1565,7 @@ void Game::drawWorld(float alpha) {
     // above ran since the input was read). The command already sent this frame keeps the aim it had; the next one
     // carries this. Raw mouse messages only: keys and clicks wait for the next frame, as before.
     if (cfg_.lowLatency == 2 && alive && !demoView && mouseCaptured_) {
-        readMouse();
+        readMouse(true);
         if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame)
     }
     // camera: own prediction when alive, else spectate someone
@@ -1698,11 +1724,15 @@ void Game::drawWorld(float alpha) {
         auto wholeBodySeen = [&] {
             AABB hb = playerBox(pos, crouch, bs);
             const Vec3 cam = r_.cameraPos();
-            for (int k = 0; k < 9; k++) {
+            // (all 9 must be clear, so the order doesn't change the answer: the ray that last found them hidden goes
+            // first, and a player behind cover usually costs one ray, not up to nine)
+            const int first = barRay_[i] % 9;
+            for (int j = 0; j < 9; j++) {
+                const int k = (first + j) % 9;
                 Vec3 q = k == 8 ? (hb.mn + hb.mx) * 0.5f : Vec3(k & 1 ? hb.mx.x - 0.02f : hb.mn.x + 0.02f, k & 2 ? hb.mx.y - 0.02f : hb.mn.y + 0.05f, k & 4 ? hb.mx.z - 0.02f : hb.mn.z + 0.02f);
                 Vec3 d = q - cam;
                 float dist = length(d);
-                if (dist > 0.01f && map.raycastAny(cam, d / dist, dist - 0.05f)) return false;
+                if (dist > 0.01f && map.raycastAny(cam, d / dist, dist - 0.05f)) { barRay_[i] = (uint8_t)k; return false; }
             }
             return true;
         };
@@ -1711,8 +1741,13 @@ void Game::drawWorld(float alpha) {
             Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
             Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * (kPlayerHalfWidth * bs);   // (the hitbox's half width, across the view)
             // (on screen first: the 9 sight rays only for a bar that would be drawn)
-            if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry) && wholeBodySeen()) {
-                float bw = std::max(4.0f, std::fabs(rx - lx)), bh = std::max(2.0f, std::min(5 * ui_.s(), bw * 0.15f));
+            // (project only rejects points behind the camera: a bar wholly off screen, left, right, above or below, draws
+            // nothing, so its rays are skipped too)
+            float bw = 0, bh = 0;
+            if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry) &&
+                (bw = std::max(4.0f, std::fabs(rx - lx)), bh = std::max(2.0f, std::min(5 * ui_.s(), bw * 0.15f)),
+                 sx + bw * 0.5f + 1 >= 0 && sx - bw * 0.5f - 1 <= (float)r_.width() && sy + bh + 1 >= 0 && sy - 1 <= (float)r_.height()) &&
+                wholeBodySeen()) {
                 float f = clampf(p.health / 100.0f, 0, 1);
                 r_.rect(sx - bw * 0.5f - 1, sy - 1, bw + 2, bh + 2, {0, 0, 0, 0.7f});
                 r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
@@ -1767,7 +1802,7 @@ void Game::drawWorld(float alpha) {
             if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
             if (w == WPN_SHOTGUN && !remoteFiring_[i] && cfg_.enemyShots) { // pellet tracers in the server's fixed pattern
                 const PlayerSnap& q = players[i].snap;
-                Vec3 eyeP = q.pos + Vec3(0, (q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+                Vec3 eyeP = q.pos + Vec3(0, ((q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);   // (giant / double size: their eye, not a body below it)
                 Vec3 aim = angleForward(q.yaw, q.pitch);
                 const WeaponDef& wd = weaponDef(w);
                 for (int k = 0; k < wd.pellets; k++) {
@@ -1777,12 +1812,15 @@ void Game::drawWorld(float alpha) {
                 }
             }
             if (cfg_.enemyShots && (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i]))) {
-                Vec3 eyeP = p.pos + Vec3(0, (p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+                Vec3 eyeP = p.pos + Vec3(0, ((p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
                 float bangT, t = map.raycastBullet(eyeP, d, range, &bangT);
                 Vec3 end = eyeP + d * (t < 0 ? range : t);
                 Vec3 start = eyeP + d * 0.6f;
+                // (watching through their eyes: a line from the eye along the view is edge on, invisible; from the
+                // gun's place, low and to the right, like your own)
+                if (i == viewing && !alive) start += Vec3(std::cos(p.yaw), 0, -std::sin(p.yaw)) * 0.2f + Vec3(0, -0.17f, 0);
                 if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
                 else tracers_.push_back({start, end, time_ + 0.9});
             }
@@ -1809,7 +1847,7 @@ void Game::drawWorld(float alpha) {
         if (knifeSlash_[i] <= 0 || t >= 1 || !players[i].valid) continue;
         bool selfView = i == me && alive;
         const PlayerSnap& p = players[i].snap;
-        Vec3 e = selfView ? eye : p.pos + Vec3(0, kEyeHeight, 0);
+        Vec3 e = selfView ? eye : p.pos + Vec3(0, ((p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
         // (yours comes out of the knife you hold, like any weapon's shot; others' from their knife hand)
         drawKnifeSlash(e, selfView ? yaw_ : p.yaw, selfView ? pitch_ : p.pitch, t, teamColor(i),
                        selfView ? muzzlePoint(WPN_KNIFE, eye) : Vec3());
@@ -1990,9 +2028,11 @@ void Game::drawWorld(float alpha) {
     const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
     bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB)) && !(opts_.debugWeapon > 0 && !specGun);   // (--weapon: shown anyway, for screenshots)
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps; outside the view model's test: scoped, hidden
+    // or dead it never decayed, and unscoping replayed the whole kick, and the muzzle stayed pushed back)
+    recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);
     if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
         int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
-        recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);   // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps)
         float kick = (float)recoil_ * 0.06f;
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward), models.h.
         // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
@@ -2031,8 +2071,12 @@ void Game::drawWorld(float alpha) {
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
-    if (lateLatch) { readMouse(); r_.relatch(yaw_, pitch_); }
-    pipeMark(PM_LATCH);
+    if (lateLatch) {
+        readMouse(true);
+        r_.relatch(yaw_, pitch_);
+        if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame, not the next)
+        pipeMark(PM_LATCH);
+    } else pipeNow_[PM_LATCH] = pipeNow_[PM_POLL];   // (no late read: the mouse is fixed at the frame's read)
     pipeMark(PM_SCENE0);
     pipeGpuBegin();
     r_.drawScene(cfg_.shadows);
@@ -2835,14 +2879,16 @@ void Game::runConsole(const std::string& line) {
     }
     if (k[0] == '/') { net_.sendCommand(line.substr(1)); return; }
     std::string current;
-    for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) current = l.substr(k.size() + 1);
-    if (current.empty() && v.empty()) { bool known = false; for (auto& l : lines()) known |= l.rfind(k + "=", 0) == 0; if (!known) { consolePrint("unknown setting '" + k + "' - try: list"); return; } }
+    bool known = k.rfind("mode_hud_", 0) == 0 || k.rfind("mode_controls_", 0) == 0;   // (keys a setting adds)
+    for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) { current = l.substr(k.size() + 1); known = true; }
+    // (with a value too: "foo 5" set nothing, saved the file and printed nothing)
+    if (!known) { consolePrint("unknown setting '" + k + "' - try: list"); return; }
     if (v.empty()) { consolePrint("  " + k + " = " + current); return; }
     cfg_.set(k, v);
     cfg_.finishLoad();
     cfg_.save();
     audio_.setMasterVolume(cfg_.volume);   // (the ones that need applying; the rest are read every frame)
-    audio_.setAnnouncer(cfg_.announcerVoice);
+    if (k == "voice") audio_.setAnnouncer(cfg_.announcerVoice);   // (it resamples every line: only when it's the one set)
     ui_.accent = rgba(cfg_.colorFriendly);
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
     consoleWords_.clear();   // (a setting can add a key: mode_hud_*, mode_controls_*)
@@ -3915,18 +3961,16 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         if (!uiTest_ && !nvMaxClocks(cfg_.gpuMaxClocks, &msg)) cfg_.gpuMaxClocks = false;
         notify(msg);
     }
-    if (ui_.toggle(xr + hw2 + gap, y, hw2, h, cfg_.exclusiveAudio && !audio_.exclusiveActive() ? "EXCLUSIVE AUDIO (BUSY)" : "EXCLUSIVE AUDIO",
+    if (ui_.toggle(xr + hw2 + gap, y, hw2, h, !cfg_.exclusiveAudio || audio_.exclusiveActive() ? "EXCLUSIVE AUDIO" : audio_.exclusiveState() == Audio::kExclUnsupported ? "EXCLUSIVE AUDIO (N/A)" : "EXCLUSIVE AUDIO (BUSY)",   // (N/A: the device takes none of its formats)
                    cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
         audio_.setExclusive(cfg_.exclusiveAudio);
     y += h + gap;
 #endif
     {   // any cap, typed or dragged (0: unlimited); right-click: the screen's refresh rate (G-Sync / FreeSync: a few under)
-        GLFWmonitor* mon = glfwGetWindowMonitor(win_);
-        if (!mon) mon = glfwGetPrimaryMonitor();
-        const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+        gameMonitor();
         float v = (float)cfg_.maxFps;
         ui_.slider(xr, y, w, h, "MAX FPS", v, 0, 1000, cfg_.maxFps <= 0 ? "UNLIMITED" : "%.0f", UiExp::cfg("maxfps"),
-                   (float)(vm && vm->refreshRate > 0 ? vm->refreshRate : 60));
+                   (float)(vmHz_ > 0 ? vmHz_ : 60));
         cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
     }
     y += h + gap;
@@ -4282,10 +4326,14 @@ void Game::drawCustomModeEditor(float cx, float y) {
         if (ui_.button(x + t * (tw + gap), y, tw, bh, customTab_ == t ? std::string("> ") + tabs[t] + " <" : tabs[t], UiExp::nav(tabPaths[t]).withId(tabs[t]))) customTab_ = t;
     y += bh + gap * 2;
     if (customTab_ == 0) {
-        std::vector<std::string> modes;
-        for (int m = 0; m < MODE_COUNT; m++) modes.push_back(std::string("PLAYS AS: ") + upper(modeName(m)));
+        static std::vector<std::string> modes;   // (built once: 13 strings every frame)
+        if (modes.empty()) for (int m = 0; m < MODE_COUNT; m++) modes.push_back(std::string("PLAYS AS: ") + upper(modeName(m)));
+        const int before = r.baseMode;
         ui_.cycle(x, y, w, bh, "PLAYS AS", r.baseMode, MODE_COUNT, modes, UiExp::state("custom"));
-        if (r.baseMode == MODE_TOURNEY || r.baseMode == MODE_ARENA) r.baseMode = MODE_FFA; // tourney and ranked arena keep their own rules
+        // tourney and ranked arena keep their own rules: stepped over, onwards in the direction it went (going ">" it
+        // was put back to FFA, so TOURNEY's neighbours on, hide and seek, tag and points, couldn't be reached that way)
+        const int step = r.baseMode == (before + 1) % MODE_COUNT ? 1 : MODE_COUNT - 1;
+        for (int k = 0; k < MODE_COUNT && (r.baseMode == MODE_TOURNEY || r.baseMode == MODE_ARENA); k++) r.baseMode = (r.baseMode + step) % MODE_COUNT;
         y += bh + gap;
         float hp = (float)r.health;
         const UiExp ce = UiExp::state("custom");
@@ -4740,6 +4788,17 @@ void Game::pipeGpuEnd() {     // (...and after its last: the HUD)
     pipeFrameDone_ = true;
 }
 
+void Game::pipeReset() {
+    std::fill(pipeSum_, pipeSum_ + PM_COUNT + 3, 0.0);
+    pipeN_ = 0;
+    pipePrevFrame_ = pipeLastFlip_ = pipeFrameDt_ = 0;
+    for (PipeSlot& sl : pipeQ_) sl.used = false;   // (their old results: overwritten by the next queries)
+    pipeFrameDone_ = pipeGpuStarted_ = false;
+    for (auto& q : latQ_) q.used = false;
+    latSamples_.clear();
+    gpuCalibAt_ = -1e9;   // (the GPU clock calibrated at once)
+}
+
 void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; finished slots into the averages
     // Vsync: when each frame really flips, from the monitor's blanks (one scanline read a frame, while F3 / F4 are on):
     // the first blank after the GPU finished it and after the frame before it flipped (frames queue, one a blank).
@@ -4754,11 +4813,14 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
         pipeNext_ = (pipeNext_ + 1) % 4;
         pipeFrameDone_ = false;
     }
-    for (PipeSlot& sl : pipeQ_) {
+    // Oldest first (from the slot filled next): in array order, after a wrap, a newer frame came before an older one
+    // and the vsync queue model ratcheted. Timestamps finish in order: the first not ready ends the look.
+    for (int i = 0; i < 4; i++) {
+        PipeSlot& sl = pipeQ_[(pipeNext_ + i) % 4];
         if (!sl.used) continue;
         GLint avail = 0;
         glGetQueryObjectiv(sl.q[1], GL_QUERY_RESULT_AVAILABLE, &avail);
-        if (!avail) continue;
+        if (!avail) break;
         GLuint64 t0 = 0, t1 = 0;
         glGetQueryObjectui64v(sl.q[0], GL_QUERY_RESULT, &t0);
         glGetQueryObjectui64v(sl.q[1], GL_QUERY_RESULT, &t1);
@@ -4793,10 +4855,8 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     double sumDt = 0;
     for (size_t k = 0; k < frameCount_; k++) sumDt += frameTimes_[k];
     const double frame = frameCount_ ? sumDt / frameCount_ : 0.0;
-    GLFWmonitor* mon = glfwGetWindowMonitor(win_);
-    if (!mon) mon = glfwGetPrimaryMonitor();
-    const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
-    const double hz = vm && vm->refreshRate > 0 ? vm->refreshRate : 60.0, refresh = 1.0 / hz;
+    gameMonitor();
+    const double hz = vmHz_ > 0 ? vmHz_ : 60.0, refresh = 1.0 / hz;
     const bool mouseKnown = mouseHz_ > 50;
     const double mouseRate = mouseKnown ? mouseHz_ : 1000.0;
     struct Row { std::string name; double t0, t1; Color c; };
@@ -4889,6 +4949,8 @@ float Game::viewFov() const {
 // display modes, present modes, low latency, latency measurement
 
 void Game::applyDisplayMode() {
+    vmStale_ = true;      // (the mode may change: read it again)
+    mouseHeld_ = false;   // (and the cursor held at the window's new centre)
     GLFWmonitor* mon = glfwGetPrimaryMonitor();
     const GLFWvidmode* vm = glfwGetVideoMode(mon);
     switch (cfg_.displayMode) {
@@ -4923,39 +4985,71 @@ void Game::applyDisplayMode() {
 // frame and flips it (no vsync) just as the refresh's vertical blank begins, so the tear line falls in the blank, off
 // screen, however long the frame took. The lead adapts by itself: the slowest frame (input read to finished on the GPU)
 // of the last few seconds, plus a margin. The offset moves the flip (+ later) if a driver's flip lands off the blank.
-bool Game::rasterBlank(double* at, double* refresh) {
-    GLFWmonitor* mon = glfwGetWindowMonitor(win_);
+GLFWmonitor* Game::gameMonitor() {
+    GLFWmonitor* mon = glfwGetWindowMonitor(win_);   // (both cheap: GLFW's own fields)
     if (!mon) mon = glfwGetPrimaryMonitor();
-    if (mon != latentMon_) { raster_.open(mon); latentMon_ = mon; }
-    const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
-    *refresh = 1.0 / (vm && vm->refreshRate > 0 ? vm->refreshRate : 60);
-    return raster_.nextBlank(*refresh, at);
+    if (vmStale_ || mon != vmMon_) {
+        const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+        vmMon_ = mon;
+        vmW_ = vm ? vm->width : 0; vmH_ = vm ? vm->height : 0; vmHz_ = vm ? vm->refreshRate : 0;
+        vmStale_ = false;
+    }
+    return mon;
+}
+
+bool Game::rasterBlank(double* at, double* refresh) {
+    GLFWmonitor* mon = gameMonitor();
+    *refresh = 1.0 / (vmHz_ > 0 ? vmHz_ : 60);
+    // (opened again for another monitor or mode; one that failed, or stopped answering (a driver reset), is retried
+    // a second later, not never)
+    if (mon != latentMon_ || vmH_ != latentH_ || vmHz_ != latentHz_ || (!raster_.ok() && time_ - latentOpenAt_ > 1.0)) {
+        raster_.open(mon);
+        latentMon_ = mon; latentH_ = vmH_; latentHz_ = vmHz_; latentOpenAt_ = time_;
+    }
+    if (raster_.nextBlank(*refresh, at)) return true;
+    raster_.close();
+    return false;
 }
 
 void Game::latentWait() {
+    latentFlip_ = 0;   // (none planned unless the scanline says when)
     double blank = 0, refresh = 0;
     if (!rasterBlank(&blank, &refresh)) return;   // (no scanline from the driver: no vsync)
-    const double now = timeNow(), lead = latentWorst_ + 0.0001;   // (input read to finished, the slowest lately, + 100 us)
+    const double now = timeNow(), lead = latentLead_ + 0.0001;   // (input read to finished, the slow end lately, + 100 us)
     // A PC whose frames take most of a refresh can't make every blank: no sync (it tears instead of stuttering, like
     // adaptive vsync) until the frames are quick enough again
-    if (lead > refresh * 0.9) { latentFlip_ = 0; return; }
+    if (lead > refresh * 0.9) return;
     double flip = blank + cfg_.latentOffsetUs * 1e-6;
-    while (flip - lead < now || flip < latentFlip_ + refresh * 0.5) flip += refresh;   // (one frame a refresh)
-    latentFlip_ = flip;
+    while (flip - lead < now || flip < latentLastFlip_ + refresh * 0.5) flip += refresh;   // (one frame a refresh)
+    latentFlip_ = latentLastFlip_ = flip;
     waitUntil(flip - lead);
 }
 
 void Game::beforeSwap() {
-    if (cfg_.presentMode != 3 || !raster_.ok()) return;
-    // the frame finished on the GPU (how long it took from its input read: the next frames' lead)...
-    GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
-    glDeleteSync(f);
-    const double done = timeNow(), took = done - ultraReadAt_;
-    if (took > latentWorst_) { latentWorst_ = took; latentWorstAt_ = done; }
-    else if (done - latentWorstAt_ > 3.0) latentWorst_ += (took - latentWorst_) * 0.02;   // (3 s without one as slow: ease down)
+    latentHeld_ = 0;
+    if (cfg_.presentMode != 3) return;
+    double took;
+    if (latentFlip_ > 0) {   // the frame finished on the GPU (how long it took from its input read: the lead)...
+        GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+        glDeleteSync(f);
+        took = timeNow() - ultraReadAt_;
+    } else took = ultraCpu_ + ultraGpu_;   // (unsynced: no wait for the GPU, ULTRA's learnt times say it)
+    if (!bake_) {   // (the loading screen sleeps on purpose: not a frame's time)
+        const double refresh = 1.0 / (vmHz_ > 0 ? vmHz_ : 60);
+        latentTook_[latentTookN_++ & 255] = (float)std::min(took, refresh);
+        float a = 0, b = 0, c = 0;   // (the 3 slowest: a spike or two tear once, they don't hold the lead up)
+        for (float v : latentTook_) {
+            if (v > a) { c = b; b = a; a = v; } else if (v > b) { c = b; b = v; } else if (v > c) c = v;
+        }
+        latentLead_ = c;
+    }
     // ...then held until its vertical blank (a frame that ran late flips now: its tear line shows, and the lead grows)
-    if (latentFlip_ > 0) waitUntil(latentFlip_);
+    if (latentFlip_ > 0) {
+        const double t = timeNow();
+        waitUntil(latentFlip_);
+        latentHeld_ = timeNow() - t;
+    }
 }
 
 void Game::applyPresentMode() {
@@ -4991,7 +5085,7 @@ void Game::beforeInput() {
     // previous one to finish before sampling input, so input is never stuck behind a deep queue.
     // (afterSwap just stored the previous frame's fence at fenceIdx_ ^ 1 and flipped the index: fenceIdx_ holds
     // the frame before it, the slot afterSwap overwrites next. Waiting on fenceIdx_ ^ 1 queued nothing: "ultra".)
-    if (cfg_.lowLatency == 1) {
+    if (cfg_.lowLatency == 1 && !ultraPaced()) {   // (Latent Sync paces like ultra: these fences would add nothing)
         int older = fenceIdx_;
         if (fence_[older]) {
             glClientWaitSync((GLsync)fence_[older], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
@@ -5029,6 +5123,9 @@ void Game::afterSwap() {
     // Low latency fences: "on" keeps at most one frame queued (beforeInput waits on the one before); "ultra" fences
     // each frame and beforeInput starts the next one just in time for it.
     if (ultraPaced()) {   // ultra (beforeInput paces it): never more than this frame on the GPU
+        // (the CPU's time ends at the swap, before any wait for the last frame below, and without Latent Sync's hold for
+        // the blank: counting the wait made the learnt CPU time grow every frame when GPU-bound, until pacing stopped)
+        const double swapped = timeNow();
         if (ultraFence_) {   // the last one isn't done yet (started too early): wait for it, and learn its real time
             glClientWaitSync((GLsync)ultraFence_, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
             glDeleteSync((GLsync)ultraFence_);
@@ -5036,30 +5133,35 @@ void Game::afterSwap() {
             ultraGpu_ += (timeNow() - ultraSwapAt_ - ultraGpu_) * 0.1;
         }
         const double now = timeNow();
-        ultraCpu_ += (now - ultraReadAt_ - ultraCpu_) * 0.1;
+        ultraCpu_ += (swapped - latentHeld_ - ultraReadAt_ - ultraCpu_) * 0.1;
         ultraFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         glFlush();
         ultraSwapAt_ = now;
     } else if (ultraFence_) { glDeleteSync((GLsync)ultraFence_); ultraFence_ = nullptr; }   // (left ultra)
-    if (cfg_.lowLatency == 1) {
+    if (cfg_.lowLatency == 1 && !ultraPaced()) {
+        // (no flush: beforeInput waits on it two frames on, with the flush bit, after the next swap has flushed it)
         GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        {
-            glFlush();
-            if (fence_[fenceIdx_]) glDeleteSync((GLsync)fence_[fenceIdx_]);
-            fence_[fenceIdx_] = f;
-            fenceIdx_ ^= 1;
-        }
-    }
+        if (fence_[fenceIdx_]) glDeleteSync((GLsync)fence_[fenceIdx_]);
+        fence_[fenceIdx_] = f;
+        fenceIdx_ ^= 1;
+    } else for (auto& f : fence_) if (f) { glDeleteSync((GLsync)f); f = nullptr; }   // (left "on")
     if (!perfOn()) return;
     pipeMark(PM_AFTER);
-    pipeCollect();
     double now = timeNow();
     if (now - gpuCalibAt_ > 10.0) {   // (a synchronous GPU query: it can stall the driver, so rarely; the clocks drift by microseconds)
-        GLint64 g = 0;
-        glGetInteger64v(GL_TIMESTAMP, &g);
-        gpuClockOffset_ = timeNow() - g * 1e-9;
+        // (the CPU time halfway through the query, the best of 3: the time after it returned put every GPU time late
+        // by the call's return; and before the collect, so the first results after F3 / F4 turn on use it)
+        double best = 1e9;
+        for (int k = 0; k < 3; k++) {
+            GLint64 g = 0;
+            const double c0 = timeNow();
+            glGetInteger64v(GL_TIMESTAMP, &g);
+            const double c1 = timeNow();
+            if (c1 - c0 < best) { best = c1 - c0; gpuClockOffset_ = 0.5 * (c0 + c1) - g * 1e-9; }
+        }
         gpuCalibAt_ = now;
     }
+    pipeCollect();
     if (!showPerf_) return;   // (F4: the graph's marks only (and the clocks above); F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
@@ -5690,7 +5792,10 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         if (ra.valid) {
             Vec3 d = p.pos - ra.pos;
             float h = std::sqrt(d.x * d.x + d.z * d.z);
-            if (h < 2.0f && std::fabs(d.y) < 0.05f) { // walking on the ground
+            // walking on the ground: by speed, not per frame (0.05 m a frame let anything slower than 200 m/s up or down
+            // count at 4000 fps: jumping, falling and grappling enemies made footsteps in the air; 3 m/s is the old
+            // threshold at 60 fps; the 2 m a frame cap stays a teleport guard)
+            if (h < 2.0f && std::fabs(d.y) < 3.0f * (float)frameDt) {
                 ra.stepDist += h;
                 if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (qrand() % 20) * 0.01f, sp); }
             }

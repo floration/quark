@@ -178,7 +178,7 @@ void Game::updateLifetime() {
                 ids += id;
             }
             if (!ids.empty()) { nextLifeFetch_ = time_ + 10; lifeAsked_ = ids; rank_.request("lifetimes", "/lifetime?ids=" + ids); }
-        }
+        } else nextLifeFetch_ = time_ + 1;   // (everyone known: look again in a second, not every frame)
     }
     if (rank_.takeText("lifetimes", out) && (out.empty() || out[0] != '!')) {
         std::istringstream in(out);

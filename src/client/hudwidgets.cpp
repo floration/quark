@@ -1,6 +1,5 @@
 #include "hudwidgets.h"
 #include "../common/u8file.h"
-#include <sys/stat.h>
 #include "../game/map.h"   // (writeFileAtomic)
 #include <algorithm>
 #include <cctype>
@@ -11,6 +10,10 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <atomic>
+#include <filesystem>
+#include <mutex>
+#include <thread>
 
 static const char* kValueNames[HV_COUNT] = {"health", "speed", "dash", "hook", "fps", "fpsmin", "ping", "loss", "time",
                                             "enemies", "teammates", "kills", "deaths", "score", "tickrate"};
@@ -50,12 +53,53 @@ static Color parseRgba(const std::string& s, Color def) {
 static double pollClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 bool HudWidgets::pollDue() const { return pollClock() - lastPoll_ >= 1.0; }
 
+namespace {
+// The file's write time and size, as one key (-2: no file). Through std::filesystem on the UTF-8 path: the narrow
+// stat() read it in the ANSI code page, so under a user folder with an accent in its name it always failed and edits
+// never reloaded.
+long long fileKey(const std::string& path) {
+    std::error_code ec;
+    const auto p = utf8Path(path);
+    const auto size = std::filesystem::file_size(p, ec);
+    if (ec) return -2;
+    const auto t = std::filesystem::last_write_time(p, ec);
+    if (ec) return -2;
+    return (long long)((unsigned long long)t.time_since_epoch().count() * 1000003ULL + (unsigned long long)size);   // (time + size: edits within a second still count)
+}
+// The hud file, looked at once a second on a thread of its own: the look (12-17 us, more with an antivirus) used to be
+// on the frame, and that frame was in the 0.1% lows every second.
+struct Watch {
+    std::mutex mu;
+    std::string path;
+    std::atomic<long long> key{-3};
+    std::atomic<bool> stop{false};
+    std::thread t;
+    ~Watch() { stop = true; if (t.joinable()) t.join(); }
+};
+Watch& watch() { static Watch w; return w; }
+void watchLoop() {
+    Watch& w = watch();
+    while (!w.stop) {
+        std::string p;
+        { std::lock_guard<std::mutex> l(w.mu); p = w.path; }
+        if (!p.empty()) w.key = fileKey(p);
+        for (int i = 0; i < 10 && !w.stop; i++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+}
+
 void HudWidgets::poll(const std::string& path) {
     double now = pollClock();
     if (now - lastPoll_ < 1.0) return;
     lastPoll_ = now;
-    struct stat st;
-    long long mt = stat(path.c_str(), &st) == 0 ? (long long)st.st_mtime * 1000003LL + (long long)st.st_size : -2; // time + size: edits within a second still count
+    Watch& w = watch();
+    long long mt;
+    {
+        std::lock_guard<std::mutex> l(w.mu);
+        if (w.path != path) { w.path = path; w.key = mt = fileKey(path); }   // (another file: looked at now, once)
+        else mt = w.key;
+        if (!w.t.joinable()) w.t = std::thread(watchLoop);
+    }
     if (mt == mtime_) return;
     mtime_ = mt;
     std::ifstream f(utf8Path(path));
@@ -136,8 +180,9 @@ std::string HudWidgets::toText() const {
 
 bool HudWidgets::save(const std::string& path) {
     if (!writeFileAtomic(path, toText())) return false;
-    struct stat st;
-    if (stat(path.c_str(), &st) == 0) mtime_ = (long long)st.st_mtime * 1000003LL + (long long)st.st_size; // don't reload our own write
+    mtime_ = fileKey(path);   // don't reload our own write
+    Watch& w = watch();
+    { std::lock_guard<std::mutex> l(w.mu); if (w.path == path) w.key = mtime_; }
     return true;
 }
 

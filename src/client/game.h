@@ -145,7 +145,7 @@ private:
     // net_.interpolatedPlayers() for this frame, worked out once (PERF-12: world, HUD, spectating and the editor each
     // asked for it): valid from the first use after the frame's ticks until the next frame or tick loop
     NetClient::PlayerArray& framePlayers() {   // (--models adds its lineup to it)
-        if (!framePlayersOk_) { framePlayers_ = net_.interpolatedPlayers(); framePlayersOk_ = true; }
+        if (!framePlayersOk_) { net_.interpolatedPlayers(framePlayers_); framePlayersOk_ = true; }
         return framePlayers_;
     }
     NetClient::PlayerArray framePlayers_{};
@@ -302,6 +302,16 @@ private:
     float edDragT0_ = 0;
     Map edDragBase_;
     std::string edDragLast_;
+    float edDragDelta_ = 0, edDragGrid_ = 0;   // the drag's step and grid last worked out (the same again: nothing to do)
+    EdSel edDragSel_;                          // the object edDragBaseOp_ is of
+    std::string edDragBaseOp_;                 // its "set" op on edDragBase_ (what undo puts back)
+    std::vector<EdHandle> edHandleBuf_;        // (editorFrame: the selection's handles, kept from frame to frame)
+    std::vector<std::pair<Vec3, std::string>> edOthers_;   // (editorFrame: the other editors' labels)
+    uint32_t edGen_ = 0, edCacheGen_ = ~0u;    // edGen_ moves on with every change to ed_; the next four were worked out at edCacheGen_
+    std::vector<AABB> edClipBoxes_;            // (the clip boxes, drawn see-through)
+    int edClipCount_ = 0;                      // (the editable ones: FIND CLIP)
+    uint32_t edCanModes_ = 0;                  // (the modes the map has what it needs for)
+    std::string edModesText_;                  // (PLAYABLE AS)
     // The save question (OWNER_DECISIONS_2 B3): "keep your edits as a new map?" when you save or leave a built-in map
     // you edited (its file is never written: yes saves your edits under a new name in your maps folder, no drops
     // them), and "save your copy?" after leaving someone else's edit session. Nothing is ever saved without asking.
@@ -441,15 +451,30 @@ private:
     RasterClock raster_;               // latent sync: the monitor's scanline (gpuprefs.h)
     GLFWmonitor* latentMon_ = nullptr; // (the monitor raster_ was opened on)
     double latentFlip_ = 0;            // (this frame's planned flip: the vertical blank it's for)
-    double latentWorst_ = 0.002;       // (the slowest recent frame, input read to finished on the GPU; slowly forgotten)
-    double latentWorstAt_ = 0;
+    // (the lead: the 3rd slowest of the last 256 frames' input read to finished on the GPU, about a second at 240 Hz:
+    // the single slowest of 3 s, as it was, held every frame's read milliseconds early for seconds after one hitch)
+    float latentTook_[256] = {};
+    int latentTookN_ = 0;
+    double latentLead_ = 0.002, latentHeld_ = 0;   // (+ how long this frame was held for its blank: not CPU time)
+    double latentLastFlip_ = 0;                    // (the last planned flip: one frame a refresh)
+    double latentOpenAt_ = -1;                     // (when raster_ was last opened: a failed one is retried a second on)
+    int latentH_ = 0, latentHz_ = 0;               // (the mode it was opened for: reopened when it changes)
+    // The game's monitor's mode, cached: glfwGetVideoMode asks the display driver every call (EnumDisplaySettings, tens
+    // of us), and Latent Sync, F3 and the settings page wanted it every frame. Read again on a display mode change, a
+    // resize or another monitor.
+    GLFWmonitor* vmMon_ = nullptr;
+    int vmW_ = 0, vmH_ = 0, vmHz_ = 0;
+    bool vmStale_ = true;
+    GLFWmonitor* gameMonitor();   // (and the cache current)
     void latentWait();
     bool rasterBlank(double* at, double* refresh);   // the next vertical blank on the game's monitor (Windows)
     bool ultraPaced() const { return cfg_.lowLatency == 2 || cfg_.presentMode == 3; }   // (fences, learnt CPU / GPU times)
     bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)
+    bool mouseFocused_ = false;        // (the window had the focus at the frame's first read: the late reads use it)
+    uint8_t barRay_[kMaxPlayers] = {};   // (health bars: the sight ray that last found a player hidden, tried first)
     double mouseHeldAt_ = 0;
 public:
-    void readMouse();                  // the main loop, before glfwPollEvents: raw mouse reports in one read (Windows)
+    void readMouse(bool late = false); // the main loop, before glfwPollEvents: raw mouse reports in one read (Windows)
 private:
 public:
     // F3 pipeline graph: when each part of a frame starts and ends (the main loop and frame() mark them), GPU timestamps
@@ -472,6 +497,7 @@ private:
     void pipeGpuBegin();
     void pipeGpuEnd();
     void pipeCollect();
+    void pipeReset();   // (F3 / F4 turned on: nothing from the last time they were on)
     void drawPipeline(float x, float y, float ts, double* totalOnly = nullptr);
     void pipeAverages();
     void drawPerfMini();

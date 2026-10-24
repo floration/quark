@@ -83,11 +83,60 @@ AABB* kindBox(Map& m, int kind, int i) {
     return nullptr;
 }
 
+// a point object's position (spawn, light, path point; nullptr for the rest)
+Vec3* kindPoint(Map& m, int kind, int i) { return kind == 1 ? &m.spawns[i].pos : kind == 2 ? &m.lights[i].pos : kind == 6 ? &m.payloadPath[i] : nullptr; }
+
 void moveObject(Map& m, int kind, int i, const Vec3& d) {
     if (AABB* b = kindBox(m, kind, i)) { b->mn += d; b->mx += d; return; }
-    if (kind == 1) m.spawns[i].pos += d;
-    else if (kind == 2) m.lights[i].pos += d;
-    else if (kind == 6) m.payloadPath[i] += d;
+    if (Vec3* p = kindPoint(m, kind, i)) *p += d;
+}
+
+// A copy of m to work an edit out on (only its ops are applied to the map): without the .qmap text, which none of
+// that reads and which is a big map's largest part (Midtown's ~470 KB), moved out and back as applyMapEdit does
+Map copyNoSource(const Map& m) {
+    std::string keep = std::move(m.source);
+    Map c = m;
+    m.source = std::move(keep);
+    c.sourceStale = true;   // (asked for, its text is made from what's there)
+    return c;
+}
+
+// object i's "set" op without its index ("<k> set <i> ..."): the same object, wherever an insert or delete moved it
+std::string objectKey(const Map& m, char k, int i) {
+    std::string d = describeMapObject(m, k, "set", i);
+    size_t c = d.find(' ', 6);   // (the space after the index)
+    return c == std::string::npos ? std::string() : d.substr(c);
+}
+
+bool sameBox(const AABB& a, const AABB& b) {
+    return a.mn.x == b.mn.x && a.mn.y == b.mn.y && a.mn.z == b.mn.z && a.mx.x == b.mx.x && a.mx.y == b.mx.y && a.mx.z == b.mx.z;
+}
+
+// the boxes the editor's static batch is made of (material and box: all it draws) are the same
+bool sameBrushes(const std::vector<Brush>& a, const std::vector<Brush>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) if (a[i].material != b[i].material || !sameBox(a[i].box, b[i].box)) return false;
+    return true;
+}
+
+// Grab points on a selection with bounds b (see Game::edHandles), into hs
+template <class H> void handlesOf(const AABB& b, bool point, std::vector<H>& hs) {
+    Vec3 c = b.center();
+    for (int a = 0; a < 3; a++)
+        for (int sg = -1; sg <= 1; sg += 2) {
+            Vec3 p = c;
+            if (point) p[a] += sg * ((b.mx[a] - b.mn[a]) * 0.5f + 0.6f);
+            else p[a] = sg > 0 ? b.mx[a] : b.mn[a];
+            hs.push_back({p, a, sg, point});
+        }
+    if (!point) // boxes, zones, ladders: a move arrow out past each of the 6 faces (the face squares resize that side)
+        for (int a = 0; a < 3; a++)
+            for (int sg = -1; sg <= 1; sg += 2) {
+                Vec3 p = c;
+                float out = std::max(1.0f, (b.mx[a] - b.mn[a]) * 0.25f);
+                p[a] = sg > 0 ? b.mx[a] + out : b.mn[a] - out;
+                hs.push_back({p, a, sg, true});
+            }
 }
 
 // The "ins" op for object i, plus (a custom group) the ops that add its parts back.
@@ -247,6 +296,7 @@ void Game::openEditor(std::string name) {
     edGroupMenu_ = edExportAsk_ = false;
     edDirty_ = edBaked_ = edOnline_ = false;
     edMeshDirty_ = true;
+    edGen_++;
     std::string err;
     if (!name.empty() && ed_.load(name, &err)) {
         edName_ = name;
@@ -287,6 +337,7 @@ void Game::enterOnlineEditor() {
     edGroupMenu_ = edExportAsk_ = false;
     edBaked_ = edDirty_ = false;
     edMeshDirty_ = true;
+    edGen_++;
     if (fromGame) edCam_ = net_.predicted().pos + Vec3(0, kEyeHeight, 0); // keep looking from where you were playing
     else resetEditorView(ed_, edCam_, yaw_, pitch_);
     r_.unloadWorld(ed_.sunDir);
@@ -308,11 +359,12 @@ void Game::closeEditor() {
 }
 
 // After a local edit: applyMapEdit already updated the map's grid (in place for boxes, a full rebuild inside it for
-// the rest), exactly as the server and the session clients rely on, so there's nothing to rebuild here.
+// the rest), exactly as the server and the session clients rely on, so there's nothing to rebuild here. (The static
+// batch is rebuilt by edDo, and only when the boxes changed.)
 void Game::edChanged() {
     edDirty_ = true;
-    edMeshDirty_ = true;
-    if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
+    edGen_++;
+    if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); edMeshDirty_ = true; }
 }
 
 // Apply an edit (or send it to the session) and remember how to undo it. coalesce: repeated nudges and
@@ -333,12 +385,15 @@ void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce
         bool ok = true;
         if (ops.size() == 1) ok = applyMapEdit(ed_, ops[0]);
         else {
-            Map tmp = ed_;
+            Map tmp = copyNoSource(ed_);   // (its text goes stale with the first op anyway)
             for (auto& one : ops) if (!(ok = applyMapEdit(tmp, one))) break;
             if (ok) ed_ = std::move(tmp);
         }
         if (!ok) { edNotify("can't do that"); return; }   // (and no undo step for what didn't happen)
         edChanged();
+        // only boxes, groups and ladders (b, g, d ops) make the static batch's boxes: a title, a slider, a spawn moved
+        // doesn't rebuild it (Midtown's rebuild is a 10-30 ms hitch)
+        for (auto& one : ops) if (!one.empty() && (one[0] == 'b' || one[0] == 'g' || one[0] == 'd')) { edMeshDirty_ = true; break; }
     }
     if (undoable) {
         if (!(coalesce && time_ - edLastPush_ < 0.75)) {   // (no join: -1e9, not 0 - time_ starts near 0 in a session, and the first edit there lost its undo step)
@@ -375,7 +430,7 @@ AABB Game::edBounds(const Map& m, EdSel sel) const {
 // Change the selected object: f edits a copy of the map, and the difference becomes a "set" op.
 void Game::edModify(const std::function<void(Map&)>& f, bool coalesce) {
     if (!edSelValid()) return;
-    Map tmp = ed_;
+    Map tmp = copyNoSource(ed_);
     f(tmp);
     char k = kKindChar[edSel_.kind];
     edDo(describeMapObject(tmp, k, "set", edSel_.idx), describeMapObject(ed_, k, "set", edSel_.idx), coalesce);
@@ -418,7 +473,7 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
         return o + d;
     };
     auto box = [&](const AABB& b, const Vec3& o) { Vec3 p = pt(b.mn, o), q = pt(b.mx, o); return AABB{vmin(p, q), vmax(p, q)}; };
-    tmp = m;
+    tmp = copyNoSource(m);
     for (auto& e : sel) {
         switch (e.kind) {
             case ED_BRUSH: tmp.brushes[e.idx].box = box(m.brushes[e.idx].box, c); break;
@@ -514,7 +569,7 @@ void Game::edDuplicate() {
     AABB b = edBounds(ed_, edSel_);
     Vec3 f = angleForward(yaw_, 0);
     Vec3 off = std::fabs(f.x) > std::fabs(f.z) ? Vec3(0, 0, b.mx.z - b.mn.z) : Vec3(b.mx.x - b.mn.x, 0, 0);
-    Map tmp = ed_;
+    Map tmp = copyNoSource(ed_);
     int i = edSel_.idx;
     switch (edSel_.kind) {
         case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), tmp.brushes[i]); break;
@@ -539,7 +594,7 @@ void Game::edAdd(int kind, int variant) {
     Vec3 at = t >= 0 ? edCam_ + dir * t + n * 0.001f : edCam_ + dir * 8.0f;
     at = snapTo(at, g);
     if (t >= 0 && n.y < -0.5f) at.y -= 1; // hit a ceiling: hang below it
-    Map tmp = ed_;
+    Map tmp = copyNoSource(ed_);
     switch (kind) {
         case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, edMat_}); break;
         case ED_GROUP: { // variant: GROUP_ROOM (8 x 3.5 x 8, a door each side) or GROUP_STAIRS (2 wide, 2 up over 4, rising away from you)
@@ -628,7 +683,7 @@ void Game::edGroupSelection() {
     if (!groupOf(ed_, sel, g, why)) { edNotify(why); return; }
     // add the group first (a map always keeps a box), then take away what went into it, highest index first
     int gi = (int)ed_.groups.size();
-    Map tmp = ed_;
+    Map tmp = copyNoSource(ed_);
     tmp.groups.push_back(g);
     std::vector<std::string> ops = {insertOps(tmp, 'g', gi)}, inv = {"g del " + std::to_string(gi)};
     std::sort(sel.begin(), sel.end(), [](const EdSel& a, const EdSel& b) { return a.kind != b.kind ? a.kind < b.kind : a.idx > b.idx; });
@@ -679,7 +734,7 @@ bool Game::edPlaceGroup(const std::string& text) {
     if (t >= 0 && n.y < -0.5f) at.y -= sz.y; // hit a ceiling: hang below it
     g.box.mn = snapTo(at - Vec3(sz.x * 0.5f, 0, sz.z * 0.5f), gr);
     g.box.mx = g.box.mn + sz;
-    Map tmp = ed_;
+    Map tmp = copyNoSource(ed_);
     tmp.groups.push_back(g);
     int gi = (int)ed_.groups.size();
     edDo(insertOps(tmp, 'g', gi), "g del " + std::to_string(gi));
@@ -802,25 +857,7 @@ std::vector<Game::EdSel> Game::edPickAll(const Vec3& o, const Vec3& dir) const {
 // arrows out of a point object along each axis (drag = move).
 std::vector<Game::EdHandle> Game::edHandles() const {
     std::vector<EdHandle> hs;
-    if (!edSelValid()) return hs;
-    AABB b = edBounds(ed_, edSel_);
-    Vec3 c = b.center();
-    bool point = edSel_.kind == ED_SPAWN || edSel_.kind == ED_LIGHT || edSel_.kind == ED_PATH;
-    for (int a = 0; a < 3; a++)
-        for (int sg = -1; sg <= 1; sg += 2) {
-            Vec3 p = c;
-            if (point) p[a] += sg * ((b.mx[a] - b.mn[a]) * 0.5f + 0.6f);
-            else p[a] = sg > 0 ? b.mx[a] : b.mn[a];
-            hs.push_back({p, a, sg, point});
-        }
-    if (!point) // boxes, zones, ladders: a move arrow out past each of the 6 faces (the face squares resize that side)
-        for (int a = 0; a < 3; a++)
-            for (int sg = -1; sg <= 1; sg += 2) {
-                Vec3 p = c;
-                float out = std::max(1.0f, (b.mx[a] - b.mn[a]) * 0.25f);
-                p[a] = sg > 0 ? b.mx[a] + out : b.mn[a] - out;
-                hs.push_back({p, a, sg, true});
-            }
+    if (edSelValid()) handlesOf(edBounds(ed_, edSel_), edSel_.kind == ED_SPAWN || edSel_.kind == ED_LIGHT || edSel_.kind == ED_PATH, hs);
     return hs;
 }
 
@@ -1076,15 +1113,40 @@ void Game::editorFrame(double dt) {
     const float W = (float)r_.width(), H = (float)r_.height();
     const float s = H / 720.0f, g = kGrids[edGridIdx_];
     const float panelW = 320 * s, panelX = W - panelW;
+    r_.cullPad = 0;   // (the match's late-latch pad stays set after leaving it: the editor's camera isn't late-latched)
     if (edOnline_) {
         // follow the session's map; keep the connection fed and tell the others where our camera is
         if (net_.mapRevision() != edRev_) {
-            ed_ = net_.map();
+            const Map& nm = net_.map();
+            // only a change to the boxes rebuilds the static batch (a remote title / spawn / light edit doesn't)
+            if (!sameBrushes(ed_.brushes, nm.brushes)) edMeshDirty_ = true;
+            // a remote insert / delete moves the indices after it: the selection follows its object (or is dropped) and
+            // a drag ends, so a stale index never edits another object. (A selection past the end is our own new
+            // object, not here yet: it's kept.)
+            size_t had[9], has[9];
+            for (int k = 0; k < 9; k++) { had[k] = kindCount(ed_, k); has[k] = kindCount(nm, k); }
+            auto follow = [&](EdSel& e) {   // false: it's gone
+                if (!e.valid() || (size_t)e.idx >= had[e.kind] || had[e.kind] == has[e.kind]) return true;
+                const char k = kKindChar[e.kind];
+                const std::string want = objectKey(ed_, k, e.idx);
+                const AABB box = edBounds(ed_, e);
+                for (int d = 0; d <= (int)std::max(had[e.kind], has[e.kind]); d++)   // nearest first (one insert / delete before it: one step)
+                    for (int j : {e.idx - d, e.idx + d})
+                        if (j >= 0 && (size_t)j < has[e.kind] && sameBox(edBounds(nm, {e.kind, j}), box) && objectKey(nm, k, j) == want) { e.idx = j; return true; }
+                return false;
+            };
+            if (edSel_.valid() && had[edSel_.kind] != has[edSel_.kind]) edDragAxis_ = -1;
+            if (!follow(edSel_)) edSel_ = EdSel();
+            size_t kept = 0;
+            for (auto& e : edMulti_) if (follow(e)) edMulti_[kept++] = e;
+            edMulti_.resize(kept);
+            ed_ = nm;
             edRev_ = net_.mapRevision();
-            edMeshDirty_ = true;
-            if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
+            edGen_++;
+            if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); edMeshDirty_ = true; }
         }
-        for (auto& e : net_.takeEvents()) {
+        net_.takeEvents(evScratch_);
+        for (auto& e : evScratch_) {
             if (e.type == EV_MESSAGE) edNotify(e.text);
             else if (e.type == EV_CHAT) edNotify(net_.playerName(e.a) + ": " + e.text);
         }
@@ -1106,8 +1168,8 @@ void Game::editorFrame(double dt) {
     }
     // the save question, when it's up, is the only thing the mouse and typing reach (drawn last, over everything)
     const bool modal = edPrompt_;
-    UiInput realIn = uiIn_;
-    if (modal) { uiIn_.pressed = uiIn_.rpressed = uiIn_.down = false; uiIn_.chars.clear(); uiIn_.backspace = uiIn_.enter = uiIn_.tab = false; }
+    UiInput realIn;   // (copied only when the question is up: it holds the typed text)
+    if (modal) { realIn = uiIn_; uiIn_.pressed = uiIn_.rpressed = uiIn_.down = false; uiIn_.chars.clear(); uiIn_.backspace = uiIn_.enter = uiIn_.tab = false; }
     // ---- fly camera (right mouse held to look; WASD, Space up, C down, Shift fast, wheel = speed)
     if (!ui_.typing()) {
         Vec3 f = angleForward(yaw_, pitch_), right = normalize(cross(angleForward(yaw_, 0), {0, 1, 0}));
@@ -1139,6 +1201,27 @@ void Game::editorFrame(double dt) {
         float bb = dot(a, d), den = 1 - bb * bb;
         return den < 1e-4f ? 0.0f : (bb * dot(d, w) - dot(a, w)) / den;
     };
+    auto handles = [&]() -> const std::vector<EdHandle>& {   // edHandles(), into a buffer kept from frame to frame
+        edHandleBuf_.clear();
+        if (edSelValid()) handlesOf(edBounds(ed_, edSel_), edSel_.kind == ED_SPAWN || edSel_.kind == ED_LIGHT || edSel_.kind == ED_PATH, edHandleBuf_);
+        return edHandleBuf_;
+    };
+    // what only changes with the map (each O(boxes) a frame on a big one): the clip boxes, the FIND CLIP count, the
+    // modes it can be / is played as. Worked out again when edGen_ moves on (asked for before each use, so an edit
+    // made earlier in the frame shows in the same frame)
+    auto mapCache = [&] {
+        if (edCacheGen_ == edGen_) return;
+        edCacheGen_ = edGen_;
+        edClipBoxes_.clear();
+        edClipCount_ = 0;
+        for (auto& b : ed_.brushes) if (b.material == 9) { edClipBoxes_.push_back(b.box); edClipCount_ += !b.generated; }
+        edCanModes_ = 0;
+        edModesText_.clear();
+        for (int m = 0; m < MODE_COUNT; m++) {
+            if (ed_.canSupportMode(m)) edCanModes_ |= 1u << m;
+            if (ed_.supportsMode(m)) edModesText_ += std::string(edModesText_.empty() ? "" : " ") + modeName(m);
+        }
+    };
     // ---- click: grab a handle of the selection, else select what's under the mouse
     if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_ && !edPrompt_) {
         ui_.clearFocus();
@@ -1149,7 +1232,7 @@ void Game::editorFrame(double dt) {
                      std::fabs(yaw_ - edLastClickYaw_) < 1e-5f && std::fabs(pitch_ - edLastClickPitch_) < 1e-5f;
         int best = -1;
         float bestD = 14 * s;
-        auto hs = edHandles();
+        const auto& hs = handles();
         std::vector<float> hd(hs.size(), 1e9f);
         for (size_t k = 0; k < hs.size(); k++) {
             float sx, sy;
@@ -1168,7 +1251,10 @@ void Game::editorFrame(double dt) {
             edDragMove_ = hs[best].move || glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
             edDragP0_ = hs[best].pos;
             edDragT0_ = closestOnAxis(edDragP0_, edDragAxis_, edMouseRay());
-            edDragBase_ = ed_;
+            edDragBase_ = copyNoSource(ed_);
+            edDragSel_ = edSel_;
+            edDragBaseOp_ = describeMapObject(edDragBase_, kKindChar[edSel_.kind], "set", edSel_.idx);   // (what undo puts back)
+            edDragGrid_ = 0;   // (worked out on the first frame)
             edDragLast_.clear();
             edDragPushed_ = false;
         } else { // shift+click adds boxes / groups to the selection (or takes one back out)
@@ -1197,22 +1283,35 @@ void Game::editorFrame(double dt) {
     if (edDragAxis_ >= 0 && (size_t)edSel_.idx < kindCount(edDragBase_, edSel_.kind)) {
         float delta = snapTo(closestOnAxis(edDragP0_, edDragAxis_, edMouseRay()) - edDragT0_, g);
         delta = clampf(delta, -500, 500);
-        Map tmp = edDragBase_;
         int kind = edSel_.kind, i = edSel_.idx, a = edDragAxis_;
-        if (edDragMove_) {
-            Vec3 d;
-            d[a] = delta;
-            moveObject(tmp, kind, i, d);
-        } else if (AABB* b = kindBox(tmp, kind, i)) {
-            if (edDragSign_ > 0) b->mx[a] = std::max(b->mn[a] + g, b->mx[a] + delta);
-            else b->mn[a] = std::min(b->mx[a] - g, b->mn[a] + delta);
-        }
         char k = kKindChar[kind];
-        std::string op = describeMapObject(tmp, k, "set", i);
-        if (op != edDragLast_ && !(edDragLast_.empty() && op == describeMapObject(edDragBase_, k, "set", i))) {
-            if (!edDragPushed_) { edUndo_.push_back(describeMapObject(edDragBase_, k, "set", i)); edDragPushed_ = true; }
-            edDo(op, "", false, false);
-            edDragLast_ = op;
+        if (kind != edDragSel_.kind || i != edDragSel_.idx) { edDragSel_ = edSel_; edDragBaseOp_ = describeMapObject(edDragBase_, k, "set", i); edDragGrid_ = 0; }
+        // (the same step on the same grid as last frame: the same op, already applied or not needed - held still, nothing to do)
+        if (delta != edDragDelta_ || g != edDragGrid_) {
+            edDragDelta_ = delta;
+            edDragGrid_ = g;
+            // the object's box / position changed on the base map in place, then put back as it was (copying the whole map
+            // every frame was 80-200 us on a big one)
+            AABB* b = kindBox(edDragBase_, kind, i);
+            Vec3* p = kindPoint(edDragBase_, kind, i);
+            const AABB keepBox = b ? *b : AABB();
+            const Vec3 keepPos = p ? *p : Vec3();
+            if (edDragMove_) {
+                Vec3 d;
+                d[a] = delta;
+                moveObject(edDragBase_, kind, i, d);
+            } else if (b) {
+                if (edDragSign_ > 0) b->mx[a] = std::max(b->mn[a] + g, b->mx[a] + delta);
+                else b->mn[a] = std::min(b->mx[a] - g, b->mn[a] + delta);
+            }
+            std::string op = describeMapObject(edDragBase_, k, "set", i);
+            if (b) *b = keepBox;
+            if (p) *p = keepPos;
+            if (op != edDragLast_ && !(edDragLast_.empty() && op == edDragBaseOp_)) {
+                if (!edDragPushed_) { edUndo_.push_back(edDragBaseOp_); edDragPushed_ = true; }
+                edDo(op, "", false, false);
+                edDragLast_ = op;
+            }
         }
     }
     if (edSel_.valid() && !edSelValid() && !edOnline_) edSel_ = EdSel(); // (online: a new object may not have arrived yet)
@@ -1237,8 +1336,8 @@ void Game::editorFrame(double dt) {
         }
         r_.useStaticBoxes();
     }
-    for (auto& b : ed_.brushes) // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
-        if (b.material == 9) r_.translucentBox(b.box, kClipColor);
+    mapCache();
+    for (auto& b : edClipBoxes_) r_.translucentBox(b, kClipColor);   // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
     for (auto& sp : ed_.spawns) {
         Vec3 c = kTeamColors[sp.team & 3];
         r_.box(sp.pos + Vec3(0, 0.9f, 0), {0.3f, 0.9f, 0.3f}, sp.yaw, c, 1.0f, false);
@@ -1272,7 +1371,7 @@ void Game::editorFrame(double dt) {
         Vec3 bc = b.center();
         // handles: drawn over everything (the overlay pass clears depth after the world), so the ones on the far
         // faces and inside walls show too; sized to stay grabbable at any distance
-        for (auto& hd : edHandles()) {
+        for (auto& hd : handles()) {
             float sz = clampf(length(hd.pos - edCam_) * 0.018f, 0.05f, 1.2f);
             bool active = edDragAxis_ == hd.axis && edDragSign_ == hd.sign && edDragMove_ == hd.move;
             Vec3 col = axisCol[hd.axis] * (active ? 1.3f : 1.0f);
@@ -1286,7 +1385,8 @@ void Game::editorFrame(double dt) {
         }
     }
     // the other editors: a camera box each, labeled after the scene is drawn
-    std::vector<std::pair<Vec3, std::string>> others;
+    auto& others = edOthers_;   // (kept from frame to frame)
+    others.clear();
     if (edOnline_) {
         const auto& ps = framePlayers();
         Vec3 col(ui_.accent.r, ui_.accent.g, ui_.accent.b);
@@ -1461,9 +1561,10 @@ void Game::editorFrame(double dt) {
         const uint32_t all = (1u << MODE_COUNT) - 1;
         uint32_t mask = ed_.allowedModes ? ed_.allowedModes : all;
         float cw = (w - 3 * gap) / 4, ch = 16 * s, cts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
+        mapCache();
         for (int m = 0; m < MODE_COUNT; m++) {
             float cx = x + (m % 4) * (cw + gap), cy = y + (m / 4) * (ch + 3 * s);
-            bool on = mask >> m & 1, can = ed_.canSupportMode(m);
+            bool on = mask >> m & 1, can = edCanModes_ >> m & 1;
             bool hv = uiIn_.mx >= cx && uiIn_.mx < cx + cw && uiIn_.my >= cy && uiIn_.my < cy + ch;
             Color bg = on ? Color{ui_.accent.r * 0.55f, ui_.accent.g * 0.55f, ui_.accent.b * 0.55f, can ? 0.95f : 0.45f} : Color{0.12f, 0.13f, 0.16f, 0.9f};
             r_.rect(cx, cy, cw, ch, bg);
@@ -1558,8 +1659,8 @@ void Game::editorFrame(double dt) {
         y += 16 * s;
         // clip boxes are invisible in play and easy to lose in a big map: step through them (selects one and
         // flies the camera back from it, keeping the view direction)
-        int nClip = 0;
-        for (auto& br : ed_.brushes) nClip += !br.generated && br.material == 9;
+        mapCache();
+        int nClip = edClipCount_;
         if (nClip && ui_.button(x, y, w, h, "FIND CLIP BOXES (INVISIBLE WALLS): " + std::to_string(nClip), UiExp::state("edsel").withId("FIND CLIP BOXES"))) {
             for (size_t k = 1; k <= ed_.brushes.size(); k++) {
                 int j = (int)((edClipFind_ + k + ed_.brushes.size()) % ed_.brushes.size());
@@ -1577,8 +1678,8 @@ void Game::editorFrame(double dt) {
     ui_.scope = nullptr;
     // what this map can be played as
     y = std::max(y + 6 * s, H - 150 * s);
-    std::string modes;
-    for (int m = 0; m < MODE_COUNT; m++) if (ed_.supportsMode(m)) modes += std::string(modes.empty() ? "" : " ") + modeName(m);
+    mapCache();
+    const std::string& modes = edModesText_;
     ui_.label(x, y, "PLAYABLE AS:", kGrey, 0.5f);
     y += 12 * s;
     ui_.label(x, y, modes.empty() ? "NOTHING YET (NEEDS SPAWNS)" : modes, modes.empty() ? kRed : kWhite, 0.5f);
@@ -1611,7 +1712,7 @@ void Game::editorFrame(double dt) {
     }
     if (ui_.probing() && !modal) uiTestActions();   // (the UI test: the 3D view, the selection's handles, the keys)
     if (modal) {
-        uiIn_ = realIn;
+        uiIn_ = std::move(realIn);
         ui_.begin(&r_, uiIn_, s);   // (and the UI test sees the question's widgets again: begin() unmutes)
         if (edPrompt_) drawEditorSavePrompt();
     }
