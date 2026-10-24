@@ -4,13 +4,13 @@ or third-party (made by people, from an outside pack or font), so the owner can 
 release's notes can say how far along it is. Standard library only.
 
     python3 tools/provenance.py sync [<export dir>]      add / drop items: the asset export's manifest.json (default
-                                                          build/assets_export) + the UI pages and bot areas (from the
-                                                          source) + the evidence in the repository
+                                                          build/assets_export) + the UI pages, bot areas and game
+                                                          modes (from the source) + the evidence in the repository
     python3 tools/provenance.py merge <sidecar.json>...   fold editor sidecars (Quark/<editor>/provenance.json) in
     python3 tools/provenance.py summary [--markdown]      human vs AI, overall and per category
     python3 tools/provenance.py check                     the files are valid (CI's meta job; needs no build)
 
-The registry is assets/provenance/<category>.json. sync never needs a build for the ui / bots / fonts items; without
+The registry is assets/provenance/<category>.json. sync never needs a build for the ui / bots / gamemodes / fonts items; without
 an export it keeps the file assets as they are and only re-applies the evidence. An entry with `by`, `date` or `tool`
 was set by a person or an editor (curated): sync never changes it. Every other entry is the tool's own reading of the
 repository and is worked out again on each sync (its extra fields, such as `wip` and `note`, are kept)."""
@@ -19,11 +19,11 @@ import ast, json, math, os, re, sys
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 REG = os.path.join(ROOT, "assets", "provenance")
 FORMAT = 1
-CATEGORIES = ["sounds", "voices", "models", "maps", "fonts", "images", "ui", "bots"]   # (the summary's order)
+CATEGORIES = ["sounds", "voices", "models", "maps", "fonts", "images", "ui", "bots", "gamemodes"]   # (the summary's order)
 PREFIX = {"sounds": "sounds", "voices": "voices", "models": "models", "maps": "maps", "fonts": "fonts",
-          "images": "images", "website": "images", "ui": "ui", "bots": "bots"}       # id's first part -> category
+          "images": "images", "website": "images", "ui": "ui", "bots": "bots", "gamemodes": "gamemodes"}   # id's first part -> category
 ORIGINS = ["ai", "human", "third-party"]
-TOOLS = ["sound-editor", "model-editor", "map-editor", "bot-editor", "ui-customizer", "dashboard", "asset-studio"]
+TOOLS = ["sound-editor", "model-editor", "map-editor", "bot-editor", "ui-customizer", "dashboard", "asset-studio", "mode-editor"]
 FIELDS = ["origin", "source", "by", "date", "tool", "version", "wip", "note", "evidence"]   # (written in this order)
 CURATED = ("by", "date", "tool")
 
@@ -170,6 +170,7 @@ class Repo:
             return "ai", "picture on the website (site/img/%s, the site branch): an in-game shot of the AI-made maps / models" % parts[1], None, {}
         if cat == "ui": return "ai", "drawn by the game's UI code (src/client/), AI-written", None, {}
         if cat == "bots": return "ai", "bot logic in src/game/bots.cpp, AI-written", None, {}
+        if cat == "gamemodes": return "ai", "mode logic tools/modes/%s.qlogic, AI-written" % parts[1], None, {}
         return "ai", "", None, {}
 
     def handmade(self, name, export_dir):
@@ -284,6 +285,12 @@ def bot_areas():
     return BOT_AREAS + ["bots/mode/" + n for n in re.findall(r'"([^"]+)"', m.group(1))]
 
 
+def game_modes():
+    """gamemodes/<name>: one item per built-in mode logic file, tools/modes/<name>.qlogic (common: the shared part)"""
+    d = os.path.join(ROOT, "tools", "modes")
+    return ["gamemodes/" + n[:-7] for n in sorted(os.listdir(d)) if n.endswith(".qlogic")] if os.path.isdir(d) else []
+
+
 # Bundled fonts: the licence file next to a font is named after its family, which the font's file name starts with
 # (BebasNeue-Regular.ttf -> BebasNeue-OFL.txt, DejaVuSans-Bold.ttf -> DejaVu-LICENSE.txt).
 FONT_LICENCES = [("-OFL.txt", "SIL OFL 1.1"), ("-LICENSE.txt", "Bitstream Vera licence"), ("-COPYING.txt", "BSD-3-Clause")]
@@ -332,9 +339,9 @@ def cmd_sync(args):
     man = os.path.join(export, "manifest.json")
     reg = load_registry()
     repo = Repo()
-    ids = set(ui_pages()) | set(bot_areas()) | set(font_files())
+    ids = set(ui_pages()) | set(bot_areas()) | set(font_files()) | set(game_modes())
     ids |= {k for k in reg if k.startswith("bots/")}   # (user brains, bots/brain/<name>: never dropped)
-    ids |= {k for k in reg if k.startswith("ui/") and curated(reg[k])}   # (pages an editor named: from a merge)
+    ids |= {k for k in reg if k.startswith(("ui/", "gamemodes/")) and curated(reg[k])}   # (pages / custom modes an editor named: from a merge)
     file_cats = ("sounds", "voices", "models", "maps", "images")
     if os.path.exists(man):
         items = json.loads(read(man))["items"]
@@ -399,7 +406,7 @@ def cmd_merge(args):
             if "tool" not in new: new["tool"] = tool   # (so a sync keeps it as the editor's: curated)
             if new.get("origin") == "human" and "wip" in new and "wip" not in e: del new["wip"]   # (shipped: no longer in progress)
             if k not in reg:
-                n_new += 1; print("  new %s (%s)%s" % (k, new["origin"], "" if k.startswith(("bots/", "ui/")) else ": a sync drops it unless the asset exists"))
+                n_new += 1; print("  new %s (%s)%s" % (k, new["origin"], "" if k.startswith(("bots/", "ui/", "gamemodes/")) else ": a sync drops it unless the asset exists"))
             elif new != reg[k]:
                 n_upd += 1; print("  %s: %s -> %s" % (k, reg[k].get("origin"), new["origin"]))
             reg[k] = new
@@ -442,18 +449,18 @@ def cmd_summary(args):
         split = (": %d by the team, %d third-party" % (tot["human"], tot["third-party"])) if tot["third-party"] else ""
         print("**Human-made assets: %s** (%d of %d%s) · AI-made %s" % (pct(h, n), h, n, split, ai_pct(h, n)))
         print()
-        print("Human-made by category: %s. Every sound, voice line, model, map, font, picture, UI page and bot area "
-              "counts as one item (assets/provenance/)." % cats)
+        print("Human-made by category: %s. Every sound, voice line, model, map, font, picture, UI page, bot area and "
+              "game mode counts as one item (assets/provenance/)." % cats)
         return 0
-    print("%-8s %6s %6s %12s %6s %11s %4s" % ("category", "items", "human", "third-party", "ai", "human-made", "wip"))
+    print("%-9s %6s %6s %12s %6s %11s %4s" % ("category", "items", "human", "third-party", "ai", "human-made", "wip"))
     for c in CATEGORIES + ["total"]:
         if c == "total":
             row, wip = tot, sum(1 for e in reg.values() if e.get("wip"))
-            print("-" * 59)
+            print("-" * 60)
         else:
             row, wip = per[c], sum(1 for k, e in reg.items() if category_of(k) == c and e.get("wip"))
         cn = sum(row.values()); ch = row["human"] + row["third-party"]
-        print("%-8s %6d %6d %12d %6d %11s %4d" % (c, cn, row["human"], row["third-party"], row["ai"], pct(ch, cn), wip))
+        print("%-9s %6d %6d %12d %6d %11s %4d" % (c, cn, row["human"], row["third-party"], row["ai"], pct(ch, cn), wip))
     return 0
 
 

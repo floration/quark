@@ -162,6 +162,7 @@ A fast, minimal FPS on a custom C++17 engine:
 | `tools/master/` | The ranking server: `worker.js`, `schema.sql`, `test.mjs`, README with the deployment steps and the SQL to run per version |
 | `tools/server/` | Dedicated server install (`install.sh`), auto-update (`autoupdate.sh`), alerts |
 | `tools/studio/` | `build.py`: the asset export's file builder for the website /assets/ page (the Asset Studio page was retired 2026-10-24) |
+| `tools/modes/`, `tools/mode_editor/` | The 13 built-in modes' logic (`*.qlogic`, `GRAMMAR.md`; embedded at build time) and the gamemode editor (local page on 127.0.0.1:8771, README there) |
 | `tools/launcher_build.sh` | Builds the shipped launcher from the `launcher` branch (release jobs) |
 | `site/` (not in `testing`) | The website: the `site` branch, checked out there as a worktree (README) |
 | `assets/` | Fonts, sounds, voice, icons; `assets/overrides/` holds the owner's replacement assets |

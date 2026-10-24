@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Gamemode Editor</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body class="modeed">
+<!-- Adapted from tools/bot_editor/web/index.html at c7aae27 (its Brain page), for game modes. -->
+<div id="app">
+  <header id="top">
+    <div class="logo"><b>QUARK</b> gamemode editor</div>
+    <div id="status"><span id="catalogBadge" class="badge"></span><span id="defaultsBadge" class="badge"></span><span id="simBadge" class="badge"></span><span id="dataDir"></span></div>
+  </header>
+
+  <section id="mode" class="page on">
+    <aside id="modeLeft" class="panel">
+      <h3>Mode</h3>
+      <div class="field"><span>Open</span><select id="modeSel"></select></div>
+      <div class="row">
+        <button id="modeNew" title="a new mode from a base mode">New…</button><button id="modeSave" class="primary" title="Ctrl+S">Save</button><button id="modeSaveAs">Save as…</button>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <button id="modeDownload" title="download the .qmode">⇩ .qmode</button><button id="modeUpload" title="open a .qmode file">⇧ Open file</button>
+        <button id="modeResetAll" class="danger" title="the logic and this editor's keys back to the built-in base mode">Reset all</button>
+      </div>
+      <label class="check muted" style="margin-top:6px" title="recorded in provenance.json (gamemodes/&lt;name&gt;) on save: ai unless ticked"><input type="checkbox" id="modeHuman"><span>I wrote this myself</span></label>
+      <label class="check muted"><input type="checkbox" id="modeWhole"><span>save the whole logic (else only what differs from the built-in)</span></label>
+      <div id="modeInfo" class="muted" style="margin:6px 0;font-size:12px"></div>
+      <input id="itemFilter" placeholder="filter: name, kind…" style="width:100%">
+      <div id="items" class="items"></div>
+    </aside>
+    <div id="brainMain">
+      <div id="viewTabs">
+        <button data-view="code" class="on">Code</button>
+        <button data-view="blocks">Blocks</button>
+        <button data-view="graph">Graph</button>
+        <button data-view="values">Values</button>
+        <button data-view="diff">Diff vs built-in</button>
+        <button data-view="phases">Phases</button>
+        <button data-view="sim">Sim</button>
+        <span class="sp"></span>
+        <button id="undo" title="undo (Ctrl+Z)">↶</button><button id="redo" title="redo (Ctrl+Y)">↷</button>
+      </div>
+      <div id="vCode" class="view on">
+        <div id="keyLines"></div>
+        <div id="code">
+          <div id="gutter"></div>
+          <div id="codeScroll"><pre id="codeHl"></pre><textarea id="codeTa" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea></div>
+          <div id="codeStatus"></div>
+        </div>
+      </div>
+      <div id="vBlocks" class="view"></div>
+      <div id="vGraph" class="view"></div>
+      <div id="vValues" class="view"><div id="values"></div></div>
+      <div id="vDiff" class="view"><div id="diff"></div></div>
+      <div id="vPhases" class="view"><div id="phases"></div></div>
+      <div id="vSim" class="view"></div>
+    </div>
+    <aside id="brainRight" class="panel right">
+      <h3>Checks</h3>
+      <div id="checkSummary" class="muted"></div>
+      <div id="problems"></div>
+      <h3>This item</h3>
+      <div id="itemInfo" class="muted"></div>
+    </aside>
+  </section>
+</div>
+<datalist id="mapNames"></datalist>
+<div id="toast"></div>
+<input type="file" id="fileIn" style="display:none">
+<script type="module" src="/web/js/app.js"></script>
+</body>
+</html>

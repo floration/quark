@@ -21,6 +21,7 @@
 #include "bots.h"
 #include "master.h"
 #include "customrules.h"
+#include "modeparams.h"
 #include "ranked.h"
 
 // Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
@@ -36,6 +37,12 @@ constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
+struct GameEvent;
+class Server;
+struct ModeHooks;
+struct ModeLogic;
+// Tests only: sees every event Server::broadcastEvent sends (the mode lockstep and the rules traces compare them).
+extern void (*g_eventHook)(const Server& s, const GameEvent& e);
 
 struct ServerConfig {
     std::string name = "quark server";
@@ -382,6 +389,26 @@ public:
     float kothPoints_[2] = {0, 0};
     double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
+    // the mode's rules (gamemodes.cpp)
+    const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)
+    ModeHooks* modeHooks_ = nullptr;   // a custom mode's logic (phase 3 of the mode editor); null: every slot native
+    uint32_t phaseSerial_ = 0;   // counts phase changes: a slot that ended the round or the match changed it
+    float liveLength_ = 0;       // the round clock the round went live with (race splits)
+    int cartNear_[2] = {0, 0};   // players of each team alive at the cart at the last cart step (the logic's cart.near)
+    bool cartDelivered_ = false; // the delivered event was raised this round (once a round)
+    // ---- a custom mode's logic (tools/modes/GRAMMAR.md; design.md 4): compiled at start() from cfg.custom's logic
+    // block, or the one preset below. Never on ranked or time trial servers, and only while the server plays the
+    // logic's base mode (rulesReset sets modeHooks_ from modeLogicHooks_).
+    // Before start(): play this .qmode's logic (the whole file: key lines and logic; base: MODE_* it plays as, -1 its
+    // mode= key). False and *err (line:col message) if it doesn't compile; nothing is kept then. The mode editor's
+    // headless sim calls it (its key lines still go in ServerConfig::custom, as for any custom mode).
+    bool presetModeLogic(const std::string& qmodeText, int base, std::string* err);
+    void presetModeLogic(std::shared_ptr<const ModeLogic> logic);   // a compiled one (null: none; the lockstep tests)
+    const ModeLogic* modeLogic() const { return modeLogic_.get(); }   // the logic this server plays (null: none)
+    const std::string& modeLabel() const { return modeLabel_; }      // its name#hash8 ("": none)
+    std::shared_ptr<const ModeLogic> presetLogic_, modeLogic_;
+    std::shared_ptr<ModeHooks> modeLogicHooks_;
+    std::string modeLabel_;
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;
@@ -557,6 +584,8 @@ public:
     uint32_t perspectivesForTest(int id) const { return perspectives(id); }
     void tickProjectilesForTest() { tickProjectiles(); }
     void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
+    // One tick on the game clock alone, no sockets or real time (frame()'s tick: the lockstep tests, headless tools)
+    void stepTick() { simulate(); tick_++; timeMs_ += 1000 / tickRate(); if (tick_ % snapEvery() == 0) sendSnapshots(); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)

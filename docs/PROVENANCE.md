@@ -18,6 +18,7 @@ along it is.
 | `images.json` | `images/<file>`, `website/<file>` |
 | `ui.json` | `ui/<page>`: one item per menu page and HUD element (below) |
 | `bots.json` | `bots/<area>`: one item per bot brain area (below) |
+| `gamemodes.json` | `gamemodes/<mode>`: one item per built-in mode logic file, `tools/modes/<mode>.qlogic` (`common` included; `sync` reads them from the source, no build needed); a custom mode the gamemode editor names is merged in under its own id and kept by `sync` |
 
 **UI pages** (`sync` reads them from the source, no build needed): the page paths the UI test uses
 (`Game::uiScreenPath` in src/client/uitest.cpp and every `UiExp::nav(...)` target), each page counted once wherever it
@@ -54,7 +55,7 @@ Every asset the game has is listed (ids sorted). Fields:
   another person for Quark), or `third-party` (made by people, from an outside pack or font, under its licence).
 - `source`: where it came from (generator, pack, licence, file).
 - `by`, `date` (YYYY-MM-DD), `tool` (which program made the change: `sound-editor`, `model-editor`, `map-editor`,
-  `bot-editor`, `ui-customizer`, `dashboard`, `asset-studio`), `version` (the first version it shipped in).
+  `bot-editor`, `ui-customizer`, `dashboard`, `asset-studio`, `mode-editor`), `version` (the first version it shipped in).
 - `wip`: a short note when a human replacement is being worked on but hasn't shipped.
 - `note`: anything else.
 - `evidence` (written by `sync`): the repository file that made it `human` (an override or a custom recording); when
@@ -75,7 +76,7 @@ apart.
   `third-party`.
   Removed assets are dropped; new ones are added as `ai`.
 - **Curated entries**: an entry with `by`, `date` or `tool` was set by a person or an editor (a merge, the
-  dashboard), and `sync` never changes it (it still drops it when the asset is gone, except `ui/` and `bots/` ids).
+  dashboard), and `sync` never changes it (it still drops it when the asset is gone, except `ui/`, `bots/` and `gamemodes/` ids).
   Every other entry is the tool's reading of the repository, worked out again on each `sync` (its `wip`, `note` and
   unknown fields are kept).
 - Never mark an asset `human` that a person didn't make. The owner can mark items in the editor dashboard.
@@ -121,7 +122,7 @@ file assets as listed and only reads the evidence and the source again. The file
 sorted, so a change is a one-line diff.
 
 **Counting**: every item counts one, whatever it is (a sound, a voice line, a model, a map, a font, a picture, a UI
-page, a bot area). Human-made = `human` + `third-party`. The percentage is rounded down to 0.1 (100% only when every
+page, a bot area, a game mode). Human-made = `human` + `third-party`. The percentage is rounded down to 0.1 (100% only when every
 item is human-made).
 
 Every release's notes (testing prereleases and production releases) end with the `summary --markdown` lines, added by
@@ -130,7 +131,7 @@ the publish steps in `.github/workflows/release.yml`, e.g.:
 ```
 **Human-made assets: 17.1%** (93 of 542: 31 by the team, 62 third-party) · AI-made 82.9%
 
-Human-made by category: sounds 90/165 · voices 0/210 · ... Every sound, voice line, model, map, font, picture, UI page and bot area counts as one item (assets/provenance/).
+Human-made by category: sounds 90/165 · voices 0/210 · ... Every sound, voice line, model, map, font, picture, UI page, bot area and game mode counts as one item (assets/provenance/).
 ```
 
 They show where the GitHub release body is shown: the release page, the launcher's changelog (ASCII: `·` becomes

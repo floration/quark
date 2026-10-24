@@ -1,0 +1,40 @@
+logic 1
+base common
+# (fixture: transcribed from the mode-editor design, section 3.1, until tools/modes/common.qlogic exists)
+param freezeTime f32 = 3 # s of countdown before each round
+param roundEndTime f32 = 4 # s of the round result
+param matchEndTime f32 = 10 # s of the match result
+param warmupCountdown f32 = 5 # s from enough players to the start (autostart servers)
+param warmupRespawn f32 = 1.5 # s dead in the warmup
+param overtime f32 = 5 # s an objective touch holds the round open after the clock runs out
+
+slot freezeLength:
+  return freezeTime
+
+slot canDamage:
+  if phase == freeze or phase == roundEnd or phase == matchEnd: return no
+  if attacker == none or attacker == victim: return yes
+  return not (teams and team(attacker) == team(victim))
+
+slot canHit:
+  return yes
+
+slot frozen:
+  return phase == freeze
+
+slot spawnType:
+  return mapSpawn(p)
+
+slot teamLocked:
+  return no
+
+slot canAutoStart:
+  return teamCount(A) >= 1 and teamCount(B) >= 1
+
+slot kill: # victim, killer, weapon
+  if killer != none and killer != victim:
+    if teams and team(killer) == team(victim): score[killer] = score[killer] - 1
+    else: score[killer] = score[killer] + 1
+
+slot roundOver:
+  pass # (the next round; modes with rounds write their own)

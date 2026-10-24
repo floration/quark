@@ -46,8 +46,9 @@ constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIG
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
 inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SCOUT", "ROBOT", "KNIGHT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
 // Seconds a player waits to respawn during play, or < 0 where nobody does: rounds with one life (VS, bomb, duel,
-// 1v1, tourney, hide and seek). The one list behind modeRespawns() and rulesRespawnDelay() (warmup / match end aside).
-inline float modeRespawnDelay(int m) {
+// 1v1, tourney, hide and seek). The one list behind modeRespawns() (the engine, keyed on the base mode) and each mode's
+// ModeParams::respawn default (modeparams.h), which rulesRespawnDelay() reads (warmup / match end aside).
+constexpr float modeRespawnDelay(int m) {
     switch (m) {
         case MODE_RACE: return 1.0f;
         case MODE_KOTH: return 4.0f;
@@ -59,7 +60,7 @@ inline float modeRespawnDelay(int m) {
         default: return -1.0f;
     }
 }
-inline bool modeRespawns(int m) { return modeRespawnDelay(m) >= 0; }
+constexpr bool modeRespawns(int m) { return modeRespawnDelay(m) >= 0; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long

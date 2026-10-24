@@ -1,0 +1,24 @@
+logic 1
+base npayload
+# Neutral payload: the cart starts in the middle; whichever team is alone at it pushes it toward the other end (A
+# toward the end, B toward the start). Delivering it wins; at the time-out the side it's on wins.
+use ncart
+
+param roundTime f32 = 300
+param respawnTime f32 = 5
+param cartRange f32 = 4 # from the cart that counts as at it
+param cartSpeed f32 = 1.6 # with one pusher (+25% for each more, up to twice)
+
+slot tick:
+  neutralCartStep()
+  if cart.dist >= cart.length - 0.001f: endMatch(A, "TEAM A delivered the payload")
+  if cart.dist <= 0.001f: endMatch(B, "TEAM B delivered the payload")
+  # overtime: the team that would lose at the time-out (the cart on the other side) is at the cart
+  mid = cart.length * 0.5f
+  even = abs(cart.dist - mid) < 0.05f
+  if (cart.near[A] > 0 and (even or cart.dist < mid)) or (cart.near[B] > 0 and (even or cart.dist > mid)): touchObjective()
+  if now < phaseEnd: hud.overtime = no
+  elif not holdOvertime():
+    if even: endMatch(none, "draw - the payload is in the middle")
+    w = cart.dist > mid ? A : B
+    endMatch(w, w, " wins - payload on their side")
