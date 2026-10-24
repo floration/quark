@@ -166,15 +166,24 @@ private:
     NetClient::PlayerArray framePlayers_{};
     bool framePlayersOk_ = false;
     void drawHud();
-    void drawRps(float W, float H, float s);   // the hide and seek tiebreak (rock paper scissors) panel
+    void drawRps(float W, float H, float s, float top);   // the hide and seek tiebreak (rock paper scissors) panel, from y top
     void drawRpsShape(float x, float y, float size, int shape, Color c);
     bool rpsPicking() const;                   // we're in the tiebreak and the throw is open
     void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
+    // where the scoreboard goes this frame (its panel; under the notice list) and its rows' text scale / height
+    struct ScoreboardBox { float x, y, w, h, ts, rowH; };
+    ScoreboardBox scoreboardBox(size_t players) const;
+    // the in-game list under the score bar (objective, banners, ranked notes, a running vote, host info): where it
+    // ended this frame, in screen px (the scoreboard and the pause menu's panels go under it)
+    float noticeEnd_ = 0;
     void drawMenu();
     // the menus' pages (the redesign's 720p coordinates through a SetLayout: game.cpp "Menus")
     SetLayout menuLayout(float designW) const;
+    // in game: the pause menu's pages between the notice list and the weapon bar (y 148..638 at 720p)
+    SetLayout ingameLayout(float designW) const;
+    float ingameTop(const SetLayout& L, float kH) const;   // where content kH design px tall starts there (its panel centred)
     void drawMainMenu(const SetLayout& L);
     void drawJoin(const SetLayout& L);
     void drawHost(const SetLayout& L);
@@ -485,7 +494,7 @@ private:
     std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
     double perfNextUpdate_ = 0;
-    std::string perfText_;
+    std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping
     void drawPerf();
 
     // display / latency
@@ -594,7 +603,7 @@ private:
     int specKeysOf() const;
     void drawChatBox(float W, float H, float s, float ts);
     void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
-    void drawVotePanel(float cx, float s, float ts);
+    float drawVotePanel(float cx, float s, float ts, float y = -1);   // a running vote, its box from y (-1: 122 at 720p); returns where it ends
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
     struct Crown { int place; const char* letter; };
     std::map<std::string, Crown> crowns_;
