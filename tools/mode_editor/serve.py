@@ -141,12 +141,22 @@ def repo_roots(explicit=None):
 
 
 def find_binary(name, explicit, roots):
+    """The newest `name` in a checkout's build folders (build, build-release, build-editors, any other build-*/,
+    build/<config>, bin), then next to serve.py, then PATH. Newest wins, so a fresh build-editors/ (the Quark Project
+    app's auto-install build) beats a stale build/."""
     if explicit:
         return os.path.abspath(explicit) if os.path.isfile(explicit) else None
     for root in roots:
-        for b in ("build", "build-release", "build/Release", "build/RelWithDebInfo", "build/Debug", "build-sim", "bin", "."):
-            c = os.path.join(root, b, name + EXE)
-            if os.path.isfile(c): return c
+        dirs = ["build", "build-release", "build-editors", "build/Release", "build/RelWithDebInfo", "build/Debug",
+                "build-sim", "bin", "."]
+        try:
+            dirs += sorted(d for d in os.listdir(root) if d.startswith("build") and d not in dirs
+                           and os.path.isdir(os.path.join(root, d)))
+        except OSError:
+            pass
+        found = [c for c in (os.path.join(root, b, name + EXE) for b in dirs) if os.path.isfile(c)]
+        if found:
+            return max(found, key=lambda c: os.path.getmtime(c))
     c = os.path.join(HERE, name + EXE)
     if os.path.isfile(c): return c
     return shutil.which(name)

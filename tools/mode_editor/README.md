@@ -21,7 +21,7 @@ Flags (or the same keys in `mode_editor.json` next to `serve.py`; `mode_editor.e
 |---|---|
 | `--port` | 8771 |
 | `--data-dir` | the game's user folder: `QUARK_DATA_DIR`, else `%APPDATA%\quark`, `~/Library/Application Support/quark` or `~/.local/share/quark`. Your modes are in its `custom_modes/` |
-| `--maptool` | `quark_maptool` in this repository's build folders (or the checkout `install.py` copied from), then on `PATH` |
+| `--maptool` | `quark_maptool` in this repository's build folders (`build`, `build-release`, `build-editors`, any other `build*`; the newest wins), or the checkout `install.py` copied from, then on `PATH` |
 | `--quark-tests` | `quark_tests` likewise |
 | `--no-open` | don't open a browser |
 
