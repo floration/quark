@@ -2809,8 +2809,9 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
         float frac = 1.0f - d / wd.splashRadius;
         Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         bool self = i == owner;
-        // Self damage: 10% when the blast is at or below your feet (rocket jumps), full otherwise.
-        float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
+        // Self damage: 10% when the blast is at or below your feet + 0.3 m (rocket jumps), rising evenly to full at
+        // feet + 1.2 m (chest height). T11: it jumped tenfold at feet + 0.3 (a knee-high blast ~30 hp, a hair lower 3).
+        float selfScale = 0.1f + 0.9f * clampf((at.y - (p.move.pos.y + kSelfRampLow)) / (kSelfRampHigh - kSelfRampLow), 0, 1);
         float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
         if (i == direct && !self) dmg = std::max(dmg, kRocketDirectDamage * tunedDamage(weapon));   // a direct hit
         Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f) * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f));

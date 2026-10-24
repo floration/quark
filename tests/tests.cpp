@@ -2558,6 +2558,22 @@ static void testFeelFixes() {
         printf("  splash over a crate: %.1f damage; behind a wall: %.1f\n", 100 - s.players_[1].health, 100 - s.players_[2].health);
         CHECK(s.players_[1].health < 100 && s.players_[2].health == 100);
     }
+    {   // T11: own splash rises evenly with the blast's height: 10% up to feet + 0.3 m, full from chest height
+        float prev = -1, at3 = 0, at31 = 0;
+        for (float h : {0.0f, 0.3f, 0.31f, 0.5f, 0.75f, 1.0f, 1.2f, 1.5f}) {
+            Server s; fresh(s, open, 1);
+            s.explodeForTest({0, h, 0}, 0, WPN_ROCKET);
+            float d = 100 - s.players_[0].health;
+            CHECK(d >= prev - 1e-3f);
+            prev = d;
+            if (h == 0.3f) at3 = d;
+            if (h == 0.31f) at31 = d;
+            if (h <= 0.3f) CHECK(std::fabs(d - weaponDef(WPN_ROCKET).damage * 0.1f) < 0.01f);
+            if (h >= 1.2f) CHECK(std::fabs(d - weaponDef(WPN_ROCKET).damage) < 0.01f);
+            if (h == 0.5f) printf("  own rocket at knee height (0.5 m): %.1f damage\n", d);
+        }
+        CHECK(at31 - at3 < 1.0f);   // no step: a hair higher is a hair more
+    }
     {   // F14: a blast with a pellet or two on the head isn't a headshot; one that's mostly head is
         for (bool high : {false, true}) {
             Server s; fresh(s, open, 2);

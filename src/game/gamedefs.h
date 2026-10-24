@@ -198,6 +198,7 @@ constexpr float kFireBuffer = 0.15f;
 // the sniper, crossbow or rocket was dropped). Primary fire only (the rocket's alt-fire is its lob).
 constexpr float kTapBuffer = 0.1f;
 inline bool tapBuffered(int w) { return w == WPN_SNIPER || w == WPN_CROSSBOW || w == WPN_ROCKET; }
+constexpr float kSelfRampLow = 0.3f, kSelfRampHigh = 1.2f;   // own splash: 10% at or below feet + low, full at feet + high (linear between)
 constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
 constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
