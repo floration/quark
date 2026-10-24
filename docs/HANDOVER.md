@@ -175,9 +175,9 @@ Building:
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-build/quark_tests                 # everything (forks one process per group, 4 at a time; tickrate and netcode after them)
+build/quark_tests                 # everything (forks one process per group, 3 per core at a time; tickrate and netcode after them)
 build/quark_tests <group>         # one group: bots, maps, movement, modes, hidden, race, votes, edit, ranked,
-                                  # ranked2, rules, assets, server, netcode, tickrate, ...
+                                  # ranked2, rules, rules2, mapbounds, assets, server, netcode, tickrate, ...
 build/quark_tests bounds          # out-of-bounds reach check (OOB_TRACE=<map> lists escape spots)
 ```
 - Linux needs the X11/GL dev packages listed in the README; python3 is needed at build time.
@@ -189,7 +189,7 @@ build/quark_tests bounds          # out-of-bounds reach check (OOB_TRACE=<map> l
   ```
 - The UI test: `build/quark --uitest <report.json>`. It clicks every button on every screen and checks what each one does.
 
-**Before every push:** `tools/release_check.sh` runs every test group (4 at a time, then the timing-sensitive ones alone) and hosts every map headless in FFA with a screenshot. It exits 0 when everything passed. `--skip "bots maps"` leaves groups out, as for 1.17.0 only. Run the UI test (`build/quark --uitest`, [UI_TEST.md](UI_TEST.md)) too. CI runs neither (owner, 2026-10-24: CI checks meta, builds and sanitizers only), so these local runs are the only automated gameplay and UI check; the commit meant for production needs them passed on it ([RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) section 0).
+**Before every push:** `tools/release_check.sh` runs every test group (3 per core at a time, then the timing-sensitive ones alone) and hosts every map headless in FFA with a screenshot. It exits 0 when everything passed. `--skip "bots maps"` leaves groups out, as for 1.17.0 only. Run the UI test (`build/quark --uitest`, [UI_TEST.md](UI_TEST.md)) too. CI runs neither (owner, 2026-10-24: CI checks meta, builds and sanitizers only), so these local runs are the only automated gameplay and UI check; the commit meant for production needs them passed on it ([RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) section 0).
 
 **Test packages for the owner:** `tools/make_test_packages.sh [out_dir]` builds unsigned Windows (MinGW cross-compile) and Linux packages of the working tree, `quark-<VERSION>-windows-test.zip` and `quark-<VERSION>-linux-test.tar.gz`, into `build/test-packages/`. The owner tries them before tagging.
 

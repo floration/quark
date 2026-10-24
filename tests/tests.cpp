@@ -7960,17 +7960,15 @@ int main(int argc, char** argv) {
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
-    std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box: rules ~40,
-                             //  maps ~30, tourney / duel / weapons ~25, governor ~22 ... bots ~9, botaim and botfalls ~1:
-                             //  the manual clock)
-        {"rules", [] { testGameRules(""); }},
-        {"maps", [] {
-            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
-            g_fail += outOfBoundsTests();
-        }},
+    std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box: tourney ~25,
+                             //  duel / weapons ~24, mapbounds ~23, rules / rules2 / governor / sessions / ranked ~20 ...
+                             //  bots ~9, botaim and botfalls ~1: the manual clock)
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
+        {"mapbounds", [] { g_fail += outOfBoundsTests(); }},   // (nothing reachable out of bounds: tests/mapbounds.cpp)
+        {"rules2", [] { testGameRules("", 2); }},
+        {"rules", [] { testGameRules("", 1); }},
         // (its own governor dir and ports; the load is the players' reported loss, stalls left out: beside the others.
         //  testGovernorPolicy and testRankedNotRated run in "server")
         {"governor", [] { testGovernorTwoServers(TP(28714)); }},
@@ -7981,6 +7979,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
+        {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
@@ -8095,7 +8094,10 @@ int main(int argc, char** argv) {
                 if (next < list.size()) start(next++);
             }
         };
-        forked(par, std::max(2u, std::thread::hardware_concurrency()));
+        // 3 per core: the groups mostly wait on real-time play (the whole run uses ~75 CPU-seconds), so with one per
+        // core the cores sat ~70% idle. 4 cores: 4 at a time 153 s, 8 at a time ~114, 12 ~102-117 (then tourney's 25 s,
+        // the longest group, bounds it), each group taking as long as with 4.
+        forked(par, 3 * std::max(1u, std::thread::hardware_concurrency()));
         // the timing-sensitive ones, one at a time on the idle machine (both at once saved ~5 s of ~150 and failed
         // netcode's clock checks 3 times in 10 full runs, against 2 in 10 one at a time)
         forked(alone, 1);

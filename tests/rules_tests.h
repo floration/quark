@@ -1374,7 +1374,7 @@ static void testRateUndoStepUp(uint16_t port) {
         s.rateUpAt_ = 0;
         rateFreshWindow(s, cls, 1.5);
         double worst = 0;
-        for (int k = 0; k < 60 && s.tickRate() != 1000; k++) ratePump(s, cls, 0.25, idle, &worst);   // a clean warmup window: up
+        for (int k = 0; k < 60 && s.tickRate() == 500; k++) ratePump(s, cls, 0.25, idle, &worst);   // a clean warmup window: up
         printf("  warmup: %d Hz%s%s (latest tick %.1f ms)\n", s.tickRate(), s.rateWhy_.empty() ? "" : "; ", s.rateWhy_.c_str(), worst * 1e3);
         if (s.tickRate() != 1000 && worst > s.stallAfter_ && attempt < kRateTries) { s.stop(); printf("  (this machine stalled a tick itself: again)\n"); continue; }
         CHECK(s.ms_.phase == PHASE_WARMUP && s.tickRate() == 1000);
@@ -1611,7 +1611,6 @@ static void testScoreboardValue() {
     CHECK(!scoreboardGibs(ms) && scoreboardValue(fragger, ms) == 5);
 }
 
-// "quark_tests rules [name]": all of them, or the one named.
 // The HUD's live line (src/client/hudclock.h): every mode with a running round clock shows it on the default HUD
 // (1.17.0-1.18.2 showed it only in overtime, KOTH, the drain modes and the time trial: FFA, tag, hide, bomb,
 // payload, both-ways payload, points and race had no clock). Checked on what a client receives from a real server
@@ -2320,38 +2319,41 @@ static void testModeCalls(uint16_t port) {
     s.stop();
 }
 
-static void testGameRules(const std::string& only) {
-    struct R { const char* name; std::function<void()> run; };
+// "quark_tests rules [name]": all of them, or the one named.
+// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~20 s each
+// on an idle box; overtime ~15 s and grapplep ~11 s are the long ones, one in each).
+static void testGameRules(const std::string& only, int half = 0) {
+    struct R { const char* name; int half; std::function<void()> run; };
     std::vector<R> all = {
-        {"overtime", [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
-        {"syringe", [] { testSyringeModes(); }},
-        {"throws", [] { testThrowCooldown(TP(29240)); }},
-        {"hull", [] { testSizeHull(TP(29242)); }},
-        {"grapple", [] { testGrappleNoBrake(); testGrapplePmove(); }},
-        {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
-        {"head", [] { testHeadBox(TP(29246)); }},
-        {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
-        {"shorthanded", [] { testShortHanded(TP(29288)); }},
-        {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
-        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
-        {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
-        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
-        {"locator", [] { testLocator(TP(29260)); }},
-        {"aware", [] { testItAwareness(TP(29263)); }},
-        {"bomb", [] { testBombDrop(TP(29249)); }},
-        {"cartbox", [] { testCartBoxPlace(TP(29275)); }},
-        {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
-        {"seeds", [] { testRandomSeeds(); }},
-        {"heal", [] { testLifeHealCap(TP(29253)); }},
-        {"scoreboard", [] { testScoreboardValue(); }},
-        {"hudclock", [] { testHudClock(TP(29280)); }},
-        {"modecalls", [] { testModeCalls(TP(29312)); }},
-        {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
-        {"customkeep", [] { testCustomRulesKeep(); }},
-        {"modehooks", [] { testModeHooks(TP(29310)); }},
+        {"overtime", 1, [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
+        {"syringe", 2, [] { testSyringeModes(); }},
+        {"throws", 1, [] { testThrowCooldown(TP(29240)); }},
+        {"hull", 1, [] { testSizeHull(TP(29242)); }},
+        {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
+        {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
+        {"head", 1, [] { testHeadBox(TP(29246)); }},
+        {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
+        {"shorthanded", 2, [] { testShortHanded(TP(29288)); }},
+        {"vsbots", 1, [] { testVsBotsDuo(TP(29294)); }},
+        {"stopwatch", 1, [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
+        {"tag", 1, [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
+        {"rps", 2, [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
+        {"locator", 2, [] { testLocator(TP(29260)); }},
+        {"aware", 2, [] { testItAwareness(TP(29263)); }},
+        {"bomb", 2, [] { testBombDrop(TP(29249)); }},
+        {"cartbox", 2, [] { testCartBoxPlace(TP(29275)); }},
+        {"botdefer", 2, [] { testBalanceBotDefer(TP(29250)); }},
+        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
+        {"seeds", 2, [] { testRandomSeeds(); }},
+        {"heal", 2, [] { testLifeHealCap(TP(29253)); }},
+        {"scoreboard", 2, [] { testScoreboardValue(); }},
+        {"hudclock", 2, [] { testHudClock(TP(29280)); }},
+        {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
+        {"weaponpredict", 1, [] { testWeaponPredict(TP(29286)); }},
+        {"customkeep", 2, [] { testCustomRulesKeep(); }},
+        {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
     };
-    for (auto& r : all) if (only.empty() || only == r.name) r.run();
+    for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {
         timingTest("rate between rounds", [] { testRateBetweenRounds(TP(29252)); });
         timingTest("rate undo step up", [] { testRateUndoStepUp(TP(29254)); });

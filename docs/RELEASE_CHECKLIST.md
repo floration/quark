@@ -172,7 +172,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 
 | ✓ | Check |
 |---|---|
-| ☐ | `build/quark_tests group maps` passed on this commit (spawns, routes, nav graph, ladders, stairs, cart track, nothing reachable out of bounds). Human-made maps print HUMAN-MADE notes instead of failing; read them. |
+| ☐ | `build/quark_tests group maps` and `group mapbounds` passed on this commit (spawns, routes, nav graph, ladders, stairs, cart track; nothing reachable out of bounds). Human-made maps print HUMAN-MADE notes instead of failing; read them. |
 | ☐ | Load **every** map in its own mode once (the list is in CLAUDE.md → Maps). Look for missing walls, floating objects, black / unlit areas, z-fighting, and spawns facing a wall. |
 | ☐ | Run around the edges of 3–4 maps: you can't get out of bounds or stuck; invisible walls (clip) block players but not shots or light. |
 | ☐ | Any map in a mode it wasn't built for: the menu warns that it may not work, and it still loads. |
