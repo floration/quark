@@ -460,6 +460,7 @@ private:
     }
     int lastHealth_ = 0;
     bool fireAlive_ = false;
+    float localRefire_ = 0;    // the refire localNextFire_ counts down (the last shot's, alt-fire's own; the spawn lock's)
     float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;

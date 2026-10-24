@@ -1370,7 +1370,8 @@ void Game::frame(double dt) {
             if (aliveNow && !fireAlive_) {
                 const PlayerSnap* mp = net_.findPlayer(net_.clientId());
                 const double rtt = mp ? mp->ping * 0.001 : 0.0;
-                localNextFire_ = std::max(localNextFire_, time_ + std::max(0.0, (double)kSpawnFireLock - rtt));
+                const double lock = std::max(0.0, (double)kSpawnFireLock - rtt);
+                if (time_ + lock > localNextFire_) { localNextFire_ = time_ + lock; localRefire_ = (float)lock; }
             }
             fireAlive_ = aliveNow;
         }
@@ -1438,7 +1439,8 @@ void Game::frame(double dt) {
                 localBurstWeapon_ = w;
                 // the next shot one refire after this one's slot, not after this frame: re-basing on the frame's time made
                 // every held shot up to a frame late, adding up (a rifle burst's last shot heard ~70 ms after the real one)
-                localNextFire_ = (cadence ? localNextFire_ : time_) + shotRefire(w, alt);
+                localRefire_ = shotRefire(w, alt);   // (the HUD's weapon bar: this shot's own, alt-fire's too)
+                localNextFire_ = (cadence ? localNextFire_ : time_) + localRefire_;
                 if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? kKnifeAway : kSyringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
@@ -2676,7 +2678,7 @@ void Game::drawHud() {
                 r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
             };
             int cw = heldWeapon_;
-            bar(bcy + 36 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
+            bar(bcy + 36 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), cw == WPN_LOCATOR || localRefire_ <= 0 ? weaponDef(cw).refire : localRefire_);   // (the locator: its recharge; else the last shot's refire: a scoped rifle's or the bubble stream's, F23)
             {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
                 // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
                 // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -6424,7 +6426,12 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             // walking on the ground: by speed, not per frame (0.05 m a frame let anything slower than 200 m/s up or down
             // count at 4000 fps: jumping, falling and grappling enemies made footsteps in the air; 3 m/s is the old
             // threshold at 60 fps; the 2 m a frame cap stays a teleport guard)
-            if (h < 2.0f && std::fabs(d.y) < 3.0f * (float)frameDt) {
+            // On stairs the climb is faster than that: then (rising or falling no steeper than the stairs, 45 deg) a short
+            // probe under their feet says whether they're on a step (F23: stairs were silent). The probe only runs then.
+            const float vy = std::fabs(d.y), flat = 3.0f * (float)frameDt;
+            const bool onFloor = vy < flat ||
+                (vy < h * 1.1f + flat && net_.map().sweepAxis(playerBox(p.pos, (p.flags & PS_CROUCHED) != 0, bodyScale()), 1, -0.2f) > -0.199f);
+            if (h < 2.0f && onFloor) {
                 ra.stepDist += h;
                 if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (qrand() % 20) * 0.01f, sp); }
             }
