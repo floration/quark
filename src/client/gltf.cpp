@@ -1,4 +1,5 @@
 #include "gltf.h"
+#include "overrides.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -411,4 +412,27 @@ std::string writeGltf(const MeshData& mesh, const std::string& name) {
                     "\"buffers\":[{\"byteLength\":" + std::to_string(bin.size()) + ",\"uri\":\"data:application/octet-stream;base64," +
                     base64Encode(bin.data(), bin.size()) + "\"}]}\n";
     return s;
+}
+
+void loadModelOverrides(ModelOverrides& out) {
+    if (!overrides::any()) return;
+    for (int kind = 0; kind < MODEL_KINDS; kind++)
+        for (int i = 0; i < modelCount(kind) && i < kMaxModelsPerKind; i++) {
+            if (!modelExists(kind, i)) continue;
+            for (overrides::From from : {overrides::FROM_SHIPPED, overrides::FROM_USER}) {
+                std::vector<uint8_t> file;
+                std::string matched, gerr;
+                if (!overrides::find(modelPath(kind, i), {".glb", ".gltf"}, file, &matched, nullptr, from)) continue;
+                const char* where = from == overrides::FROM_USER ? "yours" : "shipped";
+                std::string dir = matched.substr(0, matched.rfind('/') + 1);
+                MeshData mesh;
+                auto resolve = [&](const std::string& uri, std::vector<uint8_t>& o) { return uri.find("..") == std::string::npos && overrides::readRelative(dir + uri, o, from == overrides::FROM_USER ? overrides::FROM_ANY : from); };
+                if (!loadGltf(file.data(), file.size(), resolve, mesh, &gerr)) { printf("override %s (%s): %s\n", matched.c_str(), where, gerr.c_str()); continue; }
+                if (mesh.triangleCount() > kMaxOverrideTriangles) { printf("override %s (%s): %zu triangles (at most %zu)\n", matched.c_str(), where, mesh.triangleCount(), kMaxOverrideTriangles); continue; }
+                auto m = std::make_unique<ModelMesh>();
+                meshToModel(mesh, *m);
+                (from == overrides::FROM_USER ? out.user : out.shipped)[kind][i] = std::move(m);
+                printf("override: %s (%s)\n", matched.c_str(), where);
+            }
+        }
 }

@@ -12,6 +12,7 @@
 // Pure C++ (no GL): the game, the exporter and the tests share it.
 #pragma once
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
@@ -87,3 +88,17 @@ struct ModelMesh {
 };
 void meshToModel(const MeshData& mesh, ModelMesh& out);
 constexpr size_t kMaxOverrideTriangles = 20000;   // per model: more is refused (it streams every frame)
+
+// The owner's glTF overrides of every model (loadModelOverrides, gltf.h), loaded once at startup: the shipped ones
+// (assets/overrides/, every player has them) and yours (the per-user overrides folder). Ranked and time trials draw
+// the shipped ones only: your own could make enemies bigger or brighter for you alone. Nothing loaded: all null.
+constexpr int kMaxModelsPerKind = kProjectileModels;   // (the most models of one kind)
+struct ModelOverrides {
+    std::unique_ptr<ModelMesh> shipped[MODEL_KINDS][kMaxModelsPerKind], user[MODEL_KINDS][kMaxModelsPerKind];
+    // what to draw for a model (null: its box model); shippedOnly: ranked (fairRules)
+    const ModelMesh* get(int kind, int i, bool shippedOnly) const {
+        if (kind < 0 || kind >= MODEL_KINDS || i < 0 || i >= kMaxModelsPerKind) return nullptr;
+        const ModelMesh* m = shippedOnly ? nullptr : user[kind][i].get();
+        return m ? m : shipped[kind][i].get();
+    }
+};

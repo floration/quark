@@ -524,12 +524,33 @@ static void testOverrides() {
     for (size_t i = 0; i < thud.size(); i++) thud[i] = 0.3f + 0.6f * std::sin(i * 0.012f) * (1.0f - (float)i / thud.size()) + 0.05f * std::sin(i * 0.4f);
     ACHECK(spit(root / "sounds/mouth/HIT_BRUTAL.wav", wavFile(thud, 48000)));
     ACHECK(spit(root / "models/player/HEAVY.gltf", "this is not glTF"));
+    {   // a player model of yours: a giant (the standard model, three times as wide)
+        ModelParts parts;
+        MeshData mesh;
+        playerModelParts(0, 1.0f, referencePalette(MODEL_PLAYER), parts);
+        for (ModelPart& q : parts) q.h = q.h * 3.0f;
+        partsToMesh(parts, mesh);
+        ACHECK(spit(root / "models/player/STANDARD.gltf", writeGltf(mesh, "STANDARD")));
+    }
     overrides::useUserFolder(true);   // (re-read the folder)
     ACHECK(overrides::any());
     std::vector<uint8_t> b;
     std::string matched, where;
     ACHECK(overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, &matched, &where) && where == "user" && matched == "sounds/default/hit.wav");
     ACHECK(!overrides::find("sounds/default/KILL", {".wav"}, b));
+    where.clear();   // (only the shipped ones / only yours)
+    if (overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, nullptr, &where, overrides::FROM_SHIPPED)) ACHECK(where == "shipped");
+    ACHECK(overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, nullptr, &where, overrides::FROM_USER) && where == "user");
+    ACHECK(!overrides::find("sounds/default/KILL", {".wav"}, b, nullptr, nullptr, overrides::FROM_USER));
+    // models: yours are drawn, but ranked draws only the shipped ones (or the box model): a giant or neon enemy model
+    // of your own would be an edge that nobody else has
+    ModelOverrides mo;
+    loadModelOverrides(mo);
+    ACHECK(mo.user[MODEL_PLAYER][0] && mo.get(MODEL_PLAYER, 0, false) == mo.user[MODEL_PLAYER][0].get());
+    ACHECK(mo.get(MODEL_PLAYER, 0, true) == mo.shipped[MODEL_PLAYER][0].get());
+    ACHECK(!mo.user[MODEL_PLAYER][1]);   // (HEAVY: not glTF, left out)
+    for (int kind = 0; kind < MODEL_KINDS; kind++)
+        for (int i = 0; i < kMaxModelsPerKind; i++) ACHECK(mo.get(kind, i, true) == mo.shipped[kind][i].get());
     Audio plain, mine;
     overrides::useUserFolder(false);
     plain.startOffline();

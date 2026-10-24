@@ -16,5 +16,9 @@ std::string writeGltf(const MeshData& mesh, const std::string& name);
 using GltfResolver = std::function<bool(const std::string& uri, std::vector<uint8_t>& out)>;
 bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, MeshData& out, std::string* err = nullptr);
 
+// Every model's overrides (models.h ModelOverrides; docs/ASSETS.md): each model's file from the shipped overrides and
+// from yours, loaded and checked (a bad or too big file is logged and left out). Nothing to do when there are none.
+void loadModelOverrides(ModelOverrides& out);
+
 std::string base64Encode(const uint8_t* d, size_t n);
 bool base64Decode(const std::string& s, std::vector<uint8_t>& out);

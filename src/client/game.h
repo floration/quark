@@ -182,8 +182,9 @@ private:
     Renderer r_;
     // models (models.h): the box list being drawn (reused every frame), and the owner's glTF overrides (null: none)
     ModelParts parts_;
-    std::unique_ptr<ModelMesh> modelOv_[MODEL_KINDS][kProjectileModels];
-    const ModelMesh* modelOverride(int kind, int i) const { return i >= 0 && i < kProjectileModels ? modelOv_[kind][i].get() : nullptr; }
+    ModelOverrides modelOv_;
+    bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
+    const ModelMesh* modelOverride(int kind, int i) const { return modelOv_.get(kind, i, fairModels_); }
     void overrideTints(int kind, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
     void loadAssetOverrides();
     Ui ui_;

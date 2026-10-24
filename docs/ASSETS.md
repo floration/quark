@@ -71,7 +71,10 @@ A file at `<overrides>/<export path>` replaces that asset. Two places, the user'
   pictures are build steps instead (below).
 - **yours**: `<user data folder>/overrides/<path>` (Windows `%APPDATA%/quark`, macOS `~/Library/Application
   Support/quark`, Linux `~/.local/share/quark`; `--data-dir` / `QUARK_DATA_DIR` move it). Read at startup: try an
-  asset without rebuilding.
+  asset without rebuilding. **Ranked matches and time trials ignore your models** (players there see the shipped
+  models, or the default boxes): a model of your own could make enemies bigger or brighter for you alone. Both sets
+  are loaded at startup (`ModelOverrides`, models.h) and the game picks one once a frame (`rankedPlayer()`: spectators
+  of a ranked match still see yours). Your sounds and font still apply there.
 
 Matching ignores case, and the extension may be any the asset accepts (an upload keeps its own: `ROCKET.ogg` replaces
 `ROCKET.wav`):

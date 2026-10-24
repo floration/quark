@@ -61,22 +61,7 @@ const char* weaponName(int w) {
 // window icon. (Sounds: Audio; the font: Renderer; maps: the build.) Nothing is read when there are none.
 void Game::loadAssetOverrides() {
     if (!overrides::any()) return;
-    for (int kind = 0; kind < MODEL_KINDS; kind++)
-        for (int i = 0; i < modelCount(kind); i++) {
-            if (!modelExists(kind, i)) continue;
-            std::vector<uint8_t> file;
-            std::string matched, gerr;
-            if (!overrides::find(modelPath(kind, i), {".glb", ".gltf"}, file, &matched)) continue;
-            std::string dir = matched.substr(0, matched.rfind('/') + 1);
-            MeshData mesh;
-            auto resolve = [&](const std::string& uri, std::vector<uint8_t>& out) { return uri.find("..") == std::string::npos && overrides::readRelative(dir + uri, out); };
-            if (!loadGltf(file.data(), file.size(), resolve, mesh, &gerr)) { printf("override %s: %s\n", matched.c_str(), gerr.c_str()); continue; }
-            if (mesh.triangleCount() > kMaxOverrideTriangles) { printf("override %s: %zu triangles (at most %zu)\n", matched.c_str(), mesh.triangleCount(), kMaxOverrideTriangles); continue; }
-            auto m = std::make_unique<ModelMesh>();
-            meshToModel(mesh, *m);
-            modelOv_[kind][i] = std::move(m);
-            printf("override: %s\n", matched.c_str());
-        }
+    loadModelOverrides(modelOv_);
     std::vector<uint8_t> icon;
     int w = 0, h = 0;
     std::vector<uint8_t> rgba;
@@ -1573,6 +1558,7 @@ void Game::drawWorld(float alpha) {
     auto& players = framePlayers();
     int me = net_.clientId();
     bool alive = net_.selfAlive();
+    fairModels_ = rankedPlayer();   // (ranked: nobody's own model files, the shipped ones only: decided once a frame)
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
     const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
     const bool lateLatch = alive && !demoView && mouseCaptured_ && !opts_.camSet;   // (your own view: the aim is re-read before drawing)
