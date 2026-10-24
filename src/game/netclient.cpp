@@ -63,6 +63,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     lossExpected_ = lossReceived_ = 0;
     lossPct_ = 0;
     lastEventId_ = 0;
+    evHold_.clear();
     events_.clear();
     props_.clear(); propPlayers_ = 0;
     stringCmds_.clear();
@@ -375,9 +376,23 @@ void NetClient::onSnapshot(Snapshot& s) {
 
     // Reliable events (in order, skip already seen).
     std::vector<GameEvent> fresh;
-    for (auto& e : s.events) {
-        if (e.id <= lastEventId_) continue;
-        lastEventId_ = e.id;
+    // Reliable events, handled in id order and acked only up to the last one with none missing before it. The server
+    // resends unacked events paced, and skips one that doesn't fit, so a later event can come first: taking it and
+    // acking its id told the server the missing one had arrived, and it was gone for good (kill feed, chat, names,
+    // ranked tickets, map edits). A demo has gaps in its ids: there, every newer one as it comes.
+    evReady_.clear();
+    if (play_.active) {
+        for (auto& e : s.events) if (e.id > lastEventId_) { lastEventId_ = e.id; evReady_.push_back(std::move(e)); }
+    } else {
+        for (auto& e : s.events)
+            if (e.id > lastEventId_ && e.id - lastEventId_ <= 512) evHold_.emplace(e.id, std::move(e));   // (512: the server drops a client 256 behind)
+        while (!evHold_.empty() && evHold_.begin()->first == lastEventId_ + 1) {
+            evReady_.push_back(std::move(evHold_.begin()->second));
+            evHold_.erase(evHold_.begin());
+            lastEventId_++;
+        }
+    }
+    for (auto& e : evReady_) {
         if (rec_) fresh.push_back(e);
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
             models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; nameColors_[e.a] = (uint16_t)e.c; }
@@ -948,7 +963,7 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     }
     play_.active = true;
     play_.wall = timeNow();
-    snaps_.clear(); events_.clear(); lastEventId_ = 0; clockInit_ = false; mapReady_ = false;
+    snaps_.clear(); events_.clear(); lastEventId_ = 0; evHold_.clear(); clockInit_ = false; mapReady_ = false;
     resetJitter();
     props_.clear(); propPlayers_ = 0;
     for (auto& n : names_) n.clear();

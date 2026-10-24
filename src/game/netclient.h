@@ -6,6 +6,7 @@
 #include <thread>
 #include <array>
 #include <deque>
+#include <map>
 #include <string>
 #include <vector>
 #include "../common/asyncwriter.h"
@@ -216,7 +217,9 @@ private:
     uint8_t lossPct_ = 0;
     int lossOverride_ = -1;
     Vec3 errorOffset_;
-    uint32_t lastEventId_ = 0;
+    uint32_t lastEventId_ = 0;         // every event up to this one handled: the ack (in a demo: the newest seen)
+    std::map<uint32_t, GameEvent> evHold_;   // (newer ones that came before a missing one: handled once it arrives, in order)
+    std::vector<GameEvent> evReady_;   // (this snapshot's events to handle, in order)
     std::vector<GameEvent> events_;
     std::vector<StuckProp> props_;
     uint32_t propPlayers_ = 0;   // players with a prop in them
