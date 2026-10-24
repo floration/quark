@@ -25,7 +25,8 @@ The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shi
   - **The Discord bot:** re-installed with the auto-updater, with new keys in `/etc/quark-discord.env`.
 - **Not switched on yet:** automatic Worker deploys (the `deploy-worker` job). It needs an API token and three values in GitHub ([OPERATIONS.md](OPERATIONS.md) section 3). Until then, the Worker is updated by hand for each version that changes it.
 - **Unmerged work:** none.
-- **Quick dash (answered, 1.18.2):** the owner chose a shorter cooldown: 2 charges and a 0.4 s cooldown, no third charge.
+- **Quick dash (answered, 1.18.2):** the owner chose a shorter cooldown: 2 charges and a 0.4 s cooldown, no third charge. 1.18.4: a third of the new dash timings, 0.2 s apart and a 0.4 s recharge.
+- **Dash recharge (owner, 1.18.4):** "dashes take 1.2 seconds to recharge, but you can use them 0.6 seconds apart, so when you jump in the air with 2 dashes, you can use both of them within 1 second, without recharging any charges", with "landing refills, 1.2 s wait": any dash waits 0.6 s from the end of the previous one, and a spent charge comes back by the usual refills (the floor, a bhop landing, the dash techs, a syringe) only 1.2 s after the dash that spent it ended. Protocol 43 (the own movement state carries each recharge).
 
 ### Setting up the project
 
@@ -329,10 +330,10 @@ See [REMAINING.md](../REMAINING.md) for the full list, and section 0 "First thin
 - **Tests before the push** (this machine, Linux): every `quark_tests` group except the bot and map groups passed. That includes the timing-sensitive netcode, tick rate and governor groups, each run on its own. The owner waived the bot and map tests for this release only ("those will be replaced anyway"). Every map was instead hosted headless in FFA and screenshotted: all 21 load and run. Lodestone and Midtown need over a minute on a loaded machine with software GL before their first light bake finishes. The movement agent's last full run, which included bots and maps, passed everything but the timing groups under load.
 - **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they run one test group per runner on Linux and Windows, and the release waits for them.
 - **Decided in the owner's pre-release interview:**
-  - The 1.2 s dash cooldown is back on top of the 2 charges, timed from each dash's end (protocol 42). That balances what charges alone allowed: a dash every 0.12 s on the ground, and a super dash on every bunny hop.
+  - The 1.2 s dash cooldown is back on top of the 2 charges, timed from each dash's end (protocol 42). That balances what charges alone allowed: a dash every 0.12 s on the ground, and a super dash on every bunny hop. (1.18.4 replaced it: 0.6 s between dashes plus a 1.2 s recharge per spent charge, protocol 43; see "Dash recharge" above.)
   - Kept as they are: the ~5.6 m hop over a ladder top (five maps got a stop at narrow tops) and the standing jump landing at 7.3 m/s (air drift 8).
   - Disputed ranked matches are logged and never rated; the testing server runs only while testing is ahead of production; the damage flash is off by default.
-  - Quick dash: answered in 1.18.2, a 0.4 s cooldown and 2 charges instead of a third charge.
+  - Quick dash: answered in 1.18.2, a 0.4 s cooldown and 2 charges instead of a third charge (1.18.4: 0.2 s apart, 0.4 s recharge).
 - **The UI test** (`quark --uitest`) clicks every widget on every screen: 2,259 widgets on 109 screens, with an Esc check on each.
 - **Map scores:** see MAP_REPORT.md (regenerated with the 1.17 movement; every map at least 7).
 

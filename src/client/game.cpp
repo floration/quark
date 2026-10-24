@@ -2565,23 +2565,24 @@ void Game::drawHud() {
             };
             int cw = heldWeapon_;
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
-            {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one); while the
-                // cooldown since the last dash runs, a charged pip shows full and dim with the cooldown's progress lit over it
-                // (it used to grow from empty, so one dash looked like it had spent both charges)
+            {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
+                // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
+                // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
+                // wholly to the on color; a spent charge stays empty while it recharges (1.2 s) and after, until a refill
+                // (owner 1.18.4: "light grey that turns to blue, the whole bar not the slider"; a fill growing from empty
+                // made one dash look like it had spent both charges)
                 int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
-                const int cdTotal = dashCooldownMs(mv.mods);
-                const float f = mv.dashCooldownMs > 0 && cdTotal > 0 ? clampf(1.0f - (float)mv.dashCooldownMs / cdTotal, 0, 1) : 1.0f;
+                const bool ready = dashReady(mv);   // (pmove's own rule; mid-burst a press is dropped, so not ready either: no
+                                                    // blue flash before the cooldown starts)
+                const Color pip = ready ? full : Color{0.6f, 0.62f, 0.66f, 0.9f};
                 float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
                 for (int i = 0; i < n; i++) {
                     float px = bx + i * (pw + gap);
                     r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
-                    if (i >= have) continue;
-                    if (f >= 1) { r_.rect(px, y, pw, bh, full); continue; }
-                    r_.rect(px, y, pw, bh, {0.6f, 0.62f, 0.66f, 0.45f});
-                    r_.rect(px, y, pw * f, bh, {0.6f, 0.62f, 0.66f, 0.9f});
+                    if (i < have) r_.rect(px, y, pw, bh, pip);
                 }
                 float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
-                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 && f >= 1 ? kWhite : kGrey);
+                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 && ready ? kWhite : kGrey);
             }
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
@@ -4497,7 +4498,7 @@ static const char* const kInfoPages[][48] = {
     {   // CONTROLS
         "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
         "W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).",
-        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes (landing refills both, a bunny hop one); the next is ready 1.2 s after the last one ends.",
+        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes, usable 0.6 s apart (from the end of the last one). A spent dash recharges for 1.2 s from the end of the dash that spent it; after that, landing gives it back (a bunny hop gives one).",
         "Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.",
         "LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).",
         "E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.",
@@ -5807,7 +5808,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         // a dash cut short by a jump: a super (dash jump), or a hyper (super dash: the dash was aimed down into the
         // floor). (A dash running out on its own has under a frame left; an upward dash ending isn't a jump.)
         if (prevMove_.dashTimer > (float)frameDt + 0.01f && m.dashTimer <= 0 && m.vel.y > 1.0f && !(m.flags & MF_ONGROUND))
-            audio_.play(prevMove_.dashUp < 0 && m.dashCharges == 1 ? SND_HYPER : SND_SUPER, 0.9f);   // (a hyper leaves one charge, a super all)
+            audio_.play(dashAimedDown(prevMove_) ? SND_HYPER : SND_SUPER, 0.9f);   // (pmove's own test: since 1.18.4 the charges left no longer tell them apart)
         if ((m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {
             audio_.play(SND_GRAPPLE_FIRE, 0.7f);
             audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);

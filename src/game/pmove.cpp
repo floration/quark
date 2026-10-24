@@ -34,9 +34,10 @@ constexpr float kStopSpeed = 2.0f;
 constexpr float kStepHeight = 0.55f;
 constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
-constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DASH): the dash cooldown x this, 1.2 -> 0.4 s
-                                                    // (x a custom mode's own multiplier), the usual 2 charges (owner 1.18:
-                                                    // "quick dash should reduce dash cooldown"; 1.17 gave a third charge)
+constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DASH): the dash cooldown and recharge x this,
+                                                    // 0.6 -> 0.2 s and 1.2 -> 0.4 s (x a custom mode's own multiplier), the
+                                                    // usual 2 charges (owner 1.18: "quick dash should reduce dash cooldown";
+                                                    // 1.17 gave a third charge)
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 1.0f;       // ...and your old speed plus this, so dashes build momentum (owner 1.17: was 3)
 constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
@@ -137,12 +138,28 @@ static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouc
 // The parts of a step that only depend on the command (the same for each of its up to 8 steps).
 struct CmdCtx { const MoveTuning& mt; Vec3 fwd, right; };
 
-static int maxChargesFor(const MoveTuning& mt, uint8_t) {
-    return std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES]));   // (quick dash: no extra charge since 1.18)
+static int maxChargesFor(const MoveTuning& mt, uint8_t) {   // (quick dash: no extra charge since 1.18)
+    return std::min(kMaxDashCharges, std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES])));
 }
 static int cooldownMsFor(const MoveTuning& mt, uint8_t mods) {
     const float quick = (mods & MOVE_QUICK_DASH) ? kQuickDashCooldown : 1.0f;
     return std::min(60000, std::max(0, (int)std::lround(kDashCooldown * mt.m[MV_DASH_COOLDOWN] * quick * 1000.0f)));
+}
+static int rechargeMsFor(const MoveTuning& mt, uint8_t mods) {   // (at least 1 ms: the dash's own timer is always there to hold)
+    const float quick = (mods & MOVE_QUICK_DASH) ? kQuickDashCooldown : 1.0f;
+    return std::min(60000, std::max(1, (int)std::lround(kDashRecharge * mt.m[MV_DASH_COOLDOWN] * quick * 1000.0f)));
+}
+// Charges back (a refill): up to `target`, from the spent charges that have recharged (none still recharging).
+static void refillCharges(MoveState& s, int maxCharges, int target) {
+    const int ready = maxCharges - (int)s.dashCharges - (int)s.dashRecharging;
+    const int add = std::min(std::min(target, maxCharges) - (int)s.dashCharges, ready);
+    if (add > 0) s.dashCharges = (uint8_t)(s.dashCharges + add);
+}
+// A dash tech that leaves exactly `n` (a super dash, a wall bounce): fewer if you hold more (those count as recharged:
+// a refill gives them back), else a refill up to it.
+static void setCharges(MoveState& s, int maxCharges, int n) {
+    if (s.dashCharges > n) s.dashCharges = (uint8_t)n;
+    else refillCharges(s, maxCharges, n);
 }
 
 static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, HookProbe* hp, const CmdCtx& cx) {
@@ -191,15 +208,31 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
 
     // Dash: one burst in the movement direction (or forward), spending a charge, once the cooldown since the last
-    // dash ENDED has run out (owner 1.17: charges on top of the cooldown). Not while a dash runs (a press then does
-    // nothing, and isn't kept). Refills: at the end of this step (the ground all of them, a bhop landing one).
+    // dash ENDED has run out (owner 1.17: charges on top of the cooldown; 1.18.4: 0.6 s). Not while a dash runs (a press
+    // then does nothing, and isn't kept). The charge it spends recharges for kDashRecharge from the dash's end, and only
+    // then can a refill give it back: at the end of a step (the ground all of them, a bhop landing one) or a dash tech.
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
-    if (!dashActive) {   // (whole ms: the cooldown counts down only while no dash runs)
-        const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
+    const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
+    if (!dashActive)   // (whole ms: the cooldown counts down only while no dash runs)
         s.dashCooldownMs = (uint16_t)std::max(0, (int)s.dashCooldownMs - stepMs);
+    {   // the spent charges' recharges count down too, whole ms, all but the newest while a dash runs (the one it spent:
+        // its recharge starts when it ends); one that is done leaves the list (a refill can give it back now)
+        const int n = std::min<int>(s.dashRecharging, kMaxDashCharges);
+        int k = 0;
+        for (int i = 0; i < n; i++) {
+            int v = s.dashRechargeMs[i];
+            if (!(dashActive && i == n - 1)) v = std::max(0, v - stepMs);
+            if (v > 0) s.dashRechargeMs[k++] = (uint16_t)v;
+        }
+        for (int i = k; i < kMaxDashCharges; i++) s.dashRechargeMs[i] = 0;
+        s.dashRecharging = (uint8_t)k;
     }
     const int maxCharges = maxChargesFor(mt, s.mods);
     if (s.dashCharges > maxCharges) s.dashCharges = (uint8_t)maxCharges;
+    while (s.dashRecharging > 0 && s.dashCharges + s.dashRecharging > maxCharges) {   // (fewer charges now: the oldest go)
+        for (int i = 1; i < s.dashRecharging; i++) s.dashRechargeMs[i - 1] = s.dashRechargeMs[i];
+        s.dashRechargeMs[--s.dashRecharging] = 0;
+    }
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
     const bool dashStart = dashHeld && !(s.flags & MF_DASHHELD) && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
     bool chargesSet = false;   // a dash tech set the charges this step: no ground / bhop refill on top
@@ -214,6 +247,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashTimer = (kDashTime * mt.m[MV_DASH_TIME]);
         s.dashBounces = 0;
         s.dashCharges--;
+        if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
     }
     bool dashing = s.dashTimer > 0;
     if (dashing && !frozen) {
@@ -230,8 +264,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const bool graceJump = dashStart && !grounded && s.jumpGrace > 0 && !down;
         if ((grounded && wantJump) || graceJump) {
             float sp = burst, vy = graceJump ? s.vel.y : jumpSpeed;
-            // charges (owner): a dash jump leaves you all of them (it's off the ground), a super dash exactly one
-            s.dashCharges = (uint8_t)maxCharges;
+            // charges (owner): a dash jump leaves you all of them (it's off the ground), a super dash exactly one (1.18.4:
+            // either way only charges that have recharged come back: never the one this dash just spent)
+            refillCharges(s, maxCharges, maxCharges);
             if (grounded && down) {
                 sp = std::max(burst, std::min(kSuperDashMax * mt.m[MV_SUPER_DASH_MAX], burst * (kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST])));
                 // the hop: higher the further down the dash was aimed (its share of a straight-down dash, the sine of
@@ -241,7 +276,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 const float downShare = vmax > 1e-6f ? -s.dashUp / vmax : kSuperDashDown;   // (no vertical dash: the low end)
                 const float t = std::clamp((downShare - kSuperDashDown) / (1.0f - kSuperDashDown), 0.0f, 1.0f);
                 vy = jumpSpeed * ((kSuperDashJump + (kSuperDashJumpMax - kSuperDashJump) * t) * mt.m[MV_SUPER_DASH_JUMP]);
-                s.dashCharges = 1;
+                setCharges(s, maxCharges, 1);
             }
             chargesSet = true;
             s.vel = {s.dashDirX * sp, vy, s.dashDirZ * sp};
@@ -434,7 +469,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (bx) { s.dashDirX = -s.dashDirX; blocked &= ~1; }
             else { s.dashDirZ = -s.dashDirZ; blocked &= ~4; }
             s.dashBounces++;
-            s.dashCharges = 1;   // (owner: a wall bounce leaves you exactly one charge)
+            setCharges(s, maxCharges, 1);   // (owner: a wall bounce leaves you exactly one charge; 1.18.4: if one has recharged)
             chargesSet = true;
             const float burst = std::max((kDashSpeed * mt.m[MV_DASH_SPEED]), s.dashExitSpeed);
             const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
@@ -480,10 +515,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // landing: the next step leaves the floor again, or this one bounced off it) only up to ONE ("when holding space you
     // should only be able to charge 1 dash"): hopping never builds the second charge back. Not during a dash's own
     // steps (its push into the floor is no landing: a super dash would refill itself), not on a ladder or off a grapple.
+    // Only charges that have recharged come back (1.18.4: kDashRecharge since the dash that spent them ended).
     if (!chargesSet && !dashing && !onLadder) {
         const bool hopping = jumpHeld && !frozen && !grappleOnly;
-        if (bounced || (hopping && (s.flags & MF_ONGROUND))) s.dashCharges = (uint8_t)std::max<int>(s.dashCharges, std::min(maxCharges, 1));
-        else if (s.flags & MF_ONGROUND) s.dashCharges = (uint8_t)maxCharges;
+        if (bounced || (hopping && (s.flags & MF_ONGROUND))) refillCharges(s, maxCharges, 1);
+        else if (s.flags & MF_ONGROUND) refillCharges(s, maxCharges, maxCharges);
     }
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;
@@ -515,6 +551,17 @@ const char* moveParamUnit(int i) {
 }
 int dashMaxCharges(uint8_t mods) { return maxChargesFor(moveTuning(), mods); }
 int dashCooldownMs(uint8_t mods) { return cooldownMsFor(moveTuning(), mods); }
+int dashRechargeMs(uint8_t mods) { return rechargeMsFor(moveTuning(), mods); }
+bool dashReady(const MoveState& s) {   // (the next step counts the cooldown down by its 1 ms before it looks)
+    return s.dashCharges > 0 && s.dashTimer <= 0 && (int)s.dashCooldownMs <= std::max(1, (int)std::lround(kMoveStep * 1000.0f));
+}
+bool dashAimedDown(const MoveState& s) { return s.dashUp <= -kSuperDashDown * (kDashVertical * moveTuning().m[MV_DASH_VERTICAL]); }
+void dashRefillAll(MoveState& s) {
+    s.dashCharges = (uint8_t)maxChargesFor(moveTuning(), s.mods);
+    s.dashCooldownMs = 0;
+    s.dashRecharging = 0;
+    for (uint16_t& v : s.dashRechargeMs) v = 0;
+}
 float moveBaseGravity() { return kGravity; }
 float moveBaseSpeed() { return kGroundSpeed; }
 float moveBaseJump() { return kJumpSpeed; }
