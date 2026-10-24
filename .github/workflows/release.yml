@@ -40,7 +40,8 @@ env:
   # testing builds carry their own version (<VERSION>-test.<N>: below the production release it leads to)
   QUARK_VERSION_SUFFIX: ${{ github.ref == 'refs/heads/testing' && github.event_name == 'push' && format('-test.{0}', github.run_number) || '' }}
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # (a final-test run gets its own group: a testing push queued after it must not replace it, nor it the push)
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && inputs.final && '-final' || '' }}
   # a newer push to a work branch replaces its build; a release (testing branch or tag) always runs to the end
   cancel-in-progress: ${{ github.ref_type == 'branch' && github.ref_name != 'testing' }}
 jobs:
