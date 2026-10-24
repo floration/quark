@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <fstream>
@@ -14,6 +15,7 @@
 #include <set>
 #include <sstream>
 #include "../common/sha256.h"
+#include "../common/u8file.h"
 #include "default_brain.h"
 #include "gamedefs.h"
 #include "map.h"
@@ -2222,6 +2224,20 @@ std::shared_ptr<const Brain> loadBrain(const std::string& name, std::string* err
     }
     cache[name] = {text, b};
     return b;
+}
+
+std::vector<std::string> listBrains() {
+    std::vector<std::string> out;
+    std::error_code ec;
+    for (auto& e : std::filesystem::directory_iterator(utf8Path(userDataPath("bots")), ec)) {
+        if (!e.is_regular_file(ec) || e.path().extension() != ".qbrain") continue;
+        std::string n = e.path().stem().u8string();
+        bool ok = !n.empty() && n != "default";   // ("default" is the built-in brain's name: loadBrain never reads that file)
+        for (char ch : n) ok = ok && (isalnum((unsigned char)ch) || ch == '_' || ch == '-');
+        if (ok) out.push_back(n);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 std::string brainDiagJson(const BrainDiag& d, const Brain* b) {

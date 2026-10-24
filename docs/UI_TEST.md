@@ -99,7 +99,7 @@ editor's selection tools are tested once per selection kind (box, spawn, light, 
 group / room / stairs).
 
 The menus' pages and their paths: `main` (`main/save-copy`: the "keep your copy?" dialog after someone else's edit
-session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG; `host/picker:maps`,
+session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG, BOT BRAIN (the test's data folder has two brains, one that doesn't compile); `host/picker:maps`,
 `:modes`, `:variants`, `:ladders`), `vsbots` (+ the same pickers), `custom/general`, `custom/weapons`, `custom/maps`,
 `custom/movement`, `custom/dash` (DASH + GRAPPLE), `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
 `info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`.

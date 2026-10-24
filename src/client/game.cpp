@@ -173,6 +173,8 @@ void Game::shutdown() {
 // ---------------------------------------------------------------------------
 // hosting / connection
 
+static std::string upper(std::string t);   // (below)
+
 void Game::startHost(bool vsBots) {
     stopHost();
     if (maps_.empty()) { error_ = "no maps found in maps/"; return; }
@@ -196,6 +198,11 @@ void Game::startHost(bool vsBots) {
             sc.mode = sc.custom.baseMode;
             if (!sc.custom.maps.empty() && std::find(sc.custom.maps.begin(), sc.custom.maps.end(), sc.map) == sc.custom.maps.end()) sc.map = sc.custom.maps[0];
         } else cfg_.hostCustom.clear();
+    }
+    if (!vsBots && !sc.ranked && !cfg_.hostBotBrain.empty()) {   // HOST > ADVANCED's bot brain (ranked: never; the server refuses too)
+        std::string err;
+        if (loadBrain(cfg_.hostBotBrain, &err)) sc.botBrain = cfg_.hostBotBrain;
+        else { checkHostBrain(); notify("BOT BRAIN " + upper(cfg_.hostBotBrain) + ": " + hostBrainNote_, 6); }   // (hosts with the built-in one)
     }
     if (sc.ranked) { // 1v1 on a ladder ruleset (the 1v1 ruleset picked, if it's one of them)
         sc.mode = MODE_ARENA;
@@ -352,7 +359,27 @@ void Game::setScreen(Screen s) {
     if (s == Screen::Join) { browser_.refresh(); joinScroll_ = 0; }
     if (s == Screen::Demos) demoScroll_ = 0;
     if (s == Screen::Host || s == Screen::VsBots) rescanMaps();
+    if (s == Screen::Host) refreshHostBrains();
     if (s != Screen::Host) hostAdvanced_ = false;
+}
+
+void Game::refreshHostBrains() {
+    hostBrains_ = listBrains();
+    if (!cfg_.hostBotBrain.empty() && std::find(hostBrains_.begin(), hostBrains_.end(), cfg_.hostBotBrain) == hostBrains_.end())
+        cfg_.hostBotBrain.clear();   // (its file is gone: the built-in brain, as hosting would fall back to anyway)
+    checkHostBrain();
+}
+
+void Game::checkHostBrain() {
+    hostBrainNote_.clear();
+    if (cfg_.hostBotBrain.empty()) return;
+    std::string err;
+    if (loadBrain(cfg_.hostBotBrain, &err)) return;
+    // err: "<path>:<line>:<col>: <message>" (or the file can't be read); the menu shows the line, the console all of it
+    printf("bot brain %s: %s\n", cfg_.hostBotBrain.c_str(), err.c_str());
+    const std::string path = userDataPath("bots") + "/" + cfg_.hostBotBrain + ".qbrain:";
+    int line = err.compare(0, path.size(), path) == 0 ? atoi(err.c_str() + path.size()) : 0;
+    hostBrainNote_ = (line > 0 ? "ERROR ON LINE " + std::to_string(line) : std::string("CAN'T BE READ")) + " - BOTS PLAY THE BUILT-IN BRAIN";
 }
 
 void Game::captureMouse(bool on) {
@@ -5318,7 +5345,7 @@ void Game::drawHost(const SetLayout& L) {
     y += 44;
     ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);
     y += 20;
-    if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) hostAdvanced_ = true;
+    if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) { hostAdvanced_ = true; refreshHostBrains(); }
     y += 60;
     if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
     if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost();
@@ -5328,7 +5355,7 @@ void Game::drawHost(const SetLayout& L) {
 // HOST > ADVANCED: the network options most hosts never touch (UDP port, UPnP, the server log); BACK: HOST
 void Game::drawHostAdvanced(const SetLayout& L) {
     const float x = L.X(kMX), w = L.L(kMW), h = L.L(kMRow);
-    const float kH = 40 + 20 + 44 + 20 + 44 + 20 + 60 + 40;
+    const float kH = 40 + 20 + 44 + 20 + 44 + 20 + 44 + 44 + 36 + 40;
     float y = bandTop(kH);
     ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
     ui_.labelCentered(L.X(640), L.Y(y), "ADVANCED", kWhite, 1.5f, w);
@@ -5345,7 +5372,25 @@ void Game::drawHostAdvanced(const SetLayout& L) {
     y += 20;
     static const std::vector<std::string> logNames = {"SERVER LOG: OFF", "SERVER LOG: SIMPLE", "SERVER LOG: VERBOSE (125 HZ)", "SERVER LOG: EXTREME (EVERY TICK)"};
     ui_.cycle(x, L.Y(y), w, h, "SERVER LOG", cfg_.hostLog, 4, logNames, UiExp::cfg("host_log"));
-    y += 60;
+    y += 44;
+    // the brain bots play (bots/*.qbrain, tools/bots/GRAMMAR.md): listed when HOST opens; ranked has no bots
+    if (cfg_.hostRanked || hostBrains_.empty())
+        ui_.button(x, L.Y(y), w, h, cfg_.hostRanked ? "BOT BRAIN: OFF (RANKED)" : "BOT BRAIN: BUILT-IN", UiExp::inert().withId("BOT BRAIN"), false);
+    else {
+        std::vector<std::string> names = {"BOT BRAIN: BUILT-IN"};
+        for (auto& n : hostBrains_) names.push_back("BOT BRAIN: " + upper(n));
+        auto it = std::find(hostBrains_.begin(), hostBrains_.end(), cfg_.hostBotBrain);
+        int k = it == hostBrains_.end() ? 0 : (int)(it - hostBrains_.begin()) + 1;
+        if (ui_.cycle(x, L.Y(y), w, h, "BOT BRAIN", k, (int)names.size(), names, UiExp::cfg("host_bot_brain"))) {
+            cfg_.hostBotBrain = k > 0 ? hostBrains_[k - 1] : "";
+            checkHostBrain();
+        }
+    }
+    y += 44;
+    if (!cfg_.hostRanked && !hostBrainNote_.empty()) ui_.hint(x, L.Y(y), hostBrainNote_, kRed, w);
+    else ui_.hint(x, L.Y(y), cfg_.hostRanked ? "RANKED GAMES HAVE NO BOTS" : hostBrains_.empty() ? "PUT .QBRAIN FILES IN THE BOTS FOLDER TO PICK ONE"
+                                                : "WHAT THE BOTS PLAY: .QBRAIN FILES IN THE BOTS FOLDER", kGrey, w);
+    y += 36;
     if (ui_.button(x, L.Y(y), L.L(kMHalf), h, "BACK", UiExp::nav("host"))) { hostAdvanced_ = false; cfg_.save(); }
 }
 
@@ -5670,6 +5715,7 @@ static const char* const kInfoPages[][48] = {
         "PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.",
         "BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.",
         "CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).",
+        "ADVANCED > BOT BRAIN: what your bots play: the built-in brain, or a .qbrain file from the bots folder in your data folder. A file that doesn't compile shows its error line and the bots play the built-in brain. Never in ranked.",
         "# IN GAME (ESC as host)",
         "CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).",
         "# JOIN A GAME (main menu > JOIN GAME)",

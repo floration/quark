@@ -192,7 +192,11 @@ private:
     void drawVsBots(const SetLayout& L);
     void drawConnecting(const SetLayout& L);
     void debugMenuPage();     // --menupage PATH: that menu page open (screenshots)
-    bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log) open
+    bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log, bot brain) open
+    std::vector<std::string> hostBrains_;   // ADVANCED's BOT BRAIN choices after BUILT-IN: bots/*.qbrain, listed when HOST opens
+    std::string hostBrainNote_;             // the chosen brain's problem, short ("" none): it doesn't compile
+    void refreshHostBrains();               // list the brains again (a file gone: back to the built-in one) and check the choice
+    void checkHostBrain();                  // compile the chosen brain (loadBrain: cached while the file is unchanged)
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
     enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD };

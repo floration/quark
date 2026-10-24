@@ -277,6 +277,9 @@ const char* defaultBrainText();                  // tools/bots/default.qbrain as
 // *err (the built-in brain: give setBotBrain null).
 // An older format version is converted on disk (the original kept in bots/old/v<N>/). Null + *err on failure.
 std::shared_ptr<const Brain> loadBrain(const std::string& name, std::string* err = nullptr);
+// The brains a host can pick: the names of userDataPath("bots")/*.qbrain that loadBrain takes (letters, digits, - and _),
+// sorted. A folder read: menus call it when they open, not every frame.
+std::vector<std::string> listBrains();
 std::string brainLabel(const Brain& b);          // "name#hash"
 std::string brainDiagJson(const BrainDiag& d, const Brain* b);   // checkbrain's JSON
 std::string brainAstJson(const std::string& text, BrainDiag* diag);   // the JSON AST of text ("" on parse errors)
