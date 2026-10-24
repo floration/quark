@@ -4,7 +4,7 @@ levels BEGINNER INTERMEDIATE ADVANCED EXPERT
 
 # The built-in bot brain. One value = every level; four = BEGINNER INTERMEDIATE ADVANCED EXPERT.
 # Every number here is today's (1.18.4) bot exactly: the game runs this brain as native code, and a test
-# (quark_tests brainlockstep) checks that the interpreter running this text makes the same input every tick.
+# (quark_tests brains) checks that the interpreter running this text makes the same input every tick.
 
 # perception: what it sees and hears
 param fov f32 = 1.55 1.7 1.85 2 # full horizontal view cone (rad)

@@ -85,6 +85,12 @@ One brain, four views of the same tree; an edit in any view shows in the others.
   expression's numbers). Lists and tables.
 - **Diff vs default**: what this brain changes, each with **reset to default**.
 
+With `quark_tests` there, the page uses the game's catalog (`exportbrain`: every slot, sensor, builtin and param with
+its unit, range and doc), and each save is checked by the game (`checkbrain`): the toast and the Checks panel show
+its label (`name#hash`) and which slots run in the interpreter (only slots whose code differs from the default; a
+file that only changes numbers runs all native). A broken edit in the Code view shows its line:col; the draft is
+kept (also across a reload) and the other views show the last version that parsed.
+
 The list on the left jumps to a slot, param or curve. **Save** writes `<data>/bots/<name>.qbrain` (only what
 differs from the default, unless "save the whole brain" is ticked); **Save as**, **⇩ .qbrain** (download), **Open
 file**. Undo / redo: Ctrl+Z / Ctrl+Y outside the code box.
@@ -97,8 +103,8 @@ replaced wholesale.
 
 The Simulator's line-up, N matches on each chosen map (seed, seed + 1, ...), as fast as the helper goes. Results
 per brain, per bot (wins, kills, deaths, K/D, damage, accuracy, objective time, time alive), wins per map (team or
-player wins, draws, matches that ran out of time) and per match. **Seconds** is the most game time a match may run
-(a free for all lasts 600 s). **⇩ CSV** downloads every bot-match row.
+player wins, draws, matches that ran out of time) and per match. Each match runs until it ends; **Time cap**
+(900 s by default; a free for all lasts 600 s) is the most game time one may take before it counts as a timeout. **⇩ CSV** downloads every bot-match row.
 
 ## Files
 

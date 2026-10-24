@@ -36,8 +36,11 @@ export class BatchPage {
         if (!sc.bots.length) { this.app.toast("Add bots in the Simulator tab first (they are the batch's line-up)."); return; }
         let maps = [...$("bMaps").selectedOptions].map((o) => o.value.split("/"));
         if (!maps.length && this.app.map) maps = [[this.app.map.source, this.app.map.name]];
-        const N = Math.max(1, Math.min(1000, +$("bN").value || 10)), secs = Math.max(5, +$("bSecs").value || 90), seed0 = +$("bSeed").value || 1;
+        const N = Math.max(1, Math.min(1000, +$("bN").value || 10)), secs0 = Math.max(5, Math.min(7200, +$("bSecs").value || 900)), seed0 = +$("bSeed").value || 1;
         const mode = $("bMode").value || sc.mode;
+        // the helper plays each match to its end (until matchEnd) with this cap; the MOCK has no match end, so its
+        // matches are the cap itself, kept short
+        const secs = this.app.helper.batch ? secs0 : Math.min(secs0, 120);
         this.stopping = false; this.results = [];
         $("bRun").disabled = true; $("bStop").disabled = false; $("bCsv").disabled = true;
         const brains = {};

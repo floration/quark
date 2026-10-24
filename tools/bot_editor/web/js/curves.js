@@ -21,6 +21,7 @@ export class CurveWidget {
     constructor(host, curve, getBrain, onChange) {
         this.host = host; this.c = curve; this.getBrain = getBrain; this.onChange = onChange;
         this.cv = document.createElement("canvas");
+        this.cv._widget = this;   // (for the headless checks)
         host.append(this.cv);
         this.range = xRange(curve);
         this.ys = new Float64Array(4 * 121);   // sampled values (reused)

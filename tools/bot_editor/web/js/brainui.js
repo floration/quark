@@ -38,8 +38,20 @@ export class BrainPage {
         let st = null;
         try { st = await api.state("brain"); } catch {}
         if (st && st.text) {
-            try { this._set(numberIds(JSON.parse(JSON.stringify(parse(st.text)))), null, true); this.name = st.name || "default"; this.saved = st.savedText || null; }
-            catch { st = null; }
+            // st.text: the last version that parsed; st.draft: the Code view's text when it didn't (kept, never lost)
+            try {
+                this.name = st.name || "default";
+                this._set(numberIds(JSON.parse(JSON.stringify(parse(st.text)))), null, true);
+                this.saved = st.savedText || null;
+                if (st.draft && st.draft !== st.text) { this.codeText = st.draft; $("codeTa").value = st.draft; this._codeEdited(false); }
+            } catch (e) {
+                if (!(e instanceof BrainError)) throw e;
+                // an older state file kept only the broken text: open it as text, on top of the default
+                await this.open("default");
+                this.name = st.name || "default"; this.codeText = st.text; $("codeTa").value = st.text; this._codeEdited(false);
+                this.app.toast(`Your last brain text didn't parse (${e.message}): it's in the Code view`, 8000);
+                st = { restored: true };
+            }
         }
         if (!st) await this.open("default");
         $("brainSel").value = this.name;
@@ -77,6 +89,7 @@ export class BrainPage {
         this.hist = []; this.histIx = -1;
         this._set(this.mergeOverDefault(ast), null, true);
         this.saved = print(this.ast);
+        this._brainInfo();
         $("brainSel").value = name;
         this._persist();
     }
@@ -119,7 +132,7 @@ export class BrainPage {
         this._persistT = setTimeout(() => this._persist(), 800);
     }
     // the work in progress as a file through serve.py (the shell's browser storage starts empty)
-    _persist() { if (this.ast) api.saveState("brain", { name: this.name, text: this.codeError ? this.codeText : print(this.ast), savedText: this.saved || null }).catch(() => {}); }
+    _persist() { if (this.ast) api.saveState("brain", { name: this.name, text: print(this.ast), draft: this.codeError ? this.codeText : null, savedText: this.saved || null }).catch(() => {}); }
 
     // ---------------------------------------------------------------- views
     _showView(v) {
@@ -235,6 +248,10 @@ export class BrainPage {
     }
 
     // ---- left: items, right: problems / info
+    _brainInfo(changed) {
+        if (!changed) { const def = this.app.defaultAst(); changed = new Set(def && this.ast ? diffBrains(this.ast, def).filter((d) => d.change !== "default").map((d) => d.key) : []); }
+        $("brainInfo").innerHTML = `${esc(this.name)}.qbrain · ${changed.size} change${changed.size === 1 ? "" : "s"} vs default${this.saved !== undefined && this.saved !== null && this.saved !== print(this.ast) ? ' · <span class="warn">unsaved</span>' : ""}`;
+    }
     _items() {
         const L = $("items");
         if (!this.ast) { L.textContent = ""; return; }
@@ -264,13 +281,15 @@ export class BrainPage {
             const view = d && d.kind === "param" || (d && (d.kind === "list" || d.kind === "table" || (d.kind === "curve" && d.form !== "expr"))) ? (this.view === "code" ? "code" : "values") : this.view === "values" || this.view === "diff" ? "code" : this.view;
             this.openDecl(k, view);
         }));
-        $("brainInfo").innerHTML = `${esc(this.name)}.qbrain · ${changed.size} change${changed.size === 1 ? "" : "s"} vs default${this.saved !== undefined && this.saved !== null && this.saved !== print(this.ast) ? ' · <span class="warn">unsaved</span>' : ""}`;
+        this._brainInfo(changed);
     }
     _problems() {
         const P = $("problems"), c = this.check;
         if (!c) return;
         const n = c.problems.length;
         $("checkSummary").innerHTML = n ? `${c.errors.length} error${c.errors.length === 1 ? "" : "s"}, ${n - c.errors.length} warning${n - c.errors.length === 1 ? "" : "s"} <span class="muted">(the editor's checks; the game's checkbrain is the judge${this.app.config.quarkTests ? "" : ": quark_tests not found"})</span>` : "Clean. <span class='muted'>(the editor's checks)</span>";
+        const g = this.gameCheck;
+        if (g) $("checkSummary").insertAdjacentHTML("beforeend", `<div class="muted" style="font-size:12px;margin-top:4px">Last save, the game's check: <b>${esc(g.label)}</b> · ${g.interp.length ? `interpreted: ${esc(g.interp.join(", "))}` : "every slot native"}</div>`);
         P.innerHTML = c.problems.slice(0, 200).map((p, i) => `<div class="prob ${p.severity}" data-i="${i}">${p.line ? p.line + ":" + p.col + " " : ""}${esc(p.where || "")}: ${esc(p.msg)}</div>`).join("");
         P.querySelectorAll(".prob").forEach((e) => (e.onclick = () => {
             const p = c.problems[+e.dataset.i];
@@ -355,7 +374,14 @@ export class BrainPage {
                 return;
             }
             const errs = res.errors || [];
-            if (errs.length) this.app.toast(`quark_tests checkbrain: ${errs.length} error(s): ${errs[0].line}:${errs[0].col} ${errs[0].msg || errs[0].message}`, 8000);
+            if (errs.length) { this.app.toast(`quark_tests checkbrain: ${errs.length} error(s): ${errs[0].line}:${errs[0].col} ${errs[0].msg || errs[0].message}`, 8000); this.gameCheck = null; }
+            else if (res.ok) {
+                // the game's verdict: its label, and which slots leave the native code (only changed ones do)
+                const interp = (res.slots || []).filter((x) => !x.native).map((x) => x.slot);
+                this.gameCheck = { label: res.label, interp, warnings: (res.warnings || []).length };
+                this.app.toast(`The game compiles it: ${res.label} · ${interp.length ? interp.length + " slot" + (interp.length === 1 ? "" : "s") + " interpreted (" + interp.join(", ") + "), the rest native" : "every slot native (only numbers changed)"}`, 6000);
+                this._problems && this._problems();
+            }
         } catch {}
     }
 

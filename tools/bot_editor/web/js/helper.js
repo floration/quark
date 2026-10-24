@@ -247,7 +247,7 @@ export function runBatch(req, matches, onLine) {
     return new Promise((resolve, reject) => {
         let end = null;
         const threads = Math.max(1, Math.min(16, (navigator.hardwareConcurrency || 2) - 1));
-        const run = new RealRun(toSimRequest(req, { matches, threads, progressEvery: 0.25, realtime: false, speed: 0 }), {
+        const run = new RealRun(toSimRequest(req, { matches, threads, progressEvery: 0.25, realtime: false, speed: 0, until: "matchEnd" }), {
             onLine: (o) => { if (o.type === "end") end = o; else if (o.type === "error" || (o.error && !o.type)) reject(new Error(o.error)); onLine && onLine(o); },
             onExit: (x) => (end ? resolve(end) : reject(new Error("simbatch ended without a result: " + (x.stderr || x.code)))),
             onError: reject,

@@ -1,13 +1,15 @@
 // Values panel: every param with its four per-level values and unit, shares / chances as %, every curve as an
 // editable plot, the dice rolls of each slot as odds per level, weapon lists and tables. Edits go back into the AST.
 
-import { symbols, decisionOdds, evalExpr, paramValue, clone, declKey, slotKey, WEAPONS } from "./ast.js";
+import { symbols, decisionOdds, evalExpr, paramValue, clone, declKey, slotKey, WEAPONS, CATALOG } from "./ast.js";
 import { printExpr, canonNum, roundTo, LEVELS } from "./dsl.js";
 import { CurveWidget, LEVEL_COLORS, LEVEL_NAMES } from "./curves.js";
 
 const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-export function unitOf(d) { const m = /\(([^()]*)\)\s*$/.exec(d.trail || ""); return m ? m[1] : ""; }
-export function docOf(d) { return (d.trail || "").replace(/^#\s?/, "").replace(/\s*\([^()]*\)\s*$/, ""); }
+// the game's catalog (exportbrain) first, else the declaration's trailing comment "# what it does (unit)"
+const catParam = (d) => (d.kind === "param" && CATALOG.params && CATALOG.params[d.name]) || null;
+export function unitOf(d) { const c = catParam(d); if (c && c.unit) return c.unit; const m = /\(([^()]*)\)\s*$/.exec(d.trail || ""); return m ? m[1] : ""; }
+export function docOf(d) { const c = catParam(d); if (c && c.doc) return c.doc; return (d.trail || "").replace(/^#\s?/, "").replace(/\s*\([^()]*\)\s*$/, ""); }
 // shown as a percentage: shares, chances, fractions, qualities in 0..1
 function pctKind(d) {
     const doc = (d.trail || "").toLowerCase();

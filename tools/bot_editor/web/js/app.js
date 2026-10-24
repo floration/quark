@@ -150,7 +150,11 @@ class App {
         return out;
     }
     brainTextFor(name) {
-        if (name === "(editor)" && this.brain) return this.brain.currentText();
+        if (name === "(editor)" && this.brain) {
+            // an unsaved edit of the default would show as "default#<hash>" in the game's label: call it "editor"
+            const t = this.brain.currentText();
+            return t == null ? t : t.replace(/^brain "default"$/m, 'brain "editor"');
+        }
         return this.brainText.get(name);
     }
 }

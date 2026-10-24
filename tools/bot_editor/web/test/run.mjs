@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { parse, print, printExpr, BrainError } from "../js/dsl.js";
-import { validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, diffBrains, declAreas, decompose, compose } from "../js/ast.js";
+import { setCatalog, CATALOG, validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, diffBrains, declAreas, decompose, compose } from "../js/ast.js";
 import { brainToBlocks, blocksToBrain, toBlocks, fromBlocks } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
@@ -223,6 +223,22 @@ t("sim lines: paths carried, the end's winner and scores", () => {
     normalizeLine({ type: "start", mode: "ffa", teams: false, bots: [] });
     same(normalizeLine({ type: "end", reason: "matchEnd", winner: { team: null, player: 2, text: "x" }, bots: [], perf: {} }).winner, 2);
     same(normalizeLine({ type: "end", reason: "time", winner: null, leader: { team: "b" }, bots: [], perf: {} }).winner, null);
+});
+
+console.log("catalog (quark_tests exportbrain)");
+t("the game's catalog replaces the page's", () => {
+    const keep = JSON.parse(JSON.stringify({ slots: CATALOG.slots, builtins: CATALOG.builtins, common: CATALOG.common, params: CATALOG.params }));
+    try {
+        setCatalog({ sensors: [{ name: "now", type: "f64", common: true }, { name: "off", type: "f32" }, { name: "dist", type: "f32" }, { name: "sinceSeen", type: "f64" }],
+            slots: [{ name: "react", when: "a threat comes into view", sensors: ["off", "dist", "sinceSeen"], outputs: [{ name: "r", type: "f32" }], rolls: 0 }],
+            builtins: [{ name: "roll", sig: "roll() -> f32", draws: 1 }, { name: "min", sig: "min(a, b)" }, { name: "site", sig: "site(i int) -> point" }],
+            params: [{ name: "reactMs", type: "f32", unit: "ms", min: 0, max: 1800, doc: "reaction time", default: [450, 300, 200, 150] }] });
+        same(CATALOG.slots.react.sensors.off, "f32"); same(CATALOG.slots.react.outputs.r, "f32"); same(CATALOG.slots.react.area, "perception", "the page's area kept");
+        same(CATALOG.builtins.roll.draws, 1); same(CATALOG.builtins.min.type, "common"); same(CATALOG.builtins.site.args, 1); same(CATALOG.builtins.site.type, "point");
+        same(CATALOG.common.now, "f64"); same(CATALOG.params.reactMs.max, 1800);
+        const v = validate(parse('version 1\nbrain "x"\nparam reactMs f32 = 2000\n'));
+        same(v.problems.some((p) => /outside 0..1800/.test(p.msg)), true, "range from the game");
+    } finally { Object.assign(CATALOG, keep); CATALOG.fromGame = false; }
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

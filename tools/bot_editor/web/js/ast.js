@@ -51,8 +51,39 @@ export let CATALOG = {
     },
     params: null,   // from exportbrain: {name: {type, unit, doc, min, max}}
 };
+// `quark_tests exportbrain`'s catalog (lists of {name, ...}) -> the shape above. Slot areas stay the page's (the
+// provenance areas); everything else (sensors, outputs, types, docs, builtins, params with unit / range / default)
+// is the game's.
+export function catalogFromExport(c) {
+    const sens = new Map((c.sensors || []).map((x) => [x.name, x]));
+    const common = {};
+    for (const x of c.sensors || []) if (x.common) common[x.name] = x.type;
+    const slots = {};
+    for (const sl of c.slots || []) {
+        const old = CATALOG.slots[sl.name] || {};
+        const sensors = {};
+        for (const n of sl.sensors || []) { const x = typeof n === "string" ? sens.get(n) : n; if (x) sensors[x.name] = x.type; }
+        const outputs = {};
+        for (const o of sl.outputs || []) outputs[o.name] = o.type;
+        slots[sl.name] = { when: sl.when || old.when || "", doc: sl.doc || "", sensors, outputs, rolls: sl.rolls || 0, area: old.area || (sl.name === "objective" ? "mode" : "brain") };
+    }
+    const builtins = {};
+    for (const bi of c.builtins || []) {
+        const m = /^(\w+)\(([^)]*)\)\s*(?:->\s*(\w+))?/.exec(bi.sig || bi.name);
+        if (!m) continue;
+        const args = m[2].trim() ? m[2].split(",").length : 0;
+        const type = m[3] || (["min", "max", "clamp"].includes(m[1]) ? "common" : "arg");
+        builtins[m[1]] = { args, type, doc: bi.doc || "", sig: bi.sig, ...(bi.draws ? { draws: bi.draws } : {}) };
+    }
+    const params = {};
+    for (const p of c.params || []) params[p.name] = { type: p.type, unit: p.unit || "", doc: p.doc || "", min: p.min, max: p.max, default: p.default };
+    return { slots, builtins, common, params, fromGame: true };
+}
+
 export function setCatalog(c) {
     if (!c) return;
+    if (Array.isArray(c.slots)) c = catalogFromExport(c);
+    if (c.fromGame) { CATALOG.slots = c.slots; CATALOG.builtins = c.builtins; CATALOG.common = c.common; CATALOG.params = c.params; CATALOG.fromGame = true; return; }
     if (c.slots) CATALOG.slots = Object.assign({}, CATALOG.slots, c.slots);
     if (c.builtins) CATALOG.builtins = Object.assign({}, CATALOG.builtins, c.builtins);
     if (c.common) CATALOG.common = c.common;
