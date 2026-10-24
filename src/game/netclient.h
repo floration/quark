@@ -72,6 +72,7 @@ public:
     // Interpolated view of every player at render time.
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
     PlayerArray interpolatedPlayers() const;
+    void interpolatedPlayers(PlayerArray& out) const;   // (the same, into the caller's array: no 2.3 KB copy)
     void interpolatedProjectiles(std::vector<ProjectileSnap>& out) const;   // the ones in sight (the server sends others as an id: NET-10)
     std::vector<ProjectileSnap> interpolatedProjectiles() const { std::vector<ProjectileSnap> v; interpolatedProjectiles(v); return v; }
     // A sticky on a player (PROJ_ON_PLAYER): on that player as this client draws them (interpolated; yourself, alive
@@ -84,6 +85,7 @@ public:
     const std::vector<StuckProp>& stuckProps() const { return props_; }
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
+    const std::string& nameRef(int id) const;   // playerName without the copy (valid until the next poll / playback)
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
     int playerSoundPack(int id) const { return id >= 0 && id < kMaxPlayers ? packs_[id] : 0; }
     uint16_t playerNameColor(int id) const { return id >= 0 && id < kMaxPlayers ? nameColors_[id] : 0; }   // RGB565, 0 = default
@@ -183,12 +185,18 @@ private:
     } dl_;
 
     std::deque<Snapshot> snaps_;
+    // snaps_.back()'s players by id (index into its players, 0xFF = none): findPlayer in O(1). Rebuilt whenever a
+    // snapshot is accepted (the only push); read only while snaps_ isn't empty, so a clear needs nothing.
+    uint8_t latestIdx_[kMaxPlayers] = {};
+    void indexLatest();
     static constexpr int kLateSamples = 512;
     float lateness_[kLateSamples] = {};
     float latenessScratch_[kLateSamples] = {};   // (updateClock's percentile: no allocation)
     uint32_t latenessN_ = 0;
-    float jitterTarget_ = 0.009f, jitter_ = 0.009f; // start like the old fixed margin until measured
+    static constexpr float kJitterStart = 0.009f;
+    float jitterTarget_ = kJitterStart, jitter_ = kJitterStart; // start like the old fixed margin until measured
     double lastJitterUpdate_ = 0;
+    void resetJitter();   // a new server or demo: the old one's arrival pattern doesn't apply
     uint32_t baseMisses_ = 0;
     double snapRecvTime_ = 0;
     double clockOffset_ = 0;      // estimated serverTime - localTime

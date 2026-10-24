@@ -67,6 +67,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
+    if (s.tickRate == 0 || s.tickRate > kTickRates[0]) return false;   // (the client divides by it: 0 = an infinite tick period, over 1000 a 0 ms command)
     return !r.bad();
 }
 

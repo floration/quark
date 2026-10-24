@@ -34,6 +34,13 @@ void NetClient::resetPrediction() {
     havePendingOffset_ = reconcilePending_ = false;
 }
 
+void NetClient::resetJitter() {
+    for (auto& l : lateness_) l = 0;
+    latenessN_ = 0;
+    jitterTarget_ = jitter_ = kJitterStart;
+    lastJitterUpdate_ = 0;
+}
+
 bool NetClient::connect(const std::string& address, const std::string& name) {
     disconnect();
     error_.clear();
@@ -51,6 +58,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     lastRecv_ = timeNow();
     snaps_.clear();
     clockInit_ = false;
+    resetJitter();
     resetPrediction();
     lossExpected_ = lossReceived_ = 0;
     lossPct_ = 0;
@@ -400,6 +408,7 @@ void NetClient::onSnapshot(Snapshot& s) {
 
     if (rec_) recordSnapshot(s, fresh);
     snaps_.push_back(std::move(s));
+    indexLatest();
     // keep enough history to decode deltas based on any snapshot we acked within the last round trip
     while (snaps_.size() > 512) snaps_.pop_front();
 }
@@ -450,6 +459,10 @@ void NetClient::reconcile(const Snapshot& s) {
     } else if (!match) {
         Vec3 oldVisual = pred_.pos + errorOffset_;
         pred_ = s.self;
+        // what we now hold for the acked command: the next snapshot with the same ack (no new commands reached the
+        // server) matches instead of replaying everything again. Before the replay, which overwrites the slot if a
+        // newer command shares it. (Not in a demo: nothing is predicted there, pred_ follows every snapshot.)
+        if (!play_.active) { predicted_[s.ackCmdSeq % kCmdRing] = s.self; predictedSeq_[s.ackCmdSeq % kCmdRing] = s.ackCmdSeq; }
         // only commands still in the ring can be replayed (an ack far behind, from a server or a demo, would
         // otherwise loop over millions of sequence numbers)
         uint32_t first = s.ackCmdSeq + 1;
@@ -474,6 +487,13 @@ void NetClient::reconcile(const Snapshot& s) {
         if ((s.self.flags & MF_PULLED) && (pred_.flags & MF_PULLED)) pred_.pullPoint = s.self.pullPoint;
     }
 
+}
+
+void NetClient::indexLatest() {
+    std::memset(latestIdx_, 0xFF, sizeof latestIdx_);
+    const std::vector<PlayerSnap>& ps = snaps_.back().players;   // (at most 255: a u8 count)
+    for (size_t k = 0; k < ps.size(); k++)
+        if (ps[k].id < kMaxPlayers && latestIdx_[ps[k].id] == 0xFF) latestIdx_[ps[k].id] = (uint8_t)k;   // (the first, as the scan found)
 }
 
 void NetClient::tick(UserCmd cmd) {
@@ -559,14 +579,21 @@ bool NetClient::selfAlive() const {
 int NetClient::selfWeapon() const { return hasSnapshot() ? latest().selfWeapon : 0; }
 
 const PlayerSnap* NetClient::findPlayer(int id) const {
-    if (snaps_.empty()) return nullptr;
-    for (auto& p : snaps_.back().players) if (p.id == id) return &p;
-    return nullptr;
+    if (snaps_.empty() || id < 0 || id >= kMaxPlayers || latestIdx_[id] == 0xFF) return nullptr;   // (decoded ids are all < kMaxPlayers)
+    return &snaps_.back().players[latestIdx_[id]];
 }
 
-std::string NetClient::playerName(int id) const {
-    if (id < 0 || id >= kMaxPlayers) return "world";
-    return names_[id].empty() ? "player" + std::to_string(id) : names_[id];
+std::string NetClient::playerName(int id) const { return nameRef(id); }
+
+const std::string& NetClient::nameRef(int id) const {
+    static const std::string world = "world";
+    static const std::vector<std::string> unnamed = [] {   // (built once: "player<id>" for one who has no name yet)
+        std::vector<std::string> v;
+        for (int i = 0; i < kMaxPlayers; i++) v.push_back("player" + std::to_string(i));
+        return v;
+    }();
+    if (id < 0 || id >= kMaxPlayers) return world;
+    return names_[id].empty() ? unnamed[id] : names_[id];
 }
 
 static float lerpAngle(float a, float b, float t) {
@@ -575,48 +602,68 @@ static float lerpAngle(float a, float b, float t) {
 }
 
 // The snapshots bracketing renderTime (searching from the newest: it's a few snapshots back), and how far between.
+// At or past the newest (interpolation off, or a late snapshot) and before the oldest there's nothing to search:
+// those used to walk the whole 512 snapshot history on every call.
 static float renderBracket(const std::deque<Snapshot>& snaps, double renderTime, const Snapshot*& a, const Snapshot*& b) {
-    a = &snaps.front();
     b = &snaps.back();
-    for (size_t i = snaps.size() - 1; i > 0; i--) {
-        if (snaps[i - 1].timeMs * 0.001 <= renderTime && snaps[i].timeMs * 0.001 >= renderTime) {
-            a = &snaps[i - 1];
-            b = &snaps[i];
-            break;
+    if (renderTime >= b->timeMs * 0.001) { a = b; return 1.0f; }
+    a = &snaps.front();
+    if (renderTime >= a->timeMs * 0.001)   // (before the oldest: front to back at 0, as the full search ended)
+        for (size_t i = snaps.size() - 1; i > 0; i--) {
+            if (snaps[i - 1].timeMs * 0.001 <= renderTime && snaps[i].timeMs * 0.001 >= renderTime) {
+                a = &snaps[i - 1];
+                b = &snaps[i];
+                break;
+            }
         }
-    }
-    if (renderTime >= snaps.back().timeMs * 0.001) a = b = &snaps.back();
     double ta = a->timeMs * 0.001, tb = b->timeMs * 0.001;   // (doubles: server uptime in seconds)
     return tb > ta ? clampf((float)((renderTime - ta) / (tb - ta)), 0, 1) : 1.0f;
 }
 
-// A player (in sight in the newer snapshot `pb`) at render time: between where `a` and `pb` have them.
-static void lerpPlayer(const Snapshot* a, const PlayerSnap& pb, float t, PlayerSnap* out) {
+// A player in snapshot `a` by id, in sight there (null: not there, or out of sight).
+static const PlayerSnap* inSight(const Snapshot* a, int id) {
+    for (auto& pa : a->players) if (pa.id == id && !pa.hidden) return &pa;
+    return nullptr;
+}
+
+// A player (in sight in the newer snapshot `pb`) at render time: between where the older snapshot has them (`pa`:
+// in sight there, else null) and `pb`. pa == &pb (one snapshot: nothing to interpolate) is a copy.
+static void lerpPlayer(const PlayerSnap* pa, const PlayerSnap& pb, float t, PlayerSnap* out) {
     *out = pb;
-    for (auto& pa : a->players) {
-        if (pa.id != pb.id || pa.hidden) continue;
-        // Don't interpolate across respawns/teleports.
-        if ((pa.flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa.pos - pb.pos) < 5.0f) {
-            out->pos = vlerp(pa.pos, pb.pos, t);
-            out->yaw = lerpAngle(pa.yaw, pb.yaw, t);
-            out->pitch = lerpf(pa.pitch, pb.pitch, t);
-        }
-        break;
+    if (!pa || pa == &pb) return;
+    // Don't interpolate across respawns/teleports.
+    if ((pa->flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa->pos - pb.pos) < 5.0f) {
+        out->pos = vlerp(pa->pos, pb.pos, t);
+        out->yaw = lerpAngle(pa->yaw, pb.yaw, t);
+        out->pitch = lerpf(pa->pitch, pb.pitch, t);
     }
 }
 
 NetClient::PlayerArray NetClient::interpolatedPlayers() const {
-    PlayerArray out{};
-    if (snaps_.empty()) return out;
-    const Snapshot *a, *b;
-    float t = renderBracket(snaps_, renderTime_, a, b);
-    for (auto& pb : b->players) {
-        if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
-        InterpPlayer& ip = out[pb.id];
-        ip.valid = true;
-        lerpPlayer(a, pb, t, &ip.snap);
-    }
+    PlayerArray out;
+    interpolatedPlayers(out);
     return out;
+}
+
+void NetClient::interpolatedPlayers(PlayerArray& out) const {
+    static_assert(kMaxPlayers <= 32, "one bit per player id");
+    uint32_t set = 0;
+    if (!snaps_.empty()) {
+        const Snapshot *a, *b;
+        float t = renderBracket(snaps_, renderTime_, a, b);
+        // a's players by id (in sight there), once: not a scan of a for every player of b
+        const PlayerSnap* from[kMaxPlayers] = {};
+        if (a != b)
+            for (auto& pa : a->players) if (pa.id < kMaxPlayers && !pa.hidden && !from[pa.id]) from[pa.id] = &pa;
+        for (auto& pb : b->players) {
+            if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
+            InterpPlayer& ip = out[pb.id];
+            ip.valid = true;
+            lerpPlayer(a == b ? &pb : from[pb.id], pb, t, &ip.snap);
+            set |= 1u << pb.id;
+        }
+    }
+    for (int i = 0; i < kMaxPlayers; i++) if (!(set >> i & 1)) out[i] = InterpPlayer();   // (the rest as a fresh array has them)
 }
 
 float NetClient::bodyScale() const {
@@ -663,7 +710,7 @@ bool NetClient::attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) con
         if (pb.id != p.onPlayer) continue;
         if (pb.hidden || !(pb.flags & PS_ALIVE)) return false;
         PlayerSnap ps;
-        lerpPlayer(a, pb, t, &ps);
+        lerpPlayer(a == b ? &pb : inSight(a, pb.id), pb, t, &ps);
         *out = stickyOnPlayerPos(ps.pos, p.attachOffset, (ps.flags & PS_CROUCHED) != 0, bodyScale());
         return true;
     }
@@ -845,16 +892,20 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     Snapshot& c = recCur_;
     c = s;
     c.baseTick = recHavePrev_ ? recPrev_.tick : 0;
-    for (auto& e : recEvents_) e.id = ++recEventId_;   // numbered from 1 in the demo's own order
+    // numbered from 1 in the demo's own order; at most 255 a record (the count is a u8: the rest go in the next one)
+    const size_t nEv = std::min<size_t>(recEvents_.size(), 255);
+    const GameEvent* ev[255];
+    for (size_t k = 0; k < nEv; k++) { recEvents_[k].id = recEventId_ + 1 + (uint32_t)k; ev[k] = &recEvents_[k]; }
     if (recBuf_.size() < 64 * 1024) recBuf_.resize(64 * 1024);
     std::vector<uint8_t>& buf = recBuf_;
     Writer w(buf.data(), (int)buf.size());
     writeSnapshotClient(w, c);
     writeSnapshotWorld(w, c, recHavePrev_ ? &recPrev_ : nullptr);
-    writeSnapshotEvents(w, recEvents_);
-    if (w.overflowed()) return;   // (too big: skip this one, the next will be against the same base)
+    writeSnapshotEvents(w, ev, (int)nEv);
+    if (w.overflowed()) return;   // (too big: skip this one, the next will be against the same base, its events the same ids)
     record(2, buf.data(), (uint32_t)w.size());
-    recEvents_.clear();
+    recEventId_ += (uint32_t)nEv;   // (taken only once written: no gaps)
+    recEvents_.erase(recEvents_.begin(), recEvents_.begin() + (std::ptrdiff_t)nEv);
     std::swap(recPrev_, recCur_);
     recHavePrev_ = true;
     rec_->flush();   // (to the writer thread)
@@ -898,6 +949,7 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     play_.active = true;
     play_.wall = timeNow();
     snaps_.clear(); events_.clear(); lastEventId_ = 0; clockInit_ = false; mapReady_ = false;
+    resetJitter();
     props_.clear(); propPlayers_ = 0;
     for (auto& n : names_) n.clear();
     for (auto& c : nameColors_) c = 0;
@@ -951,7 +1003,9 @@ void NetClient::pollPlayback() {
         }
     }
     afterSnapshots();
-    if (clockInit_) {
+    if (clockInit_) {   // (the jitter eases as in poll(): it used to stay where it started)
+        jitter_ += (jitterTarget_ - jitter_) * (float)std::min(1.0, (now - lastJitterUpdate_) * 2.0);
+        lastJitterUpdate_ = now;
         renderTime_ = timeNow() + clockOffset_ - interpDelay();
     }
     if (play_.pos + 13 > d.size() && play_.t > play_.length + 0.5) {
