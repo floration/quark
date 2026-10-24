@@ -36,11 +36,20 @@ export class Testing {
   clearDrawn() { this.view.clearLayer("test"); this.view.clearLayer("routes"); this.view.highlight = null; this.view.updateSelectionTint(); }
 
   // where points: a beam and a ball at each, framed
-  showWhere(where, pass, frame = true) {
+  showWhere(where, pass, frame = true, paths = null) {
     this.view.clearLayer("test");
-    if (!where || !where.length) return;
     const L = this.view.layers.test, col = pass ? 0x3fff8a : 0xff4a4a;
-    const pts = where.map(w => Array.isArray(w[0]) ? w : [w]).flat();   // ([x,y,z] or [[min],[max]] boxes)
+    let pts = (where || []).map(w => Array.isArray(w[0]) ? w : [w]).flat();   // ([x,y,z] or [[min],[max]] boxes)
+    if (paths && paths.length) {   // a custom test's routes, coloured by time like the metrics' routes
+      const maxS = Math.max(1e-3, ...paths.map(q => q.seconds || 0)), segs = [];
+      for (const q of paths) {
+        const P = q.path || []; if (P.length < 2) continue;
+        for (let i = 0; i + 1 < P.length; i++) segs.push([[P[i][0], P[i][1] + 0.25, P[i][2]], [P[i + 1][0], P[i + 1][1] + 0.25, P[i + 1][2]], heat(((q.seconds || 0) * (i + 1) / (P.length - 1)) / maxS)]);
+        pts = pts.concat([P[0], P[P.length - 1]]);
+      }
+      if (segs.length) L.add(segmentMesh(segs, { width: 0.14 }));
+    }
+    if (!pts.length) { this.view.redraw(); return; }
     for (const p of pts) {
       const s = new THREE.Mesh(new THREE.SphereGeometry(0.35, 14, 10), new THREE.MeshBasicMaterial({ color: col, depthTest: false, transparent: true, opacity: 0.9 }));
       s.position.fromArray(p); s.renderOrder = 12; L.add(s);
@@ -74,11 +83,11 @@ export class Testing {
       for (const o of this.metrics.objectives || []) {
         if (!o.pos || (this.onlyObjective && o.name !== this.onlyObjective)) continue;
         const s = label(o.name + "  A " + fmtS(o.attackers) + " / D " + fmtS(o.defenders), "#ffffff", 0.7);
-        s.position.set(o.pos[0], o.pos[1] + 3, o.pos[2]); L.add(s);
+        s.position.set(o.pos[0], o.pos[1] + 5, o.pos[2]); L.add(s);
       }
     }
     if (this.route && this.route.path) add(this.route.path, this.route.seconds || 1, this.route.seconds || 1);
-    if (segs.length) L.add(segmentMesh(segs, { width: 0.14 }));
+    if (segs.length) L.add(segmentMesh(segs, { width: 0.22 }));
     if (this.routeMarks) for (const p of this.routeMarks) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), new THREE.MeshBasicMaterial({ color: 0x9cf })); s.position.fromArray(p); L.add(s); }
     this.view.redraw();
   }
@@ -119,13 +128,17 @@ export class Testing {
           case "point": input = el("div", { class: "v3" }, [0, 1, 2].map(k => numInput((v || [0, 0, 0])[k], x => { const p = (v || [0, 0, 0]).slice(); p[k] = x; set(fd.name, p); }, { step: 0.5 })),
             el("button", { class: "mini", title: "click a point in the view", onclick: () => this.app.editor.pickPoint(p => set(fd.name, p.map(x => Math.round(x * 100) / 100))) }, "pick")); break;
           case "box": input = el("div", {}, ["min", "max"].map(mm => el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(((v || {})[mm] || [0, 0, 0])[k], x => { const b = structuredClone(v || { min: [0, 0, 0], max: [1, 1, 1] }); b[mm][k] = x; set(fd.name, b); }, { step: 0.5 }))))); break;
-          case "number": case "seconds": input = numInput(v ?? fd.default ?? 0, x => set(fd.name, x), { step: fd.type === "seconds" ? 0.5 : "any" }); break;
+          case "number": case "seconds": input = this.optNum(v, x => set(fd.name, x), fd.type === "seconds" ? 0.5 : "any"); break;
+          case "place": input = this.placeInput(v, x => set(fd.name, x)); break;
           case "bool": input = check("", v, x => set(fd.name, x)); break;
           case "mode": input = select([["", "(map's mode)"], ...MODES], v || "", x => set(fd.name, x || null)); break;
           case "team": input = select(TEAMS, v || "a", x => set(fd.name, x)); break;
           case "spawn": input = select([["", "(any)"], ...this.doc.map.spawns.map((s, j) => [j, "#" + j + " " + s.team])], v ?? "", x => set(fd.name, x === "" ? null : +x)); break;
-          case "objective": input = select([["", "(every objective)"], ...((this.metrics && this.metrics.objectives) || []).map(o => o.name)], v || "", x => set(fd.name, x || null)); break;
-          default: input = txt(v, x => set(fd.name, x));
+          case "objective": input = this.objectiveInput(v, x => set(fd.name, x || null), "(every objective)"); break;
+          default:
+            if (fd.name === "via") input = select(["walk", "nav"], v || fd.default || "walk", x => set(fd.name, x));
+            else if (fd.name === "check" && this.checks) input = select(this.checks.checks.map(c => [c.id, c.id]), v || fd.default, x => set(fd.name, x));
+            else input = txt(v, x => set(fd.name, x));
         }
         f.append(el("label", { title: fd.desc || "" }, fd.name), input);
       }
@@ -137,6 +150,41 @@ export class Testing {
       box.append(el("p", { class: "faint" }, "This helper gives no test kinds (quark_maptool help): edit the test as JSON (native/README.md has the shape)."), ta);
     }
     return box;
+  }
+
+  // a number that may be left empty (null: the test's default)
+  optNum(v, on, step) {
+    const i = el("input", { type: "number", step: step ?? "any", value: v === null || v === undefined ? "" : String(v), placeholder: "default" });
+    i.addEventListener("change", () => { const t = i.value.trim(); if (t === "") on(null); else { const x = parseFloat(t); if (isFinite(x)) on(x); } });
+    return i;
+  }
+  objectiveNames() {
+    const m = this.doc.map, n = [];
+    m.sites.forEach((_, i) => n.push("site " + (i + 1)));
+    if (m.hill) n.push("hill");
+    m.points.forEach((_, i) => n.push("point " + String.fromCharCode(65 + i)));
+    m.checkpoints.forEach((_, i) => n.push("checkpoint " + (i + 1)));
+    if (m.path.length) n.push("cart", "cart start", "cart end");
+    for (const o of (this.metrics && this.metrics.objectives) || []) if (!n.includes(o.name)) n.push(o.name);
+    return n;
+  }
+  objectiveInput(v, on, none) {
+    return select([["", none || "(none)"], ...this.objectiveNames()], v || "", on);
+  }
+  // a place: [x,y,z], {spawn:i}, {team}, {objective}, {box:{min,max}}
+  placeInput(v, on) {
+    const kind = v === null || v === undefined ? "" : Array.isArray(v) ? "point" : v.spawn !== undefined ? "spawn" : v.team !== undefined ? "team" : v.objective !== undefined ? "objective" : v.box ? "box" : "";
+    const m = this.doc.map, wrap = el("div", {});
+    const defs = { "": null, point: [0, 0, 0], spawn: { spawn: 0 }, team: { team: "a" }, objective: { objective: this.objectiveNames()[0] || "hill" }, box: { box: { min: [0, 0, 0], max: [4, 3, 4] } } };
+    wrap.append(select([["", "(none)"], ["point", "a point"], ["spawn", "a spawn"], ["team", "a team's spawns"], ["objective", "an objective"], ["box", "a box"]], kind, k => on(structuredClone(defs[k]))));
+    const pick = (cb) => el("button", { class: "mini", title: "click a point in the view", onclick: () => this.app.editor.pickPoint(p => cb(p.map(x => Math.round(x * 100) / 100))) }, "pick");
+    if (kind === "point") wrap.append(el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(v[k], x => { const p = v.slice(); p[k] = x; on(p); }, { step: 0.5 })), pick(on)));
+    if (kind === "spawn") wrap.append(select(m.spawns.map((s, j) => [j, "#" + j + " " + s.team]), v.spawn, x => on({ spawn: +x })));
+    if (kind === "team") wrap.append(select(TEAMS, v.team, x => on({ team: x })));
+    if (kind === "objective") wrap.append(this.objectiveInput(v.objective, x => on({ objective: x })));
+    if (kind === "box") for (const mm of ["min", "max"]) wrap.append(el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(v.box[mm][k], x => { const b = structuredClone(v); b.box[mm][k] = x; on(b); }, { step: 0.5 })),
+      pick(p => { const b = structuredClone(v); b.box[mm] = p; on(b); })));
+    return wrap;
   }
 
   render() {
@@ -183,7 +231,7 @@ export class Testing {
     if (this.customResults) {
       const R = this.customResults.results || [];
       out.push(el("p", {}, R.filter(r => r.pass).length + " of " + R.length + " passed"));
-      R.forEach((r, i) => out.push(el("div", { class: "result " + (r.pass ? "pass" : "fail"), onclick: () => this.showWhere(r.where, r.pass) },
+      R.forEach((r, i) => out.push(el("div", { class: "result " + (r.pass ? "pass" : "fail"), onclick: () => this.showWhere(r.where, r.pass, true, r.paths) },
         el("div", {}, r.name, r.value !== undefined ? el("span", { class: "faint num" }, "  " + (typeof r.value === "number" ? fmt(r.value, 2) : JSON.stringify(r.value))) : null), r.detail ? el("div", { class: "d" }, r.detail) : null)));
     }
     fill(P, ...out);
