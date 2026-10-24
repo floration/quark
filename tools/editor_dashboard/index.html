@@ -11,11 +11,12 @@
 <body>
 <!-- Quark Editor Manager (tools/editor_dashboard): the editors only, served by dashboard.py on 127.0.0.1, no network.
      The header and the three views are filled by dashboard.js from /api/status, /api/changes and /api/assets.
-     The nav bar uses the shared quark-tools.css; dashboard.js adds a link per installed editor page and dims the
-     Supervisor Board link when it doesn't answer. -->
+     The nav bar uses the shared quark-tools.css; dashboard.js points the data-self links at the port it runs on, adds a
+     link per installed editor (dimmed while a server editor doesn't answer) and dims the Supervisor Board link when it
+     doesn't answer. -->
 <nav class="qt-nav" id="qtnav" aria-label="Quark tools">
-  <a class="qt-brand" href="http://127.0.0.1:8765/">Quark</a>
-  <a href="http://127.0.0.1:8765/" data-tool="dashboard" aria-current="page">Editor Manager</a>
+  <a class="qt-brand" href="http://127.0.0.1:8765/" data-self>Quark</a>
+  <a href="http://127.0.0.1:8765/" data-tool="dashboard" data-self aria-current="page">Editor Manager</a>
   <a href="http://127.0.0.1:8768/" data-tool="manager" target="quark-manager">Supervisor Board</a>
   <span class="qt-nav-sep"></span>
   <span id="navEditors"></span>
@@ -38,6 +39,7 @@
 </nav>
 <main id="view"></main>
 <div id="toast" class="toast" hidden></div>
+<div id="pvpop" class="pvpop" hidden></div>
 <script src="dashboard.js"></script>
 </body>
 </html>
