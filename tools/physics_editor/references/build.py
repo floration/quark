@@ -646,7 +646,44 @@ g.src("ESReality: Question about QL/Q3 physics (VQL, PQL)", "https://www.esreali
 g.src("Quake III Arena bg_pmove.c", P3)
 games.append(g.write())
 
-QCN = "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU"
+# PQL ("Turbo"): pmove_AirControl > 0 swaps in a hard-coded bundle. Two unofficial sources agree on it: a reconstruction of the
+# retail game code from the binaries, and a player's saved config from a PQL server (QuakeCon 2015 configs).
+QLRE = GH + "/Kr3m/QuakeLive/blob/master/src/code/game/bg_pmove.c"
+QLPC = GH + "/Danmer/ql-configs/blob/master/qcon2015/madrigal.cfg"
+g = Game("quakelive-pql", "Quake Live (PQL / Turbo)", 2014, "id Tech 3", "Quake family", "u", S,
+         "Quake III's hull (56 u tall, as the VQL entry), scaled to 1.8 m: 0.03214 m/u")
+g.u("gravity", 800, QLPC + "#L1226 (g_gravity 800)", conf="measured", rawname="g_gravity", per="/s2")
+g.u("speed", 320, QLPC + "#L1249 (g_speed 320)", conf="measured", rawname="g_speed", per="/s")
+g.u("jump", 275, QLD + " (line 431: pmove_JumpVelocity 275; the PQL bundle doesn't change it: " + QLRE + "#L169-178)", conf="measured",
+    rawname="pmove_JumpVelocity", per="/s")
+g.v("ground_accel", 15, QLRE + "#L175 (PQL bundle walkAccel 15); " + QLPC + "#L1272 (pmove_WalkAccel 15.0f)", "exact",
+    "Quake accelerate factor (CPM's 15 instead of VQL's 10); the reconstruction and the player's config agree", raw="pmove_WalkAccel 15")
+g.v("friction", 6, QLPC + "#L1273 (pmove_WalkFriction 6); " + QLRE + "#L173 (circle-strafe friction 5.5)", "measured",
+    "walk friction 6; holding forward + strafe on the ground uses pmove_CircleStrafeFriction 5.5 instead")
+g.u("stop_speed", 100, P3 + "#L34 (Quake III's pm_stopspeed 100)", conf="estimated", rawname="pm_stopspeed", per="/s",
+    note="not a Quake Live cvar; assumed unchanged from Quake III (the reconstruction keeps 100)")
+air_capped(g, 70, 35, QLRE + "#L174 / #L177 (PQL bundle strafeAccel 70, wishSpeed 35); " + QLPC + "#L1271 / #L1278 (pmove_StrafeAccel 70.0f, pmove_WishSpeed 35.0f)",
+           "PQL air with only a strafe key held: accel 70 toward 35 u/s (CPM's 70 toward 30). With forward held it is pmove_AirAccel 1.1 toward 320 u/s plus CPM air control 150.")
+g.v("overstrafe", 1.0, QLRE + " (PM_Accelerate, Quake III's)", "estimated", "no overstrafe softening")
+g.u("step", 22, QLD + " (line 423: pmove_StepHeight 22, as VQL)", conf="measured", rawname="pmove_StepHeight")
+g.toggle("dash", False, QLRE, "no dash")
+g.toggle("grapple", False, QLF, "the grappling hook is a factory option, not standard play")
+g.fact("jumpHeight", 275**2 / 1600 * S, "m", "275^2 / (2 x 800) = 47.3 u", "estimated", "v^2/2g; Quark: 1.22 m")
+g.fact("airAccelForward", 1.1, "", QLRE + "#L171 (airAccel 1.1); " + QLPC + "#L1264 (pmove_AirAccel 1.1f)", "exact", "the air accel with forward held (Quake III shape, toward 320 u/s)")
+g.fact("airControl", 150, "", QLRE + "#L170 (airControl 150); " + QLRE + "#L751 (k = 32 x aircontrol x dot^2 x frametime)", "exact", "CPM air control, forward held")
+g.fact("airStopAccel", 2.5, "", QLRE + "#L172; " + QLPC + "#L1266 (pmove_AirStopAccel 2.5f)", "exact", "the air accel when the wish direction opposes your velocity")
+g.ground_facts(320 * S, 15, 6, 100 * S, "; stop speed assumed from Quake III")
+g.d["extras"] = ["CPM-style air control (150) and A/D strafe acceleration (70 toward 35 u/s)", "air steps (3), ramp jumps, crouch slide",
+                 "the VQL entry's chain / step jumps and auto-hop", "weapon switch 10 ms (pmove_WeaponRaiseTime / DropTime 10)"]
+g.d["notes"] = ("PQL, Quake Live's CPM-like ruleset (the default race and vampiric CA factories): pmove_AirControl 1 switches in a hard-coded bundle "
+                "(air control 150, air accel 1.1, air stop accel 2.5, circle-strafe friction 5.5, strafe accel 70, walk accel 15, air steps 3, wish speed 35). "
+                "Read from Kr3m/QuakeLive (a reconstruction of the retail code from the binaries) and matched by a player's saved config from a PQL server; "
+                "gravity, speed, jump and step are VQL's, unchanged by the bundle.")
+g.src("Kr3m/QuakeLive bg_pmove.c (reconstructed retail pmove)", QLRE); g.src("A player's Quake Live config from a PQL server (Danmer/ql-configs, QuakeCon 2015)", QLPC)
+g.src("Quake Live cvarlist dump (pastebin)", QLD); g.src("Quake III Arena bg_pmove.c", P3)
+games.append(g.write())
+
+QCN ="https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU"
 QCF = "https://quake.bethesda.net/en/news/4ii1II7x0GWYdL28HEOJ34"
 QCR = "https://quake.fandom.com/wiki/Ranger_(QC)"
 g = Game("quake-champions", "Quake Champions (Ranger, a medium)", 2017, "Saber / id Software (id Tech derived)", "Quake family", "u", 1 / 40,
@@ -677,17 +714,74 @@ RFG = "https://steamcommunity.com/sharedfiles/filedetails?id=387675048"
 g = Game("reflex", "Reflex Arena", 2017, "Reflex (Turbo Pixel Studios)", "arena shooters", "u", S,
          "assumed Quake's scale (a 56 u player, 0.03214 m/u): Reflex speeds follow Quake / CPM (320 ups), but its hull size isn't published")
 g.u("speed", 320, RFW + " (base running speed 320 UPS)", conf="estimated", rawname="base run", per="/s", note="the number is the wiki's; the metre conversion assumes Quake's player size")
+RFR = GH + "/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js"
+g.u("gravity", 750, RFR + "#L19 (gconst_world_gravity 750, Competitive ruleset)", conf="measured", rawname="gconst_world_gravity", per="/s2",
+    note="a community ruleset tool's dump of the Competitive (CR1) ruleset; metres at the assumed Quake scale")
+g.u("jump", 255, RFR + "#L7 (gconst_jump_velocity 255)", conf="measured", rawname="gconst_jump_velocity", per="/s",
+    note="plus gconst_double_jump_velocity 105 for a jump within 0.4 s of the last (#L6)")
+g.v("ground_accel", 4000 / 320, RFR + "#L14 (gconst_playeronground_acceleration 4000) and #L16 (gconst_playeronground_speed 320)", "estimated",
+    "if 4000 is a fixed rate in u/s2 (it is far too big for a Quake factor): Quark-equivalent 4000 / 320 = 12.5; Reflex's ground formula isn't published",
+    raw="gconst_playeronground_acceleration 4000")
+g.v("friction", 6, RFR + "#L15 (gconst_playeronground_friction 6)", "measured", "assumed to be the Quake friction factor (the same 6 as Quake III / CPM)")
+air_capped(g, 60, 30, RFR + "#L10-11 (gconst_playerinair_bunny_accelerate 60, gconst_playerinair_bunny_wishspeed 30)",
+           "Reflex air with only a strafe key held (CPM-style bunny strafe): accel 60 toward 30 u/s; with forward held it is gconst_playerinair_acceleration 0.95 plus air control 150. Assumes Reflex keeps CPM's formula.")
+g.d["values"]["air_accel"]["confidence"] = "estimated"; g.d["values"]["air_cap"]["confidence"] = "measured"
+g.fact("crouchSpeed", 120 * S, "m/s", RFR + "#L17 (gconst_playerongroundcrouched_speed 120)", "estimated", "120 u/s at the assumed Quake scale; Quark: 4 m/s")
 g.toggle("dash", False, RFW, "no dash")
 g.toggle("grapple", False, RFW, "no grapple")
 g.fact("wallrunMaxSpeed", 507 * S, "m/s", RFW + " (wall running / circle strafe max 507 UPS)", "estimated", "507 UPS at the assumed Quake scale")
 g.fact("circleJumpSpeed", 480 * S, "m/s", RFW + " (circle jump about 480 UPS or more)", "estimated")
 g.fact("doubleJumpWindow", 0.4, "s", RFW + " (second jump within 400 ms)", "measured", "a jump within 0.4 s of the last one goes higher (stackable up to a triple jump)")
 g.fact("doubleJumpBonus", 104 * S, "m", RFG + " (double jump height bonus 104 u)", "estimated", "104 u at the assumed Quake scale")
+g.fact("jumpHeight", 255**2 / 1500 * S, "m", "255^2 / (2 x 750) = 43.4 u", "estimated", "v^2/2g from the ruleset dump; Quark: 1.22 m")
+g.fact("doubleJumpVelocity", (255 + 105) * S, "m/s", RFR + "#L6-7 (255 + gconst_double_jump_velocity 105)", "estimated",
+       "if the bonus adds to the take-off speed: 360 u/s, a 86.4 u jump (v^2/2g), 43 u higher than a single jump, not the Steam guide's 104 u, so one of the two may describe another ruleset")
+g.fact("airAccelForward", 0.95, "", RFR + "#L8 (gconst_playerinair_acceleration 0.95)", "measured", "the air accel with forward held (Quake III's is 1)")
+g.fact("airControl", 150, "", RFR + "#L9 (gconst_playerinair_aircontrol 150)", "measured", "CPM-style air control, forward held (PQL's is also 150)")
+g.fact("airDeceleration", 2.5, "", RFR + "#L12 (gconst_playerinair_decceleration 2.5)", "measured", "the air accel against your velocity (PQL's air stop accel is also 2.5)")
 g.d["extras"] = ["CPM-style air control and strafe jumping", "double and triple jumps (consecutive jumps within 0.4 s stack height)", "ramp jumps", "wall running (507 UPS cap)"]
-g.d["notes"] = ("Reflex's physics constants (jump, ground speed and acceleration, air control, bunny acceleration and wish speed, gravity) became server-editable in 0.47.3's Experimental Plus ruleset, "
-                "but their values weren't found published. Only the run speed and a few movement facts are here.")
+g.d["notes"] = ("Reflex's physics constants became server-editable in 0.47.3 (gconst_* cvars). Their Competitive (CR1) ruleset values come from a community "
+                "ruleset-comparison tool's dump (Kyt0z/reflex-ruleset-comparer): gravity 750, jump 255 (+105 double), ground speed 320, ground accel 4000, friction 6, "
+                "air accel 0.95, air control 150, bunny accel 60 toward 30, air decel 2.5, crouch speed 120. They are close to CPM / PQL's. "
+                "The metre conversion assumes Quake's player size and the air / ground mappings assume CPM's formulas, so those are estimates.")
 g.src("Reflex Wiki: Tutorial for New Players", RFW); g.src("Steam guide: Reflex Arena mechanics", RFG)
 g.src("Reflex Wiki: Changelog 0.47.x", "http://wiki.reflexfiles.com/index.php?title=Reflex_Changelog_0.47.x")
+g.src("Reflex ruleset comparer: Competitive ruleset gconst dump", RFR)
+games.append(g.write())
+
+# Diabotical: its shipped game-mode script (scripts/base.games, kept by a community patch tracker) sets every phy_* setting in
+# the `default` game, and no ranked / standard mode overrides them. The Rogue tracker's UI copy of the same block agrees.
+DBB = GH + "/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games"
+DBR = GH + "/marconett/diabotical-rogue-release-tracker/blob/main/ui/93.js"
+SD = 1.8 / 57
+g = Game("diabotical", "Diabotical", 2020, "The GD Studio's own engine", "arena shooters", "u", SD,
+         "player hitbox 57 u tall (game_player_hitbox_height 57, base.games#L75; collision 24 u below the origin, as Quake III's), scaled to 1.8 m: 0.03158 m/u")
+g.u("gravity", 800, DBB + "#L107 (phy_gravity 800)", rawname="phy_gravity", per="/s2")
+g.u("speed", 320, DBB + "#L115 (phy_speed 320); " + DBR + "#L1166", rawname="phy_speed", per="/s")
+g.u("jump", 275, DBB + "#L108 (phy_jump_impulse 275); " + DBR + "#L1160", rawname="phy_jump_impulse", per="/s")
+g.v("ground_accel", 10, DBB + "#L116 (phy_accel_ground 10)", "exact", "assumed to be the Quake accelerate factor (the same 10 as Quake III / VQL)", raw="phy_accel_ground 10")
+g.v("friction", 6, DBB + "#L118 (phy_surface_friction 6)", "exact", "assumed to be the Quake friction factor (Quake III's 6)", raw="phy_surface_friction 6")
+g.u("stop_speed", 100, DBB + "#L117 (phy_deceleration_ground 100)", conf="estimated", rawname="phy_deceleration_ground", per="/s",
+    note="read as Quake's stop speed (the same default 100); the engine's formula isn't public")
+g.v("air_accel", 0.1, DBB + "#L120-121 (phy_air_speed 320, phy_accel_air 1)", "estimated",
+    "if the air push is Quake III's (accel 1 toward the full wish speed 320): Quark-equivalent 1 / 10. phy_strafe_jumping 1 (#L126) adds strafe-jump air control whose numbers aren't in the script",
+    raw="phy_accel_air 1")
+g.u("air_cap", 320, DBB + "#L120 (phy_air_speed 320)", conf="estimated", rawname="phy_air_speed", per="/s")
+g.fact("crouchSpeed", 210 * SD, "m/s", DBB + "#L114 (phy_crouch_speed 210)", "exact", "210 u/s at the hitbox scale; Quark: 4 m/s")
+g.toggle("dash", False, DBB + "#L134-145", "no dash in standard play: the Bolt (482 u/s, 3 s cooldown) is a mode skill (Wipeout / Rogue)")
+g.toggle("grapple", False, DBB + "#L160 (phy_hook 0)", "no grapple")
+g.fact("jumpHeight", 275**2 / 1600 * SD, "m", "275^2 / (2 x 800) = 47.3 u", "estimated", "v^2/2g; Quark: 1.22 m")
+g.fact("tickrate", 125, "Hz", DBB + "#L106 (phy_target_tickrate 125)", "exact")
+g.fact("boltSpeed", 482 * SD, "m/s", DBB + "#L138 (phy_bolt_base_speed 482) and #L135 (phy_bolt_cooldown 3)", "estimated", "the Bolt skill, at the hitbox scale; Quark's dash: 24 m/s")
+g.ground_facts(320 * SD, 10, 6, 100 * SD, "; stop speed read from phy_deceleration_ground")
+g.d["extras"] = ["auto-hop (phy_auto_jump 1) and strafe jumping (phy_strafe_jumping 1)", "the Bolt dash and weeballs (grenades) as mode items / skills",
+                 "125 Hz physics tick", "Vintage physics (a later alternate preset) isn't covered: its values weren't in the script"]
+g.d["notes"] = ("Diabotical's shipped scripts/base.games (as the community patch tracker kept it): gravity 800, jump 275, speed 320, ground accel 10, friction 6, "
+                "ground deceleration 100, air speed 320, air accel 1, crouch speed 210, 125 Hz: VQL-like numbers. The duel / CA / TDM modes don't override them. "
+                "The engine is closed, so the formulas (and the air mapping) are assumed to be Quake III's. "
+                "The Rogue tracker's copy (ui/93.js#L1159-1171) has the same values; its newer rogue modes use speed 300 and air accel 1.3.")
+g.src("Diabotical patch tracker: scripts/base.games", DBB); g.src("Diabotical Rogue release tracker: ui/93.js (the same default block)", DBR)
+g.src("Diabotical Rogue release tracker: base.games (rogue modes)", GH + "/marconett/diabotical-rogue-release-tracker/blob/main/assets/shared/scripts/base.games")
 games.append(g.write())
 
 # Unreal Engine 2 / 3: Unreal adds a fixed AccelRate (UU/s2) up to GroundSpeed; in the air AirControl x AccelRate toward AirSpeed.
@@ -761,6 +855,46 @@ g.src("UT3 server config (UTGame.ini)", UT3C); g.src("UDK game ini (DefaultGravi
 g.src("Liandri Archives: Jumping", "https://unrealarchive.org/wikis/the-liandri-archives/Jumping.html")
 games.append(g.write())
 
+# UT4 (the 2014-2017 pre-alpha): Epic's source needs an Epic-linked GitHub account, but a public mirror of it exists.
+UT4M = GH + "/JimmieKJ/unrealTournament/blob/master/UnrealTournament/"
+UT4C = UT4M + "Source/UnrealTournament/Private/UTCharacterMovement.cpp"
+UT4P = UT4M + "Source/UnrealTournament/Private/UTCharacter.cpp"
+SU4 = 1.8 / 216
+g = Game("ut4", "Unreal Tournament (2014 pre-alpha, UT4)", 2014, "Unreal Engine 4", "arena shooters", "UU", SU4,
+         "player capsule 216 UU tall (InitCapsuleSize(40, 108): half height 108, UTCharacter.cpp#L66; UE4 units are cm, so 2.16 m), scaled to 1.8 m: 0.008333 m/UU")
+g.u("gravity", 2154, UT4M + "Config/DefaultEngine.ini#L414 ([/Script/Engine.PhysicsSettings] DefaultGravityZ=-2154)", rawname="DefaultGravityZ", per="/s2",
+    note="2.2x Earth in UE4's cm: UT4 is tuned at a large player scale")
+g.u("speed", 940, UT4C + "#L23 (MaxWalkSpeed = 940)", rawname="MaxWalkSpeed", per="/s",
+    note="auto-sprint to 1230 UU/s after 2 s running straight (SprintSpeed #L40, AutoSprintDelayInterval #L43)")
+g.u("jump", 730, UT4C + "#L94 (JumpZVelocity = 730)", rawname="JumpZVelocity", per="/s")
+g.v("ground_accel", 4000 / 940, UT4C + "#L57 (MaxAcceleration = 4000) and #L23 (MaxWalkSpeed 940)", "estimated",
+    "UE4 adds a fixed MaxAcceleration (4000 UU/s2) up to MaxWalkSpeed; Quark adds ground_accel x wish speed per second, so the same push is 4000 / 940. "
+    "Below 220 UU/s UT4 uses FastInitialAcceleration 12000 (#L77-78); ground friction 10.5 and braking 520 UU/s2 (#L62, #L67) are UE4's own formula, not mapped",
+    raw="MaxAcceleration 4000 UU/s2")
+g.v("air_accel", 0.45 * 4000 / 940 / 10, UT4C + "#L52 (AirControl = 0.45) x #L58 (MaxFallingAcceleration = 4000), toward MaxWalkSpeed 940", "estimated",
+    "UE4 air push is AirControl x MaxFallingAcceleration (1800 UU/s2) toward the walk speed: Quark-equivalent 0.45 x 4000 / 940 / 10", raw="AirControl 0.45")
+g.u("air_cap", 940, UT4C + "#L23 (UE4 falling caps the lateral air push at MaxWalkSpeed)", conf="estimated", rawname="MaxWalkSpeed", per="/s")
+g.u("step", 51, UT4C + "#L70 (MaxStepHeight = 51)", rawname="MaxStepHeight")
+g.fact("crouchSpeed", 315 * SU4, "m/s", UT4C + "#L47 (MaxWalkSpeedCrouched = 315)", "exact", "Quark: 4 m/s")
+g.u("dash_speed", 1500, UT4C + "#L95 (DodgeImpulseHorizontal = 1500), capped by DodgeMaxHorizontalVelocity 1700 (#L96)", conf="estimated", rawname="DodgeImpulseHorizontal", per="/s",
+    note="the dodge (double-tap) sets about 1500 UU/s horizontal with a 500 UU/s hop (#L98); mapped to Quark's dash burst")
+g.v("dash_cooldown", 0.35, UT4C + "#L37 (DodgeResetInterval = 0.35)", "estimated", "the time after landing before the next dodge; mapped to Quark's dash cooldown", raw="DodgeResetInterval 0.35 s")
+g.toggle("dash", True, UT4C + "#L95", "the dodge, wall dodge and dodge jump")
+g.toggle("grapple", False, UT4C, "no grapple in standard play (the translocator teleports)")
+g.fact("jumpHeight", 730**2 / (2 * 2154) * SU4, "m", "730^2 / (2 x 2154) = 123.7 UU", "estimated", "v^2/2g; Quark: 1.22 m")
+g.fact("sprintSpeed", 1230 * SU4, "m/s", UT4C + "#L40 (SprintSpeed = 1230)", "exact", "after 2 s of running straight")
+g.fact("dodgeUp", 500 * SU4, "m/s", UT4C + "#L98 (DodgeImpulseVertical = 500)", "exact")
+g.fact("wallDodge", 1300 * SU4, "m/s", UT4C + "#L99-100 (WallDodgeImpulseHorizontal 1300, Vertical 470)", "exact")
+g.fact("floorSlideSpeed", 1350 * SU4, "m/s", UT4C + "#L82 (MaxInitialFloorSlideSpeed = 1350)", "exact", "the slide's start speed (MaxFloorSlideSpeed 900)")
+g.d["extras"] = ["dodge (1500 UU/s, 500 up), wall dodge (1300 / 470), dodge jump", "auto-sprint (1230 UU/s after 2 s straight)", "floor slide (1350 UU/s start) and wall slide",
+                 "no double jump by default (MaxMultiJumpCount 0, #L29)", "impact hammer jumps, translocator",
+                 "UE4 ground friction 10.5 / braking 520 UU/s2 and a 12000 UU/s2 start below 220 UU/s: a different formula from Quark's, not mapped"]
+g.d["notes"] = ("UUTCharacterMovement's constructor defaults and DefaultEngine.ini's gravity, from a public mirror of Epic's UT4 source (JimmieKJ/unrealTournament; Epic's own repository "
+                "needs an Epic-linked GitHub account). Everything scales by the 2.16 m capsule; ground / air acceleration are Quark-equivalents of UE4's fixed-rate acceleration (estimated).")
+g.src("UT4 UTCharacterMovement.cpp (public mirror)", UT4C); g.src("UT4 UTCharacter.cpp (capsule size)", UT4P)
+g.src("UT4 Config/DefaultEngine.ini (DefaultGravityZ)", UT4M + "Config/DefaultEngine.ini")
+games.append(g.write())
+
 # Halo 3 / Reach (MCC): one player's in-game measurements (bungie.net forum): speed in Forge metres, jump height in % of the Spartan's height
 # (standing foot to the top of the head at the apex), airtime. Rescaled to a 1.8 m player taking the Spartan as 7 ft (2.134 m, the H2EK reference).
 HFM = "https://www.bungie.net/en/Forums/Post/3291870"
@@ -784,6 +918,15 @@ for gid, name, year, run, jpct, air, extra in [
         g.fact("mlgSpeed", 8.45 * 1.8 / SPART, "m/s", HFM + " (Halo 3 MLG settings 8.45 m/s)", "measured", "MLG settings; the post's percentages for it disagree (110% in the settings list, 90% beside the measurement)")
     else:
         g.fact("mlgSpeed", 7.5 * 1.8 / SPART, "m/s", HFM + " (Reach MLG 7.5 m/s, 110% speed, 150% gravity)", "measured")
+        # Cross-check: a Forge editor that reads Reach's tags (reverse-engineered) gives the authored numbers in world units (1 wu = 10 ft = 3.048 m).
+        HMS = GH + "/Sopitive/HaloMapStudio/blob/main/crates/hms-app/src/"
+        WU = 3.048 * 1.8 / SPART
+        g.fact("tagRunSpeed", 2.2 * WU, "m/s", HMS + "film_anim.rs#L133 (Spartan run forward 2.200 wu/s, read from matg @player information)", "measured",
+               "2.2 wu/s x 3.048 m/wu, rescaled like the rest of this file: within 2% of the bungie.net measurement (the speed value above)")
+        g.fact("tagJumpApex", 2.3**2 / (2 * 4.1712594) * WU, "m", HMS + "play_phys.rs#L425-446 (jump velocity 2.300 wu/s, gravity 4.1712594 wu/s2 from the engine's physics constants)", "estimated",
+               "v^2/2g = 0.634 wu, rescaled: within 5% of the measured jump height above; the tool notes the biped's integration isn't verified")
+        g.fact("tagAirTime", 2 * 2.3 / 4.1712594, "s", HMS + "play_phys.rs#L444-446", "estimated", "2v/g = 1.10 s against the 1.2 s measured")
+        g.src("HaloMapStudio (reads Reach's tags): play_phys.rs", HMS + "play_phys.rs")
     g.d["extras"] = extra + ["slow, high jumps compared with arena shooters: the airtime (" + str(air) + " s) is about twice Quark's"]
     g.d["notes"] = ("One player's measurements (bungie.net, 2011): run speed over the Forge grid, jump height in hundredths of the Spartan's height and airtime. "
                     "Gravity and jump speed are derived from the height and airtime (estimates), and everything is rescaled to a 1.8 m player taking the Spartan as 7 ft.")
@@ -891,7 +1034,7 @@ def closeness(gd):
 order = ["Quake family", "Source family", "arena shooters", "hero/tactical shooters", "movement shooters", "mainstream shooters", "other"]
 descs = {"Quake family": "Quake-engine and id-derived games: Quake-style acceleration and friction, the model Quark's pmove uses",
          "Source family": "GoldSrc and Source: Quake-style movement with a 30 u air cap and full-wish-speed air acceleration",
-         "arena shooters": "other arena shooters (Unreal, Halo, Reflex): different movement models, from scripts or community measurements",
+         "arena shooters": "other arena shooters (Unreal, Halo, Reflex, Diabotical): different movement models, from scripts, config dumps or community measurements",
          "hero/tactical shooters": "hero and tactical shooters with documented metric speeds",
          "movement shooters": "wallrun / slide / dash / grapple shooters (Respawn, DOOM Eternal)",
          "mainstream shooters": "Call of Duty and Fortnite: config values and community measurements",
