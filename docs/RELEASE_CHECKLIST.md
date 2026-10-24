@@ -143,6 +143,15 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Multi point | Midtown / Lodestone | Points A–E in order, staged spawns move forward, overtime. |
 | ☐ | Custom mode | any | Make one in the custom-mode editor, host it, the rules apply. |
 
+### Mode logic and the gamemode editor
+
+| ✓ | Check |
+|---|---|
+| ☐ | **Gamemode editor** (`py -3 tools\mode_editor\install.py "%USERPROFILE%\Desktop\Quark\gamemode-editor"`, then `run.cmd` there): http://127.0.0.1:8771/ opens; the catalog badge doesn't say SNAPSHOT CATALOG with a build; open FFA, switch Code / Blocks / Graph / Values / Diff / Phases (an edit in one shows in the others). |
+| ☐ | Make a mode from FFA whose `slot kill` scores 2 a frag and Save it. If the file has physics lines (gravity etc., from the physics editor), they are still there, unchanged and in place, after the save. **Sim** runs a match with bots live (frames, kills, the end scoreboard) and a small batch fills its table. |
+| ☐ | Host > Custom modes: that mode shows **LOGIC: name#xxxxxxxx** (break a line in its logic: the error shows in red and hosting it is refused with the line). Host it: the server list name starts `[name#xxxxxxxx]`, joining shows CUSTOM MODE ... - LOGIC: name#xxxxxxxx, and a frag scores 2. Saving the mode in Host > Custom modes keeps its logic. |
+| ☐ | A **ranked** match (and a time trial) plays the standard rules: no custom numbers or logic, no LOGIC label. The 13 built-in modes play as in the last release. |
+
 ## 7. Maps
 
 | ✓ | Check |
