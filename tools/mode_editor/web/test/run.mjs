@@ -16,9 +16,9 @@ import { CATALOG, walkStmts, validate, deepEqual, firstDiff, stripIds, numberIds
 import { logicToBlocks, blocksToLogic } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
-import { loadModeText, logicTextFor, fileTextFor, lineDiff } from "../js/modeui.js";
+import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel, batchModel } from "../js/sim.js";
+import { timelineModel, batchModel, sharedAxes, endCardFields } from "../js/sim.js";
 import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -227,6 +227,25 @@ await t("unknown lines before logic stay before it; text after logic belongs to 
     same(sp.logicText, "logic 1\nbase ffa\n");
 });
 
+await t("the logic block starts where the game's isModeLogicLine says: `logic`, then the end, a space, a tab or \\r", () => {
+    for (const l of ["logic 1", "logic", "logic x", "logic\t2", "logic\r"]) same(splitQmode(`mode=ffa\n${l}\nbase ffa\n`).logicLine, 2, JSON.stringify(l));
+    for (const l of ["logics=1", "logic2", "logicx", " logic 1"]) same(splitQmode(`mode=ffa\n${l}\nbase ffa\n`).logicLine, 0, JSON.stringify(l));
+    same(splitQmode("mode=ffa\r\nlogic\r\nbase ffa\r\n").logicLine, 2, "CRLF");
+});
+await t("the game's error line (a file line) maps to the same line in the Code view", () => {
+    const m = loadModeText("custommode=x\nmode=ffa\n", defaultFor);
+    const ast = clone(m.ast);
+    const kill = ast.decls.find((d) => d.kind === "slot" && d.name === "kill");
+    kill.body = [{ op: "pass" }, ...kill.body];
+    const file = fileTextFor("custommode=x\nmode=ffa\n", {}, ast, m.def, false);
+    const code = print(ast);
+    const fl = file.split("\n"), cl = code.split("\n");
+    const fi = fl.findIndex((l) => l.startsWith("slot kill")) + 2;   // (the line under its head)
+    const ci = codeLineFor(file, fi, code);
+    same(cl[ci - 1], fl[fi - 1], "the same text"); ok(ci !== fi, "a different line number in the Code view");
+    same(codeLineFor(file, 1, code), null, "a key line has no Code view line");
+});
+
 console.log("phases / sim models");
 await t("phases: built-in slots native, a changed slot interpreted, object events under their object", () => {
     const def = defaultFor("bomb");
@@ -268,6 +287,29 @@ await t("sim timeline model reads the real modesim shapes (MODESIM.md): names, r
     const b = batchModel([{ type: "start", matches: 2 }, { type: "match", done: 1, total: 2, seed: 1 }, { type: "progress", done: 1, total: 2 },
         { type: "end", matchesPlayed: 2, teams: { a: { wins: 0, winRate: 0 }, b: { wins: 2, winRate: 1 }, draws: 0 }, csv: "index\n" }]);
     same(b.matches.length, 1); same(b.progress.done, 1); same(b.end.teams.b.wins, 2);
+});
+await t("sim: trace frames, a shared time axis for compared runs, the end card's fields per mode", () => {
+    const m = timelineModel([{ type: "start", teams: false }, { type: "frame", t: 0, phase: "live", players: [] },
+        { type: "frame", t: 10, phase: "live", players: [], slots: [{ slot: "kill", calls: 2, ns: 3000 }, { slot: "tick", calls: 1250, ns: 9000 }] }]);
+    same(m.slotFrames.length, 1); same(m.slotFrames[0].ns, 12000); eq(m.slotNames, ["kill", "tick"]); same(m.maxSlotNs, 12000);
+    const m2 = timelineModel([{ type: "frame", t: 0, phase: "live", scoreA: 0, players: [] }, { type: "frame", t: 600, phase: "live", scoreA: 9, players: [] }]);
+    eq(sharedAxes([m, m2]), { t0: 0, t1: 600, maxScore: 9 });
+    const ffa = endCardFields({ teams: false }, { rounds: 0, result: { players: [{ objTime: 0 }] } });
+    same(ffa.teams, false); same(!!ffa.rounds, false); same(ffa.objTime, false);
+    const bomb = endCardFields({ teams: true }, { rounds: 5, result: { players: [{ objTime: 3.5 }] } });
+    same(bomb.teams, true); same(!!bomb.rounds, true); same(bomb.objTime, true);
+});
+await t("the unused-proc warning is only for a proc the file changes (pristine built-ins: no warning)", () => {
+    for (const mode of MODES) {
+        const def = defaultFor(mode);
+        const v = validate(def, { base: mode, def });
+        ok(!v.problems.some((p) => /never called/.test(p.msg)), mode + ": " + JSON.stringify(v.problems.filter((p) => /never called/.test(p.msg))));
+    }
+});
+await t("web/fixtures is a copy of tools/modes (snapshot_catalog.py --fixtures-only)", () => {
+    if (SRC !== REPO_MODES) return;
+    for (const f of fs.readdirSync(REPO_MODES).filter((x) => x.endsWith(".qlogic")))
+        same(fs.readFileSync(path.join(HERE, "..", "fixtures", f), "utf8"), fs.readFileSync(path.join(REPO_MODES, f), "utf8"), f);
 });
 
 console.log("serve.py");
@@ -360,6 +402,37 @@ try {
         same(n.status, 200, n.text);
         same(JSON.parse(fs.readFileSync(path.join(tmp, "provenance.json"), "utf8")).items["gamemodes/fresh"].origin, "human");
         same(n.json.check.available, false, "no checkmode without quark_tests");
+    });
+    await t("provenance is read back per mode; rename / duplicate / delete keep .bak, fix custommode= and carry provenance", async () => {
+        same((await request(port, "GET", "/api/provenance?name=fresh")).json.item.origin, "human");
+        same((await request(port, "GET", "/api/provenance?name=nope")).json.item, null);
+        const g = (await request(port, "GET", "/api/mode?name=fresh")).json;
+        same((await request(port, "POST", "/api/mode/rename?name=fresh&to=koth", { body: {}, headers: W })).status, 400, "a built-in name");
+        same((await request(port, "POST", "/api/mode/rename?name=fresh&to=lowgrav", { body: {}, headers: W })).status, 409, "an existing name");
+        same((await request(port, "POST", "/api/mode/rename?name=fresh&to=fresh2", { body: { baseSha256: "0".repeat(64) }, headers: W })).status, 409, "changed on disk");
+        const r = await request(port, "POST", "/api/mode/rename?name=fresh&to=fresh2", { body: { baseSha256: g.sha256 }, headers: W });
+        same(r.status, 200, r.text);
+        ok(!fs.existsSync(path.join(dir, "fresh.qmode")) && fs.existsSync(path.join(dir, "fresh.qmode.bak")), "the old file kept as .bak");
+        ok(r.json.text.startsWith("custommode=fresh2\n") && r.json.text.slice(r.json.text.indexOf("\n")) === g.text.slice(g.text.indexOf("\n")), "only custommode= changed");
+        const prov = JSON.parse(fs.readFileSync(path.join(tmp, "provenance.json"), "utf8")).items;
+        same(prov["gamemodes/fresh2"].origin, "human"); same(prov["gamemodes/fresh"], undefined, "moved");
+        const d = await request(port, "POST", "/api/mode/duplicate?name=lowgrav&to=lowgrav2", { body: {}, headers: W });
+        same(d.status, 200, d.text);
+        const crlf = fs.readFileSync(path.join(dir, "lowgrav2.qmode"), "utf8");
+        ok(crlf.includes("custommode=lowgrav2\r\n") && fs.existsSync(path.join(dir, "lowgrav.qmode")), "a CRLF copy; the original stays");
+        eq(foreignLines(crlf), foreignLines(fs.readFileSync(path.join(dir, "lowgrav.qmode"), "utf8")), "foreign lines kept");
+        same((await request(port, "POST", "/api/mode/delete?name=lowgrav2", { body: {}, headers: W })).status, 200);
+        ok(!fs.existsSync(path.join(dir, "lowgrav2.qmode")) && fs.existsSync(path.join(dir, "lowgrav2.qmode.bak")), "deleted, kept as .bak");
+        same((await request(port, "POST", "/api/mode/delete?name=lowgrav2", { body: {} })).status, 403, "needs the header");
+    });
+    await t("Sim scenarios are saved, listed and deleted; brains are listed from <data>/bots; an unknown run is 404", async () => {
+        same((await request(port, "POST", "/api/scenario?name=s1", { body: { form: { seed: 7 } }, headers: W })).status, 200);
+        eq((await request(port, "GET", "/api/scenarios")).json.scenarios, [{ name: "s1", scenario: { form: { seed: 7 } } }]);
+        same((await request(port, "POST", "/api/scenario/delete?name=s1", { body: {}, headers: W })).status, 200);
+        eq((await request(port, "GET", "/api/scenarios")).json.scenarios, []);
+        fs.mkdirSync(path.join(tmp, "bots"), { recursive: true }); fs.writeFileSync(path.join(tmp, "bots", "mine.qbrain"), "version 1\n");
+        eq((await request(port, "GET", "/api/brains")).json.brains, ["mine"]);
+        same((await request(port, "GET", "/api/run/0123456789ab")).status, 404);
     });
     await t("runs only modesim / modebatch, and only when quark_maptool has them", async () => {
         same((await request(port, "POST", "/api/run", { body: { args: ["modesim"], request: {} }, headers: W })).status, 501);

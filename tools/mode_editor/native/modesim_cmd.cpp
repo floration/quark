@@ -47,15 +47,11 @@ namespace {
 namespace fs = std::filesystem;
 
 // ---- the logic hook (G1) -------------------------------------------------------------------------------------------
-// TODO(G1, mode editor phase 3): wire the server running a custom mode's logic HERE (and only here). Two seams, both
-// detected at compile time so this file builds before and after the game side lands:
-//   1. applyLogicHook(s, sc, S): before Server::start. Today it puts the logic block into sc.custom.logic (phase 1a's
-//      CustomRules::logic, which the server keeps but doesn't run yet). When G1's "load a .qmode's logic into a Server
-//      before start" function lands, call it here with S.rulesText (or S.logicBlock); on failure set *err and return
-//      false (the run fails with that error).
-//   2. serverRunsLogic(s): after start, whether the server runs logic: Server::modeHooks_ (gamemodes.h ModeHooks, G1's
-//      rules refactor) is non-null. logicApplied in every answer is that AND the file having logic: never claimed from
-//      the request alone. When G1's API can report what it loaded (a label / hash), also compare it with S.compiled.hash.
+// Everything that touches the server's running of a custom mode's logic is here (and only here):
+//   1. applyLogicHook(s, sc, S): before Server::start, Server::presetModeLogic with the rules text (the same text and
+//      base the label was compiled from: the same hash); on failure the run fails with its error.
+//   2. serverRunsLogicT(s) / fileLogicRunning: after start, whether the server runs logic (Server::modeHooks_ non-null)
+//      and loaded the file's (its hash). logicApplied in every answer is that: never claimed from the request alone.
 //   3. TimedHooks: per-slot timings for `trace` and perf.logicNs. After start, the server's ModeHooks is wrapped in one
 //      that forwards every call and times it (rulesReset takes Server::modeHooks_ from modeLogicHooks_, so the wrapper
 //      goes there too and every later reset keeps it).

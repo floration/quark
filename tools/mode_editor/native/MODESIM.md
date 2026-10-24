@@ -53,20 +53,26 @@ header and `src/game/gamemodes.h` can't share a translation unit while both decl
 the slots the file changes (interpreted), their worst-case cost, and errors with line:col. A logic error refuses the
 run.
 
-Whether the server actually runs the logic is up to the game side (mode editor phase 3: `src/game/gamemodes.*`,
-`server.*`). Every answer says what happened:
+The server runs the logic through the game's hook (mode editor phase 3: `Server::presetModeLogic` before start, then
+`ModeHooks`). Every answer says what happened:
 
-- `logicApplied: true` only when the file has logic and the started server runs logic (`Server::modeHooks_`, G1's
-  hook from the rules refactor, detected at compile time). Once the game can report what it loaded, the hashes are
-  compared too.
-- Until that hook is in the game, `logicApplied` is `false` and `logic.why` says so. The match plays the base mode
-  with the file's key=value rules (time limit, score limit, rounds, weapons, movement...). Those do apply: they go
-  through `CustomRules` as the game hosts a custom mode.
-- `logic.hook` is `"pending"` (this build's server has no hook) or `"game"`.
+- `logicApplied: true` only when the file has logic, the started server runs logic (`Server::modeHooks_`) and the
+  logic it loaded has the file's hash.
+- Otherwise `logicApplied` is `false` and `logic.why` says why; the match plays the base mode with the file's key=value
+  rules (time limit, score limit, rounds, weapons, movement...), which go through `CustomRules` as the game hosts a
+  custom mode.
+- `logic.hook` is `"game"` (or `"pending"` from a build whose server has no hook).
 
-The seam is the "logic hook" block at the top of `modesim_cmd.cpp` (`applyLogicHook` before `Server::start`, `serverRunsLogicT` / `fileLogicRunning` after it). When G1's API
-lands, wiring it is a few lines there. Slot traces (`trace`) and `perf.logicNs` need per-slot timings from the game
-side. Until then there are no `slot` lines and `logicNs` is `null`.
+**Timing the logic.** After `Server::start` the server's `ModeHooks` is wrapped in `TimedHooks` (`modesim_cmd.cpp`,
+no game code): it forwards every interpreted event / query and times it with `steady_clock`. `rulesReset` takes
+`Server::modeHooks_` from `modeLogicHooks_`, so the wrapper goes there and stays through every reset. A slot that raises
+another (an action ends the round, which runs `roundOver`) is counted inside its caller: the per-tick time counts only
+the outermost calls, a slot's own totals are inclusive. That gives `perf.logicNs` (per tick, while the logic plays),
+`perf.slots` and, with `trace`, a `slots` list in every frame. The clock reads cost about 20-40 ns a call, which is in
+the measured numbers and in `tickNs`.
+
+The block is split where the game splits it: `isModeLogicLine` (customrules.cpp: `logic`, then the end of the line, a
+space, a tab or a `\r`).
 
 ## `modesim` request
 
@@ -75,7 +81,9 @@ side. Until then there are no `slot` lines and `logicNs` is `null`.
 | `map` | | A map name (`"depot"`, or one of the player's maps), a path to a `.qmap`, `{name, text}`, or the map JSON (`parse`'s form). `text` / `file` / `name` at the top level work too. |
 | `rules` (`text`) | none | The `.qmode` text: key=value lines, then `logic 1` and the logic. A file with logic but no `custommode=` line plays as a custom mode named after the logic (a warning says so). Empty: the built-in mode. |
 | `mode` | the rules' `mode=`, else the logic's `base`, else the map's `for` mode, else `ffa` | `"vs"`, `"bomb"`, ..., `"1v1"` (or `"arena"`), or the number. Ignored, with a warning, when the rules name another. |
-| `bots` | 8 (duel and 1v1: 2) | `N`, or a list of `{team: "a"/"b", skill, name}`. 1 to 32. Team modes alternate A, B, A, ... |
+| `bots` | 8 (duel and 1v1: 2) | `N`, or a list of `{team: "a"/"b", skill, name, brain}`. 1 to 32. Team modes alternate A, B, A, ... |
+| `brain` | `"default"` | The brain every bot plays (a bot's own `brain` wins): `"default"` (the built-in one) or a name. |
+| `brains` | | `{name: text}`: the brains' texts (the bot editor's `.qbrain`; serve.py fills this from `<data>/bots/`). A name not given here is read from the player's `bots/<name>.qbrain`. Each must compile, or the request fails. |
 | `skill` | `"ADVANCED"` | `0..3` or `BEGINNER` / `INTERMEDIATE` / `ADVANCED` / `EXPERT`. |
 | `seed` | 1 | Same seed, same match. |
 | `seconds` (`secs`) | 900 | The most game time to run, 0.1..7200, counted from the match start. A bomb match can last 13 rounds of about 115 s, so the page sends 1800. |
@@ -83,8 +91,9 @@ side. Until then there are no `slot` lines and `logicNs` is `null`.
 | `tickRate` | 125 | 1000, 500, 250 or 125. Bots play the same at every rate. |
 | `rate` | 4 | Frames per game second, 0.1..1000 (the tick rate caps it). |
 | `realtime` / `speed` | `false` / 1 | Paced at `speed` x real time when `realtime`; otherwise as fast as the CPU goes. |
-| `trace` | `false` | Slot calls with their cost. Needs the game hook: until then, a warning and no `slot` lines. |
+| `trace` | `false` | The interpreted slots' calls and cost in each frame (`slots`). Only when the logic runs (`start.trace` says so); rules without logic get a warning. |
 | `positions` | `true` | Player positions in frames. |
+| `mapView` | `true` | The map seen from above in the start line. |
 
 ## `modesim` answer
 
@@ -94,12 +103,16 @@ side. Until then there are no `slot` lines and `logicNs` is `null`.
  "logic":{"present":true,"applied":false,"hook":"pending","label":"rush#648ff484","hash":"648ff484",
           "interpreted":["plant"],"uses":["bomb"],"needs":["sites"],"worstCase":{"plant":11},"why":"..."},
  "teams":true,"tickRate":125,"seconds":900,"until":"matchEnd","warnings":["..."],"seed":5,"rate":4,
- "realtime":false,"speed":1,"trace":false,"bots":[{"id":0,"name":"BOT ANNA","team":"a","skill":"ADVANCED"},...],
+ "realtime":false,"speed":1,"trace":false,"bots":[{"id":0,"name":"BOT ANNA","team":"a","skill":"ADVANCED","brain":"default"},...],
+ "brains":{"mine":"mine#1a2b3c4d"},
+ "mapView":{"bounds":[x0,z0,x1,z1],"heights":[ylo,yhi],"boxes":[[x0,z0,x1,z1,top],...],"spawns":[[x,z,team],...],
+            "sites":[[x0,z0,x1,z1]],"hill":[..],"points":[..],"checkpoints":[..],"cart":[[x,z],...]},
  "serverLog":["..."]}
 {"type":"frame","t":12.5,"tick":1687,"phase":"live","round":1,"clock":92.5,"scoreA":0,"scoreB":0,"flags":[],
  "attackers":"a","obj":{"bomb":{"state":"carried","carrier":4,"pos":[..]}},
  "players":[{"id":0,"team":"a","alive":true,"pos":[x,y,z],"score":0,"kills":0,"deaths":0,"objTime":0},...],
- "events":[{"type":"kill","killer":4,"victim":1,"weapon":"rifle","pos":[..],"t":12.31},...]}
+ "events":[{"type":"kill","killer":4,"victim":1,"weapon":"rifle","pos":[..],"t":12.31},...],
+ "slots":[{"slot":"plant","calls":1,"ns":2400,"avg":2400,"max":2400}]}            (trace, while the logic runs)
 ...
 {"type":"end","t":391.68,"reason":"matchEnd","label":"rush#648ff484","logicApplied":false,
  "winner":{"team":"b","player":null,"name":"TEAM B","text":"TEAM B wins the match"},
@@ -108,7 +121,9 @@ side. Until then there are no `slot` lines and `logicNs` is `null`.
  "result":{"scoreA":0,"scoreB":3,"round":4,"phase":"matchEnd","players":[{"id","name","team","score","kills",
            "deaths","objTime","damage","won"},...]},
  "perf":{"ticks":48960,"simSeconds":1.4,"ticksPerSecond":35000,"speedup":280,
-         "tickNs":{"avg":25000,"p99":60000,"max":2000000},"logicNs":null,"wallSeconds":1.5,"startSeconds":0.02}}
+         "tickNs":{"avg":25000,"p99":60000,"max":2000000,"ticks":48960},
+         "logicNs":{"avg":40,"p99":900,"max":5200,"ticks":48960},"slots":[{"slot","calls","ns","avg","max"},...],
+         "wallSeconds":1.5,"startSeconds":0.02}}
 ```
 
 - `start.interpreted`: the slots the server interprets (empty unless `logicApplied`). `logic.interpreted`: the
@@ -141,7 +156,10 @@ side. Until then there are no `slot` lines and `logicNs` is `null`.
 - **end**: `reason` is `matchEnd` | `time` | `stopped`. `winner` is null unless the match ended. `leader` is who
   was ahead when time ran out first (`{team}` or `{player}`, null when level). `rounds` counts round results.
   `perf.speedup` is game seconds per wall second while ticking. `perf.tickNs` is `Server::simulate` per tick (movement,
-  bots, rules and logic together).
+  bots, rules and logic together). `perf.logicNs` is the interpreted slots' share of each tick (null when no logic
+  ran); `perf.slots` lists each interpreted slot over the match, the costliest first.
+- **mapView**: the solid boxes (not distant scenery, trim, water, lava or clip) as `[x0, z0, x1, z1, top y]`, lowest
+  first; spawns `[x, z, team]` (0 A, 1 B, else any / staged); the objectives' boxes; the cart track. 1 decimal.
 - **controls** (`--stream`, one per line): `pause`, `resume`, `step` (one frame while paused), `stop`,
   `speed <x>` (paced at x), `speed max`, `realtime on|off`.
 
@@ -171,7 +189,8 @@ The answer:
  "length":{"avg","min","p50","max"},"rounds":7.67,"scoreSpread":6.33,
  "matches":[{"index","seed","reason","t","winner","leader"?,"rounds","scoreA","scoreB","wallSeconds"}],
  "csv":"index,seed,reason,seconds,rounds,winnerTeam,winnerPlayer,winnerName,scoreA,scoreB,wallSeconds\n...",
- "perf":{"wallSeconds","threads","matchesPerSecond","ticks","ticksPerSecondPerMatch","speedupPerMatch","speedupTotal"}}
+ "perf":{"wallSeconds","threads","matchesPerSecond","ticks","ticksPerSecondPerMatch","speedupPerMatch","speedupTotal",
+         "logicNs":{"avg","p99","max","matches"}}}      (logicNs: the matches' mean avg, worst p99 and max; null: no logic)
 ```
 
 - A **timeout** is a match that reached `seconds` (or `matchTimeout`) before it ended. It counts in `timeouts`,

@@ -154,10 +154,35 @@ if s["logic"]["hook"] != "pending":   # an interpreted kill slot changes the res
     ps = k[-1]["result"]["players"] if code == 0 else []
     check(k[0]["logicApplied"] is True and k[-1]["logicApplied"] is True and k[0]["interpreted"] == ["kill"], "kill slot logic: applied, interpreted")
     check(ps and any(p["kills"] > 0 for p in ps) and all(p["score"] == 10 * p["kills"] for p in ps), "kill slot logic: every kill scored 10")
+    # trace / logicNs: the server's hooks timed (TimedHooks); timing changes nothing in the match
+    code, tr = run("modesim", {"map": "harbor", "bots": 6, "seed": 2, "rate": 1, "seconds": 120, "until": "time", "rules": ten, "trace": True})
+    pf = tr[-1]["perf"] if code == 0 else {}
+    sl = [x for l in tr if l.get("type") == "frame" for x in l.get("slots", [])]
+    check(tr[0]["trace"] is True and sl and all(x["slot"] == "kill" and x["calls"] > 0 and x["ns"] > 0 for x in sl), "trace: frames carry the kill slot's calls and ns")
+    check(pf.get("logicNs") and pf["logicNs"]["max"] > 0 and pf["logicNs"]["ticks"] > 0 and pf["slots"][0]["slot"] == "kill"
+          and pf["slots"][0]["calls"] == sum(x["calls"] for x in sl), "perf.logicNs (avg / p99 / max) and per-slot totals")
+    check(tr[-1]["result"] == k[-1]["result"], "a traced run plays the same match")
+    check(run("modesim", {"map": "harbor", "bots": 2, "seconds": 5, "rules": ten})[1][-1]["perf"]["logicNs"] is not None
+          and run("modesim", {"map": "harbor", "bots": 2, "seconds": 5})[1][-1]["perf"]["logicNs"] is None, "logicNs: null without logic")
 code, e = run("modesim", {"map": "depot", "rules": "custommode=x\nmode=bomb\nlogic 1\nslot tick:\n  foo = \n"})
 check(code == 1 and e[-1]["errors"][0]["line"] == 5, "a logic error refuses the run, with line:col")
+code, e = run("modesim", {"map": "depot", "seconds": 5, "rules": "custommode=x\nmode=bomb\nlogic\n"})
+check(e[0].get("logic", {}).get("present") is True, "a bare `logic` line starts the block, as the game reads it (isModeLogicLine)")
 code, e = run("modesim", {"map": "nosuchmap"})
 check(code == 1 and "error" in e[-1], "an unknown map is an error")
+
+print("modesim: the map from above, bot brains")
+code, mv = run("modesim", {"map": "depot", "mode": "bomb", "bots": 2, "seconds": 2})
+v = mv[0].get("mapView") or {}
+check(code == 0 and len(v.get("boxes", [])) > 50 and len(v["bounds"]) == 4 and len(v.get("sites", [])) >= 1 and v.get("spawns"), "start.mapView: boxes, bounds, bomb sites, spawns")
+check("mapView" not in run("modesim", {"map": "depot", "bots": 2, "seconds": 2, "mapView": False})[1][0], "mapView: false leaves it out")
+brain = open(os.path.join(ROOT, "tools", "bots", "default.qbrain")).read()
+code, bb = run("modesim", {"map": "harbor", "bots": [{"brain": "mine"}, {}], "brains": {"mine": brain}, "seed": 4, "seconds": 20, "until": "time"})
+check(code == 0 and [b["brain"] for b in bb[0]["bots"]] == ["mine", "default"] and "mine" in bb[0]["brains"], "bots[].brain from request.brains")
+code, plain = run("modesim", {"map": "harbor", "bots": 2, "seed": 4, "seconds": 20, "until": "time"})
+check(code == 0 and bb[-1]["result"] == plain[-1]["result"], "default.qbrain as a brain file plays as the built-in brain")
+code, e = run("modesim", {"map": "harbor", "brain": "nosuchbrain", "seconds": 2})
+check(code == 1 and "brain" in e[-1]["error"], "an unknown brain is an error")
 
 print("modesim --stream: controls")
 code, s = run("modesim", {"map": "harbor", "bots": 4, "seed": 3, "realtime": True, "speed": 2, "rate": 4}, stream=True, controls=["stop"])
