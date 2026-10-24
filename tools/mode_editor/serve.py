@@ -14,7 +14,8 @@ Python 3 standard library only. Binds 127.0.0.1 only. Adapted from tools/bot_edi
     repository's tools/modes/*.qlogic, else the page's fixtures (each answer says which),
   - runs `quark_tests checkmode <file>` on save (or `quark_maptool modecheck`), when the build has it,
   - runs `quark_maptool modesim` / `modebatch` for the Sim view, when the build has them (its JSON lines are relayed
-    to the page as Server-Sent Events). Without them the page shows Sim as unavailable; nothing is simulated here.
+    to the page as Server-Sent Events; tools/mode_editor/native/MODESIM.md has the formats). Without them the page
+    shows Sim as unavailable; nothing is simulated here.
 
 The shared file rule (agreed with the physics editor): a .qmode is the game's key=value lines (CustomRules::toText)
 then the logic block from the first line that is exactly `logic <N>`. This editor owns the logic block and the mode
@@ -471,6 +472,15 @@ RUN_COMMANDS = ("modesim", "modebatch")
 HELPER_COMMANDS = ("modesim", "modebatch", "modecheck")
 
 
+def resolve_map(request):
+    """A run's map named by the page: one of the user's maps (this editor's data folder, which may not be the one the
+    helper would look in) goes to the helper as its path; a shipped map's name is left for the helper to find."""
+    if isinstance(request, dict) and isinstance(request.get("map"), str) and valid_name(request["map"]):
+        p = os.path.join(CFG.user_maps_dir(), request["map"] + ".qmap")
+        if os.path.isfile(p): request = dict(request, map=p)
+    return request
+
+
 def helper_cmd(args, allowed):
     if not CFG.maptool or not args or args[0] not in allowed: return None
     if not all(isinstance(a, str) and re.match(r"^[A-Za-z0-9_.=:,+-]{1,64}$", a) for a in args): return None
@@ -598,14 +608,14 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or [], HELPER_COMMANDS)
                 if not cmd: return self._err(501, "quark_maptool with that command not found")
-                r = subprocess.run(cmd, input=json.dumps(body.get("request") or {}), capture_output=True, text=True,
+                r = subprocess.run(cmd, input=json.dumps(resolve_map(body.get("request") or {})), capture_output=True, text=True,
                                    timeout=min(7200.0, float(body.get("timeout") or 300)), creationflags=NO_WINDOW)
                 return self._send(200, {"code": r.returncode, "answer": parse_answer(r.stdout), "stderr": r.stderr[-4000:]})
             if p == "/api/run":
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or [], RUN_COMMANDS)
                 if not cmd: return self._err(501, "quark_maptool modesim not found")
-                run = Run(cmd, body.get("request") or {})
+                run = Run(cmd, resolve_map(body.get("request") or {}))
                 with RUNS_LOCK:
                     for k in [k for k, r in RUNS.items() if r.done and time.time() - r.started > 3600]: del RUNS[k]
                     RUNS[run.id] = run
