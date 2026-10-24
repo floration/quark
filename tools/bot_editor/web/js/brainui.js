@@ -37,6 +37,11 @@ export class BrainPage {
         this._fillSel();
         let st = null;
         try { st = await api.state("brain"); } catch {}
+        // each view's mode / zoom / pan (server-side, like the brain itself)
+        try { this.viewState = (await api.state("views")) || {}; } catch { this.viewState = {}; }
+        if (typeof this.viewState !== "object") this.viewState = {};
+        this.blocks.restoreState(this.viewState.blocks);
+        this.graph.restoreState(this.viewState.graph);
         if (st && st.text) {
             // st.text: the last version that parsed; st.draft: the Code view's text when it didn't (kept, never lost)
             try {
@@ -134,6 +139,14 @@ export class BrainPage {
     // the work in progress as a file through serve.py (the shell's browser storage starts empty)
     _persist() { if (this.ast) api.saveState("brain", { name: this.name, text: print(this.ast), draft: this.codeError ? this.codeText : null, savedText: this.saved || null }).catch(() => {}); }
 
+    // a view's own settings (mode, zoom, pan...), saved with the page's state
+    saveViewState(view, obj) {
+        if (!this.viewState) this.viewState = {};
+        this.viewState[view] = obj;
+        clearTimeout(this._viewsT);
+        this._viewsT = setTimeout(() => api.saveState("views", this.viewState).catch(() => {}), 600);
+    }
+
     // ---------------------------------------------------------------- views
     _showView(v) {
         this.view = v;
@@ -149,7 +162,7 @@ export class BrainPage {
         this.dirtyViews.delete(v);
         if (v === "code") this._codeFromText(this.codeText);
         else if (v === "blocks") this.blocks.setBrain(this.ast, this.sel || undefined);
-        else if (v === "graph") { this.graph.setBrain(this.ast, this.sel && /^(slot|curve):/.test(this.sel) ? this.sel : undefined); if (focus) requestAnimationFrame(() => this.graph.fit()); }
+        else if (v === "graph") { this.graph.setBrain(this.ast, this.sel && /^(slot|curve):/.test(this.sel) ? this.sel : undefined); if (focus) requestAnimationFrame(() => this.graph.shown()); }
         else if (v === "values") { this.values.setBrain(this.ast, this.app.defaultAst()); if (this.sel) this.values.scrollTo(this.sel); }
         else if (v === "diff") this._diff();
     }
@@ -278,7 +291,8 @@ export class BrainPage {
         L.querySelectorAll(".it").forEach((e) => (e.onclick = () => {
             const k = e.dataset.k;
             const d = this.ast.decls.find((x) => declKey(x) === k);
-            const view = d && d.kind === "param" || (d && (d.kind === "list" || d.kind === "table" || (d.kind === "curve" && d.form !== "expr"))) ? (this.view === "code" ? "code" : "values") : this.view === "values" || this.view === "diff" ? "code" : this.view;
+            const wholeBlocks = this.view === "blocks" && this.blocks.mode === "whole";
+            const view = wholeBlocks ? "blocks" : d && d.kind === "param" || (d && (d.kind === "list" || d.kind === "table" || (d.kind === "curve" && d.form !== "expr"))) ? (this.view === "code" ? "code" : "values") : this.view === "values" || this.view === "diff" ? "code" : this.view;
             this.openDecl(k, view);
         }));
         this._brainInfo(changed);
