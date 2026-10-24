@@ -269,7 +269,7 @@ class TestTabsMoveOnce(unittest.TestCase):
             self.assertEqual(tabs.upgrade(paths), ["docs"])
             self.assertEqual(self.order(paths)[:7], ["project", "play", "docs", "github", "tests", "mine", "dashboard"])
             saved = util.read_json_file(paths.pm("tabs.json"))
-            self.assertEqual(saved["defaultsMoved"], ["docs-before-github"])
+            self.assertEqual(saved["defaultsMoved"], ["docs-before-github-2"])
             self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"], lst)
             self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
             # q puts it back after the GitHub Manager: left there
@@ -279,6 +279,22 @@ class TestTabsMoveOnce(unittest.TestCase):
             write(paths.pm("tabs.json"), json.dumps(saved))
             self.assertEqual(tabs.upgrade(paths), [])
             self.assertEqual(self.order(paths)[:6], ["project", "play", "github", "tests", "mine", "docs"])
+
+    def test_tests_appended_after_editors(self):
+        # q's PC: an older upgrade appended Tests after the editors, and the first try of this move
+        # ("docs-before-github") skipped that file but marked itself done; the sibling-only check moves it
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            lst = self.old_default()
+            t = next(x for x in lst if x["id"] == "tests")
+            lst.remove(t)
+            lst.insert([x["id"] for x in lst].index("gamemode"), t)
+            self.save(paths, lst, defaultsMoved=["docs-before-github"])
+            self.assertEqual(tabs.upgrade(paths), ["docs"])
+            self.assertEqual(self.order(paths)[:6], ["project", "play", "docs", "github", "tests", "dashboard"])
+            saved = util.read_json_file(paths.pm("tabs.json"))
+            self.assertEqual(saved["defaultsMoved"], ["docs-before-github", "docs-before-github-2"])
+            self.assertEqual(tabs.upgrade(paths), [])
 
     def test_own_order_stays(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -291,7 +307,7 @@ class TestTabsMoveOnce(unittest.TestCase):
             before = self.order(paths)
             self.assertEqual(tabs.upgrade(paths), [])
             self.assertEqual(self.order(paths), before)
-            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github-2"])
 
     def test_different_parents_stay(self):
         with tempfile.TemporaryDirectory() as tmp:

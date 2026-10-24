@@ -541,7 +541,7 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"], old)
             saved = util.read_json_file(paths.pm("tabs.json"))
             self.assertEqual(saved["defaultsSeen"], sorted(d))
-            self.assertEqual(saved["defaultsMoved"], ["docs-before-github"])
+            self.assertEqual(saved["defaultsMoved"], ["docs-before-github-2"])
             self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
             # q removes a tab that was added: it stays removed
             saved["tabs"] = [t for t in saved["tabs"] if t["id"] != "physics"]
@@ -556,7 +556,7 @@ class TestTabs(unittest.TestCase):
             os.remove(paths.pm("tabs.json"))
             self.assertTrue(tabs.write_default(paths))
             self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsSeen"], sorted(d))
-            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github-2"])
             self.assertEqual(tabs.upgrade(paths), [])
 
     def test_shell_supervisor(self):

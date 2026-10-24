@@ -296,8 +296,10 @@ LEGACY_DEFAULT_IDS = ("project", "github", "docs", "dashboard", "sound", "ui", "
 PLACE_ONCE = ("play",)
 # Reorders of the default tabs that `upgrade` applies once to a tabs.json that still has the older default order (q's
 # own order stays): name -> (tab moved, the tab it now goes right before, the default order before the change).
-# docs-before-github (q, 2026-10-24): the bar reads Supervisor Board | Play, Claude Manager, GitHub Manager, Editor Manager.
-MOVE_ONCE = {"docs-before-github": ("docs", "github", ("project", "play", "github", "tests", "docs", "dashboard"))}
+# docs-before-github-2 (q, 2026-10-24): the bar reads Supervisor Board | Play, Claude Manager, GitHub Manager, Editor
+# Manager. ("docs-before-github", the first try, compared every tab and skipped files where an older upgrade had appended
+# Tests after the editors, q's among them; this one compares siblings only, so it runs again where that one skipped.)
+MOVE_ONCE = {"docs-before-github-2": ("docs", "github", ("play", "github", "docs", "dashboard"))}
 
 
 def _insert_in_default_place(lst, tab, order):
@@ -315,8 +317,9 @@ def _insert_in_default_place(lst, tab, order):
 
 def _move_once(lst, moved):
     """MOVE_ONCE: each move runs once per tabs.json (`defaultsMoved` records it). It moves the tab only while q's file
-    still has the older default order for those tabs (same relative order of the ids it has, and the two tabs share a
-    parent), so a list q reordered himself is left as it is. Returns (ids moved, the new defaultsMoved list)."""
+    still has the older default order for those tabs (the two tabs share a parent, and the siblings named in the old
+    order keep that relative order; tabs elsewhere in the file don't count), so a list q reordered himself is left as
+    it is. Returns (ids moved, the new defaultsMoved list)."""
     out = []
     for name, (tid, before, old_order) in MOVE_ONCE.items():
         if name in moved:
@@ -328,7 +331,8 @@ def _move_once(lst, moved):
         a, b = lst[ids.index(tid)], lst[ids.index(before)]
         if a.get("parent") != b.get("parent"):
             continue
-        if [i for i in ids if i in old_order] != [i for i in old_order if i in ids]:
+        sib = [x.get("id") for x in lst if isinstance(x, dict) and x.get("parent") == a.get("parent")]
+        if [i for i in sib if i in old_order] != [i for i in old_order if i in sib]:
             continue  # (q's own order)
         lst.remove(a)
         lst.insert(lst.index(b), a)
