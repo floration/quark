@@ -224,8 +224,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
 
     // Dash: one burst in the movement direction (or forward), spending a charge, once the cooldown since the last
-    // dash ENDED has run out (owner 1.17: charges on top of the cooldown; 1.18.7: 0.6 s). Not while a dash runs (a press
-    // then does nothing, and isn't kept). The charge it spends recharges for kDashRecharge from the dash's end, and only
+    // dash ENDED has run out (owner 1.17: charges on top of the cooldown; 1.18.7: 0.6 s), while dash is held (T2). The charge it spends recharges for kDashRecharge from the dash's end, and only
     // then can a refill give it back: at the end of a step (the ground all of them, a bhop landing one) or a dash tech.
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
     const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
@@ -250,7 +249,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashRechargeMs[--s.dashRecharging] = 0;
     }
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
-    const bool dashStart = dashHeld && !(s.flags & MF_DASHHELD) && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
+    // (owner, T2: held dash fires the moment a dash is allowed, like the held grapple: holding it chains the charges 0.6 s
+    // apart; it was a fresh press only, and a press while not ready was lost. A press up to 0.1 s early: the client holds
+    // the button that long, so this stays the only rule)
+    const bool dashStart = dashHeld && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
     bool chargesSet = false;   // a dash tech set the charges this step: no ground / bhop refill on top
     if (dashStart) {
         s.flags &= ~MF_PULLED;   // a dash breaks free of another player's grapple

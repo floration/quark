@@ -597,7 +597,7 @@ bool Game::pressInput(int code) {
     if (b.has(A_FIRE, code)) fireLatched_ = true; // a click shorter than a tick still fires
     // ...and so does a jump, dash or grapple tap (it went down and up between two ticks: no command saw it held)
     if (b.has(A_JUMP, code)) moveLatched_ |= BTN_JUMP;
-    if (b.has(A_DASH, code)) moveLatched_ |= BTN_DASH;
+    if (b.has(A_DASH, code)) { moveLatched_ |= BTN_DASH; dashHoldUntil_ = time_ + kDashPressBuffer; }
     if (b.has(A_GRAPPLE, code)) moveLatched_ |= BTN_GRAPPLE;
     return false;
 }
@@ -856,6 +856,7 @@ UserCmd Game::buildCmd() {
         altPrev_ = isDown(A_ALTFIRE);
         fireLatched_ = false;   // (a click just before Esc / chat / console fired on the first tick after it)
         moveLatched_ = 0;
+        dashHoldUntil_ = -1;
         return c;
     }
     // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
@@ -879,6 +880,7 @@ UserCmd Game::buildCmd() {
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
     if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
     c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
+    if (time_ <= dashHoldUntil_) c.buttons |= BTN_DASH;   // (a dash press up to 0.1 s before one is allowed: held till then, T2)
     moveLatched_ = 0;
     if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
     bool alt = isDown(A_ALTFIRE), altEdge = alt && !altPrev_;
@@ -1444,6 +1446,7 @@ void Game::frame(double dt) {
             }
             localPrevButtons_ = c.buttons;
             net_.tick(c);
+            if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
             tickAcc_ -= period;
         }
         if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)

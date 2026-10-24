@@ -337,6 +337,33 @@ static void testJumpTapBuffer() {
     CHECK(run(150).vel.y <= 0.0f);   // (past the buffer: no jump)
 }
 
+// T2: holding dash fires each dash the moment it's allowed (like the held grapple): the charges chain 0.6 s apart (the
+// cooldown from each dash's end), each charge back 1.2 s after its dash; in the air the two charges, then none.
+static void testHeldDash() {
+    printf("held dash\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -900 -1 -900 900 0 900\nspawn any 0 0 0\n", &err));
+    auto starts = [&](MoveState q, int ms) {
+        std::vector<int> at;
+        UserCmd c; c.msec = 1; c.buttons = BTN_DASH; c.forward = 127;
+        for (int i = 0; i < ms; i++) { pmove(q, c, m); if (q.events & ME_DASH) at.push_back(i); }
+        return at;
+    };
+    MoveState g; g.flags = MF_ONGROUND;
+    for (int i = 0; i < 50; i++) pmove(g, UserCmd(), m);
+    std::vector<int> a = starts(g, 3000);
+    printf("  held on the floor for 3 s: %zu dashes, at", a.size());
+    for (int t : a) printf(" %d", t);
+    printf(" ms\n");
+    CHECK(a.size() == 5 && a[0] == 0);
+    for (size_t k = 1; k < a.size(); k++) CHECK(std::abs(a[k] - a[k - 1] - 720) <= 1);   // (the dash's 0.12 s, then the 0.6 s cooldown)
+    MoveState air; air.pos = {0, 400, 0};   // (falling the whole time: no floor to refill them)
+    std::vector<int> b = starts(air, 3000);
+    printf("  held in the air: %zu dashes\n", b.size());
+    CHECK(b.size() == 2 && std::abs(b[1] - b[0] - 720) <= 1);
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -721,8 +748,18 @@ static void testDashCharges() {
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, sd, open);
             printf("  super dash from %d: %d charge(s), %.1f m/s\n", start, (int)q.dashCharges, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z));
             CHECK(t < 120 && std::fabs(std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z) - 11.0f) < 1e-3f && q.dashCharges == 1);   // (from a standstill: the dash's own 11)
-            UserCmd fly; fly.buttons = BTN_DASH;   // (dash still held: no new press) the hop: nothing until it lands
-            for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND); i++) { step(q, fly, open); if (!(q.flags & MF_ONGROUND)) CHECK(q.dashCharges == 1); }
+            // dash still held through the hop: nothing until the cooldown is over, then (T2: a held dash fires the moment
+            // it's allowed) the next dash at once, on the one charge left
+            UserCmd fly; fly.buttons = BTN_DASH;
+            bool again = false;
+            for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND) && !again; i++) {
+                const uint16_t cd = q.dashCooldownMs;
+                step(q, fly, open);
+                again = q.dashTimer > 0;
+                if (!again) CHECK(q.dashCharges == 1);
+                else CHECK(cd <= 1 && q.dashCharges == 0);
+            }
+            CHECK(again);
         }
         // chained super dashes: each needs a charge (the hop's bhop landing gives one back once it has recharged: never
         // more than that) and the cooldown since the last one ended; each adds 5 m/s to the speed it starts from, up to 36
@@ -827,7 +864,7 @@ static void testDashTech() {
         CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f);
         { MoveState p = q; step(p, UserCmd()); step(p, UserCmd()); UserCmd again; again.buttons = BTN_DASH; step(p, again);
           CHECK(p.dashTimer == 0 && p.dashCharges == 2 && p.dashRecharging == 0 && p.dashCooldownMs == 597); }   // both charges (a dash jump gives its own back), no dash for 0.6 s after the jump ended it
-        float peak, dist = flight(q, BTN_DASH, &peak);
+        float peak, dist = flight(q, 0, &peak);   // (dash let go: held, T2 dashes again 0.6 s on)
         printf("  dash jump: %.1f m across, %.2f m up (a jump: 1.22)\n", dist, peak);
         CHECK(peak > 1.18f && peak < 1.26f && dist > 15.5f && dist < 16.5f);
         // the same dash without jump: settles to the exit speed as before, on the floor
@@ -7122,7 +7159,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

@@ -424,6 +424,8 @@ private:
     double lastMx_ = 0, lastMy_ = 0;
     bool mouseCaptured_ = false, firstMouse_ = true;
     bool fireLatched_ = false;
+    double dashHoldUntil_ = -1;   // a dash press holds BTN_DASH till then, or till its dash starts (pmove dashes while it's held)
+    static constexpr double kDashPressBuffer = 0.1;
     uint16_t moveLatched_ = 0;   // BTN_JUMP / DASH / GRAPPLE pressed since the last command (a tap shorter than a tick still counts)
     bool localFireHeld_ = false, scopeOverlay_ = false, localFireLocked_ = false;
     double localFireQueued_ = -1;
