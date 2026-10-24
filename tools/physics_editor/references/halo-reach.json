@@ -1,0 +1,91 @@
+{
+ "id": "halo-reach",
+ "name": "Halo: Reach (MCC)",
+ "year": 2010,
+ "engine": "Blam!",
+ "group": "arena shooters",
+ "scale": {
+  "unit": "Forge m",
+  "metresPerUnit": 0.843645,
+  "why": "speeds measured in Forge metres; scaled to 1.8 m taking the Spartan as about 7 ft (2.134 m, the H2EK player reference): 0.8435 m per Forge metre"
+ },
+ "values": {
+  "speed": {
+   "value": 5.7537,
+   "unit": "m/s",
+   "mult": 0.6057,
+   "source": "https://www.bungie.net/en/Forums/Post/3291870 (default Slayer movement speed 6.82 m/s)",
+   "confidence": "measured",
+   "raw": "run 6.82 Forge m/s",
+   "note": "one player's measurement over the Forge grid; the 1.8 m rescale is an assumption"
+  },
+  "gravity": {
+   "value": 9.5,
+   "unit": "m/s2",
+   "mult": 0.4318,
+   "source": "https://www.bungie.net/en/Forums/Post/3291870 (jump peak 195 % of the Spartan's height, 1.2 s in the air)",
+   "confidence": "estimated",
+   "raw": "195 %, 1.2 s",
+   "note": "derived from the measured jump: rise = (195 - 100) % of 1.8 m = 1.71 m, g = 8 x rise / airtime^2"
+  },
+  "jump": {
+   "value": 5.7,
+   "unit": "m/s",
+   "mult": 0.7766,
+   "source": "https://www.bungie.net/en/Forums/Post/3291870 (jump peak 195 %, 1.2 s)",
+   "confidence": "estimated",
+   "raw": "195 %, 1.2 s",
+   "note": "take-off speed = 4 x rise / airtime = 4 x 1.71 / 1.2"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://www.bungie.net/en/Forums/Post/3291870",
+   "confidence": "exact",
+   "note": "no dash in the default loadouts (Reach's Evade armour ability is a dodge)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://www.bungie.net/en/Forums/Post/3291870",
+   "confidence": "exact",
+   "note": "no grapple (Halo Infinite adds the Grappleshot)"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.71,
+   "unit": "m",
+   "source": "https://www.bungie.net/en/Forums/Post/3291870 (195 % head height at the apex)",
+   "confidence": "estimated",
+   "note": "95 % of the player's height, scaled to 1.8 m; Quark: 1.22 m"
+  },
+  "airTime": {
+   "value": 1.2,
+   "unit": "s",
+   "source": "https://www.bungie.net/en/Forums/Post/3291870",
+   "confidence": "measured",
+   "note": "Quark: 0.67 s"
+  },
+  "mlgSpeed": {
+   "value": 6.3273,
+   "unit": "m/s",
+   "source": "https://www.bungie.net/en/Forums/Post/3291870 (Reach MLG 7.5 m/s, 110% speed, 150% gravity)",
+   "confidence": "measured"
+  }
+ },
+ "extras": [
+  "armour abilities: sprint, evade (a dodge), jetpack, armour lock",
+  "crouch jumping",
+  "slow, high jumps compared with arena shooters: the airtime (1.2 s) is about twice Quark's"
+ ],
+ "notes": "One player's measurements (bungie.net, 2011): run speed over the Forge grid, jump height in hundredths of the Spartan's height and airtime. Gravity and jump speed are derived from the height and airtime (estimates), and everything is rescaled to a 1.8 m player taking the Spartan as 7 ft.",
+ "sources": [
+  {
+   "title": "bungie.net: classic Halo movement speed, jump height, gravity",
+   "url": "https://www.bungie.net/en/Forums/Post/3291870"
+  },
+  {
+   "title": "H2EK: Player Statistics and Metrics (Spartan about 7 ft)",
+   "url": "https://www.h2maps.net/editingkit/player%20statistics%20and%20metrics.html"
+  }
+ ]
+}

@@ -59,6 +59,24 @@
    "outsideClamp": true,
    "note": "(x10.0 is outside the editor's 0.1..5 range: applying it clamps.)"
   },
+  "gravity": {
+   "value": 17.532,
+   "unit": "m/s2",
+   "mult": 0.7969,
+   "source": "https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645 (a Workshop 'start accelerating' up at 17.532 m/s2 cancels gravity)",
+   "confidence": "measured",
+   "raw": "17.532 m/s2",
+   "note": "found by Workshop users: the upward acceleration that holds a hero still in the air"
+  },
+  "jump": {
+   "value": 5.862,
+   "unit": "m/s",
+   "mult": 0.7986,
+   "source": "https://overwatch.fandom.com/wiki/Character (jump height 0.98 m) with https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645 (gravity 17.532 m/s2)",
+   "confidence": "estimated",
+   "raw": "sqrt(2 x 17.532 x 0.98)",
+   "note": "take-off speed for the wiki's 0.98 m jump at the Workshop-measured gravity: sqrt(2 x 17.532 x 0.98)"
+  },
   "dash": {
    "value": false,
    "source": "https://overwatch.fandom.com/wiki/Character",
@@ -98,7 +116,7 @@
   "hero-specific movement abilities (blinks, dashes, wall-ride, jet packs, double jumps)",
   "no air strafing to speak of"
  ],
- "notes": "Gravity and acceleration aren't documented, so jump take-off speed is left out (jump height only). The dash and hook rows are single heroes (Tracer, Widowmaker).",
+ "notes": "Acceleration isn't documented. Gravity is the Workshop community's counter-gravity figure (17.532 m/s2), and the jump take-off speed is derived from it and the wiki's 0.98 m jump, so both are estimates of a kind. The dash and hook rows are single heroes (Tracer, Widowmaker).",
  "sources": [
   {
    "title": "Overwatch Wiki: Character",
@@ -111,6 +129,10 @@
   {
    "title": "Overwatch Wiki: Widowmaker",
    "url": "https://overwatch.fandom.com/wiki/Widowmaker"
+  },
+  {
+   "title": "Overwatch Forums: how to counter gravity (Workshop)",
+   "url": "https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645"
   }
  ]
 }

@@ -1,0 +1,85 @@
+{
+ "id": "reflex",
+ "name": "Reflex Arena",
+ "year": 2017,
+ "engine": "Reflex (Turbo Pixel Studios)",
+ "group": "arena shooters",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.032143,
+  "why": "assumed Quake's scale (a 56 u player, 0.03214 m/u): Reflex speeds follow Quake / CPM (320 ups), but its hull size isn't published"
+ },
+ "values": {
+  "speed": {
+   "value": 10.2857,
+   "unit": "m/s",
+   "mult": 1.0827,
+   "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players (base running speed 320 UPS)",
+   "confidence": "estimated",
+   "raw": "base run 320 u/s",
+   "note": "the number is the wiki's; the metre conversion assumes Quake's player size"
+  },
+  "dash": {
+   "value": false,
+   "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "wallrunMaxSpeed": {
+   "value": 16.2964,
+   "unit": "m/s",
+   "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players (wall running / circle strafe max 507 UPS)",
+   "confidence": "estimated",
+   "note": "507 UPS at the assumed Quake scale"
+  },
+  "circleJumpSpeed": {
+   "value": 15.4286,
+   "unit": "m/s",
+   "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players (circle jump about 480 UPS or more)",
+   "confidence": "estimated"
+  },
+  "doubleJumpWindow": {
+   "value": 0.4,
+   "unit": "s",
+   "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players (second jump within 400 ms)",
+   "confidence": "measured",
+   "note": "a jump within 0.4 s of the last one goes higher (stackable up to a triple jump)"
+  },
+  "doubleJumpBonus": {
+   "value": 3.3429,
+   "unit": "m",
+   "source": "https://steamcommunity.com/sharedfiles/filedetails?id=387675048 (double jump height bonus 104 u)",
+   "confidence": "estimated",
+   "note": "104 u at the assumed Quake scale"
+  }
+ },
+ "extras": [
+  "CPM-style air control and strafe jumping",
+  "double and triple jumps (consecutive jumps within 0.4 s stack height)",
+  "ramp jumps",
+  "wall running (507 UPS cap)"
+ ],
+ "notes": "Reflex's physics constants (jump, ground speed and acceleration, air control, bunny acceleration and wish speed, gravity) became server-editable in 0.47.3's Experimental Plus ruleset, but their values weren't found published. Only the run speed and a few movement facts are here.",
+ "sources": [
+  {
+   "title": "Reflex Wiki: Tutorial for New Players",
+   "url": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players"
+  },
+  {
+   "title": "Steam guide: Reflex Arena mechanics",
+   "url": "https://steamcommunity.com/sharedfiles/filedetails?id=387675048"
+  },
+  {
+   "title": "Reflex Wiki: Changelog 0.47.x",
+   "url": "http://wiki.reflexfiles.com/index.php?title=Reflex_Changelog_0.47.x"
+  }
+ ]
+}

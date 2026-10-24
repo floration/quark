@@ -46,7 +46,8 @@ parts live on branches of their own (docs/HANDOVER.md section 4):
   Discord webhook (`QUARK_ALERT_WEBHOOK` in `/etc/quark/update.env`; an optional `GITHUB_TOKEN` there raises GitHub's
   rate limit). Both servers run sandboxed, testing at a lower CPU priority.
   **Load governor:** the two share the box through `/var/lib/quark-governor` (`--governor-dir`; `src/game/governor.h`).
-  When it can't carry both (a server falls behind its ticks, or its players lose snapshots), the empty server is
+  When it can't carry both (a server falls behind its ticks in two rate windows in a row, or its players lose
+  snapshots), the empty server is
   throttled first, a tick-rate step at a time down to 125 Hz, then the one not playing a ranked match, then the other;
   if both are at 125 Hz and production is still overloaded for 30 s, the testing server closes (its players are told
   why; it leaves the list) until production has been calm for 5 minutes. Production never closes. Rates climb back one

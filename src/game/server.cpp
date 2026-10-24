@@ -43,17 +43,28 @@ constexpr double kEditBudgetMs = 0.5;      // per tick, all players: past it, ed
 constexpr int kDeepQueue = 2;
 constexpr int kDeepTicks = 32;
 constexpr float kCatchUpRefill = 0.01f;   // commands per tick
-// Tick-rate test (Server::rateWindow_, 3 s windows): each window must stay clean or the rate steps down.
+// Tick-rate test (Server::rateWindow_, 3 s windows): each window must stay clean or the rate steps down (late ticks
+// and stalls alone: kLateWindows windows in a row).
 constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods late (counted only with real load)
 constexpr int kMaxClientLossPct = 2;       // snapshot loss a client may report
 // Stalls, whatever the load: a tick that starts over 2 snapshot intervals late (and over 3 ms) holds a snapshot back
 // past the client's 2-interval interpolation buffer: a hitch, and its jitter estimate then draws everyone further in
 // the past. 1000 Hz / 500 snapshots: 4 ms, 250 Hz: 8 ms, 125 Hz: 16 ms. Windows' 1 ms timer grid makes healthy ticks up
-// to ~1-1.7 ms late (p99 ~0.7-1 ms): never one. More than 1% of a window's ticks (~1% of the time, 30 ms in 3 s) steps
-// the tick rate down at the next break: a shared / CPU-capped VM waking 1-7 ms late at p99 (the Oracle box) stalls at
-// 1000 Hz, while at 125 Hz an 8 ms period absorbs ms-scale wake-ups (and 8x fewer wake-ups and spins use less quota).
+// to ~1-1.7 ms late (p99 ~0.7-1 ms): never one. More than 1% of a window's ticks (~1% of the time, 30 ms in 3 s), in
+// two windows in a row (kLateWindows), steps the tick rate down at the next break: a shared / CPU-capped VM waking 1-7
+// ms late at p99 (the Oracle box) stalls at 1000 Hz, while at 125 Hz an 8 ms period absorbs ms-scale wake-ups (and 8x
+// fewer wake-ups and spins use less quota).
 constexpr double kStallSnaps = 2, kStallMin = 0.003;
 constexpr double kMaxStallFraction = 0.01;
+// Late ticks / stalls with no other reason (busy at most 50%, no bandwidth or player loss / ping reason) count only
+// when kLateWindows judged windows in a row have them: a cloud VM's host now and then doesn't run us for 15-50 ms
+// (steal; measured on a 4 vCPU box: a 1 ms sleep woke over 4 ms late 25 times a minute, up to 21 ms; a spin, 51 ms),
+// and one 35 ms pause is ~31 ticks over 4 ms, over 1% of a 3 s window at 1000 Hz: a step down for a hitch nobody
+// felt. A host that really can't hold the rate stalls in every window. The first window only arms the test (logged;
+// a clean window, a window not judged or a rate change disarms it, and the governor isn't told of it); load,
+// bandwidth and players' loss / ping still count at once (one pause can't make those: busy is the share of time
+// simulating, loss counts missing ticks, ping is a window minimum).
+constexpr int kLateWindows = 2;
 // Bandwidth short: the upload over 90% of --max-upload-kbps; any send failure (the socket's buffer full: our own
 // uplink); or most players (2 or more, and 2 of 3) at once losing snapshots or with their ping up by over
 // max(25 ms, half) of what it is while uncongested (a queue on our uplink delays everyone alike; one player's bad
@@ -274,7 +285,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     rateTopLevel_ = rateLevel_;
     rateUpWait_ = 60; rateUpAt_ = 0;
-    rateDownPending_ = false; rateRaisedAt_ = -1e9; rateRaisedSnap_ = false;
+    rateDownPending_ = false; rateRaisedAt_ = -1e9; rateRaisedSnap_ = false; lateWindows_ = 0;
     snapCap_ = 0; rateWhy_.clear(); rateHoldUntil_ = 0;
     nextTick_ = timeNow();
     rateWindowStart_ = nextTick_; upKbps_ = -1;
@@ -468,6 +479,7 @@ void Server::stepRateDown(const char* why) {
     rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
     rateDownPending_ = false;
     rateRaisedAt_ = -1e9;   // (undone: the next step down waits for a break again)
+    lateWindows_ = 0;       // (the new rate is judged afresh: its own stall threshold)
     message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
     rateWhy_ = "tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")";
     log(rateWhy_);
@@ -483,6 +495,7 @@ bool Server::stepSnapDown(const char* why) {
         rateUpAt_ = timeNow() + rateUpWait_;
         rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
         rateRaisedAt_ = -1e9;
+        lateWindows_ = 0;
         message("server snapshot rate lowered to " + std::to_string(snapRate()) + "/s");
         rateWhy_ = "snapshot rate -> " + std::to_string(snapRate()) + "/s (" + why + ")";
         log(rateWhy_);
@@ -500,8 +513,11 @@ void Server::checkTickRate() {
     if (governed) { if (applyGovernorCap(between)) return; }
     else if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown(("fell behind during the round: " + rateDownWhy_).c_str()); resetRateWindow(); return; }
     if (now - rateWindowStart_ < rateWindow_) return;
-    if (!g_serverRateCheck) { resetRateWindow(); return; }
-    if (editing_ || paused_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) { resetRateWindow(); return; }
+    if (!g_serverRateCheck || editing_ || paused_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) {
+        lateWindows_ = 0;   // (a window not judged: the next late one is a first again)
+        resetRateWindow();
+        return;
+    }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
     double busy = windowBusy_ / std::max(1e-6, now - rateWindowStart_); // share of the time spent simulating + sending
@@ -531,8 +547,21 @@ void Server::checkTickRate() {
     const bool cpuBad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2);
     const bool stallBad = stall > kMaxStallFraction;
     const bool netBad = windowSendFail_ > 0 || overCap || most(lossy, active) || most(risen, pinged);
-    bool bad = cpuBad || stallBad || netBad;
-    windowBad_ = bad; windowSevere_ = busy > 0.9; windowCheckedAt_ = now;   // (what the governor sees)
+    // Late ticks / stalls alone count from the kLateWindows-th window in a row (one host pause: see kLateWindows)
+    const bool late = cpuBad || stallBad;
+    const int lateRun = late ? std::min(lateWindows_ + 1, kLateWindows) : 0;
+    if (late && lateWindows_ == 0) lateSince_ = now;
+    const bool waitLate = late && lateRun < kLateWindows && busy <= 0.5 && !netBad;
+    if (waitLate) {   // (rare: a log line, no step)
+        char b[160];
+        if (stallBad) snprintf(b, sizeof b, "tick rate: late ticks in one window (%.1f%% of ticks over %.1f ms late), waiting for a second", stall * 100, stallAfter_ * 1e3);
+        else snprintf(b, sizeof b, "tick rate: late ticks in one window (busy %.0f%%, late %.1f%%), waiting for a second", busy * 100, lateFrac * 100);
+        log(b);
+    } else if (!late && lateWindows_ > 0 && lateWindows_ < kLateWindows) log("tick rate: the next window was clean: no step down (a one-off host pause)");
+    lateWindows_ = !late ? 0 : waitLate ? lateRun : kLateWindows;   // (1..kLateWindows-1: waiting; kLateWindows: late ticks count)
+    const bool raw = late || netBad;   // (a step up needs a clean window, whatever counts)
+    bool bad = raw && !waitLate;
+    windowBad_ = bad; windowSevere_ = busy > 0.9; windowCheckedAt_ = now;   // (what the governor sees: a first late window isn't yet)
     if (governed) { resetRateWindow(); return; }
     // Below the top rate, now and then try the next one up (the tick rate first, then the snapshot rate): a clean,
     // lightly loaded window (stalls counted as the next rate would count them), room under the upload cap, and the
@@ -544,7 +573,7 @@ void Server::checkTickRate() {
         const int upHz = tickUp ? kTickRates[rateLevel_ - 1] : tickRate(), upCap = tickUp ? snapCap_ : snapCapUp();
         const double more = (double)(upHz / snapEveryAt(upHz, upCap)) / snapRate();   // upload grows with the snapshot rate
         bool room = cfg_.maxUploadKbps <= 0 || upKbps * more < kUploadRoom * cfg_.maxUploadKbps;
-        bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && stallUp < kMaxStallFraction * 0.5 && lossySome < 2 && risen < 2;
+        bool clean = !raw && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && stallUp < kMaxStallFraction * 0.5 && lossySome < 2 && risen < 2;
         if (clean && room) {
             char why[96];
             snprintf(why, sizeof why, "trying the next rate up: busy %d%%, upload %.0f kbps", (int)(busy * 100), upKbps);
@@ -573,7 +602,8 @@ void Server::checkTickRate() {
         if (overCap) add("upload %.0f of %d kbps", upKbps, cfg_.maxUploadKbps);
         if (most(lossy, active)) add("%d of %d players losing snapshots (worst %d%%)", lossy, active, worstLoss);
         if (most(risen, pinged)) add("ping up on %d of %d players", risen, pinged);
-        bool undo = now - rateRaisedAt_ < 3 * rateWindow_;   // our own recent step up didn't hold: back down now
+        // our own recent step up didn't hold: back down now (late ticks: from the first window of the run)
+        bool undo = (late ? lateSince_ : now) - rateRaisedAt_ < 3 * rateWindow_;
         // bandwidth alone: fewer snapshots first, at once (the tick rate once they're at the floor)
         if ((undo && rateRaisedSnap_) || (!undo && !cpuBad && !stallBad)) { if (stepSnapDown(w.c_str())) { resetRateWindow(); return; } }
         if (rateLevel_ < kTickRateLevels - 1) {
@@ -600,6 +630,7 @@ bool Server::applyGovernorCap(bool between) {
     rateLevel_ = cap;
     rateDownPending_ = false;
     rateRaisedAt_ = -1e9;
+    lateWindows_ = 0;
     rateUpWait_ = 60; rateUpAt_ = timeNow() + rateUpWait_;   // (running alone again later: no instant self step-up)
     const char* other = cfg_.channel == GOV_TESTING ? "the production server" : "the testing server";
     if (!empty) message(std::string("server tick rate ") + (lower ? "lowered" : "raised") + " to " + std::to_string(tickRate()) + " Hz (this machine also runs " + other + ")");
@@ -1775,6 +1806,8 @@ std::string Server::statusText() {
         s += t;
         if (upKbps_ >= 0) { snprintf(t, sizeof t, ", upload %.0f%s kbps (%.0f packets/s), download %.0f kbps (%.0f/s)", upKbps_, cap, upPps_, downKbps_, downPps_); s += t; }
         if (!rateWhy_.empty()) s += "\nlast rate change: " + rateWhy_;
+        if (lateWindows_ > 0 && lateWindows_ < kLateWindows) s += "\nlate ticks in the last window: waiting for a second before stepping down";
+        if (rateDownPending_) s += "\ntick rate steps down at the next break (" + rateDownWhy_ + ")";
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];

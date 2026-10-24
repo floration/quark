@@ -1,0 +1,112 @@
+{
+ "id": "quake-champions",
+ "name": "Quake Champions (Ranger, a medium)",
+ "year": 2017,
+ "engine": "Saber / id Software (id Tech derived)",
+ "group": "Quake family",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.025,
+  "why": "the game's own metres: the patch notes write 2.5 m = 100 u and 0.5 m = 20 u, so 40 u = 1 m (0.025 m/u); champions vary in size, so not rescaled to 1.8 m"
+ },
+ "values": {
+  "speed": {
+   "value": 7.75,
+   "unit": "m/s",
+   "mult": 0.8158,
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU (June 2018 patch: all mediums 310 base speed)",
+   "confidence": "exact",
+   "raw": "base speed 310 u/s",
+   "note": "the developer's published number; lights 320 (Anarki, Nyx, Slash...), heavies 300; Ranger is a medium"
+  },
+  "air_accel": {
+   "value": 0.0906,
+   "unit": "",
+   "mult": 0.0412,
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU (all mediums 0.905723 air accel; lights 0.85, heavies 0.967111)",
+   "confidence": "estimated",
+   "raw": "Air-Accel 0.905723",
+   "outsideClamp": true,
+   "note": "if Quake Champions keeps Quake III's air formula (accel toward the wish speed; Quake III's is 1): Quark-equivalent 0.9057 / 10. The formula isn't published (x0.0412 is outside the editor's 0.1..5 range: applying it clamps.)"
+  },
+  "air_cap": {
+   "value": 7.75,
+   "unit": "m/s",
+   "mult": 3.3696,
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU (base speed 310: the wish speed a Quake III-style air push aims at)",
+   "confidence": "estimated",
+   "raw": "wish speed 310 u/s"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU",
+   "confidence": "exact",
+   "note": "champion abilities only (several champions have dashes or blinks)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "maxSpeed": {
+   "value": 15.0,
+   "unit": "m/s",
+   "source": "https://quake.fandom.com/wiki/Ranger_(QC) (speed 310, max 600)",
+   "confidence": "measured",
+   "note": "Ranger's listed top speed (600 u/s); forum posts cite a 680 u/s cap for light champions"
+  },
+  "lightSpeed": {
+   "value": 8.0,
+   "unit": "m/s",
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU (all lights 320 base speed)",
+   "confidence": "exact"
+  },
+  "heavySpeed": {
+   "value": 7.5,
+   "unit": "m/s",
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU (all heavies 300 base speed)",
+   "confidence": "exact"
+  },
+  "anarkiFriction": {
+   "value": 8,
+   "unit": "",
+   "source": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU (Anarki and Sorlag: friction 9 -> 8; circle strafe friction 15 -> 12 / 14)",
+   "confidence": "exact",
+   "note": "per-champion friction; the other champions' values aren't published (9 before this patch for these two)"
+  },
+  "slayerDoubleJump": {
+   "value": 6.875,
+   "unit": "m/s",
+   "source": "https://quake.bethesda.net/en/news/4ii1II7x0GWYdL28HEOJ34 (Fall 2021 update: DOOM Slayer double jump velocity 7.5 -> 6.875 m/s)",
+   "confidence": "exact"
+  }
+ },
+ "extras": [
+  "per-champion base speed, air acceleration and friction (light / medium / heavy)",
+  "bunny hopping and strafe jumping with a speed cap per champion",
+  "champion active abilities (dashes, teleports, a hoverboard...)",
+  "rocket jumping"
+ ],
+ "notes": "Base speeds and air acceleration are the developer's published numbers (June 2018 patch notes, which also give the 40 u = 1 m scale). Gravity, jump speed, ground acceleration and the air formula aren't published, so the air mapping is an estimate (assumes Quake III's formula).",
+ "sources": [
+  {
+   "title": "Quake Champions June patch update 07.06.2018",
+   "url": "https://quake.bethesda.net/en/news/2fSdxgKqKYKgsyeOmggmuU"
+  },
+  {
+   "title": "Quake Champions Fall 2021 update",
+   "url": "https://quake.bethesda.net/en/news/4ii1II7x0GWYdL28HEOJ34"
+  },
+  {
+   "title": "Quake Wiki: Ranger (QC)",
+   "url": "https://quake.fandom.com/wiki/Ranger_(QC)"
+  },
+  {
+   "title": "Steam discussion: Quake Champions speed cap",
+   "url": "https://steamcommunity.com/app/611500/discussions/0/1694919808737834911"
+  }
+ ]
+}

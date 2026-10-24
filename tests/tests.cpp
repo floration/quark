@@ -113,10 +113,11 @@ struct HumanMadeGrace {
 
 // Host pauses. The tick-rate tests run the server and its clients in real time on this one thread, and the server
 // rightly counts a tick more than its stall threshold late (4 ms at 1000 Hz / 500 snapshots/s) as a stall players see:
-// 1% of a window's ticks steps it down. A cloud VM sometimes doesn't run the thread at all: on a 4 vCPU sandbox with
-// nothing else running, a plain 1 ms sleep woke more than 4 ms late 25 times a minute and up to 21 ms late (a spin:
-// 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms, 1.6% of a 1 s window. That isn't the code
-// under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
+// 1% of a window's ticks, in two windows in a row (kLateWindows), steps it down; the tests also check single windows
+// (one arms the test, a clean one disarms it, a healthy host's window has under 0.2%). A cloud VM sometimes doesn't run
+// the thread at all: on a 4 vCPU sandbox with nothing else running, a plain 1 ms sleep woke more than 4 ms late 25
+// times a minute and up to 21 ms late (a spin: 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms,
+// 1.6% of a 1 s window. That isn't the code under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
 // the server's code does can lengthen it), and an attempt of a timing test that failed while the host paused past the
 // stall threshold is set aside and run again (timingTest). Every check is the same; the third attempt always counts.
 static double g_hostPause = 0;   // the longest host pause in this attempt (real seconds)
@@ -8058,6 +8059,7 @@ int main(int argc, char** argv) {
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
             timingTest("tick rate fallback", [] { testTickRateFallback(TP(28710)); });
             timingTest("rate between rounds", [] { testRateBetweenRounds(TP(28711)); });
+            timingTest("rate two windows", [] { testRateTwoWindows(TP(28713)); });
             timingTest("rate undo step up", [] { testRateUndoStepUp(TP(28712)); });
             timingTest("rate jitter", [] { testRateJitter(TP(28720)); });
             timingTest("upload cap", [] { testUploadCap(TP(28721)); });
