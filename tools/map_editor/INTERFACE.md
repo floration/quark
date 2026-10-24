@@ -9,7 +9,13 @@ Three parts, owned by separate workers:
 - The page (`tools/map_editor/index.html`, `editor.css`, `js/*.js`; `js/deco*.js` is the decoration worker's).
 
 No map format change: the page edits a JSON form of the map and the helper writes the `.qmap` text (the game's own
-`Map::serialize`). Decoration rules live in a sidecar `<map>.mapedit.json` next to the map.
+`Map::serialize`). Editor-only data lives in a sidecar `<map>.mapedit.json` next to the map: `figures`, `botStarts`,
+`tests`, `deco` (decoration rules), `objects` (custom objects: `{name, def, rot, min, max}`, see `js/repeat.js`; their
+boxes are also written into the .qmap as plain boxes), `camera`, `bots`.
+
+Server routes besides `POST /api/<command>` (see `serve.py`'s docstring): `PUT /api/map/mine/<name>` (refused with
+422 when `quark_maptool parse` can't load the text), `DELETE /api/map/mine/<name>` (moved to `deleted/`),
+`POST /api/rename`, `GET|PUT /api/clipboard`, `GET /api/library`, `PUT|DELETE /api/library/<name>`.
 
 ## Map JSON (`quark_maptool parse`, `quark_maptool serialize`)
 

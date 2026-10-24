@@ -58,6 +58,39 @@ class App {
         });
     }
 
+    // A choice in a modal: buttons [{k, label, primary?, danger?}]; resolves with the chosen k (Escape: null)
+    choose(title, text, buttons) {
+        return new Promise((res) => {
+            const m = document.createElement("div");
+            m.className = "modal";
+            m.innerHTML = `<div><h3></h3><p style="font-size:12px;white-space:pre-wrap"></p><div class="row" style="justify-content:flex-end;margin-top:10px"></div></div>`;
+            m.querySelector("h3").textContent = title;
+            m.querySelector("p").textContent = text;
+            const done = (k) => { removeEventListener("keydown", key, true); m.remove(); res(k); };
+            const key = (e) => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
+            addEventListener("keydown", key, true);
+            const row = m.querySelector(".row");
+            for (const b of buttons) {
+                const e = document.createElement("button");
+                e.textContent = b.label;
+                if (b.primary) e.className = "primary"; else if (b.danger) e.className = "danger";
+                e.onclick = () => done(b.k);
+                row.append(e);
+            }
+            document.body.append(m);
+            (row.querySelector(".primary") || row.lastChild).focus();
+        });
+    }
+    // a file name asked for until it's valid (letters, digits, _ . -; not reserved) or cancelled
+    async promptName(title, value, help, reserved = ["default"]) {
+        for (let v = value; ;) {
+            const n = await this.prompt(title, v, help);
+            if (n == null || n === "") return null;
+            if (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n) && !n.includes("..") && !reserved.includes(n)) return n;
+            v = n; help = `“${n}” can't be used: letters, digits, _ . - (starting with a letter or digit, no “..”${reserved.length ? ", not " + reserved.map((x) => "“" + x + "”").join(" / ") : ""}).`;
+        }
+    }
+
     async boot() {
         if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed");   // (inside the project manager)
         try { this.config = await api.config(); }
@@ -151,13 +184,28 @@ class App {
     }
     brainTextFor(name) {
         if (name === "(editor)" && this.brain) {
-            // an unsaved edit of the default would show as "default#<hash>" in the game's label: call it "editor"
-            const t = this.brain.currentText();
-            return t == null ? t : t.replace(/^brain "default"$/m, 'brain "editor"');
+            // the game's label (name#hash) names the file open in the editor; an unsaved edit of the default would
+            // show as "default#<hash>": call it "editor"
+            const t = this.brain.currentText(), n = this.brain.name === "default" ? "editor" : this.brain.name;
+            return t == null ? t : t.replace(/^brain "[^"\n]*"$/m, `brain "${n}"`);
         }
         return this.brainText.get(name);
     }
 }
+
+// Colour theme: "auto" follows the system; the choice is this browser's own convenience (localStorage)
+const THEMES = ["auto", "light", "dark"];
+const sysLight = matchMedia("(prefers-color-scheme: light)");
+function applyTheme(t) {
+    document.documentElement.dataset.theme = t === "auto" ? (sysLight.matches ? "light" : "dark") : t;
+    const b = $("themeBtn");
+    if (b) b.textContent = { auto: "◐ auto", light: "☀ light", dark: "☾ dark" }[t];
+}
+let theme = "auto";
+try { theme = THEMES.includes(localStorage.getItem("qbe.theme")) ? localStorage.getItem("qbe.theme") : "auto"; } catch {}
+applyTheme(theme);
+sysLight.addEventListener("change", () => { applyTheme(theme); window.dispatchEvent(new Event("qbe-theme")); });
+$("themeBtn").onclick = () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; try { localStorage.setItem("qbe.theme", theme); } catch {} applyTheme(theme); window.dispatchEvent(new Event("qbe-theme")); };
 
 const app = new App();
 window.qbe = app;   // (for the console and the headless checks)

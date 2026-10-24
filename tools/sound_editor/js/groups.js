@@ -23,10 +23,15 @@
     } },
     { id: 'movement', name: 'Movement', arg: 'kits', make: kits => kits.map(k => Q.newGroup(Q.kitByDir(k).name + ' movement', Q.MOVEMENT.map(n => Q.key('sound', k, n)))) },
     { id: 'sameSound', name: 'Same sound across all kits', arg: 'sound', make: n => [Q.newGroup(n + ' across kits', Q.KITS.map(k => Q.key('sound', k.dir, n)), { target: { mode: 'ref', value: -20, ref: Q.key('sound', 'default', n) } })] },
-    { id: 'oneVoice', name: "One voice's lines", arg: 'voice', make: v => [Q.newGroup(Q.voiceByDir(v).name + ' lines', Q.LINES.map(l => Q.key('voice', v, l)))] },
-    { id: 'sameLine', name: 'Same line across all voices', arg: 'line', make: l => [Q.newGroup(l + ' across voices', Q.VOICES.map(v => Q.key('voice', v.dir, l)))] },
-    { id: 'allVoices', name: 'All voices (every recorded line)', arg: null, make: () => [Q.newGroup('All voices', [].concat(...Q.VOICES.map(v => Q.LINES.map(l => Q.key('voice', v.dir, l)))), { target: { mode: 'lufs', value: -16, ref: null } })] },
+    { id: 'oneVoice', name: "One voice's lines", arg: 'voice', make: v => [Q.newGroup(Q.voiceByDir(v).name + ' lines', have(Q.LINES.map(l => Q.key('voice', v, l))))] },
+    { id: 'oneVoiceQuips', name: "One voice's quips", arg: 'voice', make: v => [Q.newGroup(Q.voiceByDir(v).name + ' quips', have(Q.QUIPS.map(l => Q.key('voice', v, l))))] },
+    { id: 'sameLine', name: 'Same line or quip across all voices', arg: 'line', make: l => [Q.newGroup(l + ' across voices', have(Q.VOICES.map(v => Q.key('voice', v.dir, l))))] },
+    { id: 'allVoices', name: 'All voices (every recorded line)', arg: null, make: () => [Q.newGroup('All voices', have([].concat(...Q.VOICES.map(v => Q.LINES.map(l => Q.key('voice', v.dir, l))))), { target: { mode: 'lufs', value: -16, ref: null } })] },
+    { id: 'allQuips', name: "All voices' quips", arg: null, make: () => [Q.newGroup('All quips', have([].concat(...Q.VOICES.map(v => Q.QUIPS.map(l => Q.key('voice', v.dir, l))))), { target: { mode: 'lufs', value: -16, ref: null } })] },
   ];
+  function have(keys) { return keys.filter(k => Q.assets[k]); }
+  // a group made again from the same preset (same name, same members) is the same group: not added twice
+  Q.groupSig = g => g.name + '|' + g.members.slice().sort().join(',');
 
   Q.measureValue = (m, measure) => m ? m[measure] : -Infinity;
 

@@ -49,13 +49,17 @@ folder with `py -3 serve.py --port 8773 --no-open` and `QUARK_SHELL=1`, and show
 
 The header badge says where the numbers come from.
 
-- **quark_maptool**: the helper has the weapon commands (`wpnparams`, `wpncheck`, `wpnstats`, `wpnrange`). Every
-  number is the game's: its catalog, its check, its damage math, and the range is the game's server firing real
-  shots at bots, 1 ms at a time.
+- **quark_maptool**: the helper has the weapon commands (`wpnparams`, `wpncheck`, `wpnstats`, `wpnrange`). The
+  catalog and the check are the game's, and the range is the game's server firing real shots at bots, 1 ms at a time.
+  The tables and charts are worked out by the page (`web/js/stats.js`, instant on every edit) with the game's
+  arithmetic; once per load the page compares them with `wpnstats` on the standard set at 0 and 20 m, and a
+  mismatch (stats.js behind a change in `gamedefs.h`) puts **≠** on the badge with the differences in its tooltip.
 - **MOCK**: the page works it out itself (`web/js/stats.js` for the numbers, `web/js/mockrange.js` for the range)
   from the same fields and the same rules as `src/game/gamedefs.h`. With `quark_tests` built, the catalog (fields,
   ranges, defaults, sensors) and the check (the **checked** mark at the top) are still the game's, through
-  `quark_tests exportweapons` and `checkweapons`. Without it the page uses its built-in copy of the catalog.
+  `quark_tests exportweapons` and `checkweapons`. Without it the page uses its built-in copy of the catalog,
+  `web/js/catalog_data.js`, which `build_catalog.py` generates from `quark_tests exportweapons` (so it is the
+  game's too, as of the last rebuild; the tests below fail while it is stale: `python3 build_catalog.py` updates it).
 - **Fights** always need `quark_maptool` (its `sim` command, the bot editor's fights). Until the helper takes a
   weapon set (`weapons` in the request) the fights run with the standard weapons and the tab says so.
 
@@ -71,24 +75,25 @@ selected weapon's quick numbers. An unsaved set is kept as a draft and comes bac
 
 | tab | what it does |
 |---|---|
-| Weapon | one weapon: its label (the name shown in game), a slider, number and reset for every field, grouped (damage, fire, projectile, spread / scope, alt fire, knockback, falloff, the weapon's own fields), shots and time to kill against the comparison, damage against distance for each fire mode, and the logic that applies to it |
-| Values | every weapon and fire mode in one table (damage, shots to kill, time to kill, DPS, refire, range, speed, splash, falloff), changes marked green (stronger) or red (weaker), filters, and charts: DPS and time to kill against the comparison, damage against distance for each weapon |
-| Other games | Quark's weapons next to 224 weapons from 19 games (`web/data/games.json`, sources in `web/data/SOURCES.md`), normalised by each game's health: shots and time to kill, DPS as a share of health per second. The weapons closest to the selected one, a time-to-kill against shots-to-kill chart, and per game the target health (hero / class games: whose health) and a damage multiplier |
+| Weapon | one weapon: its label (the name shown in game), a slider, number and reset for every field, grouped (damage, fire, projectile, spread / scope, alt fire, knockback, falloff, the weapon's own fields), shots and time to kill against the comparison, damage against distance for each fire mode, and the logic that applies to it. **Copy values from…** puts another weapon's numbers (this set, the comparison or the standard) on this one in one edit: a variant is one of the 11 retuned (a 12th weapon needs game code: the game has 11 slots) |
+| Values | every weapon and fire mode in one table (damage, shots to kill, time to kill, DPS, refire, range, speed, splash, falloff, knockback, wallbang, self damage; the syringe's healing in its own table; a dropping projectile's range is how far it really reaches from eye height), changes marked green (stronger) or red (weaker), filters, and charts: DPS and time to kill against the comparison, damage against distance for each weapon |
+| Other games | Quark's weapons next to 228 weapons from 19 games (`web/data/games.json`, sources in `web/data/SOURCES.md`), normalised by each game's health: shots and time to kill, DPS as a share of health per second. The weapons closest to the selected one, a time-to-kill against shots-to-kill chart, and per game the target health (hero / class games: whose health) and a damage multiplier |
 | Code | the set's text: highlighted, problems in the gutter (the game's check when there is one), Tidy, and **Try a hit**: run the hit or kill logic with sensors you set and see the outputs and the lines that ran |
-| Blocks | the same text as blocks: drag from the palette (logic, maths, params, curves, sensors, outputs, weapons), one card per weapon with its values |
-| Graph | the logic as nodes and wires, one frame per weapon |
-| Range | fire the selected weapon at targets at 5, 10, 20, 40 and 80 m (still, strafing, a group) on the built-in range or any map, with perfect / head / body / bot aim; watch it top-down or in 3D, scrub the timeline, and compare hits, damage, kills and first-kill times with the comparison set |
-| Fights | bots fight on any map and mode with the weapons you allow: watch one match live, or run a batch of matches with the comparison set and then the edited set on the same seeds and compare kills, damage and accuracy per weapon |
+| Blocks | the same text as blocks: drag from the palette (logic, maths, params, curves, sensors, outputs, weapons), one card per weapon with its values. **+ Add** starts a slot (hit / kill, for every weapon or one), a curve or a param; a set with no logic says what slots and curves are and offers one-click starts |
+| Graph | the logic as nodes and wires, one frame per weapon; the same **+ Add** and empty-set starts as Blocks |
+| Range | fire the selected weapon at targets at 5, 10, 20, 40 and 80 m (still, strafing, a group) on the built-in range or any map, or targets you **Place** on a map (click: a target, shift+click: the shooter, drag to move, ctrl+click to remove, 16 at most), with perfect body, perfect head or bot aim; watch it top-down or in 3D, scrub the timeline, and compare hits, damage, kills and first-kill times with the comparison set |
+| Fights | bots fight on any map in any of 12 modes (ffa, vs, duel, 1v1, tourney, koth, bomb, payload, npayload, points, tag, hide; a warning when the map isn't built for it) with the weapons you allow: watch one match live, or run a batch of matches with the comparison set and then the edited set on the same seeds and compare win rates (team modes: each team's share of the matches that ended; matches that ran out of time are counted apart) and, per weapon, kills, fights won, damage, accuracy, TTK and DPS |
 
 ## Files
 
 - `serve.py`: the server (port 8773). Writes need the `X-Quark-Editor: 1` header the page sends.
-- `web/`: the page. `js/dsl.js` reads and writes `.qweapons`, `js/ast.js` checks and runs it, `js/catalog.js` is the
-  built-in catalog, `js/stats.js` the numbers, `js/mockrange.js` the MOCK range, `js/helper.js` talks to the game's
+- `build_catalog.py`: writes `web/js/catalog_data.js` from `quark_tests exportweapons` (`--check` only compares).
+- `web/`: the page. `js/dsl.js` reads and writes `.qweapons`, `js/ast.js` checks and runs it, `js/catalog.js` reads
+  the catalog (`js/catalog_data.js`, generated: never edit it by hand), `js/stats.js` the numbers, `js/mockrange.js` the MOCK range, `js/helper.js` talks to the game's
   programs.
 - `web/data/games.json`: other games' weapon data (with `SOURCES.md`).
 - `web/test/run.mjs`: the checks: `node tools/weapon_editor/web/test/run.mjs` (node 18+, Playwright from the
-  environment). It runs serve.py on a free port with a temporary data folder, checks the text round trips, the
+  environment). It runs serve.py on a free port (or `--port N`) with a temporary data folder, checks the text round trips, the
   Blocks / Graph round trips, the numbers, the range, the server's endpoints and the page in Chromium, and saves a
   screenshot of each tab into `--shots DIR` (default `/mnt/project-files/weapons-editor/shots/`). `--mock-only`
   ignores the game's programs; `--no-browser` skips Chromium.

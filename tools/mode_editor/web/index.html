@@ -16,6 +16,7 @@
 
   <section id="mode" class="page on">
     <aside id="modeLeft" class="panel">
+      <div id="modeStatus" title="where this page's parts come from (the header's badges, which the app's window hides)"></div>
       <h3>Mode</h3>
       <div class="field"><span>Open</span><select id="modeSel"></select></div>
       <div class="row">
@@ -24,6 +25,10 @@
       <div class="row" style="margin-top:4px">
         <button id="modeDownload" title="download the .qmode">⇩ .qmode</button><button id="modeUpload" title="open a .qmode file">⇧ Open file</button>
         <button id="modeResetAll" class="danger" title="the logic and this editor's keys back to the built-in base mode">Reset all</button>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <button id="modeRename" title="rename your mode's file (and its custommode= line); the old file is kept as .bak">Rename…</button><button id="modeDuplicate" title="copy your saved mode to a new name">Duplicate…</button>
+        <button id="modeDelete" class="danger" title="delete your mode's file (kept as &lt;name&gt;.qmode.bak)">Delete</button>
       </div>
       <label class="check muted" style="margin-top:6px" title="recorded in provenance.json (gamemodes/&lt;name&gt;) on save: ai unless ticked"><input type="checkbox" id="modeHuman"><span>I wrote this myself</span></label>
       <label class="check muted"><input type="checkbox" id="modeWhole"><span>save the whole logic (else only what differs from the built-in)</span></label>

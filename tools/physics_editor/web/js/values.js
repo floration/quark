@@ -46,6 +46,7 @@ export class ValuesView {
         app.on("physics", (from) => { if (from !== "values") { this._modesFromPhysics(); this.refresh(); } else this.refresh(true); });
         app.on("games", () => this.render());
         app.on("exprcheck", () => this._exprStatus());
+        app.on("theme", () => this._exprStatus());   // (the plots: drawn in the theme's colours)
     }
     games() { return (this.app.games && this.app.games.list) || []; }
     _modesFromPhysics() {
@@ -72,6 +73,11 @@ export class ValuesView {
         if (!this.picker) this.picker = new GamePicker(bar.querySelector("#vGames"), (app.games && app.games.picks) || [], (ids) => app.setGamePicks(ids));
         else bar.querySelector("#vGames").append(this.picker.btn, this.picker.pop);
         const games = this.games();
+        // the groups side by side when there's room (a 2560 px screen: two columns), every table on one set of column
+        // widths so the sliders and numbers line up from group to group
+        wrap.style.setProperty("--ng", games.length);
+        const grid = document.createElement("div"); grid.className = "vgrid";
+        const cols = `<colgroup><col class="c-lab"><col class="c-md"><col class="c-sl"><col class="c-num"><col class="c-num"><col class="c-u"><col class="c-std"><col class="c-rs">${games.map(() => `<col class="c-game">`).join("")}</colgroup>`;
         const groups = new Map(GROUPS.map((g) => [g, []]));
         for (const p of cat.all) { const g = p.group === "top" ? "general" : p.group; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p); }
         this.groupEls = new Map();
@@ -89,14 +95,16 @@ export class ValuesView {
             };
             sec.append(h);
             const t = document.createElement("table"); t.className = "params";
-            t.innerHTML = `<tr><th>value</th><th>as</th><th></th><th>x standard</th><th>value</th><th></th><th>standard</th><th></th>${games.map((gm) => this._gameHead(gm)).join("")}</tr>`;
+            t.innerHTML = cols + `<tr><th>value</th><th>as</th><th></th><th>x standard</th><th>value</th><th></th><th>standard</th><th></th>${games.map((gm) => this._gameHead(gm)).join("")}</tr>`;
             t.querySelectorAll("th.gh").forEach((th) => this._gameHeadWire(th));
             if (g === "general") for (const s of SWITCHES) t.append(this._switchRow(s, games));
             for (const p of list) { const [a, b] = this._row(p, games); t.append(a, b); }
             sec.append(t);
-            wrap.append(sec);
+            grid.append(sec);
             this.groupEls.set(g, { sec, cnt: h.querySelector(".cnt"), list });
         }
+        const none = document.createElement("div"); none.className = "vnone muted"; none.style.display = "none";
+        wrap.append(grid, none);
         const facts = games.length ? this._factsSection(games) : null;
         if (facts) wrap.append(facts);
         this.el.append(wrap);
@@ -104,6 +112,7 @@ export class ValuesView {
         filt.value = filt0; only.checked = only0;
         const apply = () => {
             const f = filt.value.trim().toLowerCase();
+            const shown = new Map();
             for (const [, r] of this.rows) {
                 const p = r.p;
                 const txt = (p.label + " " + p.key + " " + (p.unit || "") + " " + (p.group || "") + " " + (p.doc || "")).toLowerCase();
@@ -111,7 +120,14 @@ export class ValuesView {
                 const show = (!f || txt.includes(f)) && (!only.checked || changed);
                 r.tr.style.display = show ? "" : "none";
                 if (r.xtr) r.xtr.style.display = show && this.mode.get(p.key) !== "fixed" && this.mode.get(p.key) ? "" : "none";
+                const g = p.group === "top" || !p.group ? "general" : p.group;
+                if (show) shown.set(g, (shown.get(g) || 0) + 1);
             }
+            // a group with nothing left to show goes, header and all; nothing at all: say so
+            let any = 0;
+            for (const [g, ge] of this.groupEls) { const n = shown.get(g) || 0; ge.sec.style.display = n ? "" : "none"; any += n; }
+            none.style.display = any ? "none" : "";
+            none.textContent = any ? "" : only.checked && !f ? "Nothing changed: every value is at the standard physics." : `Nothing matches '${filt.value.trim()}'${only.checked ? " among the changed values" : ""}.`;
         };
         filt.oninput = apply; only.onchange = apply;
         this._apply = apply;
@@ -219,7 +235,10 @@ export class ValuesView {
         this._restFixed(ph); this.app.setPhysics(ph, "values");
         this.refresh();
         const miss = this.app.cat.all.length - keys.filter((k) => k !== "dash" && k !== "grapple").length;
-        this.app.toast(`${gm.game.name}: ${keys.length} values loaded (marked as an import)${miss ? `; ${miss} settings have no analogue and kept their values` : ""}${gm.clamped && gm.clamped.length ? `; ${gm.clamped.length} clamped to Quark's range` : ""}`, 5000);
+        // a mechanic the game has off in standard play (Quake III's grapple is a server option): its values still load,
+        // for when it's switched back on; said so, since the switch goes off at the same time
+        const off = [["dash", /^(super_)?dash_/], ["grapple", /^hook_/]].filter(([k, re]) => ph[k] === false && keys.some((x) => re.test(x))).map(([k]) => k);
+        this.app.toast(`${gm.game.name}: ${keys.length} values loaded (marked as an import)${miss ? `; ${miss} settings have no analogue and kept their values` : ""}${gm.clamped && gm.clamped.length ? `; ${gm.clamped.length} clamped to Quark's range` : ""}${off.length ? `; ${off.join(" and ")} switched off as in the game, with its values loaded for when it's on` : ""}`, 6000);
     }
 
     // ---- rows
@@ -258,7 +277,7 @@ export class ValuesView {
             setExpr(ph, p.key, null); this.mode.set(p.key, "fixed");
             unimport(ph, p.key);
             this._restFixed(ph);
-            this.app.setPhysics(ph, "values");
+            this.app.setPhysics(ph, "values", from ? "v:" + p.key : undefined);   // (a drag or typing: one undo step)
             this._show(p.key, v, from);
         };
         sl.oninput = () => commit(fromPos(p, +sl.value), "slider");
@@ -298,7 +317,7 @@ export class ValuesView {
         this._restFixed(ph);
         unimport(ph, key);
         this.fromEditor = fromEditor ? key : null;
-        this.app.setPhysics(ph, "values");
+        this.app.setPhysics(ph, "values", fromEditor ? "x:" + key : undefined);
         this.fromEditor = null;
     }
     // every expression's fixed line = its value standing still (what an older game reads); after any change, since

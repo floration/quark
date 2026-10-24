@@ -13,18 +13,22 @@ Two more tabs:
 - **Editor**, the GitHub editor, in four sections (left list, `#tab=editor&sec=...`):
   - **Notes** (below).
   - **Structure**: the branches grouped by role (production, testing, infra, work `claude/*`, other, stale: no
-    commit in N days, the `limit-stale-days` rule, and merged into or behind testing). Per branch q sets a role and a
+    commit in N days, the `limit-stale-days` rule, inside that rule's branch scope (`claude/*` by default), and merged
+    into or behind testing). Per branch q sets a role and a
     description (local, `editor/structure.json`); they set the Branches tab's kind and show in the branch's details.
     Create a branch (from testing, another branch or a sha), rename or delete one (not the default branch, testing,
-    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs): these are
-    GitHub changes, queued in Pending changes.
+    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs; an applied
+    rename takes the branch's role, description and notes along): these are GitHub changes, queued in Pending
+    changes.
   - **Rules & limits**, two kinds, labelled: *Enforced by GitHub*, the repository's branch rulesets (block force
     push, block deletion, require a PR, required status checks picked from the recent runs' job names, linear
     history), edited with a form and queued; and *Followed by every Claude*, the agent rules (push / merge / version
     / CI / limit / other, scoped to all, a branch pattern or a tool), with the limits' values editable inline, saved
     locally (`editor/rules.json`) at once.
   - **Pending changes**: each queued GitHub change with its before -> after (a sentence for a branch, the JSON diff
-    for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). Nothing
+    for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). A delete,
+    or a change with warnings, asks before it goes; Apply all's confirm lists every change with its warnings. After
+    an Apply the page follows the server's own poll and redraws as soon as GitHub's new state is in. Nothing
     is sent to GitHub before Apply. Right before the call the server reads GitHub again, re-checks the production
     lock and refuses a change whose preview is out of date ("changed on GitHub since preview, review again"). The
     result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events).
@@ -39,12 +43,15 @@ Two more tabs:
   The agent rules and the notes are also written to the Claude Documents (the private repo
   floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json` and `11-github-notes.md`, 10 s after the
   last change, by the server's own clone (`claude-docs/`) with q's gh login; a failure shows in the page and in the
-  poll warnings and is retried on the next change.
+  poll warnings and is retried on every poll until it works. On a first start the built-in rules give way to the
+  `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data folder was
+  lost), so the seed is never pushed over them.
 
   Notes: a note is
   plain text with a little markdown (paragraphs, lists, `` `code` ``, **bold**, links; everything else is shown as
   typed) about a branch, PR, run, commit, version or local copy, or a general one; it can be pinned, marked done,
-  edited and deleted (after a confirm; the deleted note stays in the history). Notes show where their target shows: a
+  edited and deleted (after a confirm; the deleted note stays in the history). A note about a branch, PR, run or local copy the page
+  doesn't know (a typo, a deleted branch) gets a warning in the form, and can still be saved. Notes show where their target shows: a
   count on branch / PR / run rows and local-copy cards, all of them with "add note" in that item's details, and the
   pinned ones in a Notes card on the Overview. Every change is a `note.*` event in the History tab. Notes stay on this
   PC (and in the Claude Documents copy); nothing is sent to GitHub.
@@ -138,8 +145,9 @@ first start's backfill is still downloading). Refresh on the page polls at once 
 - `history.jsonl`: the event log, append-only, never trimmed (runs started / passed / failed, PRs opened / merged /
   closed / updated, branches created / moved / deleted, tags, releases, local commits / moves / clean-dirty changes,
   poll errors). Events come from comparing each poll with `state-prev.json`. Each event has a fixed id, so a restart
-  or a crash never logs one twice. The very first poll writes a single `baseline` event (what it found) instead of
-  thousands of events for things that already existed; while the tool is off nothing is lost, the next poll logs what
+  or a crash never logs one twice. The first poll that reads GitHub writes a single `baseline` event (what it found) instead of
+  thousands of events for things that already existed (while gh is signed out or offline nothing is logged, so a
+  failed first poll never records "0 PRs, 0 runs"); while the tool is off nothing is lost, the next poll logs what
   changed.
 - `cache/github.json`: the page's state minus the local copies, plus every release, rewritten each poll (the Claude
   Documents manager reads it). `cache/runs/`, `cache/pulls.json`, `cache/meta.json`: the caches above.
@@ -178,5 +186,5 @@ production lock (every refused case), previews and diffs, apply / stale / refuse
 a fake gh, the editor endpoints' protections, and an offline end-to-end poll against a local repository with canned
 gh answers; `GHM_LIVE=1 ... LiveRulesets` reads the real repo's rulesets, read-only), `test/fixture_server.py` (the
 page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply; `--no-editor`,
-`--docs-error`),
+`--docs-error`, `--signed-out`: gh signed out since the start, so the GitHub parts show as unknown),
 `install.py` / `install.cmd`, `github-manager.cmd`; the page: `index.html`, the CSS and `js/`.

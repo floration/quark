@@ -137,6 +137,14 @@ Each answer: `{type: "state", t, pos, vel, speed, hspeed, flags, onGround, dashC
 hookCooldown, hookPoint? (hooked), onLadder, events:[...since the last line], us (compute time), path? (samples: the
 position after every ms)}`. A bad line answers `{type: "warning", warning}`. A 16 ms batch takes about 50 us.
 
+### physserve `--stream`
+The one-shot commands kept running (serve.py's workers: no process start per request). First line `{}` (options,
+none yet); answers `{type: "ready"}`. Then one line per request, `{id, cmd: "physsim" | "physexpr" | "physexport" |
+"physparams" | "physpresets" | "physroom", request: {...}}`, answered in order by `{id, code, answer}` where `answer`
+is exactly what `quark_maptool <cmd>` prints for that request (`code` its exit code). A map sent as `{text, name}` is
+parsed once and kept (the last 4). Another command or a line that isn't JSON answers `code: 1` with `answer.error`
+and carries on; `stop` ends it.
+
 ### physexport `{physics|qmode, name?, mode?}`
 `{qmode: "<.qmode text>", file: "custom_modes/<name>.qmode", cpp: "<list>", changes:[{key, multiplier, file, name,
 base, value, equation?}], physics, clamped?, exprs?}`. With equations: the qmode has their `expr.<key>=` lines, and each

@@ -1,6 +1,6 @@
 // Range tab: one shooter fires the selected weapon (primary or alt) at still or moving dummy targets on the built-in
-// range (a flat floor, lanes at 5 / 10 / 20 / 40 / 80 m) or on any map (in front of its first spawn): perfect, head,
-// body or bot aim, for some seconds; the edited set and the comparison set run the same scene, side by side per
+// range (a flat floor, lanes at 5 / 10 / 20 / 40 / 80 m) or on any map (in front of its first spawn, or where you
+// click them: ✎ Place, kept per map): perfect body, perfect head or bot aim, for some seconds; the edited set and the comparison set run the same scene, side by side per
 // target. Top-down (the bot editor's map view) or 3D replay with shots, projectiles and hit markers on a timeline.
 // The game's own server answers through wpnrange when the helper has it; else the page's stand-in (mockrange.js).
 
@@ -12,18 +12,21 @@ import { builtinRangeMap, rangeTargets, RANGE_DISTANCES } from "./mockrange.js";
 import { WEAPONS } from "./catalog.js";
 import { $, esc, el, fmtNum, diffSpan } from "./util.js";
 
-const PRESETS = [["lanes", "lanes 5-80 m, still"], ["strafe", "lanes, strafing 6 m/s"], ["one10", "one at 10 m"], ["one20", "one at 20 m"], ["one40", "one at 40 m"], ["strafe10", "one at 10 m, strafing"], ["group", "three side by side, 12 m"], ["close", "one at 2 m (melee)"]];
+const PRESETS = [["placed", "placed by hand (✎ Place)"], ["lanes", "lanes 5-80 m, still"], ["strafe", "lanes, strafing 6 m/s"], ["one10", "one at 10 m"], ["one20", "one at 20 m"], ["one40", "one at 40 m"], ["strafe10", "one at 10 m, strafing"], ["group", "three side by side, 12 m"], ["close", "one at 2 m (melee)"]];
 const AIMS = [["perfect", "perfect (body)"], ["head", "perfect (head)"], ["bot", "bot (aim error by skill)"]];
 
 export class RangeView {
     constructor(app) {
         this.app = app;
-        this.opts = Object.assign({ map: "", weapon: null, alt: false, preset: "lanes", aim: "perfect", skill: 0.7, seconds: 10, compare: true, three: false }, (app.ui && app.ui.range) || {});
+        this.opts = Object.assign({ map: "", weapon: null, alt: false, preset: "lanes", aim: "perfect", skill: 0.7, seconds: 10, compare: true, three: false, placed: {} }, (app.ui && app.ui.range) || {});
+        if (!this.opts.placed || typeof this.opts.placed !== "object") this.opts.placed = {};
+        this.placing = false;
         this.res = null; this.cmp = null; this.t = 0; this.playing = false; this.speed = 1;
         this.mv = new MapView($("rangeCanvas"), {});
         this.mv.show.spawns = false;
         this.mv.overlays = [(ctx, mv) => this._draw(ctx, mv)];
         this.mv.screenOverlays = [(ctx, mv) => this._drawScreen(ctx, mv)];
+        this.mv.handlers = this._placeHandlers();
         this.m3 = new Map3D($("range3d"), { bodies: () => this._bodies(), bodiesKey: () => (this.res ? this.t.toFixed(3) + ":" + (this.res.frames.length) : "") });
         this.maps = [];
         this._bar();
@@ -55,16 +58,25 @@ export class RangeView {
             <label class="small">aim <select id="rAim">${AIMS.map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
             <label class="small" id="rSkillBox">skill <input id="rSkill" type="number" min="0" max="1" step="0.1" style="width:52px"></label>
             <label class="small">seconds <input id="rSecs" type="number" min="1" max="60" step="1" style="width:52px"></label>
+            <button id="rPlace" title="place the shooter and the targets by clicking the top-down view (kept for each map)">✎ Place</button>
+            <label class="small" id="rSliceBox" title="hide everything above this height, to place on a lower floor (empty: the whole map)">floors below <input id="rSlice" type="number" step="1" style="width:56px" placeholder="all"> m</label>
             <label class="check" title="run the comparison set (standard, or the set chosen on the left) on the same scene"><input type="checkbox" id="rCmp"> compare</label>
             <button id="rRun" class="primary" title="Ctrl+Enter">▶ Fire</button>
             <span class="grow"></span>
             <button id="r2d">Top-down</button><button id="r3d">3D</button>`;
         const sel = (id, k, num) => { const e = $(id); e.value = o[k] ?? ""; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); else this.run(); }; };
-        sel("rMap", "map"); sel("rPreset", "preset"); sel("rAim", "aim"); sel("rSkill", "skill", true); sel("rSecs", "seconds", true);
+        sel("rMap", "map"); sel("rPreset", "preset"); sel("rAim", "aim"); sel("rSkill", "skill", true);
+        // seconds: 1..60, and the box shows what runs (0 or 99 used to run 10 or 60 s while the box kept 0 / 99)
+        const secs = $("rSecs"); secs.value = o.seconds;
+        secs.onchange = () => { const v = Math.round(+secs.value); o.seconds = Number.isFinite(v) && secs.value.trim() !== "" ? Math.max(1, Math.min(60, v)) : o.seconds; secs.value = o.seconds; this._save(); this.run(); };
         const ws = $("rWeapon"); ws.value = o.weapon || ""; ws.onchange = () => { o.weapon = ws.value || null; this._save(); this.run(); };
         $("rAlt").checked = o.alt; $("rAlt").onchange = () => { o.alt = $("rAlt").checked; this._save(); this.run(); };
         $("rCmp").checked = o.compare; $("rCmp").onchange = () => { o.compare = $("rCmp").checked; this._save(); this.run(); };
         $("rRun").onclick = () => this.run();
+        $("rPlace").onclick = () => this._setPlacing(!this.placing);
+        $("rPlace").classList.toggle("on", this.placing);
+        $("rSliceBox").style.display = this.map && this.map !== this.builtin ? "" : "none";
+        $("rSlice").onchange = () => { const v = $("rSlice").value.trim(); this.mv.setSlice(v === "" || !Number.isFinite(+v) ? Infinity : +v); };
         $("r2d").onclick = () => this._three(false); $("r3d").onclick = () => this._three(true);
         $("r2d").classList.toggle("on", !o.three); $("r3d").classList.toggle("on", !!o.three);
         if (!this.m3.gl) $("r3d").disabled = true;
@@ -80,6 +92,7 @@ export class RangeView {
             catch (e) { this.app.toast("can't load " + name + ": " + e.message, 3500); return; }
         }
         this.mv.setMap(this.map);
+        $("rSlice").value = ""; $("rSliceBox").style.display = v ? "" : "none";
         if (!v) this._zoomToLanes();
         if (this.m3.gl) this.m3.setMap(this.map);
         this.res = null; this.run();
@@ -87,6 +100,10 @@ export class RangeView {
     _zoomToLanes() { const mv = this.mv; mv.cam.x = 0; mv.cam.z = -42; mv.cam.s = Math.max(2, Math.min(16, ((mv.h || 600) - 40) / 104)); mv.invalidate(true); }
     // the scene: shooter and targets (on a map: in front of its first spawn, on the floor)
     _scene() {
+        if (this.opts.preset === "placed") {
+            const P = this._placed();
+            return { shooter: this._shooterOf(P.shooter), targets: P.targets.map((pos) => ({ pos: pos.slice() })) };
+        }
         let targets = this.opts.preset === "close" ? [{ pos: [0, 0, -2] }] : rangeTargets(this.opts.preset);
         let shooter = [0, 0, 0];
         if (this.map !== this.builtin) {
@@ -100,13 +117,68 @@ export class RangeView {
                 return { ...t, pos: [x, y, z], ...(t.moving ? { moving: { ...t.moving, axis: Math.abs(rx) > Math.abs(rz) ? "x" : "z" } } : {}) };
             });
         }
-        return { shooter: { pos: shooter, aim: this.opts.aim === "head" ? "head" : this.opts.aim === "bot" ? "bot" : "body", skill: this.opts.skill }, targets };
+        return { shooter: this._shooterOf(shooter), targets };
+    }
+    _shooterOf(pos) { return { pos, aim: this.opts.aim === "head" ? "head" : this.opts.aim === "bot" ? "bot" : "body", skill: this.opts.skill }; }
+
+    // ---- placing by hand: {shooter: [x,y,z], targets: [[x,y,z]...]} per map (opts.placed, saved with the page's state)
+    get _mapKey() { return this.map === this.builtin ? "range" : (this.opts.map || this.mapName || "map"); }
+    _placed() {
+        let P = this.opts.placed[this._mapKey];
+        if (!P) {
+            // start from where the presets put the shooter (the first spawn on a map) with no targets yet
+            const sp = this.map !== this.builtin && this.map.spawns[0];
+            P = { shooter: sp ? [sp.x, sp.y, sp.z] : [0, 0, 0], targets: [] };
+        }
+        return P;
+    }
+    _storePlaced(P) { this.opts.placed[this._mapKey] = P; if (this.opts.preset !== "placed") { this.opts.preset = "placed"; $("rPreset").value = "placed"; } this._save(); this._stale = !!this.res; this._side(); this.mv.invalidate(); }
+    _floor(x, z) { return this.map === this.builtin ? 0 : floorAt(this.map, x, z, this.mv.slice); }
+    _setPlacing(on) {
+        this.placing = on;
+        if (on) $("rangeMsg").textContent = "";
+        $("rPlace").classList.toggle("on", on);
+        $("rPlace").textContent = on ? "✓ Done placing" : "✎ Place";
+        if (on && this.opts.preset !== "placed") { this.opts.preset = "placed"; $("rPreset").value = "placed"; this._save(); }
+        this.mv.invalidate();
+        if (!on && this.opts.preset === "placed") this.run();   // fire the new scene once placing is done
+    }
+    // click: a target there · shift+click: the shooter · drag a marker: move it · ctrl+click a target: remove it
+    _placeHandlers() {
+        const near = (w, p) => Math.hypot(w.x - p[0], w.z - p[2]) <= Math.max(0.7, 9 / this.mv.cam.s);
+        return {
+            down: (w, ev) => {
+                if (!this.placing) return false;
+                const P = this._placed();
+                if (ev.shiftKey) { P.shooter = [w.x, this._floor(w.x, w.z), w.z]; this._drag = { P, k: -1 }; this._storePlaced(P); return true; }
+                const k = P.targets.findIndex((t) => near(w, t));
+                if (k >= 0 && (ev.ctrlKey || ev.metaKey)) { P.targets.splice(k, 1); this._storePlaced(P); return true; }
+                if (k >= 0) { this._drag = { P, k }; return true; }
+                if (near(w, P.shooter)) { this._drag = { P, k: -1 }; return true; }
+                return false;   // (empty floor: a pan, or a click that adds a target)
+            },
+            move: (w) => {
+                const d = this._drag; if (!d) return;
+                const at = [w.x, this._floor(w.x, w.z), w.z];
+                if (d.k < 0) d.P.shooter = at; else d.P.targets[d.k] = at;
+                this.mv.invalidate();
+            },
+            up: () => { if (this._drag) { this._storePlaced(this._drag.P); this._drag = null; } },
+            click: (w) => {
+                if (!this.placing) return;
+                const P = this._placed();
+                if (P.targets.length >= 16) { this.app.toast("16 targets at most", 2500); return; }
+                P.targets.push([w.x, this._floor(w.x, w.z), w.z]);
+                this._storePlaced(P);
+            },
+        };
     }
     async run() {
         const app = this.app;
         if (!app.ast) return;
         const sc = this._scene();
-        const req = { weapon: this.weapon, alt: !!this.opts.alt, targets: sc.targets, shooter: sc.shooter, seconds: Math.max(1, Math.min(60, this.opts.seconds || 10)), seed: 1, health: app.health, order: this.opts.preset.startsWith("strafe") || this.opts.preset === "lanes" ? "lanes" : "nearest" };
+        if (!sc.targets.length) { this.res = null; $("rangeMsg").textContent = "no targets placed: ✎ Place, then click the map"; this._side(); return; }
+        const req = { weapon: this.weapon, alt: !!this.opts.alt, targets: sc.targets, shooter: sc.shooter, seconds: Math.max(1, Math.min(60, Math.round(this.opts.seconds) || 10)), seed: 1, health: app.health, order: this.opts.preset.startsWith("strafe") || this.opts.preset === "lanes" ? "lanes" : "nearest" };
         const token = (this._tok = (this._tok || 0) + 1);
         $("rangeMsg").textContent = "firing…";
         const notes = [];
@@ -125,15 +197,21 @@ export class RangeView {
         $("rPlay").onclick = () => { if (!this.res) return; if (this.t >= this.req.seconds - 1e-3) this.t = 0; this.playing = !this.playing; this._last = performance.now(); };
         $("rTime").oninput = () => { this.t = +$("rTime").value / 1000; this.playing = false; this.mv.invalidate(); this.m3.dirty = true; };
         $("rSpeed").onchange = () => { this.speed = +$("rSpeed").value; };
+        // the label and numbers follow t whether it plays or is scrubbed while paused (written only when t moved)
+        let shown = -1;
         const tick = () => {
             requestAnimationFrame(tick);
-            if (!this.res || !this.playing) { $("rPlay").textContent = "▶"; return; }
-            const now = performance.now();
-            this.t = Math.min(this.req.seconds, this.t + (now - this._last) / 1000 * this.speed);
-            this._last = now;
-            if (this.t >= this.req.seconds) this.playing = false;
+            if (!this.res) { $("rPlay").textContent = "▶"; return; }
+            if (this.playing) {
+                const now = performance.now();
+                this.t = Math.min(this.req.seconds, this.t + (now - this._last) / 1000 * this.speed);
+                this._last = now;
+                if (this.t >= this.req.seconds) this.playing = false;
+                if (document.activeElement !== $("rTime")) $("rTime").value = Math.round(this.t * 1000);
+            }
             $("rPlay").textContent = this.playing ? "❚❚" : "▶";
-            if (document.activeElement !== $("rTime")) $("rTime").value = Math.round(this.t * 1000);
+            if (this.t === shown) return;
+            shown = this.t;
             $("rTlabel").textContent = this.t.toFixed(2) + " / " + this.req.seconds.toFixed(0) + " s";
             this._liveNumbers();
         };
@@ -155,12 +233,14 @@ export class RangeView {
     }
     _draw(ctx, mv) {
         const px = 1 / mv.cam.s;
+        if (this.placing || (this.opts.preset === "placed" && (!this.res || this._stale))) this._drawPlaced(ctx, px);
         // the lanes' distances
         if (this.map === this.builtin) {
             ctx.font = `600 ${13 * px}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.lineJoin = "round";
             ctx.strokeStyle = "rgba(10,12,16,.85)"; ctx.lineWidth = 3 * px; ctx.fillStyle = "#f0efec";
             for (const d of RANGE_DISTANCES) { ctx.strokeText(d + " m", 8.5, -d + 4 * px); ctx.fillText(d + " m", 8.5, -d + 4 * px); }
         }
+        if (this.placing) return;   // (the last run's players would hide where the new targets go)
         const fr = this._frame();
         if (!fr) return;
         const { F, i, f } = fr;
@@ -184,8 +264,22 @@ export class RangeView {
             ctx.strokeStyle = "rgba(0,0,0,.5)"; ctx.lineWidth = px; ctx.strokeRect(x - 0.6, z + 0.6, 1.2, 0.18);
         });
     }
+    _drawPlaced(ctx, px) {
+        const P = this._placed();
+        ctx.font = `600 ${12 * px}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        P.targets.forEach((t, i) => {
+            ctx.fillStyle = "rgba(201,133,0,.85)"; ctx.fillRect(t[0] - 0.4, t[2] - 0.4, 0.8, 0.8);
+            ctx.strokeStyle = "#f0efec"; ctx.lineWidth = 1.5 * px; ctx.strokeRect(t[0] - 0.4, t[2] - 0.4, 0.8, 0.8);
+            ctx.fillStyle = "#f0efec"; ctx.fillText(String(i + 1), t[0], t[2] - 0.4 - 9 * px);
+            ctx.strokeStyle = "rgba(240,239,236,.25)"; ctx.setLineDash([4 * px, 4 * px]); ctx.beginPath(); ctx.moveTo(P.shooter[0], P.shooter[2]); ctx.lineTo(t[0], t[2]); ctx.stroke(); ctx.setLineDash([]);
+        });
+        ctx.fillStyle = "#3987e5"; ctx.beginPath(); ctx.arc(P.shooter[0], P.shooter[2], 0.5, 0, 7); ctx.fill();
+        ctx.strokeStyle = "#f0efec"; ctx.lineWidth = 1.5 * px; ctx.stroke();
+        ctx.textBaseline = "alphabetic";
+    }
     _drawScreen(ctx, mv) {
         const info = $("rangeInfo");
+        if (this.placing) { info.textContent = `placing on ${this.map === this.builtin ? "the built-in range" : this.map.name}: click adds a target · shift+click puts the shooter · drag moves · ctrl+click removes · ${this._placed().targets.length} target(s)`; return; }
         if (!this.res) { info.textContent = "wheel zooms · drag pans"; return; }
         info.textContent = `${this.res.via === "wpnrange" ? "the game's server (wpnrange)" : "the page's stand-in (MOCK)"} · ${this.weapon}${this.opts.alt ? " alt" : ""} · ${this.t.toFixed(2)} s`;
     }

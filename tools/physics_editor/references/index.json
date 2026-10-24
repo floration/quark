@@ -1,6 +1,6 @@
 {
  "version": 1,
- "quark": "1.18.30",
+ "quark": "1.18.31",
  "units": "metres, seconds (Quark's); mult = value / Quark's base",
  "confidence": {
   "exact": "read from source code, a shipped config or a cvar default (converted by the stated scale)",
@@ -306,7 +306,7 @@
      "year": 2022,
      "engine": "Overwatch engine",
      "file": "overwatch2.json",
-     "values": 8
+     "values": 3
     },
     {
      "id": "valorant",

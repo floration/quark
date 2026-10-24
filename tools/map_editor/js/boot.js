@@ -1,18 +1,21 @@
 // Start: three.js, the server's info, the decoration scripts, then the editor's parts wired together.
 import * as THREE from "../vendor/three.module.min.js";
 import { api } from "./api.js";
-import { Doc, KINDS } from "./doc.js";
+import { Doc, KINDS, objectiveName } from "./doc.js";
+import { validateMap } from "./validate.js";
+import { stripObjects, repeatCounts, turnDef } from "./repeat.js";
 import { View } from "./view.js";
 import { Editor, GRIDS } from "./edit.js";
 import { Panels } from "./panels.js";
 import { Player } from "./player.js";
 import { Testing } from "./testing.js";
 import { Bots } from "./bots.js";
+import { Library } from "./groups.js";
 import { el, fill, $, $$, Emitter, banner, dialog, prompt, check, validMapName, fmt } from "./util.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 window.THREE = THREE;
-const MARKER_KEYS = new Set(["spawns", "lights", "sites", "hill", "points", "checkpoints", "path", "cartChecks", "ladders", "stairs", "groups", "sc.botStarts", "*"]);
+const MARKER_KEYS = new Set(["spawns", "lights", "sites", "hill", "points", "checkpoints", "path", "cartChecks", "ladders", "stairs", "groups", "sc.botStarts", "sc.objects", "*"]);
 const SIDE_KEYS = ["figures", "botStarts", "tests", "deco", "camera", "bots"];
 
 class App extends Emitter {
@@ -34,6 +37,7 @@ class App extends Emitter {
     this.panels = new Panels(this);
     this.testing = new Testing(this);
     this.bots = new Bots(this);
+    this.library = new Library(this);
     this.origin = { origin: "human", note: "" };
     this.wire();
     await this.panels.loadList();
@@ -49,27 +53,31 @@ class App extends Emitter {
 
   wire() {
     const d = this.doc, v = this.view, ed = this.editor;
-    d.on("map", (keys, live) => {
+    d.on("map", (keys, live, change) => {
       if (!keys) { v.setPalette(d.map); v.rebuildBrushes(); v.rebuildMarkers(); v.rebuildGrid(0); ed.pickDirty = true; return; }
       if (keys.some(k => k === "palette" || k === "sun" || k === "*")) { v.setPalette(d.map); }
-      const geo = keys.some(k => k === "brushes" || k === "groups" || k === "ladders" || k === "*");
+      const geo = keys.some(k => k === "brushes" || k === "groups" || k === "ladders" || k === "sc.objects" || k === "*");
       if (geo) {
-        const onlyBrushes = keys.every(k => k === "brushes" || k.startsWith("sc."));
-        if (live && onlyBrushes) v.updateBrushes(d.selOf("brush")); else v.rebuildBrushes();
-        ed.pickDirty = true;
+        // boxes changed in place (a drag, a nudge, a material): only their instances and their picking cells
+        const inPlace = keys.every(k => k === "brushes" || k.startsWith("sc.")) && change && change.touched.brushes && !change.structural.has("brushes");
+        if (!(inPlace && v.updateBrushes(change.touched.brushes))) { v.rebuildBrushes(); ed.pickDirty = true; }
+        else ed.pickMoved(change.touched.brushes);
       }
-      if (keys.some(k => MARKER_KEYS.has(k))) { v.rebuildMarkers(); ed.pickDirty = true; }
+      if (keys.some(k => MARKER_KEYS.has(k))) v.rebuildMarkers();   // (markers aren't in the picking grid: tested one by one)
       v.redraw();
     });
+    let figSel = "";
     d.on("selection", () => {
-      v.updateSelectionTint(); v.rebuildMarkers();
+      v.updateSelectionTint(); v.restyleMarkers();
+      const fs = d.selOf("figure").join(",");   // (the figures redraw only when their own selection changed)
+      if (fs !== figSel) { figSel = fs; this.player.redraw(); }
       const b = d.selBounds();
       const y = b ? Math.round(b.min[1] * 8) / 8 : 0;
       if (y !== v.gridY) v.rebuildGrid(y);
       this.hud();
     });
     d.on("dirty", () => this.mapLabel());
-    d.on("open", () => this.mapLabel());
+    d.on("open", () => { this.mapLabel(); if (d.map.preferredMode && MODES.includes(d.map.preferredMode)) $("#playMode").value = d.map.preferredMode; });
     this.on("tool", () => { $$("#tools button").forEach(b => b.classList.toggle("on", b.dataset.tool === ed.tool)); $("#toolMat").value = ed.mat; this.hud(); });
     v.onAfterRender = () => this.afterRender();
 
@@ -120,7 +128,8 @@ class App extends Emitter {
     if (ref.k === "brush") return "box #" + ref.i + " " + MATERIALS[m.brushes[ref.i].mat];
     if (ref.k === "group") return "group #" + ref.i + " " + m.groups[ref.i].type + (ref.gen !== undefined ? " (" + MATERIALS[m.generated[ref.gen].mat] + " part)" : "");
     if (ref.k === "spawn") return "spawn #" + ref.i + " team " + m.spawns[ref.i].team;
-    return K.label + (K.single ? "" : " #" + ref.i);
+    if (ref.k === "object") { const o = this.doc.sidecar.objects[ref.i]; return "custom object #" + ref.i + " " + (o ? o.name + " (" + repeatCounts(turnDef(o.def, o.rot || 0), o).join(" x ") + ")" : ""); }
+    return objectiveName(m, ref.k, ref.i);
   }
   readOnlyNote() { if (!this.roNoted) { this.roNoted = true; banner("This is a default map: your changes are kept when you Save as a map of your own.", false, 6000); } }
 
@@ -146,6 +155,7 @@ class App extends Emitter {
     if (d.sel.length) lines.push(d.sel.length === 1 ? this.describe(d.sel[0]) : d.sel.length + " selected");
     if (this.hudDrag) lines.push(this.hudDrag);
     if (ed.tool === "route" && this.testing.routeA) lines.push("route: click the end point");
+    if (ed.tool === "stamp" && ed.stamp) lines.push("click to place " + ed.stamp.name + " (Esc: cancel)");
     $("#hudInfo").textContent = lines.join("\n");
     const s = v.stats();
     $("#hudStats").textContent = (d.map.brushes.length + d.map.generated.length) + " boxes  " + (s ? s.calls + " draws\n" + (v.show.continuous ? Math.round(s.fps) + " fps  1% " + Math.round(s.low1) + "  0.1% " + Math.round(s.low01) + "\n" : "") + "render " + s.cpu.toFixed(1) + " ms cpu" : "");
@@ -179,6 +189,8 @@ class App extends Emitter {
       if (map.error) throw new Error(map.error);
       let side = {};
       try { side = await api.readSidecar(name); } catch { side = {}; }
+      const dropped = stripObjects(map, side);   // (custom objects' boxes are drawn from the objects, not kept twice)
+      if (dropped.length) banner("Custom object" + (dropped.length > 1 ? "s " : " ") + dropped.join(", ") + " no longer matched the map (edited elsewhere?): kept as plain boxes", true, 8000);
       if (src === "default") this.origin = { origin: "ai", note: "edited from " + name, base: name };
       else {
         const L = this.panels.list.mine.find(m => m.name === name);
@@ -203,15 +215,17 @@ class App extends Emitter {
     this.emit("opened");
   }
   mapForSave() {
-    const m = structuredClone(this.doc.map);
-    for (const k of ["generated", "materials", "player", "warnings", "fallback", "modesSupported", "modesPossible", "payloadLength", "bounds", "ms", "killY", "humanMade"]) delete m[k];
+    const skip = new Set(["generated", "materials", "player", "warnings", "fallback", "modesSupported", "modesPossible", "payloadLength", "bounds", "ms", "killY", "humanMade"]);
+    const m = structuredClone(Object.fromEntries(Object.entries(this.doc.map).filter(([k]) => !skip.has(k))));
+    // custom objects (sidecar) go into the .qmap as the plain boxes they are made of, after the map's own
+    for (const b of this.doc.map.generated) if (b.object !== undefined) m.brushes.push({ mat: b.mat, min: b.min.slice(), max: b.max.slice() });
     // a map changed here is human-made; an unedited one keeps its own line, so it saves byte for byte as its file
     m.handmade = !!this.doc.map.handmade || this.doc.mapEdited;
     return m;
   }
   sidecarForSave() {
     const s = {}; const sc = this.doc.sidecar;
-    for (const [k, v] of Object.entries(sc)) if (v !== undefined && !(Array.isArray(v) && !v.length && (k === "figures" || k === "botStarts"))) s[k] = v;
+    for (const [k, v] of Object.entries(sc)) if (v !== undefined && !(Array.isArray(v) && !v.length && (k === "figures" || k === "botStarts" || k === "objects"))) s[k] = v;
     const c = this.view.cam; s.camera = { pos: c.pos.toArray().map(x => Math.round(x * 100) / 100), yaw: c.yaw, pitch: c.pitch };
     return s;
   }
@@ -221,25 +235,65 @@ class App extends Emitter {
     if (deco && Array.isArray(deco.rulesApplied) && deco.rulesApplied.length) note = (note ? note + "; " : "") + "decorations generated by rules " + deco.rulesApplied.join(", ");
     return { origin: o.origin, by: "q", note };
   }
-  async writeAs(name) {
+  // The checks before a save: the page's own (validate.js: the game's limits, spawns in walls) and the helper's
+  // (serialize answers valid: false when the game's Map::parse would refuse the text). Errors refuse the save and
+  // show where; warnings go with it. -> the text to write, or null (refused)
+  async checkedText() {
     const d = this.doc;
     // unedited (or edited and undone): the file's own text, so a copy of a map is that map byte for byte (Map::serialize
     // orders and spaces some lines differently from make_maps.py and keeps no comments); edited: Map::serialize
-    let text = !d.mapEdited && typeof d.fileText === "string" ? d.fileText : null;
-    if (text === null) {
-      const ans = await api.tool("serialize", this.mapForSave());
-      if (ans.error) throw new Error(ans.error);
-      text = ans.text;
-    }
-    const r = await api.writeMap(name, text, this.provenance());
+    if (!d.mapEdited && typeof d.fileText === "string") return { text: d.fileText, warnings: [] };
+    const m = this.mapForSave(), v = validateMap({ ...m, generated: d.map.generated });
+    if (v.errors.length) { this.refuseSave(v.errors); return null; }
+    const ans = await api.tool("serialize", m);
+    if (ans.error) throw new Error(ans.error);
+    if (ans.valid === false) { this.refuseSave([{ msg: "the game can't load it: " + (ans.parseError || "parse error") }]); return null; }
+    return { text: ans.text, warnings: [...v.warnings.map(w => w.msg), ...(ans.warnings || [])] };
+  }
+  refuseSave(errors) {
+    const first = errors.find(e => e.ref && this.doc.exists(e.ref));
+    banner("Not saved: " + errors[0].msg + (errors.length > 1 ? " (+" + (errors.length - 1) + " more)" : ""), true, 0);
+    dialog([el("h2", {}, "Not saved: the game would refuse this map"), el("ul", {}, errors.slice(0, 12).map(e => el("li", {}, e.msg))),
+      el("p", { class: "dim" }, "Fix it and save again (the file on disk is unchanged).")],
+      first ? [{ label: "Close", value: "close" }, { label: "Show it", value: "show", primary: true }] : undefined)
+      .then(r => { if (r === "show") { this.doc.select([first.ref]); this.frameSel(); } });
+  }
+  async writeAs(name) {
+    const d = this.doc;
+    const c = await this.checkedText();
+    if (!c) return false;
+    const r = await api.writeMap(name, c.text, this.provenance());
     await api.writeSidecar(name, this.sidecarForSave());
     d.markSaved(name, "mine");
     if (d.map.title === undefined) d.map.title = "";
     await this.panels.loadList();
     this.mapLabel();
     history.replaceState(null, "", pageUrl({ src: "mine", map: name }));
-    banner("Saved " + r.path, false, 4000);
+    if (c.warnings.length) banner("Saved " + r.path + ", with " + c.warnings.length + " warning" + (c.warnings.length > 1 ? "s" : "") + ": " + c.warnings.slice(0, 3).join("; "), true, 12000);
+    else banner("Saved " + r.path, false, 4000);
     this.emit("save", name);
+    return true;
+  }
+  // your own maps: rename (the map, its sidecar, its provenance) and delete (moved to <your maps>/deleted/)
+  async renameMine(name) {
+    const to = await prompt("Rename " + name, name, "1-40 letters, digits, - and _");
+    if (!to || to === name) return;
+    if (!validMapName(to)) { banner("A map name is 1-40 letters, digits, - and _ (" + to + ")", true); return; }
+    try {
+      await api.renameMap(name, to);
+      if (this.doc.src === "mine" && this.doc.name === name) { this.doc.name = to; history.replaceState(null, "", pageUrl({ src: "mine", map: to })); this.mapLabel(); this.panels.renderMapSettings(); }
+      await this.panels.loadList(); banner("Renamed " + name + " to " + to, false, 3000);
+    } catch (e) { banner(e.message, true); }
+  }
+  async deleteMine(name) {
+    if (!confirm("Delete " + name + "? It is moved to the deleted folder in your maps folder (" + api.info.userMaps + "), not erased.")) return;
+    try {
+      const r = await api.deleteMap(name);
+      const open = this.doc.src === "mine" && this.doc.name === name;
+      await this.panels.loadList();
+      if (open) { this.doc.src = "new"; this.doc.name = ""; this.doc.savedAt = -1; this.doc.emit("dirty"); this.panels.renderMapSettings(); history.replaceState(null, "", pageUrl({})); }
+      banner("Deleted " + name + " (kept in " + (r.moved[0] || "deleted/") + ")", false, 5000);
+    } catch (e) { banner(e.message, true); }
   }
   async save() {
     const d = this.doc;
@@ -291,7 +345,7 @@ class App extends Emitter {
     const K = [["Right mouse + WASD", "fly (Space / C up / down, Shift fast, wheel forward, Ctrl+wheel speed)"], ["Alt + drag", "orbit"], ["T", "top-down view"], ["F / Home", "frame the selection / the map"],
       ["Click", "select (Shift adds, again: what is behind, Ctrl: a group's part)"], ["Drag", "a rectangle selects; on a selected object: slide it"], ["Arrows / PgUp PgDn", "move by the grid (Shift / Ctrl: grow / shrink that face)"],
       ["[ ]", "grid 1/8 m .. 4 m"], ["M", "material (spawn: team)"], ["R", "rotate 90 degrees"], ["Q / E", "turn a spawn 45 degrees"], ["Ctrl+D", "duplicate"], ["Del", "delete"],
-      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
+      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+C / Ctrl+V", "copy the selection / paste it at the cursor (any map)"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
     dialog([el("h2", {}, "Keys"), el("div", { class: "keys" }, K.flatMap(([k, t]) => [el("kbd", {}, k), el("span", {}, t)]))]);
   }
 
@@ -308,14 +362,14 @@ class App extends Emitter {
       const parts = idx.map(i => { const b = m.brushes[i]; return { mat: b.mat, min: [0, 1, 2].map(k => (b.min[k] - bb.min[k]) / sz[k]), max: [0, 1, 2].map(k => (b.max[k] - bb.min[k]) / sz[k]) }; });
       for (const i of idx.slice().reverse()) m.brushes.splice(i, 1);
       m.groups.push({ type: "custom", mat: 0, dir: 0, min: bb.min, max: bb.max, parts }); gi = m.groups.length - 1;
-    });
+    }, { touch: [] });
     d.select([{ k: "group", i: gi }]);
   }
   ungroup(gi) {
     const d = this.doc, m = d.map;
     const parts = m.generated.filter(b => b.group === gi).map(b => ({ mat: b.mat, min: b.min.map(v => Math.round(v * 1e4) / 1e4), max: b.max.map(v => Math.round(v * 1e4) / 1e4) }));
     const n0 = m.brushes.length;
-    d.edit("ungroup", ["brushes", "groups"], () => { m.groups.splice(gi, 1); m.brushes.push(...parts); });
+    d.edit("ungroup", ["brushes", "groups"], () => { m.groups.splice(gi, 1); m.brushes.push(...parts); }, { touch: [] });
     d.select(parts.map((_, j) => ({ k: "brush", i: n0 + j })));
   }
 
@@ -328,15 +382,16 @@ class App extends Emitter {
     // save()) are one undo step: the sidecar entry's old value rides on the map's step, so one undo restores both.
     let tick = null;   // {step, before: {key: old value}}, cleared after this task
     const thisTick = () => { if (!tick) { tick = { step: null, before: {} }; queueMicrotask(() => { tick = null; }); } return tick; };
-    const ride = (step, k, before) => { const key = "sc." + k; if (!step.keys.includes(key)) { step.keys = [...step.keys, key]; step.before[key] = before; } };
+    const ride = (step, k, before) => d.rideOn(step, "sc." + k, before);
     const top = () => d.undoStack[d.undoStack.length - 1];
     const hookApi = {
       getMap: () => structuredClone(d.map),
       setMap: (newMap, label) => {
         const t = thisTick();
+        const was = top();
         d.replaceMap(newMap, label);
-        t.step = top();
-        for (const [k, b] of Object.entries(t.before)) ride(t.step, k, b);
+        t.step = top() !== was ? top() : null;   // (null: the map came back the same, no step)
+        if (t.step) for (const [k, b] of Object.entries(t.before)) ride(t.step, k, b);
         t.before = {};
       },
       getSelection: () => ({ brushes: d.selOf("brush"), groups: d.selOf("group") }),

@@ -37,6 +37,9 @@ def parse_build_txt(text):
         sha = c.group(1)
         out["commit"] = sha[:7]
         out["sha"] = sha if len(sha) == 40 else None
+    # fetch_release.ps1: "(GitHub release, published 2026-10-20T18:00:00Z)" (ISO only; anything else is left out)
+    p = re.search(r"(?i)\bpublished\s+(\d{4}-\d\d-\d\dT[\d:.]+(?:Z|[+-]\d\d:?\d\d)?)", joined)
+    out["publishedAt"] = util.iso(util.parse_time(p.group(1))) if p and util.parse_time(p.group(1)) else None
     low = joined.lower()
     out["dirty"] = "-dirty" in low or "(dirty)" in low
     if "github release" in low:

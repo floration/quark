@@ -358,7 +358,8 @@ export class GraphView {
         let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
         for (const n of ns) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x + W); y1 = Math.max(y1, n.y + (n.ins ? nodeHeight(n) : 24)); }
         const w = this.svgEl.clientWidth || 800, h = this.svgEl.clientHeight || 600;
-        this.view.k = Math.max(0.2, Math.min(1.2, Math.min(w / (x1 - x0 + 80), h / (y1 - y0 + 80))));
+        // (up to 1.5x: a small slot fills a big screen instead of sitting in a corner at 2560)
+        this.view.k = Math.max(0.2, Math.min(1.5, Math.min(w / (x1 - x0 + 80), h / (y1 - y0 + 80))));
         this.view.x = -x0 * this.view.k + 40; this.view.y = -y0 * this.view.k + 30;
         this._applyView();
     }

@@ -109,11 +109,12 @@ export function commitList(commits, { limit = 12, id, empty = 'none', showAuthor
 // ---- history events ----
 const TYPE_ICON = {
   'run.started': '▶', 'run.completed': '✓', 'run.failed': '✕', 'pr.opened': '⊕', 'pr.merged': '⇥', 'pr.closed': '⊘', 'pr.updated': '↻',
-  'branch.created': '+', 'branch.moved': '→', 'branch.deleted': '−', 'tag.created': '⌖', 'release.published': '★',
+  'branch.created': '+', 'branch.moved': '→', 'branch.deleted': '−', 'branch.renamed': '→', 'tag.created': '⌖', 'release.published': '★',
   'local.commit': '●', 'local.moved': '→', 'local.dirty': '✎', 'poll.error': '!', baseline: '◎',
   'note.added': '✎', 'note.edited': '✎', 'note.done': '✓', 'note.deleted': '−',
   'github.branch.created': '+', 'github.branch.deleted': '−', 'github.branch.renamed': '→',
   'github.ruleset.created': '+', 'github.ruleset.updated': '✎', 'github.ruleset.deleted': '−', 'github.apply.failed': '✕',
+  'github.apply.refused': '✕', 'github.apply.stale': '!',
   'rules.changed': '§', 'structure.changed': '≡',
 };
 export const TYPE_GROUPS = [
@@ -126,11 +127,15 @@ export const groupOf = (type) => {
   const p = (type || '').split('.')[0];
   return p === 'tag' ? 'release' : p === 'baseline' ? 'poll' : ['github', 'rules', 'structure'].includes(p) ? 'editor' : p;
 };
+// a cancelled or skipped run didn't pass: greyed, and no tick for it
+const offRun = (e) => e.type === 'run.completed' && /cancel|skip/.test(`${(e.data || {}).conclusion || ''} ${e.text}`);
+const evIcon = (e) => (offRun(e) ? '–' : TYPE_ICON[e.type] || '•');
 function evClass(e) {
-  if (e.type === 'run.failed' || e.type === 'poll.error' || e.type === 'github.apply.failed') return 'bad';
+  if (e.type === 'run.failed' || e.type === 'poll.error' || e.type === 'github.apply.failed' || e.type === 'github.apply.refused') return 'bad';
+  if (e.type === 'github.apply.stale') return 'warn';
   if (e.type.startsWith('github.')) return 'merged';
   if (e.type === 'rules.changed' || e.type === 'structure.changed') return 'note';
-  if (e.type === 'run.completed') return /cancel|skip/.test(e.text) ? 'off' : 'good';
+  if (e.type === 'run.completed') return offRun(e) ? 'off' : 'good';
   if (e.type === 'pr.merged' || e.type === 'release.published') return 'merged';
   if (e.type === 'run.started') return 'run';
   if (e.type === 'note.done') return 'good';
@@ -159,7 +164,7 @@ export function refChip(ref, type) {
 export function eventRow(e, { showDay = false } = {}) {
   return html`<li class="ev ev-${evClass(e)}">
     <span class="ev-time" title="${e.at}">${showDay ? when(e.at) : html`<time datetime="${e.at}">${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(ms(e.at))}</time>`}</span>
-    <span class="ev-ico" aria-hidden="true">${TYPE_ICON[e.type] || '•'}</span>
+    <span class="ev-ico" aria-hidden="true">${evIcon(e)}</span>
     <span class="ev-text">${e.text}</span>
     <span class="ev-ref">${refChip(e.ref, e.type)}</span>
   </li>`;

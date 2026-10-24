@@ -38,15 +38,18 @@
     U.missing.ensureAssets();
     let tab = 'sounds'; try { tab = localStorage.getItem('qse.tab') || 'sounds'; } catch (e) { }
     U.showTab(tab);
-    // the kits: DEFAULT first (the others are levelled against it in the game)
-    for (const k of Q.KITS) {
-      try { await Q.loadPack('kit', k.dir); } catch (e) { U.fail('kit ' + k.dir, e); }
-      if (Q.tab === 'sounds') U.library.renderMatrix('sound');
-    }
+    // the kits: DEFAULT first (the others are levelled against it in the game), then the other four together
+    // (each pack redraws its view as it lands: Q.onPackLoaded)
+    const kit = k => Q.loadPack('kit', k.dir).catch(e => U.fail('kit ' + k.dir, e));
+    await kit(Q.KITS[0]);
+    await Promise.all(Q.KITS.slice(1).map(kit));
     Q.ready = true;
     if (Q.tab !== 'sounds') U.refreshView();
     if (Q.sel) U.editor.refresh();
   }
-  Q.onPackLoaded = (type, dir) => { if (Q.sel && Q.assets[Q.sel] && Q.assets[Q.sel].pack === dir) U.editor.refresh(); };
+  Q.onPackLoaded = (type, dir) => {
+    if (Q.sel && Q.assets[Q.sel] && Q.assets[Q.sel].pack === dir) U.editor.refresh();
+    U.library.packLoaded(type);
+  };
   boot().catch(e => U.fail('start', e));
 })();

@@ -193,7 +193,7 @@ class History:
         changed = sorted(n for n in set(blobs) | set(pblobs) if blobs.get(n) != pblobs.get(n))
         old_e, new_e, items = [], [], []
         for n in changed:
-            if docsparse.file_kind(n) == "entries":
+            if docsparse.file_kind(n, self.text(blobs.get(n) or pblobs.get(n))) == "entries":
                 old_e += self.parse(n, pblobs.get(n))["entries"] if pblobs.get(n) else []
                 new_e += self.parse(n, blobs.get(n))["entries"] if blobs.get(n) else []
             else:
@@ -251,14 +251,17 @@ def halt_what(e):
     return (s[:197] + "...") if len(s) > 200 else s
 
 
-def waiting_on(e, links):
-    """(waitingOn list, waitingWhy sentence, notStarted) for one entry; see SPEC.md. A halting entry (HALT, not
-    finished) always waits on q first, and its waitingWhy says what q has to do."""
+def waiting_on(e, links, answer=None):
+    """(waitingOn list, waitingWhy sentence, notStarted) for one entry; see the README. A halting entry (HALT, not
+    finished) always waits on q first, and its waitingWhy says what q has to do. Archived entries and 08 notes wait on
+    nothing; an unread 06 item waits on q to read it ("read"); an open 09 answer, and an item q answered in 09
+    (`answer`, that open 09 entry), wait on a Claude to act on q's answer ("answered") instead of on q."""
     st, f = e["status"], e["file"][:2]
     if st in docsparse.DONE_STATUSES:
         return ["none"], "Nothing: %s." % {"done": "done", "fixed": "fixed", "wontfix": "won't fix", "answered": "answered",
                                              "told": "told"}[st], False
     halting = docsparse.is_halting(e)
+    if e.get("archived") and not halting: return ["none"], "Nothing: archived.", False
     if f == "08" and st != "in-progress" and not halting: return ["none"], "Nothing: a reference note.", False
     text = "\n".join(x for x in (e["title"], e["body"], e["statusNote"], e.get("statusText")) if x)
     w, why = [], []
@@ -270,8 +273,8 @@ def waiting_on(e, links):
     if halting: add("owner", "A Claude agent is stopped until q acts: " + halt_what(e).rstrip("."))
 
     if f == "07" and st in ("open", "unknown") and not halting: add("owner", "Waiting on q's decision")
-    if f == "06" and st in ("open", "unknown") and not halting: add("owner", "Not told yet: for q to read")
-    if f == "09" and st in ("open", "unknown"): add("claude", "q answered; no Claude has acted on it yet")
+    if f == "06" and st in ("open", "unknown") and not halting: add("read", "Not told yet: for q to read")
+    if f == "09" and st in ("open", "unknown"): add("answered", "q answered; no Claude has acted on it yet")
     m = _OWNER_RE.search(text)
     if m and (not w or _PUSH_RE.search(text)):
         pm = _PUSH_RE.search(text)
@@ -289,12 +292,21 @@ def waiting_on(e, links):
             add("ci", "CI %s on %s" % ("failing" if l["state"] == "failure" else "running", l["label"]))
     m = _TESTS_RE.search(text)
     if m: add("tests", "Tests: " + _sentence(text, m))
+    if answer and not halting and any(k in w for k in ("owner", "push", "read")):
+        w[:] = ["answered"] + [k for k in w if k not in ("owner", "push", "read")]
+        why[:] = ["q answered (09, %s); waiting on a Claude to act on it" % (answer.get("date") or "?")] + \
+            [x for x in why if not x.startswith(("Waiting on q", "Not told yet"))]
     started = st == "in-progress"
     if not w:
         add("claude", "A Claude thread is working on it" if started else "Nobody has started it yet")
     elif "ci" in w and not any(s.startswith("CI ") or "checks" in s for s in why):
         why.append("CI not green")
     return w, "; ".join(why) + ".", (not started and w == ["claude"])
+
+
+def title_key(t):
+    """An entry title for matching a 09 answer to its question (09 repeats the question's title)."""
+    return re.sub(r"[\s.:,;!?]+$", "", re.sub(r"\s+", " ", (t or "").replace("**", ""))).strip().lower()
 
 
 def recommendation(e):
@@ -403,7 +415,17 @@ class Manager:
                 elif it.get("halting") is False: rec.pop("haltingSince", None)
                 lineage[it["entryId"]] = rec
 
-        files, entries = [], []
+        parsed = {}
+        for n in sorted(set(texts) | set(pc)):
+            src = texts.get(n) if texts.get(n) is not None else norm_text(pc[n])
+            parsed[n] = (src, docsparse.parse_file(n, src, self.thread_names))
+        answers = {}                                                        # question title -> its open 09 answer
+        for n, (_, p) in parsed.items():
+            if not n.startswith("09"): continue
+            for e in p["entries"]:
+                if e["status"] in ("open", "unknown"): answers.setdefault(title_key(e["title"]), e)
+
+        files, entries, problems = [], [], []
         for n in sorted(set(texts) | set(pc)):
             text = texts.get(n)
             pcb = pc.get(n)
@@ -414,9 +436,11 @@ class Manager:
             elif pc_text == text: pc_state = "same"
             elif blob_id(pc_text.encode("utf-8")) in known_blobs.get(n, ()): pc_state = "behind"
             else: pc_state = "edited"
-            src = text if text is not None else pc_text
-            p = docsparse.parse_file(n, src, self.thread_names)
-            f = {"name": n, "title": p["title"] or n, "kind": p["kind"], "markdown": src,
+            src, p = parsed[n]
+            probs = docsparse.lint(n, src, p)
+            problems += probs
+            f = {"name": n, "title": p["title"] or n, "kind": p["kind"], "generated": p["generated"], "markdown": src,
+                 "problems": len(probs), "problemsBad": sum(1 for x in probs if x["severity"] != "info"),
                  "lastChange": last_file.get(n), "pcUnsynced": pc_state in ("edited", "pc-only"), "pcState": pc_state,
                  "sections": p["sections"], "notes": p["notes"], "entryCount": len(p["entries"])}
             if pc_state in ("edited", "pc-only", "behind"): f["pcMarkdown"] = pc_text
@@ -427,7 +451,9 @@ class Manager:
                 canon, url = linker.thread(e["thread"])
                 e["threadRaw"], e["thread"], e["threadUrl"] = e["thread"], canon or e["thread"], url
                 e["links"] = links
-                e["waitingOn"], e["waitingWhy"], e["notStarted"] = waiting_on(e, links)
+                ans = answers.get(title_key(e["title"])) if not n.startswith("09") else None
+                e["waitingOn"], e["waitingWhy"], e["notStarted"] = waiting_on(e, links, ans)
+                e["answerId"] = ans["id"] if ans else None
                 e["recommendation"] = recommendation(e) if e["file"].startswith("07") else None
                 lin = lineage.get(e["id"], {})
                 e["firstSeen"], e["lastChanged"] = lin.get("firstSeen"), lin.get("lastChanged")
@@ -438,10 +464,12 @@ class Manager:
                 e["pcUnsynced"] = f["pcUnsynced"]
                 entries.append(e)
 
+        entry_thread = {e["id"]: e["thread"] for e in entries}
+        known = self.thread_lookup(entry_thread)
         changes = []
         for c in commits:
             r = recs[c["sha"]]
-            th = self.commit_thread(c["subject"], linker)
+            th = self.commit_thread(c["subject"], linker, r["items"], entry_thread, known)
             changes.append({"sha": c["sha"], "time": c["time"], "timeUtc": utc_of(c["time"]), "author": c["author"],
                             "subject": c["subject"], "items": r["items"], "files": r["files"], "thread": th[0],
                             "threadUrl": th[1], "url": "%s/commit/%s" % (self.repo_web, c["sha"]) if self.repo_web else None,
@@ -471,28 +499,47 @@ class Manager:
                 "ghError": self.gh.state.get("error"), "quarkDir": self.quark_dir.replace("\\", "/"),
                 "docsDir": self.docs.replace("\\", "/") if self.docs else None, "repoUrl": self.repo_web,
                 "canEdit": can_edit, "editReason": edit_reason, "readOnly": self.writer.read_only,
-                "files": files, "entries": entries, "changes": changes, "threads": thread_list,
+                "files": files, "entries": entries, "problems": problems, "changes": changes, "threads": thread_list,
                 "github": dict(gh, commits=self.gh.state.get("commits", {}))}
         self.publish(data)
         return data
 
-    def commit_thread(self, subject, linker):
-        """Thread of a commit: '(Thread title)' at the end of the subject, else a 'Thread: ...' prefix."""
-        m = re.search(r"\(([^()]+)\)\s*$", subject)
-        if m:
-            t, u = linker.thread(m.group(1))
-            if t: return t, u
-        rest = re.sub(r"^(?:claim:|\d\d:)\s*", "", subject.strip(), flags=re.I)
+    def thread_lookup(self, entry_thread):
+        """{lower name: (thread title, url)}: threads.json titles and aliases, plus every thread an entry names."""
+        known = {}
+        for t in self.threads:
+            for n in [t["title"]] + t.get("aliases", []): known[n.lower()] = (t["title"], t.get("url"))
+        for th in set(entry_thread.values()):
+            if th and th != "q": known.setdefault(th.lower(), (th, None))
+        return known
+
+    def commit_thread(self, subject, linker, items=(), entry_thread=None, known=None):
+        """Thread of a commit: q's own edits (Claude Manager) are q's; else a '(Thread title)' in the subject, a
+        'Thread: ...' prefix (threads.json names or any thread an entry names), else the thread most of the commit's
+        entries belong to (so '02: claim ...' gets the thread of the 02 entry it adds)."""
+        entry_thread = entry_thread or {}
+        known = known if known is not None else self.thread_lookup(entry_thread)
+        subj = subject.strip()
+        if re.match(r"^(?:q:|[\d/]+:\s*q (?:answered|added|edited)\b)", subj, re.I) or subj.endswith("(Claude Manager)"):
+            return "q", None
+        for g in reversed(re.findall(r"\(([^()]+)\)", subj)):
+            hit = known.get(g.strip().lower()) or (linker.thread(g) if linker.thread(g)[0] else None)
+            if hit: return hit
+        rest = re.sub(r"^(?:claim:|[\d/]+:)\s*", "", subj, flags=re.I)
         low = re.sub(r"\s*\([^()]*\)\s*$", "", rest).lower()
-        head = low.split(":", 1)[0].strip()
-        for t in self.threads:                                               # 'Thread: ...' or 'Claim: <alias>'
-            names = [t["title"].lower()] + [a.lower() for a in t.get("aliases", [])]
-            if head in names: return t["title"], t.get("url")
-        for t in self.threads:                                               # 'Sound editor merged ...'
-            for n in [t["title"]] + t.get("aliases", []):
-                if len(n.split()) >= 2 and re.match(re.escape(n.lower()) + r"\b", low): return t["title"], t.get("url")
-        for t in self.threads:                                               # 'Claim: bot editor and simulator'
-            if len(head.split()) >= 2 and head in t["title"].lower(): return t["title"], t.get("url")
+        head = re.sub(r"^claim\s+", "", low.split(":", 1)[0].strip())
+        if head in known: return known[head]                                 # 'Thread: ...' or 'Claim: <alias>'
+        for n in sorted(known, key=len, reverse=True):                       # 'Sound editor merged ...'
+            if len(n.split()) >= 2 and re.match(re.escape(n) + r"\b", low): return known[n]
+        for n, hit in known.items():                                         # 'Claim: bot editor and simulator'
+            if len(head.split()) >= 2 and head in n: return hit
+        votes = {}
+        for it in items:
+            th = entry_thread.get(it.get("entryId"))
+            if th and th != "q": votes[th] = votes.get(th, 0) + 1
+        if votes:
+            th = max(sorted(votes), key=lambda k: votes[k])
+            return known.get(th.lower(), (th, None))
         return None, None
 
     def publish(self, data):
@@ -535,9 +582,10 @@ def _blocks(e, es):
     thread = e.get("thread") or "a Claude agent"
     keys = lambda x: {(l["kind"], l.get("label")) for l in x.get("links", []) if l["kind"] in ("branch", "pr")}
     mine = keys(e)
+    if (e.get("threadRaw") or e.get("thread")) == "q": thread = "a Claude agent"                 # (q wrote it: no thread to name)
     work = [x for x in es if x["file"].startswith("02") and not x.get("archived") and x["status"] in ("in-progress", "open", "unknown")
-            and e.get("thread") and x.get("thread") == e.get("thread")]
-    work.sort(key=lambda x: (x["id"] != e["id"] and not (keys(x) & mine), x["status"] != "in-progress"))
+            and e.get("thread") and x.get("thread") == e.get("thread") and x["id"] != e["id"] and x.get("thread") != "q"]
+    work.sort(key=lambda x: (not (keys(x) & mine), x["status"] != "in-progress"))
     if work: return "%s: %s" % (thread, docsparse._short(work[0]["title"]).replace("**", "")), work[0]["id"]
     links = [l["label"] for l in e.get("links", []) if l["kind"] in ("pr", "branch")]
     return ("%s: %s" % (thread, links[0]) if links else thread), None
@@ -570,7 +618,7 @@ def make_summary(data, port=8766):
     es = [e for e in data["entries"] if not e.get("archived")]
     inprog = [e for e in es if e["file"].startswith("02") and e["section"].lower().startswith("in progress")
               and e["status"] in ("in-progress", "open", "unknown")]
-    waiting = {k: [] for k in ("owner", "push", "pr", "ci", "tests", "claude")}
+    waiting = {k: [] for k in ("owner", "push", "read", "answered", "pr", "ci", "tests", "claude")}
     for e in es:
         for k in e["waitingOn"]:
             if k in waiting: waiting[k].append(e["id"])

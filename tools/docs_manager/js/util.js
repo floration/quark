@@ -159,9 +159,10 @@ window.DM = window.DM || {};
     '00-agent-rules.md': 'Agent rules', '01-known-bugs.md': 'Known bugs', '02-currently-working-on.md': 'Currently working on',
     '03-possible-bugs.md': 'Possible bugs', '04-known-performance-improvements.md': 'Known performance improvements',
     '05-possible-performance-improvements.md': 'Possible performance improvements', '06-things-to-tell-the-user.md': 'Things to tell q',
-    '07-things-to-ask-the-user.md': 'Things to ask q', '08-other.md': 'Other notes', '09-answers-from-q.md': 'Answers from q', 'README.md': 'README',
+    '07-things-to-ask-the-user.md': 'Things to ask q', '08-other.md': 'Other notes', '09-answers-from-q.md': 'Answers from q', '10-github-rules.md': 'GitHub rules',
+    '11-github-notes.md': 'GitHub notes', '12-play-notes.md': 'Play notes', '13-app-audit.md': 'App audit', 'README.md': 'README',
   };
-  const FILE_SHORT = {'01': 'Bugs', '02': 'Working on', '03': 'Possible bugs', '04': 'Perf fixes', '05': 'Perf ideas', '06': 'To tell q', '07': 'To ask q', '08': 'Other', '09': 'Answers'};
+  const FILE_SHORT = {'01': 'Bugs', '02': 'Working on', '03': 'Possible bugs', '04': 'Perf fixes', '05': 'Perf ideas', '06': 'To tell q', '07': 'To ask q', '08': 'Other', '09': 'Answers', '12': 'Play notes'};
   function fileTitle(name) {
     const f = DM.state && DM.state.fileByName && DM.state.fileByName[name];
     let t = (f && f.title) || FILE_TITLES[name] || String(name || '').replace(/^\d+-/, '').replace(/\.md$/, '').replace(/-/g, ' ');
@@ -180,6 +181,8 @@ window.DM = window.DM || {};
     {key: 'halt', label: 'Halting a Claude', pill: 'Claude stopped until q acts', cls: 'halt'},
     {key: 'owner', label: "q's decision", pill: 'Waiting on q', cls: 'q'},
     {key: 'push', label: 'q to push', pill: 'Waiting on q to push', cls: 'q'},
+    {key: 'read', label: 'For q to read', pill: 'For q to read', cls: 'read'},
+    {key: 'answered', label: 'q answered, Claude to act', pill: 'Answered, Claude to act', cls: 'answered'},
     {key: 'ci', label: 'CI', pill: 'Waiting for CI', cls: 'ci'},
     {key: 'pr', label: 'PR review', pill: 'PR open', cls: 'pr'},
     {key: 'tests', label: 'Tests / repro', pill: 'Needs testing', cls: 'tests'},
@@ -191,12 +194,19 @@ window.DM = window.DM || {};
   function isDone(e) { return DONE.has(e.status); }
   // HALT priority, not finished: a Claude agent is stopped until q acts (the server sets e.halting).
   function isHalting(e) { return !!e && (e.halting === true || (e.halting == null && e.priority === 'HALT' && !DONE.has(e.status) && !e.archived)); }
+  // Not finished, but not work either: an 08 reference note or an archived entry (the server says it waits on nothing).
+  function isRef(e) {
+    if (isDone(e) || isHalting(e)) return false;
+    return !!e.archived || (Array.isArray(e.waitingOn) && e.waitingOn.length === 1 && e.waitingOn[0] === 'none');
+  }
+  // Open work: what every "unfinished" count, column and list means.
+  function isOpen(e) { return !isDone(e) && !isRef(e); }
   // Board keys for an entry (several possible), most blocking first.
   function waitKeys(e) {
-    if (isDone(e)) return [];
+    if (!isOpen(e)) return [];
     const w = new Set(Array.isArray(e.waitingOn) ? e.waitingOn : []);
     const out = isHalting(e) ? ['halt'] : [];
-    for (const k of ['push', 'owner', 'ci', 'pr', 'tests']) if (w.has(k) && !(k === 'owner' && out[0] === 'halt')) out.push(k);
+    for (const k of ['push', 'owner', 'read', 'answered', 'ci', 'pr', 'tests']) if (w.has(k) && !(k === 'owner' && out[0] === 'halt')) out.push(k);
     if (w.has('claude') || !out.length) out.push(e.status === 'in-progress' ? 'claude' : 'nobody');
     return out;
   }
@@ -206,6 +216,7 @@ window.DM = window.DM || {};
       const label = e.status === 'told' ? 'Told q' : e.status === 'wontfix' ? "Won't fix" : statusWord(e.status);
       return {cls: e.status === 'wontfix' ? 'wontfix' : 'done', label, key: 'done'};
     }
+    if (isRef(e)) return {cls: 'ref', label: e.archived ? 'Archived' : 'Reference', key: 'ref'};
     const k = waitKeys(e)[0];
     if (e.status === 'unknown' && k === 'nobody') return {cls: 'unknown', label: 'No status', key: 'nobody'};
     const w = WAIT_BY[k];
@@ -215,7 +226,7 @@ window.DM = window.DM || {};
     const p = pill(e);
     return h('span', {class: 'pill ' + p.cls + (small ? ' sm' : ''), title: e.waitingWhy || statusWord(e.status)}, p.label);
   }
-  function needsQ(e) { return !isDone(e) && Array.isArray(e.waitingOn) && (e.waitingOn.includes('owner') || e.waitingOn.includes('push')); }
+  function needsQ(e) { return isOpen(e) && Array.isArray(e.waitingOn) && (e.waitingOn.includes('owner') || e.waitingOn.includes('push')); }
   const PRI_RANK = {HALT: 1, P1: 2, P2: 3, P3: 4}; // (used as `PRI_RANK[p] || 9`: HALT first, no priority last)
   const PRI_TITLE = {HALT: 'HALT: a Claude agent can’t continue until you act', P1: 'Priority 1 (highest)', P2: 'Priority 2', P3: 'Priority 3 (lowest)'};
   // The priority mark: a solid red HALT pill (muted once it no longer halts), else the small P1-P3 tag.
@@ -284,6 +295,6 @@ window.DM = window.DM || {};
   }
 
   Object.assign(DM, {h, s, clear, $, $$, append, esc, safeUrl, safeHref, ext, dayKey, hhmm, dayLabel, full, dateOnly, rel, dayHeader,
-    timeEl, tickTimes, fileTitle, fileShort, statusWord, isDone, waitKeys, pill, pillEl, needsQ, PRI_RANK, priEl, isHalting, plain, trimTitle, sentences,
+    timeEl, tickTimes, fileTitle, fileShort, statusWord, isDone, isRef, isOpen, waitKeys, pill, pillEl, needsQ, PRI_RANK, priEl, isHalting, plain, trimTitle, sentences,
     chip, ghManagerUrl, shortBranch, loadPrefs, savePrefs, tip, toDate});
 })(window.DM);

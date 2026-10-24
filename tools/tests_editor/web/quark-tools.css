@@ -80,7 +80,7 @@ table.t { width: 100%; border-collapse: collapse; }
 table.t th { text-align: left; font-weight: 600; color: var(--qt-muted); font-size: var(--qt-fs-sm); padding: var(--qt-s1) var(--qt-s2); border-bottom: 1px solid var(--qt-line); white-space: nowrap; }
 table.t td { padding: var(--qt-s1) var(--qt-s2); border-bottom: 1px solid var(--qt-line); vertical-align: top; }
 table.t tr:last-child td { border-bottom: none; }
-table.t td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.t td.num, table.t th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* stacked bar: <div class="bar"><i class="h" style="width:20%"></i><i class="t" ...></i><i class="a" ...></i></div> */
 .bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--qt-panel2); border: 1px solid var(--qt-line); }

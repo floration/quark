@@ -24,7 +24,9 @@ revalidates.
   "branches": [{"name": "...", "sha": "...", "date": "...", "subject": "...", "author": "...",
                 "kind": "production" | "testing" | "claude" | "infra" | "other",       // infra = launcher, site, discord-bot
                 "ahead": 3, "behind": 10,                                               // vs testing (computed in the mirror: same as GitHub compare)
-                "pr": 8 | null, "lastRun": runSummary | null, "url": "..."}],
+                "unrelated": false,                     // true: no shared history with testing (gh-pages); ahead / behind null
+                "pr": 8 | null,                         // its open PR, else a closed one only while the branch is still at that PR's head
+                "lastRun": runSummary | null, "url": "..."}],
   "pulls": [{"number": 8, "title": "...", "state": "open" | "closed", "merged": true, "mergedAt": "...", "draft": false,
              "head": "claude/...", "base": "testing", "author": "...", "createdAt": "...", "updatedAt": "...",
              "url": "...", "checks": {"state": "success" | "failure" | "pending" | "none", "runs": [runSummary...]},
@@ -38,7 +40,9 @@ revalidates.
              "commits": [commit...] (local commits not on origin/testing, max 100), "version": "1.18.4" (VERSION file),
              "worktreeOf": null | "working-repo", "error": null | "text"}],
   "running": [runSummary...],    // status queued/in_progress/waiting/pending
-  "releases": [{"tagName": "v1.17.0", "isPrerelease": false, "publishedAt": "...", "url": "..."}]   // newest first, no drafts
+  "releases": [{"tagName": "v1.17.0", "isPrerelease": false, "publishedAt": "...", "url": "..."}],  // newest first, no drafts
+  "notRead": ["pulls", "releases", "runs"]   // GitHub parts not read since the server started (gh signed out, offline):
+                                             // their lists are empty / cached and production.publishedAt is the tag's date
 }
 commit     = {"sha": "...", "short": "abc1234", "subject": "...", "author": "...", "date": "...", "url": "..." | null}
 runSummary = {"id": 123, "workflow": "build-and-release", "branch": "...", "sha": "...", "event": "push", "title": "...",
@@ -70,7 +74,8 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
          | "note.added" | "note.edited" | "note.done" | "note.deleted"
          | "structure.changed" | "rules.changed"
          | "github.branch.created" | "github.branch.deleted" | "github.branch.renamed"
-         | "github.ruleset.created" | "github.ruleset.updated" | "github.ruleset.deleted" | "github.apply.failed",
+         | "github.ruleset.created" | "github.ruleset.updated" | "github.ruleset.deleted"
+         | "github.apply.failed" | "github.apply.refused" | "github.apply.stale" | "branch.renamed",
  "ref": {"run": 123} | {"pr": 8} | {"branch": "..."} | {"tag": "..."} | {"local": "working-repo"} | {}
         | {"note": "n0123456789ab", <its target: "branch" | "pr" | "run" | "commit" | "version" | "local": key>}
         | {"ruleset": 25800001} | {"branch": "...", "ruleset": ...},
@@ -78,14 +83,17 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
 ```
 - `id` is deterministic (type + object + version), so a restart never appends the same event twice.
 - `at` is when it happened where GitHub says (a run's end, a PR's merge, a release's publish), else the poll's time.
-- `baseline` (ref `{}`): written once, on the very first poll, instead of one event per existing branch / tag / run
+- `baseline` (ref `{}`): written once, on the first poll that read GitHub (`notRead` empty; until then no events at
+  all), instead of one event per existing branch / tag / run
   ("Started watching floration/quark: 18 branches, 105 tags, 2 open PRs, 290 runs, 4 local copies"; `data` has the
   counts). Things that existed before it never get events. Later, an item first seen in a poll gets an event only if
   it changed after the previous poll (minus 10 min), so the tool being off for a day still logs that day's runs.
 - `run.started` (a new run or a re-run attempt, text "... re-run #2 started on ..."), `run.completed` (data.conclusion:
   success / cancelled / skipped), `run.failed` (failure / timed_out / startup_failure; data.failedJobs).
 - `pr.opened` also covers a reopened PR. `pr.updated`: the open PR's head commit changed (data.from / data.to).
-- `branch.moved` data: from, to, forward (false = force-push), count (commits added).
+- `branch.moved` data: from, to, forward (false = force-push), count (commits added). `branch.renamed` (ref the new
+  name, id `branch.renamed:<old>:<new>:<sha>`): a branch gone and a new one at the same commit in one poll (data:
+  from, to, sha), instead of a delete plus a create.
 - `local.commit`: HEAD moved forward with commits that are not on origin's testing (data.count, data.subject).
   `local.moved`: anything else (a pull of testing, a reset, a branch switch). `local.dirty`: only when a copy goes
   from clean to dirty or back (data.dirty, data.was), not on every count change.
@@ -101,9 +109,12 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
   changed branch entries, `null` = removed; for rules `added`, `edited`, `removed` ids, the new `rules` and the
   `removedRules`). Ids `structure.changed:<rev>:<digest>`, `rules.changed:<rev>:<digest>`.
 - `github.*`: a pending change applied on GitHub (`github.branch.created` / `deleted` / `renamed`,
-  `github.ruleset.created` / `updated` / `deleted`, id `<type>:<change id>`), or a call GitHub refused
-  (`github.apply.failed`, id `github.apply.failed:<change id>:<at>`). data: change, type, params, before, after, call
-  (method, path, body) and result (or error).
+  `github.ruleset.created` / `updated` / `deleted`, id `<type>:<change id>`), or an Apply that didn't go through:
+  `github.apply.failed` (GitHub or gh refused the call, or the change can't be made: no such branch...),
+  `github.apply.refused` (the production lock) and `github.apply.stale` (GitHub changed since the preview), id
+  `<type>:<change id>:<at>`. data: change, type, params, before, after, call (method, path, body) and result; a
+  not-applied one: change, type, call, status, error. An applied rename also moves that branch's structure entry
+  (`structure.changed`) and its notes (`note.edited` with `from`) to the new name.
 
 ## GET /api/run?id=<id>
 
@@ -116,8 +127,10 @@ A small digest for the other local tools (the project manager on :8768), rebuilt
 ```
 {"generatedAt": "...", "repo": "floration/quark", "poll": {...same as /api/state...},
  "testing": {"sha": "...", "version": "1.18.6", "prerelease": {...} | null},
- "production": {"tag": "v1.17.0", "version": "1.17.0"},
- "openPulls": [{"number": 8, "title": "...", "head": "claude/...", "checks": {"state": "pending"}, "url": "..."}],
+ "production": {"tag": "v1.17.0", "version": "1.17.0", "sha": "...", "publishedAt": "..."},
+ "openPulls": [{"number": 8, "title": "...", "head": "claude/...", "base": "testing", "draft": false,
+                "updatedAt": "...", "checks": {"state": "pending"}, "url": "..."}],   // base: the production PR has the default branch
+ "notRead": [],                                                    // as in /api/state
  "running": [runSummary...], "lastFailed": runSummary | null,      // newest run that failed (no jobs)
  "lastTesting": runSummary | null,   // newest completed build-and-release run on testing (by createdAt): a re-run
                                      // that passes on the same sha turns it green
@@ -192,12 +205,13 @@ The agent rule `only-q-production` can't be edited, unlocked or removed (422 loc
  "rev": 4, "updatedAt": "...", "loadError": null,
  "roles": ["production", "testing", "infra", "work", "other"], "settableRoles": ["work", "infra", "other"],
  "protectedBranches": ["testing", "launcher", "site", "discord-bot", "gh-pages"], "defaultBranch": "...",
- "staleDays": 7, "staleRule": "limit-stale-days"}
+ "staleDays": 7, "staleScope": {"type": "branch", "match": "claude/*"}, "staleRule": "limit-stale-days"}
 ```
 The state's branches (/api/state) carry what this sets: `role` (production / testing from the repository, else q's
 role or the one the name gives), `roleSet` (q set it), `description`, `kind` (the Branches tab's kind: `claude` for
 work) and `stale`: a work / other branch, not protected, with no commit in `staleDays` days (the limit rule
-`limit-stale-days`) that is merged into testing (nothing ahead) or behind it.
+`limit-stale-days`) that is merged into testing (nothing ahead) or behind it, and inside that rule's scope
+(`staleScope`: a branch pattern limits it, e.g. `claude/*`; any other scope means every work / other branch).
 
 `PUT /api/structure` `{"branches": {"<name>": {"role", "description"} | null}, "rev"?}` merges those entries (null
 removes one; at most 100 per call, 2000 in all; description at most 2000 bytes). The role of testing and the default
@@ -218,6 +232,10 @@ rule = {"id": "limit-open-prs-per-thread", "title": "...", "text": "markdown",
 ```
 Seeded on the first start with the rules as they stand (the production rule first, then pushing / merging /
 versions / CI rules and three limits: `limit-open-prs-per-thread`, `limit-stale-days`, `limit-ci-job-minutes`).
+A seeded set is marked `"seeded": true` in rules.json until q edits it; before its first push to the Claude Documents
+the server reads the `github-rules.json` already there and, when there is one, takes those rules instead (a
+`rules.changed` event "loaded from the Claude Documents"), so a new install never pushes the seed over rules edited
+elsewhere.
 A limit has a numeric `value` (0-100000); other kinds have `value: null`. `locked` on other rules is q's mark
 ("agents never change it or work around it"); the page asks before changing one.
 
@@ -301,8 +319,8 @@ edit there, not here"), `github-rules.json` (`{"generatedBy", "note", "repo", "d
 `11-github-notes.md`. 10 s after the last change (a burst is one commit), and 30 s after a start when the files
 differ from what was last pushed: fetch, reset the clone to origin/main, write, commit "GitHub Manager:
 rules/notes updated", push; a rejected push is retried once after `git pull --rebase`. Nothing else in that repo is
-touched. A failure shows in `docsSync` (above), in the page and in `poll.warnings`, and is retried on the next
-change; it never stops the server. Off with `GHM_DOCS_SYNC=off`, `"claudeDocs": false`, or a repo other than
+touched. A failure shows in `docsSync` (above), in the page and in `poll.warnings`, and is retried on every poll
+(and on the next change) until it works; it never stops the server. Off with `GHM_DOCS_SYNC=off`, `"claudeDocs": false`, or a repo other than
 floration/quark without `claudeDocsRepo`.
 
 

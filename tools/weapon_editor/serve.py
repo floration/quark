@@ -345,10 +345,11 @@ def atomic_write(path, data, backup=True):
 # ---------------------------------------------------------------- the helpers
 
 def helper_cmd(args):
-    if not CFG.maptool: return None
-    if not args or args[0] not in HELPER_CMDS: return None
-    if not all(isinstance(a, str) and re.match(r"^[A-Za-z0-9_.=:,+-]{1,64}$", a) for a in args): return None
-    return [CFG.maptool] + CFG.helper_args + list(args)
+    """(the command line, None) or (None, (HTTP code, why)): a missing helper and a refused request say different things"""
+    if not CFG.maptool: return None, (501, "quark_maptool not found")
+    if not args or args[0] not in HELPER_CMDS: return None, (400, "not a helper command: %s" % (args[0] if args else "(none)"))
+    if not all(isinstance(a, str) and re.match(r"^[A-Za-z0-9_.=:,+-]{1,64}$", a) for a in args): return None, (400, "bad helper arguments")
+    return [CFG.maptool] + CFG.helper_args + list(args), None
 
 
 def parse_answer(out):
@@ -635,8 +636,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200 if d else 500, {"dir": d, "log": msg})
             if p == "/api/helper":
                 body = self._json_body()
-                cmd = helper_cmd(body.get("args") or [])
-                if not cmd: return self._err(501, "quark_maptool not found (or bad args)")
+                cmd, bad = helper_cmd(body.get("args") or [])
+                if not cmd: return self._err(*bad)
                 t0 = time.time()
                 r = subprocess.run(cmd, input=json.dumps(body.get("request") or {}), capture_output=True, text=True,
                                    encoding="utf-8", errors="replace", timeout=float(body.get("timeout") or 120),
@@ -647,8 +648,8 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 args = body.get("args") or ["sim", "--stream"]
                 if not args or args[0] not in RUN_CMDS: return self._err(400, "not a streaming command")
-                cmd = helper_cmd(args)
-                if not cmd: return self._err(501, "quark_maptool not found (or bad args)")
+                cmd, bad = helper_cmd(args)
+                if not cmd: return self._err(*bad)
                 run = Run(cmd, body.get("request") or {})
                 with RUNS_LOCK:
                     for k in [k for k, r in RUNS.items() if r.done and time.time() - r.started > 3600]: del RUNS[k]

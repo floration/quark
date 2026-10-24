@@ -163,8 +163,19 @@
       box.appendChild(h('div', {class: 'banner b-info'},
         h('b', null, 'Edited on the PC, not synced yet: '),
         unsynced.map((f, i) => [i ? ', ' : '', h('a', {href: '#tab=files&file=' + encodeURIComponent(f.name), onclick: ev => { ev.preventDefault(); DM.app.openFile(f.name); }}, DM.fileTitle(f.name))]),
-        '. Those changes are only on this PC until ', h('code', null, 'sync.cmd'), ' pushes them; other Claudes can’t see them yet.'));
+        '. Other Claudes can’t see those changes yet. ', unsyncedHow()));
     }
+  }
+
+  // Saves made from this page that couldn't be pushed go up by themselves (every 5 min) or with Send now; edits
+  // made in a text editor on the PC go up with sync.cmd (or by saving the file from the Edit tab).
+  function unsyncedHow() {
+    const es = DM.edit && DM.edit.canEdit() ? DM.edit.editStatus() : null;
+    if (es && Date.now() - es.at > 20000) { DM.edit.refreshStatus(); }
+    const n = es && es.status && es.status.unpushed || 0;
+    if (n) return [n + (n === 1 ? ' save from this page is' : ' saves from this page are') + ' waiting to go up: the manager tries again every 5 minutes. ',
+      h('button', {class: 'mini', onclick: () => DM.edit.pushNow()}, 'Send now')];
+    return ['They go up when ', h('code', null, 'sync.cmd'), ' runs', DM.edit && DM.edit.canEdit() ? ', or when you save the file from the Edit tab' : '', '.'];
   }
 
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (!st.lastTry || Date.now() - st.lastTry > 5000)) load(); });

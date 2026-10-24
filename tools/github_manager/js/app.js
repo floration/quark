@@ -115,7 +115,7 @@ function renderStatus() {
 function renderBanner() {
   const s = store.state, msgs = [];
   if (store.reachable === false && s) {
-    msgs.push(html`<div class="msg bad"><b>Can't reach the GitHub manager server</b> (last answer ${rel(new Date(store.lastFetchAt).toISOString())}). Showing the last data it sent. If its window was closed, run <code>github-manager.cmd</code> again; this page reconnects by itself.</div>`);
+    msgs.push(html`<div class="msg bad"><b>Can't reach the GitHub manager server</b> (last answer ${rel(new Date(store.lastFetchAt).toISOString())}). Showing the last data it sent. ${s.shell ? 'The Quark Project app restarts it by itself' : html`Start it again with <code>github-manager.cmd</code> (it runs without a window)`}; this page reconnects by itself.</div>`);
   }
   if (s && s.poll && s.poll.lastError) {
     msgs.push(html`<div class="msg warn"><b>The last GitHub poll failed:</b> ${s.poll.lastError}. ${s.poll.lastOk ? html`Data is from the last good poll, ${rel(s.poll.lastOk)}.` : ''}</div>`);
@@ -133,7 +133,8 @@ function renderTabCounts() {
   set('branches', String((s.branches || []).length));
   const dirty = (s.local || []).filter((l) => l.dirty).length;
   set('local', String((s.local || []).length), dirty ? 'warn' : '');
-  set('pulls', String((s.pulls || []).filter((p) => p.state === 'open').length));
+  const pullsUnread = (s.notRead || []).includes('pulls');  // GitHub not read yet: unknown, not 0
+  set('pulls', pullsUnread ? '?' : String((s.pulls || []).filter((p) => p.state === 'open').length), pullsUnread ? 'warn' : '');
   const running = idx.running.length;
   set('runs', running ? `${running} running` : '', running ? 'run' : '');
   const open = openCount(), waiting = waitingChanges().length;
@@ -145,7 +146,7 @@ function renderOffline() {
   el.view.innerHTML = String(html`<section class="offline card">
     <h2>The GitHub manager server isn't running</h2>
     <p>This page gets everything from the local server at <code>http://127.0.0.1:8767/</code>, and nothing answered there.</p>
-    <p><b>Run <code>github-manager.cmd</code></b> (it starts the server and keeps a window open while it runs). This page keeps trying every few seconds and fills in by itself.</p>
+    <p>In the Quark Project app the server is started, and restarted, for you: give it a moment. Otherwise <b>run <code>github-manager.cmd</code></b>: it starts the server in the background, with no window. This page keeps trying every few seconds and fills in by itself.</p>
     <p class="muted small">${store.fetchError}</p></section>`);
 }
 
@@ -192,6 +193,21 @@ async function poll() {
     if (!store.state) renderOffline();
   }
   schedule(ok ? null : RETRY_MS);
+}
+// After an Apply the server polls GitHub at once: follow it closely (every second, for up to ~15 s) until that
+// poll's state arrives, instead of waiting for the 15 s timer with a deleted branch still listed.
+let following = null;
+function followServerPoll() {
+  if (following) return following;
+  const was = store.state && store.state.generatedAt;
+  following = (async () => {
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      await poll();
+      if (store.state && store.state.generatedAt !== was) break;
+    }
+  })().finally(() => { following = null; });
+  return following;
 }
 function schedule(wait) {
   clearTimeout(pollTimer);
@@ -275,6 +291,7 @@ initNotes({
 initGhEdit({
   onChange() { if (!store.state) return; redraw(); renderTabCounts(); if (store.historyLoaded) ensureHistory(true); },
   toast,
+  reload: followServerPoll,
 });
 
 window.addEventListener('hashchange', route);

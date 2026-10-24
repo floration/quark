@@ -25,6 +25,14 @@ export const api = {
     saveMode: (name, body) => req("POST", `/api/mode?name=${q(name)}`, body, "json"),
     checkMode: (text) => req("POST", "/api/checkmode", text),
     provenance: (name, prov) => req("POST", `/api/provenance?name=${q(name)}`, prov, "json"),
+    provenanceOf: (name) => req("GET", `/api/provenance?name=${q(name)}`),   // {item: {origin, by, date, tool, note} | null}
+    // rename / duplicate / delete one of the user's modes: {ok, text?, sha256?, mtime?, backup?}; 409 when it changed on disk
+    modeOp: (op, name, to, baseSha256) => req("POST", `/api/mode/${op}?name=${q(name)}${to ? "&to=" + q(to) : ""}`, { baseSha256 }, "json"),
+    brains: () => req("GET", "/api/brains"),              // {brains: [name], dir}
+    scenarios: () => req("GET", "/api/scenarios"),        // {scenarios: [{name, scenario}], dir}
+    saveScenario: (name, sc) => req("POST", `/api/scenario?name=${q(name)}`, sc, "json"),
+    deleteScenario: (name) => req("POST", `/api/scenario/delete?name=${q(name)}`, {}, "json"),
+    run: (id) => req("GET", `/api/run/${id}`),            // {id, done, code, lines, started, args}: a run still known to serve.py
     modesimStatus: () => req("GET", "/api/modesim/status"),
     maps: () => req("GET", "/api/maps"),
     state: (key) => req("GET", `/api/state?key=${q(key)}`),

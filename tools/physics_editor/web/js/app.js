@@ -4,9 +4,10 @@
 //   scenario        the scenario changed           results   new runs to show            map   the test map changed
 //   games           the picked reference games (Values › Compare with games) or their data changed
 //   exprcheck       the helper's own evaluator (physexpr) answered for the edited set's equations
+//   theme           light / dark changed (canvases redraw with the new colours)
 import { api } from "./api.js";
 import { createHelper } from "./helper.js";
-import { parseQmap } from "./qmap.js";
+import { parseQmap, openRun, nearBoxes } from "./qmap.js";
 import { standardPhysics, clonePhysics, changedKeys } from "./params.js";
 import { parseQmode, mergeQmode } from "./qmode.js";
 import { computeMetrics, mergeMetrics, metricRows } from "./sim.js";
@@ -26,9 +27,22 @@ const $ = (id) => document.getElementById(id);
 export const RUN_COLORS = ["--run0", "--run1", "--run2", "--run3", "--run4", "--run5"];
 export const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888";
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// Light / dark: the system's by default; ?theme=light|dark or the header button forces one (<html data-theme>, the
+// Quark tools' convention, quark-tools.css). Applied before anything draws.
+const THEMES = ["auto", "light", "dark"];
+function themeChoice() {
+    const q = new URLSearchParams(location.search).get("theme");
+    if (THEMES.includes(q)) return q;
+    try { const t = localStorage.getItem("qpe.theme"); if (THEMES.includes(t)) return t; } catch {}
+    return "auto";
+}
+function applyTheme(t) { if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; }
+applyTheme(themeChoice());
 
 class App {
-    constructor() { this.handlers = {}; this.compareSel = new Set(); this.extraRuns = []; this.runSeq = 0; }
+    constructor() { this.handlers = {}; this.compareSel = new Set(); this.extraRuns = []; this.runSeq = 0; this.undoStack = []; this.redoStack = []; }
     on(e, f) { (this.handlers[e] || (this.handlers[e] = [])).push(f); }
     emit(e, ...a) { for (const f of this.handlers[e] || []) f(...a); }
     toast(msg, ms = 2600) {
@@ -46,6 +60,28 @@ class App {
             f.onchange = () => { const file = f.files[0]; if (!file) return res(null); file.text().then((text) => res({ name: file.name, text })); };
             f.click();
         });
+    }
+    // an in-page yes / no (never window.confirm: it blocks the page, and the Quark Project app's shell may not show it)
+    confirm(title, msg, okLabel = "OK", danger = false) {
+        return new Promise((res) => {
+            const m = document.createElement("div");
+            m.className = "modal";
+            m.innerHTML = `<div role="alertdialog" aria-modal="true"><h3></h3><p class="small"></p><div class="row" style="justify-content:flex-end;margin-top:10px"><button data-x="0">Cancel</button><button data-x="1" class="${danger ? "danger" : "primary"}"></button></div></div>`;
+            m.querySelector("h3").textContent = title; m.querySelector("p").textContent = msg;
+            const ok = m.querySelector('[data-x="1"]'); ok.textContent = okLabel;
+            const done = (yes) => { m.remove(); document.removeEventListener("keydown", key, true); res(yes); };
+            const key = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); } };
+            m.querySelectorAll("button").forEach((b) => (b.onclick = () => done(b.dataset.x === "1")));
+            m.addEventListener("mousedown", (e) => { if (e.target === m) done(false); });
+            document.addEventListener("keydown", key, true);
+            document.body.append(m); (danger ? m.querySelector('[data-x="0"]') : ok).focus();
+        });
+    }
+    // before something replaces the edited set (another set, New, a file): unsaved changes are asked about
+    async discardOk(what) {
+        if (!this.set.dirty) return true;
+        const n = this.set.name || this.set.saved || "the edited set";
+        return this.confirm("Discard the unsaved changes?", `${n} has changes that aren't saved: ${what} replaces them, and Undo can't bring them back.`, "Discard", true);
     }
     prompt(title, value, help = "") {
         return new Promise((res) => {
@@ -101,7 +137,18 @@ class App {
         window.addEventListener("keydown", (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); this.saveSet(); }
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); this.run(); }
+            // undo / redo, except where the browser's own text undo belongs (the Code text, the equation and name fields)
+            const k = e.key.toLowerCase(), t = e.target;
+            const texty = t && (t.tagName === "TEXTAREA" || t.isContentEditable || (t.tagName === "INPUT" && /^(text|search|)$/.test(t.type || "")));
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "z" || k === "y") && !texty && !document.pointerLockElement && !document.querySelector(".modal")) {
+                e.preventDefault();
+                if (k === "y" || e.shiftKey) this.redo(); else this.undo();
+            }
         });
+        // the session's last change is written when the page goes (the autosave waits 0.8 s for edits to settle)
+        window.addEventListener("pagehide", () => this.flushAutosave());
+        document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") this.flushAutosave(); });
+        this._themeUi();
         await Promise.all([this.refreshModes(), this.refreshMaps(), this.refreshScenarios()]);
         await this.restore();
         this.setGamePicks(this.games.picks, true);
@@ -121,7 +168,9 @@ class App {
     }
 
     // ---------------------------------------------------------------- the physics set
-    setPhysics(ph, from) {
+    // group: edits in a row to one thing (a slider drag, typing in one field) are one undo step; none: a step of its own
+    setPhysics(ph, from, group) {
+        this._record(group);
         this.physics = ph;
         if (from !== "code") this.set.text = mergeQmode(this.set.text, ph, this.set.name || "my physics", this.knownMove);
         this.set.dirty = true;
@@ -135,8 +184,59 @@ class App {
         this.set.text = text;
         const p = parseQmode(text, this.cat);
         this.codeParse = p;
-        this.setPhysics(p.physics, "code");
+        this.setPhysics(p.physics, "code", "code");
         return p;
+    }
+
+    // ---------------------------------------------------------------- undo / redo
+    // Every change to the edited set (Values, the Code text, a game's values, a reset) is a step; opening another set
+    // starts a new history (the unsaved-changes question comes first).
+    _record(group) {
+        const now = performance.now();
+        if (group && group === this._hGroup && now - this._hAt < 1500) { this._hAt = now; return; }
+        this.undoStack.push(this._snap());
+        if (this.undoStack.length > 300) this.undoStack.shift();
+        this.redoStack = [];
+        this._hGroup = group; this._hAt = now;
+        this._undoUi();
+    }
+    _snap() { return { physics: clonePhysics(this.physics), text: this.set.text, dirty: this.set.dirty }; }
+    undo() { this._step(this.undoStack, this.redoStack, "Undo"); }
+    redo() { this._step(this.redoStack, this.undoStack, "Redo"); }
+    _step(from, to, what) {
+        if (!from.length) return this.toast(`Nothing to ${what.toLowerCase()}`, 1500);
+        to.push(this._snap());
+        const s = from.pop();
+        this.physics = s.physics;
+        this.set.text = s.text;
+        this.set.dirty = this.set.saved ? s.text !== this.set.baseText : s.dirty;
+        this.codeParse = parseQmode(s.text, this.cat);
+        this._hGroup = null;
+        this.emit("physics", "undo");
+        this.scheduleRun(); this.scheduleExprCheck(); this.autosave(); this._setInfo(); this._undoUi();
+    }
+    _clearHistory() { this.undoStack = []; this.redoStack = []; this._hGroup = null; this._undoUi(); }
+    _undoUi() {
+        const u = $("setUndo"), r = $("setRedo");
+        if (!u) return;
+        u.disabled = !this.undoStack.length; r.disabled = !this.redoStack.length;
+        u.title = `undo (Ctrl+Z)${this.undoStack.length ? ": " + this.undoStack.length + " step" + (this.undoStack.length > 1 ? "s" : "") : ""}`;
+        r.title = `redo (Ctrl+Shift+Z / Ctrl+Y)${this.redoStack.length ? ": " + this.redoStack.length : ""}`;
+    }
+
+    // ---------------------------------------------------------------- light / dark
+    _themeUi() {
+        const b = $("themeBtn");
+        const show = () => { const t = themeChoice(); b.textContent = { auto: "◐", light: "☀", dark: "☾" }[t]; b.title = `theme: ${t === "auto" ? "the system's" : t} (click: ${THEMES[(THEMES.indexOf(t) + 1) % 3] === "auto" ? "the system's" : THEMES[(THEMES.indexOf(t) + 1) % 3]})`; };
+        b.onclick = () => {
+            const t = THEMES[(THEMES.indexOf(themeChoice()) + 1) % 3];
+            try { localStorage.setItem("qpe.theme", t); } catch {}
+            if (new URLSearchParams(location.search).has("theme")) { const u = new URL(location.href); u.searchParams.delete("theme"); history.replaceState(null, "", u); }
+            applyTheme(t); show(); this.emit("theme");
+        };
+        try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { if (themeChoice() === "auto") this.emit("theme"); }); } catch {}
+        this.on("theme", () => { if (this.results) this.emit("results"); });
+        show();
     }
     async refreshModes() {
         try { const r = await api.modes(); this.modes = r.modes; this.modesDir = r.dir; } catch { this.modes = []; }
@@ -155,6 +255,7 @@ class App {
         this.set = { name, saved: name, baseText: text, text, dirty: false };
         this.codeParse = p;
         this.physics = p.physics;
+        this._clearHistory();
         $("setName").value = name; $("setSel").value = name;
         this.emit("physics", "load");
         this.scheduleRun(); this.autosave(); this._setInfo();
@@ -163,6 +264,7 @@ class App {
     newSet() {
         this.physics = clonePhysics(this.std);
         this.set = { name: "", saved: null, baseText: "", text: mergeQmode("", this.physics, "my physics", this.knownMove), dirty: false };
+        this._clearHistory();
         $("setName").value = ""; $("setSel").value = "";
         this.emit("physics", "load"); this.scheduleRun(); this.autosave(); this._setInfo();
     }
@@ -172,7 +274,7 @@ class App {
         if (!name) return;
         if (!NAME_RE.test(name) || name.endsWith(" ")) { this.toast("Bad name: letters, digits, space, _ and - (40 at most)", 4000); return; }
         const exists = (this.modes || []).some((m) => m.name === name);
-        if (exists && name !== this.set.saved && !confirm(`${name}.qmode exists: write this set's movement lines into it? (its other lines are kept)`)) return;
+        if (exists && name !== this.set.saved && !(await this.confirm(`Write into ${name}.qmode?`, `${name}.qmode exists: write this set's movement lines into it? Its other lines (the mode, weapons, the gamemode editor's logic) are kept.`, "Write"))) return;
         const body = { physics: this.physics };
         if (!exists) {
             if (this.set.saved && this.set.saved !== name) body.from = this.set.saved;
@@ -263,7 +365,7 @@ class App {
             } catch (e) { this.toast("Couldn't load the map: " + e.message, 5000); return; }
         }
         $("mapSel").value = v;
-        this.emit("map"); this.autosave();
+        this.emit("map"); this.autosave(); this._presetMapNote();
     }
     useSpawn(i) {
         const s = this.mapChoice.map && this.mapChoice.map.spawns[i | 0];
@@ -279,14 +381,62 @@ class App {
         $("presetSel").value = id;
         $("presetDesc").textContent = p.desc || "";
         const sc = JSON.parse(JSON.stringify(p.scenario));
-        if (!this.mapChoice.room && !keepMap) { this.scenario = sc; this.useSpawn($("spawnSel").value); return; }
+        if (!this.mapChoice.room && !keepMap) { this.scenario = sc; this.useSpawn($("spawnSel").value); this._presetMapNote(); return; }
         this.setScenario(sc, "preset");
+        this._presetMapNote();
+    }
+    // The presets are made for the test room (a run-up, a gap, a wall where they need one). On a real map a wall or a
+    // ledge in front of the spawn cuts them short (a jump distance of 0): said under the preset, with a button that
+    // starts from the spawn and direction with the most open floor ahead.
+    _presetMapNote() {
+        const box = $("presetNote");
+        if (this.mapChoice.room || !this.mapChoice.map) { box.style.display = "none"; return; }
+        const preset = this.presets.find((x) => x.id === this.presetId);
+        box.style.display = "";
+        box.innerHTML = (preset ? `<b>${esc(preset.label)}</b> was made for the test room: on ${esc(this.mapChoice.name)} a wall or a ledge ahead can cut it short (a distance of 0).`
+            : `On ${esc(this.mapChoice.name)} the scenario starts at the chosen spawn, facing its way.`)
+            + ` <button id="aimBtn" title="start at the spawn and direction with the longest run of open floor ahead (walls and drops checked every 0.5 m, up to 40 m)">aim along open floor</button>`;
+        $("aimBtn").onclick = () => this.aimOpenFloor();
+    }
+    aimOpenFloor() {
+        const map = this.mapChoice.map;
+        if (!map || !map.spawns.length) return;
+        const cur = +$("spawnSel").value || 0;
+        let best = { d: -1 };
+        map.spawns.forEach((sp, i) => {
+            const boxes = nearBoxes(map, sp.x, sp.z, 42);
+            for (let k = 0; k < 24; k++) {   // (every 15 degrees; the spawn's own direction first, so a tie keeps it)
+                const yaw = sp.yaw + k * Math.PI / 12, d = openRun(boxes, sp.x, sp.y, sp.z, yaw);
+                if (d > best.d + 1e-6 || (Math.abs(d - best.d) < 1e-6 && i === cur && best.i !== cur)) best = { d, i, yaw };
+            }
+        });
+        if (best.d <= 0) return this.toast("No open floor ahead of any spawn on this map", 4000);
+        $("spawnSel").value = best.i;
+        const deg = ((best.yaw / (Math.PI / 180)) % 360 + 540) % 360 - 180;
+        this.scenario.start = { ...this.scenario.start, pos: [map.spawns[best.i].x, map.spawns[best.i].y, map.spawns[best.i].z], yaw: +deg.toFixed(1) };
+        delete this.scenario.start.onGround;
+        this.setScenario(this.scenario, "spawn");
+        this.toast(`Starts at spawn ${best.i + 1}, facing ${deg.toFixed(0)}°: ${best.d.toFixed(1)} m of open floor ahead`, 4000);
     }
     setScenario(sc, from) {
         this.scenario = sc;
         this.emit("scenario", from);
         this.scheduleRun();
         this.autosave();
+    }
+    // a saved scenario (physics_editor/scenarios/<name>.json): its map first (a map that isn't there any more: the
+    // test room, said so), then its steps
+    async loadScenario(n) {
+        let sc;
+        try { sc = await api.scenario(n); } catch (e) { this.toast(`Couldn't load the scenario ${n}: ${e.message}`, 5000); return; }
+        if (!sc || typeof sc !== "object" || !Array.isArray(sc.steps) || !sc.start) { this.toast(`${n}.json isn't a scenario (no start / steps)`, 5000); return; }
+        let want = sc.map && sc.map !== "room" && sc.map.name ? sc.map.source + ":" + sc.map.name : "room";
+        if (want !== "room" && !this.maps.some((m) => m.source + ":" + m.name === want)) { this.toast(`${n}: the map ${sc.map.name} isn't there any more: running it in the test room`, 5000); want = "room"; }
+        if (want !== $("mapSel").value) await this.chooseMap(want);
+        delete sc.map;
+        this.presetId = "custom"; $("presetSel").value = "custom"; $("presetDesc").textContent = "saved scenario " + n;
+        this.setScenario(sc, "load");
+        this._presetMapNote();
     }
     async refreshScenarios() {
         try { const r = await api.scenarios(); this.savedScenarios = r.scenarios; } catch { this.savedScenarios = []; }
@@ -341,7 +491,7 @@ class App {
             const runs = r.runs.map((run, i) => ({ ...run, label: labels[i] || "run " + i, color: cssVar(RUN_COLORS[i % RUN_COLORS.length]),
                 metrics: mergeMetrics(run.metrics, computeMetrics(run, scenario)) }));
             this.results = { runs, scenario, ms: r.ms, via: r.via, at: Date.now() };
-            info.textContent = `${r.via}: ${runs.length} run${runs.length > 1 ? "s" : ""} in ${(+r.ms || 0).toFixed(1)} ms${r.wallMs ? ` (${r.wallMs} ms with the process)` : ""}`;
+            info.textContent = `${r.via}: ${runs.length} run${runs.length > 1 ? "s" : ""} in ${(+r.ms || 0).toFixed(1)} ms${r.wallMs ? ` (${r.wallMs} ms ${r.worker ? "through the helper kept running" : "with the process"})` : ""}`;
             const dyn = this.helper.kind === "real" && !this.helper.hasExpr && [this.physics, ...cmp.map((c) => c.physics)].some((p) => p.expr && resolve(p, this.cat).dynamicKeys.length);
             if (dyn) info.insertAdjacentHTML("beforeend", `<div class="warn">this quark_maptool doesn't run equations yet: dynamic ones run at their value standing still</div>`);
             this._mini();
@@ -374,23 +524,35 @@ class App {
 
     // ---------------------------------------------------------------- the side panel
     _side() {
-        $("setSel").onchange = (e) => (e.target.value ? this.openSet(e.target.value) : this.newSet());
-        $("setNew").onclick = () => this.newSet();
+        $("setSel").onchange = async (e) => {
+            const v = e.target.value;
+            if (!(await this.discardOk(v ? `opening ${v}.qmode` : "a new set"))) { e.target.value = this.set.saved || ""; return; }
+            v ? this.openSet(v) : this.newSet();
+        };
+        $("setNew").onclick = async () => { if (await this.discardOk("a new set")) this.newSet(); };
+        $("setUndo").onclick = () => this.undo();
+        $("setRedo").onclick = () => this.redo();
         $("setSave").onclick = () => this.saveSet();
         $("setSaveAs").onclick = async () => { const n = await this.prompt("Save as", this.set.name || "my physics", "a new custom mode: letters, digits, space, _ and -"); if (n) this.saveSet(n); };
         $("setName").oninput = (e) => { this.set.name = e.target.value.trim(); this.autosave(); };
         $("setOpenFile").onclick = async () => {
+            if (!(await this.discardOk("opening a file"))) return;
             const f = await this.pickFile(".qmode,.txt");
             if (!f) return;
             const p = parseQmode(f.text, this.cat);
             this.set = { name: (p.name || f.name.replace(/\.[^.]*$/, "")).trim(), saved: null, baseText: f.text, text: f.text, dirty: true };
             $("setName").value = this.set.name; $("setSel").value = "";
-            this.codeParse = p; this.physics = p.physics;
+            this.codeParse = p; this.physics = p.physics; this._clearHistory();
             this.emit("physics", "load"); this.scheduleRun(); this.autosave(); this._setInfo();
             this.toast(`Opened ${f.name}: Save writes it to custom_modes/`, 3500);
         };
         $("setDownload").onclick = () => this.download((this.set.name || "physics") + ".qmode", this.set.text);
-        $("setResetAll").onclick = () => this.setPhysics(clonePhysics(this.std), "reset");
+        $("setResetAll").onclick = async () => {
+            const n = changedKeys(this.physics, this.cat).length + (this.physics.imports ? 1 : 0);
+            if (!n) return this.toast("Every value is at the standard physics already");
+            if (await this.confirm("Reset every value?", `Every movement value (and equation) goes back to the standard physics. Undo (Ctrl+Z) takes it back.`, "Reset all", true))
+                this.setPhysics(clonePhysics(this.std), "reset");
+        };
         const ps = $("presetSel");
         for (const p of this.presets) ps.append(new Option(p.label, p.id));
         ps.append(new Option("(custom: the Blocks tab)", "custom"));
@@ -403,18 +565,17 @@ class App {
             const n = await this.prompt("Save the scenario", (this.scenario.name || "scenario").replace(/[^A-Za-z0-9_.-]+/g, "_"), "physics_editor/scenarios/<name>.json in the data folder");
             if (!n) return;
             if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n)) return this.toast("Bad name: letters, digits, _ . -", 4000);
-            await api.saveScenario(n, { ...this.scenario, name: this.scenario.name || n, map: this.mapChoice.room ? "room" : { name: this.mapChoice.name, source: this.mapChoice.source } });
-            await this.refreshScenarios(); this.toast("Saved scenario " + n);
+            if (this.savedScenarios.some((s) => s.name === n) && !(await this.confirm("Replace the saved scenario?", `${n}.json is saved already: write this scenario over it?`, "Replace"))) return;
+            try {
+                await api.saveScenario(n, { ...this.scenario, name: this.scenario.name || n, map: this.mapChoice.room ? "room" : { name: this.mapChoice.name, source: this.mapChoice.source } });
+                await this.refreshScenarios(); this.toast("Saved scenario " + n);
+            } catch (err) { this.toast("Saving the scenario failed: " + err.message, 6000); }
         };
         $("scLoad").onchange = async (e) => {
             const n = e.target.value; e.target.value = "";
-            if (!n) return;
-            const sc = JSON.parse(await api.scenario(n));
-            if (sc.map && sc.map !== "room" && sc.map.name) { $("mapSel").value = sc.map.source + ":" + sc.map.name; await this.chooseMap($("mapSel").value); }
-            this.presetId = "custom"; $("presetSel").value = "custom"; $("presetDesc").textContent = "saved scenario " + n;
-            this.setScenario(sc, "load");
+            if (n) await this.loadScenario(n);
         };
-        this.on("scenario", (from) => { if (from === "blocks") { this.presetId = "custom"; $("presetSel").value = "custom"; $("presetDesc").textContent = "your own scenario (Blocks)"; } });
+        this.on("scenario", (from) => { if (from === "blocks") { this.presetId = "custom"; $("presetSel").value = "custom"; $("presetDesc").textContent = "your own scenario (Blocks)"; this._presetMapNote(); } });
         this._setInfo();
     }
     _compareList() {
@@ -455,10 +616,13 @@ class App {
     // ---------------------------------------------------------------- the session (the data folder, not the browser)
     autosave() {
         clearTimeout(this._as);
-        this._as = setTimeout(() => {
-            api.saveState("session", { set: this.set, physics: this.physics, scenario: this.scenario, presetId: this.presetId,
-                map: this.mapChoice.room ? "room" : { name: this.mapChoice.name, source: this.mapChoice.source }, compare: [...this.compareSel] }).catch(() => {});
-        }, 800);
+        this._as = setTimeout(() => this.flushAutosave(), 800);
+    }
+    flushAutosave() {
+        if (!this._as) return;
+        clearTimeout(this._as); this._as = 0;
+        api.saveState("session", { set: this.set, physics: this.physics, scenario: this.scenario, presetId: this.presetId,
+            map: this.mapChoice.room ? "room" : { name: this.mapChoice.name, source: this.mapChoice.source }, compare: [...this.compareSel] }, true).catch(() => {});
     }
     async restore() {
         let s = null;
@@ -479,7 +643,7 @@ class App {
                 if (!(this.modes || []).some((m) => m.name === n)) continue;
                 try { const t = await api.mode(n); this.compareCache.set(n, parseQmode(t, this.cat).physics); this.compareSel.add(n); } catch {}
             }
-            this._compareList(); this._setInfo();
+            this._compareList(); this._setInfo(); this._presetMapNote();
         } catch (e) { console.warn("session not restored", e); }
     }
 }

@@ -8,6 +8,7 @@ import { decompose, compose, catalog, symbols, slotKey, newExpr, newStmt, declKe
 import { WEAPONS } from "./catalog.js";
 import { exprNumText, printDeclHead, roundTo, canonNum } from "./dsl.js";
 import { CurveWidget } from "./curves.js";
+import { addButton, emptyHint } from "./newdecl.js";
 
 // a slot's catalog entry as {when, sensors: {name: type}, outputs: {name: type}}
 export function slotInfo(name) {
@@ -111,7 +112,6 @@ export class BlocksView {
         this.brain = brain;
         this.S = symbols(brain);
         this.model = brainToBlocks(brain);
-        this._top = new WeakSet(this.model.decls.map((b) => b.stacks.body).filter(Boolean));
         this.declJson = this.model.decls.map((b) => JSON.stringify(fromBlocks(b)));
         if (this._focusKey && declKeySel === undefined) { declKeySel = this._focusKey; this._focusKey = null; }
         if (declKeySel !== undefined) this.declIx = brain.decls.findIndex((d) => declKey(d) === declKeySel);
@@ -119,6 +119,9 @@ export class BlocksView {
         if (this.curIx < 0 || this.curIx >= brain.decls.length || brain.decls[this.curIx].kind !== "slot") this.curIx = this.declIx;
         this.render();
     }
+    _hasLogic() { return !!this.brain && this.brain.decls.some((d) => d.kind === "slot" || d.kind === "curve"); }
+    // a declaration was just added (newdecl.js; the app already re-rendered this view with it): show it
+    _added(key) { requestAnimationFrame(() => this.select(key)); }
     // open a declaration: in whole mode scroll to it (opening its group), else show it alone
     select(key) {
         const i = this.brain.decls.findIndex((d) => declKey(d) === key);
@@ -182,6 +185,7 @@ export class BlocksView {
         } else {
             b.append(el("span", "muted bk-hint", "click a slot's header to open it alone"));
         }
+        b.append(addButton({ app: this.app, curveForms: ["points", "expr"], onAdded: (k) => this._added(k) }));
         b.append(el("span", "bk-spacer"));
         if (this.mode === "whole") {
             btn("Collapse all", () => { this.collapsed = new Set((this.groups || []).map((g) => g.area)); this.render(); this._save(); });
@@ -240,7 +244,7 @@ export class BlocksView {
         this._palette();
         const c = this.canvas;
         c.textContent = "";
-        if (!this.model || this.declIx < 0) { c.append(el("div", "muted", "Pick a slot or curve on the left.")); return; }
+        if (!this.model || this.declIx < 0) { c.append(this._hasLogic() ? el("div", "muted", "Pick a slot or curve on the left.") : emptyHint({ app: this.app, curveForms: ["points", "expr"], onAdded: (k) => this._added(k) })); return; }
         const b = this.model.decls[this.declIx];
         const decl = this.brain.decls[this.declIx];
         this._datalists();
@@ -273,6 +277,7 @@ export class BlocksView {
         this._palette();
         this._datalists();
         this.groups = wholeGroups(this.brain);
+        if (!this._hasLogic()) c.append(emptyHint({ app: this.app, curveForms: ["points", "expr"], onAdded: (k) => this._added(k) }));
         for (const g of this.groups) c.append(this._group(g));
         this._outline();
         requestAnimationFrame(() => { this._drawCurves(); this._measure(); });
@@ -521,7 +526,7 @@ export class BlocksView {
             if (w && catalog()) { H(`${w}'s fields (the set's value or the standard)`); for (const f of catalog().fieldsOf(w)) if (!S.params.has(f.key)) add({ op: "name", name: f.key }, f.doc); }
         } else if (this.cat === "curve") {
             for (const [n] of S.curves) add({ op: "call", fn: n, args: [{ op: "hole" }] });
-            if (!S.curves.size) H("no curves yet: add one in the Code view (curve name(x f32) = points 0: 1, 20: 0.5)");
+            if (!S.curves.size) H("no curves yet: + Add (top) makes one");
         } else if (this.cat === "sensor") {
             const sc = this.slotCat;
             if (sc) {
@@ -873,7 +878,7 @@ export class BlocksView {
         let fixIndex = (list, i) => i;
         if (src.kind === "stack") {
             src.list.splice(src.index, 1);
-            if (src.list.length === 0 && !this._top.has(src.list)) src.list.push(toBlocks({ op: "pass" }));
+            if (src.list.length === 0) src.list.push(toBlocks({ op: "pass" }));   // (a slot's body too: "slot kill:" alone doesn't parse)
             fixIndex = (list, i) => (list === src.list && src.index < i ? i - 1 : i);
         } else if (src.kind === "input") src.owner.inputs[src.key] = toBlocks({ op: "hole" });
         else if (src.kind === "float") src.list.splice(src.list.indexOf(src.item), 1);

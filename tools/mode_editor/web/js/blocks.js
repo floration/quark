@@ -144,6 +144,7 @@ export class BlocksView {
             const blk = toBlocks(node);
             const e = blk.cat === "stmt" ? this._renderStmt(blk, true) : this._renderExpr(blk, true);
             e._src = { kind: "palette", node };
+            this._draggable(e);   // (rendered as a preview, which skips _draggable: a palette block is dragged all the same)
             const w = el("div", "bk-pitem");
             if (label) w.title = label;
             w.append(e);

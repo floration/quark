@@ -103,7 +103,7 @@ const RK = {
   'ui/host/picker/modes': 'ui/picker/modes', 'ui/ingame/console': 'ui/console',
   'ui/editor-online/chat': 'ui/hud/chat', 'ui/editor/chat': 'ui/hud/chat', 'ui/editor-online/chat [x]': 'ui/hud/chat','ui/ingame/chat': 'ui/hud/chat',
   'ui/ingame/scores [hide-rps]': 'ui/hud/scoreboard', 'ui/ingame/perf': 'ui/hud/perf-overlay',
-  'ui/ingame/perf/perfmini': 'ui/hud/perf-overlay', 'ui/ingame': 'ui/hud/widgets', 'ui/ingame [host-vs]': 'ui/hud/widgets',
+  'ui/ingame/perf/perfmini': 'ui/hud/perf-overlay', 'ui/ingame/perfmini': 'ui/hud/perf-overlay', 'ui/ingame': 'ui/hud/widgets', 'ui/ingame [host-vs]': 'ui/hud/widgets',
   // pages the registry lacks keep their ids
   'ui/custom/dash': 'ui/custom/dash', 'ui/host/advanced': 'ui/host/advanced', 'ui/host': 'ui/host',
   'ui/settings/controls/movement': 'ui/settings/controls/movement', 'ui/ingame/pause/settings/gameplay': 'ui/settings/gameplay',

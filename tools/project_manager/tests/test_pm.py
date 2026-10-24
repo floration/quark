@@ -236,6 +236,9 @@ class TestBuilds(unittest.TestCase):
                                    "(built on this PC 2026-10-24 05:00; unsigned)")
         self.assertEqual((p["version"], p["commit"], p["suffix"], p["kind"]),
                          (None, "4fe65a7", "-test.231", "local release build"))
+        self.assertIsNone(builds.parse_build_txt("v1.18.5 (GitHub release, published 10/02/2026 21:10:44)")["publishedAt"])
+        p = builds.parse_build_txt("v1.18.25 (GitHub release, published 2026-10-20T18:00:05Z)")
+        self.assertEqual((p["tag"], p["publishedAt"]), ("v1.18.25", "2026-10-20T18:00:05Z"))
         p = builds.parse_build_txt("version 1.18.6\ncommit 9c2e1f0a8b7c (dirty)\n")
         self.assertEqual((p["version"], p["commit"], p["dirty"], len(p["lines"])), ("1.18.6", "9c2e1f0", True, 2))
 
@@ -337,6 +340,23 @@ class TestChecklistServers(unittest.TestCase):
         hs = checklist.parse("# T\n## 0. A\n```\n## no\n```\n### sub\n## 1. B ##\n")
         self.assertEqual(hs, ["0. A", "1. B"])
 
+    def test_ticks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, tmp)
+            t = checklist.Ticks(paths)
+            self.assertIsNone(t.view(None))
+            self.assertEqual(t.set("1.18.6", "4. Settings", True, "1.18.6-test.231")["done"]["Settings"]["build"], "1.18.6-test.231")
+            t.set("1.18.6", "5. Modes", True)
+            t.set("1.18.6", "5. Modes", False)
+            self.assertEqual(sorted(checklist.Ticks(paths).view("1.18.6")["done"]), ["Settings"])  # (saved)
+            for bad in (("1.18", "x"), ("../x", "x"), ("1.18.6", ""), (None, "x")):
+                with self.assertRaises(ValueError):
+                    t.set(bad[0], bad[1], True)
+            for i in range(checklist.KEEP_VERSIONS + 3):
+                t.set("1.19.%d" % i, "Settings", True)
+            self.assertEqual(len(t.data), checklist.KEEP_VERSIONS)
+            self.assertNotIn("1.18.6", t.data)  # (the oldest versions go first)
+
     def test_servers(self):
         worker = FakeHTTP({"/list": lambda p: (200, "1.2.3.4:27960\n5.6.7.8:27960\n" if "v=1.17.0" in p else
                                                ("9.9.9.9:27970\n" if "v=1.18.6-test.231" in p else "")),
@@ -378,6 +398,31 @@ class TestRepo(unittest.TestCase):
             st = os.stat(os.path.join(q, "working-repo", ".git", "index")).st_mtime
             repo.fetch(Ctx(config.Paths(PM_ROOT, q)))
             self.assertEqual(st, os.stat(os.path.join(q, "working-repo", ".git", "index")).st_mtime)
+
+    @unittest.skipUnless(HAVE_GIT, "git missing")
+    def test_changelog_times(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            q = make_tree(tmp)
+            r = os.path.join(q, "repository")
+            repo._ADDED.update(head=None, times={})
+            write(os.path.join(r, "changelogs", "1.18.11.md"), "# 1.18.11\n")
+            env_ = dict(GIT_COMMITTER_DATE="2026-10-20T12:00:00Z")
+            old = {k: os.environ.get(k) for k in env_}
+            os.environ.update(env_)
+            try:
+                git(r, "add", "-A")
+                git(r, "commit", "-q", "-m", "1.18.11")
+                write(os.path.join(r, "changelogs", "1.18.11.md"), "# 1.18.11\nedited\n")
+                os.environ["GIT_COMMITTER_DATE"] = "2026-10-22T12:00:00Z"
+                git(r, "commit", "-q", "-am", "edit notes")  # (an edit later does not move the release time)
+            finally:
+                for k, v in old.items():
+                    os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)
+            d = repo.fetch(Ctx(config.Paths(PM_ROOT, q)))
+            c = {x["version"]: x for x in d["changelogs"]}
+            self.assertEqual(c["1.18.11"]["committedAt"], "2026-10-20T12:00:00Z")
+            self.assertTrue(c["1.18.6"]["committedAt"].endswith("Z"))
+            self.assertEqual(repo._ADDED["head"], d["log"][0]["sha"])  # (asked again only when HEAD moves)
 
     def test_status_parse(self):
         s = repo.parse_status("## testing...origin/testing [ahead 3, behind 1]\n M a.txt\nR  b -> c\n?? \"d e\"\n")
@@ -557,7 +602,40 @@ class TestTabs(unittest.TestCase):
             self.assertTrue(tabs.write_default(paths))
             self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsSeen"], sorted(d))
             self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github-2"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsUpgraded"], ["map-embed"])
             self.assertEqual(tabs.upgrade(paths), [])
+
+    def test_upgrade_map_embed(self):
+        # URL_ONCE: q's saved Map Editor tab (the old default url) gets ?embed=1 once; then it is a default tab again
+        with tempfile.TemporaryDirectory() as tmp:
+            q = make_tree(tmp, with_git=False)
+            paths = config.Paths(PM_ROOT, q)
+            d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
+            self.assertEqual(d["map"]["url"], "http://127.0.0.1:8770/?embed=1")
+            old_map = dict(d["map"], url="http://127.0.0.1:8770/")
+            old_map.pop("keepAlive")
+            mine = {"id": "bot", "name": "Bots", "url": "http://127.0.0.1:8770/", "port": 8771, "folder": "bot-editor"}
+            saved = {"tabs": [dict(d["project"]), old_map, mine], "defaultsSeen": sorted(d)}
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            self.assertEqual(tabs.upgrade(paths), ["map"])
+            got = util.read_json_file(paths.pm("tabs.json"))
+            m = {t["id"]: t for t in got["tabs"]}
+            self.assertEqual(m["map"]["url"], d["map"]["url"])
+            self.assertTrue(m["map"]["keepAlive"])  # (a default tab again: missing defaults filled in)
+            self.assertEqual(m["bot"], mine)  # (not the map tab: left alone)
+            self.assertEqual(got["defaultsUpgraded"], ["map-embed"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"][1]["url"], "http://127.0.0.1:8770/")
+            self.assertEqual(tabs.upgrade(paths), [])
+            # q sets the old url back on purpose: it stays (the change ran once)
+            got["tabs"][1]["url"] = "http://127.0.0.1:8770/"
+            write(paths.pm("tabs.json"), json.dumps(got))
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["tabs"][1]["url"], "http://127.0.0.1:8770/")
+            # a map tab on another port or folder (q's own) is not touched
+            saved["tabs"][1] = dict(old_map, port=9000)
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            tabs.upgrade(paths)
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["tabs"][1]["url"], "http://127.0.0.1:8770/")
 
     def test_shell_supervisor(self):
         # main.js: a keepAlive watchdog, servers started at app start, never `start` / detached on Windows
@@ -705,6 +783,72 @@ class TestDerive(unittest.TestCase):
         self.assertIn(("claude", "Map editor: snapping next"), steps)
         self.assertEqual(d["programs"][0]["aheadTesting"], 5)
         self.assertEqual(d["runs"]["running"][0]["link"], "http://127.0.0.1:8767/#run=1")
+
+    def test_fallbacks_without_github(self):
+        b = {"folders": [
+            {"name": "production", "present": True, "version": "1.18.25", "tag": "v1.18.25", "commit": "b81c0de",
+             "mtime": "2026-10-20T18:05:00Z", "publishedAt": None},
+            {"name": "testing", "present": True, "version": "1.18.30-test.312", "commit": "4fe65a7", "mtime": "x"},
+            {"name": "testing-f3", "present": False, "note": "folder missing"}]}
+        res = {"builds": env(b), "repo": env({"version": "1.18.30", "log": []}),
+               "editors": env({"production": {"version": "1.18.25", "tag": "v1.18.25", "sha": "c0ffee123"}})}
+        d = derive.derive(res)
+        v = d["versions"]
+        self.assertEqual((v["testingPrerelease"], v["testingServer"], v["productionTag"]),
+                         ("test-1.18.30-test.312", "1.18.30-test.312", "v1.18.25"))
+        prod = next(p for p in d["pipeline"] if p["stage"] == "production")
+        self.assertEqual((prod["sha"], prod["time"]), ("c0ffee1", "2026-10-20T18:05:00Z"))
+        # a local testing build of another version is not the prerelease
+        res["repo"] = env({"version": "1.18.31", "log": []})
+        self.assertIsNone(derive.derive(res)["versions"]["testingPrerelease"])
+        # production tag without any source of it: v<VERSION>
+        self.assertEqual(derive.derive({"builds": env({"folders": [{"name": "production", "version": "1.18.2"}]})})
+                         ["versions"]["productionTag"], "v1.18.2")
+
+    def test_disagreements(self):
+        gh = {"testing": {"version": "1.18.31", "sha": "aaaaaaa1111"}, "production": {"tag": "v1.18.25", "version": "1.18.25"}}
+        ed = {"testing": {"version": "1.18.31", "sha": "aaaaaaa11"}, "production": {"version": "1.18.25"}}
+        res = {"github": env(gh), "editors": env(ed),
+               "repo": env({"version": "1.18.30", "log": [{"sha": "bbbbbbb2222", "time": "x"}]})}
+        dis = derive.disagreements(res, "bbbbbbb2222")
+        self.assertEqual([x["key"] for x in dis], ["repo"])
+        self.assertIn("testing 1.18.30 (GitHub: 1.18.31)", dis[0]["text"])
+        self.assertIn("Update now", dis[0]["fix"])
+        # same version, other commit; the Editor Manager ahead of GitHub = the GitHub Manager is stale
+        res["repo"] = env({"version": "1.18.31", "log": [{"sha": "bbbbbbb2222", "time": "x"}]})
+        res["editors"] = env(dict(ed, testing={"version": "1.18.32", "sha": "ccc"}))
+        dis = {x["key"]: x for x in derive.disagreements(res, "bbbbbbb2222")}
+        self.assertIn("testing at bbbbbbb (GitHub: aaaaaaa)", dis["repo"]["text"])
+        self.assertIn("GitHub Manager", dis["editors"]["fix"])
+        # its cache does not count; without GitHub the local ones are compared with each other
+        res["github"] = dict(env(gh), stale=True)
+        self.assertEqual([x["key"] for x in derive.disagreements(res, "b")], ["local"])
+        self.assertEqual(derive.disagreements({"github": env(gh), "editors": env(ed)}, None), [])
+        # shown in Needs you only after DISAGREE_GRACE with a memo (the store keeps one)
+        res["github"] = env(gh)
+        memo, t0 = {}, 1_000_000.0
+        pick = lambda d: [a for a in d["attention"] if a.get("kind") == "disagree"]
+        self.assertEqual(pick(derive.derive(res, now=t0, memo=memo)), [])
+        self.assertEqual(len(pick(derive.derive(res, now=t0 + derive.DISAGREE_GRACE, memo=memo))), 2)
+        self.assertEqual(len(pick(derive.derive(res))), 2)  # (no memo: at once)
+        res["editors"], res["repo"] = env(ed), env({"version": "1.18.31", "log": [{"sha": "aaaaaaa1111", "time": "x"}]})
+        self.assertEqual(pick(derive.derive(res, now=t0 + 2 * derive.DISAGREE_GRACE, memo=memo)), [])
+        self.assertEqual(memo["disagreeSince"], {})
+
+    def test_with_checklist(self):
+        d = {"nextSteps": [{"text": "Hand-test 1.18.6 with RELEASE_CHECKLIST", "steps": ["0. Before", "1. Install", "2. Menus"]},
+                           {"text": "Other"}]}
+        ticks = {"version": "1.18.6", "done": {"Install": {"at": "x"}, "Gone section": {"at": "y"}}}
+        out = derive.with_checklist(d, ticks)
+        self.assertEqual(out["nextSteps"][0]["progress"], {"done": 1, "total": 3})
+        self.assertNotIn("progress", d["nextSteps"][0])  # (a copy: the store's dict is shared)
+        self.assertEqual(out["checklist"]["count"], 2)
+        self.assertIs(derive.with_checklist(d, None), d)
+
+    def test_halting_body_kept(self):
+        d = derive.derive({"docs": env({"halting": [{"id": "07:x", "title": "T", "what": "Run gh auth login",
+                                                     "body": "Run `gh auth login` on the PC.", "file": "07-questions.md"}]})})
+        self.assertEqual((d["halting"][0]["body"], d["halting"][0]["file"]), ("Run `gh auth login` on the PC.", "07-questions.md"))
 
     def test_buckets(self):
         for w, b in (("owner", "owner"), ("q", "owner"), ("Push", "push"), ("PR #9", "pr"), ("CI", "ci"),
@@ -1046,10 +1190,10 @@ class TestServer(unittest.TestCase):
         github.URL, docs.URL, editors.URL, servers.BASE, util._DEFAULT_OPENER = cls.saved
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def req(self, path, method="GET", headers=None):
+    def req(self, path, method="GET", headers=None, body=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         try:
-            c.request(method, path, headers=headers or {})
+            c.request(method, path, body=body, headers=headers or {})
             r = c.getresponse()
             return r.status, dict(r.getheaders()), r.read()
         finally:
@@ -1082,6 +1226,23 @@ class TestServer(unittest.TestCase):
         self.assertFalse([a for a in der["attention"] if a["source"] == "oracle"])
         self.assertIn("no-store", hdr["Cache-Control"])
         self.assertEqual(self.req("/api/pm?refresh=1")[0], 200)
+
+    def test_server_now_and_checklist(self):
+        before = time.time() * 1000
+        d = json.loads(self.req("/api/pm")[2])
+        self.assertLessEqual(before - 1, d["serverNow"])
+        self.assertLessEqual(d["serverNow"], time.time() * 1000 + 1)
+        js = {"Content-Type": "application/json"}
+        body = json.dumps({"version": "1.18.6", "section": "1. Install", "done": True}).encode()
+        code, _, out = self.req("/api/checklist", "POST", js, body)
+        self.assertEqual((code, json.loads(out)["checklist"]["done"].keys() >= {"Install"}), (200, True))
+        der = json.loads(self.req("/api/pm")[2])["derived"]
+        self.assertEqual((der["checklist"]["version"], der["checklist"]["count"]), ("1.18.6", 1))
+        self.assertEqual(self.req("/api/checklist", "POST", {"Content-Type": "text/plain"}, body)[0], 415)
+        self.assertEqual(self.req("/api/checklist", "POST", js, b'{"version": "nope", "section": "x"}')[0], 400)
+        self.assertEqual(self.req("/api/checklist", "POST", js, b'[1]')[0], 400)
+        self.assertEqual(self.req("/api/checklist", "POST", dict(js, Origin="https://evil.example"), body)[0], 403)
+        self.req("/api/checklist", "POST", js, json.dumps({"version": "1.18.6", "section": "1. Install", "done": False}).encode())
 
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])

@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+// Tests for the open map's undo / redo (js/doc.js: per-object steps), the save checks (js/validate.js) and the
+// objective names. Plain node, no browser: node tools/map_editor/test/doc_test.mjs. Exit code 1 on any failure.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// the page's modules are plain ES modules in js/ (no package.json there): copy the ones under test next to one
+const JS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "js");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "qme-doc-"));
+for (const f of ["doc.js", "util.js", "fallback_parse.js", "validate.js", "groups.js", "repeat.js"]) if (fs.existsSync(path.join(JS, f))) fs.copyFileSync(path.join(JS, f), path.join(tmp, f));
+fs.writeFileSync(path.join(tmp, "package.json"), '{"type":"module"}');
+const { Doc, objectiveName } = await import(pathToFileURL(path.join(tmp, "doc.js")));
+const { validateMap } = await import(pathToFileURL(path.join(tmp, "validate.js")));
+const { parseQmap } = await import(pathToFileURL(path.join(tmp, "fallback_parse.js")));
+const G = fs.existsSync(path.join(tmp, "groups.js")) ? await import(pathToFileURL(path.join(tmp, "groups.js"))) : null;
+
+let fails = 0, passes = 0;
+const ok = (c, what) => { if (c) passes++; else { fails++; console.log("  FAIL " + what); } };
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const section = (s) => console.log("== " + s);
+
+function bigMap(n = 2000) {
+  let t = "version 2\nhandmade\ntitle T\nspawn a 0 0 0 0\nspawn b 10 0 0 90\npath 0 0 0\npath 10 0 0\npath 20 0 0\ncartcheck 0.5\n";
+  for (let i = 0; i < n; i++) t += `box ${i} 0 0 ${i + 1} 1 1\n`;
+  return parseQmap(t, "t");
+}
+const open = (m) => { const d = new Doc(); d.open(m, "t", "mine", {}, null); return d; };
+
+section("a nudge of one box: one small step, undo / redo exact");
+{
+  const d = open(bigMap()), b = d.map.brushes[500], before = structuredClone(b);
+  d.select([{ k: "brush", i: 500 }]);
+  d.edit("move", ["brushes"], () => { b.min[0] += 1; b.max[0] += 1; }, { touch: d.sel });
+  const st = d.undoStack[0];
+  ok(st && st.parts.brushes.mut.length === 1 && !st.parts.brushes.st, "the step holds one box and no list change");
+  ok(JSON.stringify(st.parts).length < 400, "the step is small (" + JSON.stringify(st.parts).length + " bytes as JSON)");
+  d.undo();
+  ok(eq(d.map.brushes[500], before) && d.map.brushes[500] === b, "undo restores the box in place");
+  ok(!d.dirty && !d.mapEdited, "undone: clean");
+  d.redo();
+  ok(d.map.brushes[500].min[0] === before.min[0] + 1, "redo moves it again");
+}
+
+section("an edit that changes nothing makes no step");
+{
+  const d = open(bigMap(10));
+  d.edit("resize", ["brushes"], () => {}, { touch: [{ k: "brush", i: 3 }] });
+  d.edit("title", ["title"], (m) => { m.title = "T"; });
+  ok(d.undoStack.length === 0 && !d.dirty, "no step, not dirty");
+}
+
+section("delete half, undo, redo: same objects, same order");
+{
+  const d = open(bigMap()), objs = d.map.brushes.slice();
+  d.select(objs.map((_, i) => ({ k: "brush", i })).filter((_, i) => i % 2));
+  d.deleteSel();
+  ok(d.map.brushes.length === 1000 && d.map.brushes.every((b, i) => b === objs[i * 2]), "deleted the odd ones");
+  d.undo();
+  ok(d.map.brushes.length === 2000 && d.map.brushes.every((b, i) => b === objs[i]), "undo puts every one back where it was");
+  d.redo();
+  ok(d.map.brushes.length === 1000 && d.map.brushes[1] === objs[2], "redo deletes them again");
+}
+
+section("deleting the payload path keeps its checkpoints for undo");
+{
+  const d = open(bigMap(5));
+  ok(eq(d.map.cartChecks, [0.5]), "the map has a cart checkpoint");
+  d.select([{ k: "path", i: 0 }, { k: "path", i: 1 }]);
+  d.deleteSel();
+  ok(d.map.path.length === 1 && d.map.cartChecks.length === 0, "one point left: the checkpoints go");
+  d.undo();
+  ok(d.map.path.length === 3 && eq(d.map.cartChecks, [0.5]), "undo brings back the points and the checkpoints");
+}
+
+section("a point put in the middle of a list, and a duplicate");
+{
+  const d = open(bigMap(5)), p0 = d.map.path.slice();
+  d.edit("add path point", ["path"], (m) => m.path.splice(1, 0, [5, 0, 0]), { touch: [] });
+  ok(d.map.path.length === 4 && eq(d.map.path[1], [5, 0, 0]), "inserted");
+  d.undo();
+  ok(d.map.path.length === 3 && d.map.path.every((p, i) => p === p0[i]), "undo takes it out");
+  d.select([{ k: "brush", i: 2 }]);
+  d.duplicateSel([0, 5, 0]);
+  ok(d.map.brushes.length === 6 && d.map.brushes[5].min[1] === 5 && d.sel[0].i === 5, "duplicated above, the copy selected");
+  d.undo();
+  ok(d.map.brushes.length === 5, "undo removes the copy");
+}
+
+section("replaceMap (the decoration hook) keeps unchanged objects: the step holds only what changed");
+{
+  const d = open(bigMap()), m2 = structuredClone(d.map);
+  m2.brushes.splice(10, 1); m2.brushes.push({ mat: 8, min: [0, 5, 0], max: [1, 6, 1] });
+  const keep = d.map.brushes[20];
+  d.replaceMap(m2, "decorate");
+  const p = d.undoStack[0].parts.brushes;
+  ok(d.map.brushes[19] === keep && p.st && p.st.drop.length === 1 && p.st.ins.length === 1, "1 added, 1 taken out, the rest the same objects");
+  ok(eq(d.undoStack[0].keys, ["brushes"]), "only brushes changed");
+  d.undo();
+  ok(d.map.brushes.length === 2000 && d.map.brushes[10].min[0] === 10, "undo restores it");
+}
+
+section("validateMap: what the game refuses, and spawns in walls");
+{
+  const m = bigMap(3);
+  ok(validateMap({ ...m, generated: [] }).errors.length === 0, "a good map has no errors");
+  const bad = structuredClone(m); bad.brushes[1].max[0] = 9999;
+  const v = validateMap(bad);
+  ok(v.errors.length === 1 && v.errors[0].ref.k === "brush" && v.errors[0].ref.i === 1, "a coordinate over 4096 m is an error naming the box");
+  const flip = structuredClone(m); flip.brushes[0].min[1] = 5;
+  ok(validateMap(flip).errors.some(e => /min above its max/.test(e.msg)), "min above max is an error");
+  const wall = structuredClone(m); wall.spawns[0].pos = [0.5, 0, 0.5];
+  ok(validateMap(wall).warnings.some(w => w.ref && w.ref.k === "spawn" && w.ref.i === 0), "a spawn inside a box is a warning");
+  const none = structuredClone(m); none.spawns = [];
+  ok(validateMap(none).errors.some(e => /no spawn/.test(e.msg)), "no spawn is an error");
+}
+
+section("objective names match the game (SITE A, POINT A) and quark_maptool");
+ok(objectiveName({}, "site", 0) === "site A" && objectiveName({}, "point", 1) === "point B" && objectiveName({}, "checkpoint", 1) === "checkpoint 2", "names");
+
+if (G) {
+  section("groups: copy / paste between maps, repeat objects");
+  const d = open(bigMap(5));
+  d.map.lights.push({ pos: [2, 3, 0], radius: 8, intensity: 1 });
+  d.select([{ k: "brush", i: 1 }, { k: "brush", i: 2 }, { k: "light", i: 0 }, { k: "spawn", i: 0 }]);
+  const clip = G.copySelection(d);
+  ok(clip && clip.brushes.length === 2 && clip.lights.length === 1 && clip.spawns.length === 1, "copied two boxes, a light, a spawn");
+  ok(clip.brushes[0].min[0] === 1.4 && clip.spawns[0].pos[0] === 0.4, "positions relative to the selection's bounds (the spawn's hull starts at x -0.4)");
+  const d2 = open(bigMap(2));
+  const n0 = d2.map.brushes.length;
+  G.pasteGroup(d2, clip, [100, 0, 100]);
+  ok(d2.map.brushes.length === n0 + 2 && d2.map.lights.length === 1 && d2.map.spawns.length === 3, "pasted into another map");
+  ok(d2.sel.length === 4, "the pasted objects are selected");
+  ok(d2.undoStack.length === 1, "one undo step");
+  const bb = d2.selBounds();
+  ok(Math.abs(bb.min[0] - 100) < 1e-6 || Math.abs((bb.min[0] + bb.max[0]) / 2 - 100) < 2, "at the paste point");
+  d2.undo();
+  ok(d2.map.brushes.length === n0 && d2.map.lights.length === 0 && d2.map.spawns.length === 2, "one undo takes the paste out");
+  // repeat objects: a 1 m unit repeated along x
+  const def = { name: "post", unit: [1, 1, 1], spacing: [2, 0, 0], axes: [true, false, false], boxes: [{ mat: 3, min: [0, 0, 0], max: [0.5, 1, 0.5] }] };
+  const boxes = G.expandRepeat(def, { min: [0, 0, 0], max: [6, 1, 1] });
+  ok(boxes.length === 3 && boxes[2].min[0] === 4, "a 6 m long row of a 2 m spaced post is 3 posts");
+  const boxes2 = G.expandRepeat(def, { min: [0, 0, 0], max: [6, 3, 1] });
+  ok(boxes2.length === 3 && boxes2[0].max[1] === 1, "an axis that doesn't repeat isn't stretched either");
+  const turned = G.expandRepeat(def, { min: [0, 0, 0], max: [1, 1, 6] }, 1);
+  ok(turned.length === 3 && turned[2].min[2] === 4, "turned a quarter, it repeats along z");
+  // an object in a map: drawn from the sidecar, saved as plain boxes, taken out again when the map opens
+  const d3 = open(bigMap(2));
+  d3.edit("add post row", ["sc.objects"], (m, sc) => { sc.objects.push({ name: "post", def, rot: 0, min: [10, 0, 0], max: [16, 1, 1] }); }, { touch: [] });
+  ok(d3.map.generated.filter(b => b.object === 0).length === 3 && d3.mapEdited, "its 3 posts are drawn; the map counts as edited");
+  const saved = structuredClone(d3.map); saved.brushes.push(...d3.map.generated.filter(b => b.object !== undefined).map(b => ({ mat: b.mat, min: b.min, max: b.max })));
+  const side = { objects: structuredClone(d3.sidecar.objects) };
+  const R = await import(pathToFileURL(path.join(tmp, "repeat.js")));
+  ok(R.stripObjects(saved, side).length === 0 && saved.brushes.length === 2 && side.objects.length === 1, "opening it takes the saved posts back out of the boxes");
+  const edited = structuredClone(saved); edited.brushes.push({ mat: 3, min: [10, 0, 0], max: [10.5, 1, 0.5] });
+  const side2 = { objects: structuredClone(d3.sidecar.objects) };
+  ok(R.stripObjects(edited, side2).length === 1 && edited.brushes.length === 3 && side2.objects.length === 0, "posts no longer all there: the object goes, its boxes stay");
+}
+
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log((fails ? "FAILED " + fails : "OK") + " (" + passes + " passed)");
+process.exit(fails ? 1 : 0);

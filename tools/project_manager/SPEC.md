@@ -15,7 +15,9 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
   Electron is NOT installed with npm: `setup.ps1` downloads the official prebuilt zip
   (`electron-v<ver>-win32-x64.zip` from github.com/electron/electron releases; version = the latest stable release,
   resolved once at setup and written to `Quark\project-manager\electron\VERSION`), verifies it against that release's
-  `SHASUMS256.txt`, unzips to `Quark\project-manager\electron\`. Started as `electron.exe <app folder>`.
+  `SHASUMS256.txt`, unzips to `Quark\project-manager\electron\`. Started as `electron.exe <app folder>`. After that it
+  updates itself: the updater stages each newer stable release (same checks) in `electron.next\` and the shell swaps it
+  in after it exits (`shell/README.md`, "Electron updates").
 - Why Electron and not Edge `--app`: the editors are `file://` pages that use the File System Access API
   (Choose folder / Export to game). Chromium blocks file pickers in cross-origin iframes, and an `--app` window has no
   tab strip, so an iframe shell would break the editors. Electron gives one native window, one `WebContentsView` per
@@ -24,39 +26,44 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
 - **Fallback** (no Electron, or `--edge`): `project-manager.cmd --edge` opens Edge (else Chrome) as
   `--app=http://127.0.0.1:8768/ --user-data-dir=Quark\project-manager\profile`, the PM page, whose tab list then opens
   each tool in its own `--app` window with that profile.
-- **Tab bar**: a thin top strip (`tabbar.html`, 34 px) with the Q logo, one button per tab (name + status dot:
-  green = up, grey = not running, amber = starting), a reload button, and on the right the time in Dallas
-  (America/Chicago). Ctrl+1..9 switch tabs, Ctrl+Tab / Ctrl+Shift+Tab cycle, Ctrl+R / F5 reload the active tab,
-  F12 devtools for the active tab, Ctrl+Shift+R reload the tab list. Tabs are created lazily on first open and kept
-  alive (switching never loses an editor's state).
+- **Tab bar**: a thin top strip (`tabbar.html`, 34 px) with the Q logo, the tab tree (Supervisor Board → Play, Claude
+  Manager, GitHub Manager → Tests, Editor Manager → the editors), each with a status dot (green = up, red = not
+  running, amber = starting, amber ring = restarting by itself, grey = not checked yet), the Editor Manager's facts, a
+  reload button, and on the right the time in Dallas (America/Chicago). Ctrl+1..9 switch tabs, Ctrl+Tab /
+  Ctrl+Shift+Tab cycle, Ctrl+R / F5 reload the active tab, F12 devtools for the active tab, Ctrl+Shift+R reload the tab
+  list, Ctrl+F find; tabs can be dragged among their siblings (saved to tabs.json) and have a right-click menu. Tabs
+  are created lazily on first open and kept alive (switching never loses an editor's state). Closing the window or
+  restarting asks first when a tab has unsaved changes.
 - **Locked**: no menu bar; `window.open` / `target=_blank` / navigation to anything outside the tab's own origin
   (or, for a `file://` tab, outside its folder) is denied in-app and, if it is an `https://` link, opened in the
   default browser (`shell.openExternal`, only `https:`). No new BrowserWindows. Downloads go to a Save dialog.
   Permissions: grant `fileSystem` / `clipboard-sanitized-write` / `media` (audio playback) / `pointerLock` (physics editor Drive) to local tabs only; deny
   everything else. `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false` for every tab.
 - **Servers** (current behaviour, including the keepAlive supervisor and the watchdog: `shell/README.md`): before showing a server tab, main checks `http://127.0.0.1:<port>/` (500 ms timeout). If down and the
-  tab has `start`, it spawns that command hidden (`windowsHide`, detached, working dir = the tab's folder), shows
-  "starting" and polls up to 20 s, then loads it. The PM server (8768) is started the same way. Servers the shell
-  started are stopped when the window closes (kill the process tree with `taskkill /T /F /PID`); servers that were
-  already running are left alone.
-- **Window**: remembers size / position / last tab in `Quark\project-manager\state.json`. Title "Quark Project".
+  tab has `start`, it spawns that command hidden (`windowsHide`, never `detached` on Windows: that gives `python.exe` a
+  console window; working dir = the tab's folder), shows "starting" and polls up to 20 s, then loads it. keepAlive
+  servers start with the app and are restarted when they stop. The PM server (8768) is started the same way. Servers
+  the shell started are stopped when the window closes (kill the process tree with `taskkill /T /F /PID`), and by
+  `shell/guard.py` when the shell dies without closing; servers that were already running are left alone.
+- **Window**: remembers size / position / last tab in `state.json` (`%LOCALAPPDATA%\QuarkProject\` on Windows, off the
+  OneDrive-synced Desktop). Title "Quark Project".
   Icon `quark.ico` (copied from the repo's `assets/quark.ico`). Single instance (`requestSingleInstanceLock`; a second
   start focuses the window).
 
 ### tabs.json (`Quark\project-manager\tabs.json`; the default is written by setup, q may edit)
 
+The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). An excerpt:
+
 ```json
 {"tabs": [
-  {"id": "project",   "name": "Project",   "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
-   "start": "py -3 \"%PM%\\server.py\""},
-  {"id": "dashboard", "name": "Editors",   "url": "http://127.0.0.1:8765/?embed=1", "port": 8765, "folder": "editor-dashboard"},
-  {"id": "docs",      "name": "Claude Docs","url": "http://127.0.0.1:8766/?embed=1", "port": 8766, "folder": "docs-manager"},
-  {"id": "github",    "name": "GitHub",    "url": "http://127.0.0.1:8767/?embed=1", "port": 8767, "folder": "github-manager"},
-  {"id": "ui",    "name": "UI",     "folder": "ui-customizer", "file": "ui-customizer.html"},
-  {"id": "sound", "name": "Sound",  "folder": "sound-editor",  "file": "sound-editor.html"},
-  {"id": "model", "name": "Models", "folder": "model-editor"},
-  {"id": "map",   "name": "Maps",   "folder": "map-editor"},
-  {"id": "bot",   "name": "Bots",   "folder": "bot-editor"}
+  {"id": "project",   "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
+   "start": "py -3 \"%PM%\\server.py\"", "keepAlive": true},
+  {"id": "dashboard", "name": "Editor Manager", "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
+   "folder": "editor-dashboard", "start": "py -3 dashboard.py --quark \"%QUARK%\" --no-browser", "keepAlive": true,
+   "childLabel": "Editors"},
+  {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
+  {"id": "map",   "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/?embed=1", "port": 8770,
+   "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": true}
 ]}
 ```
 
@@ -77,7 +84,9 @@ others. `?refresh=1` on `/api/pm` asks for an immediate refresh (rate-limited to
 
 Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET /api/pm` (below), `GET /api/tabs`
 (resolved tabs.json with `installed`, `up`), `GET /api/history?limit=` (the PM's own event log),
-`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run` / `/api/updates/ack?id=` (section 5). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
+`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run` / `/api/updates/ack?id=` (section 5),
+`POST /api/checklist` (JSON `{version, section, done, build?}`: q's hand-test ticks, kept per testing VERSION in
+`Quark\project-manager\checklist-ticks.json`, newest 20 versions; a section is keyed by its heading without the number). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
 
 ### Sources (interval)
 
@@ -87,7 +96,7 @@ Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET
 | `docs` (30 s) | in-progress entries (title, thread, threadUrl, status, where, waitingOn, waitingWhy), waiting buckets, open questions for q, recent changes | `GET http://127.0.0.1:8766/api/summary` |
 | `editors` (30 s) | testing/production versions, provenance totals + % human + by category, pending marks, programs (id, name, ahead_testing, ahead_production, uncommitted, files_changed), remaining | `GET http://127.0.0.1:8765/api/summary` |
 | `builds` (60 s) | the local game folders `production\`, `testing\`, `working\`, `testing-f3\`: version + commit from each `BUILD.txt` (show its raw lines too; format may vary), mtime | local files |
-| `repo` (60 s) | `Quark\repository\` (mirror of testing): `VERSION`, newest 8 `changelogs/<v>.md` (version, first 12 lines, mtime), whether `changelogs/full/<VERSION>.md` exists; `git log -12 --format=%H%x1f%h%x1f%cI%x1f%s` | local files + `git` (read-only commands only) |
+| `repo` (60 s) | `Quark\repository\` (mirror of testing): `VERSION`, newest 8 `changelogs/<v>.md` (version, first 12 lines, mtime, `committedAt` = the commit that added it: one `git log --diff-filter=A`, cached per HEAD), whether `changelogs/full/<VERSION>.md` exists; `git log -12 --format=%H%x1f%h%x1f%cI%x1f%s` | local files + `git` (read-only commands only) |
 | `servers` (120 s) | public server list from the ranking Worker: `GET https://quark-master.jamesrandallmcamis.workers.dev/list?v=<version>` for the production and the testing version (one address per line; count them, keep the addresses), and `/queue` raw text (players queued) | HTTPS, 5 s timeout, User-Agent `quark-project-manager` |
 | `oracle` (600 s, and on demand at most once per 120 s) | the Oracle box: production game server + Discord bot health | SSH, below |
 | `checklist` (300 s) | the section headings of `Quark\repository\docs\RELEASE_CHECKLIST.md` (for the "before production" step list) | local file |
@@ -117,7 +126,7 @@ active state, an in-progress entry added / finished, % human changed. `{time, ki
 ### `GET /api/pm` shape
 
 ```json
-{"generatedAt": "...Z",
+{"generatedAt": "...Z", "serverNow": 1761335000123,
  "sources": {"github": {"ok": true, "fetchedAt": "...", "error": null, "data": {...as fetched...}}, "docs": {...},
              "editors": {...}, "builds": {...}, "repo": {...}, "servers": {...}, "oracle": {...}, "checklist": {...}},
  "derived": {
@@ -127,17 +136,24 @@ active state, an in-progress entry added / finished, % human changed. `{time, ki
    "inProgress": [{"title", "thread", "threadUrl", "status", "where", "waitingOn", "waitingWhy"}],
    "nextSteps": [{"text", "why", "owner": "q|claude", "link"}],
    "attention": [{"level": "red|amber", "text", "link"}],
-   "halting": [{"id", "title", "what", "blocks", "thread", "threadUrl", "since", "link", "source"}], "haltingCount": 1,
+   "halting": [{"id", "title", "what", "blocks", "thread", "threadUrl", "since", "link", "source", "body?", "file?"}], "haltingCount": 1,
+   "checklist": {"version": "1.18.6", "done": {"Settings": {"at", "build"}}, "count": 1},
    "humanPct": 16.9}}
 ```
+`serverNow` (ms) is the page's clock; `generatedAt` is the last derive (up to a source interval old).
 
 Derived rules (keep them simple and explainable; each item says where it came from):
 - `nextFree` = testing VERSION with the patch +1 (informational; the coordinator assigns versions).
 - `nextSteps`: open questions for q (owner q); in-progress entries waiting on owner / push (owner q); entries waiting on
   PR / CI / tests / claude (owner claude); "Hand-test <testing version> with RELEASE_CHECKLIST" when testing is ahead of
   production; local copies with unpushed commits ("working-repo has N commits not on testing").
-- `attention`: last CI run failed on testing; a unit on the Oracle box not active; a source down; production server
-  list empty; uncommitted changes in a local copy older than a day.
+- `attention`: last CI run failed on testing; a unit on the Oracle box not active; a source down (with `fix`); production
+  server list empty; uncommitted changes in a local copy older than a day; a local source (repository\, the Editor
+  Manager) whose testing version / sha or production version differs from the GitHub Manager's for more than 10 minutes
+  (`kind: disagree`, with what to do; without GitHub the two local ones are compared).
+- Production stage: sha and date fall back to the Editor Manager's sha and `production\BUILD.txt` (publishedAt, else its
+  mtime); `versions.productionTag` = GitHub's tag, else the Editor Manager's, BUILD.txt's, else `v<VERSION>`. The
+  testing prerelease falls back to `test-<testing\BUILD.txt version>` when that is a -test build of the testing VERSION.
 - `halting` (top priority: something only q can do is blocking a Claude agent; tests waiting do not count): the Claude
   Manager's `halting` list plus in-progress entries whose status / priority / waitingOn says halting (or `(HALT)`),
   newest first; then the board's own (`source` oracle: the SSH check fails in a way only q can fix, e.g. "SSH key not
@@ -149,7 +165,11 @@ Derived rules (keep them simple and explainable; each item says where it came fr
 One page, no build step, no external requests (no CDN, no web fonts; the system font stack until the shared
 `quark-tools.css` arrives from the editor dashboard, then link it and keep `pm.css` for what is PM-specific). Light
 and dark (`prefers-color-scheme`), CSS custom properties on `:root`. `?embed=1` hides the page's own header (the shell
-draws tabs). Polls `/api/pm` every 15 s (and pauses when the page is hidden). Every time shown in Dallas time.
+draws tabs). Polls `/api/pm` every 15 s (and pauses when the page is hidden); after Refresh, Check now and Update now it
+polls every 1.5-3 s until the new data is in (Check now shows "Checking…"). Each card is drawn to a string and compared
+with what it shows; live ages are attributes the 1 s ticker fills, so only a card whose data changed is replaced (text
+selection, hover and open details survive a poll). Cards flow as masonry (4 px grid rows, each card spans its height):
+two columns from 1060 px, three from 1800 px, four from 2200 px. Every time shown in Dallas time.
 Each card says which source it came from and how old it is; a down source shows a grey "not running" card with the
 fix ("start the GitHub manager" / "SSH key not found").
 
@@ -157,10 +177,16 @@ Layout (top to bottom):
 0. **HALTING — Claude is blocked on you** (only when there is something): a solid red full-width card, each item
    with what to do (bold), what it blocks, since (Dallas time and age), the source and a link (the Claude Manager entry,
    else the thread). The count goes in the page title, "(2) Supervisor Board", in `window.quarkHalting`, and to the
-   shell (`quarkShell.setBadge(n)`: a red count on the Supervisor Board tab, a red dot over the taskbar icon).
+   shell (`quarkShell.setBadge(n)`: a red count on the Supervisor Board tab, a red dot over the taskbar icon). Each item
+   has a Copy button for what to do, and each `code` span of the entry text (a command) gets its own. A HALT that was
+   not there at the last poll brings up a red toast at the top and a short chime (Mute on the toast, kept in
+   localStorage). Answering inline is not possible: the Claude Manager accepts edits only from its own page.
 1. **Release pipeline**: three big stages left to right, working → testing → production, each with version, short
    sha, age, and the arrow between them labelled with what is pending (e.g. "3 commits", "hand-test checklist",
-   "PR #9 open"). Plus the testing prerelease tag and `nextFree`.
+   "PR #9 open"; a PR whose base is testing, or with no base and a head other than testing, is "PR #N into testing" on the
+   first arrow). Plus the testing prerelease tag, the production tag and `nextFree`. "Before production" is the
+   checklist with a tick box per section (saved per testing version on the PM server) and a progress bar; the arrow and
+   the Needs-you hand-test step show "N/M".
 2. **Needs you** (attention + nextSteps owned by q), each with a link (thread / PR / run / doc entry).
 3. **In progress**: one row per entry, grouped by what it waits on (owner, push, PR, CI, tests, Claude), a coloured
    pill for the bucket, the thread link; a small bar chart of counts per bucket.
@@ -171,7 +197,9 @@ Layout (top to bottom):
    load, memory bar, each unit as a pill, last update lines), with its age and a "check now" button (POST
    `/api/refresh?source=oracle`, honours the 120 s minimum).
 7. **Local copies & builds**: each local game folder and repo copy with version / sha / ahead / behind / dirty.
-8. **Updates**: the newest changelogs (version + first lines), and the PM's own event log (latest 30) as a timeline.
+8. **Updates**: the newest changelogs (version + first lines, dated by the commit that added them), and the PM's own
+   event log (latest 30) as a timeline; "Full history…" opens a dialog with every event (`/api/history?limit=10000`),
+   searchable and filtered by kind.
 9. **Tabs**: when not inside the shell (no `embed`), a row of links to every tab from `/api/tabs`.
 
 Deep links into sibling tabs use their hashes: dashboard `#view=changes&program=<id>`, `#view=assets&category=<cat>`;
@@ -183,25 +211,55 @@ a link to `http://127.0.0.1:876x/...` is sent to the shell as "open that tab at 
 
 Tab `play` ("Play", under the Supervisor Board) is a page of this same server (`/play`, port 8768; no keepAlive of its
 own, the project tab keeps the server up). It lists the local game folders (production, testing, working, testing-f3)
-and the older versions installed in `Quark\versions\<tag>\` with a Play button each, an optional launch options field,
-the GitHub releases of floration/quark (public API, no sign-in, cached 10 min with an ETag; Install downloads the
-release's `quark-windows.zip` in the background, checks it against `SHA256SUMS`, unpacks it without its top folder and
-writes `BUILD.txt` like `fetch_release.ps1`; Remove deletes that `versions\<tag>` folder after a confirm), recent games
-and the last 20 play notes with their status read back from Claude Documents.
+and the older versions installed in `Quark\versions\<tag>\`, each card with Play, its own launch options box
+(remembered per build in the page's localStorage, with recent options and a few presets; Enter starts it), Stop while
+it runs, and Folder. Below: the play notes, recent games, and the GitHub releases of floration/quark.
+
+Releases: the public API without sign-in, **every page** (100 a page until a short page, like the launcher's
+`fetchAll`), cached 10 min; page 1's ETag answering 304 keeps the list; a later page that fails keeps what was read
+(and the older releases of the last list) and says so. Refresh is taken at most every 30 s (the button counts down).
+Rows show the channel, which local folder holds that release ("in testing"), "newer than testing / production",
+and how an installed one was checked. At 1800 px and wider production and testing are two tables side by side.
+
+Install (`quark-windows.zip` into `versions\<tag>`, unpacked without its top folder, `BUILD.txt` like
+`fetch_release.ps1`, `play-install.json` with how it was checked) verifies like the launcher (docs/SIGNING.md): from
+1.17.0 on (or any release with a `.sig`) the zip's Ed25519ph signature (`quark-windows.zip.sig`, pure-Python check,
+same algorithm as `quark_sign verify`) against the release key (`RELEASE_PUBLIC_KEY` = `kReleasePublicKey` in
+`src/common/sign.cpp`; a test keeps them equal) and the signed manifest (`quark-release.txt` + `.sig`) naming this
+tag, version, channel and the zip's sha256; anything missing or wrong installs nothing. A release claiming 1.17.0+
+with no signature is shown "unsigned: not offered". Releases from before signing install without a prompt (owner
+decision B6), checked against `SHA256SUMS` when they have one, and are marked "unsigned" / "not checked". Cancel
+stops a download, check or unzip and leaves nothing behind. Remove deletes the folder after a confirm.
 
 A game starts hidden from any console (a short-lived starter process, so the shell's `taskkill /T` of this server never
-reaches the game), from its own folder, at normal priority; its output goes to `logs\play-<session>.log`. Sessions are
-in `project-manager\play-sessions.json`; when the game exits the session wants a note (`needsNote`) and the page opens
-the form (did / noticed / want changed / anything else; Save, Skip, Later). A server restart while a game runs picks
-the game up again by pid (Windows: only when its creation time matches). Notes: `project-manager\play-notes.jsonl`
-(local copy) and one `open` entry at the top of `## Notes` in `Claude Documents\12-play-notes.md`, committed (that file
-only) and pushed; offline it stays committed on the PC and is retried every 5 min. The Supervisor Board's status line
-shows "Play · N play notes open · M waiting" (`/api/pm` field `play`).
+reaches the game), from its own folder, at normal priority; its output goes to `logs\play-<session>.log` (the last 20
+kept). Stop asks it to close (Windows: `taskkill /PID` without `/F`, i.e. WM_CLOSE; elsewhere SIGTERM to its process
+group) and ends it after 5 s (TerminateProcess / SIGKILL). Recent games flag how each ended (crashed: a signal or a
+Windows exception status such as 0xC0000005; error exit: another non-zero code; stopped) and have a Log button: the
+log's last 256 KB in a dialog, with Open the file and Logs folder. Sessions are in `project-manager\play-sessions.json`;
+when the game exits the session wants a note (`needsNote`) and the page opens the form (did / noticed / want changed /
+anything else, up to 4000 characters a box with a counter, line breaks kept; "add the last lines of the game's log",
+on by default after a crash or error exit; Save, Skip, Later: Later defers every waiting note for the page session).
+"Add a note" writes one without a game (a listed build, or the launcher + a version). A server restart while a game
+runs picks the game up again by pid (Windows: only when its creation time matches).
 
-Endpoints: `GET /play`, `GET /api/play[?refresh=1]` (everything the page shows), `GET /api/play/pending`
-(`{running, pending: [{id, label, version, endedAt, durationSec}], openNotes}`, for the shell); POST with a JSON body:
-`/api/play/launch {build, args}`, `/api/play/note {session, did, noticed, change, other}`, `/api/play/skip {session}`,
-`/api/play/install {tag}`, `/api/play/remove {tag}`, `/api/play/sync` (retry the push now).
+Notes: `project-manager\play-notes.jsonl` (local copy, append-only: an edit or removal is its own record) and one
+`open` entry at the top of `## Notes` in `Claude Documents\12-play-notes.md` (line breaks as " / "), committed (that
+file only) and pushed; offline it stays committed on the PC and is retried every 5 min. Edit / Remove work while the
+entry is still `open` (no agent has taken it): the entry is changed in place or removed (commit "<title> (edited)" /
+"(removed)"). The notes card links to `12-play-notes.md` in the Claude Manager tab (`#file=`). The Supervisor Board's
+status line shows "Play · N play notes open · M waiting" (`/api/pm` field `play`). When the server doesn't answer the
+page shows a banner in plain words and greys out every action. It polls every 2.5 s only while a game runs or an
+install / fetch is on (10 s otherwise), and the release list is sent only when it changed (`?rel=<sig>`).
+
+Endpoints: `GET /play`, `GET /api/play[?refresh=1][&rel=<sig>]` (everything the page shows; `releases.list` is null
+when the sig matches), `GET /api/play/pending` (`{running, pending: [{id, label, version, endedAt, durationSec}],
+openNotes}`, for the shell), `GET /api/play/log?session=<id>`; POST with a JSON body: `/api/play/launch {build, args}`,
+`/api/play/note {session, did, noticed, change, other, attachLog}` (no session: `{build}` or `{label, version}`),
+`/api/play/skip {session}`, `/api/play/stop {session}`, `/api/play/open {what: build|logs|log|docs|notes-file, build |
+session}`, `/api/play/note-edit {id, did, ...}`, `/api/play/note-delete {id}`, `/api/play/install {tag}`,
+`/api/play/install-cancel {tag}`, `/api/play/remove {tag}`, `/api/play/sync` (retry the push now). server.py hands
+`/api/play/<what>` routes it doesn't know to `Play.api_get` / `Play.api_post`.
 
 ## 4. Install (`tools/project_manager/setup.ps1`, `setup.cmd`)
 
@@ -216,5 +274,7 @@ which runs `project-manager.cmd --edge` hidden) with the icon. Re-running it upd
 
 After setup, nothing is installed by hand: on each app open the server pulls testing into `Quark\repository\`
 (fast-forward only) and runs the installer of every tool in `installs.json` whose sources changed, hidden; the shell
-restarts the affected servers and offers a restart when the app updated itself. Details: `shell/README.md`
-("Automatic installs and updates") and `pm/updater.py`.
+restarts the affected servers and offers a restart when the app updated itself (by itself right after opening, once
+the installs are done and no tab has unsaved changes). Electron updates itself too (latest stable, sha256-checked,
+swapped in after the app closes). Details: `shell/README.md` ("Automatic installs and updates", "Electron updates")
+and `pm/updater.py`.

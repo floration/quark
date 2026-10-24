@@ -219,7 +219,7 @@ export class LiveView {
             const ob = info.objective && info.objective.type && info.objective.type !== "default" ? info.objective.type + (info.objective.objectiveIndex != null ? " " + (info.objective.objectiveIndex + 1) : "") : "";
             h += `<div class="insp"><span>bot</span><span>${esc(info.name)} (${esc(info.skill)})</span><span>brain</span><span>${esc(info.brainLabel || info.brain)}${esc(bs)}</span>${ob ? `<span>override</span><span>${esc(ob)}</span>` : ""}<span>state</span><span>${esc(b.state)}</span>
                 <span>health</span><span>${b.health}</span><span>weapon</span><span>${esc(b.weapon)}</span><span>target</span><span>${esc(tgt)}</span>
-                <span>position</span><span>${b.pos.map((v) => v.toFixed(1)).join(" ")}</span><span>speed</span><span>${sp.toFixed(1)} m/s</span>
+                <span>position</span><span>${b.pos.map((v) => v.toFixed(1)).join(" ")}</span><span>speed</span><span>${b.alive === false ? "-" : sp.toFixed(1) + " m/s"}</span>
                 <span>goal</span><span>${b.goal ? b.goal.map((v) => v.toFixed(1)).join(" ") : "-"}</span><span>path</span><span>${(b.path || []).length} waypoints</span></div>
                 <div class="decision">${esc(b.decision || "-")}</div>
                 <label class="row muted" style="margin-top:4px"><input type="checkbox" id="followCam" ${this.opts.followCam ? "checked" : ""}> camera follows</label>`;

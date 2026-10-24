@@ -23,7 +23,9 @@ const changed = (a, b) => unified(a, b, "f", 0).split("\n").filter((l) => /^[+-]
 for (const g of qt.items.filter((i) => i.kind === "group")) {
     const s = P.entrySequence(cpp, g, isFn);
     ok(s && P.writeSequence(cpp, g, s.seq, isFn) === cpp, "round trip " + g.name);
-    ok(s.seq.filter((x) => x.kind === "call").length === g.calls.length, "calls of " + g.name + " = model's", s.seq.filter((x) => x.kind === "call").length + " vs " + g.calls.length);
+    // (a call inside a lambda handed to a wrapper, timingTest("x", [] { testX(); }), is a code statement here, a call in the model)
+    const n = s.seq.filter((x) => x.kind === "call").length + s.seq.filter((x) => x.kind === "code").reduce((a, x) => a + (x.code.match(/\btest[A-Z]\w*\s*\(/g) || []).length, 0);
+    ok(n === g.calls.length, "calls of " + g.name + " = model's", n + " vs " + g.calls.length);
 }
 // reorder the weapons group: swap the first two calls
 {
@@ -32,10 +34,11 @@ for (const g of qt.items.filter((i) => i.kind === "group")) {
     const out = P.writeSequence(cpp, g, seq, isFn);
     const d = changed(cpp, out);
     ok(d.length === 2 && d[1].includes('{"weapons", [] { testWeapons(TP(28530)); testFixedSpread(TP(28555)); testRocketSelfDamage'), "swap two calls in weapons", d.join("\n"));
-    const seq2 = s.seq.filter((x) => x.fn !== "testWallbang");
+    const gone = s.seq[2].fn, seq2 = s.seq.filter((x, i) => i !== 2);
+    const lastBefore = P.stmtCode(seq2[seq2.length - 1]);
     seq2.push({ kind: "call", fn: "testLadders", args: "" });
     const out2 = P.writeSequence(cpp, g, seq2, isFn);
-    ok(changed(cpp, out2)[1].includes("testTimeToKill(); testLadders(); }},"), "remove + add a call", changed(cpp, out2)[1]);
+    ok(changed(cpp, out2)[1].includes(lastBefore + " testLadders(); }},") && !changed(cpp, out2)[1].includes(gone + "("), "remove + add a call", changed(cpp, out2)[1]);
 }
 // a multi-line group (none today: synthetic, maps split over lines with a code line and a comment): reorder keeps the
 // code, the comment and the line count
@@ -102,7 +105,8 @@ const M = (() => {
     let e = P.editStep(yml, j, 2, { name: "secrets check" });
     ok(changed(yml, e)[1] === "+      - name: secrets check", "rename a step", changed(yml, e).join("\n"));
     e = P.editStep(yml, j, 0, { name: "checkout" });
-    ok(changed(yml, e).join("\n") === "-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0\n+      - name: checkout\n+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0", "name a uses step", changed(yml, e).join("\n"));
+    const usesLine = yml.split("\n")[j.steps[0].line - 1];
+    ok(changed(yml, e).join("\n") === `-${usesLine}\n+      - name: checkout\n+${usesLine.replace("- uses:", "  uses:")}`, "name a uses step", changed(yml, e).join("\n"));
     e = P.editStep(yml, j, 2, { run: "python3 -I tools/check_secrets.py --all" });
     ok(changed(yml, e)[1] === "+        run: python3 -I tools/check_secrets.py --all", "edit a one-line run");
     e = P.editStep(yml, j, 2, { run: "a\nb" });
@@ -118,8 +122,10 @@ const M = (() => {
     const j = J("windows");
     const out = P.applyJobDraft(yml, j, { steps: [1, 0, 2, 3, 4, { name: "x", run: "echo x" }], stepEdits: { 2: { name: "renamed", if: "always()" } }, if: "", needs: ["meta", "lightcache"], runsOn: "ubuntu-24.04" });
     const d = changed(yml, out);
-    ok(out.includes("    needs: [meta, lightcache]") && !out.split("\n").slice(146, 152).some((l) => l.startsWith("    if:")) && out.includes("      - name: renamed\n        if: always()") && out.includes("      - name: x\n        run: echo x"), "job draft", d.join("\n"));
-    ok(out.split("\n").slice(140, 200).join("\n").indexOf("download-artifact") < out.split("\n").slice(140, 200).join("\n").indexOf("actions/checkout"), "job draft reorder");
+    const head = out.split("\n").slice(j.line - 1, j.line + 8), seg = out.split("\n").slice(j.line - 1, j.endLine + 6).join("\n");
+    ok(out.includes("    needs: [meta, lightcache]") && !head.some((l) => l.startsWith("    if:")) && out.includes("      - name: renamed\n        if: always()") && out.includes("      - name: x\n        run: echo x"), "job draft", d.join("\n"));
+    const first = (k) => { const st = j.steps[k]; return (st.uses || st.name || "").split("@")[0]; };
+    ok(seg.indexOf(first(1)) >= 0 && seg.indexOf(first(1)) < seg.indexOf(first(0)), "job draft reorder", first(1) + " / " + first(0));
 }
 // group lists after the group grew a line
 {

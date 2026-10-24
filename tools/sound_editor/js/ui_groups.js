@@ -21,18 +21,28 @@
     if (p.arg === 'kits') argEl = h('div', Q.KITS.map(k => h('label', { style: { marginRight: '10px' } }, h('input', { type: 'checkbox', checked: true, value: k.dir }), k.name)));
     else if (p.arg === 'sound') { argEl = h('select', Q.SOUNDS.map(s => h('option', { value: s }, s))); }
     else if (p.arg === 'voice') { argEl = h('select', Q.VOICES.map(v => h('option', { value: v.dir }, v.name))); }
-    else if (p.arg === 'line') { argEl = h('select', Q.LINES.map(l => h('option', { value: l }, l))); }
+    else if (p.arg === 'line') { argEl = h('select', h('optgroup', { label: 'Announcer lines' }, Q.LINES.map(l => h('option', { value: l }, l))), h('optgroup', { label: 'Quips' }, Q.QUIPS.map(l => h('option', { value: l }, l)))); }
     let arg = null;
     if (argEl) {
       const ok = await U.dialog(p.name, [h('p', p.arg === 'kits' ? 'One group per kit you tick.' : 'Pick one:'), argEl], [{ label: 'Cancel', value: false }, { label: 'Create', primary: true, value: true }]);
       if (!ok) return;
       arg = p.arg === 'kits' ? [...argEl.querySelectorAll('input:checked')].map(i => i.value) : argEl.value;
     }
-    const groups = p.make(arg);
-    Q.commit('add ' + p.name, () => { Q.state.groups.push(...groups); });
-    G.selId = groups[0] && groups[0].id; G.plan = null; G.render();
+    addGroups(p.name, p.make(arg));
   }
-  G.addPreset = (id, arg) => { const p = Q.PRESETS.find(x => x.id === id); const gs = p.make(arg); Q.commit('add ' + p.name, () => Q.state.groups.push(...gs)); G.selId = gs[0].id; G.plan = null; G.render(); return gs; };
+  // add a preset's groups, leaving out any the list already has (same name and members): those are selected instead
+  function addGroups(label, groups) {
+    const have = new Map(Q.state.groups.map(g => [Q.groupSig(g), g]));
+    const fresh = groups.filter(g => g.members.length && !have.has(Q.groupSig(g)));
+    const dup = groups.map(g => have.get(Q.groupSig(g))).filter(Boolean);
+    if (fresh.length) Q.commit('add ' + label, () => { Q.state.groups.push(...fresh); });
+    if (dup.length) U.toast((fresh.length ? 'Added ' + fresh.length + '; ' : '') + 'already in the list: ' + dup.map(g => g.name).join(', '));
+    else if (!fresh.length) U.toast('Nothing to add: those sounds are not loaded');
+    const first = fresh[0] || dup[0];
+    G.selId = first ? first.id : G.selId; G.plan = null; G.render();
+    return fresh;
+  }
+  G.addPreset = (id, arg) => addGroups(Q.PRESETS.find(x => x.id === id).name, Q.PRESETS.find(x => x.id === id).make(arg));
 
   function setG(label, fn) { G.plan = null; Q.commit(label, () => fn(cur())); }
 
@@ -72,12 +82,13 @@
   }
 
   function adder(g) {
-    const kind = h('select', h('option', { value: 'sound' }, 'sounds'), h('option', { value: 'voice' }, 'voice lines'));
+    const kind = h('select', h('option', { value: 'sound' }, 'sounds'), h('option', { value: 'voice' }, 'voice lines + quips'));
     const packs = h('select', { multiple: true }), names = h('select', { multiple: true });
     const fill = () => {
       packs.innerHTML = ''; names.innerHTML = '';
       for (const p of (kind.value === 'voice' ? Q.VOICES : Q.KITS)) packs.append(h('option', { value: p.dir }, p.name));
-      for (const n of (kind.value === 'voice' ? Q.LINES : Q.SOUNDS)) names.append(h('option', { value: n }, n));
+      if (kind.value === 'voice') names.append(h('optgroup', { label: 'Announcer lines' }, Q.LINES.map(n => h('option', { value: n }, n))), h('optgroup', { label: 'Quips' }, Q.QUIPS.map(n => h('option', { value: n }, n))));
+      else for (const n of Q.SOUNDS) names.append(h('option', { value: n }, n));
     };
     kind.onchange = fill; fill();
     return h('div.adder', 'Add', kind, 'from', packs, 'named', names,
@@ -111,12 +122,21 @@
     box.append(h('div', { style: { margin: '4px 0' } }, 'Target ' + fmt(plan.T, 2) + ' ' + unit + (live.length ? '. After applying: spread ' + fmt(Math.max(...live.map(r => r.after - r.target)) - Math.min(...live.map(r => r.after - r.target)), 3) + ' dB around the target(s).' : '')), t);
   }
 
+  // a group with nothing in it (or only names whose sounds are gone) has nothing to level
+  function empty(g, box) {
+    if (g.members.some(k => Q.assets[k])) return false;
+    box.innerHTML = ''; box.append(h('div.faint', g.name + ' has no members yet: add sounds or lines above first.'));
+    U.toast(g.name + ' has no members: nothing to level');
+    return true;
+  }
   G.preview = async function (box) {
-    const g = cur(); box.innerHTML = '<div class="faint">measuring...</div>';
+    const g = cur(); if (empty(g, box)) return null;
+    box.innerHTML = '<div class="faint">measuring...</div>';
     try { const plan = await Q.planGroup(g); plan.gid = g.id; G.plan = plan; drawPlan(box, g, plan); return plan; } catch (e) { U.fail('group preview', e); }
   };
   G.apply = async function (box) {
-    const g = cur(); box.innerHTML = '<div class="faint">applying...</div><div class="progress"><i></i></div>';
+    const g = cur(); if (empty(g, box)) return null;
+    box.innerHTML = '<div class="faint">applying...</div><div class="progress"><i></i></div>';
     try {
       const plan = await Q.applyGroup(g, (pass, i, n) => { const bar = box.querySelector('.progress i'); if (bar) bar.style.width = (100 * i / n) + '%'; });
       plan.gid = g.id; G.plan = plan;

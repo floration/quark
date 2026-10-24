@@ -153,19 +153,66 @@
     return Q.finishPart(p, ref);
   };
 
+  // The default boxes' names, in the order the game's builders emit them (src/client/models.cpp: playerModelParts,
+  // viewmodelParts, projectileParts, crownParts, propParts and their comments). The export carries no names; they are
+  // given to a default only when its box count still matches (a game that changed a model keeps its boxes unnamed).
+  // x is right, -z ahead (a gun points down -z).
+  Q.DEFAULT_BOX_NAMES = {
+    'player/STANDARD': 'legs|body|head|visor',
+    'player/HEAVY': 'legs|body|left shoulder pad|right shoulder pad|helmet|visor slit',
+    'player/SCOUT': 'legs|body|head|visor',
+    'player/ROBOT': 'legs|body|chest plate|head|eye|antenna|antenna tip',
+    'player/KNIGHT': 'legs|body|tabard|helmet|crest|visor slit',
+    'weapon/RIFLE': 'receiver|barrel|front sight|magazine|stock|rail',
+    'weapon/ROCKET': 'tube|muzzle|exhaust ring|glow ring|band|side sight|grip',
+    'weapon/KNIFE': 'grip|cross guard|blade|blade tip|pommel',
+    'weapon/SNIPER': 'receiver|barrel|muzzle brake|scope|scope bell|scope lens|front scope ring|rear scope ring|bolt|stock',
+    'weapon/LASER': 'body|coil 1|coil 2|coil 3|coil 4|emitter|emitter glow|grip',
+    'weapon/SHOTGUN': 'left barrel|right barrel|pump|receiver|stock|rail',
+    'weapon/STICKY': 'barrel|drum|drum band|canister|canister light|muzzle',
+    'weapon/BUBBLE': 'body|soap tank|tank glow|wand|nozzle ring|bubble|grip',
+    'weapon/SYRINGE': 'barrel|serum|plunger rod|plunger cap|finger grips|needle hub|needle',
+    'weapon/LOCATOR': 'grip|body|screen frame|screen|screen line (long)|screen line (across)|blip|emitter|emitter glow|antenna|antenna tip|side stripe',
+    'weapon/CROSSBOW': 'stock|bow|left limb tip|right limb tip|string|bolt',
+    'projectile/STICKY': 'shell|core|spikes (x)|spikes (z)',
+    'projectile/ROCKET': 'body|nose|band|fins (flat)|fins (upright)|flame',
+    'projectile/SYRINGE': 'barrel|serum|needle',
+    'projectile/KNIFE': 'blade',
+    'projectile/BUBBLE': 'shell|core',
+    'projectile/CROSSBOW': 'shaft|broadhead|fletching (flat)|fletching (upright)',
+    'projectile/ORB': 'orb',
+    'crown/CROWN': 'band|front point|right point|back point|left point',
+    'prop/GUN_ARM': 'arm and gun',
+    'prop/ARM': 'arm',
+    'prop/BOMB_PACK': 'bomb',
+    'prop/BOMB': 'bomb',
+    'prop/CART': 'wheel (left, -z)|wheel (right, -z)|wheel (left, +z)|wheel (right, +z)|chassis|team band|rim|cradle|core|lamp (+z)|lamp (-z)',
+    'prop/GATE': 'right post|left post',
+  };
+  Q.nameDefaultParts = function (kind, name, parts) {
+    const list = (Q.DEFAULT_BOX_NAMES[kind + '/' + name] || '').split('|');
+    if (!parts || list.length !== parts.length) return false;
+    parts.forEach((p, i) => { if (!p.name) p.name = list[i]; });
+    return true;
+  };
+
   // --- the registry ----------------------------------------------------------------------------------------------------
-  // Q.models[key] = { key: 'models/player/STANDARD', kind, name, desc, defMesh, defParts | null, shipped: {name, bytes} | null }
+  // Q.models[key] = { key: 'models/player/STANDARD', kind, name, desc, defMesh, defParts | null, shipped: {name, bytes} | null,
+  //   prov: the repository's provenance entry for its id (assets/provenance/*.json: the shipped override's when there is
+  //   one, else the default's) | null }
   Q.models = {}; Q.order = []; Q.kinds = [];
   Q.KIND_ORDER = ['player', 'weapon', 'projectile', 'crown', 'prop'];
   Q.KIND_TITLES = { player: 'Players', weapon: 'Weapons (first person)', projectile: 'Projectiles', crown: 'Crown', prop: 'Props (arms, bomb, cart, gates)' };
   Q.buildModels = function (man) {
     for (const it of man.models) {
-      const m = { key: it.key, kind: it.kind, name: it.name, desc: it.desc || '', defMesh: null, defParts: null, shipped: null, err: null };
+      const m = { key: it.key, kind: it.kind, name: it.name, desc: it.desc || '', defMesh: null, defParts: null, shipped: null, err: null,
+        prov: it.prov && typeof it.prov === 'object' ? it.prov : null };
       Q.models[m.key] = m;   // (registered first: the reference palette is looked up by key)
       try {
         m.defMesh = Q.gltf.parse(Q.b64ToBytes(it.data), it.file);
         m.defParts = Q.boxes.partsOf(m.defMesh, m.key, true);
         if (m.defParts && m.defParts.error) { m.err = m.defParts.error; m.defParts = null; }
+        Q.nameDefaultParts(m.kind, m.name, m.defParts);
       } catch (e) { m.err = String(e && e.message || e); }
       if (it.shipped) {
         try {
@@ -177,6 +224,7 @@
       if (!Q.kinds.includes(m.kind)) Q.kinds.push(m.kind);
     }
     Q.kinds.sort((a, b) => (Q.KIND_ORDER.indexOf(a) + 1 || 99) - (Q.KIND_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b));
+    Q.exportedProv = man.exported && typeof man.exported === 'object' ? man.exported : {};   // (Quark\model-editor\provenance.json at build time)
     Q.palettes = [Q.DEFAULT_PALETTE].concat((man.palettes || []).map(p => Object.assign({}, p, { sun: norm(p.sun || Q.DEFAULT_PALETTE.sun) })));
     // the reference palettes above are this page's copy of the game's: check them against the defaults' boxes
     // (each box's colour is its formula at the reference) and say so in the console when the game changed them
@@ -234,6 +282,12 @@
       e.parts = e.parts.map(p => Q.finishPart(Object.assign(Q.newPart(), p, { mul: p.mul || null, add: p.add || null, teamMul: p.teamMul || null }), ref));
     }
   };
+  // a loaded state (autosave, project file): provenance belongs to an edit; an entry without one is left over (older
+  // versions kept it after Reset) and would label the next tweak, so it goes
+  Q.dropStaleProv = function () {
+    Q.state.prov = Q.state.prov || {};
+    for (const k of Object.keys(Q.state.prov)) if (!Q.state.edits[k]) delete Q.state.prov[k];
+  };
   // start editing the boxes (a copy of the default's, or of an imported box-shaped mesh)
   Q.ensureBoxEdit = function (key) {
     const e = Q.state.edits[key];
@@ -247,10 +301,11 @@
     return Q.state.edits[key];
   };
 
-  // --- undo / redo: snapshots of one model's edit -------------------------------------------------------------------
+  // --- undo / redo: snapshots of one model's edit and its provenance ------------------------------------------------
+  // (the provenance is part of the step: undoing "Start from scratch" or an import must not leave its origin behind)
   const undo = [], redo = [];
   let pending = null;   // an open coalescing group (a drag, typing in a field)
-  Q.snapshot = key => JSON.stringify(Q.state.edits[key] || null);
+  Q.snapshot = key => JSON.stringify({ e: Q.state.edits[key] || null, p: (Q.state.prov && Q.state.prov[key]) || null });
   // call before changing model `key`; `group` coalesces repeated changes (same group string within 1.5 s)
   Q.beginChange = function (key, group) {
     const now = performance.now();
@@ -263,7 +318,9 @@
   Q.endChange = function (key, why) { Q.bump(key); Q.onStateChanged && Q.onStateChanged(why || 'edit', key); };
   function restore(key, snap) {
     const v = JSON.parse(snap);
-    if (v) Q.state.edits[key] = v; else delete Q.state.edits[key];
+    if (v.e) Q.state.edits[key] = v.e; else delete Q.state.edits[key];
+    Q.state.prov = Q.state.prov || {};
+    if (v.p) Q.state.prov[key] = v.p; else delete Q.state.prov[key];
   }
   Q.undo = function () {
     const u = undo.pop(); if (!u) return null;

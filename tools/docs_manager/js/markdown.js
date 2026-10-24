@@ -71,7 +71,8 @@
       (line.includes('|') && next != null && RE_TSEP.test(next));
   }
 
-  function renderList(lines, i0) {
+  // opts.lines: each block (and list item) gets data-l="<1-based source line>", for scroll sync and "show line N".
+  function renderList(lines, i0, attr) {
     // Collect the list block: items + continuation lines; a blank line ends it unless more list follows.
     const items = [];
     let i = i0;
@@ -79,7 +80,7 @@
       const line = lines[i];
       const m = RE_ITEM.exec(line);
       if (m && !RE_HR.test(line)) {
-        items.push({indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), start: parseInt(m[2], 10) || 1, text: [m[3]]});
+        items.push({indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), start: parseInt(m[2], 10) || 1, text: [m[3]], line: i});
         continue;
       }
       if (!line.trim()) {
@@ -110,7 +111,7 @@
         html += '<' + tag + (ordered && kids[k].it.start !== 1 ? ' start="' + kids[k].it.start + '"' : '') + '>';
         while (k < kids.length && kids[k].it.ordered === ordered) {
           const n = kids[k++];
-          html += '<li>' + inline(n.it.text.join(' ')) + (n.kids.length ? emit(n.kids) : '') + '</li>';
+          html += '<li' + attr(n.it.line) + '>' + inline(n.it.text.join(' ')) + (n.kids.length ? emit(n.kids) : '') + '</li>';
         }
         html += '</' + tag + '>';
       }
@@ -119,30 +120,31 @@
     return {html: emit(root.kids), next: i};
   }
 
-  function render(src) {
+  function render(src, opts) {
     const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
-    let html = '', para = [];
-    const flush = () => { if (para.length) { html += '<p>' + inline(para.join('\n')).replace(/\n/g, ' ') + '</p>'; para = []; } };
+    const attr = opts && opts.lines ? i => ' data-l="' + (i + 1) + '"' : () => '';
+    let html = '', para = [], paraAt = 0;
+    const flush = () => { if (para.length) { html += '<p' + attr(paraAt) + '>' + inline(para.join('\n')).replace(/\n/g, ' ') + '</p>'; para = []; } };
     for (let i = 0; i < lines.length;) {
       const line = lines[i];
       let m;
       if ((m = RE_FENCE.exec(line))) {
         flush();
-        const fence = m[1][0], body = [];
+        const fence = m[1][0], body = [], at = i;
         i++;
         while (i < lines.length && !(new RegExp('^\\s{0,3}' + (fence === '`' ? '```' : '~~~')).test(lines[i]))) body.push(lines[i++]);
         i++;
-        html += '<pre><code>' + esc(body.join('\n')) + '</code></pre>';
+        html += '<pre' + attr(at) + '><code>' + esc(body.join('\n')) + '</code></pre>';
         continue;
       }
       if (!line.trim()) { flush(); i++; continue; }
-      if ((m = RE_HEAD.exec(line))) { flush(); const n = m[1].length; html += '<h' + n + '>' + inline(m[2]) + '</h' + n + '>'; i++; continue; }
-      if (RE_HR.test(line)) { flush(); html += '<hr>'; i++; continue; }
+      if ((m = RE_HEAD.exec(line))) { flush(); const n = m[1].length; html += '<h' + n + attr(i) + '>' + inline(m[2]) + '</h' + n + '>'; i++; continue; }
+      if (RE_HR.test(line)) { flush(); html += '<hr' + attr(i) + '>'; i++; continue; }
       if (line.includes('|') && i + 1 < lines.length && RE_TSEP.test(lines[i + 1])) {
         flush();
         const head = splitRow(line), al = splitRow(lines[i + 1]).map(c => /^:-+:$/.test(c) ? 'center' : /-+:$/.test(c) ? 'right' : '');
         const att = j => al[j] ? ' style="text-align:' + al[j] + '"' : '';
-        html += '<div class="md-table"><table><thead><tr>' + head.map((c, j) => '<th' + att(j) + '>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>';
+        html += '<div class="md-table"' + attr(i) + '><table><thead><tr>' + head.map((c, j) => '<th' + att(j) + '>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>';
         i += 2;
         while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
           const cells = splitRow(lines[i++]);
@@ -153,17 +155,18 @@
       }
       if (RE_ITEM.test(line)) {
         flush();
-        const r = renderList(lines, i);
+        const r = renderList(lines, i, attr);
         html += r.html; i = r.next;
         continue;
       }
       if (RE_QUOTE.test(line)) {
         flush();
-        const q = [];
+        const q = [], at = i;
         while (i < lines.length && RE_QUOTE.test(lines[i])) q.push(RE_QUOTE.exec(lines[i++])[1]);
-        html += '<blockquote>' + render(q.join('\n')) + '</blockquote>';
+        html += '<blockquote' + attr(at) + '>' + render(q.join('\n')) + '</blockquote>';
         continue;
       }
+      if (!para.length) paraAt = i;
       para.push(line.trim());
       i++;
     }
@@ -172,8 +175,8 @@
   }
 
   // Put rendered markdown into an element. The only innerHTML use on doc text, and its input is escaped above.
-  function into(el, src, inlineOnly) {
-    el.innerHTML = inlineOnly ? inline(src) : render(src);
+  function into(el, src, inlineOnly, opts) {
+    el.innerHTML = inlineOnly ? inline(src) : render(src, opts);
     return el;
   }
 

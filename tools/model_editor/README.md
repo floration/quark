@@ -15,12 +15,13 @@ python3 tools/model_editor/build.py <export folder> <output folder>
 tools\model_editor\build.cmd <export folder> [output folder]      (Windows; default output %USERPROFILE%\Desktop\Quark\model-editor)
 ```
 
-On Windows, `tools\model_editor\install.cmd [output folder]` from any repository checkout installs or updates the editor in one step: it builds only `quark_tests` (MinGW, in `build-model-editor\`), exports the assets and runs build.cmd (non-interactive, safe to re-run).
+On Windows, `tools\model_editor\install.cmd [folder]` from any repository checkout installs or updates the editor in one step: it builds only `quark_tests` (MinGW, in `build-model-editor\`), exports the assets and runs build.cmd (non-interactive, safe to re-run). The folder is the Quark folder (the page goes into its `model-editor\`; the project manager passes `%QUARK%`) or the `model-editor` folder itself; without one, `%QUARK%\model-editor`, else `%USERPROFILE%\Desktop\Quark\model-editor`.
 
 The output folder gets `model-editor.html` (this folder's `index.html` with `editor.css` and `js/*.js` inlined) and
 `data/manifest.js`: every model of the export (its .gltf, with its box list), the model overrides already shipped in this
-repository (`assets/overrides/models/...`, which the game draws in place of the built-in models), and each map's
-palette and sun (read from the export's `maps/*.qmap`). A browser blocks `fetch()` on `file://`, so the data is a
+repository (`assets/overrides/models/...`, which the game draws in place of the built-in models), each model's entry in
+the repository's provenance (`assets/provenance/*.json`), the entries of the output folder's `provenance.json` (what this
+editor exported before), and each map's palette and sun (read from the export's `maps/*.qmap`). A browser blocks `fetch()` on `file://`, so the data is a
 script. About 400 KB. Python 3 standard library only. `--page-only` rewrites only the page and keeps `data/`.
 Rebuild after a game update so the page shows the current defaults. Your work is not in these files: it is autosaved in
 the browser (IndexedDB) and in the project files you save.
@@ -89,15 +90,32 @@ Every export writes or updates a provenance sidecar, `{"format":1,"tool":"model-
 {"origin","by","date","source","note"(,"licence")}}}`, one entry per model id (the export / override path with .gltf),
 the latest export winning, other entries kept. The zip carries it; a folder export merges it into
 `<Quark\model-editor folder>\provenance.json` once that folder is chosen in the export dialog (remembered); otherwise
-**Download provenance.json**. Origins: `human` (made from scratch here: **Start from scratch**, or chosen in the panel),
-`ai` (a tweak of the AI-made default; the note says what changed, rewritten as you edit until you write your own),
-`third-party` (an imported file from a pack: the import asks for its source and licence). The library shows each
-model's origin. The editor never writes `assets/provenance/*.json` in the repository.
+**Download provenance.json** (the models an export would write: not those its errors block). A model moved to `.bak` by a
+folder export loses its entry. Origins: `human` (made by a person: **Start from scratch**, a tweak of a human-made shipped
+model, or chosen in the panel), `ai` (a tweak of an AI-made model; the note says what changed against what the edit
+started from, rewritten as you edit until you write your own), `third-party` (an imported file from a pack: the import asks
+for its source and licence).
+
+- An edit starts from the shipped override when there is one (what the game draws now), else the default, and keeps its
+  origin: the repository's entry for that id (`assets/provenance/*.json`; a default without one is `ai`). Editing a
+  shipped human-made model stays `human`, and its note is diffed against the shipped model, not the AI default.
+- The origin is part of the edit: undo / redo carry it, **Reset to default** drops it (a later tweak is labelled from
+  scratch again). An origin left without an edit by an older version is dropped when a session or project loads.
+- Every exported `.glb` carries its entry in `asset.extras.provenance` (the game ignores it). Loading a file back keeps
+  its origin: **Project > Load the models in an overrides folder** takes the file's own entry, else the folder's
+  `provenance.json`, the model editor folder's `provenance.json` or a checkout's `assets/provenance/*.json`, else this
+  editor's export log; **Import** starts its dialog from the file's entry (or the last export of that model).
+- The library shows each model's origin (and `shipped` for a shipped override, `refused` when the game refuses it: a
+  banner says so too); the panel shows the repository's entry of an unedited model and the last export from this editor.
+
+The editor never writes `assets/provenance/*.json` in the repository.
 
 ## What it does
 
-- **Library**: every model by kind with a thumbnail (in the chosen map's colours), badges for edited, origin and
-  problems; filter, edited only.
+- **Library**: every model by kind with a thumbnail (in the chosen map's colours), badges for edited, shipped, origin and
+  problems; filter, edited only. As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
+  resize it (remembered; double-click: the default). Thumbnails are read back from the GPU asynchronously (a pixel-pack
+  buffer behind a fence), so drawing them never stalls the page.
 - **Viewer** (the game's renderer ported to WebGL2: the dynamic-object shader with sky light, sun, sun visibility,
   fog, the 2048 shadow map with its 4 taps, the 1 px screen-space box outlines, translucent parts unlit and blended, the
   sky shader; camera near 0.05 m, horizontal fov 100; no tone curve on models, as the game). Views:
@@ -107,7 +125,8 @@ model's origin. The editor never writes `assets/provenance/*.json` in the reposi
   - **Third person**: a player with the gun arm (`GUN_ARM`), or as "it" the arm (`ARM`) holding the weapon's own model
     at 2x on the hand with its base forced to bright steel; the bomb on the back (`BOMB_PACK`); the crown on the head
     (with the board's letter); hitbox overlay.
-  - **In flight**: a projectile flying (a quarter speed at 1x) with its trail, spun as the game spins it.
+  - **In flight**: a projectile flying (a quarter speed at 1x) with its trail, spun as the game spins it; the camera
+    flies with it (the floor streams past), so it stays in view to inspect and edit.
   - **Lineup**: the game's `--models` screenshot lineup (5 players 5 m ahead, 1.5 m apart, facing you; as "it" turned
     aside holding the weapon; in bomb mode turned away carrying the bomb with a dropped `BOMB` 3 m ahead), your
     viewmodel; camera yaw / pitch = the game's `--yaw` / `--pitch`.
@@ -116,12 +135,17 @@ model's origin. The editor never writes `assets/provenance/*.json` in the reposi
   - Map palette (default or any map's: base / metal / glow / accent, sky, sun direction), team friendly / enemy,
     alternate teams, crouch (per box, as the game; a mesh squashed whole), animations, shadows, in sun / in shade,
     outline colour and width, brightness, viewmodel position / size / colour, bomb mode, a planted bomb's red blink, a
-    neutral cart, a reached gate, hitbox (0.8 x 1.8 x 0.8 m, head = the top 20 % at 45 % of the width), grid, floor.
+    neutral cart, a reached gate, hitbox (0.8 x 1.8 x 0.8 m, head = the top 20 % at 45 % of the width; in orbit too),
+    grid, floor. Numbers are kept within their fields' ranges (field of view 60 to 140, as the game); an option that
+    does nothing in the current view is greyed out and says why.
   - **Draw as**: auto (as the game will: its own boxes for an unedited default, the box model file for anything edited
     or shipped as boxes, a mesh for an imported mesh), the game's own boxes, box model file, mesh (as a file without
     the box list would draw).
 - **Editing** box models: a part list and fields (centre, half size, colour, an sRGB picker with an intensity
-  multiplier for colours over 1, tint slot, `mul` / `add` / `teamMul`, alpha, shadow, outside only, crouch, name); click a
+  multiplier for colours over 1, tint slot, `mul` / `add` / `teamMul`, alpha, shadow, outside only, crouch, name; Tab
+  moves through them and arrow keys step the focused one; a half size stops at 0.5 mm); the default boxes are named
+  (legs, body, head, barrel...: `Q.DEFAULT_BOX_NAMES` in `js/data.js`, from the comments of the game's model builders in
+  src/client/models.cpp, given only while a default's box count matches; the game ignores names); click a
   box in the viewport; a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
   across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default; start from scratch.
 - **Import** a .glb / .gltf (drop it or Import; a .gltf with its .bin picked together): read exactly as the game's
@@ -133,7 +157,8 @@ model's origin. The editor never writes `assets/provenance/*.json` in the reposi
   opaque), the projectile animations a box model loses.
 
 Keyboard: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, 1-6 views, F frame, W / E gizmo, arrows / PgUp / PgDn nudge (Shift: 1 cm),
-Ctrl+D duplicate, M mirror, Delete, Space animations, Esc deselect, ? the list.
+Ctrl+D duplicate, M mirror, Delete, Space animations, Esc closes an open menu (else deselects), ? the list. Without model
+data (or WebGL2) the toolbars are disabled under the banner that says how to build it.
 
 ## Accuracy (checked against the game)
 
@@ -151,6 +176,14 @@ pixels of the models:
 
 Known differences: the floor here is a stand-in for the map (no lightmap, no map shadows: choose "in sun" off for a
 model in the map's shade); the lineup's players are always the enemy colour in the game (warmup).
+
+## Tests
+
+`node tools/model_editor/tests/editor_test.js <export folder> [work folder]` (Playwright's Chromium, software WebGL):
+builds the page from this checkout and from a copy with fake shipped overrides and repository provenance, and checks
+provenance (undo, reset, folder export / load, import, shipped models, `.bak`, blocked models), the default box names,
+Tab / arrow keys in the fields, clamped view settings, Escape, the hitbox in orbit, the in-flight view, the library at
+2560 and 1280 px, the disabled toolbars without data, and that nothing logs an error.
 
 ## Source
 

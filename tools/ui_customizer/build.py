@@ -41,6 +41,7 @@ import json
 import os
 import re
 import struct
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -114,6 +115,45 @@ def load_dump(explicit=None):
         return found[0][0], rel(found[0][1]), True
     print("warning: no dump found: the page will be empty")
     return None, None, False
+
+
+# What the dump is drawn from: the game's UI code (a change there can move widgets) and VERSION (every page shows it).
+UI_PATHS = ["src/client"]
+REFRESH = (r"py -3 tools\ui_customizer\install.py --extract" if os.name == "nt" else "python3 tools/ui_customizer/install.py --extract")
+
+
+def git(*args):
+    try:
+        p = subprocess.run(["git", "-C", REPO] + list(args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                           creationflags=0x08000000 if os.name == "nt" else 0)   # (CREATE_NO_WINDOW)
+        return p.stdout.strip() if p.returncode == 0 else None
+    except OSError:
+        return None
+
+
+def freshness(dump):
+    """Is the dump still the game's UI? {gameVersion, gameCommit, dumpVersion, dumpCommit, uiCommits (commits that
+    touched the UI code since the dump's commit; None when git can't tell), stale, why, refresh}. Stale when the
+    checkout's VERSION differs from the dump's or a commit since the dump's changed the UI code."""
+    src = (dump or {}).get("source") or {}
+    try:
+        with open(os.path.join(REPO, "VERSION"), encoding="utf-8") as f:
+            gver = f.read().strip()
+    except OSError:
+        gver = ""
+    dver, dsha = str(src.get("version") or ""), str(src.get("commit") or "")
+    head = git("rev-parse", "HEAD") or ""
+    n = None
+    if dsha and head and git("cat-file", "-e", dsha + "^{commit}") is not None:
+        out = git("rev-list", "--count", dsha + "..HEAD", "--", *UI_PATHS)
+        n = int(out) if out and out.isdigit() else None
+    why = []
+    if gver and dver and gver != dver:
+        why.append(f"the dump is {dver}, the game {gver}")
+    if n:
+        why.append(f"{n} commit{'s' if n != 1 else ''} changed the UI code (src/client) since the dump's commit {dsha[:8]}")
+    return {"gameVersion": gver, "gameCommit": head, "dumpVersion": dver, "dumpCommit": dsha, "uiCommits": n,
+            "stale": bool(dump) and bool(why), "why": "; ".join(why), "refresh": REFRESH}
 
 
 def check_shots(dump):
@@ -452,6 +492,18 @@ def load_provenance():
     return data
 
 
+def game_origins():
+    """{registry id: 'human' | 'ai'} of the game's own UI pages (assets/provenance/ui.json in the checkout, read only):
+    the page list shows who made each page the game ships."""
+    path = os.path.join(REPO, "assets", "provenance", "ui.json")
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            items = json.load(f).get("items") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {k: v["origin"] for k, v in items.items() if isinstance(v, dict) and v.get("origin") in ("human", "ai")}
+
+
 def script_json(obj):
     # inside <script type="application/json">: only "</" could end the element early
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
@@ -496,8 +548,9 @@ def main(argv=None):
     write_catalogue(cat)
     js = "\n".join(f"// ---- {name} ----\n" + read(os.path.join(SRC, name)) for name in JS_ORDER)
     js = js.replace("</script", "<\\/script")
+    fresh = freshness(dump) if not is_sample else None
     info = {
-        "dump": dump_name, "sample": is_sample,
+        "dump": dump_name, "sample": is_sample, "freshness": fresh, "origins": game_origins(),
         "font": rel(font) if font else None,
         "built": datetime.datetime.now().isoformat(timespec="seconds"),
     }
@@ -532,6 +585,9 @@ def main(argv=None):
           f"{' (SAMPLE)' if is_sample else ''}, {pages} pages, font {info['font'] or 'none'}")
     src = (dump or {}).get("source") or {}
     print(f"dump: {src.get('version', '?')} {str(src.get('commit', '?'))[:12]} (extracted {src.get('extracted', '?')}); {shots}")
+    if fresh and fresh["stale"]:
+        print(f"WARNING: the UI dump is out of date ({fresh['why']}): pages may not match the game. "
+              f"Refresh it: {fresh['refresh']} (in the checkout)")
     print(f"provenance: " + (f"{len(prov['items'])} items embedded" if prov is not None else "none (no provenance.json)"))
     if start is not None:
         print(f"start layout: {layout_name} ({len(start['doc']['pages'])} pages, PROPOSAL), browser storage '{store_ns}'")
@@ -540,6 +596,7 @@ def main(argv=None):
           ", ".join(f"{f['name']} [{lic[cat['files'][f['file']]['licence']]}]" for f in cat["fonts"]))
     for n in notes:
         print("  note: " + n)
+    return info
 
 
 if __name__ == "__main__":

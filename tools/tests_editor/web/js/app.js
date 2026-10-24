@@ -31,6 +31,8 @@ class App {
         $("search").addEventListener("keydown", (e) => { if (e.key === "Enter") { const r = $("tree").querySelector(".trow:not([hidden])"); if (r) r.click(); } if (e.key === "Escape") { e.target.value = ""; this._filterTree(); } });
         $("dockToggle").onclick = () => this.toggleDock();
         $("runStop").onclick = () => this.stopRun();
+        $("runFails").onclick = () => this.nextFailure();
+        this._panels();
         window.addEventListener("hashchange", () => this.route());
         window.addEventListener("keydown", (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && document.activeElement !== this.code.ta) {
@@ -38,7 +40,9 @@ class App {
                 if (this.view === "code" && this.code.path) this.code.save();
                 else { const b = this.blocks.draftBar.querySelector("button.primary"); if (b && !b.disabled) b.click(); }
             }
-            if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("search").focus(); }
+            const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+            if (e.key === "/" && !typing) { e.preventDefault(); $("search").focus(); }
+            if ((e.key === "[" || e.key === "]") && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.togglePanel(e.key === "[" ? "l" : "r"); }
         });
         window.addEventListener("beforeunload", (e) => { if ([...this.files.values()].some((f) => f.text !== f.disk) || this.blocks.hasDrafts()) { e.preventDefault(); e.returnValue = ""; } });
         window.addEventListener("focus", () => { this.pollModel(); this.checkDisk(); });
@@ -196,6 +200,12 @@ class App {
         if (!this._rowEls) return;
         for (const [k, e] of this._rowEls) {
             const r = e._row;
+            if (r && r.item && r.item.kind === "group") {   // (a group: its last local run)
+                const lr = r.item.lastRun, d = e.querySelector(".tdot");
+                d.className = "tdot cc-" + (!lr ? "none" : lr.status === "passed" ? "ok" : lr.status === "failed" ? "bad" : "skip");
+                d.title = lr ? `last local run: ${lr.status}${lr.fails ? " (" + lr.fails + " failure" + (lr.fails > 1 ? "s" : "") + ")" : ""} · ${dallas(lr.at)}` : "not run on this machine yet";
+                continue;
+            }
             if (!r || !r.item || r.item.kind !== "job") continue;
             const c = worstConclusion(ciFor(this.ci, r.item));
             const d = e.querySelector(".tdot");
@@ -326,20 +336,56 @@ class App {
         d.append(head);
         const suite = s.kind === "suite" ? s.suite : s.kind === "item" ? s.item._suite : ix.suites.get("quark_tests");
         const it = s.kind === "item" ? s.item : null;
+        // run (first: it stays above the fold on a short screen)
+        this._runSection(d, s);
+        if (it && it.kind === "group" && it.lastRun) {
+            const lr = it.lastRun;
+            sec("Last local run");
+            const r = el("div", "dline");
+            r.append(el("i", "dot cc-" + (lr.status === "passed" ? "ok" : "bad")), el("b", null, " " + lr.status), el("span", "muted small", (lr.fails ? " · " + lr.fails + " failure" + (lr.fails > 1 ? "s" : "") : "") + " · " + dallas(lr.at) + (lr.source && /^imported/.test(lr.source) ? " · imported log" : "")));
+            d.append(r);
+            for (const f of lr.failLines || []) d.append(this._failRow(f));
+        }
         // when
         sec("When it runs");
         if (s.kind === "fn") {
-            const ub = s.fn.usedBy || [];
-            if (!ub.length) d.append(el("div", "warn small", "No group or command calls it: it never runs."));
+            const ub = s.fn.usedBy || [], via = s.fn.runsVia || [];
+            const itemOf = (u) => [...ix.items.values()].find((x) => x.id === u && x._suite.id === "quark_tests");
+            const label = (u) => u.replace(/^group:/, "group ").replace(/^cmd:/, "quark_tests ");
+            const isTest = (s.fn.checks || []).length || /\bvoid$/.test(s.fn.ret || "");
+            if (!ub.length && !via.length) d.append(el("div", isTest ? "warn small" : "muted small", isTest ? "No group or command calls it, directly or through another function: it never runs." : "No group or command reaches it (a helper, not a test)."));
             for (const u of ub) {
-                const g = [...ix.items.values()].find((x) => x.id === u);
+                const g = itemOf(u);
                 const r = el("div", "dline");
-                const a = el("span", "link", u.replace(/^group:/, "group ").replace(/^cmd:/, "quark_tests "));
+                const a = el("span", "link", label(u));
                 if (g) a.onclick = () => this.select({ kind: "item", item: g });
                 r.append(a);
                 if (g && g.kind === "group") r.append(el("span", "muted small", g.list === "par" ? " · par, before every commit" : " · alone, before every commit"));
                 d.append(r);
             }
+            if (via.length) d.append(el("div", "dline small muted", ub.length ? "and through other functions:" : "through other functions:"));
+            for (const v of via) {
+                const g = itemOf(v.item);
+                const r = el("div", "dline small");
+                const a = el("span", "link", label(v.item));
+                if (g) a.onclick = () => this.select({ kind: "item", item: g });
+                r.append(a);
+                for (const p of v.path) {
+                    r.append(document.createTextNode(" → "));
+                    const f = (ix.m.functions || {})[p];
+                    const b = el("span", f ? "link mono" : "mono", p);
+                    if (f) b.onclick = () => this.select({ kind: "fn", fn: f });
+                    r.append(b);
+                }
+                r.append(document.createTextNode(" → "), el("span", "mono", s.fn.name));
+                d.append(r);
+            }
+        } else if (it && (it.kind === "shortcut" || it.kind === "tool")) {
+            const r = el("div", "dline");
+            r.append(el("span", "chip c-when", "manual"), document.createTextNode(" only by hand: quark_tests " + it.name + this._argsHelp(it)));
+            d.append(r);
+            if ((it.aliases || []).length) d.append(el("div", "dline small muted", "the same code also answers: " + it.aliases.map((a) => "quark_tests " + a).join(", ")));
+            if (it.shadowsGroup && it.argsSpec && it.argsSpec.min > 0) d.append(el("div", "dline small warn", `Without ${this._argsHelp(it).trim() || "its arguments"}, quark_tests ${it.name} runs the group ${it.name} instead.`));
         } else {
             for (const w of (suite && suite.when) || []) { const r = el("div", "dline"); r.append(el("span", "chip c-when", w.trigger), document.createTextNode(" " + w.text)); d.append(r); }
             if (it && it.kind === "group") d.append(el("div", "dline small", it.list === "par" ? `in the par lane: at the same time as the other ${[...ix.groups.values()].filter((g) => g.list === "par").length - 1} par groups (one process each)` : `in the alone lane: after every par group, one at a time (position ${it.order + 1})`));
@@ -348,12 +394,12 @@ class App {
                 if (it.if) { const c = el("div", "dline mono small muted", "if: " + it.if); d.append(c); }
                 if ((it.needs || []).length) { const r = el("div", "dline small"); r.append(document.createTextNode("after ")); it.needs.forEach((n, i) => { if (i) r.append(document.createTextNode(", ")); const j = ix.jobs.get(wfOf(it._suite) + "/" + n); const a = el("span", j ? "link" : "err", n); if (j) a.onclick = () => this.select({ kind: "item", item: j }); r.append(a); }); r.append(document.createTextNode(" succeed")); d.append(r); }
             }
-            if (it && (it.kind === "shortcut" || it.kind === "tool")) d.append(el("div", "dline small muted", "only by hand: quark_tests " + it.name));
         }
         // how
         if (it || s.kind === "suite") {
             sec("How");
-            if (it && it.run) { const c = el("code", "cmd", it.run.cmd); const cp = el("button", "mini", "copy"); cp.onclick = () => navigator.clipboard && navigator.clipboard.writeText(it.run.cmd).then(() => toast("copied")); const w = el("div", "cmdline"); w.append(c, cp); d.append(w); if (it.kind === "group") kv("parallel", it.run.parallel ? "yes (par)" : "no (alone)"); }
+            if (it && it.run) { const cmdText = it.run.cmd + this._argsHelp(it); const c = el("code", "cmd", cmdText); const cp = el("button", "mini", "copy"); cp.onclick = () => navigator.clipboard && navigator.clipboard.writeText(cmdText).then(() => toast("copied")); const w = el("div", "cmdline"); w.append(c, cp); d.append(w); if (it.kind === "group") kv("parallel", it.run.parallel ? "yes (par)" : "no (alone)"); }
+            if (it && it.argsSpec && it.argsSpec.hint) kv("args", it.argsSpec.hint, "small");
             if (it && it.kind === "job") {
                 kv("runs on", it.runsOn || "?", "mono");
                 if (it.timeoutMin) kv("timeout", it.timeoutMin + " min");
@@ -400,22 +446,6 @@ class App {
             r.append(a);
             d.append(r);
         }
-        // run
-        const cmd = this._runCmd(s);
-        if (cmd) {
-            sec("Run here");
-            const r = el("div", "runrow");
-            const b = el("button", "primary", "▶ Run " + cmd.label);
-            b.id = "runBtn";
-            b.disabled = !!(this.run && this.run.status === "running");
-            b.onclick = () => this.startRun(cmd.cmd, cmd.label);
-            r.append(b, el("span", "muted small", "low priority, one run at a time"));
-            d.append(r);
-            this._runsBox = el("div", "druns");
-            this._runsBox.dataset.cmd = cmd.cmd;
-            d.append(this._runsBox);
-            this._fillRuns();
-        } else this._runsBox = null;
         // rules
         const rules = ix.m.rules || [];
         if (rules.length) {
@@ -459,13 +489,139 @@ class App {
         if (!any) box.append(el("div", "muted small", "no run seen yet"));
     }
     _afterCi() { this._ciDots(); this._fillCi(); if (this.sel && this.sel.kind === "when") renderWhen($("vWhen"), this); else if (this.view === "graph") this.graph.render(); }
-    _runCmd(s) {
-        if (s.kind === "item" && s.item.kind === "group") return { cmd: "group:" + s.item.name, label: "group " + s.item.name };
-        if (s.kind === "item" && s.item.kind === "shortcut") return { cmd: "cmd:" + s.item.name, label: "quark_tests " + s.item.name };
-        if (s.kind === "suite" && s.suite.id === "quark_tests") return { cmd: "groups", label: "every group" };
-        const su = s.kind === "suite" ? s.suite : s.kind === "item" ? s.item._suite : null;
-        if (su && su.kind === "script") return { cmd: su.id, label: su.title };
-        return null;
+    // ---------------------------------------------------------------- the run section of the details panel
+    _argsHelp(it) {
+        const sp = it.argsSpec;
+        if (!sp || sp.max === 0) return "";
+        const ps = sp.params || [];
+        const words = ps.map((p, i) => { const n = p.name || (sp.choices ? "NAME" : "arg" + (i + 1)); return i < sp.min ? n.toUpperCase() : "[" + n + (p.default ? "=" + p.default.replace(/^"|"$/g, "") : "") + "]"; });
+        return words.length ? " " + words.join(" ") + (sp.max === null ? " …" : "") : sp.max === null ? " …" : "";
+    }
+    _runSection(d, s) {
+        const busy = !!(this.run && this.run.status === "running");
+        let first = true;
+        const btn = (label, onclick, cls = "primary") => { const b = el("button", cls + " runbtn", label); b.disabled = busy; b.onclick = onclick; if (first) { b.id = "runBtn"; first = false; } return b; };
+        const it = s.kind === "item" ? s.item : null;
+        const su = s.kind === "suite" ? s.suite : it ? it._suite : null;
+        let filter = null;
+        const h = el("h3", null, "Run here");
+        if (s.kind === "suite" && s.suite.id === "quark_tests") { d.append(h); this._suiteRunner(d, btn); filter = "suite"; }
+        else if (it && it.kind === "group") {
+            d.append(h);
+            const r = el("div", "runrow");
+            r.append(btn("▶ Run group " + it.name, () => this.startRun("group:" + it.name)), el("span", "muted small", "low priority, one run at a time"));
+            d.append(r);
+            filter = "group:" + it.name;
+        } else if (it && (it.kind === "shortcut" || it.kind === "tool")) {
+            d.append(h);
+            filter = "cmd:" + it.name;
+            if (it.run && it.run.byHand) d.append(el("div", "dline small muted", "Not run from here: " + it.run.byHand + "."));
+            else this._argsRunner(d, it, btn);
+        } else if (su && su.kind === "script") {
+            d.append(h);
+            const r = el("div", "runrow");
+            r.append(btn("▶ Run " + su.title, () => this.startRun(su.id)), el("span", "muted small", su.id === "script:release_check.sh" ? "every group, then every map: minutes" : "low priority"));
+            d.append(r);
+            filter = su.id;
+        }
+        if (!filter) { this._runsBox = null; return; }
+        this._runsBox = el("div", "druns");
+        this._runsBox.dataset.cmd = filter;
+        d.append(this._runsBox);
+        this._fillRuns();
+    }
+    // quark_tests: the whole suite, the failed groups again, or a chosen set (QUARK_TEST_ONLY)
+    _suiteRunner(d, btn) {
+        const groups = [...this.ix.groups.values()].sort((a, b) => (a.list === "par") === (b.list === "par") ? a.order - b.order : a.list === "par" ? -1 : 1);
+        const failed = groups.filter((g) => g.lastRun && g.lastRun.status === "failed").map((g) => g.name);
+        const passed = groups.filter((g) => g.lastRun && g.lastRun.status === "passed").length;
+        const r = el("div", "runrow");
+        r.append(btn("▶ Run the whole suite", () => this.startRun("suite")));
+        const rf = btn("↻ Rerun failed (" + failed.length + ")", () => this.startRun("suite", { groups: failed }), "");
+        rf.dataset.empty = failed.length ? "0" : "1";
+        if (!failed.length) rf.disabled = true;
+        rf.title = failed.length ? failed.join(", ") : "no group failed in its last local run";
+        r.append(rf);
+        d.append(r);
+        d.append(el("div", "dline small muted", `build/quark_tests: ${groups.filter((g) => g.list === "par").length} par groups at once, then the alone ones · last here: ${passed} passed, ${failed.length} failed, ${groups.length - passed - failed.length} not run yet`));
+        // a chosen set
+        if (!this.pick) { try { this.pick = new Set(JSON.parse(localStorage.getItem("te.pick") || "[]")); } catch { this.pick = new Set(); } }
+        for (const n of [...this.pick]) if (!this.ix.groups.has(n)) this.pick.delete(n);
+        const keep = () => { try { localStorage.setItem("te.pick", JSON.stringify([...this.pick])); } catch { } };
+        const chips = el("div", "gchips");
+        const runPick = btn("", () => this.startRun("suite", { groups: groups.filter((g) => this.pick.has(g.name)).map((g) => g.name) }), "");
+        const sync = () => { runPick.textContent = "▶ Run " + this.pick.size + " chosen"; runPick.dataset.empty = this.pick.size ? "0" : "1"; runPick.disabled = !this.pick.size || !!(this.run && this.run.status === "running"); for (const c of chips.children) c.classList.toggle("on", this.pick.has(c.dataset.g)); };
+        for (const g of groups) {
+            const c = el("button", "gchip");
+            c.dataset.g = g.name;
+            const lr = g.lastRun;
+            c.append(el("i", "dot cc-" + (!lr ? "none" : lr.status === "passed" ? "ok" : "bad")), document.createTextNode(g.name));
+            c.title = (g.list === "par" ? "par" : "alone") + (g.timing ? " · " + secs(g.timing.sec) : "") + (lr ? " · last: " + lr.status : " · not run here yet");
+            c.onclick = () => { if (this.pick.has(g.name)) this.pick.delete(g.name); else this.pick.add(g.name); keep(); sync(); };
+            chips.append(c);
+        }
+        const pr = el("div", "runrow");
+        const sel = (label, names) => { const b = el("button", "mini", label); b.onclick = () => { this.pick = new Set(names); keep(); sync(); }; return b; };
+        pr.append(runPick, sel("none", []), sel("failed", failed), sel("par", groups.filter((g) => g.list === "par").map((g) => g.name)), sel("alone", groups.filter((g) => g.list !== "par").map((g) => g.name)));
+        const det = el("details", "pick");
+        det.open = this.pick.size > 0;
+        det.append(el("summary", null, "Run chosen groups (QUARK_TEST_ONLY)"), pr, chips);
+        d.append(det);
+        sync();
+        // a log from a terminal run (build/quark_tests > log.txt) feeds the group times and results too
+        const imp = el("span", "link small", "Import a run log…");
+        const file = el("input"); file.type = "file"; file.accept = ".txt,.log,text/plain"; file.hidden = true;
+        file.onchange = async () => {
+            const f = file.files[0]; if (!f) return;
+            const r2 = await api.importLog(await f.text(), f.name);
+            file.value = "";
+            if (!r2.ok) { toast("import failed: " + ((r2.data && r2.data.error) || r2.status), true); return; }
+            toast(r2.data.groups ? `imported ${r2.data.groups} group${r2.data.groups > 1 ? "s" : ""} from ${f.name}` : "no '(group X: N s)' lines in " + f.name, !r2.data.groups);
+            this.pollModel();
+        };
+        imp.onclick = () => file.click();
+        const ir = el("div", "dline");
+        ir.append(imp, file, el("span", "muted small", " (the output of build/quark_tests run elsewhere: its group times and results)"));
+        d.append(ir);
+    }
+    // a shortcut / tool command: its arguments (checked against argsSpec), then Run
+    _argsRunner(d, it, btn) {
+        const sp = it.argsSpec || { min: 0, max: 0, params: [] };
+        let input = null;
+        if (sp.max !== 0) {
+            input = el("input", "mono argsin");
+            input.id = "runArgs";
+            input.placeholder = this._argsHelp(it).trim() || "arguments";
+            try { input.value = (JSON.parse(localStorage.getItem("te.args") || "{}"))[it.name] || ""; } catch { }
+            if (sp.choices) {
+                const dl = el("datalist"); dl.id = "argChoices";
+                for (const c of sp.choices) { const o = el("option"); o.value = c; dl.append(o); }
+                d.append(dl);
+                input.setAttribute("list", "argChoices");
+            }
+            const row = el("div", "runrow");
+            row.append(el("span", "muted small", "quark_tests " + it.name), input);
+            d.append(row);
+            if (sp.choices) d.append(el("div", "dline small muted", "NAME: " + sp.choices.join(", ")));
+        }
+        const go = () => {
+            const args = input ? input.value.trim().split(/\s+/).filter(Boolean) : [];
+            const n = args.length;
+            if (n < sp.min || (sp.max !== null && n > sp.max)) { toast(`quark_tests ${it.name} takes ${sp.min === sp.max ? sp.min : sp.min + " to " + (sp.max === null ? "any" : sp.max)} argument(s)`, true); if (input) input.focus(); return; }
+            if (args.some((a) => !/^[\w.:,+-]{1,64}$/.test(a))) { toast("arguments: letters, digits and . _ - : , + only", true); return; }
+            try { const m = JSON.parse(localStorage.getItem("te.args") || "{}"); m[it.name] = args.join(" "); localStorage.setItem("te.args", JSON.stringify(m)); } catch { }
+            this.startRun("cmd:" + it.name, args.length ? { args } : null);
+        };
+        if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+        const r = el("div", "runrow");
+        r.append(btn("▶ Run quark_tests " + it.name, go), el("span", "muted small", "low priority, one run at a time"));
+        d.append(r);
+    }
+    _failRow(f) {
+        const r = el("div", "fline");
+        r.append(el("span", "mono small", clip(f.text, 160)));
+        if (f.file) { const a = el("span", "link mono small", f.file + ":" + f.line); a.title = "open the CHECK in Code"; a.onclick = () => this.jumpToCode(f.file, f.line); r.append(a); }
+        return r;
     }
 
     // ---------------------------------------------------------------- files, saving
@@ -600,7 +756,15 @@ class App {
     }
 
     // ---------------------------------------------------------------- runs
-    async loadRuns() { const r = await api.runs(); if (r.ok && Array.isArray(r.data)) { this.runs = r.data; this._fillRuns(); const cur = r.data.find((x) => x.status === "running"); if (cur && !this.run) this._follow(cur.id, cur.cmd); } }
+    async loadRuns() { const r = await api.runs(); if (r.ok && Array.isArray(r.data)) { this.runs = r.data; this._fillRuns(); const cur = r.data.find((x) => x.status === "running"); if (cur && !this.run) this._follow(cur.id, cur); } }
+    runLabel(r) {
+        const c = r.cmd || "";
+        if (c === "suite") return r.only && r.only.length ? "quark_tests: " + clip(r.only.join(", "), 60) : "quark_tests (whole suite)";
+        if (c.startsWith("group:")) return "group " + c.slice(6);
+        if (c.startsWith("cmd:")) return "quark_tests " + c.slice(4) + (r.args && r.args.length ? " " + r.args.join(" ") : "");
+        if (c.startsWith("script:")) return c.slice(7);
+        return c;
+    }
     _fillRuns() {
         const box = this._runsBox;
         if (!box) return;
@@ -610,54 +774,146 @@ class App {
         if (!list.length) { box.append(el("div", "muted small", cmd ? "not run here yet" : "none yet")); return; }
         for (const r of list) {
             const row = el("div", "runh link");
-            row.append(el("i", "dot cc-" + (r.status === "passed" ? "ok" : r.status === "failed" ? "bad" : r.status === "running" ? "run" : "skip")), el("span", "small", r.cmd), el("span", "small muted", dallas(r.startedAt) + (r.sec ? " · " + secs(r.sec) : "") + " · " + r.status));
-            row.onclick = () => this._follow(r.id, r.cmd, true);
+            const gr = r.groupResults ? Object.values(r.groupResults) : [];
+            const bad = gr.filter((x) => x.status === "failed").length;
+            row.append(el("i", "dot cc-" + (r.status === "passed" ? "ok" : r.status === "failed" ? "bad" : r.status === "running" ? "run" : "skip")), el("span", "small", this.runLabel(r)), el("span", "small muted", dallas(r.startedAt) + (r.sec ? " · " + secs(r.sec) : "") + " · " + r.status + (gr.length > 1 ? ` · ${gr.length - bad}/${gr.length} groups passed` : "")));
+            row.onclick = () => this._follow(r.id, r, true);
             box.append(row);
         }
     }
-    async startRun(cmd, label) {
-        const r = await api.run(cmd);
+    async startRun(cmd, extra) {
+        const r = await api.run(cmd, extra);
         if (r.status === 409) { toast("a run is going already: stop it first", true); return; }
-        if (r.status === 404) { toast("no build: build quark_tests first (" + ((r.data && r.data.error) || "") + ")", true, 6000); return; }
-        if (!r.ok) { toast("can't run: " + ((r.data && r.data.error) || r.status), true); return; }
-        this._follow(r.data.id, cmd);
+        if (r.status === 404) { toast((r.data && r.data.error) === "no build" ? "no build: build quark_tests first" : "can't run: " + ((r.data && r.data.error) || r.status), true, 6000); return; }
+        if (!r.ok) { toast("can't run: " + ((r.data && r.data.error) || r.status), true, 6000); return; }
+        this._follow(r.data.id, { cmd, ...(extra && extra.args ? { args: extra.args } : {}), ...(extra && extra.groups ? { only: extra.groups } : {}) });
     }
-    _follow(id, cmd, past = false) {
+    _setBusy(busy) { for (const b of document.querySelectorAll("#details .runbtn")) b.disabled = busy || b.dataset.empty === "1"; }
+    _follow(id, rec, past = false) {
         clearTimeout(this._runT);
-        this.run = { id, cmd, from: 0, status: "running" };
+        this.run = { id, cmd: rec.cmd, from: 0, status: "running", partial: "", fails: [], failAt: -1 };
         this.openDock(true);
         $("runOut").textContent = "";
-        $("runTitle").textContent = cmd;
+        $("runTitle").textContent = this.runLabel(rec);
         $("runState").textContent = past ? "" : "starting…";
         $("runState").className = "rstate";
         $("runStop").disabled = false;
+        this._failCount();
         const tick = async () => {
             if (!this.run || this.run.id !== id) return;
             const r = await api.runPoll(id, this.run.from);
             if (!r.ok) { $("runState").textContent = "lost the run (" + r.status + ")"; return; }
             const x = r.data;
-            if (x.output) {
-                const out = $("runOut");
-                const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 10;
-                out.append(document.createTextNode(x.output));
-                if (atEnd) out.scrollTop = out.scrollHeight;
-            }
+            if (x.output) this._appendOut(x.output);
             this.run.from = x.next !== undefined ? x.next : x.size !== undefined ? x.size : this.run.from + new TextEncoder().encode(x.output || "").length;
             if (x.more) { this._runT = setTimeout(tick, 0); return; }   // (paged: more output waiting)
             this.run.status = x.status;
+            $("runTitle").textContent = this.runLabel(x);
             $("runState").textContent = x.status + (x.sec ? " · " + secs(x.sec) : "") + (x.exit !== null && x.exit !== undefined && x.status !== "running" ? " · exit " + x.exit : "");
             $("runState").className = "rstate rs-" + x.status;
-            const b = $("runBtn"); if (b) b.disabled = x.status === "running";
+            this._setBusy(x.status === "running");
             if (x.status === "running") { this._runT = setTimeout(tick, POLL_RUN_MS); return; }
+            if (this.run.partial) { this._appendOut("\n"); }   // (the last line had no newline)
             $("runStop").disabled = true;
             this.loadRuns();
-            if (/^group:/.test(cmd)) this.pollModel();   // (a finished group run feeds its timing)
+            if (!past) this.pollModel();   // (a finished run feeds each group's time and result)
         };
         tick();
     }
-    async stopRun() { if (this.run) { await api.stop(this.run.id); toast("stopping " + this.run.cmd); } }
+    // the output, line by line: FAIL / TIMEOUT / FAILURE(S) lines marked (their file:line opens the CHECK), group ends
+    // muted; plain lines go in as one text node per chunk (a whole-suite run prints thousands)
+    _appendOut(text) {
+        const out = $("runOut"), run = this.run;
+        const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 10;
+        const lines = (run.partial + text).split("\n");
+        run.partial = lines.pop();
+        const frag = document.createDocumentFragment();
+        let plain = "";
+        const flush = () => { if (plain) { frag.append(document.createTextNode(plain)); plain = ""; } };
+        for (const l of lines) {
+            const fail = /^\s*(FAIL\b|TIMEOUT:)|\d+ FAILURE\(S\)$|^\s*\(group [\w-]+: \d+ failure/.test(l) || /^[\w-]+ rc=[1-9]/.test(l) || /^map \S+ FAILED/.test(l) || /^RESULT: FAILURES/.test(l);
+            const pass = !fail && (/^all tests passed$|^RESULT: all passed/.test(l));
+            const grp = !fail && !pass && /^\s*\(group [\w-]+: [\d.]+ s\)$/.test(l);
+            if (!fail && !pass && !grp) { plain += l + "\n"; continue; }
+            flush();
+            const sp = el("span", fail ? "ofail" : pass ? "opass" : "ogrp");
+            const m = fail && /FAIL\s+(\S+?):(\d+):/.exec(l);
+            const at = m && m[1].replace(/\\/g, "/");
+            const rel = at && (at.lastIndexOf("tests/") >= 0 ? at.slice(at.lastIndexOf("tests/")) : null);
+            if (rel) {
+                const i = l.indexOf(m[1]);
+                const a = el("a", "olink", rel + ":" + m[2]);
+                a.title = "open " + rel + ":" + m[2] + " in Code";
+                a.onclick = () => this.jumpToCode(rel, +m[2]);
+                sp.append(document.createTextNode(l.slice(0, i)), a, document.createTextNode(l.slice(i + m[1].length + 1 + m[2].length) + "\n"));
+            } else sp.textContent = l + "\n";
+            frag.append(sp);
+            if (fail) run.fails.push(sp);
+        }
+        flush();
+        out.append(frag);
+        if (atEnd) out.scrollTop = out.scrollHeight;
+        this._failCount();
+    }
+    _failCount() {
+        const b = $("runFails"), n = this.run ? this.run.fails.length : 0;
+        b.hidden = !n;
+        b.textContent = n + " FAIL ▸";
+        b.title = "jump to the next failure";
+    }
+    nextFailure() {
+        const run = this.run;
+        if (!run || !run.fails.length) return;
+        this.openDock(true);
+        run.failAt = (run.failAt + 1) % run.fails.length;
+        const e = run.fails[run.failAt];
+        for (const x of $("runOut").querySelectorAll(".ofail.cur")) x.classList.remove("cur");
+        e.classList.add("cur");
+        const out = $("runOut");
+        out.scrollTop = e.offsetTop - out.clientHeight / 3;
+        $("runFails").textContent = `${run.failAt + 1}/${run.fails.length} FAIL ▸`;
+    }
+    async stopRun() { if (this.run) { await api.stop(this.run.id); toast("stopping " + $("runTitle").textContent); } }
     openDock(open) { $("dock").classList.toggle("open", open); $("dockToggle").textContent = open ? "▾ run output" : "▸ run output"; }
     toggleDock() { this.openDock(!$("dock").classList.contains("open")); }
+
+    // ---------------------------------------------------------------- side panels: drag the edge to resize, [ / ] or
+    // the header buttons (or a double-click on the edge) to hide / show; kept per browser
+    _panels() {
+        const app = $("app");
+        const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+        const set = (k, v) => { try { localStorage.setItem(k, v); } catch { } };
+        for (const side of ["l", "r"]) {
+            const w = +get("te." + side + "w");
+            if (w) app.style.setProperty("--" + side + "w", w + "px");
+            if (get("te." + side + "c") === "1") document.body.classList.add(side + "-hidden");
+            const rz = $("rz" + side.toUpperCase());
+            rz.addEventListener("dblclick", () => this.togglePanel(side));
+            rz.addEventListener("pointerdown", (e) => {
+                if (document.body.classList.contains(side + "-hidden")) return;
+                e.preventDefault();
+                rz.setPointerCapture(e.pointerId);
+                const box = app.getBoundingClientRect();
+                document.body.classList.add("resizing");
+                const move = (ev) => {
+                    const px = side === "l" ? ev.clientX - box.left : box.right - ev.clientX;
+                    const w = Math.round(Math.max(160, Math.min(px, box.width * 0.45)));
+                    app.style.setProperty("--" + side + "w", w + "px");
+                    this._lastW = w;
+                };
+                const up = () => { rz.removeEventListener("pointermove", move); document.body.classList.remove("resizing"); if (this._lastW) set("te." + side + "w", this._lastW); this._lastW = 0; if (this.view === "graph" && this.sel && this.sel.kind !== "when") this.graph.render(); };
+                rz.addEventListener("pointermove", move);
+                rz.addEventListener("pointerup", up, { once: true });
+            });
+        }
+        $("leftToggle").onclick = () => this.togglePanel("l");
+        $("rightToggle").onclick = () => this.togglePanel("r");
+    }
+    togglePanel(side) {
+        const on = document.body.classList.toggle(side + "-hidden");
+        try { localStorage.setItem("te." + side + "c", on ? "1" : "0"); } catch { }
+        if (this.view === "graph" && this.sel && this.sel.kind !== "when") this.graph.render();
+    }
 }
 
 window.testsEditor = new App();

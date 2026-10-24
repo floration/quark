@@ -315,16 +315,38 @@ table.keys td { font-size: 12px; }
 .sim-form { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .sim-form label { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; color: var(--fg2); }
 .sim-form .sp { flex: 1; }
-.sim-runs { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 10px; margin-top: 8px; }
+.sim-form .row + .row { margin-top: 4px; }
+.sim-src { font-size: 11px; margin-top: 3px; }
+.sim-runs { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 8px; }
+.sim-runs.two { grid-template-columns: repeat(auto-fit, minmax(560px, 1fr)); }   /* compare: side by side when they fit */
+.sim-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; margin-top: 6px; }
+.sim-body.stack { grid-template-columns: minmax(0, 1fr); }
 .sim-run { background: var(--bg1); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 0; }
 .sim-run h4 { margin: 0 0 6px; }
 .sim-run canvas.tl { width: 100%; display: block; border-radius: 4px; }
 .sim-run canvas.plot { border-radius: 4px; }
 .sim-card { background: var(--bg2); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
 .sim-log { max-height: 220px; overflow: auto; font: 11px var(--mono); margin-top: 6px; }
-.sim-tab { border-collapse: collapse; font-size: 11px; margin-top: 6px; width: 100%; }
+.sim-tab { border-collapse: collapse; font-size: 11px; margin-top: 6px; width: auto; min-width: 260px; }
+.sim-card .sim-tab { display: inline-table; vertical-align: top; margin-right: 14px; }   /* scoreboard and slot costs side by side when there's room */
 .sim-tab th, .sim-tab td { padding: 1px 6px; text-align: right; border-bottom: 1px solid var(--line); }
 .sim-tab th:first-child, .sim-tab td:first-child { text-align: left; }
-/* ?embed=1: the page header goes (the Supervisor Board has its own title bar) */
+/* ?embed=1: the page header goes (the Supervisor Board has its own title bar); the left panel says the same in a line */
 .embed.modeed #top { display: none; }
 .embed.modeed #app { grid-template-rows: 1fr; }
+#modeStatus { display: none; font-size: 11px; color: var(--fg3); padding-bottom: 6px; border-bottom: 1px solid var(--line); line-height: 1.9; }
+#modeStatus .badge { font-size: 10px; padding: 0 6px; cursor: help; }
+#modeStatus .ms-dir { line-height: 1.3; overflow-wrap: anywhere; }
+.embed #modeStatus { display: block; }
+/* values: the params table's section rows */
+table.params tr.psub td { color: var(--fg2); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding-top: 10px; border-bottom-color: var(--line2); }
+/* space: the side panels follow the screen (1280: narrow; 2560: room for longer checks), phases wrap instead of
+   scrolling sideways, and at 2560 the blocks palette is laid out across */
+#mode { grid-template-columns: clamp(220px, 14vw, 340px) minmax(0, 1fr) clamp(220px, 16vw, 400px); }
+.ph-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@media (min-width: 2000px) {
+  .blocks { grid-template-columns: 380px 1fr; }
+  .bk-items { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
+  .bk-items .bk-ph { flex-basis: 100%; }
+  .ph-row { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

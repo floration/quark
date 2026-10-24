@@ -8,7 +8,8 @@
         --page-only     only the page and serve.py (keeps the helper, maps, models, three.js there)
 
 <out_dir> gets:
-    index.html, editor.css, js/        the page (this folder's), deco_presets/ (the decoration panel's presets)
+    index.html, editor.css, js/        the page (this folder's), deco_presets/ (the decoration panel's presets),
+                                       library_presets/ (the shipped custom objects)
     vendor/three.module.min.js         three.js 0.160.0, downloaded once (cached in <build>/map_editor_vendor/) and
                                        checked against THREE_SHA256 below; never committed
     serve.py, run.cmd, run.sh          the local server and its starters
@@ -16,7 +17,7 @@
     maps/*.qmap                        the default maps the build generated (read-only in the editor)
     models/player/*.gltf               the player models, from `quark_tests exportassets` (when it is built)
     VERSION                            the game version these came from
-Files you made there (config.json) are kept. Python 3 standard library only.
+Files you made there (config.json, provenance.json, clipboard.json, library/) are kept. Python 3 standard library only.
 """
 import hashlib, io, os, shutil, subprocess, sys, tarfile, tempfile, urllib.request
 
@@ -97,6 +98,8 @@ def main():
     njs = copy_tree(os.path.join(HERE, "js"), os.path.join(out, "js"), lambda n: n.endswith(".js"))
     if os.path.isdir(os.path.join(HERE, "deco_presets")):   # (the decoration panel's shipped presets)
         copy_tree(os.path.join(HERE, "deco_presets"), os.path.join(out, "deco_presets"), lambda n: n.endswith(".json"))
+    if os.path.isdir(os.path.join(HERE, "library_presets")):   # (the shipped custom objects; yours are in library/, kept)
+        copy_tree(os.path.join(HERE, "library_presets"), os.path.join(out, "library_presets"), lambda n: n.endswith(".json"))
     for n in ("serve.py", "run.cmd", "run.sh", "README.md", "INTERFACE.md"):
         if os.path.isfile(os.path.join(HERE, n)): shutil.copy2(os.path.join(HERE, n), os.path.join(out, n))
     try: os.chmod(os.path.join(out, "run.sh"), 0o755)

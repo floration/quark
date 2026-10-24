@@ -26,7 +26,7 @@
   }
 
   function row(e) {
-    return h('li', {class: 'trow' + (DM.isDone(e) ? ' done' : '')},
+    return h('li', {class: 'trow' + (DM.isOpen(e) ? '' : ' done')},
       DM.pillEl(e, true),
       DM.priEl(e),
       h('a', {href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }, title: e.waitingWhy || ''}, DM.md.into(h('span'), e.title, true)),
@@ -39,17 +39,24 @@
     $('#tOpenOnly').checked = p.openOnly;
     let list = threadList();
     const total = list.length;
-    if (p.openOnly) list = list.filter(t => t.entries.some(e => !DM.isDone(e)));
+    if (p.openOnly) list = list.filter(t => t.entries.some(DM.isOpen));
     if (p.q) {
       const ws = p.q.toLowerCase().split(/\s+/).filter(Boolean);
       list = list.filter(t => { const hay = (t.title + ' ' + t.entries.map(e => e.title).join(' ')).toLowerCase(); return ws.every(w => hay.includes(w)); });
     }
     $('#tCount').textContent = list.length + ' of ' + total + ' threads';
     const body = clear($('#tBody'));
-    if (!list.length) { body.appendChild(h('div', {class: 'empty'}, 'No threads match.')); return; }
+    if (!list.length) { body.classList.remove('cols'); body.appendChild(h('div', {class: 'empty'}, 'No threads match.')); return; }
+    // Balanced columns (no holes under short cards): each card goes to the column that is shortest so far,
+    // by its row count, so the order still reads left to right, top to bottom.
+    const n = colCount();
+    lastCols = n;
+    body.classList.add('cols');
+    const cols = Array.from({length: n}, () => ({el: h('div', {class: 'col'}), rows: 0}));
+    body.append(...cols.map(c => c.el));
     for (const t of list) {
-      const open = t.entries.filter(e => !DM.isDone(e)).sort((a, b) => (DM.needsQ(b) - DM.needsQ(a)) || (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9));
-      const done = t.entries.filter(DM.isDone);
+      const open = t.entries.filter(DM.isOpen).sort((a, b) => (DM.needsQ(b) - DM.needsQ(a)) || (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9));
+      const done = t.entries.filter(e => !DM.isOpen(e));
       const counts = {};
       for (const e of t.entries) { const pl = DM.pill(e); const k = pl.cls + '|' + pl.label; counts[k] = (counts[k] || 0) + 1; }
       const key = t.title || '(none)';
@@ -65,12 +72,17 @@
         })) : null,
         open.length ? h('ul', {class: 'tlist'}, open.map(row)) : h('div', {class: 'faint'}, t.entries.length ? 'Everything here is finished.' : 'No entries.'),
         done.length ? (showDone.has(key) ? [h('ul', {class: 'tlist'}, done.map(row)), h('button', {class: 'mini', onclick: () => { showDone.delete(key); render(); }}, 'Hide finished')] :
-          h('button', {class: 'mini', onclick: () => { showDone.add(key); render(); }}, 'Show ' + done.length + ' finished')) : null,
+          h('button', {class: 'mini', onclick: () => { showDone.add(key); render(); }}, 'Show ' + done.length + ' finished or reference')) : null,
         t.changes.length ? h('div', {class: 'tc-ch'}, h('span', {class: 'why-k'}, 'Latest: '), t.changes.slice(0, 2).map((c, i) => [i ? ' · ' : '',
           h('a', {href: '#tab=changes', onclick: ev => { ev.preventDefault(); DM.app.openChange(c.sha); }}, c.subject || 'change'), ' ', h('span', {class: 'faint'}, DM.timeEl(c.time))])) : null);
-      body.appendChild(card);
+      const col = cols.reduce((a, b) => b.rows < a.rows ? b : a);
+      col.el.appendChild(card);
+      col.rows += 4 + open.length + (showDone.has(key) ? done.length : 0) + (t.changes.length ? 1 : 0);
     }
   }
+  let lastCols = 0;
+  function colCount() { const w = ($('#tScroll').clientWidth || innerWidth) - 24; return Math.max(1, Math.floor((w + 10) / (440 + 10))); }
+  new ResizeObserver(() => { if (st.data && st.prefs.tab === 'threads' && colCount() !== lastCols) DM.app.render('threads'); }).observe($('#tScroll'));
 
   let qT = null;
   $('#tQ').addEventListener('input', () => { clearTimeout(qT); qT = setTimeout(() => { st.prefs.threads.q = $('#tQ').value; DM.app.save(); render(); }, 120); });

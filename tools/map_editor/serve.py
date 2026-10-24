@@ -12,11 +12,20 @@ Binds 127.0.0.1 only (nothing on the network can reach it). Python 3 standard li
     GET  /api/map/default/<name>    a default map's text (this folder's maps/, read-only)
     GET  /api/map/mine/<name>       PUT /api/map/mine/<name>     your map's text in the game's user maps folder (PUT:
                                     the text, or JSON {"text", "provenance": {"origin": "human"|"ai", "note"}}, which
-                                    also records it in provenance.json next to this file)
+                                    also records it in provenance.json next to this file). With quark_maptool, a text
+                                    the game can't load is refused (422 {"error", "parseError"})
+    DELETE /api/map/mine/<name>     moves your map and its sidecar to <your maps>/deleted/<name>-<time>.* (the game
+                                    doesn't look in sub-folders; nothing is lost)
+    POST /api/rename                {"from", "to"}: renames your map, its sidecar and its provenance entry
     GET  /api/provenance            provenance.json
     GET  /api/sidecar/<name>        PUT /api/sidecar/<name>      <name>.mapedit.json next to your map ({} when none)
     GET  /api/deco-presets          PUT /api/deco-presets/<name>  the decoration panel's own presets ({"presets": [...]}),
                                     deco_presets/user/<name>.json in this folder
+    GET  /api/clipboard             PUT /api/clipboard   the copied objects (clipboard.json next to this file: it
+                                    survives switching maps and restarts)
+    GET  /api/library               {"items": [...]}: saved groups and custom objects, yours (library/<name>.json next
+                                    to this file) and the shipped ones (library_presets/, read-only: "builtin": true)
+    PUT  /api/library/<name>        DELETE /api/library/<name>   one of yours ({"kind": "group"|"object", ...})
     POST /api/tool/<command>        quark_maptool <command> with the body JSON on stdin: its JSON answer
     POST /api/stream/bots           quark_maptool bots --stream: NDJSON lines as they come (chunked); the first line
                                     is {"type":"run","run":"<id>"}
@@ -51,6 +60,25 @@ def list_deco_presets():
         except (OSError, ValueError): continue
         if isinstance(obj, dict) and isinstance(obj.get("rules"), list): out.append(dict(obj, file=n[:-5]))
     return out
+
+
+CLIPBOARD = os.path.join(HERE, "clipboard.json")
+LIB_KINDS = ("group", "object")
+
+
+def list_library():
+    """saved groups / custom objects: library_presets/*.json (shipped) then library/*.json (yours; same name wins)"""
+    items = {}
+    for sub, builtin in (("library_presets", True), ("library", False)):
+        d = os.path.join(HERE, sub)
+        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if not n.endswith(".json") or not valid_name(n[:-5]): continue
+            try:
+                with open(os.path.join(d, n), encoding="utf-8") as fh: obj = json.load(fh)
+            except (OSError, ValueError): continue
+            if isinstance(obj, dict) and obj.get("kind") in LIB_KINDS:
+                items[n[:-5]] = dict(obj, file=n[:-5], builtin=builtin)
+    return list(items.values())
 
 
 def valid_name(n):
@@ -289,6 +317,11 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.join(st.user_maps(), name + ".mapedit.json")
             if not os.path.isfile(f): return self.send(200, {})
             with open(f, "rb") as fh: return self.send(200, fh.read())
+        if p == "clipboard":
+            if not os.path.isfile(CLIPBOARD): return self.send(200, {})
+            with open(CLIPBOARD, "rb") as fh: return self.send(200, fh.read())
+        if p == "library":
+            return self.send(200, {"items": list_library()})
         if p == "deco-presets":   # the decoration panel's own presets (deco_presets/user/<name>.json; DECO.md)
             return self.send(200, {"presets": list_deco_presets()})
         self.err(404, "not found")
@@ -308,6 +341,21 @@ class Handler(BaseHTTPRequestHandler):
             with open(f + ".tmp", "w", encoding="utf-8", newline="\n") as fh: json.dump(obj, fh, indent=2)
             os.replace(f + ".tmp", f)
             return self.send(200, {"ok": True, "file": name + ".json"})
+        if p == "clipboard":
+            try: obj = json.loads(data or b"{}")
+            except ValueError: return self.err(400, "bad JSON")
+            if not isinstance(obj, dict): return self.err(400, "the clipboard is a JSON object")
+            write_atomic(CLIPBOARD, json.dumps(obj).encode("utf-8"))
+            return self.send(200, {"ok": True})
+        m = re.match(r"^library/([^/]+)$", p)
+        if m:
+            name = m.group(1)
+            if not valid_name(name): return self.err(400, "a name is 1-40 letters, digits, - and _")
+            try: obj = json.loads(data or b"null")
+            except ValueError: return self.err(400, "bad JSON")
+            if not isinstance(obj, dict) or obj.get("kind") not in LIB_KINDS: return self.err(400, "a library item is {kind: group|object, ...}")
+            write_atomic(os.path.join(HERE, "library", name + ".json"), json.dumps(obj, indent=1).encode("utf-8"))
+            return self.send(200, {"ok": True, "file": name})
         if p == "config":
             try: cfg = json.loads(data or b"{}")
             except ValueError: return self.err(400, "bad JSON")
@@ -334,6 +382,8 @@ class Handler(BaseHTTPRequestHandler):
             text = text.replace("\r\n", "\n")
             if len(text) > 32 << 20: return self.err(413, "map too large")
             if not text.strip(): return self.err(400, "empty map")
+            bad = self.unloadable(text, name)
+            if bad: return self.send(422, {"error": "the game can't load this map: " + bad, "parseError": bad})
             write_atomic(os.path.join(st.user_maps(), name + ".qmap"), text.encode("utf-8"))
             entry = record_provenance(name, prov) if isinstance(prov, dict) else None
             return self.send(200, {"ok": True, "path": os.path.join(st.user_maps(), name + ".qmap"), "provenance": entry})
@@ -348,8 +398,67 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
         self.err(404, "not found")
 
+    def unloadable(self, text, name):
+        """why the game would refuse this map text (quark_maptool parse: the game's own Map::parse), or None. Without
+        the helper the page's own checks are all there is."""
+        st = self.server.st
+        if not st.maptool: return None
+        try:
+            r = subprocess.run([st.maptool, "parse"], input=json.dumps({"text": text, "name": name}).encode("utf-8"),
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=TIMEOUTS["parse"], cwd=HERE, creationflags=no_window())
+            ans = json.loads(r.stdout or b"{}")
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return None   # (the helper failing is not the map's fault: the save goes ahead)
+        return str(ans["error"]) if isinstance(ans, dict) and ans.get("error") else None
+
+    def do_DELETE(self):
+        path = unquote(self.path.split("?", 1)[0])
+        if not path.startswith("/api/") or not self.same_origin(): return self.err(403, "forbidden")
+        lib = re.match(r"^/api/library/([^/]+)$", path)
+        if lib:
+            f = os.path.join(HERE, "library", lib.group(1) + ".json")
+            if not valid_name(lib.group(1)) or not os.path.isfile(f): return self.err(404, "not in your library (shipped items can't be deleted)")
+            os.remove(f)
+            return self.send(200, {"ok": True})
+        m = re.match(r"^/api/map/mine/([^/]+)$", path)
+        if not m: return self.err(404, "not found")
+        name, d = m.group(1), self.server.st.user_maps()
+        if not valid_name(name): return self.err(400, "bad map name")
+        f = os.path.join(d, name + ".qmap")
+        if not os.path.isfile(f): return self.err(404, "no map " + name)
+        bin_ = os.path.join(d, "deleted")
+        os.makedirs(bin_, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        moved = []
+        for ext in (".qmap", ".mapedit.json"):
+            src = os.path.join(d, name + ext)
+            if os.path.isfile(src):
+                dst = os.path.join(bin_, "%s-%s%s" % (name, stamp, ext))
+                os.replace(src, dst); moved.append(dst)
+        self.send(200, {"ok": True, "moved": moved})
+
+    def rename(self, data):
+        st = self.server.st
+        try: req = json.loads(data or b"{}")
+        except ValueError: return self.err(400, "bad JSON")
+        a, b = str(req.get("from", "")), str(req.get("to", ""))
+        if not valid_name(a) or not valid_name(b): return self.err(400, "a map name is 1-40 letters, digits, - and _")
+        if os.path.isfile(os.path.join(defaults_dir(), b + ".qmap")): return self.err(409, b + " is a default map's name")
+        d = st.user_maps()
+        if not os.path.isfile(os.path.join(d, a + ".qmap")): return self.err(404, "no map " + a)
+        if a != b and os.path.exists(os.path.join(d, b + ".qmap")): return self.err(409, b + " exists in your maps")
+        for ext in (".qmap", ".mapedit.json"):
+            if os.path.isfile(os.path.join(d, a + ext)): os.replace(os.path.join(d, a + ext), os.path.join(d, b + ext))
+        with prov_lock:
+            p = read_provenance()
+            if "maps/%s.qmap" % a in p["items"]:
+                p["items"]["maps/%s.qmap" % b] = p["items"].pop("maps/%s.qmap" % a)
+                write_atomic(PROVENANCE, (json.dumps(p, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+        self.send(200, {"ok": True, "name": b})
+
     def api_post(self, p, data):
         st = self.server.st
+        if p == "rename": return self.rename(data)
         m = re.match(r"^tool/([a-z]+)$", p)
         if m:
             cmd = m.group(1)

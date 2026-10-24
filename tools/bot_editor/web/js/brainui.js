@@ -12,6 +12,7 @@ import { api } from "./api.js";
 const $ = (id) => document.getElementById(id);
 const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LINE_H = 19;
+const OWN_HEADER = /^# .*: a bot brain made in the Quark bot editor/;
 
 export class BrainPage {
     constructor(app) {
@@ -31,10 +32,10 @@ export class BrainPage {
         app.on("brains", () => this._fillSel());
         app.on("catalog", () => this._afterChange(null));
         app.on("page", (p) => { if (p === "brain") this._showView(this.view); });
+        addEventListener("qbe-theme", () => { for (const v of ["blocks", "graph", "values"]) this.dirtyViews.add(v); if (this.app.page === "brain") this._refreshView(); });   // (canvases take the theme's colours when drawn)
     }
 
     async start() {
-        this._fillSel();
         let st = null;
         try { st = await api.state("brain"); } catch {}
         // each view's mode / zoom / pan (server-side, like the brain itself)
@@ -59,7 +60,8 @@ export class BrainPage {
             }
         }
         if (!st) await this.open("default");
-        $("brainSel").value = this.name;
+        this._fillSel();   // (after the name is restored: a brain that was never saved gets its "(not saved)" entry)
+        this._brainInfo();   // (saved / unsaved: known only now)
         this._showView(new URLSearchParams(location.search).get("view") || "code");
     }
 
@@ -75,12 +77,25 @@ export class BrainPage {
     }
     mergedWithDefault() { return this.ast; }
     // what the file holds: only the declarations that differ from the default (or everything, when asked)
-    fileText() {
-        if ($("brainWhole") && $("brainWhole").checked) return print(this.ast);
-        const def = this.app.defaultAst();
-        if (!def) return print(this.ast);
-        const changed = new Set(diffBrains(this.ast, def).filter((d) => d.change !== "default").map((d) => d.key));
-        return print({ ...this.ast, decls: this.ast.decls.filter((d) => changed.has(declKey(d))) });
+    fileText(name = this.ast.name) {
+        const def = this.app.defaultAst(), whole = !def || ($("brainWhole") && $("brainWhole").checked);
+        let decls = this.ast.decls;
+        if (!whole) { const changed = new Set(diffBrains(this.ast, def).filter((d) => d.change !== "default").map((d) => d.key)); decls = decls.filter((d) => changed.has(declKey(d))); }
+        return print({ ...this.ast, name, decls: this._ownHeader(decls, name, whole) });
+    }
+    // A saved brain opens with its own comment, not the default's file header (the comments on the default's first
+    // declaration before its first blank line: "The built-in bot brain ...").
+    _ownHeader(decls, name, whole) {
+        if (!decls.length) return decls;
+        const def = this.app.defaultAst(), d0 = def && def.decls[0] && def.decls[0].comments || [];
+        const defHead = new Set(d0.slice(0, Math.max(0, d0.indexOf(""))).filter(Boolean));
+        const own = (d) => {
+            const c = (d.comments || []).filter((x) => !defHead.has(x) && !OWN_HEADER.test(x));
+            while (c[0] === "") c.shift();
+            return c;
+        };
+        const line = `# ${name}: a bot brain made in the Quark bot editor` + (whole ? " (the whole brain)." : ": only what differs from the default brain (tools/bots/default.qbrain), which plays the rest.");
+        return decls.map((d, i) => { const c = own(d); return { ...d, comments: i ? c : [line, "", ...c] }; });
     }
     currentText() { return print(this.ast); }
 
@@ -97,6 +112,21 @@ export class BrainPage {
         this._brainInfo();
         $("brainSel").value = name;
         this._persist();
+    }
+
+    // unsaved work: an edit since the last save / open, a brain never saved (New, Open file), or a draft that doesn't parse
+    isDirty() {
+        if (!this.ast) return false;
+        if (this.codeError) return true;
+        return this.saved == null || this.saved !== print(this.ast);
+    }
+    // before replacing the open brain (Open, New, Open file): save, discard or stay. True: go on.
+    async leaveOk(what) {
+        if (!this.isDirty()) return true;
+        const k = await this.app.choose(`${this.name}.qbrain has unsaved changes`, `${what} replaces the brain open in the editor.${this.codeError ? "\nThe Code view has an error, so it can't be saved as it is." : ""}`,
+            [{ k: "cancel", label: "Cancel" }, { k: "discard", label: "Discard changes", danger: true }, ...(this.codeError ? [] : [{ k: "save", label: "Save first", primary: true }])]);
+        if (k === "save") return await this.save();
+        return k === "discard";
     }
 
     // every view calls this with the new AST it made; `from` = the view (it keeps its own state)
@@ -187,7 +217,8 @@ export class BrainPage {
         const sets = this.ast ? highlightSets(this.ast) : {};
         $("codeHl").innerHTML = lines.map((l) => highlightLine(l, sets)).join("\n") + "\n";
         const err = this.codeError;
-        const probLines = new Set(((this.check && this.check.problems) || []).filter((p) => p.severity === "error").map((p) => p.line));
+        const gNow = this._gameNow();
+        const probLines = new Set([...((this.check && this.check.problems) || []), ...(gNow ? gNow.errors : [])].filter((p) => p.severity !== "warning").map((p) => p.line));
         let g = "";
         for (let i = 1; i <= lines.length; i++) g += (err && err.line === i) || (!err && probLines.has(i)) ? `<span class="e">${i}</span>\n` : i + "\n";
         $("gutter").innerHTML = g;
@@ -230,12 +261,32 @@ export class BrainPage {
     }
 
     // ---- diff
-    _diff() {
+    // the brain this one is compared with: the default, the open file as last saved, or another saved brain (merged
+    // over the default, as a bot plays it)
+    async _diffBaseAst(base) {
+        if (base === "default") return this.app.defaultAst();
+        if (base === "(saved)") { try { return this.saved ? numberIds(JSON.parse(JSON.stringify(parse(this.saved)))) : null; } catch { return null; } }
+        if (!this.app.brainAst.has(base)) await this.app.loadBrainText(base).catch(() => {});
+        const a = this.app.brainAst.get(base);
+        return a ? this.mergeOverDefault(a) : null;
+    }
+    async _diff() {
         const R = $("diff"), def = this.app.defaultAst();
         if (!def) { R.innerHTML = `<div class="muted">No default brain loaded.</div>`; return; }
-        const items = diffBrains(this.ast, def).filter((d) => d.change !== "default");
-        if (!items.length) { R.innerHTML = `<div class="muted">Same as the default brain.</div>`; return; }
-        R.innerHTML = `<div class="muted" style="margin-bottom:8px">${items.length} declaration${items.length > 1 ? "s" : ""} differ from the default brain. Saving writes only these (unless “whole brain” is ticked).</div>`;
+        const opts = [["default", "the default brain"], ...(this.saved && this.saved !== print(this.ast) ? [["(saved)", `${this.name}.qbrain as saved (your unsaved changes)`]] : []),
+            ...this.app.brainList.filter((b) => b.source === "user" && b.name !== this.name).map((b) => [b.name, b.name + ".qbrain"])];
+        if (!opts.some((o) => o[0] === this.diffBase)) this.diffBase = "default";
+        const base = this.diffBase, gen = (this._diffGen = (this._diffGen || 0) + 1);
+        const B = await this._diffBaseAst(base);
+        if (gen !== this._diffGen) return;   // (a newer redraw started meanwhile)
+        const head = `<div class="row" style="margin-bottom:8px"><span>Compare with</span><select id="diffBase">${opts.map(([v, t]) => `<option value="${esc(v)}"${v === base ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>`;
+        const wire = () => { $("diffBase").onchange = () => { this.diffBase = $("diffBase").value; this._diff(); }; };
+        if (!B) { R.innerHTML = head + `<div class="err">Couldn't read ${esc(base)}.</div>`; wire(); return; }
+        const baseName = base === "default" ? "the default brain" : base === "(saved)" ? "the saved file" : base + ".qbrain";
+        const items = diffBrains(this.ast, B).filter((d) => d.change !== "default");
+        if (!items.length) { R.innerHTML = head + `<div class="muted">Same as ${esc(baseName)}.</div>`; wire(); return; }
+        R.innerHTML = head + `<div class="muted" style="margin-bottom:8px">${items.length} declaration${items.length > 1 ? "s" : ""} differ from ${esc(baseName)}.${base === "default" ? " Saving writes only these (unless “whole brain” is ticked)." : " (- its line, + this brain's.)"}</div>`;
+        wire();
         for (const it of items) {
             const box = document.createElement("div"); box.className = "dItem";
             const a = it.def ? printDecl({ ...it.def, comments: undefined }) : [], b = printDecl({ ...it.decl, comments: undefined });
@@ -246,14 +297,14 @@ export class BrainPage {
             for (const l of a) if (!Bs.has(l)) h += `<span class="del">- ${esc(l)}</span>`;
             for (const l of b) h += Bs.has(l) && A.has(l) ? `  ${esc(l)}\n` : `<span class="add">+ ${esc(l)}</span>`;
             pre.innerHTML = h;
-            const bt = document.createElement("button"); bt.textContent = it.change === "added" ? "remove" : "reset to default";
-            bt.onclick = () => this._resetDecl(it.key);
+            const bt = document.createElement("button"); bt.textContent = it.change === "added" ? "remove" : base === "default" ? "reset to default" : "take " + (base === "(saved)" ? "the saved one" : base + "'s");
+            bt.onclick = () => this._resetDecl(it.key, B);
             box.querySelector("header").append(bt);
             R.append(box);
         }
     }
-    _resetDecl(key) {
-        const def = this.app.defaultAst(), ast = clone(this.ast);
+    _resetDecl(key, def = this.app.defaultAst()) {
+        const ast = clone(this.ast);
         const i = ast.decls.findIndex((d) => declKey(d) === key), o = def.decls.find((d) => declKey(d) === key);
         if (i < 0) return;
         if (o) ast.decls[i] = clone(o); else ast.decls.splice(i, 1);
@@ -263,7 +314,7 @@ export class BrainPage {
     // ---- left: items, right: problems / info
     _brainInfo(changed) {
         if (!changed) { const def = this.app.defaultAst(); changed = new Set(def && this.ast ? diffBrains(this.ast, def).filter((d) => d.change !== "default").map((d) => d.key) : []); }
-        $("brainInfo").innerHTML = `${esc(this.name)}.qbrain · ${changed.size} change${changed.size === 1 ? "" : "s"} vs default${this.saved !== undefined && this.saved !== null && this.saved !== print(this.ast) ? ' · <span class="warn">unsaved</span>' : ""}`;
+        $("brainInfo").innerHTML = `${esc(this.name)}.qbrain · ${changed.size} change${changed.size === 1 ? "" : "s"} vs default${this.isDirty() ? ` · <span class="warn">${this.saved == null ? "not saved yet" : "unsaved"}</span>` : ""}`;
     }
     _items() {
         const L = $("items");
@@ -297,18 +348,18 @@ export class BrainPage {
         }));
         this._brainInfo(changed);
     }
+    // the game's problems when they are about the text the Code view shows now
+    _gameNow() { const g = this.gameResult; return g && g.forText === this.codeText ? g : null; }
     _problems() {
         const P = $("problems"), c = this.check;
         if (!c) return;
-        const n = c.problems.length;
-        $("checkSummary").innerHTML = n ? `${c.errors.length} error${c.errors.length === 1 ? "" : "s"}, ${n - c.errors.length} warning${n - c.errors.length === 1 ? "" : "s"} <span class="muted">(the editor's checks; the game's checkbrain is the judge${this.app.config.quarkTests ? "" : ": quark_tests not found"})</span>` : "Clean. <span class='muted'>(the editor's checks)</span>";
-        const g = this.gameCheck;
-        if (g) $("checkSummary").insertAdjacentHTML("beforeend", `<div class="muted" style="font-size:12px;margin-top:4px">Last save, the game's check: <b>${esc(g.label)}</b> · ${g.interp.length ? `interpreted: ${esc(g.interp.join(", "))}` : "every slot native"}</div>`);
-        P.innerHTML = c.problems.slice(0, 200).map((p, i) => `<div class="prob ${p.severity}" data-i="${i}">${p.line ? p.line + ":" + p.col + " " : ""}${esc(p.where || "")}: ${esc(p.msg)}</div>`).join("");
-        P.querySelectorAll(".prob").forEach((e) => (e.onclick = () => {
-            const p = c.problems[+e.dataset.i];
-            if (p.line) { this._showView("code"); $("codeScroll").scrollTop = Math.max(0, (p.line - 1) * LINE_H - 80); }
-        }));
+        const n = c.problems.length, canGame = !!(this.app.config.quarkTests || this.app.config.maptool);
+        $("checkSummary").innerHTML = n ? `${c.errors.length} error${c.errors.length === 1 ? "" : "s"}, ${n - c.errors.length} warning${n - c.errors.length === 1 ? "" : "s"} <span class="muted">(the editor's checks; the game's compiler is the judge${canGame ? ": Check now" : ": quark_tests not found"})</span>` : `Clean. <span class='muted'>(the editor's checks${canGame ? "; the game's compiler: Check now" : ""})</span>`;
+        const g = this.gameResult, gNow = this._gameNow();
+        if (g) $("checkSummary").insertAdjacentHTML("beforeend", `<div class="muted" style="font-size:12px;margin-top:4px">The game's compiler${gNow ? "" : " <span class='warn'>(the text changed since: check again)</span>"}: ${g.unsupported ? "this build has no brain code" : g.errors.length ? `<b class="err">${g.errors.length} error${g.errors.length > 1 ? "s" : ""}</b>` : `<b>${esc(g.label || "compiles")}</b>${g.interp ? " · " + (g.interp.length ? `interpreted: ${esc(g.interp.join(", "))}` : "every slot native") : ""}`}${g.warnings.length ? `, ${g.warnings.length} warning${g.warnings.length > 1 ? "s" : ""}` : ""}</div>`);
+        const items = [...(gNow ? [...gNow.errors.map((p) => ({ ...p, severity: "error", where: "game" })), ...gNow.warnings.map((p) => ({ ...p, severity: "warning", where: "game" }))] : []), ...c.problems].slice(0, 200);
+        P.innerHTML = items.map((p, i) => `<div class="prob ${p.severity}${p.where === "game" ? " game" : ""}" data-i="${i}" title="${p.line ? "go to line " + p.line : ""}">${p.line ? p.line + ":" + p.col + " " : ""}${esc(p.where || "")}: ${esc(p.msg)}</div>`).join("");
+        P.querySelectorAll(".prob").forEach((e) => (e.onclick = () => { const p = items[+e.dataset.i]; this.gotoLine(p.line, p.col); }));
     }
     _info() {
         const I = $("itemInfo");
@@ -351,67 +402,120 @@ export class BrainPage {
         const areas = def ? [...new Set(diffBrains(this.ast, def).filter((d) => d.change !== "default").map((d) => d.area).filter(Boolean))] : [];
         return { areas, human: $("brainHuman").checked };
     }
+    // Save / Save as. A draft that doesn't parse can't be saved; a brain with check errors (the editor's or the game's
+    // compiler's) only after a confirm, since a run or batch refuses a brain that doesn't compile. True: saved.
     async save(asName) {
-        if (!this.ast) return;
-        if (this.codeError) { this.app.toast("The code has an error: fix it first (" + this.codeError.message + ")", 5000); return; }
+        if (!this.ast) return false;
+        if (this.codeError) { this.app.toast("The code has an error: fix it first (" + this.codeError.message + ")", 5000); return false; }
         let name = asName || this.name;
         if (name === "default") {
-            name = await this.app.prompt("Save as", "mybrain", "The built-in default can't be overwritten: save your brain under a name (letters, digits, _ . -). It goes to " + this.app.brainsDir);
-            if (!name) return;
+            name = await this.app.promptName("Save as", "mybrain", "The built-in default can't be overwritten: save your brain under a name (letters, digits, _ . -). It goes to " + this.app.brainsDir);
+            if (!name || !(await this._overwriteOk(name))) return false;
         }
-        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name) || name === "default") { this.app.toast("Bad name: letters, digits, _ . - (not 'default')"); return; }
-        const ast = { ...this.ast, name };
-        this.ast = ast;
-        const text = this.fileText();
+        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name) || name === "default") { this.app.toast("Bad name: letters, digits, _ . - (not 'default')"); return false; }
+        // the game's compiler on the Code view's text (so its line numbers are the Code view's), under the saved name:
+        // the hash in its label is of what the brain does, the same for this text as for the file
+        const g = await this.gameCheck(this.codeText.replace(/^brain "[^"\n]*"$/m, `brain "${name}"`));
+        const nEd = this.check ? this.check.errors.length : 0, nGame = g ? g.errors.length : 0;
+        if (nEd || nGame) {
+            const first = nGame ? g.errors[0] : this.check.errors[0];
+            const k = await this.app.choose(`${name}.qbrain doesn't pass its checks`,
+                `${nEd ? `The editor's checks: ${nEd} error${nEd > 1 ? "s" : ""}. ` : ""}${g ? `The game's compiler: ${nGame ? nGame + " error" + (nGame > 1 ? "s" : "") : "compiles it"}.` : ""}\nFirst: ${first.line ? first.line + ":" + first.col + " " : ""}${first.msg}\n\nSimulator runs and batches refuse a brain that doesn't compile. Every error is under Checks (right); click one for its line.`,
+                [{ k: "save", label: "Save anyway", danger: true }, { k: "cancel", label: "Cancel", primary: true }]);
+            if (k !== "save") return false;
+        }
+        const text = this.fileText(name);
         try {
             const r = await api.saveBrain(name, text, this._provenance());
+            this.ast = { ...this.ast, name };
+            this.codeText = print(this.ast);
+            if (g) g.forText = this.codeText;   // (only the header line changed: its lines are still the Code view's)
             this.name = name;
             this.app.brainText.set(name, text);
             this.app.brainAst.set(name, numberIds(JSON.parse(JSON.stringify(parse(text)))));
             await this.app.refreshBrains();
             this.saved = print(this.ast);
             this._fillSel();
+            this.dirtyViews.add("code");
             this._afterChange(null);
-            this.app.toast(`Saved ${r.path}`);
-            this._checkWithGame(text);
-        } catch (e) { this.app.toast("Save failed: " + e.message, 6000); }
+            this.app.toast(`Saved ${r.path}${g && !nGame && g.label ? ` · the game compiles it: ${g.label} · ${g.interp && g.interp.length ? g.interp.length + " slot" + (g.interp.length === 1 ? "" : "s") + " interpreted (" + g.interp.join(", ") + "), the rest native" : "every slot native (only numbers changed)"}` : ""}`, g ? 6000 : 2500);
+            return true;
+        } catch (e) { this.app.toast("Save failed: " + e.message, 6000); return false; }
     }
-    async _checkWithGame(text) {
-        if (!this.app.config.quarkTests && !this.app.config.maptool) return;
-        try {
-            const r = await api.checkBrain(text);
-            if (!r.available) return;
-            const res = r.result || {};
-            if (r.via === "simcheck") {   // quark_maptool simcheck: {brainSupport, ok, label?, error?: "line:col message"}
-                if (res.brainSupport && !res.ok && res.error) this.app.toast(`The game's brain compiler: ${res.error}`, 8000);
-                else if (res.brainSupport && res.ok) this.app.toast(`The game compiles it (${res.label || "ok"})`);
-                return;
-            }
-            const errs = res.errors || [];
-            if (errs.length) { this.app.toast(`quark_tests checkbrain: ${errs.length} error(s): ${errs[0].line}:${errs[0].col} ${errs[0].msg || errs[0].message}`, 8000); this.gameCheck = null; }
-            else if (res.ok) {
-                // the game's verdict: its label, and which slots leave the native code (only changed ones do)
-                const interp = (res.slots || []).filter((x) => !x.native).map((x) => x.slot);
-                this.gameCheck = { label: res.label, interp, warnings: (res.warnings || []).length };
-                this.app.toast(`The game compiles it: ${res.label} · ${interp.length ? interp.length + " slot" + (interp.length === 1 ? "" : "s") + " interpreted (" + interp.join(", ") + "), the rest native" : "every slot native (only numbers changed)"}`, 6000);
-                this._problems && this._problems();
-            }
-        } catch {}
+    async _overwriteOk(name) {
+        if (name === this.name || !this.app.brainList.some((b) => b.source === "user" && b.name === name)) return true;
+        return (await this.app.choose(`${name}.qbrain exists`, `Replace it with this brain? (Its current version is kept as ${name}.qbrain.bak.)`,
+            [{ k: "no", label: "Cancel" }, { k: "yes", label: "Replace", danger: true }])) === "yes";
+    }
+    // The game's own compiler (quark_tests checkbrain, else quark_maptool simcheck) on a whole brain's text. Its errors
+    // join the Checks list (and the gutter) while the Code view still shows the text it checked (forText).
+    async gameCheck(text = this.codeText, forText = this.codeText) {
+        if (!this.app.config.quarkTests && !this.app.config.maptool) return null;
+        let r;
+        try { r = await api.checkBrain(text); } catch (e) { this.app.toast("The game's check failed: " + e.message, 6000); return null; }
+        if (!r || !r.available) return null;
+        const res = r.result || {}, P = (e) => ({ line: e.line || 0, col: e.col || 0, msg: e.msg || e.message || String(e) });
+        let g;
+        if (r.via === "simcheck") {   // {brainSupport, ok, label?, error?: "line:col message"}
+            const m = /^(\d+):(\d+):?\s*(.*)$/s.exec(res.error || "");
+            g = { via: "quark_maptool simcheck", unsupported: !res.brainSupport, label: res.label, interp: null, warnings: [],
+                errors: !res.brainSupport || res.ok ? [] : [m ? { line: +m[1], col: +m[2], msg: m[3] } : { line: 0, col: 0, msg: res.error || "doesn't compile" }] };
+        } else if (res.raw != null) g = { via: "quark_tests checkbrain", errors: [{ line: 0, col: 0, msg: "no answer: " + String(res.stderr || res.raw).slice(-300) }], warnings: [] };
+        else g = { via: "quark_tests checkbrain", label: res.label, errors: (res.errors || []).map(P), warnings: (res.warnings || []).map(P),
+            // which slots leave the native code (only those whose code differs from the default)
+            interp: res.ok ? (res.slots || []).filter((x) => !x.native).map((x) => x.slot) : null };
+        g.forText = forText;
+        this.gameResult = g;
+        this._problems(); this._highlight();
+        return g;
+    }
+    gotoLine(line, col = 1) {
+        if (!line) return;
+        this._showView("code");
+        const ta = $("codeTa"), lines = ta.value.split("\n");
+        let at = 0;
+        for (let i = 0; i < Math.min(line - 1, lines.length); i++) at += lines[i].length + 1;
+        at = Math.min(ta.value.length, at + Math.max(0, col - 1));
+        $("codeScroll").scrollTop = Math.max(0, (line - 1) * LINE_H - 80);
+        ta.focus({ preventScroll: true }); ta.setSelectionRange(at, at);
     }
 
     _wire() {
         document.querySelectorAll("#viewTabs [data-view]").forEach((b) => (b.onclick = () => this._showView(b.dataset.view)));
-        $("brainSel").onchange = () => this.open($("brainSel").value);
+        $("brainSel").onchange = async () => {
+            const n = $("brainSel").value;
+            if (n === this.name) return;
+            $("brainSel").value = this.name;   // (until it's sure the open brain may go)
+            if (await this.leaveOk(`Opening ${n}`)) await this.open(n);
+        };
+        $("brainRefresh").onclick = async () => {
+            const before = new Set(this.app.brainList.map((b) => b.name));
+            try { await this.app.refreshBrains(); } catch (e) { this.app.toast("Couldn't list the brains: " + e.message); return; }
+            for (const b of this.app.brainList) if (b.source === "user") { this.app.brainText.delete(b.name); this.app.brainAst.delete(b.name); }   // (re-read on use: changed outside the page)
+            const added = this.app.brainList.filter((b) => !before.has(b.name)).map((b) => b.name);
+            this.app.toast(`${this.app.brainList.length} brain${this.app.brainList.length === 1 ? "" : "s"} in ${this.app.brainsDir}${added.length ? " · new: " + added.join(", ") : ""}`);
+        };
+        $("brainCheck").onclick = async () => {
+            if (this.codeError) { this.gotoLine(this.codeError.line, this.codeError.col); this.app.toast("The Code view doesn't parse yet: " + this.codeError.message, 5000); return; }
+            $("brainCheck").disabled = true;
+            const g = await this.gameCheck().finally(() => ($("brainCheck").disabled = false));
+            if (!g) this.app.toast("The game's compiler isn't here (quark_tests / quark_maptool not found)");
+            else this.app.toast(g.unsupported ? "This build has no brain code: it can't compile brains" : g.errors.length ? `The game's compiler: ${g.errors.length} error${g.errors.length > 1 ? "s" : ""} (under Checks)` : `The game compiles it: ${g.label || "ok"}`, 4000);
+        };
         $("brainNew").onclick = async () => {
-            const n = await this.app.prompt("New brain", "mybrain", "Starts as a copy of the default brain.");
+            if (!(await this.leaveOk("A new brain"))) return;
+            const n = await this.app.promptName("New brain", "mybrain", "Starts as a copy of the default brain.", ["default", ...this.app.brainList.map((b) => b.name)]);
             if (!n) return;
             const def = this.app.defaultAst();
-            this.name = n; this.saved = null;
+            this.name = n; this.saved = null; this.hist = []; this.histIx = -1;
             this._set(numberIds(stripIds({ ...clone(def), name: n })), null);
             this._fillSel();
         };
         $("brainSave").onclick = () => this.save();
-        $("brainSaveAs").onclick = async () => { const n = await this.app.prompt("Save as", this.name === "default" ? "mybrain" : this.name + "2", "Letters, digits, _ . -"); if (n) this.save(n); };
+        $("brainSaveAs").onclick = async () => {
+            const n = await this.app.promptName("Save as", this.name === "default" ? "mybrain" : this.name + "2", "Letters, digits, _ . -");
+            if (n && (await this._overwriteOk(n))) this.save(n);
+        };
         $("brainDownload").onclick = () => {
             if (this.codeError) { this.app.toast("The code has an error"); return; }
             const n = this.name === "default" ? "mybrain" : this.name;
@@ -419,12 +523,25 @@ export class BrainPage {
             api.provenance(n, this._provenance()).catch(() => {});
         };
         $("brainUpload").onclick = async () => {
+            if (!(await this.leaveOk("Opening a file"))) return;
             const f = await this.app.pickFile(".qbrain,.txt");
             if (!f) return;
-            try { const ast = numberIds(JSON.parse(JSON.stringify(parse(f.text)))); this.name = f.name.replace(/\.qbrain$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_") || "uploaded"; this.saved = null; this._set(this.mergeOverDefault(ast), null); this._fillSel(); }
+            try {
+                const ast = numberIds(JSON.parse(JSON.stringify(parse(f.text))));
+                this.name = f.name.replace(/\.qbrain$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[^A-Za-z0-9]+/, "") || "uploaded";
+                ast.name = this.name;   // (the game's label names the file, not what its header said)
+                this.saved = null; this.hist = []; this.histIx = -1;
+                this._set(this.mergeOverDefault(ast), null); this._fillSel();
+            }
             catch (e) { this.app.toast("Can't read it: " + e.message, 6000); }
         };
-        $("brainResetAll").onclick = () => { const def = this.app.defaultAst(); if (def) this.brainEdited(stripIds({ ...clone(def), name: this.ast.name }), null); };
+        $("brainResetAll").onclick = async () => {
+            const def = this.app.defaultAst();
+            if (!def || !this.ast) return;
+            if (diffBrains(this.ast, def).every((d) => d.change === "default")) { this.app.toast("Already the same as the default brain"); return; }
+            if ((await this.app.choose("Reset every declaration?", "Every param, curve, list and slot goes back to the default brain's. Undo (Ctrl+Z) brings your version back.", [{ k: "no", label: "Cancel" }, { k: "yes", label: "Reset all", danger: true }])) === "yes")
+                this.brainEdited(stripIds({ ...clone(def), name: this.ast.name }), null);
+        };
         $("itemFilter").oninput = () => this._items();
         $("undo").onclick = () => this.undo(-1);
         $("redo").onclick = () => this.undo(1);

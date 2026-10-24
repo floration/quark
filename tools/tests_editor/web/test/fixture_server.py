@@ -6,19 +6,25 @@ save), POST /__test/reset puts every file back.
 
     python3 tools/tests_editor/web/test/fixture_server.py [--port 8775] [--repo .]
 """
-import argparse, difflib, hashlib, json, os, re, shutil, sys, tempfile, threading, time
+import argparse, difflib, glob, hashlib, json, os, re, shutil, sys, tempfile, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 WEB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILES = ["tests/tests.cpp", "tests/rules_tests.h", "tests/server_tests.h", "tests/governor_tests.h", "tests/assets_tests.cpp",
-         "tests/launcher_tests.cpp", "tests/mapbounds.cpp", "tests/brain_tests.cpp", "tests/mode_tests.cpp", ".github/workflows/release.yml", ".github/workflows/main-guard.yml",
+FILES = ["tests/tests.cpp"] + sorted(os.path.relpath(p, os.path.join(WEB, "..", "..", "..")).replace("\\", "/")
+                                    for p in glob.glob(os.path.join(WEB, "..", "..", "..", "tests", "*.[ch]*")) if not p.endswith("tests.cpp")) + [
+         ".github/workflows/release.yml", ".github/workflows/main-guard.yml",
          ".github/workflows/macos-retry.yml", "tools/release_check.sh", "tools/githooks/pre-commit", "CMakeLists.txt"]
 ALLOWED = re.compile(r"^(tests/[^\0]+|\.github/workflows/[^/]+|tools/[^/]+\.sh|tools/githooks/[^/]+|CMakeLists\.txt)$")
 NOW = "2026-10-24T15:00:00Z"
 TIMING = {"bots": 160, "botaim": 120, "botfalls": 95, "tourney": 88, "duel": 60, "weapons": 31, "maps": 140, "movement": 45, "sessions": 70,
           "sessions2": 66, "modes": 80, "hidden": 25, "race": 50, "votes": 55, "edit": 48, "ranked": 75, "ranked2": 52, "rules": 64,
           "assets": 12, "server": 58, "netcode": 40, "tickrate": 62, "governor": 35, "resetmaps": 4, "userdata": 6}
+
+# the last local results (serve.py: cache/groups.json): duel failed with one FAIL line, weapons passed
+LAST = {"duel": {"status": "failed", "at": NOW, "run": "r0", "fails": 1, "source": "local run " + NOW,
+                 "failLines": [{"text": "FAIL /src/quark/tests/tests.cpp:120: a == b", "file": "tests/tests.cpp", "line": 120}]},
+        "weapons": {"status": "passed", "at": NOW, "run": "r0", "fails": 0, "failLines": [], "source": "local run " + NOW}}
 
 class Repo:
     def __init__(self, src):
@@ -68,7 +74,7 @@ def parse_functions(repo):
     for f in [x for x in FILES if x.startswith("tests/")]:
         lines = repo.read(f).split("\n")
         for i, l in enumerate(lines):
-            m = re.match(r"^(?:static\s+)?(?:void|int|bool|uint16_t|FfaRun|double)\s+(test\w+|\w+Tests)\s*\(([^)]*)\)\s*\{?", l)
+            m = re.match(r"^(?:[A-Z][A-Z_]+\s+)?(?:static\s+)?(?:void|int|bool|uint16_t|FfaRun|double)\s+(test\w+|\w+Tests)\s*\(([^)]*)\)\s*\{?", l)
             if not m: continue
             end = match_brace(lines, i)
             body = "\n".join(lines[i + 1:end + 1])
@@ -93,7 +99,12 @@ def parse_quark_tests(repo, fns):
         cs = [c for c in calls_in("\n".join(lines[i:end + 1]), i + 1) if c["fn"] in fns]
         kind = "tool" if m.group(1) in ("playtest", "serverbench", "exportassets", "racefloors", "snapbench", "ffaexperts", "bounds", "brainbench", "modebench") else "shortcut"
         items.append({"id": "cmd:" + m.group(1), "kind": kind, "name": m.group(1), "file": f, "line": i + 1, "endLine": end + 1, "calls": cs,
-                      "run": {"cmd": "build/quark_tests " + m.group(1), "parallel": False}})
+                      "run": {"cmd": "build/quark_tests " + m.group(1), "parallel": False}, "argsSpec": {"min": 0, "max": 0, "params": [], "hint": None}})
+    for i, l in enumerate(lines):   # (rules NAME: argc >= 3)
+        if i > main and re.match(r'^\s*if \(argc >= 3 && std::string\(argv\[1\]\) == "rules"\)', l):
+            items.append({"id": "cmd:rules", "kind": "shortcut", "name": "rules", "file": f, "line": i + 1, "endLine": i + 1, "calls": [], "shadowsGroup": True,
+                          "run": {"cmd": "build/quark_tests rules", "parallel": False},
+                          "argsSpec": {"min": 1, "max": 1, "params": [{"name": None, "default": None}], "hint": "(one rules test by name)", "choices": ["overtime", "syringe"]}})
     groups = []
     for lst in ("par", "alone"):
         st = next(i for i, l in enumerate(lines) if re.search(r"std::vector<T> %s = \{" % lst, l))
@@ -107,7 +118,8 @@ def parse_quark_tests(repo, fns):
                 groups.append({"id": "group:" + name, "kind": "group", "name": name, "list": lst, "order": order, "file": f, "line": j + 1, "endLine": end + 1,
                                "calls": cs, "run": {"cmd": "build/quark_tests group " + name, "parallel": lst == "par"},
                                "timing": {"sec": TIMING.get(name, 30), "source": "release-tests/timing/step1.txt"} if name in TIMING else None,
-                               "flaky": "timing-sensitive: re-run alone on an idle machine before calling it a failure" if name in ("tickrate", "netcode") else None})
+                               "flaky": "timing-sensitive: re-run alone on an idle machine before calling it a failure" if name in ("tickrate", "netcode") else None,
+                               "lastRun": LAST.get(name)})
                 order += 1; j = end + 1
             else: j += 1
     for it in groups + items:
@@ -282,10 +294,13 @@ REPO = None
 RUN = {"cur": None}
 def fake_run(r):
     lines = ["building nothing (fixture)", "running %s" % r["cmd"]] + ["  check %d ok" % i for i in range(1, 9)] + ["group done: 2 s", "all tests passed"]
+    bad = r["cmd"] == "suite"   # (the whole suite: duel fails, as the real output prints it)
+    if bad: lines = ["only=" + ",".join(r.get("only") or []), "weapons out", "  (group weapons: 3 s)", "  FAIL /src/quark/tests/tests.cpp:120: a == b",
+                     "  (group duel: 2 s)", "  (group duel: 1 failure(s))", "1 FAILURE(S)"]
     for l in lines:
         if r["status"] != "running": return
         time.sleep(0.25); r["output"] += l + "\n"
-    r["status"], r["exit"], r["endedAt"], r["sec"] = "passed", 0, NOW, 2.5
+    r["status"], r["exit"], r["endedAt"], r["sec"] = ("failed", 1, NOW, 2.0) if bad else ("passed", 0, NOW, 2.5)
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -311,7 +326,7 @@ class H(BaseHTTPRequestHandler):
             if not r: return self.send(404, {"error": "no run"})
             f = int(q.get("from", 0)); out = r["output"].encode()
             return self.send(200, dict({k: v for k, v in r.items() if k != "output"}, output=out[f:].decode(), size=len(out)))
-        if u.path == "/api/runs": return self.send(200, [{k: r[k] for k in ("id", "cmd", "status", "exit", "startedAt", "sec")} for r in reversed(REPO.runs)])
+        if u.path == "/api/runs": return self.send(200, [{k: r[k] for k in ("id", "cmd", "status", "exit", "startedAt", "sec", "args", "only")} for r in reversed(REPO.runs)])
         if u.path == "/api/ci":
             if not REPO.ci_available: return self.send(200, {"available": False, "jobs": {}})
             jobs = {}
@@ -347,7 +362,8 @@ class H(BaseHTTPRequestHandler):
             REPO.write(p, REPO.head[p]); return self.send(200, {"ok": True, "sha256": sha(REPO.head[p])})
         if u.path == "/api/run":
             if RUN["cur"] and RUN["cur"]["status"] == "running": return self.send(409, {"error": "a run is going"})
-            r = {"id": "r%d" % (len(REPO.runs) + 1), "cmd": b.get("cmd"), "status": "running", "exit": None, "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "endedAt": None, "sec": None, "output": ""}
+            r = {"id": "r%d" % (len(REPO.runs) + 1), "cmd": b.get("cmd"), "status": "running", "exit": None, "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "endedAt": None, "sec": None, "output": "",
+                 "args": b.get("args"), "only": b.get("groups")}
             REPO.runs.append(r); RUN["cur"] = r
             threading.Thread(target=fake_run, args=(r,), daemon=True).start()
             return self.send(200, {"id": r["id"]})

@@ -1,6 +1,8 @@
 // The side panels: map list (defaults + yours, with provenance), outliner, properties of the selection, map settings.
 import { el, fill, $, numInput, select, check, fmt, tidy, rgbHex, hexRgb } from "./util.js";
-import { KINDS } from "./doc.js";
+import { KINDS, objectiveName } from "./doc.js";
+import { LIMITS } from "./validate.js";
+import { repeatCounts } from "./repeat.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 export const TEAMS = ["a", "b", "any", "race", ...Array.from({ length: 10 }, (_, i) => "att" + i), ...Array.from({ length: 10 }, (_, i) => "def" + i)];
@@ -9,6 +11,9 @@ export const RANKED = ["vanilla", "vampire", "classic", "quirky", "hitscan", "in
 const MAT_NOTES = ["solid", "solid (accent colour)", "solid, hitscan passes for half damage", "solid", "solid, glows", "scenery outside the walls: not solid",
   "water: not solid", "lava: kills", "decoration: not solid", "invisible: blocks players only"];
 const D2R = Math.PI / 180;
+const X = LIMITS.extent, clampX = (v) => Math.max(-X, Math.min(X, v));   // (every coordinate the game loads: within 4096 m)
+// the keys the Map tab shows: it redraws only when one of them changes
+const MAPSET_KEYS = new Set(["title", "setting", "preferredMode", "holdfire", "void", "indoor", "sun", "allowedModes", "ranked", "palette", "cartChecks", "warnings", "*"]);
 
 export class Panels {
   constructor(app) {
@@ -16,8 +21,14 @@ export class Panels {
     this.mapsEl = $("#mapList"); this.outEl = $("#outliner"); this.propsEl = $("#rp-props"); this.mapsetEl = $("#rp-mapset");
     $("#mapFilter").addEventListener("input", () => this.renderMaps());
     this.doc.on("selection", () => { this.renderProps(); this.renderOutliner(); });
-    this.doc.on("map", (keys, live) => { if (!live) { this.renderProps(); this.renderOutliner(); if (!keys || keys.some(k => !k.startsWith("sc."))) this.renderMapSettings(); } });
+    this.doc.on("map", (keys, live, change) => {
+      if (live) return;
+      this.renderProps();
+      if (!keys || !change || change.structural.size || keys.includes("groups")) this.renderOutliner();   // (counts, the group list)
+      if (!keys || keys.some(k => MAPSET_KEYS.has(k))) this.renderMapSettings();
+    });
     this.doc.on("open", () => { this.renderMaps(); this.renderMapSettings(); });
+    app.on("save", () => this.renderMapSettings());
   }
 
   // ---- maps
@@ -25,20 +36,25 @@ export class Panels {
   renderMaps() {
     const L = this.list || { defaults: [], mine: [] }, f = $("#mapFilter").value.toLowerCase();
     const d = this.doc, rows = [];
+    const shown = (m) => !f || (m.name + " " + m.title + " " + m.for).toLowerCase().includes(f);
     const row = (m, src) => {
-      if (f && !(m.name + " " + m.title + " " + m.for).toLowerCase().includes(f)) return;
       const on = d.name === m.name && d.src === src;
       const prov = m.provenance ? m.provenance.origin : (src === "default" ? "ai" : null);
-      rows.push(el("div", { class: "row" + (on ? " on" : ""), title: (m.provenance && m.provenance.note) || "", onclick: () => this.app.openMap(src, m.name) },
-        el("span", {}, m.title || m.name),
+      const mine = src === "mine";
+      rows.push(el("div", { class: "row" + (on ? " on" : ""), title: m.name + ".qmap" + ((m.provenance && m.provenance.note) ? "\n" + m.provenance.note : ""), onclick: () => this.app.openMap(src, m.name) },
+        el("span", { class: "mname" }, m.title || m.name, m.title && m.title !== m.name ? el("span", { class: "fname" }, m.name) : null),
         prov ? el("span", { class: "tag", title: "provenance: " + prov + (m.provenance && m.provenance.note ? " (" + m.provenance.note + ")" : "") }, prov) : null,
-        el("span", { class: "sub" }, m.for || "")));
+        el("span", { class: "sub" }, m.for || ""),
+        mine ? el("span", { class: "acts" },
+          el("button", { class: "mini", title: "rename " + m.name + ".qmap", onclick: (e) => { e.stopPropagation(); this.app.renameMine(m.name); } }, "rename"),
+          el("button", { class: "mini danger", title: "delete " + m.name + ".qmap (moved to deleted/ in your maps folder)", onclick: (e) => { e.stopPropagation(); this.app.deleteMine(m.name); } }, "x")) : null));
     };
-    rows.push(el("div", { class: "grp" }, "Your maps (" + L.mine.length + ")"));
-    L.mine.forEach(m => row(m, "mine"));
+    const mine = L.mine.filter(shown), defs = L.defaults.filter(shown);
+    rows.push(el("div", { class: "grp" }, "Your maps (" + (f ? mine.length + " of " + L.mine.length : L.mine.length) + ")"));
+    mine.forEach(m => row(m, "mine"));
     if (!L.mine.length) rows.push(el("div", { class: "row faint" }, "none yet: New, or Save as"));
-    rows.push(el("div", { class: "grp" }, "Default maps (read-only)"));
-    L.defaults.forEach(m => row(m, "default"));
+    rows.push(el("div", { class: "grp" }, "Default maps (read-only)" + (f ? " (" + defs.length + " of " + L.defaults.length + ")" : "")));
+    defs.forEach(m => row(m, "default"));
     fill(this.mapsEl, ...rows);
   }
 
@@ -74,8 +90,8 @@ export class Panels {
 
   // ---- properties
   field(label, input) { return [el("label", {}, label), input]; }
-  v3(arr, onSet, step) { return el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(arr[k], v => onSet(k, v), { step: step ?? this.app.editor.grid }))); }
-  set(label, s, fn) { const d = this.doc; d.edit(label, [KINDS[s.k].key], () => fn(d.obj(s))); this.app.editor.pickDirty = true; }
+  v3(arr, onSet, step) { return el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(arr[k], v => onSet(k, clampX(v)), { step: step ?? this.app.editor.grid, min: -X, max: X }))); }
+  set(label, s, fn) { const d = this.doc; d.edit(label, [KINDS[s.k].key], () => fn(d.obj(s)), { touch: [s] }); }
 
   renderProps() {
     const d = this.doc, P = this.propsEl, m = d.map;
@@ -98,7 +114,7 @@ export class Panels {
       if (counts.brush) {
         out.push(el("div", { class: "form" }, this.field("material", select([["", "(mixed)"], ...MATERIALS.map((n, i) => [i, i + " " + n])], "", (v) => {
           if (v === "") return;
-          d.edit("material", ["brushes"], () => { for (const i of d.selOf("brush")) m.brushes[i].mat = +v; });
+          d.edit("material", ["brushes"], () => { for (const i of d.selOf("brush")) m.brushes[i].mat = +v; }, { touch: d.sel.filter(x => x.k === "brush") });
         }))));
       }
       out.push(this.actions());
@@ -106,12 +122,13 @@ export class Panels {
     }
     const s = sel[0], o = d.obj(s), K = KINDS[s.k];
     if (!o) { fill(P); return; }
-    out.push(el("h3", {}, K.label + (K.single ? "" : " #" + s.i), el("span", { class: "spacer" }), el("button", { class: "mini", onclick: () => this.app.frameSel() }, "frame")));
+    out.push(el("h3", {}, objectiveName(m, s.k, s.i), el("span", { class: "spacer" }), el("button", { class: "mini", onclick: () => this.app.frameSel() }, "frame")));
     const f = el("div", { class: "form" });
     const add = (...x) => f.append(...x.flat());
     const boxFields = () => {
-      add(this.field("min", this.v3(o.min, (k, v) => this.set("edit", s, (x) => { x.min[k] = tidy(v); }))));
-      add(this.field("max", this.v3(o.max, (k, v) => this.set("edit", s, (x) => { x.max[k] = tidy(v); }))));
+      // (a min never goes above its max, nor a max under its min: the value stops at the other side)
+      add(this.field("min", this.v3(o.min, (k, v) => this.set("edit", s, (x) => { x.min[k] = Math.min(tidy(v), x.max[k]); }))));
+      add(this.field("max", this.v3(o.max, (k, v) => this.set("edit", s, (x) => { x.max[k] = Math.max(tidy(v), x.min[k]); }))));
       add(this.field("size", el("span", { class: "num dim" }, [0, 1, 2].map(k => fmt(o.max[k] - o.min[k])).join(" x ") + " m")));
     };
     const posFields = (p, yaw) => {
@@ -146,10 +163,26 @@ export class Panels {
         add(this.field("intensity", numInput(o.intensity, v => this.set("light intensity", s, x => { x.intensity = Math.max(0.01, Math.min(10, v)); }), { step: 0.1 })));
         break;
       case "path": posFields(o, false); add(this.field("", el("span", { class: "faint" }, "point " + (s.i + 1) + " of " + m.path.length + ": the Path tool adds after the selected point"))); break;
+      case "object": {
+        const rep = this.app.editor.objDef(o), n = repeatCounts(rep, o);
+        add(this.field("object", el("span", {}, o.name)));
+        add(this.field("", el("span", { class: "faint" }, "a custom object: it grows by whole units where it repeats (drag a face handle, or Shift / Ctrl + arrows); saved into the map as plain boxes")));
+        add(this.field("units", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
+          ? numInput(n[k], v => this.set("units", s, x => { const len = (Math.max(1, Math.min(500, Math.round(v))) - 1) * Math.max(0.05, rep.spacing[k]) + rep.unit[k]; x.max[k] = tidy(x.min[k] + len); }), { step: 1, min: 1 })
+          : el("span", { class: "faint num" }, "x1")))));
+        add(this.field("spacing", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
+          ? numInput(rep.spacing[k], v => this.set("spacing", s, x => { const kk = (x.rot || 0) % 2 && k !== 1 ? 2 - k : k; x.def = { ...x.def, spacing: x.def.spacing.map((q, j) => j === kk ? Math.max(0.05, Math.min(64, v)) : q) }; const len = (n[k] - 1) * Math.max(0.05, Math.min(64, v)) + rep.unit[k]; x.max[k] = tidy(x.min[k] + len); }), { step: 0.25, min: 0.05 })
+          : el("span", { class: "faint num" }, "-")))));
+        add(this.field("position", this.v3(o.min, (k, v) => this.set("move", s, (x) => { const d0 = tidy(v) - x.min[k]; x.min[k] = tidy(v); x.max[k] = tidy(x.max[k] + d0); }))));
+        add(this.field("", el("div", { class: "btnrow" },
+          el("button", { class: "mini", title: "turn it into plain boxes (no longer a custom object)", onclick: () => this.app.library.explode(s.i) }, "make plain boxes"),
+          el("button", { class: "mini", title: "save its definition (with this spacing) in the library", onclick: () => this.app.library.saveDef(o.def) }, "save to library"))));
+        break;
+      }
       case "ladder": add(this.field("", check("draws its rails and rungs (auto)", o.auto, v => this.set("ladder auto", s, x => { x.auto = v; })))); boxFields(); break;
       case "stairs":
         add(this.field("", el("span", { class: "faint" }, "a staircase record (quark_tests walks it); it doesn't make boxes and doesn't move with them")));
-        for (const kk of ["x0", "z0", "x1", "z1", "base", "top", "rising"]) add(this.field(kk, numInput(o[kk], v => this.set("stairs record", s, x => { x[kk] = v; }))));
+        for (const kk of ["x0", "z0", "x1", "z1", "base", "top", "rising"]) add(this.field(kk, numInput(o[kk], v => this.set("stairs record", s, x => { x[kk] = clampX(v); }))));
         add(this.field("axis", select(["x", "z"], o.axis, v => this.set("stairs record", s, x => { x.axis = v; }))));
         add(this.field("", check("solid", o.solid, v => this.set("stairs record", s, x => { x.solid = v; }))));
         break;
@@ -161,7 +194,7 @@ export class Panels {
     fill(P, ...out);
   }
   groupParts(s, g) {
-    const d = this.doc, m = d.map;
+    const d = this.doc, m = d.map, touch = { touch: [{ k: "group", i: s.i }] };
     const wrap = el("div", {});
     const parts = m.generated.map((b, i) => ({ b, i })).filter(x => x.b.group === s.i);
     wrap.append(el("h3", {}, "Parts (" + parts.length + ")", el("span", { class: "spacer" }),
@@ -172,7 +205,7 @@ export class Panels {
       const on = s.part === n;
       const tr = el("tr", { class: "click" + (on ? " on" : ""), onclick: () => d.select([{ k: "group", i: s.i, part: on ? undefined : n }]) },
         el("td", {}, String(n)), el("td", {}, MATERIALS[x.b.mat]), el("td", { class: "n" }, [0, 1, 2].map(k => fmt(x.b.max[k] - x.b.min[k], 2)).join("x")),
-        g.type === "custom" ? el("td", {}, el("button", { class: "mini", title: "remove this part", onclick: (e) => { e.stopPropagation(); d.edit("remove part", ["groups"], () => g.parts.splice(n, 1)); } }, "x")) : null);
+        g.type === "custom" ? el("td", {}, el("button", { class: "mini", title: "remove this part", onclick: (e) => { e.stopPropagation(); d.edit("remove part", ["groups"], () => g.parts.splice(n, 1), touch); } }, "x")) : null);
       tbl.append(tr);
     });
     wrap.append(tbl);
@@ -180,9 +213,9 @@ export class Panels {
       const p = g.parts[s.part];
       wrap.append(el("h3", {}, "Part " + s.part + " (fractions of the group's box)"));
       const f = el("div", { class: "form" });
-      f.append(...this.field("material", select(MATERIALS.map((n, i) => [i, i + " " + n]), p.mat, v => d.edit("part material", ["groups"], () => { p.mat = +v; }))));
-      f.append(...this.field("min", el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(p.min[k], v => d.edit("part", ["groups"], () => { p.min[k] = v; }), { step: 0.05 })))));
-      f.append(...this.field("max", el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(p.max[k], v => d.edit("part", ["groups"], () => { p.max[k] = v; }), { step: 0.05 })))));
+      f.append(...this.field("material", select(MATERIALS.map((n, i) => [i, i + " " + n]), p.mat, v => d.edit("part material", ["groups"], () => { p.mat = +v; }, touch))));
+      f.append(...this.field("min", el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(p.min[k], v => d.edit("part", ["groups"], () => { p.min[k] = Math.min(Math.max(0, Math.min(1, v)), p.max[k]); }, touch), { step: 0.05, min: 0, max: 1 })))));
+      f.append(...this.field("max", el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(p.max[k], v => d.edit("part", ["groups"], () => { p.max[k] = Math.max(Math.max(0, Math.min(1, v)), p.min[k]); }, touch), { step: 0.05, min: 0, max: 1 })))));
       wrap.append(f);
     }
     return wrap;
@@ -213,7 +246,7 @@ export class Panels {
     add("hold fire (s)", numInput(m.holdfire || 0, v => E("hold fire", ["holdfire"], () => { m.holdfire = Math.max(0, Math.min(30, v)); }), { step: 1 }));
     const opt = (label, key, def) => {
       const on = m[key] !== null && m[key] !== undefined;
-      add(label, el("div", { class: "v3" }, check("", on, v => E(label, [key], () => { m[key] = v ? def : null; })), on ? numInput(m[key], v => E(label, [key], () => { m[key] = v; }), { step: 1 }) : el("span", { class: "faint" }, "off")));
+      add(label, el("div", { class: "v3" }, check("", on, v => E(label, [key], () => { m[key] = v ? def : null; })), on ? numInput(m[key], v => E(label, [key], () => { m[key] = clampX(v); }), { step: 1 }) : el("span", { class: "faint" }, "off")));
     };
     opt("void y", "void", -10);
     opt("indoor (roof y)", "indoor", 10);

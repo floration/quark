@@ -11,7 +11,7 @@
     for (const [id, src] of Object.entries(s.sources || {})) Q.sources[id] = { name: src.name, bytes: src.bytes };
     Q.state = Object.assign({ edits: {}, prov: {} }, s.state);
     for (const [k, e] of Object.entries(Q.state.edits)) if (!Q.models[k] || (e.type === 'mesh' && !Q.sources[e.src])) delete Q.state.edits[k];
-    Q.normalizeEdits();
+    Q.normalizeEdits(); Q.dropStaleProv();
     for (const k of Object.keys(Q.state.edits)) Q.bump(k);
     const n = Object.keys(Q.state.edits).length;
     if (n) U.banner('Restored your last session (' + n + ' edited model' + (n > 1 ? 's' : '') + '), saved ' + new Date(s.saved).toLocaleString() + '.', false,
@@ -41,24 +41,32 @@
     return url;
   };
 
+  // without model data (or WebGL) nothing on the toolbars can work: they are disabled under the banner
+  function disableTools() {
+    document.querySelectorAll('#top button, #top select, #top input, #viewBar button, #viewBar select, #viewBar input, #lib input').forEach(el => { el.disabled = true; });
+    document.querySelectorAll('#top .menu, #viewBar .menu').forEach(m => m.classList.add('off'));
+  }
+
   async function boot() {
     try {
       await new Promise((res, rej) => { Q.onManifest = res; Q.loadScript('data/manifest.js').catch(rej); });
     } catch (e) {
       U.banner('No model data next to this page (data/manifest.js). Build it: python tools/model_editor/build.py <export folder> <this folder>', true);
-      Q.bootError = String(e); return;
+      disableTools(); Q.bootError = String(e); return;
     }
     U.$('#gameVersion').textContent = 'game ' + (Q.manifest.version || '?');
     Q.buildModels(Q.manifest);
-    try { R.init(U.$('#gl')); } catch (e) { U.banner('WebGL2 is needed (Chrome or Edge): ' + e.message, true); Q.bootError = String(e); return; }
+    try { R.init(U.$('#gl')); } catch (e) { U.banner('WebGL2 is needed (Chrome or Edge): ' + e.message, true); disableTools(); Q.bootError = String(e); return; }
     await restore();
     U.init();
     U.renderLibrary();
     let sel = null; try { sel = localStorage.getItem('qme.sel'); } catch (e) { }
     U.select(Q.models[sel] ? sel : Q.order[0], true);
-    const bad = Q.order.filter(k => Q.models[k].err);
+    const bad = Q.order.filter(k => Q.models[k].err), refused = Q.order.filter(k => Q.models[k].shipped && Q.models[k].shipped.err);
     if (bad.length) U.banner('Could not read ' + bad.join(', ') + ' from the export.', true);
-    U.$('#btnUndo').disabled = true; U.$('#btnRedo').disabled = true;
+    else if (refused.length) U.banner('The game refuses the shipped override' + (refused.length > 1 ? 's' : '') + ' of ' + refused.join(', ') +
+      ' (assets/overrides) and draws the default instead: see the model panel.', true);
+    U.syncUndo();
     Q.ready = true;
     requestAnimationFrame(U.loop);
   }

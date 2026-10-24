@@ -9,6 +9,7 @@
   const ANSWERS = '09-answers-from-q.md';
   const STATUSES = ['open', 'in-progress', 'fixed', 'wontfix', 'answered', 'told', 'done'];
   const MARKER_RE = /^(<{7}|={7}|>{7})( |$)/m;
+  const MARK_OPEN = /^<{7}( |$)/, MARK_CLOSE = /^>{7}( |$)/;
   const DRAFT_KEY = 'quark.docsManager.drafts.v1';
 
   // ---------- drafts (per browser; a convenience, the server is the record) ----------
@@ -44,8 +45,12 @@
   }
   async function refreshStatus() {
     try { const r = await fetch('/api/edit/status', {cache: 'no-store'}); ed.status = await r.json(); } catch (_) { ed.status = null; }
+    ed.statusAt = Date.now();
     paintStatus();
+    DM.data.banners();                          // (the "edited on the PC" banner says whether saves are waiting to go up)
   }
+  // The writer's status ({unpushed, pushError, busy, ...}) and how old it is, for the banner.
+  function editStatus() { return {status: ed.status, at: ed.statusAt || 0}; }
   // After a write the server fetches its mirror; pick that up soon.
   function reloadSoon() { setTimeout(() => DM.data.load(), 1500); setTimeout(() => DM.data.load(), 6000); setTimeout(refreshStatus, 1600); }
 
@@ -92,12 +97,20 @@
     // edit a file
     ui.text = h('textarea', {id: 'edText', class: 'ed-text', spellcheck: 'false', 'aria-label': 'File text', wrap: 'soft'});
     ui.text.addEventListener('input', onInput);
+    for (const t of ['click', 'keyup']) ui.text.addEventListener(t, () => { if (ed.conflict) paintConflictCount(); });
     ui.prev = h('article', {class: 'doc md ed-prev', id: 'edPrev'});
-    ui.prevHead = h('div', {class: 'ed-ph'});
+    ui.prevHead = h('span', {class: 'ed-phl'});
+    ui.sync = h('input', {type: 'checkbox', id: 'edSync', checked: st.prefs.editSync !== false || null,
+      onchange: () => { st.prefs.editSync = ui.sync.checked; DM.app.save(); if (ui.sync.checked) syncFrom('text'); }});
     ui.prevScroll = h('div', {class: 'scroll'}, ui.prev);
+    ui.measure = h('div', {class: 'ed-text ed-measure', 'aria-hidden': 'true'});
     ui.paneFile = h('div', {class: 'ed-split'},
-      h('div', {class: 'ed-pane'}, h('div', {class: 'ed-ph'}, h('b', null, 'Text'), h('span', {class: 'faint'}, ' markdown; Ctrl+S saves')), ui.text),
-      h('div', {class: 'ed-pane'}, ui.prevHead, ui.prevScroll));
+      h('div', {class: 'ed-pane'}, h('div', {class: 'ed-ph'}, h('b', null, 'Text'), h('span', {class: 'faint'}, ' markdown; Ctrl+S saves')), ui.text, ui.measure),
+      h('div', {class: 'ed-pane'}, h('div', {class: 'ed-ph'}, ui.prevHead, h('span', {class: 'spacer'}),
+        h('label', {class: 'chk', title: 'Scroll the text and the preview together'}, ui.sync, 'Sync scroll')), ui.prevScroll));
+    ui.text.addEventListener('scroll', () => syncFrom('text'), {passive: true});
+    ui.prevScroll.addEventListener('scroll', () => syncFrom('prev'), {passive: true});
+    new ResizeObserver(() => { tops = null; anchors = null; }).observe(ui.text);
     // answer questions
     ui.qList = h('div', {class: 'ed-qs', id: 'edQs'});
     ui.qFoot = h('div', {class: 'ed-qfoot'});
@@ -108,14 +121,75 @@
     window.addEventListener('beforeunload', ev => { if (isDirty()) { ev.preventDefault(); ev.returnValue = ''; } });
   }
 
+  // ---------- line positions (scroll sync, jumping to a line or a conflict) ----------
+  // tops[i]: y of source line i+1 inside the wrapped textarea, measured in a hidden copy with the same width and font;
+  // anchors: [line, y] of every preview block that knows its source line (data-l). Both are dropped on edit / resize.
+  let tops = null, anchors = null;
+  function lineTops() {
+    if (tops) return tops;
+    const m = ui.measure, lines = ui.text.value.split('\n');
+    m.style.width = ui.text.clientWidth + 'px';
+    const frag = document.createDocumentFragment();
+    for (const l of lines) { const d = document.createElement('div'); d.textContent = l || '\u200b'; frag.appendChild(d); }
+    clear(m).appendChild(frag);
+    tops = Array.from(m.children, d => d.offsetTop);
+    tops.push(m.scrollHeight);
+    clear(m);
+    return tops;
+  }
+  function previewAnchors() {
+    if (anchors) return anchors;
+    const base = ui.prevScroll.getBoundingClientRect().top - ui.prevScroll.scrollTop;
+    anchors = [[1, 0]];
+    for (const el of ui.prev.querySelectorAll('[data-l]')) {
+      const l = +el.dataset.l, y = el.getBoundingClientRect().top - base;
+      if (l > anchors[anchors.length - 1][0] && y >= anchors[anchors.length - 1][1]) anchors.push([l, y]);
+    }
+    anchors.push([Infinity, ui.prevScroll.scrollHeight]);
+    return anchors;
+  }
+  // Linear map between two sorted [a, b] lists: the b for a value of a.
+  function interp(pairs, a, ai, bi) {
+    let lo = 0, hi = pairs.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pairs[mid][ai] <= a) lo = mid; else hi = mid; }
+    const p = pairs[lo], q = pairs[hi];
+    if (!isFinite(q[ai]) || q[ai] === p[ai]) return p[bi];
+    return p[bi] + (a - p[ai]) / (q[ai] - p[ai]) * (q[bi] - p[bi]);
+  }
+  let expect = {text: null, prev: null};   // scrollTop we just set on a pane: its echo event is ignored
+  function syncFrom(src) {
+    if (!ui.sync.checked || ed.conflict || !ed.loaded || ed.sub !== 'file') return;
+    const el = src === 'text' ? ui.text : ui.prevScroll, other = src === 'text' ? 'prev' : 'text';
+    if (expect[src] != null && Math.abs(el.scrollTop - expect[src]) < 2) { expect[src] = null; return; }
+    expect[src] = null;
+    const t = lineTops(), a = previewAnchors(), pairs = t.map((y, i) => [i + 1, y]);
+    let y;
+    if (src === 'text') y = interp(a, interp(pairs, ui.text.scrollTop, 1, 0), 0, 1);
+    else y = interp(pairs, interp(a, ui.prevScroll.scrollTop, 1, 0), 0, 1);
+    const target = src === 'text' ? ui.prevScroll : ui.text;
+    y = Math.max(0, Math.min(Math.round(y), target.scrollHeight - target.clientHeight));
+    if (Math.abs(target.scrollTop - y) < 2) return;
+    expect[other] = y;
+    target.scrollTop = y;
+  }
+  // Select [start, end) in the text and scroll it into the top third.
+  function showRange(start, end) {
+    const line = ui.text.value.slice(0, start).split('\n').length;
+    ui.text.focus({preventScroll: true});
+    ui.text.setSelectionRange(start, end);
+    ui.text.scrollTop = Math.max(0, lineTops()[line - 1] - ui.text.clientHeight / 3);
+  }
+
   function setSub(k) {
     ed.sub = k;
     st.prefs.editSub = k; DM.app.save();
     render();
   }
 
+  // Files q can edit here: README and 00-NN, but not the ones another tool generates (10, 11: the GitHub Manager).
+  function editable(name) { const f = st.fileByName && st.fileByName[name]; return NAME_RE.test(name) && !(f && f.generated); }
   function fileNames() {
-    const names = new Set(st.data.files.map(f => f.name).filter(n => NAME_RE.test(n)));
+    const names = new Set(st.data.files.map(f => f.name).filter(editable));
     return [...names].sort((a, b) => (a === 'README.md' ? -1 : b === 'README.md' ? 1 : a.localeCompare(b)));
   }
   function entryFileNames() { return fileNames().filter(n => /^0[1-9]-/.test(n)); }
@@ -167,7 +241,7 @@
   async function pushNow() {
     say({cls: '', text: 'Sending…'});
     const r = await post('/api/edit/push', {});
-    ed.status = r.js; paintStatus();
+    ed.status = r.js; ed.statusAt = Date.now(); paintStatus(); DM.data.banners();
     say(r.js.ok && r.js.pushed ? {cls: 'ok', text: 'Everything is on GitHub now (' + clock() + ').'} : {cls: 'warn', text: r.js.pushError || r.js.message || 'Still couldn’t reach GitHub.'});
     if (r.js.pushed) reloadSoon();
   }
@@ -176,6 +250,8 @@
   function onInput() {
     paintDirty();
     clearTimeout(prevT);
+    tops = null;
+    if (ed.conflict) paintConflictCount();
     prevT = setTimeout(() => {
       if (!ed.conflict) paintPreview();
       if (isDirty()) drafts.files[ed.file] = {base: ed.base, text: ui.text.value, at: new Date().toISOString()};
@@ -185,7 +261,8 @@
   }
   function paintPreview() {
     clear(ui.prevHead).append(h('b', null, 'Preview'), h('span', {class: 'faint'}, ' as the Files tab shows it'));
-    DM.md.into(ui.prev, ui.text.value);
+    DM.md.into(ui.prev, ui.text.value, false, {lines: true});
+    tops = null; anchors = null;
   }
 
   async function openFile(name, jump) {
@@ -233,22 +310,12 @@
     }
     let start = 0;
     for (let i = 0; i < line - 1; i++) start += lines[i].length + 1;
-    const end = start + (lines[line - 1] || '').length;
-    // the caret's height in the wrapped textarea: measure the text above it in a hidden twin (keeps undo)
-    const twin = h('textarea', {class: 'ed-text ed-twin', 'aria-hidden': 'true', tabindex: -1});
-    twin.style.width = ui.text.clientWidth + 'px';
-    ui.text.parentNode.appendChild(twin);
-    twin.value = ui.text.value.slice(0, start);
-    const y = twin.scrollHeight;
-    twin.remove();
-    ui.text.focus({preventScroll: true});
-    ui.text.setSelectionRange(start, end);
-    ui.text.scrollTop = Math.max(0, y - ui.text.clientHeight / 3);
+    showRange(start, start + (lines[line - 1] || '').length);
     if (j.title) {
       const want = DM.plain(j.title).slice(0, 40);
       const li = [...ui.prev.querySelectorAll('li')].find(el => el.textContent.includes(want));
-      if (li) { li.scrollIntoView({block: 'center'}); li.classList.add('ed-hit'); setTimeout(() => li.classList.remove('ed-hit'), 2500); }
-    }
+      if (li) { expect.prev = null; li.scrollIntoView({block: 'center'}); li.classList.add('ed-hit'); setTimeout(() => li.classList.remove('ed-hit'), 2500); }
+    } else syncFrom('text');
   }
 
   async function save() {
@@ -275,6 +342,7 @@
       ui.text.value = js.conflicted;
       drafts.files[file] = {base: ed.base, text: js.conflicted, at: new Date().toISOString()}; saveDrafts();
       paintConflict();
+      gotoConflict(1, true);
       say({cls: 'err', text: 'Not saved: someone else changed the same lines. Fix the marked parts and save again.'});
     } else {
       say({cls: 'err', text: js.message || 'Not saved.'});
@@ -289,11 +357,16 @@
     clear(ui.conflict);
     if (!c) { if (ui.prevHead && ed.loaded) paintPreview(); return; }
     const showRaw = (title, t) => { clear(ui.prevHead).append(h('b', null, title), h('span', {class: 'faint'}, ' (read only)')); clear(ui.prev).append(h('pre', {class: 'rawtext'}, t)); };
+    ui.cCount = h('b', {class: 'ed-ccount', 'aria-live': 'polite'});
     ui.conflict.append(
       h('div', null, h('b', null, 'Someone else changed the same lines of ' + ed.file + ' since you opened it. '),
         'The editor now holds both versions where they clash (', h('code', null, '<<<<<<< your edit'), ' … ', h('code', null, '======='), ' … ',
         h('code', null, '>>>>>>> the newest version'), '). Keep what you want, delete the marker lines, then save.'),
       h('div', {class: 'ed-cbtns'},
+        ui.cCount,
+        h('button', {class: 'mini', title: 'Select the previous clash (Shift+F8)', onclick: () => gotoConflict(-1)}, 'Previous'),
+        h('button', {class: 'mini', title: 'Select the next clash (F8)', onclick: () => gotoConflict(1)}, 'Next'),
+        h('span', {class: 'sep'}),
         h('span', {class: 'faint'}, 'Right side: '),
         h('button', {class: 'mini', onclick: () => showRaw('The newest version (on GitHub now)', c.current)}, 'Newest version'),
         h('button', {class: 'mini', onclick: () => showRaw('Your edit', c.mine)}, 'Your edit'),
@@ -303,6 +376,41 @@
         h('button', {class: 'mini', title: 'Load the newest version and drop your edit', onclick: () => { ui.text.value = c.current; ed.conflict = null; paintConflict(); onInput(); say(null); }}, 'Use the newest version'),
         h('button', {class: 'mini', title: 'Back to both, with markers', onclick: () => { ui.text.value = c.conflicted; onInput(); }}, 'Show both again')));
     showRaw('The newest version (on GitHub now)', c.current);
+    paintConflictCount();
+  }
+
+  // ---------- conflict navigation: each <<<<<<< ... >>>>>>> block of the text ----------
+  function conflictBlocks(text) {
+    const out = [];
+    let pos = 0, open = -1;
+    for (const line of text.split('\n')) {
+      if (MARK_OPEN.test(line)) open = pos;
+      else if (MARK_CLOSE.test(line) && open >= 0) { out.push([open, pos + line.length]); open = -1; }
+      pos += line.length + 1;
+    }
+    return out;
+  }
+  // Which block the caret is in (or after), as "2 of 5".
+  function paintConflictCount() {
+    if (!ui.cCount) return;
+    const bl = conflictBlocks(ui.text.value), at = ui.text.selectionStart;
+    const k = bl.findIndex(b => at >= b[0] && at <= b[1]);
+    ui.cCount.textContent = !bl.length ? 'No clashes left: save when ready.' :
+      (k >= 0 ? 'Clash ' + (k + 1) + ' of ' + bl.length : bl.length + (bl.length === 1 ? ' clash' : ' clashes') + ' left');
+    ui.cCount.classList.toggle('ok', !bl.length);
+  }
+  function gotoConflict(dir, first) {
+    const bl = conflictBlocks(ui.text.value);
+    if (!bl.length) { paintConflictCount(); return; }
+    const at = ui.text.selectionStart, cur = bl.findIndex(x => at >= x[0] && at <= x[1]);
+    let i;
+    if (first) i = 0;
+    else if (cur >= 0) i = (cur + dir + bl.length) % bl.length;
+    else if (dir > 0) { i = bl.findIndex(x => x[0] > at); if (i < 0) i = 0; }
+    else { i = bl.length - 1; for (let k = bl.length - 1; k >= 0; k--) if (bl[k][1] < at) { i = k; break; } }
+    const b = bl[i];
+    showRange(b[0], b[1]);
+    paintConflictCount();
   }
 
   async function discard() {
@@ -313,6 +421,7 @@
   }
 
   document.addEventListener('keydown', ev => {
+    if (ev.key === 'F8' && st.prefs.tab === 'edit' && ed.sub === 'file' && ed.conflict) { ev.preventDefault(); gotoConflict(ev.shiftKey ? -1 : 1); return; }
     if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.key.toLowerCase() !== 's') return;
     if (st.prefs.tab !== 'edit' || !canEdit()) return;
     ev.preventDefault();
@@ -323,7 +432,7 @@
 
   // ---------- answers ----------
   function questionList() {
-    return st.data.entries.filter(e => !e.archived && !DM.isDone(e) && !e.file.startsWith('09') && (e.file.startsWith('07') || DM.needsQ(e)))
+    return st.data.entries.filter(e => DM.isOpen(e) && !e.file.startsWith('09') && (e.file.startsWith('07') || DM.needsQ(e)))
       .sort((a, b) => (b.file.startsWith('07') - a.file.startsWith('07')) || (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9) ||
         (Date.parse((b.firstSeen || {}).time || '') || 0) - (Date.parse((a.firstSeen || {}).time || '') || 0));
   }
@@ -333,7 +442,8 @@
     for (const e of st.data.entries) if (e.file === ANSWERS && !(e.title in m)) m[e.title] = e;
     return m;
   }
-  function canAnswer(e) { return canEdit() && !e.archived && !DM.isDone(e) && !e.file.startsWith('09') && (e.file.startsWith('07') || DM.needsQ(e)); }
+  // Open 07 questions, anything waiting on q, and 06 news for q to read (a reply to it goes to 09 too).
+  function canAnswer(e) { return canEdit() && DM.isOpen(e) && !e.file.startsWith('09') && (e.file.startsWith('07') || DM.needsQ(e) || DM.waitKeys(e).includes('read')); }
 
   // The Answer widget: a button, then a box; opts.open starts it open (the Answer questions list).
   function answerBox(e, opts) {
@@ -448,12 +558,13 @@
     for (const el of [af.prio, af.status, af.section]) el.addEventListener('change', paintAddPreview);
     af.prio.addEventListener('change', () => af.prioHint.classList.toggle('halt-hint', af.prio.value === 'HALT'));
     const row = (lbl, el, hint) => h('label', {class: 'ad-row'}, h('span', {class: 'ad-l'}, lbl), el, hint ? h('span', {class: 'faint ad-h'}, hint) : null);
-    return h('div', {class: 'ad-form'},
+    // (wide screens: the form on the left, what it writes beside it)
+    return h('div', {class: 'ad-form'}, h('div', {class: 'ad-in'},
       h('p', {class: 'faint'}, 'Adds one entry at the top of a section (newest first), dated today, with q as its thread, and pushes it.'),
       row('File', af.file), row('Section', af.section), row('Title', af.title), h('label', {class: 'ad-row'}, h('span', {class: 'ad-l'}, 'Priority'), af.prio, af.prioHint), row('Status', af.status),
       row('Text', af.body, 'One paragraph; line breaks become spaces.'),
-      h('div', {class: 'ad-row'}, h('span', {class: 'ad-l'}, 'Writes'), h('div', {class: 'ad-out'}, af.out, af.prev)),
-      h('div', {class: 'ad-row'}, h('span', {class: 'ad-l'}), h('div', null, af.btn, af.msg)));
+      h('div', {class: 'ad-row'}, h('span', {class: 'ad-l'}), h('div', null, af.btn, af.msg))),
+      h('div', {class: 'ad-side'}, h('div', {class: 'ad-row'}, h('span', {class: 'ad-l'}, 'Writes'), h('div', {class: 'ad-out'}, af.out, af.prev))));
   }
   function syncAddForm() {
     const names = entryFileNames();
@@ -516,7 +627,7 @@
 
   // ---------- used elsewhere ----------
   function editButton(e) {
-    if (!canEdit() || !NAME_RE.test(e.file)) return null;
+    if (!canEdit() || !editable(e.file)) return null;
     return h('button', {class: 'mini ed-btn', title: 'Edit this entry in ' + e.file, onclick: ev => { ev.stopPropagation(); DM.app.closeDialog(); openAt(e.file, e.line, e.title); }}, 'Edit');
   }
   function openAt(file, line, title) {
@@ -527,6 +638,31 @@
     openFile(file, {line, title});
   }
 
+  // #answer=<entryId>: straight to that question's answer box (the Supervisor Board's HALT links). An open question
+  // goes to Edit > Answer questions; anything else answerable opens its card with the box open; otherwise the entry.
+  function openAnswer(id) {
+    const e = st.entryById[id];
+    if (!e || !canAnswer(e)) { DM.app.openEntryInList(id); return false; }
+    if (questionList().includes(e)) {
+      ed.sub = 'answer'; st.prefs.editSub = 'answer'; DM.app.save();
+      DM.app.show('edit', {keepHash: true});
+      renderQuestions(true);
+      const box = ui.qList.querySelector('.ans[data-entry="' + CSS.escape(id) + '"]');
+      const ta = box && box.querySelector('textarea');
+      if (box) {
+        const art = box.closest('article');
+        art.scrollIntoView({block: 'center'});
+        art.classList.remove('flash'); void art.offsetWidth; art.classList.add('flash');
+        if (ta) ta.focus({preventScroll: true});
+      }
+      return true;
+    }
+    DM.app.openEntry(id);
+    const open = document.querySelector('#dlgBody .ans-open');
+    if (open) open.click();
+    return true;
+  }
+
   function dataChanged() {
     const b = $('#tabs button[data-tab="edit"]');
     if (b) b.hidden = !showTab();
@@ -534,6 +670,6 @@
     if (ed.sub === 'answer' && st.prefs.tab === 'edit') renderQuestions();
   }
 
-  DM.edit = {canEdit, showTab, answerBox, canAnswer, editButton, openAt, dataChanged, refreshStatus, resultText};
+  DM.edit = {canEdit, showTab, answerBox, canAnswer, editButton, openAt, dataChanged, refreshStatus, resultText, editStatus, pushNow, editable, openAnswer};
   (DM.views = DM.views || {}).edit = {render: () => { render(); refreshStatus(); }, scroller: () => ed.sub === 'file' ? null : (ed.sub === 'answer' ? ui.paneAnswer : ui.paneAdd)};
 })(window.DM);

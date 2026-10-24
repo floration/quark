@@ -29,7 +29,8 @@ export const check = (name, value, label) =>
 
 // Wires a bar's controls to the filter state; onChange redraws the results only.
 export function bind(root, fs, onChange) {
-  const later = debounce(onChange, 120);
+  // a search typed just before a tab switch: the bar is gone by the time the debounce fires
+  const later = debounce(() => { if (root.isConnected) onChange(); }, 120);
   root.addEventListener('input', (e) => {
     const n = e.target.closest('[data-f]');
     if (!n) return;

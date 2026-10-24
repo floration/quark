@@ -141,7 +141,7 @@ A place is one of:
 - `[x,y,z]`
 - `{spawn:i}`
 - `{team:'a'}`: each of that team's spawns
-- `{objective:'hill'|'site 1'|'bomb site 1'|'point A'|'checkpoint 2'|'cart'|'cart start'|'cart end'}`
+- `{objective:'hill'|'site A'|'site 1'|'bomb site 1'|'point A'|'checkpoint 2'|'cart'|'cart start'|'cart end'}`
 - `{box:{min,max}}`
 
 | kind | fields | value |

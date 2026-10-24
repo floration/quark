@@ -218,13 +218,14 @@ export class PathView {
             if (!this.dirty3) return;
             this.dirty3 = false;
             const O = this.orbit, eye = [O.x + Math.cos(O.pitch) * Math.sin(O.yaw) * O.dist, O.y + Math.sin(O.pitch) * O.dist, O.z + Math.cos(O.pitch) * Math.cos(O.yaw) * O.dist];
-            this.scene.render(eye, lookAt(eye, [O.x, O.y, O.z]), 0.9, { grid: 1, fogFar: Math.max(400, O.dist * 4) });
+            this.scene.render(eye, lookAt(eye, [O.x, O.y, O.z]), 0.9, { grid: 1, fogFar: Math.max(400, O.dist * 4), lineWidth: 3 });
         };
         requestAnimationFrame(loop);
     }
     _strips() {
         if (!this.scene) return;
-        this.scene.setStrips(this.runs().map((r) => ({ pts: r.trace.map((p) => [p.pos[0], p.pos[1] + 0.9, p.pos[2]]), color: hexRgb(r.color) })));
+        // (the edited set's run last: drawn on top where the runs overlap, so it keeps its colour)
+        this.scene.setStrips(this.runs().map((r) => ({ pts: r.trace.map((p) => [p.pos[0], p.pos[1] + 0.9, p.pos[2]]), color: hexRgb(r.color) })).reverse());
         this.scene.clearDyn();
         const r = this.runs()[0];
         if (r && r.trace.length) { const p = r.trace[0].pos; this.scene.addBox(p[0] - 0.4, p[1], p[2] - 0.4, p[0] + 0.4, p[1] + 1.8, p[2] + 0.4, [0.9, 0.9, 0.95]); }

@@ -156,25 +156,27 @@ games.append({"id": "qc", "name": "Quake Champions", "health": None,
 # ---------------------------------------------------------------- Unreal Tournament
 ut99d = "https://project-archives1.etc.cmu.edu/2001/fall/coyote210/Docs/undox/"
 ut99s = "https://www.madrixis.de/undox/Source_botpack/"
+lia99 = "https://liandri.beyondunreal.com/"                            # fire rates (Hardcore-mode damage there)
+ula = "https://unrealarchive.org/wikis/the-liandri-archives/"          # the same archive, mirrored
 games.append({"id": "ut99", "name": "Unreal Tournament (1999)", "health": 100,
  "armor": "Thigh pads, body armor, shield belt (values not taken from the cited source).",
  "healthNote": "Standard 100 (not restated by the cited class docs). Hardcore mode (on by default in most setups) multiplies all damage by 1.5 and runs the game 10% faster; values here are the unscaled class defaults.",
  "units": "Unreal units, 1 uu = 1.905 cm (0.75 in, ~52.5 uu per metre).",
  "source": "https://www.madrixis.de/undox/botpack/", "patch": "Botpack class defaults (UnCodeX docs of 4xx-era Botpack)",
  "weapons": [
-  W("Enforcer", "pistol", 17, notes="HitDamage 17. Fire rate is animation-driven (not given numerically).", source=ut99s + "enforcer.html"),
+  W("Enforcer", "pistol", 17, fi=1/2.8, alt=W("Enforcer (alt)", "pistol", 17, fi=1/3.8, notes="Sideways rapid fire, less accurate; 3.8 shots/s per Liandri.", source=lia99 + "Enforcer?oldid=9220"), notes="HitDamage 17. Fire rate is animation-driven; 2.8 shots/s per Liandri (which lists 25 damage, the Hardcore 1.5x).", source=ut99s + "enforcer.html"),
   W("Shock Rifle (beam)", "hitscan-rifle", 40, fi=1/1.4,
     alt=W("Shock Rifle (ball)", "plasma/projectile-auto", 55, splash=S(55, 70*UU), ps=1000*UU, notes="Ball: HurtRadius(Damage, 70). Combo (beam into ball): Damage*3 = 165 over 250 uu (247 in Hardcore).", source=ut99s + "shockproj.html"),
     notes="HitDamage 40 (60 Hardcore). Liandri lists 1.4 shots/s.", source=ut99s + "shockrifle.html"),
   W("Shock Combo", "other", 165, splash=S(165, 250*UU), fi=1/0.85, notes="ShockProj SuperExplosion: Damage*3 over 250 uu; liandri lists 0.85/s.", source=ut99s + "shockproj.html"),
-  W("Sniper Rifle", "sniper", 45, head=100, notes="Fixed 45 body / 100 head, no random range. Fire rate animation-driven (not given numerically).", source=ut99s + "sniperrifle.html"),
+  W("Sniper Rifle", "sniper", 45, head=100, fi=0.6, notes="Fixed 45 body / 100 head, no random range. Fire rate animation-driven; Liandri lists 0.6 s (and 67 / 150 head, the Hardcore numbers): " + ula + "Sniper_Rifle.html.", source=ut99s + "sniperrifle.html"),
   W("Minigun", "lmg", 11.5, fi=0.13, alt=W("Minigun (alt)", "lmg", 11.5, fi=0.08, notes="Faster, less accurate.", source=ut99s + "minigun2.html"), notes="9-14 per bullet (9+Rand(6)), average 11.5; Sleep(0.13) between shots.", source=ut99s + "minigun2.html"),
   W("Flak Cannon", "shotgun", 16, pellets=8, fi=1/1.4, ps=2500*UU,
     alt=W("Flak Cannon (shell)", "grenade", 70, splash=S(70, 150*UU), fi=1.0, ps=1200*UU, notes="Slug 70 radius damage over 150 uu, then 5 chunks.", source=ut99d + "Botpack.flakslug.html"),
     notes="8 UTChunks x 16 (24 in Hardcore), 2500-2700 uu/s; 1.4 shots/s per BeyondUnreal wiki.", source=ut99d + "Botpack.UTChunk.html"),
-  W("Rocket Launcher", "rocket", 75, splash=S(75, 220*UU), ps=900*UU, notes="RocketMk2 75 over 220 uu, 900 uu/s accelerating to 1600; loads up to 6.", source=ut99d + "Botpack.RocketMk2.html"),
-  W("Pulse Gun", "plasma/projectile-auto", 20, ps=1450*UU, alt=W("Pulse Gun (beam)", "beam", 72, notes="PBolt: 72 damage per second (applied every 0.22 s of contact); BeamSize 81 uu per segment.", source="https://www.madrixis.de/undox/botpack/pbolt.html"), notes="PlasmaSphere 20.", source=ut99d + "Botpack.PlasmaSphere.html"),
-  W("Ripper", "other", 30, head=105, ps=1300*UU, alt=W("Ripper (explosive blade)", "grenade", 34, splash=S(34, 180*UU), source=ut99d + "Botpack.Razor2Alt.html"), notes="Razor2 30; head hits 3.5x (105) instead.", source=ut99d + "Botpack.Razor2.html"),
+  W("Rocket Launcher", "rocket", 75, splash=S(75, 220*UU), fi=1/1.2, ps=900*UU, notes="RocketMk2 75 over 220 uu, 900 uu/s accelerating to 1600; loads up to 6. 1.2 rockets/s per Liandri (" + ula + "Rocket_Launcher.html; its 112 damage is Hardcore).", source=ut99d + "Botpack.RocketMk2.html"),
+  W("Pulse Gun", "plasma/projectile-auto", 20, fi=1/6.1, ps=1450*UU, alt=W("Pulse Gun (beam)", "beam", 72, notes="PBolt: 72 damage per second (applied every 0.22 s of contact); BeamSize 81 uu per segment.", source="https://www.madrixis.de/undox/botpack/pbolt.html"), notes="PlasmaSphere 20; 6.1 shots/s per Liandri (" + ula + "Link_Gun.html, the UT section; its 30 damage is Hardcore).", source=ut99d + "Botpack.PlasmaSphere.html"),
+  W("Ripper", "other", 30, head=105, fi=1/2.9, ps=1300*UU, alt=W("Ripper (explosive blade)", "grenade", 34, splash=S(34, 180*UU), fi=1/1.5, notes="1.5 shots/s per Liandri.", source=ut99d + "Botpack.Razor2Alt.html"), notes="Razor2 30; head hits 3.5x (105) instead. 2.9 shots/s per Liandri (" + lia99 + "Ripper; its 45 / 157 are Hardcore).", source=ut99d + "Botpack.Razor2.html"),
  ]})
 
 lia = "https://liandri.beyondunreal.com/Weapon_comparison"
@@ -266,26 +268,28 @@ games.append({"id": "warfork", "name": "Warsow / Warfork", "health": 100,
 
 # ---------------------------------------------------------------- Team Fortress 2
 sw = "https://strategywiki.org/wiki/Team_Fortress_2/"
+tfw2 = "https://wiki.teamfortress.com/wiki/"      # official wiki: attack intervals (offline 2026-10, see SOURCES.md)
+tfc = "https://tf2console.fandom.com/wiki/"       # console wiki: cross-check of intervals where it lists them
 games.append({"id": "tf2", "name": "Team Fortress 2", "health": 125,
  "armor": "No armor; Medic overheal to 150%.",
  "healthNote": "Class health: Scout 125, Medic 150, Demoman 175, Soldier 200, Heavy 300 (StrategyWiki class pages); Engineer, Sniper, Spy 125 and Pyro 175 are not verified here. 125 used as the base.",
- "units": "Hammer units; TF2 Wiki is offline (2026-10), so numbers come from StrategyWiki's class pages. Base damage = critical / 3 where the crit and the point-blank range agree (crits do 3x base); ranges are in notes.",
+ "units": "Hammer units; TF2 Wiki is offline (2026-10), so damage comes from StrategyWiki's class pages. Base damage = critical / 3 where the crit and the point-blank range agree (crits do 3x base); ranges are in notes. Attack intervals are the official TF2 Wiki's 'Damage and function times' values (known from the wiki before it went offline, not re-fetched), checked against tf2console.fandom.com where that lists one; see SOURCES.md.",
  "source": sw + "Classes", "patch": "StrategyWiki class pages (mirroring the official wiki)",
  "weapons": [
-  W("Scattergun", "shotgun", 60, pellets=1, user="Scout", notes="Whole shot: base 60 (crit 180); point blank 85-105, mid 10-40, long 3-10. Pellet count not given.", source=sw + "Scout"),
-  W("Pistol", "pistol", 15, user="Scout", notes="Crit 45; point blank 20-22, mid 10-15, long 8-9.", source=sw + "Scout"),
+  W("Scattergun", "shotgun", 6, pellets=10, fi=0.625, user="Scout", notes="10 pellets x 6 (base 60, crit 180); point blank 85-105, mid 10-40, long 3-10. Attack interval 0.625 s and pellets: " + tfw2 + "Scattergun.", source=sw + "Scout"),
+  W("Pistol", "pistol", 15, fi=0.17, user="Scout", notes="Crit 45; point blank 20-22, mid 10-15, long 8-9. Attack interval 0.17 s (" + tfw2 + "Pistol); tf2console lists ~6 rounds/s.", source=sw + "Scout"),
   W("Bat", "melee", 35, fi=0.5, user="Scout", notes="Crit 105.", source=sw + "Scout"),
-  W("Rocket Launcher", "rocket", 90, fi=None, ps=1100*UU, user="Soldier", notes="Crit 270; point blank 105-112, mid 50-90, long 45-60. ~1100 HU/s (Fandom: ~47 mph, i.e. ~21 m/s). Reload 0.92 s first / 0.8 s each.", source=sw + "Soldier"),
-  W("Shotgun", "shotgun", 60, pellets=1, user="Soldier/Pyro/Heavy/Engineer", notes="Whole shot; point blank 86-90 (= 60 x 1.5 ramp-up), mid 24-67, long 3-26. The page's crit value (120) does not match.", source=sw + "Soldier"),
+  W("Rocket Launcher", "rocket", 90, fi=0.8, ps=1100*UU, user="Soldier", notes="Crit 270; point blank 105-112, mid 50-90, long 45-60. ~1100 HU/s (Fandom: ~47 mph, i.e. ~21 m/s). Attack interval 0.8 s (" + tfw2 + "Rocket_Launcher); reload 0.92 s first / 0.8 s each.", source=sw + "Soldier"),
+  W("Shotgun", "shotgun", 6, pellets=10, fi=0.625, user="Soldier/Pyro/Heavy/Engineer", notes="10 pellets x 6 (base 60); point blank 86-90 (= 60 x 1.5 ramp-up), mid 24-67, long 3-26. The page's crit value (120) does not match. 6 per pellet and attack interval 0.625 s: " + tfc + "Shotgun (and " + tfw2 + "Shotgun).", source=sw + "Soldier"),
   W("Flame Thrower", "beam", 6.82, fi=6.82/153.45, user="Pyro", notes="6.82 per particle point blank (~153 DPS), 4.09 mid (~92 DPS); afterburn 60 over 10 s.", source=sw + "Pyro"),
-  W("Grenade Launcher", "grenade", 100, user="Demoman", notes="Direct 84-123, splash 22-64, crit 270-330 (so base 100 +-10%); 3 s fuse.", source=sw + "Demoman"),
-  W("Stickybomb Launcher", "grenade", 120, splash=S(124, None, 60), user="Demoman", notes="Direct 120, splash 60-124; arm time 1 s.", source=sw + "Demoman"),
-  W("Minigun", "lmg", 9, user="Heavy", notes="Per bullet: crit 27; point blank 50-54 per volley, mid 5-30, long 5-10.", source=sw + "Heavy"),
-  W("Syringe Gun", "plasma/projectile-auto", 10, user="Medic", notes="Crit 30; point blank 10-12, mid 5-10, long 5-6.", source=sw + "Medic"),
-  W("Crusader's Crossbow", "crossbow/bow", 38, user="Medic", notes="38 / 56 / 75 rising with distance travelled; crit 113.", source=sw + "Medic"),
-  W("Sniper Rifle", "sniper", 50, head=150, user="Sniper", alt=W("Sniper Rifle (full charge)", "sniper", 150, head=450, notes="Body 128-172; ~4 s to charge.", source=sw + "Sniper"), notes="Uncharged body 43-57, headshot 150.", source=sw + "Sniper"),
-  W("SMG", "smg", 8, user="Sniper", notes="Crit 24; point blank 8-12, mid 4-6, long 4-5.", source=sw + "Sniper"),
-  W("Revolver", "pistol", 40, user="Spy", notes="Crit 120; point blank 55-60, mid 35-45, long 16-25.", source=sw + "Spy"),
+  W("Grenade Launcher", "grenade", 100, fi=0.6, user="Demoman", notes="Direct 84-123, splash 22-64, crit 270-330 (so base 100 +-10%); 3 s fuse. Attack interval 0.6 s (" + tfw2 + "Grenade_Launcher).", source=sw + "Demoman"),
+  W("Stickybomb Launcher", "grenade", 120, splash=S(124, None, 60), fi=0.6, user="Demoman", notes="Direct 120, splash 60-124; arm time 1 s. Attack interval 0.6 s (" + tfw2 + "Stickybomb_Launcher).", source=sw + "Demoman"),
+  W("Minigun", "lmg", 9, pellets=4, fi=0.105, user="Heavy", notes="Per bullet: crit 27; point blank 50-54 per volley, mid 5-30, long 5-10. 4 bullets every 0.105 s once spun up (" + tfw2 + "Minigun).", source=sw + "Heavy"),
+  W("Syringe Gun", "plasma/projectile-auto", 10, fi=0.105, ps=990*INCH, user="Medic", notes="Crit 30; point blank 10-12, mid 5-10, long 5-6. Attack interval 0.105 s (" + tfw2 + "Syringe_Gun; tf2console lists ~0.1 s); ~990 HU/s per " + tfc + "Syringe_Gun.", source=sw + "Medic"),
+  W("Crusader's Crossbow", "crossbow/bow", 38, user="Medic", notes="38 / 56 / 75 rising with distance travelled; crit 113. One bolt per reload; its interval wasn't confirmed from a source, so it stays empty.", source=sw + "Medic"),
+  W("Sniper Rifle", "sniper", 50, head=150, fi=1.5, user="Sniper", alt=W("Sniper Rifle (full charge)", "sniper", 150, head=450, notes="Body 128-172; ~4 s to charge.", source=sw + "Sniper"), notes="Uncharged body 43-57, headshot 150. Attack interval 1.5 s (" + tfc + "Sniper_Rifle, and " + tfw2 + "Sniper_Rifle).", source=sw + "Sniper"),
+  W("SMG", "smg", 8, fi=0.105, user="Sniper", notes="Crit 24; point blank 8-12, mid 4-6, long 4-5. Attack interval 0.105 s (" + tfw2 + "SMG; tf2console lists ~10 bullets/s).", source=sw + "Sniper"),
+  W("Revolver", "pistol", 40, fi=0.5, user="Spy", notes="Crit 120; point blank 55-60, mid 35-45, long 16-25. Attack interval 0.5 s (" + tfw2 + "Revolver); the console version lists 0.58 s (" + tfc + "Revolver).", source=sw + "Spy"),
   W("Knife", "melee", 40, fi=0.8, user="Spy", notes="Backstab: 6x the victim's current health.", source=sw + "Spy"),
   W("Melee (Shovel / Fire Axe / Fists / Bottle / Bonesaw / Kukri)", "melee", 65, fi=0.8, notes="Crit 195.", source=sw + "Soldier"),
  ]})
@@ -451,14 +455,19 @@ games.append({"id": "deadlock", "name": "Deadlock", "health": 755,
 
 # ---------------------------------------------------------------- Titanfall 2 (partial)
 tfw = "https://titanfall.fandom.com/wiki/"
+tgg = "https://titanfall.wiki.gg/wiki/"
 games.append({"id": "titanfall2", "name": "Titanfall 2 (partial)", "health": None,
  "armor": "None for pilots.",
  "healthNote": "Pilot health not verified from a cited page.",
  "units": "Metres; the wiki converts 1500 units = 28.575 m (1 unit = 1.905 cm).",
- "source": tfw + "R-201_Assault_Rifle", "patch": "Titanfall Wiki (Fandom), retrieved 2026-10-24",
+ "source": tfw + "R-201_Assault_Rifle", "patch": "Titanfall Wiki (Fandom) and titanfall.wiki.gg, retrieved 2026-10-24",
  "weapons": [
   W("R-201 Assault Rifle", "auto-rifle", 25, rpm=810, falloff={"start": 28.575, "end": 66.675}, notes="Far damage not listed.", source=tfw + "R-201_Assault_Rifle"),
   W("Kraber-AP Sniper", "sniper", 100, notes="The only pilot weapon doing 100 per shot; fire rate not listed.", source=tfw + "Kraber-AP_Sniper"),
+  W("C.A.R. SMG", "smg", 25, rpm=846, falloff={"start": 19.05, "end": 57.15}, notes="25 per bullet, actual 846 RPM (the menu lists 40 / 70); falloff 1000-3000 units, far damage not listed. Both wikis agree.", source=tfw + "C.A.R._SMG"),
+  W("Alternator", "smg", 35, rpm=600, notes="Titanfall 2 stat box: damage 35, 600 RPM; near/far split and falloff not listed.", source=tgg + "Alternator"),
+  W("Hemlok BF-R", "auto-rifle", 33, rpm=930, notes="3-round burst at 930 RPM within the burst (time between bursts not listed); damage 33, falloff not listed.", source=tgg + "Hemlok_BF-R"),
+  W("Spitfire LMG", "lmg", 35, rpm=540, notes="Titanfall 2 stat box: damage 35, 540 RPM (its prose says 50, which matches the Titanfall 1 numbers).", source=tgg + "Spitfire_LMG"),
  ]})
 
 doc = {"version": 1, "updated": "2026-10-24",

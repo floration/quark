@@ -18,7 +18,8 @@ Python 3 standard library only. Binds 127.0.0.1 only. Adapted from tools/bot_edi
     shows Sim as unavailable; nothing is simulated here.
 
 The shared file rule (agreed with the physics editor): a .qmode is the game's key=value lines (CustomRules::toText)
-then the logic block from the first line that is exactly `logic <N>`. This editor owns the logic block and the mode
+then the logic block from the first line the game's isModeLogicLine takes (customrules.cpp: `logic` then the end of the
+line, a space, a tab or a \r). This editor owns the logic block and the mode
 keys (custommode, mode, timelimit, scorelimit, rounds, maps); the physics editor owns the movement keys. A save keeps
 every other line exactly as written and in place, never reorders, and never writes a key=value line after `logic`.
 
@@ -55,7 +56,7 @@ PHYSICS_KEYS = ("gravity", "speed", "jump", "knockback", "dash", "grapple", "sel
 PHYSICS_PREFIXES = ("move_", "move.")
 UNDECIDED_KEYS = ("weapons", "weapon", "health", "instagib", "vampire", "regen")
 GAME_KEYS = set(MODE_KEYS + PHYSICS_KEYS + UNDECIDED_KEYS + ("label",))
-LOGIC_LINE = re.compile(r"^logic [0-9]+[ \t]*$")
+LOGIC_LINE = re.compile(r"^logic(?:$|[ \t\r])")   # customrules.cpp isModeLogicLine, on the line with its \r still on
 
 
 def key_of(line):
@@ -79,7 +80,7 @@ def split_qmode(text):
     lines = text.split("\n")
     if text.endswith("\n"): lines.pop()
     for i, l in enumerate(lines):
-        if LOGIC_LINE.match(l.rstrip("\r")): return lines[:i], lines[i:]
+        if LOGIC_LINE.match(l): return lines[:i], lines[i:]
     return lines, []
 
 
@@ -240,7 +241,9 @@ class Config:
 
     def modes_dir(self): return os.path.join(self.data_dir, "custom_modes")
     def state_dir(self): return os.path.join(self.data_dir, "mode_editor", "state")
+    def scenarios_dir(self): return os.path.join(self.data_dir, "mode_editor", "scenarios")
     def user_maps_dir(self): return os.path.join(self.data_dir, "maps")
+    def brains_dir(self): return os.path.join(self.data_dir, "bots")   # (the bot editor's brains: <name>.qbrain)
 
     def tests_caps(self): return binary_has(self.quark_tests, ["exportmode", "checkmode"])
 
@@ -352,6 +355,68 @@ def read_mode(name):
     return p, data, os.stat(p).st_mtime
 
 
+def patch_custommode(text, name):
+    """The file with its custommode= line set to `name`, in place (the shared file rule: the only line changed; a file
+    without one gets it at the end of the key lines, just above `logic`). CRLF stays CRLF."""
+    keys, logic = split_qmode(text)
+    crlf = "\r\n" in text
+    out, done = [], False
+    for l in keys:
+        if not done and key_of(l) == "custommode":
+            out.append("custommode=" + name + ("\r" if l.endswith("\r") else "")); done = True
+        else: out.append(l)
+    if not done: out.append("custommode=" + name + ("\r" if crlf else ""))
+    lines = out + logic
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def mode_file_op(op, name, to, base_sha):
+    """rename / duplicate / delete one of the user's modes -> (status, answer). The file a rename or delete leaves is
+    kept as <name>.qmode.bak (the game loads only *.qmode); the new file's custommode= line takes the new name; its
+    provenance item moves (rename) or is copied (duplicate). 409 when the file changed on disk since the page read it."""
+    d = CFG.modes_dir()
+    src = os.path.join(d, name + ".qmode")
+    if not os.path.isfile(src): return 404, {"error": "%s.qmode isn't in %s" % (name, d)}
+    with open(src, "rb") as f: data = f.read()
+    if base_sha and sha256(data) != base_sha:
+        return 409, {"error": "%s.qmode changed on disk since you opened it: nothing done." % name, "changed": True}
+    if op == "delete":
+        os.replace(src, src + ".bak")
+        return 200, {"ok": True, "backup": name + ".qmode.bak"}
+    if not valid_name(to): return 400, {"error": "bad name (letters, digits, _ . -)"}
+    if to.lower() in MODES: return 400, {"error": "'%s' is a built-in mode's name: pick another" % to}
+    dst = os.path.join(d, to + ".qmode")
+    if os.path.exists(dst): return 409, {"error": "%s.qmode already exists" % to, "exists": True}
+    text = patch_custommode(data.decode("utf-8", "replace"), to)
+    out = text.encode("utf-8")
+    atomic_write(dst, out, backup=False)
+    if op == "rename": os.replace(src, src + ".bak")
+    copy_provenance("gamemodes/" + name, "gamemodes/" + to, move=op == "rename")
+    st = os.stat(dst)
+    return 200, {"ok": True, "name": to, "text": text, "sha256": sha256(out), "mtime": st.st_mtime,
+                 "backup": name + ".qmode.bak" if op == "rename" else None}
+
+
+def list_brains():
+    d = CFG.brains_dir()
+    if not os.path.isdir(d): return []
+    return sorted(f[:-7] for f in os.listdir(d) if f.endswith(".qbrain") and re.match(r"^[A-Za-z0-9_-]{1,64}$", f[:-7]))
+
+
+def list_scenarios():
+    d = CFG.scenarios_dir()
+    out = []
+    if os.path.isdir(d):
+        for f in sorted(os.listdir(d)):
+            if not f.endswith(".json") or not valid_name(f[:-5]): continue
+            try:
+                with open(os.path.join(d, f), encoding="utf-8") as fh: sc = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if isinstance(sc, dict): out.append({"name": f[:-5], "scenario": sc})
+    return out
+
+
 def list_maps():
     out = []
     for src, d in (("default", CFG.default_maps_dir()), ("user", CFG.user_maps_dir())):
@@ -403,6 +468,32 @@ def update_provenance(name, prov):
         return {key: items[key]}
 
 
+def read_provenance():
+    try:
+        with open(PROVENANCE, encoding="utf-8") as f: doc = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def provenance_of(name):
+    items = read_provenance().get("items")
+    it = items.get("gamemodes/" + name) if isinstance(items, dict) else None
+    return it if isinstance(it, dict) else None
+
+
+def copy_provenance(src, dst, move):
+    """A renamed / duplicated mode keeps who made it: its item copied to the new key (moved for a rename)."""
+    with PROV_LOCK:
+        doc = read_provenance()
+        items = doc.get("items") if isinstance(doc.get("items"), dict) else None
+        if not items or not isinstance(items.get(src), dict): return
+        items[dst] = dict(items[src])
+        if move: del items[src]
+        doc["items"] = dict(sorted(items.items()))
+        atomic_write(PROVENANCE, (json.dumps(doc, indent=1) + "\n").encode("utf-8"), backup=False)
+
+
 # ---------------------------------------------------------------- checkmode
 
 def check_mode(data):
@@ -425,13 +516,18 @@ def check_mode(data):
 # ---------------------------------------------------------------- runs (quark_maptool modesim)
 
 class Run:
-    """One helper process whose stdout JSON lines are kept (a page that reconnects gets them from the start)."""
+    """One helper process whose stdout JSON lines are kept (a page that reconnects gets them from the start). A run
+    nobody watches (the page was closed or reloaded and didn't reattach) is stopped after ORPHAN_SECONDS, so a real-time
+    run can't burn a core for hours behind a closed page."""
     MAX_LINES = 400000
+    ORPHAN_SECONDS = 30
 
     def __init__(self, cmd, request):
         self.id = uuid.uuid4().hex[:12]
         self.lines, self.cond, self.done, self.code, self.err = [], threading.Condition(), False, None, ""
         self.started = time.time()
+        self.args = [a for a in cmd[1:] if a in RUN_COMMANDS]
+        self.clients, self.unwatched_since = 0, time.time()   # (SSE readers now; since when nobody reads)
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      bufsize=1, text=True, encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
         self.streaming = "--stream" in cmd
@@ -469,6 +565,18 @@ class Run:
         except (OSError, ValueError):
             return False
 
+    def watch(self, on):
+        with self.cond:
+            self.clients += 1 if on else -1
+            if self.clients <= 0: self.clients, self.unwatched_since = 0, time.time()
+
+    def orphaned(self, now):
+        return not self.done and self.clients == 0 and now - self.unwatched_since > self.ORPHAN_SECONDS
+
+    def info(self):
+        return {"id": self.id, "args": self.args, "done": self.done, "code": self.code, "lines": len(self.lines),
+                "started": self.started, "clients": self.clients}
+
     def stop(self):
         if not self.control("stop") and self.proc.poll() is None: self.proc.terminate()
         def killer():
@@ -483,12 +591,40 @@ RUN_COMMANDS = ("modesim", "modebatch")
 HELPER_COMMANDS = ("modesim", "modebatch", "modecheck")
 
 
-def resolve_map(request):
-    """A run's map named by the page: one of the user's maps (this editor's data folder, which may not be the one the
-    helper would look in) goes to the helper as its path; a shipped map's name is left for the helper to find."""
-    if isinstance(request, dict) and isinstance(request.get("map"), str) and valid_name(request["map"]):
-        p = os.path.join(CFG.user_maps_dir(), request["map"] + ".qmap")
-        if os.path.isfile(p): request = dict(request, map=p)
+def reap_runs():
+    """Every few seconds: stop the runs nobody has watched for Run.ORPHAN_SECONDS; forget finished ones after an hour."""
+    while True:
+        time.sleep(5)
+        now = time.time()
+        with RUNS_LOCK:
+            runs = list(RUNS.items())
+        for k, r in runs:
+            if r.orphaned(now):
+                r.stop()
+            elif r.done and now - r.started > 3600:
+                with RUNS_LOCK: RUNS.pop(k, None)
+
+
+def resolve_request(request):
+    """A run's map and brains named by the page, made concrete for the helper (whose own data folder may not be this
+    editor's): a user map (this editor's data folder) or a shipped one (this checkout's maps/) goes as its path, and
+    each brain named (request.brain, bots[].brain) as its text in request.brains, from <data dir>/bots/<name>.qbrain."""
+    if not isinstance(request, dict): return request
+    request = dict(request)
+    m = request.get("map")
+    if isinstance(m, str) and valid_name(m):
+        for d in (CFG.user_maps_dir(), CFG.default_maps_dir()):
+            p = os.path.join(d, m + ".qmap") if d else None
+            if p and os.path.isfile(p): request["map"] = p; break
+    names = [request.get("brain")] + [b.get("brain") for b in request.get("bots") or [] if isinstance(b, dict)] \
+        if isinstance(request.get("bots"), list) else [request.get("brain")]
+    brains = dict(request.get("brains") or {}) if isinstance(request.get("brains"), dict) else {}
+    for n in names:
+        if not isinstance(n, str) or n in ("", "default") or n in brains or not re.match(r"^[A-Za-z0-9_-]{1,64}$", n): continue
+        p = os.path.join(CFG.brains_dir(), n + ".qbrain")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8", errors="replace") as f: brains[n] = f.read()
+    if brains: request["brains"] = brains
     return request
 
 
@@ -577,6 +713,12 @@ class Handler(BaseHTTPRequestHandler):
                 except FileNotFoundError: return self._err(404, "no such mode")
                 return self._send(200, {"name": n, "path": path, "text": data.decode("utf-8", "replace"), "mtime": mt, "sha256": sha256(data)})
             if p == "/api/maps": return self._send(200, {"maps": list_maps()})
+            if p == "/api/brains": return self._send(200, {"brains": list_brains(), "dir": CFG.brains_dir()})
+            if p == "/api/scenarios": return self._send(200, {"scenarios": list_scenarios(), "dir": CFG.scenarios_dir()})
+            if p == "/api/provenance":
+                n = q.get("name", "")
+                if not valid_name(n): return self._err(400, "bad name")
+                return self._send(200, {"item": provenance_of(n)})
             if p == "/api/state":
                 n = q.get("key", "")
                 if not valid_name(n): return self._err(400, "bad key")
@@ -586,6 +728,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/modesim/status": return self._send(200, self._modesim_status())
             m = re.match(r"^/api/run/([0-9a-f]{12})/events$", p)
             if m: return self._events(m.group(1), int(q.get("from", "0") or 0))
+            m = re.match(r"^/api/run/([0-9a-f]{12})$", p)
+            if m:
+                run = RUNS.get(m.group(1))
+                return self._send(200, run.info()) if run else self._err(404, "no such run")
             return self._err(404, "not found")
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -603,6 +749,25 @@ class Handler(BaseHTTPRequestHandler):
         p = u.path
         try:
             if p == "/api/mode": return self._save_mode(q.get("name", ""))
+            m = re.match(r"^/api/mode/(rename|duplicate|delete)$", p)
+            if m:
+                n = q.get("name", "")
+                if not valid_name(n): return self._err(400, "bad name")
+                code, ans = mode_file_op(m.group(1), n, q.get("to", ""), self._json_body().get("baseSha256"))
+                return self._send(code, ans)
+            if p == "/api/scenario":   # Sim's saved setups: <data dir>/mode_editor/scenarios/<name>.json
+                n = q.get("name", "")
+                if not valid_name(n): return self._err(400, "bad name")
+                sc = self._json_body()
+                if not isinstance(sc, dict): return self._err(400, "a scenario is a JSON object")
+                atomic_write(os.path.join(CFG.scenarios_dir(), n + ".json"), (json.dumps(sc, indent=1) + "\n").encode("utf-8"), backup=False)
+                return self._send(200, {"ok": True})
+            if p == "/api/scenario/delete":
+                n = q.get("name", "")
+                if not valid_name(n): return self._err(400, "bad name")
+                f = os.path.join(CFG.scenarios_dir(), n + ".json")
+                if os.path.isfile(f): os.remove(f)
+                return self._send(200, {"ok": True})
             if p == "/api/checkmode": return self._send(200, check_mode(self._body()))
             if p == "/api/provenance":   # a download without a save: record it all the same
                 n = q.get("name", "")
@@ -619,17 +784,15 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or [], HELPER_COMMANDS)
                 if not cmd: return self._err(501, "quark_maptool with that command not found")
-                r = subprocess.run(cmd, input=json.dumps(resolve_map(body.get("request") or {})), capture_output=True, text=True,
+                r = subprocess.run(cmd, input=json.dumps(resolve_request(body.get("request") or {})), capture_output=True, text=True,
                                    timeout=min(7200.0, float(body.get("timeout") or 300)), creationflags=NO_WINDOW)
                 return self._send(200, {"code": r.returncode, "answer": parse_answer(r.stdout), "stderr": r.stderr[-4000:]})
             if p == "/api/run":
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or [], RUN_COMMANDS)
                 if not cmd: return self._err(501, "quark_maptool modesim not found")
-                run = Run(cmd, resolve_map(body.get("request") or {}))
-                with RUNS_LOCK:
-                    for k in [k for k, r in RUNS.items() if r.done and time.time() - r.started > 3600]: del RUNS[k]
-                    RUNS[run.id] = run
+                run = Run(cmd, resolve_request(body.get("request") or {}))
+                with RUNS_LOCK: RUNS[run.id] = run
                 return self._send(200, {"id": run.id})
             m = re.match(r"^/api/run/([0-9a-f]{12})/(control|stop)$", p)
             if m:
@@ -730,7 +893,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True
-        i = max(0, start)
+        run.watch(True)
+        try: self._stream(run, max(0, start))
+        finally: run.watch(False)
+
+    def _stream(self, run, i):
         while True:
             with run.cond:
                 while i >= len(run.lines) and not run.done:
@@ -768,13 +935,14 @@ def main():
         print("can't listen on 127.0.0.1:%d (%s): is the gamemode editor already running? (another port: --port or mode_editor.json)" % (CFG.port, ex))
         sys.exit(1)
     srv.daemon_threads = True
+    threading.Thread(target=reap_runs, daemon=True).start()
     url = "http://127.0.0.1:%d/" % CFG.port
     tc = CFG.tests_caps()
     print("Quark Gamemode Editor on %s" % url)
     print("  modes        %s" % CFG.modes_dir())
     print("  quark_tests  %s" % (("%s (exportmode %s, checkmode %s)" % (CFG.quark_tests, "yes" if tc["exportmode"] else "no", "yes" if tc["checkmode"] else "no")) if CFG.quark_tests else "(not found: the built-in catalog and the page's own checks)"))
     print("  maptool      %s" % (CFG.maptool or "(not found: Sim is unavailable)"))
-    print("  built-in texts: %s" % (CFG.modes_source_dir() or "(no tools/modes yet: the page's fixtures)"))
+    print("  built-in texts: %s" % (CFG.modes_source_dir() or "(no tools/modes: web/fixtures, its copy)"))
     sys.stdout.flush()
     if not args.no_open and os.environ.get("QUARK_SHELL") != "1":
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()

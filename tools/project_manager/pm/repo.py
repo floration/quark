@@ -83,19 +83,45 @@ def local_copy(ctx, name):
     return entry
 
 
-def changelogs(root, limit=8):
+_ADDED = {"head": None, "times": {}}  # (changelog add times for one HEAD: git is asked again only when HEAD moves)
+
+
+def changelog_times(root, head):
+    """{'changelogs/1.18.6.md': commit time (ISO) of the commit that added it}, from one `git log`. A file's mtime is
+    the time of the last pull on q's PC, the same for every file, so it says nothing about the release."""
+    if head and _ADDED["head"] == head:
+        return _ADDED["times"]
+    times, cur = {}, None
+    try:
+        out = git(root, "log", "--diff-filter=A", "--format=@%cI", "--name-only", "-n", "200", "--", "changelogs",
+                  timeout=15.0)
+    except util.SourceError:
+        return {}
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("@"):
+            cur = line[1:]
+        elif line and cur:
+            times.setdefault(line, cur)  # (newest first: the latest add wins)
+    _ADDED.update(head=head, times=times)
+    return times
+
+
+def changelogs(root, limit=8, head=None):
     folder = os.path.join(root, "changelogs")
     try:
         names = [n for n in os.listdir(folder) if n.endswith(".md") and util.parse_version(n[:-3]) == n[:-3]]
     except OSError:
         return []
     names.sort(key=lambda n: util.version_key(n[:-3]), reverse=True)
+    added = changelog_times(root, head) if names else {}
     out = []
     for n in names[:limit]:
         p = os.path.join(folder, n)
         try:
             lines = util.read_text(p, 64 * 1024).splitlines()[:12]
-            out.append({"version": n[:-3], "mtime": util.iso(os.path.getmtime(p)), "lines": lines})
+            out.append({"version": n[:-3], "mtime": util.iso(os.path.getmtime(p)), "lines": lines,
+                        "committedAt": util.iso(util.parse_time(added.get("changelogs/" + n)))})
         except OSError:
             continue
     return out
@@ -110,7 +136,6 @@ def fetch(ctx):
         data["version"] = util.read_text(os.path.join(root, "VERSION"), 256).strip().splitlines()[0].strip()
     except (OSError, IndexError):
         data["versionError"] = "no VERSION file"
-    data["changelogs"] = changelogs(root)
     if data["version"]:
         data["fullChangelog"] = os.path.isfile(os.path.join(root, "changelogs", "full", data["version"] + ".md"))
         data["shortChangelog"] = os.path.isfile(os.path.join(root, "changelogs", data["version"] + ".md"))
@@ -119,5 +144,6 @@ def fetch(ctx):
     except util.SourceError as e:
         data["log"] = []
         data["logError"] = str(e)
+    data["changelogs"] = changelogs(root, head=data["log"][0]["sha"] if data["log"] else None)
     data["locals"] = [local_copy(ctx, n) for n in LOCAL_COPIES]
     return data

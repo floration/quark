@@ -1,6 +1,7 @@
 /* ===== DSP ==========================================================================================
-   The non-destructive edit: trim -> fades -> chain steps (each with bypass) -> output. Filters, reverb run in an
-   OfflineAudioContext; the rest (gain, pitch resample, compressor, drive, limiter...) in plain JS. Also ports of the
+   The non-destructive edit: trim -> fades -> chain steps (each with bypass) -> output. Reverb runs in an
+   OfflineAudioContext (a convolver); everything else (filters, gain, pitch resample, compressor, drive, limiter...) in
+   plain JS, and each step's result is cached by its prefix (Q.renderEditData). Also ports of the
    game's own clip preparation (audio.cpp prepareClip / levelHit / voice()), so the editor plays what the game will. */
 (function () {
   'use strict';
@@ -42,15 +43,42 @@
     return out.getChannelData(0).slice(0, outLen);
   }
 
-  function biquadStep(x, type, p) {
-    return offline(x, x.length, (ctx, src) => {
-      const f = ctx.createBiquadFilter();
-      f.type = type; f.frequency.value = Math.min(p.freq, R / 2 - 10);
-      if (p.q != null) f.Q.value = p.q;
-      if (p.db != null) f.gain.value = p.db;
-      src.connect(f); return f;
-    });
+  /* The Web Audio BiquadFilterNode in plain JS (its spec's coefficients, so a chain sounds exactly as it did when it
+     rendered in an OfflineAudioContext): no context per step, about 1 ms for a second of sound instead of 20-60 ms.
+     As the node does, low-pass / high-pass read Q in dB, the shelves ignore it (S = 1), peaking reads it linearly. */
+  Q.biquadCoefs = function (type, p) {
+    const f0 = Math.max(0, Math.min(p.freq, R / 2 - 10)), w0 = 2 * Math.PI * f0 / R, cw = Math.cos(w0), sw = Math.sin(w0);
+    const A = Math.pow(10, (p.db || 0) / 40), q = p.q == null ? 1 : p.q;
+    let b0, b1, b2, a0, a1, a2;
+    if (type === 'lowpass' || type === 'highpass') {
+      const al = sw / (2 * Math.pow(10, q / 20)), lp = type === 'lowpass';
+      b0 = lp ? (1 - cw) / 2 : (1 + cw) / 2; b1 = lp ? 1 - cw : -(1 + cw); b2 = b0; a0 = 1 + al; a1 = -2 * cw; a2 = 1 - al;
+    } else if (type === 'peaking') {
+      const al = sw / (2 * Math.max(q, 1e-4));
+      b0 = 1 + al * A; b1 = -2 * cw; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cw; a2 = 1 - al / A;
+    } else {   // lowshelf / highshelf, S = 1
+      const al = sw / 2 * Math.SQRT2, k = 2 * al * Math.sqrt(A), s = type === 'lowshelf' ? 1 : -1;
+      b0 = A * ((A + 1) - s * (A - 1) * cw + k); b1 = s * 2 * A * ((A - 1) - s * (A + 1) * cw); b2 = A * ((A + 1) - s * (A - 1) * cw - k);
+      a0 = (A + 1) + s * (A - 1) * cw + k; a1 = -s * 2 * ((A - 1) + s * (A + 1) * cw); a2 = (A + 1) + s * (A - 1) * cw - k;
+    }
+    return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+  };
+  function biquadStep(x, type, p) {   // direct form I, double precision state (like Chrome's Biquad)
+    const [b0, b1, b2, a1, a2] = Q.biquadCoefs(type, p), y = new Float32Array(x.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = x[i], o = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = v; y2 = y1; y1 = o; y[i] = o;
+    }
+    return y;
   }
+  Q.biquadOffline = (x, type, p) => offline(x, x.length, (ctx, src) => {   // (the node itself: tests compare the two)
+    const f = ctx.createBiquadFilter();
+    f.type = type; f.frequency.value = Math.min(p.freq, R / 2 - 10);
+    if (p.q != null) f.Q.value = p.q;
+    if (p.db != null) f.gain.value = p.db;
+    src.connect(f); return f;
+  });
 
   // a deterministic room: noise decaying 60 dB over `size`, darker with time (the damping)
   function impulse(p) {
@@ -176,10 +204,29 @@
     return x;
   };
 
+  /* Rendering an edit, step by step, with every intermediate result cached by its prefix signature (the source, trim
+     and fades, and each step so far): moving a slider on step k re-renders only steps k.. (and levelling, which adds
+     its gain at the end, renders one step). Results are never changed in place, so they can be shared. Budget: 96 MB
+     of samples, least recently used out first. */
+  const stepCache = new Map(); let stepBytes = 0;
+  const STEP_BUDGET = 96 * 1048576;
+  const srcIds = new WeakMap(); let srcSeq = 0;
+  const srcId = x => { let id = srcIds.get(x); if (!id) srcIds.set(x, id = 'x' + (++srcSeq)); return id; };
+  function cacheGet(sig) { const v = stepCache.get(sig); if (v) { stepCache.delete(sig); stepCache.set(sig, v); } return v; }
+  function cachePut(sig, v) {
+    if (stepCache.has(sig)) return;
+    stepCache.set(sig, v); stepBytes += v.byteLength;
+    for (const [k, old] of stepCache) { if (stepBytes <= STEP_BUDGET) break; stepCache.delete(k); stepBytes -= old.byteLength; }
+  }
+  Q.stepCacheInfo = () => ({ entries: stepCache.size, mb: stepBytes / 1048576 });
   Q.renderEditData = async function (src, e, uptoStep) {
-    let x = Q.trimFade(src, e);
-    const chain = uptoStep == null ? e.chain : e.chain.slice(0, uptoStep);
-    for (const st of chain) if (st.on) x = await Q.applyStep(x, st);
+    const chain = (uptoStep == null ? e.chain : e.chain.slice(0, uptoStep)).filter(st => st.on);
+    const sigs = [srcId(src) + '|' + (e.trim[0] || 0) + ':' + e.trim[1] + ':' + (e.fadeIn || 0) + ':' + (e.fadeOut || 0)];
+    for (const st of chain) sigs.push(sigs[sigs.length - 1] + '|' + st.type + JSON.stringify(st.p));
+    let i = sigs.length - 1, x;
+    while (i >= 0 && !(x = cacheGet(sigs[i]))) i--;   // the longest prefix already rendered
+    if (!x) { x = Q.trimFade(src, e); cachePut(sigs[0], x); i = 0; }
+    for (let k = i; k < chain.length; k++) { x = await Q.applyStep(x, chain[k]); cachePut(sigs[k + 1], x); }
     return x;
   };
 

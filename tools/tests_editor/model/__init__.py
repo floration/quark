@@ -14,6 +14,14 @@ SCRIPT_WHEN = {
     "tools/test_editor.sh": ("manual", "by hand, headless map editor checks (needs a display: Xvfb)"),
     "tools/uitest.sh": ("ctest", "by ctest (its uitest entry); skipped without a display"),
 }
+# commands the page doesn't run: they write files into the working copy, or are a process the tests start themselves
+BY_HAND = {
+    "exportassets": "writes assets_export/ into the working copy (the Asset Studio runs it as quark_tests exportassets build/assets_export)",
+    "exportbrain": "writes brain files into the working copy: run it from a terminal",
+    "exportweapons": "writes weapon files into the working copy: run it from a terminal",
+    "exportmode": "writes mode files into the working copy: run it from a terminal",
+    "bot": "a bot client the tests start themselves (quark_tests bot MAP SECS)",
+}
 RULES = [
     ("ci-scope", "CI runs only meta, builds and sanitizers; no gameplay tests in CI.", "release.yml header / owner 2026-10-24",
      ".github/workflows/release.yml", r"CI runs no gameplay"),
@@ -54,10 +62,10 @@ def git(repo, *args, timeout=10):
 class Builder:
     """Builds and caches the model for one repo. Thread-safe: one build at a time."""
 
-    def __init__(self, repo, timing_dir=None, overview=None, runs=None, build_groups=None):
+    def __init__(self, repo, timing_dir=None, overview=None, local=None, build_groups=None):
         self.repo = os.path.abspath(repo)
         self.timing_dir, self.overview = timing_dir, overview
-        self.runs = runs or (lambda: [])                                 # () -> local run history (newest last)
+        self.local = local or (lambda: (0, {}))                          # () -> (generation, {group: newest local time / result})
         self.build_groups = build_groups or (lambda: None)               # () -> {binary, groups} or None
         self.lock = threading.Lock()
         self.files = {}                                                  # rel path -> (sig, parsed)
@@ -137,17 +145,14 @@ class Builder:
         """(model, body bytes, etag); rebuilt only when an input changed."""
         with self.lock:
             ins = self.inputs()
-            runs = self.runs()
-            last_run = runs[-1] if runs else None
+            gen, local = self.local()
             bg = self.build_groups()
-            sig = (self.stat_sig([p for k in ins.values() for p in k]),
-                   (len(runs), last_run and last_run.get("id"), last_run and last_run.get("status")),
-                   json.dumps(bg, sort_keys=True))
+            sig = (self.stat_sig([p for k in ins.values() for p in k]), gen, json.dumps(bg, sort_keys=True))
             info = self.repo_info(sig)
             key = (sig, json.dumps(info, sort_keys=True))
             if not force and key == self.sig and self.model is not None: return self.model, self.body, self.etag
             t0 = time.perf_counter()
-            m = self.build(ins, runs, info, bg)
+            m = self.build(ins, local, info, bg)
             self.last_build_ms = round((time.perf_counter() - t0) * 1000, 1)
             m["buildMs"] = self.last_build_ms
             etag = '"%s"' % hashlib.sha1(repr(key).encode()).hexdigest()[:20]     # (same inputs, same model)
@@ -155,7 +160,7 @@ class Builder:
             self.body = json.dumps(m, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
             return self.model, self.body, self.etag
 
-    def build(self, ins, runs, info, bg):
+    def build(self, ins, local, info, bg):
         texts = {}
         # C++: tests/*.cpp, tests/*.h
         sources = []
@@ -176,10 +181,6 @@ class Builder:
 
         tm = timing.timings(self.timing_dir, [g["name"] for l in lists for g in l["groups"]])
         fl_groups, fl_fns = timing.flakes(self.overview)
-        local = {}                                                       # group -> newest finished local run
-        for r in runs:
-            if r.get("status") in ("passed", "failed") and r.get("groupTimes"):
-                for g, sec in r["groupTimes"].items(): local[g] = {"sec": sec, "at": r.get("endedAt") or r.get("startedAt"), "run": r["id"]}
 
         groups = []
         for l in lists:
@@ -189,25 +190,41 @@ class Builder:
             if sched: parallel = sched.group(1).strip() != "1"
             else: parallel = bool(re.search(r"\b%s\s*\[" % re.escape(l["name"]), main_body)) and "alone" not in l["name"]
             for k, g in enumerate(l["groups"]):
-                t = None
-                note = tm.get(g["name"])
-                lr = local.get(g["name"])
-                if note: t = {"sec": note["sec"], "source": note["source"], "at": iso_of(note["mtime"])}
-                if lr and (not t or lr["at"] >= t["at"]): t = {"sec": lr["sec"], "source": "local run %s" % lr["at"], "at": lr["at"], "run": lr["run"]}
+                # timing: this machine's newest (cache/groups.json: local runs, imported logs) over the release-tests
+                # notes, which are another machine's and older than the newest groups
+                t, last = None, None
+                note, lr = tm.get(g["name"]), local.get(g["name"]) or {}
+                if lr.get("sec") is not None:
+                    t = {"sec": lr["sec"], "source": lr.get("timeSource") or "local run %s" % lr.get("timeAt"), "at": lr.get("timeAt"), "run": lr.get("timeRun")}
+                elif note: t = {"sec": note["sec"], "source": note["source"], "at": iso_of(note["mtime"])}
+                if lr.get("status"):
+                    last = {"status": lr["status"], "at": lr.get("at"), "run": lr.get("run"), "fails": lr.get("fails", 0),
+                            "failLines": lr.get("failLines") or [], "source": lr.get("source")}
                 calls = [_call(c, g["locals"], g["ports"]) for c in g["calls"]]
                 groups.append({"id": "group:" + g["name"], "kind": "group", "name": g["name"], "list": l["name"],
                                "order": k, "file": main["file"], "line": g["line"], "endLine": g["endLine"], "calls": calls,
                                "run": {"cmd": "build/quark_tests group %s" % g["name"], "parallel": parallel},
-                               "timing": t, "flaky": fl_groups.get(g["name"]),
+                               "timing": t, "lastRun": last, "flaky": fl_groups.get(g["name"]),
                                "ports": [list(p) for p in g["ports"]]})
         cmds = []
         for s in shortcuts:
             calls = [_call(c, s["locals"], s["ports"]) for c in s["calls"]]
             kind = "shortcut" if any(cpp.is_test_name(c["fn"]) for c in calls) else "tool"
-            cmds.append({"id": "cmd:" + s["name"], "kind": kind, "name": s["name"], "file": main["file"], "line": s["line"],
-                         "endLine": s["endLine"], "calls": calls,
-                         "run": {"cmd": "build/quark_tests %s" % s["name"], "parallel": False},
-                         "shadowsGroup": any(g["name"] == s["name"] for g in groups), "ports": [list(p) for p in s["ports"]]})
+            spec = s.get("argsSpec")
+            if spec and spec["max"] != 0:                            # (NAME choices: the "name" entries of the function
+                for c in s["calls"]:                                 #  it hands argv[2] to, e.g. testGameRules' list)
+                    f = index.get(c["fn"])
+                    if f and re.search(r"\bargv\s*\[\s*2\s*\]", c["args"]):
+                        body = f["_src"].text[f["_open"]:f["_close"]]
+                        ch = re.findall(r"\{\s*\"([\w-]+)\"\s*,", body)
+                        if len(ch) >= 2: spec = dict(spec, choices=ch)
+                        break
+            run = {"cmd": "build/quark_tests %s" % s["name"], "parallel": False}
+            if s["name"] in BY_HAND: run["byHand"] = BY_HAND[s["name"]]
+            cmds.append({"id": "cmd:" + s["name"], "kind": kind, "name": s["name"], "aliases": s.get("aliases") or [],
+                         "file": main["file"], "line": s["line"], "endLine": s["endLine"], "calls": calls, "run": run,
+                         "argsSpec": spec, "shadowsGroup": any(g["name"] == s["name"] for g in groups),
+                         "ports": [list(p) for p in s["ports"]]})
 
         # functions: tests, anything a group / command calls, anything with checks
         direct = {}
@@ -218,6 +235,20 @@ class Builder:
         for n in exported:
             for c in index[n]["calls"]:
                 if c in exported: called_by.setdefault(c, []).append(n)
+        # indirect: the shortest call chain from each group / command to every function it reaches through others
+        via = {}                                                         # fn -> [{item, path: [fns between]}]
+        for it in groups + cmds:
+            prev, todo = {}, []
+            for c in it["calls"]:
+                if c["fn"] in index and c["fn"] not in prev: prev[c["fn"]] = None; todo.append(c["fn"])
+            for n in todo:                                               # (breadth first: todo grows as it goes)
+                for c in index[n]["calls"]:
+                    if c not in prev and c in index: prev[c] = n; todo.append(c)
+            for n, p in prev.items():
+                if p is None or n not in exported: continue
+                path = []
+                while p is not None: path.append(p); p = prev[p]
+                via.setdefault(n, []).append({"item": it["id"], "path": path[::-1]})
         functions = {}
         for n in sorted(exported, key=lambda n: (index[n]["file"], index[n]["line"])):
             f = index[n]
@@ -226,6 +257,7 @@ class Builder:
             rec["helpers"] = [c for c in f["calls"] if c not in exported and c != "main"]
             rec["usedBy"] = sorted(set(direct.get(n, [])), key=direct.get(n, []).index) if n in direct else []
             rec["calledBy"] = sorted(called_by.get(n, []))
+            rec["runsVia"] = [v for v in via.get(n, []) if v["item"] not in rec["usedBy"]]
             short = n[4:] if n.startswith("test") else n
             rec["flaky"] = fl_fns.get(short) or fl_fns.get(n)
             functions[n] = rec
@@ -346,6 +378,7 @@ def _when(trigger, text, file, line, **kw):
 
 def _call(c, locals_, ports):
     out = {"fn": c["fn"], "args": c["args"], "line": c["line"]}
+    if c.get("via"): out["via"] = c["via"]                         # (inside a lambda passed to via(...): timingTest)
     a = c["args"].strip()
     m = re.match(r"^(\w+)\s*(?:\+\s*(\d+))?(\s*,.*)?$", a)
     if m and m.group(1) in locals_:

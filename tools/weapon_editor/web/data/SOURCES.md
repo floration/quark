@@ -91,8 +91,15 @@ not.
 - Values are the unscaled defaults. **Hardcore** mode (common default) multiplies damage by 1.5. Liandri
   (https://liandri.beyondunreal.com/Shock_Rifle) and the BeyondUnreal wiki list Hardcore numbers (shock 60, chunk
   24).
-- Fire rates are animation-driven, so most are null. The shock and flak rates (1.4/s, combo 0.85/s, flak shell 1/s)
-  are from Liandri and the BeyondUnreal wiki. Minigun 0.13 / 0.08 s is from the `Sleep()` calls.
+- Fire rates are animation-driven, so the class docs give none. The shock and flak rates (1.4/s, combo 0.85/s, flak
+  shell 1/s) are from Liandri and the BeyondUnreal wiki. Minigun 0.13 / 0.08 s is from the `Sleep()` calls.
+- The other fire rates are from the Liandri Archives' Unreal Tournament sections (retrieved 2026-10-24): Enforcer
+  2.8/s (alt 3.8/s), https://liandri.beyondunreal.com/Enforcer?oldid=9220 ; Ripper 2.9/s (alt 1.5/s),
+  https://liandri.beyondunreal.com/Ripper ; and, through its mirror on unrealarchive.org, Sniper Rifle 0.6 s
+  (https://unrealarchive.org/wikis/the-liandri-archives/Sniper_Rifle.html), Rocket Launcher 1.2/s (…/Rocket_Launcher.html)
+  and Pulse Gun 6.1/s (…/Link_Gun.html). Liandri's damage figures there are the Hardcore ones (Enforcer 25, Sniper
+  67 / 150, Ripper 45 / 157, Rocket 112, Pulse 30 = 1.5x the class defaults), so its rates are probably at
+  Hardcore's 1.1x speed too; it doesn't say. Medium confidence.
 - The Bio Rifle is left out: its damage scales with glob size and the formula wasn't confirmed.
 
 ### Unreal Tournament 2004 and UT3: medium confidence
@@ -122,8 +129,15 @@ not.
   taken as crit / 3 wherever that agrees with the point-blank range.
 - The Shotgun crit listed (120) does not match its range (86-90 point blank = 60 x 1.5), so base 60 comes from the
   range.
-- Fire intervals are not given except melee (0.8 s, bat 0.5 s), so they are null. The Rocket Launcher's 0.8 s is
-  its reload, not its refire.
+- StrategyWiki gives no fire intervals except melee (0.8 s, bat 0.5 s). The attack intervals now filled in are the
+  official TF2 Wiki's "Damage and function times" values, known from that wiki before it went offline and not
+  re-fetched (cited per weapon as wiki.teamfortress.com/wiki/<weapon>): Scattergun and Shotgun 0.625 s (10 pellets
+  x 6), Pistol 0.17 s, Rocket Launcher 0.8 s, Grenade and Stickybomb Launcher 0.6 s, Minigun 4 bullets per 0.105 s,
+  Syringe Gun and SMG 0.105 s, Sniper Rifle 1.5 s, Revolver 0.5 s.
+- Cross-check, tf2console.fandom.com (the console wiki, community-tested, retrieved 2026-10-24): Shotgun 6 per
+  pellet and 0.625 s, Sniper Rifle 1.5 s, Syringe Gun 0.1 s and about 990 HU/s, SMG about 10 bullets/s, Pistol about
+  6 rounds/s: all agree. Its Revolver is 0.58 s (the console build); the PC value 0.5 s is kept.
+- The Crusader's Crossbow's interval wasn't confirmed, so it stays null.
 - Health: Scout 125, Medic 150, Demoman 175, Soldier 200 and Heavy 300 are from StrategyWiki. The rest are not
   verified.
 - **Redo from the official wiki when it is back.**
@@ -165,8 +179,13 @@ not.
 - Head damage is null because it depends on each hero's crit bonus scale.
 
 ### Titanfall 2: low confidence, partial
-- Source: Titanfall Wiki (Fandom). Only the R-201 (25 damage, 810 RPM, falloff 28.6-66.7 m) and the Kraber (100)
-  had numbers. Pilot health isn't verified.
+- Sources: Titanfall Wiki (Fandom) and titanfall.wiki.gg, retrieved 2026-10-24.
+  - Fandom: R-201 (25 damage, 810 RPM, falloff 28.6-66.7 m), Kraber (100), C.A.R. (25 damage, 846 RPM actual,
+    falloff 1000-3000 units = 19.05-57.15 m; wiki.gg agrees).
+  - wiki.gg Titanfall 2 stat boxes: Alternator 35 / 600 RPM, Hemlok BF-R 33 / 930 RPM (3-round burst), Spitfire
+    35 / 540 RPM.
+- Most other pilot weapons' Titanfall 2 stat boxes only carry the menu's 0-100 bars (e.g. Flatline "damage 70,
+  rate of fire 60"), which aren't damage or RPM, so they are left out. Pilot health isn't verified.
 
 ## Not covered (no reachable, citable numbers)
 

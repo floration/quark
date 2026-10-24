@@ -99,6 +99,7 @@
   // --- state changes: refresh what shows, autosave a moment later ---------------------------------------------------
   let saveT = 0;
   Q.onStateChanged = function (label) {
+    U.missing && U.missing.ensureAssets();   // (your own names' slots follow state.customs, after undo too)
     U.updateUndo();
     U.refreshView();
     U.editor && U.editor.refresh();

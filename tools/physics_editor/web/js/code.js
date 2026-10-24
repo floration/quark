@@ -1,7 +1,7 @@
 // Code: the set's raw .qmode text, editable, two-way with Values (an edit here is parsed as the game parses it,
 // CustomRules::fromText with its clamps; a Values edit rewrites only the movement lines here). Problems show at
 // their line. The gamemode editor's section (from a `logic` line on) is shown below, read only.
-import { highlight, lineKinds, mergeQmode, isLogicLine, parseQmode } from "./qmode.js";
+import { highlight, lineKinds, tidyQmode, isLogicLine, parseQmode } from "./qmode.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,7 +21,11 @@ export class CodeView {
             if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
         });
         this.scroll.addEventListener("scroll", () => { this.gut.scrollTop = this.scroll.scrollTop; });
-        $("codeFormat").onclick = () => { this.app.setCodeText(mergeQmode(this.app.set.text, this.app.physics, this.app.set.name, this.app.knownMove)); this.load(); };
+        $("codeFormat").onclick = () => {
+            const t = tidyQmode(this.app.set.text, this.app.physics, this.app.set.name, this.app.knownMove);
+            if (t === this.app.set.text) return this.app.toast("Already tidy: the movement lines are as the game writes them");
+            this.app.setCodeText(t); this.load();
+        };
         app.on("physics", (from) => { if (from !== "code") this.load(); });
         app.on("page", (p) => { if (p === "code") this.load(); });
         this.load();
