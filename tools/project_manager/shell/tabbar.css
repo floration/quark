@@ -31,6 +31,7 @@ html, body {
 .tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--down); flex: none; }
 .tab[data-status="up"] .dot { background: var(--up); }
 .tab[data-status="starting"] .dot { background: var(--starting); animation: pulse .9s ease-in-out infinite alternate; }
+.tab[data-status="restarting"] .dot { background: transparent; box-shadow: inset 0 0 0 2px var(--starting); }
 .tab[data-status="missing"] { color: var(--muted); }
 .tab[data-status="missing"] .dot { background: transparent; box-shadow: inset 0 0 0 1px var(--down); }
 .tab[data-status="missing"] .name { text-decoration: line-through; text-decoration-color: rgba(125,131,141,.5); }

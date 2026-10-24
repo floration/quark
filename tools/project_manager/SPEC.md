@@ -34,7 +34,7 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
   default browser (`shell.openExternal`, only `https:`). No new BrowserWindows. Downloads go to a Save dialog.
   Permissions: grant `fileSystem` / `clipboard-sanitized-write` / `media` (audio playback) to local tabs only; deny
   everything else. `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false` for every tab.
-- **Servers**: before showing a server tab, main checks `http://127.0.0.1:<port>/` (500 ms timeout). If down and the
+- **Servers** (current behaviour, including the keepAlive supervisor and the watchdog: `shell/README.md`): before showing a server tab, main checks `http://127.0.0.1:<port>/` (500 ms timeout). If down and the
   tab has `start`, it spawns that command hidden (`windowsHide`, detached, working dir = the tab's folder), shows
   "starting" and polls up to 20 s, then loads it. The PM server (8768) is started the same way. Servers the shell
   started are stopped when the window closes (kill the process tree with `taskkill /T /F /PID`); servers that were
@@ -174,5 +174,6 @@ a link to `http://127.0.0.1:876x/...` is sent to the shell as "open that tab at 
 `setup.cmd` (double-click) → `setup.ps1 [-Quark <folder>] [-NoElectron]`: copies `server.py`, `pm\`, `web\`, `shell\`,
 `project-manager.cmd`, `quark.ico` into `Quark\project-manager\`; writes `tabs.json` / `config.json` only if missing;
 downloads + verifies Electron unless present or `-NoElectron`; makes a desktop shortcut "Quark Project" →
-`project-manager.cmd` with the icon. Re-running it updates the code and keeps q's tabs/config/history/state.
+`electron\electron.exe "<PM>\shell"` (no console window; without Electron: `wscript.exe project-manager-hidden.vbs`,
+which runs `project-manager.cmd --edge` hidden) with the icon. Re-running it updates the code and keeps q's tabs/config/history/state.
 `project-manager.cmd [--edge]` starts the server if 8768 is down, then Electron (or the Edge fallback).

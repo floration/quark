@@ -2,7 +2,8 @@
 """Supervisor Board server (the Quark project manager): http://127.0.0.1:8768 (tools/project_manager/SPEC.md section 2).
 
     py -3 server.py [--quark C:\\Users\\user\\Desktop\\Quark] [--port 8768]
-    py -3 server.py --init        write project-manager\\tabs.json / config.json if missing, then exit (setup.ps1)
+    py -3 server.py --init        write project-manager\\tabs.json / config.json if missing (and bring an older
+                                  tabs.json's default tabs up to date), then exit (setup.ps1)
 
 Python 3 standard library only. Binds 127.0.0.1 only. Every source refreshes in the background on its own interval
 and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1]  /api/tabs
@@ -24,7 +25,7 @@ from pm import config, scheduler, tabs, util  # noqa: E402
 from pm.history import History  # noqa: E402
 
 DEFAULT_PORT = 8768
-ALLOWED_ORIGIN = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(?:876[5-9]|8770)$")
+ALLOWED_ORIGIN = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(?:876[5-9]|877[0-5])$")  # (the tools' ports: 8765-8775)
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
          ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".map": "application/json; charset=utf-8"}
@@ -224,6 +225,9 @@ def main(argv=None):
     if args.init:
         wrote = [n for n, f in (("tabs.json", tabs.write_default), ("config.json", config.write_default_config)) if f(paths)]
         util.log("project-manager folder %s: %s" % (paths.pm_dir, ("wrote " + ", ".join(wrote)) if wrote else "kept existing files"))
+        up = tabs.upgrade(paths)
+        if up:
+            util.log("tabs.json: new default tabs / start commands / keepAlive for %s (old file: tabs.json.old)" % ", ".join(up))
         return 0
     app = App(paths, args.port)
     try:

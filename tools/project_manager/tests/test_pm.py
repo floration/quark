@@ -432,6 +432,7 @@ class TestTabs(unittest.TestCase):
                 {"id": "nofolder", "name": "X", "folder": "missing-tool"},
                 {"id": "sound2", "name": "S", "folder": "sound-editor"},
                 {"id": "docs2", "name": "D", "url": "http://localhost:8799/x", "folder": "docs-manager"},
+                {"id": "gh2", "name": "G", "url": "http://127.0.0.1:8798/", "folder": "github-manager", "keepAlive": "yes"},
                 {"id": "far away", "name": "F", "url": "https://example.invalid/", "start": "run.cmd", "folder": "bot-editor"},
                 {"id": "fileurl", "name": "U", "url": "file:///no/such/page.html"},
                 {"id": "pmvar", "name": "P", "folder": "%quark%/ui-customizer", "file": "ui-customizer.html"}]
@@ -439,7 +440,17 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(t["project"]["startCommand"], 'py -3 "%s\\server.py"' % paths.pm_dir)
             self.assertEqual(t["dashboard"]["installed"], False)
             self.assertEqual(t["dashboard"]["note"], "not installed")
-            self.assertEqual(t["github"]["startCommand"], '"%s"' % os.path.join(q, "github-manager", "start.cmd"))
+            self.assertEqual(t["gh2"]["startCommand"], '"%s"' % os.path.join(q, "github-manager", "start.cmd"))
+            self.assertFalse(t["gh2"]["keepAlive"])  # (true only)
+            # the managers run their servers directly (no .cmd launcher with `start /min`: no console window)
+            self.assertEqual(t["github"]["startCommand"], 'py -3 -B server.py --data "%s\\github-manager"' % q)
+            self.assertEqual(t["github"]["startCwd"], os.path.join(q, "github-manager"))
+            self.assertEqual(t["docs"]["startCommand"],
+                             'py -3 serve.py --docs "%s\\Claude Documents" --port 8766 --quiet' % q)
+            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "github", "docs", "dashboard"])
+            self.assertEqual([i for i in t if t[i]["lowPriority"]], ["github"])
+            self.assertTrue(all(".cmd" not in t[i]["startCommand"] and "start " not in t[i]["startCommand"]
+                                for i in ("project", "github", "docs", "dashboard")))
             self.assertEqual(t["docs2"]["startCommand"], '"%s"' % os.path.join(q, "docs-manager", "docs-manager.cmd"))
             self.assertEqual((t["docs2"]["port"], t["docs2"]["kind"]), (8799, "server"))
             self.assertEqual(t["far-away"]["port"], 443)
@@ -493,6 +504,66 @@ class TestTabs(unittest.TestCase):
         if not os.path.isfile(path):
             self.skipTest("shell/tabs.default.json missing")
         self.assertEqual(util.read_json_file(path), tabs.DEFAULT_TABS)
+
+    def test_upgrade(self):
+        # q's tabs.json from an older setup: default tabs get the new start commands / keepAlive; q's own edits stay
+        with tempfile.TemporaryDirectory() as tmp:
+            q = make_tree(tmp, with_git=False)
+            paths = config.Paths(PM_ROOT, q)
+            self.assertEqual(tabs.upgrade(paths), [])  # (no tabs.json)
+            old = [{"id": "project", "name": "Mine", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
+                    "start": "py -3 \"%PM%\\server.py\""},
+                   {"id": "github", "name": "GitHub Manager", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767,
+                    "folder": "github-manager"},
+                   {"id": "docs", "name": "Claude Manager", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766,
+                    "folder": "docs-manager", "start": "my.cmd", "keepAlive": False},
+                   {"id": "dashboard", "name": "Editor Manager", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
+                    "folder": "editor-dashboard", "start": "dashboard.cmd"},
+                   {"id": "bot", "name": "Bots", "url": "http://127.0.0.1:9999/", "folder": "bot-editor"}]
+            write(paths.pm("tabs.json"), json.dumps({"tabs": old}))
+            self.assertEqual(tabs.upgrade(paths), ["project", "github", "dashboard", "tests", "gamemode", "physics"])
+            got = {t["id"]: t for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]}
+            d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
+            self.assertEqual(got["project"]["name"], "Mine")
+            self.assertTrue(got["project"]["keepAlive"])
+            for k in ("start", "keepAlive", "lowPriority"):
+                self.assertEqual(got["github"][k], d["github"][k])
+            self.assertEqual((got["docs"]["start"], got["docs"]["keepAlive"]), ("my.cmd", False))  # q's choices
+            self.assertEqual(got["dashboard"]["start"], d["dashboard"]["start"])
+            self.assertEqual(got["bot"], old[4])
+            self.assertNotIn("sound", got)  # (a default tab q removed stays removed)
+            self.assertEqual(got["tests"], d["tests"])  # (new since: added)
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"], old)
+            saved = util.read_json_file(paths.pm("tabs.json"))
+            self.assertEqual(saved["defaultsSeen"], sorted(d))
+            self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
+            # q removes a tab that was added: it stays removed
+            saved["tabs"] = [t for t in saved["tabs"] if t["id"] != "physics"]
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            self.assertEqual(tabs.upgrade(paths), [])
+            # a later default (not in defaultsSeen) is added
+            saved["defaultsSeen"].remove("gamemode")
+            saved["tabs"] = [t for t in saved["tabs"] if t["id"] != "gamemode"]
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            self.assertEqual(tabs.upgrade(paths), ["gamemode"])
+            # a fresh tabs.json (from the defaults) records every default id
+            os.remove(paths.pm("tabs.json"))
+            self.assertTrue(tabs.write_default(paths))
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsSeen"], sorted(d))
+            self.assertEqual(tabs.upgrade(paths), [])
+
+    def test_shell_supervisor(self):
+        # main.js: a keepAlive watchdog, servers started at app start, never `start` / detached on Windows
+        with open(os.path.join(PM_ROOT, "shell", "main.js"), encoding="utf-8") as f:
+            js = f.read()
+        for needle in ("const WATCHDOG_MS = 10000;", "const RESTART_DELAYS_MS = [10000, 30000, 60000, 120000];",
+                       "const FAIL_WINDOW_MS = 5 * 60000;", "startKeepAlive();", "windowsHide: true, detached: !IS_WIN",
+                       "PRIORITY_LOW"):
+            self.assertIn(needle, js)
+        self.assertNotRegex(js, r"detached:\s*true")
+        if shutil.which("node"):
+            r = subprocess.run(["node", "--check", os.path.join(PM_ROOT, "shell", "main.js")], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_write_default(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -949,8 +1020,8 @@ class TestServer(unittest.TestCase):
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])
         ids = [t["id"] for t in d["tabs"]]
-        self.assertEqual(ids[:4], ["project", "github", "docs", "dashboard"])
-        self.assertEqual([x["depth"] for x in d["tabs"]][:5], [0, 1, 1, 1, 2])
+        self.assertEqual(ids[:5], ["project", "github", "tests", "docs", "dashboard"])
+        self.assertEqual([x["depth"] for x in d["tabs"]][:6], [0, 1, 2, 1, 1, 2])
         self.assertTrue(all("installed" in t and "up" in t for t in d["tabs"]))
         self.assertEqual(json.loads(self.req("/api/history?limit=5")[2]), {"events": []})
 

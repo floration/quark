@@ -7,6 +7,8 @@
 - A file tab (a file:// url, or folder + file) without `file` uses <folder>.html, else index.html, else the
   first *.html / *.htm at the folder's top.
 - A missing folder or file -> installed: false, note "not installed".
+- `keepAlive` (bool): the shell starts that local server when the app starts and restarts it whenever it stops
+  (watchdog). `lowPriority` (bool): the shell runs it at low (idle) CPU priority, like `start /low`.
 `up` comes from a background probe (GET http://127.0.0.1:<port>/, 500 ms); requests never wait for it.
 """
 import http.client
@@ -23,13 +25,18 @@ from . import util
 # shell/tabs.default.json (a test checks it).
 DEFAULT_TABS = {"tabs": [
     {"id": "project", "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
-     "start": "py -3 \"%PM%\\server.py\""},
+     "start": "py -3 \"%PM%\\server.py\"", "keepAlive": True},
     {"id": "github", "name": "GitHub Manager", "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767,
-     "folder": "github-manager"},
+     "folder": "github-manager", "start": "py -3 -B server.py --data \"%QUARK%\\github-manager\"", "keepAlive": True,
+     "lowPriority": True},
+    {"id": "tests", "name": "Tests", "parent": "github", "url": "http://127.0.0.1:8775/?embed=1", "port": 8775,
+     "folder": "tests-editor", "start": "py -3 serve.py --port 8775 --no-browser"},
     {"id": "docs", "name": "Claude Manager", "parent": "project", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766,
-     "folder": "docs-manager"},
+     "folder": "docs-manager", "start": "py -3 serve.py --docs \"%QUARK%\\Claude Documents\" --port 8766 --quiet",
+     "keepAlive": True},
     {"id": "dashboard", "name": "Editor Manager", "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
-     "folder": "editor-dashboard", "start": "dashboard.cmd", "childLabel": "Editors"},
+     "folder": "editor-dashboard", "start": "py -3 dashboard.py --quark \"%QUARK%\" --no-browser", "keepAlive": True,
+     "childLabel": "Editors"},
     {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
     {"id": "ui", "name": "UI Editor", "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
     {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
@@ -39,6 +46,10 @@ DEFAULT_TABS = {"tabs": [
     {"id": "bot", "name": "Bot Editor", "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769,
      "folder": "bot-editor", "start": "run.cmd"},
     {"id": "model", "name": "Model Editor", "parent": "dashboard", "folder": "model-editor"},
+    {"id": "gamemode", "name": "Gamemode Editor", "parent": "dashboard", "url": "http://127.0.0.1:8771/?embed=1",
+     "port": 8771, "folder": "gamemode-editor", "start": "py -3 serve.py --port 8771 --no-open"},
+    {"id": "physics", "name": "Physics Editor", "parent": "dashboard", "url": "http://127.0.0.1:8772/?embed=1",
+     "port": 8772, "folder": "physics-editor", "start": "py -3 serve.py --port 8772 --no-open"},
 ]}
 PROBE_INTERVAL = 5.0
 
@@ -97,6 +108,8 @@ def resolve_tab(raw, paths, index=0):
     t["name"] = str(raw.get("name") or raw.get("id") or "Tab %d" % (index + 1))
     t["parent"] = re.sub(r"[^A-Za-z0-9_-]", "-", str(raw["parent"])) if raw.get("parent") else None
     t["childLabel"] = str(raw.get("childLabel") or "")
+    t["keepAlive"] = raw.get("keepAlive") is True
+    t["lowPriority"] = raw.get("lowPriority") is True
     t["depth"] = 0
     folder_rel = expand(raw.get("folder"), paths)
     folder = os.path.normpath(os.path.join(paths.quark, folder_rel)) if folder_rel else None
@@ -260,5 +273,67 @@ def write_default(paths):
         data = util.read_json_file(src)
     except (OSError, ValueError):
         data = DEFAULT_TABS
+    if isinstance(data, dict):
+        data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]))
     util.write_json_atomic(path, data)
     return True
+
+
+# Start commands an older tabs.default.json gave a tab (by id). `upgrade` replaces exactly these (q's own commands stay).
+OLD_DEFAULT_STARTS = {"dashboard": {None, "dashboard.cmd"}, "github": {None}, "docs": {None}}
+# The default tab ids before tabs.json recorded `defaultsSeen` (q's tabs.json may have dropped some on purpose).
+LEGACY_DEFAULT_IDS = ("project", "github", "docs", "dashboard", "sound", "ui", "ui-redesign", "map", "bot", "model")
+
+
+def upgrade(paths):
+    """Bring q's tabs.json up to the current defaults without touching what q changed:
+    - a default tab that is new since this file was written (its id is neither in the file nor in its `defaultsSeen`
+      list) is appended, so a new tool appears after setup; a default tab q removed stays removed;
+    - for a default tab (same id, url, port and folder as the default), a start command that an older default used
+      (or none) becomes the new one, and keepAlive / lowPriority are added when the tab does not set them.
+    `defaultsSeen` (top level, next to `tabs`) lists the default ids already offered. The old file is kept as
+    tabs.json.old. Returns the ids added or changed (empty when nothing changed or the file is missing / unreadable)."""
+    path = paths.pm("tabs.json")
+    try:
+        data = util.read_json_file(path)
+    except (OSError, ValueError):
+        return []
+    if isinstance(data, list):
+        data = {"tabs": data}
+    lst = data.get("tabs") if isinstance(data, dict) else None
+    if not isinstance(lst, list):
+        return []
+    defaults = {d["id"]: d for d in DEFAULT_TABS["tabs"]}
+    seen = data.get("defaultsSeen")
+    seen = set(seen) if isinstance(seen, list) else set(LEGACY_DEFAULT_IDS)
+    have = {t.get("id") for t in lst if isinstance(t, dict)}
+    changed = []
+    for t in lst:
+        d = defaults.get(t.get("id")) if isinstance(t, dict) else None
+        if not d or any(t.get(k) != d.get(k) for k in ("url", "port", "folder")):
+            continue
+        before = dict(t)
+        if "start" in d and t.get("start") != d["start"] and t.get("start") in OLD_DEFAULT_STARTS.get(d["id"], ()):
+            t["start"] = d["start"]
+        for k in ("keepAlive", "lowPriority"):
+            if k in d and k not in t:
+                t[k] = d[k]
+        if t != before:
+            changed.append(t["id"])
+    for d in DEFAULT_TABS["tabs"]:
+        if d["id"] not in have and d["id"] not in seen:
+            lst.append(dict(d))
+            changed.append(d["id"])
+    all_seen = sorted(seen | set(defaults))
+    if changed or data.get("defaultsSeen") != all_seen:
+        data["defaultsSeen"] = all_seen
+        try:
+            with open(path, "rb") as f:
+                old = f.read()
+            if changed:
+                with open(path + ".old", "wb") as f:
+                    f.write(old)
+        except OSError:
+            pass
+        util.write_json_atomic(path, data)
+    return changed

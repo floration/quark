@@ -10,13 +10,14 @@
 // profile; elsewhere: Quark\project-manager):
 //                         <data>\state.json       (window bounds, last tab, last download folder)
 //                         <data>\electron-data\   (Chromium profile: one persist:<id> partition per tab)
-//                         <data>\logs\<id>.log    (output of servers the shell started)
+//                         <data>\logs\<id>.log    (output of servers the shell started, and the watchdog's notes)
 
 const { app, BaseWindow, WebContentsView, Menu, session, shell, ipcMain, dialog, nativeTheme, nativeImage, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { spawn, spawnSync } = require('child_process');
+const os = require('os');
+const { spawn, spawnSync, execFile } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
 
 const IS_WIN = process.platform === 'win32';
@@ -24,6 +25,13 @@ const TABBAR_H = 34;
 const START_TIMEOUT_MS = 20000;
 const PROBE_TIMEOUT_MS = 500;
 const STATUS_POLL_MS = 5000;
+// keepAlive servers (supervisor): started at app start, probed every WATCHDOG_MS, restarted when down. The wait before a
+// restart grows with the restarts in the last FAIL_WINDOW_MS: 10 s, 30 s, 60 s, then every 2 min.
+const WATCHDOG_MS = 10000;
+const RESTART_DELAYS_MS = [10000, 30000, 60000, 120000];
+const FAIL_WINDOW_MS = 5 * 60000;
+const WATCH_PROBE_TIMEOUT_MS = 1500; // (the watchdog is slower to call a busy server dead than the tab probe)
+const LOG_MAX = 4e6;
 const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'media']);
 
 // ---------- paths ----------
@@ -105,7 +113,8 @@ function resolveTab(t, i) {
   const folder = t.folder ? path.resolve(QUARK_DIR, expandVars(t.folder)) : null;
   const tab = { id, name, folder, installed: true, kind: 'file', url: null, port: null, start: null, missing: '',
     parent: t.parent ? String(t.parent).replace(/[^A-Za-z0-9_-]/g, '-') : null,
-    childLabel: t.childLabel ? String(t.childLabel) : '', depth: 0 };
+    childLabel: t.childLabel ? String(t.childLabel) : '', depth: 0,
+    keepAlive: t.keepAlive === true, lowPriority: t.lowPriority === true };
   if (t.url) {
     const url = expandVars(t.url);
     const p = parseURL(url);
@@ -220,10 +229,10 @@ function fixPython(cmd) {
   if (pyMissing === null) pyMissing = spawnSync('where', ['py'], { windowsHide: true }).status !== 0;
   return pyMissing ? cmd.replace(/^\s*py(\.exe)?\s+(-3(\.\d+)?\s+)?/i, 'python ') : cmd;
 }
-function probe(tab) {
+function probe(tab, timeout = PROBE_TIMEOUT_MS) {
   return new Promise((resolve) => {
     if (!tab.probeHost) return resolve(true);
-    const req = http.get({ host: tab.probeHost, port: tab.port, path: '/', timeout: PROBE_TIMEOUT_MS, headers: { 'User-Agent': 'quark-project-shell' } }, (res) => {
+    const req = http.get({ host: tab.probeHost, port: tab.port, path: '/', timeout, headers: { 'User-Agent': 'quark-project-shell' } }, (res) => {
       res.resume();
       resolve(true);
     });
@@ -231,49 +240,101 @@ function probe(tab) {
     req.on('error', () => resolve(false));
   });
 }
-function startServer(tab) {
+function splitCommand(cmd) {
+  // 'py -3 serve.py --docs "C:\a b"' -> ['py', '-3', 'serve.py', '--docs', 'C:\a b'] when the command is one program
+  // with plain arguments (no cmd.exe syntax, balanced quotes, not a .cmd / .bat); else null (it runs through the shell).
+  if (/[&|<>^%]/.test(cmd) || (cmd.split('"').length - 1) % 2) return null;
+  const parts = cmd.match(/(?:"[^"]*"|[^\s"])+/g);
+  if (!parts) return null;
+  const argv = parts.map((p) => p.replace(/"/g, ''));
+  return argv[0] && !/\.(cmd|bat)$/i.test(argv[0]) ? argv : null;
+}
+function lowerPriority(pid) {
+  // PRIORITY_LOW = IDLE_PRIORITY_CLASS on Windows (what `start /low` gives); processes it starts inherit it
+  if (!pid) return;
+  try { os.setPriority(pid, os.constants.priority.PRIORITY_LOW); } catch { /* gone, or not allowed */ }
+}
+const logOpened = new Set(); // tab ids whose log this session already started (later starts append to it)
+function logNote(id, line) {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(path.join(LOG_DIR, id + '.log'), '[' + new Date().toISOString() + '] ' + line + '\n');
+  } catch { /* no log */ }
+}
+function startServer(tab, why) {
   const prev = started.get(tab.id);
   if (prev && !prev.exited) return prev;
   const cmd = fixPython(tab.start);
   const rec = { cmd, child: null, pid: 0, port: tab.port, exited: false, code: null, log: [], at: Date.now() };
   let logStream = null;
-  try { fs.mkdirSync(LOG_DIR, { recursive: true }); logStream = fs.createWriteStream(path.join(LOG_DIR, tab.id + '.log'), { flags: 'w' }); } catch { /* no log */ }
   let logged = 0;
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    const file = path.join(LOG_DIR, tab.id + '.log');
+    let size = 0;
+    if (logOpened.has(tab.id)) { try { size = fs.statSync(file).size; } catch { /* new file */ } }
+    const append = size > 0 && size < LOG_MAX / 2; // first start of the session (or a big log): rewrite it
+    logStream = fs.createWriteStream(file, { flags: append ? 'a' : 'w' });
+    logStream.on('error', () => { logStream = null; });
+    logged = append ? size : 0;
+    logOpened.add(tab.id);
+    logStream.write('[' + new Date().toISOString() + '] start' + (why ? ' (' + why + ')' : '') + ': ' + cmd + '\n');
+  } catch { logStream = null; }
   const keep = (buf) => {
-    if (logStream && logged < 4e6) { logged += buf.length; logStream.write(logged < 4e6 ? buf : '\n[log cut at 4 MB]\n'); }
+    if (logStream && logged < LOG_MAX) { logged += buf.length; logStream.write(logged < LOG_MAX ? buf : '\n[log cut at 4 MB]\n'); }
     const lines = (rec.log.join('\n') + buf.toString()).split(/\r?\n/);
     rec.log = lines.slice(-40);
   };
+  const finish = (code, note) => {
+    if (rec.exited) return;
+    rec.exited = true; rec.code = code;
+    if (logStream) { const s = logStream; logStream = null; s.end('[' + new Date().toISOString() + '] ' + note + '\n'); }
+    updateTabbar();
+    onServerExit(tab.id, rec);
+  };
   try {
-    // shell: cmd.exe /d /s /c "<cmd>" so .cmd files, quoting and relative names (run.cmd) work in the tab's folder.
-    // Windows: not `detached` -- with DETACHED_PROCESS Windows ignores CREATE_NO_WINDOW and console grandchildren
-    // (py.exe -> python.exe) open a visible console. Hidden + piped output keeps every window hidden; the shell
-    // kills the tree with taskkill on close. Elsewhere detached gives a process group to kill.
-    const child = spawn(cmd, {
-      shell: true, cwd: tab.cwd, windowsHide: true, detached: !IS_WIN,
-      stdio: ['ignore', 'pipe', 'pipe'],
+    // Windows: never `detached` and never `start` -- with DETACHED_PROCESS Windows ignores CREATE_NO_WINDOW and
+    // console grandchildren (py.exe -> python.exe) open a visible console. Hidden + piped output keeps every window
+    // hidden; the shell kills the tree with taskkill on close. Elsewhere detached gives a process group to kill.
+    // A lowPriority tab with a plain "program args" command is spawned directly (no cmd.exe), so its priority is
+    // lowered on the program itself before it starts children (py.exe -> python.exe inherits it). Everything else
+    // runs as cmd.exe /d /s /c "<cmd>" so .cmd files, quoting and relative names (run.cmd) work in the tab's folder.
+    const opts = {
+      cwd: tab.cwd, windowsHide: true, detached: !IS_WIN, stdio: ['ignore', 'pipe', 'pipe'],
       env: Object.assign({}, process.env, { QUARK_SHELL: '1', PYTHONUNBUFFERED: '1' }),
-    });
+    };
+    const argv = tab.lowPriority ? splitCommand(cmd) : null;
+    const child = argv ? spawn(argv[0], argv.slice(1), opts) : spawn(cmd, Object.assign({ shell: true }, opts));
     rec.child = child; rec.pid = child.pid;
+    if (tab.lowPriority) lowerPriority(child.pid);
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
-    child.on('error', (e) => { keep(Buffer.from('\n' + e.message + '\n')); rec.exited = true; rec.code = -1; });
-    child.on('exit', (code) => { rec.exited = true; rec.code = code; if (logStream) logStream.end(); updateTabbar(); });
+    child.on('error', (e) => { keep(Buffer.from('\n' + e.message + '\n')); finish(-1, 'failed: ' + e.message); });
+    child.on('exit', (code, signal) => finish(code === null ? (signal || -1) : code, 'exited (code ' + (code === null ? signal : code) + ')'));
   } catch (e) {
     rec.exited = true; rec.code = -1; rec.log = [String(e.message || e)];
+    if (logStream) { logStream.end(String(e.message || e) + '\n'); logStream = null; }
   }
   started.set(tab.id, rec);
   return rec;
 }
-function listeningPid(port) {
-  // Windows only: the pid that listens on <port> (for servers whose start script handed off and exited).
-  const r = spawnSync('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true, encoding: 'utf8' });
-  if (r.status !== 0 || !r.stdout) return 0;
-  for (const line of r.stdout.split(/\r?\n/)) {
+function parseListeningPid(out, port) {
+  for (const line of String(out || '').split(/\r?\n/)) {
     const m = line.trim().split(/\s+/);
     if (m.length >= 5 && /LISTEN/i.test(m[3]) && /[:.](\d+)$/.test(m[1]) && Number(RegExp.$1) === port) return Number(m[4]) || 0;
   }
   return 0;
+}
+function listeningPid(port) {
+  // Windows only: the pid that listens on <port> (for servers whose start script handed off and exited).
+  const r = spawnSync('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true, encoding: 'utf8' });
+  return r.status === 0 ? parseListeningPid(r.stdout, port) : 0;
+}
+function listeningPidAsync(port) {
+  return new Promise((resolve) => {
+    if (!IS_WIN) return resolve(0);
+    execFile('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true, timeout: 5000 }, (err, out) => resolve(err ? 0 : parseListeningPid(out, port)));
+  });
 }
 function killTree(pid) {
   if (!pid) return;
@@ -286,6 +347,8 @@ let stopped = false;
 function stopStartedServers() {
   if (stopped) return;
   stopped = true;
+  clearTimeout(watchTimer);
+  for (const s of sup.values()) clearTimeout(s.timer);
   for (const rec of started.values()) {
     if (!rec.exited) killTree(rec.pid);
     else if (IS_WIN && rec.code === 0 && rec.cameUp && rec.port) {
@@ -294,6 +357,143 @@ function stopStartedServers() {
       if (pid && pid !== process.pid) killTree(pid);
     }
   }
+}
+
+// ---------- starting a server, and the supervisor (keepAlive tabs) ----------
+// One start at a time per tab: ensureStarted() is shared by the tab view (bringUp), the app-start pass and the
+// watchdog. When it ends, a view showing a placeholder ("starting" / "not running") loads the page or shows why not;
+// a loaded page is left alone (the tools' pages poll their server and reconnect by themselves).
+const waiting = new Map(); // tab id -> Promise<{ up, rec }>
+const sup = new Map();     // tab id -> { timer, busy, nextAt, why, attempts: [ms] }  (keepAlive tabs)
+let watchTimer = null;
+const supFor = (id) => { if (!sup.has(id)) sup.set(id, { timer: null, busy: false, nextAt: 0, why: '', attempts: [] }); return sup.get(id); };
+const supervised = (t) => !!(t && t.keepAlive && t.kind === 'server' && t.installed && t.probeHost && t.start);
+const restartPending = (id) => { const s = sup.get(id); return !!(s && (s.timer || s.busy)); };
+
+function ensureStarted(tab, why) {
+  if (waiting.has(tab.id)) return waiting.get(tab.id);
+  const s = sup.get(tab.id);
+  if (s && s.timer) { clearTimeout(s.timer); s.timer = null; s.nextAt = 0; }
+  startingNow.add(tab.id);
+  const e0 = views.get(tab.id);
+  if (e0 && e0.mode === 'down') showStarting(e0);
+  updateTabbar();
+  const p = (async () => {
+    let up = false;
+    let rec = null;
+    try {
+      if (await probe(tab)) up = true; // (came up meanwhile: never start a second copy)
+      else {
+        rec = startServer(tab, why);
+        const t0 = Date.now();
+        while (Date.now() - t0 < START_TIMEOUT_MS && !stopped) {
+          await new Promise((r) => setTimeout(r, 250));
+          if (await probe(tab)) { up = true; break; }
+          if (rec.exited && rec.code !== 0) break; // failed; exit code 0 = handed off to another process, keep waiting
+        }
+        if (up) rec.cameUp = true; // the port was down before the start, so whoever listens now is the server the shell started
+      }
+    } finally {
+      waiting.delete(tab.id);
+      startingNow.delete(tab.id);
+    }
+    if (stopped) return { up, rec };
+    status.set(tab.id, up ? 'up' : 'down');
+    const reason = up ? '' : !rec ? 'It did not start.' : rec.exited ? 'Its start command exited (code ' + rec.code + ').'
+      : 'It did not answer within ' + START_TIMEOUT_MS / 1000 + ' s.';
+    if (!up && rec) logNote(tab.id, 'not up: ' + reason);
+    if (!up && supervised(tab)) {
+      scheduleRestart(tab, !rec ? 'start failed' : rec.exited ? 'start exited, code ' + rec.code : 'no answer within ' + START_TIMEOUT_MS / 1000 + ' s');
+    }
+    if (up && rec && rec.cameUp && tab.lowPriority && IS_WIN) {
+      // (a start that went through cmd.exe: also lower the process that actually listens)
+      listeningPidAsync(tab.port).then((pid) => { if (pid && pid !== process.pid) lowerPriority(pid); });
+    }
+    const e = views.get(tab.id);
+    if (e && !e.view.webContents.isDestroyed() && (e.mode === 'starting' || e.mode === 'down')) {
+      if (up) loadPage(e, e.pendingHash); else showDown(e, reason);
+    }
+    updateTabbar();
+    return { up, rec };
+  })();
+  waiting.set(tab.id, p);
+  return p;
+}
+
+function scheduleRestart(tab, why) {
+  if (stopped || !supervised(tab) || waiting.has(tab.id)) return;
+  const s = supFor(tab.id);
+  if (s.timer || s.busy) return;
+  const now = Date.now();
+  s.attempts = s.attempts.filter((t) => now - t < FAIL_WINDOW_MS);
+  const delay = RESTART_DELAYS_MS[Math.min(s.attempts.length, RESTART_DELAYS_MS.length - 1)];
+  s.nextAt = now + delay; s.why = why;
+  logNote(tab.id, 'watchdog: down (' + why + '); restarting in ' + delay / 1000 + ' s');
+  s.timer = setTimeout(() => restartNow(tab.id), delay);
+  const e = views.get(tab.id);
+  if (e && e.mode === 'down') showDown(e, e.downReason);
+  updateTabbar();
+}
+async function restartNow(id) {
+  const s = supFor(id);
+  s.timer = null; s.nextAt = 0;
+  const tab = tabById(id);
+  if (stopped || !supervised(tab) || waiting.has(id)) return;
+  s.busy = true;
+  try {
+    if (await probe(tab, WATCH_PROBE_TIMEOUT_MS)) { status.set(id, 'up'); logNote(id, 'watchdog: it is answering again; no restart'); return; }
+    const rec = started.get(id);
+    if (rec && !rec.exited) {
+      // ours, alive, but not answering (hung): stop it first so the new one can take the port
+      logNote(id, 'watchdog: pid ' + rec.pid + ' is not answering; stopping it');
+      killTree(rec.pid);
+      for (let i = 0; i < 20 && !rec.exited; i++) await new Promise((r) => setTimeout(r, 150));
+      if (!rec.exited) { rec.exited = true; rec.code = -1; }
+    }
+  } finally { s.busy = false; }
+  if (stopped || waiting.has(id)) return;
+  s.attempts.push(Date.now());
+  ensureStarted(tab, 'watchdog restart ' + s.attempts.length + ' in 5 min (' + s.why + ')');
+}
+async function onServerExit(id, rec) {
+  // a supervised server the shell started has exited: restart it (after the backoff) unless something else answers
+  if (stopped || waiting.has(id) || restartPending(id)) return; // (a start being waited for handles its own failure)
+  const tab = tabById(id);
+  if (!supervised(tab) || started.get(id) !== rec) return;
+  if (await probe(tab)) return; // handed off to another process that is serving
+  status.set(id, 'down');
+  scheduleRestart(tab, 'its process exited (code ' + rec.code + ')');
+}
+async function watchdog() {
+  clearTimeout(watchTimer);
+  if (stopped) return;
+  try {
+    const list = tabs.filter((t) => supervised(t) && !waiting.has(t.id) && !restartPending(t.id));
+    // (a miss is probed again at once: one slow answer is not a dead server)
+    const res = await Promise.all(list.map(async (t) => (await probe(t, WATCH_PROBE_TIMEOUT_MS)) || probe(t, WATCH_PROBE_TIMEOUT_MS)));
+    let changed = false;
+    list.forEach((t, i) => {
+      if (waiting.has(t.id) || restartPending(t.id)) return;
+      const st = res[i] ? 'up' : 'down';
+      if (status.get(t.id) !== st) { status.set(t.id, st); changed = true; }
+      if (!res[i]) scheduleRestart(t, 'not answering on port ' + t.port);
+      else { const e = views.get(t.id); if (e && e.mode === 'down') loadPage(e, e.pendingHash); }
+    });
+    if (changed) updateTabbar();
+  } finally {
+    if (!stopped) watchTimer = setTimeout(watchdog, WATCHDOG_MS);
+  }
+}
+async function startKeepAlive() {
+  // at app start: every keepAlive server that is down starts now (in parallel, hidden), not when its tab is shown
+  const list = tabs.filter((t) => supervised(t) && !waiting.has(t.id));
+  await Promise.all(list.map(async (t) => {
+    if (await probe(t)) { status.set(t.id, 'up'); return; }
+    if (!stopped && !waiting.has(t.id)) ensureStarted(t, 'app start');
+  }));
+  updateTabbar();
+  clearTimeout(watchTimer);
+  if (!stopped) watchTimer = setTimeout(watchdog, WATCHDOG_MS);
 }
 
 // ---------- placeholder page (shown in the tab's own view) ----------
@@ -305,6 +505,9 @@ function placeholderURL(tab, mode, info = {}) {
   if (mode === 'down') {
     lines.push('Nothing answers on ' + tab.url.replace(/\?.*$/, '') + '.');
     if (info.reason) lines.push(info.reason);
+    const s = sup.get(tab.id);
+    if (supervised(tab) && s && s.nextAt) lines.push('It restarts by itself in about ' + Math.max(1, Math.round((s.nextAt - Date.now()) / 1000)) + ' s (log: ' + path.join(LOG_DIR, tab.id + '.log') + ').');
+    else if (supervised(tab)) lines.push('The shell keeps it running: it is checked every ' + WATCHDOG_MS / 1000 + ' s and restarted when down.');
   }
   if (mode === 'missing') lines.push('Not found: ' + tab.missing + '.', 'Run setup.cmd again, or fix this tab in ' + tabsFile + ' (Ctrl+Shift+R reloads the tab list).');
   if (mode === 'crashed') lines.push('The page stopped (' + (info.reason || 'renderer gone') + ').');
@@ -356,7 +559,8 @@ function tabStatus(tab) {
   if (!tab.installed) return 'missing';
   if (startingNow.has(tab.id)) return 'starting';
   if (tab.kind === 'file') return 'up';
-  return status.get(tab.id) || 'unknown';
+  const st = status.get(tab.id) || 'unknown';
+  return st !== 'up' && restartPending(tab.id) ? 'restarting' : st; // (down; the watchdog restarts it soon)
 }
 const tabbarTabs = () => tabs.map((t) => ({
   id: t.id, name: t.name, kind: t.kind, status: tabStatus(t), missing: t.missing, parent: t.parent, depth: t.depth, childLabel: t.childLabel,
@@ -500,8 +704,16 @@ function loadPage(entry, hash) {
 }
 function showDown(entry, reason) {
   entry.mode = 'down';
+  entry.downReason = reason || '';
   const rec = started.get(entry.tab.id);
   entry.view.webContents.loadURL(placeholderURL(entry.tab, 'down', { reason, log: rec && rec.log })).catch(() => {});
+}
+function showStarting(entry) {
+  if (entry.mode === 'starting') return;
+  entry.mode = 'starting';
+  const rec = started.get(entry.tab.id);
+  const elapsed = rec && !rec.exited ? Date.now() - rec.at : 0;
+  entry.view.webContents.loadURL(placeholderURL(entry.tab, 'starting', { elapsed })).catch(() => {});
 }
 
 async function bringUp(entry, hash, forceStart) {
@@ -512,31 +724,17 @@ async function bringUp(entry, hash, forceStart) {
     return;
   }
   if (tab.kind !== 'server' || !tab.probeHost) return loadPage(entry, hash);
-  if (startingNow.has(tab.id)) return; // a start is already being waited for
-  if (await probe(tab)) { status.set(tab.id, 'up'); updateTabbar(); return loadPage(entry, hash); }
+  if (hash) entry.pendingHash = hash;
+  // a start is already being waited for (app start, watchdog, another click): ensureStarted loads this view when it ends
+  if (waiting.has(tab.id)) { showStarting(entry); updateTabbar(); return; }
+  if (await probe(tab)) { status.set(tab.id, 'up'); updateTabbar(); return loadPage(entry, entry.pendingHash); }
+  if (waiting.has(tab.id)) { showStarting(entry); return; }
   status.set(tab.id, 'down');
   if (!tab.start) { updateTabbar(); return showDown(entry, 'No start command was found for it.'); }
   const prev = started.get(tab.id);
   if (prev && prev.exited && !forceStart && prev.code !== 0) { updateTabbar(); return showDown(entry, 'Its start command exited (code ' + prev.code + ').'); }
-  const rec = startServer(tab);
-  startingNow.add(tab.id);
-  entry.mode = 'starting';
-  entry.view.webContents.loadURL(placeholderURL(tab, 'starting')).catch(() => {});
-  updateTabbar();
-  const t0 = Date.now();
-  let up = false;
-  while (Date.now() - t0 < START_TIMEOUT_MS && !stopped) {
-    await new Promise((r) => setTimeout(r, 250));
-    if (await probe(tab)) { up = true; break; }
-    if (rec.exited && rec.code !== 0) break; // failed; exit code 0 = handed off to another process, keep waiting
-  }
-  startingNow.delete(tab.id);
-  if (entry.view.webContents.isDestroyed()) return;
-  status.set(tab.id, up ? 'up' : 'down');
-  updateTabbar();
-  if (up) rec.cameUp = true; // the port was down before the start, so whoever listens now is the server the shell started
-  if (up) loadPage(entry, hash || entry.pendingHash);
-  else showDown(entry, rec.exited ? 'Its start command exited (code ' + rec.code + ').' : 'It did not answer within ' + START_TIMEOUT_MS / 1000 + ' s.');
+  showStarting(entry);
+  ensureStarted(tab, forceStart ? 'Start pressed' : 'tab opened');
 }
 
 function setHash(entry, hash) {
@@ -595,6 +793,7 @@ function reloadTabList() {
   const next = tabById(keepActive) ? keepActive : (tabs[0] && tabs[0].id);
   if (next) openTab(next); else updateTabbar();
   pollStatus();
+  startKeepAlive(); // (a keepAlive tab that is new or changed starts now)
 }
 
 function cycle(dir) {
@@ -709,6 +908,7 @@ function createWindow() {
     if (SELFTEST_SCRIPT) runSelftest(SELFTEST_SCRIPT);
   });
   tabbar.webContents.loadFile(path.join(SHELL_DIR, 'tabbar.html'));
+  startKeepAlive();
 }
 
 // ---------- IPC ----------
@@ -752,7 +952,8 @@ async function selftestShot(file) {
 }
 function runSelftest(file) {
   try {
-    require(path.resolve(file))({ app, win: () => win, tabbar: () => tabbar, views, tabs: () => tabs, openTab, reloadTabList, reloadActive, status, started, activeId: () => activeId, onKey });
+    require(path.resolve(file))({ app, win: () => win, tabbar: () => tabbar, views, tabs: () => tabs, openTab, reloadTabList, reloadActive, status, started, activeId: () => activeId, onKey,
+      sup, waiting, ensureStarted, watchdog, splitCommand });
   } catch (err) { console.error('selftest failed: ' + err.stack); app.exit(1); }
 }
 

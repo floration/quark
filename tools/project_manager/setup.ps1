@@ -1,10 +1,12 @@
 # Installs (or updates) the Supervisor Board (the Quark project manager) into Quark\project-manager\ (tools/project_manager/SPEC.md section 4).
 #   setup.cmd                       (double-click; runs this)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 [-Quark C:\Users\user\Desktop\Quark] [-NoElectron]
-# Copies server.py, pm\, web\, shell\, project-manager.cmd and quark.ico; writes tabs.json / config.json only when
+# Copies server.py, pm\, web\, shell\, project-manager.cmd, project-manager-hidden.vbs and quark.ico; writes tabs.json / config.json only when
 # missing (q's own tabs, config, history and window state are never touched); downloads the official Electron zip
 # (latest stable, verified against that release's SHASUMS256.txt) unless it is there or -NoElectron; makes the desktop
-# shortcut "Quark Project". Re-running it updates the code. PowerShell 5.1 compatible, ASCII only.
+# shortcut "Quark Project" (electron.exe directly, or wscript + project-manager-hidden.vbs without Electron: no console
+# window either way). Re-running it updates the code (and brings tabs.json's default tabs up to date, keeping
+# tabs.json.old). PowerShell 5.1 compatible, ASCII only.
 param(
   [string]$Quark = '',
   [switch]$NoElectron
@@ -30,6 +32,7 @@ Write-Host "Installing the Supervisor Board into $Dest"
 # ---- code (replaced every time) --------------------------------------------------------------------------------
 Copy-Item -Force (Join-Path $Src 'server.py') $Dest
 Copy-Item -Force (Join-Path $Src 'project-manager.cmd') $Dest
+Copy-Item -Force (Join-Path $Src 'project-manager-hidden.vbs') $Dest
 foreach ($dir in 'pm', 'web', 'shell') {
   $from = Join-Path $Src $dir
   $to = Join-Path $Dest $dir
@@ -116,10 +119,19 @@ if ($NoElectron) {
 $desktop = [Environment]::GetFolderPath('Desktop')
 $ws = New-Object -ComObject WScript.Shell
 $lnk = $ws.CreateShortcut((Join-Path $desktop 'Quark Project.lnk'))
-$lnk.TargetPath = Join-Path $Dest 'project-manager.cmd'
+$electronExe = Join-Path $electronDir 'electron.exe'
+if ((-not $NoElectron) -and (Test-Path $electronExe)) {
+  # no cmd at all: the shell starts (hidden) and keeps alive the Supervisor Board server and the managers itself
+  $lnk.TargetPath = $electronExe
+  $lnk.Arguments = '"' + (Join-Path $Dest 'shell') + '"'
+} else {
+  # no Electron: wscript runs project-manager.cmd --edge with window style 0 (no console window)
+  $lnk.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+  $lnk.Arguments = '"' + (Join-Path $Dest 'project-manager-hidden.vbs') + '"'
+}
 $lnk.WorkingDirectory = $Dest
 $lnk.Description = 'Quark Project (Supervisor Board)'
-$lnk.WindowStyle = 7   # (minimized: the .cmd only starts things and exits)
+$lnk.WindowStyle = 1   # (normal: the target is a GUI program, nothing shows a console)
 if (Test-Path (Join-Path $Dest 'quark.ico')) { $lnk.IconLocation = (Join-Path $Dest 'quark.ico') + ',0' }
 $lnk.Save()
 Write-Host "Desktop shortcut: $(Join-Path $desktop 'Quark Project.lnk')"

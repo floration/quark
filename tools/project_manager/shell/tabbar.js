@@ -4,7 +4,7 @@
   const api = window.quarkTabbar;
   const tabsEl = document.getElementById('tabs');
   const errEl = document.getElementById('err');
-  const label = { up: 'running', down: 'not running', starting: 'starting', missing: 'not installed', unknown: 'checking' };
+  const label = { up: 'running', down: 'not running', starting: 'starting', restarting: 'stopped, restarting by itself shortly', missing: 'not installed', unknown: 'checking' };
   let last = '';
 
   // Ctrl+1..8 = tabs 1..8, Ctrl+9 = the last tab (as in main.js)

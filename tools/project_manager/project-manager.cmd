@@ -4,6 +4,8 @@ rem   project-manager.cmd          Electron (electron\electron.exe, put there by
 rem   project-manager.cmd --edge   Edge (else Chrome) as an --app window with its own profile in
 rem                                %LOCALAPPDATA%\QuarkProject\edge-profile (no Electron needed)
 rem Installed by tools\project_manager\setup.ps1 into Quark\project-manager\ (SPEC.md section 4).
+rem The desktop shortcut does not use this file (no console window): it starts electron\electron.exe directly, or
+rem without Electron runs project-manager-hidden.vbs (this file with --edge, hidden).
 setlocal EnableExtensions
 set "PM=%~dp0"
 set "URL=http://127.0.0.1:8768/"
@@ -23,8 +25,9 @@ goto :started
 :start_py
 start "Quark PM server" /min py -3 "%PM%server.py"
 :started
-rem (Electron waits for the server itself; the Edge window needs the page now: wait up to about 10 s)
-if "%MODE%"=="edge" call :wait
+rem (wait up to about 10 s: the Edge window needs the page now, and Electron would otherwise start a second copy
+rem  of the server if it looked before this one was listening)
+call :wait
 
 :open
 if "%MODE%"=="edge" goto :edge
