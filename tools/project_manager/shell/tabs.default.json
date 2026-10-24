@@ -11,7 +11,6 @@
    "start": "py -3 dashboard.py --quark \"%QUARK%\" --no-browser", "keepAlive": true, "childLabel": "Editors"},
   {"id": "sound",       "name": "Sound Editor",     "parent": "dashboard", "folder": "sound-editor",  "file": "sound-editor.html"},
   {"id": "ui",          "name": "UI Editor",        "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
-  {"id": "ui-redesign", "name": "UI Redesign",      "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer-redesign.html"},
   {"id": "map",         "name": "Map Editor",       "parent": "dashboard", "url": "http://127.0.0.1:8770/", "port": 8770, "folder": "map-editor",
    "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": true},
   {"id": "bot",         "name": "Bot Editor",       "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769, "folder": "bot-editor",
