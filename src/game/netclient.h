@@ -224,6 +224,9 @@ private:
     MoveState predicted_[kCmdRing];        // our predicted state after each command
     uint32_t predictedSeq_[kCmdRing] = {};
     uint32_t lastReplay_ = 0;
+    bool hookProbe(const UserCmd& cmd, HookProbe& probe);   // the enemies a grapple in cmd can catch (F20)
+    PlayerArray probePlayers_;
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; } hookCatch_;   // the last predicted catch, for replays
     uint8_t moveEv_ = 0;
     float moveLand_ = 0;
     static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)

@@ -436,6 +436,53 @@ static void testRefillPrediction(uint16_t port) {
     s.stop();
 }
 
+// F20: a grapple fired at an enemy you see is predicted latched onto them (the server's own pick), not on the wall behind.
+static void testHookPrediction(uint16_t port) {
+    printf("grapple on a player predicted\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "hooker");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, cls, 2.0, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    CHECK(ia >= 0 && ib >= 0);
+    if (ia < 0 || ib < 0) { s.stop(); return; }
+    // an open direction from a's spot: b stands 6 m along it
+    const Vec3 pa = s.players_[ia].move.pos, eye = pa + Vec3(0, kEyeHeight, 0);
+    float yaw = 0;
+    bool found = false;
+    for (int k = 0; k < 16 && !found; k++) {
+        yaw = k * PI / 8;
+        Vec3 d = angleForward(yaw, 0);
+        found = s.map_.raycast(eye, d, 12) < 0 && s.map_.raycast(pa + d * 6 + Vec3(0, 0.5f, 0), Vec3(0, -1, 0), 1.0f) >= 0;
+    }
+    CHECK(found);
+    const Vec3 pb = pa + angleForward(yaw, 0) * 6;
+    const float pitch = std::atan2(pb.y + 0.9f - eye.y, 6.0f);
+    auto place = [&] { s.players_[ib].move.pos = pb; s.players_[ib].move.vel = {}; s.players_[ia].move.pos = pa; s.players_[ia].move.vel = {}; };
+    for (int k = 0; k < 40; k++) { place(); pump(s, cls, 0.01, [&](int i) { UserCmd c; if (i == 0) { c.yaw = yaw; c.pitch = pitch; } return c; }); }
+    bool caught = false;
+    uint32_t replays = 0;
+    double end = timeNow() + 0.5;
+    while (timeNow() < end && !caught) {
+        place();
+        pump(s, cls, 0.002, [&](int i) { UserCmd c; if (i == 0) { c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_GRAPPLE; } return c; });
+        caught = (a.predicted().flags & MF_HOOKED) != 0;
+    }
+    const uint8_t predicted = a.predicted().hookTarget;
+    pump(s, cls, 0.1, [&](int i) { UserCmd c; if (i == 0) { c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_GRAPPLE; } return c; });
+    replays = a.lastReplayCount();
+    printf("  predicted hook target %d (want %d), server %d, last replay %u\n", (int)predicted, ib + 1, (int)s.players_[ia].move.hookTarget, replays);
+    CHECK(caught && predicted == ib + 1 && s.players_[ia].move.hookTarget == ib + 1);
+    s.stop();
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -7236,7 +7283,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include "demo.h"
+#include "gamemodes.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -33,6 +34,7 @@ void NetClient::resetPrediction() {
     lastReplay_ = 0;
     havePendingOffset_ = reconcilePending_ = false;
     moveEv_ = 0; moveLand_ = 0;
+    hookCatch_ = HookCatch();
     remoteEvHead_ = remoteEvTail_;   // (another server's or demo's clock)
 }
 
@@ -472,6 +474,35 @@ static bool sameCharges(const MoveState& a, const MoveState& b) {
     return true;
 }
 
+// The players a grapple fired in `cmd` could catch, as Server::grappleTargets picks them, where you see them (render
+// time: the server rewinds to it). Only for a command that can fire the hook (rare), so the interpolation costs nothing
+// the rest of the time. What the client can't know (a custom rule) stays the server's word: a correction, as before.
+bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
+    probe.n = 0;
+    const MoveState& m = pred_;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
+    if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
+    const ModeState& ms = mode();
+    if (ms.mode == MODE_RACE || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
+    const PlayerSnap* me = findPlayer(clientId_);
+    if (!me) return false;
+    interpolatedPlayers(probePlayers_);
+    uint32_t held = 0;   // players someone else's grapple holds already
+    for (const InterpPlayer& ip : probePlayers_)
+        if (ip.valid && ip.snap.id != clientId_ && ip.snap.hooked >= 2 && ip.snap.hooked - 2 < kMaxPlayers) held |= 1u << (ip.snap.hooked - 2);
+    const float scale = bodyScale();
+    for (int i = 0; i < kMaxPlayers && probe.n < HookProbe::kMax; i++) {
+        const InterpPlayer& ip = probePlayers_[i];
+        const PlayerSnap& q = ip.snap;
+        if (!ip.valid || i == clientId_ || !(q.flags & PS_ALIVE) || (q.flags & PS_SPECTATOR) || (held >> i & 1)) continue;
+        if (modeIsTeamBased(ms.mode) && q.team() == me->team()) continue;
+        if (isItMode(ms.mode) && ((q.flags & PS_HASBOMB) != 0) == ((me->flags & PS_HASBOMB) != 0)) continue;
+        probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
+        probe.id[probe.n++] = (uint8_t)i;
+    }
+    return probe.n > 0;
+}
+
 void NetClient::reconcile(const Snapshot& s) {
     // The payload cart is solid: mirror the server's collision box so prediction agrees (at the cart's place on
     // the track, which runs from the other end when team B attacks an unstaged map: Map::cartTrack, as the server).
@@ -507,7 +538,11 @@ void NetClient::reconcile(const Snapshot& s) {
             lastReplay_++;
             if (c.seq != seq) continue;
             predPrev_ = pred_;
-            pmove(pred_, c, map_);
+            if (hookCatch_.seq == seq) {   // (the command whose grapple caught a player: that player again)
+                HookProbe probe;
+                probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id;
+                pmove(pred_, c, map_, &probe);
+            } else pmove(pred_, c, map_);
             predicted_[seq % kCmdRing] = pred_;
             predictedSeq_[seq % kCmdRing] = seq;
         }
@@ -542,7 +577,11 @@ void NetClient::tick(UserCmd cmd) {
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
     if (selfAlive()) {
-        pmove(pred_, cmd, map_);
+        HookProbe probe;   // a grapple this command may fire: the enemies you see can catch it, as on the server (F20)
+        if (hookProbe(cmd, probe)) {
+            pmove(pred_, cmd, map_, &probe);
+            if (probe.hit >= 0) { hookCatch_.seq = cmd.seq; hookCatch_.box = probe.box[probe.hit]; hookCatch_.id = probe.id[probe.hit]; }
+        } else pmove(pred_, cmd, map_);
         moveEv_ |= pred_.events;
         moveLand_ = std::max(moveLand_, pred_.landSpeed);
     }
