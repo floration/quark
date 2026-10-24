@@ -10,7 +10,7 @@ export const ACTIONS = ["goto", "fallback", "seek", "evade", "pass"];
 
 const COMMON = { now: "f64", dt: "f32", mode: "mode", level: "int", myId: "int", health: "f32", itMode: "bool" };
 const OBJ_SENSORS = { checkpointsLeft: "bool", hasHill: "bool", hasCart: "bool", pointActive: "bool", bombPlanted: "bool", bombDropped: "bool",
-    bombCarried: "bool", attacker: "bool", carrierIsMe: "bool", carrierAlive: "bool", navReady: "bool", it: "bool", siteCount: "int" };
+    bombCarried: "bool", attacker: "bool", carrierIsMe: "bool", carrierAlive: "bool", navReady: "bool", it: "bool", siteCount: "int", teamRank: "int" };
 
 export let CATALOG = {
     common: COMMON,

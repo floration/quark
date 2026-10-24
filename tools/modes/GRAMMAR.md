@@ -234,12 +234,12 @@ slot sees the fields (section 6); its arguments are names.
 
 Read-only fields: `now dt phase roundNo phaseEnd liveSince roundStartTime lastProgress teams ranked tickRate
 cfg.timeLimit cfg.scoreLimit cfg.roundsToWin hasHill hasCart siteCount pointCount checkpointCount hud.roundsToWin
-bomb.state bomb.carrier bomb.acting bomb.timer cart.dist cart.length cart.checkpoint point.index point.capture`.
+bomb.state bomb.carrier bomb.acting bomb.timer cart.dist cart.length cart.checkpoint cart.checkpointCount point.index point.capture stagedSpawns`.
 Writable: `attackers hud.clock hud.overtime hud.contested hud.drain hud.target hud.owner`.
 
 Arrays (`a[i]`): per player `score objTime it out found sought` (writable), `kills deaths freezeUntil
-race.checkpoint race.finished` (read-only); per team `teamScore cart.best cart.completed` (writable), `cart.near`
-(read-only). An index out of range reads 0 and writes nothing.
+race.checkpoint race.finished` (read-only); per team `teamScore cart.best cart.completed` (writable), `cart.near
+cart.bestTime` (read-only). An index out of range reads 0 and writes nothing.
 
 Actions: `addScore(p, n)`, `addTeamScore(t, n)`, `endRound(winner, text...)`, `endRoundNoScore(winner, text...)`,
 `endRoundText(text...)`, `endMatch(winner, text...)`, `announce(text...)` (at most 4 a second: past that dropped,
@@ -271,7 +271,8 @@ warned about (the HUD won't show it and bots won't play it). An object's params 
 defaults. What each step does: `exportmode`'s catalog (`actions[].doc`). Notes: `bombStep` doesn't announce the
 plant (slot plant does); `pointStep()` is true when a point was taken this tick or there's no point left to attack;
 `cart.near[t]` is set by the last `cartStep()` / `neutralCartStep()`; `cart.best` / `cart.completed` are the
-payload and multi point progress (bestProgress_ / completeTime_).
+payload and multi point progress (bestProgress_ / completeTime_); `cart.bestTime` is when the attack reached its
+`cart.best` (bestTime_, set by the steps: a level attack goes to the sooner one).
 
 ## 8. Merging, native slots, limits
 

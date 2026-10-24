@@ -63,6 +63,8 @@ struct ModeParams {
 constexpr ModeParams builtinModeParamsFor(int mode) {
     ModeParams p;
     p.respawnTime = modeRespawnDelay(mode);
+    // 1v1, duel and tourney: rounds are one kill each way, so the round end is shorter (T22: 4 s was a large share)
+    if (mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY) p.roundEndTime = 2.5f;
     switch (mode) {
         case MODE_VS: p.rounds = 5; break;
         case MODE_DUEL: p.rounds = 11; break;          // first to 11 lives

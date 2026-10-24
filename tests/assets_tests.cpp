@@ -1032,6 +1032,31 @@ static void testDevices() {
     a.setOutputDevice("");
 }
 
+// X8: a sound behind you is up to 3 dB quieter and duller (a soft low-pass) than the same sound in front.
+static void testBehindSound() {
+    printf("audio: sounds behind you quieter and duller\n");
+    auto measure = [](float z, double* hi) {
+        Audio a;
+        a.startOffline();
+        a.setListener({0, 0, 0}, 0);   // (looking down -z)
+        a.play3D(SND_RIFLE, {0, 0, z}, 1.0f);
+        std::vector<int16_t> out(1024);
+        double e = 0, d = 0;
+        float prev = 0;
+        for (int k = 0; k < 16; k++) {
+            a.mix(out.data(), 512);
+            for (int i = 0; i < 512; i++) { float x = out[i * 2] / 32768.0f; e += x * x; d += (x - prev) * (x - prev); prev = x; }
+        }
+        a.stop();
+        *hi = d / std::max(e, 1e-12);   // (high frequencies: the share of the energy in sample-to-sample change)
+        return std::sqrt(e);
+    };
+    double hiF, hiB;
+    const double front = measure(-5, &hiF), back = measure(5, &hiB);
+    printf("  behind / in front: level %.2f (%.1f dB), high frequencies x%.2f\n", back / front, 20 * std::log10(back / std::max(front, 1e-12)), hiB / std::max(hiF, 1e-12));
+    ACHECK(front > 0 && back < front * 0.8 && back > front * 0.5 && hiB < hiF * 0.8);
+}
+
 // Every UI font fits its line by itself (textfit.h): each built-in's ink, with the outline, stays inside the line box
 // once its fit scale is applied (Rubik, which defines the box, at 1); and a long label in a narrow box is fitted by
 // tracking first (no two letters' ink touching, at most 15% tighter), then size, then "..." (Rubik and a pixel font).
@@ -1129,6 +1154,7 @@ int assetTests() {
     testCategoryVolumes();
     testQuips();
     testDevices();
+    testBehindSound();
     testOverrides();
     testSoundLevels();
     testIconSource();

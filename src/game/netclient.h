@@ -67,6 +67,17 @@ public:
     void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
     Vec3 visualPos_;
     bool visualOk_ = false;
+    // What your predicted movement did (ME_*) in the ticks since the last call, and the hardest landing's speed: your
+    // jump / land / dash sounds play from it (state compares once a frame missed a bhop's land + jump in one tick)
+    uint8_t takeMoveEvents(float* landSpeed) { uint8_t e = moveEv_; *landSpeed = moveLand_; moveEv_ = 0; moveLand_ = 0; return e; }
+    // Everyone else's movement events (PlayerSnap::keys' KEY_EV_* bits), each once, in snapshot order: the next one due by
+    // server time `upTo` (render time: when that player is drawn there). False: none due.
+    struct RemoteMoveEvent { double time; uint8_t id; uint16_t ev; };
+    bool nextRemoteMoveEvent(double upTo, RemoteMoveEvent* out) {
+        if (remoteEvHead_ == remoteEvTail_ || remoteEv_[remoteEvHead_ % kRemoteEvRing].time > upTo) return false;
+        *out = remoteEv_[remoteEvHead_++ % kRemoteEvRing];
+        return true;
+    }
     bool selfAlive() const;
     int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
     int selfWeapon() const;
@@ -135,6 +146,7 @@ private:
     Snapshot recPrev_, recCur_;
     std::vector<uint8_t> recBuf_;
     bool recHavePrev_ = false;
+    uint16_t recMoveEv_[kMaxPlayers] = {};   // KEY_EV_* bits since the last recorded snapshot
     std::vector<GameEvent> recEvents_;
     struct Playback {
         bool active = false;
@@ -212,6 +224,14 @@ private:
     MoveState predicted_[kCmdRing];        // our predicted state after each command
     uint32_t predictedSeq_[kCmdRing] = {};
     uint32_t lastReplay_ = 0;
+    bool hookProbe(const UserCmd& cmd, HookProbe& probe);   // the enemies a grapple in cmd can catch (F20)
+    PlayerArray probePlayers_;
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; } hookCatch_;   // the last predicted catch, for replays
+    uint8_t moveEv_ = 0;
+    float moveLand_ = 0;
+    static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)
+    RemoteMoveEvent remoteEv_[kRemoteEvRing] = {};
+    uint32_t remoteEvHead_ = 0, remoteEvTail_ = 0;
     void resetPrediction();             // new connection or demo: none of the old commands apply
     uint32_t lossExpected_ = 0, lossReceived_ = 0;
     uint8_t lossPct_ = 0;

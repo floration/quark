@@ -26,6 +26,7 @@
 #include "../src/client/lightmap.h"
 #include "../src/client/hudclock.h"
 #include "../src/client/weaponpredict.h"
+#include "../src/client/clientfeel.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -220,6 +221,325 @@ static void testSleepPrecision() {
     CHECK(ms < 20 * 5.0);
 }
 
+// The feel fixes' client sound rules (clientfeel.h).
+static void testFeelSounds() {
+    printf("feel sounds\n");
+    {   // F3: your hurt sound once per 0.15 s at most, louder for more damage; the laser's hits every 10 ms add up
+        HurtSoundGate g;
+        int plays = 0;
+        float loudest = 0;
+        for (int ms = 0; ms < 1000; ms += 10) { float v = g.frame(ms / 1000.0, 3); if (v > 0) { plays++; loudest = std::max(loudest, v); } }
+        printf("  laser for 1 s: %d hurt sounds (one per hit was 100)\n", plays);
+        CHECK(plays >= 6 && plays <= 7);
+        CHECK(loudest > HurtSoundGate::volumeFor(3));   // (the 15 damage of a gap, not one hit's 3)
+        HurtSoundGate h;
+        CHECK(h.frame(0, 10) > 0 && h.frame(0.05, 0) == 0 && h.frame(0.16, 0) == 0);   // nothing pending: silent
+        CHECK(HurtSoundGate::volumeFor(50) > HurtSoundGate::volumeFor(10) && HurtSoundGate::volumeFor(200) <= 1.0f);
+        CHECK(h.frame(0.2, 5) > 0);   // a fresh hit after the gap: at once
+    }
+    {   // F8: movement reports what each command did, so sounds don't depend on what a frame's state compare sees
+        Map m;
+        std::string err;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nspawn any 0 0 0\n", &err));
+        auto settle = [&](MoveState& q) { q = MoveState(); q.pos = {0, 0.5f, 0}; for (int i = 0; i < 400; i++) pmove(q, UserCmd(), m); CHECK(q.flags & MF_ONGROUND); };
+        MoveState q;
+        // a bhop: falling onto the floor with jump held bounces straight off it in one step: a landing AND a jump
+        settle(q);
+        q.pos.y = 0.004f; q.vel = {6, -12, 0}; q.flags = MF_JUMPHELD;
+        UserCmd j; j.msec = 1; j.buttons = BTN_JUMP;
+        pmove(q, j, m);
+        CHECK((q.events & (ME_LAND | ME_JUMP)) == (ME_LAND | ME_JUMP) && q.landSpeed > 11.9f && q.vel.y > 0);
+        pmove(q, j, m);
+        CHECK(q.events == 0);   // (each call reports its own)
+        // jump and dash pressed together on the floor: the dash and its dash jump in one command (it was silent)
+        settle(q);
+        UserCmd d; d.msec = 8; d.forward = 127; d.buttons = BTN_JUMP | BTN_DASH;
+        pmove(q, d, m);
+        CHECK((q.events & ME_DASH) && (q.events & ME_SUPER) && !(q.events & ME_HYPER));
+        // the same aimed down: a hyper
+        settle(q);
+        d.pitch = -0.8f;
+        pmove(q, d, m);
+        CHECK((q.events & ME_DASH) && (q.events & ME_HYPER) && !(q.events & ME_SUPER));
+        // walking: nothing
+        settle(q);
+        UserCmd w; w.msec = 8; w.forward = 127;
+        uint8_t any = 0;
+        for (int i = 0; i < 50; i++) { pmove(q, w, m); any |= q.events; }
+        CHECK(any == 0);
+    }
+}
+
+// X2: everyone else's jumps, landings and dashes reach the other clients (PlayerSnap::keys' KEY_EV_* bits), once each.
+static void testRemoteMoveSounds(uint16_t port) {
+    printf("remote movement sounds\n");
+    auto idle = [](int) { return UserCmd(); };
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "hopper");
+    b.connect("127.0.0.1:" + std::to_string(port), "listener");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.0, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    CHECK(ia >= 0 && ib >= 0 && s.players_[ia].alive && s.players_[ib].alive);
+    if (ia < 0 || ib < 0) { s.stop(); return; }
+    s.players_[ib].move.pos = s.players_[ia].move.pos;   // (side by side: in sight of each other)
+    pump(s, cls, 0.5, idle);
+    NetClient::RemoteMoveEvent e;
+    while (b.nextRemoteMoveEvent(1e18, &e)) {}
+    // hop for 2 s, then a dash
+    pump(s, cls, 2.0, [&](int i) { UserCmd c; if (i == 0) c.buttons = BTN_JUMP; return c; });
+    pump(s, cls, 0.4, idle);
+    pump(s, cls, 0.3, [&](int i) { UserCmd c; if (i == 0) { c.buttons = BTN_DASH; c.forward = 127; } return c; });
+    pump(s, cls, 0.3, idle);
+    int jumps = 0, lands = 0, dashes = 0, mine = 0;
+    while (b.nextRemoteMoveEvent(1e18, &e)) {
+        if (e.id != ia) { mine++; continue; }
+        const uint16_t ev = e.ev >> kKeyEvShift;
+        jumps += (ev & ME_JUMP) != 0; lands += (ev & ME_LAND) != 0; dashes += (ev & ME_DASH) != 0;
+    }
+    printf("  2 s of hopping and a dash, heard by the other client: %d jumps, %d landings, %d dashes (%d of its own)\n", jumps, lands, dashes, mine);
+    CHECK(jumps >= 3 && jumps <= 6 && lands >= 2 && dashes == 1 && mine == 0);
+    // X3: a hit also tells its victim where it came from (EV_HIT "@x z" in decimetres), for the damage arc
+    b.takeEvents();
+    s.ms_.phase = PHASE_WARMUP;   // (damage on)
+    const Vec3 from = s.players_[ia].move.pos;
+    s.damagePlayer(ib, ia, 10, WPN_RIFLE, Vec3());
+    pump(s, cls, 0.2, idle);
+    bool told = false;
+    for (auto& ev : b.takeEvents()) {
+        long x, z;
+        if (ev.type == EV_HIT && ev.a == ia && ev.b == ib && sscanf(ev.text.c_str(), "@%ld %ld", &x, &z) == 2)
+            told = std::fabs(x * 0.1f - from.x) < 0.11f && std::fabs(z * 0.1f - from.z) < 0.11f;
+    }
+    CHECK(told);
+    s.stop();
+}
+
+// T1: a jump tapped (and let go) up to 0.1 s before landing jumps on landing like holding jump does.
+static void testJumpTapBuffer() {
+    printf("jump tap buffer\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -50 -1 -50 50 0 50\nspawn any 0 0 0\n", &err));
+    auto start = [] { MoveState q; q.pos = {0, 3, 0}; q.vel = {8, 0, 0}; return q; };
+    int land = -1;   // the step that lands, falling 3 m with no input
+    { MoveState q = start(); for (int i = 0; i < 2000 && land < 0; i++) { pmove(q, UserCmd(), m); if (q.flags & MF_ONGROUND) land = i; } }
+    CHECK(land > 100);
+    // jump pressed for 5 ms starting `early` ms before the landing step (or held from the start: early < 0)
+    auto run = [&](int early) {
+        MoveState q = start();
+        for (int i = 0; i <= land + 20; i++) {
+            UserCmd c;
+            if (early < 0 || (i >= land - early && i < land - early + 5)) c.buttons = BTN_JUMP;
+            pmove(q, c, m);
+        }
+        return q;
+    };
+    const MoveState held = run(-1);
+    CHECK(held.vel.y > 5);   // (bounced off the landing)
+    for (int early : {10, 30, 60, 90}) {
+        MoveState t = run(early);
+        if (std::fabs(t.vel.y - held.vel.y) > 1e-4f || std::fabs(t.pos.y - held.pos.y) > 1e-4f) printf("  tapped %d ms early: vy %.3f, held %.3f\n", early, t.vel.y, held.vel.y);
+        CHECK(std::fabs(t.vel.y - held.vel.y) < 1e-4f && std::fabs(t.pos.y - held.pos.y) < 1e-4f && std::fabs(t.vel.x - held.vel.x) < 1e-4f);
+    }
+    CHECK(run(150).vel.y <= 0.0f);   // (past the buffer: no jump)
+}
+
+// T2: holding dash fires each dash the moment it's allowed (like the held grapple): the charges chain 0.6 s apart (the
+// cooldown from each dash's end), each charge back 1.2 s after its dash; in the air the two charges, then none.
+static void testHeldDash() {
+    printf("held dash\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -900 -1 -900 900 0 900\nspawn any 0 0 0\n", &err));
+    auto starts = [&](MoveState q, int ms) {
+        std::vector<int> at;
+        UserCmd c; c.msec = 1; c.buttons = BTN_DASH; c.forward = 127;
+        for (int i = 0; i < ms; i++) { pmove(q, c, m); if (q.events & ME_DASH) at.push_back(i); }
+        return at;
+    };
+    MoveState g; g.flags = MF_ONGROUND;
+    for (int i = 0; i < 50; i++) pmove(g, UserCmd(), m);
+    std::vector<int> a = starts(g, 3000);
+    printf("  held on the floor for 3 s: %zu dashes, at", a.size());
+    for (int t : a) printf(" %d", t);
+    printf(" ms\n");
+    CHECK(a.size() == 5 && a[0] == 0);
+    for (size_t k = 1; k < a.size(); k++) CHECK(std::abs(a[k] - a[k - 1] - 720) <= 1);   // (the dash's 0.12 s, then the 0.6 s cooldown)
+    MoveState air; air.pos = {0, 400, 0};   // (falling the whole time: no floor to refill them)
+    std::vector<int> b = starts(air, 3000);
+    printf("  held in the air: %zu dashes\n", b.size());
+    CHECK(b.size() == 2 && std::abs(b[1] - b[0] - 720) <= 1);
+}
+
+// F18: air-strafe speed doesn't depend on the frame rate: the frame's turn spread over its ticks (spreadYaw).
+static void testStrafeFps() {
+    printf("strafe speed vs fps\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -900 -1 -900 900 0 900\nspawn any 0 0 0\n", &err));
+    // 1.5 s of A/D strafing in the air at a steady turn, 1000 Hz ticks, the mouse read once a frame
+    auto run = [&](int fps, float rate, bool spread) {
+        MoveState q; q.pos = {0, 300, 0}; q.vel = {0, 0, -10};
+        float yaw = 0, sent = 0;
+        int msLeft = 1500;
+        double acc = 0;
+        while (msLeft > 0) {
+            acc += 1000.0 / fps;
+            const int n = std::min(msLeft, (int)acc);
+            acc -= n;
+            yaw -= rate / fps;
+            for (int k = 1; k <= n; k++) {
+                UserCmd c; c.msec = 1; c.side = 127;
+                c.yaw = spread ? spreadYaw(sent, yaw, k, n) : yaw;
+                pmove(q, c, m);
+            }
+            if (n > 0) sent = yaw;
+            msLeft -= n;
+        }
+        return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z);
+    };
+    float worstOld = 1, worstNew = 1;
+    for (float rate : {1.5f, 2.5f, 3.5f}) {
+        const float ref = run(1000, rate, false);
+        for (int fps : {30, 60, 144}) {
+            const float o = run(fps, rate, false) / ref, nw = run(fps, rate, true) / ref;
+            printf("  turn %.1f rad/s, %d fps: %.1f%% before, %.2f%% now (1000 fps: %.2f m/s)\n", rate, fps, (o - 1) * 100, (nw - 1) * 100, ref);
+            worstOld = std::min(worstOld, o); worstNew = std::min(worstNew, nw);
+        }
+    }
+    CHECK(worstNew > 0.995f && worstOld < worstNew);
+    CHECK(spreadYaw(3.1f, -3.1f, 1, 2) > 3.1f || spreadYaw(3.1f, -3.1f, 1, 2) < -3.1f);   // (across the wrap: the short way)
+    CHECK(spreadYaw(0.2f, 0.6f, 4, 4) == 0.6f && spreadYaw(0.2f, 0.6f, 1, 1) == 0.6f);
+}
+
+// F19: a refill the server makes between commands (a teammate's syringe) reaches the prediction with the next snapshot.
+static void testRefillPrediction(uint16_t port) {
+    printf("syringe refill predicted\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "dasher");
+    std::vector<NetClient*> cls = {&a};
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, cls, 2.0, idle);
+    const int id = a.clientId();
+    CHECK(id >= 0 && s.players_[id].alive);
+    if (id < 0) { s.stop(); return; }
+    // both charges spent (held dash: 0.72 s apart)
+    pump(s, cls, 0.85, [](int) { UserCmd c; c.buttons = BTN_DASH; c.forward = 127; return c; });
+    pump(s, cls, 0.05, idle);
+    const int before = a.predicted().dashCharges;
+    dashRefillAll(s.players_[id].move);   // (what the syringe does)
+    s.players_[id].move.hookCooldown = 0;
+    pump(s, cls, 0.1, idle);
+    printf("  charges: %d before the refill, predicted %d after it (server %d)\n", before, (int)a.predicted().dashCharges, (int)s.players_[id].move.dashCharges);
+    CHECK(before < 2 && a.predicted().dashCharges == s.players_[id].move.dashCharges && a.predicted().dashCooldownMs == s.players_[id].move.dashCooldownMs);
+    // and no replay while nothing differs
+    pump(s, cls, 0.3, idle);
+    CHECK(a.lastReplayCount() == 0);
+    s.stop();
+}
+
+// F20: a grapple fired at an enemy you see is predicted latched onto them (the server's own pick), not on the wall behind.
+static void testHookPrediction(uint16_t port) {
+    printf("grapple on a player predicted\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "hooker");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, cls, 2.0, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    CHECK(ia >= 0 && ib >= 0);
+    if (ia < 0 || ib < 0) { s.stop(); return; }
+    // an open direction from a's spot: b stands 6 m along it
+    const Vec3 pa = s.players_[ia].move.pos, eye = pa + Vec3(0, kEyeHeight, 0);
+    float yaw = 0;
+    bool found = false;
+    for (int k = 0; k < 16 && !found; k++) {
+        yaw = k * PI / 8;
+        Vec3 d = angleForward(yaw, 0);
+        found = s.map_.raycast(eye, d, 12) < 0 && s.map_.raycast(pa + d * 6 + Vec3(0, 0.5f, 0), Vec3(0, -1, 0), 1.0f) >= 0;
+    }
+    CHECK(found);
+    const Vec3 pb = pa + angleForward(yaw, 0) * 6;
+    const float pitch = std::atan2(pb.y + 0.9f - eye.y, 6.0f);
+    auto place = [&] { s.players_[ib].move.pos = pb; s.players_[ib].move.vel = {}; s.players_[ia].move.pos = pa; s.players_[ia].move.vel = {}; };
+    for (int k = 0; k < 40; k++) { place(); pump(s, cls, 0.01, [&](int i) { UserCmd c; if (i == 0) { c.yaw = yaw; c.pitch = pitch; } return c; }); }
+    bool caught = false;
+    uint32_t replays = 0;
+    double end = timeNow() + 0.5;
+    while (timeNow() < end && !caught) {
+        place();
+        pump(s, cls, 0.002, [&](int i) { UserCmd c; if (i == 0) { c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_GRAPPLE; } return c; });
+        caught = (a.predicted().flags & MF_HOOKED) != 0;
+    }
+    const uint8_t predicted = a.predicted().hookTarget;
+    pump(s, cls, 0.1, [&](int i) { UserCmd c; if (i == 0) { c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_GRAPPLE; } return c; });
+    replays = a.lastReplayCount();
+    printf("  predicted hook target %d (want %d), server %d, last replay %u\n", (int)predicted, ib + 1, (int)s.players_[ia].move.hookTarget, replays);
+    CHECK(caught && predicted == ib + 1 && s.players_[ia].move.hookTarget == ib + 1);
+    s.stop();
+}
+
+// T3 / T4: the dash jump's 0.1 s window for a ground dash aimed a hair up, and for held-jump hoppers.
+static void testDashJumpWindows() {
+    printf("dash jump windows\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -900 -1 -900 900 0 900\nspawn any 0 0 0\n", &err));
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    auto step = [&](MoveState& q, UserCmd c) { c.msec = 1; pmove(q, c, m); };
+    auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
+    // T3: dash on the floor aimed 0.5 deg up (it leaves the floor at once), jump 30 ms in: the 24 m/s dash jump
+    for (float up : {0.0087f, 0.05f}) {
+        MoveState q = standing();
+        UserCmd d; d.buttons = BTN_DASH; d.pitch = up;
+        for (int i = 0; i < 30; i++) step(q, d);
+        CHECK(!(q.flags & MF_ONGROUND) && q.dashTimer > 0);
+        d.buttons |= BTN_JUMP;
+        step(q, d);
+        printf("  ground dash %.1f deg up, jump 30 ms in: %.2f m/s, %.2f up\n", up * 57.3f, hs(q), q.vel.y);
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 0.01f && q.vel.y > 7.0f && (q.events & ME_SUPER));
+    }
+    {   // ...but not past the window (a dash started in the air has none)
+        MoveState q = standing();
+        q.pos.y = 3; q.flags = 0;
+        UserCmd d; d.buttons = BTN_DASH; d.pitch = 0.05f;
+        for (int i = 0; i < 30; i++) step(q, d);
+        d.buttons |= BTN_JUMP;
+        step(q, d);
+        CHECK(q.dashTimer > 0);
+    }
+    // T4: holding jump (a hop off the floor, no fresh press), dash 60 ms after leaving it: a dash jump, as after a press
+    {
+        MoveState q = standing();
+        q.flags |= MF_JUMPHELD;   // (jump held from before: this hop is no fresh press)
+        UserCmd j; j.buttons = BTN_JUMP;
+        step(q, j);
+        CHECK((q.events & ME_JUMP) && !(q.flags & MF_ONGROUND));
+        for (int i = 0; i < 60; i++) step(q, j);   // 60 ms up
+        UserCmd dj; dj.buttons = BTN_JUMP | BTN_DASH;
+        step(q, dj);
+        printf("  held-jump hop, dash 60 ms after: %.2f m/s\n", hs(q));
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 0.01f && (q.events & ME_SUPER));
+    }
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -348,8 +668,11 @@ static void testMovementTuning() {
         c.forward = 0; c.side = 127;
         step(q, c, m);
         printf(", sideways %.3f m/s\n", q.vel.x);
-        CHECK(std::fabs(q.vel.x - 4.5f) < 1e-4f && std::fabs(q.vel.y - 6.75f) < 1e-4f);   // (any held key climbs)
-        c.side = 0; c.buttons = BTN_JUMP;   // the kick-off is unchanged: 4 m/s back, 0.7 of a jump up
+        CHECK(std::fabs(q.vel.x - 4.5f) < 1e-4f && q.vel.y == 0);   // (T6: A/D only sideways; any key climbed before)
+        c.side = 0; c.forward = -127;   // T6: S climbs down (and backs you off the wall, as before)
+        step(q, c, m);
+        CHECK(std::fabs(q.vel.y + 6.75f) < 1e-4f && std::fabs(q.vel.z - 4.5f) < 1e-4f);   // (and backs off the wall, as before)
+        c.forward = 0; c.buttons = BTN_JUMP;   // the kick-off is unchanged: 4 m/s back, 0.7 of a jump up
         step(q, c, m);
         CHECK(std::fabs(q.vel.z - 4.0f) < 1e-3f && q.vel.y > 7.34f * 0.7f - 0.05f && q.vel.y <= 7.34f * 0.7f);
     }
@@ -604,8 +927,18 @@ static void testDashCharges() {
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, sd, open);
             printf("  super dash from %d: %d charge(s), %.1f m/s\n", start, (int)q.dashCharges, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z));
             CHECK(t < 120 && std::fabs(std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z) - 11.0f) < 1e-3f && q.dashCharges == 1);   // (from a standstill: the dash's own 11)
-            UserCmd fly; fly.buttons = BTN_DASH;   // (dash still held: no new press) the hop: nothing until it lands
-            for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND); i++) { step(q, fly, open); if (!(q.flags & MF_ONGROUND)) CHECK(q.dashCharges == 1); }
+            // dash still held through the hop: nothing until the cooldown is over, then (T2: a held dash fires the moment
+            // it's allowed) the next dash at once, on the one charge left
+            UserCmd fly; fly.buttons = BTN_DASH;
+            bool again = false;
+            for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND) && !again; i++) {
+                const uint16_t cd = q.dashCooldownMs;
+                step(q, fly, open);
+                again = q.dashTimer > 0;
+                if (!again) CHECK(q.dashCharges == 1);
+                else CHECK(cd <= 1 && q.dashCharges == 0);
+            }
+            CHECK(again);
         }
         // chained super dashes: each needs a charge (the hop's bhop landing gives one back once it has recharged: never
         // more than that) and the cooldown since the last one ended; each adds 5 m/s to the speed it starts from, up to 36
@@ -710,7 +1043,7 @@ static void testDashTech() {
         CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f);
         { MoveState p = q; step(p, UserCmd()); step(p, UserCmd()); UserCmd again; again.buttons = BTN_DASH; step(p, again);
           CHECK(p.dashTimer == 0 && p.dashCharges == 2 && p.dashRecharging == 0 && p.dashCooldownMs == 597); }   // both charges (a dash jump gives its own back), no dash for 0.6 s after the jump ended it
-        float peak, dist = flight(q, BTN_DASH, &peak);
+        float peak, dist = flight(q, 0, &peak);   // (dash let go: held, T2 dashes again 0.6 s on)
         printf("  dash jump: %.1f m across, %.2f m up (a jump: 1.22)\n", dist, peak);
         CHECK(peak > 1.18f && peak < 1.26f && dist > 15.5f && dist < 16.5f);
         // the same dash without jump: settles to the exit speed as before, on the floor
@@ -2460,6 +2793,287 @@ static void testRocketSelfDamage(uint16_t port) {
     s.stop();
 }
 
+// The 2026-10 feel review's server fixes, on a server that isn't started (no network: the players are set up by hand
+// and the server's own functions are called): the hit before the kill (F13), shotgun headshots (F14), the bubble
+// stream's count (F15), splash round cover (F16), the killer cam (F11), lag compensation between records (F21), refire
+// on the command clock (F22), the near-miss kills (T9), ring-out credit (T21) and the death screen's text (X1).
+static void testFeelFixes() {
+    printf("feel fixes: hit before kill, shotgun headshots, bubble count, splash, killer cam, rewind lerp, command clock, ring-outs\n");
+    // T9: 20 rifle body shots kill; two point-blank head blasts (18 of 20 pellets on the head) kill
+    CHECK(weaponDef(WPN_RIFLE).damage * 20 >= kMaxHealth);
+    CHECK(2 * (18 * headDamage(WPN_SHOTGUN) + 2 * weaponDef(WPN_SHOTGUN).damage) >= kMaxHealth);
+    // T10: a crossbow headshot saves a bolt (body 3, a head and a body 2), as the sniper's does
+    CHECK(2 * weaponDef(WPN_CROSSBOW).damage < kMaxHealth && 3 * weaponDef(WPN_CROSSBOW).damage >= kMaxHealth);
+    CHECK(headDamage(WPN_CROSSBOW) + weaponDef(WPN_CROSSBOW).damage >= kMaxHealth);
+    auto fresh = [](Server& s, const char* mapText, int n) {
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(mapText));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_WARMUP;
+        s.timeMs_ = 10000;
+        for (int i = 0; i < n; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = 100; p.team = TEAM_A; p.joinId = 100 + i;
+            p.move.flags = MF_ONGROUND;
+        }
+    };
+    const char* open = "box -40 -1 -40 40 0 40\nspawn any 0 0 0\n";
+    auto events = [](Server& s, int i, int type) {
+        std::vector<int> at;
+        for (size_t k = 0; k < s.players_[i].events.size(); k++) if (s.players_[i].events[k].type == type) at.push_back((int)k);
+        return at;
+    };
+    {   // F13: batched laser damage, then the killing hit: the attacker's last EV_HIT comes before the EV_KILL
+        Server s; fresh(s, open, 2);
+        s.players_[1].move.pos = {5, 0, 0};
+        s.damagePlayer(1, 0, 1, WPN_LASER, Vec3());    // goes out at once (none for 50 ms before)
+        s.damagePlayer(1, 0, 1, WPN_LASER, Vec3());    // batched
+        s.damagePlayer(1, 0, 98, WPN_LASER, Vec3());   // the kill
+        auto hits = events(s, 0, EV_HIT), kills = events(s, 0, EV_KILL);
+        CHECK(!s.players_[1].alive && kills.size() == 1 && hits.size() == 2 && hits.back() < kills[0]);
+        float total = 0;
+        for (int k : hits) total += s.players_[0].events[k].c / 100.0f;
+        CHECK(std::fabs(total - 100) < 0.05f);   // every point of it shown, none left for later
+        // X1: the victim's copy says the killer's health and the respawn delay (warmup: 1.5 s); nobody else's does
+        auto vk = events(s, 1, EV_KILL);
+        CHECK(vk.size() == 1 && s.players_[1].events[vk[0]].text == "100 1500" && s.players_[0].events[kills[0]].text.empty());
+        // F11 (free for all): the killer is watched
+        CHECK(s.players_[1].specTarget == 0 && (s.perspectivesForTest(1) & 1u));
+    }
+    {   // X1 in ranked: no health
+        Server s; fresh(s, open, 2);
+        s.cfg_.ranked = true;
+        s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+        auto vk = events(s, 1, EV_KILL);
+        CHECK(vk.size() == 1 && s.players_[1].events[vk[0]].text.rfind("-1 ", 0) == 0);
+    }
+    {   // F11 (team mode): the killer's view for kKillCamTime, then teammates only
+        Server s; fresh(s, open, 3);
+        s.cfg_.mode = s.ms_.mode = MODE_KOTH;
+        s.players_[0].team = TEAM_B;   // the killer; 1 the victim, 2 their teammate
+        s.players_[2].move.pos = {-5, 0, 0};
+        s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+        uint32_t m = s.perspectivesForTest(1);
+        CHECK((m & 1u) && (m & 4u));
+        s.timeMs_ += (uint64_t)(kKillCamTime * 1000) + 10;
+        m = s.perspectivesForTest(1);
+        CHECK(!(m & 1u) && (m & 4u));
+        s.handleStringCmdForTest(1, "spectate 0");   // asking for the enemy again changes nothing
+        CHECK(!(s.perspectivesForTest(1) & 1u));
+    }
+    {   // T21: knocked off within 3 s: the attacker's kill (no suicide point lost); later than that: nobody's
+        Server s; fresh(s, open, 2);
+        s.ms_.phase = PHASE_LIVE;
+        s.damagePlayer(1, 0, 10, WPN_ROCKET, Vec3(5, 4, 0));
+        s.timeMs_ += 2500;
+        CHECK(s.ringOutKiller(1) == 0);
+        s.players_[1].move.pos.y = s.map_.killY() - 1;
+        s.simulateForTest();
+        CHECK(!s.players_[1].alive && s.players_[0].kills == 1 && s.players_[1].score == 0);
+        auto vk = events(s, 0, EV_KILL);
+        CHECK(!vk.empty() && s.players_[0].events[vk.back()].a == 0 && (s.players_[0].events[vk.back()].c & KILL_WEAPON) == 252);
+        s.spawnPlayer(1);
+        s.players_[1].health = 100;
+        s.damagePlayer(1, 0, 10, WPN_CROSSBOW, Vec3(5, 4, 0));
+        s.timeMs_ += (uint64_t)(kRingOutCredit * 1000) + 100;
+        CHECK(s.ringOutKiller(1) == -1);
+        s.players_[0].joinId = 999;    // (and a newcomer in the attacker's slot is never credited)
+        s.timeMs_ -= 1000;
+        CHECK(s.ringOutKiller(1) == -1);
+    }
+    {   // F16: splash reaches a player whose body centre is behind a crate but whose head shows; full cover still blocks
+        Server s; fresh(s, "box -40 -1 -40 40 0 40\nbox 0 0 -5 1 1.2 5\nbox 10 0 -5 11 3 5\nspawn any 0 0 20\n", 3);
+        s.players_[0].move.pos = {0, 0, 30};    // the shooter, far off
+        s.players_[1].move.pos = {1.5f, 0, 0};  // behind the crate
+        s.players_[2].move.pos = {11.5f, 0, 0}; // behind the wall
+        s.explodeForTest({-2, 1, 0}, 0, WPN_ROCKET);
+        s.explodeForTest({8.6f, 1, 0}, 0, WPN_ROCKET);
+        printf("  splash over a crate: %.1f damage; behind a wall: %.1f\n", 100 - s.players_[1].health, 100 - s.players_[2].health);
+        CHECK(s.players_[1].health < 100 && s.players_[2].health == 100);
+    }
+    {   // T11: own splash rises evenly with the blast's height: 10% up to feet + 0.3 m, full from chest height
+        float prev = -1, at3 = 0, at31 = 0;
+        for (float h : {0.0f, 0.3f, 0.31f, 0.5f, 0.75f, 1.0f, 1.2f, 1.5f}) {
+            Server s; fresh(s, open, 1);
+            s.explodeForTest({0, h, 0}, 0, WPN_ROCKET);
+            float d = 100 - s.players_[0].health;
+            CHECK(d >= prev - 1e-3f);
+            prev = d;
+            if (h == 0.3f) at3 = d;
+            if (h == 0.31f) at31 = d;
+            if (h <= 0.3f) CHECK(std::fabs(d - weaponDef(WPN_ROCKET).damage * 0.1f) < 0.01f);
+            if (h >= 1.2f) CHECK(std::fabs(d - weaponDef(WPN_ROCKET).damage) < 0.01f);
+            if (h == 0.5f) printf("  own rocket at knee height (0.5 m): %.1f damage\n", d);
+        }
+        CHECK(at31 - at3 < 1.0f);   // no step: a hair higher is a hair more
+    }
+    {   // F14: a blast with a pellet or two on the head isn't a headshot; one that's mostly head is
+        for (bool high : {false, true}) {
+            Server s; fresh(s, open, 2);
+            s.players_[0].weapon = WPN_SHOTGUN;
+            const float dist = high ? 1.2f : 3.0f;
+            s.players_[1].move.pos = {-dist, 0, 0};
+            s.simulateForTest();   // (a history record where they stand)
+            Vec3 eye = s.players_[0].move.pos + Vec3(0, kEyeHeight, 0);
+            Vec3 d = normalize(s.players_[1].move.pos + Vec3(0, high ? 1.68f : 1.3f, 0) - eye);
+            UserCmd c; c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z); c.weapon = WPN_SHOTGUN; c.buttons = BTN_FIRE;
+            c.viewTick = (uint32_t)s.timeMs_;
+            s.players_[0].events.clear();
+            CHECK(s.fireWeaponForTest(0, c));
+            auto hits = events(s, 0, EV_HIT);
+            CHECK(!hits.empty());
+            bool head = !hits.empty() && s.players_[0].events[hits.back()].text == "h";
+            printf("  shotgun at the %s: %.1f damage, %s\n", high ? "head, point blank" : "neck, 3 m", 100 - s.players_[1].health, head ? "headshot" : "body");
+            CHECK(head == high);
+        }
+    }
+    {   // F15: an enemy 3 m away behind a wall doesn't shrink the bubble stream; one in sight does
+        auto stream = [&](bool wall) {
+            Server s; fresh(s, wall ? "box -40 -1 -40 40 0 40\nbox -2 0 -5 -1.5 4 5\nspawn any 0 0 20\n" : open, 2);
+            s.players_[0].weapon = WPN_BUBBLE;
+            s.players_[1].move.pos = {-3, 0, 0};
+            UserCmd c; c.yaw = PI * 0.5f; c.weapon = WPN_BUBBLE; c.buttons = BTN_ALTFIRE;
+            s.fireWeaponForTest(0, c);
+            int n = 0;
+            for (auto& pr : s.projectiles_) n += pr.active && pr.type == WPN_BUBBLE;
+            return n;
+        };
+        int seen = stream(false), hidden = stream(true);
+        printf("  bubble stream: %d bubbles with an enemy 3 m away in sight, %d behind a wall\n", seen, hidden);
+        CHECK(seen == bubbleStreamCount(3) && hidden == kBubbleStreamMax);
+    }
+    {   // F21: a rewind between two records lands between them, not on the older one
+        Server s; fresh(s, open, 1);
+        auto& p = s.players_[0];
+        for (int k = 0; k < 4; k++) {   // records 8 ms apart, moving 0.08 m each
+            p.move.pos = {0.08f * k, 0, 0};
+            s.simulateForTest();
+            s.tick_++; s.timeMs_ += 8;
+        }
+        uint64_t t0 = s.timeMs_ - 8 * 4;   // (the first record)
+        bool cr;
+        Vec3 at = s.rewoundPosForTest(0, t0 + 8 + 4, &cr);
+        printf("  rewind 4 ms past a record: x %.3f (records at 0.080 and 0.160)\n", at.x);
+        CHECK(std::fabs(at.x - 0.12f) < 0.002f);
+        CHECK(std::fabs(s.rewoundPosForTest(0, t0 + 16, &cr).x - 0.16f) < 1e-4f);   // on a record: that record
+    }
+    {   // T22: the round end is 2.5 s in 1v1 (and duel / tourney), still 4 s in team vs
+        for (int mode : {MODE_ARENA, MODE_VS}) {
+            Server s; fresh(s, open, 2);
+            s.cfg_.mode = s.ms_.mode = (uint8_t)mode;
+            s.mp_ = &builtinModeParams(mode);   // (the mode's numbers, as rulesReset sets them: roundEndTime)
+            s.players_[1].team = TEAM_B;
+            s.ms_.phase = PHASE_LIVE;
+            s.phaseEnd_ = s.time() + 60;
+            s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+            for (int k = 0; k < 3 && s.ms_.phase == PHASE_LIVE; k++) s.simulateForTest();   // (the rules see one side out)
+            printf("  %s: round end %.1f s\n", mode == MODE_ARENA ? "1v1" : "vs", s.phaseEnd_ - s.time());
+            CHECK(s.ms_.phase == PHASE_ROUND_END && std::fabs(s.phaseEnd_ - s.time() - (mode == MODE_ARENA ? 2.5 : 4.0)) < 1e-6);
+        }
+    }
+    {   // X9: a shot out of a player's sight within 60 m is sent to them muffled (roughly where, no shooter), at most
+        // every 0.3 s; one they can see, or farther off, isn't
+        Server s; fresh(s, open, 4);
+        auto& p = s.players_[0];
+        p.weapon = WPN_RIFLE; p.move.pos = {1, 0, 1};
+        s.players_[1].move.pos = {40, 0, 1};    // out of sight (never seen), 39 m
+        s.players_[2].move.pos = {-39, 0, 0};   // in sight
+        s.players_[3].move.pos = {0, 0, -70};   // too far
+        for (int i = 1; i < 4; i++) s.players_[i].events.clear();
+        UserCmd c; c.weapon = WPN_RIFLE; c.msec = 1; c.pitch = 1.3f;
+        int sent[4] = {};
+        for (int t = 0; t < 100; t++) {   // 0.8 s of holding fire
+            s.timeMs_ += 8;
+            s.players_[2].lastSeen[0] = s.time();
+            for (int k = 0; k < 8; k++) { c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); }
+        }
+        std::string where;
+        for (int i = 1; i < 4; i++)
+            for (auto& e : s.players_[i].events) if (e.type == EV_GUNFIRE) { sent[i]++; where = e.text; CHECK(e.a == 255 && e.c == WPN_RIFLE); }
+        printf("  muffled shots: %d to the one out of sight (at \"%s\"), %d in sight, %d at 70 m; %d shots fired\n", sent[1], where.c_str(), sent[2], sent[3], p.shotsFired);
+        CHECK(sent[1] >= 2 && sent[1] <= 3 && sent[2] == 0 && sent[3] == 0 && where == "0 0 0");
+    }
+    {   // F22: refire on the command clock. 1 ms commands, 8 a tick (125 Hz): a held rifle fires on the command that
+        // ends its cooldown (not the first of the tick that does), a tap there still fires, and a burst of commands
+        // never fires faster than real time
+        Server s; fresh(s, open, 1);
+        auto& p = s.players_[0];
+        p.weapon = WPN_RIFLE;
+        UserCmd c; c.weapon = WPN_RIFLE; c.msec = 1;
+        int early = 0, late = 0, shots = 0;
+        for (int t = 0; t < 120; t++) {   // ~1 s of ticks, fire held
+            s.timeMs_ += 8;
+            for (int k = 0; k < 8; k++) {
+                c.buttons = BTN_FIRE;
+                double nf = p.nextFire;
+                int before = p.shotsFired;
+                c.viewTick = (uint32_t)s.timeMs_;
+                s.runPlayerCmdForTest(0, c);
+                if (p.shotsFired > before && shots++ > 0) {
+                    early += p.cmdTime < nf - 1e-9;          // fired before its cooldown was up on the command clock
+                    late += p.cmdTime - 0.001 >= nf - 1e-9;  // ... or a command after the one that ended it
+                }
+            }
+        }
+        printf("  held rifle: %d shots in ~0.96 s, %d early, %d late\n", shots, early, late);
+        CHECK(early == 0 && late == 0 && shots >= 6 && shots <= 8);
+        // a tap of 2 commands that starts on the command ending the cooldown fires (it fell between ticks before)
+        for (int t = 0; t < 40; t++) { s.timeMs_ += 8; for (int k = 0; k < 8; k++) { c.buttons = 0; s.runPlayerCmdForTest(0, c); } }
+        int before = p.shotsFired;
+        for (int k = 0; k < 2; k++) { c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); }
+        CHECK(p.shotsFired == before + 1);
+        double nf = p.nextFire;
+        c.buttons = 0;
+        while (p.cmdTime + 0.001 < nf - 1e-9) { if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 8; s.runPlayerCmdForTest(0, c); }
+        if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 8;   // (the next command's tick)
+        before = p.shotsFired;
+        c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); s.runPlayerCmdForTest(0, c);   // tapped right at the end
+        CHECK(p.shotsFired == before + 1);
+        // 200 commands of 8 ms in one tick: the command clock stops at the server's, so one shot at most
+        for (int t = 0; t < 40; t++) { s.timeMs_ += 8; for (int k = 0; k < 8; k++) { c.buttons = 0; s.runPlayerCmdForTest(0, c); } }
+        before = p.shotsFired;
+        c.msec = 8; c.buttons = BTN_FIRE;
+        for (int k = 0; k < 200; k++) s.runPlayerCmdForTest(0, c);
+        CHECK(p.shotsFired - before == 1 && p.cmdTime <= s.time() + 1e-9);
+    }
+}
+
+// T13: a click on the sniper / crossbow / rocket up to kTapBuffer before it's ready fires when it is; an earlier one,
+// the rocket's alt-fire (lob) and other weapons aren't kept.
+static void testTapBuffer() {
+    printf("tap buffer: slow weapons keep a click up to 0.1 s early\n");
+    for (int w : {WPN_SNIPER, WPN_CROSSBOW, WPN_ROCKET, WPN_RIFLE}) {
+        for (double early : {0.05, 0.15}) {
+            for (bool alt : {false, true}) {
+                if (alt && w != WPN_ROCKET) continue;
+                Server s;
+                s.setLog([](const std::string&) {});
+                CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+                s.cfg_.mode = s.ms_.mode = MODE_FFA;
+                s.timeMs_ = 10000;
+                auto& p = s.players_[0];
+                p.connected = p.alive = true; p.health = 100; p.move.flags = MF_ONGROUND; p.weapon = w;
+                UserCmd c; c.weapon = (uint8_t)w; c.msec = 1; c.pitch = 1.2f;
+                auto run = [&](uint16_t b, int n) {
+                    for (int k = 0; k < n; k++) { if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 1; c.buttons = b; s.runPlayerCmdForTest(0, c); }
+                };
+                const uint16_t btn = alt ? BTN_ALTFIRE : BTN_FIRE;
+                run(btn, 1);
+                run(0, 1);
+                const int shots0 = p.shotsFired;
+                const double ready = p.nextFire;
+                while (p.cmdTime + 0.001 < ready - early) run(0, 1);
+                run(btn, 3);   // a 3 ms tap, early
+                run(0, (int)((early + 0.05) * 1000));
+                const int got = p.shotsFired - shots0;
+                const bool want = tapBuffered(w) && early <= kTapBuffer && !alt;
+                printf("  %-8s%s tapped %.2f s early: %d shot(s)\n", weaponDef(w).name, alt ? " (alt)" : "", early, got);
+                CHECK(got == (want ? 1 : 0));
+            }
+        }
+    }
+}
+
 static void testWallbang() {
     printf("wallbang: bullets pass through, movement and normal rays don't\n");
     Map m;
@@ -2474,6 +3088,17 @@ static void testWallbang() {
 
 // Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
 // and resets their cooldowns; it does nothing to an enemy.
+// A spawn with an open 5 m lane in front of it (-z) and floor at its end: where the syringe tests throw (spawns no
+// longer keep teammates apart, T16, so whichever one b got may face a wall)
+static Vec3 openLane(const Map& m, Vec3 fallback) {
+    for (auto& sp : m.spawns) {
+        Vec3 p = sp.pos, end = p + Vec3(0, 0, -5);
+        bool clear = m.raycast(p + Vec3(0, 0.5f, 0), {0, 0, -1}, 6) < 0 && m.raycast(p + Vec3(0, 1.6f, 0), {0, 0, -1}, 6) < 0;
+        float down = m.raycast(end + Vec3(0, 1, 0), {0, -1, 0}, 3);
+        if (clear && down > 0.9f && down < 1.1f) return p;
+    }
+    return fallback;
+}
 static void testSyringe(uint16_t port) {
     printf("syringe\n");
     Server s;
@@ -2497,7 +3122,8 @@ static void testSyringe(uint16_t port) {
     for (int k = 0; k < 50 && pa.health == 50; k++) pump(s, cls, 0.01, heal);
     double first = pa.lastFire;
     printf("  one use: %.0f hp (from 50), next in %.2f s\n", pa.health, pa.nextFire - first);
-    CHECK(pa.health == 60 && std::fabs(pa.nextFire - (first + 1.0)) < 0.002);
+    // (the cooldown runs from the use's command on the command clock, F22: the server clock or up to 0.1 s behind it)
+    CHECK(pa.health == 60 && pa.nextFire - 1.0 <= first + 0.002 && pa.nextFire - 1.0 >= first - 0.102);
     while (s.time() < first + 0.9) pump(s, cls, 0.01, heal);   // held: nothing more until the 1 s cooldown is over
     CHECK(pa.health == 60);
     while (s.time() < first + 1.2) pump(s, cls, 0.01, heal);
@@ -2506,7 +3132,7 @@ static void testSyringe(uint16_t port) {
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCharges = 0; pa.nextFire = s.time() + 5;
     pa.move.dashCooldownMs = 30000; pa.move.dashRecharging = 2; pa.move.dashRechargeMs[0] = pa.move.dashRechargeMs[1] = 30000;   // (nothing comes back on its own)
-    Vec3 base = pb.move.pos;
+    Vec3 base = openLane(s.map_, pb.move.pos);
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, idle); }
     int tick = 0;
@@ -2964,6 +3590,40 @@ static constexpr float kAimSample = 75.0f; // s of game time per tick rate (all 
 // target) and they all shoot at it, so every level gets the same movement; their places rotate between rates.
 // Levels must be clearly ordered, play the same at every tick rate (their timing is all game time), and even
 // the expert must stay beatable (well under perfect aim).
+// X11: a bot hurt by someone it can't see or hear (a sniper far off) turns toward them once its reaction time is
+// over, not before.
+static void testBotHurtTurn(uint16_t port) {
+    printf("bots turn toward whoever hurt them, after their reaction time\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    int shooter = s.addBot(TEAM_A, BOT_BEGINNER), bot = s.addBot(TEAM_A, BOT_INTERMEDIATE);
+    s.bots_[bot].onlyEnemy = shooter;
+    const Vec3 at(7, 0, -27), from(-7, 0, -24);   // the shooter stands still, silent, behind the bot
+    s.bots_[shooter].script = [&](Server& sv, int) {
+        auto& bp = sv.players_[bot]; bp.move.pos = at; bp.move.vel = {}; bp.health = 100;
+        auto& sp = sv.players_[shooter]; sp.move.pos = from; sp.move.vel = {};
+        UserCmd c; c.weapon = kNoWeaponChange; return c;
+    };
+    auto run = [&](double sec) { double end = timeNow() + sec; while (timeNow() < end) { s.frame(); sleepMs(1); } };
+    run(1.0);
+    Vec3 d = from - at;
+    const float toShooter = std::atan2(-d.x, -d.z);
+    s.bots_[bot].aimYaw = toShooter + PI;   // (facing away)
+    s.players_[bot].health = 100;
+    s.damagePlayer(bot, shooter, 1, WPN_SNIPER, Vec3());
+    const double hitAt = s.time();
+    run(0.1);
+    CHECK(s.bots_[bot].aware[shooter].hurtNoticed < hitAt);   // still reacting
+    run(1.2);
+    auto off = [&] { float a = std::fmod(s.bots_[bot].aimYaw - toShooter + 3 * PI, 2 * PI) - PI; return std::fabs(a); };
+    printf("  hit at %.2f, noticed at %.2f; facing %.0f deg off the shooter 1.3 s later\n", hitAt, s.bots_[bot].aware[shooter].hurtNoticed, off() * 180 / PI);
+    CHECK(s.bots_[bot].aware[shooter].hurtNoticed == hitAt && off() < 0.6f);
+    s.stop();
+}
+
 static void testBotAim(uint16_t& port) {
     printf("bot aim: damage per second vs a strafing player, by level and server tick rate\n");
     int rates[] = {1000, 250, 125};
@@ -3074,7 +3734,7 @@ static void testLadders() {
                 if (m.boxSolid(playerBox(ms.pos, false))) continue;
                 UserCmd cmd; cmd.yaw = yaw; cmd.pitch = 0.2f; cmd.forward = 127; cmd.msec = 8;
                 for (int t = 0; t < 1000 && !ok; t++) {   // up to 8 s: standing on top at any point counts
-                    cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it
+                    cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it...
                     pmove(ms, cmd, m);
                     if (getenv("LADDER_TRACE") && t % 50 == 0 && name == getenv("LADDER_TRACE") && (!getenv("LADDER_AT") || std::fabs(c.x - atof(getenv("LADDER_AT"))) < 0.5f)) printf("      t %d yaw %.2f pos %.2f %.2f %.2f vel %.2f %.2f %.2f ladder %d\n", t, yaw, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z, (int)m.onLadder(playerBox(ms.pos, false)));
                     ok = ms.pos.y > l.mx.y - 1.3f && (ms.flags & MF_ONGROUND) && !m.onLadder(playerBox(ms.pos, false));
@@ -6454,6 +7114,8 @@ static void testBots(uint16_t& port) {
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         std::vector<NetClient*> cls;
+        NetClient me;   // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins
+        if (mode == MODE_ARENA || mode == MODE_DUEL) { me.connect("127.0.0.1:" + std::to_string(cfg.port), "me"); cls.push_back(&me); }
         pump(s, cls, 14.0, idle);
         int kills = 0, cps = 0;
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
@@ -7006,26 +7668,26 @@ int main(int argc, char** argv) {
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"modelogic", [] { g_fail += modeTests(); }},
         {"modelockstep", [] { g_fail += modeLockstepTests(); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testWeaponSets(TP(28559)); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},

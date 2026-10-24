@@ -24,6 +24,13 @@ constexpr uint16_t kSnapDashRechargeSince = 43;  // ...and from here on the char
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
+// ...and its top six bits, what their movement did since the last snapshot (pmove's ME_JUMP / LAND / DASH / SUPER / HYPER,
+// << kKeyEvShift; KEY_EV_LAND_HARD: a landing over 12 m/s): the client plays their jump, land and dash sounds from them.
+// Older clients only look at the held-key bits; older servers and demos never set these.
+constexpr float kSpawnFireLock = 0.25f;   // no shots this long after spawning (the server's rule; the client mirrors it)
+constexpr int kKeyEvShift = 10;
+enum : uint16_t { KEY_HELD_MASK = 1023, KEY_EV_LAND_HARD = 32768 };
+constexpr float kHardLandSpeed = 12.0f;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -57,6 +64,8 @@ constexpr bool modeRespawns(int m) { return modeRespawnDelay(m) >= 0; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
+constexpr float kSeekerRespawn = 2.0f;    // hide and seek: a seeker who fell (or died) is back this long after
+constexpr float kLastLegRespawn = 3.0f;   // payload, unstaged spawns: attackers past the last checkpoint (T18; else 5 s)
 constexpr float kTagRoundTime = 60.0f;   // tag: whoever is "it" when this runs out is eliminated
 constexpr float kTagFreeze = 2.0f;       // a newly tagged player stands still this long (no instant tag-back)
 // Hide and seek tiebreak (owner B8): once every round is played, players tied for first throw rock paper scissors.
@@ -229,6 +238,14 @@ inline float weaponFalloff(const WeaponExtra& e, float dist) {
     return 1.0f + (e.falloffMin - 1.0f) * ((dist - e.falloffStart) / (e.falloffEnd - e.falloffStart));
 }
 constexpr float kFireBuffer = 0.15f;
+// Slow weapons keep a click up to kTapBuffer before they're ready and fire it when they are (T13: an early tap on
+// the sniper, crossbow or rocket was dropped). Primary fire only (the rocket's alt-fire is its lob).
+constexpr float kTapBuffer = 0.1f;
+inline bool tapBuffered(int w) { return w == WPN_SNIPER || w == WPN_CROSSBOW || w == WPN_ROCKET; }
+constexpr float kSelfRampLow = 0.3f, kSelfRampHigh = 1.2f;   // own splash: 10% at or below feet + low, full at feet + high (linear between)
+constexpr float kMuffledRange = 60.0f;   // X9: gunfire out of sight is heard muffled this far (bots hear 45-75 m)
+constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
+constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
 constexpr float kShotgunKnock = 0.30f;     // shotgun knockback per pellet's worth of damage (m/s; a full blast: 20 x 0.30 = 6 m/s; owner 1.17: doubled from 0.15)
@@ -286,19 +303,19 @@ inline const WeaponDef& baseWeaponDef(int w) {
         // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
         // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added. 1.17: rifle 1 less a
         // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50; 1.18: the
-        // sniper 40 body, 50 head, kSniperHeadDamage).
+        // sniper 40 body, 50 head, kSniperHeadDamage; the owner, 2026-10: rifle 4.95 -> 5.0, so 20 body shots kill, not leave 1 hp).
         // Perfect-aim time to kill from 100 hp in the trailing comment. DPS against the laser's 40: rifle 0.82 body,
         // 1.24 head; sniper 0.67 body, 0.83 head (the laser out-damages the rifle inside its 24 m unless you land
         // headshots).
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       0.75f*2.0f/9.9f, 4.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 21 shots, 3.0 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
+        {"RIFLE",       0.75f*2.0f/9.9f, 5.0f,  300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 20 shots, 2.9 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0.0f,  false, 5}, // 3, 2.4 s (flies straight: owner, 1.17; the lob drops, kRocketLobGravity)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
         {"SNIPER",      1.5f,    40,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3 shots, 3.0 s body; 2, 1.5 s head (owner 1.18: 40 body, 50 head; 1.17 a flat 50)
         {"LASER",       0.001f,  0.04f,  24.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s, 24 m
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
-        {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 75: kCrossbowHeadDamage)
+        {"CROSSBOW",    2.0f,    49,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 3, 4.0 s body; 2, 2.0 s with a headshot (75: kCrossbowHeadDamage; owner 2026-10: 50 -> 49, so a headshot saves a bolt)
         {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
         {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
         {"LOCATOR",     kLocatorCooldown, 0, 0, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // no damage: shows a hider / runner (hide and seek / tag only)
@@ -311,7 +328,7 @@ constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itse
 constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide; sniper 50 of a 40 body): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 7.5f;   // (1.17: 8.5 -> 7.5 with the body 5.95 -> 4.95)
-constexpr float kPelletHeadDamage = 2.55f;
+constexpr float kPelletHeadDamage = 2.6f;   // (owner, 2026-10: 2.55 -> 2.6, so two point-blank head blasts kill: 98.6 -> 100.4)
 const WeaponDef& weaponDef(int w);   // customrules.cpp
 float tunedDamage(int w);            // the active custom mode's damage multiplier for this weapon (1 = standard)
 // Movement settings of the active custom mode (pmove reads these; all 1 / on by default)
@@ -458,6 +475,8 @@ enum EventType : uint8_t {
     EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
                      // per player (shape RPS_PICKED until the reveal), then a line with what happened
     EV_PROP,         // a thrown knife / bolt / thrown syringe stuck where it landed, or a clear (cosmetic): StuckProp, protocol.h
+    EV_GUNFIRE,      // a shot out of your sight within kMuffledRange (X9): c = weapon, text = "x y z" roughly where (a 4 m grid);
+                     // no shooter (a = 255). Older clients ignore it (an unknown type), so no protocol change.
 };
 
 #define WB(w) (1u << (w))

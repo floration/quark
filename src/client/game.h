@@ -15,6 +15,7 @@
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "audio.h"
+#include "clientfeel.h"
 #include "rawmouse.h"
 #include "gpuprefs.h"
 #include "binds.h"
@@ -423,8 +424,12 @@ private:
     double lastMx_ = 0, lastMy_ = 0;
     bool mouseCaptured_ = false, firstMouse_ = true;
     bool fireLatched_ = false;
+    double dashHoldUntil_ = -1;   // a dash press holds BTN_DASH till then, or till its dash starts (pmove dashes while it's held)
+    static constexpr double kDashPressBuffer = 0.1;
+    uint16_t moveLatched_ = 0;   // BTN_JUMP / DASH / GRAPPLE pressed since the last command (a tap shorter than a tick still counts)
     bool localFireHeld_ = false, scopeOverlay_ = false, localFireLocked_ = false;
     double localFireQueued_ = -1;
+    int localTapWeapon_ = -1;   // the weapon localFireQueued_'s click was made with (a switch drops it)
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
     void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color, Vec3 from);   // from: the knife (zero: a spot by the eye)
@@ -435,6 +440,12 @@ private:
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
     int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
+    double killCamUntil_ = 0;   // team modes: the killer can be watched until then (kKillCamTime), then teammates only
+    // the death screen (X1): who killed you with what, their health then (-1: not shown, ranked or an old server), and
+    // when you respawn (-1: not known / not this round)
+    int deathKiller_ = -1, deathWeapon_ = -1, deathKillerHp_ = -1;
+    double deathRespawnAt_ = -1;
+    bool deathValid_ = false;
 
     // effects + feeds
     struct Span { size_t at, len; Color color; };   // part of a feed line in its own colour (a player's chosen name colour)
@@ -444,7 +455,9 @@ private:
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
+    double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    HurtSoundGate hurtGate_;   // your own hurt sound: one per 0.15 s, louder for more damage (clientfeel.h)
     HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
     // seconds until a thrown knife / syringe is back (0 = have it): the prediction, or the server's word (snapshot)
@@ -454,15 +467,27 @@ private:
         return std::max(local - time_, snap * 0.1);
     }
     int lastHealth_ = 0;
+    bool fireAlive_ = false;
+    float stepCam_ = 0, stepFeetY_ = 0;   // X7: the camera's lag behind a stair step (m), and last frame's feet height
+    bool stepGround_ = false;
+    float localRefire_ = 0;    // the refire localNextFire_ counts down (the last shot's, alt-fire's own; the spawn lock's)
+    float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
-    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
+    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; bool spark = false; };   // kill: a red burst where someone died (X6); spark: X4's local hit spark
+    void localImpactSparks(int w, const UserCmd& c);
+    double nextLocalSpark_ = 0;
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
     std::vector<GameEvent> evScratch_;          // (handleEvents)
     // your own projectiles start drawn at your weapon model's muzzle and blend onto their real path
-    struct ProjStart { uint16_t id; double seen; Vec3 offset; };
+    struct ProjStart { uint16_t id; double seen; Vec3 offset; float lead = 0; };   // lead: X5, drawn this far ahead (s)
+    // X5: your own rockets, bolts and thrown knives, flying from the click until the server's copy arrives (a round trip
+    // later), which then takes over drawn as far ahead as the copy was (lead), so nothing jumps back
+    struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
+    PredProj predProj_[8];
+    void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
     std::vector<ProjStart> projStarts_, projStartsKeep_;
     std::string feedPart_;   // (drawFeedText)
     double frameDt_ = 0;     // this frame's dt (frame)
@@ -666,6 +691,7 @@ private:
     void drawControls(const SetLayout& L);
     void drawHudSettings(const SetLayout& L);
     void drawCrosshairSettings(const SetLayout& L);
+    void drawKillMark(float cx, float cy, float scale);
     void drawCrosshair(float cx, float cy, float scale, bool hit);
     // FONT (settings/fonts, from PLAYER): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The
     // list is looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
@@ -769,5 +795,9 @@ private:
     void drawBracket();
     struct DmgNum { int victim; float amount; double start; Vec3 pos; bool head = false; };   // head: a headshot (drawn red)
     std::vector<DmgNum> dmgNums_;
+    struct DmgDir { Vec3 pos; double at = 0; int from = -1; };   // a hit you took: from where (X3, drawDamageArcs)
+    DmgDir dmgDirs_[6];
+    static constexpr double kDmgDirTime = 1.0;
+    void drawDamageArcs(float cx, float cy, float scale);
     int botMapIdx_ = 0;
 };

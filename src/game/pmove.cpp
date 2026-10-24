@@ -212,15 +212,20 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     s.jumpGrace = std::max(0.0f, s.jumpGrace - dt);
     // Holding jump bunny-hops: jump on the first grounded tick, before friction applies. (Not while a dash runs: a
     // jump on the floor then is the dash's, below.)
-    if (onGround && jumpHeld && !frozen && !dashActive) {
+    // A jump tapped up to the buffer's 0.1 s before landing (let go again by then) jumps there too (owner, T1): a tap a
+    // hair early used to do nothing, and each 10 ms late cost ~1.4 m/s against holding jump.
+    const bool tapped = !jumpHeld && s.jumpBuffer > 0 && !frozen && !grappleOnly;
+    if (onGround && (jumpHeld || tapped) && !frozen && !dashActive) {
         s.vel.y = jumpSpeed;
         onGround = false;
-        if (freshJump) s.jumpGrace = jumpWindow;   // (a dash right after this press is still a ground dash jump)
+        s.events |= ME_JUMP;
+        s.jumpGrace = jumpWindow;   // (a dash right after this jump is still a ground dash jump; T4: held-jump hops too,
+                                    // they had only the ~6 ms of floor contact against a fresh press's 0.1 s)
+        if (tapped) s.jumpBuffer = 0;              // (that press is used)
     }
 
     // Dash: one burst in the movement direction (or forward), spending a charge, once the cooldown since the last
-    // dash ENDED has run out (owner 1.17: charges on top of the cooldown; 1.18.7: 0.6 s). Not while a dash runs (a press
-    // then does nothing, and isn't kept). The charge it spends recharges for kDashRecharge from the dash's end, and only
+    // dash ENDED has run out (owner 1.17: charges on top of the cooldown; 1.18.7: 0.6 s), while dash is held (T2). The charge it spends recharges for kDashRecharge from the dash's end, and only
     // then can a refill give it back: at the end of a step (the ground all of them, a bhop landing one) or a dash tech.
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
     const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
@@ -245,7 +250,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashRechargeMs[--s.dashRecharging] = 0;
     }
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
-    const bool dashStart = dashHeld && !(s.flags & MF_DASHHELD) && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
+    // (owner, T2: held dash fires the moment a dash is allowed, like the held grapple: holding it chains the charges 0.6 s
+    // apart; it was a fresh press only, and a press while not ready was lost. A press up to 0.1 s early: the client holds
+    // the button that long, so this stays the only rule)
+    const bool dashStart = dashHeld && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
     bool chargesSet = false;   // a dash tech set the charges this step: no ground / bhop refill on top
     if (dashStart) {
         s.flags &= ~MF_PULLED;   // a dash breaks free of another player's grapple
@@ -253,12 +261,16 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         s.dashDirX = d.x;
         s.dashDirZ = d.z;
+        // T3: a dash that starts on the floor counts as on it for the jump window (one aimed a hair up leaves it at once:
+        // at +0.5 deg a jump made a plain 11 m/s dash, not the 24 m/s dash jump). jumpGrace is on the wire: no new state.
+        if (grounded) s.jumpGrace = jumpWindow;
         s.dashFromSpeed = h;   // (a super dash adds to this)
         s.dashExitSpeed = std::min((kDashExitMax * mt.m[MV_DASH_EXIT_MAX]), std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + (kDashKeep * mt.m[MV_DASH_KEEP])));
         s.dashUp = std::sin(cmd.pitch) * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
         s.dashTimer = (kDashTime * mt.m[MV_DASH_TIME]);
         s.dashBounces = 0;
         s.dashCharges--;
+        s.events |= ME_DASH;
         if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
     }
     bool dashing = s.dashTimer > 0;
@@ -274,7 +286,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const bool down = s.dashUp <= -kSuperDashDown * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
         const bool wantJump = jumpHeld || s.jumpBuffer > 0;
         const bool graceJump = dashStart && !grounded && s.jumpGrace > 0 && !down;
-        if ((grounded && wantJump) || graceJump) {
+        // (T3: a dash running since it left the floor, the jump within the window: a dash jump from the floor. During a
+        // dash, jumpGrace is left only by that: a jump just before a dash spends it as the dash starts, graceJump)
+        const bool liftJump = !dashStart && dashActive && !grounded && s.jumpGrace > 0 && wantJump && !down;
+        if ((grounded && wantJump) || graceJump || liftJump) {
             float sp = burst, vy = graceJump ? s.vel.y : jumpSpeed;
             if (grounded && down) {
                 // the hyper: the speed carried into the dash + kSuperDashBoost (owner 1.18.7: "+5 of current"), at least
@@ -298,6 +313,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 refillCharges(s, maxCharges, maxCharges);
             }
             chargesSet = true;
+            s.events |= (grounded && down) ? ME_HYPER : ME_SUPER;
             s.vel = {s.dashDirX * sp, vy, s.dashDirZ * sp};
             s.dashTimer = 0;
             s.jumpBuffer = 0;
@@ -349,11 +365,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.hookTarget = (uint8_t)(hp->id[caught] + 1);
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
+            s.events |= ME_HOOK;
         } else if (t >= 0) {
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;
+            s.events |= ME_HOOK;
         }
     }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -399,9 +417,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         bool jumpPress = jumpHeld && !(s.flags & MF_JUMPHELD);
         if (jumpPress) {
             s.vel = fwd * -4.0f + Vec3(0, jumpSpeed * 0.7f, 0);
+            s.events |= ME_JUMP;
         } else {
-            float climb = std::min(wishLen, 1.0f) * (kLadderSpeed * mt.m[MV_LADDER_SPEED]) * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
-            s.vel = {wishDir.x * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE])), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE]))};
+            // (owner, T6: W climbs (down while looking down past 26 deg), S the other way, A/D don't climb, only move
+            // sideways; it was any key climbing, S and A/D up too. Held keys still move you along the wall and to / from it
+            // as before: W carries you over the top, S backs you off one that ends at a wall)
+            const float f = std::clamp(cmd.forward / 127.0f, -1.0f, 1.0f);
+            float climb = (wishLen > 0 ? f : 0.0f) * (kLadderSpeed * mt.m[MV_LADDER_SPEED]) * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
+            s.vel = {wishDir.x * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE])), climb, wishDir.z * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE]))};
         }
         onGround = false;
     } else if (onGround) {
@@ -513,13 +536,17 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (nowGround) {
         s.pos.y += probe; // settle onto the floor
         float impact = -before.vel.y;
-        if (jumpHeld && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
+        if (!grounded && !dashing && impact > kLandSoundSpeed) { s.events |= ME_LAND; s.landSpeed = std::max(s.landSpeed, impact); }
+        if ((jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly). Not off a dash's own push into the floor: that's a super dash
             // (next step, from the floor) or nothing.
             s.vel.y = jumpSpeed + std::min((impact - jumpSpeed) * (kBounceGain * mt.m[MV_BOUNCE_GAIN]), (kBounceMax * mt.m[MV_BOUNCE_MAX]));
             nowGround = false;
             bounced = true;
+            s.events |= ME_JUMP;
+            if (tapped) s.jumpBuffer = 0;
+            s.jumpGrace = jumpWindow;   // (T4: a hop off a landing, like a jump off the floor)
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]));
@@ -553,6 +580,8 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     int n = cmd.msec < 1 ? 1 : (cmd.msec > 8 ? 8 : cmd.msec);
     const float sy = std::sin(cmd.yaw), cy = std::cos(cmd.yaw);
     const CmdCtx cx{moveTuning(), {-sy, 0, -cy}, {cy, 0, -sy}};
+    s.events = 0;
+    s.landSpeed = 0;
     for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx);
 }
 

@@ -38,9 +38,10 @@ struct WeaponPredictor {
     bool sent = false;       // a command carrying `desired` has gone out...
     uint32_t firstSeq = 0;   // ...this one, the first
     int held = -1;           // the weapon the last command predicts (-1: none yet / dead: the snapshot's)
+    int prev = -1;           // the one held before it this life (ServerPlayer::prevWeapon: a throw switches back to it)
 
     void want(int w) { if (w != desired) { desired = w; sent = false; } }
-    void reset() { desired = -1; sent = false; held = -1; }
+    void reset() { desired = -1; sent = false; held = -1; prev = -1; }
     // The server has run a command asking for `desired` (or the connection started over: seqs from 1 again), so its
     // snapshot says what you hold now: accepted (it matches) or refused (it doesn't, and the snapshot wins).
     bool resolved(uint32_t ackSeq, uint32_t nextSeq) const {
@@ -57,19 +58,29 @@ struct WeaponPredictor {
     // switches with fire / alt-fire held, which the server answers by locking fire until both are let go.
     int run(const UserCmd& c, const WeaponView& v, bool* lockFire = nullptr) {
         if (lockFire) *lockFire = false;
-        if (!v.alive) { held = -1; return v.serverWeapon; }
+        if (!v.alive) { held = -1; prev = -1; return v.serverWeapon; }
         int want = c.weapon < WPN_COUNT ? (int)c.weapon : -1;
         // Base: the server's word plus this command's ask. Commands still in flight all carry the same ask (fill),
         // so the newest one's result is the prediction; once resolved there's no ask and the snapshot stands.
         int w = switchedWeapon(v.serverWeapon, want, true, v.mask, v.away);
         int before = held >= 0 ? held : v.serverWeapon;
         if (lockFire && want >= 0 && w == want && w != before && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) *lockFire = true;
+        if (w != before) prev = before;
         held = w;
         return w;
     }
     // A throw this command predicts (knife / syringe away from now: `v.away` has it): the server switches to the next
     // weapon in the same command, so this command's prediction does too.
-    int thrown(const WeaponView& v) { if (v.alive && held >= 0) held = switchedWeapon(held, -1, true, v.mask, v.away); return current(v); }
+    int thrown(const WeaponView& v) {
+        if (v.alive && held >= 0) {
+            const int fired = held;
+            const bool back = prev >= 0 && prev < WPN_COUNT && prev != fired && !(v.away >> prev & 1) && (!v.mask || (v.mask >> prev & 1));
+            const int w = back ? prev : switchedWeapon(held, -1, true, v.mask, v.away);   // (as the server: back to the last one)
+            if (w != fired) prev = fired;
+            held = w;
+        }
+        return current(v);
+    }
     // Between ticks (drawing): the last command's prediction, or the server's word.
     int current(const WeaponView& v) const { return v.alive && held >= 0 ? held : v.serverWeapon; }
 };

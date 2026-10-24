@@ -26,6 +26,11 @@ slot roundStart:
   for p in everyone where it[p]:
     announce(p, " is seeking - hide! (", int(hideTime), " s)")
 
+# A seeker who falls (or dies) is back after 2 s (the hiders still respawn never).
+slot respawnDelay:
+  if it[p] and (phase == live or phase == freeze): return 2.0f
+  return respawnTime
+
 # The seeker faces the wall while the hiders hide.
 slot frozen:
   return phase == freeze and it[p]

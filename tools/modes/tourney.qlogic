@@ -6,6 +6,7 @@ use drain
 use bracket
 
 param rounds int = 3
+param roundEndTime f32 = 2.5 # short rounds, a shorter break (common: 4)
 param stalemate f32 = 30 # with no damage dealt before the drain starts
 param drainRate f32 = 5 # health a second, everyone, in a stalemate
 

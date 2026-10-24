@@ -47,7 +47,21 @@ struct MoveState {
     uint8_t mods = 0;  // MOVE_* rule modifiers (duel)
     uint8_t hookTarget = 0; // while MF_HOOKED: 0 = the map, 1 + id = latched onto that player
     Vec3 pullPoint;    // while MF_PULLED: the body of the player whose grapple holds you (set by the server every tick)
+    // What the last pmove call did (ME_*; each call clears it), for sounds: a frame or a snapshot can hold several 1 ms
+    // steps, and comparing states across it missed a jump and a landing in the same step (a bhop) or a dash and its dash
+    // jump. Not sent and not compared: the client's prediction and the server each make their own.
+    uint8_t events = 0;
+    float landSpeed = 0;   // ME_LAND: the hardest landing's speed in that call, m/s
 };
+enum : uint8_t {
+    ME_JUMP = 1,    // left the floor by a jump (a bhop off a landing too, and a jump off a ladder)
+    ME_LAND = 2,    // landed at over kLandSoundSpeed (a bhop that bounces straight off still lands)
+    ME_DASH = 4,    // a dash started
+    ME_SUPER = 8,   // a dash jump (Celeste's super)
+    ME_HYPER = 16,  // a super dash (the hyper)
+    ME_HOOK = 32,   // your grapple caught something
+};
+constexpr float kLandSoundSpeed = 6.0f;   // m/s: softer landings make no sound
 enum : uint8_t {
     MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
     MOVE_QUICK_DASH = 2,   // the dash cooldown and recharge a third as long (0.6 -> 0.2 s, 1.2 -> 0.4 s; 1.17: a third charge instead)

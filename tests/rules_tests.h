@@ -215,7 +215,10 @@ static void testThrowCooldown(uint16_t port) {
     double t0 = pa.lastFire;
     printf("  after the knife throw: weapon %d ready in %.2f s, knife back in %.2f s\n", pa.weapon, pa.nextFire - t0, pa.knifeBackAt - t0);
     CHECK(pa.weapon != WPN_KNIFE);   // switched away
-    CHECK(std::fabs(pa.nextFire - (t0 + weaponDef(WPN_KNIFE).refire)) < 0.002);   // the knife's swing cooldown, no more
+    // the knife's swing cooldown, no more: from the throw's command, on the command clock (F22), which is the server
+    // clock or up to 0.1 s behind it (here the test's pauses between pumps leave the client's commands short)
+    auto fromCmd = [&](double next, double refire, double t) { double c = next - refire; return c <= t + 0.002 && c >= t - 0.1 - 0.002; };
+    CHECK(fromCmd(pa.nextFire, weaponDef(WPN_KNIFE).refire, t0));
     CHECK(std::fabs(pa.knifeBackAt - (t0 + 4.0)) < 0.002);                         // the knife: disabled 4 s
     int other = pa.weapon;
     ba = 0; wa = other; pump(s, cls, 0.05, in);              // let go, then fire the weapon we got: nothing until the cooldown is over
@@ -234,7 +237,7 @@ static void testThrowCooldown(uint16_t port) {
     double t1 = pa.lastFire;
     printf("  after the syringe throw: weapon %d ready in %.2f s, syringe back in %.2f s\n", pa.weapon, pa.nextFire - t1, pa.syringeBackAt - t1);
     CHECK(pa.weapon != WPN_SYRINGE && pa.weapon != WPN_KNIFE);
-    CHECK(std::fabs(pa.nextFire - (t1 + 1.0)) < 0.002);        // the syringe's normal cooldown, now 1 s
+    CHECK(fromCmd(pa.nextFire, 1.0, t1));                      // the syringe's normal cooldown, now 1 s
     CHECK(std::fabs(pa.syringeBackAt - (t1 + 4.0)) < 0.002);   // the syringe: disabled 4 s
     CHECK(pa.knifeBackAt > s.time());                          // (the knife is still away)
     ba = 0; wa = other; pump(s, cls, 0.05, in);
@@ -244,7 +247,7 @@ static void testThrowCooldown(uint16_t port) {
     ba = 0; wa = WPN_SYRINGE; pump(s, cls, 0.1, in);
     CHECK(pa.weapon != WPN_SYRINGE && c[0].latest().syringeAway > 0);
     // b throws a syringe at a (5 m in front): every cooldown resets, the thrown weapons are back
-    Vec3 base = pb.move.pos;
+    Vec3 base = openLane(s.map_, pb.move.pos);
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     pa.health = 40;
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, in); }
@@ -738,7 +741,7 @@ static void testHideScoring(uint16_t port) {
 
 // B8: hide and seek ends tied for first -> rock paper scissors among the tied, synced to every client. `n` humans
 // (all tied); the server and the clients see the same throws. Returns false if the setup failed.
-static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls) {
+static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls, const std::vector<double>& hidden = {}) {
     cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
     if (!rulesStart(s, cfg, c, n, cls, false)) return false;
     s.command("forcestart");
@@ -746,8 +749,10 @@ static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vect
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // live
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // time's up: round end
     CHECK(s.ms_.phase == PHASE_ROUND_END);
-    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; }   // every round played, all on 3
+    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; p.hideSurvived = 0; }   // every round played, all on 3
+    for (size_t k = 0; k < hidden.size() && k < (size_t)n; k++) s.players_[c[k].clientId()].hideSurvived = hidden[k];   // (the time tiebreak, T23)
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    if (!hidden.empty()) return true;   // (the caller checks what the time decided)
     CHECK(s.ms_.phase == PHASE_ROUND_END && (s.ms_.flags & MS_RPS) && s.rps_.stage == RPS_PICK && s.rps_.throwNo == 1);
     for (auto* cl : cls) CHECK(cl->mode().flags & MS_RPS);
     return (s.ms_.flags & MS_RPS) != 0;
@@ -775,6 +780,25 @@ static int rpsShapeIn(const GameEvent& e, int id) {   // a player's shape in an 
     return -1;
 }
 
+// T23: hide and seek tied on score: the most time hidden wins first; only the ones level on that too play rock paper
+// scissors.
+static void testHideTimeTiebreak(uint16_t port) {
+    printf("hide and seek tiebreak: time hidden first, then rock paper scissors\n");
+    {
+        Server s; ServerConfig cfg; cfg.port = port; NetClient c[3]; std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls, {50, 10, 20})) { s.stop(); return; }
+        printf("  3 tied on score, hidden 50 / 10 / 20 s: %s\n", s.ms_.phase == PHASE_MATCH_END ? "match over, no rock paper scissors" : "still going");
+        CHECK(s.ms_.phase == PHASE_MATCH_END && !(s.ms_.flags & MS_RPS));
+        s.stop();
+    }
+    {
+        Server s; ServerConfig cfg; cfg.port = (uint16_t)(port + 1); NetClient c[3]; std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls, {40, 40, 20})) { s.stop(); return; }
+        int in = 0; for (int i = 0; i < kMaxPlayers; i++) in += s.rps_.in >> i & 1;
+        CHECK((s.ms_.flags & MS_RPS) && in == 2 && !(s.rps_.in >> c[2].clientId() & 1) && s.rps_.bestOf3);
+        s.stop();
+    }
+}
 static void testRpsTwo(uint16_t port) {
     printf("hide and seek tiebreak: two tied, best of 3, a draw is thrown again\n");
     Server s;
@@ -863,7 +887,7 @@ static void testRpsMany(uint16_t port) {
         pump(s, cls, 0.2, idle);
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
-        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; p.hideSurvived = 0; }   // (level on time too)
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
         CHECK((s.ms_.flags & MS_RPS) && bot >= 0 && s.rps_.pick[bot] >= RPS_ROCK && s.rps_.pick[bot] <= RPS_SCISSORS);
         s.stop();
@@ -1657,7 +1681,7 @@ static void testWeaponPredict(uint16_t port) {
     wp.want(WPN_LOCATOR);
     pump(s, cls, 0.2, input);
     CHECK(sp.weapon == WPN_SNIPER && switches == before);
-    // 5. the knife thrown: the next weapon in the same command; asking for the knife while it's away: refused
+    // 5. the knife thrown: the weapon held before it, in the same command; asking for the knife while it's away: refused
     wp.want(WPN_KNIFE);
     pump(s, cls, 1.2, input);   // (out, and past the switch's refire)
     CHECK(sp.weapon == WPN_KNIFE);
@@ -1665,6 +1689,7 @@ static void testWeaponPredict(uint16_t port) {
     buttons = BTN_ALTFIRE;
     pump(s, cls, 0.2, input);
     CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    CHECK(sp.weapon == WPN_SNIPER);   // back to the weapon held before the knife (T14; it was the first slot, the rocket)
     buttons = 0;
     wp.want(WPN_KNIFE);
     pump(s, cls, 0.3, input);
@@ -1707,6 +1732,249 @@ static void testWeaponPredict(uint16_t port) {
     CHECK(!locked && !sp.fireLocked);
     printf("  %d commands checked, %d weapons and %d fire locks predicted wrong\n", checked, wrong, lockWrong);
     CHECK(checked > 500 && wrong == 0 && lockWrong == 0);
+    s.stop();
+}
+
+// F6: a hide and seek seeker who falls is back 2 s later (it stayed dead and the round idled out its 300 s).
+static void testSeekerRespawn(uint16_t port) {
+    printf("hide and seek: a fallen seeker respawns\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) it = i;
+    CHECK(it >= 0);
+    if (it < 0) { s.stop(); return; }
+    s.players_[it].move.pos.y = s.map_.killY() - 5;   // a fall
+    pump(s, cls, 0.1, idle);
+    CHECK(!s.players_[it].alive);
+    pumpServerTime(s, cls, 1.5, idle);
+    CHECK(!s.players_[it].alive);
+    pumpServerTime(s, cls, 0.7, idle);
+    printf("  seeker alive after 2.2 s: %d, still it: %d, phase %d\n", s.players_[it].alive, s.players_[it].it, s.ms_.phase);
+    CHECK(s.players_[it].alive && s.players_[it].it && s.ms_.phase == PHASE_LIVE);
+    s.stop();
+}
+
+// F5: not ranked, a match that loses a side holds still (no rounds handed to the side that's left), then after 10 s
+// it's a forfeit win; an emptied server goes back to warmup. A forced short-handed start plays on.
+static void testShortHanded(uint16_t port) {
+    printf("short-handed matches: forfeit or warmup after 10 s\n");
+    std::vector<std::string> logs;
+    for (int mode : {MODE_ARENA, MODE_VS, MODE_KOTH}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_KOTH ? "summit" : mode == MODE_ARENA ? "temple" : "bastion"; cfg.mode = mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        logs.clear();
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int stay = c[0].clientId();
+        s.command("kick " + s.players_[c[1].clientId()].name);
+        std::vector<NetClient*> one = {&c[0]};
+        pumpServerTime(s, one, 2.0, idle);
+        int scored = s.ms_.scoreA + s.ms_.scoreB;
+        CHECK(s.short_ && s.ms_.phase != PHASE_MATCH_END && (mode == MODE_KOTH || scored == 0));
+        s.shortSince_ = s.time() - 9.95;   // (most of the 10 s gone)
+        pumpServerTime(s, one, 0.2, idle);
+        bool named = false;
+        for (auto& l : logs) named |= l.find(s.players_[stay].name + " wins") != std::string::npos || l.find("TEAM A wins") != std::string::npos || l.find("TEAM B wins") != std::string::npos;
+        printf("  %s: one side left -> phase %d, %d rounds awarded on hold, forfeit called %d\n", modeName(mode), s.ms_.phase, scored, named);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && named);
+        if (mode == MODE_ARENA) {   // 1v1: the call names the player, not TEAM A
+            bool byName = false;
+            for (auto& l : logs) byName |= l.find(s.players_[stay].name + " wins") != std::string::npos;
+            CHECK(byName);
+        }
+        // everyone gone: back to warmup
+        pumpServerTime(s, one, 0.1, idle);
+        s.command("forcestart");
+        pump(s, one, 0.1, idle);
+        s.command("kick " + s.players_[stay].name);
+        std::vector<NetClient*> none;
+        pump(s, none, 0.3, idle);
+        if (s.short_) s.shortSince_ = s.time() - 9.95;
+        pumpServerTime(s, none, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_WARMUP);
+        s.stop();
+    }
+    {   // forcestart with one player (a host trying a map alone): it plays on
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "summit"; cfg.mode = MODE_KOTH; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (rulesStart(s, cfg, c, 1, cls)) {
+            pumpServerTime(s, cls, 0.5, idle);
+            CHECK(!s.short_ && s.ms_.phase != PHASE_WARMUP && s.ms_.phase != PHASE_MATCH_END);
+        }
+        s.stop();
+    }
+}
+
+// F7: play vs bots in 1V1 is one enemy and no allies whatever the team sliders say; duel its team size a side.
+static void testVsBotsDuo(uint16_t port) {
+    printf("play vs bots: 1v1 and duel sizes\n");
+    for (int mode : {MODE_ARENA, MODE_DUEL}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_ARENA ? "temple" : "clockwork"; cfg.mode = mode; cfg.port = port++;
+        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.duelTeamSize = 2;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { CHECK(false); continue; }
+        int a = 0, b = 0;
+        for (auto& p : s.players_) if (p.connected && p.isBot) (p.team == TEAM_A ? a : b)++;
+        printf("  %s: %d allies, %d enemies\n", modeName(mode), a, b);
+        CHECK(mode == MODE_ARENA ? (a == 0 && b == 1) : (a == 1 && b == 2));
+        s.stop();
+    }
+}
+
+// F9 + T15: payload / multi point stopwatch. The first round's call is the mark to beat (no ROUND WON for either
+// side); the second ends as soon as the attackers pass it, with a call that agrees with the match result.
+static void testStopwatch(uint16_t port) {
+    printf("payload / multi point: stopwatch calls and early end\n");
+    for (int mode : {MODE_PAYLOAD, MODE_POINTS}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_PAYLOAD ? "railyard" : "midtown"; cfg.mode = mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        // round 1: some progress, then time out
+        if (mode == MODE_PAYLOAD) s.ms_.payloadDist = 20.0f; else s.ms_.capture = 0.5f;
+        pump(s, cls, 0.1, idle);
+        float mark = s.bestProgress_[first];
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        bool beat = false;
+        for (auto& l : logs) beat |= l.find("must beat it") != std::string::npos;
+        printf("  %s round 1: \"%s\"\n", modeName(mode), logs.empty() ? "" : logs.back().c_str());
+        CHECK(beat && mark > 0);
+        // round 2: the other side passes the mark early: it ends right there, theirs
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        for (int k = 0; k < 40 && s.ms_.phase != PHASE_LIVE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.attackers != first && s.ms_.phase == PHASE_LIVE);
+        pump(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_LIVE);   // (not yet past it)
+        logs.clear();
+        if (mode == MODE_PAYLOAD) s.ms_.payloadDist = mark + 1.0f; else s.ms_.capture = std::min(0.99f, mark + 0.2f);
+        pump(s, cls, 0.1, idle);
+        printf("  %s round 2: phase %d \"%s\"\n", modeName(mode), s.ms_.phase, logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("beats") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(first == TEAM_A ? "TEAM B" : "TEAM A") + " wins the match") != std::string::npos;
+        CHECK(won);
+        s.stop();
+    }
+    {   // against a finished attack: once the clock is past its time the round ends, the first side's
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int first = s.ms_.attackers;
+        s.ms_.payloadDist = s.ms_.payloadLen;
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END && s.completeTime_[first] > 0);
+        s.completeTime_[first] = 100;   // (a 1:40 delivery: the instant one here would lock round 2 before it's checked)
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.roundStart_ = s.time() - s.completeTime_[first] - 0.5;   // (their clock is past the first delivery)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.scoreA + s.ms_.scoreB == 1);
+        s.stop();
+    }
+}
+
+// T17: a level attack is decided by who got there sooner, not by tiebreaker rounds. Multi point, one point each:
+// the second side there sooner wins at once (locked); there later, the first side wins at time out, in two rounds.
+static void testStopwatchLevel(uint16_t port) {
+    printf("payload / multi point: level attacks go to the sooner\n");
+    for (bool sooner : {true, false}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "midtown"; cfg.mode = MODE_POINTS; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        s.ms_.capture = 1.05f;   // point A taken (past 1: nobody on it, it drains a hair first)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.point == 1 && s.bestProgress_[first] == 1.0f);
+        s.bestTime_[first] = sooner ? 100.0f : 0.01f;   // (when they got there)
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.ms_.capture = 1.05f;   // point A for the other side too: level
+        pump(s, cls, 0.1, idle);
+        if (!sooner) { CHECK(s.ms_.phase == PHASE_LIVE); s.phaseEnd_ = s.time() - 10; pumpServerTime(s, cls, 0.2, idle); }
+        printf("  there %s: \"%s\"\n", sooner ? "sooner" : "later", logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("level with") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        int w = sooner ? (first == TEAM_A ? TEAM_B : TEAM_A) : first;
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(w == TEAM_A ? "TEAM A" : "TEAM B") + " wins the match") != std::string::npos;
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2 && won);
+        s.stop();
+    }
+}
+
+// T18: on a payload map whose spawns don't move up (Railyard), attackers past the last checkpoint respawn in 3 s,
+// everyone else in the usual 5 s.
+// Natively and through payload.qlogic's respawnDelay slot (forced through the interpreter): the same numbers.
+static void testLastLegRespawn(uint16_t port) {
+  for (int interp = 0; interp < 2; interp++) {
+    printf("payload: a quicker attacker respawn on the last leg (%s)\n", interp ? "the built-in logic, interpreted" : "native");
+    Server s;
+    if (interp) s.presetModeLogic(compileModeLogic(defaultModeText(MODE_PAYLOAD), MODE_PAYLOAD, nullptr, true));
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = (uint16_t)(port + interp); cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    int att = rulesTeamPlayer(s, s.ms_.attackers), def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? TEAM_B : TEAM_A);
+    if (att < 0 || def < 0) { CHECK(false); s.stop(); return; }
+    auto wait = [&](int id) { s.killPlayer(id, -1, 252); double w = s.players_[id].respawnAt - s.time(); s.spawnPlayer(id); return w; };
+    double early = wait(att);
+    s.ms_.point = (uint8_t)s.map_.cartChecks.size();   // past the last checkpoint
+    double last = wait(att), defLast = wait(def);
+    printf("  attacker %.1f s, on the last leg %.1f s; defender there %.1f s\n", early, last, defLast);
+    CHECK(std::fabs(early - 5.0) < 0.01 && std::fabs(last - kLastLegRespawn) < 0.01 && std::fabs(defLast - 5.0) < 0.01);
+    CHECK(interp == 0 || (s.modeHooks_ && s.modeHooks_->has(MSLOT_RESPAWN_DELAY)));
+    s.stop();
+  }
+}
+
+// F23: multi point on a map without points can't start (it never ended).
+static void testPointsNoPoints(uint16_t port) {
+    printf("multi point on a map without points\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "harbor"; cfg.mode = MODE_POINTS; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    pump(s, cls, 0.2, idle);
+    CHECK(s.map_.points.empty() && s.ms_.phase == PHASE_WARMUP);
     s.stop();
 }
 
@@ -1868,6 +2136,42 @@ static void testModeHooks(uint16_t port) {
     s.stop();
 }
 
+// T27: free for all picks at random among the unseen spawns near the best distance (it always took the farthest one:
+// predictable), never one the other player can see.
+static void testFfaSpawnChoice() {
+    printf("ffa spawns: random among the unseen near the farthest\n");
+    for (const char* name : {"harbor", "gantry"}) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        if (!s.map_.load(name)) { CHECK(false); continue; }
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        for (int i = 0; i < 2; i++) { auto& p = s.players_[i]; p.connected = true; p.isBot = true; p.team = TEAM_A; }
+        auto& w = s.players_[1];
+        w.alive = true;
+        w.move.pos = s.map_.spawns[0].pos;   // (someone standing on a spawn)
+        Vec3 eye = w.move.pos + Vec3(0, kEyeHeight, 0);
+        float best = 0;
+        for (auto& sp : s.map_.spawns) best = std::max(best, length(sp.pos - w.move.pos));
+        std::vector<char> used(s.map_.spawns.size(), 0);
+        int seen = 0, close = 0;
+        for (int k = 0; k < 60; k++) {
+            auto& p = s.players_[0];
+            p.alive = false;
+            s.spawnPlayer(0);
+            Vec3 to = p.move.pos + Vec3(0, 1.2f, 0) - eye;
+            float d = length(to);
+            seen += !s.map_.raycastAny(eye, to / d, d);
+            close += length(p.move.pos - w.move.pos) < 0.5f * best;
+            for (size_t i = 0; i < s.map_.spawns.size(); i++) if (length(s.map_.spawns[i].pos - p.move.pos) < 0.3f) used[i] = 1;
+        }
+        int kinds = 0; for (char u : used) kinds += u;
+        printf("  %s: %d different spawns in 60, %d in sight, %d under half the farthest distance\n", name, kinds, seen, close);
+        CHECK(kinds >= 2 && seen == 0 && close == 0);
+        for (auto& p : s.players_) p.connected = false;
+    }
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1878,22 +2182,25 @@ static void testGameRules(const std::string& only) {
         {"grapple", [] { testGrappleNoBrake(); testGrapplePmove(); }},
         {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", [] { testHeadBox(TP(29246)); }},
-        {"hide", [] { testHideScoring(TP(29247)); }},
+        {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
+        {"shorthanded", [] { testShortHanded(TP(29288)); }},
+        {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
+        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
         {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
-        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
+        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
         {"locator", [] { testLocator(TP(29260)); }},
         {"aware", [] { testItAwareness(TP(29263)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"cartbox", [] { testCartBoxPlace(TP(29275)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", [] { testSpawnTypes(TP(29251)); }},
+        {"spawns", [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
         {"seeds", [] { testRandomSeeds(); }},
         {"heal", [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", [] { testScoreboardValue(); }},
         {"hudclock", [] { testHudClock(TP(29280)); }},
         {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
         {"customkeep", [] { testCustomRulesKeep(); }},
-        {"modehooks", [] { testModeHooks(TP(29288)); }},
+        {"modehooks", [] { testModeHooks(TP(29310)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")

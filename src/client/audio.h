@@ -156,7 +156,8 @@ public:
 private:
     // pos: where in the sound, 32.32 fixed point (exact over long clips, where a float's step went coarse past ~2.7 s);
     // step: the pitch; gainL / gainR: the gains the last period ended on (a 3D sound ramps from them to the new ones)
-    struct Voice { int id, pack; uint64_t pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0; };
+    struct Voice { int id, pack; uint64_t pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0;
+                   float lp = 1, lpY = 0; };   // (X8: behind you, a one-pole low-pass: its coefficient, 1 = off, and its state)
     // full: the oldest sound effect makes room (an announcer line only if all are)
     static void addVoice(std::vector<Voice>& list, const Voice& v, size_t cap);
     uint32_t voiceSeq_ = 0;    // (under mu_) start order: the mixer's swap-and-pop doesn't keep voices_ in it

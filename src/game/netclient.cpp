@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include "demo.h"
+#include "gamemodes.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -32,6 +33,9 @@ void NetClient::resetPrediction() {
     errorOffset_ = {};
     lastReplay_ = 0;
     havePendingOffset_ = reconcilePending_ = false;
+    moveEv_ = 0; moveLand_ = 0;
+    hookCatch_ = HookCatch();
+    remoteEvHead_ = remoteEvTail_;   // (another server's or demo's clock)
 }
 
 void NetClient::resetJitter() {
@@ -421,6 +425,13 @@ void NetClient::onSnapshot(Snapshot& s) {
 
     reconcilePending_ = true;   // (once a poll, against its newest snapshot: reconcile)
 
+    // everyone else's movement events, played as each is drawn there (an old server or demo sends none)
+    for (const PlayerSnap& p : s.players) {
+        const uint16_t ev = p.keys & (uint16_t)~KEY_HELD_MASK;
+        if (!ev || p.hidden || (p.id == s.clientId && !play_.active) || !(p.flags & PS_ALIVE)) continue;   // (a demo: the recorded player's too)
+        if (remoteEvTail_ - remoteEvHead_ >= kRemoteEvRing) remoteEvHead_++;   // (nobody's reading: the oldest goes)
+        remoteEv_[remoteEvTail_++ % kRemoteEvRing] = {s.timeMs * 0.001, p.id, ev};
+    }
     if (rec_) recordSnapshot(s, fresh);
     snaps_.push_back(std::move(s));
     indexLatest();
@@ -453,6 +464,45 @@ void NetClient::afterSnapshots() {
     if (reconcilePending_) { reconcilePending_ = false; if (!snaps_.empty()) reconcile(snaps_.back()); }
 }
 
+// The dash charges, their timers and the hook cooldown agree (F19): a teammate's syringe refills them on the server
+// between commands, which moves nothing, so a position-only compare kept the empty pips and the next dash or grapple
+// came a round trip late as a correction. Each is exact on the wire and pmove's integer / float steps match.
+static bool sameCharges(const MoveState& a, const MoveState& b) {
+    if (a.dashCharges != b.dashCharges || a.dashRecharging != b.dashRecharging || a.dashCooldownMs != b.dashCooldownMs ||
+        std::fabs(a.hookCooldown - b.hookCooldown) > 1e-4f) return false;
+    for (int i = 0; i < a.dashRecharging && i < kMaxDashCharges; i++) if (a.dashRechargeMs[i] != b.dashRechargeMs[i]) return false;
+    return true;
+}
+
+// The players a grapple fired in `cmd` could catch, as Server::grappleTargets picks them, where you see them (render
+// time: the server rewinds to it). Only for a command that can fire the hook (rare), so the interpolation costs nothing
+// the rest of the time. What the client can't know (a custom rule) stays the server's word: a correction, as before.
+bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
+    probe.n = 0;
+    const MoveState& m = pred_;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
+    if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
+    const ModeState& ms = mode();
+    if (ms.mode == MODE_RACE || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
+    const PlayerSnap* me = findPlayer(clientId_);
+    if (!me) return false;
+    interpolatedPlayers(probePlayers_);
+    uint32_t held = 0;   // players someone else's grapple holds already
+    for (const InterpPlayer& ip : probePlayers_)
+        if (ip.valid && ip.snap.id != clientId_ && ip.snap.hooked >= 2 && ip.snap.hooked - 2 < kMaxPlayers) held |= 1u << (ip.snap.hooked - 2);
+    const float scale = bodyScale();
+    for (int i = 0; i < kMaxPlayers && probe.n < HookProbe::kMax; i++) {
+        const InterpPlayer& ip = probePlayers_[i];
+        const PlayerSnap& q = ip.snap;
+        if (!ip.valid || i == clientId_ || !(q.flags & PS_ALIVE) || (q.flags & PS_SPECTATOR) || (held >> i & 1)) continue;
+        if (modeIsTeamBased(ms.mode) && q.team() == me->team()) continue;
+        if (isItMode(ms.mode) && ((q.flags & PS_HASBOMB) != 0) == ((me->flags & PS_HASBOMB) != 0)) continue;
+        probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
+        probe.id[probe.n++] = (uint8_t)i;
+    }
+    return probe.n > 0;
+}
+
 void NetClient::reconcile(const Snapshot& s) {
     // The payload cart is solid: mirror the server's collision box so prediction agrees (at the cart's place on
     // the track, which runs from the other end when team B attacks an unstaged map: Map::cartTrack, as the server).
@@ -466,7 +516,8 @@ void NetClient::reconcile(const Snapshot& s) {
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
-                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget;
+                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget &&
+                 sameCharges(mine, s.self);
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
@@ -487,7 +538,11 @@ void NetClient::reconcile(const Snapshot& s) {
             lastReplay_++;
             if (c.seq != seq) continue;
             predPrev_ = pred_;
-            pmove(pred_, c, map_);
+            if (hookCatch_.seq == seq) {   // (the command whose grapple caught a player: that player again)
+                HookProbe probe;
+                probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id;
+                pmove(pred_, c, map_, &probe);
+            } else pmove(pred_, c, map_);
             predicted_[seq % kCmdRing] = pred_;
             predictedSeq_[seq % kCmdRing] = seq;
         }
@@ -521,7 +576,15 @@ void NetClient::tick(UserCmd cmd) {
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
-    if (selfAlive()) pmove(pred_, cmd, map_);
+    if (selfAlive()) {
+        HookProbe probe;   // a grapple this command may fire: the enemies you see can catch it, as on the server (F20)
+        if (hookProbe(cmd, probe)) {
+            pmove(pred_, cmd, map_, &probe);
+            if (probe.hit >= 0) { hookCatch_.seq = cmd.seq; hookCatch_.box = probe.box[probe.hit]; hookCatch_.id = probe.id[probe.hit]; }
+        } else pmove(pred_, cmd, map_);
+        moveEv_ |= pred_.events;
+        moveLand_ = std::max(moveLand_, pred_.landSpeed);
+    }
     predicted_[cmd.seq % kCmdRing] = pred_;
     predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
     errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
@@ -865,7 +928,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
     if (!rec_->open(path)) { rec_.reset(); return false; }
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
     rec_->write(&magic, 4); rec_->write(&ver, 2);
-    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
+    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false; std::memset(recMoveEv_, 0, sizeof recMoveEv_);
     // who's who so far (names, models, ranked ids arrived as events before the recording started)
     recEvents_.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -886,6 +949,8 @@ double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 
 
 void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events) {
     for (const auto& e : events) recEvents_.push_back(e);
+    for (const PlayerSnap& p : s.players)   // (movement events of the snapshots skipped go in the next one recorded)
+        if (p.id < kMaxPlayers) recMoveEv_[p.id] |= p.keys & (uint16_t)~KEY_HELD_MASK;
     double t = timeNow() - recStart_;
     if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
@@ -906,6 +971,9 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     // (recCur_ and recBuf_ keep their memory: no allocations per recorded snapshot)
     Snapshot& c = recCur_;
     c = s;
+    for (PlayerSnap& p : c.players)
+        if (p.id < kMaxPlayers) p.keys = (uint16_t)((p.keys & KEY_HELD_MASK) | recMoveEv_[p.id]);
+    std::memset(recMoveEv_, 0, sizeof recMoveEv_);
     c.baseTick = recHavePrev_ ? recPrev_.tick : 0;
     // numbered from 1 in the demo's own order; at most 255 a record (the count is a u8: the rest go in the next one)
     const size_t nEv = std::min<size_t>(recEvents_.size(), 255);

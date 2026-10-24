@@ -31,6 +31,7 @@ struct BotAwareness {
     Vec3 seenPos, seenVel;     // where it was then, and how it seemed to move
     double heardAt = -1e9;     // last time it was heard (gunfire, footsteps)
     Vec3 heardPos;             // roughly where (the error grows with distance)
+    double hurtNoticed = -1e9; // the hit from it (ServerPlayer::lastHitByAt) last turned to (X11)
 };
 
 struct BotBrain {
@@ -147,3 +148,7 @@ UserCmd botThink(Server& s, int id);
 // calling botThinkDirect, which is botThink without the hook).
 extern UserCmd (*g_botThinkHook)(Server& s, int id);
 UserCmd botThinkDirect(Server& s, int id);
+// Tests: the route-search budget's state (the tick it counts for, searches used): the lockstep harness hands both
+// brains the same budget, as each would have had thinking alone.
+uint32_t& botPathTick();
+int& botPathsThisTick();

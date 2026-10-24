@@ -605,6 +605,10 @@ bool Game::pressInput(int code) {
         return true;
     }
     if (b.has(A_FIRE, code)) fireLatched_ = true; // a click shorter than a tick still fires
+    // ...and so does a jump, dash or grapple tap (it went down and up between two ticks: no command saw it held)
+    if (b.has(A_JUMP, code)) moveLatched_ |= BTN_JUMP;
+    if (b.has(A_DASH, code)) { moveLatched_ |= BTN_DASH; dashHoldUntil_ = time_ + kDashPressBuffer; }
+    if (b.has(A_GRAPPLE, code)) moveLatched_ |= BTN_GRAPPLE;
     return false;
 }
 
@@ -870,6 +874,8 @@ UserCmd Game::buildCmd() {
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
         altPrev_ = isDown(A_ALTFIRE);
         fireLatched_ = false;   // (a click just before Esc / chat / console fired on the first tick after it)
+        moveLatched_ = 0;
+        dashHoldUntil_ = -1;
         return c;
     }
     // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
@@ -892,6 +898,9 @@ UserCmd Game::buildCmd() {
     if (isDown(A_USE)) c.buttons |= BTN_USE;
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
     if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
+    c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
+    if (time_ <= dashHoldUntil_) c.buttons |= BTN_DASH;   // (a dash press up to 0.1 s before one is allowed: held till then, T2)
+    moveLatched_ = 0;
     if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
     bool alt = isDown(A_ALTFIRE), altEdge = alt && !altPrev_;
     altPrev_ = alt;
@@ -981,7 +990,10 @@ void Game::updateAnnouncer() {
     else if (annLeader_ == -2) annLeader_ = -1;
     // Killstreaks are per match and per player: a new match (back to warmup, or another mode) starts them again, and a
     // slot's new player doesn't inherit the last one's (they only reset on leaving the server, so a spree carried over)
-    if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP)))
+    // (and as one starts: kills in warmup, or on the end screen, don't carry into it)
+    if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP) ||
+                          ((annPrev_.phase == PHASE_WARMUP || annPrev_.phase == PHASE_MATCH_END) && ms.phase != annPrev_.phase) ||
+                          ms.round < annPrev_.round))
         for (int& k : streak_) k = 0;
     for (int i = 0; i < kMaxPlayers; i++)
         if (streak_[i] && !net_.findPlayer(i)) streak_[i] = 0;
@@ -1047,8 +1059,28 @@ void Game::handleEvents() {
                 if (nameColorOf(e.b, nc)) { size_t vn = net_.playerName(e.b).size(); f.spans.push_back({killer.empty() || e.a == e.b ? 0 : t.size() - vn, vn, nc}); }
                 killFeed_.push_back(f);
                 while (killFeed_.size() > 6) killFeed_.pop_front();
-                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) specTarget_ = e.a;
+                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) { specTarget_ = e.a; killCamUntil_ = time_ + kKillCamTime; }
+                if (e.b == net_.clientId()) {   // the death screen: the victim's copy carries "<killer hp> <respawn ms>"
+                    deathValid_ = true;
+                    deathKiller_ = e.a < kMaxPlayers && e.a != e.b ? e.a : -1;
+                    deathWeapon_ = wpn;
+                    deathKillerHp_ = -1;
+                    deathRespawnAt_ = -1;
+                    int hp = -1, ms = -1;
+                    if (!e.text.empty() && std::sscanf(e.text.c_str(), "%d %d", &hp, &ms) == 2) {
+                        deathKillerHp_ = hp >= 0 && hp <= 9999 ? hp : -1;
+                        if (ms >= 0 && ms <= 600000) deathRespawnAt_ = time_ + ms * 0.001;
+                    }
+                }
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
+                if (e.a == net_.clientId() && e.b != e.a) killMarkUntil_ = time_ + 0.45;   // X6: a kill looks unlike a hit
+                if (e.b != net_.clientId() && e.b < kMaxPlayers) {   // X6: where they fell (in sight only), a thud and a red burst
+                    const PlayerSnap* v = net_.findPlayer(e.b);
+                    if (v && !v->hidden) {
+                        audio_.play3D(SND_DEATH, v->pos + Vec3(0, 1, 0), 0.8f, 1.0f, net_.playerSoundPack(e.b));
+                        explosions_.push_back({v->pos + Vec3(0, 1, 0), time_, 0.35f, false, true});
+                    }
+                }
                 break;
             }
             case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
@@ -1185,9 +1217,16 @@ void Game::handleEvents() {
                     if (e.b && cfg_.announcer >= 1) audio_.play(won ? SND_VOICE_YOU_WIN : SND_VOICE_YOU_LOSE, 1.0f);
                     else if (!e.b && teams && cfg_.announcer >= 2) audio_.play(won ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
                     else if (!e.b && cfg_.announcer >= 2) audio_.play(SND_VOICE_ROUND_OVER, 1.0f);
-                }
+                } else if (me && me->team() != TEAM_SPECTATOR && !e.b && cfg_.announcer >= 2 && (net_.mode().mode == MODE_PAYLOAD || net_.mode().mode == MODE_POINTS))
+                    audio_.play(SND_VOICE_ROUND_OVER, 1.0f);   // (a stopwatch pair's first round: a mark to beat, nobody's won yet)
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
+                break;
+            }
+            case EV_GUNFIRE: {   // X9: a shot out of sight, roughly where: the weapon's sound, quieter and lower (muffled)
+                Vec3 p;
+                if (e.c >= 0 && e.c < WPN_COUNT && std::sscanf(e.text.c_str(), "%f %f %f", &p.x, &p.y, &p.z) == 3)
+                    audio_.play3D(SND_RIFLE + e.c, p, 0.45f, 0.8f);
                 break;
             }
             case EV_BRACKET: {
@@ -1199,6 +1238,15 @@ void Game::handleEvents() {
                 voteText_ = e.text;
                 break;
             case EV_HIT:
+                if (e.b == net_.clientId() && e.a != e.b && e.text.size() > 1 && e.text[0] == '@') {   // hit by someone: the arc
+                    long x = 0, z = 0;
+                    if (sscanf(e.text.c_str() + 1, "%ld %ld", &x, &z) == 2) {
+                        DmgDir* slot = &dmgDirs_[0];   // (theirs again, else the oldest)
+                        for (auto& d : dmgDirs_) { if (d.from == e.a) { slot = &d; break; } if (d.at < slot->at) slot = &d; }
+                        *slot = {Vec3(x * 0.1f, 0, z * 0.1f), time_, e.a};
+                    }
+                    break;
+                }
                 if (e.a == net_.clientId()) {
                     float dmg = e.c / 100.0f; // hundredths of a point
                     bool head = e.text == "h"; // a headshot: its own red number
@@ -1217,6 +1265,7 @@ void Game::handleEvents() {
                 break;
             case EV_SPAWN:
                 if (e.a == net_.clientId()) {
+                    for (auto& d : dmgDirs_) d = DmgDir();   // (the last life's hits)
                     yaw_ = e.c / 1000.0f;
                     pitch_ = 0;
                     if (opts_.spawnYaw > -999) { yaw_ = deg2rad(opts_.spawnYaw); pitch_ = deg2rad(opts_.spawnPitch); }
@@ -1373,16 +1422,42 @@ void Game::frame(double dt) {
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
         if (net_.playback()) tickAcc_ = 0;   // watching a demo: no input
         const double period = net_.tickPeriod();
+        const bool aliveBefore = fireAlive_;   // (alive through the last frame too: F18's spread below needs it)
+        {   // just spawned: the server fires nothing for kSpawnFireLock, from its spawn. We see the spawn half a round trip
+            // late and our commands reach it half a round trip after we send them: the lock here ends a round trip sooner
+            // (a click before then played a shot the server never fired)
+            const bool aliveNow = net_.selfAlive() && !net_.playback();
+            if (aliveNow && !fireAlive_) {
+                const PlayerSnap* mp = net_.findPlayer(net_.clientId());
+                const double rtt = mp ? mp->ping * 0.001 : 0.0;
+                const double lock = std::max(0.0, (double)kSpawnFireLock - rtt);
+                if (time_ + lock > localNextFire_) { localNextFire_ = time_ + lock; localRefire_ = (float)lock; }
+            }
+            fireAlive_ = aliveNow;
+        }
         QZONE("input + prediction ticks");
+        // F18: this frame's turn spread over its ticks (clientfeel.h spreadYaw): the last tick has now's exact yaw, each
+        // earlier one its share of the way there; a tick with fire, alt-fire or a grapple shot held, and every tick after
+        // it, takes the exact aim (what you see is what you shoot). Not across a spawn or while dead (the yaw is set).
+        const int frameTicks = (int)(tickAcc_ / period);
+        const bool spread = frameTicks > 1 && aliveBefore && fireAlive_;
+        const float yawFrom = spread ? tickYaw_ : yaw_;
+        bool exactAim = !spread;
+        int tickNo = 0;
         while (tickAcc_ >= period) {
             if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
                 fireLatched_ = false;   // (no stray shot when the new map is ready)
+                moveLatched_ = 0;
                 UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
                 net_.tick(k);
                 tickAcc_ -= period;
                 continue;
             }
             UserCmd c = buildCmd();
+            tickNo++;
+            if (c.buttons & (BTN_FIRE | BTN_ALTFIRE)) exactAim = true;
+            if ((c.buttons & BTN_GRAPPLE) && !(net_.predicted().flags & MF_HOOKED)) exactAim = true;
+            if (!exactAim) c.yaw = spreadYaw(yawFrom, yaw_, tickNo, frameTicks);
             // the weapon the server will hold after this command (predicted: a switch shows now, not a round trip
             // later); switching with fire held locks fire until it's let go, as the server does (runPlayerCmd)
             bool switchLock = false;
@@ -1408,8 +1483,13 @@ void Game::frame(double dt) {
                 if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
                 else wantFire = false;
             }
+            if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;
+            if (tapBuffered(hw) && !localFireLocked_ && holdFireLeft() <= 0 && weaponAwayLeft(hw) <= 0) {   // mirror the server's tap buffer (T13)
+                if (wantFire && !altShot && (c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && time_ < localNextFire_) { localFireQueued_ = time_ + kTapBuffer; localTapWeapon_ = hw; }
+                if (!wantFire && time_ <= localFireQueued_) wantFire = true;
+            }
             if (weaponDef(hw).semiAuto) { // mirror the server: one shot per click, short buffer
-                if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
+                if (wantFire && !localFireHeld_) { localFireQueued_ = time_ + kFireBuffer; localTapWeapon_ = hw; }
                 localFireHeld_ = wantFire;
                 wantFire = time_ <= localFireQueued_;
             } else localFireHeld_ = wantFire;
@@ -1424,7 +1504,8 @@ void Game::frame(double dt) {
                 localBurstWeapon_ = w;
                 // the next shot one refire after this one's slot, not after this frame: re-basing on the frame's time made
                 // every held shot up to a frame late, adding up (a rifle burst's last shot heard ~70 ms after the real one)
-                localNextFire_ = (cadence ? localNextFire_ : time_) + shotRefire(w, alt);
+                localRefire_ = shotRefire(w, alt);   // (the HUD's weapon bar: this shot's own, alt-fire's too)
+                localNextFire_ = (cadence ? localNextFire_ : time_) + localRefire_;
                 if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? weaponAlt().knifeAway : weaponAlt().syringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
@@ -1433,6 +1514,10 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
+                if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
+                    (w != WPN_LASER || time_ >= nextLocalSpark_))
+                    localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
                 else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
@@ -1465,8 +1550,10 @@ void Game::frame(double dt) {
             }
             localPrevButtons_ = c.buttons;
             net_.tick(c);
+            if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
             tickAcc_ -= period;
         }
+        tickYaw_ = yaw_;   // (the last tick's: now's)
         if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
         heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
@@ -1502,14 +1589,20 @@ void Game::frame(double dt) {
         lastProjectiles_.swap(projScratch_);
 
         int hp = net_.selfHealth();
-        if (hp < lastHealth_ && net_.selfAlive()) { damageUntil_ = time_ + 0.25; audio_.play(SND_HURT, 0.7f); }
+        {   // the hurt sound: one per 0.15 s at most, louder for more damage (clientfeel.h; it played on every drop)
+            const bool hurt = hp < lastHealth_ && net_.selfAlive();
+            if (hurt) damageUntil_ = time_ + 0.25;
+            if (!net_.selfAlive()) hurtGate_.reset();
+            else if (float v = hurtGate_.frame(time_, hurt ? lastHealth_ - hp : 0); v > 0) audio_.play(SND_HURT, v);
+        }
         lastHealth_ = hp;
+        if (net_.selfAlive()) deathValid_ = false;   // (the death screen is this death's only)
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
             const auto& ps = framePlayers();
             for (int k = 1; k <= kMaxPlayers; k++) {
                 int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
-                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
+                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
             }
         }
         captureMouse(!paused_ && !chatting_ && !bake_);
@@ -1627,8 +1720,23 @@ void Game::drawWorld(float alpha) {
         Vec3 p = demoView ? players[me].snap.pos : net_.smoothedPos(alpha);
         bool crouch = net_.predicted().flags & MF_CROUCHED;
         eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+        {   // X7: a stair step moves you up to 0.55 m in one tick: the camera (only: shots still leave from the real eye)
+            // starts where it was and closes the gap with an 8 ms time constant (95% in 25 ms), up and down
+            const bool gr = !demoView && (net_.predicted().flags & MF_ONGROUND);
+            stepCam_ *= (float)std::exp(-frameDt_ / 0.008);
+            if (gr && stepGround_) {
+                const float dy = p.y - stepFeetY_;
+                if (std::fabs(dy) > 0.02f && std::fabs(dy) < 0.6f * bodyScale()) stepCam_ = clampf(stepCam_ - dy, -0.6f, 0.6f);
+            }
+            if (std::fabs(stepCam_) < 1e-4f) stepCam_ = 0;
+            stepFeetY_ = p.y; stepGround_ = gr;
+            eye.y += stepCam_;
+        }
     } else {
-        if (specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
+        stepCam_ = 0; stepGround_ = false;
+        // team modes: an enemy (the killer) only for kKillCamTime, then a teammate (F11)
+        const bool enemyCam = specTarget_ >= 0 && modeIsTeamBased(ms.mode) && !isFriendly(specTarget_) && time_ >= killCamUntil_;
+        if (enemyCam || specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
             for (int i = 0; i < kMaxPlayers; i++)
                 if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && (isFriendly(i) || !modeIsTeamBased(ms.mode))) { specTarget_ = i; break; }
@@ -1884,7 +1992,8 @@ void Game::drawWorld(float alpha) {
                     tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
                 }
             }
-            if (cfg_.enemyShots && (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i]))) {
+            // (the rifle too, X3: each of its shots is its own firing edge, 0.15 s apart against the flag's 0.1 s)
+            if (cfg_.enemyShots && (w == WPN_LASER || ((w == WPN_SNIPER || w == WPN_RIFLE) && !remoteFiring_[i]))) {
                 Vec3 eyeP = p.pos + Vec3(0, ((p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
@@ -1895,7 +2004,7 @@ void Game::drawWorld(float alpha) {
                 // gun's place, low and to the right, like your own)
                 if (i == viewing && !alive) start += Vec3(std::cos(p.yaw), 0, -std::sin(p.yaw)) * 0.2f + Vec3(0, -0.17f, 0);
                 if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
-                else tracers_.push_back({start, end, time_ + 0.9});
+                else tracers_.push_back({start, end, time_ + (w == WPN_SNIPER ? 0.9 : 0.2)});
             }
         }
         remoteFiring_[i] = firing;
@@ -1926,7 +2035,24 @@ void Game::drawWorld(float alpha) {
                        selfView ? muzzlePoint(WPN_KNIFE, eye) : Vec3());
     }
 
-    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s)
+    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s; X5: your rockets,
+    // bolts and thrown knives fly from the click, a predicted copy, until the server's arrives and takes over as far
+    // along as the copy was)
+    auto projGravity = [](int type, bool lob) { return projectileGravity(type, lob ? kRocketLobGravity : 1.0f); };
+    if (!alive) for (auto& q : predProj_) q.live = false;
+    for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
+        if (!q.live) continue;
+        const double age = time_ - q.born;
+        if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
+        if (q.atWall) continue;
+        Vec3 p = q.pos0, v = q.vel0;
+        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
+        const Vec3 d = p - q.pos;
+        const float len = length(d);
+        if (len > 1e-4f && map.raycast(q.pos, d / len, len) >= 0) { q.atWall = true; continue; }   // (hidden; the server's copy still takes over from it)
+        q.pos = p;
+        if (!q.started) { q.started = true; q.offset = muzzlePoint(q.type, eye) - q.pos0; }
+    }
     {
         std::vector<ProjStart>& keep = projStartsKeep_;   // (the two trade memory each frame)
         keep.clear();
@@ -1935,7 +2061,18 @@ void Game::drawWorld(float alpha) {
             ProjStart st{pr.id, time_, {}};
             bool found = false;
             for (auto& o : projStarts_) if (o.id == pr.id) { st = o; found = true; }
-            if (!found && alive) {
+            PredProj* copy = nullptr;   // a new one of yours: the oldest copy of its kind takes it
+            if (!found && alive && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)))
+                for (auto& q : predProj_) if (q.live && q.type == pr.type && (!copy || q.born < copy->born)) copy = &q;
+            if (copy) {
+                const float sp = length(pr.vel);
+                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
+                Vec3 p = pr.pos, v = pr.vel;
+                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
+                if (length(st.offset) > 3.0f) st.offset = {};
+                copy->live = false;
+            } else if (!found && alive) {
                 // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
                 int w = pr.type < WPN_COUNT ? pr.type : heldWeapon_;
                 Vec3 muz = muzzlePoint(w, eye);
@@ -1945,11 +2082,12 @@ void Game::drawWorld(float alpha) {
         }
         projStarts_.swap(keep);
     }
-    for (auto pr : lastProjectiles_) {
+    auto drawProj = [&](ProjectileSnap pr, bool copy) {
         // (on you: where you are this frame; on anyone else, interpolatedProjectiles already put it on them)
         if ((pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == me) net_.attachedPos(pr, alpha, &pr.pos);
-        for (auto& st : projStarts_)
-            if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
+        if (!copy)
+            for (auto& st : projStarts_)
+                if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
         float sp = length(pr.vel);
         Vec3 dir = sp > 0.01f ? pr.vel / sp : Vec3(0, 0, -1);
@@ -1986,6 +2124,31 @@ void Game::drawWorld(float alpha) {
         else if (mt == WPN_KNIFE) r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
         else if (mt == WPN_CROSSBOW) r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
         else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
+        };
+    for (auto pr : lastProjectiles_) {
+        for (auto& st : projStarts_)
+            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) {   // (X5: as far along as its copy was, short of the wall)
+                Vec3 p = pr.pos, v = pr.vel;
+                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                const Vec3 d = p - pr.pos;
+                const float len = length(d);
+                const float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f;
+                pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
+                pr.vel = v;
+            }
+        drawProj(pr, false);
+    }
+    for (auto& q : predProj_) {
+        if (!q.live || q.atWall) continue;
+        ProjectileSnap pr;
+        pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
+        Vec3 v = q.vel0, p = q.pos0;
+        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
+        pr.vel = v;
+        float f = 1.0f - (float)(time_ - q.born) / 0.2f;   // (from the muzzle, like the server's copy did)
+        pr.pos = q.pos + (f > 0 ? q.offset * f : Vec3());
+        if (length(pr.pos - eye) < 0.8f) continue;   // (its first ~10 ms: the model would fill the view from the muzzle)
+        drawProj(pr, true);
     }
     drawStuckProps(eye, alpha);
     // explosions
@@ -1994,7 +2157,8 @@ void Game::drawWorld(float alpha) {
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
+        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
+                 : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)} : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
     }
@@ -2424,6 +2588,8 @@ void Game::drawHud() {
     const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
     // crosshair (scoped with the overlay on: the scope's reticle replaces it)
     if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    if (!paused_ && !rpsOn && net_.selfAlive()) drawDamageArcs(cx, cy, s);
+    if (!paused_ && !rpsOn) drawKillMark(cx, cy, s);
     if (!cfg_.dmgNums) dmgNums_.clear();   // (VISUALS > DAMAGE NUMBERS off)
     if (!dmgNums_.empty()) {   // floating damage numbers above whoever you hit
         const auto& ip = framePlayers();
@@ -2653,7 +2819,7 @@ void Game::drawHud() {
                 r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
             };
             int cw = heldWeapon_;
-            bar(bcy + 36 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
+            bar(bcy + 36 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), cw == WPN_LOCATOR || localRefire_ <= 0 ? weaponDef(cw).refire : localRefire_);   // (the locator: its recharge; else the last shot's refire: a scoped rifle's or the bubble stream's, F23)
             {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
                 // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
                 // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -2729,9 +2895,24 @@ void Game::drawHud() {
             }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
-        std::string t = mep && (mep->flags & PS_SPECTATOR) ? "SPECTATING" : "DEAD";
+        const bool spectator = mep && (mep->flags & PS_SPECTATOR);
+        std::string t = spectator ? "SPECTATING" : "DEAD";
         if (specTarget_ >= 0) t += " - WATCHING " + net_.playerName(specTarget_) + " (CLICK TO CYCLE)";
         ui_.labelCentered(cx, H - 60 * s, t, kGrey);
+        if (!spectator && deathValid_) {   // X1: who, with what, their health; then the respawn countdown
+            const float lh = r_.textHeight(std::max(1.0f, std::round(ts))) + 6 * s;
+            float y = H - 60 * s - lh;
+            if (deathRespawnAt_ >= 0) {
+                char b[32];
+                std::snprintf(b, sizeof b, "RESPAWN IN %.1f", std::max(0.0, deathRespawnAt_ - time_));
+                ui_.labelCentered(cx, y, b, kWhite);
+                y -= lh;
+            }
+            std::string k = deathKiller_ >= 0 ? "KILLED BY " + net_.playerName(deathKiller_) + " [" + upper(weaponName(deathWeapon_)) + "]"
+                                              : std::string("YOU DIED [") + upper(weaponName(deathWeapon_)) + "]";
+            if (deathKiller_ >= 0 && deathKillerHp_ >= 0) k += " - " + std::to_string(deathKillerHp_) + " HP";
+            ui_.labelCentered(cx, y, k, rgba(cfg_.colorEnemy));
+        }
     }
 
     if (time_ < splitUntil_) { // race split, with the difference to your best run
@@ -6530,6 +6711,78 @@ void Game::drawBracket() {
 }
 
 // Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.
+// X5: a copy of the projectile the server will launch for this command, as it launches it (Server::fireWeapon): from
+// 0.3 m in front of the eye, at the weapon's speed (a rocket lob: 70% and its drop; a thrown knife: its own).
+void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    PredProj* slot = &predProj_[0];   // (a free one, else the oldest)
+    for (auto& q : predProj_) { if (!q.live) { slot = &q; break; } if (q.born < slot->born) slot = &q; }
+    PredProj q;
+    q.type = (uint8_t)w;
+    q.live = true;
+    q.pos0 = q.pos = eye + aim * 0.3f;
+    if (w == WPN_KNIFE) q.vel0 = aim * kKnifeThrowSpeed;
+    else {
+        const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+        q.vel0 = spreadAim(aim, spread, 0, 1, localBurst_) * wd.projSpeed;
+        if (w == WPN_ROCKET && alt) { q.vel0 = q.vel0 * kRocketLobSpeed; q.lob = true; }
+    }
+    q.born = time_;
+    *slot = q;
+}
+
+// X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
+// the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
+// in sight, once a shot (the laser: at most 20 a second).
+void Game::localImpactSparks(int w, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    bool any = false;
+    for (int k = 0; k < wd.pellets; k++) {
+        const Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+        float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
+        if (t < 0) t = wd.range;
+        const Vec3 inv = safeInv(d);
+        float best = t;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
+            const float tk = rayAABB(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+            if (tk >= 0 && tk < best) best = tk;
+        }
+        if (best < t) { explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true}); any = true; }
+    }
+    if (any) nextLocalSpark_ = time_ + 0.05;
+}
+
+// Where the hits you took came from (X3): a red arc round the crosshair toward each attacker (as they stood when it
+// hit), for kDmgDirTime, fading. A few dozen small rects while one shows; nothing otherwise.
+void Game::drawDamageArcs(float cx, float cy, float scale) {
+    const Vec3 me = net_.predicted().pos;
+    const Vec3 fwd = {-std::sin(yaw_), 0, -std::cos(yaw_)}, right = {std::cos(yaw_), 0, -std::sin(yaw_)};
+    const float rad = 70 * scale, px = std::max(3.0f, std::round(5 * scale));
+    for (const DmgDir& d : dmgDirs_) {
+        const double age = time_ - d.at;
+        if (d.at <= 0 || age > kDmgDirTime) continue;
+        const Vec3 to = d.pos - me;
+        if (to.x * to.x + to.z * to.z < 0.01f) continue;   // (on top of you: no direction)
+        const float th = std::atan2(dot(to, right), dot(to, fwd));   // 0: ahead (up on screen), + to the right
+        const float a = (float)(1.0 - age / kDmgDirTime);
+        for (int k = -6; k <= 6; k++) {
+            const float t = th + k * 0.06f;
+            const float w = 1.0f - std::fabs((float)k) / 8.0f;   // (thicker in the middle)
+            r_.rect(cx + std::sin(t) * rad - px * 0.5f, cy - std::cos(t) * rad - px * 0.5f, px, px * (0.6f + w), Color{1, 0.12f, 0.08f, a * w});
+        }
+    }
+}
+
 void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     float u = std::max(1.0f, std::round(scale));
     float t = std::max(1.0f, std::round(cfg_.chThickness * u)), len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
@@ -6568,6 +6821,22 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, c);
 }
 
+// X6: your kill: a red X round the crosshair, bigger than the hit flash, fading (squares along the diagonals). Drawn
+// scoped too.
+void Game::drawKillMark(float cx, float cy, float scale) {
+    if (time_ >= killMarkUntil_) return;
+    float u = std::max(1.0f, std::round(scale));
+    float len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
+    cx = std::round(cx); cy = std::round(cy);
+    {
+        const float a = (float)std::min(1.0, (killMarkUntil_ - time_) / 0.2);
+        const float d = std::max(2.0f, std::round(2 * u)), r0 = g + 3 * u, r1 = g + len + 10 * u;
+        for (float r = r0; r <= r1; r += d * 0.75f)
+            for (int sx = -1; sx <= 1; sx += 2)
+                for (int sy = -1; sy <= 1; sy += 2) r_.rect(cx + sx * r * 0.7071f - d * 0.5f, cy + sy * r * 0.7071f - d * 0.5f, d, d, {1.0f, 0.12f, 0.1f, a});
+    }
+}
+
 // VISUALS: what's drawn (world look, shot effects, overlays)
 // FONT: the UI font (uifonts.h). Built-ins first, then mods/fonts; a click builds that font's atlas once and saves it.
 bool Game::loadUiFont(const std::string& id, std::string* err, std::string* name) {
@@ -6597,21 +6866,30 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     const double frameDt = time_ - prevSoundAt_;
     prevSoundAt_ = time_;
     if (alive && prevAlive_) {
-        bool was = prevMove_.flags & MF_ONGROUND, now = m.flags & MF_ONGROUND;
+        bool now = m.flags & MF_ONGROUND;
         Vec3 d = m.pos - prevMove_.pos;
         float h = std::sqrt(d.x * d.x + d.z * d.z);
         if (now && h < 2.0f) {
             stepDist_ += h;
             if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f, 0.9f + (qrand() % 20) * 0.01f); }
         }
-        if (was && !now && m.vel.y > 3) audio_.play(SND_JUMP, 0.5f);
-        if (!was && now && prevMove_.vel.y < -6) audio_.play(SND_LAND, clampf(-prevMove_.vel.y / 20.0f, 0.3f, 1.0f));
-        if (m.dashTimer > 0 && prevMove_.dashTimer <= 0) audio_.play(SND_DASH, 0.8f);
-        // a dash cut short by a jump: a super (dash jump), or a hyper (super dash: the dash was aimed down into the
-        // floor). (A dash running out on its own has under a frame left; an upward dash ending isn't a jump.)
-        if (prevMove_.dashTimer > (float)frameDt + 0.01f && m.dashTimer <= 0 && m.vel.y > 1.0f && !(m.flags & MF_ONGROUND))
-            audio_.play(dashAimedDown(prevMove_) ? SND_HYPER : SND_SUPER, 0.9f);   // (pmove's own test: since 1.18.7 the charges left no longer tell them apart)
-        if ((m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {
+    }
+    {   // jumps, landings, dashes and the grapple from what each tick's movement did (pmove's ME_*): comparing the state once
+        // a frame missed a jump and its landing in one tick (bhops: more of them silent the higher the fps) and a dash
+        // with its dash jump in one frame (a silent super or hyper)
+        float land = 0;
+        const uint8_t ev = net_.takeMoveEvents(&land);
+        if (alive && prevAlive_ && ev) {
+            if (ev & ME_LAND) audio_.play(SND_LAND, clampf(land / 20.0f, 0.3f, 1.0f));
+            if (ev & ME_JUMP) audio_.play(SND_JUMP, 0.5f);
+            if (ev & ME_DASH) audio_.play(SND_DASH, 0.8f);
+            if (ev & (ME_SUPER | ME_HYPER)) audio_.play((ev & ME_HYPER) ? SND_HYPER : SND_SUPER, 0.9f);
+            if (ev & ME_HOOK) {
+                audio_.play(SND_GRAPPLE_FIRE, 0.7f);
+                audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
+            }
+        }
+        if (net_.playback() && alive && prevAlive_ && (m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {   // (a demo: no ME_HOOK)
             audio_.play(SND_GRAPPLE_FIRE, 0.7f);
             audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
         }
@@ -6630,7 +6908,12 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             // walking on the ground: by speed, not per frame (0.05 m a frame let anything slower than 200 m/s up or down
             // count at 4000 fps: jumping, falling and grappling enemies made footsteps in the air; 3 m/s is the old
             // threshold at 60 fps; the 2 m a frame cap stays a teleport guard)
-            if (h < 2.0f && std::fabs(d.y) < 3.0f * (float)frameDt) {
+            // On stairs the climb is faster than that: then (rising or falling no steeper than the stairs, 45 deg) a short
+            // probe under their feet says whether they're on a step (F23: stairs were silent). The probe only runs then.
+            const float vy = std::fabs(d.y), flat = 3.0f * (float)frameDt;
+            const bool onFloor = vy < flat ||
+                (vy < h * 1.1f + flat && net_.map().sweepAxis(playerBox(p.pos, (p.flags & PS_CROUCHED) != 0, bodyScale()), 1, -0.2f) > -0.199f);
+            if (h < 2.0f && onFloor) {
                 ra.stepDist += h;
                 if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (qrand() % 20) * 0.01f, sp); }
             }
@@ -6652,6 +6935,21 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         ra.hooked = p.hooked;
         ra.health = p.health;
         ra.valid = true;
+    }
+    // everyone else's jumps, landings and dashes (the server's KEY_EV_* bits), each as that player is drawn where it
+    // happened: in the air they were silent (holding jump is the best way to move, so movers made no sound at all)
+    NetClient::RemoteMoveEvent e;
+    while (net_.nextRemoteMoveEvent(net_.renderTime(), &e)) {
+        if (e.id >= kMaxPlayers || !players[e.id].valid || !(players[e.id].snap.flags & PS_ALIVE)) continue;
+        const uint16_t ev = (uint16_t)(e.ev >> kKeyEvShift);
+        const bool self = e.id == me;   // (a demo: the recorded player, whose view this is)
+        const Vec3 at = players[e.id].snap.pos;
+        const int sp = net_.playerSoundPack(e.id);
+        auto play = [&](int snd, float vol) { if (self) audio_.play(snd, vol * 0.6f, 1.0f, sp); else audio_.play3D(snd, at, vol, 1.0f, sp); };
+        if (ev & ME_LAND) play(SND_LAND, (e.ev & KEY_EV_LAND_HARD) ? 1.0f : 0.6f);
+        if (ev & ME_JUMP) play(SND_JUMP, 0.8f);
+        if (ev & ME_DASH) play(SND_DASH, 1.0f);
+        if (ev & (ME_SUPER | ME_HYPER)) play((ev & ME_HYPER) ? SND_HYPER : SND_SUPER, 1.0f);
     }
 }
 
