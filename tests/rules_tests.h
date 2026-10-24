@@ -937,7 +937,18 @@ static void testLocator(uint16_t port) {
         int n = 0, who = -1;
         for (auto& e : got) if (e.type == EV_LOCATE) { n++; who = e.a; }
         CHECK(n == 1 && who == other);
-        CHECK(locates(oc) == 0);                           // (only to "it"; the hider's locator does nothing)
+        for (auto& e : got) CHECK(e.type != EV_SOUND);     // ("it" plays its own ping)
+        int pings = 0, locs = 0;
+        for (auto& e : oc.takeEvents()) {
+            locs += e.type == EV_LOCATE;
+            if (e.type != EV_SOUND) continue;
+            pings++;
+            Vec3 at; std::istringstream ps(e.text);
+            CHECK(e.a == it && e.c == WPN_LOCATOR && (ps >> at.x >> at.y >> at.z));
+            CHECK(length(at - s.players_[it].move.pos) < 2.0f);   // from where "it" stands
+        }
+        CHECK(locs == 0);                                  // (only to "it"; the hider's locator does nothing)
+        CHECK(pings == 1);                                 // the hider hears the ping
         CHECK(s.players_[it].locateAt > s.time() + kLocatorCooldown - 1.0);
         fire = false; pump(s, cls, 0.1, hold);
         s.players_[it].locateAt = s.time();                // recharged: fires again

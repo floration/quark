@@ -1,6 +1,6 @@
 # Quark Sound Editor
 
-A local page for designing and levelling Quark's sounds: every kit's 33 sounds, every voice's 30 announcer lines, the
+A local page for designing and levelling Quark's sounds: every kit's 33 sounds, every voice's 27 announcer lines, the
 events that have no sound yet, gameplay scenes to hear edits in context, and an export the game reads. It runs from
 disk (`file://`) in Chrome or Edge with no server and no network.
 

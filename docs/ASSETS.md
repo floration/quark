@@ -20,7 +20,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 | Category | Files | Path (= the override path) |
 |---|---|---|
 | Sounds | 33 sounds x 5 kits = 165 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
-| Voices | 30 announcer lines x 7 voices = 210 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
+| Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 6 props = 30 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
 | Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
@@ -30,8 +30,8 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 Sound names are the SND_* names (`HIT`, `ROCKET`, `GRAPPLE_FIRE` ... `assets/sfx/custom/README.md` says when each
 plays; the hitsound is four: `HIT` under 10 damage, `HIT_MED` 10 to 24, `HIT_HEAVY` 25 to 50, `HIT_BRUTAL` over 50, each
 replaced at the loudness of its tier, as heard, so the four stay in order); voice lines are `THREE` `TWO` `ONE` `GO` `BOMB_PLANTED` ... `ROUND_OVER` (src/client/audio.cpp). A line a
-voice has no recording of is exported as a tenth of a second of silence (it is silent in the game), so it can still be
-added. The export is what the game uses now: the built-in assets with the shipped overrides applied, never this
+voice has no recording of would be exported as a tenth of a second of silence (it is silent in the game), so it can still
+be added; today every voice has all 27. The export is what the game uses now: the built-in assets with the shipped overrides applied, never this
 computer's own overrides folder.
 
 Models are the game's box models (src/client/models.cpp, the same lists drawWorld draws: every model in the game,
