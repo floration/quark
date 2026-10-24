@@ -88,6 +88,7 @@ int main(int argc, char** argv) {
         else if (a == "--customshot") opts.debugCustom = atoi(next().c_str()) + 1;   // the custom mode editor on that tab (screenshots)
         else if (a == "--info") opts.debugInfo = atoi(next().c_str()) + 1;   // the info screen on that tab (screenshots)
         else if (a == "--menushot") opts.menuShot = true;
+        else if (a == "--fonts") opts.debugFonts = true;   // Settings > FONT open from the start (screenshots: with --menushot)
         else if (a == "--edfocus") opts.edFocus = true;
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();

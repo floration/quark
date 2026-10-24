@@ -45,6 +45,7 @@ std::string Game::uiScreenPath() const {
         if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
         if (hudOpen_) return hudDrop_ ? "/hud/elements" : "/hud";
         if (visualsOpen_) return "/visuals";
+        if (fontsOpen_) return "/fonts";
         return "";
     };
     auto pickerName = [](int p) -> const char* {
@@ -144,6 +145,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "edmap") return ed_.serialize();
     if (w == "edimport") return ed_.serialize() + b(edGroupMenu_);
     if (w == "browser") return std::to_string(browser_.refreshes());
+    if (w == "fontscan") return std::to_string(fontScans_);
     if (w == "scores") return b(showScores_);
     if (w == "perf") return b(showPerf_);
     if (w == "perfmini") return b(perfMini_);
@@ -524,7 +526,8 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.controlsOpen_ = g.crosshairOpen_ = g.hudOpen_ = g.visualsOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.controlsOpen_ = g.crosshairOpen_ = g.hudOpen_ = g.visualsOpen_ = g.fontsOpen_ = false;
+        g.fontScroll_ = 0;   // (the font itself follows the settings put back below: Game::frame applies ui_font)
         if (g.widgetEdit_) g.widgets_.save(g.activeHudPath());
         g.widgetEdit_ = g.hudDrop_ = g.valueDrop_ = false;
         g.widgetSel_ = -1;

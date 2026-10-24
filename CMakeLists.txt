@@ -269,6 +269,7 @@ add_library(quark_assets STATIC
   src/client/overrides.cpp
   src/client/decoders.cpp
   src/client/fontatlas.cpp
+  src/client/uifonts.cpp
   src/client/codec_vorbis.c
   src/client/codec_flac_mp3.c
   src/client/codec_image_font.c
