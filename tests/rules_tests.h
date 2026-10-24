@@ -2321,8 +2321,8 @@ static void testModeCalls(uint16_t port) {
 }
 
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
-// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~20 s each
-// on an idle box; overtime ~15 s and grapplep ~11 s are the long ones, one in each).
+// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~21 and
+// ~18 s on an idle box; overtime ~15 s and grapplep ~6 s, its bots now on the manual clock, are the long ones, one in each).
 static void testGameRules(const std::string& only, int half = 0) {
     struct R { const char* name; int half; std::function<void()> run; };
     std::vector<R> all = {
