@@ -24,7 +24,8 @@ colours and how each widget is drawn, from `src/client/ui.cpp`). `extract.py` ma
      extract.py gives it): the player's settings, maps and demos are never touched.
    - Settings > DEVICES shows generic names (SOUND OUTPUT n, MICROPHONE n, MONITOR n + its mode), not this PC's
      hardware: the dump is committed.
-2. `cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF`, target `quark` (`build-x/`).
+2. `cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF`, target `quark` (`build-x/`); on
+   Linux the default generator (run it under Xvfb: the hidden window still needs a display).
 3. `QUARK_EXTRACT_DIR=<run> QUARK_EXTRACT_SHOTS=1 TMP=<private> quark --uitest <run>/report.json` (about 4 minutes),
    no console window; killed by its PID after `--timeout`.
 4. `build_dump.py --out <extract> <run>/raw`: groups the captures by path + context. In each group the richest variant
@@ -69,4 +70,5 @@ line in the patch (and a case in `src/render.js`).
   showed by chance, tooltips and hover hints, a focused text field's caret, a slider being typed into (all described
   in `style.widgetLook`). Each page is one moment: what's on screen depends on the state the test left it in.
 - Only 1280x720. Positions at other sizes follow `Ui::s()` = height/720 (textScale = round(2*s)), but some screens lay
-  out differently.
+  out differently. The page's View menu previews other sizes from this dump (guessing each widget's anchor: see the
+  tool's README).

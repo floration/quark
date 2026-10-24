@@ -75,6 +75,28 @@ const QModel = (() => {
     };
   }
 
+  // The browser autosave stores a page the layout leaves exactly as the game has it as {$base: <its origId>, uid} (most
+  // of the 120 pages: the saved layout is a few KB, not 1.7 MB of copies, which file:// pages share one small storage
+  // quota for). Loading puts the dump's page back in its place, so after a dump refresh those pages are the new
+  // game's; a page the dump no longer has is dropped (nothing of it was the owner's). Other pages pass through.
+  const isBaseRef = (p) => !!p && typeof p === 'object' && typeof p.$base === 'string' && !Array.isArray(p.elements);
+  function expandBaseRefs(baseline, doc) {
+    if (!doc || !Array.isArray(doc.pages) || !doc.pages.some(isBaseRef)) return doc;
+    const fresh = new Map(makeWorking(baseline).pages.map((p) => [p.origId, p]));
+    const pages = doc.pages.map((p) => {
+      if (!isBaseRef(p)) return p;
+      const b = fresh.get(p.$base);
+      if (!b) return null;
+      fresh.delete(p.$base);
+      if (p.uid) b.uid = String(p.uid);
+      return b;
+    }).filter(Boolean);
+    return Object.assign({}, doc, { pages });
+  }
+  // A page's autosave text: the reference when the diff says it is the game's (no notes, no provenance mark), else json.
+  const baseRefJson = (entry, json) => (entry && entry.base && entry.status === 'unchanged' && !entry.page.prov && !entry.page.notes
+    ? JSON.stringify({ $base: entry.base.origId, uid: entry.page.uid }) : json);
+
   // Repairs a layout read from storage or a file: every page and element gets a uid, the expected arrays exist.
   function sanitizeWorking(doc) {
     if (!doc || !Array.isArray(doc.pages)) throw new Error('not a layout (no "pages" array)');
@@ -196,8 +218,22 @@ const QModel = (() => {
     return [...keys];
   };
 
+  // The same fields with the same values (=== or equal arrays of plain values): the untouched copy most widgets are.
+  // Cheap, so the diff (run after every edit) only compares field by field the few that differ.
+  function identical(a, b) {
+    let n = 0;
+    for (const k in a) {
+      if (META.has(k)) continue;
+      n++;
+      const x = a[k], y = b[k];
+      if (x !== y && !(Array.isArray(x) && Array.isArray(y) && x.length === y.length && x.every((v, i) => v === y[i]))) return false;
+    }
+    for (const k in b) if (!META.has(k)) n--;
+    return n === 0;
+  }
   // What changed between one baseline element and its working copy: {flags, changes:[{field, old, new}]}
   function elementChanges(base, el) {
+    if (identical(base, el)) return { flags: [], changes: [] };
     const flags = [], changes = [];
     if (!same(base.x, el.x) || !same(base.y, el.y)) { flags.push('moved'); changes.push({ field: 'position', old: [base.x, base.y], new: [el.x, el.y] }); }
     if (!same(base.w, el.w) || !same(base.h, el.h)) { flags.push('resized'); changes.push({ field: 'size', old: [base.w, base.h], new: [el.w, el.h] }); }
@@ -249,8 +285,8 @@ const QModel = (() => {
       }
       // draw order of the original widgets that are still on this page
       if (base) {
-        const now = entry.rows.filter((r) => r.base && !r.fromPage).map((r) => r.base.origId);
-        const was = base.elements.map((e) => e.origId).filter((o) => now.includes(o));
+        const now = entry.rows.filter((r) => r.base && !r.fromPage).map((r) => r.base.origId), still = new Set(now);
+        const was = base.elements.map((e) => e.origId).filter((o) => still.has(o));
         if (now.join() !== was.join()) { entry.pageChanges.push({ field: 'draw order', old: null, new: null }); counts.reordered++; }
       }
       entries.push(entry);
@@ -440,6 +476,10 @@ const QModel = (() => {
   }
 
   // ---- the spec ----------------------------------------------------------------------------------------------------
+  // opts: date, dumpName, font (fontDesc), freshness (build.py's: a stale dump is called out at the top), layout: which
+  // pages get a full widget table after the changes: 'changed' (default: the changed pages, so an agent sees each one
+  // whole), 'all' (every page: about 800 KB for the whole game) or 'none'.
+  const SPEC_LAYOUTS = ['changed', 'all', 'none'];
   function specMarkdown(baseline, doc, opts = {}) {
     const date = opts.date || new Date();
     const lf = layoutFont(doc);   // (the layout's own font wins over none / the default Work Sans)
@@ -458,6 +498,9 @@ const QModel = (() => {
     L.push(`- Text: drawn at text scale ${baseline.style.textScale || 2} at 720p (a line is 8 * scale px tall); "textScale" values below are at 720p.`);
     L.push('- Widget identity: "orig" is `<page id>#<index>` in the dump\'s draw order; also given: the widget\'s UiExp (action) and id. ' +
       'Find a widget in the code by its label and UiExp, not by the index.', '');
+    const fr = opts.freshness;
+    if (fr && fr.stale) L.push(`**Warning: made against an out-of-date UI dump (${fr.why}).** The game may have changed these pages since: ` +
+      'check each change against the current code before applying it.', '');
     if (opts.font && !isDefaultFont(opts.font)) L.push(...fontSection(opts.font, baseline.style.textScale || 2));
 
     L.push(...logoSection(doc, baseline.style.textScale || 2, baseline));
@@ -510,10 +553,13 @@ const QModel = (() => {
       L.push('');
     }
 
-    // ---- full layout
-    L.push('## Full layout', '');
-    L.push('Every page of the edited layout. Widget rows are in draw order (later rows draw on top).', '');
-    for (const e of D.pages) {
+    // ---- full layout (of the changed pages, or of every page)
+    const layout = SPEC_LAYOUTS.includes(opts.layout) ? opts.layout : 'changed';
+    const tables = layout === 'all' ? D.pages : layout === 'changed' ? changed : [];
+    if (layout === 'all') L.push('## Full layout', '', 'Every page of the edited layout. Widget rows are in draw order (later rows draw on top).', '');
+    else if (tables.length) L.push('## Layout of the changed pages', '', 'Every widget of each changed page, as edited. Widget rows are in draw order (later rows draw on top). ' +
+      'Unchanged pages are left out (export with "every page" to list them too).', '');
+    for (const e of tables) {
       const p = e.page;
       const st = e.status === 'added' ? 'new' : e.status;
       L.push(`### ${pageName(p)} - ${st}`, '');
@@ -541,7 +587,7 @@ const QModel = (() => {
         L.push('');
       }
     }
-    return { markdown: L.join('\n'), diff: D, fileName: 'ui-spec-' + stamp(date) + '.md' };
+    return { markdown: L.join('\n'), diff: D, fileName: 'ui-spec-' + stamp(date) + (layout === 'all' ? '-full' : '') + '.md' };
   }
 
   // ---- provenance ----------------------------------------------------------------------------------------------------
@@ -574,7 +620,7 @@ const QModel = (() => {
     else if ((m = /^ingame\/console(\/.*)?$/.exec(id))) id = 'console' + (m[1] || '');
     else if ((m = /^ingame\/chat(\/.*)?$/.exec(id))) id = 'hud/chat' + (m[1] || '');
     else if ((m = /^ingame\/scores(\/.*)?$/.exec(id))) id = 'hud/scoreboard' + (m[1] || '');
-    else if (/^ingame\/perf(\/|$)/.test(id)) id = 'hud/perf-overlay';
+    else if (/^ingame\/perf(mini)?(\/|$)/.test(id)) id = 'hud/perf-overlay';   // (F3's overlay and its mini latency line)
     else if (id === 'ingame') id = 'hud/widgets';
     return 'ui/' + id;
   }
@@ -674,8 +720,8 @@ const QModel = (() => {
     return { data: { format: 1, tool: 'ui-customizer', items: sorted }, added, updated, kept, other: Object.keys(old).filter((k) => !(k in items)).length };
   }
 
-  return { KINDS, GAME_KINDS, NEW_KINDS, normalizeDump, makeWorking, sanitizeWorking, signature, newElement, copyElement, newPage,
-    diff, elementChanges, specMarkdown, fontHeadline, isDefaultFont, stamp, clone, uid, layoutFont, setLayoutFont, layoutFontDesc,
+  return { KINDS, GAME_KINDS, NEW_KINDS, normalizeDump, makeWorking, sanitizeWorking, expandBaseRefs, baseRefJson, signature, newElement, copyElement, newPage,
+    diff, elementChanges, specMarkdown, SPEC_LAYOUTS, fontHeadline, isDefaultFont, stamp, clone, uid, layoutFont, setLayoutFont, layoutFontDesc,
     ymd, provKey, registryKey, mapProvenanceItems, sanitizeProv, markHuman, markAi, provenanceItems, parseProvenance, mergeProvenance };
 })();
 

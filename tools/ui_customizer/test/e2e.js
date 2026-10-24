@@ -18,17 +18,23 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 }, acceptDownloads: true });
   // a fake File System Access folder (the real picker can't be driven headless): provenance.json is written into it,
   // kept in localStorage across reloads; it starts with an item of another page that the merge must keep
+  // (read from localStorage on first use, never while the document starts: an init script touching localStorage on a
+  // file:// page can leave that page with an empty storage area in Chromium, so the reload would find no autosave)
   await ctx.addInitScript(() => {
-    let files = null;
-    try { files = JSON.parse(localStorage.getItem('__fakeFs') || 'null'); } catch (e) { /* none */ }
-    files = window.__fakeFiles = files || { 'build.py': '', 'provenance.json': JSON.stringify({ format: 1, tool: 'ui-customizer',
-      items: { 'ui/zz-other': { origin: 'ai', by: 'q', date: '2026-10-23', note: 'kept by the merge' } } }) };
-    const save = () => localStorage.setItem('__fakeFs', JSON.stringify(files));
-    const fileHandle = (name) => ({ kind: 'file', name, getFile: async () => ({ text: async () => files[name] }),
-      createWritable: async () => { let buf = ''; return { write: async (t) => { buf += t; }, close: async () => { files[name] = buf; save(); } }; } });
+    let cache = null;
+    const files = () => {
+      if (cache) return cache;
+      try { cache = JSON.parse(localStorage.getItem('__fakeFs') || 'null'); } catch (e) { /* none */ }
+      return (cache = cache || { 'build.py': '', 'provenance.json': JSON.stringify({ format: 1, tool: 'ui-customizer',
+        items: { 'ui/zz-other': { origin: 'ai', by: 'q', date: '2026-10-23', note: 'kept by the merge' } } }) });
+    };
+    Object.defineProperty(window, '__fakeFiles', { get: files });
+    const save = () => localStorage.setItem('__fakeFs', JSON.stringify(files()));
+    const fileHandle = (name) => ({ kind: 'file', name, getFile: async () => ({ text: async () => files()[name] }),
+      createWritable: async () => { let buf = ''; return { write: async (t) => { buf += t; }, close: async () => { files()[name] = buf; save(); } }; } });
     const dir = { kind: 'directory', name: 'ui-customizer', queryPermission: async () => 'granted', requestPermission: async () => 'granted',
       getFileHandle: async (name, o) => {
-        if (!(name in files)) { if (!o || !o.create) throw new DOMException('not found', 'NotFoundError'); files[name] = ''; }
+        if (!(name in files())) { if (!o || !o.create) throw new DOMException('not found', 'NotFoundError'); files()[name] = ''; }
         return fileHandle(name);
       } };
     window.__pickerCalls = 0;
@@ -164,11 +170,88 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
 
   // autosave survives a reload
   await page.waitForTimeout(600);
+  const stored = await ev(() => (localStorage.getItem('quark-ui-customizer/layout/v1') || '').length);
+  assert.ok(stored > 0 && stored < 200000, `autosave keeps only the changed pages whole (${stored} chars, the full layout is ~1.7 MB)`);
   await page.reload();
+  await page.waitForFunction(() => window.QApp && QApp.S && QApp.S.doc);   // (a busy machine can take longer than a fixed wait)
   await page.waitForTimeout(300);
   const kept = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
-  assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded');
+  assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded (got ' + (kept ? kept.label : 'no widget') + ')');
   assert.strictEqual((await provOf(target.page)).origin, 'human', 'mark autosaved');
+
+  // ---- in-page dialogs (the Quark Project app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
+  page.on('dialog', (d) => { errors.push('native dialog: ' + d.type() + ' ' + d.message()); d.dismiss(); });
+  const nBefore = await ev(() => QApp.S.doc.pages.length);
+  await page.locator('#bAddPage').click();
+  assert.ok(await page.locator('#dlg').isVisible(), '+ Page opens the in-page dialog');
+  await page.keyboard.press('Escape');
+  assert.ok(!(await page.locator('#dlg').isVisible()) && (await ev(() => QApp.S.doc.pages.length)) === nBefore, 'Esc cancels');
+  await page.locator('#bAddPage').click();
+  await page.locator('#dlgInput').fill('  ');
+  await page.keyboard.press('Enter');
+  assert.ok(await page.locator('#dlg').isVisible(), 'an empty id is refused');
+  await page.locator('#dlgInput').fill('main');
+  await page.keyboard.press('Enter');
+  const addedId = await ev(() => QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).id);
+  assert.strictEqual(addedId, 'main-2', 'a taken id gets -2');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.length), nBefore + 1, '+ Page added a page');
+  const idInput = page.locator('#inspector .row:has(> label:text-is("id")) input');
+  await idInput.fill('main');
+  assert.ok(await idInput.evaluate((i) => i.classList.contains('bad')), 'a duplicate page id is flagged');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).id), 'main-2', 'and not applied');
+  await idInput.press('Tab');
+  assert.strictEqual(await idInput.inputValue(), 'main-2', 'leaving the field puts the id back');
+  await page.locator('#palette button', { hasText: 'Button' }).click();   // (an empty page goes without asking)
+  await ev(() => { QApp.S.sel = new Set(); });
+  await ev(() => QApp.commit(() => {}));
+  await page.locator('#inspector button', { hasText: 'Delete page' }).click();
+  assert.ok(await page.locator('#dlg').isVisible(), 'Delete page asks in the page');
+  await page.locator('#dlgOk').click();
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.length), nBefore, 'Delete page (confirmed in the page)');
+
+  // ---- undo across pages (snapshots restringify only the pages an edit touched) ----
+  {
+    const r = await ev(() => {
+      const [A, B] = QApp.S.doc.pages.filter((p) => p.elements.length > 1).slice(0, 2);
+      const get = () => [A.elements[0].x, B.elements[0].x, B.elements.length, A.elements.length].join();
+      const out = [get()];
+      QApp.selectPage(A.uid); QApp.commit(() => { A.elements[0].x += 5; }); out.push(get());
+      QApp.selectPage(B.uid); QApp.commit(() => { B.elements[0].x += 7; }); out.push(get());
+      QApp.selectPage(A.uid); QApp.S.sel = new Set([A.elements[1].uid]); QApp.moveSelToPage(B.uid); out.push(get());
+      const live = () => { const a = QApp.S.doc.pages.find((p) => p.uid === A.uid), b = QApp.S.doc.pages.find((p) => p.uid === B.uid); return [a.elements[0].x, b.elements[0].x, b.elements.length, a.elements.length].join(); };
+      QApp.undo(); out.push(live()); QApp.undo(); out.push(live()); QApp.undo(); out.push(live());
+      return out;
+    });
+    assert.deepStrictEqual([r[4], r[5], r[6]], [r[2], r[1], r[0]], 'undo across pages and a move between pages: ' + r.join(' | '));
+  }
+
+  // ---- origins in the page list, preview at other resolutions (read only), spec layout tables ----
+  const nOrg = await page.locator('#pageList .pg .org').count();
+  assert.strictEqual(nOrg, nBefore, 'every page shows who made it');
+  await page.locator('.ochip.o-human').click();
+  const humanRows = await page.locator('#pageList .pg').count();
+  assert.ok(humanRows >= 1 && humanRows < nBefore, 'origin filter lists the human pages (' + humanRows + ')');
+  await page.locator('.ochip.o-human').click();
+  const mainId = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid);
+  await ev((u) => QApp.selectPage(u), mainId);
+  const quit = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')));
+  for (const [v, fw] of [['2560x1440', 1280], ['1920x1200', 1152], ['3440x1440', 1720]]) {
+    await page.locator('#sView').selectOption(v);
+    const pv = await ev(() => { const r = QApp.preview(); const q = r.page.elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')); return { fw: r.view.fw, x: q.x, k: r.view.k }; });
+    assert.strictEqual(pv.fw, fw, v + ' frame width in 720p units');
+    assert.strictEqual(pv.x, quit.x + (fw - 1280) / 2, v + ': a centred button keeps its offset from the centre');
+  }
+  assert.ok(Math.abs((await ev(() => QApp.preview().view.k)) - 1) < 1e-9, '1440p text is exact (scale 4)');
+  const ovBox = await page.locator('#ov').boundingBox();
+  await page.mouse.click(ovBox.x + ovBox.width / 2, ovBox.y + ovBox.height / 2);
+  assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'the preview is read only');
+  if (shots) await page.screenshot({ path: path.join(shots, 'e2e-preview-3440.png') });
+  await page.locator('#sView').selectOption('');
+  assert.strictEqual(await ev(() => QApp.preview()), null, 'back to editing');
+  const full = await ev(() => QApp.spec('all')), part = await ev(() => QApp.spec('changed'));
+  assert.ok(full.includes('## Full layout') && !part.includes('## Full layout') && part.length < full.length / 2, `changes-only spec is small (${part.length} vs ${full.length} chars)`);
+  const stale = await ev(() => JSON.parse(document.getElementById('buildInfo').textContent).freshness);
+  assert.strictEqual(await page.locator('#staleBar').isVisible(), !!(stale && stale.stale), 'the out-of-date banner shows exactly when the dump is stale');
 
   // the help popover and a screenshot of every page group's first page
   await page.keyboard.press('?');
@@ -275,14 +358,16 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   // autosave keeps the font and the upload across a reload
   await page.waitForTimeout(600);
   await page.reload();
+  await page.waitForFunction(() => window.QApp && QApp.S && QApp.S.doc);   // (a busy machine can take longer than a fixed wait)
   await page.waitForTimeout(300);
   if (upId) await page.waitForFunction((x) => !!QApp.fonts.get(x), upId, { timeout: 10000 });
   fstate = await ev(() => QApp.S.font);
-  assert.strictEqual(fstate.id, upId || trial, 'font kept after reload');
+  assert.strictEqual(fstate.id, upId || trial, 'font kept after reload: ' + JSON.stringify(fstate));
   assert.strictEqual(fstate.mult, 1.2, 'size kept after reload');
   if (upId) {   // remove it again (confirm dialog accepted above)
     await page.locator('#bFonts').click();
     await page.locator('#upList button', { hasText: 'Remove' }).first().click();
+    await page.locator('#dlgOk').click();   // (the in-page confirm)
     await page.waitForFunction((x) => !QApp.fonts.get(x), upId);
     assert.strictEqual(await ev(() => QApp.S.font.id), 'rubik', "back to the game's font after removing the upload");
     await page.locator('#fpClose').click();
@@ -366,7 +451,7 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await ev(() => { const p = QApp.S.doc.pages.find((x) => x.id === 'main'); QApp.commit(() => { p.notes = 'provenance test'; }); });
   await ev(() => { window.showDirectoryPicker = undefined; });   // (a browser without the File System Access API)
   const provDl = page.waitForEvent('download', { predicate: (d) => d.suggestedFilename() === 'provenance.json' });
-  const [ldl] = await Promise.all([page.waitForEvent('download'), page.locator('#bExport').click()]);
+  const [ldl] = await Promise.all([page.waitForEvent('download', { predicate: (d) => d.suggestedFilename().startsWith('ui-layout-') }), page.locator('#bExport').click()]);
   const lexp = JSON.parse(fs.readFileSync(await ldl.path(), 'utf8'));
   assert.deepStrictEqual(lexp.doc.font, { id: 'rubik', weight: 700 }, 'exported layout carries its font');
   assert.ok(lexp.doc.pages.some((p) => p.prov && p.prov.origin === 'human'), 'exported layout carries the marks');
