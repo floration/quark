@@ -12,7 +12,10 @@ DISPLAY=:99 xvfb-run -a ctest --test-dir build -R uitest  # the same through cte
 ```
 
 Development options: `--uitest-only menus,host-ffa` runs some scenarios, `--uitest-path settings` only explores the
-screens under one path, and `QUARK_UITEST_VERBOSE=1` prints every activation as it happens.
+screens under one path (`--uitest-path host,custom`: under any of them; the scenario's first screen always), and
+`QUARK_UITEST_VERBOSE=1` prints every activation as it happens. `quark --menupage <path> --screenshot out.png` opens a
+menu page by its path (below) for a screenshot, e.g. `host/advanced`, `vsbots/picker:maps`,
+`info/controls+15` (scrolled down 15 lines).
 
 It runs with its own data folder (a fresh temp dir: your settings, maps and keys are never read or changed), the network
 off (`QUARK_MASTER=off`, `QUARK_PUBLIC_IP=off`: no server list, ranked, queue or Discord requests), a host port of its
@@ -93,6 +96,15 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
 editor's selection tools are tested once per selection kind (box, spawn, light, site, hill, checkpoint, path, ladder,
 group / room / stairs).
+
+The menus' pages and their paths: `main` (`main/save-copy`: the "keep your copy?" dialog after someone else's edit
+session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG; `host/picker:maps`,
+`:modes`, `:variants`, `:ladders`), `vsbots` (+ the same pickers), `custom/general`, `custom/weapons`, `custom/maps`,
+`custom/movement`, `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
+`info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`.
+A CONNECTING screen
+reached by starting a game of the scenario's own (TIME TRIAL hosts one) is on its way in game and isn't explored: the
+one JOIN > CONNECT leaves is.
 
 Settings is one shell with six tabs, the same in the menus (`settings...`) and in game (`ingame/pause/settings...`):
 `settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE

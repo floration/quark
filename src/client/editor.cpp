@@ -1072,6 +1072,39 @@ void Game::editorKey(int key, int mods) {
 void Game::drawEditorSavePrompt() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     const bool inEditor = screen_ == Screen::Editor;
+    if (!inEditor) {   // after someone else's edit session (main/save-copy): the menus' dialog, centred on the screen
+        // (ui-redesign-spec: title at text 2, the body wrapped in grey, the name, then the "drop" answer left and
+        // "save" right; 528 wide in a 560 panel)
+        const SetLayout L = menuLayout(560);
+        static std::string title, body, shownFor;   // (rebuilt when the map changes, not every frame)
+        const std::string& nm = edPromptMap_.title.empty() ? edPromptMap_.name : edPromptMap_.title;
+        if (shownFor != nm + (edPromptOfficial_ ? "1" : "0")) {
+            shownFor = nm + (edPromptOfficial_ ? "1" : "0");
+            std::string up = nm;
+            for (auto& c : up) c = (char)toupper((unsigned char)c);
+            title = edPromptOfficial_ ? "KEEP YOUR EDITS AS A NEW MAP?" : "SAVE YOUR COPY OF " + up + "?";
+            body = edPromptOfficial_ ? up + " IS A BUILT-IN MAP: IT STAYS AS IT IS. SAVE YOUR EDITS AS YOUR OWN MAP (IN YOUR MAPS FOLDER, UNDER THIS NAME) OR DROP THEM."
+                                     : "SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS.";
+        }
+        const float ts = ui_.textScale(), bw = L.L(528);
+        const std::vector<std::string>& lines = ui_.wrap(body, ts, bw);
+        const int nl = (int)lines.size();
+        const float kH = 16 + 8 + nl * 20 - 4 + 12 + 36 + 12 + 36;
+        float y = std::round(360 - (kH + 32) * 0.5f) + 16;
+        const float x = L.X(376);
+        ui_.panel(L.X(360), L.Y(y - 16), L.L(560), L.L(kH + 32), 0.94f);
+        ui_.labelCentered(L.X(640), L.Y(y), title, kWhite, 1.0f, bw);
+        y += 24;
+        for (int i = 0; i < nl; i++) ui_.label(x, L.Y(y + 20 * i), lines[i], kGrey, 1.0f, bw);
+        y += nl * 20 - 4 + 12;
+        if (ui_.textField(42, x, L.Y(y), bw, L.L(36), edPromptName_, 40, UiExp::local().withId("COPY NAME"))) edPromptName_ = typedMapName(edPromptName_);
+        y += 48;
+        if (ui_.probing()) ui_.scope = "after a session";   // (as the editor's prompt: each "then" leads elsewhere)
+        if (ui_.button(x, L.Y(y), L.L(260), L.L(36), edPromptOfficial_ && !edOnline_ ? "DROP MY EDITS" : "DON'T SAVE", UiExp::nav("main").withId("NO"))) edPromptAnswer(0);
+        else if (ui_.button(L.X(644), L.Y(y), L.L(260), L.L(36), edPromptOfficial_ ? "SAVE AS NEW MAP" : "SAVE", UiExp::state("usermaps").withId("YES"))) edPromptAnswer(1);
+        if (time_ < edMsgUntil_) ui_.hint(L.X(640) - r_.textWidth(edMsg_, ui_.hintScale()) * 0.5f, L.Y(y + 36 + 24), edMsg_, kGrey, L.L(560));
+        return;
+    }
     float w = 500 * s, h = 34 * s, x = (inEditor ? W - 320 * s : W) * 0.5f - w * 0.5f, y = H * 0.35f, cx = x + w * 0.5f;
     std::string title = edPromptMap_.title.empty() ? edPromptMap_.name : edPromptMap_.title;
     for (auto& c : title) c = (char)toupper((unsigned char)c);

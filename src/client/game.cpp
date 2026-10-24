@@ -114,6 +114,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
     hostPortStr_ = std::to_string(cfg_.hostPort);
     joinAddr_ = cfg_.lastAddress;
+    if (!opts_.menuPage.empty()) debugMenuPage();   // (after the host / bots settings are read: a picker can set them)
     ui_.accent = rgba(cfg_.colorFriendly);
     applyDisplayMode();
     applyPresentMode();
@@ -340,6 +341,7 @@ void Game::setScreen(Screen s) {
     if (s == Screen::Join) { browser_.refresh(); joinScroll_ = 0; }
     if (s == Screen::Demos) demoScroll_ = 0;
     if (s == Screen::Host || s == Screen::VsBots) rescanMaps();
+    if (s != Screen::Host) hostAdvanced_ = false;
 }
 
 void Game::captureMouse(bool on) {
@@ -722,6 +724,7 @@ void Game::onKey(int key, int action, int mods) {
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
+        if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info) {
             cfg_.save();
             setScreen(Screen::Main);
@@ -818,7 +821,7 @@ void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
-    if (screen_ == Screen::Info) { infoScroll_ -= (float)dy * 60.0f; return; }
+    if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
@@ -3460,17 +3463,17 @@ void Game::startTimeTrial() {
     startHost(true);
 }
 
-// Your own race history from race_times.log: best, recent runs, average, best possible from your best splits.
-void Game::drawRaceStats(float cx, float y) {
+// MY VIADUCT RUNS (leaderboard > MY RACE STATS): your own race history from race_times.log - best, recent runs,
+// average, the best possible from your best splits - in the leaderboard's 960 x 522 panel; BACK (to the board) and
+// PLAY TIME TRIAL in its footer
+void Game::drawRaceStats(const SetLayout& L) {
     if (!raceRunsLoaded_) loadRaceRuns();
-    float s = ui_.s(), w = 720 * s, x = cx - w * 0.5f, rowH = 17 * s;
-    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.6f));
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 26 * rowH + 60 * s, 0.85f);
-    ui_.labelCentered(cx, y, "MY VIADUCT RUNS");
-    y += 34 * s;
+    ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
+    ui_.labelCentered(L.X(640), L.Y(182), "MY VIADUCT RUNS", kWhite, 1.5f, L.L(928));
+    const float y = 222, rowH = 18, hs = ui_.hintScale();
     std::vector<const RaceRun*> runs;
     for (auto& r : raceRuns_) if (r.map == "viaduct") runs.push_back(&r);
-    if (runs.empty()) { r_.text(x, y, ts, "NO RUNS YET - FINISH VIADUCT IN A TIME TRIAL OR A RACE", kGrey); return; }
+    if (runs.empty()) { ui_.labelCentered(L.X(640), L.Y(y), "NO RUNS YET - FINISH VIADUCT IN A TIME TRIAL OR A RACE", kGrey, 1.0f, L.L(928)); return; }
     int total = 0;
     for (auto* r : runs) total = std::max(total, (int)r->splits.size());
     const RaceRun* best = nullptr;
@@ -3487,33 +3490,38 @@ void Game::drawRaceStats(float cx, float y) {
     }
     long long possible = 0;
     for (int v : bestSeg) possible += v == INT32_MAX ? 0 : v;
-    auto row = [&](float cx0, float yy, const std::string& a, const std::string& b, Color c = kWhite) {
-        r_.text(cx0, yy, ts, a, kGrey);
-        r_.text(cx0 + 230 * s - r_.textWidth(b, ts), yy, ts, b, c);
+    // the left column (x 176, 400 wide): a name and its value right-aligned, a row every 18
+    const float lx = 176, lw = 400;
+    auto row = [&](float yy, const std::string& a, const std::string& b, Color c = kWhite) {
+        const float bw = r_.textWidth(b, hs);
+        ui_.hint(L.X(lx), L.Y(yy), a, kGrey, L.L(lw) - bw - L.L(12));
+        ui_.hint(L.X(lx + lw) - bw, L.Y(yy), b, c, bw + 1);
     };
-    float lx = x, rx = x + 260 * s, yy = y;
-    row(lx, yy, "RUNS", std::to_string(runs.size())); yy += rowH;
-    row(lx, yy, "TIME TRIAL RUNS", std::to_string(std::count_if(runs.begin(), runs.end(), [](const RaceRun* r) { return r->trial; }))); yy += rowH;
-    row(lx, yy, "BEST", fmtRace(best->ms), Color{1.0f, 0.8f, 0.3f, 1}); yy += rowH;
-    row(lx, yy, "BEST POSSIBLE (SEGMENTS)", fmtRace((int)possible), ui_.accent); yy += rowH;
-    row(lx, yy, "AVERAGE", fmtRace((int)(sum / runs.size()))); yy += rowH;
-    row(lx, yy, "AVERAGE, LAST " + std::to_string(recentN), fmtRace((int)(recent / recentN))); yy += rowH;
-    row(lx, yy, "LAST RUN", fmtRace(runs.back()->ms)); yy += rowH * 2;
-    // best run's splits vs your best segment at each checkpoint
-    r_.text(lx, yy, ts, "CHECKPOINT   BEST RUN   BEST SEGMENT", kGrey); yy += rowH;
-    for (int i = 0; i < total && i < 16; i++) {
-        char b[96];
+    float yy = y;
+    row(yy, "RUNS", std::to_string(runs.size())); yy += rowH;
+    row(yy, "TIME TRIAL RUNS", std::to_string(std::count_if(runs.begin(), runs.end(), [](const RaceRun* r) { return r->trial; }))); yy += rowH;
+    row(yy, "BEST", fmtRace(best->ms), Color{1.0f, 0.8f, 0.3f, 1}); yy += rowH;
+    row(yy, "BEST POSSIBLE (SEGMENTS)", fmtRace((int)possible), ui_.accent); yy += rowH;
+    row(yy, "AVERAGE", fmtRace((int)(sum / runs.size()))); yy += rowH;
+    row(yy, "AVERAGE, LAST " + std::to_string(recentN), fmtRace((int)(recent / recentN))); yy += rowH;
+    row(yy, "LAST RUN", fmtRace(runs.back()->ms)); yy += rowH * 2;
+    // best run's splits vs your best segment at each checkpoint (as many as fit above the footer)
+    const float c1 = lx, c2 = lx + 120, c3 = lx + 230;
+    ui_.hint(L.X(c1), L.Y(yy), "CHECKPOINT", kGrey, L.L(110));
+    ui_.hint(L.X(c2), L.Y(yy), "BEST RUN", kGrey, L.L(100));
+    ui_.hint(L.X(c3), L.Y(yy), "BEST SEGMENT", kGrey, L.L(lx + lw - c3));
+    yy += rowH;
+    for (int i = 0; i < total && yy + 12 <= 616; i++, yy += rowH) {
         int seg = (int)best->splits.size() == total ? best->splits[i] - (i ? best->splits[i - 1] : 0) : 0;
-        snprintf(b, sizeof b, "%-12s %9s  %s", i == total - 1 ? "FINISH" : ("CP " + std::to_string(i + 1)).c_str(),
-                 (int)best->splits.size() == total ? fmtRace(best->splits[i]).c_str() : "-",
-                 bestSeg[i] == INT32_MAX ? "-" : (fmtRace(bestSeg[i]) + (seg > bestSeg[i] ? "  (LOSES " + fmtRace(seg - bestSeg[i]) + ")" : "")).c_str());
-        r_.text(lx, yy, ts, b, kWhite);
-        yy += rowH;
+        ui_.hint(L.X(c1), L.Y(yy), i == total - 1 ? "FINISH" : "CP " + std::to_string(i + 1), kWhite, L.L(110));
+        ui_.hint(L.X(c2), L.Y(yy), (int)best->splits.size() == total ? fmtRace(best->splits[i]) : "-", kWhite, L.L(100));
+        ui_.hint(L.X(c3), L.Y(yy), bestSeg[i] == INT32_MAX ? "-" : fmtRace(bestSeg[i]) + (seg > bestSeg[i] ? "  (LOSES " + fmtRace(seg - bestSeg[i]) + ")" : ""), kWhite, L.L(lx + lw - c3));
     }
-    // recent runs, newest first, with a bar against your best
+    // recent runs, newest first, with a bar against your best (x 640..1104)
     yy = y;
-    r_.text(rx + 120 * s, yy, ts, "RECENT RUNS", kGrey); yy += rowH;
-    for (int i = 0; i < 22 && i < (int)runs.size(); i++) {
+    ui_.hint(L.X(640), L.Y(yy), "RECENT RUNS", kGrey, L.L(464));
+    yy += rowH;
+    for (int i = 0; i < (int)runs.size() && yy + 12 <= 616; i++, yy += rowH) {
         const RaceRun* r = runs[runs.size() - 1 - i];
         char d[24];
         time_t t = (time_t)r->when;
@@ -3525,28 +3533,23 @@ void Game::drawRaceStats(float cx, float y) {
 #endif
         strftime(d, sizeof d, "%m-%d %H:%M", &lt);
         Color c = r == best ? Color{1.0f, 0.8f, 0.3f, 1} : kWhite;
-        r_.text(rx + 120 * s, yy, ts, std::string(d) + (r->trial ? "  TT  " : "      ") + fmtRace(r->ms), c);
+        ui_.hint(L.X(640), L.Y(yy), d, c, L.L(100));
+        if (r->trial) ui_.hint(L.X(748), L.Y(yy), "TT", c, L.L(24));
+        ui_.hint(L.X(780), L.Y(yy), fmtRace(r->ms), c, L.L(100));
         float f = clampf((float)best->ms / r->ms, 0, 1);
-        r_.rect(rx + 120 * s + 210 * s, yy + 2 * s, 100 * s * f, rowH - 6 * s, {c.r, c.g, c.b, 0.5f});
-        yy += rowH;
+        r_.rect(L.X(888), L.Y(yy + 1), L.L(216) * f, L.L(10), {c.r, c.g, c.b, 0.5f});
     }
 }
 
-void Game::drawLeaderboard(float cx, float y) {
+// RANKED LEADERBOARD: a column per ladder (and the Viaduct time trial) - its name bar, then its top 15 (rows of 20)
+// and your own rating under them; BACK, MY RACE STATS and PLAY TIME TRIAL in the panel's footer
+void Game::drawLeaderboard(const SetLayout& L) {
     static const int ladders[3] = {0, 1, 5};
-    float s = ui_.s(), gap = 14 * s;
-    // four columns of 236 at 16:9; narrower ones (names cut shorter) when the screen is squarer, e.g. 4:3
-    float colW = std::min(236 * s, ((float)r_.width() - 48 * s - 3 * gap) / 4), w = 4 * colW + 3 * gap, x0 = cx - w * 0.5f;
-    auto head = [&](float x, float yy, const std::string& t) { // column title, a whole step smaller if it won't fit
-        float hs = std::max(1.0f, std::round(ui_.textScale() * 0.8f));
-        while (hs > 1 && r_.textWidth(t, hs) > colW - 8 * s) hs -= 1;
-        r_.text(x + (colW - r_.textWidth(t, hs)) * 0.5f, yy + 4 * s, hs, t, kWhite);
-    };
+    const float fy = L.Y(632), fw = L.L(176), fh = L.L(40);
     if (raceStatsView_) {
-        drawRaceStats(cx, y);
-        float by = y + 26 * 17 * s + 54 * s;
-        if (ui_.button(cx - 210 * s, by, 200 * s, 36 * s, "LEADERBOARD", UiExp::nav("leaderboard"))) raceStatsView_ = false;
-        if (ui_.button(cx + 10 * s, by, 200 * s, 36 * s, "PLAY TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
+        drawRaceStats(L);
+        if (ui_.button(L.X(176), fy, fw, fh, "BACK", UiExp::nav("leaderboard"))) raceStatsView_ = false;
+        if (ui_.button(L.X(928), fy, fw, fh, "PLAY TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
         return;
     }
     if (time_ >= nextBoardFetch_) {
@@ -3555,59 +3558,50 @@ void Game::drawLeaderboard(float cx, float y) {
         if (!rankKey_.id.empty()) for (int v : ladders) rank_.fetch(arenaVariant(v).name, {rankKey_.id});
         nextBoardFetch_ = time_ + 30;
     }
-    float rowH = 17 * s, ts = std::max(1.0f, std::round(ui_.textScale() * 0.6f));
-    ui_.panel(x0 - 16 * s, y - 16 * s, w + 32 * s, 20 * rowH + 130 * s, 0.85f);
-    ui_.labelCentered(cx, y, "RANKED LEADERBOARD");
-    y += 34 * s;
-    for (int c = 0; c < 3; c++) {
-        float x = x0 + c * (colW + gap), yy = y;
-        std::string ladder = arenaVariant(ladders[c]).name;
-        r_.rect(x, yy, colW, 26 * s, {ui_.accent.r * 0.45f, ui_.accent.g * 0.45f, ui_.accent.b * 0.45f, 0.95f});
-        head(x, yy, arenaVariant(ladders[c]).title);
-        yy += 32 * s;
-        std::vector<RankService::LeaderRow> rows;
-        if (!rank_.leaderboard(ladder, rows)) { r_.text(x + 6 * s, yy, ts, "LOADING...", kGrey); continue; }
-        if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NOBODY RANKED YET (3 GAMES)", kGrey);
-        if (!rows.empty() && rows[0].rating < 0) { r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey); continue; }
-        for (size_t i = 0; i < rows.size() && i < 20; i++) {
-            std::string rt = std::to_string(rows[i].rating);
-            std::string n = r_.textClip(std::to_string(i + 1) + ". " + rows[i].name, ts, colW - 18 * s - r_.textWidth(rt, ts));
+    const int kTop = 15;
+    const float ts = ui_.textScale(), colW = 220, rowH = 20;
+    ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
+    ui_.labelCentered(L.X(640), L.Y(182), "RANKED LEADERBOARD", kWhite, 1.5f, L.L(928));
+    // a column: its name bar; rows: "1. NAME" and the number right-aligned (names cut to fit: they're data)
+    auto column = [&](int c, const char* title, Color bar, std::vector<RankService::LeaderRow>* rows, bool loaded, bool race) {
+        const float x = 176 + c * 236, w = L.L(colW);
+        r_.rect(L.X(x), L.Y(222), w, L.L(32), bar);
+        ui_.labelCentered(L.X(x + colW * 0.5f), L.Y(230), title, kWhite, 1.0f, L.L(colW - 8));
+        const float sx = L.X(x + 4), sw = L.L(colW - 8);
+        if (!loaded) { ui_.hintWrapped(sx, L.Y(262), "LOADING...", kGrey, sw, L.L(14)); return; }
+        if (!rows->empty() && (*rows)[0].rating < 0) { ui_.hintWrapped(sx, L.Y(262), upper((*rows)[0].name), kGrey, sw, L.L(14)); return; }
+        if (rows->empty()) ui_.hintWrapped(sx, L.Y(262), race ? "NO TIMES YET" : "NOBODY RANKED YET (3 GAMES)", kGrey, sw, L.L(14));
+        for (size_t i = 0; i < rows->size() && i < (size_t)kTop; i++) {
+            const RankService::LeaderRow& lr = (*rows)[i];
+            std::string v = race ? fmtRace(lr.rating) : std::to_string(lr.rating);
+            const float vw = r_.textWidth(v, ts), ry = L.Y(262 + rowH * i);
+            std::string nm = r_.textClip(std::to_string(i + 1) + ". " + lr.name, ts, sw - vw - L.L(10));
             Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
-            r_.text(x + 6 * s, yy, ts, n, c2);
-            r_.text(x + colW - 6 * s - r_.textWidth(rt, ts), yy, ts, rt, c2);
-            yy += rowH;
+            r_.text(sx, ry, ts, nm, c2);
+            r_.text(sx + sw - vw, ry, ts, v, c2);
         }
+    };
+    const float youY = 262 + rowH * kTop + 8;
+    std::vector<RankService::LeaderRow> rows;
+    for (int c = 0; c < 3; c++) {
+        std::string ladder = arenaVariant(ladders[c]).name;
+        rows.clear();
+        bool ok = rank_.leaderboard(ladder, rows);
+        column(c, arenaVariant(ladders[c]).title, {ui_.accent.r * 0.45f, ui_.accent.g * 0.45f, ui_.accent.b * 0.45f, 0.95f}, &rows, ok, false);
         Rating mine;
-        if (rank_.rating(ladder, rankKey_.id, mine))
-            r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + std::to_string(mine.display()) + (mine.games < kPlacementGames ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent);
+        if (ok && !(!rows.empty() && rows[0].rating < 0) && rank_.rating(ladder, rankKey_.id, mine))   // (not under an error line)
+            ui_.label(L.X(180 + c * 236), L.Y(youY), "YOU: " + std::to_string(mine.display()) + (mine.games < kPlacementGames ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent, 1.0f, L.L(colW - 8));
     }
     {   // race: fastest Viaduct time trials
-        float x = x0 + 3 * (colW + gap), yy = y;
-        r_.rect(x, yy, colW, 26 * s, {1.0f * 0.45f, 0.78f * 0.45f, 0.25f * 0.45f, 0.95f});
-        head(x, yy, "VIADUCT TIME TRIAL");
-        yy += 32 * s;
-        std::vector<RankService::LeaderRow> rows;
-        if (!rank_.raceBoard("viaduct", rows)) r_.text(x + 6 * s, yy, ts, "LOADING...", kGrey);
-        else if (!rows.empty() && rows[0].rating < 0) r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey);
-        else {
-            if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NO TIMES YET", kGrey);
-            for (size_t i = 0; i < rows.size() && i < 20; i++) {
-                std::string t = fmtRace(rows[i].rating);
-                std::string n = r_.textClip(std::to_string(i + 1) + ". " + rows[i].name, ts, colW - 18 * s - r_.textWidth(t, ts));
-                Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
-                r_.text(x + 6 * s, yy, ts, n, c2);
-                r_.text(x + colW - 6 * s - r_.textWidth(t, ts), yy, ts, t, c2);
-                yy += rowH;
-            }
-        }
+        rows.clear();
+        bool ok = rank_.raceBoard("viaduct", rows);
+        column(3, "VIADUCT TIME TRIAL", {1.0f * 0.45f, 0.78f * 0.45f, 0.25f * 0.45f, 0.95f}, &rows, ok, true);
         if (!raceRunsLoaded_) loadRaceRuns();
-        if (const RaceRun* b = bestRun("viaduct", true))
-            r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + fmtRace(b->ms), ui_.accent);
+        if (const RaceRun* b = bestRun("viaduct", true)) ui_.label(L.X(180 + 3 * 236), L.Y(youY), "YOU: " + fmtRace(b->ms), ui_.accent, 1.0f, L.L(colW - 8));
     }
-    float by = y + 32 * s + 20 * rowH + 30 * s, bw3 = 200 * s;
-    if (ui_.button(cx - bw3 * 1.5f - 10 * s, by, bw3, 36 * s, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
-    if (ui_.button(cx - bw3 * 0.5f, by, bw3, 36 * s, "MY RACE STATS", UiExp::nav("leaderboard/race-stats"))) raceStatsView_ = true;
-    if (ui_.button(cx + bw3 * 0.5f + 10 * s, by, bw3, 36 * s, "PLAY TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
+    if (ui_.button(L.X(176), fy, fw, fh, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
+    if (ui_.button(L.X(744), fy, fw, fh, "MY RACE STATS", UiExp::nav("leaderboard/race-stats"))) raceStatsView_ = true;
+    if (ui_.button(L.X(928), fy, fw, fh, "PLAY TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
 }
 
 void Game::drawScoreboard() {
@@ -4538,6 +4532,75 @@ void Game::drawNotices(float y, float ts, float s) {
     for (auto& n : notices_) { ui_.labelCentered(r_.width() * 0.5f, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
 }
 
+// ---- Menus: the main menu and the pages under it ------------------------------------------------------------------
+// The redesign's pages (ui-redesign-spec: main, join, host + ADVANCED, vs bots, the pickers, custom mode, info,
+// leaderboard, demos, connecting) at its 720p coordinates in a 1280 frame, put on this screen by a SetLayout
+// (menuLayout: s = H / 720 around W / 2; narrowed on a squarer screen). The menu column is 360 wide at x 460 in a 392
+// panel, rows 40 high and 8 apart; the wide pages fill the 960 x 522 band (y 166..688); BACK bottom-left, the page's
+// main action bottom-right; NAME: VALUE on every cycle; hints at text 1.5. A page whose panel is sized to its content
+// centres it in the band (bandTop). Nothing here allocates per frame beyond what the widgets did before (static name
+// lists; wrapped text comes from Ui::wrap's cache).
+namespace {
+constexpr float kBandTop = 166, kBandH = 522;
+constexpr float kMX = 460, kMW = 360, kMHalf = 176, kMRow = 40;   // the menu column, its half-width buttons, its rows
+const Color kBodyC = {0.88f, 0.9f, 0.93f, 1}, kDimC = {0.5f, 0.52f, 0.55f, 1}, kWarnC = {1.0f, 0.55f, 0.3f, 1};
+// where content kH design px tall starts when its panel (16 px around it) is centred in the band
+float bandTop(float kH) { return kBandTop + std::max(0.0f, (kBandH - (kH + 32)) * 0.5f) + 16; }
+}
+
+SetLayout Game::menuLayout(float designW) const {
+    const float s = ui_.s(), W = (float)r_.width();
+    const float k = std::min(s, W / (designW + 40));   // (a page designW wide keeps 20 px each side; its top stays at y 166)
+    return {k, W * 0.5f, kBandTop * (s - k)};
+}
+
+// The current tab of a tab row (custom mode, info): a 2 px accent frame behind its button
+static void tabFrame(Renderer& r, const Ui& ui, float x, float y, float w, float h) {
+    const float f = 2 * ui.s();
+    r.rect(x - f, y - f, w + 2 * f, h + 2 * f, ui.accent);
+}
+
+// --menupage PATH: open that menu page (screenshots), by its Game::uiScreenPath name: main, main/save-copy, join, host,
+// host/advanced, host/picker:maps|modes|variants|ladders, vsbots(/picker:...), custom/general|weapons|maps|movement|dash,
+// info/modes|controls|hud|hosting|editor|maps (+N: scrolled down N lines), leaderboard(/race-stats), demos, connecting
+void Game::debugMenuPage() {
+    std::string p = opts_.menuPage;
+    int scroll = 0;
+    size_t plus = p.find('+');
+    if (plus != std::string::npos) { scroll = atoi(p.c_str() + plus + 1); p = p.substr(0, plus); }
+    auto under = [&](const char* a) { return p.rfind(a, 0) == 0; };
+    auto pickerOf = [&](bool host) {
+        size_t c = p.find("/picker:");
+        if (c == std::string::npos) return;
+        std::string k = p.substr(c + 8);
+        picker_ = k == "maps" ? (host ? PICK_HOST_MAP : PICK_BOT_MAP) : k == "modes" ? (host ? PICK_HOST_MODE : PICK_BOT_MODE)
+                : k == "variants" ? PICK_VARIANT : k == "ladders" ? PICK_RANKED : PICK_NONE;
+        variantCtx_ = host ? 0 : 1;
+        if (picker_ == PICK_VARIANT) (host ? hostModeIdx_ : cfg_.botMode) = MODE_ARENA;
+    };
+    if (p == "main/save-copy") {
+        setScreen(Screen::Main);
+        edPrompt_ = true; edPromptOfficial_ = true; edPromptThen_ = ED_THEN_NONE;
+        edPromptMap_ = Map(); edPromptMap_.name = "harbor"; edPromptName_ = "harbor_copy";
+    } else if (p == "join") setScreen(Screen::Join);
+    else if (under("host")) { setScreen(Screen::Host); hostAdvanced_ = p == "host/advanced"; pickerOf(true); }
+    else if (under("vsbots")) { setScreen(Screen::VsBots); pickerOf(false); }
+    else if (under("custom/")) {
+        static const char* tabs[] = {"general", "weapons", "maps", "movement", "dash"};
+        editRules_ = CustomRules(); editRules_.name = "my mode"; editOrigName_.clear();
+        for (int t = 0; t < 5; t++) if (p == std::string("custom/") + tabs[t]) customTab_ = t;
+        setScreen(Screen::CustomMode);
+    } else if (under("info/")) {
+        static const char* info[] = {"info/modes", "info/controls", "info/hud", "info/hosting", "info/editor", "info/maps"};   // (kInfoPaths)
+        for (int t = 0; t < 6; t++) if (p == info[t]) infoTab_ = t;
+        setScreen(Screen::Info);
+        infoScroll_ = scroll;
+    } else if (under("leaderboard")) { setScreen(Screen::Leaderboard); raceStatsView_ = p == "leaderboard/race-stats"; }
+    else if (p == "demos") setScreen(Screen::Demos);
+    else if (p == "connecting") connectTo("127.0.0.1:9");
+    else setScreen(Screen::Main);
+}
+
 void Game::drawMenu() {
     QZONE("drawMenu");
     if (screen_ == Screen::InGame || screen_ == Screen::Editor) return;
@@ -4547,245 +4610,275 @@ void Game::drawMenu() {
     r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});
     drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
     float cx = W * 0.5f;
-    float bw = 340 * s, bh = 40 * s, gap = 10 * s;
-    float x = cx - bw * 0.5f;
-    float y = H * 0.12f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it)
-    if (screen_ != Screen::Settings) r_.logo(cx, y, 8 * s, rgba(cfg_.colorFriendly), rgba(cfg_.colorEnemy));   // (the Q in both team colours)
+    if (screen_ != Screen::Settings) r_.logo(cx, H * 0.12f, 8 * s, rgba(cfg_.colorFriendly), rgba(cfg_.colorEnemy));   // (the Q in both team colours)
     r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
-    y += 80 * s;
 
-    if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, y); return; }
+    if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, H * 0.12f + 80 * s); return; }
     if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
+    const SetLayout L = menuLayout(kMW + 32);   // (the column pages: 392 wide)
     switch (screen_) {
-        case Screen::Main: {
-            ui_.label(x, y, "YOUR NAME (SHOWN IN CHAT AND SCOREBOARD)", kGrey, 0.5f);
-            y += 16 * s;
-            if (ui_.textField(9, x, y, bw, bh, cfg_.name, 20, UiExp::cfg("name").withId("NAME"))) cfg_.save();
-            y += bh + gap * 2;
-            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "PLAY VS BOTS", UiExp::nav("vsbots"))) setScreen(Screen::VsBots);
-            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
-            y += bh + gap;
-            if (ui_.button(x, y, bw, bh, "JOIN GAME", UiExp::nav("join"))) setScreen(Screen::Join);
-            y += bh + gap;
-            if (ui_.button(x, y, bw, bh, "HOST GAME", UiExp::nav("host"))) setScreen(Screen::Host);
-            y += bh + gap;
-            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "MAP EDITOR", UiExp::nav("editor"))) openEditor("");
-            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "LEADERBOARD", UiExp::nav("leaderboard"))) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }
-            y += bh + gap;
-            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "SETTINGS", UiExp::nav("settings"))) { openSettingsTab(TAB_PLAYER); setScreen(Screen::Settings); }
-            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
-            y += bh + gap;
-            {
-                float tw = (bw - 2 * gap) / 3;
-                if (ui_.button(x, y, tw, bh, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
-                if (ui_.button(x + tw + gap, y, tw, bh, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
-                if (ui_.button(x + 2 * (tw + gap), y, tw, bh, "QUIT", UiExp::quit())) quit_ = true;
-            }
-            y += bh + gap * 2;
-            if (!error_.empty()) ui_.labelCentered(cx, y, error_, kRed);
-            break;
-        }
-        case Screen::Join: {
-            float lw = 560 * s, lx = cx - lw * 0.5f;
-            ui_.label(lx, y, "ADDRESS (IP:PORT)");
-            y += 22 * s;
-            ui_.textField(2, lx, y, lw - 140 * s, bh, joinAddr_, 64, UiExp::local().withId("ADDRESS"));
-            if (ui_.button(lx + lw - 130 * s, y, 130 * s, bh, "CONNECT", UiExp::nav("connecting")) || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
-            y += bh + gap * 2;
-            ui_.label(lx, y, "SERVERS (LAN + INTERNET)");
-            ui_.label(lx, y + 22 * s, browser_.internetStatus(), kGrey, 0.5f);
-            y += 12 * s;
-            if (ui_.button(lx + lw - 130 * s, y - 6 * s, 130 * s, 30 * s, "REFRESH", UiExp::state("browser"))) browser_.refresh();
-            y += 30 * s;
-            ui_.panel(lx, y, lw, 220 * s, 0.6f);
-            float ry = y + 8 * s;
-            const int kJoinRows = 6;   // rows that fit the list panel; the wheel scrolls the rest
-            int nsv = (int)browser_.servers().size();
-            joinScroll_ = std::min(joinScroll_, std::max(0, nsv - kJoinRows));
-            for (int si = joinScroll_; si < nsv && si < joinScroll_ + kJoinRows; si++) {
-                auto& sv = browser_.servers()[si];
-                // name on the left (a long one scrolls back and forth so all of it can be read), details on the right
-                char info[96];
-                if (sv.noReply) snprintf(info, sizeof info, "NO RESPONSE - CLICK TO TRY");
-                else snprintf(info, sizeof info, "%s/%s  %d/%d  %dms", sv.map.c_str(), modeName(sv.mode), sv.players, sv.maxPlayers, (int)sv.ping);
-                std::string infoU = upper(info);
-                float bx = lx + 6 * s, bwRow = lw - 12 * s, bhRow = 30 * s, ts = ui_.textScale();
-                if (ui_.button(bx, ry, bwRow, bhRow, "", UiExp::nav("connecting").withId("SERVER").optional())) {
-                    joinAddr_ = sv.addr.toString();
-                    connectTo(joinAddr_);
-                }
-                float ty = ry + (bhRow - r_.textHeight(ts)) * 0.5f, iw = r_.textWidth(infoU, ts);
-                r_.text(bx + bwRow - iw - 8 * s, ty, ts, infoU, kWhite);
-                std::string name = upper(sv.name);
-                float avail = std::max(0.0f, bwRow - iw - 28 * s);
-                int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
-                while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
-                if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
-                    double cycle = 2 * (extra / 6.0 + 1.5), t = std::fmod(time_, cycle);
-                    double pos = t < 1.5 ? 0 : t < 1.5 + extra / 6.0 ? (t - 1.5) * 6 : t < 3 + extra / 6.0 ? extra : extra - (t - 3 - extra / 6.0) * 6;
-                    name = name.substr((size_t)std::clamp((int)pos, 0, extra));
-                    name.resize(r_.textFit(name, ts, avail));
-                }
-                r_.text(bx + 8 * s, ty, ts, name, kWhite);
-                ry += 34 * s;
-            }
-            if (browser_.servers().empty()) ui_.label(lx + 10 * s, ry, "NO GAMES FOUND", kGrey);
-            else if (nsv > kJoinRows) {
-                std::string more = std::to_string(joinScroll_ + 1) + "-" + std::to_string(std::min(nsv, joinScroll_ + kJoinRows)) + " OF " + std::to_string(nsv) + " - WHEEL TO SCROLL";
-                ui_.label(lx + lw - r_.textWidth(more, std::max(1.0f, std::round(ui_.textScale() * 0.5f))), y + 222 * s, more, kGrey, 0.5f);
-            }
-            y += 230 * s;
-            if (ui_.button(x, y, bw, bh, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
-            if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap, error_, kRed);
-            break;
-        }
-        case Screen::Host: {
-            float lw = 460 * s, lx = cx - lw * 0.5f;
-            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 528 * s + bh + gap);
-            ui_.label(lx, y, "SERVER NAME");
-            y += 22 * s;
-            ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32, UiExp::cfg("host_name").withId("SERVER NAME"));
-            y += bh + gap;
-            if (!maps_.empty()) {
-                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  >", UiExp::nav("host/picker:maps").withId("MAP"))) picker_ = PICK_HOST_MAP;
-                y += bh + gap;
-                {   // custom mode: click to go through your saved ones (or none); EDIT / NEW open the builder
-                    float ew = 74 * s, cw = lw - 2 * (ew + 6 * s);
-                    // (re-listed twice a second at most: not a folder scan every frame; none saved yet: nothing to cycle through)
-                    static std::vector<std::string> saved;
-                    static double savedAt = -1;
-                    if (time_ >= savedAt || time_ < savedAt - 1) { saved = listCustomModes(); savedAt = time_ + 0.5; }
-                    if (cfg_.hostRanked) ui_.button(lx, y, cw, bh, "CUSTOM MODE: OFF (RANKED)", UiExp::inert().withId("CUSTOM MODE"), false);
-                    else if (ui_.button(lx, y, cw, bh, "CUSTOM MODE: " + (cfg_.hostCustom.empty() ? std::string("NONE") : upper(cfg_.hostCustom)) + "  >",
-                                        UiExp::cfg("host_custom").withId("CUSTOM MODE"), !saved.empty() || !cfg_.hostCustom.empty())) {
-                        auto list = listCustomModes();
-                        auto it = std::find(list.begin(), list.end(), cfg_.hostCustom);
-                        cfg_.hostCustom = list.empty() ? "" : it == list.end() ? list[0] : it + 1 == list.end() ? "" : *(it + 1);
-                    }
-                    if (ui_.button(lx + cw + 6 * s, y, ew, bh, "EDIT", UiExp::nav("custom/general"), !cfg_.hostCustom.empty())) {
-                        editRules_ = CustomRules();
-                        if (loadCustomMode(cfg_.hostCustom, editRules_)) { editOrigName_ = editRules_.name; customTab_ = 0; setScreen(Screen::CustomMode); }
-                    }
-                    if (ui_.button(lx + cw + ew + 12 * s, y, ew, bh, "NEW", UiExp::nav("custom/general"))) {
-                        editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.baseMode = MODE_FFA;
-                        editOrigName_.clear(); customTab_ = 0; setScreen(Screen::CustomMode);
-                    }
-                    // the chosen custom mode, re-read twice a second at most (not a file read every frame)
-                    static CustomRules cur;
-                    static std::string curName;
-                    static double curAt = -1;
-                    static bool curOk = false;
-                    if (curName != cfg_.hostCustom || time_ >= curAt) {
-                        curName = cfg_.hostCustom; curAt = time_ + 0.5;
-                        cur = CustomRules();
-                        curOk = !curName.empty() && loadCustomMode(curName, cur);
-                    }
-                    if (!cfg_.hostRanked && !cfg_.hostCustom.empty() && curOk) {
-                        hostModeIdx_ = cur.baseMode;   // the mode comes from the custom mode
-                        if (!cur.maps.empty() && std::find(cur.maps.begin(), cur.maps.end(), maps_[hostMapIdx_ % maps_.size()]) == cur.maps.end())
-                            for (size_t k = 0; k < maps_.size(); k++) if (maps_[k] == cur.maps[0]) hostMapIdx_ = (int)k;
-                    }
-                    y += bh + gap;
-                }
-                if (cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
-                    if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
-                    hostModeIdx_ = rankedMode(cfg_.hostArenaVariant);
-                    if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].ranked >> cfg_.hostArenaVariant & 1))
-                        hostMapIdx_ = bestRankedMap(cfg_.hostArenaVariant);
-                }
-                bool built = hostMapIdx_ < (int)mapInfo_.size() && (mapInfo_[hostMapIdx_].modes >> hostModeIdx_ & 1); // (no map file read every frame)
-                if (cfg_.hostRanked) {
-                    static const int ladders[3] = {0, 1, 5};
-                    int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
-                    if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + rankedKind(ladders[k]) + " - " + arenaVariant(ladders[k]).title + "  >", UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
-                } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >",
-                                      UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
-                y += bh + gap;
-                if (cfg_.hostRanked) {
-                    if (testingBuild())   // (a testing build hosts ranked unrated: Server::rated)
-                        ui_.label(lx, y, "TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)", {1.0f, 0.78f, 0.25f, 1}, 0.5f);
-                    else ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
-                    ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);
-                }
-                else if (!built) ui_.label(lx, y, "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed);
-                else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)", UiExp::cfg("host_duel_size").withId("TEAMS")))
-                    cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
-                y += 24 * s;
-            }
-            ui_.label(lx, y, "UDP PORT");
-            y += 22 * s;
-            ui_.textField(4, lx, y, lw * 0.4f, bh, hostPortStr_, 5, UiExp::local().withId("UDP PORT"));
-            float mp = (float)cfg_.hostMaxPlayers;
-            if (ui_.slider(lx + lw * 0.45f, y, lw * 0.55f, bh, "MAX PLAYERS", mp, 2, (float)kMaxPlayers, "%.0f", UiExp::cfg("host_max"), (float)defaultSettings().hostMaxPlayers))
-                cfg_.hostMaxPlayers = std::min(std::max((int)std::round(mp), 2), kMaxPlayers);
-            y += bh + gap;
-            ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp, UiExp::cfg("host_upnp"));
-            y += bh + gap;
-            if (cfg_.hostRanked) ui_.button(lx, y, lw * 0.5f - 4 * s, bh, "BOTS: OFF (RANKED)", UiExp::inert().withId("BALANCE BOTS"), false);
-            else ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BALANCE BOTS", cfg_.hostBalanceBots, UiExp::cfg("host_balance_bots"));
-            ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "PUBLIC", cfg_.hostPublic, UiExp::cfg("host_public"));
-            y += bh + gap;
-            static const std::vector<std::string> logNames = {"SERVER LOG OFF", "SIMPLE LOG", "VERBOSE LOG (125 HZ)", "EXTREME LOG (EVERY TICK)"};
-            ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, logNames, UiExp::cfg("host_log"));
-            y += bh + gap;
-            ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
-            y += 14 * s;
-            ui_.label(lx, y, "IN GAME, ESC SHOWS IF THE PORT IS REACHABLE (GREEN) OR NOT (RED)", kGrey, 0.5f);
-            y += 26 * s;
-            if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START", UiExp::state("hosting", "1"))) startHost();
-            if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
-            y += bh + gap;
-            if (!error_.empty()) ui_.labelCentered(cx, y + 20 * s, error_, kRed);
-            break;
-        }
-        case Screen::Settings:
-            drawSettings();
-            break;
-        case Screen::VsBots: {
-            float lw = 460 * s, lx = cx - lw * 0.5f;
-            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 360 * s);
-            if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(cfg_.botMode) + (cfg_.botMode == MODE_ARENA ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >",
-                           UiExp::nav("vsbots/picker:modes").withId("MODE"))) picker_ = PICK_BOT_MODE;
-            y += bh + gap;
-            if (!maps_.empty()) {
-                // only offer maps that support the chosen mode
-                for (size_t k = 0; k < maps_.size(); k++) {   // (from the scan, not a map file read every frame)
-                    size_t i = botMapIdx_ % maps_.size();
-                    if (i < mapInfo_.size() && (mapInfo_[i].modes >> cfg_.botMode & 1)) break;
-                    botMapIdx_ = (botMapIdx_ + 1) % (int)maps_.size();
-                }
-                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  >", UiExp::nav("vsbots/picker:maps").withId("MAP"))) picker_ = PICK_BOT_MAP;
-                y += bh + gap;
-            }
-            static const std::vector<std::string> skills = {"BEGINNER BOTS", "INTERMEDIATE BOTS", "ADVANCED BOTS", "EXPERT BOTS"};
-            ui_.cycle(lx, y, lw, bh, "DIFFICULTY", cfg_.botSkill, 4, skills, UiExp::cfg("bot_skill"));
-            y += bh + gap;
-            bool teams = modeIsTeamBased(cfg_.botMode);
-            float ne = (float)cfg_.botEnemies, na = (float)cfg_.botAllies;
-            if (ui_.slider(lx, y, lw, bh, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f", UiExp::cfg("bot_enemies"), (float)defaultSettings().botEnemies)) cfg_.botEnemies = std::min(std::max((int)std::round(ne), 1), 7);
-            y += bh + gap;
-            if (teams && ui_.slider(lx, y, lw, bh, "TEAMMATE BOTS", na, 0, 3, "%.0f", UiExp::cfg("bot_allies"), (float)defaultSettings().botAllies)) cfg_.botAllies = std::min(std::max((int)std::round(na), 0), 3);
-            y += bh + gap * 2;
-            if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START", UiExp::state("hosting", "1"))) startHost(true);
-            if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
-            if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap + 10 * s, error_, kRed);
-            break;
-        }
-        case Screen::Leaderboard: drawLeaderboard(cx, y); break;
-        case Screen::Info: drawInfo(cx, y - 8 * s); break;
-        case Screen::Demos: drawDemos(cx, y); break;
-        case Screen::CustomMode: drawCustomModeEditor(cx, y); break;
-        case Screen::Connecting: {
-            float dlp = net_.downloadProgress();
-            if (dlp >= 0) ui_.labelCentered(cx, y, "DOWNLOADING MAP " + upper(net_.downloadName()) + " - " + std::to_string((int)(dlp * 100)) + "%", kWhite);
-            else ui_.labelCentered(cx, y, "CONNECTING TO " + net_.address() + "...", kWhite);
-            y += 60 * s;
-            if (ui_.button(x, y, bw, bh, "CANCEL", UiExp::nav("main"))) leaveGame();
-            break;
-        }
+        case Screen::Main: drawMainMenu(L); break;
+        case Screen::Join: drawJoin(menuLayout(592)); break;
+        case Screen::Host: if (hostAdvanced_) drawHostAdvanced(L); else drawHost(L); break;
+        case Screen::Settings: drawSettings(); break;
+        case Screen::VsBots: drawVsBots(L); break;
+        case Screen::Leaderboard: drawLeaderboard(menuLayout(960)); break;
+        case Screen::Info: drawInfo(menuLayout(960)); break;
+        case Screen::Demos: drawDemos(menuLayout(592)); break;
+        case Screen::CustomMode: drawCustomModeEditor(menuLayout(960)); break;
+        case Screen::Connecting: drawConnecting(L); break;
         default: break;
     }
+}
+
+// The main menu: YOUR NAME, then the menu column (two buttons a row where they pair up), QUIT on its own row last
+void Game::drawMainMenu(const SetLayout& L) {
+    const float x = L.X(kMX), w = L.L(kMW), hw = L.L(kMHalf), x2 = L.X(kMX + kMW - kMHalf), h = L.L(kMRow);
+    ui_.label(x, L.Y(166), "YOUR NAME (CHAT AND SCOREBOARD)", kGrey, 1.0f, w);
+    if (ui_.textField(9, x, L.Y(186), w, h, cfg_.name, 20, UiExp::cfg("name").withId("NAME"))) cfg_.save();
+    if (ui_.button(x, L.Y(246), hw, h, "PLAY VS BOTS", UiExp::nav("vsbots"))) setScreen(Screen::VsBots);
+    if (ui_.button(x2, L.Y(246), hw, h, "TIME TRIAL", UiExp::state("hosting", "1"))) startTimeTrial();
+    if (ui_.button(x, L.Y(294), w, h, "JOIN GAME", UiExp::nav("join"))) setScreen(Screen::Join);
+    if (ui_.button(x, L.Y(342), w, h, "HOST GAME", UiExp::nav("host"))) setScreen(Screen::Host);
+    if (ui_.button(x, L.Y(390), hw, h, "MAP EDITOR", UiExp::nav("editor"))) openEditor("");
+    if (ui_.button(x2, L.Y(390), hw, h, "LEADERBOARD", UiExp::nav("leaderboard"))) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }
+    if (ui_.button(x, L.Y(438), hw, h, "SETTINGS", UiExp::nav("settings"))) { openSettingsTab(TAB_PLAYER); setScreen(Screen::Settings); }
+    if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
+    if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
+    if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
+    if (ui_.button(x, L.Y(546), w, h, "QUIT", UiExp::quit())) quit_ = true;   // (destructive: its own row, 20 px below)
+    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(602), error_, kRed, 1.0f, L.L(960));
+}
+
+// JOIN: the address and CONNECT, the server list (column headers, 6 rows of 32, the wheel scrolls the rest), BACK and
+// REFRESH LIST in the footer
+void Game::drawJoin(const SetLayout& L) {
+    const float lx = L.X(360), lw = L.L(560), h = L.L(kMRow), hs = ui_.hintScale();
+    ui_.label(lx, L.Y(166), "ADDRESS (IP:PORT)", kGrey, 1.0f, lw);
+    ui_.textField(2, lx, L.Y(186), L.L(416), h, joinAddr_, 64, UiExp::local().withId("ADDRESS"));
+    if (ui_.button(L.X(784), L.Y(186), L.L(136), h, "CONNECT", UiExp::nav("connecting")) || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
+    ui_.label(lx, L.Y(246), "SERVERS (LAN + INTERNET)", ui_.accent, 1.0f, lw);
+    ui_.hint(lx, L.Y(266), browser_.internetStatus(), kGrey, lw);
+    ui_.panel(lx, L.Y(282), lw, L.L(236), 0.6f);
+    // the columns: SERVER, MAP, PLAYERS, PING (design x of each, and how far it may run)
+    static const float colX[4] = {372, 622, 752, 852}, colEnd[4] = {612, 744, 844, 908};
+    static const char* const heads[4] = {"SERVER", "MAP", "PLAYERS", "PING"};
+    for (int c = 0; c < 4; c++) ui_.hint(L.X(colX[c]), L.Y(290), heads[c], kGrey, L.L(colEnd[c] - colX[c]));
+    const int kJoinRows = 6;   // rows that fit the list panel; the wheel scrolls the rest
+    const int nsv = (int)browser_.servers().size();
+    joinScroll_ = std::min(joinScroll_, std::max(0, nsv - kJoinRows));
+    const float ts = ui_.textScale();
+    for (int k = 0, si = joinScroll_; si < nsv && k < kJoinRows; k++, si++) {
+        auto& sv = browser_.servers()[si];
+        const float ry = L.Y(306 + 36 * k), rh = L.L(32), ty = ry + (rh - r_.textHeight(ts)) * 0.5f;
+        if (ui_.button(L.X(366), ry, L.L(548), rh, "", UiExp::nav("connecting").withId("SERVER").optional())) {
+            joinAddr_ = sv.addr.toString();
+            connectTo(joinAddr_);
+        }
+        if (sv.noReply) r_.text(L.X(colX[1]), ty, ts, r_.textClip("NO RESPONSE - CLICK TO TRY", ts, L.L(colEnd[3] - colX[1])), kGrey);
+        else {
+            char b[96];
+            snprintf(b, sizeof b, "%s/%s", sv.map.c_str(), modeName(sv.mode));
+            r_.text(L.X(colX[1]), ty, ts, r_.textClip(upper(b), ts, L.L(colEnd[1] - colX[1])), kWhite);
+            snprintf(b, sizeof b, "%d/%d", sv.players, sv.maxPlayers);
+            r_.text(L.X(colX[2]), ty, ts, b, kWhite);
+            snprintf(b, sizeof b, "%dMS", (int)sv.ping);
+            r_.text(L.X(colX[3]), ty, ts, b, kWhite);
+        }
+        // the name: a long one scrolls back and forth so all of it can be read
+        std::string name = upper(sv.name);
+        const float avail = L.L(colEnd[0] - colX[0]);
+        int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
+        while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
+        if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
+            double cycle = 2 * (extra / 6.0 + 1.5), t = std::fmod(time_, cycle);
+            double pos = t < 1.5 ? 0 : t < 1.5 + extra / 6.0 ? (t - 1.5) * 6 : t < 3 + extra / 6.0 ? extra : extra - (t - 3 - extra / 6.0) * 6;
+            name = name.substr((size_t)std::clamp((int)pos, 0, extra));
+            name.resize(r_.textFit(name, ts, avail));
+        }
+        r_.text(L.X(colX[0]), ty, ts, name, kWhite);
+    }
+    if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
+    else if (nsv > kJoinRows) {
+        char more[64];
+        snprintf(more, sizeof more, "%d-%d OF %d - WHEEL TO SCROLL", joinScroll_ + 1, std::min(nsv, joinScroll_ + kJoinRows), nsv);
+        ui_.hint(lx + lw - r_.textWidth(more, hs), L.Y(522), more, kGrey, lw);
+    }
+    if (ui_.button(lx, L.Y(538), L.L(276), h, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
+    if (ui_.button(L.X(644), L.Y(538), L.L(276), h, "REFRESH LIST", UiExp::state("browser"))) browser_.refresh();
+    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(594), error_, kRed, 1.0f, lw);
+}
+
+// HOST: the server's name, map, custom mode, mode (TEAMS under it in duel), max players, bots / public, then
+// ADVANCED > (the network options); BACK and START in the footer
+void Game::drawHost(const SetLayout& L) {
+    const float x = L.X(kMX), w = L.L(kMW), h = L.L(kMRow), hw = L.L(kMHalf), x2 = L.X(kMX + kMW - kMHalf);
+    const bool haveMaps = !maps_.empty();
+    // what the rows show, worked out before the panel (its height depends on the row under MODE)
+    static std::vector<std::string> saved;   // (custom modes re-listed twice a second at most: not a folder scan every frame)
+    static double savedAt = -1;
+    if (time_ >= savedAt || time_ < savedAt - 1) { saved = listCustomModes(); savedAt = time_ + 0.5; }
+    static CustomRules cur;   // the chosen custom mode, re-read twice a second at most (not a file read every frame)
+    static std::string curName;
+    static double curAt = -1;
+    static bool curOk = false;
+    if (curName != cfg_.hostCustom || time_ >= curAt) {
+        curName = cfg_.hostCustom; curAt = time_ + 0.5;
+        cur = CustomRules();
+        curOk = !curName.empty() && loadCustomMode(curName, cur);
+    }
+    if (haveMaps && !cfg_.hostRanked && !cfg_.hostCustom.empty() && curOk) {
+        hostModeIdx_ = cur.baseMode;   // the mode comes from the custom mode
+        if (!cur.maps.empty() && std::find(cur.maps.begin(), cur.maps.end(), maps_[hostMapIdx_ % maps_.size()]) == cur.maps.end())
+            for (size_t k = 0; k < maps_.size(); k++) if (maps_[k] == cur.maps[0]) hostMapIdx_ = (int)k;
+    }
+    if (haveMaps && cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
+        if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
+        hostModeIdx_ = rankedMode(cfg_.hostArenaVariant);
+        if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].ranked >> cfg_.hostArenaVariant & 1))
+            hostMapIdx_ = bestRankedMap(cfg_.hostArenaVariant);
+    }
+    const bool built = hostMapIdx_ < (int)mapInfo_.size() && (mapInfo_[hostMapIdx_].modes >> hostModeIdx_ & 1); // (no map file read every frame)
+    // the row under MODE: 1 TEAMS (duel), 2 the map isn't built for the mode, 3 ranked's notes; 0 none
+    const int extra = !haveMaps ? 0 : cfg_.hostRanked ? 3 : !built ? 2 : hostModeIdx_ == MODE_DUEL ? 1 : 0;
+    const float extraH = extra == 1 ? 48 : extra == 2 ? 24 : extra == 3 ? 34 : 0;
+    const float kH = 20 + 48 * 4 + extraH + 48 + 44 + 20 + 60 + 40;   // SERVER NAME .. START / BACK
+    float y = bandTop(kH);
+    ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
+    ui_.label(x, L.Y(y), "SERVER NAME", kGrey, 1.0f, w);
+    y += 20;
+    ui_.textField(3, x, L.Y(y), w, h, cfg_.hostName, 32, UiExp::cfg("host_name").withId("SERVER NAME"));
+    y += 48;
+    if (haveMaps) {
+        if (ui_.button(x, L.Y(y), w, h, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  >", UiExp::nav("host/picker:maps").withId("MAP"))) picker_ = PICK_HOST_MAP;
+        y += 48;
+        // custom mode: click to go through your saved ones (or none); EDIT / NEW open the builder
+        const float cw = L.L(200), ew = L.L(72);
+        if (cfg_.hostRanked) ui_.button(x, L.Y(y), cw, h, "CUSTOM MODE: OFF (RANKED)", UiExp::inert().withId("CUSTOM MODE"), false);
+        else if (ui_.button(x, L.Y(y), cw, h, "CUSTOM MODE: " + (cfg_.hostCustom.empty() ? std::string("NONE") : upper(cfg_.hostCustom)) + "  >",
+                            UiExp::cfg("host_custom").withId("CUSTOM MODE"), !saved.empty() || !cfg_.hostCustom.empty())) {
+            auto list = listCustomModes();
+            auto it = std::find(list.begin(), list.end(), cfg_.hostCustom);
+            cfg_.hostCustom = list.empty() ? "" : it == list.end() ? list[0] : it + 1 == list.end() ? "" : *(it + 1);
+        }
+        if (ui_.button(L.X(kMX + 208), L.Y(y), ew, h, "EDIT", UiExp::nav("custom/general"), !cfg_.hostCustom.empty())) {
+            editRules_ = CustomRules();
+            if (loadCustomMode(cfg_.hostCustom, editRules_)) { editOrigName_ = editRules_.name; customTab_ = 0; setScreen(Screen::CustomMode); }
+        }
+        if (ui_.button(L.X(kMX + 288), L.Y(y), ew, h, "NEW", UiExp::nav("custom/general"))) {
+            editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.baseMode = MODE_FFA;
+            editOrigName_.clear(); customTab_ = 0; setScreen(Screen::CustomMode);
+        }
+        y += 48;
+        if (cfg_.hostRanked) {
+            static const int ladders[3] = {0, 1, 5};
+            int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
+            if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + rankedKind(ladders[k]) + " - " + arenaVariant(ladders[k]).title + "  >", UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
+        } else if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >",
+                              UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
+        y += 48;
+        if (extra == 1) {
+            static const std::vector<std::string> teams = {"TEAMS: 1V1", "TEAMS: 2V2"};
+            int t = cfg_.hostDuelSize == 2 ? 1 : 0;
+            if (ui_.cycle(x, L.Y(y), w, h, "TEAMS", t, 2, teams, UiExp::cfg("host_duel_size").withId("TEAMS"))) cfg_.hostDuelSize = t == 1 ? 2 : 1;
+        } else if (extra == 2) ui_.label(x, L.Y(y), "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed, 1.0f, w);
+        else if (extra == 3) {
+            if (testingBuild())   // (a testing build hosts ranked unrated: Server::rated)
+                ui_.hint(x, L.Y(y), "TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)", {1.0f, 0.78f, 0.25f, 1}, w);
+            else ui_.hint(x, L.Y(y), "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, w);
+            ui_.hint(x, L.Y(y + 14), "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, w);
+        }
+        y += extraH;
+    } else y += 48 * 3;
+    float mp = (float)cfg_.hostMaxPlayers;
+    if (ui_.slider(x, L.Y(y), w, h, "MAX PLAYERS", mp, 2, (float)kMaxPlayers, "%.0f", UiExp::cfg("host_max"), (float)defaultSettings().hostMaxPlayers))
+        cfg_.hostMaxPlayers = std::min(std::max((int)std::round(mp), 2), kMaxPlayers);
+    y += 48;
+    if (cfg_.hostRanked) ui_.button(x, L.Y(y), hw, h, "BOTS: OFF (RANKED)", UiExp::inert().withId("BALANCE BOTS"), false);
+    else ui_.toggle(x, L.Y(y), hw, h, "BALANCE BOTS", cfg_.hostBalanceBots, UiExp::cfg("host_balance_bots"));
+    ui_.toggle(x2, L.Y(y), hw, h, "PUBLIC", cfg_.hostPublic, UiExp::cfg("host_public"));
+    y += 44;
+    ui_.hint(x, L.Y(y), "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, w);
+    y += 20;
+    if (ui_.button(x, L.Y(y), w, h, "ADVANCED  >", UiExp::nav("host/advanced"))) hostAdvanced_ = true;
+    y += 60;
+    if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
+    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost();
+    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
+}
+
+// HOST > ADVANCED: the network options most hosts never touch (UDP port, UPnP, the server log); BACK: HOST
+void Game::drawHostAdvanced(const SetLayout& L) {
+    const float x = L.X(kMX), w = L.L(kMW), h = L.L(kMRow);
+    const float kH = 40 + 20 + 44 + 20 + 44 + 20 + 60 + 40;
+    float y = bandTop(kH);
+    ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
+    ui_.labelCentered(L.X(640), L.Y(y), "ADVANCED", kWhite, 1.5f, w);
+    y += 40;
+    ui_.label(x, L.Y(y), "UDP PORT", kGrey, 1.0f, w);
+    y += 20;
+    ui_.textField(4, x, L.Y(y), w, h, hostPortStr_, 5, UiExp::local().withId("UDP PORT"));
+    y += 44;
+    ui_.hint(x, L.Y(y), "IN GAME, ESC SHOWS IF THE PORT CAN BE REACHED", kGrey, w);
+    y += 20;
+    ui_.toggle(x, L.Y(y), w, h, "AUTO PORT FORWARD", cfg_.hostUpnp, UiExp::cfg("host_upnp"));
+    y += 44;
+    ui_.hint(x, L.Y(y), "OPENS THE UDP PORT ON YOUR ROUTER (UPNP)", kGrey, w);
+    y += 20;
+    static const std::vector<std::string> logNames = {"SERVER LOG: OFF", "SERVER LOG: SIMPLE", "SERVER LOG: VERBOSE (125 HZ)", "SERVER LOG: EXTREME (EVERY TICK)"};
+    ui_.cycle(x, L.Y(y), w, h, "SERVER LOG", cfg_.hostLog, 4, logNames, UiExp::cfg("host_log"));
+    y += 60;
+    if (ui_.button(x, L.Y(y), L.L(kMHalf), h, "BACK", UiExp::nav("host"))) { hostAdvanced_ = false; cfg_.save(); }
+}
+
+// VS BOTS: mode, map, difficulty, how many bots (and teammates in a team mode); BACK and START
+void Game::drawVsBots(const SetLayout& L) {
+    const float x = L.X(kMX), w = L.L(kMW), h = L.L(kMRow), hw = L.L(kMHalf), x2 = L.X(kMX + kMW - kMHalf);
+    const bool haveMaps = !maps_.empty(), teams = modeIsTeamBased(cfg_.botMode);
+    const int rows = 3 + (haveMaps ? 1 : 0) + (teams ? 1 : 0);
+    const float kH = 48 * rows + 52;   // the rows, 20 px, BACK / START
+    float y = bandTop(kH);
+    ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
+    if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(cfg_.botMode) + (cfg_.botMode == MODE_ARENA ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >",
+                   UiExp::nav("vsbots/picker:modes").withId("MODE"))) picker_ = PICK_BOT_MODE;
+    y += 48;
+    if (haveMaps) {
+        // only offer maps that support the chosen mode
+        for (size_t k = 0; k < maps_.size(); k++) {   // (from the scan, not a map file read every frame)
+            size_t i = botMapIdx_ % maps_.size();
+            if (i < mapInfo_.size() && (mapInfo_[i].modes >> cfg_.botMode & 1)) break;
+            botMapIdx_ = (botMapIdx_ + 1) % (int)maps_.size();
+        }
+        if (ui_.button(x, L.Y(y), w, h, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  >", UiExp::nav("vsbots/picker:maps").withId("MAP"))) picker_ = PICK_BOT_MAP;
+        y += 48;
+    }
+    static const std::vector<std::string> skills = {"DIFFICULTY: BEGINNER", "DIFFICULTY: INTERMEDIATE", "DIFFICULTY: ADVANCED", "DIFFICULTY: EXPERT"};
+    ui_.cycle(x, L.Y(y), w, h, "DIFFICULTY", cfg_.botSkill, 4, skills, UiExp::cfg("bot_skill"));
+    y += 48;
+    float ne = (float)cfg_.botEnemies, na = (float)cfg_.botAllies;
+    if (ui_.slider(x, L.Y(y), w, h, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f", UiExp::cfg("bot_enemies"), (float)defaultSettings().botEnemies)) cfg_.botEnemies = std::min(std::max((int)std::round(ne), 1), 7);
+    y += 48;
+    if (teams) {
+        if (ui_.slider(x, L.Y(y), w, h, "TEAMMATE BOTS", na, 0, 3, "%.0f", UiExp::cfg("bot_allies"), (float)defaultSettings().botAllies)) cfg_.botAllies = std::min(std::max((int)std::round(na), 0), 3);
+        y += 48;
+    }
+    y += 12;   // (20 px over the footer)
+    if (ui_.button(x, L.Y(y), hw, h, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
+    if (ui_.button(x2, L.Y(y), hw, h, "START", UiExp::state("hosting", "1"))) startHost(true);
+    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 64), error_, kRed, 1.0f, L.L(960));
+}
+
+// CONNECTING: the status line and CANCEL in a small panel in the middle of the band
+void Game::drawConnecting(const SetLayout& L) {
+    const float kH = 16 + 20 + 40;
+    float y = bandTop(kH);
+    ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
+    float dlp = net_.downloadProgress();
+    if (dlp >= 0) ui_.labelCentered(L.X(640), L.Y(y), "DOWNLOADING MAP " + upper(net_.downloadName()) + " - " + std::to_string((int)(dlp * 100)) + "%", kWhite, 1.0f, L.L(kMW));
+    else ui_.labelCentered(L.X(640), L.Y(y), "CONNECTING TO " + net_.address() + "...", kWhite, 1.0f, L.L(kMW));
+    y += 36;
+    if (ui_.button(L.X(kMX), L.Y(y), L.L(kMW), L.L(kMRow), "CANCEL", UiExp::nav("main"))) leaveGame();
 }
 
 // "NAME 2.2 -> 4.4 M/S": a custom mode's setting as the standard value and what this mode makes it
@@ -4795,7 +4888,9 @@ static std::string stdTo(const char* name, float base, float mul, const char* un
     return std::string(name) + " " + num(base) + (std::fabs(mul - 1) > 1e-3f ? " -> " + num(base * mul) : "") + u;
 }
 
-void Game::drawCustomModeEditor(float cx, float y) {
+void Game::drawCustomModeEditor(const SetLayout&) {
+    const float cx = r_.width() * 0.5f;
+    float y = r_.height() * 0.12f + 80 * ui_.s();
     float s = ui_.s(), w = 640 * s, x = cx - w * 0.5f, bh = 30 * s, gap = 6 * s, hw = (w - gap) * 0.5f;
     // WEAPONS and MOVEMENT are grids of "NAME standard -> this mode: x" sliders: they get the screen's width (in 640 the
     // labels were cut off, the value with them, at 720p - UI test)
@@ -5067,8 +5162,8 @@ bool Game::playDemo(const std::string& path) {
     return true;
 }
 
-void Game::drawDemos(float cx, float y) {
-    float s = ui_.s(), w = 560 * s, h = 32 * s, gap = 6 * s, x = cx - w * 0.5f;
+// DEMOS: newest first, 8 rows (the wheel scrolls the rest), the recording rate, BACK and OPEN FOLDER
+void Game::drawDemos(const SetLayout& L) {
     if (time_ >= demoListAt_) { // rescan now and then (a demo you just recorded shows up)
         demoListAt_ = time_ + 2;
         demoFiles_.clear();
@@ -5087,84 +5182,97 @@ void Game::drawDemos(float cx, float y) {
             demoNotes_.push_back(note);
         }
     }
-    // as many rows as fit above the rate row and BACK; the wheel scrolls the rest
-    int fitRows = std::max(3, (int)(((float)r_.height() - y - 4 * (h + gap) - 60 * s) / (h + gap)));
-    int nd = (int)demoFiles_.size();
-    demoScroll_ = std::min(demoScroll_, std::max(0, nd - fitRows));
-    int rows = std::min(nd - demoScroll_, fitRows);
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 4) * (h + gap) + (nd > rows ? 52 : 40) * s);
-    ui_.labelCentered(cx, y, "DEMOS", kWhite, 1.4f);
-    y += h + gap;
-    if (demoFiles_.empty()) {
-        ui_.labelCentered(cx, y + 6 * s, "NONE YET - IN A GAME, ESC > RECORD DEMO", kGrey, 0.6f);
-        y += h + gap;
-    }
-    for (int k = 0; k < rows; k++, y += h + gap) {
+    const int kRows = 8;
+    const int nd = (int)demoFiles_.size();
+    demoScroll_ = std::min(demoScroll_, std::max(0, nd - kRows));
+    const int rows = std::min(nd - demoScroll_, kRows);
+    static const std::string rateHint = "FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES";
+    const float lx = L.X(360), lw = L.L(560);
+    const int hintLines = (int)ui_.wrap(rateHint, ui_.hintScale(), lw).size();
+    // title, the list (or the "none yet" line), the scroll line, RATE + its hint, BACK / OPEN FOLDER
+    const float listH = std::max(rows, 1) * 36.0f, scrollH = nd > rows ? 28 : 12;
+    const float kH = 24 + 16 + listH + scrollH + 44 + hintLines * 14 - 2 + 20 + 40;
+    float y = bandTop(kH);
+    ui_.panel(L.X(344), L.Y(y - 16), L.L(592), L.L(kH + 32));
+    ui_.labelCentered(L.X(640), L.Y(y), "DEMOS", kWhite, 1.5f, lw);
+    y += 40;
+    if (demoFiles_.empty()) ui_.labelCentered(L.X(640), L.Y(y + 8), "NONE YET - IN A GAME, ESC > RECORD DEMO", kGrey, 1.0f, lw);
+    for (int k = 0; k < rows; k++) {
         int i = demoScroll_ + k;
         std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
         if (i < (int)demoNotes_.size() && !demoNotes_[i].empty()) name += " (" + demoNotes_[i] + ")";
-        if (ui_.button(x, y, w, h, name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
+        if (ui_.button(lx, L.Y(y + 36 * k), lw, L.L(32), name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
     }
+    y += listH;
     if (nd > rows) {
-        std::string more = std::to_string(demoScroll_ + 1) + "-" + std::to_string(demoScroll_ + rows) + " OF " + std::to_string(nd) + " - WHEEL TO SCROLL";
-        ui_.labelCentered(cx, y - gap + 2 * s, more, kGrey, 0.5f);
-        y += 12 * s;
+        char more[64];
+        snprintf(more, sizeof more, "%d-%d OF %d - WHEEL TO SCROLL", demoScroll_ + 1, demoScroll_ + rows, nd);
+        ui_.hint(L.X(640) - r_.textWidth(more, ui_.hintScale()) * 0.5f, L.Y(y), more, kGrey, lw);
     }
-    float tw = (w - 2 * gap) / 3;
-    static const std::vector<std::string> rates = {"RECORD AT 62.5 HZ", "RECORD AT FULL RATE"};
+    y += scrollH;
+    static const std::vector<std::string> rates = {"RECORDING RATE: 62.5 HZ", "RECORDING RATE: FULL"};
     int rate = cfg_.demoFullRate ? 1 : 0;
-    if (ui_.cycle(x, y, tw * 2 + gap, h, "RATE", rate, 2, rates, UiExp::cfg("demo_full_rate"))) { cfg_.demoFullRate = rate == 1; cfg_.save(); }
-    if (ui_.button(x + 2 * (tw + gap), y, tw, h, "OPEN FOLDER", UiExp::url())) {
+    if (ui_.cycle(lx, L.Y(y), lw, L.L(kMRow), "RATE", rate, 2, rates, UiExp::cfg("demo_full_rate"))) { cfg_.demoFullRate = rate == 1; cfg_.save(); }
+    y += 44;
+    y += ui_.hintWrapped(lx, L.Y(y), rateHint, kGrey, lw, L.L(14)) * 14 - 2 + 20;
+    if (ui_.button(lx, L.Y(y), L.L(276), L.L(kMRow), "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
+    if (ui_.button(L.X(644), L.Y(y), L.L(276), L.L(kMRow), "OPEN FOLDER", UiExp::url())) {
         std::error_code ec;
         std::filesystem::create_directories(demoDir(), ec);
         openUrl(std::filesystem::absolute(demoDir(), ec).lexically_normal().string());
     }
-    y += h + gap;
-    ui_.label(x, y, "FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES", kGrey, 0.5f);
-    y += 16 * s;
-    if (ui_.button(x, y, w, h, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
 }
 
-void Game::drawInfo(float cx, float y) {
-    float s = ui_.s(), w = std::min(1100 * s, (float)r_.width() - 40 * s), x = cx - w * 0.5f;
-    float bh = 34 * s, gap = 6 * s, H = (float)r_.height();
-    int nt = (int)(sizeof kInfoTabs / sizeof kInfoTabs[0]);
-    float tw = (w - gap * (nt - 1)) / nt;
-    for (int t = 0; t < nt; t++)
-        if (ui_.button(x + t * (tw + gap), y, tw, bh, infoTab_ == t ? std::string("> ") + kInfoTabs[t] + " <" : kInfoTabs[t], UiExp::nav(kInfoPaths[t]).withId(kInfoTabs[t]))) { infoTab_ = t; infoScroll_ = 0; }
-    y += bh + gap * 2;
-    float top = y, bottom = H - 70 * s;
-    ui_.panel(x - 12 * s, top - 8 * s, w + 24 * s, bottom - top + 16 * s, 0.85f);
-    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.62f)), lh = r_.textHeight(ts) + 5 * s;
-    // wrap every line to the panel (once per page and size: it measured the page word by word every frame), then draw
-    // the part that's scrolled into view
-    std::vector<std::pair<std::string, bool>>& rows = infoRows_;
-    if (infoRowsTab_ != infoTab_ || infoRowsW_ != w || infoRowsTs_ != ts) {
-    infoRowsTab_ = infoTab_; infoRowsW_ = w; infoRowsTs_ = ts;
-    rows.clear();
-    for (const char* line : kInfoPages[infoTab_]) {
-        if (!line) break;
-        bool head = line[0] == '#';
-        std::string rest = head ? std::string(line + 2) : std::string(line);
-        if (head && !rows.empty()) rows.push_back({"", false});
-        while (!rest.empty()) {
-            size_t cut = rest.size();
-            while (r_.textWidth(rest.substr(0, cut), ts) > w && cut > 0) { size_t sp = rest.rfind(' ', cut - 1); cut = sp == std::string::npos ? cut - 1 : sp; }
-            rows.push_back({rest.substr(0, cut), head});
-            rest = cut < rest.size() ? rest.substr(cut + 1) : "";
+// INFO: a tab per topic over one 960 x 482 panel; the page in a 640 px column at text 2 (at most 80 characters a
+// line), headings in the accent colour. Longer than the panel: the wheel scrolls it (3 lines a notch), with a
+// "LINES x-y OF n" line under it.
+void Game::drawInfo(const SetLayout& L) {
+    const int nt = (int)(sizeof kInfoTabs / sizeof kInfoTabs[0]);
+    for (int t = 0; t < nt; t++) {
+        const float bx = L.X(176 + 156 * t), by = L.Y(166);
+        if (t == infoTab_) tabFrame(r_, ui_, bx, by, L.L(148), L.L(32));
+        if (ui_.button(bx, by, L.L(148), L.L(32), kInfoTabs[t], UiExp::nav(kInfoPaths[t]).withId(kInfoTabs[t]))) { infoTab_ = t; infoScroll_ = 0; }
+    }
+    ui_.panel(L.X(160), L.Y(206), L.L(960), L.L(482), 0.85f);
+    const float ts = ui_.textScale(), colW = L.L(640);
+    // the page wrapped to the column (once per tab, size and font), each line's place in design px: 20 between a
+    // paragraph's lines, 26 to the next paragraph, 24 under a heading, 32 to a heading
+    std::vector<InfoRow>& rows = infoRows_;
+    if (infoRowsTab_ != infoTab_ || infoRowsW_ != colW || infoRowsTs_ != ts || infoRowsFont_ != r_.fontGeneration()) {
+        infoRowsTab_ = infoTab_; infoRowsW_ = colW; infoRowsTs_ = ts; infoRowsFont_ = r_.fontGeneration();
+        rows.clear();
+        float y = 0;
+        bool lastHead = false;
+        for (const char* line : kInfoPages[infoTab_]) {
+            if (!line) break;
+            const bool head = line[0] == '#';
+            const std::string text = head ? std::string(line + 2) : std::string(line);
+            bool first = true;
+            for (const std::string& part : ui_.wrap(text, ts, colW, 80)) {
+                if (!rows.empty()) y += !first ? 20 : head ? 32 : lastHead ? 24 : 26;
+                rows.push_back({part, head, y});
+                first = false;
+            }
+            lastHead = head;
         }
     }
+    const float viewH = 616 - 222;   // (lines from y 222 down to the footer)
+    const int n = (int)rows.size();
+    int maxFirst = 0;   // the first line that still lets the last one show
+    while (maxFirst < n - 1 && rows[n - 1].y - rows[maxFirst].y + 16 > viewH) maxFirst++;
+    infoScroll_ = std::min(std::max(infoScroll_, 0), maxFirst);
+    int last = infoScroll_ - 1;   // the last line that fits (not a heading whose text would start on the next screen)
+    while (last + 1 < n && rows[last + 1].y - rows[infoScroll_].y + 16 <= viewH) last++;
+    if (last + 1 < n && last > infoScroll_ && rows[last].head) last--;
+    for (int i = infoScroll_; i <= last; i++)
+        ui_.label(L.X(320), L.Y(222 + rows[i].y - rows[infoScroll_].y), rows[i].text, rows[i].head ? ui_.accent : kBodyC, 1.0f, colW);
+    if (ui_.button(L.X(176), L.Y(632), L.L(176), L.L(kMRow), "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
+    if (maxFirst > 0) {
+        char lines[64];
+        snprintf(lines, sizeof lines, "LINES %d-%d OF %d - WHEEL TO SCROLL", infoScroll_ + 1, last + 1, n);
+        ui_.hint(L.X(640) - r_.textWidth(lines, ui_.hintScale()) * 0.5f, L.Y(646), lines, kGrey, L.L(400));
     }
-    float total = rows.size() * lh, view = bottom - top;
-    infoScroll_ = clampf(infoScroll_, 0, std::max(0.0f, total - view));
-    for (size_t i = 0; i < rows.size(); i++) {
-        float ry = top + i * lh - infoScroll_;
-        if (ry < top - 1 || ry + lh > bottom + 1) continue;
-        r_.text(x, ry, ts, rows[i].first, rows[i].second ? ui_.accent : Color{0.88f, 0.9f, 0.93f, 1});
-    }
-    if (total > view) ui_.label(x + w - 150 * s, bottom + 2 * s, "WHEEL TO SCROLL", kGrey, 0.5f);
-    if (ui_.button(cx - 100 * s, H - 52 * s, 200 * s, 36 * s, "BACK", UiExp::nav("main"))) setScreen(Screen::Main);
 }
 
 void Game::drawPerf() {
@@ -5694,8 +5802,12 @@ void Game::afterSwap() {
 
 // Every action, two bind slots each. Click a slot, then press a key / mouse button / scroll.
 // Esc cancels, Backspace or Delete clears the slot.
-// Every map or mode as a grid of buttons. Maps that can't run the chosen mode are greyed out, and
-// each map says which mode it was built for.
+// Every map or mode as a grid of buttons, each with what it is under it (a map: the mode it's built for).
+// In the menus (host, vs bots) one card-grid template (ui-redesign-spec, the pickers): a 960 panel centred in the
+// band, the title at text 3, cards (modes / rulesets / ladders: 3 columns of 298.7, 40 high; maps: 5 columns of 176,
+// 32 high) with their description at text 1.5 wrapped under them, the current one framed in the accent colour, BACK
+// bottom-left. A map not built for the mode is tagged NOT FOR THIS MODE under one legend line (the maps built for it
+// in the accent colour). In game (the pause menu's live / vote / tourney pickers) the grid is as it was.
 void Game::drawPicker(float cx, float y) {
     float s = ui_.s(), bh = 40 * s, gap = 8 * s;
     bool ladders = picker_ == PICK_RANKED; // the three ranked ladders (hosting, or in game: host switches / anyone votes)
@@ -5717,6 +5829,157 @@ void Game::drawPicker(float cx, float y) {
     const char* done = host ? "host" : "vsbots";
     const char* back = screen_ == Screen::InGame ? (voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
+    std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
+                      : ladders ? "RANKED - CHOOSE A LADDER"
+                      : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
+                      : std::string("CHOOSE A MAP FOR ") + (rankedNow ? "RANKED" : modeTitle(mode));
+    if ((live && livePickVote_) || multi) title = "VOTE: " + title;
+    // finishing a choice: host/bots remember it; in game it's a map command or a vote
+    auto finish = [&]() {
+        picker_ = PICK_NONE;
+        if (live) {
+            std::string cmd = (livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode);
+            if (mode == MODE_ARENA || mode == MODE_TOURNEY) cmd += std::string(" ") + arenaVariant(variant).name;
+            net_.sendCommand(cmd);
+            voteMenu_ = false;
+            paused_ = false;
+        } else cfg_.save();
+    };
+    // item i: its label, what's said under it, whether it can be picked, whether it's the current one, and what
+    // picking it does (built: a map built for the mode; warn: one that isn't)
+    struct Item { std::string label, sub; bool ok = true, cur = false, warn = false, built = false; UiExp pe; };
+    auto item = [&](int i) {
+        Item it;
+        if (ladders) {
+            it.label = arenaVariant(kLadders[i]).title;
+            it.sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
+            it.cur = rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);
+        } else if (variants) {
+            it.label = arenaVariant(i).title;
+            it.sub = arenaVariant(i).desc;
+            it.cur = multi ? multiSel_[i] : i == variant;
+        } else if (modes && i == MODE_COUNT) {
+            it.label = "RANKED";
+            it.sub = "LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >";
+            it.cur = rankedNow;
+        } else if (modes) {
+            it.label = modeTitle(i);
+            it.cur = i == mode && !rankedNow;
+            for (auto& mi : mapInfo_) if (mi.preferredMode == i) it.sub = "MAP: " + upper(mi.title);
+            if (it.sub.empty() && i == MODE_TAG) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_HIDE) it.sub = "MAP: " + upper(mi.title);
+            if (i == MODE_ARENA) it.sub = "9 RULESETS >";
+            if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
+        } else {
+            const MapInfo& mi = mapInfo_[i];
+            it.label = upper(maps_[i]);
+            it.cur = multi ? multiSel_[i] : i == mapIdx;
+            it.built = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
+            int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
+            bool rankedOnly = rankedNow && !(mi.ranked >> ladderNow & 1);
+            // any map can be picked for any mode; one not built for it says so (it may be missing what the mode needs)
+            it.sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !it.built ? "WARNING: NOT BUILT FOR THIS MODE - MAY NOT WORK" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
+            it.ok = !rankedOnly;
+            it.warn = !it.built && !rankedOnly;
+        }
+        it.pe = multi ? UiExp::state("multisel")
+              : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
+              : ladders ? UiExp::nav("host")
+              : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
+              : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
+              : modes ? (i == MODE_ARENA || i == MODE_TOURNEY ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
+                         : live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
+              : live ? UiExp::cmd(livePickVote_ ? "callvote map" : "map") : UiExp::nav(done);
+        return it;
+    };
+    auto choose = [&](int i) {
+        if (multi) multiSel_[i] = !multiSel_[i];
+        else if (ladders && live) { // host switches right away, anyone else calls a vote
+            net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);
+            picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
+        }
+        else if (ladders) {
+            cfg_.hostRanked = true;
+            variant = kLadders[i];
+            mode = MODE_ARENA;
+            if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
+            finish();
+        }
+        else if (variants) { variant = i; if (live) picker_ = PICK_LIVE_MAP; else finish(); }   // in game: then the map
+        else if (modes && i == MODE_COUNT) { variantCtx_ = live ? 2 : 0; picker_ = PICK_RANKED; }
+        else if (modes) {
+            if (host) cfg_.hostRanked = false; // any other mode: unranked
+            if (live && serverRanked && !livePickVote_) net_.sendCommand("ranked off"); // host leaves ranked for another mode
+            mode = i;
+            if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
+            if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
+                variantCtx_ = live ? 2 : host ? 0 : 1;
+                picker_ = PICK_VARIANT;
+            } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)
+            else finish();
+        } else { mapIdx = i; finish(); }
+    };
+
+    if (screen_ != Screen::InGame) {   // ---- the menus' card grid
+        const SetLayout L = menuLayout(960);
+        const bool mapList = !ladders && !variants && !modes;
+        // every card once a frame (labels, tags: what it shows; the buffers are reused)
+        static std::vector<Item> items;
+        static std::vector<std::string> descs;
+        items.resize(n);
+        descs.resize(n);
+        bool warned = false;   // (a map not built for the mode: the legend line, the built ones in the accent colour)
+        for (int i = 0; i < n; i++) {
+            items[i] = item(i);
+            const Item& it = items[i];
+            warned |= it.warn;
+            descs[i] = !mapList ? it.sub : it.warn ? "NOT FOR THIS MODE" : it.sub.rfind("BUILT FOR ", 0) == 0 ? it.sub.substr(6) : it.sub;   // ("FOR <MODE>")
+        }
+        const float hs = ui_.hintScale();
+        int cols = mapList ? 5 : 3;
+        const float gx = mapList ? 12 : 16, gy = mapList ? 4 : 12, cardH = mapList ? 32 : 40;
+        const float headH = 24 + (warned ? 24 : 0) + 16;
+        // a row's height: the cards, and their descriptions wrapped at text 1.5 to the card (Ui::wrap's cache)
+        float cw = 0;
+        auto rowH = [&](int r0) {
+            int lines = 0;
+            for (int i = r0; i < n && i < r0 + cols; i++) lines = std::max(lines, (int)ui_.wrap(descs[i], hs, L.L(cw - 4)).size());
+            return cardH + (lines ? 4 + lines * 12 + (lines - 1) * 2 : 0);
+        };
+        float gridH = 0;
+        auto measure = [&]() {   // the grid's height at this many columns
+            cw = (928 - gx * (cols - 1)) / cols;
+            gridH = 0;
+            for (int r0 = 0; r0 < n; r0 += cols) gridH += rowH(r0) + (r0 + cols < n ? gy : 0);
+        };
+        measure();
+        while (headH + gridH + 60 + 32 > kBandH && cols < 8) { cols++; measure(); }   // (many maps of your own: more, narrower columns)
+        const float kH = headH + gridH + 20 + 40;
+        const float top = bandTop(kH);
+        ui_.panel(L.X(160), L.Y(top - 16), L.L(960), L.L(kH + 32));
+        ui_.labelCentered(L.X(640), L.Y(top), title, kWhite, 1.5f, L.L(928));
+        if (warned) {
+            static const std::string legend = "MAPS MARKED \"NOT FOR THIS MODE\" MAY NOT WORK IN IT";
+            ui_.hint(L.X(640) - r_.textWidth(legend, hs) * 0.5f, L.Y(top + 36), legend, kWarnC, L.L(928));
+        }
+        float ry = top + headH;
+        for (int r0 = 0; r0 < n; r0 += cols) {
+            const float h = rowH(r0);
+            for (int i = r0; i < n && i < r0 + cols; i++) {
+                const Item& it = items[i];
+                const float bx = 176 + (i - r0) * (cw + gx);
+                if (it.cur) tabFrame(r_, ui_, L.X(bx), L.Y(ry), L.L(cw), L.L(cardH));
+                if (ui_.button(L.X(bx), L.Y(ry), L.L(cw), L.L(cardH), it.label, it.pe, it.ok)) { choose(i); return; }   // (the next frame: what that led to)
+                const Color dc = it.warn ? kDimC : !it.ok ? Color{0.75f, 0.45f, 0.4f, 1} : mapList && warned && it.built ? ui_.accent : kGrey;
+                ui_.hintWrapped(L.X(bx + 2), L.Y(ry + cardH + 4), descs[i], dc, L.L(cw - 4), L.L(14));
+            }
+            ry += h + gy;
+        }
+        ry += 20 - gy;
+        if (ui_.button(L.X(176), L.Y(ry), L.L(std::max(cw, 176.0f)), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+        return;
+    }
+
+    // ---- in game: the grid as it was
     int cols = 3;
     float bw = 250 * s;
     float rowH = bh + (variants ? 30 : 18) * s + gap;
@@ -5731,104 +5994,22 @@ void Game::drawPicker(float cx, float y) {
     float x = cx - w * 0.5f;
     int rows = (n + cols - 1) / cols;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * rowH + bh + 30 * s);
-    std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
-                      : ladders ? "RANKED - CHOOSE A LADDER"
-                      : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
-                      : std::string("CHOOSE A MAP FOR ") + (rankedNow ? "RANKED" : modeTitle(mode));
-    if ((live && livePickVote_) || multi) title = "VOTE: " + title;
     ui_.labelCentered(cx, y, title);
     y += 34 * s;
-    // finishing a choice: host/bots remember it; in game it's a map command or a vote
-    auto finish = [&]() {
-        picker_ = PICK_NONE;
-        if (live) {
-            std::string cmd = (livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode);
-            if (mode == MODE_ARENA || mode == MODE_TOURNEY) cmd += std::string(" ") + arenaVariant(variant).name;
-            net_.sendCommand(cmd);
-            voteMenu_ = false;
-            paused_ = false;
-        } else cfg_.save();
-    };
     for (int i = 0; i < n; i++) {
         float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * rowH;
-        std::string label, sub;
-        bool ok = true, cur, warnRow = false;
-        if (ladders) {
-            label = arenaVariant(kLadders[i]).title;
-            sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
-            cur = rankedNow && kLadders[i] == (live ? net_.mode().arenaVariant : variant);
-        } else if (variants) {
-            label = arenaVariant(i).title;
-            sub = arenaVariant(i).desc;
-            cur = multi ? multiSel_[i] : i == variant;
-        } else if (modes && i == MODE_COUNT) {
-            label = "RANKED";
-            sub = "LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >";
-            cur = rankedNow;
-        } else if (modes) {
-            label = modeTitle(i);
-            cur = i == mode && !rankedNow;
-            for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
-            if (sub.empty() && i == MODE_TAG) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_HIDE) sub = "MAP: " + upper(mi.title);
-            if (i == MODE_ARENA) sub = "9 RULESETS >";
-            if (i == MODE_TOURNEY) sub = "BRACKET OF 1V1S - RULESETS >";
-        } else {
-            const MapInfo& mi = mapInfo_[i];
-            label = upper(maps_[i]);
-            cur = multi ? multiSel_[i] : i == mapIdx;
-            bool built = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
-            int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
-            bool rankedOnly = rankedNow && !(mi.ranked >> ladderNow & 1);
-            // any map can be picked for any mode; one not built for it says so (it may be missing what the mode needs)
-            sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !built ? "WARNING: NOT BUILT FOR THIS MODE - MAY NOT WORK" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
-            ok = !rankedOnly;
-            warnRow = !built && !rankedOnly;
-        }
-        if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
-        UiExp pe = multi ? UiExp::state("multisel")
-                 : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
-                 : ladders ? UiExp::nav("host")
-                 : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
-                 : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
-                 : modes ? (i == MODE_ARENA || i == MODE_TOURNEY ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
-                            : live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
-                 : live ? UiExp::cmd(livePickVote_ ? "callvote map" : "map") : UiExp::nav(done);
-        if (ui_.button(bx, by, bw, bh, label, pe, ok)) {
-            if (multi) multiSel_[i] = !multiSel_[i];
-            else if (ladders && live) { // host switches right away, anyone else calls a vote
-                net_.sendCommand(std::string(livePickVote_ ? "callvote " : "") + "ranked on " + arenaVariant(kLadders[i]).name);
-                picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
-            }
-            else if (ladders) {
-                cfg_.hostRanked = true;
-                variant = kLadders[i];
-                mode = MODE_ARENA;
-                if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
-                finish();
-            }
-            else if (variants) { variant = i; if (live) picker_ = PICK_LIVE_MAP; else finish(); }   // in game: then the map
-            else if (modes && i == MODE_COUNT) { variantCtx_ = live ? 2 : 0; picker_ = PICK_RANKED; }
-            else if (modes) {
-                if (host) cfg_.hostRanked = false; // any other mode: unranked
-                if (live && serverRanked && !livePickVote_) net_.sendCommand("ranked off"); // host leaves ranked for another mode
-                mode = i;
-                if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
-                if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
-                    variantCtx_ = live ? 2 : host ? 0 : 1;
-                    picker_ = PICK_VARIANT;
-                } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)
-                else finish();
-            } else { mapIdx = i; finish(); }
-        }
+        const Item it = item(i);
+        if (it.cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
+        if (ui_.button(bx, by, bw, bh, it.label, it.pe, it.ok)) choose(i);
         // wrap long descriptions onto two small lines
         float sts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
-        std::string line1 = sub, line2;
+        std::string line1 = it.sub, line2;
         while (r_.textWidth(line1, sts) > bw && line1.find(' ') != std::string::npos) {
             size_t sp = line1.rfind(' ');
             line2 = line1.substr(sp + 1) + (line2.empty() ? "" : " " + line2);
             line1 = line1.substr(0, sp);
         }
-        Color sc = warnRow ? Color{1.0f, 0.55f, 0.3f, 1} : ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1};
+        Color sc = it.warn ? Color{1.0f, 0.55f, 0.3f, 1} : it.ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1};
         r_.text(bx + 2 * s, by + bh + 3 * s, sts, line1, sc);
         if (!line2.empty()) r_.text(bx + 2 * s, by + bh + 3 * s + r_.textHeight(sts) + 2 * s, sts, line2, sc);
     }

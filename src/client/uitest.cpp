@@ -70,7 +70,7 @@ std::string Game::uiScreenPath() const {
     switch (screen_) {
         case Screen::Main: return edPrompt_ ? "main/save-copy" : "main";   // (after someone else's session: keep a copy?)
         case Screen::Join: return "join";
-        case Screen::Host: return "host" + pick;
+        case Screen::Host: return hostAdvanced_ && pick.empty() ? "host/advanced" : "host" + pick;
         case Screen::VsBots: return "vsbots" + pick;
         case Screen::Settings: return "settings" + settingsSub();
         case Screen::Leaderboard: return raceStatsView_ ? "leaderboard/race-stats" : "leaderboard";
@@ -556,6 +556,7 @@ private:
         g.picker_ = Game::PICK_NONE;
         g.multiSel_.clear();
         g.raceStatsView_ = false;
+        g.hostAdvanced_ = false;
         g.customTab_ = g.infoTab_ = 0;
         g.infoScroll_ = 0;
         g.hudSel_ = 0;

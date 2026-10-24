@@ -66,6 +66,7 @@ struct LaunchOptions {
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
     std::string settingsTab;    // --settingstab PAGE: with --settings / --settingsmenu, that page (gameplay, controls/movement, hud/elements...)
+    std::string menuPage;       // --menupage PATH: that menu page (Game::uiScreenPath's name: host/advanced, custom/dash, info/controls+2...)
     std::string editMap;        // --editor MAP: open the map editor on that map
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
@@ -172,6 +173,16 @@ private:
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
     void drawMenu();
+    // the menus' pages (the redesign's 720p coordinates through a SetLayout: game.cpp "Menus")
+    SetLayout menuLayout(float designW) const;
+    void drawMainMenu(const SetLayout& L);
+    void drawJoin(const SetLayout& L);
+    void drawHost(const SetLayout& L);
+    void drawHostAdvanced(const SetLayout& L);
+    void drawVsBots(const SetLayout& L);
+    void drawConnecting(const SetLayout& L);
+    void debugMenuPage();     // --menupage PATH: that menu page open (screenshots)
+    bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log) open
     void drawPauseMenu(float cx, float y);
     // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
     enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD };
@@ -252,16 +263,16 @@ private:
     std::string editOrigName_;
     int customTab_ = 0;
     std::vector<std::string> rulesParts_;
-    void drawCustomModeEditor(float cx, float y);
-    void drawInfo(float cx, float y);
-    void drawDemos(float cx, float y);      // the demos folder: newest first, click to watch
+    void drawCustomModeEditor(const SetLayout& L);
+    void drawInfo(const SetLayout& L);
+    void drawDemos(const SetLayout& L);     // the demos folder: newest first, click to watch
     void startRecording();
     bool playDemo(const std::string& path);
     std::vector<std::string> demoFiles_;
     std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
     double demoListAt_ = -1;
     int infoTab_ = 0;
-    float infoScroll_ = 0;
+    int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
     int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
@@ -301,7 +312,7 @@ private:
     bool helloPending_ = false;   // POST /hello in flight (retried in the background) until it took: then recorded in the config
     void updateRanked();
     double nextBoardFetch_ = 0;
-    void drawLeaderboard(float cx, float y);
+    void drawLeaderboard(const SetLayout& L);
     std::vector<std::string> rankIdsInGame() const;
     // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
     // alone, sent through the server in an edit session so everyone's copy stays the same.
@@ -447,9 +458,11 @@ private:
     std::string feedPart_;   // (drawFeedText)
     double frameDt_ = 0;     // this frame's dt (frame)
     bool polledEarly_ = false;   // preInput read the network this frame
-    std::vector<std::pair<std::string, bool>> infoRows_;   // (drawInfo: the page wrapped to the panel, for this tab and size)
+    struct InfoRow { std::string text; bool head = false; float y = 0; };   // y: design px from the page's top
+    std::vector<InfoRow> infoRows_;          // (drawInfo: the page wrapped to its column, for this tab, size and font)
     int infoRowsTab_ = -1;
     float infoRowsW_ = 0, infoRowsTs_ = 0;
+    int infoRowsFont_ = -1;
     std::string perfTick_;   // (drawPerf: the version / server line, made with the numbers)
     struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
     JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
@@ -675,7 +688,7 @@ private:
     const RaceRun* bestRun(const std::string& map, bool trial) const;
     void onRaceSplit(int checkpoint, int ms);
     void startTimeTrial();
-    void drawRaceStats(float cx, float y);
+    void drawRaceStats(const SetLayout& L);
     // profiles: per-mode rules swap the HUD layout / controls while that mode is running
     Binds modeBinds_;
     bool modeCtlActive_ = false, modeAlt_ = false;
