@@ -8082,7 +8082,7 @@ int main(int argc, char** argv) {
                 if (name == g.name) {
                     double t0 = wallSeconds();
                     g.run();
-                    if (argc >= 4 && std::string(argv[3]) == "--child") { fflush(stdout); return std::min(g_fail, 100); }
+                    if (argc >= 4 && std::string(argv[3]) == "--child") { printf("%s\n", kGroupEnd); fflush(stdout); return std::min(g_fail, 100); }
                     printf("group %s: %.0f s\n", g.name, wallSeconds() - t0);
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
@@ -8162,6 +8162,13 @@ int main(int argc, char** argv) {
                 std::stringstream ss; ss << f.rdbuf();
                 f.close();
                 outputs[i] = ss.str();
+#ifdef _WIN32
+                size_t end = outputs[i].rfind(kGroupEnd);
+                if (end != std::string::npos && outputs[i].find_first_not_of("\r\n", end + std::strlen(kGroupEnd)) == std::string::npos)
+                    outputs[i].resize(end);
+                else if (crash.empty())
+                    crash = "ended without finishing (exit code " + std::to_string(code) + ")";
+#endif
                 std::remove(running[k].out.c_str());
                 { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
                 done[i] = crash.empty() ? code : 1;
@@ -8178,10 +8185,15 @@ int main(int argc, char** argv) {
         // 3 per core: the groups mostly wait on real-time play (the whole run uses ~65 CPU-seconds), so with one per
         // core the cores sat ~70% idle. 4 cores: 4 at a time 153 s, 8 at a time ~114, 12 ~102-117 (then the longest
         // group bounds it: tourney's 25 s then, rules' / governor's ~21 s now), each group taking as long as with 4.
-        // (Windows runs the real-time groups at 1x, testTimeScale: each needs a quarter of the CPU per second that it
-        //  does at 4x, so 3 per core loads it less than Linux; the compute-only ones are the same CPU-seconds at a
-        //  lower priority.) QUARK_TEST_JOBS overrides it.
+        // Windows: 1 per core. At 1x (testTimeScale) a real-time group needs a quarter of the CPU per second it needs at
+        // 4x, but under Wine on 4 vCPUs 3 per core missed 55-90 real-time checks a run (the compute-only groups niced
+        // or not) and 1 per core none, in the same wall time (~490 s: the lockstep groups' CPU bounds it there).
+        // QUARK_TEST_JOBS overrides it.
+#ifdef _WIN32
+        unsigned jobs = std::max(1u, std::thread::hardware_concurrency());
+#else
         unsigned jobs = 3 * std::max(1u, std::thread::hardware_concurrency());
+#endif
         if (const char* e = getenv("QUARK_TEST_JOBS"); e && atoi(e) > 0) jobs = (unsigned)atoi(e);
         parallel(par, std::min(jobs, kGroupMaxJobs));
         // the timing-sensitive ones, one at a time on the idle machine (both at once saved ~5 s of ~150 and failed

@@ -15,6 +15,11 @@ constexpr unsigned kGroupMaxJobs = 64;
 constexpr unsigned kGroupMaxJobs = 1u << 30;
 #endif
 
+// Windows: a group's process ends its log with this line once the group has run (`group NAME --child`), and the run
+// takes it off; a log without it is a group that didn't finish, whatever the exit code says (Wine reports 0 for a
+// killed process, and anything in the group that calls exit(0) would too).
+constexpr const char* kGroupEnd = "quark_tests: group finished";
+
 // Starts the group `name` in its own process, its stdout and stderr into the file `log`; `low` runs it at a lower CPU
 // priority (nice 10 / BELOW_NORMAL_PRIORITY_CLASS). POSIX: the forked child runs `child` and exits with what it
 // returns. Windows: `child` isn't used (the new process runs the group itself). Returns the process, or -1.
