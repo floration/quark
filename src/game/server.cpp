@@ -1843,6 +1843,28 @@ void Server::spawnPlayer(int id) {
                 }
                 if (!out) take(c, score);
             }
+            // T27 (free for all, Quake 3 style): not always the farthest spawn (where you'd appear was predictable):
+            // a random one of the unseen standing spawns at least 75% as far from everyone as the best, the farthest
+            // few of them (up to kFfaSpawnChoice: the sight rays stay bounded however many spawns qualify).
+            constexpr int kFfaSpawnChoice = 6;
+            if (ms_.mode == MODE_FFA && bestIdx >= 0 && !bestCrouched && bestScore > 0) {
+                const float near = bestScore * 0.75f;
+                int n = 0;
+                const Cand* pick = nullptr;
+                for (const Cand& c : cands_) {
+                    if (c.upper < near || n >= kFfaSpawnChoice) break;   // (sorted: farthest first)
+                    if (c.low) continue;
+                    Vec3 chest = c.sp->pos + Vec3(0, 1.2f, 0);
+                    bool seen = false;
+                    for (int e = 0; e < nEyes && !seen; e++) {
+                        Vec3 to = chest - eyes[e];
+                        float d = length(to);
+                        seen = d > 0.1f && !map_.raycastAny(eyes[e], to / d, d);
+                    }
+                    if (!seen && qrand() % ++n == 0) pick = &c;   // (one pass, each equally likely)
+                }
+                if (pick) best = pick->sp;
+            }
         }
         pos = best->pos;
         yaw = best->yaw;

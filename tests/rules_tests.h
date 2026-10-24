@@ -1904,6 +1904,42 @@ static void testPointsNoPoints(uint16_t port) {
     s.stop();
 }
 
+// T27: free for all picks at random among the unseen spawns near the best distance (it always took the farthest one:
+// predictable), never one the other player can see.
+static void testFfaSpawnChoice() {
+    printf("ffa spawns: random among the unseen near the farthest\n");
+    for (const char* name : {"harbor", "gantry"}) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        if (!s.map_.load(name)) { CHECK(false); continue; }
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        for (int i = 0; i < 2; i++) { auto& p = s.players_[i]; p.connected = true; p.isBot = true; p.team = TEAM_A; }
+        auto& w = s.players_[1];
+        w.alive = true;
+        w.move.pos = s.map_.spawns[0].pos;   // (someone standing on a spawn)
+        Vec3 eye = w.move.pos + Vec3(0, kEyeHeight, 0);
+        float best = 0;
+        for (auto& sp : s.map_.spawns) best = std::max(best, length(sp.pos - w.move.pos));
+        std::vector<char> used(s.map_.spawns.size(), 0);
+        int seen = 0, close = 0;
+        for (int k = 0; k < 60; k++) {
+            auto& p = s.players_[0];
+            p.alive = false;
+            s.spawnPlayer(0);
+            Vec3 to = p.move.pos + Vec3(0, 1.2f, 0) - eye;
+            float d = length(to);
+            seen += !s.map_.raycastAny(eye, to / d, d);
+            close += length(p.move.pos - w.move.pos) < 0.5f * best;
+            for (size_t i = 0; i < s.map_.spawns.size(); i++) if (length(s.map_.spawns[i].pos - p.move.pos) < 0.3f) used[i] = 1;
+        }
+        int kinds = 0; for (char u : used) kinds += u;
+        printf("  %s: %d different spawns in 60, %d in sight, %d under half the farthest distance\n", name, kinds, seen, close);
+        CHECK(kinds >= 2 && seen == 0 && close == 0);
+        for (auto& p : s.players_) p.connected = false;
+    }
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1925,7 +1961,7 @@ static void testGameRules(const std::string& only) {
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"cartbox", [] { testCartBoxPlace(TP(29275)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", [] { testSpawnTypes(TP(29251)); }},
+        {"spawns", [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
         {"seeds", [] { testRandomSeeds(); }},
         {"heal", [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", [] { testScoreboardValue(); }},
