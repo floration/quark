@@ -12,7 +12,8 @@ $ErrorActionPreference = 'Stop'
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
   Write-Error 'Needs the GitHub CLI: winget install GitHub.cli, then gh auth login (once).'
 }
-$run = gh run list -R $Repo --workflow build-and-release --branch $Branch --status success --limit 1 --json databaseId,headSha,displayTitle | ConvertFrom-Json
+# (pushes only: a manual "final" run builds nothing, only the sanitizers)
+$run = gh run list -R $Repo --workflow build-and-release --branch $Branch --event push --status success --limit 1 --json databaseId,headSha,displayTitle | ConvertFrom-Json
 if (-not $run) { Write-Error "No successful build-and-release run on '$Branch' yet." }
 $run = $run[0]
 $sha = $run.headSha.Substring(0, 7)

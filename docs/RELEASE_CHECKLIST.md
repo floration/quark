@@ -13,7 +13,9 @@ Do this for **every** update, after it has been pushed to the `testing` branch a
 
 | ✓ | Check |
 |---|---|
-| ☐ | GitHub → Actions: the run for the `testing` push is green: Linux tests, Windows tests, macOS build, sanitizers. |
+| ☐ | GitHub → Actions: the run for the `testing` push is green: meta (VERSION, changelogs, secrets check), the Windows, Linux and macOS builds, the testing prerelease. CI runs **no** gameplay or UI tests (owner, 2026-10-24): those are the local runs below and this checklist. |
+| ☐ | This is the **final test build** (the one you mean to ship) and its **sanitizers** run is green. Mark it either way: give the push to `testing` a head commit message with `[final]` in it (for a merged PR, put `[final]` in the PR's title), or after the push run Actions → **build-and-release** → **Run workflow** on `testing` with **final** ticked (that runs only the sanitizers, on the branch's current commit; nothing is built or published). The sanitizers fail only on a memory or undefined-behaviour error (ASan / UBSan / the fuzzers), never on a test's own result. No other build runs them (work branches and pull requests included): only a human marks a final test, never an agent. |
+| ☐ | Claude's local test runs passed **on this commit** (ask for the results): `tools/release_check.sh` (every `build/quark_tests` group, plus every map hosted headless; exit 0) and the UI test `build/quark --uitest` under Xvfb ([UI_TEST.md](UI_TEST.md); exit 0). CI no longer runs them, so nothing else checks them before production. |
 | ☐ | GitHub → Releases: the prerelease `test-<VERSION>-test.<N>` exists. It is marked **Pre-release**, not "Latest". |
 | ☐ | Its assets: `quark-windows.qpak`, `quark-linux.qpak` (and `quark-macos.qpak` once the macOS build finished), each with a `.sig`; `quark-release.txt` + `.sig`; `SHA256SUMS` + `.sig`. |
 | ☐ | `VERSION` is bumped. `changelogs/<VERSION>.md` (the short notes) and `changelogs/full/<VERSION>.md` (every change, and why) both exist; a production tag without either fails. |
@@ -55,7 +57,7 @@ Do this on Windows; also on Linux / macOS if you have one.
 
 ## 3. Menus (every screen)
 
-The automated UI test clicks every button (`quark --uitest`, part of the test suite). Here you check that things look right and make sense to a person.
+The automated UI test clicks every button (`quark --uitest`, run locally on this commit: section 0). Here you check that things look right and make sense to a person.
 
 | ✓ | Check |
 |---|---|

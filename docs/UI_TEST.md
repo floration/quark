@@ -1,8 +1,9 @@
 # The UI test
 
 `build/quark --uitest [report.json]` clicks every button in the game, in every situation it shows up in, and checks
-each one does what it says. It runs in CI under Xvfb on the release's own Linux build (the `linux-uitest` job, which every
-release waits for from 1.17.1 on) and fails the build when anything is wrong — including a widget nobody told it about.
+each one does what it says. It fails when anything is wrong — including a widget nobody told it about. CI doesn't run it
+(owner, 2026-10-24: CI checks builds, meta and sanitizers only): run it locally under Xvfb before a push, and on the
+commit meant for production (docs/RELEASE_CHECKLIST.md section 0).
 
 ```
 Xvfb :99 -screen 0 1920x1080x24 &
