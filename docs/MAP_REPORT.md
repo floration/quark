@@ -8,14 +8,14 @@ Measured with the game's movement code: the speed a good player builds with auto
 
 | speed | run-up | rise | across, level | across, 3.5 m up | across, 8 m up | after a 20 m grapple pull |
 |---|---|---|---|---|---|---|
-| 9.5 m/s | 0 m | 4.2 m | 21.5 m | 11.5 m | 0.0 m | 24 m/s |
-| 12 m/s | 0 m | 4.6 m | 22.0 m | 14.0 m | 0.0 m | 24 m/s |
-| 16 m/s | 0 m | 5.7 m | 24.5 m | 21.0 m | 0.0 m | 24 m/s |
-| 20 m/s | 0 m | 7.1 m | 33.0 m | 29.5 m | 0.0 m | 24 m/s |
-| 24 m/s | 0 m | 8.9 m | 43.5 m | 39.5 m | 31.5 m | 24 m/s |
-| 28 m/s | 0 m | 11.2 m | 55.5 m | 51.5 m | 45.0 m | 28 m/s |
-| 32 m/s | 17 m | 13.1 m | 65.5 m | 62.0 m | 55.5 m | 32 m/s |
-| 36 m/s | 42 m | 13.1 m | 67.5 m | 63.5 m | 57.0 m | 36 m/s |
+| 9.5 m/s | 0 m | 8.1 m | 47.5 m | 43.5 m | 33.0 m | 24 m/s |
+| 12 m/s | 0 m | 8.1 m | 48.0 m | 43.5 m | 33.0 m | 24 m/s |
+| 16 m/s | 0 m | 9.2 m | 48.0 m | 44.0 m | 33.0 m | 24 m/s |
+| 20 m/s | 0 m | 11.7 m | 48.5 m | 44.0 m | 37.0 m | 24 m/s |
+| 24 m/s | 0 m | 14.3 m | 57.5 m | 53.5 m | 48.0 m | 24 m/s |
+| 28 m/s | 24 m | 17.4 m | 70.5 m | 66.5 m | 61.0 m | 28 m/s |
+| 32 m/s | 38 m | 20.0 m | 81.5 m | 77.5 m | 72.0 m | 32 m/s |
+| 36 m/s | 44 m | 20.0 m | 83.0 m | 79.5 m | 73.5 m | 36 m/s |
 
 ## Scores
 
@@ -33,7 +33,7 @@ Measured with the game's movement code: the speed a good player builds with auto
 | furnace | 1v1 | blast furnace | 8.2 | 7.5 | 9.0 | 7.5 | 9.0 | 10.0 | 2.7 |
 | gantry | ffa | crane hall | 8.6 | 7.6 | 9.1 | 7.5 | 7.6 | - | 3.8 |
 | hamlet | hide | valley village | 7.2 | 7.3 | 8.3 | 8.0 | 8.6 | - | 2.5 |
-| harbor | ffa | harbour | 7.5 | 7.5 | 8.4 | 7.5 | 7.4 | - | 2.6 |
+| harbor | ffa | harbour | 7.5 | 7.5 | 8.3 | 7.5 | 7.4 | - | 2.6 |
 | hightown | hide | skyscraper over a city | 8.1 | 7.5 | 8.5 | 8.0 | 8.8 | - | 7.7 |
 | lodestone | points | mine | 7.4 | 7.6 | 9.4 | 8.0 | 8.6 | 8.7 | 1.5 |
 | midtown | points | city centre | 7.4 | 7.5 | 8.1 | 8.0 | 8.7 | 10.0 | 1.5 |
@@ -41,7 +41,7 @@ Measured with the game's movement code: the speed a good player builds with auto
 | railyard | payload | rail yard | 8.0 | 7.3 | 8.3 | 7.5 | 9.6 | - | 2.7 |
 | summit | koth | mountain peak | 7.3 | 7.9 | 9.3 | 7.5 | 10.0 | 10.0 | 2.7 |
 | temple | 1v1 | pagoda temple on a mountain top | 7.2 | 7.2 | 8.6 | 7.5 | 7.5 | 10.0 | 4.0 |
-| viaduct | race | mountain gorge | 9.3 | 7.1 | 8.6 | 8.8 | 7.6 | - | 10.0 |
+| viaduct | race | mountain gorge | 9.3 | 7.1 | 8.7 | 8.8 | 8.0 | - | 10.0 |
 
 ## Decor / detail
 
@@ -129,12 +129,12 @@ Sub-scores 0-10 (the movement score is their mean); the measurement behind each 
 
 | map | grapple (anchors) | speed lanes (p90) | vertical (jump links, levels) | headroom (>6 m) | risk (near a lethal drop) | tech payoff |
 |---|---|---|---|---|---|---|
-| anvil | 10.0 (98%) | 8.8 (35 m) | 8.0 (55%, 5) | 9.1 (82%) | 8.9 (6%) | 7.5 |
+| anvil | 10.0 (98%) | 8.8 (35 m) | 8.0 (55%, 5) | 9.1 (82%) | 8.9 (6%) | 7.4 |
 | bastion | 9.1 (72%) | 10.0 (49 m) | 10.0 (65%, 7) | 9.2 (83%) | 10.0 (22%) | 4.8 |
 | canal | 10.0 (86%) | 10.0 (52 m) | 7.5 (66%, 5) | 9.7 (87%) | 10.0 (25%) | 4.2 |
 | clockwork | 10.0 (99%) | 7.2 (29 m) | 7.6 (63%, 5) | 8.4 (75%) | 10.0 (21%) | 4.9 |
 | colosseum | 10.0 (99%) | 10.0 (41 m) | 7.2 (57%, 5) | 8.7 (78%) | 6.9 (2%) | 4.4 |
-| depot | 10.0 (86%) | 10.0 (44 m) | 9.3 (72%, 5) | 8.8 (79%) | 7.8 (4%) | 6.9 |
+| depot | 10.0 (86%) | 10.0 (44 m) | 9.3 (72%, 5) | 8.8 (79%) | 7.8 (4%) | 6.8 |
 | dojo | 0.0 (0%) | 6.8 (27 m) | 1.5 (71%, 1) | 10.0 (100%) | 10.0 (17%) | 4.2 |
 | downtown | 10.0 (94%) | 9.5 (38 m) | 10.0 (63%, 8) | 9.2 (82%) | 7.0 (2%) | 4.4 |
 | foundry | 10.0 (100%) | 10.0 (56 m) | 7.2 (66%, 5) | 9.1 (82%) | 7.4 (3%) | 4.3 |
@@ -149,31 +149,31 @@ Sub-scores 0-10 (the movement score is their mean); the measurement behind each 
 | railyard | 10.0 (89%) | 10.0 (59 m) | 9.5 (69%, 5) | 10.0 (92%) | 6.0 (0%) | 4.2 |
 | summit | 10.0 (84%) | 10.0 (42 m) | 7.6 (62%, 5) | 8.9 (80%) | 9.4 (7%) | 10.0 |
 | temple | 9.7 (77%) | 10.0 (48 m) | 10.0 (69%, 8) | 7.8 (70%) | 9.5 (7%) | 4.6 |
-| viaduct | 10.0 (100%) | 5.2 (21 m) | 10.0 (33%, 18) | 8.8 (80%) | 10.0 (70%) | 7.6 |
+| viaduct | 10.0 (100%) | 5.2 (21 m) | 10.0 (33%, 18) | 8.8 (80%) | 10.0 (70%) | 8.0 |
 
 Tech payoff:
 
-- **anvil**: movement tech shortens main trips by 1.09x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 424 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 33244 of 104731 leaps need a run-up
-- **bastion**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 452 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 180900 of 400507 leaps need a run-up
-- **canal**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 228 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 71224 of 175585 leaps need a run-up
-- **clockwork**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 280 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 25386 of 119609 leaps need a run-up
-- **colosseum**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 652 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 82752 of 250079 leaps need a run-up
-- **depot**: movement tech shortens main trips by 1.07x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1064 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 105640 of 259611 leaps need a run-up
-- **dojo**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 0 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 2005 of 22186 leaps need a run-up
-- **downtown**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 108 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 44053 of 133457 leaps need a run-up
-- **foundry**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 776 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 198637 of 595234 leaps need a run-up
-- **furnace**: movement tech shortens main trips by 1.26x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 208 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 26591 of 82783 leaps need a run-up
-- **gantry**: movement tech shortens main trips by 1.07x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 2072 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 159720 of 507615 leaps need a run-up
-- **hamlet**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1416 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 145925 of 278862 leaps need a run-up
-- **harbor**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 892 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 103659 of 252147 leaps need a run-up
-- **hightown**: movement tech shortens main trips by 1.20x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 256 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 43280 of 326073 leaps need a run-up
-- **lodestone**: race: shortcut 10.0 (worst leg 2 at 1.23x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 3.6 on the tech path (3.3 jumps per 100 m, 0% narrow, 0% grappled) - legs: 1: 37 m run / 35 m with tech (1.06x), 2 jumps, 0 m narrow, 0 m grappled; 2: 53 m run / 43 m with tech (1.23x), 2 jumps, 0 m narrow, 0 m grappled; 3: 59 m run / 54 m with tech (1.09x), 2 jumps, 0 m narrow, 0 m grappled; 4: 81 m run / 80 m with tech (1.01x), 1 jumps, 0 m narrow, 0 m grappled; 5: 76 m run / 75 m with tech (1.01x), 3 jumps, 0 m narrow, 0 m grappled; 6: 46 m run / 46 m with tech (1.00x), 1 jumps, 0 m narrow, 0 m grappled; with every move a good player also reaches 32040 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 60597 of 95112 leaps need a run-up
-- **midtown**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 3752 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 48605 of 88268 leaps need a run-up
-- **orbital**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 248 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 40563 of 183467 leaps need a run-up
-- **railyard**: movement tech shortens main trips by 1.00x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1412 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 153222 of 369473 leaps need a run-up
-- **summit**: movement tech shortens main trips by 1.72x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 92 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 70222 of 178307 leaps need a run-up
-- **temple**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 188 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 115799 of 314145 leaps need a run-up
-- **viaduct**: race: shortcut 10.0 (worst leg 8 at 1.20x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 7.6 on the tech path (8.9 jumps per 100 m, 13% narrow, 2% grappled) - legs: 1: 41 m run / 41 m with tech (1.01x), 6 jumps, 10 m narrow, 0 m grappled; 2: 34 m run / 34 m with tech (1.00x), 3 jumps, 0 m narrow, 0 m grappled; 3: 29 m run / 28 m with tech (1.01x), 3 jumps, 0 m narrow, 0 m grappled; 4: 36 m run / 34 m with tech (1.04x), 2 jumps, 0 m narrow, 0 m grappled; 5: 18 m run / 18 m with tech (1.00x), 2 jumps, 8 m narrow, 0 m grappled; 6: 59 m run / 52 m with tech (1.14x), 3 jumps, 3 m narrow, 0 m grappled; 7: 71 m run / 70 m with tech (1.01x), 10 jumps, 22 m narrow, 0 m grappled; 8: 32 m run / 27 m with tech (1.20x), 1 jumps, 0 m narrow, 0 m grappled; 9: 105 m run / 95 m with tech (1.10x), 8 jumps, 24 m narrow, 0 m grappled; 10: 60 m run / 59 m with tech (1.03x), 4 jumps, 6 m narrow, 0 m grappled; 11: 55 m run / 53 m with tech (1.04x), 1 jumps, 0 m narrow, 13 m grappled; 12: 95 m run / 84 m with tech (1.13x), 10 jumps, 4 m narrow, 0 m grappled; with every move a good player also reaches 168 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 4489 of 29059 leaps need a run-up
+- **anvil**: movement tech shortens main trips by 1.08x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 424 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 8763 of 101661 leaps need a run-up
+- **bastion**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 452 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 92712 of 404759 leaps need a run-up
+- **canal**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 228 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 18480 of 174708 leaps need a run-up
+- **clockwork**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 280 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 2282 of 119242 leaps need a run-up
+- **colosseum**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 652 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 21308 of 250479 leaps need a run-up
+- **depot**: movement tech shortens main trips by 1.07x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1064 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 30700 of 254166 leaps need a run-up
+- **dojo**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 0 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 226 of 22138 leaps need a run-up
+- **downtown**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 108 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 8832 of 128111 leaps need a run-up
+- **foundry**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 776 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 49083 of 600060 leaps need a run-up
+- **furnace**: movement tech shortens main trips by 1.27x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 208 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 4809 of 84756 leaps need a run-up
+- **gantry**: movement tech shortens main trips by 1.07x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 2072 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 94560 of 525905 leaps need a run-up
+- **hamlet**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1416 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 79640 of 287394 leaps need a run-up
+- **harbor**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 892 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 22987 of 241052 leaps need a run-up
+- **hightown**: movement tech shortens main trips by 1.20x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 256 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 2363 of 364616 leaps need a run-up
+- **lodestone**: race: shortcut 10.0 (worst leg 2 at 1.23x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 3.8 on the tech path (3.6 jumps per 100 m, 0% narrow, 0% grappled) - legs: 1: 37 m run / 34 m with tech (1.08x), 2 jumps, 0 m narrow, 0 m grappled; 2: 53 m run / 43 m with tech (1.23x), 2 jumps, 0 m narrow, 0 m grappled; 3: 59 m run / 54 m with tech (1.10x), 3 jumps, 0 m narrow, 0 m grappled; 4: 81 m run / 80 m with tech (1.01x), 1 jumps, 0 m narrow, 0 m grappled; 5: 76 m run / 75 m with tech (1.01x), 3 jumps, 0 m narrow, 0 m grappled; 6: 46 m run / 46 m with tech (1.00x), 1 jumps, 0 m narrow, 0 m grappled; with every move a good player also reaches 32040 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 44591 of 113247 leaps need a run-up
+- **midtown**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 3752 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 36854 of 100721 leaps need a run-up
+- **orbital**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 248 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 4454 of 184786 leaps need a run-up
+- **railyard**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1412 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 61612 of 368259 leaps need a run-up
+- **summit**: movement tech shortens main trips by 1.72x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 92 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 8808 of 176619 leaps need a run-up
+- **temple**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 188 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 33590 of 313724 leaps need a run-up
+- **viaduct**: race: shortcut 10.0 (worst leg 8 at 1.20x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 8.0 on the tech path (9.2 jumps per 100 m, 16% narrow, 2% grappled) - legs: 1: 41 m run / 41 m with tech (1.01x), 5 jumps, 10 m narrow, 0 m grappled; 2: 34 m run / 34 m with tech (1.00x), 2 jumps, 0 m narrow, 0 m grappled; 3: 29 m run / 28 m with tech (1.01x), 3 jumps, 0 m narrow, 0 m grappled; 4: 36 m run / 34 m with tech (1.05x), 2 jumps, 0 m narrow, 0 m grappled; 5: 18 m run / 18 m with tech (1.00x), 2 jumps, 8 m narrow, 0 m grappled; 6: 59 m run / 52 m with tech (1.14x), 3 jumps, 3 m narrow, 0 m grappled; 7: 71 m run / 70 m with tech (1.01x), 9 jumps, 22 m narrow, 0 m grappled; 8: 32 m run / 27 m with tech (1.20x), 1 jumps, 0 m narrow, 0 m grappled; 9: 105 m run / 96 m with tech (1.10x), 11 jumps, 39 m narrow, 0 m grappled; 10: 60 m run / 59 m with tech (1.02x), 6 jumps, 12 m narrow, 0 m grappled; 11: 55 m run / 53 m with tech (1.04x), 1 jumps, 0 m narrow, 13 m grappled; 12: 95 m run / 84 m with tech (1.13x), 10 jumps, 4 m narrow, 0 m grappled; with every move a good player also reaches 168 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 1523 of 29611 leaps need a run-up
 
 ### Mode fit
 

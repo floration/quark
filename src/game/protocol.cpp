@@ -24,13 +24,17 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u8(s.clientId);
     // own movement state, exact (prediction replays from it); the grapple / dash parts only while active
     const MoveState& m = s.self;
-    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
+    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 || m.dashRecharging > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
                   ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
                   (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
     w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
-    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
-    if (opt & 4) { w.u8(m.dashCharges); w.u16(m.dashCooldownMs); }   // (42: charges + the cooldown in ms, when not 2 / running; 41: the charges alone; before: the cooldown f32)
+    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); w.f32(m.dashFromSpeed); }   // (43: + the speed the dash started from)
+    if (opt & 4) {   // (43: charges | recharging << 4, the cooldown in ms, each recharge's ms; 42: charges + the cooldown; 41: the charges alone; before: the cooldown f32)
+        const int n = std::min<int>(m.dashRecharging, kMaxDashCharges);
+        w.u8((uint8_t)(std::min<int>(m.dashCharges, 15) | n << 4)); w.u16(m.dashCooldownMs);
+        for (int i = 0; i < n; i++) w.u16(m.dashRechargeMs[i]);
+    }
     if (opt & 8) w.f32(m.hookCooldown);
     if (opt & 16) w.u8(m.hookTarget);    // (38: the grapple latched onto a player, and the one it holds)
     if (opt & 32) w.vec(m.pullPoint);
@@ -53,9 +57,19 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     m.pos = r.vec(); m.vel = r.vec(); m.flags = r.u8(); m.mods = r.u8();
     uint8_t opt = r.u8();
     if (opt & 1) m.hookPoint = r.vec();
-    if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
+    if (opt & 2) {
+        m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32();
+        if (proto >= kSnapDashRechargeSince) m.dashFromSpeed = r.f32();
+        else m.dashFromSpeed = std::max(0.0f, m.dashExitSpeed - 1.0f);   // (older demos: about the speed it started from, from the exit's + 1)
+    }
     if (opt & 4) {
-        if (proto >= kSnapDashChargesSince) { m.dashCharges = r.u8(); if (proto >= kSnapDashCooldownSince) m.dashCooldownMs = r.u16(); }
+        if (proto >= kSnapDashRechargeSince) {
+            const uint8_t b = r.u8();
+            m.dashCharges = b & 15; m.dashCooldownMs = r.u16();
+            const int n = b >> 4;
+            for (int i = 0; i < n; i++) { const uint16_t v = r.u16(); if (i < kMaxDashCharges) m.dashRechargeMs[i] = v; }
+            m.dashRecharging = (uint8_t)std::min(n, kMaxDashCharges);   // (more than there's room for: a hostile packet; the rest dropped)
+        } else if (proto >= kSnapDashChargesSince) { m.dashCharges = r.u8(); if (proto >= kSnapDashCooldownSince) m.dashCooldownMs = r.u16(); }
         else m.dashCooldownMs = (uint16_t)std::min(60000.0f, std::max(0.0f, std::ceil(r.f32() * 1000.0f)));   // (older: the cooldown alone, as an f32 in s)
     }
     if (opt & 8) m.hookCooldown = r.f32();

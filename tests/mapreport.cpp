@@ -334,11 +334,12 @@ const MoveEnvelope& moveEnvelope() {
             size_t next = 1;
             for (int t = 0; t < 30000 && next < e.speed.size(); t++) {
                 float h = hspeed(s.vel), vyaw = h > 0.1f ? std::atan2(-s.vel.x, -s.vel.z) : 0;
-                // (charges: 2, the ground refills them, a bhop landing one, a dash jump all, a super dash leaves one; and
-                // the 1.2 s cooldown from the end of the last dash;
-                // above 31 m/s a dash slows you: it leaves at your speed + 1, at most 32)
-                bool dash = !dashed && s.dashCharges > 0 && s.dashCooldownMs == 0 && s.dashTimer <= 0 && h < 31.0f;
-                if (superDash) dash = !dashed && s.dashCharges > 0 && s.dashCooldownMs == 0 && s.dashTimer <= 0 && (s.flags & MF_ONGROUND) && h < 35.9f;
+                // (charges: 2, the ground refills them, a bhop landing one, a dash jump all, a super dash leaves one, each
+                // only once it has recharged (1.2 s from the end of the dash that spent it); and the 0.6 s cooldown from
+                // the end of the last dash (dashReady: pmove's rule); above 31 m/s a dash slows you: it leaves at your
+                // speed + 1, at most 32)
+                bool dash = !dashed && dashReady(s) && h < 31.0f;
+                if (superDash) dash = !dashed && dashReady(s) && (s.flags & MF_ONGROUND) && h < 35.9f;
                 MoveState best;
                 float bestH = -1;
                 bool bestDash = false;
@@ -365,8 +366,8 @@ const MoveEnvelope& moveEnvelope() {
         }
         lap("speed build-up");
         // take-offs: moving at the tier's speed, jump, then (or not) an upward dash after tau at pitch p, and with the
-        // charges left (two; a dash jump off the take-off refills them) more dashes the same way: chained (each as the
-        // last ends) or one 0.3 s later. Each arc is followed until it is kLowest below the take-off; the envelope is
+        // charges left (two; a dash jump off the take-off refills what has recharged) more dashes the same way: chained
+        // (each as the last ends), one 0.3 s later, or one as soon as pmove lets it (0.6 s after the first ends). Each arc is followed until it is kLowest below the take-off; the envelope is
         // the highest any of them is at each distance.
         Map pad;
         pad.parse("box -1 -1 -1 1 0 1\nspawn any 0 0 0\n");
@@ -377,7 +378,7 @@ const MoveEnvelope& moveEnvelope() {
                 for (int pi = -2; pi <= 9; pi++)   // (no dash, a down dash (a super dash off the take-off; aimed as far down as the
                                                    // mouse goes, 88.8 deg: its hop is highest there, a full jump), or one at
                                                    // 0-90 degrees up, 0-0.4 s after the jump)
-                for (int more = 0; more < (pi == -1 ? 1 : 4); more++) {   // dashes after it: none, 1 or 2 chained, one 0.3 s later
+                for (int more = 0; more < (pi == -1 ? 1 : 5); more++) {   // dashes after it: none, 1 or 2 chained, one 0.3 s later, one at the earliest
                     float tau = ti * 0.08f, pitch = pi == -2 ? -1.55f : pi < 0 ? 0 : pi * 10 * 0.0174533f;
                     MoveState s;
                     s.pos = {0, 0, 0.9f};
@@ -385,6 +386,7 @@ const MoveEnvelope& moveEnvelope() {
                     s.flags = MF_ONGROUND;
                     std::vector<float> y(MoveEnvelope::kBins, -1e9f);
                     float apex = 0;
+                    int pressed = 0;   // (more == 4: the dashes pressed, each the moment pmove allows it)
                     for (int t = 0; t < 6000; t++) {
                         UserCmd c;
                         c.msec = 1;
@@ -392,6 +394,7 @@ const MoveEnvelope& moveEnvelope() {
                         c.pitch = pitch;
                         int t0 = (int)(tau * 1000), n = more == 3 ? 1 : more, gapMs = more == 3 ? 300 : 125;
                         bool press = pi != -1 && t >= t0 && (t - t0) % gapMs < 5 && (t - t0) / gapMs <= n;
+                        if (more == 4) { press = pi != -1 && t >= t0 && pressed < 2 && dashReady(s) && !(s.flags & MF_DASHHELD); pressed += press; }
                         c.buttons = BTN_JUMP | (press ? BTN_DASH : 0);
                         pmove(s, c, pad);
                         apex = std::max(apex, s.pos.y);

@@ -34,9 +34,10 @@ constexpr float kStopSpeed = 2.0f;
 constexpr float kStepHeight = 0.55f;
 constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
-constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DASH): the dash cooldown x this, 1.2 -> 0.4 s
-                                                    // (x a custom mode's own multiplier), the usual 2 charges (owner 1.18:
-                                                    // "quick dash should reduce dash cooldown"; 1.17 gave a third charge)
+constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DASH): the dash cooldown and recharge x this,
+                                                    // 0.6 -> 0.2 s and 1.2 -> 0.4 s (x a custom mode's own multiplier), the
+                                                    // usual 2 charges (owner 1.18: "quick dash should reduce dash cooldown";
+                                                    // 1.17 gave a third charge)
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 1.0f;       // ...and your old speed plus this, so dashes build momentum (owner 1.17: was 3)
 constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
@@ -50,7 +51,9 @@ constexpr float kDashJumpWindow = 0.1f;  // input buffer (Celeste ~0.08 s): a ju
                                          // (pressing jump a hair before dash) is still a ground dash jump
 constexpr float kSuperDashDown = 0.25f;  // a dash at least this far down (share of kDashVertical: looking >= 14.5 deg
                                          // below level) that meets the floor is a super dash; shallower is a dash jump
-constexpr float kSuperDashBoost = 1.25f; // super dash: the burst speed x this (Celeste's hyper vs super: 325 / 260)...
+constexpr float kSuperDashBoost = 5.0f;  // super dash (the hyper): the horizontal speed you carried into the dash + this, m/s
+                                         // (owner 1.18.7: "+5 of current"; it was the burst speed x 1.25, 30 m/s from a
+                                         // standstill), never less than the same dash would leave with on its own...
 constexpr float kSuperDashJump = 0.5f;   // ...with a jump at this share of the jump speed at the kSuperDashDown threshold
                                          // (Celeste: half; a 0.31 m hop that skims the floor, bhop on from its landing)...
 constexpr float kSuperDashJumpMax = 1.0f; // ...rising linearly with how far down the dash was aimed (the sine of the look
@@ -58,9 +61,13 @@ constexpr float kSuperDashJumpMax = 1.0f; // ...rising linearly with how far dow
                                           // (owner 1.18: "the lower you look the higher you should bounce"). Hops (jump
                                           // 7.34, gravity 22): 14.5 deg 0.31 m, 20 deg 0.39 m, 30 deg 0.54 m, 45 deg
                                           // 0.79 m, 60 deg 1.02 m, 90 deg 1.22 m (the mouse stops at 88.8 deg: 1.22 m)
-constexpr float kSuperDashMax = 36.0f;   // its cap: above the dash's 32, so a super dash at top dash speed still boosts
+constexpr float kSuperDashMax = 36.0f;   // its cap: above the dash's 32, so a super dash at top dash speed still boosts (the
+                                         // dash's limit is intended, owner decision 5.4: the cap keeps chained hypers from
+                                         // adding 5 each without end)
 // Dash wall bounce (owner): a dash into a wall at under this angle from the wall's normal (fairly head-on)
-// bounces off it, reflected, at the dash's full speed; a more glancing hit slides along it as before.
+// bounces off it, reflected, at kDashBounceSpeed; a more glancing hit slides along it as before.
+constexpr float kDashBounceSpeed = 16.0f; // the bounce's speed (x a custom mode's dash speed): the rest of the dash runs at it
+                                          // and leaves with it (owner 1.18.7: "16"; it was the dash's burst, 24 or more)
 constexpr float kDashBounceAngle = 45.0f; // degrees
 constexpr int kDashMaxBounces = 2;        // per dash (a corner can take two; a third wall slides)
 constexpr float kBounceGain = 0.5f;     // bhop: landing faster than a jump adds this share of the extra to the jump
@@ -137,12 +144,33 @@ static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouc
 // The parts of a step that only depend on the command (the same for each of its up to 8 steps).
 struct CmdCtx { const MoveTuning& mt; Vec3 fwd, right; };
 
-static int maxChargesFor(const MoveTuning& mt, uint8_t) {
-    return std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES]));   // (quick dash: no extra charge since 1.18)
+static int maxChargesFor(const MoveTuning& mt, uint8_t) {   // (quick dash: no extra charge since 1.18)
+    return std::min(kMaxDashCharges, std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES])));
 }
 static int cooldownMsFor(const MoveTuning& mt, uint8_t mods) {
     const float quick = (mods & MOVE_QUICK_DASH) ? kQuickDashCooldown : 1.0f;
     return std::min(60000, std::max(0, (int)std::lround(kDashCooldown * mt.m[MV_DASH_COOLDOWN] * quick * 1000.0f)));
+}
+static int rechargeMsFor(const MoveTuning& mt, uint8_t mods) {   // (at least 1 ms: the dash's own timer is always there to hold)
+    const float quick = (mods & MOVE_QUICK_DASH) ? kQuickDashCooldown : 1.0f;
+    return std::min(60000, std::max(1, (int)std::lround(kDashRecharge * mt.m[MV_DASH_COOLDOWN] * quick * 1000.0f)));
+}
+// The speed a running dash moves at: its burst (never slower than what you leave it with), or after a wall bounce the
+// bounce's speed (kDashBounceSpeed, kept in dashExitSpeed).
+static float dashBurst(const MoveState& s, const MoveTuning& mt) {
+    return s.dashBounces > 0 ? s.dashExitSpeed : std::max(kDashSpeed * mt.m[MV_DASH_SPEED], s.dashExitSpeed);
+}
+// Charges back (a refill): up to `target`, from the spent charges that have recharged (none still recharging).
+static void refillCharges(MoveState& s, int maxCharges, int target) {
+    const int ready = maxCharges - (int)s.dashCharges - (int)s.dashRecharging;
+    const int add = std::min(std::min(target, maxCharges) - (int)s.dashCharges, ready);
+    if (add > 0) s.dashCharges = (uint8_t)(s.dashCharges + add);
+}
+// A dash tech that leaves exactly `n` (a super dash, a wall bounce): fewer if you hold more (those count as recharged:
+// a refill gives them back), else a refill up to it.
+static void setCharges(MoveState& s, int maxCharges, int n) {
+    if (s.dashCharges > n) s.dashCharges = (uint8_t)n;
+    else refillCharges(s, maxCharges, n);
 }
 
 static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, HookProbe* hp, const CmdCtx& cx) {
@@ -191,15 +219,31 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
 
     // Dash: one burst in the movement direction (or forward), spending a charge, once the cooldown since the last
-    // dash ENDED has run out (owner 1.17: charges on top of the cooldown). Not while a dash runs (a press then does
-    // nothing, and isn't kept). Refills: at the end of this step (the ground all of them, a bhop landing one).
+    // dash ENDED has run out (owner 1.17: charges on top of the cooldown; 1.18.7: 0.6 s). Not while a dash runs (a press
+    // then does nothing, and isn't kept). The charge it spends recharges for kDashRecharge from the dash's end, and only
+    // then can a refill give it back: at the end of a step (the ground all of them, a bhop landing one) or a dash tech.
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
-    if (!dashActive) {   // (whole ms: the cooldown counts down only while no dash runs)
-        const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
+    const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
+    if (!dashActive)   // (whole ms: the cooldown counts down only while no dash runs)
         s.dashCooldownMs = (uint16_t)std::max(0, (int)s.dashCooldownMs - stepMs);
+    {   // the spent charges' recharges count down too, whole ms, all but the newest while a dash runs (the one it spent:
+        // its recharge starts when it ends); one that is done leaves the list (a refill can give it back now)
+        const int n = std::min<int>(s.dashRecharging, kMaxDashCharges);
+        int k = 0;
+        for (int i = 0; i < n; i++) {
+            int v = s.dashRechargeMs[i];
+            if (!(dashActive && i == n - 1)) v = std::max(0, v - stepMs);
+            if (v > 0) s.dashRechargeMs[k++] = (uint16_t)v;
+        }
+        for (int i = k; i < kMaxDashCharges; i++) s.dashRechargeMs[i] = 0;
+        s.dashRecharging = (uint8_t)k;
     }
     const int maxCharges = maxChargesFor(mt, s.mods);
     if (s.dashCharges > maxCharges) s.dashCharges = (uint8_t)maxCharges;
+    while (s.dashRecharging > 0 && s.dashCharges + s.dashRecharging > maxCharges) {   // (fewer charges now: the oldest go)
+        for (int i = 1; i < s.dashRecharging; i++) s.dashRechargeMs[i - 1] = s.dashRechargeMs[i];
+        s.dashRechargeMs[--s.dashRecharging] = 0;
+    }
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
     const bool dashStart = dashHeld && !(s.flags & MF_DASHHELD) && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
     bool chargesSet = false;   // a dash tech set the charges this step: no ground / bhop refill on top
@@ -209,11 +253,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         s.dashDirX = d.x;
         s.dashDirZ = d.z;
+        s.dashFromSpeed = h;   // (a super dash adds to this)
         s.dashExitSpeed = std::min((kDashExitMax * mt.m[MV_DASH_EXIT_MAX]), std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + (kDashKeep * mt.m[MV_DASH_KEEP])));
         s.dashUp = std::sin(cmd.pitch) * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
         s.dashTimer = (kDashTime * mt.m[MV_DASH_TIME]);
         s.dashBounces = 0;
         s.dashCharges--;
+        if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
     }
     bool dashing = s.dashTimer > 0;
     if (dashing && !frozen) {
@@ -221,19 +267,21 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // and the dash ends at once, leaving with its full burst speed along its direction plus a normal jump; also a
         // dash started just after jumping off the floor (jump pressed a hair first: the jump's rise is kept as it is).
         // Super dash (Celeste's hyper): the same off a dash aimed down (kSuperDashDown) into the floor, or meeting it
-        // during the dash: faster than the burst, and a hop from half a jump (aimed just past the threshold) up to a
-        // full one (aimed straight down). The jump replaces the bhop: no landing bounce
-        // (the ground check doesn't bounce off a dash) and no bhop jump on top.
-        const float burst = std::max((kDashSpeed * mt.m[MV_DASH_SPEED]), s.dashExitSpeed);
+        // during the dash: the speed you carried into it + 5 (1.18.7; it was the burst x 1.25), and a hop from half a
+        // jump (aimed just past the threshold) up to a full one (aimed straight down). The jump replaces the bhop: no
+        // landing bounce (the ground check doesn't bounce off a dash) and no bhop jump on top.
+        const float burst = dashBurst(s, mt);
         const bool down = s.dashUp <= -kSuperDashDown * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
         const bool wantJump = jumpHeld || s.jumpBuffer > 0;
         const bool graceJump = dashStart && !grounded && s.jumpGrace > 0 && !down;
         if ((grounded && wantJump) || graceJump) {
             float sp = burst, vy = graceJump ? s.vel.y : jumpSpeed;
-            // charges (owner): a dash jump leaves you all of them (it's off the ground), a super dash exactly one
-            s.dashCharges = (uint8_t)maxCharges;
             if (grounded && down) {
-                sp = std::max(burst, std::min(kSuperDashMax * mt.m[MV_SUPER_DASH_MAX], burst * (kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST])));
+                // the hyper: the speed carried into the dash + kSuperDashBoost (owner 1.18.7: "+5 of current"), at least
+                // what the dash leaves with on its own (11 from a standstill), at most kSuperDashMax
+                const float cap = kSuperDashMax * mt.m[MV_SUPER_DASH_MAX];
+                sp = std::min(std::max(s.dashExitSpeed, s.dashFromSpeed + kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST]),
+                              std::max(cap, s.dashExitSpeed));
                 // the hop: higher the further down the dash was aimed (its share of a straight-down dash, the sine of
                 // the pitch: kSuperDashDown -> kSuperDashJump, straight down -> kSuperDashJumpMax); a custom mode's
                 // super dash jump multiplier scales both ends
@@ -241,7 +289,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 const float downShare = vmax > 1e-6f ? -s.dashUp / vmax : kSuperDashDown;   // (no vertical dash: the low end)
                 const float t = std::clamp((downShare - kSuperDashDown) / (1.0f - kSuperDashDown), 0.0f, 1.0f);
                 vy = jumpSpeed * ((kSuperDashJump + (kSuperDashJumpMax - kSuperDashJump) * t) * mt.m[MV_SUPER_DASH_JUMP]);
-                s.dashCharges = 1;
+                setCharges(s, maxCharges, 1);   // (owner: a super dash leaves exactly one; 1.18.7: if one has recharged)
+            } else {
+                // a dash jump leaves you all of them (owner: it's off the ground), the one its own dash just spent too
+                // (owner 1.18.7: "exempt the dash jump": that charge's recharge, the newest, is dropped); others still
+                // come back only once recharged
+                if (s.dashRecharging > 0) s.dashRechargeMs[--s.dashRecharging] = 0;
+                refillCharges(s, maxCharges, maxCharges);
             }
             chargesSet = true;
             s.vel = {s.dashDirX * sp, vy, s.dashDirZ * sp};
@@ -255,7 +309,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (dashing) {
         // Short, strong burst, tilted a little by where you look: no gravity, no steering.
         float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp)); // aiming up / down trades horizontal for vertical
-        float burst = std::max((kDashSpeed * mt.m[MV_DASH_SPEED]), s.dashExitSpeed); // (never slower than what you leave it with)
+        float burst = dashBurst(s, mt);
         s.vel = {s.dashDirX * burst * hs, s.dashUp * burst, s.dashDirZ * burst * hs};
         onGround = false;
         s.dashTimer -= dt;
@@ -424,9 +478,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
     // Dash wall bounce: a dash (this step's, including its last) that runs into a wall under kDashBounceAngle from
     // the wall's normal reflects off it (d' = d - 2(d.n)n: walls are axis-aligned, so one horizontal component
-    // flips; the vertical part is kept) and goes on at the dash's burst speed: the rest of the dash runs in the new
-    // direction, and it leaves at the burst speed however little was left (so every bounce carries). A dash jump
-    // or super dash after it keeps that.
+    // flips; the vertical part is kept) and goes on at kDashBounceSpeed (16; it was the burst): the rest of the dash
+    // runs in the new direction, and it leaves at that speed however little was left. A dash jump after it keeps
+    // that speed; a super dash adds to it.
     if (dashing && (blocked & 0b101) && s.dashBounces < kDashMaxBounces) {
         const float c = std::cos(kDashBounceAngle * mt.m[MV_DASH_BOUNCE_ANGLE] * (PI / 180.0f));
         const bool bx = (blocked & 1) && std::fabs(s.dashDirX) > c, bz = !bx && (blocked & 4) && std::fabs(s.dashDirZ) > c;
@@ -434,13 +488,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (bx) { s.dashDirX = -s.dashDirX; blocked &= ~1; }
             else { s.dashDirZ = -s.dashDirZ; blocked &= ~4; }
             s.dashBounces++;
-            s.dashCharges = 1;   // (owner: a wall bounce leaves you exactly one charge)
+            setCharges(s, maxCharges, 1);   // (owner: a wall bounce leaves you exactly one charge; 1.18.7: if one has recharged)
             chargesSet = true;
-            const float burst = std::max((kDashSpeed * mt.m[MV_DASH_SPEED]), s.dashExitSpeed);
+            const float bounce = kDashBounceSpeed * mt.m[MV_DASH_SPEED];   // (owner 1.18.7: 16, was the burst)
             const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
-            s.dashExitSpeed = burst;
-            s.vel.x = s.dashDirX * burst * hs;
-            s.vel.z = s.dashDirZ * burst * hs;
+            s.dashExitSpeed = bounce;
+            s.dashFromSpeed = bounce;   // (a super dash off the bounce adds to this)
+            s.vel.x = s.dashDirX * bounce * hs;
+            s.vel.z = s.dashDirZ * bounce * hs;
         }
     }
     if (blocked & 1) s.vel.x = 0;
@@ -480,10 +535,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // landing: the next step leaves the floor again, or this one bounced off it) only up to ONE ("when holding space you
     // should only be able to charge 1 dash"): hopping never builds the second charge back. Not during a dash's own
     // steps (its push into the floor is no landing: a super dash would refill itself), not on a ladder or off a grapple.
+    // Only charges that have recharged come back (1.18.7: kDashRecharge since the dash that spent them ended).
     if (!chargesSet && !dashing && !onLadder) {
         const bool hopping = jumpHeld && !frozen && !grappleOnly;
-        if (bounced || (hopping && (s.flags & MF_ONGROUND))) s.dashCharges = (uint8_t)std::max<int>(s.dashCharges, std::min(maxCharges, 1));
-        else if (s.flags & MF_ONGROUND) s.dashCharges = (uint8_t)maxCharges;
+        if (bounced || (hopping && (s.flags & MF_ONGROUND))) refillCharges(s, maxCharges, 1);
+        else if (s.flags & MF_ONGROUND) refillCharges(s, maxCharges, maxCharges);
     }
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;
@@ -510,11 +566,22 @@ float moveParamBase(int i) {
 }
 const char* moveParamUnit(int i) {
     static const char* u[MV_COUNT] = {"m/s", "", "", "m/s", "", "m/s", "", "", "m", "m/s", "s", "m/s", "m/s", "m/s", "", "", "s",
-        "", "m/s", "m", "m/s2", "m/s", "x", "m", "s", "m/s", "m/s", "s", "x", "x", "m/s", "deg", "m/s2", ""};
+        "", "m/s", "m", "m/s2", "m/s", "x", "m", "s", "m/s", "m/s", "s", "m/s", "x", "m/s", "deg", "m/s2", ""};   // (super dash boost: + m/s since 1.18.7)
     return i >= 0 && i < MV_COUNT ? u[i] : "";
 }
 int dashMaxCharges(uint8_t mods) { return maxChargesFor(moveTuning(), mods); }
 int dashCooldownMs(uint8_t mods) { return cooldownMsFor(moveTuning(), mods); }
+int dashRechargeMs(uint8_t mods) { return rechargeMsFor(moveTuning(), mods); }
+bool dashReady(const MoveState& s) {   // (the next step counts the cooldown down by its 1 ms before it looks)
+    return s.dashCharges > 0 && s.dashTimer <= 0 && (int)s.dashCooldownMs <= std::max(1, (int)std::lround(kMoveStep * 1000.0f));
+}
+bool dashAimedDown(const MoveState& s) { return s.dashUp <= -kSuperDashDown * (kDashVertical * moveTuning().m[MV_DASH_VERTICAL]); }
+void dashRefillAll(MoveState& s) {
+    s.dashCharges = (uint8_t)maxChargesFor(moveTuning(), s.mods);
+    s.dashCooldownMs = 0;
+    s.dashRecharging = 0;
+    for (uint16_t& v : s.dashRechargeMs) v = 0;
+}
 float moveBaseGravity() { return kGravity; }
 float moveBaseSpeed() { return kGroundSpeed; }
 float moveBaseJump() { return kJumpSpeed; }

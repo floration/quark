@@ -2553,8 +2553,7 @@ void Server::stepProjectile(Projectile& pr) {
                 auto& t = players_[hitPlayer];
                 t.health = std::min(lifeMaxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
                 t.nextFire = time();
-                t.move.dashCharges = (uint8_t)dashMaxCharges(t.move.mods);
-                t.move.dashCooldownMs = 0;
+                dashRefillAll(t.move);   // (the charges back, the cooldown and every recharge over)
                 t.move.hookCooldown = 0;
                 if (t.knifeBackAt > time()) t.knifeBackAt = time();   // (a thrown knife / syringe is back at once too)
                 if (t.syringeBackAt > time()) t.syringeBackAt = time();

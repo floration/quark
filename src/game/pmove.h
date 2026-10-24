@@ -15,19 +15,30 @@ struct UserCmd {
 };
 
 constexpr int kDashCharges = 2;   // dashes you hold (owner 1.17)...
-constexpr float kDashCooldown = 1.2f;   // ...and a dash also waits this long after the previous dash ENDS (owner 1.17: charges on top of the cooldown)
+constexpr float kDashCooldown = 0.6f;   // ...a dash waits this long after the previous dash ENDS (owner 1.18.7: "you can use them 0.6
+                                        // seconds apart"; it was 1.2 s between any two dashes)...
+constexpr float kDashRecharge = 1.2f;   // ...and a spent charge can only come back this long after the dash that spent it ended (owner
+                                        // 1.18.7: "dashes take 1.2 seconds to recharge ... when you jump in the air with 2 dashes, you
+                                        // can use both of them within 1 second, without recharging any charges"); it still comes back
+                                        // only the way charges always have (the floor all, a bhop landing one, the dash techs)
+constexpr int kMaxDashCharges = 10;     // the most charges a custom mode can give (2 x its 5x limit): the recharge timers' room
 
 // Everything prediction needs to replay movement. Sent unquantized for the local player.
 struct MoveState {
     Vec3 pos;      // feet position (bottom center of hull)
     Vec3 vel;
     uint8_t flags = 0; // MF_*
-    uint8_t dashCharges = kDashCharges;   // dashes left: the ground refills them all, a bhop landing one
+    uint8_t dashCharges = kDashCharges;   // dashes left: the ground refills them all, a bhop landing one (once recharged)
     uint16_t dashCooldownMs = 0;   // ms until the next dash may start (counts from the end of the last one; whole ms: exact on the wire)
+    uint8_t dashRecharging = 0;    // spent charges still recharging: their ms left in dashRechargeMs[0..n), oldest first (the newest
+                                   // waits at the full recharge while the dash that spent it runs); spent charges past it are the rest
+                                   // (max - dashCharges - dashRecharging): a refill can give those back
+    uint16_t dashRechargeMs[kMaxDashCharges] = {};
     float dashTimer = 0;     // > 0 while the dash burst is active
     float dashDirX = 0, dashDirZ = 0;
     float dashUp = 0;        // vertical part of the dash (from look pitch, small)
-    float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends
+    float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends (after a wall bounce: the bounce's speed)
+    float dashFromSpeed = 0; // horizontal speed when this dash started (after a wall bounce: the bounce's): a super dash adds to it
     float jumpBuffer = 0;    // a fresh jump press still counts this long for a dash jump / super dash (frozen while dashing)
     float jumpGrace = 0;     // jumped off the ground by a press this recently: a dash now is still a ground dash jump
     uint8_t dashBounces = 0; // wall bounces this dash has made
@@ -39,7 +50,7 @@ struct MoveState {
 };
 enum : uint8_t {
     MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
-    MOVE_QUICK_DASH = 2,   // the dash cooldown a third as long (1.2 -> 0.4 s; 1.17: a third charge instead)
+    MOVE_QUICK_DASH = 2,   // the dash cooldown and recharge a third as long (0.6 -> 0.2 s, 1.2 -> 0.4 s; 1.17: a third charge instead)
     MOVE_LOW_GRAVITY = 4,  // 40% gravity
     MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
     MOVE_BIG = 16,         // duel "double size" / "giant snipers": the hull (and eyes) x kBigScale
@@ -73,6 +84,15 @@ float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
 int dashMaxCharges(uint8_t mods);
 // the dash cooldown in ms (kDashCooldown x the custom mode's multiplier; MOVE_QUICK_DASH in `mods`: a third of that)
 int dashCooldownMs(uint8_t mods = 0);
+// a spent charge's recharge in ms (kDashRecharge, scaled the same way: the custom mode's DASH COOLDOWN scales both)
+int dashRechargeMs(uint8_t mods = 0);
+// would a fresh dash press in the next command start a dash (not frozen / run only): a charge left, no dash running,
+// and the cooldown since the last one ended over by that command's first step. Bots and the HUD use it, so they match pmove.
+bool dashReady(const MoveState& s);
+// is this dash aimed down far enough that a jump makes it a super dash (else a dash jump)
+bool dashAimedDown(const MoveState& s);
+// every charge back at once and nothing recharging (a teammate's syringe)
+void dashRefillAll(MoveState& s);
 // The players a grapple fired in this command can latch onto (the server fills it, lag compensated: where the shooter
 // saw them; enemies only). The hook takes the nearest of these or the map along its ray; `hit` says which box caught.
 struct HookProbe {

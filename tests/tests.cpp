@@ -24,6 +24,8 @@
 #include "game/demo.h"
 #include "../src/client/complete.h"
 #include "../src/client/lightmap.h"
+#include "../src/client/hudclock.h"
+#include "../src/client/weaponpredict.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -442,62 +444,107 @@ static void testMovementTuning() {
 }
 
 // Dash charges (owner 1.17): two; a dash spends one; no dash while one runs (the press is dropped, not kept), the next
-// press after it ends spends the next; the ground refills both, holding jump (a bhop landing) only up to one; a dash jump leaves both,
-// a super dash exactly one, a wall bounce exactly one; the super dash's own floor contact is no refill; ladders
-// refill nothing; quick dash (1.18): the usual two charges, the cooldown a third as long (0.4 s).
+// press after it ends spends the next; the ground refills both, holding jump (a bhop landing) only up to one; a dash jump
+// refills all, a super dash leaves exactly one, a wall bounce exactly one; the super dash's own floor contact is no refill;
+// ladders refill nothing. 1.18.7 (owner: "dashes take 1.2 seconds to recharge, but you can use them 0.6 seconds apart,
+// so when you jump in the air with 2 dashes, you can use both of them within 1 second, without recharging any
+// charges"): a dash waits 0.6 s from the end of the last one, and a spent charge only comes back by those refills
+// once 1.2 s have passed since the dash that spent it ended. Quick dash (1.18): the usual two charges, a third of
+// both (0.2 s apart, 0.4 s to recharge).
 static void testDashCharges() {
     printf("dash charges\n");
     std::string err;
     Map open;
     CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
     auto step = [&](MoveState& q, UserCmd c, const Map& m) { c.msec = 1; pmove(q, c, m); };
-    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
     UserCmd none, dash; dash.buttons = BTN_DASH;
-    { // in the air: press, press again mid-burst (dropped), press right after it ends (the cooldown: nothing), press
-      // exactly 1.2 s after it ENDED (the second), a third after another 1.2 s (none left)
+    // a press every other ms (fresh each time) for `ms`: the dashes' start and end steps
+    auto spam = [&](MoveState& q, int ms, std::vector<int>* starts, std::vector<int>* ends, UserCmd base = UserCmd()) {
+        bool was = q.dashTimer > 0;
+        for (int t = 0; t < ms; t++) {
+            UserCmd c = base; if (t % 2 == 0) c.buttons |= BTN_DASH;
+            const uint16_t cd = q.dashCooldownMs;
+            step(q, c, open);
+            const bool on = q.dashTimer > 0;
+            const bool started = on ? !was : (cd == 0 && q.dashCooldownMs > 0 && !was);   // (a super dash can start and end in one step)
+            if (started) starts->push_back(t);
+            if (q.dashCooldownMs > cd) ends->push_back(t);   // (a dash ended this step: the cooldown restarted)
+            was = on;
+        }
+    };
+    auto minGap = [](const std::vector<int>& a, const std::vector<int>& b) {   // the least from an end to the next start
+        int g = 1 << 30;
+        for (size_t i = 0; i + 1 < a.size() && i < b.size(); i++) g = std::min(g, a[i + 1] - b[i]);
+        return g;
+    };
+    auto minStep = [](const std::vector<int>& a) { int g = 1 << 30; for (size_t i = 1; i < a.size(); i++) g = std::min(g, a[i] - a[i - 1]); return g; };
+    { // in the air from full: press, press again mid-burst (dropped), press right after it ends (the cooldown: nothing), press
+      // exactly 0.6 s after it ENDED (the second), then none left: both recharge in the air but only the floor gives them back
         MoveState q; q.pos = {0, 200, 0};
-        CHECK(q.dashCharges == 2 && dashMaxCharges(0) == 2 && dashMaxCharges(MOVE_QUICK_DASH) == 2 && dashCooldownMs() == 1200 &&
-              dashCooldownMs(MOVE_QUICK_DASH) == 400);
+        CHECK(q.dashCharges == 2 && dashMaxCharges(0) == 2 && dashMaxCharges(MOVE_QUICK_DASH) == 2 && dashCooldownMs() == 600 &&
+              dashCooldownMs(MOVE_QUICK_DASH) == 200 && dashRechargeMs() == 1200 && dashRechargeMs(MOVE_QUICK_DASH) == 400 && dashReady(q));
         step(q, dash, open); step(q, none, open);
-        CHECK(q.dashCharges == 1 && q.dashTimer > 0 && q.dashCooldownMs == 0);   // (no cooldown while the dash runs)
+        CHECK(q.dashCharges == 1 && q.dashTimer > 0 && q.dashCooldownMs == 0 && !dashReady(q));   // (no cooldown while the dash runs)
+        CHECK(q.dashRecharging == 1 && q.dashRechargeMs[0] == 1200);   // (the spent charge's recharge waits for the dash to end)
         for (int i = 0; i < 40; i++) step(q, none, open);
+        CHECK(q.dashRechargeMs[0] == 1200);
         float left = q.dashTimer;
         step(q, dash, open);                     // mid-burst: nothing (the timer runs on, the charge stays)
         CHECK(q.dashCharges == 1 && q.dashTimer < left && q.dashTimer > 0 && q.dashCooldownMs == 0);
         while (q.dashTimer > 0) step(q, dash, open);   // (held through the end: still the same press, not a new one)
-        printf("  cooldown at the dash's end: %d ms\n", (int)q.dashCooldownMs);
-        CHECK(q.dashCharges == 1 && q.dashCooldownMs == 1200);   // the cooldown starts when the dash ENDS
+        printf("  cooldown at the dash's end: %d ms, its charge recharging %d ms\n", (int)q.dashCooldownMs, (int)q.dashRechargeMs[0]);
+        CHECK(q.dashCharges == 1 && q.dashCooldownMs == 600 && q.dashRecharging == 1 && q.dashRechargeMs[0] == 1200);   // both start when the dash ENDS
         { MoveState p = q; step(p, none, open); step(p, dash, open);   // two dashes in a row: no (a charge is left)
-          CHECK(p.dashCharges == 1 && p.dashTimer == 0 && p.dashCooldownMs == 1198); }
-        for (int k = 1; k <= 1198; k++) step(q, none, open);
-        { MoveState p = q; step(p, dash, open);   // 1.199 s after the end: still nothing
+          CHECK(p.dashCharges == 1 && p.dashTimer == 0 && p.dashCooldownMs == 598 && p.dashRechargeMs[0] == 1198); }
+        for (int k = 1; k <= 598; k++) step(q, none, open);
+        CHECK(!dashReady(q));   // (dashReady: would a press in the next step go)
+        { MoveState p = q; step(p, dash, open);   // 0.599 s after the end: still nothing
           CHECK(p.dashCharges == 1 && p.dashTimer == 0 && p.dashCooldownMs == 1); }
-        step(q, none, open); step(q, dash, open);   // 1.2 s after the end: the second
-        printf("  air: %d charge(s) after two dashes 1.2 s apart (the mid-burst press dropped)\n", (int)q.dashCharges);
-        CHECK(q.dashCharges == 0 && q.dashTimer > 0);
+        step(q, none, open);
+        CHECK(dashReady(q) && q.dashCooldownMs == 1);
+        step(q, dash, open);   // 0.6 s after the end: the second
+        printf("  air: %d charge(s) after two dashes 0.6 s apart (the mid-burst press dropped)\n", (int)q.dashCharges);
+        CHECK(q.dashCharges == 0 && q.dashTimer > 0 && q.dashRecharging == 2 && q.dashRechargeMs[0] == 600 && q.dashRechargeMs[1] == 1200);
         while (q.dashTimer > 0) step(q, none, open);
+        CHECK(q.dashRecharging == 2 && q.dashRechargeMs[0] < 600 && q.dashRechargeMs[0] > 470 && q.dashRechargeMs[1] == 1200);   // (the first counts on during the second)
         for (int k = 0; k < 1300; k++) step(q, none, open);
-        CHECK(q.dashCooldownMs == 0 && !(q.flags & MF_ONGROUND));
-        step(q, dash, open);                     // the cooldown is over but no charge is left
+        CHECK(q.dashCooldownMs == 0 && q.dashRecharging == 0 && !(q.flags & MF_ONGROUND) && !dashReady(q));
+        step(q, dash, open);                     // the cooldown and recharges are over but no charge came back (in the air)
         CHECK(q.dashCharges == 0 && q.dashTimer == 0);
         // landing without jump: both back
         for (int i = 0; i < 10000 && !(q.flags & MF_ONGROUND); i++) step(q, none, open);
         CHECK((q.flags & MF_ONGROUND) && q.dashCharges == 2);
     }
-    { // on the floor the charges refill, but the cooldown still spaces the dashes 1.2 s from each one's end
+    for (int mods : {0, (int)MOVE_QUICK_DASH}) { // in the air from full, pressing every other ms: both within a second
+        MoveState a; a.pos = {0, 200, 0}; a.mods = (uint8_t)mods;
+        std::vector<int> st, en;
+        spam(a, 3000, &st, &en);
+        const int want = mods ? 200 : 600;
+        printf("  air%s from full, pressing: %d dashes, %d ms start to start (%d ms from the first's end)\n", mods ? " (quick dash)" : "",
+               (int)st.size(), st.size() > 1 ? st[1] - st[0] : -1, st.size() > 1 && !en.empty() ? st[1] - en[0] : -1);
+        CHECK(st.size() == 2 && st[1] - st[0] < 1000 && st[1] - en[0] >= want && st[1] - en[0] <= want + 1 && a.dashCharges == 0);
+    }
+    for (int mods : {0, (int)MOVE_QUICK_DASH}) { // on the floor the charges refill once recharged: the cooldown alone spaces the dashes
+        MoveState q; q.flags = MF_ONGROUND; q.mods = (uint8_t)mods;
+        for (int i = 0; i < 20; i++) step(q, none, open);
+        std::vector<int> st, en;
+        spam(q, 4000, &st, &en);
+        const int want = mods ? 200 : 600;
+        printf("  ground%s dash spam over 4 s: %d dashes, %d ms start to start, %d ms at least from one's end to the next\n",
+               mods ? " (quick dash)" : "", (int)st.size(), minStep(st), minGap(st, en));
+        CHECK(minGap(st, en) >= want && minGap(st, en) <= want + 1 && (int)st.size() == (mods ? 13 : 6));
+    }
+    { // on the floor a spent charge comes back 1.2 s after its dash ended, not before
         MoveState q; q.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) step(q, none, open);
-        int dashes = 0, lastEnd = -100000, minGap = 1 << 30;
-        bool was = false;
-        for (int t = 0; t < 4000; t++) {
-            step(q, t % 2 ? dash : none, open);   // (a fresh press every other ms)
-            bool on = q.dashTimer > 0;
-            if (on && !was) { dashes++; minGap = std::min(minGap, t - lastEnd); }
-            if (!on && was) lastEnd = t;
-            was = on;
-        }
-        printf("  ground dash spam over 4 s: %d dashes, %d ms at least between one's end and the next\n", dashes, minGap);
-        CHECK(dashes == 4 && minGap >= 1200 && minGap <= 1201);
+        step(q, dash, open);
+        int t = 0;
+        while (q.dashTimer > 0) { step(q, none, open); t++; }
+        CHECK(q.dashCharges == 1 && q.dashRecharging == 1);
+        int back = 0;
+        for (int k = 1; k <= 1300 && !back; k++) { step(q, none, open); if (q.dashCharges == 2) back = k; }
+        printf("  ground: the spent charge back %d ms after its dash ended\n", back);
+        CHECK(back == 1200 && q.dashRecharging == 0);
     }
     { // holding jump (bhop landings, a hard-landing bounce) refills only up to ONE charge (owner): letting go of jump on
       // the floor gives both back
@@ -519,16 +566,35 @@ static void testDashCharges() {
         printf("  let go of jump and land: %d charge(s)\n", q.dashCharges);
         CHECK(q.dashCharges == 2);
     }
-    { // a dash jump leaves both (it's off the floor): from one charge, ground dash + jump
-        MoveState q; q.flags = MF_ONGROUND; q.dashCharges = 1;
+    for (int mods : {0, (int)MOVE_QUICK_DASH}) { // bunny-hopping (jump held) and pressing dash all the while: a landing gives one back once recharged
+        MoveState q; q.flags = MF_ONGROUND; q.mods = (uint8_t)mods;
         for (int i = 0; i < 20; i++) step(q, none, open);
-        q.dashCharges = 1;
+        UserCmd hop; hop.buttons = BTN_JUMP; hop.forward = 127;
+        std::vector<int> st, en;
+        spam(q, 4000, &st, &en, hop);
+        printf("  bhop%s dash spam over 4 s: %d dashes, %d ms start to start at least, %d ms from one's end to the next\n",
+               mods ? " (quick dash)" : "", (int)st.size(), minStep(st), minGap(st, en));
+        CHECK(minGap(st, en) >= (mods ? 200 : 600) && st.size() >= 3);
+    }
+    { // a dash jump refills all (it's off the floor), the charge its own dash just spent too (owner 1.18.7: "exempt the
+      // dash jump"); an older charge still recharging stays out: a ground dash, 0.6 s later a ground dash + jump
+        MoveState q; q.flags = MF_ONGROUND;
+        for (int i = 0; i < 20; i++) step(q, none, open);
         step(q, dash, open);
-        CHECK(q.dashCharges == 0 && q.dashTimer > 0);
+        while (q.dashTimer > 0) step(q, none, open);
+        for (int k = 0; k < 600; k++) step(q, none, open);
+        CHECK(q.dashCharges == 1 && q.dashRecharging == 1 && q.dashCooldownMs == 0);
+        step(q, dash, open);
+        CHECK(q.dashCharges == 0 && q.dashTimer > 0 && q.dashRecharging == 2);
         UserCmd dj; dj.buttons = BTN_DASH | BTN_JUMP;
         step(q, dj, open);
-        printf("  dash jump: %d charges, %.1f m/s\n", (int)q.dashCharges, hs(q));
-        CHECK(q.dashTimer == 0 && q.dashCharges == 2 && q.vel.y > 7.0f && q.dashCooldownMs == 1200);   // (ended by the jump: the cooldown from there)
+        printf("  dash jump with the other charge recharging: %d charge(s) (%d recharging), %.1f m/s\n", (int)q.dashCharges, (int)q.dashRecharging, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z));
+        CHECK(q.dashTimer == 0 && q.dashCharges == 1 && q.dashRecharging == 1 && q.vel.y > 7.0f && q.dashCooldownMs == 600);   // (ended by the jump: the cooldown from there)
+        MoveState f; f.flags = MF_ONGROUND;   // from full: both kept, nothing recharging
+        for (int i = 0; i < 20; i++) step(f, none, open);
+        step(f, dash, open); step(f, dj, open);
+        printf("  dash jump from full: %d charge(s) (%d recharging)\n", (int)f.dashCharges, (int)f.dashRecharging);
+        CHECK(f.dashTimer == 0 && f.dashCharges == 2 && f.dashRecharging == 0 && f.dashCooldownMs == 600);
     }
     { // a super dash leaves exactly one, from two or from one; its floor contact refills nothing on top
         for (int start : {2, 1}) {
@@ -536,32 +602,35 @@ static void testDashCharges() {
             UserCmd sd; sd.pitch = -1.2f; sd.buttons = BTN_DASH | BTN_JUMP;
             int t = 0;
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, sd, open);
-            printf("  super dash from %d: %d charge(s), %.1f m/s\n", start, (int)q.dashCharges, hs(q));
-            CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-3f && q.dashCharges == 1);
+            printf("  super dash from %d: %d charge(s), %.1f m/s\n", start, (int)q.dashCharges, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z));
+            CHECK(t < 120 && std::fabs(std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z) - 11.0f) < 1e-3f && q.dashCharges == 1);   // (from a standstill: the dash's own 11)
             UserCmd fly; fly.buttons = BTN_DASH;   // (dash still held: no new press) the hop: nothing until it lands
             for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND); i++) { step(q, fly, open); if (!(q.flags & MF_ONGROUND)) CHECK(q.dashCharges == 1); }
         }
-        // chained super dashes: each needs a charge (the hop's bhop landing gives one back: never more than that) and
-        // the cooldown since the last one ended
-        MoveState q; q.pos = {0, 1.0f, 0};
-        int supers = 0, dashes = 0, maxSeen = 0, lastEnd = -100000, minGap = 1 << 30;
-        bool was = false;
-        for (int i = 0; i < 4000; i++) {
-            UserCmd c; c.pitch = -1.2f; c.buttons = BTN_JUMP;
-            if (q.dashTimer <= 0 && q.vel.y < 0 && i % 2 == 0) c.buttons |= BTN_DASH;   // (a fresh press every other ms on the way down)
-            float before = hs(q);
-            const uint16_t cd = q.dashCooldownMs;
-            step(q, c, open);
-            if (hs(q) > 29.0f && before < 29.0f) supers++;
-            const bool started = q.dashTimer > 0 ? !was : (cd == 0 && q.dashCooldownMs > 0 && !was);   // (a super dash can start and end in one step)
-            if (started) { dashes++; minGap = std::min(minGap, i - lastEnd); }
-            if (q.dashCooldownMs > cd) lastEnd = i;   // (a dash ended this step: the cooldown restarted)
-            was = q.dashTimer > 0;
-            maxSeen = std::max(maxSeen, (int)q.dashCharges);
+        // chained super dashes: each needs a charge (the hop's bhop landing gives one back once it has recharged: never
+        // more than that) and the cooldown since the last one ended; each adds 5 m/s to the speed it starts from, up to 36
+        for (int mods : {0, (int)MOVE_QUICK_DASH}) {
+            MoveState q; q.pos = {0, 1.0f, 0}; q.mods = (uint8_t)mods;
+            int supers = 0, maxSeen = 0;
+            float top = 0;
+            std::vector<int> st, en;
+            bool was = false;
+            for (int i = 0; i < 4000; i++) {
+                UserCmd c; c.pitch = -1.2f; c.buttons = BTN_JUMP; c.forward = 127;
+                if (q.dashTimer <= 0 && q.vel.y < 0 && i % 2 == 0) c.buttons |= BTN_DASH;   // (a fresh press every other ms on the way down)
+                const uint16_t cd = q.dashCooldownMs;
+                step(q, c, open);
+                if (q.dashCooldownMs > cd && q.vel.y > 2.0f) { supers++; top = std::max(top, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z)); }   // (a dash ending in a hop)
+                const bool started = q.dashTimer > 0 ? !was : (cd == 0 && q.dashCooldownMs > 0 && !was);
+                if (started) st.push_back(i);
+                if (q.dashCooldownMs > cd) en.push_back(i);
+                was = q.dashTimer > 0;
+                maxSeen = std::max(maxSeen, (int)q.dashCharges);
+            }
+            printf("  chained super dashes%s over 4 s: %d supers of %d dashes (fastest %.1f m/s), %d ms start to start at least, %d ms from one's end to the next, at most %d charge(s) held\n",
+                   mods ? " (quick dash)" : "", supers, (int)st.size(), top, minStep(st), minGap(st, en), maxSeen);
+            CHECK(supers >= 2 && top <= 36.0f + 1e-3f && minGap(st, en) >= (mods ? 200 : 600) && maxSeen <= 2);
         }
-        printf("  chained super dashes over 4 s: %d supers of %d dashes, at least %d ms from one's end to the next, at most %d charge(s) held\n",
-               supers, dashes, minGap, maxSeen);
-        CHECK(supers >= 2 && dashes <= 4 && minGap >= 1200 && maxSeen <= 2);
     }
     { // a wall bounce leaves exactly one (twice in a corridor: still one)
         Map corridor;
@@ -578,7 +647,7 @@ static void testDashCharges() {
         printf("  wall bounces: %d then %d charge(s)\n", b1, b2);
         CHECK(b1 == 1 && b2 == 1);
     }
-    { // a ladder refills nothing; quick dash: two on the floor, dashes 0.4 s from one's end to the next
+    { // a ladder refills nothing
         Map m;
         CHECK(m.parse("box -20 -1 -20 20 0 20\nbox -20 0 -3 20 30 -2\nladder -5 0 -2 5 30 -1.5\nspawn any 0 0 0\n", &err));
         MoveState q; q.pos = {0, 3, -1.6f}; q.dashCharges = 0;
@@ -587,23 +656,24 @@ static void testDashCharges() {
         MoveState g; g.flags = MF_ONGROUND; g.mods = MOVE_QUICK_DASH; g.dashCharges = 0;
         step(g, none, open);
         CHECK(g.dashCharges == 2);
-        for (int i = 0; i < 20; i++) step(g, none, open);
-        int dashes = 0, lastEnd = -100000, minGap = 1 << 30;
-        bool was = false;
-        for (int t = 0; t < 4000; t++) {
-            step(g, t % 2 ? dash : none, open);   // (a fresh press every other ms)
-            bool on = g.dashTimer > 0;
-            if (on && !was) { dashes++; minGap = std::min(minGap, t - lastEnd); }
-            if (!on && was) { lastEnd = t; CHECK(g.dashCooldownMs == 400); }
-            was = on;
-        }
-        printf("  quick dash ground spam over 4 s: %d dashes, %d ms at least between one's end and the next\n", dashes, minGap);
-        CHECK(dashes == 8 && minGap >= 400 && minGap <= 401);
-        // in the air: the two charges, 0.4 s apart, then none until the floor
-        MoveState a; a.pos = {0, 200, 0}; a.mods = MOVE_QUICK_DASH;
-        int airDashes = 0; was = false;
-        for (int t = 0; t < 2000; t++) { step(a, t % 2 ? dash : none, open); bool on = a.dashTimer > 0; if (on && !was) airDashes++; was = on; }
-        CHECK(airDashes == 2 && a.dashCharges == 0);
+    }
+    { // the wire: the charges, cooldown and recharges go exactly (protocol 43), and nothing extra when nothing runs
+        auto roundTrip = [](const MoveState& m, int* bytes) {
+            Snapshot s; s.self = m;
+            uint8_t buf[512]; Writer w(buf, sizeof buf); writeSnapshotClient(w, s);
+            *bytes = (int)w.size();
+            Reader r(buf, (int)w.size()); Snapshot o; CHECK(readSnapshotClient(r, o)); return o.self;
+        };
+        MoveState q; q.pos = {0, 200, 0};
+        int idle = 0, busy = 0;
+        roundTrip(q, &idle);
+        step(q, dash, open); while (q.dashTimer > 0) step(q, none, open);
+        for (int k = 0; k < 600; k++) step(q, none, open);
+        step(q, dash, open); while (q.dashTimer > 0) step(q, none, open);
+        MoveState o = roundTrip(q, &busy);
+        printf("  own state: %d bytes idle, %d with two charges recharging\n", idle, busy);
+        CHECK(o.dashCharges == q.dashCharges && o.dashCooldownMs == q.dashCooldownMs && o.dashRecharging == 2 &&
+              o.dashRechargeMs[0] == q.dashRechargeMs[0] && o.dashRechargeMs[1] == q.dashRechargeMs[1] && busy == idle + 1 + 2 + 4);
     }
 }
 
@@ -639,7 +709,7 @@ static void testDashTech() {
         printf("  dash jump: %.3f m/s, %.3f up\n", hs(q), q.vel.y);
         CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f);
         { MoveState p = q; step(p, UserCmd()); step(p, UserCmd()); UserCmd again; again.buttons = BTN_DASH; step(p, again);
-          CHECK(p.dashTimer == 0 && p.dashCharges == 2 && p.dashCooldownMs == 1197); }   // both charges, but no dash for 1.2 s after the jump ended it
+          CHECK(p.dashTimer == 0 && p.dashCharges == 2 && p.dashRecharging == 0 && p.dashCooldownMs == 597); }   // both charges (a dash jump gives its own back), no dash for 0.6 s after the jump ended it
         float peak, dist = flight(q, BTN_DASH, &peak);
         printf("  dash jump: %.1f m across, %.2f m up (a jump: 1.22)\n", dist, peak);
         CHECK(peak > 1.18f && peak < 1.26f && dist > 15.5f && dist < 16.5f);
@@ -673,14 +743,15 @@ static void testDashTech() {
         UserCmd r; r.forward = 127;
         for (int i = 0; i < 1000; i++) step(q, r);
         CHECK(std::fabs(hs(q) - 9.5f) < 0.05f);
+        const float h0 = hs(q);
         r.pitch = -1.0f; r.buttons = BTN_DASH | BTN_JUMP;
         step(q, r);
-        printf("  super dash from a run: %.3f m/s, %.3f up\n", hs(q), q.vel.y);
+        printf("  super dash from a run (%.2f m/s): %.3f m/s, %.3f up\n", h0, hs(q), q.vel.y);
         const float vy = superHop(-1.0f);   // (57.3 deg down: 0.89 of a jump)
-        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - (h0 + 5.0f)) < 1e-3f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);   // (owner 1.18.7: + 5)
         float peak, dist = flight(q, BTN_DASH, &peak), air = 2 * vy / 22.0f;
         printf("  super dash: %.1f m across, %.2f m up (%.2f expected)\n", dist, peak, vy * vy / 44.0f);
-        CHECK(std::fabs(peak - vy * vy / 44.0f) < 0.03f && std::fabs(dist - 30.0f * air) < 0.6f);
+        CHECK(std::fabs(peak - vy * vy / 44.0f) < 0.03f && std::fabs(dist - (h0 + 5.0f) * air) < 0.6f);
     }
     { // the hop grows with how far down the dash is aimed (owner 1.18: "the lower you look the higher you should
       // bounce"): half a jump just past the 14.5 deg threshold (the old hop), a full jump straight down
@@ -688,7 +759,7 @@ static void testDashTech() {
             MoveState q = standing();
             UserCmd d; d.pitch = pitch; d.buttons = BTN_DASH | BTN_JUMP;
             step(q, d);
-            CHECK(q.dashTimer == 0 && q.dashCharges == 1 && std::fabs(hs(q) - 30.0f) < 1e-4f);   // (a super dash)
+            CHECK(q.dashTimer == 0 && q.dashCharges == 1 && std::fabs(hs(q) - 11.0f) < 1e-4f);   // (a super dash: from a standstill, the dash's own 11)
             flight(q, BTN_DASH, peak);
             return q.vel.y;   // (landed: the hop's peak is in *peak)
         };
@@ -711,7 +782,7 @@ static void testDashTech() {
           CHECK(std::fabs(q.vel.y - (3.67f - g1)) < 1e-3f); }
         // shallower than the threshold: a dash jump (a full jump at the burst speed), not a super dash
         { MoveState q = standing(); UserCmd d; d.pitch = -10 * 0.0174533f; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
-          CHECK(q.dashCharges == 2 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f); }
+          CHECK(q.dashCharges == 2 && q.dashRecharging == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f); }
     }
     { // super dash out of a bhop: in the air, dash down into the floor holding jump; it converts as it lands
         MoveState q = standing();
@@ -721,20 +792,25 @@ static void testDashTech() {
         for (int i = 0; i < 1000 || q.vel.y > -1.0f; i++) step(q, r);   // bhopping, now on the way down
         CHECK(!(q.flags & MF_ONGROUND) && q.pos.y > 0.2f);
         r.pitch = -1.2f; r.buttons = BTN_JUMP | BTN_DASH;
+        const float h0 = hs(q);
         int t = 0;
         for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, r);
-        printf("  super dash out of a bhop: %.3f m/s, %.3f up after %d ms\n", hs(q), q.vel.y, t);
+        printf("  super dash out of a bhop (%.2f m/s): %.3f m/s, %.3f up after %d ms\n", h0, hs(q), q.vel.y, t);
         const float vy = superHop(-1.2f);   // (68.8 deg down: 0.95 of a jump)
-        CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
+        CHECK(t < 120 && std::fabs(hs(q) - std::max(11.0f, h0 + 5.0f)) < 1e-3f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
         float peak;
         flight(q, BTN_DASH, &peak);
         CHECK(peak < vy * vy / 44.0f + 0.02f);   // (no bhop bounce off the dash's push into the floor on top)
-        // at speed: the burst is the dash's exit speed (30 + 1 = 31), the super dash 1.25x that, capped at 36
+        // at speed: the super dash is the speed it started from + 5 (30 -> 35), capped at 36 (33 -> 36)
         MoveState f = standing();
         f.vel = {0, 0, -30};
         UserCmd d; d.pitch = -1.0f; d.buttons = BTN_DASH | BTN_JUMP;
         step(f, d);
-        CHECK(std::fabs(hs(f) - 36.0f) < 1e-4f);
+        MoveState f3 = standing();
+        f3.vel = {0, 0, -33};
+        step(f3, d);
+        printf("  super dash at 30 m/s: %.3f m/s; at 33: %.3f\n", hs(f), hs(f3));
+        CHECK(std::fabs(hs(f) - 35.0f) < 1e-3f && std::fabs(hs(f3) - 36.0f) < 1e-4f);
         MoveState f2 = standing();
         f2.vel = {0, 0, -30};
         d.pitch = 0;
@@ -756,11 +832,11 @@ static void testDashTech() {
             UserCmd d; d.pitch = -1.2f; d.buttons = BTN_DASH;
             int t = 0;
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, d);
-            if (gap < 100) CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-4f && q.vel.y > 3.0f);
+            if (gap < 100) CHECK(t < 120 && std::fabs(hs(q) - 11.0f) < 1e-4f && q.vel.y > 3.0f);   // (a super dash from a standstill: 11)
             else CHECK(t == 120 && hs(q) < 11.01f);
         }
     }
-    { // dash wall bounce: a dash 30 deg off a wall's normal reflects at the dash's speed; 50 deg (glancing) slides
+    { // dash wall bounce: a dash 30 deg off a wall's normal reflects at 16 m/s (owner 1.18.7; it was the dash's speed); 50 deg (glancing) slides
         Map wall;   // a wall across -z, its face 1.5 m ahead
         CHECK(wall.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -1.5\nspawn any 0 0 0\n", &err));
         auto dashAt = [&](float deg, bool jumpAfter, MoveState* out) {
@@ -776,15 +852,16 @@ static void testDashTech() {
         MoveState q;
         int t = dashAt(30, false, &q);
         printf("  wall bounce at 30 deg after %d ms: (%.3f, %.3f) m/s, %d bounce\n", t, q.vel.x, q.vel.z, q.dashBounces);
-        CHECK(q.dashBounces == 1 && q.dashTimer > 0 && std::fabs(q.vel.x - (-12.0f)) < 1e-3f && std::fabs(q.vel.z - 20.7846f) < 1e-3f);
+        CHECK(q.dashBounces == 1 && q.dashTimer > 0 && std::fabs(q.vel.x - (-8.0f)) < 1e-3f && std::fabs(q.vel.z - 13.8564f) < 1e-3f);
         UserCmd d; d.msec = 1; d.yaw = 30 * PI / 180; d.buttons = BTN_DASH;
         while (q.dashTimer > 0) pmove(q, d, wall);
-        CHECK(std::fabs(hs(q) - 24.0f) < 1e-3f && q.vel.z > 0);   // leaves at full dash speed, reflected (not the 11 m/s exit)
+        printf("  wall bounce: the rest of the dash and its exit at %.3f m/s\n", hs(q));
+        CHECK(std::fabs(hs(q) - 16.0f) < 1e-3f && q.vel.z > 0);   // runs on and leaves at the bounce's 16, reflected (not the 11 m/s exit)
         t = dashAt(50, false, &q);
         printf("  wall at 50 deg after %d ms: z %.5f (%.3f, %.3f) m/s, %d bounces\n", t, q.pos.z, q.vel.x, q.vel.z, q.dashBounces);
         CHECK(q.dashBounces == 0 && q.vel.z == 0 && std::fabs(q.vel.x - (-24.0f * std::sin(50 * PI / 180))) < 1e-3f);   // slides along
         dashAt(30, true, &q);   // bounce, then jump during the rest of the dash on the floor: a dash jump the reflected way
-        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-3f && q.vel.z > 0 && q.vel.y > 7.0f);
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 16.0f) < 1e-3f && q.vel.z > 0 && q.vel.y > 7.0f);   // (keeps the bounce's 16)
         // head-on between two walls 2.4 m apart: two bounces, the third wall stops it (at most 2 per dash)
         MoveState c; c.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) pmove(c, UserCmd(), wall);
@@ -820,7 +897,7 @@ static void testDashTech() {
         MoveState s;
         s.pos = {-20, 0, 20};
         for (const UserCmd& c : cmds) { pmove(s, c, m); states.push_back(s); }
-        int bad = 0, buffered = 0, cooling = 0;
+        int bad = 0, buffered = 0, cooling = 0, recharging = 0;
         for (size_t k = 0; k + 1 < cmds.size(); k += 7) {
             Snapshot snap;
             snap.self = states[k];
@@ -834,13 +911,16 @@ static void testDashTech() {
             MoveState q = back.self;
             for (size_t i = k + 1; i < cmds.size(); i++) pmove(q, cmds[i], m);
             const MoveState& e = states.back();
-            if (!(q.pos.x == e.pos.x && q.pos.y == e.pos.y && q.pos.z == e.pos.z && q.vel.x == e.vel.x && q.vel.y == e.vel.y && q.vel.z == e.vel.z && q.flags == e.flags && q.dashCharges == e.dashCharges && q.dashCooldownMs == e.dashCooldownMs)) bad++;
+            if (!(q.pos.x == e.pos.x && q.pos.y == e.pos.y && q.pos.z == e.pos.z && q.vel.x == e.vel.x && q.vel.y == e.vel.y && q.vel.z == e.vel.z && q.flags == e.flags && q.dashCharges == e.dashCharges && q.dashCooldownMs == e.dashCooldownMs &&
+                  q.dashRecharging == e.dashRecharging && !memcmp(q.dashRechargeMs, e.dashRechargeMs, sizeof q.dashRechargeMs))) bad++;
             cooling += states[k].dashCooldownMs > 0;
+            recharging += states[k].dashRecharging > 0;
         }
         int bounced = 0;
         for (const MoveState& st : states) bounced += st.dashTimer > 0 && st.dashBounces > 0;
-        printf("  replay from %zu snapshot points (%d with a jump buffered, %d with the dash cooldown running; %d ms of bounced dashes): %d differ\n", cmds.size() / 7, buffered, cooling, bounced, bad);
-        CHECK(bad == 0 && buffered > 0 && cooling > 0);
+        printf("  replay from %zu snapshot points (%d with a jump buffered, %d with the dash cooldown running, %d with a charge recharging; %d ms of bounced dashes): %d differ\n",
+               cmds.size() / 7, buffered, cooling, recharging, bounced, bad);
+        CHECK(bad == 0 && buffered > 0 && cooling > 0 && recharging > 0);
     }
 }
 
@@ -2425,14 +2505,16 @@ static void testSyringe(uint16_t port) {
     CHECK(pa.health == 70);
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCharges = 0; pa.nextFire = s.time() + 5;
+    pa.move.dashCooldownMs = 30000; pa.move.dashRecharging = 2; pa.move.dashRechargeMs[0] = pa.move.dashRechargeMs[1] = 30000;   // (nothing comes back on its own)
     Vec3 base = pb.move.pos;
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, idle); }
     int tick = 0;
     pump(s, cls, 0.5, [&](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 1) { c.yaw = 0; c.pitch = -0.05f; if (tick++ < 30) c.buttons = BTN_ALTFIRE; } if (i == 0) place(); return c; });
-    printf("  thrown: %.0f hp (from 40), dash charges %d\n", pa.health, (int)pa.move.dashCharges);
+    printf("  thrown: %.0f hp (from 40), dash charges %d (%d recharging, cooldown %d ms)\n", pa.health, (int)pa.move.dashCharges,
+           (int)pa.move.dashRecharging, (int)pa.move.dashCooldownMs);
     CHECK(pa.health >= 69 && pa.health <= 72);
-    CHECK(pa.move.dashCharges == 2 && pa.nextFire <= s.time());
+    CHECK(pa.move.dashCharges == 2 && pa.move.dashRecharging == 0 && pa.move.dashCooldownMs == 0 && pa.nextFire <= s.time());
     s.stop();
 }
 
@@ -5635,20 +5717,23 @@ static void testDemoUpgrade() {
         std::string err;
         CHECK(p.startPlayback((d / "p37.qdemo").string(), err) && p.mapReady());
     }
-    { // protocol 41 (own-state opt bit 4: the dash charges alone, u8) and 40 (the old dash cooldown, f32) convert to
-      // 42's charges + cooldown (u16 ms): a record of each appended to a current demo, converted, read back
+    { // protocol 42 (own-state opt bit 4: the u8 charges + the u16 cooldown, no recharges), 41 (the dash charges alone,
+      // u8) and 40 (the old dash cooldown, f32) convert to 43's packed charges / recharging count + cooldown + recharges:
+      // a record of each appended to a current demo, converted, read back
         std::string cur = rd(d / "old.qdemo");
         auto demoAt = [&](uint16_t proto) {
             Snapshot sn;
             sn.tick = 1;
             sn.self.dashCharges = 1;
+            sn.self.dashCooldownMs = 300;   // (nothing recharging: 43's bytes here are 42's)
             std::vector<uint8_t> b(4096);
             Writer w(b.data(), (int)b.size());
             writeSnapshotClient(w, sn);
             std::string hdr((const char*)b.data(), (size_t)w.size());
             const size_t optAt = 19 + 24 + 2;   // (tick .. clientId, pos + vel, flags + mods)
             CHECK((uint8_t)hdr[optAt] == 4 && (uint8_t)hdr[optAt + 1] == 1);
-            if (proto == 41) hdr.erase(optAt + 2, 2);   // the u8 charges, no cooldown
+            if (proto == 42) {}   // the u8 charges + the u16 cooldown
+            else if (proto == 41) hdr.erase(optAt + 2, 2);   // the u8 charges, no cooldown
             else { float cd = 0.5f; hdr.replace(optAt + 1, 3, (const char*)&cd, 4); }   // the f32 cooldown in its place
             Writer w2(b.data(), (int)b.size());
             writeSnapshotWorld(w2, sn, nullptr); writeSnapshotEvents(w2, sn.events);
@@ -5672,15 +5757,17 @@ static void testDemoUpgrade() {
             *m = sn.self;
             return ok && sn.tick == 1;
         };
-        std::string out41, out40, why;
-        MoveState m41, m40;
+        std::string out42, out41, out40, why;
+        MoveState m42, m41, m40;
+        CHECK(demo::convert(demoAt(42), &out42, &why) && lastSelf(out42, &m42));
+        CHECK(m42.dashCharges == 1 && m42.dashCooldownMs == 300 && m42.dashRecharging == 0);
         CHECK(demo::convert(demoAt(41), &out41, &why) && lastSelf(out41, &m41));
         CHECK(demo::convert(demoAt(40), &out40, &why) && lastSelf(out40, &m40));
         printf("  protocol 41 -> %d: %d charge(s), %d ms; protocol 40: %d charge(s), %d ms\n", (int)kProtocolVersion,
                (int)m41.dashCharges, (int)m41.dashCooldownMs, (int)m40.dashCharges, (int)m40.dashCooldownMs);
         CHECK(m41.dashCharges == 1 && m41.dashCooldownMs == 0 && m40.dashCharges == 2 && m40.dashCooldownMs == 500);
         uint16_t pv = 0; memcpy(&pv, &out41[4], 2);
-        CHECK(pv == kProtocolVersion && demo::convertible(41) && demo::convertible(40));
+        CHECK(pv == kProtocolVersion && demo::convertible(42) && demo::convertible(41) && demo::convertible(40));
     }
     // a second conversion of the same name keeps both originals
     put("old.qdemo", fixture, -1);
