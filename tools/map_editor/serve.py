@@ -12,7 +12,11 @@ Binds 127.0.0.1 only (nothing on the network can reach it). Python 3 standard li
     GET  /api/map/default/<name>    a default map's text (this folder's maps/, read-only)
     GET  /api/map/mine/<name>       PUT /api/map/mine/<name>     your map's text in the game's user maps folder (PUT:
                                     the text, or JSON {"text", "provenance": {"origin": "human"|"ai", "note"}}, which
-                                    also records it in provenance.json next to this file)
+                                    also records it in provenance.json next to this file). With quark_maptool, a text
+                                    the game can't load is refused (422 {"error", "parseError"})
+    DELETE /api/map/mine/<name>     moves your map and its sidecar to <your maps>/deleted/<name>-<time>.* (the game
+                                    doesn't look in sub-folders; nothing is lost)
+    POST /api/rename                {"from", "to"}: renames your map, its sidecar and its provenance entry
     GET  /api/provenance            provenance.json
     GET  /api/sidecar/<name>        PUT /api/sidecar/<name>      <name>.mapedit.json next to your map ({} when none)
     GET  /api/deco-presets          PUT /api/deco-presets/<name>  the decoration panel's own presets ({"presets": [...]}),
@@ -334,6 +338,8 @@ class Handler(BaseHTTPRequestHandler):
             text = text.replace("\r\n", "\n")
             if len(text) > 32 << 20: return self.err(413, "map too large")
             if not text.strip(): return self.err(400, "empty map")
+            bad = self.unloadable(text, name)
+            if bad: return self.send(422, {"error": "the game can't load this map: " + bad, "parseError": bad})
             write_atomic(os.path.join(st.user_maps(), name + ".qmap"), text.encode("utf-8"))
             entry = record_provenance(name, prov) if isinstance(prov, dict) else None
             return self.send(200, {"ok": True, "path": os.path.join(st.user_maps(), name + ".qmap"), "provenance": entry})
@@ -348,8 +354,61 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
         self.err(404, "not found")
 
+    def unloadable(self, text, name):
+        """why the game would refuse this map text (quark_maptool parse: the game's own Map::parse), or None. Without
+        the helper the page's own checks are all there is."""
+        st = self.server.st
+        if not st.maptool: return None
+        try:
+            r = subprocess.run([st.maptool, "parse"], input=json.dumps({"text": text, "name": name}).encode("utf-8"),
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=TIMEOUTS["parse"], cwd=HERE, creationflags=no_window())
+            ans = json.loads(r.stdout or b"{}")
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return None   # (the helper failing is not the map's fault: the save goes ahead)
+        return str(ans["error"]) if isinstance(ans, dict) and ans.get("error") else None
+
+    def do_DELETE(self):
+        path = unquote(self.path.split("?", 1)[0])
+        if not path.startswith("/api/") or not self.same_origin(): return self.err(403, "forbidden")
+        m = re.match(r"^/api/map/mine/([^/]+)$", path)
+        if not m: return self.err(404, "not found")
+        name, d = m.group(1), self.server.st.user_maps()
+        if not valid_name(name): return self.err(400, "bad map name")
+        f = os.path.join(d, name + ".qmap")
+        if not os.path.isfile(f): return self.err(404, "no map " + name)
+        bin_ = os.path.join(d, "deleted")
+        os.makedirs(bin_, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        moved = []
+        for ext in (".qmap", ".mapedit.json"):
+            src = os.path.join(d, name + ext)
+            if os.path.isfile(src):
+                dst = os.path.join(bin_, "%s-%s%s" % (name, stamp, ext))
+                os.replace(src, dst); moved.append(dst)
+        self.send(200, {"ok": True, "moved": moved})
+
+    def rename(self, data):
+        st = self.server.st
+        try: req = json.loads(data or b"{}")
+        except ValueError: return self.err(400, "bad JSON")
+        a, b = str(req.get("from", "")), str(req.get("to", ""))
+        if not valid_name(a) or not valid_name(b): return self.err(400, "a map name is 1-40 letters, digits, - and _")
+        if os.path.isfile(os.path.join(defaults_dir(), b + ".qmap")): return self.err(409, b + " is a default map's name")
+        d = st.user_maps()
+        if not os.path.isfile(os.path.join(d, a + ".qmap")): return self.err(404, "no map " + a)
+        if a != b and os.path.exists(os.path.join(d, b + ".qmap")): return self.err(409, b + " exists in your maps")
+        for ext in (".qmap", ".mapedit.json"):
+            if os.path.isfile(os.path.join(d, a + ext)): os.replace(os.path.join(d, a + ext), os.path.join(d, b + ext))
+        with prov_lock:
+            p = read_provenance()
+            if "maps/%s.qmap" % a in p["items"]:
+                p["items"]["maps/%s.qmap" % b] = p["items"].pop("maps/%s.qmap" % a)
+                write_atomic(PROVENANCE, (json.dumps(p, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+        self.send(200, {"ok": True, "name": b})
+
     def api_post(self, p, data):
         st = self.server.st
+        if p == "rename": return self.rename(data)
         m = re.match(r"^tool/([a-z]+)$", p)
         if m:
             cmd = m.group(1)
