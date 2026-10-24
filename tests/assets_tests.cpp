@@ -13,6 +13,8 @@
 #include <vector>
 #include "../src/client/audio.h"
 #include "../src/client/fontatlas.h"
+#include "../src/client/font_ui.h"
+#include "../src/client/textfit.h"
 #include "../src/client/gltf.h"
 #include "../src/client/models.h"
 #include "../src/client/overrides.h"
@@ -830,6 +832,89 @@ static void testVoiceSteal() {
     a.stop();
 }
 
+// Every UI font fits its line by itself (textfit.h): each built-in's ink, with the outline, stays inside the line box
+// once its fit scale is applied (Rubik, which defines the box, at 1); and a long label in a narrow box is fitted by
+// tracking first (no two letters' ink touching, at most 15% tighter), then size, then "..." (Rubik and a pixel font).
+static void testTextFit() {
+    printf("text fitting: every built-in font inside the line box; tracking, then size, then \"...\"\n");
+    const FontAtlasLayout L = {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread, kUiCapHeight};
+    TextMetrics rubik;
+    rubik.adv = kUiAdv; rubik.kern = kUiKern;
+    measureInk(kUiAtlas, L, rubik.ink);
+    const LineBox box = lineBoxOf(rubik.ink);
+    LineFit lf = lineFit(rubik.ink, box);
+    rubik.fitScale = lf.scale; rubik.fitShift = lf.shift;
+    printf("  line box %.2f..%.2f units (8-unit line; Rubik's ink + its outline); Rubik fit %.3f\n", box.top, box.bottom, rubik.fitScale);
+    ACHECK(lf.scale == 1.0f && lf.shift == 0.0f && box.top <= 0 && box.bottom >= 8);
+    ACHECK(!rubik.ink['H' - 32].empty() && rubik.ink[0].empty());
+    ACHECK(std::fabs(rubik.ink['H' - 32].y0 - 0.75f) < 0.2f && std::fabs(rubik.ink['H' - 32].y1 - 6.0f) < 0.2f);   // (caps 0.75..6.0 units)
+    auto inside = [&](const TextMetrics& m, const char* name) {
+        float top = 1e9f, bottom = -1e9f;
+        for (int g = 0; g < 95; g++)
+            if (!m.ink[g].empty()) { top = std::min(top, fittedY(m.ink[g].y0, {m.fitScale, m.fitShift})); bottom = std::max(bottom, fittedY(m.ink[g].y1, {m.fitScale, m.fitShift})); }
+        bool ok = top - kLineOutline >= box.top - 0.01f && bottom + kLineOutline <= box.bottom + 0.01f && m.fitScale >= 0.8f;
+        printf("  %-18s ink %.2f..%.2f, fit scale %.3f, shift %+.2f%s\n", name, top, bottom, m.fitScale, m.fitShift, ok ? "" : "  OUTSIDE THE LINE BOX");
+        ACHECK(ok);
+    };
+    inside(rubik, "rubik");
+    std::vector<std::unique_ptr<FontAtlas>> keep;   // (the metrics point at their advances)
+    TextMetrics pixel;
+    std::string err;
+    for (const uifonts::Entry& e : uifonts::scan()) {
+        if (e.user || e.id == "rubik" || !uifonts::isBuiltin(e.id)) continue;
+        std::unique_ptr<FontAtlas> fa;
+        if (!uifonts::load(e.id, L, fa, &err) || !fa) { ACHECK(false); continue; }
+        TextMetrics m;
+        m.adv = fa->adv; m.kern = fa->kern;
+        m.minScale = fa->minScale > 0 ? fa->minScale : 1.3f;
+        measureInk(fa->tex.data(), L, m.ink);
+        LineFit f = lineFit(m.ink, box);
+        m.fitScale = f.scale; m.fitShift = f.shift;
+        inside(m, e.id.c_str());
+        if (e.id == "classic") pixel = m;
+        keep.push_back(std::move(fa));
+    }
+    ACHECK(pixel.adv != nullptr);   // (QUARK CLASSIC is built in)
+    // fitting a long label into narrower and narrower boxes
+    const std::string label = "OTHER PLAYERS' TRACERS / BEAMS: ON";
+    auto fits = [&](const TextMetrics& m, const char* name) {
+        const float ts = 2, w0 = textUnits(m, label, 0, ts * m.fitScale) * ts * m.fitScale;
+        // just too wide: closed up at the same size; no two letters' fills closer than an outline, no pair over 15%
+        TextFit f = fitText(m, label, ts, w0 * 0.97f);
+        const float sk = f.scale * m.fitScale, o = outlineUnits(sk);
+        float worst = 1e9f, most = 0;
+        for (size_t i = 1; i < label.size(); i++) {
+            int a = textGlyph(label[i - 1]), b = textGlyph(label[i]);
+            float c = m.closeUp(a, b, f.level, o);
+            most = std::max(most, c / m.adv[a]);
+            if (!m.ink[a].empty() && !m.ink[b].empty()) {
+                float before = m.advance(a, b) + m.ink[b].x0 - m.ink[a].x1;
+                worst = std::min(worst, before - c - std::min(before, o));   // (a pair already closer than an outline isn't closed up)
+            }
+        }
+        printf("  %s: 97%% wide: scale %.2f, closed up to %.3f units (at most %.0f%% of a letter), fills >= an outline apart: %s\n",
+               name, f.scale, f.level, most * 100, worst >= -1e-3f ? "yes" : "NO");
+        ACHECK(f.keep < 0 && f.scale == ts && f.level > 0 && worst >= -1e-3f && most <= kMaxTighten + 1e-4f);
+        ACHECK(textUnits(m, label, f.level, sk) * f.scale * m.fitScale <= w0 * 0.97f + 0.01f);
+        // too wide for that: smaller, closed up all that size allows
+        f = fitText(m, label, ts, w0 * 0.75f);
+        printf("  %s: 75%% wide: scale %.2f, closed up to %.3f\n", name, f.scale, f.level);
+        ACHECK(f.keep < 0 && f.scale < ts && f.scale >= m.minScale);
+        ACHECK(textUnits(m, label, f.level, f.scale * m.fitScale) * f.scale * m.fitScale <= w0 * 0.75f + 0.01f);
+        ACHECK(std::fabs(f.level - maxLevel(m, label, f.scale * m.fitScale)) < 1e-4f);
+        // far too wide even at the smallest size: cut short with "..."
+        f = fitText(m, label, ts, w0 * 0.2f);
+        printf("  %s: 20%% wide: scale %.2f, %d characters + \"...\"\n", name, f.scale, f.keep);
+        ACHECK(f.keep >= 0 && f.keep < (int)label.size() && f.scale == m.minScale);
+        ACHECK(textUnits(m, label.substr(0, f.keep) + "...", 0, f.scale * m.fitScale) * f.scale * m.fitScale <= w0 * 0.2f + 0.01f);
+        // it fits already: as it is
+        f = fitText(m, label, ts, w0 + 1);
+        ACHECK(f.keep < 0 && f.scale == ts && f.level == 0);
+    };
+    fits(rubik, "rubik");
+    fits(pixel, "classic");
+}
+
 int assetTests() {
     g_afail = 0;
     testModelExport();
@@ -838,6 +923,7 @@ int assetTests() {
     testDecoders();
     testFontAtlas();
     testUiFonts();
+    testTextFit();
     testHitTiers();
     testVoiceSteal();
     testOverrides();

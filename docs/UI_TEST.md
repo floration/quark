@@ -64,7 +64,8 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    it must show its default (`Ui::slider`'s last argument), read back the same way, and not start typing.
 4. **Esc from every screen** must go back to a screen on the way to it.
 5. **Layout**, at 1280x720 while exploring, then every screen again at 1920x1080 and 1024x768 (4:3): no widget off
-   screen, no two widgets overlapping, no label clipped (`Ui::fit` shrinking a label is fine; cutting it off isn't).
+   screen, no two widgets overlapping, no label clipped (`Ui::fit` closing a label's letters up or shrinking it is
+   fine; cutting it off with "..." isn't).
 6. **The coverage gate**: the test fails if a widget has no expectation (`UiExp::NONE`), fails its check, or was seen
    but never tested. Every failure, untested widget, layout and Esc problem is listed in the summary and the report.
 
@@ -122,6 +123,12 @@ if (ui_.button(x, y, w, h, "KEEP AS NEW MAP", UiExp::state("usermaps"))) ...    
 if (ui_.button(x, y, w, h, "LOCATOR", UiExp::nav("ingame/pause/locator"))) ...                    // a new page
 ```
 
+- A **label** (a header, hint, caption or description) gets the width it may take: `Ui::label(..., maxW)` /
+  `Ui::hint(..., maxW)` / `labelCentered`, or a box for a whole column (`Ui::box(x0, x1)`; `Ui::panel` sets its own,
+  `Ui::begin` clears it). Then it fits itself in every font, like a widget's label: closed up (each pair only as far
+  as its ink allows), then smaller, and only then cut with "..." (src/client/textfit.h; the fit is cached, not worked
+  out every frame). Text drawn with `Renderer::text` directly doesn't: keep it to short fixed strings. So a new font
+  needs no UI checks of its own.
 - A **new screen or overlay** needs a name in `Game::uiScreenPath` (src/client/uitest.cpp), so NAV can point at it
   and Esc can be checked; its buttons then say where they lead.
 - A **new kind of effect** that none of the observables shows: add one to `Game::uiObserve` and use `UiExp::state`.

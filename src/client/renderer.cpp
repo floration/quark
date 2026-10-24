@@ -9,6 +9,7 @@
 #include "logo_data.h"
 #include "overrides.h"
 #include "fontatlas.h"
+#include "textfit.h"
 #include <memory>
 
 namespace {
@@ -20,6 +21,27 @@ inline int glyphIndex(char ch) { unsigned char uc = (unsigned char)ch; return (u
 const float* g_uiAdv = kUiAdv;
 const signed char* g_uiKern = kUiKern;
 std::unique_ptr<FontAtlas> g_uiFont;
+// ...and what's measured from it (textfit.h: every glyph's ink, the scale that keeps it in the line box), once per font
+const LineBox& defaultLineBox() {   // (Rubik's own ink defines the box)
+    static const LineBox box = [] {
+        static GlyphInk ink[95];
+        measureInk(kUiAtlas, {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, ink);
+        return lineBoxOf(ink);
+    }();
+    return box;
+}
+TextMetrics& uiMetrics() {
+    static TextMetrics m = [] {
+        TextMetrics t;
+        t.adv = kUiAdv; t.kern = kUiKern;
+        measureInk(kUiAtlas, {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, t.ink);
+        LineFit lf = lineFit(t.ink, defaultLineBox());
+        t.fitScale = lf.scale; t.fitShift = lf.shift;
+        t.minScale = Renderer::kMinTextScale;
+        return t;
+    }();
+    return m;
+}
 
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -1136,22 +1158,25 @@ void Renderer::logo(float cx, float y, float ts, const Color& tint) {
 
 static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
-void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
+void Renderer::text(float x, float y, float s, const std::string& str, const Color& c, float level) {
     if (s <= 0) return;
     if (s < minScale_) s = minScale_;
+    // a font whose ink would leave the line box is drawn k times smaller, moved by its fit shift (k = 1: most fonts)
+    const float k = uiMetrics().fitScale, sk = s * k;
     float cx = x, cy = uiRound(y);
-    float sc = clampf(s, 1.0f / 256, 255);
+    float sc = clampf(sk, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
-    const float pad = kUiPad * s, box = 8.0f * s;
+    const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
+    const TextMetrics& m = uiMetrics();
     const Rgba8 col = rgba8(c);
     int prev = -1;
     for (char ch : str) {
         int g = glyphIndex(ch);
-        if (prev >= 0) cx += glyphAdv(prev, g) * s;
+        if (prev >= 0) cx += (glyphAdv(prev, g) - m.closeUp(prev, g, level, o)) * sk;   // (closed up: Ui's fitting)
         prev = g;
         if (g == 0) continue;
         // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
-        float qx = uiRound(cx - kUiOrigin * s) - pad, qy = cy - pad;
+        float qx = uiRound(cx - kUiOrigin * sk) - pad, qy = top - pad;
         int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
         uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
     }
@@ -1164,30 +1189,30 @@ static constexpr float kMonoAdv = 5.3f;
 void Renderer::textMono(float x, float y, float s, const std::string& str, const Color& c) {
     if (s <= 0) return;
     if (s < minScale_) s = minScale_;
-    float sc = clampf(s, 1.0f / 256, 255);
+    const float k = uiMetrics().fitScale;   // (the line-box fit, as text())
+    float sc = clampf(s * k, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
-    const float pad = kUiPad * s, cy = uiRound(y);
+    const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
     const Rgba8 col = rgba8(c);
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         if (g == 0) continue;
-        float sx = s * std::min(1.0f, kMonoAdv / g_uiAdv[g]); // horizontal scale
+        float sx = s * k * std::min(1.0f, kMonoAdv / (g_uiAdv[g] * k)); // horizontal scale
         float cx = x + i * kMonoAdv * s + (kMonoAdv * s - g_uiAdv[g] * sx) * 0.5f;
         float qx = uiRound(cx - kUiOrigin * sx) - kUiPad * sx, qy = cy - pad;
         int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuad(ui_, qx, qy, qx + (8.0f + 2 * kUiPad) * sx, qy + 8.0f * s + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        uiQuad(ui_, qx, qy, qx + (8.0f + 2 * kUiPad) * sx, qy + 8.0f * s * k + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
     }
 }
 
 float Renderer::textWidthMono(const std::string& str, float scale) const { return str.size() * kMonoAdv * std::max(scale, minScale_); }
 
-float Renderer::textWidth(const std::string& str, float scale) const {
-    float w = 0;
-    int prev = -1;
-    for (char ch : str) { int g = glyphIndex(ch); if (prev >= 0) w += glyphAdv(prev, g); prev = g; }
-    if (prev >= 0) w += g_uiAdv[prev];
-    return w * std::max(scale, minScale_);
+float Renderer::textWidth(const std::string& str, float scale, float level) const {
+    const float sk = std::max(scale, minScale_) * uiMetrics().fitScale;
+    return textUnits(uiMetrics(), str, level, sk) * sk;
 }
+
+TextFit Renderer::fitText(const std::string& str, float scale, float maxW) const { return ::fitText(uiMetrics(), str, std::max(scale, minScale_), maxW); }
 
 std::string Renderer::textClip(const std::string& str, float scale, float maxW) const {
     if (textWidth(str, scale) <= maxW) return str;
@@ -1201,7 +1226,7 @@ size_t Renderer::textFit(const std::string& str, float scale, float maxW) const 
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         float nw = w + (prev >= 0 ? glyphAdv(prev, g) - g_uiAdv[prev] : 0) + g_uiAdv[g];
-        if (nw * std::max(scale, minScale_) > maxW) return i;
+        if (nw * std::max(scale, minScale_) * uiMetrics().fitScale > maxW) return i;
         w = nw; prev = g;
     }
     return str.size();
@@ -1216,6 +1241,14 @@ void Renderer::setUiFont(std::unique_ptr<FontAtlas> font) {
     g_uiAdv = g_uiFont ? g_uiFont->adv : kUiAdv;
     g_uiKern = g_uiFont ? g_uiFont->kern : kUiKern;
     minScale_ = g_uiFont && g_uiFont->minScale > 0 ? g_uiFont->minScale : kMinTextScale;
+    {   // its ink, and the scale that keeps it in the line box (once per pick)
+        TextMetrics& m = uiMetrics();
+        m.adv = g_uiAdv; m.kern = g_uiKern; m.minScale = minScale_;
+        measureInk(g_uiFont ? g_uiFont->tex.data() : kUiAtlas, {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, m.ink);
+        LineFit lf = lineFit(m.ink, defaultLineBox());
+        m.fitScale = lf.scale; m.fitShift = lf.shift;
+        fontGen_++;
+    }
     if (!fontTex_) return;   // (before init: init uploads it)
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);

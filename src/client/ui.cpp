@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include "ui.h"
 #include <cstdio>
+#include <cstring>
 #include "../common/net.h"
 
 void Ui::begin(Renderer* r, const UiInput& in, float scale) {
@@ -10,6 +11,7 @@ void Ui::begin(Renderer* r, const UiInput& in, float scale) {
     scale_ = scale;
     textScale_ = std::max(1.0f, std::round(2.0f * scale));
     sliderCounter_ = 0;
+    boxL_ = boxR_ = 0;
     where = scope = nullptr;
     muted = false;
     if (!in.down) activeSlider_ = -1;
@@ -35,50 +37,85 @@ bool Ui::hover(float x, float y, float w, float h) const {
 
 float Ui::hintScale() const { return std::max(r_->minTextScale(), textScale_ * 0.75f); }
 
-void Ui::hint(float x, float y, const std::string& t, const Color& c) { r_->text(x, y, hintScale(), t, c); }
+void Ui::hint(float x, float y, const std::string& t, const Color& c, float maxW) { drawFitted(x, y, t, c, hintScale(), maxW > 0 ? maxW : boxWidth(x)); }
 
 void Ui::panel(float x, float y, float w, float h, float alpha) {
     r_->rect(x, y, w, h, {0.05f, 0.06f, 0.08f, alpha});
     r_->rect(x, y, w, 2 * scale_, accent);
+    box(x, x + w);   // (labels after it fit inside it, until a narrower box is set)
 }
 
-void Ui::label(float x, float y, const std::string& t, const Color& c, float sizeMul) {
+// A label's text in at most maxW (0: as wide as it is): tighter, then smaller, then cut (fitted()), vertically centred
+// on where the full-size line would be.
+void Ui::drawFitted(float x, float y, const std::string& t, const Color& c, float ts, float maxW) {
+    if (maxW <= 0 || t.empty() || r_->textWidth(t, ts) <= maxW) { r_->text(x, y, ts, t, c); return; }
+    TextFit f = fitted(t, ts, maxW);
+    float dy = (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f;
+    if (f.keep >= 0) r_->text(x, y + dy, f.scale, t.substr(0, f.keep) + "...", c);
+    else r_->text(x, y + dy, f.scale, t, c, f.level);
+}
+
+void Ui::label(float x, float y, const std::string& t, const Color& c, float sizeMul, float maxW) {
     float ts = std::max(1.0f, std::round(textScale_ * sizeMul));
-    r_->text(x, y, ts, t, c);
+    drawFitted(x, y, t, c, ts, maxW > 0 ? maxW : boxWidth(x));
 }
 
 void Ui::labelFit(float x, float y, float maxW, std::string t, const Color& c) {
-    float ts = fit(t, maxW);
-    r_->text(x, y + (r_->textHeight(textScale_) - r_->textHeight(ts)) * 0.5f, ts, t, c);
+    float tk = 0, ts = fit(t, maxW, nullptr, &tk);
+    r_->text(x, y + (r_->textHeight(textScale_) - r_->textHeight(ts)) * 0.5f, ts, t, c, tk);
 }
 
-void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, float sizeMul) {
+void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, float sizeMul, float maxW) {
     float ts = std::max(1.0f, std::round(textScale_ * sizeMul));
-    r_->text(cx - r_->textWidth(t, ts) * 0.5f, y, ts, t, c);
+    if (maxW <= 0 && boxR_ > boxL_) maxW = 2 * std::max(0.0f, std::min(cx - boxL_, boxR_ - cx));   // (centred in its box)
+    float w = r_->textWidth(t, ts);
+    if (maxW <= 0 || t.empty() || w <= maxW) { r_->text(cx - w * 0.5f, y, ts, t, c); return; }
+    TextFit f = fitted(t, ts, maxW);
+    std::string shown = f.keep >= 0 ? t.substr(0, f.keep) + "..." : t;
+    float tk = f.keep >= 0 ? 0 : f.level;
+    r_->text(cx - r_->textWidth(shown, f.scale, tk) * 0.5f, y + (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f, f.scale, shown, c, tk);
 }
 
-// Text scale that fits maxW: the normal size, or shrunk only as much as needed. The renderer never draws below
-// Renderer::minTextScale() (the font's), so text that still doesn't fit at that size is clipped with "..." (t is replaced).
-float Ui::fit(std::string& t, float maxW, bool* clipped) const {
+// The fit of t at ts in maxW (Renderer::fitText: tighter letters, then smaller, then cut), from a small cache: a
+// label that doesn't fit is worked out once, not every frame (keyed by the text, the width, the size and the font).
+TextFit Ui::fitted(const std::string& t, float ts, float maxW) const {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+    for (unsigned char ch : t) mix(ch);
+    uint32_t wb, sb;
+    std::memcpy(&wb, &maxW, 4); std::memcpy(&sb, &ts, 4);
+    mix(wb); mix(sb); mix((uint64_t)(uint32_t)r_->fontGeneration());
+    h |= 1;   // (0: an empty slot)
+    FitEntry& e = fitCache_[h % kFitCache];
+    if (e.key != h) { e.key = h; e.fit = r_->fitText(t, ts, maxW); }
+    return e.fit;
+}
+
+// Text scale that fits maxW: the normal size, else tighter letters, else shrunk only as much as needed. The renderer
+// never draws below Renderer::minTextScale() (the font's), so text that still doesn't fit at that size is clipped with
+// "..." (t is replaced). track: how far to close its letters up when it's drawn (Renderer::text's level).
+float Ui::fit(std::string& t, float maxW, bool* clipped, float* track) const {
+    if (track) *track = 0;
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
-    float ts = std::max(r_->minTextScale(), maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
-    if (r_->textWidth(t, ts) > maxW + 0.01f) {   // (shrunk to exactly fit, rounding can come out a hair over: not cut)
-        t = r_->textClip(t, ts, maxW);
+    TextFit f = fitted(t, textScale_, maxW);
+    if (f.keep >= 0) {
+        t = t.substr(0, f.keep) + "...";
         if (clipped) *clipped = true;
-    }
-    return ts;
+    } else if (track) *track = f.level;
+    return f.scale;
 }
 
-// fit() for drawing: no copy of t (buf holds it only when it has to be clipped), and its width at the scale (ts, tw)
-// from the measuring fit() does anyway, so the caller doesn't measure it again. Returns the text to draw: t or buf.
-const std::string& Ui::fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tw, bool* clipped) const {
-    ts = textScale_;
+// fit() for drawing: no copy of t (buf holds it only when it has to be cut), with its scale, closing-up level and
+// width at them (from the fit cache), so the caller doesn't measure it again. Returns the text to draw: t or buf.
+const std::string& Ui::fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tk, float& tw, bool* clipped) const {
+    ts = textScale_; tk = 0;
     tw = t.empty() ? 0.0f : r_->textWidth(t, textScale_);
     if (t.empty() || tw <= maxW) return t;
-    ts = std::max(r_->minTextScale(), maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
-    tw = r_->textWidth(t, ts);
-    if (tw <= maxW + 0.01f) return t;   // (shrunk to exactly fit, rounding can come out a hair over: not cut)
-    buf = r_->textClip(t, ts, maxW);
+    const TextFit f = fitted(t, textScale_, maxW);
+    ts = f.scale;
+    if (f.keep < 0) { tk = f.level; tw = r_->textWidth(t, ts, tk); return t; }
+    buf.assign(t, 0, (size_t)f.keep);
+    buf += "...";
     if (clipped) *clipped = true;
     tw = r_->textWidth(buf, ts);
     return buf;
@@ -133,8 +170,8 @@ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool 
     if (sub) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     std::string shown = label;
     bool clipped = false;
-    float ts = fit(shown, w - 8 * scale_, &clipped);
-    r_->text(x + (w - r_->textWidth(shown, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1});
+    float tk = 0, ts = fit(shown, w - 8 * scale_, &clipped, &tk);
+    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, clipped);
     return hv && in_.pressed;
 }
@@ -147,9 +184,9 @@ bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
     std::string buf;
-    float ts, tw;
-    const std::string& shown = fitText(label, w - 8 * scale_, buf, ts, tw, clipped);
-    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc);
+    float ts, tk, tw;
+    const std::string& shown = fitText(label, w - 8 * scale_, buf, ts, tk, tw, clipped);
+    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc, tk);
     return hv && in_.pressed;
 }
 
@@ -207,9 +244,9 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
     const std::string& name = index >= 0 && index < (int)names.size() ? names[index] : kUnknown;
     bool clipped = false;
     std::string buf;
-    float ts, tw;
-    const std::string& t = fitText(name, w - 2 * bw - 8 * scale_, buf, ts, tw, &clipped);
-    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1});
+    float ts, tk, tw;
+    const std::string& t = fitText(name, w - 2 * bw - 8 * scale_, buf, ts, tk, tw, &clipped);
+    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1}, tk);
     if (reporting()) {
         UiWidget wd;
         wd.where = where; wd.scope = scope;
@@ -395,8 +432,8 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
     r_->rect(sx, sy, sw, sh, rgba(c));
     std::string shown = label;
     bool clipped = false;
-    float ts = fit(shown, sx - x - 16 * s, &clipped);
-    r_->text(x + 8 * s, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1});
+    float tk = 0, ts = fit(shown, sx - x - 16 * s, &clipped, &tk);
+    r_->text(x + 8 * s, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
     if (open) {
         popup_.seen = true;
         popup_.ax = x; popup_.ay = y; popup_.aw = w; popup_.ah = h;
@@ -489,8 +526,8 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, 
     if (hv || open) r_->rect(x, y + h - 2 * s, w, 2 * s, accent);
     std::string shown = label + ": " + (index >= 0 && index < n ? names[index] : "?") + (open ? "  ^" : "  V");
     bool clipped = false;
-    float ts = fit(shown, w - 8 * s, &clipped);
-    r_->text(x + (w - r_->textWidth(shown, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1});
+    float tk = 0, ts = fit(shown, w - 8 * s, &clipped, &tk);
+    r_->text(x + (w - r_->textWidth(shown, ts, tk)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, {1, 1, 1, 1}, tk);
     if (open) {
         popup_.seen = true;
         popup_.ax = x; popup_.ay = y; popup_.aw = w; popup_.ah = h;
@@ -529,8 +566,8 @@ void Ui::popups() {
             Color bg = i == popup_.index ? accent : hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f} : Color{0.14f, 0.16f, 0.2f, 0.9f};
             r_->rect(ex, ey, ew, rowH, bg);
             std::string t = popup_.names[i];
-            float ts = fit(t, ew - 8 * s);
-            r_->text(ex + (ew - r_->textWidth(t, ts)) * 0.5f, ey + (rowH - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1});
+            float tk = 0, ts = fit(t, ew - 8 * s, nullptr, &tk);
+            r_->text(ex + (ew - r_->textWidth(t, ts, tk)) * 0.5f, ey + (rowH - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1}, tk);
         }
     } else if (popup_.kind == POP_COLOR) {
         r_->rect(b[0], b[1], b[2], b[3], {0.05f, 0.06f, 0.08f, 0.98f});

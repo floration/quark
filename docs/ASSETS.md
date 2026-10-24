@@ -170,6 +170,18 @@ no decoding at startup.
 **default instance** (often Regular or Light; use a static Bold file for bold). Each is sized so its capitals match
 Rubik's. Names are shown upper case, `_` as spaces.
 
+**Every font fits by itself** (src/client/textfit.h; nothing to check per font): when a font is picked (never per
+frame) the game measures every glyph's ink from its atlas. (1) **Line height:** if any glyph's ink, with its outline
+(0.5 units: 1 px at the base text scale), reaches above or below the line box Rubik uses (the 8-unit line, or Rubik's
+own ink where that goes further), the whole font is drawn just enough smaller to fit, and moved only as far as that
+needs (keeping the middle of its capitals where Rubik's are when it can). Of the built-ins, Overwatch / Bebas Neue is
+drawn at 0.876 (its 1.2x size took its `|`, `,` and `;` below the box) and TF2 / Lilita One at 0.982; Work Sans and
+TF2 Secondary / Jost only move (0.05 and 0.13 units up); quark_tests checks every built-in stays in the box.
+(2) **Width:** a widget's label or a label in its box (`Ui::label` / `hint` with a width, or the current `Ui::box`)
+that's too wide is first closed up (each pair of letters only as far as its ink allows: the fills stay at least an
+outline apart, and no pair closer by more than 15% of a letter), then drawn smaller, and only cut with "..." if it
+still doesn't fit at the font's smallest size. Each fit is worked out once and cached (per text, width, size and font).
+
 **QUARK CLASSIC** is the original 5x7 pixel font (before 1.17: the `kFont` table of `git show 8678b00 --
 src/client/renderer.cpp`, now `CLASSIC` in tools/make_font_atlas.py), with its original metrics: 1 unit a pixel, 6
 units a glyph, drawn from the line top, lower case drawn as upper case. Its distance field uses the max norm, so

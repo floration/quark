@@ -3859,14 +3859,15 @@ struct SetFlow {
     float top() const { return L.Y(y); }
     float w(float dw = kColW) const { return L.L(dw); }
     float h() const { return L.L(kRowH); }
-    void header(const std::string& t) { ui.label(x(), top(), t, ui.accent); y += 24; }
+    // (its text fits the column: Ui's label fitting, so every font fits by itself)
+    void header(const std::string& t) { ui.label(x(), top(), t, ui.accent, 1.0f, w()); y += 24; }
     void section(const std::string& t) { y += 12; header(t); }
-    void label(const std::string& t) { ui.label(x(), top(), t, kLabelC); y += 20; }
+    void label(const std::string& t) { ui.label(x(), top(), t, kLabelC, 1.0f, w()); y += 20; }
     void next() { y += kRowH + 8; }
     // hint lines under the row just placed (right after next())
     void hint(const std::string& a, const std::string& b = std::string()) {
-        ui.hint(x(), L.Y(y - 4), a, kHintC);
-        if (!b.empty()) { ui.hint(x(), L.Y(y + 10), b, kHintC); y += 14; }
+        ui.hint(x(), L.Y(y - 4), a, kHintC, w());
+        if (!b.empty()) { ui.hint(x(), L.Y(y + 10), b, kHintC, w()); y += 14; }
         y += 16;
     }
 };
@@ -3984,7 +3985,7 @@ void Game::drawPlayerSettings(const SetLayout& L) {
     if (cfg_.discordName.empty()) f.label("DISCORD CODE");
     else {
         const float ts = ui_.textScale();
-        ui_.label(f.x(), f.top(), "DISCORD: " + r_.textClip(upper(cfg_.discordName), ts, w - r_.textWidth("DISCORD:  (PUBLIC)", ts)) + " (PUBLIC)", kLabelC);
+        ui_.label(f.x(), f.top(), "DISCORD: " + r_.textClip(upper(cfg_.discordName), ts, w - r_.textWidth("DISCORD:  (PUBLIC)", ts)) + " (PUBLIC)", kLabelC, 1.0f, w);
         f.y += 20;
     }
     ui_.textField(43, f.x(), f.top(), w, h, discordCode_, 8, UiExp::local().withId("DISCORD CODE"));
@@ -4257,7 +4258,7 @@ void Game::drawControls(const SetLayout& L) {
     if (ui_.tab(L.X(268), L.Y(90), L.L(368), h, "GENERAL + INTERFACE KEYS", controlsSub_ == 0, UiExp::nav("~settings/controls"), true)) { controlsSub_ = 0; captureAction_ = -1; }
     if (ui_.tab(L.X(644), L.Y(90), L.L(368), h, "MOVE + WEAPON KEYS", controlsSub_ == 1, UiExp::nav("~settings/controls/movement"), true)) { controlsSub_ = 1; captureAction_ = -1; }
     ui_.hint(L.X(268), L.Y(126), captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, DEL CLEARS"
-                                                     : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kHintC);
+                                                     : "CLICK A SLOT TO REBIND IT - RIGHT-CLICK OR DEL UNBINDS", kHintC, L.L(744));
     // key rows: a header with KEY 1 / KEY 2 over the slots, then a row an action (label, two 108 px slots)
     static std::string idText[A_COUNT][2];   // the UI test's ids: "<ACTION> KEY 1", "<ACTION> KEY 2"
     static const char* ids[A_COUNT][2];
@@ -4265,7 +4266,7 @@ void Game::drawControls(const SetLayout& L) {
         for (int a = 0; a < A_COUNT; a++)
             for (int k = 0; k < 2; k++) { idText[a][k] = std::string(actionName(a)) + (k ? " KEY 2" : " KEY 1"); ids[a][k] = idText[a][k].c_str(); }
     auto keyRows = [&](float col, float y, const char* header, std::initializer_list<int> actions) -> float {
-        ui_.label(L.X(col), L.Y(y), header, ui_.accent);
+        ui_.label(L.X(col), L.Y(y), header, ui_.accent, 1.0f, L.L(128));
         const float hs = ui_.hintScale();
         for (int k = 0; k < 2; k++) {
             const char* cap = k ? "KEY 2" : "KEY 1";
@@ -4348,7 +4349,7 @@ void Game::drawControls(const SetLayout& L) {
         if (ui_.button(f.x() + 2 * (tw + tg), f.top(), tw, h, "FOLDER", UiExp::url())) openUrl(profileDir("controls"));
         f.next();
         f.hint("CONTROL SCRIPTS ARE OFF IN RANKED");
-        if (time_ < widgetMsgUntil_) ui_.hint(f.x(), f.top(), r_.textClip(widgetMsg_, ui_.hintScale(), w), ui_.accent);
+        if (time_ < widgetMsgUntil_) ui_.hint(f.x(), f.top(), widgetMsg_, ui_.accent, w);
     }
     static const Binds defaults = [] { Binds b; b.setDefaults(); return b; }();
     bool isDefault = std::memcmp(defaults.code, cfg_.binds.code, sizeof defaults.code) == 0;
@@ -4364,7 +4365,7 @@ void Game::drawImportDialog(const SetLayout& L) {
     const float ph = 88 + 40.0f * n, py = 360 - ph * 0.5f;   // (centred on the shell)
     const float bw = L.L(kColW), bh = L.L(kRowH), bx = L.X(460);
     ui_.panel(L.X(444), L.Y(py), L.L(392), L.L(ph), 1.0f);
-    ui_.label(bx, L.Y(py + 16), files.empty() ? "NO FILES IN CONTROLS/ - USE FOLDER" : "PICK A FILE TO IMPORT", kWhite);
+    ui_.label(bx, L.Y(py + 16), files.empty() ? "NO FILES IN CONTROLS/ - USE FOLDER" : "PICK A FILE TO IMPORT", kWhite, 1.0f, bw);
     float y = py + 40;
     for (int i = 0; i < n; i++, y += 40)
         if (ui_.button(bx, L.Y(y), bw, bh, upper(files[i]), UiExp::state("ctlimport").withId("FILE"))) {
@@ -4509,7 +4510,7 @@ void Game::drawFontSettings(const SetLayout& L) {
             else notify("FONT " + upper(name) + ": " + upper(err), 5);   // (nothing changes)
             return;   // (fontList_ stays; the next frame draws in the new font)
         }
-        if (!e.hint.empty()) ui_.hint(L.X(kColR), f.top() + (h - r_.textHeight(hs)) * 0.5f, r_.textClip(e.hint, hs, w), kHintC);
+        if (!e.hint.empty()) ui_.hint(L.X(kColR), f.top() + (h - r_.textHeight(hs)) * 0.5f, e.hint, kHintC, w);
         f.next();
     }
     if (n > rows) f.hint(std::to_string(fontScroll_ + 1) + "-" + std::to_string(fontScroll_ + rows) + " OF " + std::to_string(n) + " - WHEEL TO SCROLL");

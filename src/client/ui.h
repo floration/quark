@@ -89,12 +89,19 @@ public:
     void caret(float x, float y, float ts = 0); // blinking text caret after x (text top y), at text scale ts (0: the UI's)
 
     void panel(float x, float y, float w, float h, float alpha = 0.75f);
-    void label(float x, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
+    // Text that fits by itself, in every font: every label is fitted to a width - maxW, or else the current box
+    // (box(): a settings column, a panel; Ui::panel sets its own, begin() clears it) - first with tighter letter
+    // spacing (never letting letters touch), then smaller, and only then cut with "..." (textfit.h). Without either it
+    // is drawn as it is. Widgets fit their own labels the same way.
+    void label(float x, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f, float maxW = 0);
     // A hint under a control: 0.75 of the UI's text scale, not rounded (1.5 at 720p; label() rounds its size)
-    void hint(float x, float y, const std::string& t, const Color& c = {0.7f, 0.72f, 0.75f, 1});
+    void hint(float x, float y, const std::string& t, const Color& c = {0.7f, 0.72f, 0.75f, 1}, float maxW = 0);
     float hintScale() const;
     void labelFit(float x, float y, float maxW, std::string t, const Color& c = {1, 1, 1, 1}); // shrunk / clipped to maxW
-    void labelCentered(float cx, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
+    void labelCentered(float cx, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f, float maxW = 0);
+    // the box labels fit into (x from x0 to x1; a centred one: centred in it); noBox(): none
+    void box(float x0, float x1) { boxL_ = x0; boxR_ = x1; }
+    void noBox() { boxL_ = boxR_ = 0; }
     bool button(float x, float y, float w, float h, const std::string& label, const UiExp& e, bool enabled = true);
     // a tab of a tab row: the current one filled (a page tab in accent * 0.6, a sub-page tab in accent * 0.35 with an
     // accent line under it), the others drawn as buttons; any of them can be clicked (reported as a button)
@@ -184,8 +191,16 @@ private:
     bool blocked_ = false, unblock_ = false;   // a popup is open: other widgets take no input (its own do)
     std::string hexText_;
     static constexpr int kPickerFocus = 200000;
-    float fit(std::string& t, float maxW, bool* clipped = nullptr) const;   // scale for t to fit maxW; clips t if it can't
-    const std::string& fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tw, bool* clipped) const;   // (no copy; ts, width)
+    float fit(std::string& t, float maxW, bool* clipped = nullptr, float* track = nullptr) const;   // scale (and tracking) for t to fit maxW; clips t if it can't
+    // fit() for drawing: no copy of t (buf holds it only when it's cut), its scale, closing-up level and width
+    const std::string& fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tk, float& tw, bool* clipped) const;
+    TextFit fitted(const std::string& t, float ts, float maxW) const;
+    void drawFitted(float x, float y, const std::string& t, const Color& c, float ts, float maxW);
+    float boxWidth(float x) const { return boxR_ > boxL_ ? std::max(1.0f, boxR_ - x) : 0; }
+    float boxL_ = 0, boxR_ = 0;
+    struct FitEntry { uint64_t key = 0; TextFit fit; };
+    static constexpr int kFitCache = 256;
+    mutable FitEntry fitCache_[kFitCache];
     bool buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped);
     void report(UiWidget::Kind k, float x, float y, float w, float h, const std::string& label, const std::string& value,
                 const UiExp& e, bool enabled, bool clipped);
