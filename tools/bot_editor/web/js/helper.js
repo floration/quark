@@ -134,13 +134,23 @@ export function buildRequest(scenario, map, brains) {
 }
 
 // ---------------------------------------------------------------- the real helper (through serve.py)
+// Runs still going when the page goes away (reload, tab closed) are stopped at once; serve.py also stops a run whose
+// event stream has been gone a few seconds, for a page that couldn't say so.
+const LIVE_RUNS = new Set();
+addEventListener("pagehide", () => {
+    for (const r of LIVE_RUNS) if (r.id) fetch(`/api/run/${r.id}/stop`, { method: "POST", keepalive: true, headers: { "X-Quark-Editor": "1" } }).catch(() => {});
+});
 class RealRun {
     // cmd: "sim" (live, with brains and overrides), "simbatch" (raw lines: see runBatch) or "bots" (an older helper)
     constructor(req, handlers, cmd = "sim") {
-        this.h = handlers; this.count = 0; this.closed = false; this.id = null; this.cmd = cmd; this.queue = [];
+        this.h = handlers; this.count = 0; this.closed = false; this.id = null; this.cmd = cmd; this.queue = []; this.stopAsked = false;
         const request = cmd === "bots" ? toHelperRequest(req) : cmd === "sim" ? toSimRequest(req) : req;
-        api.post("/api/run", { args: [cmd, "--stream"], request }).then((r) => { this.id = r.id; this._open(); for (const l of this.queue.splice(0)) this.control(l); })
-            .catch((e) => handlers.onError && handlers.onError(e));
+        LIVE_RUNS.add(this);
+        api.post("/api/run", { args: [cmd, "--stream"], request }).then((r) => {
+            this.id = r.id;
+            if (this.stopAsked) { this.stop(); return; }   // (stopped before the server answered: "Back to editing", Run again)
+            this._open(); for (const l of this.queue.splice(0)) this.control(l);
+        }).catch((e) => { LIVE_RUNS.delete(this); handlers.onError && handlers.onError(e); });
     }
     _open() {
         const es = new EventSource(`/api/run/${this.id}/events?from=${this.count}`);
@@ -155,7 +165,7 @@ class RealRun {
                 if (n) this.h.onLine(n);
             }
         };
-        es.addEventListener("exit", (ev) => { this.closed = true; es.close(); this.h.onExit && this.h.onExit(JSON.parse(ev.data)); });
+        es.addEventListener("exit", (ev) => { this.closed = true; LIVE_RUNS.delete(this); es.close(); this.h.onExit && this.h.onExit(JSON.parse(ev.data)); });
         es.onerror = () => { es.close(); if (!this.closed) setTimeout(() => !this.closed && this._open(), 500); };
     }
     control(line) {
@@ -168,7 +178,12 @@ class RealRun {
         if (line === "speed max") line = "speed 0";
         return send(line);
     }
-    stop() { if (this.id) api.post(`/api/run/${this.id}/stop`, {}); }
+    stop() {
+        this.stopAsked = true;
+        if (!this.id) return;
+        if (!this.es) { this.closed = true; LIVE_RUNS.delete(this); }   // (never watched: no exit line will come)
+        api.post(`/api/run/${this.id}/stop`, {}).catch(() => {});
+    }
 }
 
 // ---------------------------------------------------------------- the mock (same lines, in the page)
