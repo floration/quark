@@ -8062,7 +8062,7 @@ int main(int argc, char** argv) {
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testClockWrap(TP(28804)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         // (the client's weapon prediction over a 40 ms network: in the rules group it missed its 0.8 s window in about 1
         //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
-        {"weaponpredict", [] { testGameRules("weaponpredict"); }},
+        {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
     };
     // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
     // group in this process
@@ -8106,6 +8106,12 @@ int main(int argc, char** argv) {
                 fflush(stdout);
                 pid_t pid = fork();
                 if (pid == 0) {   // the child: one test group, its output to a file
+                    // Groups that only compute (no real-time play: lockstep, map reach and walk checks, bots on the
+                    // manual clock) run at a lower priority, so the real-time groups beside them get the cores when they
+                    // ask: with them at equal priority the CPU-bound ~6 cores' worth starved real-time checks (the laser's
+                    // damage in 0.5 s, payload's start) in 2 of 3 full runs. Their own results don't depend on timing.
+                    static const char* const cpuOnly[] = {"modelockstep", "modelockstep2", "mapbounds", "mapbounds2", "maps", "brains", "modelogic"};
+                    for (const char* n : cpuOnly) if (std::strcmp(n, list[i].name) == 0 && nice(10) == -1) {}
                     if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
                     dup2(fileno(stdout), 2);
                     setvbuf(stdout, nullptr, _IOLBF, 0);
