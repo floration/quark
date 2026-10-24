@@ -525,7 +525,7 @@ bool Game::isDown(int action) const {
     if (testHeld_ >> action & 1) return true;   // (the UI test holding e.g. the scoreboard key; 0 in play)
     for (int k = 0; k < 2; k++) {
         int c = binds().code[action][k];
-        if (c >= kMouseCode && c < kMouseCode + 16) { if (glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
+        if (c >= kMouseCode && c < kMouseCode + 16) { if (!(swallowedBtn_ >> (c - kMouseCode) & 1) && glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
         else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
         else if ((c == kWheelUp || c == kWheelDown) && timeNow() < wheelHeldUntil_[c - kWheelUp]) return true;
     }
@@ -734,7 +734,15 @@ void Game::onKey(int key, int action, int mods) {
     }
 }
 
+void Game::onFocus(bool focused) { if (focused) focusGained_ = true; else swallowedBtn_ = 0; }   // (let go while away: no release comes)
+
 void Game::onMouseButton(int button, int action) {
+    // The click that brings the game back from another window (alt-tab, then a click on it) fired the weapon: a
+    // press in the same event poll as the focus coming back is the window's, and its button isn't down until let go.
+    if (button >= 0 && button < 16) {
+        if (action == GLFW_RELEASE && (swallowedBtn_ >> button & 1)) { swallowedBtn_ &= (uint16_t)~(1u << button); return; }
+        if (action == GLFW_PRESS && focusGained_ && screen_ == Screen::InGame && !paused_ && !chatting_) { swallowedBtn_ |= (uint16_t)(1u << button); return; }
+    }
     markInput();
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
@@ -1247,6 +1255,7 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
 // main loop
 
 void Game::frame(double dt) {
+    focusGained_ = false;   // (the event poll that saw the focus come back is over)
     QZONE("Game::frame");
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;

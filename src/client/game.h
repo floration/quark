@@ -90,6 +90,7 @@ public:
     void onChar(unsigned cp);
     void onKey(int key, int action, int mods);
     void onMouseButton(int button, int action);
+    void onFocus(bool focused);   // (the click that brings the window back is the window's, not a shot)
     void onCursor(double x, double y);
     void onResize(int w, int h);
     void onScroll(double dy);
@@ -470,6 +471,8 @@ private:
     bool rasterBlank(double* at, double* refresh);   // the next vertical blank on the game's monitor (Windows)
     bool ultraPaced() const { return cfg_.lowLatency == 2 || cfg_.presentMode == 3; }   // (fences, learnt CPU / GPU times)
     bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)
+    bool focusGained_ = false;         // (focus came back in this event poll: its mouse presses are swallowed)
+    uint16_t swallowedBtn_ = 0;        // (mouse buttons pressed by that click: up to their release, not down)
     bool mouseFocused_ = false;        // (the window had the focus at the frame's first read: the late reads use it)
     uint8_t barRay_[kMaxPlayers] = {};   // (health bars: the sight ray that last found a player hidden, tried first)
     double mouseHeldAt_ = 0;
