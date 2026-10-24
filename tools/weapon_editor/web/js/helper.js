@@ -36,7 +36,7 @@ async function call(cmd, request, timeout = 60) {
 export async function createHelper(config) {
     const H = {
         kind: "mock", wpn: false, sim: false, catalogSource: BUILTIN_SOURCE, why: "",
-        label: "MOCK", rawCatalog: null,
+        label: "MOCK", rawCatalog: null, mockWanted: wantMock(),
     };
     const hasTool = !!(config && config.maptool) && !wantMock();
     if (hasTool) {

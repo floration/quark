@@ -1,18 +1,21 @@
 // Fights tab: bot vs bot on any map with the weapon set applied: watch one live (the bot editor's live view and
-// recording) or run a batch, standard vs edited side by side (win rates, per weapon kills / damage / accuracy /
-// time to kill). Runs through quark_maptool sim / simbatch with the set's text (`weapons`), the pool
+// recording) or run a batch, standard vs edited side by side (match results, per weapon kills / deaths / fights won /
+// damage / accuracy / time to kill / DPS) in any mode the game has. Runs through quark_maptool sim / simbatch with the set's text (`weapons`), the pool
 // (`weaponsAllowed`) and an optional custom mode (`qmode`); no mock: without the helper the tab says what it needs.
 
 import { api } from "./api.js";
 import { MapView } from "./mapview.js";
 import { Map3D } from "./map3d.js";
-import { parseQmap } from "./qmap.js";
+import { parseQmap, mapSupports } from "./qmap.js";
 import { Recording, LiveView } from "./live.js";
 import { RealRun, runBatch, toFightRequest } from "./fight.js";
 import { WEAPONS } from "./catalog.js";
 import { $, esc, fmtNum, diffSpan } from "./util.js";
 
-const MODES = [["ffa", "free for all"], ["vs", "team vs"], ["duel", "duel (1v1 rounds)"], ["1v1", "1v1"]];
+// every mode bots play (race has no fights); a map built for another mode may not work in it: the bar says so
+const MODES = [["ffa", "free for all"], ["vs", "team vs"], ["duel", "duel (1v1 rounds)"], ["1v1", "1v1"], ["tourney", "tourney"], ["koth", "king of the hill"],
+    ["bomb", "bomb"], ["payload", "payload"], ["npayload", "payload (both ways)"], ["points", "points"], ["tag", "tag"], ["hide", "hide and seek"]];
+const TEAM_MODES = new Set(["vs", "koth", "bomb", "payload", "npayload", "points"]);
 const SKILLS = ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"];
 
 export class FightsView {
@@ -30,6 +33,12 @@ export class FightsView {
         $("fSpeed").onchange = () => { if (this.run) this.run.control("speed " + $("fSpeed").value); };
         $("fTime").oninput = () => { if (!this.live.rec) return; this.live.follow = +$("fTime").value >= +$("fTime").max - 5; this.live.t = +$("fTime").value / 1000; this.mv.invalidate(); };
         setInterval(() => this._tick(), 200);
+        // a reload or a closed tab must not leave quark_maptool playing on (a live sim runs up to its seconds, a batch
+        // every match): stop both as the page goes (keepalive: the request outlives the page)
+        window.addEventListener("pagehide", () => {
+            for (const r of [this.run, runBatch.current]) if (r && r.id && !r.closed)
+                fetch(`/api/run/${r.id}/stop`, { method: "POST", headers: { "X-Quark-Editor": "1" }, keepalive: true }).catch(() => {});
+        });
     }
     _save() { this.app.ui.fights = { ...this.opts }; this.app.saveUi(); }
     refresh() { this._banner(); this._side(); }
@@ -37,11 +46,14 @@ export class FightsView {
     get pool() { return this.opts.pool && this.opts.pool.length ? this.opts.pool : []; }
 
     _banner() {
-        const b = $("fightBanner"), H = this.app.helper;
+        const b = $("fightBanner"), H = this.app.helper, start = this.lastStart || this.helperStart;
         if (!H.sim) {
-            b.innerHTML = `<b>Fights need the helper.</b> quark_maptool with the bot editor's <code>sim</code> / <code>simbatch</code> runs the game's own bots; ${this.app.config.maptool ? "this quark_maptool has no sim (an older build): rebuild the game (cmake --build build) or update the Quark folder" : "no quark_maptool was found next to the editor (install the editor from the Quark Project app, or set \"maptool\" in weapon_editor.json)"}. The weapon set reaches the bots once sim takes the <code>weapons</code> key (the weapons helper).`;
+            const why = H.mockWanted ? "the page is in MOCK mode (<code>?mock</code> in the address): open it without <code>?mock</code> for fights"
+                : this.app.config.maptool ? "this quark_maptool has no sim (an older build): rebuild the game (cmake --build build) or update the Quark folder"
+                : "no quark_maptool was found next to the editor (install the editor from the Quark Project app, or set \"maptool\" in weapon_editor.json)";
+            b.innerHTML = `<b>Fights need the helper.</b> quark_maptool with the bot editor's <code>sim</code> / <code>simbatch</code> runs the game's own bots; ${why}.`;
             b.classList.add("on");
-        } else if (this.lastStart && this.lastStart.weaponSet === undefined) {
+        } else if (start && start.weaponSet === undefined) {
             b.innerHTML = `<b>This helper ignores the weapon set:</b> sim ran, but its start line has no <code>weaponSet</code>, so the bots fought with the standard weapons. The weapons helper (DESIGN.md section 4) adds it.`;
             b.classList.add("on");
         } else b.classList.remove("on");
@@ -49,7 +61,7 @@ export class FightsView {
     }
     _bar() {
         const o = this.opts, b = $("fightBar");
-        b.innerHTML = `<label class="small">map <select id="fMap">${this.maps.map((m) => `<option value="${esc(m.source + "/" + m.name)}">${esc(m.name)}${m.forMode ? " · " + esc(m.forMode) : ""}</option>`).join("") || '<option value="">(no maps: Generate them in the Quark folder)</option>'}</select></label>
+        b.innerHTML = `<label class="small">map <select id="fMap">${this.maps.map((m) => `<option value="${esc(m.source + "/" + m.name)}">${esc(m.name)}${m.for ? " · " + esc(m.for) : ""}</option>`).join("") || '<option value="">(no maps: Generate them in the Quark folder)</option>'}</select></label>
             <label class="small">mode <select id="fMode">${MODES.map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
             <label class="small">bots <input id="fBots" type="number" min="2" max="16" style="width:48px"></label>
             <label class="small">skill <select id="fSkill">${SKILLS.map((s) => `<option>${s}</option>`).join("")}</select></label>
@@ -59,14 +71,20 @@ export class FightsView {
             <label class="small">batch <input id="fMatches" type="number" min="2" max="500" style="width:56px"> matches</label>
             <button id="fBatch" title="the same matches with the comparison set and the edited one, as fast as the computer goes">Run batch: ${esc(this.app.cmpLabel)} vs edited</button>
             <button id="fStop" class="danger">Stop</button>
+            <span class="small warn" id="fFit"></span>
             <span class="grow"></span><button id="f2d">Top-down</button><button id="f3d">3D</button>`;
-        const bind = (id, k, num) => { const e = $(id); e.value = o[k]; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); }; };
+        const bind = (id, k, num) => { const e = $(id); e.value = o[k]; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); else if (k === "mode") this._fit(); }; };
         bind("fMap", "map"); bind("fMode", "mode"); bind("fBots", "bots", true); bind("fSkill", "skill"); bind("fSecs", "secs", true); bind("fMatches", "matches", true);
         const pool = $("fPool");
         for (const w of WEAPONS.filter((x) => x !== "syringe" && x !== "locator")) {
             const l = document.createElement("label");
             l.innerHTML = `<input type="checkbox" value="${w}" ${!o.pool.length || o.pool.includes(w) ? "checked" : ""}>${w}`;
-            l.querySelector("input").onchange = () => { o.pool = [...pool.querySelectorAll("input:checked")].map((x) => x.value); if (o.pool.length === pool.querySelectorAll("input").length) o.pool = []; this._save(); };
+            // (an empty pool is the request's "every weapon": the last box can't be unticked, so the boxes never lie)
+            l.querySelector("input").onchange = (ev) => {
+                const on = [...pool.querySelectorAll("input:checked")].map((x) => x.value);
+                if (!on.length) { ev.target.checked = true; this.app.toast("the bots need at least one weapon", 2500); return; }
+                o.pool = on.length === pool.querySelectorAll("input").length ? [] : on; this._save();
+            };
             pool.append(l);
         }
         $("fLive").onclick = () => this.watch();
@@ -82,18 +100,26 @@ export class FightsView {
     async _loadMap(v) {
         if (!v) return;
         const [src, ...rest] = v.split("/"); const name = rest.join("/");
-        if (!this.maps.some((m) => m.name === name)) { const m0 = this.maps.find((m) => m.forMode === "ffa") || this.maps[0]; if (!m0) return; return this._loadMap(m0.source + "/" + m0.name); }
+        if (!this.maps.some((m) => m.name === name)) { const m0 = this.maps.find((m) => m.for === "ffa") || this.maps[0]; if (!m0) return; return this._loadMap(m0.source + "/" + m0.name); }
         try {
             const text = await api.map(name, src);
             this.map = parseQmap(text, name); this.map.text = text; this.map.source = src;
             this.mv.setMap(this.map); this._fitted = this.mv.h > 50;
             if (this.m3.gl) this.m3.setMap(this.map);
             this.opts.map = src + "/" + name; const s = $("fMap"); if (s) s.value = this.opts.map;
+            this._fit();
         } catch (e) { this.app.toast("can't load " + name + ": " + e.message, 3500); }
+    }
+    // does the map have what the mode needs (spawns, a hill, sites...)? (qmap.js mapSupports, as the game's menus warn)
+    _fit() {
+        const e = $("fFit"); if (!e) return;
+        const ok = !this.map || mapSupports(this.map, this.opts.mode);
+        const info = this.maps.find((m) => this.map && m.name === this.map.name);
+        e.textContent = ok ? "" : `${this.map.name} isn't built for ${this.opts.mode}${info && info.for ? ` (it's a ${info.for} map)` : ""}: the match may not work`;
     }
     _request(text) {
         const o = this.opts, n = Math.max(2, Math.min(16, o.bots | 0));
-        const team = (i) => (o.mode === "ffa" ? "any" : i % 2 ? "b" : "a");
+        const team = (i) => (TEAM_MODES.has(o.mode) ? (i % 2 ? "b" : "a") : "any");
         return toFightRequest({ map: { name: this.map.name, source: this.map.source, text: this.map.text }, mode: o.mode, seed: 1, secs: o.secs, speed: $("fSpeed").value === "max" ? "max" : +$("fSpeed").value || 1,
             skill: o.skill, bots: Array.from({ length: n }, (_, i) => ({ name: "bot" + (i + 1), team: team(i), skill: o.skill })), weapons: text, weaponsAllowed: this.pool });
     }
@@ -114,11 +140,13 @@ export class FightsView {
         if (!this.app.helper.sim) return this._banner();
         if (!this.map) return;
         const n = Math.max(2, Math.min(500, this.opts.matches | 0));
-        this.batch = { running: true, std: null, ed: null, progress: 0, n };
+        this.batch = { running: true, std: null, ed: null, progress: 0, n, mode: this.opts.mode, map: this.map.name, cmpLabel: this.app.cmpLabel };
         this._side();
+        // (the start line goes to the banner's helper check only: the live view keeps the recording it shows)
+        const onLine = (base) => (o) => { if (o.type === "progress") { this.batch.progress = base + (o.done ?? 0) / n / 2; this._side(); } if (o.type === "start") { this.helperStart = o; this._banner(); } };
         try {
-            this.batch.std = await runBatch(this._request(this.app.cmp.text), n, (o) => { if (o.type === "progress") { this.batch.progress = (o.done ?? o.matches ?? 0) / n / 2; this._side(); } if (o.type === "start") { this.lastStart = o; this._banner(); } });
-            this.batch.ed = await runBatch(this._request(this.app.text), n, (o) => { if (o.type === "progress") { this.batch.progress = 0.5 + (o.done ?? o.matches ?? 0) / n / 2; this._side(); } });
+            this.batch.std = await runBatch(this._request(this.app.cmp.text), n, onLine(0));
+            this.batch.ed = await runBatch(this._request(this.app.text), n, onLine(0.5));
         } catch (e) { this.app.toast("batch: " + e.message, 5000); }
         this.batch.running = false;
         this._side();
@@ -142,11 +170,24 @@ export class FightsView {
         } else $("fightInfo").textContent = this.map ? this.map.name + " · wheel zooms · drag pans" : "";
         this._side();
     }
-    // per weapon numbers from a batch end line (the helper's `weapons` list; else from the bots' totals)
+    // per weapon numbers from a batch end line (SIM.md: weapons [{weapon, kills, deaths, damage, shots, hits, accuracy,
+    // ttk, dps, heldSeconds}], every bot and match together)
     _weaponRows(end) {
-        if (!end) return null;
-        if (Array.isArray(end.weapons)) return new Map(end.weapons.map((w) => [String(w.weapon).toLowerCase(), w]));
-        return null;
+        if (!end || !Array.isArray(end.weapons)) return null;
+        return new Map(end.weapons.map((w) => [String(w.weapon).toLowerCase(), w]));
+    }
+    // the matches' results: team modes {a, b, draws}, free for all the best bot's share; timeouts have no winner
+    _results(e) {
+        if (!e) return "–";
+        const n = e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : 0);
+        if (!n) return "no match finished";
+        const pct = (x) => Math.round(100 * x / n) + "%";
+        if (e.teamWins) return `A ${pct(e.teamWins.a || 0)} · B ${pct(e.teamWins.b || 0)}${e.teamWins.draws ? " · draw " + pct(e.teamWins.draws) : ""}`;
+        if (Array.isArray(e.bots) && e.bots.length) {   // (free for all: each bot's own wins, SIM.md's totals)
+            const best = e.bots.reduce((a, b) => ((b.wins || 0) > (a.wins || 0) ? b : a));
+            return `most wins: ${esc(best.name)} ${pct(best.wins || 0)}${e.draws ? " · draw " + pct(e.draws) : ""}`;
+        }
+        return "–";
     }
     _side() {
         const box = $("fightSide");
@@ -154,27 +195,39 @@ export class FightsView {
         let h = "";
         const B = this.batch;
         if (B) {
-            h += `<h3>Batch ${B.running ? `<span class="muted">running ${Math.round(B.progress * 100)}%</span>` : ""}</h3>`;
+            h += `<h3>Batch <span class="muted small">${esc(B.map)} · ${esc(B.mode)} · ${B.n} matches each</span> ${B.running ? `<span class="muted">running ${Math.round(B.progress * 100)}%</span>` : ""}</h3>`;
             const S = B.std, E = B.ed;
             if (S || E) {
-                h += `<table class="score"><tr><th></th><th>${esc(this.app.cmpLabel)}</th><th>edited</th></tr>`;
+                h += `<table class="score"><tr><th></th><th>${esc(B.cmpLabel)}</th><th>edited</th></tr>`;
                 const tot = (e, k) => (e && e.totals ? e.totals[k] : e && Array.isArray(e.bots) ? e.bots.reduce((a, b) => a + (b[k] || 0), 0) : null);
                 for (const [k, lab] of [["kills", "kills"], ["damage", "damage"], ["shots", "shots"], ["hits", "hits"]]) {
                     const a = tot(S, k), b = tot(E, k);
                     h += `<tr><td>${lab}</td><td>${a == null ? "–" : fmtNum(a)}</td><td>${b == null ? "–" : fmtNum(b)}${a != null && b != null ? diffSpan(b, a) : ""}</td></tr>`;
                 }
-                h += `<tr><td>matches</td><td>${S ? S.matches ?? B.n : "–"}</td><td>${E ? E.matches ?? B.n : "–"}</td></tr></table>`;
+                const played = (e) => (e ? `${e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : B.n)}${e.timeouts ? ` (${e.timeouts} timed out)` : ""}` : "–");
+                h += `<tr><td>matches</td><td>${played(S)}</td><td>${played(E)}</td></tr>`;
+                h += `<tr><td>results</td><td>${this._results(S)}</td><td>${this._results(E)}</td></tr></table>`;
                 const ws = this._weaponRows(S), we = this._weaponRows(E);
                 if (ws || we) {
-                    h += `<h3>Per weapon</h3><table class="score"><tr><th>weapon</th><th>kills</th><th>accuracy</th><th>TTK s</th></tr>`;
+                    // fights won = kills / (kills + deaths while holding it): how often a fight with that weapon in hand ended
+                    // the other's way; a mirror match's team results can't tell sets apart, this can
+                    h += `<h3>Per weapon <span class="muted small">edited, change vs ${esc(B.cmpLabel)}</span></h3><table class="score"><tr><th>weapon</th><th title="kills with it">kills</th><th title="kills / (kills + deaths while holding it)">fights won</th><th title="damage to enemies">damage</th><th title="hits / shots: ${esc(B.cmpLabel)} → edited">accuracy</th><th title="mean time from a fight's first hit to the kill">TTK s</th><th title="damage / seconds held">DPS</th></tr>`;
+                    const won = (x) => (x && x.kills + (x.deaths || 0) > 0 ? x.kills / (x.kills + (x.deaths || 0)) : null);
+                    const acc = (x) => (x ? (x.accuracy != null ? x.accuracy : x.shots ? x.hits / x.shots : null) : null);
+                    const pct = (v) => (v == null ? "–" : Math.round(v * 100) + "%");
+                    const cell = (b, a, k, lower, f = fmtNum) => `${b && b[k] != null ? f(b[k]) : "–"}${a && b && a[k] != null && b[k] != null ? diffSpan(b[k], a[k], lower) : ""}`;
                     for (const w of WEAPONS) {
                         const a = ws && ws.get(w), b = we && we.get(w);
                         if (!a && !b) continue;
-                        const acc = (x) => (x ? (x.accuracy != null ? x.accuracy : x.shots ? x.hits / x.shots : null) : null);
-                        h += `<tr><td>${w}</td><td>${b ? b.kills : "–"}${a && b ? diffSpan(b.kills, a.kills) : ""}</td><td>${acc(b) == null ? "–" : Math.round(acc(b) * 100) + "%"}</td><td>${b && b.ttk != null ? fmtNum(b.ttk) : "–"}${a && b && a.ttk != null && b.ttk != null ? diffSpan(b.ttk, a.ttk, true) : ""}</td></tr>`;
+                        const wa = won(a), wb = won(b);
+                        h += `<tr><td>${esc(this.app.titles ? this.app.titles.get(w) || w : w)}</td><td>${cell(b, a, "kills")}</td>`
+                            + `<td>${pct(wb)}${wa != null && wb != null ? diffSpan(Math.round(wb * 100), Math.round(wa * 100)) : ""}</td>`
+                            + `<td>${cell(b, a, "damage", false, (x) => fmtNum(Math.round(x)))}</td>`
+                            + `<td><span class="muted">${pct(acc(a))}</span> → ${pct(acc(b))}</td>`
+                            + `<td>${cell(b, a, "ttk", true)}</td><td>${cell(b, a, "dps")}</td></tr>`;
                     }
                     h += `</table>`;
-                } else if (S || E) h += `<div class="muted small">per weapon numbers come when simbatch's end line has <code>weapons</code> (the weapons helper)</div>`;
+                } else h += `<div class="muted small">per weapon numbers come when simbatch's end line has <code>weapons</code> (the weapons helper)</div>`;
             }
         }
         const live = document.createElement("div");
