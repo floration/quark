@@ -1686,7 +1686,7 @@ static void testWeaponPredict(uint16_t port) {
     CHECK(lastPred == WPN_RIFLE && a.selfWeapon() == was);   // (shown now; the server's word still the old one)
     buttons = BTN_FIRE;
     lf = sp.lastFire;
-    lagPump(0.4);
+    lagPump(0.8);   // (a few round trips: a loaded machine (the full run) sometimes missed it in 0.4 s)
     CHECK(sp.weapon == WPN_RIFLE && a.selfWeapon() == WPN_RIFLE && !locked && !sp.fireLocked && sp.lastFire != lf && wp.desired < 0);
     wp.want(WPN_SHOTGUN);   // (fire still held: locked)
     lagPump(0.3);
