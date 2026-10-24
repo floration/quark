@@ -190,7 +190,7 @@ export async function createHelper(config) {
                 const r = await api.helper(["physsim"], request, 60);
                 const a = r.answer || {};
                 if (r.code !== 0 || a.error || !Array.isArray(a.runs)) throw new Error(a.error || r.stderr || "physsim failed");
-                return { runs: a.runs.map(normRun), ms: a.ms ?? r.wallMs, wallMs: r.wallMs, via: "quark_maptool physsim" };
+                return { runs: a.runs.map(normRun), ms: a.ms ?? r.wallMs, wallMs: r.wallMs, worker: !!r.worker, via: "quark_maptool physsim" };
             }
             const t0 = performance.now();
             const text = req.map && !req.map.room ? req.map.text : (await H.room()).text;

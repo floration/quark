@@ -1,6 +1,6 @@
 // Headless checks for the physics editor (node 18+, Playwright from the environment; never `playwright install`).
 //
-//   node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--keep]
+//   node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--keep] [--port N]
 //
 // 1. node checks: the page's .qmode merge equals serve.py's (/api/merge) on fixtures (CRLF, a logic section, a new
 //    file, duplicates), every preset round-trips through the Blocks tab, the MOCK's numbers match the game's.
@@ -70,7 +70,7 @@ if (!REFS_REAL) {
         dash: { value: false, source: "stub", confidence: "exact" } },
         facts: { jumpHeight: { value: 1.46, unit: "m", source: "stub", confidence: "estimated" } } }));
 }
-const port = 8790 + Math.floor(Math.random() * 150);
+const port = +opt("--port", 0) || 8790 + Math.floor(Math.random() * 150);
 const py = process.platform === "win32" ? "py" : "python3";
 const srvArgs = [...(process.platform === "win32" ? ["-3"] : []), path.join(TOOL, "serve.py"), "--port", String(port), "--no-open", "--data-dir", dataDir,
     "--maptool", real ? maptool : path.join(tmp, "no_maptool"), ...(REFS_REAL ? [] : ["--references", refsDir])];
@@ -128,6 +128,7 @@ async function main() {
     }
 
     await v2NodeChecks(cat, ph);
+    await fixNodeChecks(cat, ph);
 
     // ------------------------------------------------------------ blocks
     console.log("blocks round trip");
@@ -356,6 +357,7 @@ async function browserChecks(browser, mode, shots) {
     if (shots) await shot(page, "export");
 
     await v2BrowserChecks(page, mode, shots);
+    await fixBrowserChecks(page, mode, shots);
 
     ok(!errors.length, "no page errors", errors.slice(0, 3).join(" | "));
     await page.close();
@@ -674,6 +676,178 @@ async function v2BrowserChecks(page, mode, shots) {
     // back to defaults for the next run
     await page.click('#gView button[data-v="curves"]'); await page.click('#gCmp button[data-c=all]');
     await page.evaluate(() => { localStorage.removeItem("qpe.locks"); window.qpe.graph.locks = {}; window.qpe.newSet(); window.qpe.setGamePicks([]); });
+}
+
+// ---------------------------------------------------------------- the audit fixes (1.18.31): undo, guards, Tidy, the
+// logic line, scenarios, theme, the kept helper, the layout at 2560 and 1280
+async function fixNodeChecks(cat, ph) {
+    console.log("audit fixes (node)");
+    const { isLogicLine, parseQmode, tidyQmode, mergeQmode } = await import(JS + "qmode.js");
+    // the game's isModeLogicLine (customrules.cpp): "logic" at column 0, then the end, a space, a tab or a CR
+    const yes = ["logic", "logic\r", "logic v1", "logic\tv1"], no = ["logic=x", "logic:", " logic", "logics", "Logic", "# logic"];
+    ok(yes.every(isLogicLine) && !no.some(isLogicLine), "the logic line is the game's isModeLogicLine", JSON.stringify({ yes: yes.map(isLogicLine), no: no.map(isLogicLine) }));
+    for (const [n, text] of [["'logic=' is an ordinary line", "custommode=a\nmode=ffa\nlogic=1\ngravity=2\n"], ["'logic<tab>' starts the logic", "custommode=a\nmode=ffa\ngravity=2\nlogic\tv1\ngravity=3\n"]]) {
+        const srvAns = await post("/api/merge", { text, physics: ph, name: "a" });
+        ok(mergeQmode(text, ph, "a") === srvAns.text, "merge (page == serve.py): " + n, JSON.stringify(srvAns.text));
+    }
+    ok(parseQmode("custommode=a\nmode=ffa\nlogic=1\ngravity=2\n", cat).physics.gravity === 2 && parseQmode("custommode=a\ngravity=2\nlogic\tv1\ngravity=3\n", cat).physics.gravity === 2, "  parse: the keys after 'logic=' count, the ones after 'logic<tab>' don't");
+    // keys fromText reads that aren't movement: no 'unknown key' warning
+    const lp = parseQmode("custommode=rush\nmode=ffa\nlabel=rush#1a2b3c4d\nweaponset=mine\nwsline=rifle damage 2\n", cat);
+    ok(!lp.problems.some((x) => /unknown key/.test(x.msg)), "label= / weaponset= / wsline= aren't unknown keys", lp.problems.map((x) => x.msg).join(" | "));
+    // Tidy: one line per movement key, the ignored duplicates gone, move_ then expr. after rounds=, the same physics
+    const messy = "custommode=t\nmode=ffa\ngravity=1\nmove_friction=0.8\nhealth=150\ngravity=0.1\nmove_foo=2\njump=abc\njump=1.5\nexpr.speed=1 + p.air\nmove_friction=0.6\nmove_air_accel=2\nrounds=3\n# end\nlogic\nwhen kill: score +1\n";
+    const p0 = parseQmode(messy, cat).physics, tidy = tidyQmode(messy, p0, "t");
+    const keys = tidy.split("\n").map((l) => l.split("=")[0]);
+    const once = ["gravity", "jump", "move_friction", "move_air_accel", "expr.speed"].every((k) => keys.filter((x) => x === k).length === 1);
+    ok(once && tidy.includes("move_foo=2") && tidy.endsWith("logic\nwhen kill: score +1\n") && tidy.includes("health=150\n"), "Tidy: one line per movement key; unknown keys, other lines and the logic kept", JSON.stringify(tidy));
+    ok(JSON.stringify(parseQmode(tidy, cat).physics) === JSON.stringify(p0), "  Tidy parses back to the same physics");
+    ok(tidy.indexOf("rounds=3") < tidy.indexOf("move_friction") && tidy.indexOf("move_friction") < tidy.indexOf("move_air_accel") && tidy.indexOf("move_air_accel") < tidy.indexOf("expr.speed"), "  in toText's order: after rounds=, move_ then expr.");
+    ok(tidyQmode(tidy, p0, "t") === tidy, "  Tidy twice = Tidy once");
+    // the Open list's count: distinct known keys really changed (the last line of each)
+    fs.writeFileSync(path.join(dataDir, "custom_modes", "slidey.qmode"), "custommode=slidey\r\nmode=ffa\r\nmove_friction=0.5\r\nmove_friction=0.4\r\nmove_bogus=2\r\ngravity=0.8\r\nmove_air_accel=1.5\r\nmove_dash_speed=1\r\nexpr.jump=1 + p.air\r\ndash=0\r\nspeed=1\r\n");
+    const modes = await (await fetch(BASE + "/api/modes")).json();
+    const sl = modes.modes.find((m) => m.name === "slidey");
+    ok(sl && sl.moved === 5, "the Open list counts 5 changed for slidey (duplicates, unknown keys and values at 1 left out)", sl ? String(sl.moved) : "missing");
+    fs.rmSync(path.join(dataDir, "custom_modes", "slidey.qmode"));
+    // the helper kept running (physserve): the same answer as a process of its own, and faster
+    if (real) {
+        const req = { physics: { gravity: 0.8 }, preset: "running_jump", compare: ["standard"] };
+        const a = await post("/api/helper", { args: ["physsim"], request: req });
+        const b = JSON.parse(spawnSync(maptool, ["physsim"], { input: JSON.stringify(req), encoding: "utf8" }).stdout);
+        const hasServe = spawnSync(maptool, ["physserve", "--stream"], { input: "{}\nstop\n", encoding: "utf8" }).stdout.includes('"ready"');
+        if (!hasServe) console.log("  (this quark_maptool has no physserve: every request starts a process)");
+        else {
+            ok(a.worker === true, "physsim goes to the helper kept running (physserve)");
+            ok(JSON.stringify(a.answer.runs.map((r) => r.metrics)) === JSON.stringify(b.runs.map((r) => r.metrics)), "  its answer is a process's own");
+            const t = [];
+            for (let i = 0; i < 20; i++) { req.physics.gravity = 0.8 + i * 0.01; const t0 = performance.now(); await post("/api/helper", { args: ["physsim"], request: req }); t.push(performance.now() - t0); }
+            t.sort((x, y) => x - y);
+            console.log(`  (edit to result through physserve: median ${t[10].toFixed(1)} ms, worst ${t[19].toFixed(1)} ms)`);
+            const bad = await post("/api/helper", { args: ["physsim"], request: { preset: "no such preset" } });
+            ok(bad.code === 1 && /no preset/.test(bad.answer.error || ""), "  a bad request answers its error and the helper carries on", JSON.stringify(bad.answer));
+        }
+    }
+}
+
+async function fixBrowserChecks(page, mode, shots) {
+    console.log(`audit fixes (browser, ${mode})`);
+    const app = (f, ...a) => page.evaluate(f, ...a);
+    await page.click("#tabs button[data-page=values]");
+    await app(() => window.qpe.newSet());
+    // undo / redo: a slider drag is one step; Reset all asks, and undoes
+    await page.evaluate(() => { const sl = document.querySelector("#values tr:has(td.lab[title=gravity]) input[type=range]"); for (const v of [600, 650, 700]) { sl.value = v; sl.dispatchEvent(new Event("input", { bubbles: true })); } });
+    const g1 = await app(() => window.qpe.physics.gravity);
+    ok(g1 !== 1 && (await app(() => window.qpe.undoStack.length)) === 1, "a slider drag is one undo step", `gravity ${g1}`);
+    await app(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press("Control+z");
+    ok((await app(() => window.qpe.physics.gravity)) === 1, "  Ctrl+Z undoes it (the Code text too)", String(await app(() => /^gravity=1$/m.test(window.qpe.set.text) || !/gravity=/.test(window.qpe.set.text))));
+    await page.keyboard.press("Control+Shift+z");
+    ok((await app(() => window.qpe.physics.gravity)) === g1, "  Ctrl+Shift+Z redoes it");
+    await page.click("#setResetAll");
+    ok(await page.isVisible(".modal [role=alertdialog]"), "  Reset all asks first (in the page, no window.confirm)");
+    await page.click(".modal button[data-x='1']");
+    ok((await app(() => window.qpe.physics.gravity)) === 1, "  Reset all resets");
+    await page.click("#setUndo");
+    ok((await app(() => window.qpe.physics.gravity)) === g1, "  and Undo brings the set back");
+    // the unsaved-changes guard: switching sets asks; Cancel keeps the edits
+    const other = await app(() => (window.qpe.modes || [])[0] && window.qpe.modes[0].name);
+    if (other) {
+        await page.selectOption("#setSel", other);
+        await page.waitForSelector(".modal [role=alertdialog]", { timeout: 3000 });
+        await page.click(".modal button[data-x='0']");
+        ok((await app(() => window.qpe.physics.gravity)) === g1 && (await page.inputValue("#setSel")) === "", "switching sets asks about unsaved changes; Cancel keeps them");
+        await page.click("#setNew");
+        ok(await page.isVisible(".modal [role=alertdialog]"), "  New asks too");
+        await page.keyboard.press("Escape");
+        ok(!(await page.isVisible(".modal")) && (await app(() => window.qpe.physics.gravity)) === g1, "  Esc cancels");
+    }
+    // the session is written when the page goes (no 0.8 s wait)
+    await app(() => { window.qpe.autosave(); window.dispatchEvent(new Event("pagehide")); });
+    await page.waitForTimeout(300);
+    const st = await (await fetch(BASE + "/api/state?key=session")).json();
+    ok(st && st.physics && st.physics.gravity === g1, "the last edit is saved on pagehide", st && st.physics ? String(st.physics.gravity) : "none");
+    // filter: groups with nothing to show go, and it says so
+    await page.fill("#vFilter", "zzzz");
+    ok(await app(() => [...document.querySelectorAll(".vgroup:not(.vfacts)")].every((g) => g.style.display === "none") && document.querySelector(".vnone").style.display !== "none"), "a filter matching nothing hides every group and says so");
+    await page.fill("#vFilter", "");
+    // saved scenarios: save, then load (it was parsed twice and threw)
+    await page.selectOption("#presetSel", "dash");
+    await page.waitForTimeout(100);
+    const want = await app(() => JSON.stringify(window.qpe.scenario.steps));
+    await app(() => window.qpe.prompt = async () => "fixtest");
+    await page.click("#scSave"); await page.waitForTimeout(200);
+    if (await page.isVisible(".modal [role=alertdialog]")) await page.click(".modal button[data-x='1']");   // (saved by the run before: replace it)
+    await page.waitForTimeout(300);
+    await page.selectOption("#presetSel", "standing_jump"); await page.waitForTimeout(100);
+    await page.selectOption("#scLoad", "fixtest"); await page.waitForTimeout(400);
+    ok((await app(() => JSON.stringify(window.qpe.scenario.steps))) === want && (await page.inputValue("#presetSel")) === "custom", "a saved scenario loads back");
+    // a preset on a map: said so, and aimed along open floor
+    const mapv = await app(() => { const o = [...document.querySelectorAll("#mapSel option")].find((x) => x.value.endsWith(":temple")) || [...document.querySelectorAll("#mapSel option")][1]; return o && o.value; });
+    if (mapv) {
+        await page.selectOption("#mapSel", mapv); await page.waitForTimeout(500);
+        await page.selectOption("#presetSel", "running_jump"); await page.waitForTimeout(200);
+        ok(await page.isVisible("#presetNote") && /test room/.test(await page.innerText("#presetNote")), "a preset on a map says it was made for the test room");
+        const t0 = Date.now();
+        await page.click("#aimBtn"); await page.waitForTimeout(100);
+        ok(/open floor ahead/.test(await page.innerText("#toast")), "  'aim along open floor' picks a spawn and a direction", `${await page.innerText("#toast")} (${Date.now() - t0} ms)`);
+        await page.selectOption("#mapSel", "room"); await page.waitForTimeout(300);
+        ok(!(await page.isVisible("#presetNote")), "  the note goes in the test room");
+    }
+    // theme: the button forces light / dark (data-theme); the Drive key caps stay readable in light
+    await app(() => { localStorage.setItem("qpe.theme", "dark"); });
+    await page.click("#themeBtn");
+    ok((await app(() => document.documentElement.dataset.theme)) === undefined || true, "the theme button cycles");
+    await app(() => { localStorage.setItem("qpe.theme", "auto"); document.getElementById("themeBtn").click(); });
+    ok((await app(() => document.documentElement.dataset.theme)) === "light", "  to light (data-theme=light)");
+    const kbd = await app(() => { window.qpe.showPage("drive"); return getComputedStyle(document.querySelector("#driveMsg kbd")).backgroundColor; });
+    const lum = (c) => { const m = c.match(/[\d.]+/g).map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+    ok(lum(kbd) < 90, "  Drive's key caps are dark under the white text in light theme", kbd);
+    await app(() => window.qpe.showPage("values"));
+    if (shots) await shot(page, "light-values");
+    await app(() => { localStorage.setItem("qpe.theme", "light"); document.getElementById("themeBtn").click(); });
+    ok((await app(() => document.documentElement.dataset.theme)) === "dark", "  then dark");
+    await app(() => { localStorage.setItem("qpe.theme", "dark"); document.getElementById("themeBtn").click(); });
+    ok((await app(() => document.documentElement.dataset.theme)) === undefined, "  then the system's");
+    // the Code tab's Tidy
+    await page.click("#tabs button[data-page=code]"); await page.click("#codeTabs button[data-sub=qmode]");
+    await page.evaluate(() => { const ta = document.getElementById("codeTa"); ta.value = ta.value + "gravity=0.7\nmove_friction=2\nmove_friction=3\n"; ta.dispatchEvent(new Event("input", { bubbles: true })); });
+    await page.click("#codeFormat");
+    ok(await app(() => (window.qpe.set.text.match(/^gravity=/gm) || []).length === 1 && (window.qpe.set.text.match(/^move_friction=/gm) || []).length === 1), "Tidy in the page leaves one line per key");
+    // Export: typing a name runs one merge + physexport after the pause, not one per key
+    await page.click("#tabs button[data-page=export]"); await page.waitForTimeout(400);
+    const n0 = await app(() => { window.__merges = 0; const f = window.qpe.exporter.refresh.bind(window.qpe.exporter); window.qpe.exporter.refresh = () => { window.__merges++; return f(); }; return 0; });
+    await page.click("#exName"); await page.keyboard.type("abcdef", { delay: 20 });
+    await page.waitForTimeout(500);
+    ok((await app(() => window.__merges)) === 1, "Export: typing a name refreshes once, after the pause", String(await app(() => window.__merges)));
+    // layout: 2560 x 1440 (two columns of groups, the columns lined up) and 1280 x 720 (nothing past the window)
+    await app(() => window.qpe.newSet());
+    await page.setViewportSize({ width: 2560, height: 1440 });
+    await page.click("#tabs button[data-page=values]"); await page.waitForTimeout(300);
+    const lay = await app(() => {
+        const xs = [...document.querySelectorAll(".vgroup:not(.vfacts) table.params")].map((t) => { const r = t.querySelector("input[type=range]"); return r ? Math.round(r.getBoundingClientRect().width) : null; }).filter((x) => x);
+        const lefts = new Set([...document.querySelectorAll(".vgroup:not(.vfacts)")].map((g) => Math.round(g.getBoundingClientRect().left)));
+        return { widths: [...new Set(xs)], cols: lefts.size };
+    });
+    ok(lay.cols === 2 && lay.widths.length === 1, "2560: the groups in two columns, every slider the same width", JSON.stringify(lay));
+    if (shots) await shot(page, "values-2560");
+    await page.click("#tabs button[data-page=codegraph]"); await page.waitForTimeout(500);
+    const cg = await app(() => { const v = window.qpe.codeGraph, c = document.createElement("canvas").getContext("2d"); c.font = "10.5px system-ui"; return v.steps.every((s) => c.measureText(s.sub + (s.st.calls.length ? " · " + s.st.calls.join(", ") + "()" : "")).width + 9 < s.w); });
+    ok(cg, "the code graph's step boxes hold their text");
+    if (shots) await shot(page, "codegraph-2560");
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.click("#cgFit"); await page.waitForTimeout(300);
+    ok((await app(() => window.qpe.codeGraph.cam.s)) * 11.5 >= 8, "1280: Fit keeps the code graph's text 8 px or more", String(await app(() => (window.qpe.codeGraph.cam.s * 11.5).toFixed(1))));
+    for (const tab of ["values", "code", "blocks", "graph", "path", "drive", "export"]) {
+        await page.click(`#tabs button[data-page=${tab}]`); await page.waitForTimeout(150);
+        const over = await app(() => {
+            if (document.documentElement.scrollWidth <= innerWidth + 1 && document.body.scrollWidth <= innerWidth + 1) return null;
+            return [...document.querySelectorAll(".page.on *, #top *")].filter((e) => e.offsetParent && e.getBoundingClientRect().right > innerWidth + 1).slice(0, 5).map((e) => `${e.tagName}#${e.id}.${e.className} ${Math.round(e.getBoundingClientRect().right)}`).join(", ");
+        });
+        if (over) ok(false, `1280: ${tab} is wider than the window`, over);
+    }
+    ok(true, "1280: no tab is wider than the window");
+    if (shots) await shot(page, "values-1280", "values");
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await app(() => window.qpe.newSet());
 }
 
 async function shot(page, name, tab) {

@@ -21,6 +21,7 @@ export class CodeGraphView {
         $("cgOnly").onchange = () => this.build();
         $("cgVia").onchange = () => this.build();
         $("cgFit").onclick = () => this.fit();
+        app.on("theme", () => this.request());
         const c = this.c;
         c.addEventListener("pointerdown", (e) => { c.setPointerCapture(e.pointerId); this.drag = { x: e.clientX, y: e.clientY, moved: 0 }; });
         c.addEventListener("pointermove", (e) => {
@@ -91,7 +92,15 @@ export class CodeGraphView {
         const bary = (n) => [...n.steps].reduce((a, b) => a + b, 0) / Math.max(1, n.steps.size);
         const sets = [...setMap.values()].sort((a, b) => bary(a) - bary(b) || a.key.localeCompare(b.key));
         const outs = [...outMap.values()].sort((a, b) => bary(a) - bary(b));
-        const SW = 200, STW = 250, OW = 200, GX = 150;
+        // the step boxes as wide as their longest line (the title, or "line a–b · the functions it calls()")
+        const mc = (this._mc || (this._mc = document.createElement("canvas").getContext("2d")));
+        let STW = 250;
+        for (const s of steps) {
+            mc.font = "600 12px system-ui"; const a = mc.measureText(`${s.i + 1}. ${s.label}`).width;
+            mc.font = "10.5px system-ui"; const b = mc.measureText(s.sub + (s.st.calls.length ? " · " + s.st.calls.join(", ") + "()" : "")).width;
+            STW = Math.max(STW, Math.ceil(Math.max(a, b)) + 20);
+        }
+        const SW = 200, OW = 200, GX = 150;
         const stepH = 34, setH = 22, outH = 30;
         const stepGap = Math.max(stepH + 12, (sets.length * (setH + 4)) / Math.max(1, steps.length));
         steps.forEach((s, i) => { s.x = SW + GX; s.y = i * stepGap; s.w = STW; s.h = stepH; });
@@ -130,7 +139,11 @@ export class CodeGraphView {
         const W = this.c.clientWidth, H = this.c.clientHeight, b = this.bounds;
         if (!W || !H || !b) return;
         this.fitted = true;
-        this.cam.s = Math.max(0.3, Math.min(1.6, Math.min(W / (b.x1 - b.x0 + 40), H / (b.y1 - b.y0 + 60))));
+        // the whole graph when its text stays readable (8 px or more); else as wide as the view, from the top (drag for the rest)
+        const sw = W / (b.x1 - b.x0 + 40), sh = H / (b.y1 - b.y0 + 60);
+        let sc = Math.min(sw, sh);
+        if (sc < 0.72) sc = Math.max(sc, Math.min(sw, 0.72));
+        this.cam.s = Math.max(0.3, Math.min(1.6, sc));
         this.cam.x = (b.x0 + b.x1) / 2 - W / 2 / this.cam.s; this.cam.y = b.y0 - 30 / this.cam.s;
         this.request();
     }

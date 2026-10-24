@@ -256,7 +256,7 @@ export class BlocksView {
         for (const b of this.blocks) { stack.append(this._blockEl(b, t)); t += b.kind === "look" ? 0 : b.ms | 0; }
         hat.append(stack);
         const tot = document.createElement("div"); tot.className = "muted small"; tot.style.marginTop = "6px";
-        tot.textContent = `${this.blocks.length} blocks · ${((t + (this.tailMs ?? 600)) / 1000).toFixed(2)} s in all`;
+        tot.textContent = `${this.blocks.length} block${this.blocks.length === 1 ? "" : "s"} · ${((t + (this.tailMs ?? 600)) / 1000).toFixed(2)} s in all`;
         hat.append(tot);
         this.ws.append(hat);
         this._timeline();
@@ -270,16 +270,17 @@ export class BlocksView {
         const keysSel = () => `<select data-f="keys">${Object.keys(KEYS).map((x) => `<option value="${x}" ${x === b.keys ? "selected" : ""}>${keyLabel(x)}</option>`).join("")}</select>`;
         const n = (f, step = 1, w = 62) => `<input type="number" data-f="${f}" value="${b[f] ?? ""}" step="${step}" style="width:${w}px">`;
         const cb = (f, lab) => `<label><input type="checkbox" data-f="${f}" ${b[f] ? "checked" : ""}>${lab}</label>`;
+        const dur = `<label title="how long this block lasts (the next one starts after it)">for ${n("ms", 10)} ms</label>`;
         switch (b.kind) {
             case "look": h += `<label>yaw ${n("yaw")}</label><label>pitch ${n("pitch")}</label>`; break;
-            case "wait": h += `<label>${n("ms", 10)} ms</label>`; break;
+            case "wait": h += `${dur}`; break;
             case "turn": h += `${keysSel()}<label>by ${n("deg")}°</label><label>over ${n("ms", 10)} ms</label>`; break;
-            case "dash": h += `${keysSel()}<label>pitch ${n("pitch", 1, 50)}</label><label>press ${n("press", 1, 46)}</label><label>${n("ms", 10)} ms</label>`; break;
-            case "jump": h += `${keysSel()}<label>press ${n("press", 1, 46)}</label><label>${n("ms", 10)} ms</label>`; break;
-            case "superdash": case "grapple": h += `${keysSel()}<label>pitch ${n("pitch", 1, 50)}</label><label>${n("ms", 10)} ms</label>`; break;
-            case "strafe": h += `<select data-f="side"><option ${b.side === "A" ? "selected" : ""}>A</option><option ${b.side !== "A" ? "selected" : ""}>D</option></select><label>swap <select data-f="swap">${[["off", "off"], ["land", "at landings"], ["swing", "weave"]].map(([v, l]) => `<option value="${v}" ${(b.swap === true ? "swing" : b.swap || "off") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label><label>${n("ms", 10)} ms</label>`; break;
-            case "step": h += `<label>fwd ${n("forward", 1, 52)}</label><label>side ${n("side", 1, 52)}</label>${cb("jump", "jump")}${cb("dash", "dash")}${cb("hook", "hook")}${cb("crouch", "crouch")}${cb("strafeBot", "strafe bot")}<label>swap <select data-f="strafeSwitch">${[["", "off"], ["land", "at landings"], ["swing", "weave"]].map(([v, l]) => `<option value="${v}" ${(b.strafeSwitch === true ? "swing" : b.strafeSwitch || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>${cb("jumpAtEdge", "edge jump")}<label>yaw/s ${n("yawRate", 1, 56)}</label><label>pitch/s ${n("pitchRate", 1, 50)}</label><label>yaw ${n("yaw", 1, 50)}</label><label>pitch ${n("pitch", 1, 50)}</label><label>${n("ms", 10)} ms</label>`; break;
-            default: h += `${keysSel()}<label>${n("ms", 10)} ms</label>`;
+            case "dash": h += `${keysSel()}<label>pitch ${n("pitch", 1, 50)}</label><label title="how long the dash button is held">press ${n("press", 1, 46)} ms</label>${dur}`; break;
+            case "jump": h += `${keysSel()}<label title="how long the jump button is held">press ${n("press", 1, 46)} ms</label>${dur}`; break;
+            case "superdash": case "grapple": h += `${keysSel()}<label>pitch ${n("pitch", 1, 50)}</label>${dur}`; break;
+            case "strafe": h += `<select data-f="side"><option ${b.side === "A" ? "selected" : ""}>A</option><option ${b.side !== "A" ? "selected" : ""}>D</option></select><label>swap <select data-f="swap">${[["off", "off"], ["land", "at landings"], ["swing", "weave"]].map(([v, l]) => `<option value="${v}" ${(b.swap === true ? "swing" : b.swap || "off") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>${dur}`; break;
+            case "step": h += `<label>fwd ${n("forward", 1, 52)}</label><label>side ${n("side", 1, 52)}</label>${cb("jump", "jump")}${cb("dash", "dash")}${cb("hook", "hook")}${cb("crouch", "crouch")}${cb("strafeBot", "strafe bot")}<label>swap <select data-f="strafeSwitch">${[["", "off"], ["land", "at landings"], ["swing", "weave"]].map(([v, l]) => `<option value="${v}" ${(b.strafeSwitch === true ? "swing" : b.strafeSwitch || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>${cb("jumpAtEdge", "edge jump")}<label>yaw/s ${n("yawRate", 1, 56)}</label><label>pitch/s ${n("pitchRate", 1, 50)}</label><label>yaw ${n("yaw", 1, 50)}</label><label>pitch ${n("pitch", 1, 50)}</label>${dur}`; break;
+            default: h += `${keysSel()}${dur}`;
         }
         h += `<span class="bk-t">@${(t0 / 1000).toFixed(2)} s</span><button class="x" title="delete">✕</button>`;
         d.innerHTML = h;

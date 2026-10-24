@@ -1,9 +1,11 @@
 // serve.py's API. Every write carries X-Quark-Editor (serve.py refuses writes without it).
-async function req(method, url, body, type) {
+// keepalive: the request outlives the page (a write on pagehide); browsers allow it for bodies up to 64 KB
+async function req(method, url, body, type, keepalive) {
     const opt = { method, headers: { "X-Quark-Editor": "1" } };
     if (body !== undefined) {
         if (typeof body === "string" && type !== "json") { opt.body = body; opt.headers["Content-Type"] = "text/plain; charset=utf-8"; }
         else { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
+        if (keepalive && opt.body.length < 60000) opt.keepalive = true;
     }
     const r = await fetch(url, opt);
     const ct = r.headers.get("Content-Type") || "";
@@ -26,7 +28,7 @@ export const api = {
     scenario: (name) => req("GET", `/api/scenario?name=${q(name)}`),
     saveScenario: (name, s) => req("POST", `/api/scenario?name=${q(name)}`, s, "json"),
     state: (key) => req("GET", `/api/state?key=${q(key)}`),
-    saveState: (key, obj) => req("POST", `/api/state?key=${q(key)}`, obj, "json"),
+    saveState: (key, obj, keepalive) => req("POST", `/api/state?key=${q(key)}`, obj, "json", keepalive),
     helper: (args, request, timeout) => req("POST", "/api/helper", { args, request, timeout }, "json"),
     generateMaps: () => req("POST", "/api/generate-maps", {}),
 };

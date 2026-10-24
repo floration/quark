@@ -222,3 +222,35 @@ export function floorAt(map, x, z, below = 1e9) {
     }
     return best > -1e9 ? best : 0;
 }
+
+// How far a player can run from (x, y, z) facing yaw (radians; forward = (-sin, -cos), the game's) over open floor:
+// until a wall (a solid box across the body above step height) or a drop (no floor within 1.2 m below), in 0.5 m
+// steps, `max` m at most. For aiming a test-room scenario on a real map (the side panel's "aim along open floor").
+// boxes: the solid boxes near the start (nearBoxes), so a 12k-box map costs a few ms.
+const SOLID = (mt) => mt !== 6 && mt !== 7 && mt !== 8;   // (water, lava, trim: not solid, map.h)
+export function nearBoxes(map, x, z, r) {
+    const B = map.boxes, out = [];
+    for (let i = 0; i < map.nBoxes; i++) {
+        const o = i * 6;
+        if (!SOLID(map.mats[i]) || B[o] > x + r || B[o + 3] < x - r || B[o + 2] > z + r || B[o + 5] < z - r) continue;
+        out.push(B[o], B[o + 1], B[o + 2], B[o + 3], B[o + 4], B[o + 5]);
+    }
+    return out;
+}
+export function openRun(boxes, x, y, z, yaw, max = 40) {
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), R = 0.4, n = boxes.length;
+    let fy = y, d = 0;
+    for (let s = 0.5; s <= max + 1e-6; s += 0.5) {
+        const px = x + fx * s, pz = z + fz * s;
+        let floor = -1e9, wall = false;
+        for (let o = 0; o < n; o += 6) {
+            if (boxes[o] > px + R || boxes[o + 3] < px - R || boxes[o + 2] > pz + R || boxes[o + 5] < pz - R) continue;
+            const top = boxes[o + 4];
+            if (top <= fy + 0.5 && top >= fy - 1.2) { if (top > floor) floor = top; }   // (a step up to 0.5 m, a step down to 1.2 m)
+            else if (boxes[o + 1] < fy + 1.75 && top > fy + 0.5) { wall = true; break; }
+        }
+        if (wall || floor < -1e8) break;
+        fy = floor; d = s;
+    }
+    return d;
+}
