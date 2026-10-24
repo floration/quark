@@ -52,4 +52,12 @@ body.keys .tab .key { display: inline; }
 .icon:hover { background: var(--hover); color: var(--strong); }
 #clock { flex: none; color: var(--text); font-variant-numeric: tabular-nums; padding-left: 8px; border-left: 1px solid var(--line); height: 18px; display: flex; align-items: center; gap: 5px; }
 #clock .where { color: var(--muted); }
+#update { flex: none; display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 3px 0 9px; border-radius: 6px;
+  background: rgba(76,141,255,.16); color: var(--strong); font-size: 11.5px; white-space: nowrap; }
+#update[hidden] { display: none; }
+#update .msg { overflow: hidden; text-overflow: ellipsis; }
+#update button { height: 18px; padding: 0 9px; border: 0; border-radius: 4px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+#update button:hover { filter: brightness(1.12); }
+#update button:disabled { opacity: .6; cursor: default; }
+#update button:focus-visible { outline: 1px solid #fff; outline-offset: 1px; }
 #err { position: fixed; right: 210px; top: 7px; background: #4a2a12; color: #f3c58b; border-radius: 5px; padding: 4px 8px; font-size: 11.5px; }

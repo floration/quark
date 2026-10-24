@@ -2,12 +2,14 @@
 """Supervisor Board server (the Quark project manager): http://127.0.0.1:8768 (tools/project_manager/SPEC.md section 2).
 
     py -3 server.py [--quark C:\\Users\\user\\Desktop\\Quark] [--port 8768]
+    py -3 server.py [--no-update]  no automatic installs / updates of the tools (pm/updater.py, installs.json)
     py -3 server.py --init        write project-manager\\tabs.json / config.json if missing (and bring an older
                                   tabs.json's default tabs up to date), then exit (setup.ps1)
 
 Python 3 standard library only. Binds 127.0.0.1 only. Every source refreshes in the background on its own interval
 and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1]  /api/tabs
-/api/history?limit=N  /api/health;  POST /api/refresh?source=<key|all>.
+/api/history?limit=N  /api/health  /api/updates;  POST /api/refresh?source=<key|all>  /api/updates/run
+/api/updates/ack?id=<restart request id>.
 """
 import argparse
 import json
@@ -21,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from pm import config, scheduler, tabs, util  # noqa: E402
+from pm import config, scheduler, tabs, updater, util  # noqa: E402
 from pm.history import History  # noqa: E402
 
 DEFAULT_PORT = 8768
@@ -35,7 +37,7 @@ FALLBACK_PAGE = (b"<!doctype html><meta charset=utf-8><title>Supervisor Board</t
 
 
 class App:
-    def __init__(self, paths, port=DEFAULT_PORT, modules=scheduler.MODULES, prober=tabs.probe):
+    def __init__(self, paths, port=DEFAULT_PORT, modules=scheduler.MODULES, prober=tabs.probe, update=False):
         self.paths = paths
         self.port = port
         self.history = History(paths)
@@ -44,9 +46,12 @@ class App:
         self._tabs_cache = None
         self._tabs_lock = threading.Lock()
         self.stop = self.store.stop
+        # (off unless asked for: main() turns it on, --no-update and the tests leave it off)
+        self.updater = updater.Updater(paths, enabled=update)
 
     def start(self):
         self.store.start()
+        self.updater.start()
         threading.Thread(target=self._tabs_loop, name="pm-tabs", daemon=True).start()
 
     def _tabs_loop(self):
@@ -68,7 +73,7 @@ class App:
 
     def pm(self, refresh=False):
         out = {"generatedAt": self.store.generated_at, "sources": self.store.results(), "derived": self.store.derived,
-               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"]}
+               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": self.updater.view()}
         if refresh:
             ok, wait = self.store.refresh_all()
             out["refresh"] = {"accepted": ok, "nextAllowedIn": wait}
@@ -170,6 +175,8 @@ class Handler(BaseHTTPRequestHandler):
                 if q.get("refresh", ["0"])[0] not in ("", "0", "false"):
                     self.app.tabs.wake.set()
                 return self._json(self.app.tabs_view())
+            if p == "/api/updates":
+                return self._json(self.app.updater.view())
             if p == "/api/history":
                 limit = util.to_int(q.get("limit", ["100"])[0], 100)
                 return self._json({"events": self.app.history.latest(max(1, min(limit, 10000)))})
@@ -189,6 +196,12 @@ class Handler(BaseHTTPRequestHandler):
         if n:
             self.rfile.read(min(n, 65536))
         u = urllib.parse.urlsplit(self.path)
+        if u.path == "/api/updates/run":
+            ok, wait = self.app.updater.request()
+            return self._json({"accepted": ok, "nextAllowedIn": wait, "enabled": self.app.updater.enabled})
+        if u.path == "/api/updates/ack":
+            rid = urllib.parse.parse_qs(u.query).get("id", [""])[0]
+            return self._json({"removed": self.app.updater.ack(rid)})
         if u.path != "/api/refresh":
             return self._send(404, "not found", "text/plain; charset=utf-8")
         src = urllib.parse.parse_qs(u.query).get("source", ["all"])[0]
@@ -220,6 +233,7 @@ def main(argv=None):
     ap.add_argument("--quark", help="the Quark folder (default: the parent of the folder holding server.py)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--init", action="store_true", help="write tabs.json / config.json if missing, then exit")
+    ap.add_argument("--no-update", action="store_true", help="no automatic installs / updates of the tools")
     args = ap.parse_args(argv)
     paths = config.Paths(HERE, args.quark)
     if args.init:
@@ -229,7 +243,7 @@ def main(argv=None):
         if up:
             util.log("tabs.json: new default tabs / start commands / keepAlive for %s (old file: tabs.json.old)" % ", ".join(up))
         return 0
-    app = App(paths, args.port)
+    app = App(paths, args.port, update=not args.no_update)
     try:
         httpd = make_server(app, args.port)
     except OSError as e:
@@ -243,6 +257,7 @@ def main(argv=None):
         pass
     finally:
         app.store.shutdown()
+        app.updater.shutdown()
         httpd.server_close()
     return 0
 

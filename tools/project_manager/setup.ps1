@@ -1,7 +1,7 @@
 # Installs (or updates) the Supervisor Board (the Quark project manager) into Quark\project-manager\ (tools/project_manager/SPEC.md section 4).
 #   setup.cmd                       (double-click; runs this)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 [-Quark C:\Users\user\Desktop\Quark] [-NoElectron]
-# Copies server.py, pm\, web\, shell\, project-manager.cmd, project-manager-hidden.vbs and quark.ico; writes tabs.json / config.json only when
+# Copies server.py, pm\, web\, shell\, project-manager.cmd, project-manager-hidden.vbs, installs.json and quark.ico; writes tabs.json / config.json only when
 # missing (q's own tabs, config, history and window state are never touched); downloads the official Electron zip
 # (latest stable, verified against that release's SHASUMS256.txt) unless it is there or -NoElectron; makes the desktop
 # shortcut "Quark Project" (electron.exe directly, or wscript + project-manager-hidden.vbs without Electron: no console
@@ -33,6 +33,8 @@ Write-Host "Installing the Supervisor Board into $Dest"
 Copy-Item -Force (Join-Path $Src 'server.py') $Dest
 Copy-Item -Force (Join-Path $Src 'project-manager.cmd') $Dest
 Copy-Item -Force (Join-Path $Src 'project-manager-hidden.vbs') $Dest
+# (the tools the app installs and updates by itself; repository\tools\project_manager\installs.json wins when present)
+if (Test-Path (Join-Path $Src 'installs.json')) { Copy-Item -Force (Join-Path $Src 'installs.json') $Dest }
 foreach ($dir in 'pm', 'web', 'shell') {
   $from = Join-Path $Src $dir
   $to = Join-Path $Dest $dir

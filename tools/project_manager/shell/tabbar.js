@@ -4,6 +4,7 @@
   const api = window.quarkTabbar;
   const tabsEl = document.getElementById('tabs');
   const errEl = document.getElementById('err');
+  const updEl = document.getElementById('update');
   const label = { up: 'running', down: 'not running', starting: 'starting', restarting: 'stopped, restarting by itself shortly', missing: 'not installed', unknown: 'checking' };
   let last = '';
 
@@ -64,10 +65,12 @@
     });
     const act = tabsEl.querySelector('.tab.active');
     if (act) act.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    updEl.hidden = data.updated !== true;
     errEl.hidden = !data.error;
     errEl.textContent = data.error || '';
   }
 
+  document.getElementById('relaunch').addEventListener('click', () => api.command('relaunch'));
   document.getElementById('reload').addEventListener('click', (e) => api.command(e.shiftKey ? 'reload-tabs' : 'reload'));
   tabsEl.addEventListener('wheel', (e) => { if (e.deltaY) { tabsEl.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
   // hold Ctrl to see the Ctrl+N numbers

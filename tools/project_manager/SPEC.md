@@ -77,7 +77,7 @@ others. `?refresh=1` on `/api/pm` asks for an immediate refresh (rate-limited to
 
 Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET /api/pm` (below), `GET /api/tabs`
 (resolved tabs.json with `installed`, `up`), `GET /api/history?limit=` (the PM's own event log),
-`GET /api/health` → `ok`. CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
+`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run` / `/api/updates/ack?id=` (section 5). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
 
 ### Sources (interval)
 
@@ -177,3 +177,10 @@ downloads + verifies Electron unless present or `-NoElectron`; makes a desktop s
 `electron\electron.exe "<PM>\shell"` (no console window; without Electron: `wscript.exe project-manager-hidden.vbs`,
 which runs `project-manager.cmd --edge` hidden) with the icon. Re-running it updates the code and keeps q's tabs/config/history/state.
 `project-manager.cmd [--edge]` starts the server if 8768 is down, then Electron (or the Edge fallback).
+
+## 5. Automatic installs and updates
+
+After setup, nothing is installed by hand: on each app open the server pulls testing into `Quark\repository\`
+(fast-forward only) and runs the installer of every tool in `installs.json` whose sources changed, hidden; the shell
+restarts the affected servers and offers a restart when the app updated itself. Details: `shell/README.md`
+("Automatic installs and updates") and `pm/updater.py`.

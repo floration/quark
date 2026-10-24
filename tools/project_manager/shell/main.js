@@ -11,6 +11,8 @@
 //                         <data>\state.json       (window bounds, last tab, last download folder)
 //                         <data>\electron-data\   (Chromium profile: one persist:<id> partition per tab)
 //                         <data>\logs\<id>.log    (output of servers the shell started, and the watchdog's notes)
+// Automatic updates (pm/updater.py): the Supervisor Board server installs the tools; this shell polls its
+// /api/updates, restarts the servers whose tool was reinstalled, and offers a restart when the app itself was updated.
 
 const { app, BaseWindow, WebContentsView, Menu, session, shell, ipcMain, dialog, nativeTheme, nativeImage, screen } = require('electron');
 const path = require('path');
@@ -33,6 +35,10 @@ const FAIL_WINDOW_MS = 5 * 60000;
 const WATCH_PROBE_TIMEOUT_MS = 1500; // (the watchdog is slower to call a busy server dead than the tab probe)
 const LOG_MAX = 4e6;
 const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'media']);
+// automatic updates: GET <Supervisor Board>/api/updates every UPDATES_POLL_MS (the first one a few seconds after start)
+const UPDATES_POLL_MS = 15000;
+const UPDATES_FIRST_MS = 3000;
+const PM_PORT_DEFAULT = 8768;
 
 // ---------- paths ----------
 function argValue(name, argv = process.argv) {
@@ -348,6 +354,7 @@ function stopStartedServers() {
   if (stopped) return;
   stopped = true;
   clearTimeout(watchTimer);
+  clearTimeout(updatesTimer);
   for (const s of sup.values()) clearTimeout(s.timer);
   for (const rec of started.values()) {
     if (!rec.exited) killTree(rec.pid);
@@ -421,7 +428,7 @@ function ensureStarted(tab, why) {
 }
 
 function scheduleRestart(tab, why) {
-  if (stopped || !supervised(tab) || waiting.has(tab.id)) return;
+  if (stopped || !supervised(tab) || waiting.has(tab.id) || updateRestarting.has(tab.id)) return;
   const s = supFor(tab.id);
   if (s.timer || s.busy) return;
   const now = Date.now();
@@ -457,7 +464,7 @@ async function restartNow(id) {
 }
 async function onServerExit(id, rec) {
   // a supervised server the shell started has exited: restart it (after the backoff) unless something else answers
-  if (stopped || waiting.has(id) || restartPending(id)) return; // (a start being waited for handles its own failure)
+  if (stopped || waiting.has(id) || restartPending(id) || updateRestarting.has(id)) return; // (a start being waited for handles its own failure)
   const tab = tabById(id);
   if (!supervised(tab) || started.get(id) !== rec) return;
   if (await probe(tab)) return; // handed off to another process that is serving
@@ -468,7 +475,7 @@ async function watchdog() {
   clearTimeout(watchTimer);
   if (stopped) return;
   try {
-    const list = tabs.filter((t) => supervised(t) && !waiting.has(t.id) && !restartPending(t.id));
+    const list = tabs.filter((t) => supervised(t) && !waiting.has(t.id) && !restartPending(t.id) && !updateRestarting.has(t.id));
     // (a miss is probed again at once: one slow answer is not a dead server)
     const res = await Promise.all(list.map(async (t) => (await probe(t, WATCH_PROBE_TIMEOUT_MS)) || probe(t, WATCH_PROBE_TIMEOUT_MS)));
     let changed = false;
@@ -494,6 +501,153 @@ async function startKeepAlive() {
   updateTabbar();
   clearTimeout(watchTimer);
   if (!stopped) watchTimer = setTimeout(watchdog, WATCHDOG_MS);
+}
+
+// ---------- automatic updates (pm/updater.py, installs.json; shell/README.md "Automatic installs and updates") ----------
+// The Supervisor Board server pulls testing into Quark\repository and reinstalls the tools whose sources changed.
+// Here: ask for that pass once per app open, restart each server whose tool was reinstalled (its `restart` requests,
+// acknowledged so a relaunch never repeats them) and show "updated, reopen" when the app's own files changed.
+const updateRestarting = new Set(); // tab ids being restarted for an update (the watchdog keeps out of the way)
+const handledRestarts = new Set();  // restart request ids already done this session
+let selfUpdated = false;
+let updatesTimer = null;
+let askedUpdate = false;
+let relaunching = false;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function pmPort() {
+  const t = tabById('project');
+  return (t && t.probeHost && t.port) || PM_PORT_DEFAULT;
+}
+function pmRequest(method, pathname, timeout = 5000) {
+  // -> the JSON answer, or null (server down, not JSON)
+  return new Promise((resolve) => {
+    const req = http.request({ host: '127.0.0.1', port: pmPort(), path: pathname, method, timeout,
+      headers: { 'User-Agent': 'quark-project-shell', 'Content-Length': 0 } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => { if (chunks.length < 256) chunks.push(c); });
+      res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { resolve(null); } });
+      res.on('error', () => resolve(null));
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+function commandLine(pid) {
+  // the command line of process <pid> ('' when unknown): Get-CimInstance, else wmic (gone from new Windows 11)
+  return new Promise((resolve) => {
+    pid = Number(pid) || 0;
+    if (!pid) return resolve('');
+    if (!IS_WIN) {
+      try { return resolve(fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').replace(/\0/g, ' ').trim()); } catch { return resolve(''); }
+    }
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      '(Get-CimInstance Win32_Process -Filter "ProcessId=' + pid + '").CommandLine'],
+    { windowsHide: true, timeout: 15000 }, (err, out) => {
+      const s = String(out || '').trim();
+      if (!err && s) return resolve(s);
+      execFile('wmic', ['process', 'where', 'ProcessId=' + pid, 'get', 'CommandLine', '/value'], { windowsHide: true, timeout: 10000 }, (e2, o2) => {
+        const m = /CommandLine=(.*)/.exec(String(o2 || ''));
+        resolve(!e2 && m ? m[1].trim() : '');
+      });
+    });
+  });
+}
+async function stopForeignListener(port, folderName, logId) {
+  // a server this shell did not start: stop whatever listens on <port> only if its command line names the tool's
+  // folder (never some other program that happens to use the port). -> true when it was stopped.
+  const pid = await listeningPidAsync(port);
+  if (!pid || pid === process.pid) { logNote(logId, 'update: no process found listening on port ' + port + ' (left alone)'); return false; }
+  const cl = await commandLine(pid);
+  if (!folderName || !cl.toLowerCase().includes(String(folderName).toLowerCase())) {
+    logNote(logId, 'update: pid ' + pid + ' on port ' + port + ' does not look like ' + (folderName || 'the tool') + ' ('
+      + (cl ? 'command line: ' + cl.slice(0, 240) : 'command line unknown') + '); left alone, restart it by hand');
+    return false;
+  }
+  logNote(logId, 'update: stopping pid ' + pid + ' (' + cl.slice(0, 240) + ')');
+  killTree(pid);
+  return true;
+}
+async function restartForUpdate(r) {
+  const port = Number(r.port);
+  const tab = tabs.find((t) => t.kind === 'server' && t.probeHost && t.port === port && t.installed);
+  if (!tab || tab.id === 'project') return; // (no tab on that port; the Supervisor Board itself restarts with the app)
+  const id = tab.id;
+  const what = String(r.name || r.entry || 'its tool');
+  const folderName = tab.folder ? path.basename(tab.folder) : String(r.folder || '');
+  let start = false;
+  updateRestarting.add(id);
+  try {
+    if (waiting.has(id)) await waiting.get(id); // (a start already under way finishes first)
+    const rec = started.get(id);
+    const up = await probe(tab, WATCH_PROBE_TIMEOUT_MS);
+    if (rec && !rec.exited) {
+      logNote(id, 'update: ' + what + ' was reinstalled; restarting pid ' + rec.pid);
+      killTree(rec.pid);
+      for (let i = 0; i < 40 && !rec.exited; i++) await sleep(150);
+      if (!rec.exited) { rec.exited = true; rec.code = -1; }
+      start = true;
+    } else if (up) {
+      start = await stopForeignListener(port, folderName, id); // (Windows only: elsewhere it is left alone)
+    } else {
+      // down: a keepAlive server starts now with the new code; any other starts when its tab is opened
+      start = supervised(tab);
+      logNote(id, 'update: ' + what + ' was reinstalled; it is not running' + (start ? ', starting it' : ' (it starts with the new code when opened)'));
+    }
+    if (start) for (let i = 0; i < 40 && await probe(tab, 300); i++) await sleep(250); // (until the port is free)
+  } finally { updateRestarting.delete(id); }
+  if (!start || stopped || !tab.start) return;
+  const s = sup.get(id);
+  if (s && s.timer) { clearTimeout(s.timer); s.timer = null; s.nextAt = 0; }
+  status.set(id, 'down');
+  const res = await ensureStarted(tab, 'update: ' + what + ' reinstalled');
+  // a loaded page gets the new page files (a page with unsaved changes asks first)
+  const e = views.get(id);
+  if (res.up && e && e.mode === 'page' && !e.view.webContents.isDestroyed()) e.view.webContents.reload();
+}
+async function pollUpdates() {
+  clearTimeout(updatesTimer);
+  if (stopped) return;
+  try {
+    const u = await pmRequest('GET', '/api/updates');
+    if (u && typeof u === 'object') {
+      // once per app open: an install pass (the server's own one at its start makes this a no-op within a minute)
+      if (!askedUpdate) { askedUpdate = true; pmRequest('POST', '/api/updates/run'); }
+      if (u.selfUpdated === true && !selfUpdated) { selfUpdated = true; updateTabbar(); }
+      for (const r of Array.isArray(u.restart) ? u.restart : []) {
+        if (!r || typeof r.id !== 'string' || handledRestarts.has(r.id)) continue;
+        handledRestarts.add(r.id);
+        restartForUpdate(r)
+          .catch((err) => logNote('updates', 'restart for port ' + r.port + ' failed: ' + (err && err.message)))
+          .finally(() => pmRequest('POST', '/api/updates/ack?id=' + encodeURIComponent(r.id)));
+      }
+    }
+  } finally {
+    if (!stopped) updatesTimer = setTimeout(pollUpdates, win && win.isMinimized() ? UPDATES_POLL_MS * 2 : UPDATES_POLL_MS);
+  }
+}
+async function relaunchApp() {
+  // the tab bar's Restart button after a self-update: a new shell with the new files; the old Supervisor Board server
+  // goes too (stopped here when this shell started it, else when its command line is Quark\project-manager's), and
+  // the new shell's supervisor starts the new one
+  if (relaunching || !win) return;
+  relaunching = true;
+  const r = await dialog.showMessageBox(win, {
+    type: 'question', title: 'Quark Project', noLink: true, defaultId: 0, cancelId: 1, buttons: ['Restart', 'Later'],
+    message: 'Restart Quark Project with the new version?',
+    detail: 'Every tab closes and opens again. Save open work in the editors first (their autosaves are kept).',
+  });
+  if (r.response !== 0) { relaunching = false; updateTabbar(); return; }
+  saveState(true);
+  const pm = tabById('project');
+  const own = pm && started.get(pm.id);
+  if (pm && pm.probeHost && !(own && !own.exited) && IS_WIN && await probe(pm)) {
+    await stopForeignListener(pm.port, path.basename(PM_DIR), pm.id);
+  }
+  stopStartedServers();
+  app.relaunch();
+  app.exit(0);
 }
 
 // ---------- placeholder page (shown in the tab's own view) ----------
@@ -570,6 +724,7 @@ function updateTabbar() {
   tabbar.webContents.send('shell:tabs', {
     active: activeId,
     error: tabsError,
+    updated: selfUpdated,
     tabs: tabbarTabs(),
   });
 }
@@ -909,6 +1064,7 @@ function createWindow() {
   });
   tabbar.webContents.loadFile(path.join(SHELL_DIR, 'tabbar.html'));
   startKeepAlive();
+  updatesTimer = setTimeout(pollUpdates, UPDATES_FIRST_MS);
 }
 
 // ---------- IPC ----------
@@ -925,10 +1081,11 @@ ipcMain.on('shell:tabbar', (e, cmd) => {
   if (cmd === 'reload') reloadActive(false);
   else if (cmd === 'reload-tabs') reloadTabList();
   else if (cmd === 'ready') updateTabbar();
+  else if (cmd === 'relaunch' && selfUpdated) relaunchApp();
 });
 ipcMain.handle('shell:tabs', (e) => {
   if (!tabbar || e.sender !== tabbar.webContents) return null;
-  return { active: activeId, error: tabsError, tabs: tabbarTabs() };
+  return { active: activeId, error: tabsError, updated: selfUpdated, tabs: tabbarTabs() };
 });
 
 // ---------- selftest (local verification only) ----------
@@ -953,7 +1110,8 @@ async function selftestShot(file) {
 function runSelftest(file) {
   try {
     require(path.resolve(file))({ app, win: () => win, tabbar: () => tabbar, views, tabs: () => tabs, openTab, reloadTabList, reloadActive, status, started, activeId: () => activeId, onKey,
-      sup, waiting, ensureStarted, watchdog, splitCommand });
+      sup, waiting, ensureStarted, watchdog, splitCommand, pollUpdates, restartForUpdate, handledRestarts, selfUpdated: () => selfUpdated,
+      updateRestarting, commandLine });
   } catch (err) { console.error('selftest failed: ' + err.stack); app.exit(1); }
 }
 
