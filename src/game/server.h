@@ -737,6 +737,7 @@ public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }
     void explodeForTest(const Vec3& at, int owner, int weapon) { explode(at, owner, weapon); }
+    double nextTickForTest() const { return nextTick_; }   // (a manual clock steps to it: one tick per frame())
 private:
     void openGameLog();
     void logTick();

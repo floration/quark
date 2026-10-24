@@ -77,6 +77,12 @@ double timeNow();
 // Tests only: run the clock faster than real time (simulation is unchanged, just compressed).
 void setTimeScale(double scale);
 double timeScale();   // (1 outside tests: real seconds = timeNow() seconds / timeScale())
+// Tests only: a manual clock. While on, timeNow() stands still and moves only by advanceClockTo (forward only), so a
+// test can step a bots-only server tick by tick with no real time waited (tests.cpp simRun). Nothing may wait on
+// timeNow() meanwhile (waitUntil would never return). Off (or setTimeScale): the clock runs on from there at timeScale().
+void setManualClock(bool on);
+bool manualClock();
+void advanceClockTo(double t);
 void sleepMs(int ms);
 // Returns at timeNow() >= t, on time: sleeps (a high-resolution timer on Windows) until just before, then spins.
 void waitUntil(double t);

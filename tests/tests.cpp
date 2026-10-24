@@ -151,6 +151,37 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
     }
 }
 
+// A server with only in-process bots (no NetClients) runs on a manual clock instead (net.h; a SimClock for the test's
+// scope): simRun steps the clock to the server's next tick and runs frame(), one tick per call. Every tick runs,
+// however loaded the machine is (pump's real time skips ticks past 20 a frame), and no real time is waited: the same
+// game as fast as the CPU goes, and the same game every run for the same seeds. perTick runs after each tick.
+struct SimClock {
+    bool was = manualClock();
+    SimClock() { setManualClock(true); }
+    ~SimClock() { setManualClock(was); }
+};
+template <class F>
+static void simRun(Server& s, double seconds, F perTick) {
+    const uint64_t end = s.timeMs_ + (uint64_t)std::llround(seconds * 1000);
+    while (s.timeMs_ < end) {
+        advanceClockTo(s.nextTickForTest());
+        const uint64_t before = s.timeMs_;
+        s.frame();
+        if (s.timeMs_ == before) { printf("  FAIL %s:%d: simRun: no tick ran (no SimClock?)\n", __FILE__, __LINE__); g_fail++; return; }
+        perTick();
+    }
+}
+static void simRun(Server& s, double seconds) { simRun(s, seconds, [] {}); }
+// Real seconds (how long a test group took): timeNow() is game time, 4x real in the tests and stepped by SimClock
+static double wallSeconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+// The bots' navigation graph builds on a thread of its own, in real time: wait for it before stepping (up to 20 s), or
+// when the bots start using it would depend on the machine's speed.
+static bool simNavReady(Server& s) {
+    for (int k = 0; k < 20000; k++) { if (s.nav_.ready(s.map_)) return true; sleepMs(1); }
+    printf("  FAIL %s:%d: the navigation graph never finished building\n", __FILE__, __LINE__); g_fail++;
+    return false;
+}
+
 // Console tab completion: unique -> filled in + space; several -> common prefix and every option listed.
 static void testCompletion() {
     printf("console completion\n");
@@ -3555,9 +3586,9 @@ static void testNavGraph() {
         Map m;
         if (!m.load(name)) continue;
         NavGraph g;
-        double t0 = timeNow();
+        double t0 = wallSeconds();
         g.build(m);
-        double bt = (timeNow() - t0) * 1000;
+        double bt = (wallSeconds() - t0) * 1000;
         worstBuild = std::max(worstBuild, bt);
         const size_t n = g.nodes.size(), R = g.regions.size();
         size_t bad = 0, nl = 0;
@@ -3826,7 +3857,9 @@ static void testBotAim(uint16_t& port) {
     int rates[] = {1000, 250, 125};
     if (getenv("AIM_RATE")) rates[0] = rates[1] = rates[2] = atoi(getenv("AIM_RATE")); // (noise check: three samples at one rate)
     float dps[3][BOT_SKILLS] = {}, acc[3][BOT_SKILLS] = {};
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int r = 0; r < 3; r++) {
+        qsrand(0x5EED0A00u + r);
         Server s;
         ServerConfig cfg;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++; cfg.maxTickRate = rates[r];
@@ -3866,12 +3899,12 @@ static void testBotAim(uint16_t& port) {
         };
         s.players_[tid].move.pos = {-7, 0, -24}; s.players_[tid].move.vel = {}; // (in front of them from the start)
         for (int k = 0; k < BOT_SKILLS; k++) s.players_[bot[k]].move.pos = {7, 0, -27.0f + 2.0f * ((k + r) % BOT_SKILLS)};
-        std::vector<NetClient*> none;
-        pump(s, none, 1.0, idle);
+        simNavReady(s);
+        simRun(s, 1.0);
         float dealt0[BOT_SKILLS]; int fired0[BOT_SKILLS], hit0[BOT_SKILLS];
         for (int k = 0; k < BOT_SKILLS; k++) { auto& bp = s.players_[bot[k]]; dealt0[k] = bp.dmgDealt; fired0[k] = bp.shotsFired; hit0[k] = bp.shotsHit; }
         double t0 = s.time();
-        pump(s, none, kAimSample, idle);
+        simRun(s, kAimSample);
         double span = std::max(1.0, s.time() - t0);
         for (int k = 0; k < BOT_SKILLS; k++) {
             auto& bp = s.players_[bot[k]];
@@ -4027,10 +4060,15 @@ static void testHostedBotsThreadExit(uint16_t port) {
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT;
         s.setLog([](const std::string&) {});
         { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-        std::atomic<bool> quit{false};
-        std::thread host([&] { s.run(quit); });   // as Game::startHost
-        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-        quit = true; host.join(); s.stop();       // as Game::stopHost
+        // Hosted until the bots have searched routes on that thread (read after each join: no race), in short spells
+        // of 100 ms, each a thread started and stopped as Game::startHost / stopHost do, 2.5 s at most
+        for (int spell = 0; spell < 25 && s.nav_.scratch_.cur == 0; spell++) {
+            std::atomic<bool> quit{false};
+            std::thread host([&] { s.run(quit); });   // as Game::startHost
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            quit = true; host.join();                 // as Game::stopHost
+        }
+        s.stop();
         CHECK(s.nav_.scratch_.cur > 0);           // (the bots did search routes on that thread)
     }
 }
@@ -7156,12 +7194,13 @@ static void testHiddenInfo(uint16_t port) {
 
 // FFA on Clockwork: 3 expert bots and a player standing still, 40 s of game time. Seeded: the match is forced to
 // start over once the bots' navigation is ready, with every bot's dice and the spawn picks seeded, and the "player"
-// is in-process (a scripted bot), so no network timing gets in. A seed plays out much the same match every time
-// (8-9 kills for seed 0 in 1.17; what's left to chance is the warmup before the restart, which bots and players
-// carry a little of into it: cooldowns, the lag-compensation history).
+// is in-process (a scripted bot), so no network timing gets in. It runs on the manual clock (simRun: every tick, the
+// warmup before the restart too, which is seeded as well), so a seed plays out exactly the same match every time.
 struct FfaRun { int kills = 0, playerDeaths = 0, hooks = 0, phase = 0; };
 static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
     FfaRun r;
+    SimClock clock;
+    qsrand(seed);   // (the warmup's spawn picks and the bots' first dice)
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
@@ -7172,9 +7211,8 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
     CHECK(s.playerCount() == 3);
     int me = s.addBot(TEAM_A, BOT_BEGINNER);
     auto stand = [](Server&, int) { UserCmd c; c.weapon = kNoWeaponChange; return c; };
-    std::vector<NetClient*> none;
-    pump(s, none, 1.0, idle);
-    for (int k = 0; k < 100 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.05, idle);
+    simNavReady(s);
+    simRun(s, 1.0);
     CHECK(me >= 0 && s.nav_.ready(s.map_));
     if (me < 0) { s.stop(); return r; }
     qsrand(seed);   // (spawn picks)
@@ -7189,15 +7227,13 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
     for (auto& pr : s.projectiles_) pr.active = false;   // (nothing from the warmup still flying)
     s.command("forcestart");
     bool was[kMaxPlayers] = {};
-    double end = s.time() + 40.0;
-    while (s.time() < end) { // counting grapple grabs as we go (every 20 ms: a grab let go of at once counts too)
-        pump(s, none, 0.02, idle);
+    simRun(s, 40.0, [&] {   // counting grapple grabs as we go (every tick: a grab let go of at once counts too)
         for (int k = 0; k < kMaxPlayers; k++) {
             bool h = s.players_[k].connected && s.players_[k].isBot && k != me && (s.players_[k].move.flags & MF_HOOKED);
             r.hooks += h && !was[k];
             was[k] = h;
         }
-    }
+    });
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != me) r.kills += s.players_[i].kills;
     r.playerDeaths = s.players_[me].deaths;
     r.phase = s.ms_.phase;
@@ -7207,12 +7243,12 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
 
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
-    { // FFA vs 3 expert bots: they should find and kill each other / us (seeded: about the same match every run)
+    { // FFA vs 3 expert bots: they should find and kill each other / us (seeded, on the manual clock: the same match every run)
         FfaRun r = ffaVsExperts(port++, 0x5EED0001u);
         printf("  ffa vs 3 expert bots: %d kills (%d of the player standing still), %d grapples in 40 s (phase %d)\n", r.kills, r.playerDeaths, r.hooks, r.phase);
-        CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17)
+        CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17; 3 to 8 over 20 seeds and 7 for this one, on the manual clock)
         CHECK(r.playerDeaths >= 1);  // nobody stands in the open for long
-        CHECK(r.hooks >= 1);         // bots use the grapple
+        CHECK(r.hooks >= 1);         // bots use the grapple (3 grabs here; 0 to 10 over 20 seeds, every tick counted)
     }
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
         Server s;
@@ -7302,7 +7338,9 @@ static void testBots(uint16_t& port) {
     // every mode with bots on both sides: no crashes, things happen
     const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone"};
     static_assert(MODE_COUNT == 13, "add the new mode's map here");
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
+        qsrand(0x5EED0100u + mode);
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
@@ -7310,10 +7348,19 @@ static void testBots(uint16_t& port) {
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
-        std::vector<NetClient*> cls;
-        NetClient me;   // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins
-        if (mode == MODE_ARENA || mode == MODE_DUEL) { me.connect("127.0.0.1:" + std::to_string(cfg.port), "me"); cls.push_back(&me); }
-        pump(s, cls, 14.0, idle);
+        if (mode == MODE_ARENA || mode == MODE_DUEL) {
+            // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins, a NetClient,
+            // so these two run on the real clock (pump) as before; the other modes are bots only
+            setManualClock(false);
+            NetClient me;
+            me.connect("127.0.0.1:" + std::to_string(cfg.port), "me");
+            std::vector<NetClient*> cls = {&me};
+            pump(s, cls, 14.0, idle);
+            setManualClock(true);
+        } else {
+            simNavReady(s);
+            simRun(s, 14.0);
+        }
         int kills = 0, cps = 0;
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
         printf("  %-8s with 5 bots: phase %d, round %d, kills %d, score %d-%d, cart %.1f, bomb %d, race checkpoints %d\n",
@@ -7389,9 +7436,14 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
 
 // A bots-only match on a map: what killed whom. Falls are deaths to the void or lava (pushed = hit in the 2 s
 // before), self = own rockets / stickies, mode = the mode's own kills (bomb, drain). trace: prints the last
-// second of every fall (positions, speed, buttons, grapple) and every self-kill's weapon.
+// second of every fall (positions, speed, buttons, grapple) and every self-kill's weapon. On the manual clock
+// (simRun), seeded by the map, mode and level: the same match every run.
 struct BotMatch { int kills = 0, deaths = 0, falls = 0, pushed = 0, self = 0, modeKills = 0; std::string state; };
 static bool playBots(const std::string& name, int mode, int skill, uint16_t& port, double seconds, bool trace, BotMatch& r) {
+    SimClock clock;
+    uint32_t seed = 2166136261u;
+    for (char c : name) seed = (seed ^ (uint8_t)c) * 16777619u;
+    qsrand(seed ^ (uint32_t)(mode * 7919 + skill * 104729));
     Server s;
     ServerConfig cfg;
     std::string logPath = (std::filesystem::temp_directory_path() / ("quark_playtest_" + std::to_string(getpid()) + ".log")).string();
@@ -7404,18 +7456,19 @@ static bool playBots(const std::string& name, int mode, int skill, uint16_t& por
     bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
     int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
     for (int i = 0; i < n; i++) { s.addBot(TEAM_A, skill); if (mode != MODE_RACE) s.addBot(TEAM_B, skill); }
-    std::vector<NetClient*> none;
-    pump(s, none, 1.0, idle);
+    simNavReady(s);
+    simRun(s, 1.0);
     s.command("forcestart");
     // where each fall began: the last place the bot stood before it died over the void / in lava
     Vec3 ground[kMaxPlayers]; bool was[kMaxPlayers] = {};
-    double end = timeNow() + seconds;
     struct Sample { double t; Vec3 pos, vel; uint16_t buttons; uint8_t flags; bool dash; Vec3 hook; };
     std::vector<Sample> hist[kMaxPlayers];   // (trace: the last second of each bot, printed for a fall)
-    double nextPos = 0;
-    while (timeNow() < end) {
-        pump(s, none, trace ? 0.01 : 0.02, idle);
-        if (getenv("PT_POS") && s.time() >= nextPos) {   // (where everyone is, every second)
+    double nextPos = 0, nextHist = 0;
+    const bool printPos = getenv("PT_POS") != nullptr;
+    simRun(s, seconds, [&] {   // (every tick)
+        const bool histNow = trace && s.time() >= nextHist;   // (trace: a sample each 10 ms of game time)
+        if (histNow) nextHist = s.time() + 0.01;
+        if (printPos && s.time() >= nextPos) {   // (where everyone is, every second)
             nextPos = s.time() + 1.0;
             printf("    t %.0f:", s.time());
             for (auto& p : s.players_) if (p.connected) printf("  %.1f %.1f %.1f%s", p.move.pos.x, p.move.pos.y, p.move.pos.z, p.alive ? "" : " dead");
@@ -7445,11 +7498,12 @@ static bool playBots(const std::string& name, int mode, int skill, uint16_t& por
             if (p.alive && (p.move.flags & MF_ONGROUND)) ground[i] = p.move.pos;
             if (trace) {
                 if (!p.alive) { hist[i].clear(); continue; }
+                if (!histNow) continue;
                 hist[i].push_back({s.time(), p.move.pos, p.move.vel, p.buttons, (uint8_t)p.move.flags, p.move.dashTimer > 0, p.move.hookPoint});
                 if (hist[i].size() > 300) hist[i].erase(hist[i].begin());
             }
         }
-    }
+    });
     for (auto& p : s.players_) if (p.connected) { r.kills += p.kills; r.deaths += p.deaths; }
     char st[160];
     int cp = 0; for (auto& p : s.players_) if (p.connected) cp = std::max(cp, (int)p.checkpoint);
@@ -7903,33 +7957,34 @@ int main(int argc, char** argv) {
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
-    std::vector<T> par = {   // (longest first: they set the wall time)
+    std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box: rules ~40,
+                             //  maps ~30, tourney / duel / weapons ~25 ... bots ~9, botaim and botfalls ~1: the manual clock)
+        {"rules", [] { testGameRules(""); }},
+        {"maps", [] {
+            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
+            g_fail += outOfBoundsTests();
+        }},
+        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
+        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
+        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
+        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
+        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
+        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"modelogic", [] { g_fail += modeTests(); }},
         {"modelockstep", [] { g_fail += modeLockstepTests(); }},
-        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
-        {"maps", [] {
-            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
-            g_fail += outOfBoundsTests();
-        }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
-        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
-        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
-        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
-        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
-        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
-        {"rules", [] { testGameRules(""); }},
         {"assets", [] { g_fail += assetTests(); }},
-        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
@@ -7956,9 +8011,9 @@ int main(int argc, char** argv) {
         for (auto* list : {&par, &alone})
             for (auto& g : *list)
                 if (std::string(argv[2]) == g.name) {
-                    double t0 = timeNow();
+                    double t0 = wallSeconds();
                     g.run();
-                    printf("group %s: %.0f s\n", g.name, timeNow() - t0);
+                    printf("group %s: %.0f s\n", g.name, wallSeconds() - t0);
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
                 }
@@ -8001,7 +8056,7 @@ int main(int argc, char** argv) {
                 fflush(stdout);
                 std::_Exit(std::min(g_fail, 100));
             }
-            running.push_back({pid, out, i, timeNow()});
+            running.push_back({pid, out, i, wallSeconds()});
         };
         while (next < par.size() && running.size() < jobs) start(next++);
         while (!running.empty()) {
@@ -8018,7 +8073,7 @@ int main(int argc, char** argv) {
                 { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
                 done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
                 char took[96];
-                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", par[i].name, timeNow() - running[k].t0);
+                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", par[i].name, wallSeconds() - running[k].t0);
                 outputs[i] += took;
                 if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
                 running.erase(running.begin() + k);
