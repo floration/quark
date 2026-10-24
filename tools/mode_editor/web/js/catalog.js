@@ -74,6 +74,7 @@ export function builtinCatalog() {
             "bomb.timer": { type: "f32", object: "bomb" },
             "cart.dist": { type: "f32", object: "cart" }, "cart.length": { type: "f32", object: "cart" }, "cart.checkpoint": { type: "int", object: "cart" },
             "point.index": { type: "int", object: "points" }, "point.capture": { type: "f32", object: "points" },
+            "cart.checkpointCount": { type: "int", object: "cart" }, stagedSpawns: { type: "bool", doc: "the map's spawns move up as the attack goes" },
         },
         // name[index]
         arrays: {
@@ -82,6 +83,7 @@ export function builtinCatalog() {
             kills: { index: P, type: "int" }, deaths: { index: P, type: "int" },
             teamScore: { index: T, type: "int", rw: true, doc: "scoreA / scoreB (int16 on the wire)" },
             "cart.best": { index: T, type: "f32", object: "cart" }, "cart.completed": { index: T, type: "f32", rw: true, object: "cart" },
+            "cart.bestTime": { index: T, type: "f32", object: "cart" },
             "race.checkpoint": { index: P, type: "int", object: "race" }, "race.finished": { index: P, type: "bool", object: "race" },
         },
         // functions with a value: args are types ("num" = int / f32 / f64, "any")

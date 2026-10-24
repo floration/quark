@@ -55,12 +55,12 @@ struct FakeHost : ModeHost {
             return n;
         }
         if (f == MF_IN_ZONE) return (unsigned)a < 32u && (inZone[modeZoneKind(b)] >> a & 1);
-        if (f >= MF_ALIVE_COUNT && f <= MF_CART_NEAR) return (unsigned)a < 2u ? team[f][a] : 0;
+        if (f >= MF_ALIVE_COUNT && f <= MF_CART_BEST_TIME) return (unsigned)a < 2u ? team[f][a] : 0;
         if (f >= MF_ALIVE && f < MF_IN_ZONE) return (unsigned)a < 32u ? player[f][a] : 0;
         return scalar[f];
     }
     void set(int f, int a, double v) override {
-        if (f >= MF_ALIVE_COUNT && f <= MF_CART_NEAR) { if ((unsigned)a < 2u) team[f][a] = v; return; }
+        if (f >= MF_ALIVE_COUNT && f <= MF_CART_BEST_TIME) { if ((unsigned)a < 2u) team[f][a] = v; return; }
         if (f >= MF_ALIVE && f < MF_IN_ZONE) { if ((unsigned)a < 32u) player[f][a] = v; return; }
         scalar[f] = v;
     }
@@ -388,7 +388,7 @@ void testInterpreter() {
         runModeSlot(*L, st, h, MSLOT_MATCH_START);
         MCHECK(st.vars[0] == 0 && st.vars[1] == 0);
     }
-    {   // payload: the tiebreak resets, then a draw on the second tie
+    {   // payload: level pushes go to the side there sooner (T17: no tiebreaker rounds); dead level is a draw
         auto L = compileModeLogic(defaultModeText(MODE_PAYLOAD), MODE_PAYLOAD, nullptr, true);
         MCHECK(L != nullptr);
         if (!L) return;
@@ -396,9 +396,11 @@ void testInterpreter() {
         h.scalar[MF_PHASE] = PHASE_ROUND_END;
         h.scalar[MF_ROUND_NO] = 2;
         h.team[MF_CART_BEST][0] = h.team[MF_CART_BEST][1] = 12.5;
+        h.team[MF_CART_BEST_TIME][0] = 80; h.team[MF_CART_BEST_TIME][1] = 60;
         runModeSlot(*L, st, h, MSLOT_ROUND_OVER);
-        MCHECK(h.says.size() == 1 && h.says[0] == std::to_string(MA_ANNOUNCE) + ":tied - tiebreaker rounds" && h.team[MF_CART_BEST][0] == 0);
-        h.scalar[MF_ROUND_NO] = 4;
+        MCHECK(h.says.size() == 1 && h.says[0] == std::to_string(MA_END_MATCH) + ":TEAM B wins the match");
+        h.scalar[MF_PHASE] = PHASE_ROUND_END;
+        h.team[MF_CART_BEST_TIME][0] = h.team[MF_CART_BEST_TIME][1] = 60;
         runModeSlot(*L, st, h, MSLOT_ROUND_OVER);
         MCHECK(h.says.back() == std::to_string(MA_END_MATCH) + ":match draw" && h.sayWinner.back() == -1);
         // faster delivery wins

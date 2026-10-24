@@ -1900,6 +1900,69 @@ static void testStopwatch(uint16_t port) {
     }
 }
 
+// T17: a level attack is decided by who got there sooner, not by tiebreaker rounds. Multi point, one point each:
+// the second side there sooner wins at once (locked); there later, the first side wins at time out, in two rounds.
+static void testStopwatchLevel(uint16_t port) {
+    printf("payload / multi point: level attacks go to the sooner\n");
+    for (bool sooner : {true, false}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "midtown"; cfg.mode = MODE_POINTS; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        s.ms_.capture = 1.05f;   // point A taken (past 1: nobody on it, it drains a hair first)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.point == 1 && s.bestProgress_[first] == 1.0f);
+        s.bestTime_[first] = sooner ? 100.0f : 0.01f;   // (when they got there)
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.ms_.capture = 1.05f;   // point A for the other side too: level
+        pump(s, cls, 0.1, idle);
+        if (!sooner) { CHECK(s.ms_.phase == PHASE_LIVE); s.phaseEnd_ = s.time() - 10; pumpServerTime(s, cls, 0.2, idle); }
+        printf("  there %s: \"%s\"\n", sooner ? "sooner" : "later", logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("level with") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        int w = sooner ? (first == TEAM_A ? TEAM_B : TEAM_A) : first;
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(w == TEAM_A ? "TEAM A" : "TEAM B") + " wins the match") != std::string::npos;
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2 && won);
+        s.stop();
+    }
+}
+
+// T18: on a payload map whose spawns don't move up (Railyard), attackers past the last checkpoint respawn in 3 s,
+// everyone else in the usual 5 s.
+// Natively and through payload.qlogic's respawnDelay slot (forced through the interpreter): the same numbers.
+static void testLastLegRespawn(uint16_t port) {
+  for (int interp = 0; interp < 2; interp++) {
+    printf("payload: a quicker attacker respawn on the last leg (%s)\n", interp ? "the built-in logic, interpreted" : "native");
+    Server s;
+    if (interp) s.presetModeLogic(compileModeLogic(defaultModeText(MODE_PAYLOAD), MODE_PAYLOAD, nullptr, true));
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = (uint16_t)(port + interp); cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    int att = rulesTeamPlayer(s, s.ms_.attackers), def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? TEAM_B : TEAM_A);
+    if (att < 0 || def < 0) { CHECK(false); s.stop(); return; }
+    auto wait = [&](int id) { s.killPlayer(id, -1, 252); double w = s.players_[id].respawnAt - s.time(); s.spawnPlayer(id); return w; };
+    double early = wait(att);
+    s.ms_.point = (uint8_t)s.map_.cartChecks.size();   // past the last checkpoint
+    double last = wait(att), defLast = wait(def);
+    printf("  attacker %.1f s, on the last leg %.1f s; defender there %.1f s\n", early, last, defLast);
+    CHECK(std::fabs(early - 5.0) < 0.01 && std::fabs(last - kLastLegRespawn) < 0.01 && std::fabs(defLast - 5.0) < 0.01);
+    CHECK(interp == 0 || (s.modeHooks_ && s.modeHooks_->has(MSLOT_RESPAWN_DELAY)));
+    s.stop();
+  }
+}
+
 // F23: multi point on a map without points can't start (it never ended).
 static void testPointsNoPoints(uint16_t port) {
     printf("multi point on a map without points\n");
@@ -2073,6 +2136,42 @@ static void testModeHooks(uint16_t port) {
     s.stop();
 }
 
+// T27: free for all picks at random among the unseen spawns near the best distance (it always took the farthest one:
+// predictable), never one the other player can see.
+static void testFfaSpawnChoice() {
+    printf("ffa spawns: random among the unseen near the farthest\n");
+    for (const char* name : {"harbor", "gantry"}) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        if (!s.map_.load(name)) { CHECK(false); continue; }
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        for (int i = 0; i < 2; i++) { auto& p = s.players_[i]; p.connected = true; p.isBot = true; p.team = TEAM_A; }
+        auto& w = s.players_[1];
+        w.alive = true;
+        w.move.pos = s.map_.spawns[0].pos;   // (someone standing on a spawn)
+        Vec3 eye = w.move.pos + Vec3(0, kEyeHeight, 0);
+        float best = 0;
+        for (auto& sp : s.map_.spawns) best = std::max(best, length(sp.pos - w.move.pos));
+        std::vector<char> used(s.map_.spawns.size(), 0);
+        int seen = 0, close = 0;
+        for (int k = 0; k < 60; k++) {
+            auto& p = s.players_[0];
+            p.alive = false;
+            s.spawnPlayer(0);
+            Vec3 to = p.move.pos + Vec3(0, 1.2f, 0) - eye;
+            float d = length(to);
+            seen += !s.map_.raycastAny(eye, to / d, d);
+            close += length(p.move.pos - w.move.pos) < 0.5f * best;
+            for (size_t i = 0; i < s.map_.spawns.size(); i++) if (length(s.map_.spawns[i].pos - p.move.pos) < 0.3f) used[i] = 1;
+        }
+        int kinds = 0; for (char u : used) kinds += u;
+        printf("  %s: %d different spawns in 60, %d in sight, %d under half the farthest distance\n", name, kinds, seen, close);
+        CHECK(kinds >= 2 && seen == 0 && close == 0);
+        for (auto& p : s.players_) p.connected = false;
+    }
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -2086,7 +2185,7 @@ static void testGameRules(const std::string& only) {
         {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
         {"shorthanded", [] { testShortHanded(TP(29288)); }},
         {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
-        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); }},
+        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
         {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
         {"locator", [] { testLocator(TP(29260)); }},
@@ -2094,7 +2193,7 @@ static void testGameRules(const std::string& only) {
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"cartbox", [] { testCartBoxPlace(TP(29275)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", [] { testSpawnTypes(TP(29251)); }},
+        {"spawns", [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
         {"seeds", [] { testRandomSeeds(); }},
         {"heal", [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", [] { testScoreboardValue(); }},

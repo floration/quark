@@ -1,7 +1,7 @@
 logic 1
 base points
 # Multi point: each team attacks once, taking the map's points in order against the clock (each point adds time).
-# Scored like payload: more points taken wins, then the faster attack; a tie plays two more rounds.
+# Scored like payload: more points taken wins, then the faster attack, then the one there sooner; dead level is a draw.
 use points
 
 param roundTime f32 = 150 # the attack's clock at the start
@@ -21,6 +21,7 @@ proc stopwatchLocked:
   if cart.completed[done] > 0:
     if now - roundStartTime > cart.completed[done]: endRoundNoScore(done)
   elif cart.best[attackers] > cart.best[done]: endRoundNoScore(attackers)
+  elif cart.best[attackers] == cart.best[done] and cart.best[done] > 0 and cart.bestTime[attackers] < cart.bestTime[done]: endRoundNoScore(attackers)
 
 slot tick:
   if pointStep(): return # a point was taken (or there's none left to attack)
@@ -43,14 +44,6 @@ slot roundOver:
   elif teamScore[A] > 0:
     if cart.completed[A] != cart.completed[B]: w = cart.completed[A] < cart.completed[B] ? A : B
   elif cart.best[A] != cart.best[B]: w = cart.best[A] > cart.best[B] ? A : B
-  if w == none and roundNo < 4:
-    announce("tied - tiebreaker rounds")
-    teamScore[A] = 0
-    teamScore[B] = 0
-    cart.best[A] = 0.0f
-    cart.best[B] = 0.0f
-    cart.completed[A] = 0.0f
-    cart.completed[B] = 0.0f
-    return
+  elif cart.best[A] > 0 and cart.bestTime[A] != cart.bestTime[B]: w = cart.bestTime[A] < cart.bestTime[B] ? A : B # level: the sooner there
   if w == none: endMatch(none, "match draw")
   endMatch(w, w, " wins the match")

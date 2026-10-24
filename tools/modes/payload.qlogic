@@ -1,7 +1,7 @@
 logic 1
 base payload
 # Payload: each team attacks once, pushing the cart down the track against the clock (checkpoints add time). The
-# team that pushed it farther (or delivered it faster) wins; a tie plays two more rounds.
+# team that pushed it farther (or delivered it faster) wins; level, the one there sooner; dead level is a draw.
 use cart
 
 param roundTime f32 = 240
@@ -11,6 +11,11 @@ param cartSpeed f32 = 1.6 # with one pusher (+25% for each more, up to twice)
 param cartRollback f32 = 0.6 # the cart rolls back this fast when left alone...
 param cartIdle f32 = 10 # ...after this long with no attacker at it
 param cartCheckBonus f32 = 60 # added to the clock at each checkpoint
+
+# Attackers past the last checkpoint, on a map whose spawns don't move up, are back after 3 s (the last leg is long).
+slot respawnDelay:
+  if phase == live and team(p) == attackers and cart.checkpointCount > 0 and cart.checkpoint >= cart.checkpointCount and not stagedSpawns: return min(respawnTime, 3.0f)
+  return respawnTime
 
 slot roundSetup:
   attackers = roundNo % 2 == 1 ? A : B
@@ -23,6 +28,7 @@ proc stopwatchLocked:
   if cart.completed[done] > 0:
     if now - roundStartTime > cart.completed[done]: endRoundNoScore(done)
   elif cart.best[attackers] > cart.best[done]: endRoundNoScore(attackers)
+  elif cart.best[attackers] == cart.best[done] and cart.best[done] > 0 and cart.bestTime[attackers] < cart.bestTime[done]: endRoundNoScore(attackers)
 
 slot tick:
   cartStep()
@@ -38,7 +44,7 @@ slot delivered:
   cart.completed[attackers] = f32(now - roundStartTime)
   endRound(attackers, "payload delivered")
 
-# After both teams have attacked: more deliveries wins, then the faster delivery, then the farther push.
+# After both teams have attacked: more deliveries wins, then the faster delivery, then the farther push, then the one there sooner.
 slot roundOver:
   if roundNo < 2 or roundNo % 2 != 0: return
   w = none
@@ -46,14 +52,6 @@ slot roundOver:
   elif teamScore[A] > 0:
     if cart.completed[A] != cart.completed[B]: w = cart.completed[A] < cart.completed[B] ? A : B
   elif cart.best[A] != cart.best[B]: w = cart.best[A] > cart.best[B] ? A : B
-  if w == none and roundNo < 4:
-    announce("tied - tiebreaker rounds")
-    teamScore[A] = 0
-    teamScore[B] = 0
-    cart.best[A] = 0.0f
-    cart.best[B] = 0.0f
-    cart.completed[A] = 0.0f
-    cart.completed[B] = 0.0f
-    return
+  elif cart.best[A] > 0 and cart.bestTime[A] != cart.bestTime[B]: w = cart.bestTime[A] < cart.bestTime[B] ? A : B # level: the sooner there
   if w == none: endMatch(none, "match draw")
   endMatch(w, w, " wins the match")

@@ -612,6 +612,7 @@ void startMatch(Server& s) {
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
+    s.bestTime_[0] = s.bestTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.tagOut_.clear();   // tag knockouts last one match: everyone is back in for the next
@@ -633,7 +634,15 @@ int payloadWinner(const Server& s) {
         return -1;
     }
     if (s.bestProgress_[0] != s.bestProgress_[1]) return s.bestProgress_[0] > s.bestProgress_[1] ? TEAM_A : TEAM_B;
+    // T17: level: whoever got there first (tiebreaker rounds used to add 8-11 min, in 6 of 16 Midtown matches)
+    if (s.bestProgress_[0] > 0 && s.bestTime_[0] != s.bestTime_[1]) return s.bestTime_[0] < s.bestTime_[1] ? TEAM_A : TEAM_B;
     return -1;
+}
+// A new best for the attack: its progress, and when it got there (T17's tiebreak)
+void noteBest(Server& s, int att, float v) {
+    if (v <= s.bestProgress_[att]) return;
+    s.bestProgress_[att] = v;
+    s.bestTime_[att] = (float)(s.time() - s.roundStart_);
 }
 
 const char* teamName(int t) { return t == TEAM_A ? "TEAM A" : "TEAM B"; }
@@ -671,7 +680,8 @@ int stopwatchLocked(const Server& s) {
     if (m.round % 2 != 0) return -1;
     const int att = m.attackers, first = other(att);
     if (s.completeTime_[first] > 0) return s.time() - s.roundStart_ > s.completeTime_[first] ? first : -1;
-    return s.bestProgress_[att] > s.bestProgress_[first] ? att : -1;
+    const float a = s.bestProgress_[att], f = s.bestProgress_[first];   // (level but there sooner: theirs too, T17)
+    return a > f || (a == f && a > 0 && s.bestTime_[att] < s.bestTime_[first]) ? att : -1;
 }
 
 // winner: team for team modes, player id for race, -1 = draw/no winner.
@@ -687,11 +697,19 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
         if (winner >= 0 && award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
         const int att = m.attackers, first = other(att);
         text = std::string(teamName(att)) + " " + attackText(s, att);
-        if (m.round % 2 == 1) { text += " - " + std::string(teamName(first)) + " must beat it"; winner = -1; }
+        // (by when: a level attack is decided on it, T17)
+        auto by = [&](int t) { return s.completeTime_[t] > 0 || s.bestProgress_[t] <= 0 ? std::string() : " by " + clockText(s.bestTime_[t]); };
+        if (m.round % 2 == 1) { text += by(att) + " - " + std::string(teamName(first)) + " must beat it"; winner = -1; }
         else {
             winner = payloadWinner(s);
-            text += winner == att ? " - beats " : winner < 0 ? " - level with " : " - short of ";
-            text += std::string(teamName(first)) + "'s " + markText(s, first);
+            const bool level = s.completeTime_[att] <= 0 && s.completeTime_[first] <= 0 && s.bestProgress_[att] == s.bestProgress_[first];
+            if (level && winner >= 0)
+                text += by(att) + " - level with " + teamName(first) + "'s " + markText(s, first) + (winner == att ? ", there sooner than its " : ", which got there sooner, by ") +
+                        clockText(s.bestTime_[first]);
+            else {
+                text += winner == att ? " - beats " : winner < 0 ? " - level with " : " - short of ";
+                text += std::string(teamName(first)) + "'s " + markText(s, first);
+            }
         }
     } else if (winner >= 0) {
         if (award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
@@ -749,14 +767,7 @@ bool nativeRoundOver(Server& s) {
         case MODE_PAYLOAD:
         case MODE_POINTS: {   // (multi point: progress = points taken + the capture on the next one)
             if (m.round < 2 || m.round % 2 != 0) return false;
-            int w = payloadWinner(s);
-            if (w < 0 && m.round < 4) { // the tiebreaker is decided on its own two rounds
-                s.message("tied - tiebreaker rounds");
-                m.scoreA = m.scoreB = 0;
-                s.bestProgress_[0] = s.bestProgress_[1] = 0;
-                s.completeTime_[0] = s.completeTime_[1] = 0;
-                return false;
-            }
+            int w = payloadWinner(s);   // (level on progress: the sooner there, T17; no tiebreaker rounds: dead level is a draw)
             enterMatchEnd(s, w >= 0 ? std::string(teamName(w)) + " wins the match" : "match draw", w);
             return true;
         }
@@ -1073,8 +1084,7 @@ void cartStep(Server& s) {
         raise(s, MSLOT_CART_CHECKPOINT, m.point);
         if (m.phase != PHASE_LIVE) return;
     }
-    float& best = s.bestProgress_[att];
-    best = std::max(best, m.payloadDist);
+    noteBest(s, att, m.payloadDist);
     // (once a round: a delivered slot that doesn't end the round isn't raised again every tick the cart sits there)
     if (m.payloadDist >= m.payloadLen - 1e-3f && !s.cartDelivered_) { s.cartDelivered_ = true; raise(s, MSLOT_DELIVERED); }
 }
@@ -1121,12 +1131,11 @@ bool pointStep(Server& s) {
     if (m.capture >= 1.0f) {
         m.capture = 0;
         m.point++;
-        float& best = s.bestProgress_[att];
-        best = std::max(best, (float)m.point);
+        noteBest(s, att, (float)m.point);
         raise(s, MSLOT_CAPTURE, m.point);   // (the points taken now: 1 = the first)
         return true;
     }
-    s.bestProgress_[att] = std::max(s.bestProgress_[att], m.point + m.capture * 0.99f);
+    noteBest(s, att, m.point + m.capture * 0.99f);
     return false;
 }
 
@@ -1527,6 +1536,10 @@ void rulesEndMatch(Server& s, const std::string& text, int winner) {
     enterMatchEnd(s, text, winner);
 }
 
+namespace {
+bool stagedSpawns(const Map& map) { for (auto& sp : map.spawns) if (isStagedSpawn(sp.team)) return true; return false; }
+}
+
 float rulesRespawnDelay(const Server& s, int id) {
     if (s.ms_.phase == PHASE_WARMUP) return P(s).warmupRespawn;
     if (s.ms_.phase == PHASE_MATCH_END) return -1.0f;
@@ -1536,6 +1549,13 @@ float rulesRespawnDelay(const Server& s, int id) {
     // idled out its 300 s with every hider scoring (owner's pick, F6; hide.qlogic's respawnDelay says the same)
     if (s.ms_.mode == MODE_HIDE && id >= 0 && id < kMaxPlayers && s.players_[id].it && (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_FREEZE))
         return kSeekerRespawn;
+    // payload attackers past the last checkpoint, on a map whose spawns don't move up, are back after kLastLegRespawn,
+    // not 5 s (T18: on Railyard's last leg they spawned 55 m from the cart, the defenders 37 m, and 3 of 40 bot rounds
+    // were delivered; payload.qlogic's respawnDelay says the same)
+    const ModeState& m = s.ms_;
+    if (m.mode == MODE_PAYLOAD && m.phase == PHASE_LIVE && id >= 0 && id < kMaxPlayers && s.players_[id].team == m.attackers &&
+        !s.map_.cartChecks.empty() && m.point >= s.map_.cartChecks.size() && !stagedSpawns(s.map_))
+        return std::min(P(s).respawnTime, kLastLegRespawn);
     return P(s).respawnTime;
 }
 
@@ -1698,6 +1718,8 @@ public:
             case MF_CART_DIST: return m.payloadDist;
             case MF_CART_LENGTH: return m.payloadLen;
             case MF_CART_CHECKPOINT: return m.point;
+            case MF_CART_CHECKPOINT_COUNT: return (double)s.map_.cartChecks.size();
+            case MF_STAGED_SPAWNS: return stagedSpawns(s.map_);
             case MF_POINT_INDEX: return m.point;
             case MF_POINT_CAPTURE: return m.capture;
             // per team (out of range: 0)
@@ -1707,6 +1729,7 @@ public:
             case MF_CART_BEST: return team(a) ? s.bestProgress_[a] : 0;
             case MF_CART_COMPLETED: return team(a) ? s.completeTime_[a] : 0;
             case MF_CART_NEAR: return team(a) ? s.cartNear_[a] : 0;
+            case MF_CART_BEST_TIME: return team(a) ? s.bestTime_[a] : 0;
             default: break;
         }
         // per player (out of range: 0; team: none)

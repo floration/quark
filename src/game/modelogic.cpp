@@ -130,6 +130,8 @@ const FieldInfo kFields[] = {
     {"cart.checkpoint", T_INT, MF_CART_CHECKPOINT, false, "", "checkpoints the cart has reached"},
     {"point.index", T_INT, MF_POINT_INDEX, false, "", "the point under attack (= points taken)"},
     {"point.capture", T_F32, MF_POINT_CAPTURE, false, "", "its capture, 0..1"},
+    {"cart.checkpointCount", T_INT, MF_CART_CHECKPOINT_COUNT, false, "", "the payload track's checkpoints on the map"},
+    {"stagedSpawns", T_BOOL, MF_STAGED_SPAWNS, false, "", "the map's spawns move up as the attack goes (staged spawns)"},
 };
 constexpr int kNumFields = (int)(sizeof kFields / sizeof kFields[0]);
 
@@ -150,6 +152,7 @@ const ArrayInfo kArrays[] = {
     {"cart.best", T_TEAM, T_F32, MF_CART_BEST, true, "", "payload: the farthest the team pushed the cart (m); multi point: points taken + capture"},
     {"cart.completed", T_TEAM, T_F32, MF_CART_COMPLETED, true, "s", "payload / multi point: how long the team's attack took to finish (0: it didn't)"},
     {"cart.near", T_TEAM, T_INT, MF_CART_NEAR, false, "", "players of the team alive at the cart at the last cart step"},
+    {"cart.bestTime", T_TEAM, T_F32, MF_CART_BEST_TIME, false, "s", "payload / multi point: when (since its round went live) the team's attack reached cart.best (a level attack: the sooner wins)"},
 };
 constexpr int kNumArrays = (int)(sizeof kArrays / sizeof kArrays[0]);
 
