@@ -37,16 +37,21 @@
       sel([['', 'All threads']].concat(threads), p.thread, v => { p.thread = v; DM.app.save(); draw(); }, 'Thread'),
       check('show finished (last 7 days)', p.showDone, v => { p.showDone = v; DM.app.save(); draw(); }));
     const pass = e => (!p.file || e.file === p.file) && (!p.thread || e.thread === p.thread);
-    const open = d.entries.filter(e => !DM.isDone(e) && pass(e));
+    const open = d.entries.filter(e => DM.isOpen(e) && pass(e));
     const sortE = (a, b) => (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9) ||
       (Date.parse((b.lastChanged || {}).time || '') || 0) - (Date.parse((a.lastChanged || {}).time || '') || 0);
-    const cols = DM.WAIT.map(w => ({w, list: open.filter(e => DM.waitKeys(e)[0] === w.key).sort(sortE)}));
+    const all = DM.WAIT.map(w => ({w, list: open.filter(e => DM.waitKeys(e)[0] === w.key).sort(sortE)}));
+    // Empty columns are named in one line instead of taking a column each, so the board fits a 1280 px screen.
+    const CORE = new Set(['owner', 'claude', 'nobody']);
+    const cols = all.filter(c => c.list.length || CORE.has(c.w.key));
+    const empty = all.filter(c => !c.list.length && !CORE.has(c.w.key));
     if (p.showDone) {
       const since = Date.now() - 7 * 86400000;
       cols.push({w: {key: 'done', label: 'Finished', cls: 'done'}, list: d.entries.filter(e => DM.isDone(e) && pass(e) &&
         Date.parse((e.lastChanged || {}).time || '') > since).sort(sortE)});
     }
-    const grid = h('div', {class: 'kanban', style: {gridTemplateColumns: 'repeat(' + cols.length + ', minmax(160px, 1fr))'}});
+    if (empty.length) tools.append(h('span', {class: 'faint', title: 'Columns with nothing in them right now'}, 'Empty: ' + empty.map(c => c.w.label).join(', ')));
+    const grid = h('div', {class: 'kanban', style: {gridTemplateColumns: 'repeat(' + cols.length + ', minmax(0, 1fr))'}});
     for (const {w, list} of cols) {
       grid.appendChild(h('div', {class: 'kcol ' + w.cls + (list.length ? '' : ' empty'), title: w.key === 'halt' ? 'HALT items: a Claude agent can’t continue until you act' : null},
         h('div', {class: 'kcol-h'}, h('span', null, w.label), h('b', null, String(list.length))),

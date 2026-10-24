@@ -19,7 +19,7 @@
     kanban: {file: '', thread: '', showDone: false},
     timeline: {range: '3d', openOnly: false},
     flow: {showDone: false, linkedOnly: true, collapsed: {}},
-    files: {sel: '', raw: false},
+    files: {sel: '', raw: false, probAll: true},
     editSub: 'file', editFile: '', addFile: '', haltOpen: true,
   };
   function merge(def, got) {
@@ -63,6 +63,7 @@
   function dataChanged() {
     $('#loading').hidden = true;
     DM.data.banners();
+    if (DM.files) DM.files.badge();
     if (DM.edit) DM.edit.dataChanged();
     if (st.prefs.tab === 'edit' && !DM.edit.showTab()) show('overview', {keepHash: true});
     for (const t of TABS) stale.add(t);
@@ -71,7 +72,7 @@
   }
   function rerender(tab) { stale.add(tab); if (st.prefs.tab === tab) render(tab); }
 
-  // ---------- hash deep links: #tab=..., #entry=<id>, #search=<text>, #file=<name> ----------
+  // ---------- hash deep links: #tab=..., #entry=<id>, #answer=<id>, #search=<text>, #file=<name> ----------
   function setHash(hs) {
     const want = '#' + hs;
     if (location.hash !== want) { try { history.replaceState(null, '', want); } catch (_) { /* file:// or sandbox */ } }
@@ -79,6 +80,7 @@
   function route() {
     const hs = new URLSearchParams(location.hash.replace(/^#/, ''));
     if (hs.has('entry')) { openEntryInList(hs.get('entry')); return; }
+    if (hs.has('answer')) { DM.edit.openAnswer(hs.get('answer')); return; }
     if (hs.has('search')) {
       Object.assign(st.prefs.entries, DEF.entries, {q: hs.get('search'), status: ''});
       save(); stale.add('entries'); show('entries', {keepHash: true}); syncEntryControls(); return;
@@ -93,12 +95,13 @@
   // Open the Entries tab, scrolled to one entry, highlighted and expanded.
   function openEntryInList(id) {
     const e = st.entryById && st.entryById[id];
-    if (!e) { show('entries'); return; }
+    if (!e) { show('entries'); toast('No entry "' + String(id).slice(0, 80) + '" (renamed, moved or removed?)'); return; }
     if (!DM.entries.matches(e)) { Object.assign(st.prefs.entries, DEF.entries, {status: '', sort: st.prefs.entries.sort}); save(); syncEntryControls(); }
     st.expanded.add(id);
     stale.add('entries');
     show('entries', {keepHash: true});
     setHash('entry=' + encodeURIComponent(id));
+    DM.entries.flush();
     const card = document.getElementById('card-' + cssId(id));
     if (card) {
       card.scrollIntoView({block: 'center'});
@@ -154,13 +157,13 @@
   }
 
   function help() {
-    const keys = [['/', 'Search (current tab, else Entries)'], ['1 – 7', 'Switch tabs'], ['Ctrl+S', 'Edit tab: save'], ['Ctrl+Enter', 'In an answer box: save the answer'], ['Esc', 'Close a dialog, leave the search box'],
+    const keys = [['/', 'Search (current tab, else Entries)'], ['1 – 7', 'Switch tabs'], ['Ctrl+S', 'Edit tab: save'], ['F8 / Shift+F8', 'Edit tab, after a clash: next / previous clash'], ['Ctrl+Enter', 'In an answer box: save the answer'], ['Esc', 'Close a dialog, leave the search box'],
       ['Wheel / drag', 'Zoom / pan the timeline'], ['Double-click', 'Timeline: show everything']];
     openDialog('About this page', h('div', null,
       h('p', null, 'The Claude Manager: a view of Claude Documents, the notebook every Claude on Quark writes. It reads its own copy of the repo every minute and checks here every 30 s.'),
       DM.edit && DM.edit.canEdit() ? h('p', null, 'Edit tab: change any file, answer questions (they go into 09-answers-from-q.md) or add an entry. Each save goes to the Claude Documents folder on this PC, is committed and pushed straight away; if GitHub can’t be reached it stays on the PC and goes up later.') :
         h('p', null, 'Editing is off here, so this page only reads.'),
-      h('p', null, '"Waiting on" is a guess from each entry’s text and its linked PRs and CI runs: q’s decision, q to push, PR review, CI, tests, Claude working, or nobody yet.'),
+      h('p', null, '"Waiting on" is a guess from each entry’s text and its linked PRs and CI runs: q’s decision, q to push, for q to read, q answered (Claude to act), PR review, CI, tests, Claude working, or nobody yet. Reference notes (08) and archived entries wait on nothing.'),
       h('div', {class: 'keys'}, keys.map(([k, d]) => [h('kbd', null, k), h('span', null, d)])),
       st.data ? h('p', {class: 'faint'}, 'Data: ', st.source, ' · docs commit ', String(st.data.mirrorHead || '').slice(0, 7) || '?',
         st.data.generatedAt ? [' · made ', DM.timeEl(st.data.generatedAt, 'dayclock')] : '') : null));
@@ -185,7 +188,17 @@
 
   // ---------- events ----------
   for (const b of $$('#tabs button')) b.addEventListener('click', () => show(b.dataset.tab));
-  $('#btnRefresh').addEventListener('click', () => DM.data.load());
+  // Refresh: have the server fetch the docs repo now (it otherwise fetches every 60 s), then load what it built.
+  async function refreshNow() {
+    const b = $('#btnRefresh');
+    b.disabled = true;
+    try {
+      if (st.source === '/api/data') await fetch('/api/refresh', {method: 'POST', cache: 'no-store'}).catch(() => null);
+      await DM.data.load();
+      if (st.source === '/api/data') for (const ms of [2000, 6000]) setTimeout(() => DM.data.load(), ms);   // (a fetch from GitHub takes a moment)
+    } finally { b.disabled = false; }
+  }
+  $('#btnRefresh').addEventListener('click', refreshNow);
   $('#btnHelp').addEventListener('click', help);
 
   const SEARCH = {entries: '#eQ', changes: '#cQ', threads: '#tQ'};

@@ -7,7 +7,7 @@
   const KIND_LABEL = {halt: 'Became halting (HALT)', added: 'New entry', status: 'Status change', edited: 'Edit', moved: 'Move', removed: 'Removal'};
   const kindOf = it => it.halting === true ? 'halt' : it.kind;
   const RANGES = [['6h', '6 h', 6 * 3600e3], ['24h', '24 h', 86400e3], ['3d', '3 days', 3 * 86400e3], ['7d', '7 days', 7 * 86400e3], ['all', 'All', 0]];
-  const LANE_H = 24, AXIS_H = 26;
+  const LANE_H = 24, AXIS_H = 36;   // the axis: a row of days (Dallas midnights) over a row of hours
   let view = null; // {t0, t1} kept across data refreshes
   let lastRangeKey = null;
 
@@ -37,11 +37,26 @@
     return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute) - Math.floor(t / 60000) * 60000;
   }
 
+  // Dallas midnights in [t0, t1]: [{t, label}].
+  function midnights(t0, t1) {
+    const out = [];
+    const p = {};
+    for (const x of new Intl.DateTimeFormat('en-US', {timeZone: 'America/Chicago', year: 'numeric', month: 'numeric', day: 'numeric'}).formatToParts(new Date(t0))) p[x.type] = +x.value || 0;
+    for (let k = 0; k < 400; k++) {
+      const u = Date.UTC(p.year, p.month - 1, p.day + k);
+      let t = u - tzOff(u);
+      t = u - tzOff(t);                                  // (the offset at that midnight, not 6 h later: DST days)
+      if (t > t1) break;
+      if (t >= t0) out.push({t, label: DM.dayLabel(new Date(t + 3600e3))});
+    }
+    return out;
+  }
+
   function render(body, tools) {
     const p = st.prefs.timeline;
     const evs = events();
     if (!evs.length) { body.appendChild(h('div', {class: 'empty'}, 'No changes yet.')); return; }
-    const unfinished = new Set(st.data.entries.filter(e => !DM.isDone(e)).map(e => e.thread || '(no thread)'));
+    const unfinished = new Set(st.data.entries.filter(DM.isOpen).map(e => e.thread || '(no thread)'));
     const laneLast = {};
     for (const ev of evs) laneLast[ev.lane] = Math.max(laneLast[ev.lane] || 0, ev.t);
     let lanes = Object.keys(laneLast).sort((a, b) => laneLast[b] - laneLast[a]);
@@ -93,19 +108,30 @@
       const x = t => (t - t0) / span * W;
       // lane stripes
       lanes.forEach((l, i) => { if (i % 2) svg.appendChild(s('rect', {x: 0, y: AXIS_H + i * LANE_H, width: W, height: LANE_H, class: 'tl-stripe'})); });
-      // ticks
-      const STEPS = [15, 30, 60, 120, 180, 360, 720, 1440, 2880, 10080].map(m => m * 60e3);
-      const step = STEPS.find(sp => W / (span / sp) >= 78) || STEPS[STEPS.length - 1];
-      const off = tzOff(t0);
-      let t = Math.floor((t0 + off) / step) * step - off;
-      for (; t <= t1; t += step) {
-        const xx = x(t);
-        if (xx < -1) continue;
-        const local = new Date(t + tzOff(t));
-        const midnight = local.getUTCHours() === 0 && local.getUTCMinutes() === 0;
-        svg.appendChild(s('line', {x1: xx, x2: xx, y1: AXIS_H - 4, y2: H, class: midnight ? 'tl-day' : 'tl-grid'}));
-        const lbl = step >= 86400e3 || midnight ? DM.dayLabel(new Date(t)) : DM.hhmm(new Date(t));
-        svg.appendChild(s('text', {x: xx + 3, y: 14, class: midnight ? 'tl-tick day' : 'tl-tick', text: lbl}));
+      // days: a line at every Dallas midnight, its date in the top row (every k-th day when they are close);
+      // the day at the left edge stays labelled when no midnight is near it
+      const days = midnights(t0, t1);
+      const pxDay = W / (span / 86400e3), every = Math.max(1, Math.ceil(84 / pxDay));
+      days.forEach((d, i) => {
+        const xx = x(d.t);
+        svg.appendChild(s('line', {x1: xx, x2: xx, y1: 0, y2: H, class: 'tl-day'}));
+        if (i % every === 0 || every === 1) svg.appendChild(s('text', {x: xx + 4, y: 13, class: 'tl-tick day', text: d.label}));
+      });
+      if (!days.length || x(days[0].t) > 96) svg.appendChild(s('text', {x: 4, y: 13, class: 'tl-tick day', text: DM.dayLabel(new Date(t0))}));
+      svg.appendChild(s('line', {x1: 0, x2: W, y1: 18.5, y2: 18.5, class: 'tl-grid'}));
+      // hours (only while a day is wide enough to show them)
+      const STEPS = [15, 30, 60, 120, 180, 360, 720].map(m => m * 60e3);
+      const step = STEPS.find(sp => W / (span / sp) >= 64);
+      if (step) {
+        const off = tzOff(t0);
+        for (let t = Math.floor((t0 + off) / step) * step - off; t <= t1; t += step) {
+          const xx = x(t);
+          if (xx < -1) continue;
+          const local = new Date(t + tzOff(t));
+          if (local.getUTCHours() === 0 && local.getUTCMinutes() === 0) continue;   // (the day line is there)
+          svg.appendChild(s('line', {x1: xx, x2: xx, y1: 20, y2: H, class: 'tl-grid'}));
+          svg.appendChild(s('text', {x: xx + 3, y: 31, class: 'tl-tick', text: DM.hhmm(new Date(t))}));
+        }
       }
       // now
       const nx = x(Date.now());
