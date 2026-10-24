@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GitHub manager</title>
+<title>GitHub Manager</title>
 <meta name="description" content="Quark's repository at a glance: production vs testing, branches, local copies, pull requests, CI runs and their logs, and a local history of all of it.">
 <script>
   // ?embed=1: hosted in the project manager's tab (it has its own tab bar), so the shared nav is hidden.
@@ -15,11 +15,11 @@
 </head>
 <body>
 <!-- ===== BEGIN shared quark-tools nav (same markup in every tool; hidden under ?embed=1) ===== -->
-<nav class="qt-nav" aria-label="Quark tools"><a class="qt-brand" href="http://127.0.0.1:8765/">Quark</a><a href="http://127.0.0.1:8765/" data-tool="dashboard" target="quark-dashboard">Dashboard</a><a href="http://127.0.0.1:8767/" data-tool="github" target="quark-github" aria-current="page">GitHub</a><a href="http://127.0.0.1:8766/" data-tool="docs" target="quark-docs">Claude Documents</a><span class="qt-nav-sep"></span><a href="http://127.0.0.1:8765/editors/sound-editor/sound-editor.html" target="quark-sound-editor">Sound editor</a><a href="http://127.0.0.1:8765/editors/model-editor/model-editor.html" target="quark-model-editor">Model editor</a><a href="http://127.0.0.1:8765/editors/map-editor/map-editor.html" target="quark-map-editor">Map editor</a><a href="http://127.0.0.1:8765/editors/bot-editor/bot-editor.html" target="quark-bot-editor">Bot editor</a><a href="http://127.0.0.1:8765/editors/ui-customizer/ui-customizer.html" target="quark-ui-customizer">UI customizer</a><span class="qt-nav-note"></span></nav>
+<nav class="qt-nav" aria-label="Quark tools"><a class="qt-brand" href="http://127.0.0.1:8768/">Quark</a><a href="http://127.0.0.1:8768/" data-tool="supervisor" target="quark-supervisor">Supervisor Board</a><a href="http://127.0.0.1:8765/" data-tool="dashboard" target="quark-dashboard">Editor Manager</a><a href="http://127.0.0.1:8767/" data-tool="github" target="quark-github" aria-current="page">GitHub Manager</a><a href="http://127.0.0.1:8766/" data-tool="docs" target="quark-docs">Claude Manager</a><span class="qt-nav-sep"></span><a href="http://127.0.0.1:8765/editors/sound-editor/sound-editor.html" target="quark-sound-editor">Sound editor</a><a href="http://127.0.0.1:8765/editors/model-editor/model-editor.html" target="quark-model-editor">Model editor</a><a href="http://127.0.0.1:8765/editors/map-editor/map-editor.html" target="quark-map-editor">Map editor</a><a href="http://127.0.0.1:8765/editors/bot-editor/bot-editor.html" target="quark-bot-editor">Bot editor</a><a href="http://127.0.0.1:8765/editors/ui-customizer/ui-customizer.html" target="quark-ui-customizer">UI customizer</a><span class="qt-nav-note"></span></nav>
 <!-- ===== END shared quark-tools nav ===== -->
 
 <header class="topbar">
-  <div class="tb-title"><h1>GitHub</h1><a id="repo-link" href="https://github.com/floration/quark" target="_blank" rel="noopener">floration/quark</a></div>
+  <div class="tb-title"><h1>GitHub Manager</h1><a id="repo-link" href="https://github.com/floration/quark" target="_blank" rel="noopener">floration/quark</a></div>
   <div id="status" class="tb-status" aria-live="polite">Connecting…</div>
   <button id="refresh" class="primary" type="button" title="Ask the server to poll GitHub now (at most once every 10 s)">Refresh</button>
 </header>

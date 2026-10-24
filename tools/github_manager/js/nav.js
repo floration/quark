@@ -1,5 +1,5 @@
 // Shared nav: dims the tools that aren't running (checked once at load, no-cors with a short timeout).
-const TOOLS = { dashboard: 'http://127.0.0.1:8765/', docs: 'http://127.0.0.1:8766/' };
+const TOOLS = { supervisor: 'http://127.0.0.1:8768/', dashboard: 'http://127.0.0.1:8765/', docs: 'http://127.0.0.1:8766/' };
 if (!document.documentElement.classList.contains('embed')) {
   for (const [tool, url] of Object.entries(TOOLS)) {
     const a = document.querySelector(`.qt-nav a[data-tool="${tool}"]`);

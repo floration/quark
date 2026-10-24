@@ -153,7 +153,7 @@ export function versionChip(v, url) {
   return chip('version', `#version=${enc(v)}`, v, url || gh(`/blob/testing/changelogs/${v}.md`), `Version ${v}`);
 }
 export const localChip = (name) => html`<span class="chip c-local"><a href="#local=${enc(name)}" title="Local copy ${name}">${name}</a></span>`;
-export const docsLink = (text) => html`<a class="docsl" href="${docsSearch(text)}" target="_blank" rel="noopener" title="Search the Claude Documents for ${text}">docs</a>`;
+export const docsLink = (text) => html`<a class="docsl" href="${docsSearch(text)}" target="_blank" rel="noopener" title="Search the Claude Manager for ${text}">docs</a>`;
 
 // ---- misc ----
 export function aheadBehind(a, b, ref = 'testing') {

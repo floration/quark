@@ -15,8 +15,8 @@ export function localCard(l, { full = false } = {}) {
       ${l.worktreeOf ? html`<span class="tag">worktree of ${l.worktreeOf}</span>` : ''}
       ${l.dirty ? html`<span class="tag t-dirty">${plural(l.dirty, 'uncommitted file')}</span>` : html`<span class="tag t-clean">clean</span>`}
       <span class="grow"></span>
-      <a class="small" href="${dashLink('view=changes&program=overview')}" target="quark-dashboard" title="The editor dashboard's changes, by program">changes by program</a>
-      <a class="small" href="${dashLink(`branch=${enc(l.branch || '')}`)}" target="quark-dashboard">branch in dashboard</a>
+      <a class="small" href="${dashLink('view=changes&program=overview')}" target="quark-dashboard" title="The Editor Manager's changes, by program">changes by program</a>
+      <a class="small" href="${dashLink(`branch=${enc(l.branch || '')}`)}" target="quark-dashboard">branch in Editor Manager</a>
     </header>
     <div class="lc-path mono muted" title="${l.path}">${l.path}</div>
     ${l.error ? html`<div class="msg bad small">${l.error}</div>` : ''}
