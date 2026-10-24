@@ -1,5 +1,6 @@
 #include "lightmap.h"
 #include "../common/u8file.h"
+#include "../common/net.h"
 #include <filesystem>
 #include <unordered_map>
 #include <algorithm>
@@ -121,25 +122,61 @@ bool loadCache(const Map& m, BakedWorld& out) {
         (int)hdr[3] != out.atlasW || (int)hdr[4] != out.atlasH) return false;
     out.texels.resize((size_t)out.atlasW * out.atlasH * 2);
     f.read((char*)out.texels.data(), out.texels.size());
-    return (bool)f;
+    if (!f) return false;
+    f.close();
+    // (eviction goes by write time: a hit marks the bake used, so the maps being played keep theirs)
+    std::error_code ec;
+    std::filesystem::last_write_time(utf8Path(cachePath(m)), std::filesystem::file_time_type::clock::now(), ec);
+    return true;
 }
 
 void saveCache(const Map& m, const BakedWorld& w) {
     std::error_code ec;
     std::filesystem::create_directories(userDataPath("cache"), ec);
+    // written to a temporary file and renamed over the cache in one step (a crash or a full disk mid-write left a
+    // truncated cache that every later load turned down and baked again)
+    const std::string path = cachePath(m), tmp = path + ".tmp";
     {
-        std::ofstream f(utf8Path(cachePath(m)), std::ios::binary);
+        std::ofstream f(utf8Path(tmp), std::ios::binary | std::ios::trunc);
         if (!f) return;
         uint32_t hdr[5] = {kCacheMagic, kBakeVersion, idWord(m), (uint32_t)w.atlasW, (uint32_t)w.atlasH};
         f.write((const char*)hdr, sizeof hdr);
         f.write((const char*)w.texels.data(), w.texels.size());
+        f.flush();
+        if (!f) { f.close(); std::filesystem::remove(utf8Path(tmp), ec); return; }
     }
+    std::filesystem::rename(utf8Path(tmp), utf8Path(path), ec);
+    if (ec) { std::filesystem::remove(utf8Path(tmp), ec); return; }
     std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> all;
     for (auto& e : std::filesystem::directory_iterator(userDataPath("cache"), ec))
         if (e.path().extension() == ".qlm") all.push_back({e.last_write_time(ec), e.path()});
     if (all.size() <= kMaxCaches) return;
     std::sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.first > b.first; });
     for (size_t i = kMaxCaches; i < all.size(); i++) std::filesystem::remove(all[i].second, ec);
+}
+
+// fn(i) for every i in [0, n), on the bake's thread count (the caller's thread is one of them), 256 at a time from a
+// shared counter; false if stopped() turned true (checked once per chunk). Each fn(i) writes only its own slots, so
+// the result is the same as a serial loop's.
+template <class S, class F> bool parallelFor(size_t n, const S& stopped, const F& fn) {
+    constexpr size_t kChunk = 256;
+    unsigned hc = std::thread::hardware_concurrency(), nt = std::max(1u, hc > 2 ? hc - 1 : hc);
+    nt = (unsigned)std::min<size_t>(nt, (n + kChunk - 1) / kChunk);
+    std::atomic<size_t> next{0};
+    std::atomic<bool> halted{false};
+    auto run = [&] {
+        for (;;) {
+            const size_t b = next.fetch_add(kChunk, std::memory_order_relaxed);
+            if (b >= n) return;
+            if (stopped()) { halted = true; return; }
+            for (size_t i = b, e = std::min(n, b + kChunk); i < e; i++) fn(i);
+        }
+    };
+    std::vector<std::thread> threads;
+    for (unsigned t = 1; t < nt; t++) threads.emplace_back(run);
+    run();
+    for (auto& th : threads) th.join();
+    return !halted;
 }
 } // namespace
 
@@ -156,9 +193,14 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     std::vector<Face> faces;
     const PointGrid solidAt(map);
     auto stopped = [&] { return cancel && cancel->load(std::memory_order_relaxed); };   // (checked through the prepass too)
-    for (const Brush& br : map.brushes) {
-        if (stopped()) { out.cancelled = true; return; }
-        if (br.material == 9) continue;   // clip: invisible
+    // The prepass's three loops run on the bake's threads (110-180 ms of every load, a cached one too, on one core):
+    // each brush's faces go to its own six slots and are gathered in brush order after, so the faces (and the atlas,
+    // the mesh and the cache they key) are the same as a serial loop's.
+    std::vector<Face> slots(map.brushes.size() * 6);
+    std::vector<uint8_t> keep(slots.size(), 0);
+    bool ran = parallelFor(map.brushes.size(), stopped, [&](size_t bi) {
+        const Brush& br = map.brushes[bi];
+        if (br.material == 9) return;   // clip: invisible
         for (int axis = 0; axis < 3; axis++)
             for (int sign = -1; sign <= 1; sign += 2) {
                 Face f;
@@ -180,9 +222,11 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                     Vec3 p = facePoint(f, lerpf(f.u0, f.u1, fu), lerpf(f.v0, f.v1, fv)) + n * 0.01f;
                     hidden = solidAt.solid(p);
                 }
-                if (!hidden) faces.push_back(f);
+                if (!hidden) { const size_t s = bi * 6 + axis * 2 + (sign > 0); slots[s] = f; keep[s] = 1; }
             }
-    }
+    });
+    if (!ran) { out.cancelled = true; return; }
+    for (size_t s = 0; s < slots.size(); s++) if (keep[s]) faces.push_back(slots[s]);
     // 1b. Outline edges: an edge shared flush with another face of the same material in the same plane is
     // not a real edge (a wall built from several boxes reads as one wall), so its outline is turned off.
     // edgeOff[f] bit 0: u0 edge, 1: u1, 2: v0, 3: v1.
@@ -231,8 +275,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
         });
     };
-    for (size_t i = 0; i < faces.size(); i++) {
-        if ((i & 1023) == 0 && stopped()) { out.cancelled = true; return; }
+    ran = parallelFor(faces.size(), stopped, [&](size_t i) {
         const Face& f = faces[i];
         const float e = 0.02f;
         for (int edge = 0; edge < 4; edge++) {
@@ -245,15 +288,15 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             }
             if (all) edgeOff[i] |= 1 << edge;
         }
-    }
+    });
+    if (!ran) { out.cancelled = true; return; }
     // 1c. Coplanar faces of different materials overlapping would z-fight: the higher material (wallbang >
     // accent > base) gets lifted a hair off its plane, so decorations can sit flush on gameplay geometry.
     // Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
     std::vector<uint8_t> needLift(faces.size(), 0);
-    for (size_t i = 0; i < faces.size(); i++) {
-        if ((i & 1023) == 0 && stopped()) { out.cancelled = true; return; }
+    ran = parallelFor(faces.size(), stopped, [&](size_t i) {
         const Face& f = faces[i];
-        if (f.material == 0) continue;
+        if (f.material == 0) return;
         auto overlaps = [&](uint32_t k) {
             const Face& o = faces[k];
             if (o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) return false;
@@ -270,7 +313,8 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                 for (int cu = cu0; cu <= cu1 && !hit; cu++) hit = near(f, mat, cu, cv, overlaps);
         }
         needLift[i] = hit;
-    }
+    });
+    if (!ran) { out.cancelled = true; return; }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
     for (auto& f : faces) if (f.material < 4) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
@@ -437,7 +481,9 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     if (progress) {
         while (doneCount < (int)faces.size()) {
             progress(faces.empty() ? 1.0f : doneCount / (float)faces.size());
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            // ~30 ms between updates, in 1 ms steps that stop once the work is done (one 30 ms sleep held a finished
+            // bake up to 30 ms; MinGW's sleep_for ignores the 1 ms timer period, sleepMs uses Sleep)
+            for (int ms = 0; ms < 30 && doneCount < (int)faces.size(); ms++) sleepMs(1);
         }
     }
     for (auto& th : threads) th.join();

@@ -171,12 +171,19 @@ struct Doc {
         const J& a = acc->a[ai];
         std::string type = a.str("type");
         comps = type == "SCALAR" ? 1 : type == "VEC2" ? 2 : type == "VEC3" ? 3 : type == "VEC4" ? 4 : type == "MAT4" ? 16 : 0;
-        int ct = a.inum("componentType", 0), count = a.inum("count", 0);
+        int ct = a.inum("componentType", 0);
+        double cn = a.num("count", 0);
         bool norm = a.get("normalized") && a.get("normalized")->b;
         int csize = ct == 5120 || ct == 5121 ? 1 : ct == 5122 || ct == 5123 ? 2 : ct == 5125 || ct == 5126 ? 4 : 0;
-        if (!comps || !csize || count < 0) { err = "unsupported accessor"; return false; }
-        out.assign((size_t)count * comps, 0.0f);
-        if (!a.get("bufferView")) return true;   // all zeros (sparse accessors are not supported)
+        if (!comps || !csize || !(cn >= 0 && cn < 2147483648.0)) { err = "unsupported accessor"; return false; }
+        const int count = (int)cn;
+        const size_t elem = (size_t)comps * csize;
+        // every size is checked before anything is allocated (a bogus count used to allocate first, up to 128 GB)
+        if (!a.get("bufferView")) {   // all zeros (sparse accessors are not supported)
+            if (count > (1 << 24)) { err = "accessor out of range"; return false; }   // (no buffer to bound it by)
+            out.assign((size_t)count * comps, 0.0f);
+            return true;
+        }
         const J* views = root.get("bufferViews");
         int vi = a.inum("bufferView", -1);
         if (!views || vi < 0 || vi >= (int)views->size()) { err = "bad bufferView"; return false; }
@@ -184,10 +191,14 @@ struct Doc {
         int bi = v.inum("buffer", 0);
         if (bi < 0 || bi >= (int)buffers.size()) { err = "bad buffer"; return false; }
         const std::vector<uint8_t>& buf = buffers[bi];
-        size_t off = (size_t)v.num("byteOffset", 0) + (size_t)a.num("byteOffset", 0);
-        size_t stride = (size_t)v.num("byteStride", 0);
-        if (!stride) stride = (size_t)comps * csize;
-        if (count && off + stride * (count - 1) + (size_t)comps * csize > buf.size()) { err = "accessor out of range"; return false; }
+        double vo = v.num("byteOffset", 0), ao = a.num("byteOffset", 0), vs = v.num("byteStride", 0);
+        if (!(vo >= 0 && ao >= 0 && vs >= 0 && vo + ao <= (double)buf.size() && vs <= 65536)) { err = "accessor out of range"; return false; }
+        size_t off = (size_t)vo + (size_t)ao;
+        size_t stride = (size_t)vs;
+        if (!stride) stride = elem;
+        // off + stride * (count - 1) + elem <= size, without overflowing
+        if (count && (elem > buf.size() - off || (size_t)(count - 1) > (buf.size() - off - elem) / stride)) { err = "accessor out of range"; return false; }
+        out.assign((size_t)count * comps, 0.0f);
         for (int i = 0; i < count; i++)
             for (int c = 0; c < comps; c++) {
                 const uint8_t* p = &buf[off + stride * i + (size_t)c * csize];
@@ -217,6 +228,9 @@ bool addPrimitive(Doc& d, const J& prim, const M4& xf, MeshData& out) {
     size_t nv = pos.size() / 3;
     if (attrs->get("NORMAL") && (!d.read(attrs->inum("NORMAL", -1), nrm, nc) || nc != 3)) nrm.clear();
     if (attrs->get("COLOR_0") && (!d.read(attrs->inum("COLOR_0", -1), col, cc) || (cc != 3 && cc != 4))) col.clear();
+    // (one per vertex or none: a shorter list was read past its end for the vertices it misses)
+    if (nrm.size() != nv * 3) nrm.clear();
+    if (col.size() != nv * cc) col.clear();
     std::vector<uint32_t> idx;
     if (prim.get("indices")) {
         if (!d.read(prim.inum("indices", -1), idxf, ic) || ic != 1) { if (d.err.empty()) d.err = "bad indices"; return false; }
