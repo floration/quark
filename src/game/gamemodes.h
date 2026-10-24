@@ -16,6 +16,7 @@ void rulesEndMatch(Server& s, const std::string& text, int winner); // end the m
 void rulesOnSpectate(Server& s, int id);          // a player is about to switch to spectator
 bool rulesTeamLocked(const Server& s);            // no joining a side now (a tag match is being played)
 float rulesRespawnDelay(const Server& s);         // < 0 means no respawn
+float rulesRespawnDelayFor(const Server& s, int id);   // player id's own (the hide and seek seeker, payload's last leg)
 bool rulesCanDamage(const Server& s, int attacker, int victim);
 bool rulesFrozen(const Server& s, int id);         // movement locked (freeze time / planting)
 int rulesSpawnType(const Server& s, int id);       // SPAWN_*

@@ -1942,7 +1942,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     e.c = (int16_t)(weapon < 0 ? weapon : weapon | (headHit_[victim] ? KILL_HEADSHOT : 0) | (airborne ? KILL_AIRBORNE : 0));
     {   // the victim's copy says "<killer's health, -1: not shown> <respawn in ms, -1: none>" for the death screen (old
         // clients ignore a kill's text). No killer health in ranked.
-        const float rs = rulesRespawnDelay(*this);
+        const float rs = rulesRespawnDelayFor(*this, victim);
         const bool showHp = killer >= 0 && killer < kMaxPlayers && killer != victim && players_[killer].alive && !cfg_.ranked;
         const std::string mine = std::to_string(showHp ? (int)std::ceil(std::max(0.0f, players_[killer].health)) : -1) + " " +
                                  std::to_string(rs >= 0 ? (int)std::lround(rs * 1000) : -1);
@@ -1955,10 +1955,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     glog(LOG_SIMPLE, "kill killer=%d \"%s\" victim=%d \"%s\" weapon=%d", killer, killer >= 0 ? players_[killer].name.c_str() : "", victim,
          v.name.c_str(), weapon);
     rulesOnDeath(*this, victim, killer);
-    float d = rulesRespawnDelay(*this);
-    // hide and seek: a seeker who falls (or dies) is back after 2 s; it used to stay dead and the round idled out
-    // its 300 s with every hider scoring (owner's pick, F6)
-    if (ms_.mode == MODE_HIDE && v.it && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_FREEZE)) d = kSeekerRespawn;
+    float d = rulesRespawnDelayFor(*this, victim);   // (the seeker, F6; payload's last leg, T18)
     v.respawnAt = d >= 0 ? time() + d : -1;
 }
 

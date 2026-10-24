@@ -1926,6 +1926,27 @@ static void testStopwatchLevel(uint16_t port) {
     }
 }
 
+// T18: on a payload map whose spawns don't move up (Railyard), attackers past the last checkpoint respawn in 3 s,
+// everyone else in the usual 5 s.
+static void testLastLegRespawn(uint16_t port) {
+    printf("payload: a quicker attacker respawn on the last leg\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    int att = rulesTeamPlayer(s, s.ms_.attackers), def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? TEAM_B : TEAM_A);
+    if (att < 0 || def < 0) { CHECK(false); s.stop(); return; }
+    auto wait = [&](int id) { s.killPlayer(id, -1, 252); double w = s.players_[id].respawnAt - s.time(); s.spawnPlayer(id); return w; };
+    double early = wait(att);
+    s.ms_.point = (uint8_t)s.map_.cartChecks.size();   // past the last checkpoint
+    double last = wait(att), defLast = wait(def);
+    printf("  attacker %.1f s, on the last leg %.1f s; defender there %.1f s\n", early, last, defLast);
+    CHECK(std::fabs(early - 5.0) < 0.01 && std::fabs(last - kLastLegRespawn) < 0.01 && std::fabs(defLast - 5.0) < 0.01);
+    s.stop();
+}
+
 // F23: multi point on a map without points can't start (it never ended).
 static void testPointsNoPoints(uint16_t port) {
     printf("multi point on a map without points\n");
@@ -1990,7 +2011,7 @@ static void testGameRules(const std::string& only) {
         {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
         {"shorthanded", [] { testShortHanded(TP(29288)); }},
         {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
-        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); }},
+        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
         {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
         {"locator", [] { testLocator(TP(29260)); }},

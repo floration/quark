@@ -57,6 +57,7 @@ inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one p
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
 constexpr float kSeekerRespawn = 2.0f;    // hide and seek: a seeker who fell (or died) is back this long after
+constexpr float kLastLegRespawn = 3.0f;   // payload, unstaged spawns: attackers past the last checkpoint (T18; else 5 s)
 constexpr float kTagRoundTime = 60.0f;   // tag: whoever is "it" when this runs out is eliminated
 constexpr float kTagFreeze = 2.0f;       // a newly tagged player stands still this long (no instant tag-back)
 // Hide and seek tiebreak (owner B8): once every round is played, players tied for first throw rock paper scissors.

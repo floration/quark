@@ -1339,6 +1339,23 @@ float rulesRespawnDelay(const Server& s) {
     return modeRespawnDelay(s.ms_.mode);
 }
 
+// One player's: a hide and seek seeker who fell is back after kSeekerRespawn (F6: it stayed dead and the round idled
+// out its 300 s); payload attackers past the last checkpoint on a map whose spawns don't move up are back after
+// kLastLegRespawn, not 5 s (T18: on Railyard's last leg they spawned 55 m from the cart, the defenders 37 m, and 3 of
+// 40 bot rounds were delivered).
+float rulesRespawnDelayFor(const Server& s, int id) {
+    const float d = rulesRespawnDelay(s);
+    const ModeState& m = s.ms_;
+    const auto& p = s.players_[id];
+    if (m.mode == MODE_HIDE && p.it && (m.phase == PHASE_LIVE || m.phase == PHASE_FREEZE)) return kSeekerRespawn;
+    if (m.mode == MODE_PAYLOAD && m.phase == PHASE_LIVE && p.team == m.attackers && !s.map_.cartChecks.empty() && m.point >= s.map_.cartChecks.size()) {
+        bool staged = false;
+        for (auto& sp : s.map_.spawns) staged |= isStagedSpawn(sp.team);
+        if (!staged) return std::min(d, kLastLegRespawn);
+    }
+    return d;
+}
+
 bool rulesCanDamage(const Server& s, int attacker, int victim) {
     if (s.ms_.phase == PHASE_ROUND_END || s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_FREEZE) return false;
     if (s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP) return false; // race: knockback only
