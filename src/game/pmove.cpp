@@ -212,11 +212,15 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     s.jumpGrace = std::max(0.0f, s.jumpGrace - dt);
     // Holding jump bunny-hops: jump on the first grounded tick, before friction applies. (Not while a dash runs: a
     // jump on the floor then is the dash's, below.)
-    if (onGround && jumpHeld && !frozen && !dashActive) {
+    // A jump tapped up to the buffer's 0.1 s before landing (let go again by then) jumps there too (owner, T1): a tap a
+    // hair early used to do nothing, and each 10 ms late cost ~1.4 m/s against holding jump.
+    const bool tapped = !jumpHeld && s.jumpBuffer > 0 && !frozen && !grappleOnly;
+    if (onGround && (jumpHeld || tapped) && !frozen && !dashActive) {
         s.vel.y = jumpSpeed;
         onGround = false;
         s.events |= ME_JUMP;
         if (freshJump) s.jumpGrace = jumpWindow;   // (a dash right after this press is still a ground dash jump)
+        if (tapped) s.jumpBuffer = 0;              // (that press is used)
     }
 
     // Dash: one burst in the movement direction (or forward), spending a charge, once the cooldown since the last
@@ -520,7 +524,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.pos.y += probe; // settle onto the floor
         float impact = -before.vel.y;
         if (!grounded && !dashing && impact > kLandSoundSpeed) { s.events |= ME_LAND; s.landSpeed = std::max(s.landSpeed, impact); }
-        if (jumpHeld && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
+        if ((jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly). Not off a dash's own push into the floor: that's a super dash
             // (next step, from the floor) or nothing.
@@ -528,6 +532,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             nowGround = false;
             bounced = true;
             s.events |= ME_JUMP;
+            if (tapped) s.jumpBuffer = 0;
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]));

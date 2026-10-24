@@ -307,6 +307,36 @@ static void testRemoteMoveSounds(uint16_t port) {
     s.stop();
 }
 
+// T1: a jump tapped (and let go) up to 0.1 s before landing jumps on landing like holding jump does.
+static void testJumpTapBuffer() {
+    printf("jump tap buffer\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -50 -1 -50 50 0 50\nspawn any 0 0 0\n", &err));
+    auto start = [] { MoveState q; q.pos = {0, 3, 0}; q.vel = {8, 0, 0}; return q; };
+    int land = -1;   // the step that lands, falling 3 m with no input
+    { MoveState q = start(); for (int i = 0; i < 2000 && land < 0; i++) { pmove(q, UserCmd(), m); if (q.flags & MF_ONGROUND) land = i; } }
+    CHECK(land > 100);
+    // jump pressed for 5 ms starting `early` ms before the landing step (or held from the start: early < 0)
+    auto run = [&](int early) {
+        MoveState q = start();
+        for (int i = 0; i <= land + 20; i++) {
+            UserCmd c;
+            if (early < 0 || (i >= land - early && i < land - early + 5)) c.buttons = BTN_JUMP;
+            pmove(q, c, m);
+        }
+        return q;
+    };
+    const MoveState held = run(-1);
+    CHECK(held.vel.y > 5);   // (bounced off the landing)
+    for (int early : {10, 30, 60, 90}) {
+        MoveState t = run(early);
+        if (std::fabs(t.vel.y - held.vel.y) > 1e-4f || std::fabs(t.pos.y - held.pos.y) > 1e-4f) printf("  tapped %d ms early: vy %.3f, held %.3f\n", early, t.vel.y, held.vel.y);
+        CHECK(std::fabs(t.vel.y - held.vel.y) < 1e-4f && std::fabs(t.pos.y - held.pos.y) < 1e-4f && std::fabs(t.vel.x - held.vel.x) < 1e-4f);
+    }
+    CHECK(run(150).vel.y <= 0.0f);   // (past the buffer: no jump)
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -7092,7 +7122,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
