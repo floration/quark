@@ -7,6 +7,7 @@ wpnrangemap, and the weapon set keys of the bot editor's sim / simbatch (weapons
 The tool defaults to $QUARK_MAPTOOL, then build/quark_maptool. python3 stdlib only. When node is on PATH, wpnstats is
 also compared row by row with the page's own arithmetic (web/js/stats.js). Exit code 0 = pass."""
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -85,6 +86,7 @@ check(len(p.get("fields", [])) > 200 and all(f["key"] in p["values"] for f in p[
 check(p.get("changed") == [] and p.get("ok") is True and p.get("name") is None, "the standard set: nothing changed")
 check(len(p.get("weapons", [])) == 11 and p.get("defaultText", "").startswith("version 1"), "11 weapons, the default text")
 check("range" in p.get("features", []) and "stats" in p.get("features", []), "features")
+RIFLE = p["values"]["rifle.damage"]   # the standard rifle's damage (gamedefs.h), never a copy of it
 qt = os.path.join(ROOT, "build", "quark_tests")
 if os.path.isfile(qt):
     out = os.path.join(ROOT, "build", "wpn_test_catalog.json")
@@ -94,6 +96,8 @@ if os.path.isfile(qt):
             cat = json.load(f)
         os.remove(out)
         check([x["key"] for x in cat["fields"]] == [x["key"] for x in p["fields"]] and cat["defaultText"] == p["defaultText"], "== quark_tests exportweapons")
+        bc = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "weapon_editor", "build_catalog.py"), "--quark-tests", qt, "--check"], capture_output=True, text=True, timeout=120)
+        check(bc.returncode == 0, "the page's built-in catalog (web/js/catalog_data.js) is the game's: " + bc.stdout.strip())
 p2, rc, _ = run("wpnparams", {"weapons": SET_HOT})
 check(rc == 0 and set(p2["changed"]) == {"rifle.damage", "rocket.damage"} and p2["values"]["rocket.damage"] == 300, "a set: changed, values")
 check(p2["labels"].get("rifle") == "HOT RIFLE" and p2["name"] == "hot" and set(p2["writes"]) == {"rifle.damage", "rocket.damage"}, "labels, name, writes")
@@ -128,7 +132,7 @@ check(R["rocket:primary:direct"]["body"] == 50 and R["rocket:primary:splash"]["h
 check(R["locator:primary"].get("support") and R["locator:primary"]["stkBody"] is None, "locator: support, no shots to kill")
 check(isinstance(s.get("gameRows"), list) and s["gameRows"], "gameRows (computeWeaponStats)")
 s2, rc, _ = run("wpnstats", {"weapons": SET_HOT, "compare": [""], "health": 200})
-check(s2["rows"][0]["body"] == 9.9 and s2["compare"][0]["rows"][0]["body"] == 4.95, "a set and the compare set")
+check(s2["rows"][0]["body"] == 9.9 and s2["compare"][0]["rows"][0]["body"] == RIFLE, "a set and the compare set")
 check(s2["compare"][0]["rows"][8]["stkHead"] == 4, "health 200: the sniper needs 4 head shots")
 s3, rc, _ = run("wpnstats", {"weapons": SET_FALL, "dist": 25})
 f = {r["id"]: r for r in s3["rows"]}
@@ -185,7 +189,7 @@ check(len(a["frames"]) == 501 and near(a["frames"][1]["t"] - a["frames"][0]["t"]
 fr = a["frames"][100]
 check(fr["players"][0].get("shooter") and len(fr["players"]) == 6 and all({"pos", "yaw", "pitch", "health", "alive"} <= set(x) for x in fr["players"]), "frame players")
 check(any(f["shots"] for f in a["frames"]) and all({"from", "to", "hit"} <= set(s) for f in a["frames"] for s in f["shots"]), "frame shot traces")
-check(all({"t", "hit", "head", "dmg", "target", "dist"} <= set(x) for x in a["shots"]) and a["shots"][0]["dmg"] == 4.95, "shots: per hit damage")
+check(all({"t", "hit", "head", "dmg", "target", "dist"} <= set(x) for x in a["shots"]) and a["shots"][0]["dmg"] == RIFLE, "shots: per hit damage")
 b, _, _ = run("wpnrange", {"weapon": "rifle", "seconds": 10, "seed": 1})
 check(strip(a) == strip(b), "deterministic (the same request, the same answer)")
 print("    10 s of rifle at 1000 Hz: %.3f s wall (%.0fx real time)" % (a["perf"]["wallSeconds"], a["perf"]["speedup"]))
@@ -200,10 +204,10 @@ check(bt["totals"]["shots"] > 0 and bt["totals"]["hits"] > 0 and bt["skill"] == 
 hot, _, _ = run("wpnrange", {"weapon": "rifle", "seconds": 4, "targets": [{"pos": [0, 0, -10]}], "weapons": SET_HOT, "compare": [SET_LOGIC]})
 check(hot["weaponSet"] == "hot" and hot["shots"][0]["dmg"] == 9.9, "a set: its damage")
 lg = hot.get("compare", [{}])[0]
-check(lg.get("weaponSet") == "logic" and lg.get("weaponLogic") and near(lg["shots"][0]["dmg"], 9.9, 1e-6), "compare: the other set ran too (its hit slot doubles 4.95)")
+check(lg.get("weaponSet") == "logic" and lg.get("weaponLogic") and near(lg["shots"][0]["dmg"], 2 * RIFLE, 1e-6), "compare: the other set ran too (its hit slot doubles the rifle's damage)")
 check(near(hot["targets"][0]["firstKill"], 10 * R["rifle:primary"]["refire"], 0.01), "11 shots of 9.9: the first kill a set's way")
 qm, _, _ = run("wpnrange", {"weapon": "rifle", "seconds": 7, "targets": [{"pos": [0, 0, -10]}], "qmode": "custommode=tanky\nhealth=200\n"})
-check(qm["qmode"] == "tanky" and qm["targets"][0]["health"] == 200 and near(qm["targets"][0]["firstKill"], 40 * R["rifle:primary"]["refire"], 0.01), "a qmode: its health (41 rifle shots)")
+check(qm["qmode"] == "tanky" and qm["targets"][0]["health"] == 200 and near(qm["targets"][0]["firstKill"], (math.ceil(200 / RIFLE - 1e-9) - 1) * R["rifle:primary"]["refire"], 0.01), "a qmode: its health (%d rifle shots)" % math.ceil(200 / RIFLE - 1e-9))
 e, rc, _ = run("wpnrange", {"weapon": "rifle", "weaponsAllowed": ["rocket"]})
 check(rc == 1 and "allow" in e.get("error", ""), "a weapon the pool doesn't allow: an error")
 e, rc, _ = run("wpnrange", {"weapon": "rifle", "weapons": SET_BAD})

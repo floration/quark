@@ -35,6 +35,7 @@ h3 { margin: 10px 0 6px; font-size: 12px; text-transform: uppercase; letter-spac
 .badge { padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 600; }
 .badge.mock { background: color-mix(in srgb, var(--warn) 25%, var(--bg1)); color: var(--warn); border: 1px solid var(--warn); }
 .badge.real { background: color-mix(in srgb, var(--ok) 20%, var(--bg1)); color: var(--ok); border: 1px solid var(--ok); }
+.badge.drift { background: color-mix(in srgb, var(--bad) 20%, var(--bg1)); color: var(--bad); border-color: var(--bad); }
 kbd { font: 11px var(--mono); background: var(--bg2); border: 1px solid var(--line2); border-radius: 3px; padding: 0 4px; }
 .warn { color: var(--warn); } .err { color: var(--bad); } .ok { color: var(--ok); }
 .check { display: flex; gap: 6px; align-items: center; font-size: 12px; margin: 3px 0; cursor: pointer; }

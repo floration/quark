@@ -1,6 +1,6 @@
 // Headless checks for the weapons editor (node 18+, Playwright from the environment; never `playwright install`).
 //
-//   node tools/weapon_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--quark-tests PATH] [--mock-only] [--no-browser]
+//   node tools/weapon_editor/web/test/run.mjs [--shots DIR] [--port N] [--maptool PATH] [--quark-tests PATH] [--mock-only] [--no-browser]
 //
 // 1. node checks: .qweapons text round-trips (the built-in standard set, the game's default text from quark_tests
 //    exportweapons when there is one, a set with labels / curves / slots), the page's checks, Blocks and Graph give
@@ -94,6 +94,15 @@ async function nodeChecks() {
         const gc = normalizeCatalog(gameCat);
         setCatalog(gc);
         tryOk("game catalog: " + gameCat.fields.length + " fields, " + gameCat.weapons.length + " weapons", () => gc.fields.length > 100 && gc.weapons.length >= 11);
+        tryOk("the built-in catalog (catalog_data.js) is the game's: every field, range, default; weapons; default text", () => {
+            const bad = [];
+            const gf = new Map(gameCat.fields.map((f) => [f.key, f]));
+            if (cat.fields.length !== gameCat.fields.length) bad.push(`fields: page ${cat.fields.length}, game ${gameCat.fields.length}`);
+            for (const f of cat.fields) { const g = gf.get(f.key); if (!g) { bad.push("no field " + f.key + " in the game"); continue; } for (const k of ["type", "min", "max", "default"]) if (g[k] !== f[k]) bad.push(`${f.key}.${k}: page ${f[k]}, game ${g[k]}`); }
+            if (cat.defaultText !== gameCat.defaultText) bad.push("defaultText differs");
+            if (cat.weapons.map((w) => w.id + ":" + w.kind).join(" ") !== gameCat.weapons.map((w) => w.name + ":" + w.kind).join(" ")) bad.push("weapons differ");
+            return bad.length === 0 || bad.slice(0, 6).join("; ") + " (run python3 tools/weapon_editor/build_catalog.py)";
+        });
         tryOk("the built-in catalog's slots match the game's", () => {
             const bad = [];
             for (const gs of gameCat.slots) { const bs = cat.slots.find((x) => x.name === gs.name); if (!bs) { bad.push("no slot " + gs.name); continue; }
@@ -133,7 +142,7 @@ async function nodeChecks() {
     const sset = parse(STD), vals = fieldValues(sset);
     const rows = computeStats(vals, { set: sset, health: 100 }).rows;
     const row = (w, m = "primary") => rows.find((r) => r.weapon === w && r.mode === m);
-    const want = [["rifle", 21, 14, 3.03, 1.97], ["sniper", 3, 2, 3, 1.5], ["shotgun", 3, 2, 1.5, 0.75], ["crossbow", 2, 2, 2, 2]];
+    const want = [["rifle", 20, 14, 2.88, 1.97], ["sniper", 3, 2, 3, 1.5], ["shotgun", 3, 2, 1.5, 0.75], ["crossbow", 2, 2, 2, 2]];
     for (const [w, sb, sh, tb, th] of want) tryOk(`${w}: ${sb}/${sh} shots, ${tb}/${th} s`, () => { const r = row(w); return (r.stkBody === sb && r.stkHead === sh && near(r.ttkBody, tb) && near(r.ttkHead, th)) || `${r.stkBody}/${r.stkHead} ${r.ttkBody}/${r.ttkHead}`; });
     tryOk("rocket direct hit: 2 shots, 1.2 s", () => { const r = rows.find((r) => r.weapon === "rocket" && /direct/.test(r.label) && !/lob/.test(r.label)); return (r && r.stkBody === 2 && near(r.ttkBody, 1.2)) || JSON.stringify(r && [r.stkBody, r.ttkBody]); });
     tryOk("laser: 40 hp/s, 2.5 s", () => { const r = row("laser"); return (near(r.dpsBody, 40, 0.05) && near(r.ttkBody, 2.5)) || `${r.dpsBody} ${r.ttkBody}`; });
@@ -162,7 +171,7 @@ const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), "qwe-tes
 const dataDir = path.join(tmp, "data");
 fs.mkdirSync(path.join(dataDir, "custom_modes"), { recursive: true });
 fs.writeFileSync(path.join(dataDir, "custom_modes", "wpn-keep.qmode"), "custommode=wpn-keep\r\nmode=duel\r\nhealth=150\r\nweaponset=old\r\n# a comment\r\nlogic\r\nwhen kill: score +1\r\n");
-const port = 8800 + Math.floor(Math.random() * 150);
+const port = +opt("--port", 0) || 8800 + Math.floor(Math.random() * 150);
 const py = process.platform === "win32" ? "py" : "python3";
 const srvArgs = [...(process.platform === "win32" ? ["-3"] : []), path.join(TOOL, "serve.py"), "--port", String(port), "--no-open", "--data-dir", dataDir,
     "--maptool", maptool || path.join(tmp, "no_maptool"), "--quark-tests", quarkTests || path.join(tmp, "no_quark_tests")];

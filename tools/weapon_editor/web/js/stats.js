@@ -84,9 +84,13 @@ const ROW_DEFS = [
 
 // values: Map key -> value; opts: {health, dist (the distance the shots-to-kill columns use; 0 = every hit lands),
 // set (the AST, for <weapon>.falloff curves), titles: Map weapon -> display name}
+// numbers the game keeps fixed (gamedefs.h: kSyringeThrowSpeed / Gravity / Life, kSyringeAway): a set can't change
+// them, so the catalog has no field for them; wpnstats reads the same constants (the load-time check compares)
+const FIXED = { "syringe.throwSpeed": 30, "syringe.throwGravity": 9, "syringe.throwLife": 2, "syringe.away": 4 };
+
 export function computeStats(values, opts = {}) {
     const H = opts.health || 100, D = opts.dist || 0;
-    const v = (k) => { const x = values.get(k); return x === undefined ? 0 : typeof x === "boolean" ? (x ? 1 : 0) : +x; };
+    const v = (k) => { const x = values.get(k); return x === undefined ? FIXED[k] || 0 : typeof x === "boolean" ? (x ? 1 : 0) : +x; };
     const curves = new Map();
     if (opts.set) for (const d of opts.set.decls) if (d.kind === "curve") curves.set(d.name, d);
     const rows = [];

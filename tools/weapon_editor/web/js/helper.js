@@ -15,7 +15,7 @@
 // that exists, else the built-in table.
 
 import { api } from "./api.js";
-import { builtinCatalog, normalizeCatalog } from "./catalog.js";
+import { builtinCatalog, normalizeCatalog, BUILTIN_SOURCE } from "./catalog.js";
 import { parse } from "./dsl.js";
 import { validate } from "./ast.js";
 import { computeStats } from "./stats.js";
@@ -35,7 +35,7 @@ async function call(cmd, request, timeout = 60) {
 
 export async function createHelper(config) {
     const H = {
-        kind: "mock", wpn: false, sim: false, catalogSource: "built-in (gamedefs.h 1.18)", why: "",
+        kind: "mock", wpn: false, sim: false, catalogSource: BUILTIN_SOURCE, why: "",
         label: "MOCK", rawCatalog: null,
     };
     const hasTool = !!(config && config.maptool) && !wantMock();
@@ -89,6 +89,28 @@ export async function createHelper(config) {
             const a = await call("wpnstats", { weapons: text, compare: compare ? [compare] : [], health: opts.health || 100, dist: opts.dist || 0 }, 30);
             return Array.isArray(a.rows) ? a : null;
         } catch { return null; }
+    };
+
+    // once per catalog load: the page's numbers (stats.js, used everywhere because they are instant) against the
+    // game's wpnstats on the standard set at two distances, so a change in gamedefs.h that stats.js doesn't follow
+    // shows up as a warning instead of silently wrong numbers. -> null (no wpnstats) or {diffs: [text]}
+    H.selfCheck = async (text, values, set) => {
+        if (!H.wpn) return null;
+        const COLS = ["body", "head", "stkBody", "stkHead", "ttkBody", "ttkHead", "dpsBody", "dpsHead", "refire", "range", "speed", "splashRadius", "splashMax", "at10", "at20", "at40"];
+        const same = (a, b) => (a == null || !Number.isFinite(a) ? b == null || !Number.isFinite(b) : b != null && Math.abs(a - b) <= 1e-4 * Math.max(1, Math.abs(a)));
+        const diffs = [];
+        for (const dist of [0, 20]) {
+            const g = await H.statsGame(text, null, { health: 100, dist });
+            if (!g) return null;
+            const mine = new Map(computeStats(values, { health: 100, dist, set }).rows.map((r) => [r.id, r]));
+            for (const gr of g.rows) {
+                const r = mine.get(gr.id);
+                if (!r) { diffs.push(`${gr.id}: the page has no such row`); continue; }
+                for (const k of COLS) if (!same(gr[k], r[k])) diffs.push(`${gr.id} ${k} at ${dist} m: game ${gr[k] ?? "∞"}, page ${Number.isFinite(r[k]) ? +r[k].toPrecision(7) : "∞"}`);
+                for (const p of gr.per || []) if (!same(p.body, r.per(p.d, false))) { diffs.push(`${gr.id} damage at ${p.d} m: game ${p.body}, page ${+r.per(p.d, false).toPrecision(7)}`); break; }
+            }
+        }
+        return { diffs };
     };
 
     // the range: the game's own server when the helper has wpnrange, else the page's stand-in

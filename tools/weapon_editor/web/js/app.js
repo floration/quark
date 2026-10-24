@@ -82,6 +82,19 @@ class App {
         });
         window.addEventListener("beforeunload", () => this._saveDraftNow());
         this.ready = true;
+        this._selfCheck();
+    }
+    // the page's numbers against the game's wpnstats, once per load (helper.js selfCheck): a mismatch is a warning on
+    // the badge, never a block
+    async _selfCheck() {
+        const r = await this.helper.selfCheck(this.cat.defaultText, this.stdValues, this.stdAst).catch(() => null);
+        const b = $("helperBadge");
+        if (!r) return;
+        if (!r.diffs.length) { b.title += "\nThe page's numbers (stats.js) match the game's wpnstats on the standard set."; return; }
+        b.textContent += " ≠"; b.classList.add("drift");
+        b.title += `\nThe page's numbers differ from the game's wpnstats in ${r.diffs.length} place${r.diffs.length > 1 ? "s" : ""} (stats.js needs updating to the game):\n` + r.diffs.slice(0, 12).join("\n");
+        console.warn("weapons editor: stats.js differs from wpnstats:", r.diffs);
+        this.toast(`the page's numbers differ from the game's in ${r.diffs.length} place${r.diffs.length > 1 ? "s" : ""}: see the header badge`, 6000);
     }
 
     // ---------------------------------------------------------------- the set
