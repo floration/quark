@@ -1,12 +1,10 @@
-/* Quark editor dashboard: its own layout. The colours, type, buttons, cards, tables, bars and badges are the shared
+/* Quark Editor Manager: its own layout. The colours, type, buttons, cards, tables, bars and badges are the shared
    quark-tools.css (loaded first). */
 :root { --row: 30px; }
 html, body { height: 100%; }
 body { display: flex; flex-direction: column; overflow: hidden; }
 #navEditors { display: contents; }
-.embed .qt-nav { display: none; }                                       /* (?embed=1: the project manager has the tabs) */
-.gh { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--qt-muted); }
-.gh:hover { color: var(--qt-accent); border-bottom-color: var(--qt-accent); }
+.embed .qt-nav { display: none; }                                       /* (?embed=1: the Supervisor Board has the tabs) */
 
 /* header */
 #top { display: flex; align-items: center; gap: 16px; padding: 8px 14px; background: var(--qt-panel); border-bottom: 1px solid var(--qt-line); flex-wrap: wrap; }
@@ -37,7 +35,6 @@ main { flex: 1; min-height: 0; display: flex; }
 .side button .nm { flex: 1; }
 .side .cnt { font-size: 11px; padding: 0 5px; border-radius: 8px; line-height: 16px; }
 .side .cnt.l { background: color-mix(in srgb, var(--qt-st-local) 25%, transparent); color: var(--qt-st-local); }
-.side .cnt.b { background: color-mix(in srgb, var(--qt-st-branch) 25%, transparent); color: var(--qt-st-branch); }
 .side .cnt.t { background: color-mix(in srgb, var(--qt-st-testing) 25%, transparent); color: var(--qt-st-testing); }
 .side .cnt.e { background: color-mix(in srgb, var(--qt-pending) 25%, transparent); color: var(--qt-pending); }
 .side .sep { border-top: 1px solid var(--qt-line); margin: 8px 0; }

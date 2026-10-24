@@ -1,4 +1,5 @@
-/* Quark editor dashboard page. Talks only to dashboard.py on 127.0.0.1:
+/* Quark Editor Manager page: the editors only (GitHub, Claude Documents, game code and tooling are the Supervisor
+   Board's). Talks only to dashboard.py on 127.0.0.1:
      GET  /api/status /api/changes /api/assets      the cached snapshot (dashboard.py builds it at start and on Refresh)
      POST /api/refresh {fetch}                      rebuild it (fetch: git fetch in each clone first)
      POST /api/mark {ids, origin, by, note | clear} the dashboard's own sidecar (never a git clone)
@@ -13,7 +14,6 @@ const STATUS_LABEL = {
   local: ["only local", "the change is not in testing yet"],
   testing: ["in testing", "in testing, not in production yet"],
   both: ["in both", "already in testing and production"],
-  branch: ["branch only", "on this remote branch, not in testing"],
   none: ["no net change", "changed by a commit, then changed back"],
   unc: ["uncommitted", "not committed in this clone"],
 };
@@ -21,7 +21,7 @@ const ROW_H = 30;
 
 const S = {
   summary: null, changes: null, assets: null,
-  tab: "changes", program: "Overview", expanded: new Set(),
+  tab: "changes", program: "overview", expanded: new Set(),
   filt: { assets: { q: "", origin: "", cat: "", pending: false }, remaining: { q: "", origin: "ai", cat: "", pending: false } },
   sel: new Set(), lastIdx: -1, markOrigin: "human", rows: [],
 };
@@ -93,10 +93,10 @@ async function refresh() {
   b.disabled = false; b.textContent = "Refresh";
 }
 
-// ---- the shared nav bar ------------------------------------------------------------------------------------------------
-// GitHub (8767) and Claude Documents (8766) are sibling local servers: dashboard.py checks they answer and the bar says
-// how to start one that doesn't. Each editor's page is served by dashboard.py under /editors/<folder>/ (Chrome / Edge
-// don't follow a file:// link from an http page).
+// ---- the nav bar ---------------------------------------------------------------------------------------------------------
+// The Supervisor Board (8768) is a sibling local server: dashboard.py checks it answers and the bar dims it when it
+// doesn't. Each editor's page is served by dashboard.py under /editors/<folder>/ (Chrome / Edge don't follow a file://
+// link from an http page).
 let linksAt = 0;
 const sib = (id) => ((S.links || {}).siblings || []).find((x) => x.id === id);
 function renderNav(L) {
@@ -107,8 +107,8 @@ function renderNav(L) {
     const a = document.querySelector(`#qtnav [data-tool="${x.id}"]`);
     if (!a) continue;
     a.classList.toggle("down", !x.up);
-    a.title = x.up ? x.url : `not running: start ${x.start}`;
-    if (!x.up) notes.push(`${x.label}: start ${x.start}`);
+    a.title = x.up ? x.url : downText(x);
+    if (!x.up) notes.push(`${x.label}: ${downText(x)}`);
   }
   $("#navNote").textContent = notes.join(" · ");
   $("#navEditors").innerHTML = L.editors.map((e) => `<a href="${esc(e.url)}" target="quark-${esc(e.folder)}" title="${esc(e.file)} (served from here: its browser autosave belongs to this address)">${esc(e.program)}</a>`).join("");
@@ -117,17 +117,13 @@ async function checkLinks() {
   linksAt = Date.now();
   try { renderNav(await api("/api/links")); } catch { /* the server is gone: loadAll says so */ }
 }
-// a link into the GitHub manager: kind = commit | branch | version | pr | run
-function gh(kind, value, text) {
-  const g = sib("github");
-  if (!g || !value) return esc(text);
-  return `<a class="gh" data-tool="github" href="${esc(g.url)}#${kind}=${esc(encodeURIComponent(value).replace(/%2F/g, "/"))}" target="quark-github" title="open in the GitHub manager (${kind} ${esc(value)})">${esc(text)}</a>`;
-}
+const downText = (x) => "not running" + (x.start ? ": start " + x.start : "");
 
-// ---- deep links: #view=changes&program=<id>, #view=assets&category=<cat>&origin=<o>&q=<text>, #view=remaining&category=,
+// ---- deep links: #view=changes&program=<id> (an editor's folder name), #view=assets&category=<cat>&origin=<o>&q=<text>, #view=remaining&category=,
 // #asset=<id> (and the old #changes / #assets / #remaining). The hash follows what is on screen (replaceState).
 const VIEWS = ["changes", "assets", "remaining"];
-const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const PROGRAM_ALIAS = { "ui-editor": "ui-customizer" };               // (the UI editor's id is its folder's name)
+const progId = (s) => { const v = String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); return PROGRAM_ALIAS[v] || v; };
 function applyHash() {
   const raw = location.hash.slice(1);
   if (!raw) return false;
@@ -140,7 +136,7 @@ function applyHash() {
   const v = p.get("view");
   if (!VIEWS.includes(v)) return false;
   S.tab = v;
-  if (v === "changes") { if (p.has("program")) S.program = slug(p.get("program")) || "overview"; }
+  if (v === "changes") { if (p.has("program")) S.program = progId(p.get("program")) || "overview"; }
   else {
     const f = S.filt[v];
     f.cat = p.get("category") || ""; f.q = p.get("q") || ""; f.pending = p.get("pending") === "1";
@@ -165,7 +161,7 @@ function writeHash() {
 // ---- header ---------------------------------------------------------------------------------------------------------
 function renderHeader() {
   const s = S.summary, h = s.human, c = h.counts;
-  const ver = (x) => x.version ? `<b>${gh("version", x.version, x.version)}</b>` : `<b class="muted">none</b>`;
+  const ver = (x) => x.version ? `<b>${esc(x.version)}</b>` : `<b class="muted">none</b>`;
   $("#facts").innerHTML = `
     <div class="fact"><span class="k">Testing</span>${ver(s.testing)}<span class="muted small mono" title="${esc(s.testing.ref || "no origin/testing")}">${esc(s.testing.sha || "no origin/testing")}</span></div>
     <div class="fact"><span class="k">Production</span>${ver(s.production)}<span class="muted small mono">${esc(s.production.tag || "no v<semver> tag")}</span></div>
@@ -187,28 +183,26 @@ function render() {
   if (S.tab === "changes") renderChanges(); else renderAssets(S.tab);
 }
 
-// ---- view 1: changes by program ---------------------------------------------------------------------------------------
+// ---- view 1: changes by editor ----------------------------------------------------------------------------------------
 function progCounts(p) {
   const local = p.files.filter(([, sts]) => Object.values(sts).includes("local")).length;
-  return { local, branches: p.branches.length, testing: p.testing.length, exports: p.exports.length };
+  return { local, testing: p.testing.length, exports: p.exports.length };
 }
 function renderChanges() {
   const ch = S.changes, progs = ch.programs;
   let side = `<button data-prog="overview" class="${S.program === "overview" ? "on" : ""}"><span class="nm">Overview</span></button><div class="sep"></div>`;
   for (const p of progs) {
     const c = progCounts(p);
-    side += `<button data-prog="${slug(p.name)}" class="${S.program === slug(p.name) ? "on" : ""}"><span class="nm">${esc(p.name)}</span>
+    side += `<button data-prog="${esc(p.id)}" class="${S.program === p.id ? "on" : ""}"><span class="nm">${esc(p.name)}</span>
       ${c.local ? `<span class="cnt l" title="files only local">${c.local}</span>` : ""}
-      ${c.branches ? `<span class="cnt b" title="unmerged remote branches">${c.branches}</span>` : ""}
       ${c.testing ? `<span class="cnt t" title="commits in testing, not production">${c.testing}</span>` : ""}
       ${c.exports ? `<span class="cnt e" title="exported files">${c.exports}</span>` : ""}</button>`;
   }
   side += `<div class="sep"></div><div class="legend small">
     <div><span class="cnt l">n</span> files only local</div>
-    <div><span class="cnt b">n</span> unmerged branches</div>
     <div><span class="cnt t">n</span> testing, not production</div>
     <div><span class="cnt e">n</span> editor exports</div></div>`;
-  const p = progs.find((x) => slug(x.name) === S.program);
+  const p = progs.find((x) => x.id === S.program);
   if (!p) S.program = "overview";
   writeHash();
   $("#view").innerHTML = `<aside class="side" id="side">${side}</aside><section class="pane" id="pane">${p ? programPane(p) : overviewPane()}</section>`;
@@ -217,32 +211,32 @@ function renderChanges() {
 function overviewPane() {
   const ch = S.changes, s = S.summary;
   let h = `<h2>Overview</h2>`;
-  h += `<h3>Clones and worktrees <span class="muted">compared with ${esc(s.testing.ref || "testing")} ${esc(s.testing.sha)} and ${esc(s.production.tag || "production")}</span></h3>`;
-  h += `<div class="card"><table class="t"><tr><th>Clone</th><th>Branch</th><th>HEAD</th><th>vs testing</th><th>vs production</th><th>Uncommitted</th><th>Notes</th></tr>`;
+  h += `<h3>By editor <span class="muted">compared with ${esc(s.testing.ref || "testing")} ${esc(s.testing.sha)} and ${esc(s.production.tag || "production")}</span></h3>`;
+  h += `<div class="card"><table class="t"><tr><th>Editor</th><th>Only local files</th><th>Local commits</th><th>Uncommitted</th><th>Testing, not production</th><th>Exports</th><th>Newest export</th></tr>`;
+  for (const p of ch.programs) {
+    const c = progCounts(p);
+    const commits = new Set(), unc = p.clones.reduce((n, x) => n + x.uncommitted.length, 0);
+    for (const x of p.clones) for (const cm of x.commits) commits.add(cm.sha);
+    const newest = p.exports.length ? p.exports[0].mtime : 0;
+    h += `<tr><td><a href="#view=changes&amp;program=${esc(p.id)}" data-prog="${esc(p.id)}">${esc(p.name)}</a></td><td class="num">${c.local || ""}</td><td class="num">${commits.size || ""}</td>
+      <td class="num">${unc || ""}</td><td class="num">${c.testing || ""}</td><td class="num">${c.exports || ""}</td><td>${when(newest)}</td></tr>`;
+  }
+  h += `</table></div>`;
+  // the clones, only as far as the editors' files go
+  h += `<h3>Working clones <span class="muted">the editors' files only</span></h3>`;
+  h += `<div class="card"><table class="t"><tr><th>Clone</th><th>Local commits</th><th>Uncommitted</th><th>Only local files</th><th>Notes</th></tr>`;
   for (const c of ch.clones) {
     const notes = [];
     if (c.role === "mirror") notes.push("mirror of testing (only pulled)");
     if (c.outside) notes.push(`<span class="muted mono small">${esc(c.path)}</span>`);
     if (c.stale) notes.push(`<span class="warn" title="this clone's origin/testing is ${esc(c.testingSha)}: Refresh with fetch">origin/testing here is ${esc(c.testingSha)}</span>`);
     for (const e of c.errors) notes.push(`<span class="err">${esc(e)}</span>`);
-    const ab = c.aheadTesting == null ? "-" : `<span title="commits ahead of testing">↑${c.aheadTesting}</span> <span class="muted" title="commits behind testing">↓${c.behindTesting}</span>`;
-    h += `<tr><td class="nowrap"><b>${esc(c.name)}</b></td><td class="mono nowrap">${esc(c.branch)}</td><td class="mono muted">${esc(c.head)}</td>
-      <td class="num">${ab}</td><td class="num">${c.aheadProd == null ? "-" : "↑" + c.aheadProd}</td>
-      <td class="num">${c.uncommitted ? `<span class="st st-unc">${c.uncommitted}</span>` : "0"}</td><td>${notes.join(" · ")}</td></tr>`;
+    h += `<tr><td class="nowrap"><b>${esc(c.name)}</b></td><td class="num" title="commits not in testing that touch an editor's files">${c.commits || ""}</td>
+      <td class="num">${c.uncommitted ? `<span class="st st-unc">${c.uncommitted}</span>` : ""}</td><td class="num">${c.local || ""}</td><td>${notes.join(" · ")}</td></tr>`;
   }
-  if (!ch.clones.length) h += `<tr><td colspan="7" class="empty">no clones found</td></tr>`;
+  if (!ch.clones.length) h += `<tr><td colspan="5" class="empty">no clones found</td></tr>`;
   h += `</table></div>`;
-  h += `<h3>By program</h3><div class="card"><table class="t"><tr><th>Program</th><th>Only local files</th><th>Local commits</th><th>Uncommitted</th><th>Unmerged branches</th><th>Testing, not production</th><th>Exports</th><th>Newest export</th></tr>`;
-  for (const p of ch.programs) {
-    const c = progCounts(p);
-    const commits = new Set(), unc = p.clones.reduce((n, x) => n + x.uncommitted.length, 0);
-    for (const x of p.clones) for (const cm of x.commits) commits.add(cm.sha);
-    const newest = p.exports.length ? p.exports[0].mtime : 0;
-    h += `<tr><td><a href="#view=changes&amp;program=${slug(p.name)}" data-prog="${slug(p.name)}">${esc(p.name)}</a></td><td class="num">${c.local || ""}</td><td class="num">${commits.size || ""}</td>
-      <td class="num">${unc || ""}</td><td class="num">${c.branches || ""}</td><td class="num">${c.testing || ""}</td><td class="num">${c.exports || ""}</td><td>${when(newest)}</td></tr>`;
-  }
-  h += `</table></div>`;
-  h += `<h3>Editor folders</h3><div class="card"><table class="t"><tr><th>Folder</th><th>Program</th><th>Page</th><th>Exported files</th></tr>`;
+  h += `<h3>Editor folders</h3><div class="card"><table class="t"><tr><th>Folder</th><th>Editor</th><th>Page</th><th>Exported files</th></tr>`;
   for (const e of ch.editors) {
     const ex = ch.exports.find((x) => x.name === e.folder), pg = ((S.links || {}).editors || []).find((x) => x.folder === e.folder);
     const page = pg ? pg.pages.map((n) => `<a href="/editors/${esc(e.folder)}/${esc(encodeURIComponent(n))}" target="_blank" rel="noopener">${esc(n)}</a>`).join(" · ") : `<span class="muted">-</span>`;
@@ -251,8 +245,8 @@ function overviewPane() {
   for (const ex of ch.exports.filter((x) => !ch.editors.some((e) => e.folder === x.name)))
     h += `<tr><td class="mono">${esc(ex.name)}</td><td class="muted">by path</td><td></td><td>${ex.files} <span class="muted small mono">${esc(ex.path)}</span></td></tr>`;
   h += `</table></div>`;
-  h += `<p class="muted small">Remote branches: ${ch.branches} unmerged shown per program, ${ch.branchesMerged} with nothing beyond testing hidden (from ${esc(s.refClone || "-")}).
-    Files go to programs by the PATH_RULES table at the top of dashboard.py.</p>`;
+  h += `<p class="muted small">Files go to editors by the PATH_RULES table at the top of dashboard.py; files of no editor are not shown
+    (game code, tooling and GitHub are in the Supervisor Board).</p>`;
   return h;
 }
 
@@ -262,8 +256,8 @@ function showMore(key, list, fn) {
   if (list.length > LIST_MAX) h += `<div class="more"><button data-more="${esc(key)}">${all ? "show fewer" : `show all ${list.length}`}</button></div>`;
   return h;
 }
-function commitRow(cm, fileFn, onGitHub) {
-  return `<div class="cm"><span class="mono muted" title="${esc(cm.sha)}">${onGitHub ? gh("commit", cm.sha, cm.h.slice(0, 8)) : esc(cm.h.slice(0, 8))}</span><span class="s" title="${esc(cm.s)}">${esc(cm.s)}</span><span class="muted small">${esc(cm.a)} · ${when(cm.t)}</span>
+function commitRow(cm, fileFn) {
+  return `<div class="cm"><span class="mono muted" title="${esc(cm.sha)}">${esc(cm.h.slice(0, 8))}</span><span class="s" title="${esc(cm.s)}">${esc(cm.s)}</span><span class="muted small">${esc(cm.a)} · ${when(cm.t)}</span>
     <div class="files">${cm.files.map(fileFn).join("")}</div></div>`;
 }
 
@@ -274,9 +268,7 @@ function programPane(p) {
   h += `<h3>Local work <span class="muted">commits ahead of testing and uncommitted files, in every working clone</span></h3>`;
   if (!p.clones.length) h += `<div class="empty">nothing local</div>`;
   for (const c of p.clones) {
-    const meta = S.changes.clones.find((x) => x.name === c.clone) || {};
-    h += `<div class="card"><div class="hd"><b>${esc(c.clone)}</b><span class="mono muted">${esc(c.branch)}</span>
-      ${meta.aheadTesting != null ? `<span class="muted">↑${meta.aheadTesting} ↓${meta.behindTesting} vs testing · ↑${meta.aheadProd ?? "-"} vs production</span>` : ""}</div>`;
+    h += `<div class="card"><div class="hd"><b>${esc(c.clone)}</b><span class="muted">${plural(c.commits.length, "commit")} not in testing · ${c.uncommitted.length} uncommitted</span></div>`;
     if (c.commits.length) h += showMore("c:" + p.name + c.clone, c.commits, (cm) => commitRow(cm, ([l, f, x]) => `<span><span class="letter">${esc(l)}</span>${esc(f)} ${st(x)}</span>`));
     if (c.uncommitted.length) {
       h += `<details ${c.uncommitted.length <= 12 ? "open" : ""}><summary>${plural(c.uncommitted.length, "uncommitted file")}</summary><div class="flist">`;
@@ -290,20 +282,12 @@ function programPane(p) {
     h += showMore("f:" + p.name, p.files, ([f, sts]) => `<tr><td class="mono">${esc(f)}</td><td>${Object.entries(sts).map(([cl, x]) => `<span class="muted small">${esc(cl)}</span> ${st(x)}`).join(" &nbsp; ")}</td></tr>`);
     h += `</table></details>`;
   }
-  // remote branches
-  h += `<h3>Unmerged remote branches <span class="muted">commits not in testing (read-only)</span></h3>`;
-  if (!p.branches.length) h += `<div class="empty">none touch ${esc(p.name)}</div>`;
-  for (const b of p.branches) {
-    h += `<div class="card"><div class="hd"><b class="mono">${gh("branch", b.name.replace(/^origin\//, ""), b.name)}</b><span class="muted">↑${b.ahead ?? "?"} ↓${b.behind ?? "?"} vs testing · last commit ${when(b.t)}</span>${st("branch")}</div>
-      <details><summary>${plural(b.commits.length, "commit")} · ${plural(b.files.length, "file")}</summary>
-      ${showMore("b:" + p.name + b.name, b.commits, (cm) => commitRow(cm, ([l, f]) => `<span><span class="letter">${esc(l)}</span>${esc(f)}</span>`, true))}</details></div>`;
-  }
   // testing vs production
   h += `<h3>In testing, not in production <span class="muted">${esc(s.production.tag || "no production tag")} → ${esc(s.testing.ref || "testing")} (${esc(s.production.version || "?")} → ${esc(s.testing.version || "?")})</span></h3>`;
   if (!p.testing.length && !p.testingFiles.length) h += `<div class="empty">nothing for ${esc(p.name)} since production</div>`;
   else {
     h += `<div class="card"><details ${p.testing.length <= 8 ? "open" : ""}><summary>${plural(p.testing.length, "commit")}</summary>`;
-    h += showMore("t:" + p.name, p.testing, (cm) => commitRow(cm, ([l, f]) => `<span><span class="letter">${esc(l)}</span>${esc(f)}</span>`, true));
+    h += showMore("t:" + p.name, p.testing, (cm) => commitRow(cm, ([l, f]) => `<span><span class="letter">${esc(l)}</span>${esc(f)}</span>`));
     h += `</details><details><summary>${plural(p.testingFiles.length, "file")} differ between production and testing</summary><div class="flist">`;
     h += showMore("tf:" + p.name, p.testingFiles, ([l, f]) => `<div><span class="letter">${esc(l)}</span><span class="p">${esc(f)}</span></div>`);
     h += `</div></details></div>`;
@@ -388,8 +372,8 @@ function renderAssets(mode) {
     <span class="seg">${ORIGINS.map((o) => `<button data-origin="${o}" class="${o} ${S.markOrigin === o ? "on" : ""}">${ORIGIN_LABEL[o]}</button>`).join("")}</span>
     <label>by <input type="text" name="by" value="${esc(store.get("by", "q"))}"></label>
     <label>note <input type="text" name="note" placeholder="optional"></label>
-    <button class="primary" id="markGo">Mark</button><button id="markClear" title="remove the dashboard's own mark for the selected items">Remove my mark</button>
-    <span class="muted small">saved to the dashboard's provenance.json, never into a clone</span></div>`;
+    <button class="primary" id="markGo">Mark</button><button id="markClear" title="remove the Editor Manager's own mark for the selected items">Remove my mark</button>
+    <span class="muted small">saved to the Editor Manager's provenance.json, never into a clone</span></div>`;
   // the list
   h += `<div class="vt"><div class="vrow vhead"><span><input type="checkbox" id="selHead" title="select every shown item"></span><span>Asset</span><span>Category</span><span>Origin</span><span>Pending</span><span>By / date</span><span>Source / note</span></div>
     <div class="vbody" id="vbody"><div id="vspace"></div></div><div class="vfoot" id="vfoot"></div></div>`;
@@ -489,7 +473,7 @@ document.addEventListener("click", (ev) => {
     api("/api/links").then((L) => {
       renderNav(L);
       const now = sib(sb.id);
-      now && now.up ? window.open(href, target) : toast(`${sb.label} isn't running: start ${sb.start}`, true);
+      now && now.up ? window.open(href, target) : toast(`${sb.label}: ${downText(sb)}`, true);
     });
     return;
   }
@@ -537,7 +521,7 @@ window.addEventListener("hashchange", () => { if (applyHash()) setTab(S.tab); })
 (function start() {
   S.tab = store.get("tab", "changes");
   if (!VIEWS.includes(S.tab)) S.tab = "changes";
-  S.program = slug(store.get("program", "overview"));
+  S.program = progId(store.get("program", "overview"));
   applyHash();                                                          // (a deep link wins over the remembered view)
   for (const b of document.querySelectorAll("#tabs [data-tab]")) b.classList.toggle("on", b.dataset.tab === S.tab);
   loadAll().catch((e) => { $("#view").innerHTML = `<div class="pane"><p class="err">Couldn't load: ${esc(e.message)}. Is dashboard.py still running?</p></div>`; });
