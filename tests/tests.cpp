@@ -3049,6 +3049,8 @@ static void testBotAim(uint16_t& port) {
 // end up standing on whatever it leads to.
 int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map scores are below 7)
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
+int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
+int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
@@ -6969,6 +6971,9 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && (std::string(argv[1]) == "exportbrain" || std::string(argv[1]) == "checkbrain" || std::string(argv[1]) == "brainast" || std::string(argv[1]) == "printbrain"))
+        return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
+    if (argc >= 2 && std::string(argv[1]) == "brainbench") return brainBench(TP(29170));
     if (argc >= 2 && std::string(argv[1]) == "brains") { g_fail += brainTests(TP(29150)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }

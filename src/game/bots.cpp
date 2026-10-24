@@ -265,14 +265,8 @@ bool NavGraph::ready(const Map& m) {
 
 namespace {
 
-float rnd(BotBrain& b) { // xorshift, 0..1
-    b.rng ^= b.rng << 13; b.rng ^= b.rng >> 17; b.rng ^= b.rng << 5;
-    return (b.rng & 0xFFFFFF) / 16777216.0f;
-}
-float gauss(BotBrain& b) { // Box-Muller
-    float u = std::max(rnd(b), 1e-7f), v = rnd(b);
-    return std::sqrt(-2.0f * std::log(u)) * std::cos(2 * PI * v);
-}
+float rnd(BotBrain& b) { return brainRnd(b.rng); }   // xorshift, 0..1 (botbrain.h)
+float gauss(BotBrain& b) { return brainGauss(b.rng); } // Box-Muller
 // An event that happens `rate` times a second on average: the chance over this tick (any tick length) is
 // p = 1 - exp(-rate * dt) (from tickConsts)
 bool chance(BotBrain& b, float rate, float p) { return rate > 0 && rnd(b) < p; }
@@ -401,8 +395,42 @@ bool safeHook(const Server& s, const ServerPlayer& me, const Vec3& anchor) {
     return true;
 }
 
+// ---- a loaded brain's interpreted slots (null when every slot is native: the built-in brain, or one that only
+// retunes numbers). The common sensors are filled once per think; each call site fills its own and runs the slot.
+struct Interp {
+    const Brain* br = nullptr;
+    int level = 1;
+    float dt = 0;
+    BrainCall c;
+    bool native(int slot) const { return br->native[slot]; }
+    const double* run(int slot) { runBrainSlot(*br, slot, level, dt, c); return c.out; }
+};
+#define NATIVE(slot) (!ip || ip->native(slot))
+
+// The objective slots' sensors (and urgent's)
+void objectiveSensors(const Server& s, int id, BrainCall& c) {
+    const ModeState& m = s.ms_;
+    const ServerPlayer& me = s.players_[id];
+    const Map& map = s.map_;
+    double* in = c.in;
+    in[S_CHECKPOINTSLEFT] = me.checkpoint < (int)map.checkpoints.size();
+    in[S_HASHILL] = map.hasHill;
+    in[S_HASCART] = map.payloadPath.size() >= 2;
+    in[S_POINTACTIVE] = m.point < map.points.size();
+    in[S_BOMBPLANTED] = m.bombState == BOMB_PLANTED;
+    in[S_BOMBDROPPED] = m.bombState == BOMB_DROPPED;
+    in[S_BOMBCARRIED] = m.bombState == BOMB_CARRIED;
+    in[S_ATTACKER] = me.team == m.attackers;
+    in[S_CARRIERISME] = m.bombCarrier == id;
+    in[S_CARRIERALIVE] = m.bombState == BOMB_CARRIED && m.bombCarrier >= 0 && m.bombCarrier < kMaxPlayers &&
+                         s.players_[m.bombCarrier].connected && s.players_[m.bombCarrier].alive;
+    in[S_NAVREADY] = !s.nav_.nodes.empty() && s.nav_.mapId == map.id();
+    in[S_IT] = me.it;
+    in[S_SITECOUNT] = (double)map.bombSites.size();
+}
+
 // ---- perception: look (view cone + line of sight) and listen, at 20 Hz of game time
-void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3& eye, double now) {
+void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3& eye, double now, Interp* ip) {
     const float scale = s.bodyScale();
     for (int i = 0; i < kMaxPlayers; i++) {
         BotAwareness& a = b.aware[i];
@@ -418,8 +446,14 @@ void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3&
             bool inCone = (off <= sp.fov * 0.5f && pOff < sp.vertCone) || dist < sp.feelDist; // (bumping into someone: felt)
             if (inCone) vis = canSee(s, eye, head) || canSee(s, eye, chest);
             if (vis && !a.visible) { // just came into view: the reaction starts now (slower out of the corner of the eye)
-                float react = sp.reactMs * 0.001f * (1.0f + 0.5f * off / (sp.fov * 0.5f)) * evalBrainCurve(sp.c_reactDist, dist);
-                if (now - a.seenAt < sp.reacquireWindow) react *= sp.reacquire; // lost behind cover a moment ago: expected back
+                float react;
+                if (NATIVE(SLOT_REACT)) {
+                    react = sp.reactMs * 0.001f * (1.0f + 0.5f * off / (sp.fov * 0.5f)) * evalBrainCurve(sp.c_reactDist, dist);
+                    if (now - a.seenAt < sp.reacquireWindow) react *= sp.reacquire; // lost behind cover a moment ago: expected back
+                } else {
+                    ip->c.in[S_OFF] = off; ip->c.in[S_DIST] = dist; ip->c.in[S_SINCESEEN] = now - a.seenAt;
+                    react = (float)ip->run(SLOT_REACT)[0];
+                }
                 a.reactedAt = now + react;
             }
         }
@@ -432,10 +466,19 @@ void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3&
         }
         // hearing: gunfire, running footsteps, dashes; the direction (and distance) only roughly
         float hs = std::sqrt(o.move.vel.x * o.move.vel.x + o.move.vel.z * o.move.vel.z);
-        bool gun = now - o.lastFire < sp.hearGunWindow && dist < sp.hearGun;
-        bool steps = (o.move.flags & MF_ONGROUND) && hs > sp.hearStepSpeed && dist < sp.hearSteps;
-        bool dash = o.move.dashTimer > 0 && dist < sp.hearSteps * sp.hearDashMult;
-        if (gun || steps || dash) {
+        bool heard;
+        if (NATIVE(SLOT_HEARING)) {
+            bool gun = now - o.lastFire < sp.hearGunWindow && dist < sp.hearGun;
+            bool steps = (o.move.flags & MF_ONGROUND) && hs > sp.hearStepSpeed && dist < sp.hearSteps;
+            bool dash = o.move.dashTimer > 0 && dist < sp.hearSteps * sp.hearDashMult;
+            heard = gun || steps || dash;
+        } else {
+            double* in = ip->c.in;
+            in[S_DIST] = dist; in[S_GUNAGE] = now - o.lastFire; in[S_ONGROUND] = (o.move.flags & MF_ONGROUND) != 0;
+            in[S_GROUNDSPEED] = hs; in[S_DASHING] = o.move.dashTimer > 0;
+            heard = ip->run(SLOT_HEARING)[0] != 0;
+        }
+        if (heard) {
             if (now - a.heardAt > sp.soundNewWindow) { // a new sound: a fresh guess at where it came from
                 float err = dist * sp.soundErr;
                 a.heardPos = o.move.pos + Vec3(gauss(b) * err, 0, gauss(b) * err);
@@ -447,12 +490,120 @@ void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3&
     }
 }
 
-// Where the bot wants to go when it isn't fighting: the mode's objective, else roam.
-Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp) {
-    const ModeState& m = s.ms_;
+// Where the bot wants to go when it isn't fighting: the mode's objective, else roam. The objective slots (botbrain.h)
+// choose between going to a point and these behaviours.
+Vec3 randomNavNode(Server& s, BotBrain& b) {
+    const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
+    return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f);
+}
+// no objective: go after what was last seen or heard, else roam between spawn points
+Vec3 fallbackGoal(Server& s, int id, BotBrain& b, const BrainParams& sp) {
     const ServerPlayer& me = s.players_[id];
     const Map& map = s.map_;
     const double now = s.time();
+    double bestT = -1e9; Vec3 lead;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const BotAwareness& a = b.aware[i];
+        if (now - a.seenAt >= sp.memory && now - a.heardAt >= sp.huntHeardWindow) continue; // (nothing recent: skip the checks)
+        if (!isEnemy(s, id, i)) continue;
+        if (now - a.seenAt < sp.memory && a.seenAt > bestT) { bestT = a.seenAt; lead = a.seenPos; }
+        else if (now - a.heardAt < sp.huntHeardWindow && a.heardAt > bestT) { bestT = a.heardAt; lead = a.heardPos; }
+    }
+    if (bestT > -1e9 && length(lead - me.move.pos) > sp.arriveDist) return lead;
+    if (map.spawns.empty()) return me.move.pos;
+    if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) {
+        const auto& spn = map.spawns[(size_t)(rnd(b) * map.spawns.size()) % map.spawns.size()];
+        b.goal = spn.pos;
+        b.goalUntil = now + sp.roamGoal + rnd(b) * sp.roamGoalRand;
+    }
+    return b.goal;
+}
+// (the graph is still the previous map's while this one's builds: roam between spawns until it's ready)
+bool navReadyFor(const Server& s) { return !s.nav_.nodes.empty() && s.nav_.mapId == s.map_.id(); }
+// seek ("it"): wander everywhere, toward anything heard or the locator's last find (targets are chased by the fight
+// code once seen)
+Vec3 seekGoal(Server& s, int id, BotBrain& b, const BrainParams& sp) {
+    const ServerPlayer& me = s.players_[id];
+    const double now = s.time();
+    if (now - me.locatedAt < sp.seekLocatorWindow) { b.goal = me.locatedPos; b.goalUntil = now + sp.seekLocatorGoal; }
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (isEnemy(s, id, i) && now - b.aware[i].heardAt < sp.seekHeardWindow && now - b.aware[i].seenAt > sp.seekUnseen) { b.goal = b.aware[i].heardPos; b.goalUntil = now + sp.seekHeardGoal; }
+    if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) { b.goal = randomNavNode(s, b); b.goalUntil = now + sp.seekWanderGoal; }
+    return b.goal;
+}
+// evade (a runner): flee "it" when it's near, else hide (hide and seek) or wander
+Vec3 evadeGoal(Server& s, int id, BotBrain& b, const BrainParams& sp) {
+    const ModeState& m = s.ms_;
+    const ServerPlayer& me = s.players_[id];
+    const double now = s.time();
+    // only what this runner has seen or heard of "it" (no knowing where it is through walls)
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (i != id && s.players_[i].connected && s.players_[i].alive && s.players_[i].it) it = i;
+    Vec3 itPos;
+    bool threat = false;
+    if (it >= 0) {
+        const BotAwareness& a = b.aware[it];
+        float range = m.mode == MODE_TAG ? sp.evadeRangeTag : sp.evadeRangeHide;
+        if (now - a.seenAt < sp.evadeFresh && length(a.seenPos - me.move.pos) < range) { threat = true; itPos = a.seenPos; }
+        else if (now - a.heardAt < sp.evadeFresh && length(a.heardPos - me.move.pos) < range * sp.evadeHeardMult) { threat = true; itPos = a.heardPos; }
+    }
+    if (threat && now > b.fleeUntil) { // run: the reachable-looking spot farthest from it
+        Vec3 best = b.goal;
+        float bestScore = -1e9f;
+        for (int k = 0; k < sp.fleeCandidates; k++) {
+            Vec3 c = randomNavNode(s, b);
+            float sc = length(c - itPos) - sp.fleeNearWeight * length(c - me.move.pos);
+            if (sc > bestScore) { bestScore = sc; best = c; }
+        }
+        b.goal = best; b.goalUntil = now + sp.fleeGoal; b.fleeUntil = now + sp.fleeCommit + (1.0f - sp.fleePredict) * sp.fleeHesitate;
+        return b.goal;
+    }
+    if (m.mode == MODE_HIDE && !threat) { // pick a hiding spot once and stay put
+        if (now > b.goalUntil) { b.goal = randomNavNode(s, b); b.goalUntil = now + sp.hideHold; }
+        if (length(b.goal - me.move.pos) < sp.hideArrive) return me.move.pos;
+        return b.goal;
+    }
+    if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) { b.goal = randomNavNode(s, b); b.goalUntil = now + sp.evadeWanderGoal; }
+    return b.goal;
+}
+// A point an objective slot named (where the bot stands when the map has no such thing)
+Vec3 brainPoint(const Server& s, int id, int pt, int arg) {
+    const ModeState& m = s.ms_;
+    const ServerPlayer& me = s.players_[id];
+    const Map& map = s.map_;
+    switch (pt) {
+        case PT_CHECKPOINT: if (me.checkpoint >= 0 && me.checkpoint < (int)map.checkpoints.size()) return map.checkpoints[me.checkpoint].center(); break;
+        case PT_HILL: if (map.hasHill) return {map.hill.center().x, map.hill.mn.y, map.hill.center().z}; break;
+        case PT_CART: if (map.payloadPath.size() >= 2) return map.cartPoint(m.mode, m.attackers, m.payloadDist); break;
+        case PT_POINT: if (m.point < map.points.size()) { const AABB& p = map.points[m.point]; return {p.center().x, p.mn.y, p.center().z}; } break;
+        case PT_BOMB: if (m.bombState == BOMB_PLANTED || m.bombState == BOMB_DROPPED) return m.bombPos; break;
+        case PT_CARRIER:
+            if (m.bombState == BOMB_CARRIED && m.bombCarrier >= 0 && m.bombCarrier < kMaxPlayers && s.players_[m.bombCarrier].connected && s.players_[m.bombCarrier].alive)
+                return s.players_[m.bombCarrier].move.pos;
+            break;
+        case PT_SITE:
+            if (!map.bombSites.empty()) { int n = (int)map.bombSites.size(); return map.bombSites[((arg % n) + n) % n].center(); }
+            break;
+        default: break;
+    }
+    return me.move.pos;
+}
+
+Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip) {
+    const ModeState& m = s.ms_;
+    const ServerPlayer& me = s.players_[id];
+    const Map& map = s.map_;
+    if (ip && m.mode >= 0 && m.mode < MODE_COUNT && !ip->native(SLOT_OBJECTIVE + m.mode)) {
+        objectiveSensors(s, id, ip->c);
+        const double* out = ip->run(ip->br->objSlot[m.mode]);
+        switch ((int)out[0]) {
+            case ACT_GOTO: return brainPoint(s, id, (int)out[1], (int)out[2]);
+            case ACT_SEEK: if (navReadyFor(s)) return seekGoal(s, id, b, sp); break;
+            case ACT_EVADE: if (navReadyFor(s)) return evadeGoal(s, id, b, sp); break;
+            default: break;
+        }
+        return fallbackGoal(s, id, b, sp);
+    }
     switch (m.mode) {
         case MODE_RACE:
             if (me.checkpoint < (int)map.checkpoints.size()) return map.checkpoints[me.checkpoint].center();
@@ -483,67 +634,12 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp) {
             break;
         }
         case MODE_HIDE:
-        case MODE_TAG: {
-            // (the graph is still the previous map's while this one's builds: roam between spawns until it's ready)
-            if (s.nav_.nodes.empty() || s.nav_.mapId != map.id()) break;
-            auto randomNode = [&]() { const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
-                                      return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
-            if (me.it) { // seek: wander everywhere, toward anything heard or the locator's last find (targets are chased by the fight code once seen)
-                if (now - me.locatedAt < sp.seekLocatorWindow) { b.goal = me.locatedPos; b.goalUntil = now + sp.seekLocatorGoal; }
-                for (int i = 0; i < kMaxPlayers; i++)
-                    if (isEnemy(s, id, i) && now - b.aware[i].heardAt < sp.seekHeardWindow && now - b.aware[i].seenAt > sp.seekUnseen) { b.goal = b.aware[i].heardPos; b.goalUntil = now + sp.seekHeardGoal; }
-                if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) { b.goal = randomNode(); b.goalUntil = now + sp.seekWanderGoal; }
-                return b.goal;
-            }
-            // only what this runner has seen or heard of "it" (no knowing where it is through walls)
-            int it = -1;
-            for (int i = 0; i < kMaxPlayers; i++) if (i != id && s.players_[i].connected && s.players_[i].alive && s.players_[i].it) it = i;
-            Vec3 itPos;
-            bool threat = false;
-            if (it >= 0) {
-                const BotAwareness& a = b.aware[it];
-                float range = m.mode == MODE_TAG ? sp.evadeRangeTag : sp.evadeRangeHide;
-                if (now - a.seenAt < sp.evadeFresh && length(a.seenPos - me.move.pos) < range) { threat = true; itPos = a.seenPos; }
-                else if (now - a.heardAt < sp.evadeFresh && length(a.heardPos - me.move.pos) < range * sp.evadeHeardMult) { threat = true; itPos = a.heardPos; }
-            }
-            if (threat && now > b.fleeUntil) { // run: the reachable-looking spot farthest from it
-                Vec3 best = b.goal;
-                float bestScore = -1e9f;
-                for (int k = 0; k < sp.fleeCandidates; k++) {
-                    Vec3 c = randomNode();
-                    float sc = length(c - itPos) - sp.fleeNearWeight * length(c - me.move.pos);
-                    if (sc > bestScore) { bestScore = sc; best = c; }
-                }
-                b.goal = best; b.goalUntil = now + sp.fleeGoal; b.fleeUntil = now + sp.fleeCommit + (1.0f - sp.fleePredict) * sp.fleeHesitate;
-                return b.goal;
-            }
-            if (m.mode == MODE_HIDE && !threat) { // pick a hiding spot once and stay put
-                if (now > b.goalUntil) { b.goal = randomNode(); b.goalUntil = now + sp.hideHold; }
-                if (length(b.goal - me.move.pos) < sp.hideArrive) return me.move.pos;
-                return b.goal;
-            }
-            if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) { b.goal = randomNode(); b.goalUntil = now + sp.evadeWanderGoal; }
-            return b.goal;
-        }
+        case MODE_TAG:
+            if (!navReadyFor(s)) break;
+            return me.it ? seekGoal(s, id, b, sp) : evadeGoal(s, id, b, sp);
         default: break;
     }
-    // no objective: go after what was last seen or heard, else roam between spawn points
-    double bestT = -1e9; Vec3 lead;
-    for (int i = 0; i < kMaxPlayers; i++) {
-        const BotAwareness& a = b.aware[i];
-        if (now - a.seenAt >= sp.memory && now - a.heardAt >= sp.huntHeardWindow) continue; // (nothing recent: skip the checks)
-        if (!isEnemy(s, id, i)) continue;
-        if (now - a.seenAt < sp.memory && a.seenAt > bestT) { bestT = a.seenAt; lead = a.seenPos; }
-        else if (now - a.heardAt < sp.huntHeardWindow && a.heardAt > bestT) { bestT = a.heardAt; lead = a.heardPos; }
-    }
-    if (bestT > -1e9 && length(lead - me.move.pos) > sp.arriveDist) return lead;
-    if (map.spawns.empty()) return me.move.pos;
-    if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) {
-        const auto& spn = map.spawns[(size_t)(rnd(b) * map.spawns.size()) % map.spawns.size()];
-        b.goal = spn.pos;
-        b.goalUntil = now + sp.roamGoal + rnd(b) * sp.roamGoalRand;
-    }
-    return b.goal;
+    return fallbackGoal(s, id, b, sp);
 }
 
 // Best weapon for the range that this mode allows (1v1 rulesets / duel lives restrict the pool).
@@ -569,8 +665,8 @@ thread_local int g_pathsThisTick = 0;
 // values: the results are bit-identical (no -ffast-math, -ffp-contract=off: CMakeLists.txt).
 const BotBrain::TickConsts& tickConsts(BotBrain& b, int skill, const BrainParams& sp, float dt, int rate) {
     BotBrain::TickConsts& c = b.tc;
-    if (c.dt != dt || c.rate != rate || c.skill != skill) {
-        c.dt = dt; c.rate = rate; c.skill = skill;
+    if (c.dt != dt || c.rate != rate || c.skill != skill || c.params != &sp) {
+        c.dt = dt; c.rate = rate; c.skill = skill; c.params = &sp;
         c.velK = 1.0f - std::exp(-dt / sp.velTau);
         float a = std::exp(-dt / sp.noiseTau);
         c.noiseA = a;
@@ -589,6 +685,14 @@ const BotBrain::TickConsts& tickConsts(BotBrain& b, int skill, const BrainParams
 
 } // namespace
 
+bool setBotBrain(Server& s, int id, std::shared_ptr<const Brain> brain) {
+    if (id < 0 || id >= kMaxPlayers || !s.players_[id].connected || !s.players_[id].isBot) return false;
+    if (brain && (s.cfg_.ranked || s.cfg_.timeTrial)) return false;   // (bots there play the built-in brain: they aren't there at all today)
+    s.bots_[id].brain = brain && !brain->builtIn ? std::move(brain) : nullptr;
+    s.bots_[id].tc.dt = -1;
+    return true;
+}
+
 const char* botSkillName(int skill) {
     static const char* n[BOT_SKILLS] = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"};
     return n[skill < 0 || skill >= BOT_SKILLS ? 1 : skill];
@@ -601,7 +705,8 @@ UserCmd botThinkDirect(Server& s, int id) {
     ServerPlayer& me = s.players_[id];
     BotBrain& b = s.bots_[id];
     const int skill = b.skill < 0 || b.skill >= BOT_SKILLS ? 1 : b.skill;
-    const BrainParams& sp = defaultBrainParams(skill);
+    const Brain* br = b.brain.get();   // (null: the built-in brain, all native)
+    const BrainParams& sp = br ? br->lvl[skill] : defaultBrainParams(skill);
     const double now = s.time(); const float dt = s.dt();
     if (b.script) return b.script(s, id);
     UserCmd cmd;
@@ -625,13 +730,31 @@ UserCmd botThinkDirect(Server& s, int id) {
     }
     Vec3 eye = eyeOf(me, s.bodyScale());
     const BotBrain::TickConsts& tc = tickConsts(b, skill, sp, dt, s.tickRate());
+    // a brain with interpreted slots: their common sensors, the dice, the chance() thresholds (once per tick length)
+    Interp interp;
+    Interp* ip = nullptr;
+    if (br && !br->allNative) {
+        ip = &interp;
+        interp.br = br; interp.level = skill; interp.dt = dt;
+        BrainCall& c = interp.c;
+        c.in[S_NOW] = now; c.in[S_DT] = dt; c.in[S_MODE] = s.ms_.mode; c.in[S_LEVEL] = skill; c.in[S_MYID] = id;
+        c.in[S_HEALTH] = me.health; c.in[S_ITMODE] = isItMode(s.ms_.mode);
+        c.rng = &b.rng;
+        c.weaponMask = s.weaponMask();
+        BrainChanceCache& cc = b.chance;
+        if (cc.brain != br || cc.level != skill || cc.dt != dt) {
+            cc.brain = br; cc.level = skill; cc.dt = dt;
+            for (size_t k = 0; k < br->chanceParams.size(); k++) cc.p[k] = 1.0f - std::exp(-(float)br->P[skill][br->chanceParams[k]] * dt);
+        }
+        c.chanceP = cc.p;
+    }
 
     // --- perception (20 Hz of game time, each bot at its own phase)
     bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);
     if (b.nextLook <= 0) b.nextLook = now + (id % 10) * (sp.lookEvery / 10); // spread the bots' looks over the 50 ms
     if (now >= b.nextLook) {
         b.nextLook = std::max(b.nextLook + sp.lookEvery, now + sp.lookEvery * 0.5);
-        { QZONE("bot perceive"); perceive(s, id, b, sp, eye, now); }
+        { QZONE("bot perceive"); perceive(s, id, b, sp, eye, now, ip); }
         // Edges: the void or lava within a stumble, a knockback or a hop (maps that have them). Eight directions at
         // 1.5 and 3 m (near: no jumping about), and 5 m (a fight drifts away from it: a laser or a blast pushes you
         // that far); the nearer one weighs more in which way is away.
@@ -654,7 +777,12 @@ UserCmd botThinkDirect(Server& s, int id) {
         for (int i = 0; i < kMaxPlayers && damageOn; i++) {
             if (!b.aware[i].visible || !isEnemy(s, id, i)) continue;
             Vec3 d = s.players_[i].move.pos + Vec3(0, sp.targetAimHeight, 0) - eye;
-            float sc = length(d) + std::fabs(angleDiff(yawOf(d), b.aimYaw)) * sp.targetAngleWeight - (i == b.target ? sp.targetKeepBonus : 0.0f);
+            float sc;
+            if (NATIVE(SLOT_TARGET_SCORE)) sc = length(d) + std::fabs(angleDiff(yawOf(d), b.aimYaw)) * sp.targetAngleWeight - (i == b.target ? sp.targetKeepBonus : 0.0f);
+            else {
+                ip->c.in[S_DIST] = length(d); ip->c.in[S_ANGLEOFF] = std::fabs(angleDiff(yawOf(d), b.aimYaw)); ip->c.in[S_CURRENT] = i == b.target;
+                sc = (float)ip->run(SLOT_TARGET_SCORE)[0];
+            }
             if (sc < bestScore) { bestScore = sc; best = i; }
         }
         if (best < 0 && b.target >= 0 && damageOn && isEnemy(s, id, b.target) && now - b.aware[b.target].seenAt < sp.memory) best = b.target;
@@ -670,7 +798,7 @@ UserCmd botThinkDirect(Server& s, int id) {
     // Objective movement (nav route to the mode's goal), also used while fighting when the
     // objective can't wait: carrying the bomb, or defusing a planted one.
     auto objectiveMove = [&](Vec3& dirOut, uint16_t& buttons, const Vec3* override) {
-        Vec3 goal = override ? *override : objective(s, id, b, sp);
+        Vec3 goal = override ? *override : objective(s, id, b, sp, ip);
         if (navOk && b.pathGen != s.nav_.generation) { b.path.clear(); b.pathPrev = -1; b.needPath = true; b.pathGen = s.nav_.generation; }
         Vec3 toWp = b.waypoint - me.move.pos;
         bool steerNow = now >= b.nextSteer || b.needPath || toWp.x * toWp.x + toWp.z * toWp.z < 1.0f || length(goal - b.pathGoal) > 1.0f;
@@ -724,8 +852,10 @@ UserCmd botThinkDirect(Server& s, int id) {
         if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && hull.overlaps(s.map_.points[m.point])) dirOut = dirOut * sp.objectiveSlow;
     };
     const ModeState& ms = s.ms_;
-    bool urgent = ms.mode == MODE_BOMB && ((ms.bombState == BOMB_CARRIED && ms.bombCarrier == id) ||
-                                           (ms.bombState == BOMB_PLANTED && me.team != ms.attackers));
+    bool urgent;
+    if (NATIVE(SLOT_URGENT)) urgent = ms.mode == MODE_BOMB && ((ms.bombState == BOMB_CARRIED && ms.bombCarrier == id) ||
+                                                               (ms.bombState == BOMB_PLANTED && me.team != ms.attackers));
+    else { objectiveSensors(s, id, ip->c); urgent = ip->run(SLOT_URGENT)[0] != 0; }
 
     float wantYaw = b.aimYaw, wantPitch = 0;
     float ffYaw = 0;             // feed-forward turn speed (tracking a target crossing the view)
@@ -760,10 +890,15 @@ UserCmd botThinkDirect(Server& s, int id) {
         fighting = true;
         const ServerPlayer& t = s.players_[b.target];
         if (now >= b.rejudgeAt) { // misjudgements, rolled per engagement and every second or so
-            b.leadFactor = std::max(0.0f, sp.leadMean + gauss(b) * sp.leadSd);
-            b.dropFactor = std::max(0.3f, 1.0f + gauss(b) * sp.leadSd * 0.7f);
-            b.speedJudge = std::max(0.3f, 1.0f + gauss(b) * sp.speedJudge);
-            b.rejudgeAt = now + 0.7 + rnd(b) * 0.8;
+            if (NATIVE(SLOT_REJUDGE)) {
+                b.leadFactor = std::max(0.0f, sp.leadMean + gauss(b) * sp.leadSd);
+                b.dropFactor = std::max(0.3f, 1.0f + gauss(b) * sp.leadSd * 0.7f);
+                b.speedJudge = std::max(0.3f, 1.0f + gauss(b) * sp.speedJudge);
+                b.rejudgeAt = now + 0.7 + rnd(b) * 0.8;
+            } else {
+                const double* o = ip->run(SLOT_REJUDGE);
+                b.leadFactor = (float)o[0]; b.dropFactor = (float)o[1]; b.speedJudge = (float)o[2]; b.rejudgeAt = o[3];
+            }
         }
         Vec3 perceived;
         if (ta->visible) {
@@ -779,10 +914,20 @@ UserCmd botThinkDirect(Server& s, int id) {
         }
         Vec3 aimAt = perceived + Vec3(0, sp.aimHeight * s.bodyScale(), 0);
         float dist = length(aimAt - eye);
-        int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
+        int w = b.forceWeapon;
+        if (w < 0) {
+            if (NATIVE(SLOT_PICK_WEAPON)) w = pickWeapon(s, sp, dist);
+            else {
+                ip->c.in[S_DIST] = dist;
+                w = (int)ip->run(SLOT_PICK_WEAPON)[0];
+                if (w < 0 || w >= WPN_COUNT) w = WPN_RIFLE;
+            }
+        }
         if (now < me.backAt(w) && me.weapon != w) w = me.weapon; // thrown it (knife / syringe): use what we switched to
         const WeaponDef& wd = weaponDef(w);
-        bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < sp.knifeThrowMax && sp.canLead && !isItMode(s.ms_.mode); // out of reach: throw it
+        bool throwKnife;   // out of reach: throw it
+        if (NATIVE(SLOT_THROW_KNIFE)) throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < sp.knifeThrowMax && sp.canLead && !isItMode(s.ms_.mode);
+        else { ip->c.in[S_WEAPON] = w; ip->c.in[S_DIST] = dist; ip->c.in[S_WEAPONRANGE] = wd.range; throwKnife = ip->run(SLOT_THROW_KNIFE)[0] != 0; }
         if (throwKnife) {
             float tf = dist / kKnifeThrowSpeed;
             aimAt += b.velEst * (tf * b.leadFactor);
@@ -832,9 +977,20 @@ UserCmd botThinkDirect(Server& s, int id) {
             const WeaponDef& held = weaponDef(me.weapon);
             auto ownBlast = [&] { return held.splashRadius > 0 && !held.sticky && !(s.arenaRules() & AR_NO_SELF_DAMAGE) &&
                                          s.map_.raycast(eye, angleForward(b.aimYaw, b.aimPitch), held.splashRadius * 0.8f) >= 0; };
-            if (ready && !knifeOut && !ownBlast()) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
-            if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
-            if (w == WPN_RIFLE && dist > sp.rifleScopeDist && sp.canLead) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
+            if (NATIVE(SLOT_FIRE)) {
+                if (ready && !knifeOut && !ownBlast()) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
+                if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
+                if (w == WPN_RIFLE && dist > sp.rifleScopeDist && sp.canLead) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
+            } else {
+                double* in = ip->c.in;
+                in[S_ERR] = err; in[S_DIST] = dist; in[S_WEAPON] = w; in[S_THROWKNIFE] = throwKnife; in[S_WEAPONRANGE] = wd.range;
+                ip->c.user = &ownBlast;
+                ip->c.lazy = [](void* u, int) { return (*static_cast<decltype(ownBlast)*>(u))(); };
+                const double* o = ip->run(SLOT_FIRE);
+                ip->c.lazy = nullptr; ip->c.user = nullptr;
+                if (o[0] != 0) cmd.buttons |= BTN_FIRE;
+                if (o[1] != 0) cmd.buttons |= BTN_ALTFIRE;
+            }
             if (me.weapon == WPN_STICKY) { // set off our stickies when the target (as seen) is in the blast, or one is stuck on an enemy
                 for (const auto& pr : s.projectiles_)
                     if (pr.active && pr.owner == id && pr.type == WPN_STICKY &&
@@ -861,14 +1017,25 @@ UserCmd botThinkDirect(Server& s, int id) {
                 } else if (onTarget && !(me.move.flags & MF_HOOKHELD)) {
                     cmd.buttons |= BTN_GRAPPLE;   // (fires once the aim is on them)
                 }
-            } else if (sp.grapple && closeWeapon && moveTuning().grapple && !(me.move.mods & MOVE_RUN_ONLY) && s.ms_.mode != MODE_RACE &&
-                !(me.move.flags & (MF_HOOKED | MF_HOOKHELD)) && me.move.hookCooldown <= 0 && now >= b.nextHookTry &&
-                dist > sp.fightHookMin && dist < hookRange * 0.8f) {
-                b.nextHookTry = now + sp.fightHookRetry;
-                // (both are pulled to the middle: that's where the pull ends, and it must be safe ground)
-                if (rnd(b) < sp.fightHookChance && safeHook(s, me, (me.move.pos + perceived) * 0.5f + Vec3(0, 1.0f, 0))) {
-                    b.fightHookUntil = now + sp.fightHookHold;
-                    if (onTarget) cmd.buttons |= BTN_GRAPPLE;
+            } else if (moveTuning().grapple && !(me.move.mods & MOVE_RUN_ONLY) && s.ms_.mode != MODE_RACE &&
+                !(me.move.flags & (MF_HOOKED | MF_HOOKHELD)) && me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
+                bool tryIt, go = false;
+                double retry = 0, hold = 0;
+                if (NATIVE(SLOT_FIGHT_HOOK)) {
+                    tryIt = sp.grapple && closeWeapon && dist > sp.fightHookMin && dist < hookRange * 0.8f;
+                    if (tryIt) { retry = now + sp.fightHookRetry; go = rnd(b) < sp.fightHookChance; hold = now + sp.fightHookHold; }
+                } else {
+                    ip->c.in[S_WEAPON] = w; ip->c.in[S_DIST] = dist; ip->c.in[S_HOOKRANGE] = hookRange;
+                    const double* o = ip->run(SLOT_FIGHT_HOOK);
+                    tryIt = o[0] != 0; retry = o[1]; go = o[2] != 0; hold = o[3];
+                }
+                if (tryIt) {
+                    b.nextHookTry = retry;
+                    // (both are pulled to the middle: that's where the pull ends, and it must be safe ground)
+                    if (go && safeHook(s, me, (me.move.pos + perceived) * 0.5f + Vec3(0, 1.0f, 0))) {
+                        b.fightHookUntil = hold;
+                        if (onTarget) cmd.buttons |= BTN_GRAPPLE;
+                    }
                 }
             }
         }
@@ -876,13 +1043,20 @@ UserCmd botThinkDirect(Server& s, int id) {
         Vec3 to = perceived - me.move.pos;
         to.y = 0;
         Vec3 toN = normalize(to);
-        float ideal = sp.t_idealRange[w < 0 || w >= 16 ? 0 : w];
+        float ideal;
+        if (NATIVE(SLOT_IDEAL_RANGE)) ideal = sp.t_idealRange[w < 0 || w >= 16 ? 0 : w];
+        else { ip->c.in[S_WEAPON] = w; ideal = (float)ip->run(SLOT_IDEAL_RANGE)[0]; }
         if (ta->visible) {
             moveDir = toN * (dist > ideal + sp.rangeBand ? 1.0f : dist < ideal - sp.rangeBand ? -1.0f : 0.0f);
             // decisions at a fixed game-time rate (not per tick): strafe or plant your feet, change direction
             if (now >= b.strafeSwitchAt) {
-                b.strafeDir = rnd(b) < sp.strafe ? (rnd(b) < 0.5f ? -1.0f : 1.0f) : 0.0f;
-                b.strafeSwitchAt = now + (0.15 + rnd(b) * 2.0 / sp.jukeRate);
+                if (NATIVE(SLOT_STRAFE)) {
+                    b.strafeDir = rnd(b) < sp.strafe ? (rnd(b) < 0.5f ? -1.0f : 1.0f) : 0.0f;
+                    b.strafeSwitchAt = now + (0.15 + rnd(b) * 2.0 / sp.jukeRate);
+                } else {
+                    const double* o = ip->run(SLOT_STRAFE);
+                    b.strafeDir = (float)o[0]; b.strafeSwitchAt = o[1];
+                }
             }
             Vec3 side = Vec3(-toN.z, 0, toN.x) * b.strafeDir;
             if (b.nearEdge || b.edgeFar) { // fighting by a drop: dodge along it or away, never toward it, and step back from it
@@ -891,16 +1065,26 @@ UserCmd botThinkDirect(Server& s, int id) {
             }
             moveDir += side;
             // held by the target's grapple and wanting range (no close-range weapon): advanced and up dash out of it
-            if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > sp.pulledDashMinRange && dashReady(me.move) && !b.nearEdge && !b.edgeFar &&
-                chance(b, sp.pulledDashRate, tc.pPulledDash)) {
+            auto pulledDash = [&] {
+                if (NATIVE(SLOT_PULLED_DASH)) return sp.grapple && ideal > sp.pulledDashMinRange && chance(b, sp.pulledDashRate, tc.pPulledDash);
+                ip->c.in[S_IDEAL] = ideal;
+                return ip->run(SLOT_PULLED_DASH)[0] != 0;
+            };
+            if ((me.move.flags & MF_PULLED) && dashReady(me.move) && !b.nearEdge && !b.edgeFar &&
+                pulledDash()) {
                 Vec3 out = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f);
                 if (groundAlong(s, me.move.pos, out, 10.0f)) { moveDir = out; cmd.buttons |= BTN_DASH; }
             }
             // (no jumps or dashes within 5 m of a drop: a hit in the air there, a blast or a laser push, is a fall)
             if ((me.move.flags & MF_ONGROUND) && !b.nearEdge && !b.edgeFar) {
-                if (chance(b, sp.jumpRate, tc.pJump)) cmd.buttons |= BTN_JUMP;
-                if (dashReady(me.move) && chance(b, sp.dashRate, tc.pDash)) {
-                    if (dist > sp.dashCloseDist) moveDir = toN;                                  // close in
+                if (NATIVE(SLOT_FIGHT_JUMP) ? chance(b, sp.jumpRate, tc.pJump) : ip->run(SLOT_FIGHT_JUMP)[0] != 0) cmd.buttons |= BTN_JUMP;
+                bool dash = false, closeIn = false;
+                if (dashReady(me.move)) {
+                    if (NATIVE(SLOT_FIGHT_DASH)) { dash = chance(b, sp.dashRate, tc.pDash); closeIn = dash && dist > sp.dashCloseDist; }
+                    else { ip->c.in[S_DIST] = dist; const double* o = ip->run(SLOT_FIGHT_DASH); dash = o[0] != 0; closeIn = o[1] != 0; }
+                }
+                if (dash) {
+                    if (closeIn) moveDir = toN;                                  // close in
                     else moveDir = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f); // dodge sideways
                     if (groundAlong(s, me.move.pos, normalize(moveDir), 10.0f)) cmd.buttons |= BTN_DASH;
                 }
@@ -946,10 +1130,17 @@ UserCmd botThinkDirect(Server& s, int id) {
             gain = sp.soundGain;
         } else {
             if (now >= b.nextGlance) { // (moving: off the route's heading; standing: a new direction to face)
-                float off = (rnd(b) * 2 - 1) * (idle ? sp.glanceIdle : sp.glanceMoving);
+                float off;
+                if (NATIVE(SLOT_GLANCE)) {
+                    off = (rnd(b) * 2 - 1) * (idle ? sp.glanceIdle : sp.glanceMoving);
+                    b.glanceUntil = now + (idle ? 1.0 + rnd(b) * 1.5 : 0.35 + rnd(b) * 0.4);
+                    b.nextGlance = now + 1.5 + rnd(b) * 3.0;
+                } else {
+                    ip->c.in[S_IDLE] = idle;
+                    const double* o = ip->run(SLOT_GLANCE);
+                    off = (float)o[0]; b.glanceUntil = o[1]; b.nextGlance = o[2];
+                }
                 b.glanceYaw = idle ? wrapAngle(b.aimYaw + off) : off;
-                b.glanceUntil = now + (idle ? 1.0 + rnd(b) * 1.5 : 0.35 + rnd(b) * 0.4);
-                b.nextGlance = now + 1.5 + rnd(b) * 3.0;
             }
             if (now < b.glanceUntil) wantYaw = idle ? b.glanceYaw : wantYaw + b.glanceYaw;
         }
@@ -966,7 +1157,8 @@ UserCmd botThinkDirect(Server& s, int id) {
                 if (me.move.flags & MF_HOOKED) holdHook();
                 else if (std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch) < sp.hookAimTol) cmd.buttons |= BTN_GRAPPLE;
             } else if (me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
-                b.nextHookTry = now + (grappleOnly ? sp.hookRetryGrappleOnly : sp.hookRetry); // (expert: hooks around all the time)
+                if (NATIVE(SLOT_HOOK_RETRY)) b.nextHookTry = now + (grappleOnly ? sp.hookRetryGrappleOnly : sp.hookRetry); // (expert: hooks around all the time)
+                else { ip->c.in[S_GRAPPLEONLY] = grappleOnly; b.nextHookTry = ip->run(SLOT_HOOK_RETRY)[0]; }
                 // the next waypoint if it's a ledge up, else the end of the route if it's a long open stretch
                 // (and, on maps with pits, a few surfaces further along the route: the line to the route's end often
                 // crosses a pit where one to a point along the route doesn't)
@@ -982,7 +1174,9 @@ UserCmd botThinkDirect(Server& s, int id) {
                     const Vec3& cand = cands[ci];
                     Vec3 off = cand - me.move.pos;
                     float rise = off.y, hd = std::sqrt(off.x * off.x + off.z * off.z);
-                    bool want = grappleOnly ? hd > 2.0f : (rise > sp.hookRise && hd < sp.hookRiseReach) || (hd > sp.hookFlat && rise > sp.hookFlatDrop);
+                    bool want;
+                    if (NATIVE(SLOT_ROUTE_HOOK)) want = grappleOnly ? hd > 2.0f : (rise > sp.hookRise && hd < sp.hookRiseReach) || (hd > sp.hookFlat && rise > sp.hookFlatDrop);
+                    else { ip->c.in[S_RISE] = rise; ip->c.in[S_FLAT] = hd; ip->c.in[S_GRAPPLEONLY] = grappleOnly; want = ip->run(SLOT_ROUTE_HOOK)[0] != 0; }
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
@@ -1028,8 +1222,10 @@ UserCmd botThinkDirect(Server& s, int id) {
         moveDir = moveDir / ml;
         Vec3 wish = moveDir;
         bool onGround = (me.move.flags & MF_ONGROUND) != 0;
-        bool hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > sp.bhopMinDist &&
-                       !(me.move.flags & MF_HOOKED);   // (hooked: no air-strafing off the pull)
+        bool hopping;
+        if (NATIVE(SLOT_BHOP)) hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > sp.bhopMinDist;
+        else { ip->c.in[S_FIGHTING] = fighting; ip->c.in[S_WPDIST] = length(b.waypoint - me.move.pos); hopping = ip->run(SLOT_BHOP)[0] != 0; }
+        hopping = hopping && !(me.move.flags & MF_HOOKED);   // (hooked: no air-strafing off the pull)
         // air-strafe: push at the angle to the current velocity that gains speed, curving toward the route
         Vec3 hv = {me.move.vel.x, 0, me.move.vel.z};
         float hs = length(hv);
@@ -1069,14 +1265,20 @@ UserCmd botThinkDirect(Server& s, int id) {
         }
         if (hopping) cmd.buttons |= BTN_JUMP;
         // long straight stretch: dash along it (levels that would), when it lands on something
-        if (!fighting && onGround && sp.runDash > 0 && dashReady(me.move) && !(me.move.mods & MOVE_RUN_ONLY) &&
-            length(b.waypoint - me.move.pos) > sp.runDashMinDist && dot(moveDir, fwd) > sp.runDashStraight && chance(b, sp.runDash, tc.pRunDash)) {
+        auto runDash = [&] {
+            if (NATIVE(SLOT_RUN_DASH)) return sp.runDash > 0 && length(b.waypoint - me.move.pos) > sp.runDashMinDist && dot(moveDir, fwd) > sp.runDashStraight && chance(b, sp.runDash, tc.pRunDash);
+            ip->c.in[S_WPDIST] = length(b.waypoint - me.move.pos); ip->c.in[S_STRAIGHT] = dot(moveDir, fwd);
+            return ip->run(SLOT_RUN_DASH)[0] != 0;
+        };
+        if (!fighting && onGround && dashReady(me.move) && !(me.move.mods & MOVE_RUN_ONLY) && runDash()) {
             if (groundAlong(s, me.move.pos, moveDir, 12.0f)) {
                 cmd.buttons |= BTN_DASH;
                 // experts with the room make it a dash jump: jump with it and keep the dash's 24 m/s through a
                 // jump's ~16 m flight (ground all the way, and the waypoint further than that)
-                dashJump = sp.dashJump && hopping && length(b.waypoint - me.move.pos) > sp.dashJumpMinDist &&
-                           groundAlong(s, me.move.pos, moveDir, 20.0f);
+                bool want;
+                if (NATIVE(SLOT_DASH_JUMP)) want = sp.dashJump && hopping && length(b.waypoint - me.move.pos) > sp.dashJumpMinDist;
+                else { ip->c.in[S_HOPPING] = hopping; ip->c.in[S_WPDIST] = length(b.waypoint - me.move.pos); want = ip->run(SLOT_DASH_JUMP)[0] != 0; }
+                dashJump = want && groundAlong(s, me.move.pos, moveDir, 20.0f);
             }
         }
     }
@@ -1120,16 +1322,28 @@ UserCmd botThinkDirect(Server& s, int id) {
 
     // unstick: if we've barely moved for a while, hop and sidestep; when just roaming, pick somewhere else
     if (now >= b.stuckCheckAt) {
-        if (ml > 1e-3f && length(me.move.pos - b.lastPos) < sp.stuckDist && b.target < 0) {
-            b.strafeDir = rnd(b) < 0.5f ? -1.0f : 1.0f;
+        bool stuck;
+        double until = 0, next;
+        if (NATIVE(SLOT_UNSTICK)) {
+            stuck = ml > 1e-3f && length(me.move.pos - b.lastPos) < sp.stuckDist && b.target < 0;
+            if (stuck) { b.strafeDir = rnd(b) < 0.5f ? -1.0f : 1.0f; until = now + sp.unstickTime; }
+            next = now + sp.stuckEvery;
+        } else {
+            ip->c.in[S_MOVING] = ml > 1e-3f; ip->c.in[S_MOVED] = length(me.move.pos - b.lastPos); ip->c.in[S_HASTARGET] = b.target >= 0;
+            const double* o = ip->run(SLOT_UNSTICK);
+            stuck = o[0] != 0;
+            if (stuck) { b.strafeDir = (float)o[1]; until = o[2]; }
+            next = o[3];
+        }
+        if (stuck) {
             if (!b.nearEdge) cmd.buttons |= BTN_JUMP;
             else if (dot(Vec3(-moveDir.z, 0, moveDir.x) * b.strafeDir, b.edgeAway) < 0) b.strafeDir = -b.strafeDir; // by a drop: no hop, sidestep away from it
-            b.unstickUntil = now + sp.unstickTime;
+            b.unstickUntil = until;
             b.goalUntil = 0;
             b.needPath = true;
         }
         b.lastPos = me.move.pos;
-        b.stuckCheckAt = now + sp.stuckEvery;
+        b.stuckCheckAt = next;
     }
     // jump with our own dash on the floor (a hop's landing, a fight jump) turns it into a dash jump: a 16 m flight
     // at dash speed, past what the dash checked for ground. Only when meant.

@@ -13,7 +13,13 @@ parameters but can't switch off.
   text (what the printer writes), so text, blocks and graph are three views of one tree.
 * `quark_tests exportbrain <out.json>` writes the default brain (text, AST) and the catalog (every parameter,
   slot, sensor, output, builtin with types, units, ranges and docs). `quark_tests checkbrain <file>` compiles a
-  file and prints errors and warnings as JSON with line:col.
+  file and prints errors and warnings as JSON with line:col (exit 1 on errors). `quark_tests brainast <file>` prints
+  a file's JSON AST, `quark_tests printbrain <file>` its canonical text, `quark_tests brainbench` the cost of a bot
+  think, native vs interpreted.
+* Picking one: the console's `addbot [a|b] [skill] [brain=<name>]`, or a server's `--botbrain <name>` (ServerConfig
+  botBrain) for every bot it adds. Never on ranked or time trial servers (their bots play the built-in brain). A bot
+  that plays a file says so when it joins: `BOT ANNA (EXPERT, mybrain#1a2b3c4d) joined` (name, then the first 8
+  hex digits of the sha256 of the brain's merged canonical text without comments).
 
 ---------------------------------------------------------------------------------------------------------------
 
@@ -44,7 +50,7 @@ levels BEGINNER INTERMEDIATE ADVANCED EXPERT
 * `version N`: the format version, the first line (like maps). This document is version 1. A file of an older
   version is converted on load by the converter table (`kBrainUpgrades`, one step per version; the original is
   kept in `bots/old/v<N>/`). A newer version than the game knows is an error.
-* `brain "<name>"`: the display name (shown on the join line with the hash: `BOT ANNA (EXPERT, brain mybrain#1a2b3c4d)`).
+* `brain "<name>"`: the display name (shown on the join line with the hash: `BOT ANNA (EXPERT, mybrain#1a2b3c4d)`).
 * `levels`: optional; when present exactly these four names in this order (the game has 4 skill levels).
   The printer always writes it.
 * The header lines carry no comments.
@@ -295,3 +301,4 @@ with the same values: `canLead` (was `leadMean >= 0.8`), `dashJump` (was the exp
 ## 7. Changelog
 
 * v1 (1.18.x): first version.
+  - (docs only, no format change) the tools list gained brainast / printbrain / brainbench and how a brain is picked.

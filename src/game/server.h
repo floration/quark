@@ -54,6 +54,7 @@ struct ServerConfig {
     bool vsBots = false;        // "play vs bots": fixed bots, humans always on team A
     bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
+    std::string botBrain;       // bots/<name>.qbrain that bots play (tools/bots/GRAMMAR.md); empty = the built-in one. Never on ranked or time trial
     bool lanOnly = false;
     // More addresses ("host:port") that reach this server, for checking ranked signatures (REVIEW 2.2): needed only
     // when players dial an address the server can't see itself (a router forwarding another port to it, a container).
@@ -363,7 +364,7 @@ public:
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;
-    int addBot(int team, int skill, bool balance = false);
+    int addBot(int team, int skill, bool balance = false, const std::string* brain = nullptr);   // brain: a brain file's name (null: cfg botBrain)
     void removeBot(int id);
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);

@@ -153,6 +153,7 @@ add_library(quark_core STATIC
   src/game/customrules.cpp
   src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
+  ${CMAKE_BINARY_DIR}/generated/default_brain.h
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
@@ -163,6 +164,11 @@ target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # copied) only when .gitignore un-ignores it with a "!/maps/<name>.qmap" line, i.e. it's tracked: any other *.qmap
 # in maps/ (one the generator no longer makes, a test leftover, a stray file) is neither embedded nor copied.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# The built-in bot brain (tools/bots/default.qbrain, tools/bots/GRAMMAR.md) is embedded at build time.
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_brain.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
+  COMMENT "Embedding the built-in bot brain (tools/bots/default.qbrain)" VERBATIM)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list

@@ -7,6 +7,23 @@
 // code reads are part of it too.
 #pragma once
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include "../common/qmath.h"
+
+// The bot's dice: xorshift, 0..1 (one draw), and Box-Muller (two draws). The native bot and the interpreter both
+// draw through these, so a brain makes the same numbers in the same order either way.
+inline float brainRnd(uint32_t& s) {
+    s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+    return (s & 0xFFFFFF) / 16777216.0f;
+}
+inline float brainGauss(uint32_t& s) {
+    float u = std::max(brainRnd(s), 1e-7f), v = brainRnd(s);
+    return std::sqrt(-2.0f * std::log(u)) * std::cos(2 * PI * v);
+}
 
 // One weapon preference list (best first) and its membership mask.
 struct BrainList {
@@ -176,3 +193,97 @@ struct BrainParams {
 
 // The built-in brain's parameters for a level (0-3; out of range: INTERMEDIATE, like botSkillName).
 const BrainParams& defaultBrainParams(int level);
+
+// ---- slots: the decision points the bot code calls (GRAMMAR.md section 5)
+enum BrainSlot : uint8_t {
+    SLOT_REACT, SLOT_HEARING, SLOT_TARGET_SCORE, SLOT_URGENT, SLOT_PICK_WEAPON, SLOT_THROW_KNIFE, SLOT_IDEAL_RANGE,
+    SLOT_REJUDGE, SLOT_FIRE, SLOT_FIGHT_HOOK, SLOT_STRAFE, SLOT_PULLED_DASH, SLOT_FIGHT_JUMP, SLOT_FIGHT_DASH,
+    SLOT_GLANCE, SLOT_HOOK_RETRY, SLOT_ROUTE_HOOK, SLOT_BHOP, SLOT_RUN_DASH, SLOT_DASH_JUMP, SLOT_UNSTICK,
+    SLOT_OBJECTIVE,                              // + mode (MODE_*); SLOT_OBJECTIVE + kBrainModes: `objective default`
+    SLOT_COUNT = SLOT_OBJECTIVE + 13 + 1
+};
+constexpr int kBrainModes = 13;                  // MODE_COUNT (static_assert in botbrain.cpp)
+
+// Sensors: what the bot code tells a slot (one id space; each slot gets its own few plus the common ones).
+enum BrainSensor : uint8_t {
+    S_NOW, S_DT, S_MODE, S_LEVEL, S_MYID, S_HEALTH, S_ITMODE,                 // common (every slot)
+    S_OFF, S_DIST, S_SINCESEEN, S_GUNAGE, S_ONGROUND, S_GROUNDSPEED, S_DASHING, S_ANGLEOFF, S_CURRENT,
+    S_CHECKPOINTSLEFT, S_HASHILL, S_HASCART, S_POINTACTIVE, S_BOMBPLANTED, S_BOMBDROPPED, S_BOMBCARRIED,
+    S_ATTACKER, S_CARRIERISME, S_CARRIERALIVE, S_NAVREADY, S_IT, S_SITECOUNT,
+    S_WEAPON, S_WEAPONRANGE, S_ERR, S_THROWKNIFE, S_OWNBLAST, S_HOOKRANGE, S_IDEAL, S_IDLE, S_GRAPPLEONLY,
+    S_RISE, S_FLAT, S_FIGHTING, S_WPDIST, S_STRAIGHT, S_HOPPING, S_MOVING, S_MOVED, S_HASTARGET,
+    S_COUNT
+};
+// Points an objective slot can go to (`goto`); the bot code turns them into positions.
+enum BrainPoint : uint8_t { PT_ME, PT_CHECKPOINT, PT_HILL, PT_CART, PT_POINT, PT_BOMB, PT_CARRIER, PT_SITE, PT_COUNT };
+// What an objective slot decided (its output 0; output 1 the point, output 2 site()'s argument).
+enum BrainAction : uint8_t { ACT_NONE = 0, ACT_GOTO, ACT_FALLBACK, ACT_SEEK, ACT_EVADE };
+
+// One call of an interpreted slot. The caller fills the sensors the slot gets (in[S_*]) and reads out[] (the slot's
+// outputs in catalog order: bool 0/1, weapons as ids, times absolute). No allocation, no strings.
+struct BrainCall {
+    double in[S_COUNT];
+    double out[8];
+    uint32_t* rng = nullptr;                     // the bot's dice (BotBrain::rng)
+    uint16_t weaponMask = 0;                     // Server::weaponMask() (0: every weapon)
+    bool (*lazy)(void* user, int sensor) = nullptr; void* user = nullptr; // sensors worked out only when read (S_OWNBLAST)
+    float* chanceP = nullptr;                    // the bot's cache of chance(param) thresholds (BrainChanceCache)
+};
+struct BrainChanceCache { const void* brain = nullptr; int level = -1; float dt = -1; float p[16] = {}; };
+
+struct BrainInsn { uint8_t op, d, a, b; int32_t k; };   // 8 bytes: an op over a fixed register file
+
+// A compiled brain. Shared (const) by every bot that plays it.
+struct Brain {
+    std::string name;                            // `brain "..."`
+    std::string hash;                            // 8 hex: sha256 of the canonical text without comments
+    std::string text;                            // canonical text
+    bool builtIn = false;                        // the embedded default
+    BrainParams lvl[4];                          // the native code's numbers, per level
+    bool native[SLOT_COUNT] = {};                // slot runs the built-in C++ code (its AST is the default's)
+    uint8_t objSlot[kBrainModes];                // the slot each mode's objective runs (an objective slot index)
+    // the interpreter's program (every slot is compiled, native or not)
+    std::vector<BrainInsn> code;
+    int32_t start[SLOT_COUNT];                   // first instruction of each slot (-1: none)
+    uint8_t regs[SLOT_COUNT] = {};               // registers it uses
+    uint8_t rolls[SLOT_COUNT] = {};              // random draws on its longest path (validation display)
+    std::vector<double> konst;                   // constants
+    std::vector<double> P[4];                    // every param (catalog and the file's own), per level
+    std::vector<BrainList> lists;
+    std::vector<std::vector<float>> tables;      // per weapon (16)
+    std::vector<BrainCurve> curves;              // data curves
+    std::vector<int> chanceParams;               // params used as chance() rates (cached per bot: BrainChanceCache)
+    bool allNative = false;                      // every slot native: the bot code skips the interpreter entirely
+    bool usesSlot(int slot) const { return start[slot] >= 0; }
+};
+
+// Run slot `slot` of brain `b` for skill level `level` (0-3). Outputs in call.out.
+void runBrainSlot(const Brain& b, int slot, int level, float dt, BrainCall& call);
+
+// ---- loading, checking, the editor's tools
+struct BrainDiag {
+    struct Msg { int line = 0, col = 0; std::string msg; };
+    std::vector<Msg> errors, warnings;
+};
+constexpr int kBrainFormatVersion = 1;
+// Compile brain text (any version: older ones are converted first). Null on errors (in *diag, with line:col).
+// forceInterpreter: every slot runs in the interpreter, even ones equal to the default (lockstep tests, cost).
+std::shared_ptr<const Brain> compileBrain(const std::string& text, BrainDiag* diag = nullptr, bool forceInterpreter = false);
+// Brain text of an older format version converted to the current one (unchanged if current; "" + *err if it can't be).
+std::string upgradeBrainText(const std::string& text, std::string* err = nullptr, int* fromVersion = nullptr);
+const Brain& defaultBrain();                     // the built-in brain (native code; params = the C++ table)
+const char* defaultBrainText();                  // tools/bots/default.qbrain as embedded at build time
+// userDataPath("bots")/<name>.qbrain, compiled (cached while the file is unchanged). "" or "default": null with no
+// *err (the built-in brain: give setBotBrain null).
+// An older format version is converted on disk (the original kept in bots/old/v<N>/). Null + *err on failure.
+std::shared_ptr<const Brain> loadBrain(const std::string& name, std::string* err = nullptr);
+std::string brainLabel(const Brain& b);          // "name#hash"
+std::string brainDiagJson(const BrainDiag& d, const Brain* b);   // checkbrain's JSON
+std::string brainAstJson(const std::string& text, BrainDiag* diag);   // the JSON AST of text ("" on parse errors)
+std::string printBrainText(const std::string& text, BrainDiag* diag); // canonical text ("" on parse errors)
+std::string exportBrainJson();                   // default text + AST + the catalog (quark_tests exportbrain)
+
+class Server;
+// Give bot `id` a brain (null: the built-in one). False if `id` isn't a bot, or the server is ranked / time trial
+// (bots there always play the built-in brain). Defined in bots.cpp.
+bool setBotBrain(Server& s, int id, std::shared_ptr<const Brain> brain);
