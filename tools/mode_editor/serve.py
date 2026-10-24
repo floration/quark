@@ -942,7 +942,7 @@ def main():
     print("  modes        %s" % CFG.modes_dir())
     print("  quark_tests  %s" % (("%s (exportmode %s, checkmode %s)" % (CFG.quark_tests, "yes" if tc["exportmode"] else "no", "yes" if tc["checkmode"] else "no")) if CFG.quark_tests else "(not found: the built-in catalog and the page's own checks)"))
     print("  maptool      %s" % (CFG.maptool or "(not found: Sim is unavailable)"))
-    print("  built-in texts: %s" % (CFG.modes_source_dir() or "(no tools/modes yet: the page's fixtures)"))
+    print("  built-in texts: %s" % (CFG.modes_source_dir() or "(no tools/modes: web/fixtures, its copy)"))
     sys.stdout.flush()
     if not args.no_open and os.environ.get("QUARK_SHELL") != "1":
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()

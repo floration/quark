@@ -112,8 +112,17 @@ class App {
         sb.title = this.config.modesim ? "quark_maptool modesim: " + this.config.maptool : "quark_maptool modesim isn't available: the Sim view is off (nothing is simulated in the page)";
         await this.refreshModes();
         this._statusLine();
+        this._mapNames();
         this.page = new ModePage(this);
         await this.page.start();
+    }
+    // the maps key's suggestions (Values: <input list="mapNames">): the shipped maps and the user's
+    async _mapNames() {
+        let maps = [];
+        try { maps = (await api.maps()).maps || []; } catch {}
+        const dl = $("mapNames");
+        dl.textContent = "";
+        for (const m of maps) { const o = document.createElement("option"); o.value = m.name; o.label = `${m.name}${m.for ? " (" + m.for + ")" : ""}${m.source === "user" ? " [yours]" : ""}`; dl.append(o); }
     }
     // ?embed=1 hides the header, so the left panel says the same in one line: catalog · built-in texts · modesim · folder
     _statusLine() {
@@ -143,7 +152,7 @@ class App {
         const have = MODES.filter((m) => this.defaultAsts.has(m));
         db.textContent = `built-in texts: ${r.source} (${have.length}/13${this.defaultAsts.has("common") ? " + common" : ""})`;
         db.className = "badge " + (r.source === "game" || r.source === "repo" ? "real" : "mock");
-        db.title = { game: "from quark_tests exportmode", repo: "the repository's tools/modes/*.qlogic", fixtures: "this page's fixtures (transcribed from the design, section 3) until tools/modes/*.qlogic exist" }[r.source] || "";
+        db.title = { game: "from quark_tests exportmode", repo: "the repository's tools/modes/*.qlogic", fixtures: "web/fixtures: a copy of tools/modes/*.qlogic (snapshot_catalog.py refreshes it); this install has neither exportmode nor tools/modes" }[r.source] || "";
         if (this.defaultErrors.size) this.toast("Some built-in texts don't parse in the page: " + [...this.defaultErrors.keys()].join(", "), 8000);
     }
     // common + the base mode's built-in text (or common alone when that text isn't available yet)
