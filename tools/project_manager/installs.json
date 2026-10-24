@@ -10,7 +10,7 @@
   {"id": "dashboard", "name": "Editor Manager", "sources": ["tools/editor_dashboard"],
    "run": "py -3 tools\\editor_dashboard\\dashboard.py --install", "check": "editor-dashboard\\dashboard.py", "restartsPort": 8765},
   {"id": "model", "name": "Model Editor", "sources": ["tools/model_editor", "src/client", "tools/maps", "tests/assets_tests.cpp", "VERSION"],
-   "run": "tools\\model_editor\\install.cmd", "check": "model-editor\\model-editor.html", "timeoutSec": 1800, "lowPriority": true},
+   "run": "tools\\model_editor\\install.cmd \"%QUARK%\\model-editor\"", "check": "model-editor\\model-editor.html", "timeoutSec": 1800, "lowPriority": true},
   {"id": "sound", "name": "Sound Editor", "sources": ["tools/sound_editor", "VERSION", "assets/sfx", "assets/voice", "assets/overrides"],
    "run": "py -3 tools\\sound_editor\\install.py", "check": "sound-editor\\sound-editor.html", "timeoutSec": 900},
   {"id": "botmap", "name": "Bot + Map Editors", "sources": ["tools/bot_editor", "tools/map_editor", "tools/bots", "src", "tests", "tools/make_maps.py", "tools/maps", "CMakeLists.txt", "VERSION"],
