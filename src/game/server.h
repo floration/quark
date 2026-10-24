@@ -313,6 +313,8 @@ public:
     double rateUpWait_ = 60;
     bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
     std::string rateDownWhy_;      // ... what it saw
+    int lateWindows_ = 0;          // judged windows in a row with late ticks / stalls (kLateWindows; 0 after a rate change)
+    double lateSince_ = -1e9;      // ... when the first of them ended (a step up's undo counts from it)
     double rateRaisedAt_ = -1e9;   // the last step up: undone in any phase if it doesn't hold for 3 windows (REVIEW 6.1)
     bool rateRaisedSnap_ = false;  // ... and it raised the snapshot rate, not the tick rate
     int snapCap_ = 0;              // the rate test's snapshot rate cap (bandwidth short: lowered before the tick rate); 0 = none

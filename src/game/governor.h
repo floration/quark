@@ -71,7 +71,8 @@ struct GovSide {             // one server, as its status file says
     int rankedPlayers = 0;   // players in its live ranked match (0: none live)
     int level = 0;           // its tick rate now (index into kTickRates: 0 = 1000 Hz, 3 = 125 Hz)
     int top = 0;             // its own highest rate (--tickrate)
-    bool overloaded = false; // its last rate window was bad (the server's own fell-behind / loss / send-failure test)
+    bool overloaded = false; // its last rate window was bad (the server's own fell-behind / loss / send-failure test; late
+                             // ticks alone: from the second window in a row, Server kLateWindows)
     bool severe = false;     // it can't keep up at all (busy > 90%)
 };
 

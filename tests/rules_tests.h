@@ -1312,10 +1312,21 @@ static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F 
     }
 }
 static constexpr int kRateTries = 3;
+// Pumps (as ratePump) until the rate test has judged `n` more windows (windowCheckedAt_ moves; at most two windows'
+// time each). `input` is called through a reference, so a Stalls keeps its own schedule across the chunks.
+template <class F>
+static void rateJudged(Server& s, std::vector<NetClient*>& cls, int n, F& input, double* worst) {
+    auto in = [&input](int i) { return input(i); };
+    for (int k = 0; k < n; k++) {
+        const double was = s.windowCheckedAt_, end = timeNow() + s.rateWindow_ * 2;
+        while (s.windowCheckedAt_ == was && timeNow() < end) ratePump(s, cls, 0.02, in, worst);
+    }
+}
 
 // GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break. Here the
 // host's ticks stall (a tick 12 ms late every 0.25 s: ~3% of 1000 Hz ticks over 4 ms late) with almost no load, as the
-// Oracle box did: that alone now steps the tick rate down. (12 ms whatever the rate: over 250 Hz's 8 ms, under 125
+// Oracle box did: that alone now steps the tick rate down, once two windows in a row have it (kLateWindows: the first
+// only arms the test, and the governor isn't told yet). (12 ms whatever the rate: over 250 Hz's 8 ms, under 125
 // Hz's 16 with 4 ms to spare either side, so 125 Hz is clean but would count a stall at 250 Hz and stays. The pump's
 // own 1 ms sleep after the stall adds up to 2 ms on Windows: under 16 still. CI once saw 1.6% over 16 ms on Windows
 // with a 14 ms sleep.)
@@ -1333,15 +1344,24 @@ static void testRateBetweenRounds(uint16_t port) {
         if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
         rateFreshWindow(s, cls, 1.5);   // (6 stalls a window)
         CHECK(s.tickRate() == 1000);
-        pump(s, cls, s.rateWindow_ * 2.5, Stalls{&s, 0.25, 12});   // two and a half rate windows, mid-match
-        printf("  mid-match, stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase);
-        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_);
+        Stalls st{&s, 0.25, 12};
+        double w = 0;
+        rateJudged(s, cls, 1, st, &w);   // one window, mid-match: arms the test, nothing more
+        printf("  mid-match, one window stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d), %s\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase,
+               s.rateDownPending_ ? "step down pending" : s.lateWindows_ == 1 ? "waiting for a second window" : "not armed");
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && !s.rateDownPending_ && s.lateWindows_ == 1 && !s.windowBad_);
+        CHECK(s.stallPct_ > 1 && s.statusText().find("waiting for a second") != std::string::npos);
+        rateJudged(s, cls, 1, st, &w);   // a second in a row: the step down waits for the break
+        printf("  a second window stalling (%.1f%%): %d Hz (phase %d), %s\n", s.stallPct_, s.tickRate(), s.ms_.phase, s.rateDownPending_ ? "step down pending" : "no step pending");
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_ && s.windowBad_);
+        CHECK(s.statusText().find("steps down at the next break") != std::string::npos);
         CHECK(s.stallPct_ > 1 && s.snapRate() == 500);   // (late ticks aren't a bandwidth problem: the snapshot rate stays)
         s.phaseEnd_ = s.time();                  // time's up: the match is over
         pump(s, cls, 0.5, idle);
         printf("  match over: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateWhy_.c_str());
         CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
-        // between rounds the stalls go on stepping it down until a tick period absorbs them (at 125 Hz a stall is 16 ms)
+        // between rounds the stalls go on stepping it down (two windows a step) until a tick period absorbs them (at 125
+        // Hz a stall is 16 ms)
         for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{&s, 0.25, 12});
         printf("  still stalling, match end: %d Hz\n", s.tickRate());
         CHECK(s.tickRate() == 125);
@@ -1357,8 +1377,51 @@ static void testRateBetweenRounds(uint16_t port) {
     }
 }
 
+// kLateWindows: late ticks have to come in windows in a row. Stalling, clean, stalling (as a cloud VM's host pausing
+// us now and then does) steps nothing down; a second stalling window in a row then does. (A run in which this machine
+// stalled a tick in the clean window itself, which the server is right to count, runs again: ratePump.)
+static void testRateTwoWindows(uint16_t port) {
+    printf("tick rate: late ticks step it down only in two windows in a row\n");
+    setTimeScale(1.0);
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }   // (live: a step down waits for the break)
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        auto logged = [&](const char* what) { for (auto& l : logs) if (l.find(what) != std::string::npos) return true; return false; };
+        rateFreshWindow(s, cls, 1.5);
+        Stalls st{&s, 0.25, 12};
+        auto calm = [](int) { return UserCmd(); };
+        double w = 0, quiet = 0;
+        rateJudged(s, cls, 1, st, &w);
+        const bool armed = s.lateWindows_ == 1 && !s.rateDownPending_ && !s.windowBad_;
+        rateJudged(s, cls, 1, calm, &quiet);
+        const double pct = s.stallPct_;
+        const bool disarmed = s.lateWindows_ == 0 && !s.rateDownPending_;
+        rateJudged(s, cls, 1, st, &w);
+        const bool again = s.lateWindows_ == 1 && !s.rateDownPending_ && s.tickRate() == 1000;
+        printf("  stalling, clean (%.2f%%, latest tick %.1f ms), stalling: %d Hz, %s\n", pct, quiet * 1e3, s.tickRate(),
+               s.rateDownPending_ ? "step down pending" : s.lateWindows_ == 1 ? "waiting for a second window" : "not armed");
+        if (!(armed && disarmed && again) && quiet > s.stallAfter_ && attempt < kRateTries) { s.stop(); printf("  (this machine stalled a tick in the clean window itself: again)\n"); continue; }
+        CHECK(armed && disarmed && again);
+        CHECK(logged("late ticks in one window (") && logged("waiting for a second") && logged("the next window was clean"));
+        rateJudged(s, cls, 1, st, &w);   // the second stalling window in a row
+        printf("  and stalling again: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateDownPending_ ? "step down pending" : "no step pending");
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_ && s.windowBad_);
+        CHECK(logged("stepping down at the next break"));
+        s.stop();
+        return;
+    }
+}
+
 // REVIEW 6.1: a step up (made in a break) that doesn't hold is undone at once, even mid-round; any other step down
-// still waits for the break.
+// still waits for the break. (Late ticks alone: two windows in a row, the first within 3 windows of the raise.)
 static void testRateUndoStepUp(uint16_t port) {
     printf("tick rate: a step up that doesn't hold is undone mid-round\n");
     setTimeScale(1.0);
@@ -1383,8 +1446,11 @@ static void testRateUndoStepUp(uint16_t port) {
         for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
         CHECK(s.ms_.phase == PHASE_LIVE);
         Stalls st{&s, 0.25, 12};                  // the raise doesn't hold
-        for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, st);
-        printf("  live, stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        rateJudged(s, cls, 1, st, &worst);
+        printf("  live, one window stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.lateWindows_ == 1);   // (one window: not yet)
+        rateJudged(s, cls, 1, st, &worst);
+        printf("  live, two windows stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
         CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
         pump(s, cls, s.rateWindow_ * 2.5, st);   // still stalling, but that's no longer our own raise: waits for the break
         printf("  still stalling: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
@@ -2381,6 +2447,7 @@ static void testGameRules(const std::string& only, int half = 0) {
     for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {
         timingTest("rate between rounds", [] { testRateBetweenRounds(TP(29252)); });
+        timingTest("rate two windows", [] { testRateTwoWindows(TP(29261)); });
         timingTest("rate undo step up", [] { testRateUndoStepUp(TP(29254)); });
         timingTest("rate jitter", [] { testRateJitter(TP(29257)); });
         timingTest("upload cap", [] { testUploadCap(TP(29258)); });
