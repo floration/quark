@@ -159,9 +159,9 @@ window.DM = window.DM || {};
     '00-agent-rules.md': 'Agent rules', '01-known-bugs.md': 'Known bugs', '02-currently-working-on.md': 'Currently working on',
     '03-possible-bugs.md': 'Possible bugs', '04-known-performance-improvements.md': 'Known performance improvements',
     '05-possible-performance-improvements.md': 'Possible performance improvements', '06-things-to-tell-the-user.md': 'Things to tell q',
-    '07-things-to-ask-the-user.md': 'Things to ask q', '08-other.md': 'Other notes', 'README.md': 'README',
+    '07-things-to-ask-the-user.md': 'Things to ask q', '08-other.md': 'Other notes', '09-answers-from-q.md': 'Answers from q', 'README.md': 'README',
   };
-  const FILE_SHORT = {'01': 'Bugs', '02': 'Working on', '03': 'Possible bugs', '04': 'Perf fixes', '05': 'Perf ideas', '06': 'To tell q', '07': 'To ask q', '08': 'Other'};
+  const FILE_SHORT = {'01': 'Bugs', '02': 'Working on', '03': 'Possible bugs', '04': 'Perf fixes', '05': 'Perf ideas', '06': 'To tell q', '07': 'To ask q', '08': 'Other', '09': 'Answers'};
   function fileTitle(name) {
     const f = DM.state && DM.state.fileByName && DM.state.fileByName[name];
     let t = (f && f.title) || FILE_TITLES[name] || String(name || '').replace(/^\d+-/, '').replace(/\.md$/, '').replace(/-/g, ' ');

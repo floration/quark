@@ -7,10 +7,10 @@ keeping that folder's mirror/ and cache/. Then double-click docs-manager.cmd the
 import argparse, os, shutil, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FILES = ["serve.py", "docsparse.py", "ghlinks.py", "threads.json", "index.html", "manager.css", "quark-tools.css",
+FILES = ["serve.py", "docsparse.py", "docsedit.py", "ghlinks.py", "threads.json", "index.html", "manager.css", "quark-tools.css",
          "docs-manager.cmd"]
 DIRS = ["js"]
-REQUIRED = {"serve.py", "docsparse.py", "ghlinks.py", "threads.json", "index.html", "docs-manager.cmd"}
+REQUIRED = {"serve.py", "docsparse.py", "docsedit.py", "ghlinks.py", "threads.json", "index.html", "docs-manager.cmd"}
 
 
 def install(target):

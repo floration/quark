@@ -46,7 +46,9 @@
     el.appendChild(h('div', {class: 'nq-m'},
       h('span', {class: 'faint'}, DM.fileTitle(e.file), e.section ? ' › ' + e.section : ''),
       h('span', {class: 'dotsep'}), DM.data.threadLink(e.thread, e.threadUrl),
-      chips.length ? h('span', {class: 'chips inl'}, chips) : null));
+      chips.length ? h('span', {class: 'chips inl'}, chips) : null,
+      DM.edit ? DM.edit.editButton(e) : null));
+    if (DM.edit && DM.edit.canAnswer(e)) el.appendChild(DM.edit.answerBox(e));
     return el;
   }
 

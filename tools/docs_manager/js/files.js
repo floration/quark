@@ -28,6 +28,7 @@
       f.lastChange && f.lastChange.time ? h('span', {class: 'dim'}, 'Last changed ', DM.timeEl(f.lastChange.time, 'dayclock'), ' (', DM.timeEl(f.lastChange.time), ')',
         f.lastChange.subject ? h('span', {class: 'faint'}, ': ' + f.lastChange.subject) : null) : null,
       h('span', {class: 'spacer'}),
+      DM.edit && DM.edit.canEdit() ? h('button', {class: 'mini', title: 'Open this file in the Edit tab', onclick: () => DM.edit.openAt(f.name, 1)}, 'Edit this file') : null,
       h('div', {class: 'seg'},
         h('button', {class: p.raw ? '' : 'on', onclick: () => { p.raw = false; DM.app.save(); render(); }}, 'Readable'),
         h('button', {class: p.raw ? 'on' : '', onclick: () => { p.raw = true; DM.app.save(); render(); }}, 'Raw text')));

@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
-"""Claude Documents manager: a read-only local server that shows every Claude Documents entry, its history and
-what it waits on, at http://127.0.0.1:8766/ (the page: index.html, manager.css, js/ beside this file).
+"""Claude Documents manager: a local server that shows every Claude Documents entry, its history and what it
+waits on, and lets q edit the files and answer questions, at http://127.0.0.1:8766/ (the page: index.html,
+manager.css, js/ beside this file).
 
-    python3 serve.py [--docs "<PC Claude Documents folder>"] [--repo URL|path] [--port 8766] [--open]
+    python3 serve.py [--docs "<PC Claude Documents folder>"] [--repo URL|path] [--port 8766] [--open] [--read-only]
     python3 serve.py --snapshot out.json [--gh-fixture tests/fixtures/github.json | --no-gh]
     python3 serve.py --ping                (exit 0 when a manager already answers on the port)
 
-It never writes to the Claude Documents folder or its repo. History comes from its own bare clone in
-<state dir>/mirror (fetched every --interval s); the PC folder is only read, to flag files edited there and not
-synced yet. GitHub (gh CLI) is refreshed every 5 min into <state dir>/cache/github.json; the per-commit
-entry diffs are cached by sha in <state dir>/cache/changes.json. Python 3 standard library only.
+History comes from its own bare clone in <state dir>/mirror (fetched every --interval s), which it never writes
+to; the PC folder (--docs) is read to flag files edited there and not synced yet. q's edits (docsedit.py) go only
+to the PC folder: pull, change, commit, push, under one lock; then the mirror is fetched again. GitHub (gh CLI) is
+refreshed every 5 min into <state dir>/cache/github.json; the per-commit entry diffs are cached by sha in
+<state dir>/cache/changes.json. Python 3 standard library only.
 
 API: GET /api/data (everything, ETag / If-None-Match), GET /api/summary (small: in progress, waiting, questions,
-recent changes), GET /api/health, POST /api/refresh (fetch now). CORS for the sibling tools on 8765-8770.
+recent changes), GET /api/health, POST /api/refresh (fetch now); CORS for the sibling tools on 8765-8770 (reads
+only). Edits (same origin + X-Claude-Manager: 1 only): GET /api/doc?file=, GET /api/edit/status,
+POST /api/doc/save, POST /api/answer, POST /api/entry/add, POST /api/edit/push (send offline saves now).
 """
-import argparse, datetime, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.request, webbrowser
+import argparse, datetime, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.parse, urllib.request, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import docsparse, ghlinks  # noqa: E402
+import docsedit, docsparse, ghlinks  # noqa: E402
 from ghlinks import run, now_iso, parse_iso  # noqa: E402
 
 VERSION = "1.0"
@@ -29,6 +33,8 @@ MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", 
         ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json"}
 CORS_PORTS = range(8765, 8771)
 VOLATILE = ("generatedAt", "mirrorFetchedAt", "ghFetchedAt")
+WRITE_PATHS = {"/api/doc/save", "/api/answer", "/api/entry/add", "/api/edit/push"}             # same origin + X-Claude-Manager: 1 only
+MAX_BODY = 4 * 1024 * 1024
 
 
 def log(msg):
@@ -251,6 +257,7 @@ def waiting_on(e, links):
 
     if f == "07" and st in ("open", "unknown"): add("owner", "Waiting on q's decision")
     if f == "06" and st in ("open", "unknown"): add("owner", "Not told yet: for q to read")
+    if f == "09" and st in ("open", "unknown"): add("claude", "q answered; no Claude has acted on it yet")
     m = _OWNER_RE.search(text)
     if m and (not w or _PUSH_RE.search(text)):
         pm = _PUSH_RE.search(text)
@@ -316,6 +323,7 @@ class Manager:
         shared = None if args.gh_shared == "" else (args.gh_shared or os.path.join(self.quark_dir, "github-manager", "cache", "github.json"))
         self.gh = ghlinks.GitHub(os.path.join(self.state_dir, "cache", "github.json"), fixture=args.gh_fixture, shared=shared,
                                  disabled=args.no_gh, repo=args.gh_repo, log=log)
+        self.writer = docsedit.Writer(self.docs, read_only=getattr(args, "read_only", False), thread_names=self.thread_names, log=log)
         self.lock = threading.Lock()
         self.body, self.etag, self.summary, self.summary_etag, self.data = None, None, None, None, None
         self.started = time.time()
@@ -435,11 +443,13 @@ class Manager:
                 threads[c["thread"]]["lastActivity"] = c["timeUtc"]
         thread_list = sorted(threads.values(), key=lambda t: t["lastActivity"] or "", reverse=True)
 
+        can_edit, edit_reason = self.writer.editable()
         data = {"generatedAt": now_iso(), "version": VERSION, "mirrorHead": head, "mirrorFetchedAt": self.mirror.fetched_at,
                 "fetchOk": self.mirror.fetch_ok, "fetchError": self.mirror.error, "ghOk": bool(self.gh.state.get("ok")),
                 "ghFetchedAt": self.gh.state.get("fetchedAt"), "ghSource": self.gh.state.get("source"),
                 "ghError": self.gh.state.get("error"), "quarkDir": self.quark_dir.replace("\\", "/"),
                 "docsDir": self.docs.replace("\\", "/") if self.docs else None, "repoUrl": self.repo_web,
+                "canEdit": can_edit, "editReason": edit_reason, "readOnly": self.writer.read_only,
                 "files": files, "entries": entries, "changes": changes, "threads": thread_list,
                 "github": dict(gh, commits=self.gh.state.get("commits", {}))}
         self.publish(data)
@@ -562,6 +572,8 @@ class Refresher(threading.Thread):
 def make_handler(mgr, refresher, port, quiet):
     hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
     origins = {"http://%s:%d" % (h, p) for h in ("127.0.0.1", "localhost") for p in CORS_PORTS}
+    own = {"http://127.0.0.1:%d" % port, "http://localhost:%d" % port}
+    writer = mgr.writer
 
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "QuarkDocsManager/" + VERSION
@@ -572,7 +584,7 @@ def make_handler(mgr, refresher, port, quiet):
 
         def _cors(self):
             o = self.headers.get("Origin")
-            if o in origins and self.path.startswith("/api/"):
+            if o in origins and self.path.startswith("/api/") and self.path.split("?", 1)[0] not in WRITE_PATHS:
                 self.send_header("Access-Control-Allow-Origin", o)
                 self.send_header("Access-Control-Expose-Headers", "ETag, X-Mirror-Fetched-At, X-Gh-Fetched-At, X-Fetch-Ok")
             self.send_header("Vary", "Origin")
@@ -598,6 +610,8 @@ def make_handler(mgr, refresher, port, quiet):
 
         def do_OPTIONS(self):
             if not self._host_ok(): return
+            if self.path.split("?", 1)[0] in WRITE_PATHS:                   # writes: same origin only, never preflighted
+                return self._json(403, {"error": "cross-origin", "message": "Edits are only accepted from the manager's own page."})
             self.send_response(204)
             self._cors()
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -621,6 +635,14 @@ def make_handler(mgr, refresher, port, quiet):
                 if etag and etag in [t.strip() for t in inm.split(",")]: return self._send(304, headers=h)
                 return self._send(200, body, headers=h)
             if path == "/api/health": return self._json(200, mgr.health())
+            if path == "/api/edit/status": return self._json(200, writer.status())
+            if path == "/api/doc":
+                q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                try:
+                    sync = (q.get("sync") or [""])[0] == "1" and self._write_refusal(json_body=False) is None   # (a pull writes)
+                    return self._json(200, writer.read((q.get("file") or [""])[0], sync=sync))
+                except docsedit.EditError as e:
+                    return self._json(e.code, e.payload())
             if path.startswith("/api/"): return self._json(404, {"error": "no such endpoint"})
             rel = "index.html" if path == "/" else path.lstrip("/")
             if ".." in rel.split("/") or "\\" in rel or not (rel in STATIC or rel.startswith(STATIC_DIRS)):
@@ -632,11 +654,59 @@ def make_handler(mgr, refresher, port, quiet):
             self._send(200, body, MIME.get(os.path.splitext(full)[1].lower(), "application/octet-stream"),
                        headers={"Cache-Control": "no-cache"})
 
+        def _write_refusal(self, json_body=True):
+            """None if this request may write, else (code, payload): same origin, the custom header, not read-only."""
+            o = self.headers.get("Origin")
+            site = self.headers.get("Sec-Fetch-Site")
+            if (o is not None and o not in own) or (site and site not in ("same-origin", "none")):
+                return 403, {"error": "cross-origin", "message": "Edits are only accepted from the manager's own page."}
+            if self.headers.get("X-Claude-Manager") != "1":
+                return 403, {"error": "header", "message": "Edits need the X-Claude-Manager: 1 header."}
+            if writer.read_only:
+                return 403, {"error": "read-only", "message": "The Claude Manager was started read-only (--read-only), so it can't edit."}
+            if json_body and not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+                return 415, {"error": "content-type", "message": "Edits are sent as JSON."}
+            return None
+
+        def _post_write(self, path, n):
+            if n > MAX_BODY:
+                self.close_connection = True
+                return self._json(413, {"error": "too-big", "message": "That edit is too big."})
+            raw = self.rfile.read(n) if n else b""
+            bad = self._write_refusal()
+            if bad: return self._json(*bad)
+            try:
+                req = json.loads(raw.decode("utf-8")) if raw else {}
+                if not isinstance(req, dict): raise ValueError("not an object")
+            except ValueError:
+                return self._json(400, {"error": "bad-json", "message": "The page sent something that isn't JSON."})
+            try:
+                if path == "/api/doc/save": res = writer.save(req.get("file"), req.get("base"), req.get("text"))
+                elif path == "/api/answer": res = writer.answer(req.get("answers"))
+                elif path == "/api/edit/push":
+                    if not writer.editable()[0]: raise docsedit.EditError(423, "not-editable", writer.editable()[1])
+                    pushed = writer.retry_push()
+                    res = dict(writer.status(), ok=True, pushed=pushed)
+                else: res = writer.add_entry(req)
+                return self._json(200, res)
+            except docsedit.EditError as e:
+                if e.code >= 500: log("edit failed: %s" % e.message)
+                return self._json(e.code, e.payload())
+            except Exception as e:
+                import traceback
+                log("edit crashed: %s" % traceback.format_exc().strip().splitlines()[-1])
+                return self._json(500, {"ok": False, "error": "crash", "message": "The manager hit an error while saving: %s" % e})
+
         def do_POST(self):
             if not self._host_ok(): return
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = max(0, int(self.headers.get("Content-Length") or 0))
+            except ValueError:
+                n = 0
+            path = self.path.split("?", 1)[0]
+            if path in WRITE_PATHS: return self._post_write(path, n)
             if n: self.rfile.read(min(n, 65536))
-            if self.path.split("?", 1)[0] == "/api/refresh":
+            if path == "/api/refresh":
                 refresher.poke()
                 return self._json(202, {"ok": True, "detail": "refreshing"})
             return self._json(404, {"error": "no such endpoint"})
@@ -662,8 +732,8 @@ def default_docs():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Claude Manager: Claude Documents, read only (local server).")
-    ap.add_argument("--docs", default=None, help="the PC's Claude Documents folder (read only); default %s" % default_docs())
+    ap = argparse.ArgumentParser(description="Claude Manager: Claude Documents viewer and editor (local server).")
+    ap.add_argument("--docs", default=None, help="the PC's Claude Documents folder (edits go here); default %s" % default_docs())
     ap.add_argument("--repo", default=None, help="repo to mirror (URL or path); default: the docs folder's origin")
     ap.add_argument("--branch", default="main")
     ap.add_argument("--port", type=int, default=8766)
@@ -681,6 +751,8 @@ def main(argv=None):
     ap.add_argument("--open", action="store_true", help="open the page in the browser once data is ready")
     ap.add_argument("--ping", action="store_true", help="exit 0 if a manager answers on --port, else 1")
     ap.add_argument("--quiet", action="store_true", help="no request log")
+    ap.add_argument("--read-only", action="store_true", help="never write to the Claude Documents folder (no editing)")
+    ap.add_argument("--push-retry", type=float, default=docsedit.RETRY_EVERY, help="retry an offline save's push every N s")
     args = ap.parse_args(argv)
 
     if args.ping: return 0 if ping(args.port) else 1
@@ -715,12 +787,14 @@ def main(argv=None):
         except Exception as e: log("first build failed: %s" % e)
     ref = Refresher(mgr, args.interval if not args.no_fetch else 1e12, args.gh_interval)
     ref.start()
+    mgr.writer.on_change = ref.poke                                         # (fetch the mirror right after an edit)
+    if not args.read_only: mgr.writer.start_retry(args.push_retry)
     try:
         srv = Server(("127.0.0.1", args.port), make_handler(mgr, ref, args.port, args.quiet))
     except OSError as e:
         log("cannot listen on 127.0.0.1:%d (%s)" % (args.port, e)); return 2
     url = "http://127.0.0.1:%d/" % args.port
-    log("serving %s (docs: %s, repo: %s)" % (url, mgr.docs or "-", mgr.mirror.repo or "-"))
+    log("serving %s (docs: %s, repo: %s%s)" % (url, mgr.docs or "-", mgr.mirror.repo or "-", ", read-only" if args.read_only else ""))
     if args.open:
         def opener():
             ref.ready.wait(90)

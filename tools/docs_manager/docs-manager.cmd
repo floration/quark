@@ -1,5 +1,5 @@
 @echo off
-rem Quark Claude Manager (Claude Documents): starts the local read-only server with no window and opens
+rem Quark Claude Manager (Claude Documents): starts the local server with no window and opens
 rem http://127.0.0.1:8766/. If it is already running, this only opens the page. Its log: cache\serve.log.
 rem To stop it: close it from the Quark app, or end "pythonw" in Task Manager.
 setlocal
