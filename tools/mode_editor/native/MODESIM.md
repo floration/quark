@@ -48,21 +48,23 @@ reach bots. The events below come from the game log and from state changes inste
 
 ## Mode logic and the game hook (`logicApplied`)
 
-The rules text is compiled with the game's language (`src/game/modelogic.h`). That gives the label (`name#hash8`),
+The rules text is compiled with the game's language (`src/game/modelogic.h`, through `modesim_logic.cpp`: that
+header and `src/game/gamemodes.h` can't share a translation unit while both declare `enum ModeSlot`). That gives the label (`name#hash8`),
 the slots the file changes (interpreted), their worst-case cost, and errors with line:col. A logic error refuses the
 run.
 
 Whether the server actually runs the logic is up to the game side (mode editor phase 3: `src/game/gamemodes.*`,
 `server.*`). Every answer says what happened:
 
-- `logicApplied: true` only when the started server reports the logic it runs (`Server::logic_`, detected at
-  compile time) and that logic has the file's hash.
+- `logicApplied: true` only when the file has logic and the started server runs logic (`Server::modeHooks_`, G1's
+  hook from the rules refactor, detected at compile time). Once the game can report what it loaded, the hashes are
+  compared too.
 - Until that hook is in the game, `logicApplied` is `false` and `logic.why` says so. The match plays the base mode
   with the file's key=value rules (time limit, score limit, rounds, weapons, movement...). Those do apply: they go
   through `CustomRules` as the game hosts a custom mode.
 - `logic.hook` is `"pending"` (this build's server has no hook) or `"game"`.
 
-The seam is the "logic hook" block at the top of `modesim_cmd.cpp` (`applyLogicHook`, `serverLogic`). When G1's API
+The seam is the "logic hook" block at the top of `modesim_cmd.cpp` (`applyLogicHook` before `Server::start`, `serverRunsLogicT` / `fileLogicRunning` after it). When G1's API
 lands, wiring it is a few lines there. Slot traces (`trace`) and `perf.logicNs` need per-slot timings from the game
 side. Until then there are no `slot` lines and `logicNs` is `null`.
 

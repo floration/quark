@@ -30,6 +30,7 @@
 #include <type_traits>
 #include <utility>
 #include "maptool.h"
+#include "modesim_logic.h"   // (the logic language: not in this file, see its header)
 #include "common/net.h"
 #include "common/u8file.h"
 #include "common/rng.h"
@@ -38,45 +39,33 @@
 #include "game/gamedefs.h"
 #include "game/gamemodes.h"
 #include "game/map.h"
-#include "game/modelogic.h"
 #include "game/server.h"
 
 namespace {
 namespace fs = std::filesystem;
 
 // ---- the logic hook (G1) -------------------------------------------------------------------------------------------
-// TODO(G1, mode editor phase 3): when the server runs a custom mode's logic, wire it here. Two seams, both detected at
-// compile time so this file builds before and after the game side lands:
-//   1. setLogicText(sc.custom, logicBlock): the logic block goes into the rules the server starts with. Phase 1a gives
-//      CustomRules a `logic` member (the text from the `logic N` line on); design 4.1 has Server::start compile it.
-//      If G1 instead takes a compiled ModeLogic (say ServerConfig::logic or Server::setModeLogic(L) before start),
-//      replace the body of applyLogicHook with that call: it gets the compiled logic `L` too.
-//   2. serverLogic(s): after start, what the server is actually running. Design 4.1 names it
-//      `std::shared_ptr<const ModeLogic> Server::logic_`. If G1 names it otherwise, change HasServerLogic / serverLogic.
-//      logicApplied in every answer is "serverLogic(s) is the file's logic (same hash)": never claimed from the
-//      request alone (fileLogicRunning, below).
-//   (3. later: per-slot timings for `trace` / perf.logicNs need a callback or counters from runModeSlot's caller.)
+// TODO(G1, mode editor phase 3): wire the server running a custom mode's logic HERE (and only here). Two seams, both
+// detected at compile time so this file builds before and after the game side lands:
+//   1. applyLogicHook(s, sc, S): before Server::start. Today it puts the logic block into sc.custom.logic (phase 1a's
+//      CustomRules::logic, which the server keeps but doesn't run yet). When G1's "load a .qmode's logic into a Server
+//      before start" function lands, call it here with S.rulesText (or S.logicBlock); on failure set *err and return
+//      false (the run fails with that error).
+//   2. serverRunsLogic(s): after start, whether the server runs logic: Server::modeHooks_ (gamemodes.h ModeHooks, G1's
+//      rules refactor) is non-null. logicApplied in every answer is that AND the file having logic: never claimed from
+//      the request alone. When G1's API can report what it loaded (a label / hash), also compare it with S.compiled.hash.
+//   (3. later: per-slot timings for `trace` / perf.logicNs need counters or a callback around ModeHooks::event/query.)
+template <class S, class = void> struct HasModeHooks : std::false_type {};
+template <class S> struct HasModeHooks<S, std::void_t<decltype(std::declval<const S&>().modeHooks_ != nullptr)>> : std::true_type {};
+template <class S> bool serverRunsLogicT(const S& s) {
+    if constexpr (HasModeHooks<S>::value) return s.modeHooks_ != nullptr;
+    else { (void)s; return false; }
+}
+constexpr bool kServerHasLogicHook = HasModeHooks<Server>::value;
 template <class T, class = void> struct HasLogicText : std::false_type {};
 template <class T> struct HasLogicText<T, std::void_t<decltype(std::declval<T&>().logic = std::string())>> : std::true_type {};
 template <class C> void setLogicText(C& c, const std::string& text) {
     if constexpr (HasLogicText<C>::value) c.logic = text; else (void)c, (void)text;
-}
-template <class S, class = void> struct HasServerLogic : std::false_type {};
-template <class S> struct HasServerLogic<S, std::void_t<decltype(std::declval<const S&>().logic_.get())>> : std::true_type {};
-template <class S> const ModeLogic* serverLogic(const S& s) {
-    if constexpr (HasServerLogic<S>::value) return static_cast<const ModeLogic*>(s.logic_.get());
-    else { (void)s; return nullptr; }
-}
-constexpr bool kServerHasLogicHook = HasServerLogic<Server>::value;
-// The file's logic as the server runs it: null unless the file has logic and the server runs that very logic (the
-// same hash: a server that, say, always runs the base mode's default doesn't count).
-const ModeLogic* fileLogicRunning(const ModeLogic* running, const std::string& logicBlock, const std::shared_ptr<const ModeLogic>& L) {
-    if (!running || logicBlock.empty() || !L || running->hash != L->hash) return nullptr;
-    return running;
-}
-void applyLogicHook(ServerConfig& sc, const std::string& logicBlock, const std::shared_ptr<const ModeLogic>& L) {
-    (void)L;
-    setLogicText(sc.custom, logicBlock);
 }
 // --------------------------------------------------------------------------------------------------------------------
 
@@ -110,7 +99,7 @@ int skillFromJson(const Json& j, int def) {
 }
 int modeByAnyName(const std::string& n) {
     int m = modeFromName(n.c_str());
-    if (m < 0) m = modeBaseByName(n);   // ("arena" = 1v1)
+    if (m < 0) m = modeBaseFromName(n);   // ("arena" = 1v1)
     return m;
 }
 
@@ -140,7 +129,7 @@ struct Setup {
     std::string rulesText;             // the request's .qmode text ("" = the built-in mode)
     CustomRules custom;                // its key=value rules (name empty: none)
     std::string logicBlock;            // its logic block ("" = none)
-    std::shared_ptr<const ModeLogic> logic;   // that, compiled (also for a file without logic: the label)
+    ModeCompile compiled;              // that, compiled (also for a file without logic: the label); compiled.ok false: none
     std::string label;                 // name#hash, or the built-in mode's name
     Json check;                        // the compile's answer (modeDiagJson)
     std::vector<BotReq> bots;
@@ -155,6 +144,13 @@ struct Setup {
     bool positions = true;
     std::vector<std::string> warnings;
 };
+
+// the logic hook, part 1 (see the TODO at the top): before Server::start
+bool applyLogicHook(Server& s, ServerConfig& sc, const Setup& S, std::string* err) {
+    (void)s; (void)err;
+    if (sc.custom.active()) setLogicText(sc.custom, S.logicBlock);
+    return true;
+}
 
 bool loadMap(const Json& req, Map& m, std::string& err) {
     const Json& mj = req["map"];
@@ -179,16 +175,15 @@ bool parseRules(const Json& req, Setup& S, int fallbackMode, std::string& err, J
     int base = fallbackMode;
     if (hasCustom) base = S.custom.baseMode;
     if (!S.rulesText.empty()) {
-        ModeDiag d;
-        auto L = compileModeLogic(S.rulesText, hasCustom ? base : -1, &d);
-        if (!L && !hasCustom) {   // a bare logic text with no `base` line: the request's / the map's mode
-            ModeDiag d2;
-            auto L2 = compileModeLogic(S.rulesText, base, &d2);
-            if (L2 || d2.errors.size() < d.errors.size()) { L = L2; d = d2; }
+        ModeCompile c = compileModeText(S.rulesText, hasCustom ? base : -1);
+        Json::parse(c.diagJson, S.check);
+        if (!c.ok && !hasCustom) {   // a bare logic text with no `base` line: the request's / the map's mode
+            ModeCompile c2 = compileModeText(S.rulesText, base);
+            Json j2;
+            Json::parse(c2.diagJson, j2);
+            if (c2.ok || j2["errors"].size() < S.check["errors"].size()) { c = c2; S.check = j2; }
         }
-        std::string dj = modeDiagJson(d, L.get());
-        Json::parse(dj, S.check);
-        if (!L) {
+        if (!c.ok) {
             if (!S.logicBlock.empty()) {
                 if (errors) *errors = S.check["errors"];
                 const Json& e0 = S.check["errors"][0];
@@ -196,15 +191,15 @@ bool parseRules(const Json& req, Setup& S, int fallbackMode, std::string& err, J
                 return false;
             }
         } else {
-            S.logic = L;
-            if (!hasCustom && L->base >= 0) base = L->base;   // (a bare logic text: its `base` line)
+            S.compiled = c;
+            if (!hasCustom && c.base >= 0) base = c.base;   // (a bare logic text: its `base` line)
         }
     }
     S.mode = base;
     if (S.logicBlock.empty() && !hasCustom) { S.label = modeName(base); return true; }
     if (!hasCustom) {   // logic without a custommode= line: the server needs a custom mode to carry it
         S.custom = CustomRules();
-        S.custom.name = S.logic && !S.logic->name.empty() ? S.logic->name : "modesim";
+        S.custom.name = S.compiled.ok && !S.compiled.name.empty() ? S.compiled.name : "modesim";
         S.custom.baseMode = base;
         S.warnings.push_back("the rules have no custommode= line: played as the custom mode '" + S.custom.name + "'");
     }
@@ -212,7 +207,7 @@ bool parseRules(const Json& req, Setup& S, int fallbackMode, std::string& err, J
         S.warnings.push_back("the rules' map pool (maps=) is ignored: the match plays on the requested map and stops at its end");
         S.custom.maps.clear();
     }
-    S.label = S.logic ? modeLabel(*S.logic) : S.custom.name;
+    S.label = S.compiled.ok ? S.compiled.label : S.custom.name;
     return true;
 }
 
@@ -288,7 +283,7 @@ public:
     Json winner() const;
     Json leader() const;
     Json perf() const;
-    const ModeLogic* runningLogic() const { return server_ ? serverLogic(*server_) : nullptr; }
+    bool runsLogic() const { return server_ && serverRunsLogicT(*server_); }
     const std::vector<std::string>& serverLog() const { return serverLog_; }
     long long ticks() const { return ticks_; }
     double simWall() const { return simWall_; }
@@ -340,11 +335,9 @@ bool ModeMatch::start(const Setup& S, uint32_t seed, const std::string& dataDir,
     sc.autoStart = true;
     sc.logLevel = LOG_SIMPLE;
     sc.logFile = logPath_;
-    if (S.custom.active()) {
-        sc.custom = S.custom;
-        applyLogicHook(sc, S.logicBlock, S.logic);   // (the logic hook, above)
-    }
+    if (S.custom.active()) sc.custom = S.custom;
     std::string e;
+    if (!applyLogicHook(s, sc, S, &e)) { server_.reset(); if (err) *err = "logic: " + e; return false; }   // (the logic hook)
     if (!s.start(sc, &e)) { server_.reset(); if (err) *err = "server: " + e; return false; }
     for (int k = 0; k < 20000 && !s.nav_.ready(s.map_); k++) sleepMs(1);   // (bots stand still without the nav graph)
     for (const BotReq& b : S.bots) {
@@ -658,6 +651,9 @@ Json ModeMatch::perf() const {
     return p;
 }
 
+// the logic hook, part 2 (see the TODO at the top): the server runs logic, and the file has some
+bool fileLogicRunning(const ModeMatch& M, const Setup& S) { return M.runsLogic() && !S.logicBlock.empty() && S.compiled.ok; }
+
 // ---- shared pieces of the commands ---------------------------------------------------------------------------------
 // a data folder for the run(s): maps/<name>.qmap, made the game's user data folder (never the player's real one)
 bool prepareDir(const Setup& S, const char* tag, std::string& dir, std::string& err) {
@@ -673,13 +669,13 @@ bool prepareDir(const Setup& S, const char* tag, std::string& dir, std::string& 
 }
 
 // known: false in modebatch's start line (no match has run yet: its end line says what the server did)
-Json logicJson(const Setup& S, const ModeLogic* running, bool known = true) {
+Json logicJson(const Setup& S, bool running, bool known = true) {
     Json l = Json::object();
     l.set("present", !S.logicBlock.empty());
-    l.set("applied", running != nullptr);
+    l.set("applied", running);
     l.set("hook", kServerHasLogicHook ? "game" : "pending");
-    if (S.logic) {
-        l.set("label", modeLabel(*S.logic)); l.set("hash", S.logic->hash);
+    if (S.compiled.ok) {
+        l.set("label", S.compiled.label); l.set("hash", S.compiled.hash);
         l.set("interpreted", S.check["interpreted"]); l.set("uses", S.check["uses"]); l.set("needs", S.check["needs"]);
         Json c = Json::object();
         for (auto& sl : S.check["slots"].items()) if (sl["interpreted"].boolean()) c.set(sl["slot"].str(), sl["worstCase"]);
@@ -690,11 +686,11 @@ Json logicJson(const Setup& S, const ModeLogic* running, bool known = true) {
     return l;
 }
 
-void startCommon(Json& s, const Setup& S, const ModeLogic* running, bool known = true) {
+void startCommon(Json& s, const Setup& S, bool running, bool known = true) {
     s.set("map", S.mapName); s.set("base", modeName(S.mode)); s.set("mode", modeName(S.mode));
     s.set("label", S.label);
     s.set("custom", S.custom.active() ? Json(S.custom.name) : Json());
-    s.set("logicApplied", running != nullptr);
+    s.set("logicApplied", running);
     s.set("interpreted", running ? S.check["interpreted"] : Json::array());   // slots the server interprets (logic.interpreted: what the file would)
     s.set("logic", logicJson(S, running, known));
     s.set("teams", modeIsTeamBased(S.mode));
@@ -752,13 +748,13 @@ int runModeSim(const Json& req, Json& out, CmdCtx& ctx) {
     if (!M.start(S, S.seed, dir, &err)) return cmdError(out, err);
     const double startSeconds = maptoolNow() - w0;
     const int ticksPer = std::max(1, (int)std::lround(M.tickRate() / S.rate));
-    const ModeLogic* running = fileLogicRunning(M.runningLogic(), S.logicBlock, S.logic);
+    const bool running = fileLogicRunning(M, S);
     {
         Json s = Json::object();
         s.set("type", "start");
         startCommon(s, S, running);
         s.set("seed", (double)S.seed); s.set("rate", (double)M.tickRate() / ticksPer);
-        s.set("realtime", S.realtime); s.set("speed", S.speed); s.set("trace", S.trace && running != nullptr);
+        s.set("realtime", S.realtime); s.set("speed", S.speed); s.set("trace", false);   // (no slot lines until the hook can time slots)
         s.set("bots", M.startBots());
         Json log = Json::array();
         for (auto& l : M.serverLog())   // (not the log file or the ephemeral port: the same request gives the same lines)
@@ -806,7 +802,7 @@ int runModeSim(const Json& req, Json& out, CmdCtx& ctx) {
     }
     Json d = Json::object();
     d.set("type", "end"); d.set("t", r2(M.time())); d.set("reason", reason);
-    d.set("label", S.label); d.set("logicApplied", running != nullptr);
+    d.set("label", S.label); d.set("logicApplied", running);
     d.set("winner", M.winner());
     if (!M.matchOver()) d.set("leader", M.leader());
     d.set("rounds", M.roundsPlayed());
@@ -866,7 +862,7 @@ int runModeBatch(const Json& req, Json& out, CmdCtx& ctx) {
     {
         Json s = Json::object();
         s.set("type", "start");
-        startCommon(s, S, nullptr, false);   // (the end line says what the server did: logicApplied there)
+        startCommon(s, S, false, false);   // (the end line says what the server did: logicApplied there)
         s.set("matches", N); s.set("threads", T);
         Json sj = Json::array(); for (auto x : seeds) sj.push((double)x); s.set("seeds", sj);
         Json bots = Json::array();
@@ -892,7 +888,7 @@ int runModeBatch(const Json& req, Json& out, CmdCtx& ctx) {
         ModeMatch M;
         std::string e;
         if (!M.start(S, seeds[i], dir, &e)) { R.error = e; R.reason = "error"; return; }
-        R.applied = fileLogicRunning(M.runningLogic(), S.logicBlock, S.logic) != nullptr;
+        R.applied = fileLogicRunning(M, S);
         const int chunk = std::max(1, M.tickRate());
         std::string reason = "time";
         while (true) {
@@ -1012,7 +1008,7 @@ int runModeBatch(const Json& req, Json& out, CmdCtx& ctx) {
     d.set("reason", cancel ? "stopped" : "done");
     d.set("label", S.label); d.set("base", modeName(S.mode)); d.set("map", S.mapName);
     d.set("logicApplied", played > 0 && applied == played);
-    d.set("logic", logicJson(S, played > 0 && applied == played ? S.logic.get() : nullptr));
+    d.set("logic", logicJson(S, played > 0 && applied == played));
     d.set("matchesPlayed", played); d.set("errors", errorsN); d.set("timeouts", timeouts);
     if (teams) {
         Json t = Json::object();
@@ -1078,27 +1074,27 @@ int runModeCheck(const Json& req, Json& out, CmdCtx&) {
         base = modeByAnyName(req["base"].str(req["mode"].str()));
         if (base < 0) return cmdError(out, "base: a mode name");
     }
-    ModeDiag d;
-    auto L = compileModeLogic(text, base, &d);
-    std::vector<ModeDiag::Msg> mapErrs;
+    ModeCompile c = compileModeText(text, base);
+    std::vector<std::string> mapErrs;
     std::string mapName;
-    if (L && (req["map"].isStr() || req["map"].isObj())) {
+    if (c.ok && (req["map"].isStr() || req["map"].isObj())) {
         Map m; std::string err;
-        if (!loadMap(req, m, err)) mapErrs.push_back({0, 0, "can't load the map: " + err});
+        if (!loadMap(req, m, err)) mapErrs.push_back("can't load the map: " + err);
         else {
             mapName = m.name;
-            uint32_t n = modeLogicNeeds(*L);
-            auto need = [&](uint32_t bit, bool has, const char* what) { if ((n & bit) && !has) mapErrs.push_back({0, 0, m.name + " has no " + what + " (the logic needs one)"}); };
-            need(MN_HILL, m.hasHill, "hill");
-            need(MN_SITES, !m.bombSites.empty(), "bomb site");
-            need(MN_CART, m.payloadPath.size() >= 2, "payload track");
-            need(MN_POINTS, !m.points.empty(), "multi point zone");
-            need(MN_CHECKPOINTS, !m.checkpoints.empty(), "race checkpoint");
+            auto need = [&](const char* key, bool has, const char* what) {
+                if (!has && std::find(c.needs.begin(), c.needs.end(), key) != c.needs.end()) mapErrs.push_back(m.name + " has no " + what + " (the logic needs one)");
+            };
+            need("hill", m.hasHill, "hill");
+            need("sites", !m.bombSites.empty(), "bomb site");
+            need("cart", m.payloadPath.size() >= 2, "payload track");
+            need("points", !m.points.empty(), "multi point zone");
+            need("checkpoints", !m.checkpoints.empty(), "race checkpoint");
         }
     }
-    for (auto& e : mapErrs) d.errors.push_back(e);
-    const bool ok = L && d.errors.empty();
-    Json::parse(modeDiagJson(d, ok ? L.get() : nullptr), out);
+    if (!mapErrs.empty()) c = compileModeText(text, base, mapErrs);
+    const bool ok = c.ok;
+    Json::parse(c.diagJson, out);
     if (!out.isObj()) out = Json::object();
     if (!mapName.empty()) out.set("map", mapName);
     out.set("serverRunsLogic", kServerHasLogicHook);   // (modesim's logicApplied: also needs the match to load it)
