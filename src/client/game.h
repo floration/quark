@@ -466,7 +466,9 @@ private:
     float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
-    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
+    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool spark = false; };   // spark: X4's local hit spark
+    void localImpactSparks(int w, const UserCmd& c);
+    double nextLocalSpark_ = 0;
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
