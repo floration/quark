@@ -1649,7 +1649,7 @@ static void testWeaponPredict(uint16_t port) {
     wp.want(WPN_LOCATOR);
     pump(s, cls, 0.2, input);
     CHECK(sp.weapon == WPN_SNIPER && switches == before);
-    // 5. the knife thrown: the next weapon in the same command; asking for the knife while it's away: refused
+    // 5. the knife thrown: the weapon held before it, in the same command; asking for the knife while it's away: refused
     wp.want(WPN_KNIFE);
     pump(s, cls, 1.2, input);   // (out, and past the switch's refire)
     CHECK(sp.weapon == WPN_KNIFE);
@@ -1657,6 +1657,7 @@ static void testWeaponPredict(uint16_t port) {
     buttons = BTN_ALTFIRE;
     pump(s, cls, 0.2, input);
     CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    CHECK(sp.weapon == WPN_SNIPER);   // back to the weapon held before the knife (T14; it was the first slot, the rocket)
     buttons = 0;
     wp.want(WPN_KNIFE);
     pump(s, cls, 0.3, input);

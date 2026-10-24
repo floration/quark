@@ -1863,6 +1863,7 @@ void Server::spawnPlayer(int id) {
     p.alive = true;
     p.health = kMaxHealth;
     p.weapon = isItMode(ms_.mode) ? WPN_KNIFE : p.selectedWeapon;   // (hide and seek / tag: "it" starts with the knife out)
+    p.prevWeapon = -1;
     p.knifeBackAt = p.syringeBackAt = 0;
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
@@ -2151,6 +2152,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     int heldWeapon = p.weapon;
     if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon) && !(away(cmd.weapon) && otherWeapon() >= 0)) p.weapon = cmd.weapon;
     if (away(p.weapon) && otherWeapon() >= 0) p.weapon = otherWeapon();
+    if (p.weapon != heldWeapon) p.prevWeapon = heldWeapon;
     bool disabled = away(p.weapon);
     // a weapon switch never fires the new weapon with a button held from before: let go and press again
     if (p.weapon != heldWeapon && (cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = true;
@@ -2209,7 +2211,10 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
             if (firedWeapon == WPN_KNIFE) p.knifeBackAt = time() + kKnifeAway;
             else p.syringeBackAt = time() + kSyringeAway;
             p.fireLocked = true;
-            if (otherWeapon() >= 0) p.weapon = otherWeapon();
+            // back to the weapon held before (T14: it was always the first slot, the rocket); else the first one usable
+            const int back = p.prevWeapon >= 0 && p.prevWeapon < WPN_COUNT && p.prevWeapon != firedWeapon && !away(p.prevWeapon) &&
+                             weaponAllowed(p.prevWeapon) ? p.prevWeapon : otherWeapon();
+            if (back >= 0) { p.prevWeapon = firedWeapon; p.weapon = back; }
             p.fireQueuedUntil = -1;
             break;
         }
