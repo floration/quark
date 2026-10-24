@@ -1353,6 +1353,17 @@ void Game::frame(double dt) {
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
         if (net_.playback()) tickAcc_ = 0;   // watching a demo: no input
         const double period = net_.tickPeriod();
+        {   // just spawned: the server fires nothing for kSpawnFireLock, from its spawn. We see the spawn half a round trip
+            // late and our commands reach it half a round trip after we send them: the lock here ends a round trip sooner
+            // (a click before then played a shot the server never fired)
+            const bool aliveNow = net_.selfAlive() && !net_.playback();
+            if (aliveNow && !fireAlive_) {
+                const PlayerSnap* mp = net_.findPlayer(net_.clientId());
+                const double rtt = mp ? mp->ping * 0.001 : 0.0;
+                localNextFire_ = std::max(localNextFire_, time_ + std::max(0.0, (double)kSpawnFireLock - rtt));
+            }
+            fireAlive_ = aliveNow;
+        }
         QZONE("input + prediction ticks");
         while (tickAcc_ >= period) {
             if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else

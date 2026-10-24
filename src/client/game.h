@@ -459,6 +459,7 @@ private:
         return std::max(local - time_, snap * 0.1);
     }
     int lastHealth_ = 0;
+    bool fireAlive_ = false;   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };

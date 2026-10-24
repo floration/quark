@@ -1868,7 +1868,7 @@ void Server::spawnPlayer(int id) {
     if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
-    p.nextFire = time() + 0.25f;
+    p.nextFire = time() + kSpawnFireLock;
     p.respawnAt = -1;
     GameEvent e;
     e.type = EV_SPAWN;
