@@ -2321,8 +2321,10 @@ static void testModeCalls(uint16_t port) {
 }
 
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
-// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~21 and
-// ~18 s on an idle box; overtime ~15 s and grapplep ~6 s, its bots now on the manual clock, are the long ones, one in each).
+// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
+// on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
+// suite runs it in a group of its own, alone. The halves run at once, sharing one port block: tests whose ports overlap
+// stay in one half (hudclock takes 29280-29291, which hide, shorthanded and rps reach too).
 static void testGameRules(const std::string& only, int half = 0) {
     struct R { const char* name; int half; std::function<void()> run; };
     std::vector<R> all = {
@@ -2339,18 +2341,18 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"stopwatch", 1, [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
         {"tag", 1, [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
         {"rps", 2, [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
-        {"locator", 2, [] { testLocator(TP(29260)); }},
+        {"locator", 1, [] { testLocator(TP(29260)); }},
         {"aware", 2, [] { testItAwareness(TP(29263)); }},
         {"bomb", 2, [] { testBombDrop(TP(29249)); }},
         {"cartbox", 2, [] { testCartBoxPlace(TP(29275)); }},
-        {"botdefer", 2, [] { testBalanceBotDefer(TP(29250)); }},
+        {"botdefer", 1, [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", 2, [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
         {"seeds", 2, [] { testRandomSeeds(); }},
         {"heal", 2, [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", 2, [] { testScoreboardValue(); }},
         {"hudclock", 2, [] { testHudClock(TP(29280)); }},
         {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
-        {"weaponpredict", 1, [] { testWeaponPredict(TP(29286)); }},
+        {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
     };

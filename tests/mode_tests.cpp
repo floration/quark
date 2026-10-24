@@ -1056,17 +1056,21 @@ void testLogicServers() {
 
 } // namespace
 
-int modeLockstepTests() {
+// part / parts: the suite runs it as two groups ("modelockstep", "modelockstep2": ~23-27 s each instead of ~45 s, the
+// longest group of the run); part 0 also has the server checks, the no-hooks pair and the harness check.
+int modeLockstepTests(int part, int parts) {
     g_modeFail = 0;
-    printf("mode logic on the server\n");
-    testLogicServers();
+    printf("mode logic on the server%s\n", parts > 1 ? (" (part " + std::to_string(part + 1) + " of " + std::to_string(parts) + ")").c_str() : "");
+    if (part == 0) testLogicServers();
     const bool rateCheck = g_serverRateCheck;
     g_serverRateCheck = false;   // (the game clock, not the real one: never step the tick rate down)
     printf("  lockstep: every built-in mode native vs forced through the interpreter, at 1000 / 250 / 125 Hz\n");
     const int rates[] = {1000, 250, 125};
     long ticks = 0;
-    int rounds = 0, deaths = 0;
+    int rounds = 0, deaths = 0, cases = 0;
     for (const LockCase& c : kLockCases) {
+        if ((int)(&c - kLockCases) % parts != part) continue;
+        cases++;
         ModeDiag d1, d2;
         auto nat = compileModeLogic(lockText(c), c.mode, &d1);
         auto interp = compileModeLogic(lockText(c), c.mode, &d2, true);
@@ -1083,8 +1087,8 @@ int modeLockstepTests() {
         printf("    %-8s%s\n", modeName(c.mode), line.c_str());
     }
     printf("  lockstep: %ld ticks compared (%d rounds started, %d deaths)\n", ticks, rounds, deaths);
-    MCHECK(rounds > 13 * 3 * 2 && deaths > 0);
-    {   // and against a server with no hooks at all (the built-in mode, its built-in numbers)
+    MCHECK(rounds > cases * 3 * 2 && deaths > 0);
+    if (part == 0) {   // and against a server with no hooks at all (the built-in mode, its built-in numbers)
         const LockCase c = {MODE_KOTH, "summit", 8, ""};
         auto interp = compileModeLogic(defaultModeText(MODE_KOTH), MODE_KOTH, nullptr, true);
         MCHECK(interp != nullptr);
@@ -1094,7 +1098,7 @@ int modeLockstepTests() {
             MCHECK(run.why.empty() && run.first.empty() && run.ticks > 7000);
         }
     }
-    {   // the harness sees a difference: a kill slot that scores 2
+    if (part == 0) {   // the harness sees a difference: a kill slot that scores 2
         const LockCase& c = kLockCases[MODE_VS];
         auto nat = compileModeLogic(lockText(c), c.mode);
         auto other = compileModeLogic(lockText(c, "slot kill:\n  if killer != none and killer != victim: addScore(killer, 2)\n"), c.mode, nullptr, true);

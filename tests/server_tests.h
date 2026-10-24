@@ -354,62 +354,70 @@ SERVER_TEST void testTagAddbot(uint16_t port) {
 // hits on a mover all carry on.
 SERVER_TEST void testClockWrap(uint16_t port) {
     printf("server clock past 2^32 ms (49.7 days)\n");
-    Server s;
-    ServerConfig cfg;
-    cfg.autoStart = false;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    const uint64_t wrap = 1ull << 32;
-    s.timeMs_ = wrap - 2500;
-    CHECK(s.fromWireMs((uint32_t)(wrap + 5)) == wrap + 5 && s.fromWireMs((uint32_t)(wrap - 2600)) == wrap - 2600);
-    NetClient a, b;
-    a.setInterpFixed(0.05f);
-    a.connect("127.0.0.1:" + std::to_string(port), "shooter");
-    b.connect("127.0.0.1:" + std::to_string(port), "mover");
-    std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 1.0, idle);
-    CHECK(a.state() == ConnState::Connected && b.state() == ConnState::Connected);
-    if (a.clientId() < 0 || b.clientId() < 0) { s.stop(); return; }
-    auto& sa = s.players_[a.clientId()];
-    auto& sb = s.players_[b.clientId()];
-    auto moverAt = [](double t) { double ph = std::fmod(t, 1.0); return Vec3(-5, 0, 19 + 2.5f * (float)(ph < 0.5 ? ph * 4 - 1 : 3 - ph * 4)); };
-    Vec3 shooterPos(10, 0, 19);
-    double prevRender = 0;
-    bool monotonic = true;
-    std::vector<int> lags;
-    auto input = [&](int i, bool fire) {
-        sa.move.pos = shooterPos; sa.move.vel = {};
-        sb.move.pos = moverAt(s.time()); sb.move.vel = {}; sb.health = 100;
-        UserCmd c;
-        c.weapon = WPN_RIFLE;
-        if (i != 0) return c;
-        if (a.renderTime() < prevRender) monotonic = false;
-        prevRender = a.renderTime();
-        if (sa.lastViewTick) lags.push_back((int)((int64_t)s.timeMs_ - (int64_t)sa.lastViewTick));
-        NetClient::PlayerArray ps = a.interpolatedPlayers();
-        const InterpPlayer& ip = ps[b.clientId()];
-        if (!ip.valid) return c;
-        Vec3 d = normalize(ip.snap.pos + Vec3(0, 1.0f, 0) - (shooterPos + Vec3(0, kEyeHeight, 0)));
-        c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
-        if (fire) c.buttons = BTN_FIRE;
-        return c;
-    };
-    pump(s, cls, 0.4, [&](int i) { return input(i, false); });
-    int fired0 = sa.shotsFired, hit0 = sa.shotsHit;
-    pump(s, cls, 2.5, [&](int i) { return input(i, true); });   // through the wrap
-    int fired = sa.shotsFired - fired0, hit = sa.shotsHit - hit0;
-    std::sort(lags.begin(), lags.end());
-    int median = lags.empty() ? -1 : lags[lags.size() / 2];
-    printf("  clock %llu ms (past 2^32 by %lld), render time %.3f s, ping %.0f ms, view tick a median %d ms behind, %d of %d rifle shots hit, %u undecodable deltas\n",
-           (unsigned long long)s.timeMs_, (long long)s.timeMs_ - (long long)wrap, a.renderTime(), sa.ping, median, hit, fired, a.baseMisses());
-    CHECK(s.timeMs_ > wrap + 500);
-    CHECK(a.state() == ConnState::Connected && a.renderTime() > wrap * 0.001 && monotonic);
-    CHECK(sa.ping >= 0 && sa.ping < 100);
-    CHECK(median >= 40 && median < 200);
-    CHECK(fired >= 8 && hit * 10 >= fired * 8);
-    CHECK(a.baseMisses() < 5);
-    s.stop();
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = false;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        const uint64_t wrap = 1ull << 32;
+        s.timeMs_ = wrap - 2500;
+        CHECK(s.fromWireMs((uint32_t)(wrap + 5)) == wrap + 5 && s.fromWireMs((uint32_t)(wrap - 2600)) == wrap - 2600);
+        NetClient a, b;
+        a.setInterpFixed(0.05f);
+        a.connect("127.0.0.1:" + std::to_string(port), "shooter");
+        b.connect("127.0.0.1:" + std::to_string(port), "mover");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 1.0, idle);
+        CHECK(a.state() == ConnState::Connected && b.state() == ConnState::Connected);
+        if (a.clientId() < 0 || b.clientId() < 0) { s.stop(); return; }
+        auto& sa = s.players_[a.clientId()];
+        auto& sb = s.players_[b.clientId()];
+        auto moverAt = [](double t) { double ph = std::fmod(t, 1.0); return Vec3(-5, 0, 19 + 2.5f * (float)(ph < 0.5 ? ph * 4 - 1 : 3 - ph * 4)); };
+        Vec3 shooterPos(10, 0, 19);
+        double prevRender = 0;
+        bool monotonic = true;
+        std::vector<int> lags;
+        auto input = [&](int i, bool fire) {
+            sa.move.pos = shooterPos; sa.move.vel = {};
+            sb.move.pos = moverAt(s.time()); sb.move.vel = {}; sb.health = 100;
+            UserCmd c;
+            c.weapon = WPN_RIFLE;
+            if (i != 0) return c;
+            if (a.renderTime() < prevRender) monotonic = false;
+            prevRender = a.renderTime();
+            if (sa.lastViewTick) lags.push_back((int)((int64_t)s.timeMs_ - (int64_t)sa.lastViewTick));
+            NetClient::PlayerArray ps = a.interpolatedPlayers();
+            const InterpPlayer& ip = ps[b.clientId()];
+            if (!ip.valid) return c;
+            Vec3 d = normalize(ip.snap.pos + Vec3(0, 1.0f, 0) - (shooterPos + Vec3(0, kEyeHeight, 0)));
+            c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+            if (fire) c.buttons = BTN_FIRE;
+            return c;
+        };
+        double stalled = 0;
+        pump(s, cls, 0.4, [&](int i) { return input(i, false); }, &stalled);
+        int fired0 = sa.shotsFired, hit0 = sa.shotsHit;
+        pump(s, cls, 2.5, [&](int i) { return input(i, true); }, &stalled);   // through the wrap
+        int fired = sa.shotsFired - fired0, hit = sa.shotsHit - hit0;
+        std::sort(lags.begin(), lags.end());
+        int median = lags.empty() ? -1 : lags[lags.size() / 2];
+        printf("  clock %llu ms (past 2^32 by %lld), render time %.3f s, ping %.0f ms, view tick a median %d ms behind, %d of %d rifle shots hit, %u undecodable deltas (machine stalled %.1f ms)\n",
+               (unsigned long long)s.timeMs_, (long long)s.timeMs_ - (long long)wrap, a.renderTime(), sa.ping, median, hit, fired, a.baseMisses(), stalled * 1e3);
+        CHECK(s.timeMs_ > wrap + 500);
+        CHECK(a.state() == ConnState::Connected && a.renderTime() > wrap * 0.001 && monotonic);
+        CHECK(sa.ping >= 0 && sa.ping < 100);
+        CHECK(fired >= 8 && hit * 10 >= fired * 8);
+        CHECK(a.baseMisses() < 5);
+        s.stop();
+        // (as testUptimeClock: a machine stall past the server's skip moves its clock back against the client's, and the
+        //  view tick reads early for a while; then it runs again, the last try as it is)
+        bool ok = median >= 40 && median < 200;
+        if (!ok && stalled > serverSkipStall(s) && attempt < kStallTries) { printf("  (the machine stalled the server past its skip: again)\n"); continue; }
+        CHECK(ok);
+        break;
+    }
 }
 
 // ---- snapshot / visibility benchmark (PERF-8, PERF-9) ----
@@ -865,7 +873,7 @@ static void serverTests() {
     testRestoreKeepsIdentity(TP(28802));
     testGiantSpawns();
     testTagAddbot(TP(28803));
-    testClockWrap(TP(28804));
+    // (testClockWrap: in the "netcode" group, beside testUptimeClock: real-time view-tick lag, timing-sensitive)
     {   // PERF-8: a snapshot send allocates nothing once the delta-base rings have grown (events included)
         printf("snapshots: no heap allocations per send\n");
         SnapBenchResult r = snapBench("harbor", 8, 3.0, TP(28805), false);

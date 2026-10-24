@@ -3997,7 +3997,7 @@ int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted
 int modeTests();                 // tests/mode_tests.cpp: the mode logic language (returns the failure count)
 int modeTool(const std::string& cmd, int argc, char** argv);   // tests/mode_tests.cpp: exportmode / checkmode / modeast / printmode
 int modeBench();                 // tests/mode_tests.cpp: interpreted mode slot cost
-int modeLockstepTests();         // tests/mode_tests.cpp: logic on servers, native vs interpreted lockstep (the failure count)
+int modeLockstepTests(int part = 0, int parts = 1);   // tests/mode_tests.cpp: logic on servers, native vs interpreted lockstep (the failure count)
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
@@ -8013,9 +8013,11 @@ int main(int argc, char** argv) {
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box, 12 at a time:
-                             //  rules / governor ~21, rules2 ~18, weapons ~16, mapbounds / mapbounds2 / maps ~12-14,
-                             //  server / modes ~10, ... duel ~3, tourney ~1: the countdowns skipped, botaim ~1: the
-                             //  manual clock)
+                             //  rules / governor ~21, modelockstep / modelockstep2 ~25 (CPU: two servers stepped tick by tick),
+                             //  rules2 ~18, weapons ~16, mapbounds / mapbounds2 / maps ~12-14, server / modes ~10, ...
+                             //  duel ~3, tourney ~1: the countdowns skipped, botaim ~1 and brains ~4: the manual clock)
+        {"modelockstep", [] { g_fail += modeLockstepTests(0, 2); }},   // (every other mode each)
+        {"modelockstep2", [] { g_fail += modeLockstepTests(1, 2); }},
         {"rules", [] { testGameRules("", 1); }},
         // (its own governor dir and ports; the load is the players' reported loss, stalls left out: beside the others.
         //  testGovernorPolicy and testRankedNotRated run in "server")
@@ -8035,17 +8037,16 @@ int main(int argc, char** argv) {
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
+        {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"brains", [] { g_fail += brainTests(TP(29150)); }},
-        {"modelogic", [] { g_fail += modeTests(); }},
-        {"modelockstep", [] { g_fail += modeLockstepTests(); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},
+        {"modelogic", [] { g_fail += modeTests(); }},
         {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
     };
@@ -8058,7 +8059,10 @@ int main(int argc, char** argv) {
             timingTest("upload cap", [] { testUploadCap(TP(28721)); });
             timingTest("shared congestion", [] { testSharedCongestion(TP(28722)); });
         }},
-        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testClockWrap(TP(28804)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        // (the client's weapon prediction over a 40 ms network: in the rules group it missed its 0.8 s window in about 1
+        //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
+        {"weaponpredict", [] { testGameRules("weaponpredict"); }},
     };
     // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
     // group in this process

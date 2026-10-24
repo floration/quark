@@ -114,7 +114,9 @@ void lockstepMatch(uint16_t port, const LockMatch& lm, int rate, double secs, ui
     s.command("forcestart");
     g_ls = &ls;
     g_botThinkHook = lockstepThink;
-    pumpFor(s, secs);
+    // every tick of the match, one after another with no waiting (as the mode lockstep steps its servers): every tick
+    // runs however loaded the machine is, as fast as the CPU goes (in real time at the tests' 4x clock: ~100 s of waiting)
+    for (long t = 0, n = std::lround(secs * rate); t < n; t++) s.stepTick();
     for (auto& p : s.players_) ls.kills += p.connected ? p.kills : 0;
     g_botThinkHook = nullptr;
     g_ls = nullptr;

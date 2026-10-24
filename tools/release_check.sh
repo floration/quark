@@ -8,7 +8,7 @@ SKIP=" "
 [ "$1" = "--skip" ] && SKIP=" $2 "
 export TMPDIR="${TMPDIR:-/tmp}/quark_release_check.$$"; mkdir -p "$TMPDIR"
 fail=0
-alone="tickrate netcode"   # (timing-sensitive: after the others, on an idle machine; as quark_tests orders them)
+alone="tickrate netcode weaponpredict"   # (timing-sensitive: after the others, on an idle machine; as quark_tests orders them)
 par=""
 for g in $(build/quark_tests groups); do case "$SKIP$alone " in *" $g "*) ;; *) par="$par $g";; esac; done
 jobs=$(( 3 * $(nproc 2>/dev/null || echo 4) ))   # (as quark_tests: the groups mostly wait on real-time play)
