@@ -1,12 +1,17 @@
 @echo off
 rem Quark Model Editor: install or update from this checkout (non-interactive, safe to re-run).
-rem   tools\model_editor\install.cmd [output folder]     (run from anywhere; default %USERPROFILE%\Desktop\Quark\model-editor)
+rem   tools\model_editor\install.cmd [folder]     (run from anywhere)
+rem The folder is the Quark folder (the page goes into its model-editor\, what the project manager passes as %QUARK%)
+rem or the model-editor folder itself; default %QUARK%\model-editor, else %USERPROFILE%\Desktop\Quark\model-editor.
 rem Builds only quark_tests (MinGW, Release, in build-model-editor\), exports the game assets, rebuilds the page.
 rem Needs git, cmake, MinGW-w64 g++ / mingw32-make and Python 3 on PATH (as tools\build_windows.ps1 -Setup installs).
 setlocal
-pushd "%~dp0..\.." || exit /b 1
-set "OUT=%~1"
+set "OUT="
+if not "%~1"=="" set "OUT=%~f1"
+if "%OUT%"=="" if not "%QUARK%"=="" set "OUT=%QUARK%"
 if "%OUT%"=="" set "OUT=%USERPROFILE%\Desktop\Quark\model-editor"
+for %%d in ("%OUT%") do if /i not "%%~nxd"=="model-editor" set "OUT=%OUT%\model-editor"
+pushd "%~dp0..\.." || exit /b 1
 set "PY=python"
 where py >nul 2>nul && set "PY=py -3"
 for /f "delims=" %%p in ('%PY% -c "import sys;print(sys.executable)"') do set "PYEXE=%%p"
