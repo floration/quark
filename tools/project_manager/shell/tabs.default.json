@@ -1,6 +1,8 @@
 {"tabs": [
   {"id": "project",     "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
    "start": "py -3 \"%PM%\\server.py\"", "keepAlive": true},
+  {"id": "play",        "name": "Play",             "parent": "project", "url": "http://127.0.0.1:8768/play?embed=1", "port": 8768,
+   "start": "py -3 \"%PM%\\server.py\""},
   {"id": "github",      "name": "GitHub Manager",   "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767, "folder": "github-manager",
    "start": "py -3 -B server.py --data \"%QUARK%\\github-manager\"", "keepAlive": true, "lowPriority": true},
   {"id": "tests",       "name": "Tests",            "parent": "github", "url": "http://127.0.0.1:8775/?embed=1", "port": 8775, "folder": "tests-editor",

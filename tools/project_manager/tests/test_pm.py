@@ -522,7 +522,7 @@ class TestTabs(unittest.TestCase):
                    {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
                     "file": "ui-customizer-redesign.html"}]
             write(paths.pm("tabs.json"), json.dumps({"tabs": old}))
-            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "tests", "gamemode", "physics"])
+            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "play", "tests", "gamemode", "physics"])
             got = {t["id"]: t for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]}
             d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
             self.assertEqual(got["project"]["name"], "Mine")
@@ -1081,8 +1081,8 @@ class TestServer(unittest.TestCase):
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])
         ids = [t["id"] for t in d["tabs"]]
-        self.assertEqual(ids[:5], ["project", "github", "tests", "docs", "dashboard"])
-        self.assertEqual([x["depth"] for x in d["tabs"]][:6], [0, 1, 2, 1, 1, 2])
+        self.assertEqual(ids[:6], ["project", "play", "github", "tests", "docs", "dashboard"])
+        self.assertEqual([x["depth"] for x in d["tabs"]][:7], [0, 1, 1, 2, 1, 1, 2])
         self.assertTrue(all("installed" in t and "up" in t for t in d["tabs"]))
         self.assertEqual(json.loads(self.req("/api/history?limit=5")[2]), {"events": []})
 

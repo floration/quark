@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Play</title>
+<link rel="stylesheet" href="static/quark-tools.css">
+<link rel="stylesheet" href="static/pm.css">
+<link rel="stylesheet" href="static/play.css">
+</head>
+<body>
+<header class="qt-nav top" id="top">
+  <a class="qt-brand" href="./">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+    Supervisor Board
+  </a>
+  <span class="qt-nav-sep"></span>
+  <a href="play" aria-current="page">Play</a>
+  <span class="grow"></span>
+  <span class="clock" id="clock" title="Dallas time (America/Chicago)">--:--</span>
+</header>
+
+<main id="main">
+  <section class="card play-pending" id="sec-pending" hidden></section>
+  <div class="statusline" id="statusline" role="status" aria-live="polite"><span id="status-text">Loading&hellip;</span></div>
+
+  <section class="card" id="sec-builds" aria-labelledby="h-builds">
+    <div class="card-head">
+      <h2 id="h-builds">Play a build</h2>
+      <label class="opts">Launch options
+        <input type="text" id="args" spellcheck="false" autocomplete="off" maxlength="400" placeholder="e.g. --host ffa --map bastion">
+      </label>
+    </div>
+    <div class="builds" id="builds"></div>
+  </section>
+
+  <div class="grid two play-grid">
+    <section class="card" id="sec-notes" aria-labelledby="h-notes"></section>
+    <section class="card" id="sec-sessions" aria-labelledby="h-sessions"></section>
+  </div>
+
+  <section class="card" id="sec-releases" aria-labelledby="h-releases"></section>
+</main>
+
+<dialog id="note-dlg" aria-labelledby="note-h">
+  <form id="note-form" method="dialog">
+    <div class="dlg-head">
+      <h2 id="note-h">How was it?</h2>
+      <span class="small muted" id="note-count"></span>
+    </div>
+    <div class="note-meta" id="note-meta"></div>
+    <label>What did you do?<textarea name="did" rows="3" placeholder="e.g. two FFA rounds on bastion with 6 bots, then the map editor"></textarea></label>
+    <label>What did you notice?<textarea name="noticed" rows="3" placeholder="bugs, stutters, anything that felt off or good"></textarea></label>
+    <label>What do you want changed?<textarea name="change" rows="3"></textarea></label>
+    <label>Anything else<textarea name="other" rows="2"></textarea></label>
+    <p class="small muted">Saved on this PC and added to Claude Documents (12-play-notes.md) as an open entry for the agents. No passwords or keys.</p>
+    <p class="err small" id="note-err" hidden></p>
+    <div class="dlg-buttons">
+      <button type="button" class="btn" id="note-later" title="Close this; the note stays waiting (the Play tab shows a badge)">Later</button>
+      <button type="button" class="btn" id="note-skip" title="No note for this session">Skip</button>
+      <span class="grow"></span>
+      <button type="submit" class="btn primary" id="note-save" title="Ctrl+Enter">Save note</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+<script src="static/play.js"></script>
+</body>
+</html>

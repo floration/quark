@@ -26,6 +26,9 @@ from . import util
 DEFAULT_TABS = {"tabs": [
     {"id": "project", "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
      "start": "py -3 \"%PM%\\server.py\"", "keepAlive": True},
+    # (the Play tab is a page of the Supervisor Board server: same port, kept up by the project tab, so no keepAlive)
+    {"id": "play", "name": "Play", "parent": "project", "url": "http://127.0.0.1:8768/play?embed=1", "port": 8768,
+     "start": "py -3 \"%PM%\\server.py\""},
     {"id": "github", "name": "GitHub Manager", "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767,
      "folder": "github-manager", "start": "py -3 -B server.py --data \"%QUARK%\\github-manager\"", "keepAlive": True,
      "lowPriority": True},
