@@ -353,6 +353,10 @@ public:
     GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
+    // not ranked: a match that had both sides and lost one (or everyone) is on hold (short_), since shortSince_ (F5)
+    bool short_ = false;
+    double shortSince_ = 0;
+    bool matchManned_ = false;   // this match has had enough players at some point (a forced short-handed start hasn't)
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping
     double payloadIdleSince_ = 0;

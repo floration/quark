@@ -1699,6 +1699,186 @@ static void testWeaponPredict(uint16_t port) {
     s.stop();
 }
 
+// F6: a hide and seek seeker who falls is back 2 s later (it stayed dead and the round idled out its 300 s).
+static void testSeekerRespawn(uint16_t port) {
+    printf("hide and seek: a fallen seeker respawns\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) it = i;
+    CHECK(it >= 0);
+    if (it < 0) { s.stop(); return; }
+    s.players_[it].move.pos.y = s.map_.killY() - 5;   // a fall
+    pump(s, cls, 0.1, idle);
+    CHECK(!s.players_[it].alive);
+    pumpServerTime(s, cls, 1.5, idle);
+    CHECK(!s.players_[it].alive);
+    pumpServerTime(s, cls, 0.7, idle);
+    printf("  seeker alive after 2.2 s: %d, still it: %d, phase %d\n", s.players_[it].alive, s.players_[it].it, s.ms_.phase);
+    CHECK(s.players_[it].alive && s.players_[it].it && s.ms_.phase == PHASE_LIVE);
+    s.stop();
+}
+
+// F5: not ranked, a match that loses a side holds still (no rounds handed to the side that's left), then after 10 s
+// it's a forfeit win; an emptied server goes back to warmup. A forced short-handed start plays on.
+static void testShortHanded(uint16_t port) {
+    printf("short-handed matches: forfeit or warmup after 10 s\n");
+    std::vector<std::string> logs;
+    for (int mode : {MODE_ARENA, MODE_VS, MODE_KOTH}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_KOTH ? "summit" : mode == MODE_ARENA ? "temple" : "bastion"; cfg.mode = mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        logs.clear();
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int stay = c[0].clientId();
+        s.command("kick " + s.players_[c[1].clientId()].name);
+        std::vector<NetClient*> one = {&c[0]};
+        pumpServerTime(s, one, 2.0, idle);
+        int scored = s.ms_.scoreA + s.ms_.scoreB;
+        CHECK(s.short_ && s.ms_.phase != PHASE_MATCH_END && (mode == MODE_KOTH || scored == 0));
+        s.shortSince_ = s.time() - 9.95;   // (most of the 10 s gone)
+        pumpServerTime(s, one, 0.2, idle);
+        bool named = false;
+        for (auto& l : logs) named |= l.find(s.players_[stay].name + " wins") != std::string::npos || l.find("TEAM A wins") != std::string::npos || l.find("TEAM B wins") != std::string::npos;
+        printf("  %s: one side left -> phase %d, %d rounds awarded on hold, forfeit called %d\n", modeName(mode), s.ms_.phase, scored, named);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && named);
+        if (mode == MODE_ARENA) {   // 1v1: the call names the player, not TEAM A
+            bool byName = false;
+            for (auto& l : logs) byName |= l.find(s.players_[stay].name + " wins") != std::string::npos;
+            CHECK(byName);
+        }
+        // everyone gone: back to warmup
+        pumpServerTime(s, one, 0.1, idle);
+        s.command("forcestart");
+        pump(s, one, 0.1, idle);
+        s.command("kick " + s.players_[stay].name);
+        std::vector<NetClient*> none;
+        pump(s, none, 0.3, idle);
+        if (s.short_) s.shortSince_ = s.time() - 9.95;
+        pumpServerTime(s, none, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_WARMUP);
+        s.stop();
+    }
+    {   // forcestart with one player (a host trying a map alone): it plays on
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "summit"; cfg.mode = MODE_KOTH; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (rulesStart(s, cfg, c, 1, cls)) {
+            pumpServerTime(s, cls, 0.5, idle);
+            CHECK(!s.short_ && s.ms_.phase != PHASE_WARMUP && s.ms_.phase != PHASE_MATCH_END);
+        }
+        s.stop();
+    }
+}
+
+// F7: play vs bots in 1V1 is one enemy and no allies whatever the team sliders say; duel its team size a side.
+static void testVsBotsDuo(uint16_t port) {
+    printf("play vs bots: 1v1 and duel sizes\n");
+    for (int mode : {MODE_ARENA, MODE_DUEL}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_ARENA ? "temple" : "clockwork"; cfg.mode = mode; cfg.port = port++;
+        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.duelTeamSize = 2;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { CHECK(false); continue; }
+        int a = 0, b = 0;
+        for (auto& p : s.players_) if (p.connected && p.isBot) (p.team == TEAM_A ? a : b)++;
+        printf("  %s: %d allies, %d enemies\n", modeName(mode), a, b);
+        CHECK(mode == MODE_ARENA ? (a == 0 && b == 1) : (a == 1 && b == 2));
+        s.stop();
+    }
+}
+
+// F9 + T15: payload / multi point stopwatch. The first round's call is the mark to beat (no ROUND WON for either
+// side); the second ends as soon as the attackers pass it, with a call that agrees with the match result.
+static void testStopwatch(uint16_t port) {
+    printf("payload / multi point: stopwatch calls and early end\n");
+    for (int mode : {MODE_PAYLOAD, MODE_POINTS}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_PAYLOAD ? "railyard" : "midtown"; cfg.mode = mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        // round 1: some progress, then time out
+        if (mode == MODE_PAYLOAD) s.ms_.payloadDist = 20.0f; else s.ms_.capture = 0.5f;
+        pump(s, cls, 0.1, idle);
+        float mark = s.bestProgress_[first];
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        bool beat = false;
+        for (auto& l : logs) beat |= l.find("must beat it") != std::string::npos;
+        printf("  %s round 1: \"%s\"\n", modeName(mode), logs.empty() ? "" : logs.back().c_str());
+        CHECK(beat && mark > 0);
+        // round 2: the other side passes the mark early: it ends right there, theirs
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        for (int k = 0; k < 40 && s.ms_.phase != PHASE_LIVE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.attackers != first && s.ms_.phase == PHASE_LIVE);
+        pump(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_LIVE);   // (not yet past it)
+        logs.clear();
+        if (mode == MODE_PAYLOAD) s.ms_.payloadDist = mark + 1.0f; else s.ms_.capture = std::min(0.99f, mark + 0.2f);
+        pump(s, cls, 0.1, idle);
+        printf("  %s round 2: phase %d \"%s\"\n", modeName(mode), s.ms_.phase, logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("beats") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(first == TEAM_A ? "TEAM B" : "TEAM A") + " wins the match") != std::string::npos;
+        CHECK(won);
+        s.stop();
+    }
+    {   // against a finished attack: once the clock is past its time the round ends, the first side's
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int first = s.ms_.attackers;
+        s.ms_.payloadDist = s.ms_.payloadLen;
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END && s.completeTime_[first] > 0);
+        s.completeTime_[first] = 100;   // (a 1:40 delivery: the instant one here would lock round 2 before it's checked)
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.roundStart_ = s.time() - s.completeTime_[first] - 0.5;   // (their clock is past the first delivery)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.scoreA + s.ms_.scoreB == 1);
+        s.stop();
+    }
+}
+
+// F23: multi point on a map without points can't start (it never ended).
+static void testPointsNoPoints(uint16_t port) {
+    printf("multi point on a map without points\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "harbor"; cfg.mode = MODE_POINTS; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    pump(s, cls, 0.2, idle);
+    CHECK(s.map_.points.empty() && s.ms_.phase == PHASE_WARMUP);
+    s.stop();
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1709,7 +1889,10 @@ static void testGameRules(const std::string& only) {
         {"grapple", [] { testGrappleNoBrake(); testGrapplePmove(); }},
         {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", [] { testHeadBox(TP(29246)); }},
-        {"hide", [] { testHideScoring(TP(29247)); }},
+        {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
+        {"shorthanded", [] { testShortHanded(TP(29288)); }},
+        {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
+        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); }},
         {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
         {"locator", [] { testLocator(TP(29260)); }},

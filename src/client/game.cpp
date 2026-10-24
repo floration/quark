@@ -962,7 +962,10 @@ void Game::updateAnnouncer() {
     else if (annLeader_ == -2) annLeader_ = -1;
     // Killstreaks are per match and per player: a new match (back to warmup, or another mode) starts them again, and a
     // slot's new player doesn't inherit the last one's (they only reset on leaving the server, so a spree carried over)
-    if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP)))
+    // (and as one starts: kills in warmup, or on the end screen, don't carry into it)
+    if (annPrevValid_ && (ms.mode != annPrev_.mode || (annPrev_.phase != PHASE_WARMUP && ms.phase == PHASE_WARMUP) ||
+                          ((annPrev_.phase == PHASE_WARMUP || annPrev_.phase == PHASE_MATCH_END) && ms.phase != annPrev_.phase) ||
+                          ms.round < annPrev_.round))
         for (int& k : streak_) k = 0;
     for (int i = 0; i < kMaxPlayers; i++)
         if (streak_[i] && !net_.findPlayer(i)) streak_[i] = 0;
@@ -1158,7 +1161,8 @@ void Game::handleEvents() {
                     if (e.b && cfg_.announcer >= 1) audio_.play(won ? SND_VOICE_YOU_WIN : SND_VOICE_YOU_LOSE, 1.0f);
                     else if (!e.b && teams && cfg_.announcer >= 2) audio_.play(won ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
                     else if (!e.b && cfg_.announcer >= 2) audio_.play(SND_VOICE_ROUND_OVER, 1.0f);
-                }
+                } else if (me && me->team() != TEAM_SPECTATOR && !e.b && cfg_.announcer >= 2 && (net_.mode().mode == MODE_PAYLOAD || net_.mode().mode == MODE_POINTS))
+                    audio_.play(SND_VOICE_ROUND_OVER, 1.0f);   // (a stopwatch pair's first round: a mark to beat, nobody's won yet)
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
                 break;
