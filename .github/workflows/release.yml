@@ -93,6 +93,8 @@ jobs:
           echo "### $CHANNEL ${TAG:-(build only)}" >> "$GITHUB_STEP_SUMMARY"
       - name: no keys, tokens or secrets in the repository (tools/check_secrets.py; the pre-commit hook runs it too)
         run: python3 -I tools/check_secrets.py
+      - name: the asset provenance registry is valid (tools/provenance.py check, docs/PROVENANCE.md)
+        run: python3 -I tools/provenance.py check
       - id: g
         name: the test groups (tests/tests.cpp's par + alone lists; the linux job checks the built binary agrees)
         run: |
@@ -401,8 +403,9 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
+          { cat "changelogs/$VER.md"; echo; python3 -I tools/provenance.py summary --markdown; } > notes.md   # (+ the human-made line)
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --latest \
-            --title "quark $VER" --notes-file "changelogs/$VER.md" \
+            --title "quark $VER" --notes-file notes.md \
             dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
 
   release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
@@ -444,6 +447,8 @@ jobs:
             echo "**Testing build** $VER (\`${GITHUB_SHA::7}\`, branch \`testing\`). Not a production release."
             echo
             if [ -f "changelogs/$BASE.md" ]; then cat "changelogs/$BASE.md"; fi
+            echo
+            python3 -I tools/provenance.py summary --markdown   # (how much is human-made: docs/PROVENANCE.md)
           } > notes.md
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "quark $VER (testing)" --notes-file notes.md \

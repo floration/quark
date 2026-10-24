@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Editor Dashboard</title>
+<script>/* ?embed=1: inside the project manager's window, which draws its own tab bar */ if (/[?&]embed=1(&|$)/.test(location.search)) document.documentElement.classList.add("embed");</script>
+<link rel="stylesheet" href="quark-tools.css">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+<!-- Quark editor dashboard (tools/editor_dashboard): served by dashboard.py on 127.0.0.1, no network.
+     The header and the three views are filled by dashboard.js from /api/status, /api/changes and /api/assets.
+     The nav bar is the one every Quark tool shares (quark-tools.css); dashboard.js marks the tools that don't answer and
+     adds a link per installed editor page. -->
+<nav class="qt-nav" id="qtnav" aria-label="Quark tools">
+  <a class="qt-brand" href="http://127.0.0.1:8765/">Quark</a>
+  <a href="http://127.0.0.1:8765/" data-tool="dashboard" aria-current="page">Dashboard</a>
+  <a href="http://127.0.0.1:8767/" data-tool="github" target="quark-github">GitHub</a>
+  <a href="http://127.0.0.1:8766/" data-tool="docs" target="quark-docs">Claude Documents</a>
+  <span class="qt-nav-sep"></span>
+  <span id="navEditors"></span>
+  <span class="qt-nav-note" id="navNote"></span>
+</nav>
+<header id="top">
+  <div class="brand">Editor dashboard</div>
+  <div class="facts" id="facts"><span class="muted">loading...</span></div>
+  <div class="actions">
+    <label class="chk" title="git fetch --prune origin in each clone first (updates only the remote-tracking refs)"><input type="checkbox" id="fetch"> fetch</label>
+    <button id="refresh" class="primary">Refresh</button>
+  </div>
+</header>
+<nav id="tabs">
+  <button data-tab="changes">Changes by program</button>
+  <button data-tab="assets">Assets: AI vs human</button>
+  <button data-tab="remaining">Remaining</button>
+  <span class="grow"></span>
+  <span id="cost" class="muted small"></span>
+</nav>
+<main id="view"></main>
+<div id="toast" class="toast" hidden></div>
+<script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+ "format": 1,
+ "category": "models",
+ "items": {
+  "models/crown/CROWN.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/HEAVY.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/KNIGHT.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/ROBOT.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/SCOUT.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/STANDARD.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/BUBBLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/CROSSBOW.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/KNIFE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/ORB.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/ROCKET.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/STICKY.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/projectile/SYRINGE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/BUBBLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/CROSSBOW.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/KNIFE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/LASER.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/LOCATOR.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/RIFLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/ROCKET.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/SHOTGUN.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/SNIPER.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/STICKY.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/weapon/SYRINGE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"}
+ }
+}
