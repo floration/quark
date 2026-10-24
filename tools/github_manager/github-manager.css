@@ -590,3 +590,10 @@ pre.diff .d-ctx { color: var(--gm-muted); }
   .rel-gap { flex-direction: row; gap: 8px; }
   .rel-arrow { display: none; }
 }
+
+/* wide screens (q, 2026-10-24: a 2560x1440 screen should get three card slots across, not two):
+   the page fills up to 2400 px and the overview's cards go three across */
+@media (min-width: 1800px) {
+  :root { --gm-max: 2400px; }
+  .grid2.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

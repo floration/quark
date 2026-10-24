@@ -193,10 +193,8 @@ export const overview = {
     document.getElementById('ov').innerHTML = String(html`
       ${releases(s)}
       ${pinnedNotes()}
-      <div class="grid2">${running(s)}${failures(s)}</div>
+      <div class="grid2 cards">${running(s)}${failures(s)}${openPulls(s)}${locals(s)}${notInProd(s)}${activity()}</div>
       ${lanes(s)}
-      ${timeline(s)}
-      <div class="grid2">${openPulls(s)}${locals(s)}</div>
-      <div class="grid2">${notInProd(s)}${activity()}</div>`);
+      ${timeline(s)}`);
   },
 };

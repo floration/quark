@@ -175,7 +175,7 @@ whose source folders and installer commands are not decided. When one has an ins
 - Downloads open a Save dialog in the last folder used.
 - A page with unsaved changes (`beforeunload`) asks before Ctrl+R / F5 reloads it.
 - Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+R / F5 reload (Ctrl+F5
-  without cache), Ctrl+Shift+R re-read tabs.json, F11 full screen, Ctrl+= / Ctrl+- zoom every tab (Ctrl+0: automatic, which is 1.25x on a 1440p screen and 1x on 1080p), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
+  without cache), Ctrl+Shift+R re-read tabs.json, F11 full screen, Ctrl+= / Ctrl+- zoom every tab (Ctrl+0: back to 100%), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).
 
 ## Testing without Windows
