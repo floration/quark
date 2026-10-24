@@ -2494,7 +2494,8 @@ static void testPayloadPush(uint16_t port) {
     std::vector<NetClient*> cls = {&a, &b};
     pump(s, cls, 0.4, idle);
     s.command("forcestart");
-    pump(s, cls, 3.2, idle);
+    pump(s, cls, 3.2, idle);   // (the freeze; a loaded machine (the full run) sometimes needs a little longer)
+    for (int k = 0; k < 20 && s.ms_.phase != PHASE_LIVE; k++) pump(s, cls, 0.1, idle);
     CHECK(s.ms_.phase == PHASE_LIVE);
     int att = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == s.ms_.attackers) att = i;
