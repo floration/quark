@@ -349,7 +349,7 @@ static void testMoveExprCallers() {
         printf("  10 deg down: standard vy %.2f (%d charges, aimed down %d), dash_vertical x0.5 while dashing vy %.2f (%d charges, aimed down %d)\n",
                plain.vel.y, plain.dashCharges, (int)a0, eq.vel.y, eq.dashCharges, (int)a1);
         CHECK(!a0 && plain.vel.y > 7.0f && plain.dashCharges == 2);   // a dash jump: a full jump, every charge back
-        CHECK(a1 && eq.vel.y < 5.0f && eq.dashCharges == 1);          // a super dash: the hop, one charge left
+        CHECK(a1 && eq.vel.y < plain.vel.y - 0.1f && eq.dashCharges == 1);   // a super dash: the hop (0.87 of a jump this shallow), one charge left
     }
     setActiveRules(CustomRules());
 }
