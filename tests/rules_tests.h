@@ -2320,7 +2320,7 @@ static void testModeCalls(uint16_t port) {
     s.stop();
 }
 
-// "quark_tests rules [name]": all of them, or the one named.
+// "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
 // half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~20 s each
 // on an idle box; overtime ~15 s and grapplep ~11 s are the long ones, one in each).
 static void testGameRules(const std::string& only, int half = 0) {

@@ -7968,7 +7968,6 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "demos") { testDemoUpgrade(); testDemoLengthWrap(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "launcher") { g_fail += launcherTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_FLOORS table for tools/master/worker.js
         Map m;
@@ -7979,33 +7978,8 @@ int main(int argc, char** argv) {
         printf("]\n");
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "proc") { testProcPipes(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "dashtech") { testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bounds") { g_fail += outOfBoundsTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); testSpawnSanity(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "mapsym") { testMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "moveexpr") { testMoveExpr(); testMoveExprCallers(); testMoveExprNetwork(TP(29991)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "exprbench") return moveExprBench();
-    if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); setTimeScale(kTestTimeScale); testBotNavBlockers(TP(29030)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "navstuck") { setTimeScale(kTestTimeScale); testBotNavBlockers(TP(29030)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "navbench") { navBench(argc > 2 && std::string(argv[2]) != "all" ? argv[2] : nullptr, argc > 3 && std::string(argv[3]) == "surfaces"); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
         int n = argc > 2 ? atoi(argv[2]) : 10;
@@ -8015,32 +7989,15 @@ int main(int argc, char** argv) {
         }
         return g_fail ? 1 : 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "falls") { testBotFalls(TP(29060)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testBuiltInMapEditSession(TP(29606)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "assets") { g_fail += assetTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && (std::string(argv[1]) == "exportbrain" || std::string(argv[1]) == "checkbrain" || std::string(argv[1]) == "brainast" || std::string(argv[1]) == "printbrain"))
         return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "brainbench") return brainBench(TP(29170));
     if (argc >= 2 && (std::string(argv[1]) == "exportweapons" || std::string(argv[1]) == "checkweapons" || std::string(argv[1]) == "weaponsast" || std::string(argv[1]) == "printweapons"))
         return weaponTool(argv[1], argc > 2 ? argv[2] : nullptr);
-    if (argc >= 2 && std::string(argv[1]) == "weaponsets") { testWeaponSets(TP(29790)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "brains") { g_fail += brainTests(TP(29150)); return g_fail ? 1 : 0; }
     if (argc >= 2 && (std::string(argv[1]) == "exportmode" || std::string(argv[1]) == "checkmode" || std::string(argv[1]) == "modeast" || std::string(argv[1]) == "printmode"))
         return modeTool(argv[1], argc, argv);
     if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
-    if (argc >= 2 && std::string(argv[1]) == "modelogic") { g_fail += modeTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "modelockstep") { g_fail += modeLockstepTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
         double secs = argc > 2 ? atof(argv[2]) : 8;
         snapBench("midtown", 32, secs, TP(28820));
@@ -8050,7 +8007,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); testStuckProps(p + 70); testWeaponSets(p + 80); return g_fail ? 1 : 0; }
+    if (argc >= 3 && std::string(argv[1]) == "rules") { testGameRules(argv[2]); return g_fail ? 1 : 0; }   // (one rules test by name)
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -8100,30 +8057,28 @@ int main(int argc, char** argv) {
         }},
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
     };
-    // CI runs the suite one group per runner (release.yml's test matrix): `groups` lists them, `group NAME` runs exactly
-    // that group (the older shortcuts above share some names but run less)
+    // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
+    // group in this process
     if (argc >= 2 && std::string(argv[1]) == "groups") {
         for (auto* list : {&par, &alone})
             for (auto& g : *list) printf("%s\n", g.name);
         return 0;
     }
-    if (argc >= 3 && std::string(argv[1]) == "group") {
+    if (argc >= 2 && std::string(argv[1]) != "serial") {
+        const std::string name = argc >= 3 && std::string(argv[1]) == "group" ? argv[2] : argv[1];
         for (auto* list : {&par, &alone})
             for (auto& g : *list)
-                if (std::string(argv[2]) == g.name) {
+                if (name == g.name) {
                     double t0 = wallSeconds();
                     g.run();
                     printf("group %s: %.0f s\n", g.name, wallSeconds() - t0);
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
                 }
-        printf("no test group '%s' (quark_tests groups lists them)\n", argv[2]);
+        printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts,\n"
+               "racefloors, bounds, exportassets, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
         return 1;
     }
-    if (argc >= 2)   // one group by name (e.g. `quark_tests netcode`), on its own
-        for (auto* list : {&par, &alone})
-            for (auto& g : *list)
-                if (std::string(argv[1]) == g.name) { g.run(); printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail); return g_fail ? 1 : 0; }
     [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
 #ifndef _WIN32
     if (!serial) {

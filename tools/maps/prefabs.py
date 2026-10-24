@@ -143,7 +143,7 @@ class M:
     def stairs(s, x0, z0, x1, z1, top, axis, rising, mirror=False, base=0.0, solid=True):
         """steps of 0.5 m from `base` up to `top` along axis ('x' or 'z'), rising toward +/-; solid=False makes
         each step a 1 m slab (a flight in the air, nothing underneath) instead of a block down to the ground"""
-        # recorded for quark_tests stairs (every flight is walked, and checked against the paths around it)
+        # recorded for quark_tests' stairs check (group maps: every flight is walked, and checked against the paths around it)
         s.lines.append(f"stairs {x0:g} {z0:g} {x1:g} {z1:g} {base:g} {top:g} {axis} {rising:g} {int(solid)}")
         if mirror: s.lines.append(f"stairs {-x1:g} {-z1:g} {-x0:g} {-z0:g} {base:g} {top:g} {axis} {-rising:g} {int(solid)}")
         n = max(1, math.ceil((top - base) / 0.5 - 1e-6)); length = (x1 - x0) if axis == "x" else (z1 - z0)   # (every rise <= 0.5 m: the step-up is 0.55)
@@ -177,7 +177,7 @@ class M:
     def raw(s, line): s.lines.append(line)
     # ---- spawn pools (REVIEW MAP-2): every mode a map offers has a spawn for each player a full default-size server
     # (8) puts in its pool: free for all, hide, tag and a tourney's warm-up draw from the "any" spawns, race from the
-    # race spawns. save() tops short pools up from open floor (quark_tests spawns checks every pool spawnPlayer uses).
+    # race spawns. save() tops short pools up from open floor (quark_tests maps checks every pool spawnPlayer uses).
     POOL = 8
     def spawn_spots(s, ys, band=0.6):
         """open standing spots on the floors at heights ys: solid floor under the whole hull, nothing within 0.6 m of
