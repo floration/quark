@@ -244,7 +244,7 @@ static void testThrowCooldown(uint16_t port) {
     ba = 0; wa = WPN_SYRINGE; pump(s, cls, 0.1, in);
     CHECK(pa.weapon != WPN_SYRINGE && c[0].latest().syringeAway > 0);
     // b throws a syringe at a (5 m in front): every cooldown resets, the thrown weapons are back
-    Vec3 base = pb.move.pos;
+    Vec3 base = openLane(s.map_, pb.move.pos);
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     pa.health = 40;
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, in); }
