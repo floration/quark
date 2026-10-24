@@ -15,6 +15,7 @@
 //               it is pushed; GATE: origin on the track at the checkpoint, -Z the cart's way, the posts at +-X
 // Pure C++ (no GL): the game, the exporter and the tests share it.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -35,6 +36,13 @@ struct ModelPart {
     bool shadow = true;        // casts a shadow
     bool visOnly = false;      // drawn only when the model is seen from outside (face plates: not on your own body)
     float alpha = 1;           // < 1: translucent (the bubble's shell)
+    // A box model's file (exportModelParts, an override's extras.quark.boxes): how the colour follows its slot, drawn
+    // colour = slot colour * mul + team colour * teamMul + add (per channel; the default HEAVY's grey is team * 0.6 +
+    // (0.06, 0.06, 0.07); teamMul: a part of another slot that also takes some team colour, the cart's core), and
+    // whether a player model's crouch also squashes the half height (every centre's height follows it). The built-in
+    // builders below don't fill these: they compute `color` themselves.
+    Vec3 mul = {1, 1, 1}, add = {0, 0, 0}, teamMul = {0, 0, 0};
+    bool crouch = false;
 };
 using ModelParts = std::vector<ModelPart>;
 constexpr size_t kMaxDefaultParts = 32;   // the most boxes in one default model (the tests check): the game reserves it
@@ -78,6 +86,21 @@ Vec3 crownColor(int place);
 // colour once the cart has reached it; the rest have no colour slots
 void propParts(int prop, const ModelPalette& pal, ModelParts& out);
 
+// A default model's boxes as the export writes them (the reference colours, standing, still) with mul / add / crouch
+// filled in, so a box model file of it draws exactly like the built-in model (overrideBoxParts).
+void exportModelParts(int kind, int idx, ModelParts& out);
+// The slots a model's drawing gives colours to (bit per TintSlot): a slot it doesn't drive stays at the reference
+// colour, so an override's "glow" on a player is drawn as authored (tint 1), not at white / reference.
+unsigned drivenSlots(int kind, int idx);
+// pal with every slot the model doesn't drive set to its reference colour
+ModelPalette drivenPalette(int kind, int idx, const ModelPalette& pal);
+// A box model override's parts as drawn now: colours from pal (drivenPalette'd), the crouch (hs: players' height
+// scale, 1 standing) applied. out is cleared first and reused (no allocation once it has the room).
+// a box model file's parts once read: a slot part written without `mul` gets colour / the reference colour (how a
+// mesh's colours are tinted), with add 0
+void finishBoxModel(int kind, int idx, ModelParts& boxes);
+void overrideBoxParts(int kind, int idx, const ModelParts& boxes, const ModelPalette& pal, float hs, ModelParts& out);
+
 // A triangle mesh: what a glTF file holds for one model (one primitive per material).
 struct MeshPrim {
     std::string material;          // "body" / "team" / "glow" / "metal" / "base" (or any name: tint by prefix)
@@ -100,9 +123,13 @@ struct ModelMesh {
     std::vector<V> opaque, translucent;   // 3 vertices per triangle
     Vec3 center;                          // bounding sphere (model space)
     float radius = 0;
+    // a box model (its file's extras.quark.boxes, docs/ASSETS.md): drawn by the box path like a built-in model
+    // (outlines, crouch per part, visOnly, shadows), the triangles above unused. Empty: a mesh.
+    ModelParts boxes;
 };
 void meshToModel(const MeshData& mesh, ModelMesh& out);
 constexpr size_t kMaxOverrideTriangles = 20000;   // per model: more is refused (it streams every frame)
+constexpr size_t kMaxOverrideBoxes = 256;         // per box model: more is refused (each is a box with an outline)
 
 // The owner's glTF overrides of every model (loadModelOverrides, gltf.h), loaded once at startup: the shipped ones
 // (assets/overrides/, every player has them) and yours (the per-user overrides folder). Ranked and time trials draw
@@ -115,5 +142,14 @@ struct ModelOverrides {
         if (kind < 0 || kind >= MODEL_KINDS || i < 0 || i >= kMaxModelsPerKind) return nullptr;
         const ModelMesh* m = shippedOnly ? nullptr : user[kind][i].get();
         return m ? m : shipped[kind][i].get();
+    }
+    size_t maxBoxes() const {   // (the most boxes of one box model: the game reserves its box list for it)
+        size_t n = 0;
+        for (int k = 0; k < MODEL_KINDS; k++)
+            for (int i = 0; i < kMaxModelsPerKind; i++) {
+                if (shipped[k][i]) n = std::max(n, shipped[k][i]->boxes.size());
+                if (user[k][i]) n = std::max(n, user[k][i]->boxes.size());
+            }
+        return n;
     }
 };

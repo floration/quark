@@ -184,7 +184,10 @@ private:
     ModelParts parts_;
     ModelOverrides modelOv_;
     bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
-    const ModelMesh* modelOverride(int kind, int i) const { return modelOv_.get(kind, i, fairModels_); }
+    // the override drawn for a model: a mesh (drawn as triangles), or a box model (its boxes go through the box path
+    // in place of the built-in ones: overrideBoxParts); null: none of that kind
+    const ModelMesh* modelOverride(int kind, int i) const { const ModelMesh* m = modelOv_.get(kind, i, fairModels_); return m && m->boxes.empty() ? m : nullptr; }
+    const ModelParts* boxOverride(int kind, int i) const { const ModelMesh* m = modelOv_.get(kind, i, fairModels_); return m && !m->boxes.empty() ? &m->boxes : nullptr; }
     void overrideTints(int kind, int idx, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
     // a prop (models.h) at `origin`: its override turned by yaw, or its boxes at origin + right * x + y + back * z
     // (model space), each box turned by boxYaw

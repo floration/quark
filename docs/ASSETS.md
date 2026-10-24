@@ -68,8 +68,44 @@ Material names pick a colour that changes at run time (prefix, any case: `team`,
 | anything else | nothing: drawn as authored | |
 
 An override's colour in a slot is multiplied by (the current colour / the colour shown in the export), so a model drawn
-in the exported colours looks like the default. Vertex colours (COLOR_0) times the material's baseColorFactor give the
-colour; textures are ignored. A material with alphaMode BLEND is drawn see-through (like the bubble's shell).
+in the exported colours looks like the default. A slot the model's drawing doesn't colour (`glow`, `metal`, `base`,
+`accent` on a player or the crown; `metal` / `base` / `accent` on a projectile; any slot on an arm or the backpack) is
+drawn as authored (tint 1). Vertex colours (COLOR_0) times the material's baseColorFactor give the colour; textures
+are ignored. A material with alphaMode BLEND is drawn see-through (like the bubble's shell).
+
+### Box models
+
+Every exported model is also a **box model**: its first mesh carries the box list in `meshes[0].extras.quark`. An
+override whose file has it (version 2) is drawn by the game's own box path, exactly like a built-in model: 1 px
+outlines, a crouch squashing only the boxes it squashes, `visOnly` boxes hidden on your own body, per-box shadows, the
+same colour formulas. The triangles in the file are then only for other viewers (Blender, the website, the model
+editor); the game reads the boxes. An export put back unchanged as an override draws pixel-identically to the default.
+Anything else (no extras, another version) is drawn as a mesh, as before. A box list that fails the checks below is
+logged and the default is kept. Parsed once at startup; drawing costs what the built-in boxes cost.
+
+```
+"extras": {"quark": {"version": 2, "boxes": [
+  {"c": [x, y, z], "h": [hx, hy, hz],           // centre and half size, metres, model space
+   "slot": "team",                              // body | team | glow | metal | base | accent (default body)
+   "color": [r, g, b],                          // linear colour as exported (the reference palette)
+   "mul": [r, g, b], "add": [r, g, b],          // slot boxes: drawn = slot colour * mul + team colour * teamMul + add
+   "teamMul": [r, g, b],                        // (optional, default 0: another slot's box that also takes team colour)
+   "alpha": 1,                                  // (optional) < 1: see-through (projectiles)
+   "shadow": true, "visOnly": false,            // casts a shadow; drawn only seen from outside (face plates)
+   "crouch": false,                             // players: a crouch also squashes the half height
+   "name": "legs"}                              // (optional, ignored by the game)
+]}}
+```
+
+- Without `mul`, a slot box is tinted like a mesh: mul = color / the export's colour of that slot, add 0. An editor
+  that recolours a box should rewrite `mul` / `add` (or drop them).
+- Players: every box's centre height follows a crouch; its half height too when `crouch` is true. The default
+  STANDARD's legs and body have it, the head and face plate don't.
+- Checks: 1 to 256 boxes; every number finite; `c` within 64 m; `h` over 0 and at most 32 m; `color`, `mul`, `add`,
+  `teamMul` 0 to 16; `alpha` over 0, at most 1; known slot names; booleans true / false. Numbers are written with 9
+  significant digits, so floats come back exactly.
+- Not animated in a box override: the rocket's flame flicker, the sticky's core blink and the bubble's wobble (the
+  game spins and turns it as usual).
 
 The website shows the same export: https://floration.github.io/quark/assets/ (every model and map in 3D) and
 `/sounds/` (every sound and voice line), each with a PRODUCTION / TESTING switch and a "make your own" mode (a box
@@ -98,7 +134,7 @@ Matching ignores case, and the extension may be any the asset accepts (an upload
 | sounds | .wav .ogg .flac .mp3 | Mono, leading silence trimmed, cut at 3 s, as loud as the sound it replaces (kits stay fair). A DEFAULT override also becomes every kit's sound that was DEFAULT's, and RETRO's (chiptuned). Players' own `mods/sounds/` still win over it. |
 | voices | .wav .ogg .flac .mp3 | The same, cut at 5 s, as loud as the line it replaces |
 | sound levels | `sound-levels.txt` (at the overrides root) | Sounds and voice lines that keep their own level: one asset path a line without extension (`sounds/default/ROCKET`, `voices/male/GO`), any case, `#` comment lines. A listed file is still made mono, trimmed, cut and faded, but not matched to the sound it replaces (the sound editor levels groups by LUFS, and matching would undo it); only a peak over 1.0 is scaled down to 1.0. A kept DEFAULT stays at its level in the kits it becomes. Your file's lines add to the shipped one's. Embedded like the rest (the one .txt that is). Players' mods: `mods/sounds/sound-levels.txt`, paths relative to it (`default/ROCKET`, `all/ROCKET`). |
-| models | .glb .gltf | Drawn in place of the box model (lit, shadowed, no outline). Buffers embedded or in files next to the .gltf. At most 20 000 triangles a model (they stream every frame); a bad file is logged and the default kept. |
+| models | .glb .gltf | Drawn in place of the box model: a box model file (Box models, above) exactly as the game draws boxes; any other mesh lit and shadowed, with no outline. Buffers embedded or in files next to the .gltf. At most 20 000 triangles a model (they stream every frame); a bad file is logged and the default kept. |
 | font | `fonts/Rubik.ttf` / `.otf` (the default UI font), `fonts/WorkSans.ttf` / `.otf` (the WORK SANS entry of Settings > FONT) | That font's distance-field atlas is rasterised from it when it is in use (stb_truetype: at startup for the default, on picking it for WORK SANS), same layout as tools/make_font_atlas.py, sized so its capitals are as tall as Rubik Bold's. Upload a static font of the weight to use (a variable font gives its default instance: Rubik's is Light, Work Sans's Regular). Up to 1.18 `fonts/WorkSans.*` replaced the UI font; it now replaces only the WORK SANS entry (Rubik is the default). A look-alike's file name (`fonts/BebasNeue-Regular.ttf`, `fonts/LibreQuake-CONCHARS.png` a 16x16 sheet, ...) replaces that look-alike; a player's own copy of the real game font still comes first. |
 | icon | `images/icon.png` / `.jpg` | Shipped: run `python3 tools/make_icon.py` (Pillow) after adding it: it makes assets/quark.png / .ico, the launcher's and the site's icon from it and records it in assets/quark.icon-source (quark_tests fails until that matches). In the game: the window icon. |
 | maps | `maps/<name>.qmap` | Shipped: tools/make_maps.py writes the override instead of generating that map and tools/embed_maps.py embeds it (an official map: ranked uses its sha256). It counts as human-made: quark_tests runs every map check on it and reports the numbers, labelled HUMAN-MADE, without failing on them ([MAP_METRICS.md](MAP_METRICS.md)). Yours: loaded in place of the shipped map (a copy of it in your `maps/` folder from an older version still comes first; the editor no longer writes one, it asks to save your edits under a new name); ranked won't accept it. |

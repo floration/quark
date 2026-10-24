@@ -111,14 +111,15 @@ const char* propDesc(int prop) {
     }
     return "";
 }
-// A model's default boxes with the export's colours
-void defaultParts(int kind, int i, ModelParts& parts) {
-    const ModelPalette& pal = referencePalette(kind, i);
-    if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-    else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-    else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-    else if (kind == MODEL_PROP) propParts(i, pal, parts);
-    else crownParts(pal, parts);
+// A model's default boxes with the export's colours (and each box's mul / add / crouch: a box model file)
+void defaultParts(int kind, int i, ModelParts& parts) { exportModelParts(kind, i, parts); }
+// The built-in model as drawn with this palette (and crouch: players)
+void builtIn(int kind, int i, const ModelPalette& pal, float hs, ModelParts& out) {
+    if (kind == MODEL_PLAYER) playerModelParts(i, hs, pal, out);
+    else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, out);
+    else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, out);
+    else if (kind == MODEL_PROP) propParts(i, pal, out);
+    else crownParts(pal, out);
 }
 
 struct Item { std::string id, category, kind, name, file, desc, kit; };
@@ -188,7 +189,7 @@ int exportAssets(const char* dirArg) {
             partsToMesh(parts, mesh);
             std::string path = modelPath(kind, i);
             add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", kind == MODEL_PROP ? propDesc(i) : modelDesc(kind), modelKindName(kind)},
-                writeGltf(mesh, modelName(kind, i)));
+                writeGltf(mesh, modelName(kind, i), &parts));
         }
     // maps: the shipped text (the generated map, or its override)
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
@@ -270,11 +271,41 @@ static void testModelExport() {
             MeshData a, b;
             partsToMesh(parts, a);
             ACHECK(a.triangleCount() == parts.size() * 12);
-            std::string g = writeGltf(a, modelName(kind, i));
+            std::string g = writeGltf(a, modelName(kind, i), &parts);
             std::string err;
-            bool ok = loadGltf((const uint8_t*)g.data(), g.size(), nullptr, b, &err);
+            ModelParts boxes;
+            bool ok = loadGltf((const uint8_t*)g.data(), g.size(), nullptr, b, &err, &boxes);
             if (!ok) printf("  %s: %s\n", modelPath(kind, i).c_str(), err.c_str());
             ACHECK(ok);
+            // the box model round trip: the file's boxes are the export's exactly (every float as written), and drawn
+            // with any palette (and crouched) they are the built-in model's boxes
+            ACHECK(boxes.size() == parts.size());
+            finishBoxModel(kind, i, boxes);
+            for (size_t k = 0; k < boxes.size() && k < parts.size(); k++) {
+                const ModelPart &p = parts[k], &q = boxes[k];
+                bool same = !memcmp(&p.c, &q.c, sizeof p.c) && !memcmp(&p.h, &q.h, sizeof p.h) && !memcmp(&p.color, &q.color, sizeof p.color) &&
+                            p.slot == q.slot && p.alpha == q.alpha && p.shadow == q.shadow && p.visOnly == q.visOnly && p.crouch == q.crouch &&
+                            (p.slot == TINT_NONE || (!memcmp(&p.mul, &q.mul, sizeof p.mul) && !memcmp(&p.add, &q.add, sizeof p.add) && !memcmp(&p.teamMul, &q.teamMul, sizeof p.teamMul)));
+                if (!same) printf("  %s box %zu differs after the round trip\n", modelPath(kind, i).c_str(), k);
+                ACHECK(same);
+            }
+            for (int v = 0; v < 3; v++) {
+                ModelPalette pal = referencePalette(kind, i);
+                const Vec3 cols[3] = {{0.2f, 0.4f, 0.8f}, {1.0f, 0.3f, 0.25f}, {0.05f, 0.9f, 0.1f}};
+                for (int s = 1; s < TINT_COUNT; s++) if (drivenSlots(kind, i) >> s & 1) pal.c[s] = cols[(v + s) % 3];
+                const float hs = kind == MODEL_PLAYER && v == 1 ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
+                ModelParts want, got;
+                builtIn(kind, i, pal, hs, want);
+                overrideBoxParts(kind, i, boxes, pal, hs, got);
+                ACHECK(want.size() == got.size());
+                for (size_t k = 0; k < want.size() && k < got.size(); k++) {
+                    const ModelPart &w = want[k], &o = got[k];
+                    bool geo = !memcmp(&w.c, &o.c, sizeof w.c) && !memcmp(&w.h, &o.h, sizeof w.h) && w.visOnly == o.visOnly && w.shadow == o.shadow && w.alpha == o.alpha;
+                    bool col = length(w.color - o.color) < 1e-5f * std::max(1.0f, length(w.color));   // (within float rounding)
+                    if (!geo || !col) printf("  %s box %zu drawn differently (palette %d)\n", modelPath(kind, i).c_str(), k, v);
+                    ACHECK(geo && col);
+                }
+            }
             ACHECK(b.triangleCount() == a.triangleCount());
             Vec3 amn, amx, bmn, bmx;
             ACHECK(a.bounds(amn, amx) && b.bounds(bmn, bmx));
@@ -303,6 +334,73 @@ static void testModelExport() {
     playerModelParts(0, 1.0f, pal, parts);
     ACHECK(parts.size() == 4 && std::fabs(parts[1].c.y - 1.15f) < 1e-6f && length(parts[1].color - pal.c[TINT_TEAM]) < 1e-6f && parts[3].visOnly);
     ACHECK(tintSlotFromName("Team_Armour.001") == TINT_TEAM && tintSlotFromName("GLOW") == TINT_GLOW && tintSlotFromName("skin") == TINT_NONE);
+}
+
+// Box model files: what the loader takes and what it refuses (a refused file keeps the default)
+static void testBoxModels() {
+    ModelParts p;
+    std::string err;
+    const std::string box = "{\"c\":[0,1,0],\"h\":[0.2,0.3,0.4],\"slot\":\"team\",\"color\":[0.5,0.5,0.5]";
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"mul\":[0.6,0.6,0.6],\"add\":[0.06,0.06,0.07],\"crouch\":true,\"name\":\"legs\"}]}", p, &err));
+    ACHECK(p.size() == 1 && p[0].slot == TINT_TEAM && p[0].crouch && p[0].shadow && !p[0].visOnly && std::fabs(p[0].add.z - 0.07f) < 1e-7f);
+    // no mul: the colour over the reference (team: white), as a mesh is tinted
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err));
+    finishBoxModel(MODEL_PLAYER, 0, p);
+    ACHECK(p.size() == 1 && std::fabs(p[0].mul.x - 0.5f) < 1e-7f && p[0].add.x == 0);
+    ModelPalette team;
+    team.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+    ModelParts drawn;
+    overrideBoxParts(MODEL_PLAYER, 0, p, team, 0.5f, drawn);
+    ACHECK(drawn.size() == 1 && std::fabs(drawn[0].color.z - 0.4f) < 1e-6f && std::fabs(drawn[0].c.y - 0.5f) < 1e-6f && drawn[0].h.y == 0.3f);
+    const char* bad[] = {
+        "{\"version\":2,\"boxes\":[]}",                                                              // no boxes
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1],\"h\":[1,1,1],\"color\":[1,1,1]}]}",                   // c: 2 numbers
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1e999,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",             // not finite
+        "{\"version\":2,\"boxes\":[{\"c\":[0,100,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",               // too far
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,0,1],\"color\":[1,1,1]}]}",                 // flat
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,-1,1],\"color\":[1,1,1]}]}",                // negative
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[40,1,1],\"color\":[1,1,1]}]}",                // huge
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,-1,1]}]}",               // colour < 0
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,99,1]}]}",               // colour > 16
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"slot\":\"neon\"}]}",  // unknown slot
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"alpha\":0}]}",     // invisible
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"shadow\":1}]}",    // not a bool
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"slot\":\"team\",\"mul\":[1,1]}]}",
+        "{\"version\":2,\"boxes\":[{\"c\":\"0 1 0\",\"h\":[1,1,1],\"color\":[1,1,1]}]}",
+        "{\"version\":1,\"boxes\":[]}",                                                              // not version 2
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0]",                                                     // cut off
+    };
+    for (const char* b : bad) {
+        bool ok = parseBoxModel(b, p, &err);
+        if (ok) printf("  box model accepted: %s\n", b);
+        ACHECK(!ok && p.empty());
+    }
+    std::string many = "{\"version\":2,\"boxes\":[";   // too many boxes
+    for (size_t i = 0; i <= kMaxOverrideBoxes; i++) many += std::string(i ? "," : "") + "{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1]}";
+    ACHECK(!parseBoxModel(many + "]}", p, &err));
+    // in a file: a bad box list fails the load (the default is kept); the model editor's older notes (version 1) and
+    // no extras at all are a plain mesh
+    ModelParts parts, boxes;
+    playerModelParts(0, 1.0f, referencePalette(MODEL_PLAYER), parts);
+    MeshData mesh, back;
+    partsToMesh(parts, mesh);
+    std::string g = writeGltf(mesh, "STANDARD");
+    ACHECK(loadGltf((const uint8_t*)g.data(), g.size(), nullptr, back, &err, &boxes) && boxes.empty());
+    parts[0].h.y = -1;
+    g = writeGltf(mesh, "STANDARD", &parts);
+    ACHECK(!loadGltf((const uint8_t*)g.data(), g.size(), nullptr, back, &err, &boxes) && boxes.empty() && err.find("box model") == 0);
+    std::string v1 = writeGltf(mesh, "STANDARD");
+    v1.replace(v1.find("\"primitives\""), 0, "\"extras\":{\"quark\":{\"version\":1,\"boxes\":[[{\"i\":0,\"name\":\"\",\"shadow\":true,\"visOnly\":false}]]}},");
+    ACHECK(loadGltf((const uint8_t*)v1.data(), v1.size(), nullptr, back, &err, &boxes) && boxes.empty());
+    // slots a model's drawing doesn't colour stay at the reference (an override's "glow" on a player: tint 1)
+    ModelPalette pl;
+    pl.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+    for (int kind : {MODEL_PLAYER, MODEL_CROWN, MODEL_PROJECTILE}) {
+        ModelPalette d = drivenPalette(kind, 0, pl);
+        ACHECK(length(d.c[TINT_TEAM] - pl.c[TINT_TEAM]) < 1e-7f);
+        for (int s : {(int)TINT_METAL, (int)TINT_BASE, (int)TINT_ACCENT}) ACHECK(length(d.c[s] - referencePalette(kind, 0).c[s]) < 1e-7f);
+        if (kind != MODEL_PROJECTILE) ACHECK(length(d.c[TINT_GLOW] - referencePalette(kind, 0).c[TINT_GLOW]) < 1e-7f);
+    }
 }
 
 static void testGltfLoader() {
@@ -736,6 +834,7 @@ int assetTests() {
     g_afail = 0;
     testModelExport();
     testGltfLoader();
+    testBoxModels();
     testDecoders();
     testFontAtlas();
     testUiFonts();

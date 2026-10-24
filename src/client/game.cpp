@@ -73,8 +73,9 @@ void Game::loadAssetOverrides() {
     }
 }
 
-void Game::overrideTints(int kind, int idx, const ModelPalette& pal, Vec3* tint) const {
+void Game::overrideTints(int kind, int idx, const ModelPalette& drawn, Vec3* tint) const {
     const ModelPalette& ref = referencePalette(kind, idx);
+    const ModelPalette pal = drivenPalette(kind, idx, drawn);   // (a slot this model's drawing doesn't colour: 1)
     tint[0] = {1, 1, 1};
     auto ratio = [](float a, float b) { return b > 1e-3f ? a / b : a; };
     for (int s = 1; s < TINT_COUNT; s++)
@@ -91,7 +92,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!r_.init(cfg_.shadowRes, err)) return false;
     loadAssetOverrides();
     applyUiFontSetting();   // (Settings > FONT; the default needs nothing)
-    parts_.reserve(kMaxDefaultParts);   // (the box list every model is drawn from: never grown while drawing)
+    parts_.reserve(std::max(kMaxDefaultParts, modelOv_.maxBoxes()));   // (the box list every model is drawn from, box models' too: never grown while drawing)
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)
@@ -1233,7 +1234,8 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
             r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * Mat4::rotX(pitch), tint, 1.0f);
             continue;
         }
-        projectileParts(mt, ppal, 1, 1, 0, parts_);
+        if (const ModelParts* bx = boxOverride(MODEL_PROJECTILE, mt)) overrideBoxParts(MODEL_PROJECTILE, mt, *bx, ppal, 1.0f, parts_);
+        else projectileParts(mt, ppal, 1, 1, 0, parts_);
         for (const ModelPart& q : parts_) {   // (opaque parts only: a stuck one has no glow; far off: its main part only)
             if (q.alpha < 1) continue;
             r_.boxPitched(pos, q.c, q.h, yaw, pitch, q.color, 1.0f, false);   // (no shadow: see boxPitched)
@@ -1667,7 +1669,8 @@ void Game::drawWorld(float alpha) {
             sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
             r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true, vis);
         } else {
-            playerModelParts(pm, hs, pal, parts_);
+            if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, hs, parts_);
+            else playerModelParts(pm, hs, pal, parts_);
             const float cy = std::cos(yaw), sy = std::sin(yaw);
             for (const ModelPart& q : parts_) {
                 if (q.visOnly && !vis) continue;
@@ -1688,7 +1691,8 @@ void Game::drawWorld(float alpha) {
                     sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
                     r_.mesh(*bov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true);
                 } else {   // (the box keeps its size when crouched: only its height follows)
-                    propParts(PROP_BOMB_PACK, kNoSlots, parts_);
+                    if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_BOMB_PACK)) overrideBoxParts(MODEL_PROP, PROP_BOMB_PACK, *bx, kNoSlots, 1.0f, parts_);
+                    else propParts(PROP_BOMB_PACK, kNoSlots, parts_);
                     const float cy = std::cos(yaw), sy = std::sin(yaw);
                     for (const ModelPart& q : parts_) {
                         const Vec3 c = {q.c.x * bs, q.c.y * hs * bs, q.c.z * bs};
@@ -1719,7 +1723,8 @@ void Game::drawWorld(float alpha) {
                 sc.m[0] = sc.m[5] = sc.m[10] = bs;
                 r_.mesh(*ov, Mat4::translate(top) * Mat4::rotY(yaw) * sc, tint, sv, false);
             } else {
-                crownParts(cpal, parts_);                                   // a band and four points
+                if (const ModelParts* bx = boxOverride(MODEL_CROWN, 0)) overrideBoxParts(MODEL_CROWN, 0, *bx, cpal, 1.0f, parts_);
+                else crownParts(cpal, parts_);                              // a band and four points
                 const float cy = std::cos(yaw), sy = std::sin(yaw);
                 for (const ModelPart& q : parts_) {
                     Vec3 c = q.c * bs;
@@ -1927,7 +1932,8 @@ void Game::drawWorld(float alpha) {
             overrideTints(MODEL_PROJECTILE, mt, ppal, tint);
             r_.mesh(*ov, Mat4::translate(pr.pos) * Mat4::rotY(my) * Mat4::rotX(mp), tint, 1.0f);
         } else {
-            projectileParts(mt, ppal, fl, core, wob, parts_);
+            if (const ModelParts* bx = boxOverride(MODEL_PROJECTILE, mt)) overrideBoxParts(MODEL_PROJECTILE, mt, *bx, ppal, 1.0f, parts_);   // (still: no flicker / blink / wobble)
+            else projectileParts(mt, ppal, fl, core, wob, parts_);
             for (const ModelPart& q : parts_) {
                 if (q.alpha < 1) r_.translucentBox({pr.pos + q.c - q.h, pr.pos + q.c + q.h}, rgba(q.color, q.alpha));
                 else r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, 1.0f);
@@ -2072,7 +2078,8 @@ void Game::drawWorld(float alpha) {
             overrideTints(MODEL_WEAPON, w, vpal, tint);
             r_.viewMesh(*ov, at, k, tint);
         } else {
-            viewmodelParts(w, vpal, parts_);
+            if (const ModelParts* bx = boxOverride(MODEL_WEAPON, w)) overrideBoxParts(MODEL_WEAPON, w, *bx, vpal, 1.0f, parts_);
+            else viewmodelParts(w, vpal, parts_);
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
             for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
@@ -5495,7 +5502,8 @@ void Game::drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float
         r_.mesh(*ov, Mat4::translate(origin) * Mat4::rotY(yaw), tint, sv, true);
         return;
     }
-    propParts(prop, pal, parts_);
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, pal, 1.0f, parts_);
+    else propParts(prop, pal, parts_);
     for (const ModelPart& q : parts_)
         r_.box(origin + Vec3(right.x * q.c.x + back.x * q.c.z, q.c.y, right.z * q.c.x + back.z * q.c.z), q.h, boxYaw, q.color, sv, q.shadow);
 }
@@ -5509,7 +5517,8 @@ void Game::drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float
         r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * sc, tint, sv, true);
         return;
     }
-    propParts(prop, kNoSlots, parts_);
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, kNoSlots, 1.0f, parts_);
+    else propParts(prop, kNoSlots, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(shoulder, q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
 }
 
@@ -5533,7 +5542,8 @@ void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float p
         r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(hand) * sc, tint, sv, true);
         return;
     }
-    viewmodelParts(w, pal, parts_);
+    if (const ModelParts* bx = boxOverride(MODEL_WEAPON, w)) overrideBoxParts(MODEL_WEAPON, w, *bx, pal, 1.0f, parts_);
+    else viewmodelParts(w, pal, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(shoulder, hand + q.c * k, q.h * k, yaw, pitch, q.color, sv);
 }
 

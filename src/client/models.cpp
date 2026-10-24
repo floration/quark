@@ -343,6 +343,91 @@ void propParts(int prop, const ModelPalette& pal, ModelParts& out) {
     }
 }
 
+// ---- box model files ----------------------------------------------------------------------------------------------
+unsigned drivenSlots(int kind, int idx) {
+    const unsigned T = 1u << TINT_TEAM, G = 1u << TINT_GLOW, M = 1u << TINT_METAL, B = 1u << TINT_BASE, A = 1u << TINT_ACCENT;
+    switch (kind) {
+        case MODEL_PLAYER: case MODEL_CROWN: return T;
+        case MODEL_PROJECTILE: return T | G;
+        case MODEL_WEAPON: return T | G | M | B;
+        case MODEL_PROP: return idx == PROP_BOMB ? G : idx == PROP_CART ? T | M | A | G : idx == PROP_GATE ? T : 0;
+    }
+    return 0;
+}
+
+ModelPalette drivenPalette(int kind, int idx, const ModelPalette& pal) {
+    ModelPalette p = referencePalette(kind, idx);
+    const unsigned d = drivenSlots(kind, idx);
+    for (int s = 1; s < TINT_COUNT; s++) if (d >> s & 1) p.c[s] = pal.c[s];
+    return p;
+}
+
+static void buildParts(int kind, int i, const ModelPalette& pal, float hs, ModelParts& out) {
+    if (kind == MODEL_PLAYER) playerModelParts(i, hs, pal, out);
+    else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, out);
+    else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, out);
+    else if (kind == MODEL_PROP) propParts(i, pal, out);
+    else crownParts(pal, out);
+}
+
+void exportModelParts(int kind, int idx, ModelParts& out) {
+    const ModelPalette& ref = referencePalette(kind, idx);
+    buildParts(kind, idx, ref, 1.0f, out);
+    // each part's colour is affine in its slot's colour and the team colour (the builders' only arithmetic): built with
+    // both black it is `add`; that slot white instead gives `mul` (minus add), the team white `teamMul` (other slots
+    // stay at the reference)
+    ModelParts lo, hi, tm;
+    for (int s = 1; s < TINT_COUNT; s++) {
+        ModelPalette p0 = ref, p1 = ref, pt = ref;
+        p0.c[s] = p0.c[TINT_TEAM] = {0, 0, 0};
+        p1.c[TINT_TEAM] = {0, 0, 0};
+        p1.c[s] = {1, 1, 1};
+        pt.c[s] = {0, 0, 0};
+        pt.c[TINT_TEAM] = {1, 1, 1};
+        buildParts(kind, idx, p0, 1.0f, lo);
+        buildParts(kind, idx, p1, 1.0f, hi);
+        buildParts(kind, idx, pt, 1.0f, tm);
+        for (size_t k = 0; k < out.size() && k < lo.size() && k < hi.size() && k < tm.size(); k++)
+            if (out[k].slot == s) {
+                out[k].add = lo[k].color;
+                out[k].mul = hi[k].color - lo[k].color;
+                out[k].teamMul = s == TINT_TEAM ? Vec3(0, 0, 0) : tm[k].color - lo[k].color;
+            }
+    }
+    if (kind == MODEL_PLAYER) {   // which half heights a crouch squashes
+        buildParts(kind, idx, ref, 0.5f, lo);
+        for (size_t k = 0; k < out.size() && k < lo.size(); k++) out[k].crouch = lo[k].h.y != out[k].h.y;
+    }
+}
+
+void finishBoxModel(int kind, int idx, ModelParts& boxes) {
+    const ModelPalette& ref = referencePalette(kind, idx);
+    auto ratio = [](float a, float b) { return b > 1e-3f ? a / b : a; };
+    for (ModelPart& q : boxes)
+        if (q.slot != TINT_NONE && q.slot < TINT_COUNT && q.mul.x < 0) {
+            const Vec3& r = ref.c[q.slot];
+            q.mul = {ratio(q.color.x, r.x), ratio(q.color.y, r.y), ratio(q.color.z, r.z)};
+            q.add = q.teamMul = {0, 0, 0};
+        }
+}
+
+void overrideBoxParts(int kind, int idx, const ModelParts& boxes, const ModelPalette& pal, float hs, ModelParts& out) {
+    out.clear();
+    const ModelPalette p = drivenPalette(kind, idx, pal);
+    for (const ModelPart& b : boxes) {
+        out.push_back(b);
+        ModelPart& q = out.back();
+        if (q.slot != TINT_NONE && q.slot < TINT_COUNT) {
+            const Vec3 &s = p.c[q.slot], &t = p.c[TINT_TEAM];
+            q.color = Vec3(s.x * q.mul.x + t.x * q.teamMul.x + q.add.x, s.y * q.mul.y + t.y * q.teamMul.y + q.add.y, s.z * q.mul.z + t.z * q.teamMul.z + q.add.z);
+        }
+        if (hs != 1.0f) {
+            q.c.y = q.c.y * hs;
+            if (q.crouch) q.h.y = q.h.y * hs;
+        }
+    }
+}
+
 bool MeshData::bounds(Vec3& mn, Vec3& mx) const {
     mn = {1e30f, 1e30f, 1e30f}; mx = {-1e30f, -1e30f, -1e30f};
     bool any = false;
