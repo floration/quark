@@ -555,7 +555,10 @@ export class GraphView {
         if (!ns || !ns.length) return;
         let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
         for (const n of ns) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x + W); y1 = Math.max(y1, n.y + (n.ins ? nodeHeight(n) : 24)); }
-        this.view.k = Math.max(0.2, Math.min(1.2, Math.min(w / (x1 - x0 + 80), h / (y1 - y0 + 80))));
+        // the overview is a tall list (every param): fit its width at a readable size and pan down it, never squeeze
+        // ~120 rows into the height
+        if (this.mode === "overview") this.view.k = Math.max(0.75, Math.min(1.2, w / (x1 - x0 + 80)));
+        else this.view.k = Math.max(0.2, Math.min(1.2, Math.min(w / (x1 - x0 + 80), h / (y1 - y0 + 80))));
         this.view.x = -x0 * this.view.k + 40; this.view.y = -y0 * this.view.k + 30;
         this._applyView();
     }
@@ -811,6 +814,9 @@ export class GraphView {
     _renderOverview() {
         const L = this.layer, ov = this.ov;
         const by = new Map(ov.nodes.map((n) => [n.gid, n]));
+        // a picked node: what it reads and what reads it stay bright, the rest fades
+        const rel = new Set(this.ovSel ? [this.ovSel, ...ov.edges.filter((e) => e.from === this.ovSel).map((e) => e.to), ...ov.edges.filter((e) => e.to === this.ovSel).map((e) => e.from)] : []);
+        L.classList.toggle("ov-focus", rel.size > 0);
         const eg = svg("g", { class: "gr-edges" }, L);
         for (const e of ov.edges) {
             const a = by.get(e.from), b = by.get(e.to);
@@ -819,14 +825,14 @@ export class GraphView {
             svg("path", { d: `M${x0},${y0} C${x0 + 80},${y0} ${x1 - 80},${y1} ${x1},${y1}`, class: "gr-edge ov" + (hl ? " sel" : "") }, eg);
         }
         for (const n of ov.nodes) {
-            const g = svg("g", { class: `gr-ov c-${n.kind === "param" ? "param" : n.kind === "slot" ? "hat" : n.kind === "curve" ? "curve" : "data"}${this.ovSel === n.gid ? " sel" : ""}`, transform: `translate(${n.x},${n.y})` }, L);
+            const g = svg("g", { class: `gr-ov c-${n.kind === "param" ? "param" : n.kind === "slot" ? "hat" : n.kind === "curve" ? "curve" : "data"}${this.ovSel === n.gid ? " sel" : ""}${rel.has(n.gid) ? " rel" : ""}`, transform: `translate(${n.x},${n.y})` }, L);
             svg("rect", { width: 150, height: 20, rx: 4 }, g);
             const t = svg("text", { x: 8, y: 14 }, g); t.textContent = n.label;
             g._ov = n;
         }
         this.side.textContent = "";
         const p = document.createElement("div"); p.className = "muted pad";
-        p.textContent = "Params (left) and curves / lists / tables (middle) feed the slots (right) that read them. Click one to highlight its links; double-click a slot to open its graph.";
+        p.textContent = "Params (left) and curves / lists / tables (middle) feed the slots (right) that read them. Drag to pan down the list, the wheel zooms. Click one to keep only its links bright (click it again to clear); double-click a slot to open its graph.";
         this.side.append(p);
     }
 
@@ -1011,7 +1017,7 @@ export class GraphView {
             cancelAnimationFrame(this._anim);
             this._downTarget = e.target;   // (with the pointer captured, the dblclick's target is the svg)
             el.setPointerCapture(e.pointerId);
-            if (ov) { this.ovSel = ov._ov.gid; this.render(); return; }
+            if (ov) { this.ovSel = this.ovSel === ov._ov.gid ? null : ov._ov.gid; this.render(); return; }
             if (sn) { this.sharedSel = this.sharedSel === sn._shared.id ? null : sn._shared.id; this._renderShared(); this.sel = null; this._side(); this._drag = { kind: "pan", sx: px, sy: py, x: this.view.x, y: this.view.y }; return; }
             if (this.mode === "whole" && fe && this._lodLevel < 2) this._setCurrent(fe._frame);
             if (port && port.dir === "in" && e.altKey) {

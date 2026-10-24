@@ -3,7 +3,7 @@
 
 import { MapView, TEAM_COLORS } from "./mapview.js";
 import { Map3D } from "./map3d.js";
-import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorAt } from "./qmap.js";
+import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorOrNull } from "./qmap.js";
 import { LiveView, Recording } from "./live.js";
 import { buildRequest } from "./helper.js";
 import { api } from "./api.js";
@@ -61,12 +61,24 @@ export class SimPage {
     // ---------------------------------------------------------------- wiring
     _wire() {
         $("mapSel").onchange = async () => {
-            const [source, name] = $("mapSel").value.split("/");
+            const v = $("mapSel").value, source = v.slice(0, v.indexOf("/")), name = v.slice(v.indexOf("/") + 1);
             this.sc.map = { name, source };
-            this.sc.bots.forEach((b) => (b.pos = null));   // positions are per map
+            // positions are per map: starts, and the goto / hold / waypoint points (an objective's target is the
+            // new map's own: the mode picks it)
+            for (const b of this.sc.bots) {
+                b.pos = null;
+                const o = b.objective || {};
+                if (o.kind === "goto" || o.kind === "hold") delete o.pos;
+                else if (o.kind === "follow") o.points = [];
+                else if (o.kind === "objective") delete o.target;
+            }
+            // the map's own mode, unless one was picked by hand
+            const info = this.app.maps.find((x) => x.name === name && x.source === source);
+            if (!this.sc.modeByHand && info && info.for && MODES.includes(info.for) && info.for !== this.sc.mode) { this.sc.mode = info.for; this._teamsForMode(); }
+            this.pick = null; this._hint();
             await this.app.loadMap(name, source);
         };
-        $("modeSel").onchange = () => { this.sc.mode = $("modeSel").value; this._modeWarn(); this._teamsForMode(); this.renderBots(); this._save(); };
+        $("modeSel").onchange = () => { this.sc.mode = $("modeSel").value; this.sc.modeByHand = true; this._modeWarn(); this._teamsForMode(); this.renderBots(); this._save(); };
         $("slice").oninput = () => {
             const m = this.app.map; if (!m) return;
             const v = +$("slice").value;
@@ -129,7 +141,7 @@ export class SimPage {
             const ms = this.app.maps.filter((m) => m.source === src);
             if (!ms.length) continue;
             const og = document.createElement("optgroup"); og.label = label;
-            for (const m of ms) { const o = document.createElement("option"); o.value = m.source + "/" + m.name; o.textContent = `${m.title || m.name}${m.for ? "  (" + m.for + ")" : ""}${m.handmade ? " ✎" : ""}`; og.append(o); }
+            for (const m of ms) { const o = document.createElement("option"); o.value = m.source + "/" + m.name; o.textContent = `${m.title || m.name}${m.for ? "  (" + m.for + ")" : ""}${m.handmade ? " ✎" : ""}${m.shadows ? " · same name as a game map" : ""}`; if (m.shadows) o.title = `${m.name}.qmap in ${m.dir}: the game plays this file instead of its own ${m.name}`; og.append(o); }
             s.append(og);
         }
         if (cur) s.value = cur;
@@ -144,7 +156,7 @@ export class SimPage {
         if (this.m3) this.m3.setMap(m);
         $("slice").value = 100; $("sliceVal").textContent = "all";
         const info = this.app.maps.find((x) => x.name === m.name && x.source === m.source);
-        if (!this.sc.mode || (info && info.for && this.sc.mode === "ffa" && !this.sc.bots.length)) this.sc.mode = (info && info.for) || "ffa";
+        if (!this.sc.mode || (info && info.for && this.sc.mode === "ffa" && !this.sc.bots.length && !this.sc.modeByHand)) this.sc.mode = (info && info.for) || "ffa";
         $("modeSel").value = this.sc.mode;
         $("mapSel").value = m.source + "/" + m.name;
         this._modeWarn();
@@ -294,7 +306,7 @@ export class SimPage {
     _setTool(t) { this.tool = t; $("toolSelect").classList.toggle("on", t === "select"); $("toolAdd").classList.toggle("on", t === "add"); if (t === "add") this._hint("Click the map to place a bot (drag to set its facing)."); else if (!this.pick) this._hint(); }
 
     // ---------------------------------------------------------------- map interaction (editing)
-    _floor(w) { const m = this.app.map; return floorAt(m, w.x, w.z, this.mv.slice === Infinity ? 1e9 : this.mv.slice); }
+    _floorOrNull(w) { const m = this.app.map; return m ? floorOrNull(m, w.x, w.z, this.mv.slice === Infinity ? 1e9 : this.mv.slice) : null; }
     _hitBot(w) {
         const r = Math.max(0.8, 10 / this.mv.cam.s);
         for (let i = this.sc.bots.length - 1; i >= 0; i--) { const p = this.sc.bots[i].pos; if (p && Math.hypot(p.x - w.x, p.z - w.z) < r) return i; }
@@ -314,7 +326,9 @@ export class SimPage {
             return false;
         }
         if (this.pick) {
-            const p = [w.x, this._floor(w), w.z], o = this.pick.bot.objective;
+            const y = this._floorOrNull(w);
+            if (y == null) { this._hint("No floor there: click a point on the map (Esc: stop picking)."); return true; }
+            const p = [w.x, y, w.z], o = this.pick.bot.objective;
             if (this.pick.kind === "follow") { (o.points || (o.points = [])).push(p); }
             else { o.pos = p; if (this.pick.kind === "hold" && !o.radius) o.radius = 4; this.pick = null; this._hint(); }
             this.renderBots(); this._save();
@@ -322,7 +336,9 @@ export class SimPage {
         }
         if (this.tool === "add") {
             const idx = this.placeFor != null && this.sc.bots[this.placeFor] ? this.placeFor : -1;
-            const pos = { x: w.x, y: this._floor(w), z: w.z };
+            const y = this._floorOrNull(w);
+            if (y == null) { this._hint("No floor there: a bot is placed on the map (Esc: stop placing)."); return true; }
+            const pos = { x: w.x, y, z: w.z };
             let b;
             if (idx >= 0) { b = this.sc.bots[idx]; b.pos = pos; this.sel = idx; } else b = this.addBot(pos);
             this.placeFor = null;
@@ -345,10 +361,12 @@ export class SimPage {
     }
     _move(w) {
         const d = this._drag; if (!d) return;
-        if (d.kind === "move") { d.b.pos = { x: w.x + d.dx, y: 0, z: w.z + d.dz }; d.b.pos.y = this._floor(d.b.pos); }
+        if (d.kind === "move") { const p = { x: w.x + d.dx, z: w.z + d.dz }, y = this._floorOrNull(p); if (y != null) d.b.pos = { x: p.x, y, z: p.z }; }   // (never off the floor)
         else if (d.kind === "yaw") { const dx = w.x - d.b.pos.x, dz = w.z - d.b.pos.z; if (Math.hypot(dx, dz) > 0.3) { let a = Math.atan2(-dx, -dz) * 180 / Math.PI; if (!window.event || !window.event.shiftKey) a = Math.round(a / 15) * 15; d.b.yaw = Math.round(a); } }
-        else if (d.kind === "opos") d.b.objective.pos = [w.x, this._floor(w), w.z];
-        else if (d.kind === "wp") d.b.objective.points[d.k] = [w.x, this._floor(w), w.z];
+        else if (d.kind === "opos" || d.kind === "wp") {
+            const y = this._floorOrNull(w);
+            if (y != null) { if (d.kind === "opos") d.b.objective.pos = [w.x, y, w.z]; else d.b.objective.points[d.k] = [w.x, y, w.z]; }
+        }
         this.mv.invalidate();
     }
     _up() { if (this._drag) { this._drag = null; if (this.tool === "add") this._setTool("select"); this.renderBots(); this._save(); } }

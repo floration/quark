@@ -208,7 +208,9 @@ export function mapObjectives(map) {
 
 // Floor height under (x, z): the top of the highest walkable box whose footprint holds the point and whose top is at
 // or below `below` (default: anywhere). Used to drop placed bots onto the floor.
-export function floorAt(map, x, z, below = 1e9) {
+export function floorAt(map, x, z, below = 1e9) { const y = floorOrNull(map, x, z, below); return y == null ? 0 : y; }
+// the top of the highest floor under (x, z) at or below `below`; null: no floor there (off the map, over a pit)
+export function floorOrNull(map, x, z, below = 1e9) {
     let best = -1e9;
     const B = map.boxes;
     for (let i = 0; i < map.nBoxes; i++) {
@@ -220,5 +222,5 @@ export function floorAt(map, x, z, below = 1e9) {
             if (top <= below + 1e-3 && top > best) best = top;
         }
     }
-    return best > -1e9 ? best : 0;
+    return best > -1e9 ? best : null;
 }
