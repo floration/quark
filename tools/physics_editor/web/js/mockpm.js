@@ -15,8 +15,8 @@ export const MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_HOOKHELD = 16
 const K = {
     gravity: 22, jump: 7.34, ground: 9.5, crouch: 4, groundAccel: 16, airAccel: 2.2, airCap: 2.3, strafeCapAD: 1.1, strafeAccelAD: 1.15,
     overstrafe: 0.35, airControl: 4, airControlFrom: 9.5, airControlW: 0.9, airDrift: 8, strafeBoost: 0.1, friction: 7, stopSpeed: 2,
-    step: 0.55, dashSpeed: 24, dashTime: 0.12, dashExitMin: 11, dashKeep: 1, dashExitMax: 32, dashVertical: 0.6375, dashJumpWindow: 0.1,
-    superDashDown: 0.25, superDashBoost: 5, superDashJump: 0.866, superDashJumpMax: 1.732, superDashMax: 36, dashBounceSpeed: 16,
+    step: 0.55, dashSpeed: 24, dashTime: 0.12, dashExitMin: 11, dashKeep: 1, dashExitMax: 32, dashVerticalUp: 0.4, dashVerticalDown: 0.9, dashJumpWindow: 0.1,
+    superDashDown: 0.25, superDashBoost: 5, superDashJump: 0.9, superDashMax: 36, dashBounceSpeed: 16,
     dashBounceAngle: 45, dashMaxBounces: 2, bounceGain: 0.5, bounceMax: 8, hookAccel: 38, hookMax: 24, hookGravity: 0.5, hookRelease: 1.2,
     ladderSpeed: 6.75, ladderSide: 4.5, grappleRange: 45, hookCooldown: 1, dashCharges: 2, dashCooldown: 0.6, dashRecharge: 1.2,
     maxCharges: 10, halfWidth: 0.4, height: 1.8, crouchHeight: 1.2, eye: 1.6, crouchEye: 1.05,
@@ -255,7 +255,7 @@ export function pmoveStep(s, cmd, w, dt, mt, ev) {
         s.dashDirX = d[0]; s.dashDirZ = d[2];
         s.dashFromSpeed = h;
         s.dashExitSpeed = Math.min(K.dashExitMax * mt.m.dash_exit_max, Math.max(K.dashExitMin * mt.m.dash_exit_min, h + K.dashKeep * mt.m.dash_keep));
-        s.dashUp = Math.sin(cmd.pitch) * (K.dashVertical * mt.m.dash_vertical);
+        s.dashUp = Math.sin(cmd.pitch) * ((cmd.pitch > 0 ? K.dashVerticalUp : K.dashVerticalDown) * mt.m.dash_vertical);
         s.dashTimer = K.dashTime * mt.m.dash_time;
         s.dashBounces = 0;
         s.dashCharges--;
@@ -265,18 +265,17 @@ export function pmoveStep(s, cmd, w, dt, mt, ev) {
     let dashing = s.dashTimer > 0;
     if (dashing) {
         const burst = dashBurst(s, mt);
-        const down = s.dashUp <= -K.superDashDown * (K.dashVertical * mt.m.dash_vertical);
+        const down = s.dashUp <= -K.superDashDown * (K.dashVerticalDown * mt.m.dash_vertical);
         const wantJump = jumpHeld || s.jumpBuffer > 0;
         const graceJump = dashStart && !grounded && s.jumpGrace > 0 && !down;
         if ((grounded && wantJump) || graceJump) {
-            let sp = burst, vy = graceJump ? s.vel[1] : jumpSpeed, tech = "dash jump";
+            let sp = burst, vy = graceJump ? s.vel[1] : jumpSpeed, level = 1, tech = "dash jump";
             if (grounded && down) {
                 const cap = K.superDashMax * mt.m.super_dash_max;
                 sp = Math.min(Math.max(s.dashExitSpeed, s.dashFromSpeed + K.superDashBoost * mt.m.super_dash_boost), Math.max(cap, s.dashExitSpeed));
-                const vmax = K.dashVertical * mt.m.dash_vertical;
-                const downShare = vmax > 1e-6 ? -s.dashUp / vmax : K.superDashDown;
-                const t = clamp((downShare - K.superDashDown) / (1 - K.superDashDown), 0, 1);
-                vy = jumpSpeed * ((K.superDashJump + (K.superDashJumpMax - K.superDashJump) * t) * mt.m.super_dash_jump);
+                const up = Math.min(Math.max(0, -s.dashUp) * mt.m.super_dash_jump, Math.min(0.99, K.superDashJump * mt.m.super_dash_jump));
+                vy = sp * up;
+                level = Math.sqrt(1 - up * up);
                 setCharges(s, maxCharges, 1);
                 tech = "super dash";
             } else {
@@ -284,7 +283,7 @@ export function pmoveStep(s, cmd, w, dt, mt, ev) {
                 refillCharges(s, maxCharges, maxCharges);
             }
             chargesSet = true;
-            s.vel = [s.dashDirX * sp, vy, s.dashDirZ * sp];
+            s.vel = [s.dashDirX * sp * level, vy, s.dashDirZ * sp * level];
             s.dashTimer = 0; s.jumpBuffer = 0; s.jumpGrace = 0;
             dashing = false; onGround = false;
             ev(tech === "super dash" ? "superDash" : "dashJump", { speed: sp, vy });

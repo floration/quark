@@ -69,7 +69,7 @@ const ParamConsts kConsts[] = {
     {MV_DASH_EXIT_MIN, {{"src/game/pmove.cpp", "kDashExitMin", 11.0f, false}}},
     {MV_DASH_KEEP, {{"src/game/pmove.cpp", "kDashKeep", 1.0f, false}}},
     {MV_DASH_EXIT_MAX, {{"src/game/pmove.cpp", "kDashExitMax", 32.0f, false}}},
-    {MV_DASH_VERTICAL, {{"src/game/pmove.cpp", "kDashVertical", 0.6375f, false}}},
+    {MV_DASH_VERTICAL, {{"src/game/pmove.cpp", "kDashVerticalDown", 0.9f, false}, {"src/game/pmove.cpp", "kDashVerticalUp", 0.4f, false}}},
     {MV_DASH_CHARGES, {{"src/game/pmove.h", "kDashCharges", 2.0f, true}}},
     {MV_DASH_COOLDOWN, {{"src/game/pmove.h", "kDashCooldown", 0.6f, false}, {"src/game/pmove.h", "kDashRecharge", 1.2f, false}}},
     {MV_BOUNCE_GAIN, {{"src/game/pmove.cpp", "kBounceGain", 0.5f, false}}},
@@ -84,7 +84,7 @@ const ParamConsts kConsts[] = {
     {MV_LADDER_SIDE, {{"src/game/pmove.cpp", "kLadderSide", 4.5f, false}}},
     {MV_DASH_JUMP_WINDOW, {{"src/game/pmove.cpp", "kDashJumpWindow", 0.1f, false}}},
     {MV_SUPER_DASH_BOOST, {{"src/game/pmove.cpp", "kSuperDashBoost", 5.0f, false}}},
-    {MV_SUPER_DASH_JUMP, {{"src/game/pmove.cpp", "kSuperDashJump", 0.866f, false}, {"src/game/pmove.cpp", "kSuperDashJumpMax", 1.732f, false}}},
+    {MV_SUPER_DASH_JUMP, {{"src/game/pmove.cpp", "kSuperDashJump", 0.9f, false}}},
     {MV_SUPER_DASH_MAX, {{"src/game/pmove.cpp", "kSuperDashMax", 36.0f, false}}},
     {MV_DASH_BOUNCE_ANGLE, {{"src/game/pmove.cpp", "kDashBounceAngle", 45.0f, false}}},
     {MV_AIR_DRIFT, {{"src/game/pmove.cpp", "kAirDriftAccel", 8.0f, false}}},
@@ -109,7 +109,7 @@ const char* noteFor(int k) {
     case MV_DASH_SPEED: return "also scales the wall bounce's speed (16 m/s)";
     case MV_DASH_COOLDOWN: return "scales the cooldown (0.6 s) and each charge's recharge (1.2 s)";
     case MV_DASH_CHARGES: return "rounded to whole charges, 1 to 10";
-    case MV_SUPER_DASH_JUMP: return "scales both ends of the hop: 0.87 of a jump aimed just down, 1.73 straight down (3x the height of a jump)";
+    case MV_SUPER_DASH_JUMP: return "scales the share of its speed that goes up (the dash's down share, at most 0.9)";
     default: return nullptr;
     }
 }
