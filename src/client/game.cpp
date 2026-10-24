@@ -1363,6 +1363,7 @@ void Game::frame(double dt) {
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
         if (net_.playback()) tickAcc_ = 0;   // watching a demo: no input
         const double period = net_.tickPeriod();
+        const bool aliveBefore = fireAlive_;   // (alive through the last frame too: F18's spread below needs it)
         {   // just spawned: the server fires nothing for kSpawnFireLock, from its spawn. We see the spawn half a round trip
             // late and our commands reach it half a round trip after we send them: the lock here ends a round trip sooner
             // (a click before then played a shot the server never fired)
@@ -1380,7 +1381,7 @@ void Game::frame(double dt) {
         // earlier one its share of the way there; a tick with fire, alt-fire or a grapple shot held, and every tick after
         // it, takes the exact aim (what you see is what you shoot). Not across a spawn or while dead (the yaw is set).
         const int frameTicks = (int)(tickAcc_ / period);
-        const bool spread = frameTicks > 1 && fireAlive_ && net_.selfAlive() && !net_.playback();
+        const bool spread = frameTicks > 1 && aliveBefore && fireAlive_;
         const float yawFrom = spread ? tickYaw_ : yaw_;
         bool exactAim = !spread;
         int tickNo = 0;
