@@ -44,11 +44,14 @@ def inline_page():
     return html
 
 
+NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}   # (CREATE_NO_WINDOW: no console flashes on Windows)
+
+
 def find_ffmpeg():
     exe = shutil.which("ffmpeg")
     if not exe: return None
     try:
-        subprocess.run([exe, "-hide_banner", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        subprocess.run([exe, "-hide_banner", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, **NO_WINDOW)
         return exe
     except Exception:
         return None
@@ -60,7 +63,7 @@ def encode(path, ffmpeg, tmp):
     if ffmpeg:
         out = os.path.join(tmp, "c.flac")
         r = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-c:a", "flac",
-                            "-compression_level", "8", out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            "-compression_level", "8", out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NO_WINDOW)
         if r.returncode == 0 and os.path.isfile(out):
             data = open(out, "rb").read()
             if 0 < len(data) < len(raw): return "audio/flac", data

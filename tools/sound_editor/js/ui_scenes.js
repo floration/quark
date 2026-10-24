@@ -165,6 +165,8 @@
     U.$('#scPlay').onclick = () => S.toggle();
     U.$('#scRender').onclick = () => S.renderMix();
     for (const id of ['#scMyKit', '#scEnemyKit', '#scVoice', '#scMissing']) U.$(id).addEventListener('change', () => { S.render(); S.applyMix(); });
+    // (the field shows the volume that plays: typed values outside 0..1 snap to it)
+    U.$('#scMaster').addEventListener('change', ev => { const v = S.opt().master; if (+ev.target.value !== v) ev.target.value = v; });
     for (const id of ['#scMaster', '#scLimiter']) U.$(id).addEventListener('change', () => { if (S.playing) S.play(); });
   };
 })();

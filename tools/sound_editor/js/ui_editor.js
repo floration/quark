@@ -34,10 +34,38 @@
     if (changed) { E.view = null; E.cursor = null; E.sel = null; }
     build();
   };
-  E.refresh = function () { if (E.key && Q.assets[E.key]) build(); };
+  let refreshT = 0;
+  E.refresh = function () {
+    if (E.key && !Q.assets[E.key]) { E.key = null; idle(); return; }   // (its sound is gone: your own name removed)
+    if (!E.key) return;
+    // a commit from a field in the dock (its change fires on Tab or a click elsewhere, while the focus is between
+    // fields: on body): rebuild once the focus has landed, then build() puts it back on the same field of the new dock
+    const ae = document.activeElement;
+    if (!ae || ae === document.body || U.$('#editor').contains(ae)) { clearTimeout(refreshT); refreshT = setTimeout(() => { if (E.key && Q.assets[E.key]) build(); }, 0); return; }
+    build();
+  };
+  function idle() {
+    U.$('#dock').classList.add('idle');
+    const root = U.$('#editor'); root.innerHTML = ''; root.append(h('div.empty', 'Select a sound (click a cell) to edit it here.'));
+  }
+
+  // what a rebuild must not lose: the focused field (by its place among the dock's fields) and the columns' scroll
+  const FIELDS = 'input, select, textarea, button';
+  function uiState(root) {
+    const f = [...root.querySelectorAll(FIELDS)], el = document.activeElement;
+    const sc = sel => { const x = root.querySelector(sel); return x ? x.scrollTop : 0; };
+    return { focus: root.contains(el) ? f.indexOf(el) : -1, side: sc('.ed-side'), chain: sc('.ed-chain') };
+  }
+  function restoreUI(root, st) {
+    const set = (sel, v) => { const x = root.querySelector(sel); if (x) x.scrollTop = v; };
+    set('.ed-side', st.side); set('.ed-chain', st.chain);
+    if (st.focus >= 0) { const el = root.querySelectorAll(FIELDS)[st.focus]; if (el) el.focus({ preventScroll: true }); }
+  }
 
   function build() {
-    const a = Q.assets[E.key], e = edit(), root = U.$('#editor');
+    const a = Q.assets[E.key], e = edit(), root = U.$('#editor'), keep = uiState(root);
+    clearTimeout(refreshT);
+    U.$('#dock').classList.remove('idle');
     const loadedId = (a.kind === 'voice' ? 'voice:' : 'kit:') + a.pack;
     if (!Q.loaded[loadedId] && !a.custom) { Q.loadPack(a.kind === 'voice' ? 'voice' : 'kit', a.pack).then(() => E.key === a.key && build()); }
     const pack = Q.packName(a.kind, a.pack), meta = Q.state.meta[U.metaKey(E.key)] || {};
@@ -85,7 +113,7 @@
     const [t0, t1] = trimOf();
     const num = (label, val, step, onv, title) => [h('span', { title }, label), h('input', { type: 'number', step, value: +val.toFixed(4), title,
       oninput: ev => { const v = parseFloat(ev.target.value); if (isFinite(v)) E.live(label, ed => onv(ed, v)); }, onchange: () => E.liveEnd() })];
-    const side = h('div.ed-side',
+    const side = h('div.ed-side', h('div.side-a',
       h('div.side-h', 'Trim and fades'),
       h('div.kv',
         num('start s', t0, 0.001, (ed, v) => { ed.trim[0] = Math.max(0, Math.min(v, trimOf()[1] - 0.001)); }),
@@ -99,11 +127,11 @@
       h('div.side-h', 'Level'),
       h('label', { title: 'Listed in sound-levels.txt on export: the game keeps this file\'s level instead of matching it to the sound it replaces' },
         h('input', { type: 'checkbox', checked: !!(e && e.levelSet), onchange: ev => E.change(ev.target.checked ? 'keep my level' : 'game levels it', ed => { ed.levelSet = ev.target.checked; }) }), 'keep my level (sound-levels.txt)'),
-      els.levelInfo = h('div.faint', { style: { marginTop: '3px' } }),
-      originBlock(a, e),
+      els.levelInfo = h('div.faint', { style: { marginTop: '3px' } })),
+      h('div.side-b', originBlock(a, e),
       h('div.side-h', 'Notes'),
       h('textarea.note', { placeholder: 'notes for this sound (all packs)', onchange: ev => Q.commit('note', () => { const m = Q.state.meta[U.metaKey(E.key)] = Q.state.meta[U.metaKey(E.key)] || {}; m.note = ev.target.value; }) }, meta.note || ''),
-      usesBlock(a));
+      usesBlock(a)));
     // chain
     const chain = h('div.ed-chain', h('div.side-h', 'Filter chain', h('span.faint', { style: { textTransform: 'none', letterSpacing: 0, fontWeight: 400 } }, 'top to bottom, after trim')));
     const addSel = h('select', Object.keys(Q.STEPS).map(t => h('option', { value: t }, Q.STEPS[t].label)));
@@ -112,6 +140,7 @@
     if (e) e.chain.forEach((st, i) => chain.append(stepUI(st, i, e.chain.length)));
     if (!e || !e.chain.length) chain.append(h('div.faint', 'No steps. Add one above; each renders offline and can be bypassed.'));
     root.append(head, h('div.ed-body', wave, side, chain));
+    restoreUI(root, keep);
     wireHandles();
     wireCanvas();
     E.redraw();

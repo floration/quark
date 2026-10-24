@@ -7,9 +7,11 @@
   const AUDIO = /\.(wav|ogg|mp3|flac|oga|opus|m4a|aac|aiff?|webm)$/i;
 
   // --- name matching: "ROCKET.wav", "heavy_metal/ROCKET.ogg", "male_GO.wav", "sounds/magical/hit-med.flac" -------------
+  // quips: "male_quips_HEADSHOT.wav", "voices/male/quips/HEADSHOT.wav", "quips/HEADSHOT.wav" (a quips folder or prefix)
   const norm = s => s.toUpperCase().replace(/[\s\-.]+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  const QUIP_TOK = /^QUIPS?$/, QUIP_PRE = /^QUIPS?_/;
   function allNames(kind) {
-    const base = kind === 'voice' ? Q.LINES : Q.SOUNDS;
+    const base = kind === 'voice' ? Q.LINES.concat(Q.QUIPS) : Q.SOUNDS;
     const extra = Q.MISSING.filter(m => m.name && (m.kind || 'sound') === kind).map(m => m.name).concat(Q.state.customs.filter(c => c.kind === kind).map(c => c.name));
     return base.concat(extra.filter(n => !base.includes(n)));
   }
@@ -30,8 +32,16 @@
       for (const x of packs) { const t = dirTok(x.dir) + '_'; if (stem.startsWith(t)) { kind = x.kind; pack = x.dir; stem = stem.slice(t.length); break; } }
       if (!pack && stem.startsWith('WOODEN_')) { kind = 'sound'; pack = 'mouth'; stem = stem.slice(7); }
     }
+    // a quip (never the announcer line of the same name): a quips folder, or quips_ in front of the name
+    let quip = kind !== 'sound' && segs.some(s => QUIP_TOK.test(norm(s)));
+    if (kind !== 'sound' && QUIP_PRE.test(stem)) { quip = true; stem = stem.replace(QUIP_PRE, ''); }
+    if (quip) kind = 'voice';
     // the sound / line name: exact, else the longest known name the stem starts with (ROCKET_V2 -> ROCKET)
-    const find = k => { const names = allNames(k); if (names.includes(stem)) return stem; return names.filter(n => stem.startsWith(n + '_') || stem === n).sort((a, b) => b.length - a.length)[0] || names.filter(n => stem.includes(n)).sort((a, b) => b.length - a.length)[0] || null; };
+    const find = k => {
+      const names = quip ? Q.QUIPS.map(n => n.slice(6)) : allNames(k).filter(n => !n.startsWith('quips/'));
+      const r = names.includes(stem) ? stem : names.filter(n => stem.startsWith(n + '_') || stem === n).sort((a, b) => b.length - a.length)[0] || names.filter(n => stem.includes(n)).sort((a, b) => b.length - a.length)[0] || null;
+      return r && quip ? 'quips/' + r : r;
+    };
     let name = null;
     if (kind) name = find(kind);
     else {
@@ -42,7 +52,7 @@
       else if (s) { kind = 'sound'; name = s; } else if (v) { kind = 'voice'; name = v; }
     }
     if (!pack && kind) pack = fallback && fallback.kind === kind ? fallback.pack : (kind === 'voice' ? 'male' : 'default');
-    if (!name && fallback) return { kind: fallback.kind, pack: fallback.pack, name: fallback.name, guessed: true };
+    if (!name && fallback && (!quip || (fallback.name || '').startsWith('quips/'))) return { kind: fallback.kind, pack: fallback.pack, name: fallback.name, guessed: true };
     return name ? { kind, pack, name, guessed: false } : null;
   };
 
@@ -121,7 +131,7 @@
         h('td', ps), h('td', ns), h('td', r.m ? (r.guessed ? h('span', { style: { color: 'var(--warn)' } }, 'guessed') : h('span', { style: { color: '#8ee08e' } }, 'matched')) : h('span', { style: { color: 'var(--warn)' } }, 'no match: pick one'), ' ', warn)));
       ui.push({ r, inc, ps, ns });
     }
-    const ok = await U.dialog('Assign ' + rows.length + ' file' + (rows.length > 1 ? 's' : ''), [h('p', 'Matched by file name and folder (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav). A file naming no kit / voice goes to ' + (fb ? 'the selected sound\'s ' + (fb.kind === 'voice' ? 'voice' : 'kit') + ' (' + Q.packName(fb.kind, fb.pack) + ')' : 'DEFAULT (voices: MALE)') + '. Check the targets, untick what to skip. An edit\'s filter chain stays on its new audio.'), table],
+    const ok = await U.dialog('Assign ' + rows.length + ' file' + (rows.length > 1 ? 's' : ''), [h('p', 'Matched by file name and folder (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav; a quip: male_quips_HEADSHOT.wav or voices/male/quips/HEADSHOT.wav). A file naming no kit / voice goes to ' + (fb ? 'the selected sound\'s ' + (fb.kind === 'voice' ? 'voice' : 'kit') + ' (' + Q.packName(fb.kind, fb.pack) + ')' : 'DEFAULT (voices: MALE)') + '. Check the targets, untick what to skip. An edit\'s filter chain stays on its new audio.'), table],
       [{ label: 'Cancel', value: false }, { label: 'Assign', primary: true, value: true }]);
     if (!ok) return [];
     const list = [];
@@ -172,15 +182,16 @@
       txt.placeholder = HINT[v]; txt.value = (v === 'third-party' ? o.source : o.note) || '';
       txt.classList.toggle('need', v === 'third-party' && !txt.value.trim());
     };
+    // the box is the source for third-party, the note otherwise; the other field is kept only while the origin stays
     const set = (origin, text) => {
-      const e = Q.state.edits[key], o = (e && e.origin) || {};
-      const note = origin === 'third-party' ? o.note || '' : text, source = origin === 'third-party' ? text : o.source || '';
-      Q.commit(origin ? 'origin ' + Q.assets[key].name + ': ' + origin : 'clear origin', () => P.setOrigin(key, origin, note, source));
+      const tp = origin === 'third-party';
+      Q.commit(origin ? 'origin ' + Q.assets[key].name + ': ' + origin : 'clear origin', () => P.setOrigin(key, origin, tp ? null : text, tp ? text : null));
       sync(); opts.onchange && opts.onchange();
     };
     sel.onchange = () => {
       const e = Q.state.edits[key], o = (e && e.origin) || {};
-      set(sel.value, (sel.value === 'third-party' ? o.source : o.note) || '');
+      const same = o.origin === sel.value;
+      set(sel.value, same ? (sel.value === 'third-party' ? o.source : o.note) || '' : '');
     };
     txt.onchange = () => { if (sel.value) set(sel.value, txt.value.trim()); };
     sync();
@@ -345,7 +356,9 @@
     window.addEventListener('dragover', ev => { if ([...(ev.dataTransfer.types || [])].includes('Files')) { ev.preventDefault(); hint(true); } });
     window.addEventListener('drop', async ev => { ev.preventDefault(); hint(false); const files = await F.collect(ev.dataTransfer); F.autoAssign(files); });
     U.$('#btnUpload').onclick = () => U.$('#fileUpload').click();
-    U.$('#fileUpload').onchange = ev => { const fs = [...ev.target.files].map(f => ({ file: f, path: f.webkitRelativePath || f.name })); ev.target.value = ''; F.autoAssign(fs.filter(x => AUDIO.test(x.file.name))); };
+    U.$('#btnUploadDir').onclick = () => U.$('#dirUpload').click();
+    // (a folder's files carry their path, webkitRelativePath, so the folder names pick the kit / voice / quips)
+    for (const id of ['#fileUpload', '#dirUpload']) U.$(id).onchange = ev => { const fs = [...ev.target.files].map(f => ({ file: f, path: f.webkitRelativePath || f.name })); ev.target.value = ''; F.autoAssign(fs.filter(x => AUDIO.test(x.file.name))); };
     U.$('#btnExport').onclick = () => F.exportDialog();
     U.$('#btnSaveProject').onclick = () => { Q.download(new Blob([Q.projectJSON()], { type: 'application/json' }), 'quark-sounds-project.json'); U.toast('Project saved (edits, groups, chains and your audio)'); };
     U.$('#btnLoadProject').onclick = () => U.$('#fileProject').click();

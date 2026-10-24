@@ -20,12 +20,15 @@ Python 3 standard library only. `--page-only` rewrites only the page and keeps `
 Rebuild after a game update so the page shows the current defaults. Your work is not in these files: it is autosaved in
 the browser and in the project files you save.
 
-**Install / update in one step** (non-interactive; the Quark Project app runs it): `python tools/sound_editor/install.py [out]`
-(default out: `<checkout>/../sound-editor`). It exports the sounds with the first `quark_tests` it finds (`$QUARK_TESTS`,
-`build-win`, `build`, `../working-repo-sound/build-win`, `../.src/testing/build-win`) whose export names this checkout's
-`VERSION`, and rebuilds page + data. A build of another version is skipped with a warning, because it would export old
-sounds and voice lines. With no matching build it rebuilds only the page if data is already there, exiting 2 when it
-skipped stale builds so the app can show that the sounds weren't updated. It writes `INSTALLED.txt` and never opens a browser.
+**Install / update in one step** (non-interactive; the Quark Project app runs it): `python tools/sound_editor/install.py [out]
+[--no-build]` (default out: `<checkout>/../sound-editor`). It exports the sounds with a `quark_tests` whose export names this
+checkout's `VERSION`: `$QUARK_TESTS` first, then every build folder the other installs use (`build-win`, `build`,
+`build-model-editor`, `build-editors`, `../working-repo-sound/build-win`, `../.src/*/build*`), newest first. A build of
+another version is skipped with a warning, because it would export old sounds and voice lines. With none matching it builds
+`quark_tests` itself in `build-editors` (the bot editor's folder and settings, so neither install builds twice), below normal
+priority and with no console window; `--no-build` skips that. Only when no build can be made does it rebuild just the page
+(if data is already there), exiting 2 when it skipped stale builds so the app can show that the sounds weren't updated. It
+writes `INSTALLED.txt` and never opens a browser.
 
 ## Export to the game
 
@@ -57,16 +60,22 @@ provenance spec (`assets/provenance/`, `tools/provenance.py merge <sidecar>` fol
 
 Ids are the export paths (`sounds/<kit>/<SOUND>.wav`, `voices/<voice>/<LINE>.wav`, missing-sound slots too). One entry
 per id: the latest export replaces it (fields the editor doesn't set are kept), every other entry stays. The origin
-(shown in the editor panel's **Origin** and in a column of the export dialog) is `human` only when a person made the audio:
+(shown as a chip on every matrix cell, in the editor panel's **Origin** and in a column of the export dialog) is `human` only
+when a person made the audio:
 
 - **A dropped / uploaded file** (or an empty missing-sound slot): not set until you pick human, third-party (with where it
   came from: pack / site / licence) or AI, in the panel or the export dialog (bulk set for many). The export waits for it.
 - **An edit of a shipped sound** (trim, fades, filters, levelling) keeps the shipped sound's origin, with a note such as
   "trim, high-pass of the AI default": DEFAULT and RETRO (synthesized) and every kit's SUPER / HYPER / LOCATOR (DEFAULT's)
   are `ai`; HEAVY METAL, MAGICAL and MOUTH (Kenney CC0 clips, `assets/sfx/CREDITS.md`) are `third-party`; the voices are
-  `ai` (Piper text to speech, and the recordings in `assets/voice/`, whose maker the repository doesn't record); a sound
+  `ai` (Piper text to speech, and the recordings in `assets/voice/`, whose maker the repository doesn't record); a default
+  quip is its voice's line of that name (the game plays the line as its quip), so it has that line's origin; a sound
   with the owner's file in `assets/overrides` is `human`.
 - **Design...** (the generator, shaped by hand): `human`, "made in the sound editor's generator".
+
+Changing a dropped file's origin starts its note / source afresh (a "recorded by q" note never stays on a file switched to
+third-party). The matrix shows what the game plays now: a kit sound with no edit that plays your DEFAULT edit (`=D`,
+RETRO) shows that edit's origin, and a quip with no edit of its own shows its line's.
 
 Origins are saved in the project file and the autosave. On the first export the editor asks for the sound-editor folder
 (Chrome / Edge), checks it holds `sound-editor.html`, and remembers it (asking permission again in a later session).
@@ -82,16 +91,23 @@ folder, not into overrides.
   `voices/<voice>/quips/<NAME>.wav` (provenance id the same path). Any quip files for a voice replace its whole default
   set in the game (docs/ASSETS.md), so export every quip you want that voice to keep.
   Flags: over the length guide, cut by the game's cap (3 s sounds, 5 s lines), edited, level yours, `=D` (this kit uses
-  DEFAULT's sound, so a DEFAULT edit plays here; RETRO is DEFAULT chiptuned). Show the values as the game plays them,
+  DEFAULT's sound, so a DEFAULT edit plays here; RETRO is DEFAULT chiptuned), and who made it: `AI`, `3P` (third-party),
+  `HUM` (human) or `SET?` (a dropped file whose origin isn't chosen yet). Each kit / voice header counts its origins and the
+  toolbar counts the whole matrix, so you can see how much is still AI-made. Show the values as the game plays them,
   as the exported file, or as shipped. Click to play and edit; solo / mute per sound and per pack; play a row across
-  kits (compare) or a column through a kit; filter, edited only, over guide, favourites.
+  kits (compare) or a column through a kit; filter by name, edited only, over guide (Voices: cut at 5 s), favourites, and
+  origin ("still AI-made" keeps the rows with an AI-made cell and dims the other cells). The mini waveforms of a row share
+  one time scale, its longest clip. The seven voices load together (about twice as fast as one after another).
 - **Editor** (bottom dock): source waveform (zoom with the wheel, Shift+wheel scrolls), draggable trim and fade handles,
   cursor, playhead, play selection (Shift+drag a region), auto trim (start by the game's rule: the first sample at 3 %
   of the peak; end under -60 dB), the guide and the game's cap as markers, the output with where the game starts it,
   a spectrogram, and metrics for the file, the game and the original. Filter chain, each step with bypass, reorderable:
   gain, high-pass, low-pass, low shelf, peak EQ, high shelf, pitch / speed (resample), compressor, drive / soft clip,
-  reverse, reverb (generated room), normalize (peak), true-peak limiter. Filters and reverb render in an
-  OfflineAudioContext. A/B against the shipped original; B plays either the file or what the game will play (its
+  reverse, reverb (generated room), normalize (peak), true-peak limiter. The filters run in plain JS with the Web Audio
+  BiquadFilterNode's own coefficients (the same result, without an OfflineAudioContext per step); reverb renders in an
+  OfflineAudioContext. Every step's result is cached by its prefix (source, trim, fades and the steps before it), so a
+  change re-renders only that step and the ones after it. A field you change keeps the focus (Tab moves on); at 2560 wide
+  the side column shows trim / level and origin / notes side by side. A/B against the shipped original; B plays either the file or what the game will play (its
   leading-silence trim, cap, and level match unless "keep my level"). Undo / redo for everything.
 - **Loudness**: ITU-R BS.1770-4 K-weighting; integrated LUFS (400 ms blocks, 75 % overlap, -70 / -10 gates; a clip
   under 400 ms uses its whole-clip mean square), max momentary (400 ms), true peak (4x oversampled), plus the game's own
@@ -99,7 +115,8 @@ folder, not into overrides.
 - **Levelling**: groups of any sounds / lines brought to one loudness: match a number, the loudest, the average or a
   reference member, by integrated, max momentary or heard loudness, with a true-peak ceiling (default -1 dBTP) and a
   soft limiter when needed. Presets: each kit's weapons, the hitsound ladder (keeps 0.7 / 0.85 / 1.0 / 1.15; per kit or
-  across kits), movement, the same sound across kits, one voice's lines, the same line across voices, all voices.
+  across kits), movement, the same sound across kits, one voice's lines, one voice's quips, the same line or quip across
+  voices, all voices, all quips. A preset made twice adds its group once. The member adder lists the quips too.
   Preview the gains, apply (a gain step per member, refined until each is within 0.02 dB; one undo step; re-applying
   replaces the group's own steps). Members are measured as the game plays them once their level is kept.
 - **Scenes**: rifle duel, rockets and jumps, laser / sniper / headshot, movement tech, bomb round, race, killstreak,
@@ -108,10 +125,14 @@ folder, not into overrides.
   (0.6) and the mixer's soft limit follow the game. Loop them while you edit (each pass uses the edits as they are),
   see every event on a timeline, solo / mute live, render a scene offline (its mix loudness and a WAV).
 - **Missing**: the audit's events with no sound (priority, 2D / 3D, when it would play, a design note), each with a
-  slot per kit (or voice) to drop a file into or design one; marked "needs a game hook". Add your own names too.
-- **Overview**: a dot plot of every sound's loudness per kit (or every line per voice) with the spread per row.
+  slot per kit (or voice) to drop a file into or design one; marked "needs a game hook". Add your own names too; removing
+  one removes its slots' sounds as well (after a confirm; undo brings them back), so they are not exported.
+- **Overview**: a dot plot of every sound's loudness per kit (or every line per voice) with the spread per row; the voices
+  chart fills in as the voices load.
 - **Files**: drop a file on a cell to replace it; drop many files or a folder anywhere to assign them by name
-  (`ROCKET.wav`, `heavy_metal/ROCKET.ogg`, `male_GO.wav`, `wooden/STEP.flac`) with a confirm list; or Upload. Project
+  (`ROCKET.wav`, `heavy_metal/ROCKET.ogg`, `male_GO.wav`, `wooden/STEP.flac`; a quip: `male_quips_HEADSHOT.wav`,
+  `voices/male/quips/HEADSHOT.wav`, `quips/HEADSHOT.wav`) with a confirm list; or Upload (files) / Upload folder (matched
+  by its folder names too). Project
   files (.json: every edit, chain, group and note with your audio embedded) save and open; the session autosaves in the
   browser.
 
@@ -127,3 +148,11 @@ mute, F favourite, + / - / 0 zoom, 1-6 tabs, ? the list.
 spots, missing events: update it when the game changes), `loudness.js` (BS.1770 and the game's measures; also runs in
 node), `dsp.js` (chain, the game's clip preparation, WAV), `engine.js` (caches, mixer state, playback), `scenes.js`,
 `groups.js`, `export.js` (zip, folder, sound-levels.txt, project, autosave), `provenance.js` (origins, provenance.json), `render.js` (canvas), `ui*.js`, `boot.js`.
+
+## Tests
+
+`node tools/sound_editor/test/test_page.js <sound-editor folder>` (Playwright, headless Chromium) checks a built editor:
+the name matching (quips), provenance notes and origins, the matrix chips / filters / counts, Voices and the overview,
+the chain cache and JS filters against the Web Audio node, Missing, levelling presets, the dock and the layout at
+1280x720 and 2560x1440, with no console errors. Rebuild the page first (`build.py - <folder> --page-only`).
+`python3 tools/sound_editor/test/test_install.py` checks which `quark_tests` install.py picks (fake builds, no compiler).

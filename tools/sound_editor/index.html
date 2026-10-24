@@ -24,6 +24,8 @@
     <span class="sep"></span>
     <button id="btnUpload" title="Upload audio files (or drop them anywhere)">Upload</button>
     <input type="file" id="fileUpload" multiple accept=".wav,.ogg,.mp3,.flac,audio/*" hidden>
+    <button id="btnUploadDir" title="Upload a folder: its files are matched by folder and name (heavy_metal/ROCKET.ogg, male/quips/HEADSHOT.wav)">Upload folder</button>
+    <input type="file" id="dirUpload" webkitdirectory multiple hidden>
     <div class="menu"><button>Project</button>
       <div class="menu-list">
         <button id="btnSaveProject">Save project file (.json)</button>
@@ -53,6 +55,8 @@
       <label class="chk"><input type="checkbox" id="sEdited"> edited</label>
       <label class="chk"><input type="checkbox" id="sOver"> over guide</label>
       <label class="chk"><input type="checkbox" id="sFav"> favourites</label>
+      <label title="Who made what the game plays (provenance): the goal is every sound human-made">Origin <select id="sOrigin"><option value="">any</option><option value="ai">still AI-made</option><option value="third-party">third-party</option><option value="human">human-made</option><option value="unset">not set yet</option></select></label>
+      <span id="sCounts" class="ocounts"></span>
       <span class="spacer"></span>
       <span class="faint">click a cell to play + edit, drop a file on a cell to replace it</span>
     </div>
@@ -67,6 +71,10 @@
       <label>of <select id="vWhich"><option value="game">as heard in the game</option><option value="out">the file you export</option><option value="orig">the shipped line</option></select></label>
       <input type="search" id="vFilter" placeholder="filter lines">
       <label class="chk"><input type="checkbox" id="vEdited"> edited</label>
+      <label class="chk" title="Longer than the game's 5 s cap for a line: the game cuts it"><input type="checkbox" id="vOver"> cut at 5 s</label>
+      <label class="chk"><input type="checkbox" id="vFav"> favourites</label>
+      <label title="Who made what the game plays (provenance): the goal is every line human-made">Origin <select id="vOrigin"><option value="">any</option><option value="ai">still AI-made</option><option value="third-party">third-party</option><option value="human">human-made</option><option value="unset">not set yet</option></select></label>
+      <span id="vCounts" class="ocounts"></span>
       <span class="spacer"></span>
       <span id="voiceLoad" class="faint"></span>
     </div>
@@ -112,7 +120,7 @@
 
   <section id="view-missing" class="view">
     <div class="toolbar">
-      <span>Events with no sound yet (the 1.18.3 audit). Design one here: it exports as <code>sounds/&lt;kit&gt;/&lt;NAME&gt;.wav</code> (voices: <code>voices/&lt;voice&gt;/&lt;NAME&gt;.wav</code>). Each <b>needs a game hook</b> before it plays.</span>
+      <span>Events with no sound yet (the sound audit, js/audit.js). Design one here: it exports as <code>sounds/&lt;kit&gt;/&lt;NAME&gt;.wav</code> (voices: <code>voices/&lt;voice&gt;/&lt;NAME&gt;.wav</code>). Each <b>needs a game hook</b> before it plays.</span>
       <span class="spacer"></span>
       <input id="msName" placeholder="YOUR_NEW_SOUND" size="16"><select id="msKind"><option value="sound">sound</option><option value="voice">voice line</option></select>
       <button id="msAdd">+ Add your own</button>
@@ -132,12 +140,12 @@
   </section>
 </main>
 
-<section id="dock">
+<section id="dock" class="idle">
   <div id="dockGrip" title="Drag to resize"></div>
   <div id="editor"><div class="empty">Select a sound (click a cell) to edit it here.</div></div>
 </section>
 
-<div id="dropHint" hidden><div>Drop audio files: they are matched to sounds by file name (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav). A folder works too.</div></div>
+<div id="dropHint" hidden><div>Drop audio files: they are matched to sounds by file name (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav, male_quips_HEADSHOT.wav). A folder works too.</div></div>
 <div id="toast"></div>
 <dialog id="dlg"><form method="dialog" id="dlgBody"></form></dialog>
 <dialog id="dlg2"><form method="dialog" id="dlg2Body"></form></dialog>
