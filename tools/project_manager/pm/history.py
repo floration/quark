@@ -40,7 +40,7 @@ def facts(results, derived):
         f["units"] = {n: (u or {}).get("active") for n, u in orc["units"].items()}
     if derive.ok_data(results, "docs") is not None:
         f["inProgress"] = {str(e["id"] if e.get("id") is not None else e["title"]):
-                           {"title": e["title"], "waitingOn": e.get("waitingOn"), "link": e["link"]}
+                           {"title": e["title"], "waitingOn": e.get("waitingOn"), "link": e.get("entryLink") or e["link"]}
                            for e in derived["inProgress"]}
     if derived.get("humanPct") is not None:
         f["humanPct"] = derived["humanPct"]

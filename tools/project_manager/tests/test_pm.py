@@ -560,6 +560,68 @@ class TestDerive(unittest.TestCase):
             self.assertEqual(derive.bucket(w), b, w)
 
 
+# the documented /api/summary shapes: tools/docs_manager/README.md and tools/editor_dashboard/README.md
+DOCS_REAL = {
+    "generatedAt": "2026-10-24T05:20:00Z", "mirrorHead": "abc", "fetchOk": True, "ghOk": True,
+    "inProgress": [
+        {"id": "02-in-progress.md:map-editor", "title": "Map editor", "thread": "Maps", "threadUrl": "https://claude.ai/m",
+         "status": "in-progress", "where": "claude/x", "waitingOn": ["pr", "ci"], "waitingWhy": "PR #8 is open, checks running.",
+         "date": "2026-10-23", "lastChanged": {"sha": "s", "time": "t", "what": "edited"}},
+        {"id": "02-in-progress.md:feel", "title": "Feel", "thread": "Tweak", "threadUrl": None, "status": "in-progress",
+         "where": "", "waitingOn": ["owner", "push"], "waitingWhy": "Waiting on q to push.", "date": "2026-10-23"},
+        {"id": "02-in-progress.md:roles", "title": "Rank roles", "status": "open", "waitingOn": ["owner"],
+         "waitingWhy": "Waiting on q: role names."},
+        {"id": "02-in-progress.md:bare", "title": "Bare", "status": "in-progress"},
+    ],
+    "waiting": {"owner": ["02-in-progress.md:feel", "02-in-progress.md:roles", "07-questions.md:gantry"],
+                "push": ["02-in-progress.md:feel"], "pr": ["02-in-progress.md:map-editor"], "ci": ["02-in-progress.md:map-editor"],
+                "tests": [], "claude": ["02-in-progress.md:bare"]},
+    "questions": [{"id": "07-questions.md:gantry", "title": "Gantry 5 or 7 min?", "body": "...", "thread": "Tweak",
+                   "threadUrl": "https://claude.ai/t", "date": "2026-10-24", "recommendation": "7 min"}],
+    "recentChanges": [{"time": "t", "what": "added"}],
+}
+EDITORS_REAL = {
+    "testing": {"version": "1.18.6", "ref": "origin/testing"}, "production": {"version": "1.17.0", "tag": "v1.17.0"},
+    "provenance": {"total": 10, "human": 2, "third_party": 3, "ai": 5, "pct_human": 20.0,
+                   "by_category": {"sounds": {"total": 6, "human": 1, "third_party": 2, "ai": 3},
+                                   "models": {"total": 4, "human": 1, "third_party": 1, "ai": 2}}},
+    "pending_marks": 6, "remaining": 5, "generated_at": "2026-10-24T05:00:00Z",
+    "programs": [{"id": "map-editor", "name": "Map editor", "ahead_testing": 1, "ahead_production": 2, "uncommitted": 0,
+                  "files_changed": 3}],
+}
+
+
+class TestRealSiblingShapes(unittest.TestCase):
+    def test_docs_and_editors(self):
+        d = derive.derive({"docs": env(DOCS_REAL), "editors": env(EDITORS_REAL)})
+        ip = {e["id"]: e for e in d["inProgress"]}
+        self.assertEqual(ip["02-in-progress.md:map-editor"]["bucket"], "pr")
+        self.assertEqual(ip["02-in-progress.md:map-editor"]["waitingOn"], "pr, ci")
+        self.assertEqual(ip["02-in-progress.md:map-editor"]["waitingOnList"], ["pr", "ci"])
+        self.assertEqual(ip["02-in-progress.md:feel"]["bucket"], "push")
+        self.assertEqual(ip["02-in-progress.md:roles"]["bucket"], "owner")
+        self.assertEqual(ip["02-in-progress.md:bare"]["bucket"], "claude")  # (from waiting{})
+        self.assertEqual(ip["02-in-progress.md:feel"]["link"], "http://127.0.0.1:8766/#entry=02-in-progress.md:feel")
+        self.assertEqual(ip["02-in-progress.md:map-editor"]["threadUrl"], "https://claude.ai/m")
+        steps = [(s["owner"], s["text"], s["link"]) for s in d["nextSteps"]]
+        self.assertEqual(steps[0], ("q", "Answer: Gantry 5 or 7 min?", "http://127.0.0.1:8766/#entry=07-questions.md:gantry"))
+        self.assertIn(("q", 'Say push for "Tweak"', "http://127.0.0.1:8766/#entry=02-in-progress.md:feel"), steps)
+        self.assertIn(("q", "Waiting on q: role names.", "http://127.0.0.1:8766/#entry=02-in-progress.md:roles"), steps)
+        self.assertIn("claude", [o for o, _, _ in steps])
+        self.assertEqual(d["questions"][0]["recommendation"], "7 min")
+        self.assertEqual(d["humanPct"], 20.0)
+        self.assertEqual((d["versions"]["testing"], d["versions"]["production"]), ("1.18.6", "1.17.0"))
+        a = d["assets"]
+        self.assertEqual((a["thirdParty"], a["pendingMarks"], a["remaining"]), (3, 6, 5))
+        self.assertEqual(sorted(c["category"] for c in a["byCategory"]), ["models", "sounds"])
+        self.assertEqual(next(c for c in a["byCategory"] if c["category"] == "sounds")["thirdParty"], 2)
+        self.assertEqual(d["programs"][0]["filesChanged"], 3)
+        # pct missing: computed from the counts with third_party
+        e2 = json.loads(json.dumps(EDITORS_REAL))
+        del e2["provenance"]["pct_human"]
+        self.assertEqual(derive.human_pct(e2), 20.0)
+
+
 class TestHistory(unittest.TestCase):
     def results(self, **gh):
         g = json.loads(json.dumps(GITHUB_SUMMARY))

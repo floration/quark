@@ -2,6 +2,7 @@
 source it came from (`source`). Sibling field names may differ a little, so everything is read with tolerant
 fallbacks (util.get with several names) and the raw data stays in `sources`."""
 import time
+import urllib.parse
 
 from . import util
 from .util import get, as_list
@@ -166,8 +167,15 @@ def local_copies(results):
 
 # ---- Claude Docs manager --------------------------------------------------------------------------------------
 
+BUCKET_ORDER = ("push", "owner", "pr", "ci", "tests", "claude")  # (owner + push = "q needs to push": push)
+
+
 def bucket(waiting):
-    w = (waiting or "").strip().lower()
+    """One bucket for a waitingOn string or list (the docs manager sends a list, e.g. ["owner", "push"])."""
+    if isinstance(waiting, (list, tuple)):
+        found = {bucket(w) for w in waiting if isinstance(w, str)}
+        return next((b for b in BUCKET_ORDER if b in found), "other")
+    w = (waiting or "").strip().lower() if isinstance(waiting, str) else ""
     if not w:
         return "other"
     if w in ("q", "you", "user", "owner") or "owner" in w or w.startswith("q "):
@@ -179,24 +187,44 @@ def bucket(waiting):
     return "other"
 
 
+def entry_link(eid):
+    return DOCS + "#entry=" + urllib.parse.quote(str(eid), safe=":/-_.~") if eid is not None else DOCS + "#tab=board"
+
+
+def _waiting_text(w):
+    if isinstance(w, (list, tuple)):
+        return ", ".join(str(x) for x in w if x not in (None, "none")) or None
+    return w if isinstance(w, str) and w else None
+
+
 def in_progress(d):
+    """The docs manager's inProgress (waitingOn may be a list), with `bucket` and a deep link to the entry."""
+    by_id = {}  # (the docs manager's waiting{bucket: [ids]}, used when an entry has no waitingOn of its own)
+    waiting_map = get(d, "waiting")
+    for b, ids in (waiting_map.items() if isinstance(waiting_map, dict) else []):
+        for i in (ids if isinstance(ids, list) else []):
+            by_id.setdefault(str(i), []).append(b)
     out = []
     for e in as_list(get(d, "inProgress", "in_progress", "inprogress", "entries", "active")):
         if not isinstance(e, dict):
             continue
         status = get(e, "status", "state", default="")
-        if isinstance(status, str) and status.lower() in ("done", "finished", "closed", "shipped"):
+        if isinstance(status, str) and status.lower() in ("done", "finished", "closed", "shipped", "fixed", "answered"):
             continue
         eid = get(e, "id", "entryId", "key")
         url = get(e, "threadUrl", "thread_url", "threadLink", "url", "link")
         waiting = get(e, "waitingOn", "waiting_on", "waiting", "bucket", "waitingFor")
+        if not waiting and eid is not None:
+            waiting = by_id.get(str(eid))
+        wl = [w for w in (waiting if isinstance(waiting, list) else [waiting]) if isinstance(w, str) and w and w != "none"]
         out.append({"id": eid, "title": get(e, "title", "name", "text", default="(untitled)"),
                     "thread": get(e, "thread", "threadName", "thread_name"), "threadUrl": url,
                     "status": status, "where": get(e, "where", "location", "branch"),
-                    "waitingOn": waiting, "waitingWhy": get(e, "waitingWhy", "waiting_why", "why", "reason"),
-                    "bucket": bucket(waiting if isinstance(waiting, str) else None),
-                    "link": url or (DOCS + "#entry=%s" % eid if eid is not None else DOCS + "#tab=board"),
-                    "source": "docs"})
+                    "waitingOn": _waiting_text(waiting), "waitingOnList": wl,
+                    "waitingWhy": get(e, "waitingWhy", "waiting_why", "why", "reason"),
+                    "date": get(e, "date"), "lastChanged": get(e, "lastChanged"),
+                    "bucket": bucket(wl), "link": entry_link(eid) if eid is not None else (url or entry_link(None)),
+                    "entryLink": entry_link(eid), "source": "docs"})
     return out
 
 
@@ -208,17 +236,19 @@ def questions(d):
         if not isinstance(q, dict):
             continue
         qid = get(q, "id", "entryId")
-        out.append({"id": qid, "text": get(q, "text", "question", "title", default=""), "thread": get(q, "thread"),
-                    "askedAt": get(q, "askedAt", "time", "createdAt"),
-                    "link": get(q, "url", "link") or (DOCS + "#entry=%s" % qid if qid is not None else DOCS)})
+        out.append({"id": qid, "text": get(q, "text", "title", "question", default=""), "body": get(q, "body"),
+                    "thread": get(q, "thread"), "threadUrl": get(q, "threadUrl"),
+                    "recommendation": get(q, "recommendation"),
+                    "askedAt": get(q, "askedAt", "date", "time", "createdAt"),
+                    "link": entry_link(qid) if qid is not None else (get(q, "url", "link", "threadUrl") or DOCS)})
     return out
 
 
 # ---- editor dashboard -----------------------------------------------------------------------------------------
 
 def human_pct(d):
-    v = util.to_float(get(d, "humanPct", "human_pct", "percentHuman", "provenance.humanPct", "provenance.percentHuman",
-                          "provenance.human_pct", "totals.humanPct", "provenance.totals.humanPct"))
+    v = util.to_float(get(d, "humanPct", "human_pct", "percentHuman", "provenance.pct_human", "provenance.humanPct",
+                          "provenance.percentHuman", "provenance.human_pct", "totals.humanPct", "provenance.totals.humanPct"))
     if v is None:
         t = get(d, "provenance.totals", "provenance", "totals") or {}
         h = util.to_float(get(t, "human"), 0.0)
@@ -226,6 +256,27 @@ def human_pct(d):
         if h + rest > 0:
             v = 100.0 * h / (h + rest)
     return round(v, 1) if v is not None else None
+
+
+def assets(d):
+    """The editor dashboard's provenance in one shape: by_category may be a dict or a list, snake or camel case."""
+    p = get(d, "provenance") or {}
+    cats = get(p, "by_category", "byCategory", "categories")
+    rows = []
+    for c in as_list(cats):
+        if isinstance(c, dict):
+            h = util.to_int(get(c, "human"), 0)
+            t = util.to_int(get(c, "third_party", "thirdParty", "third-party"), 0)
+            a = util.to_int(get(c, "ai"), 0)
+            rows.append({"category": get(c, "category", "name"), "total": util.to_int(get(c, "total"), h + t + a),
+                         "human": h, "thirdParty": t, "ai": a,
+                         "link": DASH + "#view=assets&category=%s" % get(c, "category", "name")})
+    return {"total": util.to_int(get(p, "total")), "human": util.to_int(get(p, "human")),
+            "thirdParty": util.to_int(get(p, "third_party", "thirdParty")), "ai": util.to_int(get(p, "ai")),
+            "humanPct": human_pct(d), "byCategory": rows,
+            "pendingMarks": util.to_int(get(d, "pending_marks", "pendingMarks")),
+            "remaining": util.to_int(get(d, "remaining")), "generatedAt": get(d, "generated_at", "generatedAt"),
+            "link": DASH + "#view=assets"}
 
 
 def programs(d):
@@ -258,10 +309,11 @@ def versions(results):
     t = gh_testing(gh) if gh else {}
     p = gh_production(gh) if gh else {}
     b_prod, b_test, b_work = _build(results, "production"), _build(results, "testing"), _build(results, "working")
-    production = p.get("version") or util.parse_version(get(ed, "versions.production", "productionVersion")) or \
+    production = p.get("version") or \
+        util.parse_version(get(ed, "production.version", "production.tag", "versions.production", "productionVersion")) or \
         util.base_version((b_prod or {}).get("version"))
     testing = t.get("version") or util.parse_version(repo.get("version")) or \
-        util.parse_version(get(ed, "versions.testing", "testingVersion"))
+        util.parse_version(get(ed, "testing.version", "versions.testing", "testingVersion"))
     pre = (t.get("prerelease") or {}).get("tag")
     if not pre and b_test and str(b_test.get("tag") or "").startswith("test-"):
         pre = b_test["tag"]
@@ -430,4 +482,4 @@ def derive(results, now=None):
             # normalized copies of what the page needs most (the raw data stays in `sources`)
             "questions": qs, "prs": prs, "runs": {"running": runs["running"], "lastFailed": runs["lastFailed"],
                                                   "lastTesting": ci or runs["lastTesting"]},
-            "localCopies": locs, "programs": programs(ed) if ed else []}
+            "localCopies": locs, "programs": programs(ed) if ed else [], "assets": assets(ed) if ed else None}
