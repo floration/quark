@@ -13,8 +13,9 @@ Run it from the repository folder (the owner's `repository\`): non-interactive, 
   3. --map-editor DIR (default ../map-editor; `--map-editor -` skips it): runs tools/map_editor/build.py with the
      same build folder (its own page, three.js download, maps, models; its config.json is kept).
 A helper that's in use (a live run) is replaced on the next run instead of failing the install. A bot editor that's
-running when its files change is told to quit (POST /api/quit) and started again from the new files; when the Quark
-Project app is open (its port 8768 answers) its watchdog restarts it instead. Exit code 0 = done.
+running when its files change is told to quit (POST /api/quit) and started again from the new files, in the background
+with no window (its output in serve.log there); when the Quark Project app is open (its port 8768 answers) its
+watchdog restarts it instead. Exit code 0 = done.
 Python 3 standard library; needs cmake, a C++ compiler (MinGW-w64 on Windows) and python on PATH, like the game build.
 """
 import argparse, filecmp, json, os, shutil, subprocess, sys, time, urllib.request
@@ -26,9 +27,24 @@ EXE = ".exe" if IS_WIN else ""
 TOOL_FILES = ["serve.py", "run.cmd", "run.sh", "README.md", "bot_editor.example.json"]
 
 
+CREATE_NO_WINDOW = 0x08000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+
+def has_console():
+    """Windows: started from a console (a terminal, run.cmd) rather than by the Quark Project app or pythonw."""
+    if not IS_WIN: return True
+    try:
+        import ctypes
+        return bool(ctypes.windll.kernel32.GetConsoleWindow())
+    except Exception:
+        return True
+
+
 def low_priority():
-    """Child processes start below normal so a build never slows the game (CLAUDE.md: the owner may be playing)."""
-    if IS_WIN: return {"creationflags": 0x00004000}   # BELOW_NORMAL_PRIORITY_CLASS
+    """Child processes start below normal so a build never slows the game (CLAUDE.md: the owner may be playing).
+    Without a console of our own (the app runs us), cmake and the compiler get no window either."""
+    if IS_WIN: return {"creationflags": 0x00004000 | (0 if has_console() else CREATE_NO_WINDOW)}   # BELOW_NORMAL_PRIORITY_CLASS
     return {"preexec_fn": lambda: os.nice(10)}
 
 
@@ -135,13 +151,18 @@ def restart_bot_editor(dest, port):
     if http("http://127.0.0.1:8768/", timeout=1.0) is not None or os.environ.get("QUARK_SHELL") == "1":
         print("  bot editor stopped: the Quark Project app restarts it from the new files")
         return
-    if IS_WIN:   # (its own console window, like run.cmd from Explorer)
-        subprocess.Popen(["cmd", "/c", "start", "Quark Bot Editor", os.path.join(dest, "run.cmd"), "--no-open"], cwd=dest)
-    else:
-        subprocess.Popen([sys.executable, os.path.join(dest, "serve.py"), "--no-open"], cwd=dest, start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # in the background with no window (the owner wants no console windows): its output goes to serve.log there (this run's only)
+    with open(os.path.join(dest, "serve.log"), "wb") as log:
+        if IS_WIN:   # pythonw has no console at all; python.exe with CREATE_NO_WINDOW gets a hidden one
+            pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            subprocess.Popen([pyw if os.path.isfile(pyw) else sys.executable, os.path.join(dest, "serve.py"), "--no-open"], cwd=dest,
+                             creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, close_fds=True,
+                             stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+        else:
+            subprocess.Popen([sys.executable, os.path.join(dest, "serve.py"), "--no-open"], cwd=dest, start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=log, stderr=log)
     ok = any(http(base + "ping", timeout=0.5) or time.sleep(0.5) for _ in range(20))
-    print("  bot editor restarted from the new files on port %d" % port if ok else "  note: the bot editor didn't come back on port %d: start run.cmd" % port)
+    print("  bot editor restarted from the new files on port %d" % port if ok else "  note: the bot editor didn't come back on port %d: see serve.log there, or start run.cmd" % port)
 
 
 def main():
