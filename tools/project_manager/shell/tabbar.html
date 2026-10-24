@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+<title>Quark Project</title>
+<link rel="stylesheet" href="tabbar.css">
+</head>
+<body>
+<div id="bar">
+  <div id="logo" title="Quark Project">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="#2a63d6"/>
+      <circle cx="11.4" cy="11.2" r="5.6" fill="none" stroke="#fff" stroke-width="2.3"/>
+      <path d="M14.2 14.3 L18.2 18.4" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <nav id="tabs" role="tablist" aria-label="Tabs"></nav>
+  <button id="reload" class="icon" title="Reload this tab (Ctrl+R, F5). Ctrl+Shift+R reloads the tab list" aria-label="Reload">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.2 8a5.2 5.2 0 1 1-1.6-3.75" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.2 1.6v3.1H9.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div id="clock" title="Dallas (America/Chicago)"><span class="where">Dallas</span> <span id="time"></span></div>
+</div>
+<div id="err" hidden></div>
+<script src="tabbar.js"></script>
+</body>
+</html>
