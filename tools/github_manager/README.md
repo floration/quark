@@ -76,9 +76,10 @@ Delete `state-prev.json` and `history.jsonl` to start the history again; delete 
 
 ## API
 
-`GET /api/state`, `/api/summary`, `/api/history?since=&limit=`, `/api/log?run=&job=`, `POST /api/refresh`; see
-`API.md` (the contract with the page). `/api/*` sends CORS headers for the other local tools on 127.0.0.1 /
-localhost ports 8765-8768.
+`GET /api/state?runs=`, `/api/summary`, `/api/run?id=`, `/api/history?since=&limit=`, `/api/log?run=&job=`,
+`POST /api/refresh`; see `API.md` (the contract with the page). The JSON answers carry ETags (304 when nothing
+changed) and are gzipped when the browser asks, each version built once. `/api/*` sends CORS headers for the other
+local tools on 127.0.0.1 / localhost ports 8765-8768.
 
 ## Source
 

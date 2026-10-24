@@ -3,7 +3,16 @@
 The server (`server.py`, Python 3 stdlib) serves the page at http://127.0.0.1:8767/ and these JSON endpoints.
 All times are ISO 8601 UTC strings; the page shows them in Dallas time (America/Chicago).
 
-## GET /api/state
+## Caching (every JSON GET below)
+
+`/api/state`, `/api/summary`, `/api/run` and `/api/history` send a strong `ETag` (from the state's generatedAt and a
+revision bumped by every poll or saved log; for history, the event count, the last event id and the query) with
+`Cache-Control: no-cache`, and answer `If-None-Match` with `304 Not Modified` and no body. With `Accept-Encoding: gzip`
+the body is gzipped (`Content-Encoding: gzip`, ETag suffix `-gz`; about 0.93 MB -> 96 KB for the state); each version
+is serialized and compressed once, not per request. The page fetches with `cache: 'no-cache'`, so the browser
+revalidates.
+
+## GET /api/state?runs=<n>
 
 ```
 {
@@ -36,6 +45,9 @@ runSummary = {"id": 123, "workflow": "build-and-release", "branch": "...", "sha"
               "status": "completed", "conclusion": "success" | "failure" | "cancelled" | "skipped" | null,
               "createdAt": "...", "updatedAt": "...", "durationSec": 600, "attempt": 1, "url": "..."}
 ```
+
+`runs=N` sends only the newest N runs (default: all; the page asks for 300) and then adds `"runsTotal"`; `running`,
+`branches[].lastRun` and `pulls[].checks.runs` are unaffected.
 
 Extra keys the server also sends (the page may use or ignore them): `poll.lastAt` (start of the last poll),
 `poll.durationSec`, `poll.ghCalls`, `poll.ghChanged` (calls that were not a 304), `poll.backlog` ({jobs, logs} still to
@@ -72,6 +84,11 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
   from clean to dirty or back (data.dirty, data.was), not on every count change.
 - `poll.error`: once per new error text (data.error), not on every failed poll.
 
+## GET /api/run?id=<id>
+
+One run (runSummary + jobs, as in `runs`), for a `#run=` deep link to a run older than the ones the page asked for.
+404 if the server doesn't know it.
+
 ## GET /api/summary
 
 A small digest for the other local tools (the project manager on :8768), rebuilt each poll:
@@ -97,9 +114,10 @@ project manager), and nothing for any other origin (`file://` pages send `Origin
 Plain text of a job's log, from `logs/<run>/<job>.txt` (failed jobs are downloaded once and kept forever; others on
 request, then kept). 404 if GitHub no longer has it and it was never saved.
 
-## POST /api/refresh
+## POST /api/refresh?runs=<n>
 
-Polls now (rate limited to one per 10 s) and re-scans for local copies. Returns the new state (header
+Polls now (rate limited to one per 10 s) and re-scans for local copies. Returns the new state (`runs` as for
+/api/state; header
 `X-Refresh: polled`), or the current one within 10 s of the last refresh (`X-Refresh: skipped (one per 10 s)`). It
 waits for a poll already running. Read-only toward GitHub and the repositories.
 

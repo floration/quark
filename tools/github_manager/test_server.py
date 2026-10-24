@@ -8,6 +8,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
+import gzip
 import json
 import os
 import shutil
@@ -628,6 +629,41 @@ class EndToEnd(unittest.TestCase):
             for bad in ("/server.py", "/cache/github.json", "/%2e%2e/%2e%2e/etc/passwd", "/history.jsonl"):
                 self.assertEqual(get(bad)[0], 404, bad)
             self.assertEqual(get("/")[0], 200)
+
+            # ETags, 304s, gzip, runs=N, /api/run
+            code, h, body = get("/api/state")
+            etag = h["ETag"]
+            self.assertTrue(etag.startswith('"st-') and not etag.endswith('-gz"'), etag)
+            self.assertEqual(h["Cache-Control"], "no-cache")
+            code, h2, body2 = get("/api/state", {"If-None-Match": etag})
+            self.assertEqual((code, body2), (304, b""))
+            code, hz, bz = get("/api/state", {"Accept-Encoding": "gzip, deflate"})
+            self.assertEqual(hz.get("Content-Encoding"), "gzip")
+            self.assertEqual(json.loads(gzip.decompress(bz)), json.loads(body))
+            self.assertLess(len(bz), len(body))
+            self.assertEqual(get("/api/state", {"Accept-Encoding": "gzip", "If-None-Match": hz["ETag"]})[0], 304)
+            self.assertEqual(get("/api/state", {"Accept-Encoding": "gzip;q=0"})[1].get("Content-Encoding"), None)
+            self.assertIs(m3.body(etag.strip('"'), True, lambda: self.fail("rebuilt")), m3.body(etag.strip('"'), True,
+                                                                                               lambda: b""))
+            code, h, body = get("/api/state?runs=1")
+            one = json.loads(body)
+            self.assertEqual(([r["id"] for r in one["runs"]], one["runsTotal"]), ([102], 2))
+            self.assertNotEqual(h["ETag"], etag)
+            code, h, body = get("/api/run?id=101")
+            self.assertEqual((code, json.loads(body)["jobs"][0]["failedSteps"]), (200, ["quark_tests"]))
+            self.assertEqual(get("/api/run?id=101", {"If-None-Match": h["ETag"]})[0], 304)
+            self.assertEqual(get("/api/run?id=999")[0], 404)
+            self.assertEqual(get("/api/run?id=x")[0], 404)
+            code, h, body = get("/api/summary")
+            self.assertEqual(get("/api/summary", {"If-None-Match": h["ETag"]})[0], 304)
+            code, h, body = get("/api/history?limit=2")
+            self.assertEqual(get("/api/history?limit=2", {"If-None-Match": h["ETag"]})[0], 304)
+            self.assertEqual(get("/api/history?limit=3", {"If-None-Match": h["ETag"]})[0], 200)
+            # a new version (a poll, or a log saved on request) changes every ETag
+            m3.republish()
+            self.assertEqual(get("/api/state", {"If-None-Match": etag})[0], 200)
+            m3.history.append([S.ev("x:new", AT1, "tag.created", {}, "t")])
+            self.assertEqual(get("/api/history?limit=2", {"If-None-Match": h["ETag"]})[0], 200)
         finally:
             srv.shutdown()
             srv.server_close()

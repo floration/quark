@@ -18,7 +18,10 @@ sys.dont_write_bytecode = True  # never leave __pycache__ next to the script (it
 
 import argparse
 import datetime
+import collections
 import errno
+import gzip
+import hashlib
 import http.server
 import json
 import os
@@ -1015,8 +1018,9 @@ class Manager:
         cached = read_json(self._p("cache", "github.json"))
         self.state = cached if isinstance(cached, dict) else self._empty_state()
         self.state["local"] = []
-        self.state_bytes = dumps(self.state).encode("utf-8")
-        self.summary_bytes = dumps(self.summary(self.state)).encode("utf-8")
+        self.summary_obj = self.summary(self.state)
+        self.rev = 0            # bumped whenever the served state changes (each poll, a log saved on request)
+        self.bodies = collections.OrderedDict()  # (etag, gzip) -> bytes: each version serialized / zipped once
 
     def _p(self, *parts):
         return os.path.join(self.data, *parts)
@@ -1452,12 +1456,12 @@ class Manager:
     def publish(self, state):
         github = dict(state)
         github.pop("local", None)
-        body = dumps(state).encode("utf-8")
-        summ = dumps(self.summary(state)).encode("utf-8")
+        summ = self.summary(state)
         with self.lock:
             self.state = state
-            self.state_bytes = body
-            self.summary_bytes = summ
+            self.summary_obj = summ
+            self.rev += 1
+            self.bodies.clear()
         try:
             write_atomic(self._p("cache", "github.json"), dumps(github))
         except OSError as e:
@@ -1470,9 +1474,55 @@ class Manager:
         for r in state.get("runs") or []:
             for j in r.get("jobs") or []:
                 j["hasLog"] = (str(r["id"]), str(j["id"])) in self.saved_logs
-        body = dumps(state).encode("utf-8")
         with self.lock:
-            self.state_bytes = body
+            self.rev += 1
+            self.bodies.clear()
+
+    # -- served bodies: one serialization (and one gzip) per version, ETags for 304s ------------------------------
+
+    def version_tag(self):
+        with self.lock:
+            return "%s.%d" % (re.sub(r"[^0-9A-Za-z]", "", self.state.get("generatedAt") or "0"), self.rev)
+
+    def state_view(self, runs=None):
+        """The state, with only the newest `runs` runs when asked (running runs are always in "running")."""
+        with self.lock:
+            st = self.state
+        if runs is None or runs >= len(st.get("runs") or []):
+            return st
+        v = dict(st)
+        v["runs"] = (st.get("runs") or [])[:max(0, runs)]
+        v["runsTotal"] = len(st.get("runs") or [])
+        return v
+
+    def run_json(self, rid):
+        with self.lock:
+            st = self.state
+        for r in st.get("runs") or []:
+            if r.get("id") == rid:
+                return r
+        return self.run_view(rid) if rid in self.runs else None
+
+    def body(self, etag, gz, make):
+        """Bytes for this ETag (gzip-compressed when gz), built at most once per version."""
+        key = (etag, gz)
+        with self.lock:
+            b = self.bodies.get(key)
+            if b is not None:
+                self.bodies.move_to_end(key)
+                return b
+            raw = self.bodies.get((etag, False))
+        if raw is None:
+            raw = make()
+            if isinstance(raw, str):
+                raw = raw.encode("utf-8")
+        b = gzip.compress(raw, 6) if gz else raw
+        with self.lock:
+            self.bodies[(etag, False)] = raw
+            self.bodies[key] = b
+            while len(self.bodies) > 24:
+                self.bodies.popitem(last=False)
+        return b
 
     # -- building the API objects ------------------------------------------------------------------------------
 
@@ -1691,14 +1741,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        extra = dict(extra or {})
+        self.send_header("Cache-Control", extra.pop("Cache-Control", "no-store"))
         self.send_header("X-Content-Type-Options", "nosniff")
+        vary = extra.pop("Vary", "Origin" if cors else None)
         if cors:
             o = cors_origin(self.headers.get("Origin"))
             if o:
                 self.send_header("Access-Control-Allow-Origin", o)
-            self.send_header("Vary", "Origin")
-        for k, v in (extra or {}).items():
+                self.send_header("Access-Control-Expose-Headers", "ETag, X-Refresh")
+        if vary:
+            self.send_header("Vary", vary)
+        for k, v in extra.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
@@ -1706,6 +1760,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _json(self, code, obj, cors=True):
         self._send(code, dumps(obj), cors=cors)
+
+    @staticmethod
+    def _int(q, name):
+        try:
+            v = (q.get(name) or [""])[0]
+            return int(v) if v != "" else None
+        except ValueError:
+            return None
+
+    def _gzip_ok(self):
+        for part in (self.headers.get("Accept-Encoding") or "").lower().split(","):
+            enc, _, params = part.strip().partition(";")
+            if enc.strip() in ("gzip", "*") and params.replace(" ", "") not in ("q=0", "q=0.0", "q=0.00", "q=0.000"):
+                return True
+        return False
+
+    def _cached(self, etag, make, code=200, extra=None):
+        """JSON with a strong ETag (304 on If-None-Match, no body) and gzip when the client takes it."""
+        gz = self._gzip_ok()
+        tag = '"%s%s"' % (etag, "-gz" if gz else "")
+        inm = self.headers.get("If-None-Match")
+        if inm and code == 200 and self.command in ("GET", "HEAD"):
+            mine = ('"%s"' % etag, '"%s-gz"' % etag)
+            tags = [t.strip() for t in inm.split(",")]
+            if "*" in tags or any((t[2:] if t.startswith("W/") else t) in mine for t in tags):
+                self.send_response(304)
+                self.send_header("ETag", tag)
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Vary", "Origin, Accept-Encoding")
+                o = cors_origin(self.headers.get("Origin"))
+                if o:
+                    self.send_header("Access-Control-Allow-Origin", o)
+                    self.send_header("Access-Control-Expose-Headers", "ETag, X-Refresh")
+                self.end_headers()
+                return
+        body = self.manager.body(etag, gz, make)
+        hdr = {"ETag": tag, "Cache-Control": "no-cache", "Vary": "Origin, Accept-Encoding"}
+        if gz:
+            hdr["Content-Encoding"] = "gzip"
+        hdr.update(extra or {})
+        self._send(code, body, cors=True, extra=hdr)
 
     def do_OPTIONS(self):
         if not self._host_ok():
@@ -1734,21 +1829,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = url.path
         try:
             if path == "/api/state":
-                with m.lock:
-                    body = m.state_bytes
-                return self._send(200, body, cors=True)
+                runs = self._int(q, "runs")
+                v = m.version_tag()
+                return self._cached("st-%s-%s" % (v, "all" if runs is None else runs),
+                                    lambda: dumps(m.state_view(runs)))
             if path == "/api/summary":
-                with m.lock:
-                    body = m.summary_bytes
-                return self._send(200, body, cors=True)
+                return self._cached("su-" + m.version_tag(), lambda: dumps(m.summary_obj))
+            if path == "/api/run":
+                rid = self._int(q, "id")
+                r = m.run_json(rid) if rid is not None else None
+                if r is None:
+                    return self._json(404, {"error": "unknown run"})
+                return self._cached("run-%s-%d" % (m.version_tag(), rid), lambda: dumps(r))
             if path == "/api/history":
-                try:
-                    limit = int((q.get("limit") or ["500"])[0])
-                except ValueError:
-                    limit = 500
-                limit = max(1, min(limit, 1000000))
+                limit = self._int(q, "limit")
+                limit = 500 if limit is None else max(1, min(limit, 1000000))
                 since = (q.get("since") or [None])[0]
-                return self._json(200, m.history.query(since, limit))
+                with m.history.lock:
+                    n = len(m.history.events)
+                    last = m.history.events[-1].get("id") if n else ""
+                key = hashlib.sha1(("%d|%s|%s|%d" % (n, last, since, limit)).encode("utf-8")).hexdigest()[:16]
+                return self._cached("h-%d-%s" % (n, key), lambda: dumps(m.history.query(since, limit)))
             if path == "/api/log":
                 return self._log(q)
             if path.startswith("/api/"):
@@ -1764,16 +1865,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if n:
             self.rfile.read(min(n, 65536))
         m = self.manager
-        path = urllib.parse.urlsplit(self.path).path
+        url = urllib.parse.urlsplit(self.path)
+        path = url.path
+        runs = self._int(urllib.parse.parse_qs(url.query), "runs")
         if path != "/api/refresh":
             return self._json(404, {"error": "no such endpoint"})
         try:
             polled = m.refresh()
         except Exception as e:
             return self._json(500, {"error": "refresh failed: %r" % e})
-        with m.lock:
-            body = m.state_bytes
-        self._send(200, body, cors=True, extra={"X-Refresh": "polled" if polled else "skipped (one per 10 s)"})
+        self._cached("st-%s-%s" % (m.version_tag(), "all" if runs is None else runs),
+                     lambda: dumps(m.state_view(runs)),
+                     extra={"X-Refresh": "polled" if polled else "skipped (one per 10 s)"})
 
     def _log(self, q):
         m = self.manager
