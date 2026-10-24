@@ -204,25 +204,55 @@ a link to `http://127.0.0.1:876x/...` is sent to the shell as "open that tab at 
 
 Tab `play` ("Play", under the Supervisor Board) is a page of this same server (`/play`, port 8768; no keepAlive of its
 own, the project tab keeps the server up). It lists the local game folders (production, testing, working, testing-f3)
-and the older versions installed in `Quark\versions\<tag>\` with a Play button each, an optional launch options field,
-the GitHub releases of floration/quark (public API, no sign-in, cached 10 min with an ETag; Install downloads the
-release's `quark-windows.zip` in the background, checks it against `SHA256SUMS`, unpacks it without its top folder and
-writes `BUILD.txt` like `fetch_release.ps1`; Remove deletes that `versions\<tag>` folder after a confirm), recent games
-and the last 20 play notes with their status read back from Claude Documents.
+and the older versions installed in `Quark\versions\<tag>\`, each card with Play, its own launch options box
+(remembered per build in the page's localStorage, with recent options and a few presets; Enter starts it), Stop while
+it runs, and Folder. Below: the play notes, recent games, and the GitHub releases of floration/quark.
+
+Releases: the public API without sign-in, **every page** (100 a page until a short page, like the launcher's
+`fetchAll`), cached 10 min; page 1's ETag answering 304 keeps the list; a later page that fails keeps what was read
+(and the older releases of the last list) and says so. Refresh is taken at most every 30 s (the button counts down).
+Rows show the channel, which local folder holds that release ("in testing"), "newer than testing / production",
+and how an installed one was checked. At 1800 px and wider production and testing are two tables side by side.
+
+Install (`quark-windows.zip` into `versions\<tag>`, unpacked without its top folder, `BUILD.txt` like
+`fetch_release.ps1`, `play-install.json` with how it was checked) verifies like the launcher (docs/SIGNING.md): from
+1.17.0 on (or any release with a `.sig`) the zip's Ed25519ph signature (`quark-windows.zip.sig`, pure-Python check,
+same algorithm as `quark_sign verify`) against the release key (`RELEASE_PUBLIC_KEY` = `kReleasePublicKey` in
+`src/common/sign.cpp`; a test keeps them equal) and the signed manifest (`quark-release.txt` + `.sig`) naming this
+tag, version, channel and the zip's sha256; anything missing or wrong installs nothing. A release claiming 1.17.0+
+with no signature is shown "unsigned: not offered". Releases from before signing install without a prompt (owner
+decision B6), checked against `SHA256SUMS` when they have one, and are marked "unsigned" / "not checked". Cancel
+stops a download, check or unzip and leaves nothing behind. Remove deletes the folder after a confirm.
 
 A game starts hidden from any console (a short-lived starter process, so the shell's `taskkill /T` of this server never
-reaches the game), from its own folder, at normal priority; its output goes to `logs\play-<session>.log`. Sessions are
-in `project-manager\play-sessions.json`; when the game exits the session wants a note (`needsNote`) and the page opens
-the form (did / noticed / want changed / anything else; Save, Skip, Later). A server restart while a game runs picks
-the game up again by pid (Windows: only when its creation time matches). Notes: `project-manager\play-notes.jsonl`
-(local copy) and one `open` entry at the top of `## Notes` in `Claude Documents\12-play-notes.md`, committed (that file
-only) and pushed; offline it stays committed on the PC and is retried every 5 min. The Supervisor Board's status line
-shows "Play · N play notes open · M waiting" (`/api/pm` field `play`).
+reaches the game), from its own folder, at normal priority; its output goes to `logs\play-<session>.log` (the last 20
+kept). Stop asks it to close (Windows: `taskkill /PID` without `/F`, i.e. WM_CLOSE; elsewhere SIGTERM to its process
+group) and ends it after 5 s (TerminateProcess / SIGKILL). Recent games flag how each ended (crashed: a signal or a
+Windows exception status such as 0xC0000005; error exit: another non-zero code; stopped) and have a Log button: the
+log's last 256 KB in a dialog, with Open the file and Logs folder. Sessions are in `project-manager\play-sessions.json`;
+when the game exits the session wants a note (`needsNote`) and the page opens the form (did / noticed / want changed /
+anything else, up to 4000 characters a box with a counter, line breaks kept; "add the last lines of the game's log",
+on by default after a crash or error exit; Save, Skip, Later: Later defers every waiting note for the page session).
+"Add a note" writes one without a game (a listed build, or the launcher + a version). A server restart while a game
+runs picks the game up again by pid (Windows: only when its creation time matches).
 
-Endpoints: `GET /play`, `GET /api/play[?refresh=1]` (everything the page shows), `GET /api/play/pending`
-(`{running, pending: [{id, label, version, endedAt, durationSec}], openNotes}`, for the shell); POST with a JSON body:
-`/api/play/launch {build, args}`, `/api/play/note {session, did, noticed, change, other}`, `/api/play/skip {session}`,
-`/api/play/install {tag}`, `/api/play/remove {tag}`, `/api/play/sync` (retry the push now).
+Notes: `project-manager\play-notes.jsonl` (local copy, append-only: an edit or removal is its own record) and one
+`open` entry at the top of `## Notes` in `Claude Documents\12-play-notes.md` (line breaks as " / "), committed (that
+file only) and pushed; offline it stays committed on the PC and is retried every 5 min. Edit / Remove work while the
+entry is still `open` (no agent has taken it): the entry is changed in place or removed (commit "<title> (edited)" /
+"(removed)"). The notes card links to `12-play-notes.md` in the Claude Manager tab (`#file=`). The Supervisor Board's
+status line shows "Play · N play notes open · M waiting" (`/api/pm` field `play`). When the server doesn't answer the
+page shows a banner in plain words and greys out every action. It polls every 2.5 s only while a game runs or an
+install / fetch is on (10 s otherwise), and the release list is sent only when it changed (`?rel=<sig>`).
+
+Endpoints: `GET /play`, `GET /api/play[?refresh=1][&rel=<sig>]` (everything the page shows; `releases.list` is null
+when the sig matches), `GET /api/play/pending` (`{running, pending: [{id, label, version, endedAt, durationSec}],
+openNotes}`, for the shell), `GET /api/play/log?session=<id>`; POST with a JSON body: `/api/play/launch {build, args}`,
+`/api/play/note {session, did, noticed, change, other, attachLog}` (no session: `{build}` or `{label, version}`),
+`/api/play/skip {session}`, `/api/play/stop {session}`, `/api/play/open {what: build|logs|log|docs|notes-file, build |
+session}`, `/api/play/note-edit {id, did, ...}`, `/api/play/note-delete {id}`, `/api/play/install {tag}`,
+`/api/play/install-cancel {tag}`, `/api/play/remove {tag}`, `/api/play/sync` (retry the push now). server.py hands
+`/api/play/<what>` routes it doesn't know to `Play.api_get` / `Play.api_post`.
 
 ## 4. Install (`tools/project_manager/setup.ps1`, `setup.cmd`)
 
