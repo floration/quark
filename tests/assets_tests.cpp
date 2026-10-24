@@ -16,6 +16,7 @@
 #include "../src/client/gltf.h"
 #include "../src/client/models.h"
 #include "../src/client/overrides.h"
+#include "../src/client/uifonts.h"
 #include "../src/common/sha256.h"
 #include "../src/common/version.h"
 #include "../src/game/map.h"
@@ -185,11 +186,16 @@ int exportAssets(const char* dirArg) {
     std::vector<uint8_t> ov;
     std::string matched;
     const fs::path src = srcDir();
+    if (overrides::find("fonts/Rubik", {".ttf", ".otf"}, ov, &matched))
+        add({"font/rubik", "Fonts", "font", "RUBIK", "fonts/Rubik" + matched.substr(matched.rfind('.')),
+             "the game's text (menus, HUD), the default font, drawn bold", ""}, std::string(ov.begin(), ov.end()));
+    else add({"font/rubik", "Fonts", "font", "RUBIK", "fonts/Rubik.ttf",
+              "the game's text (menus, HUD), the default font, drawn bold; Rubik Project Authors, SIL OFL 1.1", ""}, slurp(src / "assets/fonts/Rubik.ttf"));
     if (overrides::find("fonts/WorkSans", {".ttf", ".otf"}, ov, &matched))
         add({"font/worksans", "Fonts", "font", "WORK SANS", "fonts/WorkSans" + matched.substr(matched.rfind('.')),
-             "the game's text (menus, HUD, launcher), drawn bold", ""}, std::string(ov.begin(), ov.end()));
+             "Settings > FONT: WORK SANS (the UI font of 1.17 - 1.18), drawn bold", ""}, std::string(ov.begin(), ov.end()));
     else add({"font/worksans", "Fonts", "font", "WORK SANS", "fonts/WorkSans.ttf",
-              "the game's text (menus, HUD, launcher), drawn bold; Work Sans Project Authors, SIL OFL 1.1", ""}, slurp(src / "assets/fonts/WorkSans.ttf"));
+              "Settings > FONT: WORK SANS (the UI font of 1.17 - 1.18), drawn bold; Work Sans Project Authors, SIL OFL 1.1", ""}, slurp(src / "assets/fonts/WorkSans.ttf"));
     if (overrides::find("images/icon", {".png", ".jpg", ".jpeg"}, ov, &matched))
         add({"image/icon", "Images", "image", "GAME ICON", "images/icon" + matched.substr(matched.rfind('.')), "app, launcher, window and website icon", ""}, std::string(ov.begin(), ov.end()));
     else add({"image/icon", "Images", "image", "GAME ICON", "images/icon.png", "app, launcher, window and website icon (256 px)", ""}, slurp(src / "assets/quark.png"));
@@ -343,6 +349,90 @@ static void testFontAtlas() {
     for (int y = 0; y < L.cell && top < 0; y++) for (int x = 0; x < L.cell; x++) if (a.tex[(size_t)(cy + y) * L.texW + cx + x] >= 128) { top = y; break; }
     ACHECK(std::abs(top - (int)((1.5f + 0.75f) * 6)) <= 1);
     ACHECK(!buildFontAtlas((const uint8_t*)"not a font at all", 17, L, a, &err));
+}
+
+// Settings > FONT (uifonts.h): every built-in loads, a font is sized to Rubik's capitals, Quake's console font sheet
+// (from a WAD2 / PAK too) becomes a pixel atlas, and a mods/fonts name can't leave that folder
+static void testUiFonts() {
+    printf("fonts: the built-ins, capital sizing, a pixel sheet, WAD2 / PAK\n");
+    const FontAtlasLayout L = {1056, 462, 66, 6.0f, 1.5f, 0.5f, 9.0f, 5.25f};   // Renderer::uiFontLayout()
+    auto inkRows = [&](const FontAtlas& a, char ch, int* top) {   // rows of the glyph's cell with ink (>= the edge)
+        int g = ch - 32, cx = g % 16 * L.cell, cy = g / 16 * L.cell, n = 0;
+        *top = -1;
+        for (int y = 0; y < L.cell; y++) {
+            bool any = false;
+            for (int x = 0; x < L.cell; x++) any |= a.tex[(size_t)(cy + y) * L.texW + cx + x] >= 128;
+            if (any) { n++; if (*top < 0) *top = y; }
+        }
+        return n;
+    };
+    // capitals as tall as Rubik's (5.25 units = 31.5 texels), their top 0.75 units below the line top
+    std::string ttf = slurp(srcDir() / "assets/fonts/WorkSans.ttf");
+    FontAtlas a;
+    std::string err;
+    ACHECK(buildFontAtlas((const uint8_t*)ttf.data(), ttf.size(), L, a, &err));
+    int top = 0, rows = inkRows(a, 'H', &top);
+    printf("  work sans at rubik's cap height: H %d texels tall, top at %d\n", rows, top);
+    ACHECK(std::abs(rows - 31) <= 2 && std::abs(top - (int)((1.5f + 0.75f) * 6)) <= 1);
+    // every built-in loads (the default: font_ui.h as it is, no atlas)
+    std::unique_ptr<FontAtlas> fa;
+    ACHECK(uifonts::load("rubik", L, fa, &err) && !fa);
+    ACHECK(uifonts::load("", L, fa, &err) && !fa);
+    for (const uifonts::Entry& e : uifonts::scan()) {
+        if (e.user) continue;
+        bool ok = uifonts::load(e.id, L, fa, &err);
+        if (!ok) printf("  %s: %s\n", e.id.c_str(), err.c_str());
+        ACHECK(ok && (e.id == "rubik" || (fa && fa->tex.size() == (size_t)L.texW * L.texH && fa->adv['H' - 32] > 2)));
+    }
+    // QUARK CLASSIC: the original metrics (6 units a glyph, 7 pixels from the line top, lower case as upper case)
+    ACHECK(uifonts::load("classic", L, fa, &err) && fa);
+    if (fa) {
+        ACHECK(fa->adv['H' - 32] == 6.0f && fa->adv['i' - 32] == 6.0f);
+        rows = inkRows(*fa, 'H', &top);
+        ACHECK(rows == 7 * 6 && top == (int)(1.5f * 6));
+        ACHECK(!std::memcmp(&fa->tex[(size_t)(2 * L.cell + 5) * L.texW + 4 * L.cell], &fa->tex[(size_t)(4 * L.cell + 5) * L.texW + 4 * L.cell], 40));   // ('a' = 'A')
+    }
+    // a mods/fonts name stays in that folder; a missing file fails
+    ACHECK(!uifonts::load("../quark.cfg", L, fa, &err) && !uifonts::load("no such font.ttf", L, fa, &err));
+    // a Quake-style sheet: 'H' (cell 72) of 7 rows -> as tall as Rubik's capitals, square, a fixed advance
+    std::vector<uint8_t> sheet(128 * 128, 0);
+    auto px = [&](int c, int x, int y) { sheet[(size_t)((c / 16) * 8 + y) * 128 + (c % 16) * 8 + x] = 37; };
+    for (int y = 1; y < 8; y++) { px('H', 1, y); px('H', 5, y); }
+    for (int x = 1; x <= 5; x++) px('H', x, 4);
+    px('.', 3, 7);
+    FontAtlas q;
+    ACHECK(buildSheetAtlas(sheet.data(), 128, 128, L, q, &err));
+    rows = inkRows(q, 'H', &top);
+    ACHECK(std::abs(rows - 31) <= 2 && std::abs(top - (int)((1.5f + 0.75f) * 6)) <= 1);
+    ACHECK(std::fabs(q.adv['H' - 32] - 8 * 5.25f / 7) < 0.01f && inkRows(q, 'A', &top) == 0);
+    std::vector<uint8_t> blank(128 * 128, 0);
+    ACHECK(!buildSheetAtlas(blank.data(), 128, 128, L, q, &err));   // (no H)
+    // ...read from gfx.wad's CONCHARS lump, and from a PAK holding that gfx.wad
+    auto put32 = [](std::vector<uint8_t>& v, size_t at, int32_t x) { for (int i = 0; i < 4; i++) v[at + i] = (uint8_t)(x >> (8 * i)); };
+    std::vector<uint8_t> wad(12 + sheet.size() + 32, 0);
+    std::memcpy(wad.data(), "WAD2", 4);
+    put32(wad, 4, 1); put32(wad, 8, (int32_t)(12 + sheet.size()));
+    std::memcpy(&wad[12], sheet.data(), sheet.size());
+    size_t e = 12 + sheet.size();
+    put32(wad, e, 12); put32(wad, e + 4, (int32_t)sheet.size()); put32(wad, e + 8, (int32_t)sheet.size());
+    wad[e + 12] = 0x44; std::memcpy(&wad[e + 16], "CONCHARS", 8);
+    std::vector<uint8_t> pak(12 + wad.size() + 64, 0);
+    std::memcpy(pak.data(), "PACK", 4);
+    put32(pak, 4, (int32_t)(12 + wad.size())); put32(pak, 8, 64);
+    std::memcpy(&pak[12], wad.data(), wad.size());
+    std::memcpy(&pak[12 + wad.size()], "gfx.wad", 7);
+    put32(pak, 12 + wad.size() + 56, 12); put32(pak, 12 + wad.size() + 60, (int32_t)wad.size());
+    for (const std::vector<uint8_t>* f : {&sheet, &wad, &pak}) {
+        std::vector<uint8_t> ink;
+        int w = 0, h = 0;
+        ACHECK(quakeConchars(f->data(), f->size(), ink, w, h, &err) && w == 128 && h == 128);
+        ACHECK(ink.size() == sheet.size() && ink[(size_t)(4 * 8 + 4) * 128 + 8 * 8 + 3] == 1 && ink[0] == 0);   // ('H' row 4)
+    }
+    std::vector<uint8_t> bad = wad;
+    std::memcpy(&bad[e + 16], "NOTCHARS", 8);
+    std::vector<uint8_t> ink;
+    int w = 0, h = 0;
+    ACHECK(!quakeConchars(bad.data(), bad.size(), ink, w, h, &err));
 }
 
 // The hitsound's tiers: picked by the hit's damage at exact boundaries; one per moment (the heaviest); in every kit
@@ -538,7 +628,7 @@ static void testExport() {
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
     ACHECK(models == 24 && maps == official && missing == 0);
-    ACHECK(man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
+    ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);
 }
@@ -582,6 +672,7 @@ int assetTests() {
     testGltfLoader();
     testDecoders();
     testFontAtlas();
+    testUiFonts();
     testHitTiers();
     testVoiceSteal();
     testOverrides();
