@@ -3221,7 +3221,8 @@ void Game::drawWidgetEditor() {
     for (int i = 0; i < HV_COUNT; i++) if (preview.v[i] == 0) preview.v[i] = std::round(preview.max[i] * 0.65f); // something to look at in menus
     auto& L = widgets_.list();
     if (widgetSel_ >= (int)L.size()) widgetSel_ = -1;
-    float pw = 380 * s, px = W - pw - 16 * s, py = 16 * s, h = 24 * s, gap = 5 * s;
+    // (the toolbar 24 px from the top and right edges, fitted to what's in it: ui-redesign-spec, settings/hud/widgets)
+    float pw = 364 * s, px = W - pw - 36 * s, py = 36 * s, h = 24 * s, gap = 5 * s;
     bool overPanel = uiIn_.mx > px - 12 * s;
     // select / drag
     if (uiIn_.pressed && !overPanel) {
@@ -3254,10 +3255,12 @@ void Game::drawWidgetEditor() {
 
     // panel
     if (ui_.probing()) ui_.where = settingsInGame_ ? "ingame/pause/settings/hud/widgets" : "settings/hud/widgets";   // (the UI test: also under its lists)
-    int rows = widgetSel_ >= 0 ? 17 : 5;
-    ui_.panel(px - 12 * s, py - 12 * s, pw + 24 * s, rows * (h + gap) + 40 * s);
-    ui_.label(px, py, "CLICK A WIDGET TO EDIT, DRAG TO MOVE. IMPORT/EXPORT = CLIPBOARD", kWhite, 0.5f);
-    float y = py + 18 * s, hw = pw * 0.5f - gap * 0.5f;
+    // rows under VALUE: style, icon, size / max, bar w / h, colour, its R G B A, grade, (low colour, its R G B A,) label, delete
+    const int rows = widgetSel_ < 0 ? 0 : 10 + (L[widgetSel_].grade || L[widgetSel_].style == HudWidget::GRADBAR ? 2 : 0);
+    ui_.panel(px - 12 * s, py - 12 * s, pw + 24 * s, (137 + 19) * s + rows * (h + gap));
+    ui_.hint(px, py, "CLICK A WIDGET TO EDIT, DRAG TO MOVE.", kWhite, pw);
+    ui_.hint(px, py + 14 * s, "IMPORT / EXPORT USE THE CLIPBOARD.", kWhite, pw);
+    float y = py + 34 * s, hw = pw * 0.5f - gap * 0.5f;
     if (ui_.button(px, y, hw, h, "ADD WIDGET", UiExp::state("widgets"))) {
         HudWidget w;
         w.anchor = 4; w.y = 120;
@@ -3311,8 +3314,8 @@ void Game::drawWidgetEditor() {
         }
         return;
     }
-    if (time_ < widgetMsgUntil_) ui_.label(px, y, widgetMsg_, ui_.accent, 0.5f);
-    else if (!widgets_.error().empty()) ui_.label(px, y, widgets_.error(), kRed, 0.5f);
+    if (time_ < widgetMsgUntil_) ui_.hint(px, y, widgetMsg_, ui_.accent, pw);
+    else if (!widgets_.error().empty()) ui_.hint(px, y, widgets_.error(), kRed, pw);
     y += 16 * s;
     if (widgetSel_ < 0) return;
     HudWidget& w = L[widgetSel_];
@@ -3347,7 +3350,7 @@ void Game::drawWidgetEditor() {
     ui_.slider(px + hw + gap, y, hw, h, "BAR H", w.h, 2, 60, "%.0f", UiExp::state("widgets"), dw.h); w.h = clampf(std::round(w.h), 1, 400);
     y += h + gap;
     auto rgba4 = [&](const char* name, Color& c, const Color& def) {
-        ui_.label(px, y + 4 * s, name, kWhite, 0.5f);
+        ui_.hint(px, y + (h - r_.textHeight(ui_.hintScale())) * 0.5f, name, kWhite, pw - 48 * s);
         r_.rect(px + pw - 40 * s, y, 40 * s, h, c);
         y += h + gap;
         float sw = (pw - 3 * gap) / 4;
@@ -3364,7 +3367,7 @@ void Game::drawWidgetEditor() {
     ui_.toggle(px, y, pw, h, "GRADE FROM LOW COLOR", w.grade, UiExp::state("widgets"));
     y += h + gap;
     if (w.grade || w.style == HudWidget::GRADBAR) rgba4("LOW COLOR (EMPTY)", w.low, dw.low);
-    ui_.label(px, y + 4 * s, "LABEL", kWhite, 0.5f);
+    ui_.hint(px, y + (h - r_.textHeight(ui_.hintScale())) * 0.5f, "LABEL", kWhite, 54 * s);
     ui_.textField(40, px + 60 * s, y, pw - 60 * s, h, w.label, 24, UiExp::state("widgets").withId("LABEL"));
     std::string lab; // no '#' (comment) or '_' (saved spaces) in labels
     for (char c : w.label) if (c != '#' && c != '_') lab += (char)toupper((unsigned char)c);
