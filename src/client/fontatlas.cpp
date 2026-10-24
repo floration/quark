@@ -64,11 +64,10 @@ bool buildSheetAtlas(const uint8_t* ink, int sw, int sh, const FontAtlasLayout& 
     if (sw < 16 || sh < 16 || sw % 16 || sh % 16 || sw > 4096 || sh > 4096) return fail("not a 16 x 16 character sheet");
     const int cw = sw / 16, ch = sh / 16;
     auto at = [&](int c, int x, int y) { return ink[(size_t)((c / 16) * ch + y) * sw + (c % 16) * cw + x] != 0; };
-    int htop = -1, hbot = -1;
-    for (int y = 0; y < ch; y++) for (int x = 0; x < cw; x++) if (at('H', x, y)) { if (htop < 0) htop = y; hbot = y; }
-    if (htop < 0) return fail("the sheet has no letter H at character 72");
-    const float unit = L.cap > 0 ? L.cap / (hbot - htop + 1) : 1.0f;      // font units per sheet pixel
-    const float top = L.cap > 0 ? kCapTop - htop * unit : 0.0f;
+    bool hasH = false;
+    for (int y = 0; y < ch; y++) for (int x = 0; x < cw; x++) hasH |= at('H', x, y);
+    if (!hasH) return fail("the sheet has no letter H at character 72");
+    const float unit = 8.0f / ch, top = 0.0f;                            // a cell is the 8-unit line (8 px: 1 unit a pixel)
     const float px = L.tpu, s = unit * px;                                // texels per sheet pixel
     const float gx0 = (L.pad + L.origin) * px, gy0 = (L.pad + top) * px;  // the glyph's pixel grid in its cell (texels)
     const float k = 0.5f / L.spread;                                     // texels -> field units
@@ -76,13 +75,16 @@ bool buildSheetAtlas(const uint8_t* ink, int sw, int sh, const FontAtlasLayout& 
     std::vector<float> inkR, offR;   // squares (x0, y0, x1, y1) in cell texels
     for (int g = 0; g < 95; g++) {
         const int c = 32 + g;
-        out.adv[g] = cw * unit;
         inkR.clear(); offR.clear();
+        int c0 = cw, c1 = -1;   // the glyph's ink columns
         for (int y = 0; y < ch; y++)
             for (int x = 0; x < cw; x++) {
+                if (at(c, x, y)) { c0 = std::min(c0, x); c1 = std::max(c1, x); }
                 std::vector<float>& v = at(c, x, y) ? inkR : offR;
                 v.insert(v.end(), {gx0 + x * s, gy0 + y * s, gx0 + (x + 1) * s, gy0 + (y + 1) * s});
             }
+        // up to its rightmost ink: the next glyph's blank column 0 is the space (half a cell for a blank one)
+        out.adv[g] = (c1 < 0 ? cw * 0.5f : (float)(c1 + 1 + (c0 == 0))) * unit;
         if (inkR.empty()) continue;
         const float gx1 = gx0 + cw * s, gy1 = gy0 + ch * s;
         const int cx = (g % 16) * L.cell, cy = (g / 16) * L.cell;
@@ -110,6 +112,7 @@ bool buildSheetAtlas(const uint8_t* ink, int sw, int sh, const FontAtlasLayout& 
     }
     solidBlock(L, out);
     std::memset(out.kern, 0, sizeof out.kern);
+    out.minScale = 1.0f;   // (1 screen pixel a font pixel at the smallest: the font is wide)
     return true;
 }
 
@@ -160,7 +163,7 @@ bool quakeConchars(const uint8_t* d, size_t n, std::vector<uint8_t>& ink, int& w
         ink.resize((size_t)w * h);
         for (size_t i = 0; i < ink.size(); i++) {
             const uint8_t* p = &rgba[i * 4];
-            ink[i] = p[3] > 127 && std::max({p[0], p[1], p[2]}) > 0;   // (black / transparent is paper)
+            ink[i] = p[3] > 127 && std::max({p[0], p[1], p[2]}) > 63;   // (transparent, black and a dark drop shadow are paper)
         }
         return true;
     }

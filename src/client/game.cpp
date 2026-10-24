@@ -114,7 +114,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
-    if (opts_.debugFonts) { setScreen(Screen::Settings); fontsOpen_ = true; }
+    if (opts_.debugFonts) { setScreen(Screen::Settings); fontsOpen_ = opts_.debugFonts == 1; }
     if (opts_.debugCustom) { rescanMaps(); editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.move[MV_AIR_ACCEL] = 2; editRules_.gravity = 0.5f; customTab_ = opts_.debugCustom - 1; setScreen(Screen::CustomMode); }
     if (!opts_.demo.empty()) playDemo(opts_.demo);
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
@@ -3851,7 +3851,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     {   // (fits its half column: shrunk, then a long linked name clipped, keeping "(PUBLIC)")
         float lw = w * 0.5f - gap * 0.5f;
         std::string dl = cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC"
-            : "DISCORD: " + r_.textClip(cfg_.discordName, Renderer::kMinTextScale, lw - r_.textWidth("DISCORD:  (PUBLIC)", Renderer::kMinTextScale)) + " (PUBLIC)";
+            : "DISCORD: " + r_.textClip(cfg_.discordName, r_.minTextScale(), lw - r_.textWidth("DISCORD:  (PUBLIC)", r_.minTextScale())) + " (PUBLIC)";
         ui_.labelFit(x + w * 0.5f + gap * 0.5f, y, lw, dl);
     }
     y += 22 * s;
@@ -4389,7 +4389,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         for (int k = 0; k < MV_COUNT; k++) {
             char v[16];
             snprintf(v, sizeof v, ": %.2fx", r.move[k]);
-            widest = std::max(widest, r_.textWidth(stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)) + v, Renderer::kMinTextScale));
+            widest = std::max(widest, r_.textWidth(stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)) + v, r_.minTextScale()));
         }
         int cols = widest + 8 * s <= (gw - 2 * gap) / 3 ? 3 : 2, rows = (MV_COUNT + cols - 1) / cols;
         const float rh = std::max(18 * s, std::min(bh, avail / rows - gap));
@@ -4433,7 +4433,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         int n = 0;
         float widest = 0;
         for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++)
-            if (mapInfo_[i].modes >> r.baseMode & 1) { n++; widest = std::max(widest, r_.textWidth(upper(maps_[i]) + ": OFF", Renderer::kMinTextScale)); }
+            if (mapInfo_[i].modes >> r.baseMode & 1) { n++; widest = std::max(widest, r_.textWidth(upper(maps_[i]) + ": OFF", r_.minTextScale())); }
         // as many columns as fit above SAVE / BACK, but never so narrow a name is cut off (with many of your own maps:
         // lower rows instead, never off the bottom)
         const float avail = r_.height() - y - 80 * s;
@@ -5681,7 +5681,8 @@ void Game::drawFontSettings(float x0, float y0, float wTotal) {
     const int n = (int)fontList_.size();
     // as many rows as fit above OPEN FOLDER / REFRESH, the note and BACK; the wheel scrolls the rest
     const float H = (float)r_.height(), top0 = std::max(24 * s, y0);
-    const int fitRows = std::max(3, (int)((H - top0 - 3 * (h + gap) - 90 * s) / (h + gap)));
+    // (the panel may rise over the logo, as the settings page does: every built-in fits at 1024x768 without scrolling)
+    const int fitRows = std::max(3, (int)((H - 24 * s - 3 * (h + gap) - 100 * s) / (h + gap)));
     fontScroll_ = std::min(fontScroll_, std::max(0, n - fitRows));
     const int rows = std::min(n - fontScroll_, fitRows);
     bool noneOfYours = std::none_of(fontList_.begin(), fontList_.end(), [](const uifonts::Entry& e) { return e.user; });

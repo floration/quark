@@ -1087,7 +1087,7 @@ static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
     if (s <= 0) return;
-    if (s < kMinTextScale) s = kMinTextScale;
+    if (s < minScale_) s = minScale_;
     float cx = x, cy = uiRound(y);
     float sc = clampf(s, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
@@ -1112,7 +1112,7 @@ static constexpr float kMonoAdv = 5.3f;
 
 void Renderer::textMono(float x, float y, float s, const std::string& str, const Color& c) {
     if (s <= 0) return;
-    if (s < kMinTextScale) s = kMinTextScale;
+    if (s < minScale_) s = minScale_;
     float sc = clampf(s, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * s, cy = uiRound(y);
@@ -1128,14 +1128,14 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     }
 }
 
-float Renderer::textWidthMono(const std::string& str, float scale) const { return str.size() * kMonoAdv * std::max(scale, kMinTextScale); }
+float Renderer::textWidthMono(const std::string& str, float scale) const { return str.size() * kMonoAdv * std::max(scale, minScale_); }
 
 float Renderer::textWidth(const std::string& str, float scale) const {
     float w = 0;
     int prev = -1;
     for (char ch : str) { int g = glyphIndex(ch); if (prev >= 0) w += glyphAdv(prev, g); prev = g; }
     if (prev >= 0) w += g_uiAdv[prev];
-    return w * std::max(scale, kMinTextScale);
+    return w * std::max(scale, minScale_);
 }
 
 std::string Renderer::textClip(const std::string& str, float scale, float maxW) const {
@@ -1150,7 +1150,7 @@ size_t Renderer::textFit(const std::string& str, float scale, float maxW) const 
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         float nw = w + (prev >= 0 ? glyphAdv(prev, g) - g_uiAdv[prev] : 0) + g_uiAdv[g];
-        if (nw * std::max(scale, kMinTextScale) > maxW) return i;
+        if (nw * std::max(scale, minScale_) > maxW) return i;
         w = nw; prev = g;
     }
     return str.size();
@@ -1164,6 +1164,7 @@ void Renderer::setUiFont(std::unique_ptr<FontAtlas> font) {
     g_uiFont = std::move(font);
     g_uiAdv = g_uiFont ? g_uiFont->adv : kUiAdv;
     g_uiKern = g_uiFont ? g_uiFont->kern : kUiKern;
+    minScale_ = g_uiFont && g_uiFont->minScale > 0 ? g_uiFont->minScale : kMinTextScale;
     if (!fontTex_) return;   // (before init: init uploads it)
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);

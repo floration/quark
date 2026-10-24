@@ -14,12 +14,14 @@ struct FontAtlas {
     std::vector<uint8_t> tex;        // texW * texH, R8
     float adv[95] = {};
     signed char kern[95 * 95] = {};
+    float minScale = 0;              // the smallest text scale (0: Renderer::kMinTextScale; a pixel font: 1)
 };
 // A TrueType / OpenType font (stb_truetype: a variable font gives its default instance).
 bool buildFontAtlas(const uint8_t* font, size_t size, const FontAtlasLayout& layout, FontAtlas& out, std::string* err = nullptr);
 // A pixel font sheet: 16 x 16 cells (a Quake-style console font: character n in cell n, read left to right, top to
-// bottom), ink = non-zero; sheetW / sheetH divisible by 16. Sized so 'H' is `layout.cap` tall (or 1 unit a pixel),
-// with square edges (a max-norm distance field) and a fixed advance of one cell.
+// bottom), ink = non-zero; sheetW / sheetH divisible by 16. 1 unit a pixel from the line top (an 8-pixel cell = the
+// 8-unit line, like QUARK CLASSIC), square edges (a max-norm distance field), each glyph as wide as its ink (the blank
+// column 0 of the next one is the space; tools/make_font_atlas.py's "conchars"), drawn down to scale 1.
 bool buildSheetAtlas(const uint8_t* ink, int sheetW, int sheetH, const FontAtlasLayout& layout, FontAtlas& out, std::string* err = nullptr);
 // Quake's console font (CONCHARS, 128 x 128, one byte a pixel) from any of: a PAK (id1/pak0.pak: its gfx.wad), a
 // WAD2 (gfx.wad: the CONCHARS lump), the raw 16384-byte lump (conchars.lmp), or a PNG / JPEG sheet. ink: 1 = ink.

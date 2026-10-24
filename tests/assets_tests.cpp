@@ -196,6 +196,26 @@ int exportAssets(const char* dirArg) {
              "Settings > FONT: WORK SANS (the UI font of 1.17 - 1.18), drawn bold", ""}, std::string(ov.begin(), ov.end()));
     else add({"font/worksans", "Fonts", "font", "WORK SANS", "fonts/WorkSans.ttf",
               "Settings > FONT: WORK SANS (the UI font of 1.17 - 1.18), drawn bold; Work Sans Project Authors, SIL OFL 1.1", ""}, slurp(src / "assets/fonts/WorkSans.ttf"));
+    // the free look-alikes of game fonts (Settings > FONT; uifonts.cpp's override paths; a player's own real font wins)
+    struct LookAlike { const char* id; const char* name; const char* file; const char* desc; };
+    static const LookAlike kLookAlikes[] = {
+        {"font/bebasneue", "BEBAS NEUE", "BebasNeue-Regular.ttf", "Settings > FONT: the closest free match of Overwatch's font; Dharma Type, SIL OFL 1.1"},
+        {"font/decalotype", "DECALOTYPE", "Decalotype-Bold.ttf", "Settings > FONT: the font Cocaine Diesel uses; SIL OFL 1.1"},
+        {"font/librequake", "LIBREQUAKE 8X8", "LibreQuake-CONCHARS.png", "Settings > FONT: the closest free match of Quake's console font (a 16x16 sheet of 8x8 characters); LibreQuake, BSD-3-Clause"},
+        {"font/dejavusans", "DEJAVU SANS", "DejaVuSans-Bold.ttf", "Settings > FONT: the closest free match of Half-Life 2's font; Bitstream Vera licence"},
+        {"font/lilitaone", "LILITA ONE", "LilitaOne-Regular.ttf", "Settings > FONT: the closest free match of TF2 Build; SIL OFL 1.1"},
+        {"font/jost", "JOST", "Jost.ttf", "Settings > FONT: the closest free match of TF2 Secondary, drawn SemiBold; SIL OFL 1.1"},
+        {"font/barlowcondensed", "BARLOW CONDENSED", "BarlowCondensed-Bold.ttf", "Settings > FONT: the closest free match of Apex Legends' font; SIL OFL 1.1"},
+    };
+    for (const LookAlike& f : kLookAlikes) {
+        std::error_code fec;
+        if (!fs::exists(src / "assets/fonts" / f.file, fec)) continue;
+        std::string file = f.file, base = "fonts/" + file.substr(0, file.rfind('.')), ext = file.substr(file.rfind('.'));
+        bool png = ext == ".png";
+        bool have = png ? overrides::find(base, {".png"}, ov, &matched) : overrides::find(base, {".ttf", ".otf"}, ov, &matched);
+        if (have) add({f.id, "Fonts", png ? "image" : "font", f.name, base + matched.substr(matched.rfind('.')), f.desc, ""}, std::string(ov.begin(), ov.end()));
+        else add({f.id, "Fonts", png ? "image" : "font", f.name, "fonts/" + file, f.desc, ""}, slurp(src / "assets/fonts" / f.file));
+    }
     if (overrides::find("images/icon", {".png", ".jpg", ".jpeg"}, ov, &matched))
         add({"image/icon", "Images", "image", "GAME ICON", "images/icon" + matched.substr(matched.rfind('.')), "app, launcher, window and website icon", ""}, std::string(ov.begin(), ov.end()));
     else add({"image/icon", "Images", "image", "GAME ICON", "images/icon.png", "app, launcher, window and website icon (256 px)", ""}, slurp(src / "assets/quark.png"));
@@ -387,14 +407,14 @@ static void testUiFonts() {
     // QUARK CLASSIC: the original metrics (6 units a glyph, 7 pixels from the line top, lower case as upper case)
     ACHECK(uifonts::load("classic", L, fa, &err) && fa);
     if (fa) {
-        ACHECK(fa->adv['H' - 32] == 6.0f && fa->adv['i' - 32] == 6.0f);
+        ACHECK(fa->adv['H' - 32] == 6.0f && fa->adv['i' - 32] == 6.0f && fa->minScale == 1.0f);
         rows = inkRows(*fa, 'H', &top);
         ACHECK(rows == 7 * 6 && top == (int)(1.5f * 6));
         ACHECK(!std::memcmp(&fa->tex[(size_t)(2 * L.cell + 5) * L.texW + 4 * L.cell], &fa->tex[(size_t)(4 * L.cell + 5) * L.texW + 4 * L.cell], 40));   // ('a' = 'A')
     }
     // a mods/fonts name stays in that folder; a missing file fails
     ACHECK(!uifonts::load("../quark.cfg", L, fa, &err) && !uifonts::load("no such font.ttf", L, fa, &err));
-    // a Quake-style sheet: 'H' (cell 72) of 7 rows -> as tall as Rubik's capitals, square, a fixed advance
+    // a Quake-style sheet: 1 unit a pixel from the line top, square, each glyph as wide as its ink (+ column 0)
     std::vector<uint8_t> sheet(128 * 128, 0);
     auto px = [&](int c, int x, int y) { sheet[(size_t)((c / 16) * 8 + y) * 128 + (c % 16) * 8 + x] = 37; };
     for (int y = 1; y < 8; y++) { px('H', 1, y); px('H', 5, y); }
@@ -403,8 +423,8 @@ static void testUiFonts() {
     FontAtlas q;
     ACHECK(buildSheetAtlas(sheet.data(), 128, 128, L, q, &err));
     rows = inkRows(q, 'H', &top);
-    ACHECK(std::abs(rows - 31) <= 2 && std::abs(top - (int)((1.5f + 0.75f) * 6)) <= 1);
-    ACHECK(std::fabs(q.adv['H' - 32] - 8 * 5.25f / 7) < 0.01f && inkRows(q, 'A', &top) == 0);
+    ACHECK(rows == 7 * 6 && top == (int)((1.5f + 1) * 6));
+    ACHECK(q.adv['H' - 32] == 6.0f && q.adv['.' - 32] == 4.0f && q.adv['A' - 32] == 4.0f && inkRows(q, 'A', &top) == 0 && q.minScale == 1.0f);
     std::vector<uint8_t> blank(128 * 128, 0);
     ACHECK(!buildSheetAtlas(blank.data(), 128, 128, L, q, &err));   // (no H)
     // ...read from gfx.wad's CONCHARS lump, and from a PAK holding that gfx.wad

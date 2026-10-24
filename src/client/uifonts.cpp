@@ -40,24 +40,24 @@ const Builtin kBuiltinFonts[] = {
     {"rubik", "RUBIK", "", "THE DEFAULT", "fonts/Rubik", nullptr, {}},
     {"worksans", "WORK SANS", "worksans", "QUARK 1.17 - 1.18", "fonts/WorkSans", nullptr, {}},
     {"classic", "QUARK CLASSIC", "classic", "THE ORIGINAL PIXEL FONT", nullptr, nullptr, {}},
-    {"overwatch", "BEBAS NEUE", "bebasneue", "CLOSEST FREE MATCH: OVERWATCH", nullptr, "BIG NOODLE", {
+    {"overwatch", "BEBAS NEUE", "bebasneue", "CLOSEST FREE MATCH: OVERWATCH", "fonts/BebasNeue-Regular", "BIG NOODLE", {
         {MODS, TTF, "bignoodletoo*"}, {MODS, TTF, "big_noodle_titling*"}, {MODS, TTF, "bignoodletitling*"}, {MODS, TTF, "big noodle*"}}},
-    {"cocainediesel", "DECALOTYPE", "decalotype", "THE FONT COCAINE DIESEL USES", nullptr, nullptr, {}},
-    {"quake", "LIBREQUAKE 8X8", "librequake", "CLOSEST FREE MATCH: QUAKE", nullptr, "QUAKE", {
+    {"cocainediesel", "DECALOTYPE", "decalotype", "THE FONT COCAINE DIESEL USES", "fonts/Decalotype-Bold", nullptr, {}},
+    {"quake", "LIBREQUAKE 8X8", "librequake", "CLOSEST FREE MATCH: QUAKE", "fonts/LibreQuake-CONCHARS", "QUAKE", {
         {MODS, QUAKE, "conchars.lmp"}, {MODS, QUAKE, "conchars.png"}, {MODS, QUAKE, "gfx.wad"},
         {STEAM, QUAKE, "steamapps/common/Quake/id1/gfx.wad"}, {STEAM, QUAKE, "steamapps/common/Quake/id1/pak0.pak"},
         {STEAM, QUAKE, "steamapps/common/Quake/rerelease/id1/pak0.pak"}}},
-    {"hl2", "DEJAVU SANS", "dejavusans", "CLOSEST FREE MATCH: HALF-LIFE 2", nullptr, "VERDANA BOLD", {
+    {"hl2", "DEJAVU SANS", "dejavusans", "CLOSEST FREE MATCH: HALF-LIFE 2", "fonts/DejaVuSans-Bold", "VERDANA BOLD", {
         {MODS, TTF, "verdanab.ttf"}, {SYSTEM, TTF, "win:%WINDIR%/Fonts/verdanab.ttf"},
         {SYSTEM, TTF, "mac:/Library/Fonts/Verdana Bold.ttf"}, {SYSTEM, TTF, "mac:/System/Library/Fonts/Supplemental/Verdana Bold.ttf"},
         {SYSTEM, TTF, "linux:/usr/share/fonts/truetype/msttcorefonts/Verdana_Bold.ttf"},
         {SYSTEM, TTF, "linux:/usr/share/fonts/truetype/msttcorefonts/verdanab.ttf"},
         {SYSTEM, TTF, "linux:/usr/share/fonts/msttcore/verdanab.ttf"}, {SYSTEM, TTF, "linux:/usr/share/fonts/TTF/verdanab.ttf"}}},
-    {"tf2", "LILITA ONE", "lilitaone", "CLOSEST FREE MATCH: TF2", nullptr, "TF2 BUILD", {
+    {"tf2", "LILITA ONE", "lilitaone", "CLOSEST FREE MATCH: TF2", "fonts/LilitaOne-Regular", "TF2 BUILD", {
         {MODS, TTF, "tf2build*"}, {STEAM, TTF, "steamapps/common/Team Fortress 2/tf/resource/tf2build.ttf"}}},
-    {"tf2secondary", "JOST", "jost", "CLOSEST FREE MATCH: TF2 SECONDARY", nullptr, "TF2 SECONDARY", {
+    {"tf2secondary", "JOST", "jost", "CLOSEST FREE MATCH: TF2 SECONDARY", "fonts/Jost", "TF2 SECONDARY", {
         {MODS, TTF, "tf2secondary*"}, {STEAM, TTF, "steamapps/common/Team Fortress 2/tf/resource/tf2secondary.ttf"}}},
-    {"apex", "BARLOW CONDENSED", "barlowcondensed", "CLOSEST FREE MATCH: APEX LEGENDS", nullptr, "APEX LEGENDS", {
+    {"apex", "BARLOW CONDENSED", "barlowcondensed", "CLOSEST FREE MATCH: APEX LEGENDS", "fonts/BarlowCondensed-Bold", "APEX LEGENDS", {
         // (the fan family "Apex" by Felix's Foundry: personal use only, so never bundled; Bold first)
         {MODS, TTF, "apex-bold.ttf"}, {MODS, TTF, "apex-semibold.ttf"}, {MODS, TTF, "apex-extrabold.ttf"},
         {MODS, TTF, "apex-*"}, {MODS, TTF, "apex*"}}},
@@ -172,9 +172,7 @@ fs::path findReal(const Builtin& b, Fmt* fmt = nullptr) {
     }
     return {};
 }
-bool buildFrom(const fs::path& p, Fmt fmt, const FontAtlasLayout& L, std::unique_ptr<FontAtlas>& out, std::string* err) {
-    std::vector<uint8_t> file;
-    if (!readFile(p, file)) { if (err) *err = "can't read " + p.filename().u8string(); return false; }
+bool buildBytes(const std::vector<uint8_t>& file, Fmt fmt, const FontAtlasLayout& L, std::unique_ptr<FontAtlas>& out, std::string* err) {
     auto fa = std::make_unique<FontAtlas>();
     bool ok;
     if (fmt == QUAKE) {
@@ -184,6 +182,11 @@ bool buildFrom(const fs::path& p, Fmt fmt, const FontAtlasLayout& L, std::unique
     } else ok = buildFontAtlas(file.data(), file.size(), L, *fa, err);
     if (ok) out = std::move(fa);
     return ok;
+}
+bool buildFrom(const fs::path& p, Fmt fmt, const FontAtlasLayout& L, std::unique_ptr<FontAtlas>& out, std::string* err) {
+    std::vector<uint8_t> file;
+    if (!readFile(p, file)) { if (err) *err = "can't read " + p.filename().u8string(); return false; }
+    return buildBytes(file, fmt, L, out, err);
 }
 } // namespace
 
@@ -241,22 +244,22 @@ bool load(const std::string& idIn, const FontAtlasLayout& L, std::unique_ptr<Fon
     const std::string id = idIn.empty() ? kDefault : idIn;
     if (const Builtin* b = builtin(id)) {
         if (name) *name = b->name;
-        if (b->override) {   // the owner's replacement of the bundled font
-            std::vector<uint8_t> file;
-            std::string matched, ferr;
-            if (overrides::find(b->override, {".ttf", ".otf"}, file, &matched)) {
-                auto fa = std::make_unique<FontAtlas>();
-                if (buildFontAtlas(file.data(), file.size(), L, *fa, &ferr)) { out = std::move(fa); return true; }
-                fprintf(stderr, "override %s: %s\n", matched.c_str(), ferr.c_str());
-            }
-        }
-        if (b->real[0].path) {   // the player's own real font
+        if (b->real[0].path) {   // the player's own real font (first: the bundled one only looks like it)
             Fmt fmt = TTF;
             fs::path real = findReal(*b, &fmt);
             if (!real.empty()) {
                 std::string rerr;
                 if (buildFrom(real, fmt, L, out, &rerr)) { if (name) *name = b->realName; return true; }
                 fprintf(stderr, "font %s: %s\n", real.u8string().c_str(), rerr.c_str());
+            }
+        }
+        if (b->override) {   // the owner's replacement of the bundled font (docs/ASSETS.md; QUAKE rows: a sheet picture)
+            const bool sheet = b->real[0].path && b->real[0].fmt == QUAKE;
+            std::vector<uint8_t> file;
+            std::string matched, ferr;
+            if (sheet ? overrides::find(b->override, {".png"}, file, &matched) : overrides::find(b->override, {".ttf", ".otf"}, file, &matched)) {
+                if (buildBytes(file, sheet ? QUAKE : TTF, L, out, &ferr)) return true;
+                fprintf(stderr, "override %s: %s\n", matched.c_str(), ferr.c_str());
             }
         }
         if (!*b->baked) return true;   // the default: font_ui.h as it is
@@ -266,6 +269,7 @@ bool load(const std::string& idIn, const FontAtlasLayout& L, std::unique_ptr<Fon
         if (!atlasFromPng(bf->png, bf->pngSize, L, *fa, err)) return false;
         std::memcpy(fa->adv, bf->adv, sizeof fa->adv);
         if (bf->kern) std::memcpy(fa->kern, bf->kern, sizeof fa->kern);
+        fa->minScale = bf->minScale;
         out = std::move(fa);
         return true;
     }

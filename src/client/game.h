@@ -67,7 +67,7 @@ struct LaunchOptions {
     std::string chatShot;       // --chatshot TEXT: in game, chat open with TEXT typed and the caret in the middle
     std::string consoleShot;    // --consoleshot TEXT: in game, the console open with TEXT typed, then Tab pressed
     bool edFocus = false;       // --edfocus: the editor's map title field focused (caret screenshot)
-    bool debugFonts = false;    // --fonts: open Settings > FONT in the main menu
+    int debugFonts = 0;         // --fonts: open Settings > FONT in the main menu (1); --settingsmenu: the settings page (2)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
     bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)

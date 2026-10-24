@@ -1422,6 +1422,8 @@ void uiTestPrepare(LaunchOptions& o) {
     s.width = 1280; s.height = 720;
     s.presentMode = 0;   // (no frame pacing: the test runs as fast as it can; latent sync is Windows' default)
     s.binds.code[A_TOGGLECHAT][0] = GLFW_KEY_F6;   // (unbound by default: bound here so the key is tested too)
+    // QUARK_UITEST_FONT=<ui_font>: the whole test (layout checks too) in that font (docs/UI_TEST.md)
+    { const char* f = getenv("QUARK_UITEST_FONT"); if (f && *f) { s.uiFont = f; printf("uitest: font %s\n", f); } }
     s.save();
     printf("uitest: data in %s\n", dir.u8string().c_str());
     (void)o;
