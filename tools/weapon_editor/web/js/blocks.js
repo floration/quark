@@ -111,7 +111,6 @@ export class BlocksView {
         this.brain = brain;
         this.S = symbols(brain);
         this.model = brainToBlocks(brain);
-        this._top = new WeakSet(this.model.decls.map((b) => b.stacks.body).filter(Boolean));
         this.declJson = this.model.decls.map((b) => JSON.stringify(fromBlocks(b)));
         if (this._focusKey && declKeySel === undefined) { declKeySel = this._focusKey; this._focusKey = null; }
         if (declKeySel !== undefined) this.declIx = brain.decls.findIndex((d) => declKey(d) === declKeySel);
@@ -873,7 +872,7 @@ export class BlocksView {
         let fixIndex = (list, i) => i;
         if (src.kind === "stack") {
             src.list.splice(src.index, 1);
-            if (src.list.length === 0 && !this._top.has(src.list)) src.list.push(toBlocks({ op: "pass" }));
+            if (src.list.length === 0) src.list.push(toBlocks({ op: "pass" }));   // (a slot's body too: "slot kill:" alone doesn't parse)
             fixIndex = (list, i) => (list === src.list && src.index < i ? i - 1 : i);
         } else if (src.kind === "input") src.owner.inputs[src.key] = toBlocks({ op: "hole" });
         else if (src.kind === "float") src.list.splice(src.list.indexOf(src.item), 1);
