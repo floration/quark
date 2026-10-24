@@ -43,7 +43,7 @@ struct BotBrain {
     std::function<UserCmd(Server&, int)> script; // tests: this bot's input comes from here instead (a scripted player)
     // perception
     BotAwareness aware[32];    // (kMaxPlayers)
-    double nextLook = 0;       // perception runs at a fixed game-time rate, staggered between bots
+    double nextLook = 0;       // perception runs at a fixed game-time rate, each bot at its own phase (from its id)
     int target = -1;           // player id being fought (visible) or hunted (remembered)
     double engagedAt = -1;     // aim started moving onto the current target (after the reaction time)
     float leadFactor = 1, dropFactor = 1, speedJudge = 1; // per engagement: how this bot misjudges leads

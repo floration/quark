@@ -5,6 +5,7 @@
 #include <cstring>
 #include <algorithm>
 #include <csignal>
+#include <numeric>
 #include <queue>
 #include <thread>
 #include "../src/common/rng.h"
@@ -7323,11 +7324,26 @@ static void testBots(uint16_t& port) {
 
 // Server CPU benchmark: a full server (bots fighting + human clients receiving snapshots) on a busy map;
 // prints the time per tick (simulate + snapshots) against the 1 ms budget of a 1000 Hz server.
-static void serverBench(uint16_t port, int bots, int humans, double seconds, const char* map) {
+// serverbench: the bots' thinking per tick, timed through the think hook (summed per tick)
+static uint64_t g_benchThinkTick = ~0ull;
+static double g_benchThinkSum = 0;
+static std::vector<float>* g_benchThinks = nullptr;
+static UserCmd benchThink(Server& s, int id) {
+    if (s.tick_ != g_benchThinkTick) {
+        if (g_benchThinkTick != ~0ull && g_benchThinks) g_benchThinks->push_back((float)g_benchThinkSum);
+        g_benchThinkTick = s.tick_; g_benchThinkSum = 0;
+    }
+    double t0 = timeNow();
+    UserCmd c = botThinkDirect(s, id);
+    g_benchThinkSum += timeNow() - t0;
+    return c;
+}
+static void serverBench(uint16_t port, int bots, int humans, double seconds, const char* map, int mode = MODE_FFA, int rate = 0) {
     g_serverRateCheck = false; // measure at 1000 Hz, don't step down
     Server s;
     ServerConfig cfg;
-    cfg.map = map; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
+    cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
+    if (rate) cfg.maxTickRate = rate;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { printf("  start failed\n"); return; }
     std::vector<std::unique_ptr<NetClient>> owned;
@@ -7337,20 +7353,35 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
         owned.back()->connect("127.0.0.1:" + std::to_string(port), "h" + std::to_string(i));
         cls.push_back(owned.back().get());
     }
-    for (int i = 0; i < bots; i++) s.addBot(TEAM_A, BOT_ADVANCED);
+    const bool teams = modeIsTeamBased(mode);
+    for (int i = 0; i < bots; i++) s.addBot(teams && i % 2 ? TEAM_B : TEAM_A, BOT_ADVANCED);
     pump(s, cls, 2.0, idle);
+    if (teams) { s.command("forcestart"); pump(s, cls, 0.5, idle); }   // (a team mode: everyone spawns at once, as a round starts)
     std::vector<float> t;
     t.reserve(200000);
     s.tickTimes_ = &t;
+    std::vector<float> th;
+    th.reserve(200000);
+    g_benchThinks = &th; g_benchThinkTick = ~0ull; g_botThinkHook = benchThink;
     pump(s, cls, seconds, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.3f + (float)timeNow(); c.buttons = BTN_JUMP | BTN_FIRE; return c; });
+    g_botThinkHook = nullptr; g_benchThinks = nullptr;
     s.tickTimes_ = nullptr;
+    std::sort(th.begin(), th.end());
+    auto pctTh = [&](double p) { return th.empty() ? 0.0 : th[std::min(th.size() - 1, (size_t)(th.size() * p))] * 1e6; };
+    // the bots' perception phases: how many look on the same tick (the busiest tick of each 50 ms)
+    int slots[1000] = {}, busiest = 0, period = std::max(1, (int)std::lround(0.05 * s.tickRate()));
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (s.players_[i].connected && s.players_[i].isBot && s.players_[i].alive && period <= 1000)
+            busiest = std::max(busiest, ++slots[(int)(std::llround(s.bots_[i].nextLook * s.tickRate()) % period)]);
     std::sort(t.begin(), t.end());
     double sum = 0;
     for (float v : t) sum += v;
     auto pct = [&](double p) { return t.empty() ? 0.0 : t[std::min(t.size() - 1, (size_t)(t.size() * p))] * 1e6; };
-    printf("  SERVERBENCH %s: %d bots + %d clients, %zu ticks at %d Hz: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us  (%.1f%% of the tick budget)\n",
-           map, bots, humans, t.size(), s.tickRate(), t.empty() ? 0 : sum / t.size() * 1e6, pct(0.99), pct(0.999), t.empty() ? 0 : t.back() * 1e6,
-           t.empty() ? 0 : sum / t.size() * s.tickRate() * 100);
+    printf("  SERVERBENCH %s %s: %d bots + %d clients, %zu ticks at %d Hz: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us  (%.1f%% of the tick budget); at most %d bots look on one tick\n"
+           "    bot thinks per tick: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us\n",
+           map, modeName(mode), bots, humans, t.size(), s.tickRate(), t.empty() ? 0 : sum / t.size() * 1e6, pct(0.99), pct(0.999), t.empty() ? 0 : t.back() * 1e6,
+           t.empty() ? 0 : sum / t.size() * s.tickRate() * 100, busiest,
+           th.empty() ? 0 : std::accumulate(th.begin(), th.end(), 0.0) / th.size() * 1e6, pctTh(0.99), pctTh(0.999), th.empty() ? 0 : th.back() * 1e6);
     qzoneDump();
     s.stop();
 }
@@ -7773,9 +7804,14 @@ int main(int argc, char** argv) {
 #endif
     }
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(TP(29400), argc > 2 ? atof(argv[2]) : 40); return 0; }
-    if (argc >= 2 && std::string(argv[1]) == "serverbench") {
-        serverBench(TP(29300), 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
-        serverBench(TP(29301), 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
+    if (argc >= 2 && std::string(argv[1]) == "serverbench") {   // [secs] [run: 1..5, or all]
+        double secs = argc > 2 ? atof(argv[2]) : 15;
+        int only = argc > 3 ? atoi(argv[3]) : 0;
+        if (!only || only == 1) serverBench(TP(29300), 12, 4, secs, "harbor");
+        if (!only || only == 2) serverBench(TP(29301), 24, 8, secs, "hamlet");
+        if (!only || only == 3) serverBench(TP(29302), 16, 4, secs, "midtown", MODE_POINTS);
+        if (!only || only == 4) serverBench(TP(29303), 16, 0, secs * 2, "depot", MODE_BOMB);        // (rounds: everyone respawns at once)
+        if (!only || only == 5) serverBench(TP(29304), 16, 0, secs * 2, "depot", MODE_BOMB, 125);   // (...at 125 Hz: a look period is 6 ticks)
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }

@@ -1171,9 +1171,20 @@ UserCmd botThinkDirect(Server& s, int id) {
 
     // --- perception (20 Hz of game time, each bot at its own phase)
     bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);
-    if (b.nextLook <= 0) b.nextLook = now + (id % 10) * (sp.lookEvery / 10); // spread the bots' looks over the 50 ms
+    // Each bot looks at its own fixed phase of the period, from its id (golden-ratio steps: any number of bots spread
+    // evenly), kept through deaths: a round's respawn (everyone on one tick) used to start every bot's looks again
+    // together, ten or more of them on one tick from then on (worst-tick cost).
+    const double look = sp.lookEvery, lookPhase = look * (id * 0.6180339887498949 - std::floor(id * 0.6180339887498949));
+    auto lookAfter = [&](double t, bool strict) {   // the first look time at or (strict) after t on this bot's phase
+        if (look <= 0) return t;
+        double k = std::ceil((t - lookPhase) / look), at = lookPhase + k * look;
+        return strict && at <= t ? at + look : at;
+    };
+    // (new; the clock went back: a new match; or a look was missed, as after a death: the next one on the phase, not
+    // straight away, or a round's bots, respawned together, would all look on that one tick)
+    if (b.nextLook <= 0 || b.nextLook > now + look || now - b.nextLook >= look + dt) b.nextLook = lookAfter(now, false);
     if (now >= b.nextLook) {
-        b.nextLook = std::max(b.nextLook + sp.lookEvery, now + sp.lookEvery * 0.5);
+        b.nextLook = lookAfter(now, true);
         { QZONE("bot perceive"); perceive(s, id, b, sp, eye, now, ip); }
         // Edges: the void or lava within a stumble, a knockback or a hop (maps that have them). Eight directions at
         // 1.5 and 3 m (near: no jumping about), and 5 m (a fight drifts away from it: a laser or a blast pushes you
