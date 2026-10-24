@@ -216,7 +216,7 @@ private:
     ModeState annPrev_;
     bool annPrevValid_ = false;
     int annCount_ = 0;
-    int annLeader_ = -2;   // FFA: who leads (-1 nobody yet, -2 not counting)
+    int annLeader_ = -2;   // FFA: you lead alone (1) or not (0, -1: not counted yet); -2 not counting (X10)
 
     GLFWwindow* win_ = nullptr;
     Settings cfg_;
