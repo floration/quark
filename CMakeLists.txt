@@ -390,10 +390,11 @@ if(QUARK_BUILD_TESTS)
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
   endif()
-  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics and mode editors' commands
-  # linked into it (an empty or missing tools/mode_editor/native globs to nothing)
+  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics, mode and weapons editors'
+  # commands linked into it (an empty or missing tools/mode_editor/native globs to nothing)
   file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp)
+       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp
+       ${CMAKE_SOURCE_DIR}/tools/weapon_editor/native/*.cpp)
   add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
   target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
   if(EXISTS ${CMAKE_SOURCE_DIR}/tools/mode_editor/native)
