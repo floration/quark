@@ -153,6 +153,14 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Host > Custom modes: that mode shows **LOGIC: name#xxxxxxxx** (break a line in its logic: the error shows in red and hosting it is refused with the line). Host it: the server list name starts `[name#xxxxxxxx]`, joining shows CUSTOM MODE ... - LOGIC: name#xxxxxxxx, and a frag scores 2. Saving the mode in Host > Custom modes keeps its logic. |
 | ☐ | A **ranked** match (and a time trial) plays the standard rules: no custom numbers or logic, no LOGIC label. The 13 built-in modes play as in the last release. |
 
+### Weapon sets and the weapons editor
+
+| ✓ | Check |
+|---|---|
+| ☐ | **Weapons editor** (the Quark Project app's Editor Manager > Weapons Editor tab, or `py -3 tools\weapon_editor\serve.py --install`, then `run.cmd` in `Quark\weapons-editor`, http://127.0.0.1:8773/): the badge says quark_maptool (not MOCK); Values shows the rifle 21 / 14 shots and 3.03 / 1.97 s to kill body / head, the sniper 3 / 2; Other games lists 19 games; an edit in Weapon shows in Code, Blocks and Graph. |
+| ☐ | Make a set: rocket damage 40 and a `slot hit sniper:` that doubles airborne damage; Save writes `custom_weapons\<name>.qweapons`. **Range**: the rocket's numbers per target change; **Fights**: a live bot match runs with the set (no "standard weapons" banner) and a batch fills the per-weapon table. |
+| ☐ | **Write wpn-<set>.qmode**, then Host > Custom modes > that mode: rockets do 40 (a direct hit at least 50), an airborne sniper body hit 80. A second client joining gets the same refire / spread / projectiles (no rubber-banding of shots), and the gamemode or physics editor saving that .qmode keeps its `weaponset=` line. Ranked and time trials play the standard weapons. |
+
 ## 7. Maps
 
 | ✓ | Check |

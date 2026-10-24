@@ -6868,6 +6868,7 @@ static void testReachProbe(uint16_t port) {
 }
 
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
+#include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 
@@ -6978,6 +6979,9 @@ int main(int argc, char** argv) {
     if (argc >= 2 && (std::string(argv[1]) == "exportbrain" || std::string(argv[1]) == "checkbrain" || std::string(argv[1]) == "brainast" || std::string(argv[1]) == "printbrain"))
         return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "brainbench") return brainBench(TP(29170));
+    if (argc >= 2 && (std::string(argv[1]) == "exportweapons" || std::string(argv[1]) == "checkweapons" || std::string(argv[1]) == "weaponsast" || std::string(argv[1]) == "printweapons"))
+        return weaponTool(argv[1], argc > 2 ? argv[2] : nullptr);
+    if (argc >= 2 && std::string(argv[1]) == "weaponsets") { testWeaponSets(TP(29790)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "brains") { g_fail += brainTests(TP(29150)); return g_fail ? 1 : 0; }
     if (argc >= 2 && (std::string(argv[1]) == "exportmode" || std::string(argv[1]) == "checkmode" || std::string(argv[1]) == "modeast" || std::string(argv[1]) == "printmode"))
         return modeTool(argv[1], argc, argv);
@@ -6995,7 +6999,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); testStuckProps(p + 70); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); testStuckProps(p + 70); testWeaponSets(p + 80); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -7009,7 +7013,7 @@ int main(int argc, char** argv) {
         {"modelockstep", [] { g_fail += modeLockstepTests(); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testWeaponSets(TP(28559)); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality

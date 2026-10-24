@@ -30,6 +30,10 @@ struct CustomRules {
     std::string label;                // the logic's name#hash8 (GRAMMAR.md 9; "" = no logic): the server fills it in
                                       // and sends it as label=; read back for display only, never trusted
     int logicLine = 0;                // fromText: the file line the logic starts on (1 = the first; 0: none / not read)
+    // A weapon set (weaponset.h; the weapons editor's): `weaponset=<name>` names custom_weapons/<name>.qweapons, whose
+    // text loadCustomMode reads into weaponSetText. The network form carries the text (`wsline=` lines, so clients
+    // compile the same set); the file form only the name. Empty: the standard weapons.
+    std::string weaponSetName, weaponSetText;
     CustomRules();
     bool active() const { return !name.empty(); }
     std::string toText() const;       // the .qmode file: the known keys (canonical order, no label=), then extraKeys, then logic

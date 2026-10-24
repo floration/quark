@@ -61,7 +61,6 @@ constexpr double kUploadShort = 0.9, kUploadRoom = 0.8;
 constexpr float kPingRiseMs = 25, kPingBaseCreepMs = 1;   // (the uncongested ping follows a lasting change: +1 ms a window)
 constexpr int kSnapSteps[] = {500, 333, 250, 125};       // snapshots per second (125: the floor)
 constexpr int kUdpHeaderBytes = 28;                      // IPv4 + UDP, counted with each datagram
-const float kKnifeRange = weaponDef(WPN_KNIFE).range; // the knife's reach (also what clients draw)
 constexpr float kRocketLife = 5.0f;
 // Visibility (PERF-9): each viewer's line to each player is re-checked every kVisInterval, spread over the ticks in
 // between (round robin over the pairs that are due) instead of all at once 20 times a second, which on Midtown with
@@ -1214,6 +1213,11 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
 void Server::sendRules(int id) {
     if (!cfg_.custom.active()) return;
     std::string t = cfg_.custom.toNetText();   // (not the logic or unknown keys: clients never run them)
+    if (t.size() > kMaxRulesTextBytes) {   // (too many chunks for a joining client's event queue: resolveWeaponSet refuses such sets)
+        CustomRules c = cfg_.custom; c.weaponSetText.clear();
+        t = c.toNetText();
+        log("custom mode rules too big to send with the weapon set: sent without it");
+    }
     int n = (int)(t.size() + 239) / 240;
     for (int k = 0; k < n; k++) {
         GameEvent e; e.type = EV_RULES; e.a = (uint8_t)k; e.b = (uint8_t)n; e.text = t.substr(k * 240, 240);
@@ -2187,8 +2191,8 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         bool hit = fireWeapon(id, cmd);
         p.knifeSwingUntil = (p.weapon == WPN_KNIFE && !threw && !hit) ? time() + kKnifeSwingTime : -1;
         if (threw) { // the knife / syringe is away: switch to the next weapon (usable after the throw's cooldown: nextFire above)
-            if (firedWeapon == WPN_KNIFE) p.knifeBackAt = time() + kKnifeAway;
-            else p.syringeBackAt = time() + kSyringeAway;
+            if (firedWeapon == WPN_KNIFE) p.knifeBackAt = time() + weaponAlt().knifeAway;
+            else p.syringeBackAt = time() + weaponAlt().syringeAway;
             p.fireLocked = true;
             if (otherWeapon() >= 0) p.weapon = otherWeapon();
             p.fireQueuedUntil = -1;
@@ -2197,9 +2201,68 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     }
 }
 
+// A weapon's hit on a player. With a weapon set that has logic (weaponset.h), its `hit` slot may change the damage,
+// knockback and heal the shooter first, and its `kill` slot runs when the hit killed. Without: damagePlayer, nothing
+// else (one thread-local pointer test).
+void Server::weaponHit(int victim, int attacker, float dmg, const Vec3& knock, int weapon, bool alt, float dist, bool direct, float splash) {
+    const WeaponSet* L = activeWeaponLogic();
+    if (__builtin_expect(L == nullptr, 1) || attacker < 0 || attacker >= kMaxPlayers || weapon < 0 || weapon >= WPN_COUNT) {
+        damagePlayer(victim, attacker, dmg, weapon, knock);
+        return;
+    }
+    ServerPlayer& v = players_[victim];
+    ServerPlayer& a = players_[attacker];
+    if (!v.alive) return;
+    const bool self = victim == attacker;
+    WsCall c;
+    c.in[WSS_WEAPON] = weapon; c.in[WSS_ALT] = alt; c.in[WSS_DIST] = (float)dist; c.in[WSS_HEAD] = headHit_[victim];
+    c.in[WSS_DIRECT] = direct; c.in[WSS_SPLASH] = (float)splash; c.in[WSS_SELF] = self;
+    c.in[WSS_AIRBORNE] = !(v.move.flags & MF_ONGROUND) && !map_.onLadder(playerBox(v.move));
+    c.in[WSS_VICTIM_HEALTH] = (float)v.health; c.in[WSS_SHOOTER_HEALTH] = (float)a.health;
+    c.in[WSS_VICTIM_SPEED] = length(v.move.vel); c.in[WSS_SHOOTER_SPEED] = length(a.move.vel);
+    c.in[WSS_TIME] = time() - roundStart_;
+    if (!self) {   // hits on this victim less than 1 s apart, this one included
+        double& last = wsTrack_.lastHit[attacker][victim];
+        uint16_t& st = wsTrack_.streak[attacker][victim];
+        if (st == 0 || time() - last >= 1.0) st = 0;
+        if (st < 65535) st++;
+        last = time();
+        c.in[WSS_STREAK] = st;
+    } else c.in[WSS_STREAK] = 1;
+    if (wsTrack_.lifeDeaths[attacker] != a.deaths) { wsTrack_.lifeDeaths[attacker] = a.deaths; wsTrack_.lifeKills[attacker] = 0; }
+    Vec3 kb = knock;
+    float heal = 0;
+    if (weaponSetHasSlot(*L, WS_HIT, weapon)) {
+        c.out[WSO_DAMAGE] = dmg; c.out[WSO_KNOCK] = 1; c.out[WSO_HEAL] = 0;
+        runWeaponSlot(*L, WS_HIT, weapon, c);
+        // (whatever the logic computed: finite, damage and heal not negative, knockback within x-100..100)
+        dmg = std::isfinite(c.out[WSO_DAMAGE]) ? (float)std::max(0.0, std::min(1e6, c.out[WSO_DAMAGE])) : 0.0f;
+        kb = knock * (std::isfinite(c.out[WSO_KNOCK]) ? (float)std::max(-100.0, std::min(100.0, c.out[WSO_KNOCK])) : 1.0f);
+        heal = std::isfinite(c.out[WSO_HEAL]) ? (float)std::max(0.0, std::min(1e6, c.out[WSO_HEAL])) : 0.0f;
+    }
+    const float before = v.health;
+    const int deaths0 = v.deaths;
+    damagePlayer(victim, attacker, dmg, weapon, kb);
+    const bool killed = v.deaths != deaths0 && !v.alive;
+    if (heal > 0 && !self && a.alive && (v.health < before || killed)) a.health = std::min(lifeMaxHealth(), a.health + heal);
+    if (!killed || self) return;
+    int kills = ++wsTrack_.lifeKills[attacker];
+    if (!weaponSetHasSlot(*L, WS_KILL, weapon)) return;
+    WsCall k;
+    for (int i = 0; i < WSS_COUNT; i++) k.in[i] = c.in[i];
+    k.in[WSS_SHOOTER_HEALTH] = (float)a.health;
+    k.in[WSS_KILLS] = kills;
+    k.out[WSO_HEAL] = 0; k.out[WSO_REFUND] = 0;
+    runWeaponSlot(*L, WS_KILL, weapon, k);
+    float kh = std::isfinite(k.out[WSO_HEAL]) ? (float)std::max(0.0, std::min(1e6, k.out[WSO_HEAL])) : 0.0f;
+    if (kh > 0 && a.alive) a.health = std::min(lifeMaxHealth(), a.health + kh);
+    if (k.out[WSO_REFUND] != 0) a.nextFire = time();
+}
+
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
-void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce) {
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce, const WeaponExtra* wex) {
+    const WeaponExtra& ex = wex ? *wex : weaponExtra(players_[id].weapon);   // (falloff, wallbang: the weapon set's)
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
@@ -2215,7 +2278,9 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             if (t < 0) continue;
             float d = dmg;
             if (headDmg > 0 && rayHitsHead(eye, dir, bb)) { d = std::max(d, headDmg); headHit_[i] = true; }
-            dmgPer[i] += (bang >= 0 && t > bang) ? d * kWallbangDamage : d;
+            if (ex.falloff) d *= weaponFalloff(ex, t);
+            hitDist_[i] = t;
+            dmgPer[i] += (bang >= 0 && t > bang) ? d * ex.wallbang : d;
             continue;
         }
         float t = rayAABB(eye, inv, bb, best);
@@ -2223,7 +2288,9 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     }
     if (hit < 0) return;
     if (headDmg > 0 && rayHitsHead(eye, dir, hitBb)) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }   // (the head, not the shoulders)
-    dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
+    if (ex.falloff) dmg *= weaponFalloff(ex, best);
+    hitDist_[hit] = best;
+    dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * ex.wallbang : dmg;
 }
 
 // ---- the grapple latched onto a player (owner: "if the tip of the hook hits a player it sticks to them, 10 damage, 15
@@ -2379,7 +2446,9 @@ void Server::tickLatches() {
 // A pellet that ricochets: straight until it hits a player (done) or a wall, then reflects off it, up to
 // kShotgunBounces times, with whatever range is left. Players are tested where the shooter saw them.
 void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, float* dmgPer, float dmg) {
-    for (int b = 0; b <= kShotgunBounces && range > 0.01f; b++) {
+    float travelled = 0;
+    const int bounces = weaponAlt().bounces;
+    for (int b = 0; b <= bounces && range > 0.01f; b++) {
         Vec3 n;
         float wall = map_.raycast(o, dir, range, &n);
         float best = wall >= 0 ? wall : range;
@@ -2390,11 +2459,12 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, floa
             float t = rayAABB(o, inv, rewoundHitBox(i, vt), best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
-        if (hit >= 0) { dmgPer[hit] += dmg; return; }
+        if (hit >= 0) { dmgPer[hit] += dmg; hitDist_[hit] = travelled + best; return; }
         if (wall < 0) return;
         o = o + dir * wall + n * 0.01f;
         dir = dir - n * (2.0f * dot(dir, n));
         range -= wall;
+        travelled += wall;
     }
 }
 
@@ -2422,8 +2492,9 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.type = WPN_KNIFE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
-            pr.vel = aim * kKnifeThrowSpeed;
-            pr.dieAt = time() + kKnifeThrowLife;
+            pr.vel = aim * weaponAlt().knifeThrowSpeed;
+            pr.dieAt = time() + weaponAlt().knifeThrowLife;
+            pr.alt = true;
             return false;
         }
         return false;
@@ -2438,8 +2509,9 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.type = WPN_SYRINGE;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
-            pr.vel = aim * kSyringeThrowSpeed;
-            pr.dieAt = time() + kSyringeThrowLife;
+            pr.vel = aim * weaponAlt().syringeThrowSpeed;
+            pr.dieAt = time() + weaponAlt().syringeThrowLife;
+            pr.alt = true;
             return false;
         }
         return false;
@@ -2453,7 +2525,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 count++;
                 if (oldest < 0 || (uint16_t)(pr.id - projectiles_[oldest].id) > 0x8000) oldest = k;
             }
-            if (count >= kMaxStickies && oldest >= 0) projectiles_[oldest].active = false;
+            if (count >= weaponAlt().stickyMax && oldest >= 0) projectiles_[oldest].active = false;
         }
         if (p.weapon == WPN_BUBBLE && alt) { // the stream: every bubble at once, each at its own speed
             float nearest = 1e9f;
@@ -2472,9 +2544,11 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
-                float speed = kBubbleStreamSlow + (kBubbleStreamFast - kBubbleStreamSlow) * n / std::max(1, count - 1);
+                const WeaponAlt& wa = weaponAlt();
+                float speed = wa.streamSlow + (wa.streamFast - wa.streamSlow) * n / std::max(1, count - 1);
                 pr.vel = spreadAim(aim, 0.09f, n, count, 0) * speed * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
                 pr.dieAt = time() + wd.life;
+                pr.alt = true;
                 if (++n == count) break;
             }
             return false;
@@ -2489,10 +2563,10 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (p.weapon != WPN_SYRINGE) p.shotsFired++;   // accuracy: a hit is counted when it lands
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadAim(aim, spread, 0, 1, p.burstShot) * wd.projSpeed;
-            if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
+            if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * weaponAlt().lobSpeed; pr.gravMul = kRocketLobGravity; pr.alt = true; }
             if (p.weapon == WPN_STICKY) pr.vel += stickyInherit(p.move.vel, aim);   // (stickies only: rockets fly straight)
             pr.dieAt = time() + wd.life;
-            pr.armAt = time() + kStickyArmTime;
+            pr.armAt = time() + weaponAlt().stickyArmTime;
             return false;
         }
         return false;
@@ -2510,24 +2584,27 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         if (timeMs_ - vt > cap) vt = timeMs_ - cap;   // (64-bit: never wraps)
     }
     rwHave_ = 0;   // (this shot's rewound hit boxes: built as the pellets need them)
-    float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
+    float range = wd.range;   // (the knife: its reach)
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
     float dmgPer[kMaxPlayers] = {};
     // Laser alt-fire is a tractor beam: pulls the target toward you for a little less damage.
     bool pull = wd.beam && (cmd.buttons & BTN_ALTFIRE);
-    float dmg = wd.damage * (pull ? kLaserPullDamage : 1.0f);
+    const WeaponAlt& wa = weaponAlt();
+    const WeaponExtra& ex = weaponExtra(p.weapon);   // (looked up once a shot, not per pellet)
+    float dmg = wd.damage * (pull ? wa.pullDamage : 1.0f);
     bool bounce = p.weapon == WPN_SHOTGUN && alt; // ricochet pellets: half damage, off up to 2 walls
+    const float headDmg = pull ? 0.0f : ex.headDamage, grow = p.weapon == WPN_KNIFE ? wa.knifeGrow : 0.0f;   // (headDamage(w))
     for (int k = 0; k < wd.pellets; k++) {
         Vec3 d = spreadAim(aim, spread, k, wd.pellets, p.burstShot);   // the fixed pattern (NET-9)
-        if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
-        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f, p.weapon == WPN_SNIPER);
+        if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * wa.bounceDamage);
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg, headDmg, grow, p.weapon == WPN_SNIPER, &ex);
     }
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
-        Vec3 knock = aim * (wd.pellets > 1 ? kShotgunKnock * dmgPer[i] / wd.damage : 1.0f);
-        if (wd.beam) knock = aim * (kLaserPush * wd.refire * (pull ? -kLaserPullScale : 1.0f)); // same push per second at any fire rate
-        damagePlayer(i, id, dmgPer[i], p.weapon, knock);
+        Vec3 knock = aim * (wd.pellets > 1 ? ex.knock * dmgPer[i] / wd.damage : ex.knock);
+        if (wd.beam) knock = aim * (ex.knock * wd.refire * (pull ? -wa.pullScale : 1.0f)); // same push per second at any fire rate
+        weaponHit(i, id, dmgPer[i], knock, p.weapon, alt, hitDist_[i], false, 1.0f);
         any = true;
     }
     if (shotHit(id)) p.shotsHit++;
@@ -2587,7 +2664,7 @@ void Server::stepProjectile(Projectile& pr) {
             auto& o = players_[pr.owner];
             if (hitPlayer >= 0 && modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == o.team) {
                 auto& t = players_[hitPlayer];
-                t.health = std::min(lifeMaxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
+                t.health = std::min(lifeMaxHealth(), t.health + weaponAlt().syringeHeal);   // (x the mode's syringe damage)
                 t.nextFire = time();
                 dashRefillAll(t.move);   // (the charges back, the cooldown and every recharge over)
                 t.move.hookCooldown = 0;
@@ -2629,7 +2706,13 @@ void Server::stepProjectile(Projectile& pr) {
             if (hitPlayer >= 0) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
                 if (head > 0 && rayHitsHead(pr.pos, dir, hitBb)) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
-                damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * (pr.type == WPN_CROSSBOW ? kCrossbowKnock : 3.0f));
+                const WeaponExtra& ex = weaponExtra(pr.type);
+                const bool wantDist = ex.falloff || activeWeaponLogic();   // (only a weapon set needs it)
+                float dist = wantDist && pr.owner >= 0 && pr.owner < kMaxPlayers ? length(at - shooterEye(pr.owner)) : 0.0f;
+                if (ex.falloff) dmg *= weaponFalloff(ex, dist);
+                // (knock: the bolt's own; the thrown knife 3x the knife's; anything else 3 m/s)
+                float k = pr.type == WPN_CROSSBOW ? ex.knock : pr.type == WPN_KNIFE ? 3.0f * ex.knock : 3.0f;
+                weaponHit(hitPlayer, pr.owner, dmg, dir * k, pr.type, pr.alt, dist, true, 1.0f);
                 headHit_[hitPlayer] = false;
                 if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
             }
@@ -2639,7 +2722,7 @@ void Server::stepProjectile(Projectile& pr) {
         } else {
             pr.pos = at;
             pr.active = false;
-            explode(at, pr.owner, pr.type, pr.type == WPN_ROCKET ? hitPlayer : -1);
+            explode(at, pr.owner, pr.type, hitPlayer, pr.alt);
         }
     }
 }
@@ -2711,8 +2794,11 @@ void Server::clearProps() {
     propsSent_ = false;
 }
 
-void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
+void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt) {
     const WeaponDef& wd = weaponDef(weapon);
+    const WeaponExtra& ex = weaponExtra(weapon);
+    const bool wantDist = ex.falloff || activeWeaponLogic();   // (falloff and the logic's dist: only a weapon set needs it)
+    const float ownerDist = wantDist && owner >= 0 && owner < kMaxPlayers ? length(at - shooterEye(owner)) : 0.0f;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || !p.alive) continue;
@@ -2733,11 +2819,12 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
         bool self = i == owner;
         // Self damage: 10% when the blast is at or below your feet (rocket jumps), full otherwise.
         float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
-        float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
-        if (i == direct && !self) dmg = std::max(dmg, kRocketDirectDamage * tunedDamage(weapon));   // a direct hit
-        Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f) * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f));
+        float dmg = wd.damage * frac * (self ? selfScale * ex.selfDamage : 1.0f);
+        if (i == direct && !self && ex.directDamage > 0) dmg = std::max(dmg, ex.directDamage);   // a direct hit (the rocket's 50)
+        if (ex.falloff && !self) dmg *= weaponFalloff(ex, ownerDist);
+        Vec3 knock = push * (ex.knock * frac * (self ? 1.3f : 1.0f) * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f));
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
-        damagePlayer(i, owner, dmg, weapon, knock);
+        weaponHit(i, owner, dmg, knock, weapon, alt, self ? 0.0f : ownerDist, i == direct, frac);
     }
     if (owner >= 0 && weapon != WPN_BUBBLE && shotHit(owner)) players_[owner].shotsHit++;
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is

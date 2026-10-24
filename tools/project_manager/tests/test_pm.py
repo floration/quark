@@ -447,7 +447,7 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(t["github"]["startCwd"], os.path.join(q, "github-manager"))
             self.assertEqual(t["docs"]["startCommand"],
                              'py -3 serve.py --docs "%s\\Claude Documents" --port 8766 --quiet' % q)
-            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "github", "tests", "docs", "dashboard", "map", "bot", "gamemode", "physics"])
+            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "github", "tests", "docs", "dashboard", "map", "bot", "gamemode", "physics", "weapons"])
             self.assertEqual([i for i in t if t[i]["lowPriority"]], ["github"])
             self.assertTrue(all(".cmd" not in t[i]["startCommand"] and "start " not in t[i]["startCommand"]
                                 for i in ("project", "github", "docs", "dashboard")))
@@ -522,7 +522,7 @@ class TestTabs(unittest.TestCase):
                    {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
                     "file": "ui-customizer-redesign.html"}]
             write(paths.pm("tabs.json"), json.dumps({"tabs": old}))
-            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "play", "tests", "gamemode", "physics"])
+            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "play", "tests", "gamemode", "physics", "weapons"])
             got = {t["id"]: t for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]}
             d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
             self.assertEqual(got["project"]["name"], "Mine")
