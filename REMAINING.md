@@ -56,7 +56,7 @@ Every Low finding is fixed. What's left:
 | 3.9 | P3 | The Worker's read cache (`caches.default`) does nothing on `*.workers.dev`; it needs a custom domain. Documented in worker.js. **Owner**, optional. |
 
 **Cleanup:**
-- clang warns about unused code gcc doesn't: `kRocketLife`, `kMaxVoteListItems` (server.cpp), `NetClient::snapRecvTime_`, `kJumpReach` (mapreport.cpp).
+- clang warns about unused code gcc doesn't: `kRocketLife`, `kMaxVoteListItems` (server.cpp), `NetClient::snapRecvTime_`.
 
 ## 3. Second security review: what's left
 
@@ -71,7 +71,7 @@ Every Low finding is fixed. What's left:
 | SUP-12 | P3 | The website loads Google Fonts and has no Content-Security-Policy. Self-host the fonts and add a CSP meta tag (with the site remake). |
 | §5.5 | P3 | Feedback gaps: no directional damage flash, and remote players make no sound while in the air. |
 | SUP-7 | Fixed | The launcher now loads DLLs only from System32, never from the folder it was started in (Downloads). |
-| B7 follow-up | P2 | The laser now reaches 24 m, but the map report's long-sightline band still uses 32 m (`kBandLong` in `tests/mapreport.cpp`), as do the Furnace notes in `make_maps.py` and `docs/MAP_STRUCTURES.md`. Changing the band changes scores, so do it with the metric work (C1). |
+| B7 follow-up | P2 | The laser now reaches 24 m, but the Furnace notes in `make_maps.py` and `docs/MAP_STRUCTURES.md` still use a 32 m long-sightline band (the map report that used it was removed 2026-10-24). |
 
 ## 4. Decisions waiting on you (Owner)
 
