@@ -100,6 +100,7 @@
       h('label', { title: 'Listed in sound-levels.txt on export: the game keeps this file\'s level instead of matching it to the sound it replaces' },
         h('input', { type: 'checkbox', checked: !!(e && e.levelSet), onchange: ev => E.change(ev.target.checked ? 'keep my level' : 'game levels it', ed => { ed.levelSet = ev.target.checked; }) }), 'keep my level (sound-levels.txt)'),
       els.levelInfo = h('div.faint', { style: { marginTop: '3px' } }),
+      originBlock(a, e),
       h('div.side-h', 'Notes'),
       h('textarea.note', { placeholder: 'notes for this sound (all packs)', onchange: ev => Q.commit('note', () => { const m = Q.state.meta[U.metaKey(E.key)] = Q.state.meta[U.metaKey(E.key)] || {}; m.note = ev.target.value; }) }, meta.note || ''),
       usesBlock(a));
@@ -116,6 +117,16 @@
     E.redraw();
     if (Q.assets[E.key].orig || e) { Q.getOut(E.key).then(() => { E.redraw(); fillMetrics(); }).catch(er => U.fail('render', er)); Q.getGame(E.key).then(() => fillMetrics()).catch(() => { }); }
     fillMetrics();
+  }
+
+  // who made this sound (provenance.json on export): a choice for a dropped file, fixed for an edit of a shipped sound
+  function originBlock(a, e) {
+    const P = Q.prov;
+    if (!e) { const d = P.defaultOrigin(a.key); return [h('div.side-h', 'Origin'), h('div.faint', d ? 'Shipped: ' + P.LABEL[d.origin] + ' (' + d.source + ').' : 'Empty: drop a file or Design...')]; }
+    const o = P.originOf(a.key);
+    const chip = h('span.chip.origin.' + (o.origin || 'unset'), o.origin ? P.LABEL[o.origin] : 'ORIGIN NOT SET');
+    if (!o.choose) return [h('div.side-h', 'Origin'), h('div', chip, ' ', h('span.faint', o.note)), h('div.faint', { style: { marginTop: '3px' } }, o.why)];
+    return [h('div.side-h', 'Origin'), h('div', chip), U.originPicker(a.key, { compact: false }), h('div.faint', { style: { marginTop: '3px' } }, o.why)];
   }
 
   function usesBlock(a) {
@@ -350,6 +361,6 @@
     const ok = await U.dialog('Design a sound', body, [{ label: 'Preview', onclick: () => { Q.playPreview(draw(), { key: E.key, tag: 'gen' }); return false; } }, { label: 'Cancel', value: false }, { label: 'Use it', primary: true, value: true }]);
     if (!ok) return;
     const id = Q.addSource('generated ' + g.f0 + '-' + g.f1 + ' Hz', Q.generate(g));
-    E.change('design ' + a.name, ed => { ed.src = id; ed.trim = [0, null]; ed.fadeIn = 0; ed.fadeOut = 0; });
+    E.change('design ' + a.name, ed => { ed.src = id; ed.made = 'gen'; delete ed.origin; ed.trim = [0, null]; ed.fadeIn = 0; ed.fadeOut = 0; });
   };
 })();

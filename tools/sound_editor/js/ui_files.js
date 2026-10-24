@@ -157,6 +157,107 @@
     inp.click();
   };
 
+  // --- origin (provenance.json): who made a dropped file ---------------------------------------------------------------
+  const P = Q.prov;
+  const ORIGIN_TEXT = { '': 'who made it? (choose)', human: 'human-made (a person made it)', 'third-party': 'third-party (a pack / site, its licence)', ai: 'AI-made' };
+  const HINT = { '': 'note (optional)', human: 'who / how (optional), e.g. recorded by q', 'third-party': 'source: pack / site / licence (required)', ai: 'which tool (optional)' };
+  // a select + a text box for one dropped file's origin; the text is the source for third-party, a note otherwise
+  U.originPicker = function (key, opts) {
+    opts = opts || {};
+    const sel = h('select', { title: 'Who made this audio. Human only if a person made this sound.' }, Object.keys(ORIGIN_TEXT).map(v => h('option', { value: v }, ORIGIN_TEXT[v])));
+    const txt = h('input', { type: 'text' });
+    const sync = () => {
+      const e = Q.state.edits[key], o = (e && e.origin) || {}, v = o.origin || '';
+      sel.value = v; sel.classList.toggle('unset', !v);
+      txt.placeholder = HINT[v]; txt.value = (v === 'third-party' ? o.source : o.note) || '';
+      txt.classList.toggle('need', v === 'third-party' && !txt.value.trim());
+    };
+    const set = (origin, text) => {
+      const e = Q.state.edits[key], o = (e && e.origin) || {};
+      const note = origin === 'third-party' ? o.note || '' : text, source = origin === 'third-party' ? text : o.source || '';
+      Q.commit(origin ? 'origin ' + Q.assets[key].name + ': ' + origin : 'clear origin', () => P.setOrigin(key, origin, note, source));
+      sync(); opts.onchange && opts.onchange();
+    };
+    sel.onchange = () => {
+      const e = Q.state.edits[key], o = (e && e.origin) || {};
+      set(sel.value, (sel.value === 'third-party' ? o.source : o.note) || '');
+    };
+    txt.onchange = () => { if (sel.value) set(sel.value, txt.value.trim()); };
+    sync();
+    return h('span.origin-pick', { 'data-key': key }, sel, txt);
+  };
+
+  // where this page is (the sound-editor folder), for the dialogs
+  F.pageFolder = function () {
+    try {
+      if (location.protocol !== 'file:') return null;
+      let p = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
+      if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1).replace(/\//g, '\\');
+      return p;
+    } catch (e) { return null; }
+  };
+
+  /* After an export: write / update provenance.json in the sound-editor folder. A remembered folder with permission is
+     written straight away; otherwise one dialog asks for the folder (or the permission again, or offers the file as a
+     download). Resolves to a line for the export report. */
+  F.recordProvenance = async function (keys) {
+    const entries = P.entries(keys), n = Object.keys(entries).length;
+    if (!n) return '';
+    const done = r => { const m = 'provenance.json in ' + r.where + ': ' + n + ' entr' + (n === 1 ? 'y' : 'ies') + ' written (' + r.total + ' in all).'; U.toast(m); return m; };
+    let dir = await P.getDir();
+    if (dir && await P.permission(dir, false) === 'granted') {
+      try { const r = await P.writeTo(dir, entries); return done({ where: dir.name, total: r.total }); }
+      catch (e) { U.fail('provenance.json', e); }
+    }
+    const here = F.pageFolder();
+    const status = h('p.faint');
+    let result = null, pending = null;
+    const download = async () => {
+      try {
+        const obj = await P.offline(entries);
+        Q.download(new Blob([P.text(obj)], { type: 'application/json' }), P.FILE);
+        Q.lastProvenance = obj;   // (tests read it back)
+        result = 'provenance.json downloaded (' + Object.keys(obj.items).length + ' entries): put it in the sound-editor folder, next to sound-editor.html.';
+        return true;
+      } catch (e) { U.fail('provenance.json', e); return false; }
+    };
+    const write = async d => {
+      try {
+        const r = await P.writeTo(d, entries);
+        await P.setDir(d);
+        result = done({ where: d.name, total: r.total });
+        return true;
+      } catch (e) { status.textContent = 'Could not write there: ' + (e.message || e); status.style.color = 'var(--bad)'; return false; }
+    };
+    const anyway = h('button', { type: 'button', hidden: true, onclick: async () => { if (pending && await write(pending)) U.closeDialog2(); } }, 'Write here anyway');
+    const btns = [];
+    if (dir && P.canPick()) btns.push({ label: 'Allow writing in ' + dir.name, primary: true, onclick: async () => {
+      if (await P.permission(dir, true) !== 'granted') { status.textContent = 'Not allowed. Choose the folder again, or download the file.'; return false; }
+      return await write(dir) ? undefined : false;
+    } });
+    if (P.canPick()) btns.push({ label: dir ? 'Choose another folder...' : 'Choose the sound-editor folder...', primary: !dir, onclick: async () => {
+      let d;
+      try { d = await window.showDirectoryPicker({ id: 'quark-sound-editor', mode: 'readwrite' }); } catch (e) { status.textContent = 'No folder chosen. Choose it, or download the file instead.'; return false; }
+      if (!await P.looksRight(d)) {
+        pending = d; anyway.hidden = false;
+        status.textContent = '"' + d.name + '" has no sound-editor.html: it does not look like the sound-editor folder. Choose again, or write here anyway.';
+        status.style.color = 'var(--warn)';
+        return false;
+      }
+      return await write(d) ? undefined : false;
+    } });
+    btns.push({ node: anyway });
+    btns.push({ label: 'Download provenance.json', primary: !P.canPick(), onclick: async () => (await download()) ? undefined : false });
+    btns.push({ label: 'Skip', value: null });
+    const body = [
+      h('p', 'Quark keeps a record of who made every sound (human, third-party or AI), so the game can list what is still AI-made. The editor writes it as ', h('code', 'provenance.json'), ' in its own folder: the one ', h('code', 'sound-editor.html'), ' is in', here ? [': ', h('code', here)] : [' (usually ', h('code', 'Desktop\\Quark\\sound-editor'), ')'], '. Not the overrides folder.'),
+      h('p', dir ? 'The editor remembers "' + dir.name + '" but needs your permission again this session.' : (P.canPick() ? 'Choose that folder once: the editor remembers it and updates the file on every export.' : 'This browser cannot write folders: download the file and put it in that folder (it holds every entry this editor has exported, so it can replace the one there).')),
+      h('p.faint', n + ' entr' + (n === 1 ? 'y' : 'ies') + ' from this export; entries already in the file are kept, the ones exported now are replaced.'),
+      status];
+    await U.dialog('Record who made these sounds', body, btns, { second: true });
+    return result || 'provenance.json not written (skipped): it records who made each sound, export again to write it.';
+  };
+
   // --- export -----------------------------------------------------------------------------------------------------------
   F.exportDialog = async function () {
     const keys = Q.exportList();
@@ -164,32 +265,79 @@
     const lv = new Set(Q.levelList());
     const rep = h('div'), prog = h('div.progress', h('i'));
     const replaceOther = h('input', { type: 'checkbox', checked: true });
-    const tbl = h('table', h('tr', h('th', 'file'), h('th', 'level'), h('th', 'note')), keys.map(k => {
+    const gate = h('div.prov-gate');
+    const originCell = k => {
+      const o = P.originOf(k);
+      if (o.choose) return U.originPicker(k, { onchange: updateGate });
+      return h('span', { title: o.why }, h('span.chip.origin.' + o.origin, P.LABEL[o.origin]), ' ', h('span.faint', o.note));
+    };
+    const cells = {};
+    const tbl = h('table', h('tr', h('th', 'file'), h('th', 'level'), h('th', 'origin (provenance.json)'), h('th', 'note')), keys.map(k => {
       const a = Q.assets[k];
-      return h('tr', h('td.num', k + '.wav'), h('td', lv.has(k) ? 'yours (sound-levels.txt)' : 'game matches it'), h('td.faint', a.custom ? 'new: needs a game hook' : a.kind === 'sound' && a.pack === 'default' ? 'DEFAULT: also used by kits with DEFAULT\'s sound and RETRO' : ''));
+      cells[k] = h('td', originCell(k));
+      return h('tr', h('td.num', k + '.wav'), h('td', lv.has(k) ? 'yours (sound-levels.txt)' : 'game matches it'), cells[k], h('td.faint', a.custom ? 'new: needs a game hook' : a.kind === 'sound' && a.pack === 'default' ? 'DEFAULT: also used by kits with DEFAULT\'s sound and RETRO' : ''));
     }));
+    const choosable = keys.filter(k => P.originOf(k).choose);
+    // bulk: one origin for many dropped files
+    const bSel = h('select', Object.keys(ORIGIN_TEXT).filter(Boolean).map(v => h('option', { value: v }, ORIGIN_TEXT[v])));
+    const bTxt = h('input', { type: 'text', placeholder: HINT.human });
+    bSel.onchange = () => { bTxt.placeholder = HINT[bSel.value]; };
+    const bulk = which => {
+      const ks = which === 'unset' ? choosable.filter(k => !P.originOf(k).origin) : choosable;
+      if (!ks.length) { U.toast('No dropped files to set'); return; }
+      const v = bSel.value, t = bTxt.value.trim();
+      if (v === 'third-party' && !t) { U.toast('Third-party: say where they came from (pack / site / licence)', true); bTxt.focus(); return; }
+      Q.commit('origin of ' + ks.length + ' files: ' + v, () => { for (const k of ks) P.setOrigin(k, v, v === 'third-party' ? '' : t, v === 'third-party' ? t : ''); });
+      for (const k of ks) { cells[k].innerHTML = ''; cells[k].append(originCell(k)); }
+      updateGate();
+    };
+    const bulkRow = choosable.length > 1 ? h('div.prov-bulk', h('b', 'Set dropped files:'), bSel, bTxt,
+      h('button', { type: 'button', onclick: () => bulk('unset') }, 'to those not set'), h('button', { type: 'button', onclick: () => bulk('all') }, 'to all ' + choosable.length)) : null;
     const progress = (i, n) => { prog.firstChild.style.width = (100 * i / n) + '%'; };
+    let exportBtns = [];
+    function updateGate() {
+      const miss = P.missing(keys);
+      gate.textContent = miss.length ? miss.length + ' file' + (miss.length > 1 ? 's' : '') + ' still need' + (miss.length > 1 ? '' : 's') + ' an origin before export: ' + miss.map(k => k.split('/').slice(1).join('/') + ' (' + P.problem(k) + ')').join(', ') + '. Human only if a person made the sound.' : '';
+      for (const b of exportBtns) { b.disabled = !!miss.length; b.title = miss.length ? 'Set every file\'s origin first' : ''; }
+      return !miss.length;
+    }
+    const blocked = () => { if (updateGate()) return false; U.toast('Set who made each dropped file first (the origin column)', true); return true; };
     const body = [h('p', keys.length + ' files, 48 kHz 16-bit mono WAV, rendered through trim, fades and chain. ' + lv.size + ' keep their own level: they are listed in sound-levels.txt (merged with the one already there).'),
       h('p', 'Pick the folder: ', h('code', '%APPDATA%\\quark\\overrides'), ' to try them in the game without rebuilding (restart the game), or the repository\'s ', h('code', 'assets\\overrides'), ' to ship them with the next build. Picking ', h('code', '%APPDATA%\\quark'), ' or the repository folder itself also works: the overrides folder inside is used.'),
+      h('p', 'Every export also records who made each file in ', h('code', 'provenance.json'), ' in the sound-editor folder (where sound-editor.html is). A file you dropped in needs its origin: human only if a person made the sound. An edit of a shipped sound keeps the shipped sound\'s origin; a sound from Design... is yours. The .zip carries provenance.json at its root too: it belongs in the sound-editor folder, not in overrides.'),
       h('label', replaceOther, 'move a same-named .ogg / .flac / .mp3 already there to .bak (the game would otherwise pick either)'),
-      tbl, prog, rep];
+      bulkRow, tbl, gate, prog, rep];
     const btns = [{ label: 'Close', value: null },
-      { label: 'Download .zip', onclick: async () => { try { const r = await Q.exportZip(progress); rep.textContent = 'Zip downloaded: ' + r.files.length + ' files (unzip it into the overrides folder).'; } catch (e) { U.fail('zip', e); } return false; } }];
+      { label: 'Download .zip', onclick: async () => {
+        if (blocked()) return false;
+        try {
+          const r = await Q.exportZip(progress);
+          rep.innerHTML = '';
+          rep.append(h('p', 'Zip downloaded: ' + r.files.length + ' files (unzip it into the overrides folder; move its provenance.json into the sound-editor folder instead).'));
+          rep.append(h('p', await F.recordProvenance(r.keys)));
+        } catch (e) { U.fail('zip', e); }
+        return false;
+      } }];
     if (Q.canPickFolder()) btns.push({ label: 'Choose folder and write', primary: true, onclick: async () => {
+      if (blocked()) return false;
       let dir;
       try { dir = await window.showDirectoryPicker({ id: 'quark-overrides', mode: 'readwrite' }); } catch (e) { return false; }
       try {
         const r = await Q.exportToFolder(dir, { replaceOther: replaceOther.checked }, progress);
         rep.innerHTML = '';
-        rep.append(h('p', 'Wrote ' + r.written.length + ' files into ' + r.where + (r.guess ? ' (no overrides folder found there: written into the folder you picked)' : '') + '.'),
+        rep.append(...[h('p', 'Wrote ' + r.written.length + ' files into ' + r.where + (r.guess ? ' (no overrides folder found there: written into the folder you picked)' : '') + '.'),
           r.removed.length ? h('p', 'Moved to .bak: ' + r.removed.join(', ')) : null,
-          r.conflicts.length ? h('p', { style: { color: 'var(--warn)' } }, 'Also there with another extension (the game may pick either): ' + r.conflicts.join(', ')) : null);
+          r.conflicts.length ? h('p', { style: { color: 'var(--warn)' } }, 'Also there with another extension (the game may pick either): ' + r.conflicts.join(', ')) : null].filter(Boolean));
         U.toast('Exported ' + r.written.length + ' files');
+        rep.append(h('p', await F.recordProvenance(keys)));
       } catch (e) { U.fail('export', e); }
       return false;
     } });
     else body.unshift(h('p', { style: { color: 'var(--warn)' } }, 'This browser cannot write folders (use Chrome or Edge); download the zip instead.'));
-    await U.dialog('Export to the game', body, btns);
+    const shown = U.dialog('Export to the game', body, btns);
+    exportBtns = [...document.querySelectorAll('#dlg .dlg-f button')].filter(b => b.textContent === 'Download .zip' || b.textContent === 'Choose folder and write');
+    updateGate();
+    await shown;
   };
 
   F.init = function () {

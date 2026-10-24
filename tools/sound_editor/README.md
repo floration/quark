@@ -38,6 +38,35 @@ the game keeps their own level. It is merged with the file already there: lines 
 export, all other lines and comments stay. Sounds for missing events export the same way (`sounds/<kit>/<NAME>.wav`);
 the game ignores them until it has a hook for them.
 
+## Provenance: who made each sound
+
+Every export (folder or zip) also records, for each exported file, who made it: `provenance.json` in the editor's own
+folder (where `sound-editor.html` is, e.g. `Desktop\Quark\sound-editor`), never in overrides. Format and rules: the
+provenance spec (`assets/provenance/`, `tools/provenance.py merge <sidecar>` folds it into the registry before a push):
+
+```json
+{"format": 1, "tool": "sound-editor", "items": {"sounds/default/ROCKET.wav": {"origin": "human", "by": "q", "date": "2026-10-24", "tool": "sound-editor", "note": "..."}}}
+```
+
+Ids are the export paths (`sounds/<kit>/<SOUND>.wav`, `voices/<voice>/<LINE>.wav`, missing-sound slots too). One entry
+per id: the latest export replaces it (fields the editor doesn't set are kept), every other entry stays. The origin
+(shown in the editor panel's **Origin** and in a column of the export dialog) is `human` only when a person made the audio:
+
+- **A dropped / uploaded file** (or an empty missing-sound slot): not set until you pick human, third-party (with where it
+  came from: pack / site / licence) or AI, in the panel or the export dialog (bulk set for many). The export waits for it.
+- **An edit of a shipped sound** (trim, fades, filters, levelling) keeps the shipped sound's origin, with a note such as
+  "trim, high-pass of the AI default": DEFAULT and RETRO (synthesized) and every kit's SUPER / HYPER / LOCATOR (DEFAULT's)
+  are `ai`; HEAVY METAL, MAGICAL and MOUTH (Kenney CC0 clips, `assets/sfx/CREDITS.md`) are `third-party`; the voices are
+  `ai` (Piper text to speech, and the recordings in `assets/voice/`, whose maker the repository doesn't record); a sound
+  with the owner's file in `assets/overrides` is `human`.
+- **Design...** (the generator, shaped by hand): `human`, "made in the sound editor's generator".
+
+Origins are saved in the project file and the autosave. On the first export the editor asks for the sound-editor folder
+(Chrome / Edge), checks it holds `sound-editor.html`, and remembers it (asking permission again in a later session).
+Without a folder picker, or if you skip it, **Download provenance.json** gives the file to put in that folder (it holds
+every entry this editor has exported). The .zip carries `provenance.json` at its root too: move it to the sound-editor
+folder, not into overrides.
+
 ## What it does
 
 - **Sounds / Voices**: a matrix (rows = sounds or lines, columns = kits or voices) with a mini waveform, duration,
@@ -87,4 +116,4 @@ mute, F favourite, + / - / 0 zoom, 1-6 tabs, ? the list.
 `index.html` + `editor.css` + `js/`: `data.js` (tables, registry, state, undo), `audit.js` (where each sound plays, weak
 spots, missing events: update it when the game changes), `loudness.js` (BS.1770 and the game's measures; also runs in
 node), `dsp.js` (chain, the game's clip preparation, WAV), `engine.js` (caches, mixer state, playback), `scenes.js`,
-`groups.js`, `export.js` (zip, folder, sound-levels.txt, project, autosave), `render.js` (canvas), `ui*.js`, `boot.js`.
+`groups.js`, `export.js` (zip, folder, sound-levels.txt, project, autosave), `provenance.js` (origins, provenance.json), `render.js` (canvas), `ui*.js`, `boot.js`.
