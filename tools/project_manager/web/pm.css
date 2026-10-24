@@ -91,6 +91,12 @@ main {
 }
 .grid.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 1060px) { .grid.two { grid-template-columns: minmax(0, 1fr); } }
+.grid .span-all { grid-column: 1 / -1; }
+/* wide screens (q, 2026-10-24: a 2560x1440 screen should get three card slots across, not two) */
+@media (min-width: 1800px) {
+  main { max-width: 2600px; }
+  .grid.two.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 640px) { main { padding: 12px 16px 32px; } .top { padding: 10px 16px; } }
 
 .statusline {
@@ -422,3 +428,5 @@ table.t .z { color: var(--ink-3); }
 /* very narrow windows: let long pills and table headers wrap instead of widening the page */
 .units .pill { white-space: normal; max-width: 100%; overflow-wrap: anywhere; height: auto; }
 table.t th.n { white-space: normal; }
+
+@media (min-width: 1800px) { .needs { grid-template-columns: repeat(3, minmax(0, 1fr)); } } /* (after .needs above) */

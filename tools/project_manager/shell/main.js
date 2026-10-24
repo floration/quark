@@ -839,15 +839,9 @@ function sessionFor(tab) {
 }
 
 // ---------- page zoom ----------
-// The tool pages were laid out on a 1080p screen; on a taller one (q: 2560x1440) they looked small. Pages open at
-// the screen's work-area height / 1040 (rounded to 1/4, 1x..1.5x), so 1080p stays 1x and 1440p is 1.25x. Ctrl+= /
-// Ctrl+- change it for every tab (remembered in state.json), Ctrl+0 goes back to the automatic size.
-function autoZoom() {
-  try {
-    const d = win ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
-    return Math.min(1.5, Math.max(1, Math.round(d.workAreaSize.height / 1040 * 4) / 4));
-  } catch { return 1; }
-}
+// Pages open at 100% (q wants more cards across on a big screen, not bigger cards: the pages lay out by width).
+// Ctrl+= / Ctrl+- change the zoom for every tab (remembered in state.json), Ctrl+0 goes back to 100%.
+function autoZoom() { return 1; }
 const zoom = () => (state.zoom >= 0.5 && state.zoom <= 3 ? state.zoom : autoZoom());
 function applyZoom() {
   for (const e of views.values()) if (!e.view.webContents.isDestroyed()) e.view.webContents.setZoomFactor(zoom());
