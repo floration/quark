@@ -89,7 +89,15 @@ export class WeaponView {
             sl.oninput = () => { const v = fromPos(f, +sl.value); inp.value = fmtValue(v, f.type); this.app.setField(f.key, v); };
             tdS.append(sl);
             inp = el("input"); inp.type = "number"; inp.step = f.type === "int" ? 1 : "any";
-            inp.onchange = () => { const x = Number(inp.value); if (!Number.isFinite(x)) { this._paintRow(f.key, this.rows.get(f.key)); return; } const v = clampField(f, x); if (v !== x) this.app.toast(`${f.key}: kept within ${f.min}..${f.max} (the game clamps it)`, 2500); this.app.setField(f.key, v); };
+            // an empty or unreadable box puts the value back (Number("") is 0: it would write the field's minimum);
+            // an out-of-range one shows the clamped value at once, focused or not
+            inp.onchange = () => {
+                const raw = inp.value.trim(), x = raw === "" ? NaN : Number(raw);
+                if (!Number.isFinite(x)) { inp.value = fmtValue(this.app.values.get(f.key), f.type); return; }
+                const v = clampField(f, x);
+                if (v !== x) { this.app.toast(`${f.key}: kept within ${f.min}..${f.max} (the game clamps it)`, 2500); inp.value = fmtValue(v, f.type); }
+                this.app.setField(f.key, v);
+            };
             tdN.append(inp);
         }
         tdStd.textContent = fmtValue(f.default, f.type);
