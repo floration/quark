@@ -31,19 +31,34 @@
   <section class="card pipeline-card" id="sec-pipeline" aria-labelledby="h-pipeline"></section>
   <section class="card needs-card" id="sec-needs" aria-labelledby="h-needs"></section>
 
-  <div class="grid two cards">
+  <!-- masonry: pm.js sets each card's row span from its height (no gaps under short cards); 2 / 3 / 4 columns by width -->
+  <div class="grid two cards" id="cards">
     <section class="card" id="sec-progress" aria-labelledby="h-progress"></section>
     <section class="card" id="sec-ci" aria-labelledby="h-ci"></section>
     <section class="card" id="sec-assets" aria-labelledby="h-assets"></section>
     <section class="card" id="sec-servers" aria-labelledby="h-servers"></section>
     <section class="card" id="sec-changelogs" aria-labelledby="h-changelogs"></section>
     <section class="card" id="sec-history" aria-labelledby="h-history"></section>
-    <section class="card span-all" id="sec-local" aria-labelledby="h-local"></section>
-    <section class="card span-all" id="sec-tools" aria-labelledby="h-tools"></section>
+    <section class="card" id="sec-local" aria-labelledby="h-local"></section>
+    <section class="card" id="sec-tools" aria-labelledby="h-tools"></section>
   </div>
 
   <section class="card tabs-card" id="sec-tabs" aria-labelledby="h-tabs" hidden></section>
 </main>
+
+<div class="halt-toast" id="halt-toast" role="alert" hidden></div>
+
+<dialog class="hist-dialog" id="history-dialog" aria-labelledby="fh-title">
+  <div class="fh-head">
+    <h2 id="fh-title">Event log</h2>
+    <span class="small muted" id="fh-meta"></span>
+    <span class="grow"></span>
+    <input type="search" id="fh-q" placeholder="Search events" aria-label="Search events">
+    <select id="fh-lane" aria-label="Kind of event"><option value="">All kinds</option></select>
+    <button type="button" class="btn small" id="fh-close">Close</button>
+  </div>
+  <div class="fh-body" id="fh-body"></div>
+</dialog>
 
 <script src="static/pm.js"></script>
 </body>

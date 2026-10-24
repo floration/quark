@@ -146,6 +146,13 @@
             "checks": "success",
             "checksText": "5 of 5 passed",
             "updatedAt": "2026-10-24T17:12:40Z"
+          },
+          {
+            "number": 10,
+            "title": "Bump actions/checkout from 4.1.7 to 4.2.0",
+            "url": "https://github.com/floration/quark/pull/10",
+            "head": "dependabot/github_actions/actions/checkout-4.2.0",
+            "checks": "success"
           }
         ],
         "runs": {
@@ -252,7 +259,8 @@
             "section": "Ranked season reset",
             "date": "2026-10-24",
             "since": "2026-10-24T18:55:00Z",
-            "link": "http://127.0.0.1:8766/#entry=02-in-progress.md:worker-secret"
+            "link": "http://127.0.0.1:8766/#entry=02-in-progress.md:worker-secret",
+            "body": "Add the RANK_SIGNING_KEY secret to the ranking Worker. In tools/master run `wrangler secret put RANK_SIGNING_KEY` and paste the key from your password manager, then re-run `deploy-worker`."
           }
         ],
         "haltingCount": 1
@@ -399,14 +407,12 @@
           },
           {
             "name": "testing-f3",
-            "version": "1.18.5-test.228",
-            "commit": "173b9ee",
-            "mtime": "2026-10-23T05:10:40Z",
-            "lines": [
-              "version 1.18.5-test.228",
-              "commit 173b9ee",
-              "F3 overlay on"
-            ]
+            "present": false,
+            "version": null,
+            "commit": null,
+            "mtime": null,
+            "lines": [],
+            "note": "folder missing"
           }
         ]
       }
@@ -430,7 +436,8 @@
               "## Sounds",
               "- **Your own volume for replacement sounds.** A file listed in `sound-levels.txt` now keeps its own loudness instead (it is only turned down if it would clip).",
               "- **Sound editor (for modders and the developer):** `tools/sound_editor` builds a local page to hear every pack's sounds and every voice line."
-            ]
+            ],
+            "committedAt": "2026-10-24T04:30:11Z"
           },
           {
             "version": "1.18.5",
@@ -443,7 +450,8 @@
               "## Loading",
               "- **The official maps ship with their lighting already baked.** Midtown 5.3 s -> 0.05 s, Lodestone 2.8 s -> 0.04 s.",
               "- **Cached map loads are about 2.5x faster** (the light bake's preparation runs on every core)."
-            ]
+            ],
+            "committedAt": "2026-10-23T22:05:40Z"
           },
           {
             "version": "1.18.4",
@@ -455,7 +463,8 @@
               "",
               "## Servers",
               "- A big reliable message, such as a long chat line, a ranked ticket or a map edit, can no longer get stuck waiting while a crowded snapshot has no room for it."
-            ]
+            ],
+            "committedAt": "2026-10-23T03:12:09Z"
           },
           {
             "version": "1.18.3",
@@ -467,7 +476,8 @@
               "",
               "## Ranked",
               "- The queue no longer pairs you with the player you just played twice in a row."
-            ]
+            ],
+            "committedAt": "2026-10-22T19:48:00Z"
           }
         ],
         "log": [
@@ -599,7 +609,8 @@
       "testing": "1.18.6",
       "testingPrerelease": "test-1.18.6-test.231",
       "working": "1.18.6",
-      "nextFree": "1.18.7"
+      "nextFree": "1.18.7",
+      "productionTag": "v1.17.0"
     },
     "pipeline": [
       {
@@ -803,7 +814,11 @@
         "why": "testing (1.18.6) is ahead of production (1.17.0)",
         "owner": "q",
         "link": "https://github.com/floration/quark/blob/testing/docs/RELEASE_CHECKLIST.md",
-        "source": "derived"
+        "source": "derived",
+        "progress": {
+          "done": 3,
+          "total": 17
+        }
       },
       {
         "text": "Say push for \"Tweak gameplay\"",
@@ -853,6 +868,15 @@
         "text": "working-repo has uncommitted changes older than a day (4 files)",
         "link": "http://127.0.0.1:8767/#local=working-repo",
         "source": "github"
+      },
+      {
+        "level": "amber",
+        "source": "derived",
+        "link": null,
+        "kind": "disagree",
+        "text": "The Editor Manager has testing 1.18.5 (GitHub: 1.18.6)",
+        "why": "not synced with GitHub yet",
+        "fix": "Refresh with fetch in the Editor Manager"
       }
     ],
     "humanPct": 16.9,
@@ -939,7 +963,9 @@
         "threadUrl": "https://claude.ai/code/session_01RankedSeasonReset",
         "since": "2026-10-24T18:55:00Z",
         "link": "http://127.0.0.1:8766/#entry=02-in-progress.md:worker-secret",
-        "source": "docs"
+        "source": "docs",
+        "body": "Add the RANK_SIGNING_KEY secret to the ranking Worker. In tools/master run `wrangler secret put RANK_SIGNING_KEY` and paste the key from your password manager, then re-run `deploy-worker`.",
+        "file": "02-in-progress.md"
       },
       {
         "id": "discord-roles",
@@ -964,7 +990,25 @@
         "source": "updates"
       }
     ],
-    "haltingCount": 3
+    "haltingCount": 3,
+    "checklist": {
+      "version": "1.18.6",
+      "done": {
+        "Before you start: the build is complete": {
+          "at": "2026-10-24T18:10:00Z",
+          "build": "1.18.6-test.231"
+        },
+        "Install and update (launcher)": {
+          "at": "2026-10-24T18:11:00Z",
+          "build": "1.18.6-test.231"
+        },
+        "First start and performance": {
+          "at": "2026-10-24T18:12:00Z",
+          "build": "1.18.6-test.231"
+        }
+      },
+      "count": 3
+    }
   },
   "history": [
     {

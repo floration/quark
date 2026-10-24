@@ -17,6 +17,9 @@
   const ORACLE_MIN_MS = 120000;
   const REFRESH_MIN_MS = 10000;
   const UPDATE_MIN_MS = 60000;
+  // after Refresh / Check now / Update now: poll this often until the new data is in (or the time is up)
+  const SETTLE = { refresh: { every: 1500, max: 15000 }, oracle: { every: 3000, max: 55000 }, update: { every: 2000, max: 20000 } };
+  const FULL_HISTORY_PAGE = 300;
   const FIXTURE_URL = 'static/fixtures/pm-sample.json';
   const DEFAULT_TAB_PORTS = { 8765: 'dashboard', 8766: 'docs', 8767: 'github', 8768: 'project' };
   const TAB_NAMES = { dashboard: 'Editor Manager', docs: 'Claude Manager', github: 'GitHub Manager', project: 'Supervisor Board' };
@@ -42,7 +45,7 @@
     { id: 'other',  label: 'other',  hint: 'waiting on something else', color: 'var(--idle)' },
   ];
   const LANES = [
-    { id: 'release', label: 'Releases', color: 'var(--s1)', match: /version|release|tag|prerelease|sha|testing|production/ },
+    { id: 'release', label: 'Releases', color: 'var(--s1)', match: /version|release|tag|prerelease|sha|testing|production|push/ },
     { id: 'pr',      label: 'PRs',      color: 'var(--s7)', match: /pr|pull/ },
     { id: 'ci',      label: 'CI',       color: 'var(--s2)', match: /ci|run|build/ },
     { id: 'unit',    label: 'Oracle',   color: 'var(--s3)', match: /unit|oracle|server|bot/ },
@@ -54,9 +57,16 @@
   // ---------------------------------------------------------------- state
   const state = {
     pm: null, history: null, tabs: null,
-    genMs: 0, fetchedPerf: 0, lastOkMs: 0, error: null, historyAt: 0,
+    // nowAnchor: the server's clock (serverNow) at the last answer, fetchedPerf: performance.now() then
+    genMs: 0, nowAnchor: 0, fetchedPerf: 0, lastOkMs: 0, error: null, historyAt: 0,
     sig: '', timer: 0, lastPollPerf: -1e9, refreshAt: -1e9, oracleClickAt: -1e9, updateClickAt: -1e15, updateMsg: '',
     showAllHistory: false, openDetails: new Set(), toast: '',
+    shown: {},          // section id -> the html it shows, without its live ages (only a changed card is redrawn)
+    settle: {},         // kind -> {until, done()}: re-poll soon after Refresh / Check now / Update now (SETTLE)
+    haltKeys: null,     // the halting items seen last time (a new one brings up the notice)
+    ckBusy: new Set(),  // checklist sections being saved
+    ckMsg: '',
+    full: null, fullLimit: FULL_HISTORY_PAGE, fullErr: '', // the full event history (dialog)
   };
   const charts = {};
 
@@ -80,7 +90,7 @@
   function unk(v, word) { return has(v) && (typeof v !== 'object') ? esc(v) : '<span class="muted">' + esc(word || 'unknown') + '</span>'; }
   function short(sha) { return has(sha) ? String(sha).slice(0, 7) : ''; }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
-  function nowMs() { return state.genMs ? state.genMs + (performance.now() - state.fetchedPerf) : Date.now(); }
+  function nowMs() { return state.nowAnchor ? state.nowAnchor + (performance.now() - state.fetchedPerf) : Date.now(); }
   function parseTime(v) {
     if (!has(v)) return null;
     if (typeof v === 'number') return v > 1e12 ? v : v * 1000;
@@ -131,10 +141,11 @@
     const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
     return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0');
   }
-  // live age / elapsed spans, updated by the 1 s ticker
+  // live age / elapsed spans: drawn empty and filled by the 1 s ticker, so a card's html does not change as time passes
+  // (renderAll compares it without these attributes and redraws only cards whose data changed)
   function ageSpan(ms, prefix) {
     if (ms == null) return '<span class="muted">unknown</span>';
-    return '<span data-age="' + ms + '" data-prefix="' + esc(prefix || '') + '" title="' + esc(fmtFull(ms)) + '">' + esc((prefix || '') + fmtAge(ms)) + '</span>';
+    return '<span data-age="' + ms + '"' + (prefix ? ' data-prefix="' + esc(prefix) + '"' : '') + '></span>';
   }
   function whenSpan(ms) {
     if (ms == null) return '<span class="muted">unknown</span>';
@@ -261,7 +272,7 @@
     const title = info.local ? info.name + ' not running' : info.name + ' unavailable';
     const t = parseTime(s.fetchedAt);
     return '<div class="down">' + IC.down + '<div><strong>' + esc(title) + '</strong><div class="fix">' + esc(fixFor(key, s.error)) + '</div>' +
-      (has(s.error) ? '<div class="err">' + esc(s.error) + (t != null ? ' &middot; last good data ' + esc(fmtAge(t)) : '') + '</div>' : '') + '</div></div>';
+      (has(s.error) ? '<div class="err">' + esc(s.error) + (t != null ? ' &middot; last good data ' + ageSpan(t) : '') + '</div>' : '') + '</div></div>';
   }
   function head(id, title, extra, meta) {
     return '<div class="card-head"><h2 id="' + id + '">' + esc(title) + (extra || '') + '</h2>' + (meta || '') + '</div>';
@@ -286,7 +297,12 @@
   }
   // derived.* holds the server's normalized copies (prs, runs, localCopies, programs); the raw source data is the fallback
   function openPrs() { const d = derived(); if (Array.isArray(d.prs) && srcOk('github')) return d.prs.filter(isObj); const g = data('github'); return arr(pick(g, 'prs', 'pulls', 'openPrs', 'openPRs', 'pullRequests')).filter(isObj); }
-  function locals() { const d = derived(); if (Array.isArray(d.localCopies) && srcOk('github')) return d.localCopies.filter(isObj); const g = data('github'); return arr(pick(g, 'locals', 'localCopies', 'local')).filter(isObj); }
+  // a PR's base branch; an older GitHub Manager summary has none: a PR from testing goes to the default branch
+  // (production), any other goes into testing (the only branch work is merged into)
+  function prBase(pr) { return has(pr.base) ? String(pr.base) : String(pr.head || '') === 'testing' ? null : 'testing'; }
+  function intoTesting(pr) { return prBase(pr) === 'testing'; }
+  // (derived.localCopies merges the GitHub Manager's view with this board's own git reads: shown even when it is down)
+  function locals() { const d = derived(); if (Array.isArray(d.localCopies)) return d.localCopies.filter(isObj); const g = data('github'); return arr(pick(g, 'locals', 'localCopies', 'local')).filter(isObj); }
   function workingCopy() { return locals().find(l => /working/i.test(String(l.name || ''))) || null; }
 
   function renderPipeline() {
@@ -321,14 +337,15 @@
     const tItem = stages[1], pItem = stages[2];
     if (has(tItem.pending)) tp.push(esc(tItem.pending));
     for (const pr of openPrs()) {
-      const base = String(pr.base || '');
-      if (base && /^(testing)$/.test(base)) continue; // PRs into testing belong before testing, not before production
-      if (num(pr.number) != null) tp.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' open'));
+      if (num(pr.number) == null) continue;
+      // PRs into testing belong before testing, the testing -> default branch PR before production
+      if (intoTesting(pr)) wt.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' into testing'));
+      else tp.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' open'));
     }
     const tv = tItem.version, pv = pItem.version;
-    if (has(tv) && has(pv) && String(tv) !== String(pv)) tp.push('<a href="#checklist" data-open="checklist">hand-test checklist</a>');
-    for (const pr of openPrs()) {
-      if (String(pr.base || '') === 'testing' && num(pr.number) != null) wt.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' into testing'));
+    const ckp = checklistProgress();
+    if (has(tv) && has(pv) && String(tv) !== String(pv)) {
+      tp.push('<a href="#checklist" data-open="checklist">hand-test checklist</a>' + (ckp.total ? ' <span class="ck-frac' + (ckp.done === ckp.total ? ' all' : '') + '">' + ckp.done + '/' + ckp.total + '</span>' : ''));
     }
     const arrows = arr(d.arrows).filter(isObj);
     const serverArrow = (from, list) => {
@@ -349,20 +366,40 @@
     const g = data('github');
     const preTag = v.testingPrerelease || pick(g, 'testing.prerelease.tag');
     const preUrl = pick(g, 'testing.prerelease.url');
-    const prodTag = pick(g, 'production.tag');
+    const prodTag = pick(g, 'production.tag') || v.productionTag;
     const ck = checklistItems();
-    const ckHtml = srcOk('checklist')
-      ? (ck.length ? '<ol class="checklist">' + ck.map(h => '<li>' + esc(String(h).replace(/^\d+\.\s*/, '')) + '</li>').join('') + '</ol>' : '<p class="empty">The checklist has no sections.</p>')
-      : downBlock('checklist');
+    const ckHtml = srcOk('checklist') ? renderChecklist(ck, ckp) : downBlock('checklist');
     const html = head('h-pipeline', 'Release pipeline', '', srcMeta(['github', 'builds'])) +
       '<div class="pipeline">' + stageHtml(stages[0]) + arrow(wt, wtNone) + stageHtml(stages[1]) + arrow(tp, tpNone) + stageHtml(stages[2]) + '</div>' +
       '<div class="pipe-foot">' +
       '<span class="kv">Testing prerelease <b>' + (has(preTag) ? link(preUrl, esc(preTag)) : '<span class="muted">unknown</span>') + '</b></span>' +
       '<span class="kv">Production tag <b>' + unk(prodTag) + '</b></span>' +
       '<span class="kv" title="Testing VERSION with the patch +1. Informational: the coordinator assigns versions.">Next free version <b>' + unk(v.nextFree) + '</b></span>' +
-      '<details id="checklist" data-key="checklist"><summary>Before production' + (ck.length ? ' (' + ck.length + ' sections)' : '') + '</summary>' + ckHtml + '</details>' +
+      '<details id="checklist" data-key="checklist"><summary>Before production' + (ck.length ? ' (' + (ckp.version ? ckp.done + ' of ' + ck.length + ' tested for ' + esc(ckp.version) : ck.length + ' sections') + ')' : '') + '</summary>' + ckHtml + '</details>' +
       '</div>';
     return html;
+  }
+  // q's ticks for the testing version (POST /api/checklist; derived.checklist). Keyed by heading without its number.
+  function sectionKey(h) { return String(h || '').replace(/^\s*\d+[.)]\s*/, '').trim().slice(0, 200); }
+  function checklistProgress() {
+    const c = obj(derived().checklist), done = obj(c.done), ck = checklistItems();
+    const version = has(c.version) ? String(c.version) : (has(obj(derived().versions).testing) ? String(derived().versions.testing) : null);
+    return { version, done: ck.filter(h => done[sectionKey(h)]).length, total: ck.length, ticks: done };
+  }
+  function renderChecklist(ck, p) {
+    if (!ck.length) return '<p class="empty">The checklist has no sections.</p>';
+    const url = pick(src('checklist').data, 'url');
+    const items = ck.map(h => {
+      const k = sectionKey(h), t = obj(p.ticks[k]), on = !!p.ticks[k], at = parseTime(t.at);
+      return '<li><label' + (at != null ? ' title="' + esc('ticked ' + fmtFull(at) + (has(t.build) ? ' on ' + t.build : '')) + '"' : '') + '>' +
+        '<input type="checkbox" data-ck="' + esc(k) + '"' + (on ? ' checked' : '') + (p.version ? '' : ' disabled') + '> ' +
+        '<span>' + esc(String(h).replace(/^\d+\.\s*/, '')) + '</span></label></li>';
+    }).join('');
+    return '<div class="ck-head small muted">' + (p.version ? 'Hand-test of <b>' + esc(p.version) + '</b>: tick a section when it passed (saved on this PC, per version).' : 'Testing version unknown: ticks are saved per version.') +
+      (linkAttrs(url) ? ' ' + link(url, 'RELEASE_CHECKLIST.md') + ' &#8599;' : '') + '</div>' +
+      (state.ckMsg ? '<div class="ck-msg small">' + esc(state.ckMsg) + '</div>' : '') +
+      '<div class="ck-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + p.total + '" aria-valuenow="' + p.done + '"><i style="width:' + (p.total ? Math.round(p.done / p.total * 100) : 0) + '%"></i></div>' +
+      '<ol class="checklist">' + items + '</ol>';
   }
   function checklistItems() {
     const c = src('checklist').data;
@@ -377,10 +414,22 @@
   };
   const HALT_GOTO = { oracle: ['#sec-servers', 'Servers & bot'], updates: ['#sec-tools', 'Tools & updates'] };
   function haltingItems() { return arr(derived().halting).filter(isObj); }
+  function haltKey(h) { return String(has(h.id) ? h.id : '') + '|' + String(h.source || '') + '|' + String(h.what || h.title || ''); }
+  // the `code` spans of the entry text (a command, a setting, a path): each gets a Copy button
+  function haltCodes(h) {
+    const out = [], seen = new Set();
+    const re = /`([^`\n]{2,200})`/g;
+    let m;
+    while ((m = re.exec(String(h.body || ''))) && out.length < 4) { const c = m[1].trim(); if (c && !seen.has(c)) { seen.add(c); out.push(c); } }
+    return out;
+  }
+  function copyBtn(text, label) {
+    return '<button type="button" class="btn small copy" data-copy="' + esc(text) + '" title="' + esc('Copy: ' + text) + '">' + esc(label || 'Copy') + '</button>';
+  }
   function renderHalting() {
     const items = haltingItems();
     const sec = document.getElementById('sec-halting');
-    sec.hidden = items.length === 0;
+    if (sec.hidden !== (items.length === 0)) sec.hidden = items.length === 0;
     if (!items.length) return '';
     const li = items.map(h => {
       const t = parseTime(h.since);
@@ -389,6 +438,8 @@
       if (linkAttrs(h.threadUrl) && h.threadUrl !== h.link) go.push(link(h.threadUrl, esc(has(h.thread) ? h.thread : 'Thread') + ' &#8599;'));
       if (!go.length && HALT_GOTO[h.source]) go.push('<a href="' + HALT_GOTO[h.source][0] + '">' + esc(HALT_GOTO[h.source][1]) + ' &darr;</a>');
       const what = has(h.what) ? h.what : (has(h.title) ? h.title : 'Something needs you');
+      go.push(copyBtn(what, 'Copy'));
+      const codes = haltCodes(h);
       const blocks = has(h.blocks) ? h.blocks : (has(h.thread) ? h.thread : null);
       const meta = [
         '<span class="h-src">' + esc(HALT_SOURCES[h.source] || h.source || 'unknown source') + '</span>',
@@ -397,6 +448,7 @@
       if (has(h.title) && h.title !== what) meta.push('<span>' + esc(h.title) + '</span>');
       if (has(h.detail)) meta.push('<span class="h-detail">' + esc(h.detail) + '</span>');
       return '<li class="halt"><div class="h-what">' + esc(what) + '</div><div class="h-go">' + go.join('') + '</div>' +
+        (codes.length ? '<div class="h-codes">' + codes.map(c => '<span class="h-code"><code>' + esc(c) + '</code>' + copyBtn(c) + '</span>').join('') + '</div>' : '') +
         (blocks ? '<div class="h-blocks">Blocks <b>' + esc(blocks) + '</b></div>' : '') +
         '<div class="h-meta">' + meta.join('') + '</div></li>';
     }).join('');
@@ -406,13 +458,55 @@
   // the count in the page title and for the Quark Project shell (red badge on this tab and the taskbar)
   let lastHaltBadge = null;
   function publishHalting() {
-    const n = haltingItems().length;
+    const items = haltingItems(), n = items.length;
     window.quarkHalting = n;
     document.title = (n ? '(' + n + ') ' : '') + 'Supervisor Board';
+    // a HALT that was not there at the last poll (never on the first load: those are already on the badge)
+    const keys = new Set(items.map(haltKey));
+    if (state.haltKeys) {
+      const fresh = items.filter(h => !state.haltKeys.has(haltKey(h)));
+      if (fresh.length) haltNotice(fresh);
+    }
+    state.haltKeys = keys;
+    if (!n) { const t = document.getElementById('halt-toast'); if (t) t.hidden = true; }
     if (n === lastHaltBadge) return;
     lastHaltBadge = n;
     const sh = window.quarkShell;
     if (sh && typeof sh.setBadge === 'function') { try { sh.setBadge(n); } catch (err) { /* older shell */ } }
+  }
+  // the notice: a red toast at the top (stays until dismissed or the item is gone) and a short chime (Mute on the
+  // toast, remembered in this browser)
+  function chimeMuted() { try { return localStorage.getItem('pm.haltChime') === 'off'; } catch (e) { return false; } }
+  function haltNotice(fresh) {
+    const el = document.getElementById('halt-toast');
+    if (!el) return;
+    const h = fresh[0];
+    el.innerHTML = IC.halt + '<div class="ht-txt"><b>' + esc(fresh.length > 1 ? fresh.length + ' new HALT items' : 'New HALT') + '</b> ' +
+      esc(has(h.what) ? h.what : (h.title || 'Claude is blocked on you')) + '</div>' +
+      '<a href="#sec-halting" class="ht-go" data-dismiss="1">Show</a>' +
+      '<button type="button" class="btn small ghost ht-mute" id="halt-mute">' + (chimeMuted() ? 'Unmute' : 'Mute') + '</button>' +
+      '<button type="button" class="btn small ghost ht-x" data-dismiss="1" aria-label="Dismiss">&times;</button>';
+    el.hidden = false;
+    if (!chimeMuted()) chime();
+  }
+  let audio = null;
+  function chime() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audio = audio || new AC();
+      if (audio.state === 'suspended') audio.resume();
+      const t0 = audio.currentTime + 0.02;
+      [[880, 0], [660, 0.16]].forEach(([f, dt]) => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0 + dt);
+        g.gain.exponentialRampToValueAtTime(0.18, t0 + dt + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.3);
+        o.connect(g).connect(audio.destination);
+        o.start(t0 + dt); o.stop(t0 + dt + 0.32);
+      });
+    } catch (e) { /* no audio here (autoplay policy, no device): the toast is the notice */ }
   }
 
   // ---------------------------------------------------------------- 2. needs you
@@ -435,11 +529,13 @@
     const meta = '<span class="src" title="Worked out by the PM server from every source"><span class="dot' + (state.pm ? '' : ' dot-down') + '"></span><b>derived</b> ' + (state.genMs ? ageSpan(state.genMs) : '<span class="muted">never</span>') + '</span>';
     if (!items.length) return head('h-needs', 'Needs you', count(0), meta) + '<p class="empty">Nothing needs you right now.</p>';
     const li = items.map(({ cls, icon, a }) => {
-      const why = has(a.why) ? a.why : (a.source ? 'from ' + (SOURCES[a.source] ? SOURCES[a.source].name : a.source) : (cls === 'step' ? '' : (a.level === 'red' ? 'needs fixing' : 'worth a look')));
+      const why = has(a.why) ? a.why : (a.source && SOURCES[a.source] ? 'from ' + SOURCES[a.source].name : (cls === 'step' ? '' : (a.level === 'red' ? 'needs fixing' : 'worth a look')));
       const lab = linkLabel(a.link);
+      const pr = obj(a.progress), pt = num(pr.total), pd = num(pr.done);
       return '<li class="need ' + cls + '">' + icon + '<span class="txt">' + unk(a.text, 'no text') + '</span>' +
-        (lab ? link(a.link, esc(lab) + ' &rarr;', 'go') : '<span></span>') +
+        (pt ? '<a href="#checklist" data-open="checklist" class="go">' + esc(pd + ' of ' + pt) + ' tested &rarr;</a>' : lab ? link(a.link, esc(lab) + ' &rarr;', 'go') : '<span></span>') +
         (why ? '<span class="why">' + esc(why) + '</span>' : '') +
+        (has(a.fix) ? '<span class="why"><b>Fix:</b> ' + esc(a.fix) + '</span>' : '') +
         (cls === 'step' && recFor(a) != null ? '<span class="rec"><b>Recommended:</b> ' + esc(recFor(a)) + '</span>' : '') + '</li>';
     }).join('');
     return head('h-needs', 'Needs you', count(items.length), meta) + '<ul class="needs">' + li + '</ul>';
@@ -489,12 +585,7 @@
       }
       html += '</ul>';
     }
-    const cl = arr(d.nextSteps).filter(s => isObj(s) && String(s.owner || '').toLowerCase() === 'claude');
-    if (cl.length) {
-      html += '<div class="sub-head" style="margin-top:16px">Claude&rsquo;s next steps</div><ul class="claude-next">' +
-        cl.map(s => '<li>' + (linkAttrs(s.link) ? link(s.link, unk(s.text, 'no text')) : unk(s.text, 'no text')) + (has(s.why) ? ' <span class="muted">&middot; ' + esc(s.why) + '</span>' : '') + '</li>').join('') + '</ul>';
-    }
-    return html;
+    return html; // (derived.nextSteps owned by claude are these same entries: not listed twice)
   }
   function drawBuckets(el, w) {
     const rows = charts.buckets || [];
@@ -521,14 +612,14 @@
     const failed = obj(pick(runsObj, 'lastFailed', 'lastFailure') || pick(g, 'lastFailed', 'lastFailedRun', 'lastFailure'));
     const lastT = obj(pick(runsObj, 'lastTesting') || pick(g, 'lastTestingRun'));
     html += '<div class="sub-head">Running now' + (running.length ? ' (' + running.length + ')' : '') + '</div>';
-    if (!running.length) html += '<p class="empty">No CI runs in progress.' + (has(lastT.conclusion) ? ' Last run on testing: ' + esc(lastT.conclusion) + ', ' + esc(fmtAge(parseTime(lastT.finishedAt))) + '.' : '') + '</p>';
+    if (!running.length) html += '<p class="empty">No CI runs in progress.' + (has(lastT.conclusion) ? ' Last run on testing: ' + esc(lastT.conclusion) + ', ' + ageSpan(parseTime(lastT.finishedAt)) + '.' : '') + '</p>';
     for (const r of running) {
       const start = parseTime(pick(r, 'startedAt', 'createdAt', 'started'));
       const id = pick(r, 'id', 'runId');
       const name = esc(pick(r, 'name', 'workflow') || 'run') + ' <span class="muted">on</span> ' + unk(r.branch, 'branch unknown');
       const bits = [has(r.job) ? esc(r.job) : null, has(r.event) ? esc(r.event) : null, has(r.sha) ? '<span class="mono">' + esc(short(r.sha)) + '</span>' : null].filter(Boolean);
       html += '<div class="run">' + pill('run', 'running') + '<span class="t">' + (id != null ? tabLink('github', '#run=' + encodeURIComponent(id), name) : name) + ext(r.url) + '</span>' +
-        '<span class="elapsed"' + (start != null ? ' data-start="' + start + '" title="started ' + esc(fmtFull(start)) + '"' : '') + '>' + (start != null ? fmtDur(nowMs() - start) : 'unknown') + '</span>' +
+        '<span class="elapsed"' + (start != null ? ' data-start="' + start + '" title="started ' + esc(fmtFull(start)) + '"' : '') + '>' + (start != null ? '' : 'unknown') + '</span>' +
         '<span class="m">' + (bits.join(' &middot; ') || '&nbsp;') + (start != null ? ' &middot; started ' + esc(fmtWhen(start)) : '') + '</span></div>';
     }
     html += '<div class="sub-head">Last failure</div>';
@@ -553,7 +644,7 @@
       const up = parseTime(pr.updatedAt);
       html += '<div class="pr">' + ckPill + '<span class="t">' + (n != null ? tabLink('github', '#pr=' + n, title) : title) + ext(pr.url) + '</span>' +
         (pr.draft ? pill('idle', 'draft') : '<span></span>') +
-        '<span class="m"><span class="mono">' + esc(pr.head || '?') + '</span> &rarr; <span class="mono">' + esc(pr.base || '?') + '</span>' +
+        '<span class="m"><span class="mono">' + esc(pr.head || '?') + '</span> &rarr; ' + (prBase(pr) != null ? '<span class="mono"' + (has(pr.base) ? '' : ' title="the GitHub Manager did not say; a PR from any branch but testing goes into testing"') + '>' + esc(prBase(pr)) + '</span>' : '<span class="muted" title="a PR from testing goes to the default branch (production)">default branch</span>') +
         (has(pr.checksText) ? ' &middot; ' + esc(pr.checksText) : '') + (up != null ? ' &middot; updated ' + ageSpan(up) : '') + '</span></div>';
     }
     return html;
@@ -724,18 +815,21 @@
     const cards = [];
     if (!srcOk('builds')) cards.push('<div class="loc">' + downBlock('builds') + '</div>');
     for (const f of buildFolders()) {
-      const missing = f.missing === true || f.exists === false;
+      const missing = f.present === false || f.missing === true || f.exists === false;
+      const noMarker = !missing && has(f.note) && !has(f.version); // (e.g. "no BUILD.txt")
       const mt = parseTime(pick(f, 'mtime', 'builtAt', 'time'));
       const lines = arr(f.lines || f.raw).map(String);
       cards.push('<div class="loc"><div class="n"><span>' + esc(f.name) + '</span><span class="kind">game folder</span></div>' +
-        (missing ? '<div class="m">not found</div>' :
+        (missing ? '<div class="v muted">not found</div>' + (has(f.note) ? '<div class="m">' + esc(f.note) + '</div>' : '') :
+          noMarker ? '<div class="v muted">' + esc(f.note) + '</div>' :
           '<div class="v">' + unk(f.version) + (has(f.commit) ? ' <span class="mono muted">' + esc(short(f.commit)) + '</span>' : '') + '</div>' +
           '<div class="m">built ' + ageSpan(mt) + (mt != null ? ' &middot; ' + esc(fmtWhen(mt)) : '') + '</div>' +
           (lines.length ? '<details data-key="build-' + esc(f.name) + '"><summary>BUILD.txt</summary><pre>' + lines.map(esc).join('\n') + '</pre></details>' : '')) + '</div>');
     }
-    if (!srcOk('github')) cards.push('<div class="loc">' + downBlock('github') + '</div>');
+    const copies = locals().filter(isObj);
+    if (!srcOk('github') && !copies.length) cards.push('<div class="loc">' + downBlock('github') + '</div>');
     const repo = data('repo');
-    for (const l of locals().filter(isObj)) {
+    for (const l of copies) {
       const ah = num(l.ahead), bh = num(l.behind), df = num(pick(l, 'dirtyFiles', 'dirtyCount', 'uncommitted'));
       const flags = [];
       if (ah) flags.push(pill('ahead', ah + ' ahead'));
@@ -751,7 +845,8 @@
         '<div class="flags">' + flags.join('') + '</div></div>');
     }
     if (!cards.length) return html + '<p class="empty">No local folders reported.</p>';
-    return html + '<div class="locals">' + cards.join('') + '</div>';
+    const note = !srcOk('github') && copies.length ? '<p class="small muted" style="margin:-4px 0 8px">GitHub Manager not running: the repo copies come from this board&rsquo;s own git reads.</p>' : '';
+    return html + note + '<div class="locals">' + cards.join('') + '</div>';
   }
 
   // ---------------------------------------------------------------- 7b. tools & updates (pm/updater.py, installs.json)
@@ -761,9 +856,9 @@
     disabled: ['idle', 'disabled'], waiting: ['warn', 'waiting (not merged yet)'],
   };
   function updateWaitMs() {
-    // what the server said (nextAllowedIn at generatedAt), or the last click here
+    // what the server said (nextAllowedIn when it answered), or the last click here
     const u = updatesInfo();
-    const srv = num(u.nextAllowedIn) != null ? num(u.nextAllowedIn) * 1000 - (nowMs() - state.genMs) : 0;
+    const srv = num(u.nextAllowedIn) != null ? num(u.nextAllowedIn) * 1000 - (performance.now() - state.fetchedPerf) : 0;
     return Math.max(srv, UPDATE_MIN_MS - (nowMs() - state.updateClickAt));
   }
   function tmeta(e, ports) {
@@ -823,7 +918,7 @@
     if (!cls.length) return html + '<p class="empty">No changelogs found.</p>';
     cls.forEach((c, i) => {
       const lines = arr(c.lines).map(String);
-      const mt = parseTime(c.mtime);
+      const mt = parseTime(c.committedAt) != null ? parseTime(c.committedAt) : parseTime(c.mtime); // (committedAt: when git added it)
       let summary = '';
       const blocks = []; // {h, items}
       for (const raw of lines) {
@@ -873,7 +968,8 @@
         '<span class="tm" title="' + esc(e.t != null ? fmtFull(e.t) : '') + '">' + esc(e.t != null ? fmt({ hour: 'numeric', minute: '2-digit' }).format(e.t) : '?') + '</span></li>';
     }
     html += '<ul class="timeline">' + li + '</ul>';
-    if (items.length > 12) html += '<button type="button" class="btn ghost small show-more" id="history-more">' + (state.showAllHistory ? 'Show fewer' : 'Show all ' + items.length) + '</button>';
+    html += '<div class="hist-btns">' + (items.length > 12 ? '<button type="button" class="btn ghost small show-more" id="history-more">' + (state.showAllHistory ? 'Show fewer' : 'Show all ' + items.length) + '</button>' : '') +
+      '<button type="button" class="btn ghost small show-more" id="history-all" title="Every event since the PM server started logging (history.jsonl)">Full history&hellip;</button></div>';
     return html;
   }
   function drawTimeline(el, w) {
@@ -934,7 +1030,7 @@
     const tabs = tabList().filter(isObj);
     const sec = document.getElementById('sec-tabs');
     const nav = document.getElementById('nav-tabs');
-    if (EMBED) { sec.hidden = true; return null; }
+    if (EMBED) { if (!sec.hidden) sec.hidden = true; return null; }
     const tree = tabTree(tabs);
     const item = (t, inNav) => {
       const installed = t.installed !== false;
@@ -956,10 +1052,10 @@
         if (depth >= 2 && prev < 2 && h) h += '<span class="qt-nav-sep"></span>';
         h += item(t, true); prev = depth;
       }
-      nav.innerHTML = h;
+      if (state.shown.nav !== h) { state.shown.nav = h; nav.innerHTML = h; }
     }
-    if (!tabs.length) { sec.hidden = true; return null; }
-    sec.hidden = false;
+    if (!tabs.length) { if (!sec.hidden) sec.hidden = true; return null; }
+    if (sec.hidden) sec.hidden = false;
     // card: nested lists
     let html = '', depth = -1;
     for (const { t, depth: d } of tree) {
@@ -977,8 +1073,9 @@
     const p = obj(state.pm && state.pm.play);
     const el = document.getElementById('sec-play');
     const open = num(p.openNotes), pend = num(p.pending), run = num(p.running);
-    el.hidden = open == null && pend == null;
-    if (el.hidden) return '';
+    const hide = open == null && pend == null;
+    if (el.hidden !== hide) el.hidden = hide;
+    if (hide) return '';
     const bits = [esc(plural(open || 0, 'play note')) + ' open'];
     if (pend) bits.push('<b>' + esc(pend) + ' waiting for you to write</b>');
     if (run) bits.push(esc(plural(run, 'game')) + ' running');
@@ -993,24 +1090,47 @@
   ];
   const DRAW = { buckets: drawBuckets, stack: drawStack, mem: drawMem, timeline: drawTimeline };
 
+  // Each card is drawn to a string and compared with what it shows. Live ages / elapsed times are attributes the
+  // ticker reads (data-age, data-start): a card whose html differs only there keeps its DOM (text selection, hover,
+  // focus, open <details>) and gets just those attributes updated; only a card whose data changed is replaced.
+  const LIVE_ATTR = / data-(?:age|start)="[^"]*"/g;
+  function patchSection(el, id, html) {
+    const key = html.replace(LIVE_ATTR, '');
+    if (state.shown[id] === key) {
+      const vals = (html.match(LIVE_ATTR) || []).map(v => v.match(/data-(age|start)="([^"]*)"/));
+      const live = el.querySelectorAll('[data-age],[data-start]');
+      if (vals.length === live.length && vals.every((m, i) => m[1] in live[i].dataset)) {
+        vals.forEach((m, i) => { if (live[i].dataset[m[1]] !== m[2]) live[i].dataset[m[1]] = m[2]; });
+        return false;
+      }
+    }
+    state.shown[id] = key;
+    el.querySelectorAll('details[data-key]').forEach(d => { if (d.open) state.openDetails.add(d.dataset.key); else state.openDetails.delete(d.dataset.key); });
+    el.innerHTML = html;
+    el.querySelectorAll('details[data-key]').forEach(d => { if (state.openDetails.has(d.dataset.key)) d.open = true; });
+    return true;
+  }
   function renderAll() {
-    document.querySelectorAll('details[data-key]').forEach(d => { if (d.open) state.openDetails.add(d.dataset.key); else state.openDetails.delete(d.dataset.key); });
-    for (const k in charts) delete charts[k];
+    const changed = [];
     for (const [id, fn] of SECTIONS) {
       const el = document.getElementById(id);
       if (!el) continue;
       let html;
       try { html = fn(); }
       catch (err) { html = '<div class="down">' + IC.down + '<div><strong>Could not draw this card</strong><div class="err">' + esc(err && err.message || err) + '</div></div></div>'; if (window.console) console.error(err); }
-      if (html != null) el.innerHTML = html;
+      if (html != null && patchSection(el, id, html)) changed.push(el);
     }
-    document.querySelectorAll('details[data-key]').forEach(d => { if (state.openDetails.has(d.dataset.key)) d.open = true; });
     publishHalting();
-    drawCharts();
+    changed.forEach(el => drawCharts(el));
     tick();
   }
-  function drawCharts() {
-    document.querySelectorAll('[data-chart]').forEach(el => {
+  function rerender(id) { // one card now (a click that changes only it)
+    const sec = SECTIONS.find(x => x[0] === id), el = document.getElementById(id);
+    if (sec && el && patchSection(el, id, sec[1]())) drawCharts(el);
+    tick();
+  }
+  function drawCharts(root) {
+    (root || document).querySelectorAll('[data-chart]').forEach(el => {
       const fn = DRAW[el.dataset.chart];
       if (!fn) return;
       try { fn(el, Math.max(120, Math.floor(el.clientWidth || el.parentNode.clientWidth || 400))); }
@@ -1026,32 +1146,45 @@
     else if (state.error) { txt = 'PM server not reachable (' + state.error + '); showing data from ' + fmtAge(state.lastOkMs) + '.'; bad = true; }
     else if (!state.pm) txt = 'Loading…';
     else txt = (FIXTURE ? 'Sample data (fixtures/pm-sample.json) · ' : '') + 'Generated ' + fmtWhen(state.genMs) + ' Dallas · ' + fmtAge(state.genMs) + (FIXTURE ? '' : ' · refreshes every 15 s');
-    el.textContent = txt;
-    line.classList.toggle('bad', bad);
+    setText(el, txt);
+    if (line.classList.contains('bad') !== bad) line.classList.toggle('bad', bad);
   }
 
   // ---------------------------------------------------------------- ticker (1 s): ages, elapsed, clock, buttons
+  // (every write is skipped when the value is the same: an idle page makes no DOM changes but the ones it shows)
+  function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
   function tick() {
-    document.querySelectorAll('[data-age]').forEach(el => { el.textContent = (el.dataset.prefix || '') + fmtAge(Number(el.dataset.age)); });
-    document.querySelectorAll('[data-start]').forEach(el => { el.textContent = fmtDur(nowMs() - Number(el.dataset.start)); });
+    document.querySelectorAll('[data-age]').forEach(el => {
+      const ms = Number(el.dataset.age);
+      setText(el, (el.dataset.prefix || '') + fmtAge(ms));
+      const t = fmtFull(ms);
+      if (el.title !== t) el.title = t;
+    });
+    document.querySelectorAll('[data-start]').forEach(el => setText(el, fmtDur(nowMs() - Number(el.dataset.start))));
     const c = document.getElementById('clock');
-    if (c) c.textContent = fmt({ weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(nowMs()) + ' Dallas';
+    if (c) setText(c, fmt({ weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(nowMs()) + ' Dallas');
     const b = document.getElementById('oracle-check');
     if (b) {
       const last = Math.max(parseTime(src('oracle').fetchedAt) || -1e15, state.oracleClickAt);
       const wait = ORACLE_MIN_MS - (nowMs() - last);
-      b.disabled = wait > 0;
-      b.textContent = wait > 0 ? 'Check in ' + fmtDur(wait) : 'Check now';
+      const checking = !!state.settle.oracle;
+      b.disabled = checking || wait > 0;
+      setText(b, checking ? 'Checking…' : wait > 0 ? 'Check in ' + fmtDur(wait) : 'Check now');
     }
     const ub = document.getElementById('tools-update');
     if (ub) {
       const u = updatesInfo();
       const w = updateWaitMs();
       ub.disabled = u.running === true || w > 0;
-      ub.textContent = u.running === true ? 'Updating…' : w > 0 ? 'Update in ' + fmtDur(w) : 'Update now';
+      setText(ub, u.running === true ? 'Updating…' : w > 0 ? 'Update in ' + fmtDur(w) : 'Update now');
     }
     const r = document.getElementById('refresh-btn');
-    if (r) { const w2 = REFRESH_MIN_MS - (performance.now() - state.refreshAt); r.disabled = w2 > 0; }
+    if (r) {
+      const w2 = REFRESH_MIN_MS - (performance.now() - state.refreshAt);
+      const busy = !!state.settle.refresh;
+      if (r.disabled !== (busy || w2 > 0)) r.disabled = busy || w2 > 0;
+      setText(r, busy ? 'Refreshing…' : 'Refresh');
+    }
     renderStatus();
   }
 
@@ -1073,6 +1206,12 @@
         apply(f, f.history, f.tabs);
       } else {
         const pm = await getJson('/api/pm' + (refresh ? '?refresh=1' : ''));
+        // the sources refresh after this answer: poll again until each has fetched since (not 15 s later)
+        if (refresh && isObj(pm) && obj(pm.refresh).accepted === true) {
+          const since = (parseTime(pm.serverNow) || Date.now()) - 1000; // (fetchedAt has whole seconds)
+          settleOn('refresh', () => Object.keys(SOURCES).every(k => k === 'oracle' || src(k).pending === true ||
+            (parseTime(src(k).fetchedAt) || 0) >= since));
+        }
         // /api/pm carries `history` (latest 30) and `tabs`; the separate endpoints are the fallback
         const [hist, tabs] = await Promise.allSettled([
           isObj(pm) && pm.history != null ? Promise.resolve(pm.history) : getJson('/api/history?limit=30'),
@@ -1084,15 +1223,29 @@
       state.error = (err && err.name === 'AbortError') ? 'timed out' : String(err && err.message || err || 'error');
       if (!state.pm) renderAll(); else renderStatus();
     }
+    // a settle ends when its data is in or its time is up
+    for (const k of Object.keys(state.settle)) {
+      const st = state.settle[k];
+      if (performance.now() > st.until || (state.pm && !state.error && st.done())) delete state.settle[k];
+    }
+    schedule();
+    tick();
+  }
+  function settleOn(kind, done) {
+    if (FIXTURE) return;
+    state.settle[kind] = { until: performance.now() + SETTLE[kind].max, done };
     schedule();
   }
+  // (serverNow and the refresh answer change on every poll; the rest is what is shown)
+  const VOLATILE = { serverNow: 1, refresh: 1 };
   function apply(pm, history, tabs, historyFresh) {
     if (!isObj(pm)) throw new Error('bad /api/pm answer');
-    const sig = JSON.stringify([pm, history, tabs]);
+    const sig = JSON.stringify([pm, history, tabs], (k, v) => VOLATILE[k] ? undefined : v);
     state.genMs = parseTime(pm.generatedAt) || Date.now();
+    state.nowAnchor = parseTime(pm.serverNow) || state.genMs; // (an older server, or the sample: its generatedAt)
     state.fetchedPerf = performance.now();
-    state.lastOkMs = state.genMs;
-    if (historyFresh !== false) state.historyAt = state.genMs;
+    state.lastOkMs = state.nowAnchor;
+    if (historyFresh !== false) state.historyAt = state.nowAnchor;
     if (sig === state.sig) { tick(); return; } // nothing changed: ages are kept fresh by the ticker
     state.sig = sig; state.pm = pm; state.history = history == null ? null : history; state.tabs = tabs == null ? null : tabs;
     renderAll();
@@ -1100,7 +1253,8 @@
   function schedule() {
     clearTimeout(state.timer);
     if (document.hidden) return; // paused while hidden; resumes on visibilitychange
-    state.timer = setTimeout(() => poll(false), POLL_MS);
+    const kinds = Object.keys(state.settle);
+    state.timer = setTimeout(() => poll(false), kinds.length ? Math.min(...kinds.map(k => SETTLE[k].every)) : POLL_MS);
   }
 
   // ---------------------------------------------------------------- events
@@ -1121,27 +1275,141 @@
     if (a && a.getAttribute('href') === '#') { e.preventDefault(); return; }
     const op = t.closest('[data-open]');
     if (op) { const d = document.getElementById(op.dataset.open); if (d) { e.preventDefault(); d.open = true; d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } return; }
-    if (t.closest('#history-more')) { state.showAllHistory = !state.showAllHistory; const el = document.getElementById('sec-history'); el.innerHTML = renderHistory(); drawCharts(); tick(); return; }
+    if (t.closest('#history-more')) { state.showAllHistory = !state.showAllHistory; rerender('sec-history'); return; }
+    if (t.closest('#history-all')) { openFullHistory(); return; }
+    if (t.closest('#fh-close')) { document.getElementById('history-dialog').close(); return; }
+    if (t.closest('#fh-more')) { state.fullLimit += FULL_HISTORY_PAGE; renderFullHistory(); return; }
+    const cp = t.closest('[data-copy]');
+    if (cp) { copyText(cp.dataset.copy, cp); return; }
+    if (t.closest('#halt-mute')) {
+      const off = !chimeMuted();
+      try { localStorage.setItem('pm.haltChime', off ? 'off' : 'on'); } catch (err) { /* private window: not kept */ }
+      t.closest('#halt-mute').textContent = off ? 'Unmute' : 'Mute';
+      return;
+    }
+    if (t.closest('[data-dismiss]')) { document.getElementById('halt-toast').hidden = true; if (!t.closest('a')) return; }
     if (t.closest('#refresh-btn')) { state.refreshAt = performance.now(); tick(); poll(true); return; }
     if (t.closest('#tools-update')) {
       state.updateClickAt = nowMs(); state.updateMsg = ''; tick();
       if (FIXTURE) return;
+      const before = updatesInfo().lastRunAt;
       fetch('/api/updates/run', { method: 'POST', cache: 'no-store' })
         .then(r => r.json())
         .then(j => {
           const o = obj(j);
-          if (o.accepted !== true) state.updateMsg = o.enabled === false ? 'Automatic installs are off on this server.' : 'Not started: an update ran less than a minute ago or is running.';
-          setTimeout(() => poll(false), 2000);
-        }, () => { state.updateMsg = 'The PM server did not answer.'; });
+          if (o.accepted !== true) { state.updateMsg = o.enabled === false ? 'Automatic installs are off on this server.' : 'Not started: an update ran less than a minute ago or is running.'; rerender('sec-tools'); }
+          else settleOn('update', () => updatesInfo().running === true || updatesInfo().lastRunAt !== before);
+        }, () => { state.updateMsg = 'The PM server did not answer.'; rerender('sec-tools'); });
       return;
     }
     if (t.closest('#oracle-check')) {
-      state.oracleClickAt = nowMs(); tick();
-      if (FIXTURE) return;
+      state.oracleClickAt = nowMs();
+      if (FIXTURE) { tick(); return; }
+      // the SSH check takes ~11 s (up to 45 s): "Checking…" and a poll every 3 s until its result is in
+      const since = nowMs() - 1000;
+      settleOn('oracle', () => (parseTime(src('oracle').fetchedAt) || 0) >= since);
+      tick();
       fetch('/api/refresh?source=oracle', { method: 'POST', cache: 'no-store' })
-        .then(() => setTimeout(() => poll(false), 2500), () => {});
+        .then(r => r.json())
+        .then(j => { if (obj(j).accepted !== true) { delete state.settle.oracle; tick(); } }, () => { delete state.settle.oracle; tick(); });
     }
   });
+  document.addEventListener('change', e => {
+    const t = e.target;
+    if (t instanceof HTMLInputElement && t.dataset.ck != null) tickSection(t);
+    if (t instanceof Element && t.closest('#fh-lane')) { state.fullLimit = FULL_HISTORY_PAGE; renderFullHistory(); }
+  });
+  document.addEventListener('input', e => {
+    if (e.target instanceof Element && e.target.closest('#fh-q')) { state.fullLimit = FULL_HISTORY_PAGE; renderFullHistory(); }
+  });
+
+  // copy (a HALT item's text or command): the async clipboard, else a hidden textarea
+  function copyText(text, btn) {
+    const done = ok => {
+      if (!btn) return;
+      const was = btn.dataset.label || btn.textContent;
+      btn.dataset.label = was;
+      btn.textContent = ok ? 'Copied' : 'Copy failed';
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => { btn.textContent = was; }, 1500);
+    };
+    const fallback = () => {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      ta.remove();
+      done(ok);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') navigator.clipboard.writeText(text).then(() => done(true), fallback);
+    else fallback();
+  }
+
+  // a checklist tick: saved on the PM server per testing version (POST /api/checklist), shown at once
+  function tickSection(input) {
+    const p = checklistProgress(), k = input.dataset.ck, on = input.checked;
+    if (!p.version || state.ckBusy.has(k)) { input.checked = !on; return; }
+    const d = derived();
+    const local = view => {
+      d.checklist = Object.assign({}, obj(d.checklist), view, { count: Object.keys(obj(view.done)).length });
+      const keys = checklistItems().map(sectionKey);
+      for (const st of arr(d.nextSteps)) if (isObj(st) && isObj(st.progress)) st.progress = { done: keys.filter(x => obj(view.done)[x]).length, total: keys.length };
+      state.sig = ''; // (the next poll redraws from the server's copy)
+      rerender('sec-pipeline'); rerender('sec-needs');
+    };
+    const done = Object.assign({}, p.ticks);
+    if (on) done[k] = { at: new Date(nowMs()).toISOString(), build: obj(d.versions).testingServer || null }; else delete done[k];
+    state.ckMsg = '';
+    local({ version: p.version, done });
+    if (FIXTURE) return;
+    state.ckBusy.add(k);
+    fetch('/api/checklist', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: p.version, section: k, done: on, build: obj(d.versions).testingServer || null }) })
+      .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => { if (!ok || obj(j).ok !== true) throw new Error(obj(j).message || 'not saved'); local(obj(j).checklist); })
+      .catch(err => {
+        const back = Object.assign({}, done);
+        if (on) delete back[k]; else back[k] = p.ticks[k];
+        state.ckMsg = 'Not saved: ' + (err && err.message || 'the PM server did not answer') + '.';
+        local({ version: p.version, done: back });
+      })
+      .finally(() => state.ckBusy.delete(k));
+  }
+
+  // ---------------------------------------------------------------- full event history (a dialog; /api/history)
+  function openFullHistory() {
+    const dlg = document.getElementById('history-dialog');
+    if (!dlg) return;
+    state.fullLimit = FULL_HISTORY_PAGE; state.fullErr = '';
+    if (!dlg.open) dlg.showModal();
+    renderFullHistory();
+    const load = FIXTURE ? Promise.resolve(state.history) : getJson('/api/history?limit=10000');
+    load.then(h => { state.full = arr(Array.isArray(h) ? h : obj(h).events).filter(isObj); renderFullHistory(); },
+      err => { state.fullErr = 'Could not load the event log (' + (err && err.message || 'error') + ').'; renderFullHistory(); });
+  }
+  function renderFullHistory() {
+    const body = document.getElementById('fh-body'), meta = document.getElementById('fh-meta'), sel = document.getElementById('fh-lane');
+    if (!body) return;
+    if (sel && sel.options.length <= 1) sel.innerHTML = '<option value="">All kinds</option>' + LANES.map(l => '<option value="' + l.id + '">' + esc(l.label) + '</option>').join('');
+    if (state.fullErr) { body.innerHTML = '<p class="empty">' + esc(state.fullErr) + '</p>'; return; }
+    if (!state.full) { body.innerHTML = '<p class="empty">Loading&hellip;</p>'; return; }
+    const lane = sel ? sel.value : '', q = (document.getElementById('fh-q') || {}).value || '';
+    const ql = q.trim().toLowerCase();
+    const all = state.full.map(e => ({ t: parseTime(e.time), kind: e.kind, text: e.text, link: e.link, lane: laneOf(e.kind) }))
+      .sort((a, b) => (b.t || 0) - (a.t || 0));
+    const hits = all.filter(e => (!lane || e.lane.id === lane) && (!ql || String(e.text || '').toLowerCase().indexOf(ql) >= 0));
+    meta.textContent = hits.length === all.length ? plural(all.length, 'event') : hits.length + ' of ' + plural(all.length, 'event');
+    let lastDay = '', li = '';
+    for (const e of hits.slice(0, state.fullLimit)) {
+      const dk = e.t != null ? dayKey(e.t) : 'unknown';
+      if (dk !== lastDay) { lastDay = dk; li += '<li class="day">' + esc(e.t == null ? 'Unknown time' : fmt({ weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(e.t)) + '</li>'; }
+      li += '<li style="--kc:' + e.lane.color + '"><span class="tx">' + (linkAttrs(e.link) ? link(e.link, unk(e.text, 'event')) : unk(e.text, 'event')) + ' <span class="muted small">' + esc(e.lane.label) + '</span></span>' +
+        '<span class="tm" title="' + esc(e.t != null ? fmtFull(e.t) : '') + '">' + esc(e.t != null ? fmt({ hour: 'numeric', minute: '2-digit' }).format(e.t) : '?') + '</span></li>';
+    }
+    body.innerHTML = hits.length ? '<ul class="timeline">' + li + '</ul>' + (hits.length > state.fullLimit ? '<button type="button" class="btn ghost small show-more" id="fh-more">Show ' + Math.min(FULL_HISTORY_PAGE, hits.length - state.fullLimit) + ' more</button>' : '')
+      : '<p class="empty">' + (all.length ? 'No event matches.' : 'Nothing logged yet.') + '</p>';
+  }
   // tooltips for SVG marks
   const tip = document.createElement('div');
   tip.className = 'tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
@@ -1157,6 +1425,23 @@
   });
   let rz = 0;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawCharts, 120); });
+
+  // ---------------------------------------------------------------- masonry: the card grid without gaps
+  // CSS grid with 4 px rows: each card spans as many rows as it is tall (+ the gap), and `dense` packing puts the next
+  // card under the shortest column. A ResizeObserver keeps the spans right as cards change; nothing runs while idle.
+  const grid = document.getElementById('cards');
+  if (grid && typeof ResizeObserver === 'function') {
+    const ROW = 4, GAP = 16;
+    const ro = new ResizeObserver(entries => {
+      for (const en of entries) {
+        const el = en.target, h = el.getBoundingClientRect().height;
+        const span = 'span ' + Math.max(1, Math.ceil((h + GAP) / ROW));
+        if (el.style.gridRowEnd !== span) el.style.gridRowEnd = span;
+      }
+    });
+    for (const c of grid.children) ro.observe(c);
+    grid.classList.add('masonry');
+  }
 
   if (EMBED) document.body.classList.add('embed');
   setInterval(tick, 1000);

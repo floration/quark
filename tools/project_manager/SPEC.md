@@ -77,7 +77,9 @@ others. `?refresh=1` on `/api/pm` asks for an immediate refresh (rate-limited to
 
 Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET /api/pm` (below), `GET /api/tabs`
 (resolved tabs.json with `installed`, `up`), `GET /api/history?limit=` (the PM's own event log),
-`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run` / `/api/updates/ack?id=` (section 5). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
+`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run` / `/api/updates/ack?id=` (section 5),
+`POST /api/checklist` (JSON `{version, section, done, build?}`: q's hand-test ticks, kept per testing VERSION in
+`Quark\project-manager\checklist-ticks.json`, newest 20 versions; a section is keyed by its heading without the number). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
 
 ### Sources (interval)
 
@@ -87,7 +89,7 @@ Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET
 | `docs` (30 s) | in-progress entries (title, thread, threadUrl, status, where, waitingOn, waitingWhy), waiting buckets, open questions for q, recent changes | `GET http://127.0.0.1:8766/api/summary` |
 | `editors` (30 s) | testing/production versions, provenance totals + % human + by category, pending marks, programs (id, name, ahead_testing, ahead_production, uncommitted, files_changed), remaining | `GET http://127.0.0.1:8765/api/summary` |
 | `builds` (60 s) | the local game folders `production\`, `testing\`, `working\`, `testing-f3\`: version + commit from each `BUILD.txt` (show its raw lines too; format may vary), mtime | local files |
-| `repo` (60 s) | `Quark\repository\` (mirror of testing): `VERSION`, newest 8 `changelogs/<v>.md` (version, first 12 lines, mtime), whether `changelogs/full/<VERSION>.md` exists; `git log -12 --format=%H%x1f%h%x1f%cI%x1f%s` | local files + `git` (read-only commands only) |
+| `repo` (60 s) | `Quark\repository\` (mirror of testing): `VERSION`, newest 8 `changelogs/<v>.md` (version, first 12 lines, mtime, `committedAt` = the commit that added it: one `git log --diff-filter=A`, cached per HEAD), whether `changelogs/full/<VERSION>.md` exists; `git log -12 --format=%H%x1f%h%x1f%cI%x1f%s` | local files + `git` (read-only commands only) |
 | `servers` (120 s) | public server list from the ranking Worker: `GET https://quark-master.jamesrandallmcamis.workers.dev/list?v=<version>` for the production and the testing version (one address per line; count them, keep the addresses), and `/queue` raw text (players queued) | HTTPS, 5 s timeout, User-Agent `quark-project-manager` |
 | `oracle` (600 s, and on demand at most once per 120 s) | the Oracle box: production game server + Discord bot health | SSH, below |
 | `checklist` (300 s) | the section headings of `Quark\repository\docs\RELEASE_CHECKLIST.md` (for the "before production" step list) | local file |
@@ -117,7 +119,7 @@ active state, an in-progress entry added / finished, % human changed. `{time, ki
 ### `GET /api/pm` shape
 
 ```json
-{"generatedAt": "...Z",
+{"generatedAt": "...Z", "serverNow": 1761335000123,
  "sources": {"github": {"ok": true, "fetchedAt": "...", "error": null, "data": {...as fetched...}}, "docs": {...},
              "editors": {...}, "builds": {...}, "repo": {...}, "servers": {...}, "oracle": {...}, "checklist": {...}},
  "derived": {
@@ -127,17 +129,24 @@ active state, an in-progress entry added / finished, % human changed. `{time, ki
    "inProgress": [{"title", "thread", "threadUrl", "status", "where", "waitingOn", "waitingWhy"}],
    "nextSteps": [{"text", "why", "owner": "q|claude", "link"}],
    "attention": [{"level": "red|amber", "text", "link"}],
-   "halting": [{"id", "title", "what", "blocks", "thread", "threadUrl", "since", "link", "source"}], "haltingCount": 1,
+   "halting": [{"id", "title", "what", "blocks", "thread", "threadUrl", "since", "link", "source", "body?", "file?"}], "haltingCount": 1,
+   "checklist": {"version": "1.18.6", "done": {"Settings": {"at", "build"}}, "count": 1},
    "humanPct": 16.9}}
 ```
+`serverNow` (ms) is the page's clock; `generatedAt` is the last derive (up to a source interval old).
 
 Derived rules (keep them simple and explainable; each item says where it came from):
 - `nextFree` = testing VERSION with the patch +1 (informational; the coordinator assigns versions).
 - `nextSteps`: open questions for q (owner q); in-progress entries waiting on owner / push (owner q); entries waiting on
   PR / CI / tests / claude (owner claude); "Hand-test <testing version> with RELEASE_CHECKLIST" when testing is ahead of
   production; local copies with unpushed commits ("working-repo has N commits not on testing").
-- `attention`: last CI run failed on testing; a unit on the Oracle box not active; a source down; production server
-  list empty; uncommitted changes in a local copy older than a day.
+- `attention`: last CI run failed on testing; a unit on the Oracle box not active; a source down (with `fix`); production
+  server list empty; uncommitted changes in a local copy older than a day; a local source (repository\, the Editor
+  Manager) whose testing version / sha or production version differs from the GitHub Manager's for more than 10 minutes
+  (`kind: disagree`, with what to do; without GitHub the two local ones are compared).
+- Production stage: sha and date fall back to the Editor Manager's sha and `production\BUILD.txt` (publishedAt, else its
+  mtime); `versions.productionTag` = GitHub's tag, else the Editor Manager's, BUILD.txt's, else `v<VERSION>`. The
+  testing prerelease falls back to `test-<testing\BUILD.txt version>` when that is a -test build of the testing VERSION.
 - `halting` (top priority: something only q can do is blocking a Claude agent; tests waiting do not count): the Claude
   Manager's `halting` list plus in-progress entries whose status / priority / waitingOn says halting (or `(HALT)`),
   newest first; then the board's own (`source` oracle: the SSH check fails in a way only q can fix, e.g. "SSH key not
@@ -149,7 +158,11 @@ Derived rules (keep them simple and explainable; each item says where it came fr
 One page, no build step, no external requests (no CDN, no web fonts; the system font stack until the shared
 `quark-tools.css` arrives from the editor dashboard, then link it and keep `pm.css` for what is PM-specific). Light
 and dark (`prefers-color-scheme`), CSS custom properties on `:root`. `?embed=1` hides the page's own header (the shell
-draws tabs). Polls `/api/pm` every 15 s (and pauses when the page is hidden). Every time shown in Dallas time.
+draws tabs). Polls `/api/pm` every 15 s (and pauses when the page is hidden); after Refresh, Check now and Update now it
+polls every 1.5-3 s until the new data is in (Check now shows "Checking…"). Each card is drawn to a string and compared
+with what it shows; live ages are attributes the 1 s ticker fills, so only a card whose data changed is replaced (text
+selection, hover and open details survive a poll). Cards flow as masonry (4 px grid rows, each card spans its height):
+two columns from 1060 px, three from 1800 px, four from 2200 px. Every time shown in Dallas time.
 Each card says which source it came from and how old it is; a down source shows a grey "not running" card with the
 fix ("start the GitHub manager" / "SSH key not found").
 
@@ -157,10 +170,16 @@ Layout (top to bottom):
 0. **HALTING — Claude is blocked on you** (only when there is something): a solid red full-width card, each item
    with what to do (bold), what it blocks, since (Dallas time and age), the source and a link (the Claude Manager entry,
    else the thread). The count goes in the page title, "(2) Supervisor Board", in `window.quarkHalting`, and to the
-   shell (`quarkShell.setBadge(n)`: a red count on the Supervisor Board tab, a red dot over the taskbar icon).
+   shell (`quarkShell.setBadge(n)`: a red count on the Supervisor Board tab, a red dot over the taskbar icon). Each item
+   has a Copy button for what to do, and each `code` span of the entry text (a command) gets its own. A HALT that was
+   not there at the last poll brings up a red toast at the top and a short chime (Mute on the toast, kept in
+   localStorage). Answering inline is not possible: the Claude Manager accepts edits only from its own page.
 1. **Release pipeline**: three big stages left to right, working → testing → production, each with version, short
    sha, age, and the arrow between them labelled with what is pending (e.g. "3 commits", "hand-test checklist",
-   "PR #9 open"). Plus the testing prerelease tag and `nextFree`.
+   "PR #9 open"; a PR whose base is testing, or with no base and a head other than testing, is "PR #N into testing" on the
+   first arrow). Plus the testing prerelease tag, the production tag and `nextFree`. "Before production" is the
+   checklist with a tick box per section (saved per testing version on the PM server) and a progress bar; the arrow and
+   the Needs-you hand-test step show "N/M".
 2. **Needs you** (attention + nextSteps owned by q), each with a link (thread / PR / run / doc entry).
 3. **In progress**: one row per entry, grouped by what it waits on (owner, push, PR, CI, tests, Claude), a coloured
    pill for the bucket, the thread link; a small bar chart of counts per bucket.
@@ -171,7 +190,9 @@ Layout (top to bottom):
    load, memory bar, each unit as a pill, last update lines), with its age and a "check now" button (POST
    `/api/refresh?source=oracle`, honours the 120 s minimum).
 7. **Local copies & builds**: each local game folder and repo copy with version / sha / ahead / behind / dirty.
-8. **Updates**: the newest changelogs (version + first lines), and the PM's own event log (latest 30) as a timeline.
+8. **Updates**: the newest changelogs (version + first lines, dated by the commit that added them), and the PM's own
+   event log (latest 30) as a timeline; "Full history…" opens a dialog with every event (`/api/history?limit=10000`),
+   searchable and filtered by kind.
 9. **Tabs**: when not inside the shell (no `embed`), a row of links to every tab from `/api/tabs`.
 
 Deep links into sibling tabs use their hashes: dashboard `#view=changes&program=<id>`, `#view=assets&category=<cat>`;
