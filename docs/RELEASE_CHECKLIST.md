@@ -47,6 +47,9 @@ Do this on Windows; also on Linux / macOS if you have one.
 | ☐ | **MAX FPS** slider: drag, type a number, 0 = UNLIMITED; right-click sets your screen's refresh rate; the cap holds in F3. **GPU MAX CLOCKS** (NVIDIA): turning it on says it applies from the next start (or asks for administrator once). |
 | ☐ | Late mouse read: fast flicks show no lag or wobble on the weapon model, and nothing pops in late at the screen's edges. Alt-tabbed, moving the mouse doesn't turn you; the cursor is free on the desktop and held again when you're back. |
 | ☐ | Loading a big map (Midtown) the first time: the window never says "Not Responding"; joining a remote server's big map doesn't time out. |
+| ☐ | **Shipped light bakes**: with an empty user cache (or a fresh install), joining Midtown / Lodestone loads in well under a second with no bake bar; the install has `maps/lightcache/*.qlbz` (21 files, about 12 MB). |
+| ☐ | **Alt-tab back with a click**: the click that brings the window back doesn't fire; the next click does. ALT TOGGLE on: a tap zooms and stays zoomed until the next tap. |
+| ☐ | **Sound**: an explosion behind you moves to the other ear as you turn while it plays; EXCLUSIVE AUDIO on / off still clean; the startup log's audio line names the engine period. |
 | ☐ | No stutter when bots spawn, when a round restarts, when the scoreboard opens, or when a demo is recording. |
 | ☐ | Alt+Enter switches borderless ↔ windowed (and doesn't also send Enter to chat). |
 
