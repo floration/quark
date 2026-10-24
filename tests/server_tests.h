@@ -424,6 +424,13 @@ void* operator new(size_t n) {
 }
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p, size_t) noexcept { std::free(p); }
+// The nothrow forms too: their library defaults call the throwing operator new above, but AddressSanitizer replaces
+// them with its own, so without these a nothrow allocation (std::stable_sort's temporary buffer, libstdc++ 14) came
+// from ASan's new and went back through the free() above: alloc-dealloc-mismatch in every group (CI sanitizers job).
+void* operator new(size_t n, const std::nothrow_t&) noexcept {
+    try { return ::operator new(n); } catch (...) { return nullptr; }
+}
+void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
