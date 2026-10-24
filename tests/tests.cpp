@@ -626,6 +626,26 @@ static void testDashJumpWindows() {
     }
 }
 
+// Grapple held against a wall (owner 1.18.32: "it plays the sound like 100 times per second"): the anchor is inside the
+// release distance, so the grab lets go in its own step; it must start the cooldown, not grab again every 1 ms step.
+static void testGrappleAgainstWall() {
+    printf("grapple against a wall: one grab per cooldown\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -10 -1 -10 10 0 10\nbox -10 0 -1.5 10 4 -1\nspawn any 0 0 0\n", &err));   // (a wall 1 m ahead, along -z)
+    MoveState s; s.flags = MF_ONGROUND;
+    UserCmd c; c.msec = 1; c.buttons = BTN_GRAPPLE;   // (yaw 0, level: straight at the wall)
+    int grabs = 0, firstMs = -1, secondMs = -1;
+    for (int t = 0; t < 1500; t++) {
+        s.events = 0;
+        pmove(s, c, m);
+        if (s.events & ME_HOOK) { if (grabs == 0) firstMs = t; else if (grabs == 1) secondMs = t; grabs++; }
+    }
+    printf("  %d grabs in 1.5 s held (at %d ms and %d ms)\n", grabs, firstMs, secondMs);
+    CHECK(grabs == 2 && firstMs == 0 && secondMs >= 990 && secondMs <= 1010);   // (the 1 s cooldown between them)
+    CHECK(!(s.flags & MF_HOOKED));
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -8048,7 +8068,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},

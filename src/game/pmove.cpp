@@ -346,6 +346,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0 && !(s.mods & MOVE_RUN_ONLY) && mt.grapple;
     bool wasHooked = (s.flags & MF_HOOKED) != 0;
     if (!hookHeld) s.flags &= ~MF_HOOKHELD;
+    bool grabbed = false;   // (this step's grab: one let go of in its own step still starts the cooldown)
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
         float eyeH = (crouched ? kCrouchEyeHeight : kEyeHeight) * scale;
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
@@ -369,12 +370,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
             s.events |= ME_HOOK;
+            grabbed = true;
         } else if (t >= 0) {
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;
             s.events |= ME_HOOK;
+            grabbed = true;
         }
     }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -395,7 +398,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             onGround = false;
         }
     }
-    if (wasHooked && !(s.flags & MF_HOOKED)) s.hookCooldown = (kHookCooldown * mt.m[MV_HOOK_COOLDOWN]);
+    // (a grab already inside the release distance, e.g. against a wall, lets go in the step it grabbed: without the
+    // cooldown it grabbed again every 1 ms step, and its sound played every frame; owner 1.18.32)
+    if ((wasHooked || grabbed) && !(s.flags & MF_HOOKED)) s.hookCooldown = (kHookCooldown * mt.m[MV_HOOK_COOLDOWN]);
     if (!(s.flags & MF_HOOKED)) s.hookTarget = 0;
     // Held by another player's grapple: pulled toward them like a hook pulls its owner (the same acceleration and
     // top speed, momentum kept, half gravity). The server moves pullPoint with them and ends it; dashing or grabbing
