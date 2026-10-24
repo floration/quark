@@ -1,9 +1,25 @@
 // Pieces several views share: run rows, failure sentences, PR rows, commit lists, history event rows.
 import {
   html, relOnly, when, dur, elapsed, ms, plural, badge, runBadge, runState, RUNNING, stateLabel,
-  prChip, branchChip, commitChip, runChip, ghLink, docsLink, enc, aheadBehind, localChip,
+  prChip, branchChip, commitChip, runChip, ghLink, docsLink, enc, aheadBehind, localChip, versionChip,
 } from './util.js';
 import { store } from './store.js';
+import { noteBadge } from './notes.js';
+import { testsJobUrl } from './tests.js';
+
+// The workflow file of a run (release.yml): the server sends workflowFile; a run cached before it did borrows it
+// from another run of the same workflow.
+export function workflowFile(r) {
+  if (r.workflowFile) return r.workflowFile;
+  for (const x of (store.state && store.state.runs) || []) if (x.workflow === r.workflow && x.workflowFile) return x.workflowFile;
+  return null;
+}
+// "tests editor" link for one job of a run (empty when the workflow file isn't known)
+export function testsLink(r, job, { label = 'tests editor' } = {}) {
+  const f = workflowFile(r);
+  if (!f || !job) return '';
+  return html`<a class="testsl small" href="${testsJobUrl(f, job.name, r.id)}" target="quark-tests-editor" rel="noopener" title="Open ${job.name}'s tests in the tests editor (${f})">${label}</a>`;
+}
 
 export const jobsOf = (r) => (r && store.idx && store.idx.runs.get(String(r.id)) || r || {}).jobs || [];
 export const failedJobs = (r) => jobsOf(r).filter((j) => ['failure', 'timed_out', 'startup_failure'].includes(j.conclusion));
@@ -45,7 +61,7 @@ export function runOutcome(r) {
 export function runRow(r, { showBranch = true } = {}) {
   const st = runState(r);
   return html`<li class="row run-row rs-${st}" data-action="row" data-href="#run=${r.id}" tabindex="0">
-    <div class="r-main">${runBadge(r)}<a class="r-title" href="#run=${r.id}">${r.title || r.workflow}</a></div>
+    <div class="r-main">${runBadge(r)}<a class="r-title" href="#run=${r.id}">${r.title || r.workflow}</a>${noteBadge('run', r.id, `#run=${r.id}`)}</div>
     <div class="r-meta">
       <span class="wf">${r.workflow}</span>
       ${showBranch ? branchChip(r.branch) : ''} ${commitChip(r.sha)}
@@ -54,7 +70,7 @@ export function runRow(r, { showBranch = true } = {}) {
       ${runTiming(r)}
       ${ghLink(r.url, 'Open the run on GitHub')}
     </div>
-    ${st !== 'success' ? html`<div class="r-out">${runOutcome(r)}</div>` : ''}
+    ${st !== 'success' ? html`<div class="r-out">${runOutcome(r)}${failedJobs(r).slice(0, 3).map((j) => html` ${testsLink(r, j, { label: `tests: ${j.name}` })}`)}</div>` : ''}
   </li>`;
 }
 
@@ -70,7 +86,7 @@ export function prState(p) {
 
 export function prRow(p) {
   return html`<li class="row pr-row" data-action="row" data-href="#pr=${p.number}" tabindex="0">
-    <div class="r-main">${prState(p)}<a class="r-title" href="#pr=${p.number}">${p.title}</a> ${prChip(p.number, p.title)}</div>
+    <div class="r-main">${prState(p)}<a class="r-title" href="#pr=${p.number}">${p.title}</a> ${prChip(p.number, p.title)}${noteBadge('pr', p.number, `#pr=${p.number}`)}</div>
     <div class="r-meta">
       ${branchChip(p.head)} <span class="muted">into</span> ${branchChip(p.base)}
       <span class="muted">by ${p.author}</span>
@@ -95,10 +111,12 @@ const TYPE_ICON = {
   'run.started': '▶', 'run.completed': '✓', 'run.failed': '✕', 'pr.opened': '⊕', 'pr.merged': '⇥', 'pr.closed': '⊘', 'pr.updated': '↻',
   'branch.created': '+', 'branch.moved': '→', 'branch.deleted': '−', 'tag.created': '⌖', 'release.published': '★',
   'local.commit': '●', 'local.moved': '→', 'local.dirty': '✎', 'poll.error': '!', baseline: '◎',
+  'note.added': '✎', 'note.edited': '✎', 'note.done': '✓', 'note.deleted': '−',
 };
 export const TYPE_GROUPS = [
   { key: 'run', label: 'CI runs' }, { key: 'pr', label: 'Pull requests' }, { key: 'branch', label: 'Branches' },
-  { key: 'release', label: 'Tags & releases', types: ['tag', 'release'] }, { key: 'local', label: 'Local copies' }, { key: 'poll', label: 'Server', types: ['poll', 'baseline'] },
+  { key: 'release', label: 'Tags & releases', types: ['tag', 'release'] }, { key: 'local', label: 'Local copies' }, { key: 'note', label: 'Notes' },
+  { key: 'poll', label: 'Server', types: ['poll', 'baseline'] },
 ];
 export const groupOf = (type) => {
   const p = (type || '').split('.')[0];
@@ -109,10 +127,18 @@ function evClass(e) {
   if (e.type === 'run.completed') return /cancel|skip/.test(e.text) ? 'off' : 'good';
   if (e.type === 'pr.merged' || e.type === 'release.published') return 'merged';
   if (e.type === 'run.started') return 'run';
+  if (e.type === 'note.done') return 'good';
+  if (e.type === 'note.added' || e.type === 'note.edited') return 'note';
   return 'off';
 }
-export function refChip(ref) {
+export function refChip(ref, type) {
   if (!ref) return '';
+  if (ref.note) {
+    // a note's event: its target (as the other events show it) and, unless it was deleted, the note itself
+    const { note, ...target } = ref;
+    const t = target.commit ? commitChip(target.commit) : target.version ? versionChip(target.version) : refChip(target);
+    return html`${t}${type !== 'note.deleted' ? html` <span class="chip c-note"><a href="#tab=editor&note=${enc(note)}" title="Open the note in the Editor">note</a></span>` : ''}`;
+  }
   if (ref.run != null) { const r = store.idx.runs.get(String(ref.run)); return r ? runChip(r) : html`<span class="chip c-run"><a href="#run=${ref.run}">run ${ref.run}</a></span>`; }
   if (ref.pr != null) return prChip(ref.pr);
   if (ref.branch) return branchChip(ref.branch);
@@ -128,7 +154,7 @@ export function eventRow(e, { showDay = false } = {}) {
     <span class="ev-time" title="${e.at}">${showDay ? when(e.at) : html`<time datetime="${e.at}">${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(ms(e.at))}</time>`}</span>
     <span class="ev-ico" aria-hidden="true">${TYPE_ICON[e.type] || '•'}</span>
     <span class="ev-text">${e.text}</span>
-    <span class="ev-ref">${refChip(e.ref)}</span>
+    <span class="ev-ref">${refChip(e.ref, e.type)}</span>
   </li>`;
 }
 export function eventsFor(pred, limit = 15) {

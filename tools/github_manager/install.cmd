@@ -16,5 +16,5 @@ if not defined PY (
   pause
   exit /b 1
 )
-start "" /b %PY% -B "%~dp0install.py" "%OUT%"
+start "" /b %PY% -B "%~dp0install.py" --dest "%OUT%"
 exit /b 0

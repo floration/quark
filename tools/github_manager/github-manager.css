@@ -337,6 +337,88 @@ body.log-open::after { content: ""; position: fixed; inset: 0; background: rgba(
 .ll.l-cur { outline: 2px solid var(--gm-accent); outline-offset: -2px; }
 .log-body .pad { font-family: var(--gm-font); font-size: var(--gm-fs); }
 
+/* ---- notes (Editor tab, drawers, Overview) ---- */
+.nbadge { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 6px; padding: 0 5px; border-radius: 9px; font-size: var(--gm-fs-sm); line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--gm-accent); border: 1px solid color-mix(in srgb, var(--gm-accent) 45%, transparent); background: color-mix(in srgb, var(--gm-accent) var(--gm-tint), transparent); vertical-align: 1px; }
+.nbadge:hover { text-decoration: none; border-color: var(--gm-accent); }
+.nbadge.all-done { color: var(--gm-muted); border-color: var(--gm-line); background: none; }
+.notes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gm-s2); }
+.note { border: 1px solid var(--gm-line); border-radius: var(--gm-radius); padding: var(--gm-s2) var(--gm-s3); background: var(--gm-panel); min-width: 0; }
+.note.is-pinned { border-left: 3px solid var(--gm-accent); }
+.note.is-done .n-text { color: var(--gm-muted); }
+.note.editing { padding: 0; border: none; background: none; }
+.note.flash { animation: noteflash 2s ease-out; }
+@keyframes noteflash { from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gm-accent) 60%, transparent); } to { box-shadow: 0 0 0 3px transparent; } }
+@media (prefers-reduced-motion: reduce) { .note.flash { animation: none; outline: 2px solid var(--gm-accent); } }
+.n-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--gm-s2); min-width: 0; }
+.n-by { white-space: nowrap; }
+.n-acts { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.n-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--gm-bad); }
+button.danger { color: var(--gm-bad); border-color: color-mix(in srgb, var(--gm-bad) 60%, var(--gm-line)); }
+button.danger:hover { border-color: var(--gm-bad); }
+.tag.t-pin { color: var(--gm-accent); border-color: color-mix(in srgb, var(--gm-accent) 60%, transparent); }
+.ev-note .ev-ico { color: var(--gm-accent); }
+.chip.c-general > a:first-child, .chip.c-note > a:first-child { color: var(--gm-muted); }
+.md { overflow-wrap: anywhere; margin-top: 4px; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre { margin: 0 0 6px; }
+.md ul, .md ol { padding-left: 20px; }
+.md li + li { margin-top: 1px; }
+.md .md-h { font-weight: 700; }
+.md code { background: var(--gm-panel2); border: 1px solid var(--gm-line); border-radius: 3px; padding: 0 3px; }
+.md pre { background: var(--gm-bg); border: 1px solid var(--gm-line); border-radius: var(--gm-radius); padding: 6px 8px; overflow-x: auto; }
+.md pre code { background: none; border: none; padding: 0; }
+.nform { display: grid; gap: 6px; border: 1px solid var(--gm-accent); border-radius: var(--gm-radius); padding: var(--gm-s2); background: var(--gm-panel); }
+.nform.compose { border-color: var(--gm-line); background: var(--gm-panel2); }
+.nform textarea { width: 100%; resize: vertical; min-height: 64px; line-height: 1.45; background: var(--gm-bg); }
+.nform.compose textarea { background: var(--gm-panel); }
+.nform textarea:focus, .nform input:focus, .nform select:focus { outline: 2px solid color-mix(in srgb, var(--gm-accent) 70%, transparent); outline-offset: -1px; border-color: var(--gm-accent); }
+.nform input[type=text] { min-width: 0; }
+.nf-target { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--gm-s2); }
+.nf-key { flex: 1 1 260px; max-width: 520px; }
+.nf-key input { width: 100%; }
+.nf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--gm-s3); }
+.nf-count { font-variant-numeric: tabular-nums; }
+.nf-btns { display: inline-flex; gap: 6px; margin-left: auto; }
+.drawer .nf-key-hint { display: none; }
+.nf-err { margin: 0; }
+.notes-block { margin-top: var(--gm-s3); }
+.notes-block h3 button { text-transform: none; letter-spacing: 0; color: var(--gm-text); font-weight: 400; }
+.notes-block .nform { margin-bottom: var(--gm-s2); }
+.notes-card.is-empty { padding-top: var(--gm-s2); padding-bottom: var(--gm-s2); display: flex; align-items: baseline; gap: var(--gm-s3); }
+.notes-card.is-empty h2, .notes-card.is-empty p { margin: 0; }
+.notes-card h2 a { font-weight: 400; }
+.notes.pinned { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; }
+/* long pinned notes are cut at about 5 lines, fading out (a short one is not faded: the fade is in absolute units) */
+.notes.pinned .n-text { max-height: 7.6em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 5.8em, transparent 7.6em); mask-image: linear-gradient(to bottom, #000 5.8em, transparent 7.6em); }
+
+/* ---- the Editor tab ---- */
+.ed-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: var(--gm-s3); align-items: start; }
+.ed-nav { position: sticky; top: var(--gm-s3); display: grid; gap: 4px; }
+.ed-sec { display: grid; gap: 1px; padding: var(--gm-s2) var(--gm-s3); border-radius: var(--gm-radius); border: 1px solid transparent; color: var(--gm-text); }
+.ed-sec-l { display: flex; align-items: center; gap: var(--gm-s2); font-weight: 600; }
+.ed-sec-h { font-size: var(--gm-fs-sm); color: var(--gm-muted); }
+a.ed-sec:hover { text-decoration: none; background: var(--gm-panel2); }
+.ed-sec.on { background: var(--gm-panel); border-color: var(--gm-line); box-shadow: inset 3px 0 var(--gm-accent); }
+.ed-sec.is-soon { grid-template-columns: 1fr auto; color: var(--gm-muted); cursor: not-allowed; }
+.ed-sec.is-soon .ed-sec-l { font-weight: 500; }
+.ed-sec.is-soon .ed-sec-h { grid-column: 1 / -1; opacity: .8; }
+.ed-nav-note { margin: var(--gm-s2) var(--gm-s3) 0; }
+.ed-main .card > h2 { margin-bottom: 4px; }
+@media (max-width: 900px) {
+  .ed-layout { grid-template-columns: minmax(0, 1fr); }
+  .ed-nav { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ed-nav-note, .ed-sec-h { display: none; }
+}
+
+/* ---- the Tests tab: the tests editor in a frame ---- */
+.view.v-tests { max-width: none; padding: 0; }
+.tests-frame { display: block; width: 100%; border: 0; background: var(--gm-bg); }
+.tests-down code { overflow-wrap: anywhere; }
+.testsl { color: var(--gm-muted); border: 1px dotted var(--gm-line); border-radius: 4px; padding: 0 5px; line-height: 16px; white-space: nowrap; }
+.testsl:hover { color: var(--gm-accent); border-color: var(--gm-accent); text-decoration: none; }
+.r-out .testsl { margin-left: 4px; }
+
 /* ---- tooltip, toast ---- */
 .tip { position: fixed; left: 0; top: 0; z-index: 40; max-width: 380px; background: var(--gm-panel2); color: var(--gm-text); border: 1px solid var(--gm-line); border-radius: var(--gm-radius); padding: 6px 9px; font-size: 12px; box-shadow: var(--gm-shadow); pointer-events: none; }
 .toast { z-index: 50; }

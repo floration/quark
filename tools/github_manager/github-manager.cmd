@@ -23,19 +23,22 @@ if not exist "%OUT%" mkdir "%OUT%"
 set "GHM_SERVER=%~dp0server.py"
 set "GHM_OUT=%OUT%"
 
-rem 1) a windowless Python: pyw -3, pythonw on PATH, or pythonw.exe next to the Python that py / python run
+rem 1) a windowless Python, started directly: the real pythonw.exe next to the Python that py -3 / python run
+rem    (first: pyw -3 keeps the server in the py launcher's job, so killing pyw.exe would kill the server too),
+rem    then pythonw on PATH, then pyw -3. Its output goes to nul: it writes server.log itself.
 set "PYW="
-pyw -3 -c "import sys" >nul 2>nul && set "PYW=pyw -3"
-if not defined PYW pythonw -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>nul && set "PYW=pythonw"
 set "GHM_TMP=%TEMP%\quark-ghm-pythonw.txt"
 set "GHM_FIND=import os,sys; sys.stdout.write(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))"
-if not defined PYW py -3 -c "%GHM_FIND%" > "%GHM_TMP%" 2>nul || python -c "%GHM_FIND%" > "%GHM_TMP%" 2>nul
 set "PYW_EXE="
-if not defined PYW if exist "%GHM_TMP%" set /p PYW_EXE=<"%GHM_TMP%"
+py -3 -c "%GHM_FIND%" > "%GHM_TMP%" 2>nul && if exist "%GHM_TMP%" set /p PYW_EXE=<"%GHM_TMP%"
+if defined PYW_EXE if not exist "%PYW_EXE%" set "PYW_EXE="
+if not defined PYW_EXE python -c "%GHM_FIND%" > "%GHM_TMP%" 2>nul && if exist "%GHM_TMP%" set /p PYW_EXE=<"%GHM_TMP%"
 if exist "%GHM_TMP%" del "%GHM_TMP%" >nul 2>nul
-if not defined PYW if defined PYW_EXE if exist "%PYW_EXE%" set PYW="%PYW_EXE%"
+if defined PYW_EXE if exist "%PYW_EXE%" set PYW="%PYW_EXE%"
+if not defined PYW pythonw -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>nul && set "PYW=pythonw"
+if not defined PYW pyw -3 -c "import sys" >nul 2>nul && set "PYW=pyw -3"
 if defined PYW (
-  start "" /b /low %PYW% -B "%GHM_SERVER%" --data "%GHM_OUT%" --open
+  start "" /b /low %PYW% -B "%GHM_SERVER%" --data "%GHM_OUT%" --open >nul 2>nul
   exit /b 0
 )
 

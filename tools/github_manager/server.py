@@ -60,8 +60,9 @@ STATIC_EXT = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=ut
               ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
               ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2",
               ".woff": "font/woff", ".map": "application/json"}
-STATIC_BLOCKED = frozenset(("cache", "logs", "mirror.git", "test", "__pycache__"))  # data folders never served
-CORS_ORIGIN_RE = re.compile(r"^http://(127\.0\.0\.1|localhost):(876[5-8])$")
+# data folders never served (the page may run from the output folder itself)
+STATIC_BLOCKED = frozenset(("cache", "logs", "mirror.git", "test", "__pycache__", "editor"))
+CORS_ORIGIN_RE = re.compile(r"^http://(127\.0\.0\.1|localhost):(876[5-8]|8775)$")  # the local tools + tests editor
 WIN = os.name == "nt"
 NO_WINDOW = 0x08000000 if WIN else 0  # CREATE_NO_WINDOW: git / gh never flash a console window
 
@@ -650,7 +651,9 @@ def run_summary(r):
     status = r.get("status")
     started = r.get("run_started_at") or r.get("created_at")
     end = r.get("updated_at") if status == "completed" else iso(now_dt())
-    return {"id": r.get("id"), "workflow": r.get("name") or "", "branch": r.get("head_branch") or "",
+    path = (r.get("path") or "").split("@", 1)[0]  # ".github/workflows/release.yml" (dynamic runs add "@ref")
+    return {"id": r.get("id"), "workflow": r.get("name") or "", "workflowFile": path.rsplit("/", 1)[-1] or None,
+            "branch": r.get("head_branch") or "",
             "sha": r.get("head_sha") or "", "event": r.get("event") or "", "title": r.get("display_title") or "",
             "status": status, "conclusion": r.get("conclusion"), "createdAt": r.get("created_at"),
             "updatedAt": r.get("updated_at"), "startedAt": started, "durationSec": seconds_between(started, end),
@@ -983,6 +986,421 @@ class History:
 
 
 # ----------------------------------------------------------------------------------------------------------------
+# the editor: q's notes (<data>/editor/notes.json, notes.md); the only thing the page can change, all local
+
+NOTE_KINDS = ("general", "branch", "pr", "run", "commit", "version", "local")
+NOTE_STATUSES = ("open", "done")
+NOTE_TEXT_MAX = 20 * 1024       # bytes of UTF-8 per note
+NOTE_MAX = 5000                 # notes in all
+NOTE_AUTHOR_MAX = 80
+NOTE_KEY_MAX = 200
+NOTE_BODY_MAX = 64 * 1024       # a write request's body
+NOTE_NEW_FIELDS = frozenset(("target", "text", "pinned", "status", "author"))
+NOTE_EDIT_FIELDS = NOTE_NEW_FIELDS | {"rev"}
+NOTE_ID_RE = re.compile(r"^n[0-9a-f]{12}$")
+WRITE_EXTRA_PORTS = (8768,)     # the Supervisor Board, which embeds the page
+NOTE_HEADING = {"general": "General", "branch": "Branch `%s`", "pr": "Pull request #%s", "run": "CI run %s",
+                "commit": "Commit `%s`", "version": "Version %s", "local": "Local copy `%s`"}
+NOTE_ON = {"general": "", "branch": " on branch %s", "pr": " on PR #%s", "run": " on run %s",
+           "commit": " on commit %s", "version": " on version %s", "local": " on local copy %s"}
+
+
+class NoteError(Exception):
+    """A rejected note write: code is the HTTP status (400 bad input, 404 no such note, 409 conflict / full)."""
+
+    def __init__(self, code, message):
+        Exception.__init__(self, message)
+        self.code = code
+
+
+def _printable(s):
+    return not any(ord(c) < 32 or ord(c) == 127 for c in s)
+
+
+def note_target(t):
+    """{kind, key} -> the normalized target (raises NoteError). pr / run keys are numbers, commit keys lowercase hex,
+    version keys X.Y.Z (a leading v is dropped), general has the key ""."""
+    if not isinstance(t, dict) or set(t) - {"kind", "key"} or "kind" not in t:
+        raise NoteError(400, "target must be {\"kind\": ..., \"key\": ...}")
+    kind, key = t["kind"], t.get("key", "")
+    if kind not in NOTE_KINDS:
+        raise NoteError(400, "target.kind must be one of %s" % ", ".join(NOTE_KINDS))
+    if kind in ("pr", "run") and isinstance(key, int) and not isinstance(key, bool):
+        key = str(key)
+    if not isinstance(key, str):
+        raise NoteError(400, "target.key must be a string")
+    key = key.strip()
+    if kind == "general":
+        if key:
+            raise NoteError(400, "a general note has no target.key")
+        return {"kind": kind, "key": ""}
+    if not key or len(key) > NOTE_KEY_MAX or not _printable(key):
+        raise NoteError(400, "target.key must be 1-%d printable characters" % NOTE_KEY_MAX)
+    if kind in ("pr", "run"):
+        key = key.lstrip("#")
+        if not re.match(r"^[0-9]{1,15}$", key):
+            raise NoteError(400, "a %s key is a number" % kind)
+        key = str(int(key))
+    elif kind == "commit":
+        key = key.lower()
+        if not re.match(r"^[0-9a-f]{4,64}$", key):
+            raise NoteError(400, "a commit key is a sha (hex)")
+    elif kind == "version":
+        key = key[1:] if key[:1] in ("v", "V") else key
+        if not re.match(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$", key):
+            raise NoteError(400, "a version key looks like 1.18.6")
+    elif kind == "branch":
+        if key.startswith("origin/"):
+            key = key[7:]
+        if not re.match(r"^[^\s~^:?*\[\\]+$", key) or ".." in key:
+            raise NoteError(400, "not a branch name")
+    return {"kind": kind, "key": key}
+
+
+def note_text(v):
+    if not isinstance(v, str) or not v.strip():
+        raise NoteError(400, "text must be a non-empty string")
+    v = v.replace("\r\n", "\n").replace("\r", "\n")
+    if len(v.encode("utf-8")) > NOTE_TEXT_MAX:
+        raise NoteError(400, "text is over %d KB" % (NOTE_TEXT_MAX // 1024))
+    if "\0" in v:
+        raise NoteError(400, "text has a NUL character")
+    return v
+
+
+def note_author(v):
+    if v is None:
+        return "q"
+    if not isinstance(v, str) or len(v) > NOTE_AUTHOR_MAX or not _printable(v):
+        raise NoteError(400, "author must be at most %d printable characters" % NOTE_AUTHOR_MAX)
+    return v.strip() or "q"
+
+
+def note_flag(v, name):
+    if not isinstance(v, bool):
+        raise NoteError(400, "%s must be true or false" % name)
+    return v
+
+
+def note_status(v):
+    if v not in NOTE_STATUSES:
+        raise NoteError(400, "status must be open or done")
+    return v
+
+
+def note_fields(body, allowed):
+    if not isinstance(body, dict):
+        raise NoteError(400, "the body must be a JSON object")
+    extra = sorted(set(body) - allowed)
+    if extra:
+        raise NoteError(400, "unknown field%s: %s" % ("s" if len(extra) > 1 else "", ", ".join(extra)))
+    out = {}
+    if "target" in body:
+        out["target"] = note_target(body["target"])
+    if "text" in body:
+        out["text"] = note_text(body["text"])
+    if "pinned" in body:
+        out["pinned"] = note_flag(body["pinned"], "pinned")
+    if "status" in body:
+        out["status"] = note_status(body["status"])
+    if "author" in body:
+        out["author"] = note_author(body["author"])
+    if "rev" in body:
+        if not isinstance(body["rev"], int) or isinstance(body["rev"], bool):
+            raise NoteError(400, "rev must be a number")
+        out["rev"] = body["rev"]
+    return out
+
+
+def note_ref(n):
+    """A history event's ref: the note plus its target as the other events name it ({"branch": ...}, {"pr": 8}, ...),
+    so a note's events show with that branch / PR / run's own history."""
+    ref = {"note": n["id"]}
+    kind, key = n["target"]["kind"], n["target"]["key"]
+    if kind in ("pr", "run"):
+        ref[kind] = int(key)
+    elif kind != "general":
+        ref[kind] = key
+    return ref
+
+
+def note_on(target):
+    kind, key = target["kind"], target["key"]
+    return NOTE_ON[kind] % (key[:7] if kind == "commit" else key) if kind != "general" else ""
+
+
+def note_snippet(text, n=80):
+    line = " ".join(text.split())
+    return line if len(line) <= n else line[:n - 1].rstrip() + "…"
+
+
+def write_origin_ok(headers, port):
+    """Note writes come only from this page (or the Supervisor Board that embeds it): the Origin header, or with no
+    Origin the Referer, must be http://127.0.0.1:<port> or http://localhost:<port>. Anything else (another site,
+    a file:// page's "null", no header at all) is refused."""
+    allowed = set()
+    for p in (port,) + WRITE_EXTRA_PORTS:
+        allowed.update(("http://127.0.0.1:%d" % p, "http://localhost:%d" % p))
+    origin = headers.get("Origin")
+    if origin is not None:
+        return origin.strip() in allowed
+    u = urllib.parse.urlsplit((headers.get("Referer") or "").strip())
+    return bool(u.scheme) and "%s://%s" % (u.scheme, u.netloc) in allowed
+
+
+def json_content_type(ctype):
+    return (ctype or "").split(";", 1)[0].strip().lower() == "application/json"
+
+
+class Notes:
+    """q's notes. notes.json is rewritten on every change through a temp file + os.replace, the previous version kept
+    as notes.json.bak; notes.md, a readable copy grouped by target, is rewritten with it. Every change also goes to
+    the history log (note.added / note.edited / note.done / note.deleted), a deleted note with its whole text, so
+    nothing is lost. folder None keeps them in memory only (the page's fixture server)."""
+
+    def __init__(self, folder, on_events=None, repo=DEFAULT_REPO, now=None):
+        self.folder = folder
+        self.on_events = on_events
+        self.repo = repo
+        self.now = now or (lambda: iso(now_dt()))
+        self.lock = threading.Lock()
+        self.notes = collections.OrderedDict()
+        self.load_error = None
+        self._built = None      # (etag, body) of GET /api/notes
+        if folder:
+            self._load()
+
+    def _p(self, name):
+        return os.path.join(self.folder, name)
+
+    def _load(self):
+        path = self._p("notes.json")
+        if not os.path.exists(path):
+            return
+        ok = lambda d: isinstance(d, dict) and isinstance(d.get("notes"), list)
+        d = read_json(path)
+        if not ok(d):
+            # unreadable: keep it aside (the next save would otherwise copy it over the good .bak) and use the .bak
+            bad = "%s.bad-%s" % (path, now_dt().strftime("%Y%m%d-%H%M%S"))
+            try:
+                os.replace(path, bad)
+            except OSError:
+                pass
+            d = read_json(self._p("notes.json.bak"))
+            self.load_error = "notes.json could not be read (kept as %s); %s" % (
+                os.path.basename(bad), "loaded notes.json.bak" if ok(d) else "no readable notes.json.bak either")
+            LOG.warning("editor: %s", self.load_error)
+            if not ok(d):
+                return
+        for raw in d["notes"]:
+            n = self._clean(raw)
+            if n:
+                self.notes[n["id"]] = n
+
+    @staticmethod
+    def _clean(raw):
+        if not isinstance(raw, dict) or not NOTE_ID_RE.match(str(raw.get("id") or "")):
+            return None
+        try:
+            status = raw.get("status") if raw.get("status") in NOTE_STATUSES else "open"
+            rev = raw["rev"] if isinstance(raw.get("rev"), int) else 1
+            n = {"id": raw["id"], "target": note_target(raw.get("target")), "text": note_text(raw.get("text")),
+                 "pinned": bool(raw.get("pinned")), "status": status, "createdAt": raw.get("createdAt"),
+                 "updatedAt": raw.get("updatedAt") or raw.get("createdAt"), "author": note_author(raw.get("author")),
+                 "rev": rev}
+        except NoteError:
+            return None
+        return n
+
+    def _sorted(self):
+        """Newest change first."""
+        return sorted((dict(n) for n in self.notes.values()), key=lambda n: (n.get("updatedAt") or "", n["id"]),
+                      reverse=True)
+
+    def all(self):
+        with self.lock:
+            return self._sorted()
+
+    def view(self):
+        """(etag, JSON body) of GET /api/notes, built once per change."""
+        with self.lock:
+            if self._built is None:
+                body = dumps({"notes": self._sorted(), "loadError": self.load_error,
+                              "limits": {"textBytes": NOTE_TEXT_MAX, "notes": NOTE_MAX}})
+                self._built = (hashlib.sha1(body.encode("utf-8")).hexdigest()[:16], body)
+            return self._built
+
+    def _new_id(self):
+        while True:
+            nid = "n" + os.urandom(6).hex()
+            if nid not in self.notes:
+                return nid
+
+    def _save(self):
+        """Caller holds the lock. Raises OSError when notes.json can't be written (the change is then undone)."""
+        self._built = None
+        if not self.folder:
+            return
+        os.makedirs(self.folder, exist_ok=True)
+        path = self._p("notes.json")
+        data = dumps({"version": 1, "notes": list(self.notes.values())}, pretty=True) + "\n"
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                write_atomic(self._p("notes.json.bak"), f.read())
+        write_atomic(path, data)
+        try:
+            write_atomic(self._p("notes.md"), self.markdown())
+        except OSError as e:
+            LOG.warning("editor: could not write notes.md: %s", e)
+
+    def _emit(self, events):
+        if self.on_events and events:
+            try:
+                self.on_events(events)
+            except Exception:
+                LOG.exception("editor: could not log a note event")
+
+    def _event(self, typ, eid, n, at, text, data):
+        d = {"target": n["target"], "author": n["author"], "status": n["status"], "pinned": n["pinned"]}
+        d.update(data)
+        return ev(eid, at, typ, note_ref(n), text, d)
+
+    def create(self, body):
+        f = note_fields(body, NOTE_NEW_FIELDS)
+        if "target" not in f or "text" not in f:
+            raise NoteError(400, "a new note needs target and text")
+        with self.lock:
+            if len(self.notes) >= NOTE_MAX:
+                raise NoteError(409, "there are already %d notes, the most it keeps; delete some first" % NOTE_MAX)
+            at = self.now()
+            nid = self._new_id()
+            n = {"id": nid, "target": f["target"], "text": f["text"], "pinned": f.get("pinned", False),
+                 "status": f.get("status", "open"), "createdAt": at, "updatedAt": at,
+                 "author": f.get("author", "q"), "rev": 1}
+            self.notes[nid] = n
+            try:
+                self._save()
+            except OSError as e:
+                del self.notes[nid]
+                self._built = None
+                raise NoteError(500, "could not save the notes: %s" % e)
+            e = self._event("note.added", "note.added:%s" % nid, n, at,
+                            "Note%s: %s" % (note_on(n["target"]), note_snippet(n["text"])), {"text": n["text"]})
+            out = dict(n)
+        self._emit([e])
+        return out
+
+    def update(self, nid, body):
+        f = note_fields(body, NOTE_EDIT_FIELDS)
+        rev = f.pop("rev", None)
+        if not f:
+            raise NoteError(400, "nothing to change")
+        with self.lock:
+            n = self.notes.get(nid)
+            if n is None:
+                raise NoteError(404, "no note %s" % nid)
+            if rev is not None and rev != n["rev"]:
+                raise NoteError(409, "this note was changed somewhere else since you opened it (now version %d); "
+                                     "reload to see it" % n["rev"])
+            changed = [k for k in ("text", "target", "status", "pinned", "author") if k in f and f[k] != n[k]]
+            if not changed:
+                return dict(n)
+            old = dict(n)
+            at = self.now()
+            n.update({k: f[k] for k in changed})
+            n["updatedAt"] = at
+            n["rev"] = old["rev"] + 1
+            try:
+                self._save()
+            except OSError as e:
+                self.notes[nid] = old
+                self._built = None
+                raise NoteError(500, "could not save the notes: %s" % e)
+            done = "status" in changed and n["status"] == "done"
+            words = []
+            for k in changed:
+                if k == "status":
+                    words.append("done" if done else "reopened")
+                elif k == "pinned":
+                    words.append("pinned" if n["pinned"] else "unpinned")
+                elif k == "target":
+                    words.append("moved from%s" % (note_on(old["target"]) or " general"))
+                elif k == "author":
+                    words.append("author %s" % n["author"])
+                else:
+                    words.append("edited")
+            data = {"changed": changed, "rev": n["rev"]}
+            if "text" in changed:
+                data["text"] = n["text"]
+            if "target" in changed:
+                data["from"] = old["target"]
+            typ = "note.done" if done else "note.edited"
+            e = self._event(typ, "%s:%s:%d" % (typ, nid, n["rev"]), n, at, "Note %s%s: %s" % (
+                ", ".join(words), note_on(n["target"]), note_snippet(n["text"])), data)
+            out = dict(n)
+        self._emit([e])
+        return out
+
+    def delete(self, nid):
+        with self.lock:
+            n = self.notes.pop(nid, None)
+            if n is None:
+                raise NoteError(404, "no note %s" % nid)
+            try:
+                self._save()
+            except OSError as e:
+                self.notes[nid] = n
+                self._built = None
+                raise NoteError(500, "could not save the notes: %s" % e)
+            at = self.now()
+            # the tombstone: the whole note stays in the history log
+            e = self._event("note.deleted", "note.deleted:%s" % nid, n, at,
+                            "Note deleted%s: %s" % (note_on(n["target"]), note_snippet(n["text"])),
+                            {"note": dict(n)})
+        self._emit([e])
+        return nid
+
+    def markdown(self):
+        """notes.md: every note grouped by target (general first), pinned and open first, newest first."""
+        groups = collections.OrderedDict((k, {}) for k in NOTE_KINDS)
+        for n in self.notes.values():
+            groups[n["target"]["kind"]].setdefault(n["target"]["key"], []).append(n)
+        ns = list(self.notes.values())
+        n_open = sum(1 for n in ns if n["status"] == "open")
+        out = ["# GitHub manager notes", "",
+               "q's notes from the GitHub manager's Editor tab (http://127.0.0.1:8767/#tab=editor), grouped by what "
+               "they are about. The manager rewrites this file on every change, so edit the notes there, not here "
+               "(the data is notes.json next to this file; deleted notes stay in history.jsonl).", "",
+               "%s: %d open, %d done, %d pinned. Written %s." % (plural(len(ns), "note"), n_open, len(ns) - n_open,
+                                                                sum(1 for n in ns if n["pinned"]), self.now()), ""]
+        if not ns:
+            out += ["No notes yet.", ""]
+        gh = "https://github.com/%s" % self.repo
+        link = {"branch": gh + "/tree/%s", "pr": gh + "/pull/%s", "run": gh + "/actions/runs/%s",
+                "commit": gh + "/commit/%s", "version": gh + "/blob/testing/changelogs/%s.md"}
+        for kind, keys in groups.items():
+            order = (lambda k: (len(k), k)) if kind in ("pr", "run") else (lambda k: k.lower())
+            for key in sorted(keys, key=order):
+                head = NOTE_HEADING[kind] % key if kind != "general" else NOTE_HEADING[kind]
+                out.append("## " + head)
+                out.append("")
+                if kind in link:
+                    out += ["<%s>" % (link[kind] % urllib.parse.quote(key, safe="/")), ""]
+                items = sorted(keys[key], key=lambda n: n.get("updatedAt") or "", reverse=True)
+                items.sort(key=lambda n: (not n["pinned"], n["status"] == "done"))
+                for n in items:
+                    when = "written %s" % n["createdAt"]
+                    if n["updatedAt"] != n["createdAt"]:
+                        when += ", changed %s" % n["updatedAt"]
+                    out.append("### %s%s · by %s · %s · `%s`" % (n["status"], ", pinned" if n["pinned"] else "",
+                                                                 n["author"], when, n["id"]))
+                    out.append("")
+                    out += [("> " + line).rstrip() for line in n["text"].strip("\n").split("\n")]
+                    out.append("")
+        return "\n".join(out)
+
+
+# ----------------------------------------------------------------------------------------------------------------
 # the manager: one poll at a time, state published as ready-made JSON bytes
 
 def default_data_dir():
@@ -1019,6 +1437,7 @@ class Manager:
         self.git = Git(self.proc)
         self.mirror = Mirror(os.path.join(data_dir, "mirror.git"), self.repo, self.git, cfg.get("originUrl"))
         self.history = History(os.path.join(data_dir, "history.jsonl"))
+        self.notes = Notes(os.path.join(data_dir, "editor"), self.history.append, self.repo)
         self.poll_lock = threading.Lock()
         self.lock = threading.Lock()
         self.log_locks = {}
@@ -1115,6 +1534,9 @@ class Manager:
             self._save_run(rid)
             return
         old = c["summary"]
+        if "workflowFile" not in old and s.get("workflowFile"):  # cached before workflowFile existed
+            old["workflowFile"] = s["workflowFile"]
+            self._save_run(rid)
         if old.get("status") == "completed" and c.get("jobsDone") and old.get("attempt") == s["attempt"] and \
                 s["status"] == "completed":
             return  # completed runs are immutable
@@ -1850,7 +2272,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         if o and self.path.startswith("/api/"):
             self.send_header("Access-Control-Allow-Origin", o)
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", self.headers.get("Access-Control-Request-Headers")
                              or "Content-Type")
             self.send_header("Access-Control-Max-Age", "600")
@@ -1893,15 +2315,73 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._cached("h-%d-%s" % (n, key), lambda: dumps(m.history.query(since, limit)))
             if path == "/api/log":
                 return self._log(q)
+            if path == "/api/notes":
+                tag, body = m.notes.view()
+                return self._cached("no-" + tag, lambda: body)
             if path.startswith("/api/"):
                 return self._json(404, {"error": "no such endpoint"})
             return self._static(path)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def do_PUT(self):
+        if not self._host_ok():
+            return self._send(403, "forbidden", "text/plain")
+        if not urllib.parse.urlsplit(self.path).path.startswith("/api/notes/"):
+            self.close_connection = True
+            return self._json(404, {"error": "no such endpoint"})
+        self._notes_write()
+
+    def do_DELETE(self):
+        self.do_PUT()
+
+    def _notes_write(self):
+        """POST /api/notes, PUT /api/notes/<id>, DELETE /api/notes/<id>: only from the page's own origin (or the
+        Supervisor Board's), only with a JSON body (Content-Type: application/json), at most 64 KB."""
+        path = urllib.parse.urlsplit(self.path).path
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0 or n > NOTE_BODY_MAX:
+            self.close_connection = True  # the body is not read
+            return self._json(413 if n > 0 else 400,
+                              {"error": "the body must be at most %d KB" % (NOTE_BODY_MAX // 1024)})
+        raw = self.rfile.read(n) if n else b""
+        if not write_origin_ok(self.headers, self.server.server_address[1]):
+            return self._json(403, {"error": "notes can only be changed from the GitHub manager's own page"})
+        if not json_content_type(self.headers.get("Content-Type")):
+            return self._json(415, {"error": "send JSON (Content-Type: application/json)"})
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw.strip() else None
+        except (ValueError, UnicodeDecodeError):
+            return self._json(400, {"error": "the body is not valid JSON"})
+        notes = self.manager.notes
+        cmd = self.command
+        try:
+            if path == "/api/notes":
+                if cmd != "POST":
+                    return self._json(405, {"error": "POST a new note here; PUT / DELETE go to /api/notes/<id>"})
+                return self._json(201, {"note": notes.create(body)})
+            nid = path[len("/api/notes/"):]
+            if not NOTE_ID_RE.match(nid):
+                return self._json(404, {"error": "no note %s" % nid[:40]})
+            if cmd == "PUT":
+                return self._json(200, {"note": notes.update(nid, body)})
+            if cmd == "DELETE":
+                if body not in (None, {}):
+                    return self._json(400, {"error": "DELETE takes no fields"})
+                return self._json(200, {"deleted": notes.delete(nid)})
+            return self._json(405, {"error": "PUT or DELETE a note here"})
+        except NoteError as e:
+            return self._json(e.code, {"error": str(e)})
+
     def do_POST(self):
         if not self._host_ok():
             return self._send(403, "forbidden", "text/plain")
+        upath = urllib.parse.urlsplit(self.path).path
+        if upath == "/api/notes" or upath.startswith("/api/notes/"):
+            return self._notes_write()
         n = int(self.headers.get("Content-Length") or 0)
         if n:
             self.rfile.read(min(n, 65536))

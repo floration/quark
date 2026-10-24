@@ -4,7 +4,8 @@ import {
   html, when, relOnly, dur, plural, enc, gh, ghLink, docsLink, dashLink, branchChip, commitChip, prChip,
   localChip, runBadge, badge, aheadBehind, RUNNING, ms, elapsed, short,
 } from './util.js';
-import { runRow, prState, checksBadge, eventRow, eventsFor, runOutcome, jobsOf } from './parts.js';
+import { runRow, prState, checksBadge, eventRow, eventsFor, runOutcome, jobsOf, testsLink } from './parts.js';
+import { notesBlock } from './notes.js';
 import { localCard } from './local.js';
 
 export const ITEM_KEYS = ['run', 'pr', 'branch', 'commit', 'version', 'local'];
@@ -17,7 +18,7 @@ const historyBlock = (evs, what) => html`<h3>History</h3>${!store.historyLoaded 
 
 function runDetail(id) {
   const r = store.idx.runs.get(String(id));
-  if (!r) return notFound('CI run', `run ${id}`);
+  if (!r) return html`${notFound('CI run', `run ${id}`)}${notesBlock('run', id)}`;
   const jobs = jobsOf(r);
   const order = (j) => (j.conclusion === 'failure' ? 0 : j.status === 'in_progress' ? 1 : j.status === 'queued' ? 3 : 2);
   const sorted = [...jobs].sort((a, b) => order(a) - order(b));
@@ -29,6 +30,7 @@ function runDetail(id) {
     return html`<li class="job${failed ? ' is-failed' : ''}">
       <div class="job-main">${badge(st)}<span class="job-name">${j.name}</span><span class="muted small">${t}</span>
         <span class="grow"></span>
+        ${testsLink(r, j)}
         ${j.hasLog || failed || j.status === 'completed' ? html`<button class="${failed ? 'primary' : ''} small" data-action="open-log" data-run="${r.id}" data-job="${j.id}">View log</button>` : ''}
         ${ghLink(j.url, 'Open the job on GitHub')}</div>
       ${j.failedSteps && j.failedSteps.length ? html`<div class="job-steps">failed at ${j.failedSteps.map((s, i) => html`${i ? ', ' : ''}<q>${s}</q>`)}</div>` : ''}
@@ -45,6 +47,7 @@ function runDetail(id) {
       <dt>Started</dt><dd>${when(r.createdAt, { secs: true })}</dd>
       <dt>${RUNNING.has(r.status) ? 'Running for' : 'Took'}</dt><dd>${RUNNING.has(r.status) ? elapsed(r.createdAt) : dur(r.durationSec)}</dd>
     </dl>
+    ${notesBlock('run', r.id)}
     <h3>Jobs ${jobs.length ? html`<span class="muted small">${Object.entries(counts).map(([k, n]) => `${n} ${k === 'success' ? 'passed' : k === 'failure' ? 'failed' : k}`).join(' · ')}</span>` : ''}</h3>
     ${jobs.length ? html`<ul class="jobs">${sorted.map(job)}</ul>` : html`<p class="muted small">${RUNNING.has(r.status) ? 'No jobs have started yet.' : 'The server has no job list for this run.'}</p>`}
     ${historyBlock(eventsFor((e) => e.ref && String(e.ref.run) === String(r.id)), 'run')}`;
@@ -52,7 +55,7 @@ function runDetail(id) {
 
 function prDetail(n) {
   const p = store.idx.pulls.get(String(n));
-  if (!p) return notFound('Pull request', `#${n}`);
+  if (!p) return html`${notFound('Pull request', `#${n}`)}${notesBlock('pr', n)}`;
   const b = store.idx.branches.get(p.head);
   const checkIds = new Set(((p.checks && p.checks.runs) || []).map((r) => String(r.id)));
   const runs = runsOf((r) => r.branch === p.head && !checkIds.has(String(r.id))).slice(0, 10);
@@ -65,6 +68,7 @@ function prDetail(n) {
       <dt>${p.merged ? 'Merged' : p.state === 'closed' ? 'Closed' : 'Updated'}</dt><dd>${when(p.merged ? p.mergedAt : p.updatedAt)}</dd>
       ${b ? html`<dt>Branch now</dt><dd>${aheadBehind(b.ahead, b.behind)} · head ${commitChip(b.sha)}</dd>` : ''}
     </dl>
+    ${notesBlock('pr', p.number)}
     <h3>Checks</h3>
     ${(p.checks && p.checks.runs && p.checks.runs.length) ? html`<ul class="rows">${p.checks.runs.map((r) => runRow(store.idx.runs.get(String(r.id)) || r, { showBranch: false }))}</ul>` : html`<p class="muted small">No check runs on the head commit.</p>`}
     ${runs.length ? html`<h3>Other recent runs on ${p.head}</h3><ul class="rows">${runs.map((r) => runRow(r, { showBranch: false }))}</ul>` : ''}
@@ -77,7 +81,7 @@ function branchDetail(name) {
   const pulls = (store.state.pulls || []).filter((p) => p.head === name);
   const locals = (store.state.local || []).filter((l) => l.branch === name);
   const evs = eventsFor((e) => e.ref && (e.ref.branch === name || (e.ref.run != null && store.idx.runs.get(String(e.ref.run))?.branch === name) || (e.ref.pr != null && store.idx.pulls.get(String(e.ref.pr))?.head === name)));
-  if (!b && !runs.length && !pulls.length) return html`${notFound('Branch', name)}${historyBlock(evs, 'branch')}`;
+  if (!b && !runs.length && !pulls.length) return html`${notFound('Branch', name)}${notesBlock('branch', name)}${historyBlock(evs, 'branch')}`;
   const path = name.split('/').map(enc).join('/');
   return html`${head(`Branch${b ? ` · ${b.kind}` : ' · deleted or not polled'}`, name, html`${ext(gh(`/tree/${path}`), 'Open on GitHub')} · ${ext(gh(`/compare/testing...${path}`), 'Compare with testing')} · ${ext(gh(`/commits/${path}`), 'Commits')} · ${docsLink(name)} · <a href="${dashLink(`branch=${enc(name)}`)}" target="quark-dashboard">dashboard</a>`)}
     ${b ? html`<dl class="kv">
@@ -87,6 +91,7 @@ function branchDetail(name) {
       <dt>Last CI</dt><dd>${b.lastRun ? html`${runBadge(b.lastRun)} <a href="#run=${b.lastRun.id}">${runOutcome(b.lastRun)}</a>` : html`<span class="muted">no runs</span>`}</dd>
       ${locals.length ? html`<dt>On this PC</dt><dd>${locals.map((l) => localChip(l.name))}</dd>` : ''}
     </dl>` : ''}
+    ${notesBlock('branch', name)}
     ${pulls.length ? html`<h3>Pull requests</h3><ul class="rows compact">${pulls.map((p) => html`<li class="row" data-action="row" data-href="#pr=${p.number}" tabindex="0"><div class="r-main">${prState(p)} ${prChip(p.number, p.title)} <a class="r-title" href="#pr=${p.number}">${p.title}</a></div><div class="r-meta">${p.state === 'open' ? checksBadge(p) : ''} <span class="muted">into ${p.base} · ${relOnly(p.updatedAt)}</span></div></li>`)}</ul>` : ''}
     <h3>CI runs ${runs.length ? html`<span class="count">${runs.length}</span>` : ''}</h3>
     ${runs.length ? html`<ul class="rows">${runs.slice(0, 15).map((r) => runRow(r, { showBranch: false }))}</ul>${runs.length > 15 ? html`<p class="small"><a href="#tab=runs&on=${enc(name)}">All ${runs.length} runs on this branch</a></p>` : ''}` : html`<p class="muted small">No runs known.</p>`}
@@ -99,7 +104,7 @@ function commitDetail(sha) {
   const runs = runsOf((r) => r.sha && sha && r.sha.startsWith(sha.toLowerCase()));
   const full = f ? f.commit.sha : sha;
   const links = html`${ext(gh(`/commit/${full}`), 'Open on GitHub')} · <a href="${dashLink(`commit=${full}`)}" target="quark-dashboard">dashboard</a>`;
-  if (!f && !runs.length) return html`${head('Commit', short(sha))}<p class="empty">This commit isn't in the data the server sent (it lists testing since production, each branch's head and local commits).</p><div class="d-links">${links}</div>`;
+  if (!f && !runs.length) return html`${head('Commit', short(sha))}<p class="empty">This commit isn't in the data the server sent (it lists testing since production, each branch's head and local commits).</p><div class="d-links">${links}</div>${/^[0-9a-f]{4,64}$/i.test(sha) ? notesBlock('commit', sha) : ''}`;
   const c = f ? f.commit : { sha, subject: runs[0].title };
   const where = f ? f.where : [];
   const said = [];
@@ -116,6 +121,7 @@ function commitDetail(sha) {
       ${c.date ? html`<dt>Date</dt><dd>${when(c.date)}</dd>` : ''}
       <dt>SHA</dt><dd class="mono small">${c.sha}</dd>
     </dl>
+    ${notesBlock('commit', c.sha)}
     ${said.length ? html`<h3>Where it is</h3><ul class="where">${said}</ul>` : ''}
     ${runs.length ? html`<h3>CI runs on this commit</h3><ul class="rows">${runs.map((r) => runRow(r))}</ul>` : ''}`;
 }
@@ -130,6 +136,7 @@ function versionDetail(v) {
   const evs = eventsFor((e) => e.ref && e.ref.tag && (e.ref.tag === `v${v}` || e.ref.tag.startsWith(`test-${v}-`)), 20);
   const isProdOrOlder = p.version && cmp(v, p.version) <= 0;
   return html`${head('Version', v, html`${ext(gh(`/blob/testing/changelogs/${v}.md`), 'Short changelog')} · ${ext(gh(`/blob/testing/changelogs/full/${v}.md`), 'Full changelog')}${isProdOrOlder ? html` · ${ext(gh(`/releases/tag/v${v}`), `Release v${v}`)} · ${ext(`https://floration.github.io/quark/updates/${enc(v)}/`, 'Website page')}` : t.version === v && t.prerelease ? html` · ${ext(t.prerelease.url, t.prerelease.tag)}` : ''}`)}
+    ${notesBlock('version', v)}
     ${rows.length ? html`<h3>Where it is</h3><ul class="where">${rows}</ul>` : html`<p class="muted">Neither production, testing nor a local copy is on ${v} right now.</p>`}
     <h3>Releases and tags</h3>
     ${!store.historyLoaded ? html`<p class="muted small">Loading…</p>` : evs.length ? html`<ul class="events">${evs.map((e) => eventRow(e, { showDay: true }))}</ul>` : html`<p class="muted small">No tag or release for ${v} in the local log.</p>`}`;
@@ -142,8 +149,8 @@ function cmp(a, b) {
 
 function localDetail(name) {
   const l = store.idx.local.get(name);
-  if (!l) return notFound('Local copy', name);
-  return html`${head('Local copy on this PC', name)}${localCard(l, { full: true })}
+  if (!l) return html`${notFound('Local copy', name)}${notesBlock('local', name)}`;
+  return html`${head('Local copy on this PC', name)}${localCard(l, { full: true, extra: notesBlock('local', name) })}
     ${historyBlock(eventsFor((e) => e.ref && e.ref.local === name), 'local copy')}`;
 }
 

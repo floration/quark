@@ -2,7 +2,7 @@
 import { ms, RUNNING } from './util.js';
 
 // When the page is opened from disk (file://) the API still lives on the server.
-const BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8767' : '';
+export const BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8767' : '';
 
 export const store = {
   state: null,        // last /api/state

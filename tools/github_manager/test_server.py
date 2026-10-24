@@ -130,8 +130,11 @@ class Parsers(unittest.TestCase):
              "display_title": "t", "status": "completed", "conclusion": "failure",
              "created_at": "2026-10-24T10:00:00Z", "run_started_at": "2026-10-24T10:00:10Z",
              "updated_at": "2026-10-24T10:10:10Z", "run_attempt": 2, "html_url": "u",
-             "pull_requests": [{"number": 8}]}
+             "pull_requests": [{"number": 8}], "path": ".github/workflows/release.yml"}
         s = S.run_summary(r)
+        self.assertEqual(s["workflowFile"], "release.yml")
+        self.assertEqual(S.run_summary(dict(r, path="dynamic/x/y.yml@refs/heads/t"))["workflowFile"], "y.yml")
+        self.assertIsNone(S.run_summary(dict(r, path=None))["workflowFile"])
         self.assertEqual(s["durationSec"], 600)
         self.assertEqual(s["attempt"], 2)
         self.assertEqual(s["prs"], [8])
@@ -156,9 +159,11 @@ class Parsers(unittest.TestCase):
         self.assertEqual(j["failedSteps"], ["quark_tests"])
 
     def test_cors(self):
-        for o in ("http://127.0.0.1:8768", "http://localhost:8765", "http://127.0.0.1:8766", "http://localhost:8767"):
+        for o in ("http://127.0.0.1:8768", "http://localhost:8765", "http://127.0.0.1:8766", "http://localhost:8767",
+                  "http://127.0.0.1:8775", "http://localhost:8775"):
             self.assertEqual(S.cors_origin(o), o)
-        for o in ("http://127.0.0.1:8769", "http://evil.example", "https://127.0.0.1:8768", None, "null"):
+        for o in ("http://127.0.0.1:8769", "http://127.0.0.1:8774", "http://127.0.0.1:87750", "http://evil.example",
+                  "https://127.0.0.1:8768", None, "null"):
             self.assertIsNone(S.cors_origin(o))
 
     def test_ref_key(self):
@@ -321,6 +326,245 @@ class HistoryLog(unittest.TestCase):
         self.assertEqual([e["id"] for e in h3.query()], ["x:3", "x:2", "x:1"])
         self.assertEqual([e["id"] for e in h3.query(since=AT1)], ["x:3", "x:2"])
         self.assertEqual(len(h3.query(limit=1)), 1)
+
+
+class NotesStore(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="ghm-notes-")
+        self.folder = os.path.join(self.dir, "editor")
+        self.events = []
+        self.clock = iter("2026-10-24T10:%02d:00Z" % i for i in range(60))
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def store(self):
+        return S.Notes(self.folder, self.events.extend, "o/r", now=lambda: next(self.clock))
+
+    def test_create_edit_done_delete_and_history(self):
+        st = self.store()
+        n = st.create({"target": {"kind": "pr", "key": "#8"}, "text": "check the **netcode** test\n- one\n- two"})
+        self.assertRegex(n["id"], r"^n[0-9a-f]{12}$")
+        self.assertEqual((n["target"], n["status"], n["pinned"], n["author"], n["rev"]),
+                         ({"kind": "pr", "key": "8"}, "open", False, "q", 1))
+        self.assertEqual(n["createdAt"], n["updatedAt"])
+        g = st.create({"target": {"kind": "general"}, "text": "general", "pinned": True, "author": "Claude"})
+        self.assertEqual((g["target"], g["author"]), ({"kind": "general", "key": ""}, "Claude"))
+        e = st.update(n["id"], {"text": "new text", "pinned": True, "rev": 1})
+        self.assertEqual((e["text"], e["pinned"], e["rev"]), ("new text", True, 2))
+        self.assertNotEqual(e["updatedAt"], e["createdAt"])
+        self.assertEqual(st.update(n["id"], {"pinned": True}), e)  # no change: no write, no event
+        with self.assertRaises(S.NoteError) as c:
+            st.update(n["id"], {"text": "stale", "rev": 1})  # a second tab's old copy
+        self.assertEqual(c.exception.code, 409)
+        d = st.update(n["id"], {"status": "done"})
+        st.update(n["id"], {"status": "open", "target": {"kind": "branch", "key": "origin/testing"}})
+        self.assertEqual(st.all()[0]["target"], {"kind": "branch", "key": "testing"})
+        self.assertEqual(st.delete(n["id"]), n["id"])
+        with self.assertRaises(S.NoteError) as c:
+            st.delete(n["id"])
+        self.assertEqual(c.exception.code, 404)
+        self.assertEqual(types(self.events), ["note.added", "note.added", "note.edited", "note.done", "note.edited",
+                                              "note.deleted"])
+        self.assertEqual(len({e["id"] for e in self.events}), 6)
+        added, _, edited, done, moved, deleted = self.events
+        self.assertEqual(added["ref"], {"note": n["id"], "pr": 8})
+        self.assertEqual(added["text"], "Note on PR #8: check the **netcode** test - one - two")
+        self.assertEqual(edited["text"], "Note edited, pinned on PR #8: new text")
+        self.assertEqual((edited["data"]["changed"], edited["data"]["text"]), (["text", "pinned"], "new text"))
+        self.assertEqual(done["id"], "note.done:%s:3" % n["id"])
+        self.assertEqual(moved["ref"], {"note": n["id"], "branch": "testing"})
+        self.assertEqual(moved["data"]["from"], {"kind": "pr", "key": "8"})
+        self.assertIn("reopened", moved["text"])
+        # the tombstone: the whole note is in the log
+        self.assertEqual(deleted["data"]["note"]["text"], "new text")
+        self.assertEqual(deleted["text"], "Note deleted on branch testing: new text")
+        self.assertEqual(d["status"], "done")
+        self.assertEqual([x["id"] for x in st.all()], [g["id"]])
+
+    def test_files_atomic_bak_markdown_and_reload(self):
+        st = self.store()
+        a = st.create({"target": {"kind": "branch", "key": "claude/x"}, "text": "first\n\nsecond paragraph"})
+        path = os.path.join(self.folder, "notes.json")
+        self.assertFalse(os.path.exists(path + ".bak"))
+        st.create({"target": {"kind": "run", "key": 123}, "text": "flaky", "pinned": True})
+        before = S.read_json(path + ".bak")
+        self.assertEqual([x["id"] for x in before["notes"]], [a["id"]])  # .bak is the previous version
+        self.assertEqual(len(S.read_json(path)["notes"]), 2)
+        self.assertEqual([f for f in os.listdir(self.folder) if ".tmp" in f], [])
+        md = open_text(os.path.join(self.folder, "notes.md"))
+        self.assertIn("## Branch `claude/x`", md)
+        self.assertIn("<https://github.com/o/r/tree/claude/x>", md)
+        self.assertIn("## CI run 123", md)
+        self.assertIn("> first\n>\n> second paragraph", md)
+        self.assertIn("### open, pinned · by q", md)
+        self.assertLess(md.index("## Branch"), md.index("## CI run"))
+        # a restart reads them back; the same body gives the same ETag
+        st2 = self.store()
+        self.assertEqual(st2.all(), st.all())
+        self.assertEqual(st2.view()[0], st.view()[0])
+        tag = st2.view()[0]
+        st2.update(a["id"], {"author": "me"})
+        self.assertNotEqual(st2.view()[0], tag)
+        # a cut notes.json: kept aside, the .bak is loaded, and the next save does not copy the broken file over it
+        with open(path, "w") as f:
+            f.write('{"notes": [')
+        st3 = self.store()
+        self.assertIn("loaded notes.json.bak", st3.load_error)
+        self.assertEqual(len(st3.all()), 2)
+        self.assertTrue([f for f in os.listdir(self.folder) if f.startswith("notes.json.bad-")])
+        self.assertIn("loadError", json.loads(st3.view()[1]))
+
+    def test_save_failure_undoes_the_change(self):
+        st = self.store()
+        a = st.create({"target": {"kind": "general"}, "text": "keep"})
+        real = S.write_atomic
+        S.write_atomic = lambda path, data: (_ for _ in ()).throw(OSError("disk full"))
+        try:
+            for call in (lambda: st.create({"target": {"kind": "general"}, "text": "x"}),
+                         lambda: st.update(a["id"], {"text": "changed"}), lambda: st.delete(a["id"])):
+                with self.assertRaises(S.NoteError) as c:
+                    call()
+                self.assertEqual(c.exception.code, 500)
+        finally:
+            S.write_atomic = real
+        self.assertEqual([(x["id"], x["text"]) for x in st.all()], [(a["id"], "keep")])
+        self.assertEqual(types(self.events), ["note.added"])
+
+    def test_validation(self):
+        st = self.store()
+        ok = {"target": {"kind": "general"}, "text": "t"}
+        bad = [
+            {"text": "no target"}, {"target": {"kind": "general"}}, dict(ok, id="n000000000000"),
+            dict(ok, createdAt=AT0), dict(ok, colour="red"), dict(ok, text=""), dict(ok, text="   "), dict(ok, text=5),
+            dict(ok, text="x" * (20 * 1024 + 1)), dict(ok, text="é" * 10241), dict(ok, pinned="yes"),
+            dict(ok, status="closed"), dict(ok, author="a" * 81), dict(ok, author="a\nb"),
+            dict(ok, target={"kind": "issue", "key": "1"}), dict(ok, target={"kind": "general", "key": "x"}),
+            dict(ok, target={"kind": "pr", "key": "eight"}), dict(ok, target={"kind": "pr", "key": True}),
+            dict(ok, target={"kind": "commit", "key": "xyz"}), dict(ok, target={"kind": "version", "key": "1.2"}),
+            dict(ok, target={"kind": "branch", "key": "a b"}), dict(ok, target={"kind": "branch", "key": ""}),
+            dict(ok, target={"kind": "local", "key": "x" * 201}), dict(ok, target={"kind": "run"}),
+            dict(ok, target={"kind": "run", "key": "1", "extra": 1}), dict(ok, target="general"), [ok], None, "x",
+        ]
+        for b in bad:
+            with self.assertRaises(S.NoteError, msg=repr(b)[:80]) as c:
+                st.create(b)
+            self.assertEqual(c.exception.code, 400)
+        self.assertEqual(st.create(dict(ok, text="x" * (20 * 1024)))["text"], "x" * 20480)
+        self.assertEqual(st.create(dict(ok, target={"kind": "version", "key": "v1.18.6"}))["target"]["key"], "1.18.6")
+        self.assertEqual(st.create(dict(ok, target={"kind": "commit", "key": "ABC1234"}))["target"]["key"], "abc1234")
+        self.assertEqual(st.create(dict(ok, text="a\r\nb"))["text"], "a\nb")
+        n = st.all()[0]
+        for b in ({}, {"rev": 1}, {"id": "x"}, {"text": ""}, {"createdAt": AT0}):
+            with self.assertRaises(S.NoteError):
+                st.update(n["id"], b)
+        self.assertEqual(len(self.events), 4)
+
+    def test_limit(self):
+        st = self.store()
+        old = S.NOTE_MAX
+        S.NOTE_MAX = 3
+        try:
+            for i in range(3):
+                st.create({"target": {"kind": "general"}, "text": str(i)})
+            with self.assertRaises(S.NoteError) as c:
+                st.create({"target": {"kind": "general"}, "text": "one too many"})
+            self.assertEqual(c.exception.code, 409)
+        finally:
+            S.NOTE_MAX = old
+
+    def test_write_origin(self):
+        ok = lambda h: S.write_origin_ok(h, 8767)
+        for o in ("http://127.0.0.1:8767", "http://localhost:8767", "http://127.0.0.1:8768", "http://localhost:8768"):
+            self.assertTrue(ok({"Origin": o}), o)
+        for o in ("http://127.0.0.1:8765", "http://127.0.0.1:8775", "http://evil.example", "null", "",
+                  "https://127.0.0.1:8767", "http://127.0.0.1:8767.evil.example"):
+            self.assertFalse(ok({"Origin": o}), o)
+        self.assertTrue(ok({"Referer": "http://127.0.0.1:8767/#tab=editor"}))
+        self.assertFalse(ok({"Referer": "http://127.0.0.1:8767@evil.example/"}))
+        self.assertFalse(ok({"Referer": "http://evil.example/http://127.0.0.1:8767/"}))
+        self.assertFalse(ok({}))
+        self.assertFalse(ok({"Origin": "http://evil.example", "Referer": "http://127.0.0.1:8767/"}))
+        self.assertTrue(S.write_origin_ok({"Origin": "http://127.0.0.1:9000"}, 9000))
+        self.assertTrue(S.json_content_type("application/json; charset=utf-8"))
+        for ct in ("text/plain", "application/x-www-form-urlencoded", "multipart/form-data", None):
+            self.assertFalse(S.json_content_type(ct))
+
+
+class NotesHttp(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="ghm-notes-http-")
+        cfg = {"repo": "o/r", "port": 0, "quarkDir": self.dir}
+        self.m = S.Manager(cfg, self.dir, os.path.dirname(os.path.abspath(S.__file__)), quiet=True)
+        self.srv = S.make_server(self.m, 0)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.own = "http://127.0.0.1:%d" % self.port
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def call(self, method, path, body=None, headers=None, raw=None):
+        h = {"Origin": self.own, "Content-Type": "application/json"}
+        h.update(headers or {})
+        h = {k: v for k, v in h.items() if v is not None}
+        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        req = urllib.request.Request("http://127.0.0.1:%d%s" % (self.port, path), data=data, headers=h,
+                                     method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, dict(r.headers), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
+
+    def test_crud_etag_history_and_safety(self):
+        code, h, body = self.call("GET", "/api/notes", headers={"Content-Type": None})
+        self.assertEqual((code, json.loads(body)["notes"]), (200, []))
+        etag = h["ETag"]
+        self.assertEqual(self.call("GET", "/api/notes", headers={"If-None-Match": etag})[0], 304)
+        code, h, body = self.call("POST", "/api/notes", {"target": {"kind": "run", "key": "42"}, "text": "hi"})
+        self.assertEqual(code, 201, body)
+        nid = json.loads(body)["note"]["id"]
+        self.assertEqual(self.call("GET", "/api/notes", headers={"If-None-Match": etag})[0], 200)
+        code, h, body = self.call("PUT", "/api/notes/" + nid, {"status": "done", "rev": 1})
+        self.assertEqual((code, json.loads(body)["note"]["status"]), (200, "done"))
+        self.assertEqual(self.call("PUT", "/api/notes/" + nid, {"text": "x", "rev": 1})[0], 409)
+        # refused: another origin, no origin at all, a form post, unknown fields, too big, bad JSON, bad ids
+        evil = {"Origin": "http://evil.example"}
+        self.assertEqual(self.call("POST", "/api/notes", {"target": {"kind": "general"}, "text": "x"}, evil)[0], 403)
+        self.assertEqual(self.call("DELETE", "/api/notes/" + nid, headers=evil)[0], 403)
+        self.assertEqual(self.call("POST", "/api/notes", {"target": {"kind": "general"}, "text": "x"},
+                                   {"Origin": None})[0], 403)
+        self.assertEqual(self.call("POST", "/api/notes", {"target": {"kind": "general"}, "text": "x"},
+                                   {"Origin": None, "Referer": self.own + "/#tab=editor"})[0], 201)
+        self.assertEqual(self.call("POST", "/api/notes", {"target": {"kind": "general"}, "text": "x"},
+                                   {"Origin": "http://localhost:8768"})[0], 201)
+        self.assertEqual(self.call("POST", "/api/notes", raw=b"text=x",
+                                   headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 415)
+        self.assertEqual(self.call("POST", "/api/notes", {"target": {"kind": "general"}, "text": "x", "x": 1})[0], 400)
+        self.assertEqual(self.call("POST", "/api/notes", raw=b"{not json")[0], 400)
+        self.assertEqual(self.call("POST", "/api/notes", raw=b"x" * (64 * 1024 + 1))[0], 413)
+        self.assertEqual(self.call("PUT", "/api/notes/../../etc", {"text": "x"})[0], 404)
+        self.assertEqual(self.call("PUT", "/api/notes/n000000000000", {"text": "x"})[0], 404)
+        self.assertEqual(self.call("PUT", "/api/notes", {"text": "x"})[0], 404)
+        self.assertEqual(self.call("PUT", "/api/state", {"text": "x"})[0], 404)
+        self.assertEqual(self.call("DELETE", "/api/notes/" + nid, {"x": 1})[0], 400)
+        code, h, body = self.call("DELETE", "/api/notes/" + nid)
+        self.assertEqual((code, json.loads(body)), (200, {"deleted": nid}))
+        code, h, body = self.call("GET", "/api/notes")
+        self.assertEqual(len(json.loads(body)["notes"]), 2)
+        hist = json.loads(self.call("GET", "/api/history")[2])
+        self.assertEqual(sorted(types(hist)), ["note.added", "note.added", "note.added", "note.deleted", "note.done"])
+        self.assertEqual(S.History(os.path.join(self.dir, "history.jsonl")).query()[0]["type"], "note.deleted")
+        # the data folder is never served as a static file, even when the page runs from the output folder
+        self.m.static = self.dir
+        self.assertEqual(self.call("GET", "/editor/notes.md")[0], 404)
+        code, h, _ = self.call("OPTIONS", "/api/notes/" + nid, headers={"Origin": "http://127.0.0.1:8768",
+                                                                        "Access-Control-Request-Method": "PUT"})
+        self.assertEqual(code, 204)
+        self.assertIn("PUT", h["Access-Control-Allow-Methods"])
 
 
 ESC_ERR = "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway\n"
@@ -578,14 +822,31 @@ class Windowless(unittest.TestCase):
             import install
         finally:
             sys.path.remove(HERE)
-        self.assertEqual(install.main([out, "--no-start"]), 0)
-        for n in ("server.py", "github-manager.cmd", "README.md", "API.md"):
+        os.makedirs(os.path.join(out, "editor"))
+        write(os.path.join(out, "editor", "notes.json"), "{}\n")
+        # --help and bad arguments install nothing
+        for args, code in ((["--help"], 0), (["--bogus"], 2), ([out, "--dest", out + "x"], 2)):
+            with self.assertRaises(SystemExit) as c:
+                install.main(args)
+            self.assertEqual(c.exception.code, code)
+        self.assertFalse(os.path.exists(os.path.join(out, "server.py")))
+        self.assertEqual(install.main(["--dest", out, "--no-start"]), 0)
+        for n in ("server.py", "github-manager.cmd", "README.md", "API.md", os.path.join("js", "notes.js")):
             self.assertTrue(os.path.isfile(os.path.join(out, n)), n)
         for n in ("test_server.py", "install.py", "test"):
             self.assertFalse(os.path.exists(os.path.join(out, n)), n)
         with open(os.path.join(out, "history.jsonl"), encoding="utf-8") as f:
             self.assertEqual(f.read(), "keep\n")
+        self.assertEqual(open_text(os.path.join(out, "editor", "notes.json")), "{}\n")
         self.assertIn("installed", open_text(os.path.join(out, "install.log")))
+        # again: nothing to copy; a stale page file is removed; the old positional folder still works
+        write(os.path.join(out, "js", "old.js"), "x")
+        self.assertEqual(install.main([out, "--no-start"]), 0)
+        self.assertFalse(os.path.exists(os.path.join(out, "js", "old.js")))
+        self.assertEqual(install.main([out, "--no-start"]), 0)
+        log = [x for x in open_text(os.path.join(out, "install.log")).splitlines() if x.startswith("installed")]
+        self.assertIn("(1 changed)", log[-2])
+        self.assertIn("already up to date", log[-1])
 
 
 def open_text(path):
@@ -655,7 +916,8 @@ def gh_run(rid, status, conclusion, sha, branch="testing", attempt=1, name="buil
             "display_title": "run %d" % rid, "status": status, "conclusion": conclusion,
             "created_at": "2026-10-24T09:00:00Z", "run_started_at": "2026-10-24T09:00:05Z",
             "updated_at": S.iso(S.now_dt()), "run_attempt": attempt, "run_number": rid,
-            "html_url": "https://github.com/o/r/actions/runs/%d" % rid, "pull_requests": []}
+            "html_url": "https://github.com/o/r/actions/runs/%d" % rid, "pull_requests": [],
+            "path": ".github/workflows/release.yml"}
 
 
 class EndToEnd(unittest.TestCase):

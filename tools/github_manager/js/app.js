@@ -7,11 +7,14 @@ import { local } from './local.js';
 import { pulls } from './pulls.js';
 import { runs } from './runs.js';
 import { history } from './history.js';
+import { editor } from './editor.js';
+import { tests } from './tests.js';
+import { loadNotes, initNotes, openCount, captureFocus, restoreFocus } from './notes.js';
 import { renderDetail, ITEM_KEYS } from './detail.js';
 import { openLog, closeLog, isLogOpen } from './logview.js';
 import './tip.js';
 
-const VIEWS = { overview, branches, local, pulls, runs, history };
+const VIEWS = { overview, branches, local, pulls, runs, history, editor, tests };
 const TAB_FOR = { pr: 'pulls', branch: 'branches', run: 'runs', local: 'local', commit: 'overview', version: 'overview' };
 const VISIBLE_MS = 15000, HIDDEN_MS = 60000, RETRY_MS = 5000;
 
@@ -69,7 +72,9 @@ function renderDrawer(fromRoute) {
     return;
   }
   const scroll = fromRoute ? 0 : el.drawerBody.scrollTop;
+  const focus = fromRoute ? null : captureFocus();
   el.drawerBody.innerHTML = String(renderDetail(activeItem.kind, activeItem.id, ctx));
+  restoreFocus(focus);
   el.drawer.hidden = false; el.scrim.hidden = false;
   document.body.classList.add('drawer-open');
   el.drawerBody.scrollTop = scroll;
@@ -130,6 +135,8 @@ function renderTabCounts() {
   set('pulls', String((s.pulls || []).filter((p) => p.state === 'open').length));
   const running = idx.running.length;
   set('runs', running ? `${running} running` : '', running ? 'run' : '');
+  const open = openCount();
+  set('editor', open ? String(open) : '');
 }
 function renderOffline() {
   el.view.className = 'view';
@@ -143,7 +150,10 @@ function renderOffline() {
 // ---- drawing ----
 function redraw() {
   if (!store.state) return;
+  // a note being typed survives the redraw: its draft is kept by notes.js, the caret is put back here
+  const focus = captureFocus();
   VIEWS[activeTab].update(ctx);
+  restoreFocus(focus);
   renderDrawer(false);
 }
 function onState() {
@@ -165,15 +175,17 @@ function onState() {
   } else if (changed) {
     redraw();
     if (store.historyLoaded) ensureHistory(true);
-  }
+  } else return false;
+  return true;
 }
 
 // ---- polling: every 15 s while the page is visible, every 60 s while hidden ----
 async function poll() {
   clearTimeout(pollTimer);
-  const ok = await loadState();
-  if (ok) onState();
-  else {
+  const [ok, notesChanged] = await Promise.all([loadState(), loadNotes()]);
+  if (ok) {
+    if (!onState() && notesChanged) { redraw(); renderTabCounts(); }
+  } else {
     renderStatus(); renderBanner();
     if (!store.state) renderOffline();
   }
@@ -251,6 +263,12 @@ document.addEventListener('keydown', (e) => {
 
 const ctx = { hashFor, toast, ensureHistory, get tab() { return activeTab; }, get item() { return activeItem; } };
 export { ctx };
+
+// a note was added / changed / deleted (or a form opened): redraw, and fetch the history the change was logged in
+initNotes({
+  onChange() { if (!store.state) return; redraw(); renderTabCounts(); if (store.historyLoaded) ensureHistory(true); },
+  toast,
+});
 
 window.addEventListener('hashchange', route);
 route();

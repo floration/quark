@@ -2,12 +2,18 @@
 """Copies the GitHub manager (server, launcher, page files) into its output folder, so it runs from there and not
 from a working copy whose branch may change, then starts it there with no window (or, if it is already running,
 opens the page). Data already in the folder (github-manager.json, cache\\, history.jsonl, logs\\, mirror.git,
-server.log) is never touched. A running server keeps its old code until it is restarted.
+editor\\, server.log) is never touched. Non-interactive and safe to re-run: only files that differ are copied. A running
+server is never stopped: when files changed it keeps its old code, and this prints "restart needed".
 
-    python install.py [output folder] [--no-start]   (default %USERPROFILE%\\Desktop\\Quark\\github-manager)
+    python install.py [--dest <folder>] [--no-start]    (default %USERPROFILE%\\Desktop\\Quark\\github-manager)
+    python install.py <folder> [--no-start]              (the same; install.cmd passes the folder like this)
 
-What it did goes to <output folder>\\install.log as well as the console (if there is one).
+--no-start only copies (the Quark Project app does this, then starts and restarts the server itself). No browser
+opens when QUARK_SHELL=1. What it did goes to <output folder>\\install.log as well as the console (if there is one).
+Exit codes: 0 done, 1 the copy failed, 2 bad arguments.
 """
+import argparse
+import filecmp
 import json
 import os
 import shutil
@@ -19,7 +25,7 @@ import webbrowser
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKIP = {"test", "__pycache__", "install.py", "install.cmd", "test_server.py"}
 DATA = {"github-manager.json", "cache", "logs", "mirror.git", "history.jsonl", "state-prev.json", "server.log",
-        "install.log"}
+        "install.log", "editor"}
 WIN = os.name == "nt"
 PORT = 8767
 
@@ -69,44 +75,107 @@ def start_hidden(out):
     return subprocess.Popen(args, **kw)
 
 
-def install(out):
-    os.makedirs(out, exist_ok=True)
+def _same(a, b):
+    try:
+        return os.path.isfile(b) and filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
+
+
+def _sync_dir(src, dst):
+    """Makes dst a copy of src (no __pycache__ / .pyc), touching only what differs. -> files changed."""
     n = 0
+    os.makedirs(dst, exist_ok=True)
+    want = set()
+    for name in os.listdir(src):
+        if name == "__pycache__" or name.endswith(".pyc"):
+            continue
+        want.add(name)
+        a, b = os.path.join(src, name), os.path.join(dst, name)
+        if os.path.isdir(a):
+            if os.path.isfile(b):
+                os.remove(b)
+            n += _sync_dir(a, b)
+        elif not _same(a, b):
+            if os.path.isdir(b):
+                shutil.rmtree(b)
+            shutil.copy2(a, b)
+            n += 1
+    for name in os.listdir(dst):
+        if name not in want:
+            p = os.path.join(dst, name)
+            shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
+            n += 1
+    return n
+
+
+def install(out):
+    """Copies the tool's files into out (never the data). -> (files / folders copied, files that changed)."""
+    os.makedirs(out, exist_ok=True)
+    n = changed = 0
     for name in sorted(os.listdir(HERE)):
         if name in SKIP or name in DATA or name.startswith("."):
             continue
         src, dst = os.path.join(HERE, name), os.path.join(out, name)
         if os.path.isdir(src):
-            if os.path.isdir(dst):
-                shutil.rmtree(dst)
-            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        else:
+            changed += _sync_dir(src, dst)
+        elif not _same(src, dst):
             shutil.copy2(src, dst)
+            changed += 1
         n += 1
-    return n
+    return n, changed
+
+
+def default_dest():
+    return os.path.join(os.path.expanduser("~"), "Desktop", "Quark", "github-manager")
+
+
+def parse_args(argv):
+    ap = argparse.ArgumentParser(
+        prog="install.py", description="Copy the Quark GitHub manager into its output folder and start it there "
+        "(no window). Data in the folder is never touched; a running server is never stopped.")
+    ap.add_argument("folder", nargs="?", help="output folder (same as --dest)")
+    ap.add_argument("--dest", help="output folder (default %%USERPROFILE%%\\Desktop\\Quark\\github-manager)")
+    ap.add_argument("--no-start", action="store_true", help="only copy the files; don't start the server or open "
+                    "the page (the Quark Project app starts it itself)")
+    a = ap.parse_args(argv)  # unknown arguments: a message and exit code 2
+    if a.folder and a.dest and os.path.abspath(a.folder) != os.path.abspath(a.dest):
+        ap.error("give the output folder once (a folder argument or --dest)")
+    return a
 
 
 def main(argv):
-    args = [a for a in argv if not a.startswith("--")]
-    out = os.path.abspath(args[0] if args else
-                          os.path.join(os.path.expanduser("~"), "Desktop", "Quark", "github-manager"))
+    a = parse_args(argv)
+    out = os.path.abspath(os.path.expanduser(a.dest or a.folder or default_dest()))
+    changed = 0
     if os.path.normcase(out) != os.path.normcase(HERE):
-        n = install(out)
-        say(out, "installed %d files / folders into %s" % (n, out))
+        try:
+            n, changed = install(out)
+        except OSError as e:
+            say(out, "could not install into %s: %s" % (out, e))
+            return 1
+        say(out, "installed %d files / folders into %s (%s)" % (
+            n, out, "%d changed" % changed if changed else "already up to date"))
     else:
         say(out, "already installed here: %s" % out)
-    if "--no-start" in argv:
-        say(out, "start it with: %s" % os.path.join(out, "github-manager.cmd"))
-        return 0
     port = PORT
     try:
         with open(os.path.join(out, "github-manager.json"), "r", encoding="utf-8") as f:
             port = int(json.load(f).get("port") or PORT)
     except (OSError, ValueError, AttributeError, TypeError):
         pass
-    if running(port):
-        say(out, "already running (restart it to use the new files): opening http://127.0.0.1:%d/" % port)
+    up = running(port)
+    if up and changed:
+        say(out, "restart needed: the GitHub manager running on port %d still uses its old files" % port)
+    if a.no_start:
+        if not up:
+            say(out, "not started (--no-start); start it with: %s" % os.path.join(out, "github-manager.cmd"))
+        return 0
+    if up:
+        if not changed:
+            say(out, "already running on port %d" % port)
         if os.environ.get("QUARK_SHELL") != "1":
+            say(out, "opening http://127.0.0.1:%d/" % port)
             webbrowser.open("http://127.0.0.1:%d/" % port)
         return 0
     p = start_hidden(out)

@@ -6,6 +6,7 @@ import {
 } from './util.js';
 import { failureSentence, commitList, eventRow, checksBadge, lastRunCell, runningSentence } from './parts.js';
 import { laneChart, ciTimeline } from './charts.js';
+import { notes, noteCard, sortNotes, noteBadge } from './notes.js';
 
 const preVersion = (tag) => (/^test-(\d+\.\d+\.\d+)/.exec(tag || '') || [])[1];
 const FAILED = new Set(['failure', 'timed_out', 'startup_failure']);
@@ -38,6 +39,21 @@ function releases(s) {
         <div>${pre ? html`prerelease <span class="chip c-tag"><a href="#version=${enc(preVersion(pre.tag) || t.version || '')}">${pre.tag}</a>${ghLink(pre.url, 'Open the prerelease on GitHub')}</span> ${relOnly(pre.publishedAt)}${preVersion(pre.tag) && t.version && preVersion(pre.tag) !== t.version ? html` <span class="tag t-warn" title="The newest prerelease is for an older version: ${t.version}'s TESTING build hasn't been published yet (its run may still be going, or it failed)">not ${t.version} yet</span>` : ''}` : html`<span class="muted">no prerelease for this head yet</span>`}</div>
       </div>
     </div>
+  </section>`;
+}
+
+// Pinned notes (open ones first); read-only here, the Editor tab edits them.
+function pinnedNotes() {
+  if (!notes.list) return '';
+  const pinned = sortNotes(notes.list.filter((n) => n.pinned));
+  const open = notes.list.filter((n) => n.status === 'open').length;
+  if (!pinned.length) {
+    return html`<section class="card notes-card is-empty"><h2>Notes</h2><p class="small muted">Nothing pinned${open ? html` · <a href="#tab=editor">${plural(open, 'open note')}</a>` : ''}. Pin a note in the <a href="#tab=editor">Editor</a> to keep it here.</p></section>`;
+  }
+  return html`<section class="card notes-card">
+    <h2>Notes <span class="count">${pinned.length} pinned</span><span class="grow"></span><a class="small" href="#tab=editor">${open ? `All notes (${open} open)` : 'All notes'}</a></h2>
+    <ul class="notes pinned">${pinned.slice(0, 6).map((n) => noteCard(n, { scope: 'o', actions: false }))}</ul>
+    ${pinned.length > 6 ? html`<p class="small"><a href="#tab=editor">${plural(pinned.length - 6, 'more pinned note')}</a></p>` : ''}
   </section>`;
 }
 
@@ -122,7 +138,7 @@ function openPulls(s) {
   return html`<section class="card">
     <h2>Open pull requests ${open.length ? html`<span class="count">${open.length}</span>` : ''}</h2>
     ${open.length ? html`<ul class="rows compact">${open.map((p) => html`<li class="row" data-action="row" data-href="#pr=${p.number}" tabindex="0">
-      <div class="r-main">${prChip(p.number, p.title)} <a class="r-title" href="#pr=${p.number}">${p.title}</a>${p.draft ? html` <span class="tag t-draft">draft</span>` : ''}</div>
+      <div class="r-main">${prChip(p.number, p.title)} <a class="r-title" href="#pr=${p.number}">${p.title}</a>${p.draft ? html` <span class="tag t-draft">draft</span>` : ''}${noteBadge('pr', p.number, `#pr=${p.number}`)}</div>
       <div class="r-meta">${checksBadge(p)} ${branchChip(p.head)} <span class="muted">→ ${p.base} · updated ${relOnly(p.updatedAt)}</span> ${docsLink(`PR #${p.number}`)}</div></li>`)}</ul>`
       : html`<p class="empty">No open pull requests.</p>`}
     <p class="small"><a href="#tab=pulls">All pull requests</a></p>
@@ -134,7 +150,7 @@ function locals(s) {
   return html`<section class="card">
     <h2>Copies on this PC</h2>
     ${ls.length ? html`<ul class="rows compact">${ls.map((l) => html`<li class="row" data-action="row" data-href="#local=${enc(l.name)}" tabindex="0">
-      <div class="r-main">${localChip(l.name)} <span class="muted">on</span> ${branchChip(l.branch)} ${versionChip(l.version)}${l.dirty ? html` <span class="tag t-dirty">${plural(l.dirty, 'uncommitted file')}</span>` : ''}${l.error ? html` <span class="tag t-closed">error</span>` : ''}</div>
+      <div class="r-main">${localChip(l.name)} <span class="muted">on</span> ${branchChip(l.branch)} ${versionChip(l.version)}${l.dirty ? html` <span class="tag t-dirty">${plural(l.dirty, 'uncommitted file')}</span>` : ''}${l.error ? html` <span class="tag t-closed">error</span>` : ''}${noteBadge('local', l.name, `#local=${enc(l.name)}`)}</div>
       <div class="r-meta muted">${l.error ? l.error : html`${aheadBehind(l.aheadOfTesting, l.behindTesting)}${l.worktreeOf ? ` · worktree of ${l.worktreeOf}` : ''} · head ${relOnly(l.date)}`}</div></li>`)}</ul>`
       : html`<p class="empty">No local copies found.</p>`}
     <p class="small"><a href="#tab=local">Local copies</a></p>
@@ -176,6 +192,7 @@ export const overview = {
     }
     document.getElementById('ov').innerHTML = String(html`
       ${releases(s)}
+      ${pinnedNotes()}
       <div class="grid2">${running(s)}${failures(s)}</div>
       ${lanes(s)}
       ${timeline(s)}

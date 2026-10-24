@@ -3,8 +3,10 @@
 import { store } from './store.js';
 import { html, relOnly, plural, enc, branchChip, commitChip, versionChip, aheadBehind, dashLink, docsLink, gh } from './util.js';
 import { commitList } from './parts.js';
+import { noteBadge } from './notes.js';
 
-export function localCard(l, { full = false } = {}) {
+// extra: shown after the key facts (the drawer puts the copy's notes there)
+export function localCard(l, { full = false, extra = '' } = {}) {
   const b = store.idx.branches.get(l.branch);
   const p = b ? (b.pr != null ? store.idx.pulls.get(String(b.pr)) : null) : store.idx.pullByHead.get(l.branch);
   const files = l.dirtyFiles || [];
@@ -14,6 +16,7 @@ export function localCard(l, { full = false } = {}) {
       <h2><a href="#local=${enc(l.name)}">${l.name}</a></h2>
       ${l.worktreeOf ? html`<span class="tag">worktree of ${l.worktreeOf}</span>` : ''}
       ${l.dirty ? html`<span class="tag t-dirty">${plural(l.dirty, 'uncommitted file')}</span>` : html`<span class="tag t-clean">clean</span>`}
+      ${full ? '' : noteBadge('local', l.name, `#local=${enc(l.name)}`)}
       <span class="grow"></span>
       <a class="small" href="${dashLink('view=changes&program=overview')}" target="quark-dashboard" title="The Editor Manager's changes, by program">changes by program</a>
       <a class="small" href="${dashLink(`branch=${enc(l.branch || '')}`)}" target="quark-dashboard">branch in Editor Manager</a>
@@ -26,6 +29,7 @@ export function localCard(l, { full = false } = {}) {
       <dt>Version</dt><dd>${versionChip(l.version)} <span class="muted small">(VERSION file)</span></dd>
       <dt>vs testing</dt><dd>${aheadBehind(l.aheadOfTesting, l.behindTesting)}${l.aheadOfProduction != null ? html` <span class="muted">· ${plural(l.aheadOfProduction, 'commit')} ahead of production</span>` : ''}</dd>
     </dl>
+    ${extra}
     ${l.dirty ? html`<h3>Uncommitted files</h3>
       <ul class="files" id="${boxId}">${files.slice(0, full ? 50 : 8).map((f) => { const m = /^\s*(\S{1,2})\s+(.*)$/.exec(f) || [0, '', f]; return html`<li title="${f}"><span class="fst">${m[1]}</span> <span class="mono">${m[2]}</span></li>`; })}</ul>
       ${!full && files.length > 8 ? html`<p class="small"><a href="#local=${enc(l.name)}">and ${files.length - 8} more</a></p>` : ''}

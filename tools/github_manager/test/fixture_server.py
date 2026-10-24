@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """Dev server for the GitHub manager page: serves the page and the fixtures on the API paths (stdlib only).
 
-    python3 tools/github_manager/test/fixture_server.py [--port 8767] [--no-shift] [--poll-error TEXT]
+    python3 tools/github_manager/test/fixture_server.py [--port 8767] [--no-shift] [--poll-error TEXT] [--no-notes]
 
 Every timestamp in the fixtures is shifted so the fixture's generatedAt is "now" (so elapsed timers and
 "5 min ago" look live); --no-shift serves them as written. /api/log returns a made-up GitHub Actions log for a
-job with hasLog (with ##[error] lines for failed jobs), 404 otherwise.
+job with hasLog (with ##[error] lines for failed jobs), 404 otherwise. /api/notes is the real notes store
+(server.Notes) kept in memory, with a few sample notes (--no-notes: none) and the same write checks as the server;
+its history events are added to the fixture history.
 """
 import argparse, json, os, re, sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)  # tools/github_manager
+sys.dont_write_bytecode = True
+sys.path.insert(0, ROOT)
+import server as S  # noqa: E402
+
+WORKFLOW_FILES = {"build-and-release": "release.yml", "main-guard": "main-guard.yml", "macos-retry": "macos-retry.yml"}
 ISO = re.compile(r'"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)Z"')
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
@@ -24,8 +31,41 @@ def parse(s):
 
 
 class Fixtures:
-    def __init__(self, shift, poll_error):
+    def __init__(self, shift, poll_error, sample_notes=True):
         self.shift, self.poll_error = shift, poll_error
+        self.note_events = []
+        self.notes = S.Notes(None, self.note_events.extend, "floration/quark")
+        if sample_notes:
+            self.seed_notes()
+
+    def seed_notes(self):
+        s = self.state()
+        work = [b["name"] for b in s["branches"] if b["kind"] == "claude"]
+        open_pr = [p["number"] for p in s["pulls"] if p["state"] == "open"]
+        failed = [r["id"] for r in s["runs"] if r.get("conclusion") == "failure"]
+        add = self.notes.create
+        t0 = datetime.now(timezone.utc) - timedelta(hours=30)
+        times = (S.iso(t0 + timedelta(minutes=97 * i)) for i in range(100))
+        self.notes.now = lambda: next(times)
+        add({"target": {"kind": "general"}, "pinned": True, "text":
+             "Before the next production PR:\n- run the **whole** `docs/RELEASE_CHECKLIST.md` on the testing build\n"
+             "- ask about the macOS runner wait\n\nSee https://github.com/floration/quark/actions for the queue."})
+        add({"target": {"kind": "version", "key": s["testing"]["version"]}, "pinned": True,
+             "text": "Hold %s until ranked is re-tested on Windows." % s["testing"]["version"]})
+        if work:
+            add({"target": {"kind": "branch", "key": work[0]}, "text": "Rebase onto testing before review."})
+        if open_pr:
+            add({"target": {"kind": "pr", "key": str(open_pr[0])}, "text":
+                 "Review the `netcode` change first.\n\n1. snapshot delta\n2. ack window", "author": "Claude"})
+            add({"target": {"kind": "pr", "key": str(open_pr[0])}, "text": "Owner asked for screenshots.",
+                 "status": "done"})
+        if failed:
+            n = add({"target": {"kind": "run", "key": str(failed[0])}, "pinned": True,
+                     "text": "Flaky? `net/snapshot_delta_baseline` failed once; re-run before blaming the change."})
+            self.notes.update(n["id"], {"text": n["text"] + " <b>not bold</b>"})
+        if s["local"]:
+            add({"target": {"kind": "local", "key": s["local"][0]["name"]}, "text": "Uncommitted map edits: keep."})
+        self.notes.now = lambda: S.iso(datetime.now(timezone.utc))
 
     def _load(self, name):
         with open(os.path.join(HERE, name), encoding="utf-8") as f:
@@ -38,14 +78,17 @@ class Fixtures:
 
     def state(self):
         s = self._load("fixture-state.json")
+        for r in s["runs"] + s.get("running", []):
+            r.setdefault("workflowFile", WORKFLOW_FILES.get(r["workflow"]))
         if self.poll_error:
             s["poll"]["lastError"] = self.poll_error
         return s
 
     def history(self, since=None, limit=None):
-        h = self._load("fixture-history.json")
+        h = self._load("fixture-history.json") + self.note_events
+        h = [e for _, e in sorted(enumerate(h), key=lambda ie: (ie[1]["at"], ie[0]), reverse=True)]
         if since:
-            h = [e for e in h if e["at"] > since]
+            h = [e for e in h if e["at"] >= since]  # as the server: since is inclusive (the page dedupes)
         return h[:limit] if limit else h
 
     def log(self, run, job):
@@ -109,7 +152,42 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if urlparse(self.path).path == "/api/refresh":
             return self.json(self.fx.state())
-        self.send(404, "not found", "text/plain")
+        self.write()
+
+    def do_PUT(self):
+        self.write()
+
+    def do_DELETE(self):
+        self.write()
+
+    def write(self):
+        """The notes API's writes, with the server's checks (origin, JSON, known fields, sizes)."""
+        path = urlparse(self.path).path
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if 0 < n <= S.NOTE_BODY_MAX else b""
+        if n > S.NOTE_BODY_MAX:
+            return self.json({"error": "too big"}, 413)
+        if not S.write_origin_ok(self.headers, self.server.server_address[1]):
+            return self.json({"error": "notes can only be changed from the GitHub manager's own page"}, 403)
+        if not S.json_content_type(self.headers.get("Content-Type")):
+            return self.json({"error": "send JSON"}, 415)
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw.strip() else None
+        except ValueError:
+            return self.json({"error": "the body is not valid JSON"}, 400)
+        try:
+            if path == "/api/notes" and self.command == "POST":
+                return self.json({"note": self.fx.notes.create(body)}, 201)
+            nid = path[len("/api/notes/"):] if path.startswith("/api/notes/") else ""
+            if not S.NOTE_ID_RE.match(nid):
+                return self.json({"error": "not found"}, 404)
+            if self.command == "PUT":
+                return self.json({"note": self.fx.notes.update(nid, body)})
+            if self.command == "DELETE":
+                return self.json({"deleted": self.fx.notes.delete(nid)})
+        except S.NoteError as e:
+            return self.json({"error": str(e)}, e.code)
+        self.json({"error": "not found"}, 404)
 
     def do_GET(self):
         u = urlparse(self.path)
@@ -118,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(self.fx.state())
         if u.path == "/api/history":
             return self.json(self.fx.history(q.get("since"), int(q["limit"]) if q.get("limit") else None))
+        if u.path == "/api/notes":
+            return self.send(200, self.fx.notes.view()[1], "application/json")
         if u.path == "/api/log":
             text = self.fx.log(q.get("run", ""), q.get("job", ""))
             if text is None:
@@ -136,8 +216,9 @@ def main():
     ap.add_argument("--port", type=int, default=8767)
     ap.add_argument("--no-shift", action="store_true")
     ap.add_argument("--poll-error", default=None)
+    ap.add_argument("--no-notes", action="store_true", help="start with no sample notes")
     a = ap.parse_args()
-    Handler.fx = Fixtures(not a.no_shift, a.poll_error)
+    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"fixture server on http://127.0.0.1:{a.port}/", flush=True)
     srv.serve_forever()
