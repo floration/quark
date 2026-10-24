@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Quark editor dashboard: the owner's local page that ties the editors and the git clones together.
+"""Quark Editor Manager: the owner's local page for the editors (sound, UI, map, bot and model editor) only.
+GitHub, Claude Documents, game code and tooling changes live in the Supervisor Board (127.0.0.1:8768), not here.
 
     python3 dashboard.py                          start on 127.0.0.1:8765 (or the next free port) and open the browser
     python3 dashboard.py --quark <root>           the Quark folder (default: found from where this is installed)
@@ -12,10 +13,9 @@ Other options: --port N, --no-browser, --data-dir <the game's user data folder> 
 ~/.local/share/quark, ~/Library/Application Support/quark), --sidecar <file> (where the dashboard keeps its marks).
 
 What it reads (README.md has the views):
-  - every working-repo* clone in the Quark folder and every worktree `git worktree list` gives for them: commits ahead
-    of origin/testing and of the production tag (the newest v<semver>), uncommitted files;
-  - the unmerged remote branches (origin/*, except testing and the default branch) of the reference clone
-    (repository\\ if present): commits ahead of testing, files, ahead / behind;
+  - every working-repo* clone in the Quark folder and every worktree `git worktree list` gives for them: the editors'
+    files in their commits ahead of origin/testing and their uncommitted files (other files are not shown);
+  - the editors' files that differ between the production tag (the newest v<semver>) and origin/testing;
   - each editor folder (sound-editor\\, model-editor\\, map-editor\\, bot-editor\\, ui-customizer\\): its exported files
     and its provenance.json sidecar (docs/PROVENANCE.md), and the game's own overrides folder on this PC;
   - the provenance registry, <repo>/assets/provenance/*.json.
@@ -33,63 +33,61 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_ID = "quark-editor-dashboard"
 DEFAULT_PORT = 8765
-SHELL_ORIGINS = ("http://127.0.0.1:8768", "http://localhost:8768")          # the project manager may read GET /api/*
+SHELL_ORIGINS = ("http://127.0.0.1:8768", "http://localhost:8768")          # the Supervisor Board may read GET /api/*
 STATIC = {"/": "index.html", "/index.html": "index.html", "/dashboard.css": "dashboard.css", "/dashboard.js": "dashboard.js",
           "/quark-tools.css": "quark-tools.css"}
 MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
 PROGRAM_FILES = ["dashboard.py", "index.html", "quark-tools.css", "dashboard.css", "dashboard.js", "README.md", "dashboard.cmd", "install.cmd"]
 ORIGINS = ("human", "third-party", "ai")
-# the sibling local tools in the shared nav bar: (id, label, url, how to start it). Each is checked when the page asks.
-SIBLINGS = [
-    ("github", "GitHub", "http://127.0.0.1:8767/", os.path.join("Quark", "github-manager", "github-manager.cmd")),
-    ("docs", "Claude Documents", "http://127.0.0.1:8766/", os.path.join("Quark", "docs-manager", "docs-manager.cmd")),
-]
+# the other local tool in the nav bar: (id, label, url, how to start it), checked when the page asks. GitHub, Claude
+# Documents, game code and tooling are the Supervisor Board's, not this page's.
+SIBLINGS = [("manager", "Supervisor Board", "http://127.0.0.1:8768/", "")]
 
 # --- what belongs to which program -----------------------------------------------------------------------------------
 
-PROGRAMS = ["Sound editor", "Model editor", "Map editor", "Bot editor", "UI customizer", "Game code", "Tooling/CI", "Other"]
-
-# The editor folders in the Quark folder: (folder, program, the `tool` its sidecar entries carry). Missing ones are skipped.
+# The editors, in the order the page shows them: (folder in the Quark folder, program, the `tool` its sidecar entries
+# carry). The folder is also the program's id (links, /api/summary). Missing folders are skipped.
 EDITORS = [
     ("sound-editor", "Sound editor", "sound-editor"),
-    ("model-editor", "Model editor", "model-editor"),
+    ("ui-customizer", "UI editor", "ui-customizer"),
     ("map-editor", "Map editor", "map-editor"),
     ("bot-editor", "Bot editor", "bot-editor"),
-    ("ui-customizer", "UI customizer", "ui-customizer"),
+    ("model-editor", "Model editor", "model-editor"),
 ]
+PROGRAMS = [p for _, p, _ in EDITORS]
+PROGRAM_ID = {p: f for f, p, _ in EDITORS}
 
 # Path rules, first match wins: repository paths (lower case, '/'), a pattern ending in '/' is that folder and everything
-# under it, anything else is an fnmatch glob ('*' crosses '/'). Edit this table to move files between programs.
+# under it, anything else is an fnmatch glob ('*' crosses '/'). A file no rule matches belongs to no editor and is not
+# shown (game code, tooling and CI are the Supervisor Board's). Edit this table to move files between editors.
 PATH_RULES = [
     ("Sound editor", ["tools/sound_editor/", "assets/sfx/", "assets/voice/", "assets/overrides/sounds/",
                       "assets/overrides/voices/", "*sound-levels*", "mods/sounds/", "src/client/audio.*",
                       "src/client/sfx_recorded.h", "src/client/voice_data.h", "tools/import_sfx.py",
                       "tools/import_voice.py", "tools/make_voice.py"]),
-    ("Model editor", ["tools/model_editor/", "assets/overrides/models/", "src/client/models.*", "src/client/gltf.*"]),
+    ("UI editor", ["tools/ui_customizer/", "ui-customizer/", "*ui-customizer*", "src/client/ui*",
+                   "src/client/hudwidgets.*", "src/client/fontatlas.*", "src/client/font_ui.h", "assets/fonts/",
+                   "assets/overrides/fonts/", "assets/overrides/ui/", "tools/make_font_atlas.py"]),
     ("Map editor", ["tools/map_editor/", "tools/maps/", "tools/make_maps.py", "tools/embed_maps.py",
                     "assets/overrides/maps/", "src/client/editor.cpp", "docs/map_*"]),
     ("Bot editor", ["tools/bot_editor/", "src/game/bots.*"]),
-    ("UI customizer", ["tools/ui_customizer/", "ui-customizer/", "*ui-customizer*", "src/client/ui*",
-                       "src/client/hudwidgets.*", "src/client/fontatlas.*", "src/client/font_ui.h", "assets/fonts/",
-                       "assets/overrides/fonts/", "assets/overrides/ui/", "tools/make_font_atlas.py"]),
-    ("Other", ["assets/overrides/", "assets/provenance/"]),              # (the icon, website pictures; the registry)
-    ("Game code", ["src/", "third_party/", "assets/", "mods/", "cmakelists.txt", "cmake/"]),
-    ("Tooling/CI", ["tools/", ".github/", ".gitignore", ".gitattributes"]),
+    ("Model editor", ["tools/model_editor/", "assets/overrides/models/", "src/client/models.*", "src/client/gltf.*"]),
 ]
 
 
-def slug(name):
-    """a program's id in links and /api/summary: "Tooling/CI" -> "tooling-ci" (dashboard.js has the same)"""
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+# the same rules as git pathspecs (git's default matching: '*' crosses '/', a trailing '/' is the folder), so git reads
+# and lists only the editors' files; program_of() still decides which editor a file is
+EDITOR_PATHSPEC = ["--"] + [":(icase)" + pat for _, pats in PATH_RULES for pat in pats]
 
 
 @functools.lru_cache(maxsize=None)
 def program_of(path):
+    """the editor a repository path belongs to, or None"""
     p = path.replace("\\", "/").lower()
     for prog, pats in PATH_RULES:
         for pat in pats:
             if (p.startswith(pat) if pat.endswith("/") else fnmatch.fnmatchcase(p, pat)): return prog
-    return "Other"
+    return None
 
 
 # --- git ---------------------------------------------------------------------------------------------------------------
@@ -154,22 +152,15 @@ def parse_name_status_z(out):
 
 
 def parse_status_z(out):
-    """git status --porcelain=v1 -z -b -> (branch line info, [[xy, path]])"""
-    info, files = {"branch": "", "upstream": "", "ahead": 0, "behind": 0}, []
-    toks, i = (out or "").split("\0"), 0
+    """git status --porcelain=v1 -z -> [[xy, path]]"""
+    files, toks, i = [], (out or "").split("\0"), 0
     while i < len(toks):
         t = toks[i]; i += 1
         if not t: continue
-        if t.startswith("## "):
-            m = re.match(r"## (?:No commits yet on )?(.+?)(?:\.\.\.(\S+))?(?: \[(.*)\])?$", t)
-            if m:
-                info["branch"], info["upstream"] = m.group(1), m.group(2) or ""
-                for k, n in re.findall(r"(ahead|behind) (\d+)", m.group(3) or ""): info[k] = int(n)
-            continue
         xy, path = t[:2], t[3:]
         if xy[0] in "RC": i += 1                                        # (-z puts the old name next)
         files.append([xy, path])
-    return info, files
+    return files
 
 
 def semver_key(tag):
@@ -292,25 +283,20 @@ def run_parallel(jobs, pool=None):
 # --- collecting --------------------------------------------------------------------------------------------------------
 
 def repo_refs(cwd):
-    """one for-each-ref: origin/testing, the production tag, the remote branches (with ahead / behind testing on git 2.41+)"""
-    fmt = "%(refname)%00%(objectname)%00%(*objectname)%00%(committerdate:unix)%00%(symref)"
-    out = GIT(cwd, "for-each-ref", "--format=" + fmt, "refs/remotes/", "refs/tags/", "refs/heads/testing")
-    refs, tags, remotes, default = {}, [], [], None
+    """one for-each-ref: origin/testing (else a local testing) and the production tag (the newest v<semver>)"""
+    out = GIT(cwd, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(*objectname)",
+              "refs/remotes/origin/testing", "refs/heads/testing", "refs/tags/v*")
+    refs, tags = {}, []
     for line in (out or "").splitlines():
         p = line.split("\0")
-        if len(p) < 5: continue
-        name, obj, peeled, t, sym = p
-        refs[name] = peeled or obj
-        if name.startswith("refs/tags/") and semver_key(name[10:]): tags.append(name[10:])
-        elif name == "refs/remotes/origin/HEAD": default = sym.rsplit("/", 1)[-1] if sym else None
-        elif name.startswith("refs/remotes/origin/"): remotes.append({"name": name[20:], "sha": obj, "t": int(t or 0)})
+        if len(p) < 3: continue
+        refs[p[0]] = p[2] or p[1]
+        if p[0].startswith("refs/tags/") and semver_key(p[0][10:]): tags.append(p[0][10:])
     testing_ref = ("origin/testing" if "refs/remotes/origin/testing" in refs else
                    "testing" if "refs/heads/testing" in refs else None)
     prod = max(tags, key=semver_key) if tags else None
-    skip = {"testing", "HEAD", default} | ({"main", "master"} if not default else set())
     return {"testing_ref": testing_ref, "testing_sha": refs.get("refs/remotes/origin/testing") or refs.get("refs/heads/testing"),
-            "prod_tag": prod, "prod_sha": refs.get("refs/tags/" + prod) if prod else None, "default_branch": default,
-            "branches": [b for b in remotes if b["name"] not in skip]}
+            "prod_tag": prod, "prod_sha": refs.get("refs/tags/" + prod) if prod else None}
 
 
 def read_versions(cwd, revs):
@@ -343,47 +329,56 @@ def subprocess_bytes(cwd, args, stdin):
     return out
 
 
-def collect_repo(cwd, refs, with_testing_log):
-    """per shared .git: the files testing changed since production (and, for the reference clone, those commits)"""
+def collect_repo(cwd, refs, is_ref):
+    """per pair of (testing, production) commits: the editors' files testing changed since production; for the reference
+    clone also those commits and VERSION at both"""
     res = {"tp_files": {}, "testing_commits": [], "versions": {}}
     t, p = refs["testing_ref"], refs["prod_tag"]
-    jobs = [(read_versions, (cwd, [t, p]))]
+    jobs = [(read_versions, (cwd, [t, p]))] if is_ref else []
     if t and p:
-        jobs.append((GIT, (cwd, "diff", "--name-status", "-z", "--no-renames", p, t)))
-        if with_testing_log: jobs.append((GIT, (cwd, "log", "--no-merges", "--max-count=%d" % MAX_TESTING_COMMITS,
-                                       LOG_FORMAT, "--name-status", "--no-renames", p + ".." + t)))
+        jobs.append((GIT, (cwd, "diff", "--name-status", "-z", "--no-renames", p, t, *EDITOR_PATHSPEC)))
+        if is_ref: jobs.append((GIT, (cwd, "log", "--no-merges", "--full-history", "--max-count=%d" % MAX_TESTING_COMMITS,
+                                      LOG_FORMAT, "--name-status", "--no-renames", p + ".." + t, *EDITOR_PATHSPEC)))
     outs = run_parallel(jobs)
-    res["versions"] = outs[0]
-    if len(outs) > 1: res["tp_files"] = parse_name_status_z(outs[1])
-    if len(outs) > 2: res["testing_commits"] = parse_log(outs[2])
+    if is_ref: res["versions"] = outs.pop(0)
+    if outs: res["tp_files"] = {f: l for f, l in parse_name_status_z(outs[0]).items() if program_of(f)}
+    if len(outs) > 1: res["testing_commits"] = editor_commits(outs[1])
     return res
 
 
+def editor_commits(out):
+    """parse_log, keeping only the editors' files (and the commits that touch one)"""
+    keep = []
+    for cm in parse_log(out):
+        cm["files"] = [lf for lf in cm["files"] if program_of(lf[1])]
+        if cm["files"]: keep.append(cm)
+    return keep
+
+
 def collect_worktree(c, refs, tp_files):
-    """one clone / worktree: branch, ahead / behind, commits ahead of testing, uncommitted, and each file's status:
-    local (the change isn't in testing), testing (in testing, not production) or both (in testing and production)"""
-    cwd, t, p = c["path"], refs["testing_ref"], refs["prod_tag"]
-    jobs = [(GIT, (cwd, "status", "--porcelain=v1", "-z", "-b", "--untracked-files=all")),
-            (GIT, (cwd, "rev-parse", "HEAD"))]
+    """one clone / worktree, the editors' files only: commits ahead of testing, uncommitted files, and each file's state:
+    local (the change isn't in testing), testing (in testing, not production) or both (in testing and production).
+    Four git calls, in parallel, each limited to the editors' paths."""
+    cwd, t, ps = c["path"], refs["testing_ref"], EDITOR_PATHSPEC
+    jobs = [(GIT, (cwd, "status", "--porcelain=v1", "-z", "--untracked-files=all", *ps))]
     if t:
-        jobs += [(GIT, (cwd, "merge-base", t, "HEAD")),
-                 (GIT, (cwd, "rev-list", "--left-right", "--count", t + "...HEAD")),
-                 (GIT, (cwd, "log", "--no-merges", LOG_FORMAT, "--name-status", "--no-renames", t + "..HEAD")),
-                 (GIT, (cwd, "diff", "--name-only", "-z", "--no-renames", t))]
-    if p: jobs.append((GIT, (cwd, "rev-list", "--count", p + "..HEAD")))
+        jobs += [(GIT, (cwd, "log", "--no-merges", "--full-history", LOG_FORMAT, "--name-status", "--no-renames", t + "..HEAD", *ps)),
+                 (GIT, (cwd, "diff", "--name-only", "-z", "--no-renames", t, *ps)),
+                 # the working tree vs the merge base with testing (git 2.30+; older git: merge-base, then diff)
+                 (GIT, (cwd, "diff", "--name-status", "-z", "--no-renames", "--merge-base", t, *ps))]
     outs = run_parallel(jobs)
-    info, unc = parse_status_z(outs[0])
-    w = dict(name=c["name"], path=c["path"], role=c["role"], outside=c.get("outside", False), branch=info["branch"],
-             upstream=info["upstream"], aheadUp=info["ahead"], behindUp=info["behind"], head=(outs[1] or "").strip()[:9],
-             aheadTesting=None, behindTesting=None, aheadProd=None, commits=[], uncommitted=unc, status={}, errors=[])
-    if outs[1] is None: w["errors"].append("not a readable git clone")
+    unc = [xf for xf in parse_status_z(outs[0]) if program_of(xf[1])]
+    w = dict(name=c["name"], path=c["path"], role=c["role"], outside=c.get("outside", False),
+             commits=[], uncommitted=unc, status={}, errors=[])
+    if outs[0] is None: w["errors"].append("not a readable git clone")
     if t:
-        mb = (outs[2] or "").strip()
-        lr = (outs[3] or "").split()
-        if len(lr) == 2: w["behindTesting"], w["aheadTesting"] = int(lr[0]), int(lr[1])
-        w["commits"] = parse_log(outs[4])
-        d_t = set(n for n in (outs[5] or "").split("\0") if n)          # the working tree vs testing's tip
-        local = parse_name_status_z(GIT(cwd, "diff", "--name-status", "-z", "--no-renames", mb)) if mb else {}
+        w["commits"] = editor_commits(outs[1])
+        d_t = set(n for n in (outs[2] or "").split("\0") if n)          # the working tree vs testing's tip
+        local_out = outs[3]
+        if local_out is None:
+            mb = (GIT(cwd, "merge-base", t, "HEAD") or "").strip()
+            local_out = GIT(cwd, "diff", "--name-status", "-z", "--no-renames", mb, *ps) if mb else ""
+        local = {f: l for f, l in parse_name_status_z(local_out).items() if program_of(f)}
         local_set = set(local) | {f for xy, f in unc if xy == "??"}
         for f in local_set | {f for cm in w["commits"] for _, f in cm["files"]} | {f for _, f in unc}:
             if f in local_set and (f in d_t or f not in local): st = "local"     # (untracked: never in testing)
@@ -393,38 +388,7 @@ def collect_worktree(c, refs, tp_files):
     else:
         w["errors"].append("no origin/testing in this clone: run Refresh with fetch")
         for _, f in unc: w["status"][f] = "local"
-    if p and len(outs) > (6 if t else 2):
-        try: w["aheadProd"] = int((outs[-1] or "").strip())
-        except ValueError: pass
     return w
-
-
-def collect_branches(cwd, refs):
-    """the reference clone's unmerged remote branches: commits ahead of testing with their files, ahead / behind"""
-    t = refs["testing_ref"]
-    if not t: return [], 0
-    branches = refs["branches"]
-    # ahead / behind for every branch in one call (git 2.41+); older git: one rev-list per branch
-    ab = {}
-    out = GIT(cwd, "for-each-ref", "--format=%(refname:short)%00%(ahead-behind:" + t + ")", "refs/remotes/origin/")
-    for line in (out or "").splitlines():
-        p = line.split("\0")
-        if len(p) == 2 and " " in p[1]:
-            a, b = p[1].split(); ab[p[0][7:] if p[0].startswith("origin/") else p[0]] = (int(a), int(b))
-    if not ab and branches:
-        outs = run_parallel([(GIT, (cwd, "rev-list", "--left-right", "--count", t + "...origin/" + b["name"])) for b in branches])
-        for b, o in zip(branches, outs):
-            lr = (o or "").split()
-            if len(lr) == 2: ab[b["name"]] = (int(lr[1]), int(lr[0]))
-    live = [b for b in branches if ab.get(b["name"], (1, 0))[0] > 0]
-    logs = run_parallel([(GIT, (cwd, "log", "--no-merges", LOG_FORMAT, "--name-status", "--no-renames",
-                                t + "..origin/" + b["name"])) for b in live])
-    res = []
-    for b, o in zip(live, logs):
-        a, bh = ab.get(b["name"], (None, None))
-        res.append({"name": "origin/" + b["name"], "t": b["t"], "ahead": a, "behind": bh, "commits": parse_log(o)})
-    res.sort(key=lambda b: -b["t"])
-    return res, len(branches) - len(live)
 
 
 # --- files outside git: editor exports, the game's overrides folder ------------------------------------------------------
@@ -466,7 +430,8 @@ def compare_to_repo(f, rel, size, ov_idx):
 
 def scan_exports(folder, program, ov_idx, overrides_root=False):
     """files an editor wrote: its provenance.json, anything under an export / overrides folder, output-looking files at
-    its top level. overrides_root: the folder itself is an overrides folder (the game's per-user one)."""
+    its top level. overrides_root: the folder itself is an overrides folder (the game's per-user one); its files go to
+    the editor their assets/overrides/ path belongs to, and those of no editor are left out."""
     files, more = [], 0
     for d, dirs, names in os.walk(folder):
         rel_d = os.path.relpath(d, folder)
@@ -478,21 +443,18 @@ def scan_exports(folder, program, ov_idx, overrides_root=False):
             ext = os.path.splitext(n)[1].lower()
             if n.lower() in ("readme.md", "readme.txt"): continue
             if not (in_export or (depth == 0 and (ext in EXPORT_EXT or n.lower() == "provenance.json"))): continue
-            if len(files) >= MAX_FILES: more += 1; continue
             f = os.path.join(d, n)
-            try: st = os.stat(f)
-            except OSError: continue
             rel = os.path.relpath(f, folder).replace(os.sep, "/")
-            e = {"path": rel, "mtime": int(st.st_mtime), "size": st.st_size}
             # the part after the last overrides/ folder is the asset's override path
             ov = rel if overrides_root else (rel.lower().split("overrides/", 1)[1] if "overrides/" in rel.lower() else None)
-            if ov is not None:
-                ov = rel[len(rel) - len(ov):]
-                e["asset"] = ov
-                e["repo"] = compare_to_repo(f, ov, st.st_size, ov_idx)
-                e["program"] = program_of("assets/overrides/" + ov) if overrides_root else program
-            else:
-                e["program"] = program
+            if ov is not None: ov = rel[len(rel) - len(ov):]
+            prog = program_of("assets/overrides/" + ov) if overrides_root else program
+            if not prog: continue
+            if len(files) >= MAX_FILES: more += 1; continue
+            try: st = os.stat(f)
+            except OSError: continue
+            e = {"path": rel, "mtime": int(st.st_mtime), "size": st.st_size, "program": prog}
+            if ov is not None: e["asset"], e["repo"] = ov, compare_to_repo(f, ov, st.st_size, ov_idx)
             files.append(e)
     files.sort(key=lambda e: -e["mtime"])
     return files, more
@@ -640,9 +602,9 @@ def write_marks(cfg, ids, origin, by, note, clear):
 
 # --- the whole picture --------------------------------------------------------------------------------------------------
 
-def by_program(clones, repos, ref_key, branches, exports):
-    """regroups everything per program: a commit shows under each program it touches, with only that program's files"""
-    progs = {p: {"name": p, "clones": [], "branches": [], "testing": [], "testingFiles": [], "exports": [],
+def by_program(clones, repos, ref_key, exports):
+    """regroups everything per editor: a commit shows under each editor it touches, with only that editor's files"""
+    progs = {p: {"id": PROGRAM_ID[p], "name": p, "clones": [], "testing": [], "testingFiles": [], "exports": [],
                  "files": {}} for p in PROGRAMS}
     for w in clones:
         per = {}
@@ -653,21 +615,12 @@ def by_program(clones, repos, ref_key, branches, exports):
         for xy, f in w["uncommitted"]:
             per.setdefault(program_of(f), {"commits": {}, "uncommitted": []})["uncommitted"].append([xy, f, w["status"].get(f, "local")])
         for prog, g in per.items():
-            progs[prog]["clones"].append({"clone": w["name"], "branch": w["branch"], "commits": list(g["commits"].values()),
+            progs[prog]["clones"].append({"clone": w["name"], "commits": list(g["commits"].values()),
                                           "uncommitted": g["uncommitted"]})
             fl = progs[prog]["files"]
             for cm in g["commits"].values():
                 for _, f, st in cm["files"]: fl.setdefault(f, {}).setdefault(w["name"], st)
             for xy, f, st in g["uncommitted"]: fl.setdefault(f, {})[w["name"]] = st
-    for b in branches:
-        per = {}
-        for cm in b["commits"]:
-            for letter, f in cm["files"]:
-                per.setdefault(program_of(f), {}).setdefault(cm["sha"], dict(cm, files=[]))["files"].append([letter, f])
-        for prog, cms in per.items():
-            files = sorted({f for cm in cms.values() for _, f in cm["files"]})
-            progs[prog]["branches"].append({"name": b["name"], "t": b["t"], "ahead": b["ahead"], "behind": b["behind"],
-                                            "commits": list(cms.values()), "files": files})
     ref = repos.get(ref_key) or {}
     for cm in ref.get("testing_commits", []):
         per = {}
@@ -720,12 +673,15 @@ class State:
         refs = dict(zip(commons, run_parallel([(repo_refs, (by_common[k]["path"],)) for k in commons])))
         ref_key = ref_clone["common"] if ref_clone else None
         ov_idx = repo_overrides_index(cfg.repo)
-        # everything else at once: per shared .git, per worktree, the branches, the editor folders
-        repo_jobs = [(collect_repo, (by_common[k]["path"], refs[k], k == ref_key)) for k in commons]
-        repo_res = run_parallel(repo_jobs, TASKS)
-        repos = dict(zip(commons, repo_res))
+        # testing vs production once per pair of commits (clones whose origin/testing and production tag are the
+        # reference's, the usual case, share its result), then every worktree and editor folder at once
+        pair = lambda k: (refs[k]["testing_sha"], refs[k]["prod_sha"])
+        firsts = {}
+        for k in ([ref_key] if ref_key else []) + commons: firsts.setdefault(pair(k), k)
+        pair_res = dict(zip(firsts, run_parallel([(collect_repo, (by_common[k]["path"], refs[k], k == ref_key))
+                                                  for k in firsts.values()], TASKS)))
+        repos = {k: pair_res[pair(k)] for k in commons}
         jobs = [(collect_worktree, (c, refs[c["common"]], repos[c["common"]]["tp_files"])) for c in clones]
-        if ref_clone: jobs.append((collect_branches, (ref_clone["path"], refs[ref_key])))
         export_srcs = []
         for folder, prog, tool in EDITORS:
             d = os.path.join(cfg.quark, folder)
@@ -735,9 +691,7 @@ class State:
         jobs += [(scan_exports, (d, prog, ov_idx, root)) for _, d, prog, root in export_srcs]
         res = run_parallel(jobs, TASKS)
         worktrees = res[:len(clones)]
-        branches, merged = res[len(clones)] if ref_clone else ([], 0)
-        exp_res = res[len(clones) + (1 if ref_clone else 0):]
-        exports = [{"name": n, "path": d, "files": r[0], "more": r[1]} for (n, d, _, _), r in zip(export_srcs, exp_res)]
+        exports = [{"name": n, "path": d, "files": r[0], "more": r[1]} for (n, d, _, _), r in zip(export_srcs, res[len(clones):])]
         rr = refs.get(ref_key) or {"testing_ref": None, "testing_sha": None, "prod_tag": None, "prod_sha": None}
         vers = (repos.get(ref_key) or {}).get("versions", {})
         for w, c in zip(worktrees, clones):                          # (a clone whose origin/testing isn't the reference's)
@@ -745,10 +699,10 @@ class State:
             w["stale"] = bool(rr["testing_sha"] and refs[c["common"]]["testing_sha"] != rr["testing_sha"])
         assets = assets_payload(cfg)
         editors = [{"folder": f, "program": p, "present": os.path.isdir(os.path.join(cfg.quark, f))} for f, p, _ in EDITORS]
-        self.changes = {"programs": by_program(worktrees, repos, ref_key, branches, exports),
+        self.changes = {"programs": by_program(worktrees, repos, ref_key, exports),
                         "clones": [{k: w[k] for k in w if k not in ("commits", "uncommitted", "status")} |
-                                   {"commits": len(w["commits"]), "uncommitted": len(w["uncommitted"])} for w in worktrees],
-                        "branchesMerged": merged, "branches": len(branches),
+                                   {"commits": len(w["commits"]), "uncommitted": len(w["uncommitted"]),
+                                    "local": sum(1 for x in w["status"].values() if x == "local")} for w in worktrees],
                         "exports": [{"name": e["name"], "path": e["path"], "files": len(e["files"]), "more": e["more"]} for e in exports],
                         "editors": editors, "rules": PATH_RULES}
         self.assets = assets
@@ -769,7 +723,7 @@ class State:
         self.status = dict(self.status, human=summary_pct(self.assets["stats"]))
 
     def summary(self):
-        """GET /api/summary: the compact, stable shape other tools read (the project manager on 8768). Keep its keys."""
+        """GET /api/summary: the compact, stable shape other tools read (the Supervisor Board on 8768). Keep its keys."""
         st, a = self.status, self.assets
         cats, tot = {}, {"human": 0, "third_party": 0, "ai": 0}
         for c, v in sorted(a["stats"].items()):
@@ -779,7 +733,7 @@ class State:
         progs = []
         for p in self.changes["programs"]:
             local = {cm["sha"] for c in p["clones"] for cm in c["commits"]}
-            progs.append({"id": slug(p["name"]), "name": p["name"], "ahead_testing": len(local),
+            progs.append({"id": p["id"], "name": p["name"], "ahead_testing": len(local),
                           "ahead_production": len(local) + len(p["testing"]),
                           "uncommitted": sum(len(c["uncommitted"]) for c in p["clones"]),
                           "files_changed": sum(1 for _, sts in p["files"] if "local" in sts.values())})
@@ -801,7 +755,7 @@ class Handler(BaseHTTPRequestHandler):
         if str(code)[:1] in ("4", "5"): super().log_request(code, size)
 
     def host_ok(self, read_api=False):
-        """only this machine's own page (blocks DNS rebinding by Host, other sites by Origin); the project manager's page
+        """only this machine's own page (blocks DNS rebinding by Host, other sites by Origin); the Supervisor Board's page
         (SHELL_ORIGINS) may also read GET /api/* (read_api), which then answers with its CORS header"""
         port = self.server.server_address[1]
         self.cors = None
@@ -824,7 +778,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_OPTIONS(self):                                               # (a CORS preflight from the project manager)
+    def do_OPTIONS(self):                                               # (a CORS preflight from the Supervisor Board)
         path = self.path.split("?", 1)[0]
         if not path.startswith("/api/") or not self.host_ok(read_api=True) or not self.cors:
             return self.send(403, {"error": "forbidden"})
@@ -950,12 +904,12 @@ def install(dest):
     for n in PROGRAM_FILES:
         src = os.path.join(HERE, n)
         if os.path.isfile(src): shutil.copyfile(src, os.path.join(dest, n))
-    print("editor dashboard installed in %s (your marks, provenance.json there, are kept)" % dest)
+    print("Editor Manager installed in %s (your marks, provenance.json there, are kept)" % dest)
     print("start it: %s" % os.path.join(dest, "dashboard.cmd" if os.name == "nt" else "dashboard.py"))
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Quark editor dashboard (local, read-only on the git clones)")
+    ap = argparse.ArgumentParser(description="Quark Editor Manager (local, read-only on the git clones)")
     ap.add_argument("--quark", help="the Quark folder (holds repository\\, working-repo\\, the editors)")
     ap.add_argument("--repo", help="the clone whose assets/provenance/ is the registry (a name in the Quark folder or a path)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -979,7 +933,7 @@ def main():
     Handler.state = state
     srv = bind(a.port)
     url = "http://127.0.0.1:%d/" % srv.server_address[1]
-    print("Quark editor dashboard: %s\n  Quark folder: %s\n  registry:     %s\n  your marks:   %s\nCtrl+C stops it."
+    print("Quark Editor Manager: %s\n  Quark folder: %s\n  registry:     %s\n  your marks:   %s\nCtrl+C stops it."
           % (url, cfg.quark, os.path.join(cfg.repo, "assets", "provenance"), cfg.sidecar))
     threading.Thread(target=state.refresh, daemon=True).start()          # (the page waits for the first snapshot)
     if not a.no_browser: threading.Timer(0.2, webbrowser.open, (url,)).start()
