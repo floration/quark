@@ -23,7 +23,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 | Voices | 30 announcer lines x 7 voices = 210 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Models | 5 players, 10 weapon viewmodels, 7 projectiles, the crown = 23 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
-| Fonts | the default UI font (Rubik) and WORK SANS of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf` |
+| Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
 | Images | the game icon | `images/icon.png` |
 | Website | the site's pictures | `website/<file>` (from `site/img/`) |
 
@@ -82,7 +82,7 @@ Matching ignores case, and the extension may be any the asset accepts (an upload
 | voices | .wav .ogg .flac .mp3 | The same, cut at 5 s, as loud as the line it replaces |
 | sound levels | `sound-levels.txt` (at the overrides root) | Sounds and voice lines that keep their own level: one asset path a line without extension (`sounds/default/ROCKET`, `voices/male/GO`), any case, `#` comment lines. A listed file is still made mono, trimmed, cut and faded, but not matched to the sound it replaces (the sound editor levels groups by LUFS, and matching would undo it); only a peak over 1.0 is scaled down to 1.0. A kept DEFAULT stays at its level in the kits it becomes. Your file's lines add to the shipped one's. Embedded like the rest (the one .txt that is). Players' mods: `mods/sounds/sound-levels.txt`, paths relative to it (`default/ROCKET`, `all/ROCKET`). |
 | models | .glb .gltf | Drawn in place of the box model (lit, shadowed, no outline). Buffers embedded or in files next to the .gltf. At most 20 000 triangles a model (they stream every frame); a bad file is logged and the default kept. |
-| font | `fonts/Rubik.ttf` / `.otf` (the default UI font), `fonts/WorkSans.ttf` / `.otf` (the WORK SANS entry of Settings > FONT) | That font's distance-field atlas is rasterised from it when it is in use (stb_truetype: at startup for the default, on picking it for WORK SANS), same layout as tools/make_font_atlas.py, sized so its capitals are as tall as Rubik Bold's. Upload a static font of the weight to use (a variable font gives its default instance: Rubik's is Light, Work Sans's Regular). Up to 1.18 `fonts/WorkSans.*` replaced the UI font; it now replaces only the WORK SANS entry (Rubik is the default). |
+| font | `fonts/Rubik.ttf` / `.otf` (the default UI font), `fonts/WorkSans.ttf` / `.otf` (the WORK SANS entry of Settings > FONT) | That font's distance-field atlas is rasterised from it when it is in use (stb_truetype: at startup for the default, on picking it for WORK SANS), same layout as tools/make_font_atlas.py, sized so its capitals are as tall as Rubik Bold's. Upload a static font of the weight to use (a variable font gives its default instance: Rubik's is Light, Work Sans's Regular). Up to 1.18 `fonts/WorkSans.*` replaced the UI font; it now replaces only the WORK SANS entry (Rubik is the default). A look-alike's file name (`fonts/BebasNeue-Regular.ttf`, `fonts/LibreQuake-CONCHARS.png` a 16x16 sheet, ...) replaces that look-alike; a player's own copy of the real game font still comes first. |
 | icon | `images/icon.png` / `.jpg` | Shipped: run `python3 tools/make_icon.py` (Pillow) after adding it: it makes assets/quark.png / .ico, the launcher's and the site's icon from it and records it in assets/quark.icon-source (quark_tests fails until that matches). In the game: the window icon. |
 | maps | `maps/<name>.qmap` | Shipped: tools/make_maps.py writes the override instead of generating that map and tools/embed_maps.py embeds it (an official map: ranked uses its sha256). It counts as human-made: quark_tests runs every map check on it and reports the numbers, labelled HUMAN-MADE, without failing on them ([MAP_METRICS.md](MAP_METRICS.md)). Yours: loaded in place of the shipped map (a copy of it in your `maps/` folder from an older version still comes first; the editor no longer writes one, it asks to save your edits under a new name); ranked won't accept it. |
 | website | `website/<file>` (.jpg / .png, the same name and type) | The release workflow copies it over `site/img/<file>` when it deploys the site. The pictures: `hero.jpg` (the home page's big in-game shot, 1920x1080), `<map>.jpg` for each of the 21 maps (960x540), `hud.jpg` and `models.jpg`. |
@@ -104,7 +104,7 @@ switch):
 | Font | Where it comes from | Cost |
 |---|---|---|
 | RUBIK (default) | `src/client/font_ui.h`: Rubik (`assets/fonts/Rubik.ttf`, a variable font) at wght 700, baked by `tools/make_font_atlas.py` as raw texels | on the GPU at startup, no decoding |
-| WORK SANS, QUARK CLASSIC and the look-alikes | `src/client/font_builtin.h`: each atlas baked by the same tool, stored as a PNG | ~3 ms to decode when picked; 17-65 KB of binary each |
+| WORK SANS, QUARK CLASSIC and the look-alikes | `src/client/font_builtin.h`: each atlas baked by the same tool, stored as a PNG | ~3 ms to decode when picked; 15-65 KB of binary each |
 | your mods/fonts files, the real game fonts below | rasterised from the file (stb_truetype) | ~50 ms when picked |
 
 Why the built-ins are baked PNGs and not font files rasterised at run time: Pillow can set a variable font's weight
@@ -142,14 +142,22 @@ Steam libraries: the default one (Windows: the registry's `HKCU\Software\Valve\S
 `C:/Program Files (x86)/Steam`; Linux `~/.steam/steam`, `~/.local/share/Steam`, the Flatpak's; macOS
 `~/Library/Application Support/Steam`) and every `"path"` in its `steamapps/libraryfolders.vdf`.
 
-**The look-alike files are not in the repository yet** (the owner approved them; this PC's session couldn't download
-them): put each file and its licence in `assets/fonts/` under the names above, run `python3 tools/make_font_atlas.py`
-(Pillow + numpy) and commit `src/client/font_builtin.h`. A row whose file is missing is skipped by the tool (and the
-menu shows that entry only when the player has the real font). Sources: Bebas Neue, Lilita One, Jost and Barlow
-Condensed from github.com/google/fonts (`ofl/<name>/`, with its OFL.txt); Decalotype Bold from the Cocaine Diesel
-repository (`base/fonts`) or fontlibrary.org (with its OFL); LibreQuake's `lq1/gfx-wad/CONCHARS.png` and `docs/COPYING`;
-DejaVu Sans Bold from the dejavu-fonts release zip (`DejaVuSans-Bold.ttf` and `LICENSE`). Never commit an atlas made
-from a player's or a commercial font.
+**Sources of the bundled files** (each with its licence beside it in `assets/fonts/`; added 2026-10-23 with the
+owner's approval): Bebas Neue, Lilita One, Jost and Barlow Condensed from github.com/google/fonts (`ofl/<name>/` and
+its OFL.txt); Decalotype Bold from the Cocaine Diesel repository (`base/fonts`; `Decalotype-OFL.txt` is the OFL with
+the font's own copyright line, the repository has none); LibreQuake's `lq1/gfx-wad/CONCHARS.png` and `docs/COPYING`;
+DejaVu Sans Bold from the dejavu-fonts release (`DejaVuSans-Bold.ttf` and `LICENSE`). A `BUILTIN` row whose file is
+missing is skipped by the tool (the menu then shows that entry only when the player has the real font). Never commit
+an atlas made from a player's or a commercial font.
+
+**Tuning** (from screenshots of every font on the main menu, settings and FONT pages, and the UI test's layout checks
+run in each with `QUARK_UITEST_FONT`): Bebas Neue is capitals only and very condensed, so at Rubik's cap height its
+1-pixel strokes broke up in small labels; it is baked 20% taller (`SIZE` in the tool; it has no descenders, so it still
+fits the line). The pixel fonts (QUARK CLASSIC, LibreQuake and a player's Quake CONCHARS) are 1 unit a pixel from the
+line top (an 8-pixel cell is the 8-unit line), may be drawn down to scale 1 (1 screen pixel a font pixel;
+`BakedFont::minScale`, `FontAtlas::minScale`) instead of Rubik's 1.3, and LibreQuake / CONCHARS glyphs are as wide as
+their ink (Quake draws every glyph 8 pixels wide; that clipped 6 settings labels at 1280x720). The sheet's dark drop
+shadow is paper: the UI draws its own black outline.
 
 **Adding a built-in**: a row in `kBuiltinFonts` (src/client/uifonts.cpp: id, menu name, its baked atlas, the grey
 hint, where the real font may be) and, for a bundled font, its row in `BUILTIN` (tools/make_font_atlas.py: kind,

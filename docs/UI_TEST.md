@@ -91,6 +91,8 @@ name as a stable id whichever is in use; REFRESH is `state("fontscan")`, OPEN FO
 settings back between widgets, and Game::frame applies `ui_font` when it differs, so every check after a font pick runs
 in the default font again. The entries depend on the machine (a game-styled entry is listed only when its look-alike
 is built in or the real font is found), so the number of widgets there can differ between computers.
+`QUARK_UITEST_FONT=<ui_font value>` (e.g. `classic`, `overwatch`) runs the whole test in that font, layout checks
+included: every built-in font was run through `--uitest-only menus` this way when they were added.
 
 ## Adding a widget
 
