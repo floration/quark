@@ -1237,8 +1237,10 @@ struct Stalls {
 };
 
 // GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break. Here the
-// host's ticks stall (12 ms every 0.25 s: ~3% of 1000 Hz ticks over 4 ms late) with almost no load, as the Oracle box
-// did: that alone now steps the tick rate down.
+// host's ticks stall (14 ms every 0.25 s: ~4% of 1000 Hz ticks over 4 ms late) with almost no load, as the Oracle box
+// did: that alone now steps the tick rate down. (14 ms whatever the phase: at 250 Hz the tick due in the stall is at
+// least 10 ms late, over its 8 ms; at 125 Hz at most 14, under its 16. A 12 ms stall that starts just after a 125 Hz
+// tick holds the next one only 4 ms, so with Linux's exact sleeps 250 Hz looked clean and it stepped up.)
 static void testRateBetweenRounds(uint16_t port) {
     printf("tick rate changes only between rounds; stalled ticks with no load step it down\n");
     setTimeScale(1.0);
@@ -1251,7 +1253,7 @@ static void testRateBetweenRounds(uint16_t port) {
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
     CHECK(s.tickRate() == 1000);
-    pump(s, cls, 3.0 * 2.5, Stalls{0.25, 0, 12});   // two and a half rate windows, mid-match
+    pump(s, cls, 3.0 * 2.5, Stalls{0.25, 0, 14});   // two and a half rate windows, mid-match
     printf("  mid-match, stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase);
     CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_);
     CHECK(s.stallPct_ > 1 && s.snapRate() == 500);   // (late ticks aren't a bandwidth problem: the snapshot rate stays)
@@ -1260,11 +1262,11 @@ static void testRateBetweenRounds(uint16_t port) {
     printf("  match over: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateWhy_.c_str());
     CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
     // between rounds the stalls go on stepping it down until a tick period absorbs them (at 125 Hz a stall is 16 ms)
-    for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{0.25, 0, 12});
+    for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{0.25, 0, 14});
     printf("  still stalling, match end: %d Hz\n", s.tickRate());
     CHECK(s.tickRate() == 125);
     s.rateUpAt_ = 0;   // (the wait before trying the next rate up: over)
-    pump(s, cls, 3.0 * 1.5, Stalls{0.25, 0, 12});
+    pump(s, cls, 3.0 * 1.5, Stalls{0.25, 0, 14});
     printf("  at 125 Hz, same stalls: %.1f%% over %.1f ms, %d Hz\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate());
     CHECK(s.tickRate() == 125 && s.stallPct_ < 1);   // clean at 125, but 250 Hz would stall: it stays
     s.stop();
