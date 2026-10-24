@@ -271,6 +271,9 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.editMode) setEditing(true);
     if (cfg_.vsBots) {
         cfg_.autoStart = true;
+        // 1v1 is one enemy and no allies, duel its team size a side (the team sliders made both 2v3: F7)
+        if (cfg_.mode == MODE_ARENA) { cfg_.botsEnemy = 1; cfg_.botsAlly = 0; }
+        else if (cfg_.mode == MODE_DUEL) { int n = std::min(std::max(cfg_.duelTeamSize, 1), 2); cfg_.botsEnemy = n; cfg_.botsAlly = n - 1; }
         bool teams = modeIsTeamBased(cfg_.mode);
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
         for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
@@ -1912,6 +1915,9 @@ void Server::killPlayer(int victim, int killer, int weapon) {
          v.name.c_str(), weapon);
     rulesOnDeath(*this, victim, killer);
     float d = rulesRespawnDelay(*this);
+    // hide and seek: a seeker who falls (or dies) is back after 2 s; it used to stay dead and the round idled out
+    // its 300 s with every hider scoring (owner's pick, F6)
+    if (ms_.mode == MODE_HIDE && v.it && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_FREEZE)) d = kSeekerRespawn;
     v.respawnAt = d >= 0 ? time() + d : -1;
 }
 

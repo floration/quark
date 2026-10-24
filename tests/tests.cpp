@@ -6461,6 +6461,8 @@ static void testBots(uint16_t& port) {
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         std::vector<NetClient*> cls;
+        NetClient me;   // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins
+        if (mode == MODE_ARENA || mode == MODE_DUEL) { me.connect("127.0.0.1:" + std::to_string(cfg.port), "me"); cls.push_back(&me); }
         pump(s, cls, 14.0, idle);
         int kills = 0, cps = 0;
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
