@@ -22,6 +22,25 @@ and never deletes or rewrites anything else in that folder (the owner's provenan
 screenshots (about 15 MB) are not committed: without them the page works the same, minus the reference-screenshot
 overlay.
 
+**Out-of-date dump.** build.py compares the dump with the checkout: its `VERSION`, and the commits that changed
+`src/client` since the dump's commit. When either moved on, the build and the install print a WARNING, `INSTALLED.txt`
+says so, the page shows a red banner (with the refresh command and a Copy button) and an exported spec starts with a
+warning. Refresh = `install.py --extract` (or `extract/extract.py --gz` to also rewrite the committed dump), then reload.
+
+## Using it
+
+- Pages on the left, grouped by screen (main menu first). Each row shows who made the page: **HU** human, **AI** AI-made
+  (a page changed in this layout counts as yours, or as the AI proposal's in a proposal build; the others are as the
+  game's provenance registry, `assets/provenance/ui.json`, says). The counts at the top filter the list.
+- Click / drag / resize / arrow keys on the page, the inspector on the right; `?` lists every key. Zoom up to 400 %,
+  Ctrl+wheel zooms at the mouse.
+- **View** previews the page at another resolution / aspect ratio (1080p, 1440p, 4K, 16:10, 21:9, 32:9, 5:4), laid out
+  as the game scales: 720p units times ui.s() = height / 720, text at max(1, round(2s)). The dump has positions, not the
+  code's anchors, so widgets (or the panel around them) that hug a side edge stay on it, full-width bars stretch, and
+  everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. Read only.
+- **Export spec**: the changes, then widget tables of the changed pages (the spec window switches to every page, about
+  800 KB, or to no tables). Dialogs are in the page (the Quark Project app's Electron has no `window.prompt`).
+
 ## Files
 
 | | |
@@ -48,6 +67,10 @@ Builds a patched copy of the game in a scratch clone (`Quark\ui-customizer\.extr
 a hidden window, no audio and its own data folder, and writes `Quark\ui-customizer\extract\` (dump + screenshots);
 `--gz` also rewrites `data/ui-dump.json.gz` here, to commit. About 8 minutes. Details: `extract/README.md`.
 
+It also runs on Linux (no Windows needed): `DISPLAY=:99 python3 tools/ui_customizer/extract/extract.py --gz` under
+Xvfb (`Xvfb :99 &`); needs git, cmake, a C++ compiler and the game's build dependencies. The screenshots come out the
+same way.
+
 ## Tests
 
 ```
@@ -57,4 +80,5 @@ node test/overlay.js [html] [out dir] [page ids]  (the page drawn over the game'
 ```
 
 e2e / overlay need playwright-core (`npx playwright --version` caches it, or `PW_CORE=<folder>`) and an installed Edge
-or Chrome (`BROWSER_EXE`).
+or Chrome (`BROWSER_EXE`; without one, Playwright's own Chromium). e2e covers drags, undo, the in-page dialogs, the
+resolution preview, the origin badges and the spec's layout tables.
