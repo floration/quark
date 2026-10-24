@@ -4411,10 +4411,30 @@ void Game::listDevices() {
     listRates();
     devListed_ = true;
     devScans_++;
+    devRowText();
+}
+
+// The rows' ids and in-use labels, once a listing (not per frame). A list that came back the same keeps its strings:
+// the UI test holds ids by pointer, across a REFRESH too.
+void Game::devRowText() {
+    static const char* const prefix[3] = {"OUTPUT", "INPUT", "MONITOR"};
+    static const char* const def[3] = {"SYSTEM DEFAULT", "SYSTEM DEFAULT", "PRIMARY MONITOR"};
+    const std::vector<DeviceEntry>* devs[3] = {&devOut_, &devIn_, &devMons_};
+    for (int k = 0; k < 3; k++) {
+        std::vector<std::string> ids, on;
+        for (size_t i = 0; i <= devs[k]->size(); i++) {
+            const std::string& name = i == 0 ? std::string(def[k]) : (*devs[k])[i - 1].name;
+            ids.push_back(std::string(prefix[k]) + ": " + name);
+            on.push_back("> " + name + " <");
+        }
+        if (ids != devRowId_[k]) devRowId_[k].swap(ids);
+        if (on != devRowOn_[k]) devRowOn_[k].swap(on);
+    }
 }
 
 void Game::listRates() {
     devRates_.clear();
+    devRateKey_[0] = -1;   // (REFRESH RATE's names: made again)
     GLFWmonitor* mon = chosenMonitor();
     if (!mon) return;
     const DeskMode d = desktopMode(mon);
@@ -4436,9 +4456,10 @@ void Game::drawDeviceSettings(const SetLayout& L) {
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW);
     const Color warn = {1.0f, 0.55f, 0.3f, 1};
     // one list: the default first, then the OS's; rows at most; returns true when a row was picked (value set)
-    auto list = [&](SetFlow& f, int which, const char* idPrefix, const std::string& defName, const std::vector<DeviceEntry>& devs,
+    auto list = [&](SetFlow& f, int which, const std::string& defName, const std::vector<DeviceEntry>& devs,
                     std::string& value, const char* key, int rows) -> bool {
-        static std::string ids[3][64];   // the rows' UI test ids: "<PREFIX>: <NAME>" (kept: an id is a pointer)
+        const std::vector<std::string>& ids = devRowId_[which];   // the rows' UI test ids "<PREFIX>: <NAME>" (devRowText)
+        const std::vector<std::string>& onText = devRowOn_[which];
         const int n = (int)devs.size() + 1;
         devScroll_[which] = std::min(devScroll_[which], std::max(0, n - rows));
         const int first = devScroll_[which], shown = std::min(n - first, rows);
@@ -4450,9 +4471,8 @@ void Game::drawDeviceSettings(const SetLayout& L) {
             const int i = first + r;   // (0: the default)
             const std::string& name = i == 0 ? defName : devs[i - 1].name;
             const bool on = i == 0 ? cur == kDeviceDefault : cur == i - 1;
-            if (r < 64) ids[which][r] = std::string(idPrefix) + ": " + name;
-            const UiExp e = (on ? UiExp::inert() : UiExp::cfg(key)).withId(r < 64 ? ids[which][r].c_str() : idPrefix).clipOk();   // (names: may be long)
-            if (ui_.button(f.x(), f.top(), w, h, on ? "> " + name + " <" : name, e) && !on && !picked) {
+            const UiExp e = (on ? UiExp::inert() : UiExp::cfg(key)).withId(ids[i].c_str()).clipOk();   // (names: may be long)
+            if (ui_.button(f.x(), f.top(), w, h, on ? onText[i] : name, e) && !on && !picked) {
                 value = i == 0 ? std::string() : devs[i - 1].id;
                 picked = true;
             }
@@ -4465,13 +4485,13 @@ void Game::drawDeviceSettings(const SetLayout& L) {
     // --- left: AUDIO OUTPUT, AUDIO INPUT
     SetFlow f{ui_, L, kColL, 90};
     f.header("AUDIO OUTPUT");
-    if (list(f, 0, "OUTPUT", "SYSTEM DEFAULT", devOut_, cfg_.audioOutput, "audio_output", 5)) { audio_.setOutputDevice(cfg_.audioOutput); cfg_.save(); }
+    if (list(f, 0, "SYSTEM DEFAULT", devOut_, cfg_.audioOutput, "audio_output", 5)) { audio_.setOutputDevice(cfg_.audioOutput); cfg_.save(); }
     if (findDevice(devOut_, cfg_.audioOutput) == kDeviceGone || (audio_.ok() && audio_.outputMissing())) {
         ui_.hint(f.x(), L.Y(f.y - 4), "THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS", warn, f.w());
         f.y += 16;
     } else f.hint("SOUND SWITCHES TO IT AT ONCE");
     f.section("AUDIO INPUT (MICROPHONE)");
-    if (list(f, 1, "INPUT", "SYSTEM DEFAULT", devIn_, cfg_.audioInput, "audio_input", 4)) cfg_.save();
+    if (list(f, 1, "SYSTEM DEFAULT", devIn_, cfg_.audioInput, "audio_input", 4)) cfg_.save();
     if (findDevice(devIn_, cfg_.audioInput) == kDeviceGone) {
         ui_.hint(f.x(), L.Y(f.y - 4), "THE SAVED MICROPHONE IS GONE: THE DEFAULT", warn, f.w());
         f.y += 16;
@@ -4481,7 +4501,7 @@ void Game::drawDeviceSettings(const SetLayout& L) {
     // --- right: MONITOR, REFRESH RATE
     SetFlow g{ui_, L, kColR, 90};
     g.header("MONITOR");
-    if (list(g, 2, "MONITOR", "PRIMARY MONITOR", devMons_, cfg_.monitor, "monitor", 5)) {
+    if (list(g, 2, "PRIMARY MONITOR", devMons_, cfg_.monitor, "monitor", 5)) {
         cfg_.save();
         listRates();   // (the new monitor's)
         if (cfg_.displayMode != 0) applyDisplayMode();   // (fullscreen / borderless: the window goes there now)
@@ -4492,20 +4512,22 @@ void Game::drawDeviceSettings(const SetLayout& L) {
     } else g.hint("FULLSCREEN AND BORDERLESS OPEN ON IT");
     g.section("REFRESH RATE");
     {   // exclusive fullscreen's: the desktop's, or another the monitor has at that size
-        static std::vector<std::string> names;
-        names.clear();   // (a few short strings, only while this page is open)
         GLFWmonitor* mon = chosenMonitor();
         const int deskHz = mon ? desktopMode(mon).hz : 0;
-        names.push_back("REFRESH RATE: DESKTOP (" + std::to_string(deskHz) + " HZ)");
+        std::vector<std::string>& names = devRateNames_;   // (made again only when what they show changes: not per frame)
+        if (devRateKey_[0] != deskHz || devRateKey_[1] != cfg_.fullscreenHz) {
+            devRateKey_[0] = deskHz; devRateKey_[1] = cfg_.fullscreenHz;
+            names.clear();
+            names.push_back("REFRESH RATE: DESKTOP (" + std::to_string(deskHz) + " HZ)");
+            for (int hz : devRates_) names.push_back("REFRESH RATE: " + std::to_string(hz) + " HZ");
+            if (cfg_.fullscreenHz > 0 && cfg_.fullscreenHz != deskHz &&   // (saved for another monitor: kept until changed)
+                std::find(devRates_.begin(), devRates_.end(), cfg_.fullscreenHz) == devRates_.end())
+                names.push_back("REFRESH RATE: " + std::to_string(cfg_.fullscreenHz) + " HZ (NOT ON THIS MONITOR)");
+        }
         int idx = 0;
-        for (size_t i = 0; i < devRates_.size(); i++) {
-            names.push_back("REFRESH RATE: " + std::to_string(devRates_[i]) + " HZ");
+        for (size_t i = 0; i < devRates_.size(); i++)
             if (devRates_[i] == cfg_.fullscreenHz) idx = (int)i + 1;
-        }
-        if (cfg_.fullscreenHz > 0 && idx == 0 && cfg_.fullscreenHz != deskHz) {   // (saved for another monitor: kept until changed)
-            names.push_back("REFRESH RATE: " + std::to_string(cfg_.fullscreenHz) + " HZ (NOT ON THIS MONITOR)");
-            idx = (int)names.size() - 1;
-        }
+        if (idx == 0 && (int)names.size() > (int)devRates_.size() + 1) idx = (int)names.size() - 1;
         if (ui_.cycle(g.x(), g.top(), w, h, "REFRESH RATE", idx, (int)names.size(), names, UiExp::cfg("fullscreen_hz"))) {
             cfg_.fullscreenHz = idx == 0 || idx > (int)devRates_.size() ? 0 : devRates_[idx - 1];
             cfg_.save();
