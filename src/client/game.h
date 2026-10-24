@@ -744,5 +744,9 @@ private:
     void drawBracket();
     struct DmgNum { int victim; float amount; double start; Vec3 pos; bool head = false; };   // head: a headshot (drawn red)
     std::vector<DmgNum> dmgNums_;
+    struct DmgDir { Vec3 pos; double at = 0; int from = -1; };   // a hit you took: from where (X3, drawDamageArcs)
+    DmgDir dmgDirs_[6];
+    static constexpr double kDmgDirTime = 1.0;
+    void drawDamageArcs(float cx, float cy, float scale);
     int botMapIdx_ = 0;
 };

@@ -1983,6 +1983,14 @@ void Server::flushHit(int attacker, int victim) {
     if (hitHead_[attacker][victim]) e.text = "h";   // a headshot
     hitHead_[attacker][victim] = false;
     sendEvent(attacker, e);
+    if (victim != attacker && players_[victim].connected) {   // the victim's copy: where it came from, for their damage arc
+        // (x z in decimetres after "@"; older clients only read the attacker's own EV_HITs)
+        const Vec3& from = players_[attacker].move.pos;
+        char t[40];
+        snprintf(t, sizeof t, "@%ld %ld", std::lround(from.x * 10.0f), std::lround(from.z * 10.0f));
+        e.text = t;
+        sendEvent(victim, e);
+    }
     acc = 0;
     hitFlushAt_[attacker][victim] = time() + 0.05f;
 }

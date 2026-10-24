@@ -304,6 +304,19 @@ static void testRemoteMoveSounds(uint16_t port) {
     }
     printf("  2 s of hopping and a dash, heard by the other client: %d jumps, %d landings, %d dashes (%d of its own)\n", jumps, lands, dashes, mine);
     CHECK(jumps >= 3 && jumps <= 6 && lands >= 2 && dashes == 1 && mine == 0);
+    // X3: a hit also tells its victim where it came from (EV_HIT "@x z" in decimetres), for the damage arc
+    b.takeEvents();
+    s.ms_.phase = PHASE_WARMUP;   // (damage on)
+    const Vec3 from = s.players_[ia].move.pos;
+    s.damagePlayer(ib, ia, 10, WPN_RIFLE, Vec3());
+    pump(s, cls, 0.2, idle);
+    bool told = false;
+    for (auto& ev : b.takeEvents()) {
+        long x, z;
+        if (ev.type == EV_HIT && ev.a == ia && ev.b == ib && sscanf(ev.text.c_str(), "@%ld %ld", &x, &z) == 2)
+            told = std::fabs(x * 0.1f - from.x) < 0.11f && std::fabs(z * 0.1f - from.z) < 0.11f;
+    }
+    CHECK(told);
     s.stop();
 }
 

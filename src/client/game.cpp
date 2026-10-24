@@ -1181,6 +1181,15 @@ void Game::handleEvents() {
                 voteText_ = e.text;
                 break;
             case EV_HIT:
+                if (e.b == net_.clientId() && e.a != e.b && e.text.size() > 1 && e.text[0] == '@') {   // hit by someone: the arc
+                    long x = 0, z = 0;
+                    if (sscanf(e.text.c_str() + 1, "%ld %ld", &x, &z) == 2) {
+                        DmgDir* slot = &dmgDirs_[0];   // (theirs again, else the oldest)
+                        for (auto& d : dmgDirs_) { if (d.from == e.a) { slot = &d; break; } if (d.at < slot->at) slot = &d; }
+                        *slot = {Vec3(x * 0.1f, 0, z * 0.1f), time_, e.a};
+                    }
+                    break;
+                }
                 if (e.a == net_.clientId()) {
                     float dmg = e.c / 100.0f; // hundredths of a point
                     bool head = e.text == "h"; // a headshot: its own red number
@@ -1199,6 +1208,7 @@ void Game::handleEvents() {
                 break;
             case EV_SPAWN:
                 if (e.a == net_.clientId()) {
+                    for (auto& d : dmgDirs_) d = DmgDir();   // (the last life's hits)
                     yaw_ = e.c / 1000.0f;
                     pitch_ = 0;
                     if (opts_.spawnYaw > -999) { yaw_ = deg2rad(opts_.spawnYaw); pitch_ = deg2rad(opts_.spawnPitch); }
@@ -1895,7 +1905,8 @@ void Game::drawWorld(float alpha) {
                     tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
                 }
             }
-            if (cfg_.enemyShots && (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i]))) {
+            // (the rifle too, X3: each of its shots is its own firing edge, 0.15 s apart against the flag's 0.1 s)
+            if (cfg_.enemyShots && (w == WPN_LASER || ((w == WPN_SNIPER || w == WPN_RIFLE) && !remoteFiring_[i]))) {
                 Vec3 eyeP = p.pos + Vec3(0, ((p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
@@ -1906,7 +1917,7 @@ void Game::drawWorld(float alpha) {
                 // gun's place, low and to the right, like your own)
                 if (i == viewing && !alive) start += Vec3(std::cos(p.yaw), 0, -std::sin(p.yaw)) * 0.2f + Vec3(0, -0.17f, 0);
                 if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
-                else tracers_.push_back({start, end, time_ + 0.9});
+                else tracers_.push_back({start, end, time_ + (w == WPN_SNIPER ? 0.9 : 0.2)});
             }
         }
         remoteFiring_[i] = firing;
@@ -2435,6 +2446,7 @@ void Game::drawHud() {
     const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
     // crosshair (scoped with the overlay on: the scope's reticle replaces it)
     if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    if (!paused_ && !rpsOn && net_.selfAlive()) drawDamageArcs(cx, cy, s);
     if (!cfg_.dmgNums) dmgNums_.clear();   // (VISUALS > DAMAGE NUMBERS off)
     if (!dmgNums_.empty()) {   // floating damage numbers above whoever you hit
         const auto& ip = framePlayers();
@@ -6282,6 +6294,27 @@ void Game::drawBracket() {
 }
 
 // Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.
+// Where the hits you took came from (X3): a red arc round the crosshair toward each attacker (as they stood when it
+// hit), for kDmgDirTime, fading. A few dozen small rects while one shows; nothing otherwise.
+void Game::drawDamageArcs(float cx, float cy, float scale) {
+    const Vec3 me = net_.predicted().pos;
+    const Vec3 fwd = {-std::sin(yaw_), 0, -std::cos(yaw_)}, right = {std::cos(yaw_), 0, -std::sin(yaw_)};
+    const float rad = 70 * scale, px = std::max(2.0f, std::round(4 * scale));
+    for (const DmgDir& d : dmgDirs_) {
+        const double age = time_ - d.at;
+        if (d.at <= 0 || age > kDmgDirTime) continue;
+        const Vec3 to = d.pos - me;
+        if (to.x * to.x + to.z * to.z < 0.01f) continue;   // (on top of you: no direction)
+        const float th = std::atan2(dot(to, right), dot(to, fwd));   // 0: ahead (up on screen), + to the right
+        const float a = 0.85f * (float)(1.0 - age / kDmgDirTime);
+        for (int k = -6; k <= 6; k++) {
+            const float t = th + k * 0.06f;
+            const float w = 1.0f - std::fabs((float)k) / 8.0f;   // (thicker in the middle)
+            r_.rect(cx + std::sin(t) * rad - px * 0.5f, cy - std::cos(t) * rad - px * 0.5f, px, px * (0.6f + w), Color{1, 0.12f, 0.08f, a * w});
+        }
+    }
+}
+
 void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     float u = std::max(1.0f, std::round(scale));
     float t = std::max(1.0f, std::round(cfg_.chThickness * u)), len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
