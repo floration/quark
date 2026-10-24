@@ -2,6 +2,8 @@
 // translucent markers, first-person viewmodel and a 2D layer for HUD/menus.
 // Everything dynamic is streamed into one vertex buffer per layer each frame (few draw calls).
 #pragma once
+#include <memory>
+#include "fontatlas.h"
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
@@ -80,7 +82,8 @@ public:
     // 2D (pixels, origin top-left)
     void rect(float x, float y, float w, float h, const Color& c);
     void text(float x, float y, float scale, const std::string& s, const Color& c);
-    // proportional UI font (Work Sans Bold): widths come from per-glyph advances and kerning
+    // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances
+    // and kerning
     float textWidth(const std::string& s, float scale) const;
     void textMono(float x, float y, float scale, const std::string& s, const Color& c); // fixed advance (console)
     float textWidthMono(const std::string& s, float scale) const;
@@ -89,6 +92,10 @@ public:
     // smallest drawn text scale: the proportional font's caps are ~5 units tall, so scale 1 would be unreadable
     static constexpr float kMinTextScale = 1.3f;
     float textHeight(float scale) const { return 8.0f * (scale < kMinTextScale ? kMinTextScale : scale); }
+    // The UI font (Settings > FONT, uifonts.h): its atlas replaces the texture's texels in place (same layout) and its
+    // metrics become the ones every text call uses. null: the baked default (font_ui.h). Once per pick, never per frame.
+    void setUiFont(std::unique_ptr<FontAtlas> font);
+    static FontAtlasLayout uiFontLayout();   // font_ui.h's layout, sized to Rubik's capitals
     void flush2D();
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();

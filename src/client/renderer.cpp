@@ -7,19 +7,17 @@
 #include <fstream>
 #include "font_ui.h"
 #include "fontatlas.h"
-#include "overrides.h"
 #include <memory>
 
 namespace {
 
-// UI font: Work Sans Bold as a signed distance field (font_ui.h, made by tools/make_font_atlas.py).
-// Font units: a line is 8 tall; advances and kerning are proportional.
+// UI font: Rubik Bold as a signed distance field (font_ui.h, made by tools/make_font_atlas.py), or the one picked in
+// Settings > FONT (Renderer::setUiFont). Font units: a line is 8 tall; advances and kerning are proportional.
 inline int glyphIndex(char ch) { unsigned char uc = (unsigned char)ch; return (uc < 32 || uc > 126) ? '?' - 32 : uc - 32; }
-// The metrics in use: font_ui.h's, or an override font's (fonts/WorkSans.*, docs/ASSETS.md), built at startup only
-// when there is one.
+// The metrics in use: font_ui.h's, or the picked font's (g_uiFont, built when it was picked)
 const float* g_uiAdv = kUiAdv;
 const signed char* g_uiKern = kUiKern;
-std::unique_ptr<FontAtlas> g_fontOverride;
+std::unique_ptr<FontAtlas> g_uiFont;
 
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -388,17 +386,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glGenTextures(1, &fontTex_);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
-    const unsigned char* atlas = kUiAtlas;
-    if (!g_fontOverride) {   // the owner's font (docs/ASSETS.md): rasterised now, only when there is one
-        std::vector<uint8_t> file;
-        std::string matched, ferr;
-        if (overrides::find("fonts/WorkSans", {".ttf", ".otf"}, file, &matched)) {
-            auto fa = std::make_unique<FontAtlas>();
-            if (buildFontAtlas(file.data(), file.size(), {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, *fa, &ferr)) g_fontOverride = std::move(fa);
-            else fprintf(stderr, "override %s: %s\n", matched.c_str(), ferr.c_str());
-        }
-    }
-    if (g_fontOverride) { atlas = g_fontOverride->tex.data(); g_uiAdv = g_fontOverride->adv; g_uiKern = g_fontOverride->kern; }
+    // (the default; Game::init then applies the ui_font setting, which may replace it: setUiFont)
+    const unsigned char* atlas = g_uiFont ? g_uiFont->tex.data() : kUiAtlas;
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kUiTexW, kUiTexH, 0, GL_RED, GL_UNSIGNED_BYTE, atlas);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1165,6 +1154,20 @@ size_t Renderer::textFit(const std::string& str, float scale, float maxW) const 
         w = nw; prev = g;
     }
     return str.size();
+}
+
+FontAtlasLayout Renderer::uiFontLayout() { return {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread, kUiCapHeight}; }
+
+void Renderer::setUiFont(std::unique_ptr<FontAtlas> font) {
+    if (font && font->tex.size() != (size_t)kUiTexW * kUiTexH) font.reset();
+    if (!font && !g_uiFont) return;   // (the default already)
+    g_uiFont = std::move(font);
+    g_uiAdv = g_uiFont ? g_uiFont->adv : kUiAdv;
+    g_uiKern = g_uiFont ? g_uiFont->kern : kUiKern;
+    if (!fontTex_) return;   // (before init: init uploads it)
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kUiTexW, kUiTexH, GL_RED, GL_UNSIGNED_BYTE, g_uiFont ? g_uiFont->tex.data() : kUiAtlas);
 }
 
 void Renderer::prepare2D() {

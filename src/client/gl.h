@@ -126,6 +126,7 @@ typedef struct __GLsync* GLsync;
     X(void, glDeleteTextures, (GLsizei, const GLuint*)) \
     X(void, glBindTexture, (GLenum, GLuint)) \
     X(void, glTexImage2D, (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*)) \
+    X(void, glTexSubImage2D, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*)) \
     X(void, glTexParameteri, (GLenum, GLenum, GLint)) \
     X(void, glTexParameterfv, (GLenum, GLenum, const GLfloat*)) \
     X(void, glActiveTexture, (GLenum)) \
