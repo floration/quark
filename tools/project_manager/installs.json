@@ -16,6 +16,8 @@
   {"id": "botmap", "name": "Bot + Map Editors", "sources": ["tools/bot_editor", "tools/map_editor", "tools/bots", "src", "tests", "tools/make_maps.py", "tools/maps", "CMakeLists.txt", "VERSION"],
    "run": "py -3 tools\\bot_editor\\install.py", "check": "bot-editor\\run.cmd", "restartsPort": [8769, 8770],
    "timeoutSec": 1800, "lowPriority": true},
+  {"id": "physics", "name": "Physics Editor", "sources": ["tools/physics_editor", "tools/map_editor/native", "src", "CMakeLists.txt", "VERSION"],
+   "run": "py -3 tools\\physics_editor\\serve.py --install", "check": "physics-editor\\serve.py", "restartsPort": 8772},
   {"id": "gamemode", "name": "Gamemode Editor", "sources": ["tools/mode_editor", "tools/modes"],
    "run": "py -3 tools\\mode_editor\\install.py \"%QUARK%\\gamemode-editor\"", "check": "gamemode-editor\\serve.py", "restartsPort": 8771}
 ]}
