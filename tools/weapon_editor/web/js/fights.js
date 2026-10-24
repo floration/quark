@@ -179,8 +179,9 @@ export class FightsView {
     // the matches' results: team modes {a, b, draws}, free for all the best bot's share; timeouts have no winner
     _results(e) {
         if (!e) return "–";
-        const n = e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : 0);
-        if (!n) return "no match finished";
+        // (shares of the matches that ended: one that ran out of seconds has no winner)
+        const n = (e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : 0)) - (e.timeouts || 0);
+        if (n <= 0) return e.timeouts ? "no winner: every match ran out of seconds" : "no match finished";
         const pct = (x) => Math.round(100 * x / n) + "%";
         if (e.teamWins) return `A ${pct(e.teamWins.a || 0)} · B ${pct(e.teamWins.b || 0)}${e.teamWins.draws ? " · draw " + pct(e.teamWins.draws) : ""}`;
         if (Array.isArray(e.bots) && e.bots.length) {   // (free for all: each bot's own wins, SIM.md's totals)

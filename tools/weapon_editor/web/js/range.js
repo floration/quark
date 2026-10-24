@@ -75,6 +75,7 @@ export class RangeView {
         $("rRun").onclick = () => this.run();
         $("rPlace").onclick = () => this._setPlacing(!this.placing);
         $("rPlace").classList.toggle("on", this.placing);
+        $("rSliceBox").style.display = this.map && this.map !== this.builtin ? "" : "none";
         $("rSlice").onchange = () => { const v = $("rSlice").value.trim(); this.mv.setSlice(v === "" || !Number.isFinite(+v) ? Infinity : +v); };
         $("r2d").onclick = () => this._three(false); $("r3d").onclick = () => this._three(true);
         $("r2d").classList.toggle("on", !o.three); $("r3d").classList.toggle("on", !!o.three);
@@ -91,7 +92,7 @@ export class RangeView {
             catch (e) { this.app.toast("can't load " + name + ": " + e.message, 3500); return; }
         }
         this.mv.setMap(this.map);
-        $("rSlice").value = "";
+        $("rSlice").value = ""; $("rSliceBox").style.display = v ? "" : "none";
         if (!v) this._zoomToLanes();
         if (this.m3.gl) this.m3.setMap(this.map);
         this.res = null; this.run();
@@ -239,6 +240,7 @@ export class RangeView {
             ctx.strokeStyle = "rgba(10,12,16,.85)"; ctx.lineWidth = 3 * px; ctx.fillStyle = "#f0efec";
             for (const d of RANGE_DISTANCES) { ctx.strokeText(d + " m", 8.5, -d + 4 * px); ctx.fillText(d + " m", 8.5, -d + 4 * px); }
         }
+        if (this.placing) return;   // (the last run's players would hide where the new targets go)
         const fr = this._frame();
         if (!fr) return;
         const { F, i, f } = fr;

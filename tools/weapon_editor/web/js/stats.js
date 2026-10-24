@@ -105,7 +105,8 @@ const FIXED = { "syringe.throwSpeed": 30, "syringe.throwGravity": 9, "syringe.th
 
 export function computeStats(values, opts = {}) {
     const H = opts.health || 100, D = opts.dist || 0;
-    const v = (k) => { const x = values.get(k); return x === undefined ? FIXED[k] || 0 : typeof x === "boolean" ? (x ? 1 : 0) : +x; };
+    // (a field is an f32 in the game: 0.04 there is 0.0399999991, so the laser needs 2501 ticks for 100 hp, not 2500)
+    const v = (k) => { const x = values.get(k); return x === undefined ? FIXED[k] || 0 : typeof x === "boolean" ? (x ? 1 : 0) : Math.fround(+x); };
     const curves = new Map();
     if (opts.set) for (const d of opts.set.decls) if (d.kind === "curve") curves.set(d.name, d);
     const rows = [];
