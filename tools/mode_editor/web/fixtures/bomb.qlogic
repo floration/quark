@@ -1,64 +1,52 @@
 logic 1
 base bomb
-# Bomb: rounds of attack and defence. One attacker carries the bomb. Planting it on a site and letting it go off
-# wins the round for the attack; defusing it, or the clock running out, wins it for the defence; wiping the other
-# side out wins it for either. The sides swap after half of the most rounds a match can last.
-# (fixture: transcribed from the mode-editor design, section 3.4, until tools/modes/bomb.qlogic exists)
+# Bomb: the attackers carry the bomb to a site and plant it; the defenders stop them or defuse it. One life a round,
+# first to 7; the sides swap after 6 rounds.
+use bomb
 
-use bomb # carry, drop, pick up, return, plant, defuse, fuse (the params below)
+param rounds int = 7
+param roundTime f32 = 105
+param plantTime f32 = 3 # holding USE on a site, on the ground
+param defuseTime f32 = 6 # holding USE by the bomb
+param bombFuse f32 = 40 # from the plant to the blast
+param bombRadius f32 = 18 # the blast kills everyone this close
+param defuseRange f32 = 1.8
+param pickupRange f32 = 1.2
+param bombReturn f32 = 15 # a dropped bomb lies this long before it goes back to an attacker
 
-param rounds int = 7 # rounds to win the match
-param roundTime f32 = 105 # s for the attack to plant
-param plantTime f32 = 3 # s holding USE on a site, on the ground
-param defuseTime f32 = 6 # s holding USE by the bomb
-param bombFuse f32 = 40 # s from the plant to the blast
-param bombRadius f32 = 18 # m: the blast kills everyone this close
-param defuseRange f32 = 1.8 # m from the bomb to defuse it
-param pickupRange f32 = 1.2 # m from a dropped bomb for an attacker to take it
-param bombReturn f32 = 15 # s a dropped bomb lies before it goes back to a random attacker
-
-slot roundsToWin:
-  return cfg.roundsToWin > 0 ? cfg.roundsToWin : rounds
-
-slot roundLength:
-  return roundTime
-
-slot respawnDelay:
-  return -1.0f # one life a round
-
-slot roundSetup: # team A attacks the first half, team B the second
+# The first half's attack is team A; from round rounds (7) on it's team B.
+slot roundSetup:
   half = hud.roundsToWin - 1
   attackers = half > 0 and roundNo > half ? B : A
 
 slot roundStart:
-  giveBomb(random(p in team(attackers) where alive(p)))
+  c = random(p in team(attackers) where alive(p))
+  if c != none: giveBomb(c)
 
-slot frozen: # the freeze, and whoever is planting or defusing
+# A planter or defuser can't move.
+slot frozen:
   return phase == freeze or (phase == live and bomb.acting == p)
 
 slot tick:
-  bombStep() # (a defuse or the blast ends the round: the slots below)
-  att = attackers
-  def = other(att)
-  if aliveCount(def) == 0: endRound(att, "defenders eliminated")
-  elif aliveCount(att) == 0 and bomb.state != planted: endRound(def, "attackers eliminated")
-  elif bomb.state == planted:
-    hud.overtime = no # the fuse is the clock now
-  else:
-    if any(p in team(att) where alive(p) and inZone(p, sites)): touchObjective()
-    if now < phaseEnd: hud.overtime = no
-    elif not holdOvertime(): endRound(def, "time")
+  bombStep()
+  def = other(attackers)
+  if aliveCount(def) == 0: endRound(attackers, "defenders eliminated")
+  if aliveCount(attackers) == 0 and bomb.state != planted: endRound(def, "attackers eliminated")
+  if bomb.state == planted:
+    hud.overtime = no # (the fuse is the clock now)
+    return
+  if any(p in team(attackers) where alive(p) and inZone(p, sites)): touchObjective()
+  if now < phaseEnd: hud.overtime = no
+  elif not holdOvertime(): endRound(def, "time")
 
-slot plant: # p planted it
+slot plant:
   announce("bomb planted")
 
-slot defuse: # p defused it
+slot defuse:
   endRound(other(attackers), "bomb defused")
 
-slot explode: # (everyone within bombRadius is already dead)
+slot explode:
   endRound(attackers, "bomb exploded")
 
 slot roundOver:
-  if teamScore[A] >= hud.roundsToWin or teamScore[B] >= hud.roundsToWin:
-    w = teamScore[A] >= hud.roundsToWin ? A : B
-    endMatch(w, w, " wins the match")
+  firstToRounds()

@@ -1,0 +1,22 @@
+logic 1
+base duel
+# Duel: team VS where every life (round) has a random modifier, never one already played this match; first to 11.
+use drain
+use duelmods
+
+param rounds int = 11
+param roundEndTime f32 = 2.5 # short rounds, a shorter break (common: 4)
+param stalemate f32 = 30 # with no damage dealt before the drain starts
+param drainRate f32 = 5 # health a second, everyone, in a stalemate
+
+slot roundSetup:
+  pickDuelModifier()
+
+slot tick:
+  a = aliveCount(A)
+  b = aliveCount(B)
+  if a == 0 or b == 0: endRound(a > 0 ? A : b > 0 ? B : none)
+  stalemateDrain()
+
+slot roundOver:
+  firstToRounds()
