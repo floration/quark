@@ -28,6 +28,41 @@ export function segmentMesh(segs, opts = {}) {
   return mesh;
 }
 
+// segmentMesh's instanced mesh kept between frames (bot trails): begin(), add() segments, end(); it grows (x1.5) when
+// it runs out of room and otherwise only rewrites its instances
+export class SegmentBuffer {
+  constructor(opts = {}) {
+    this.w = opts.width ?? 0.08; this.cap = 0; this.n = 0;
+    this.mesh = new THREE.Group();   // (holds the instanced mesh, which is remade when it grows)
+    this.mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.grow(256);
+  }
+  grow(cap) {
+    if (this.inst) { this.mesh.remove(this.inst); this.inst.dispose(); }
+    this.cap = cap;
+    this.inst = new THREE.InstancedMesh(unit, this.mat, cap);
+    this.inst.frustumCulled = false; this.inst.count = 0;
+    this.inst.setColorAt(0, tmpC.set(0xffffff));
+    this.mesh.add(this.inst);
+  }
+  begin() { this.n = 0; return this; }
+  // a -> b, colour c (THREE.Color) times k, mixed towards white by w
+  add(a, b, c, k = 1, w = 0) {
+    if (this.n >= this.cap) { const old = this.inst, n = this.n; this.grow(Math.ceil(this.cap * 1.5)); this.inst.instanceMatrix.array.set(old.instanceMatrix.array.subarray(0, n * 16)); this.inst.instanceColor.array.set(old.instanceColor.array.subarray(0, n * 3)); }
+    tmpA.fromArray(a); tmpB.fromArray(b);
+    tmpD.subVectors(tmpB, tmpA);
+    const len = tmpD.length();
+    if (len < 1e-6) tmpQ.identity(); else tmpQ.setFromUnitVectors(zAxis, tmpD.multiplyScalar(1 / len));
+    tmpS.set(this.w, this.w, Math.max(len, 1e-4));
+    this.inst.setMatrixAt(this.n, tmpM.compose(tmpA, tmpQ, tmpS));
+    tmpC.copy(c).multiplyScalar(k); if (w) tmpC.lerp(WHITE, w);
+    this.inst.setColorAt(this.n, tmpC);
+    this.n++;
+  }
+  end() { this.inst.count = this.n; this.inst.instanceMatrix.needsUpdate = true; this.inst.instanceColor.needsUpdate = true; }
+}
+const WHITE = new THREE.Color(1, 1, 1);
+
 // a polyline's segments, coloured by a function of the fraction along it (0..1) or one colour
 export function polylineSegs(pts, color, out = []) {
   for (let i = 0; i + 1 < pts.length; i++) out.push([pts[i], pts[i + 1], typeof color === "function" ? color(i / Math.max(1, pts.length - 2), i) : color]);
