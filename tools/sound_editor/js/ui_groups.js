@@ -21,7 +21,7 @@
     if (p.arg === 'kits') argEl = h('div', Q.KITS.map(k => h('label', { style: { marginRight: '10px' } }, h('input', { type: 'checkbox', checked: true, value: k.dir }), k.name)));
     else if (p.arg === 'sound') { argEl = h('select', Q.SOUNDS.map(s => h('option', { value: s }, s))); }
     else if (p.arg === 'voice') { argEl = h('select', Q.VOICES.map(v => h('option', { value: v.dir }, v.name))); }
-    else if (p.arg === 'line') { argEl = h('select', Q.LINES.filter(l => !Q.UNRECORDED.includes(l)).map(l => h('option', { value: l }, l))); }
+    else if (p.arg === 'line') { argEl = h('select', Q.LINES.map(l => h('option', { value: l }, l))); }
     let arg = null;
     if (argEl) {
       const ok = await U.dialog(p.name, [h('p', p.arg === 'kits' ? 'One group per kit you tick.' : 'Pick one:'), argEl], [{ label: 'Cancel', value: false }, { label: 'Create', primary: true, value: true }]);

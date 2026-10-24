@@ -265,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
                 pl.wake.set()
                 return self._json({"ok": True})
         except play.PlayError as e:
-            return self._json({"ok": False, "message": e.message}, e.code)
+            return self._json({"ok": False, "message": e.message, "reason": e.reason}, e.code)
         return self._send(404, "not found", "text/plain; charset=utf-8")
 
 

@@ -55,7 +55,7 @@
     const r = await fetch(path, opts);
     let j = null;
     try { j = await r.json(); } catch (e) { /* not JSON */ }
-    if (!r.ok) throw new Error((j && j.message) || 'HTTP ' + r.status);
+    if (!r.ok) { const e = new Error((j && j.message) || 'HTTP ' + r.status); e.status = r.status; e.reason = j && j.reason; throw e; }
     return j;
   }
   function shellPoke() { try { if (window.quarkShell && window.quarkShell.playChanged) window.quarkShell.playChanged(); } catch (e) { /* older shell */ } }
@@ -182,6 +182,7 @@
       try { fn(); } catch (err) { if (window.console) console.error(err); }
     }
     renderStatus();
+    closeStaleNote();
     maybeOpenNote();
   }
 
@@ -200,10 +201,31 @@
     const next = pend.find(p => !state.dismissed.has(p.id));
     if (next) openNote(next.id);
   }
+  // the open form's session was noted or skipped somewhere else (another page, the API): close it, say so
+  function closeStaleNote() {
+    if (!dlg.open || !state.noteId || state.busy) return;
+    const s = sessionById(state.noteId);
+    const gone = !s || s.state === 'noted' || (state.noteFrom === 'needsNote' && s.state !== 'needsNote');
+    if (!gone) return;
+    const what = s && s.state === 'noted' ? 'already saved' : s && s.state === 'skipped' ? 'already skipped' : 'gone';
+    store('play-draft-' + state.noteId, null);
+    closeNote(false);
+    toast('That play note was ' + what + ' (from another window).');
+  }
+  // Save / Skip answered 409 for a stale session: close the form, nothing is written twice
+  function staleAnswer(err) {
+    if (err.status !== 409 || !['already-noted', 'running'].includes(err.reason)) return false;
+    store('play-draft-' + state.noteId, null);
+    closeNote(false);
+    toast(err.reason === 'already-noted' ? 'That play note was already saved.' : err.message);
+    poll();
+    return true;
+  }
   function openNote(id) {
     const s = sessionById(id);
     if (!s) return;
     state.noteId = id;
+    state.noteFrom = s.state;
     const pend = arr(state.v.pending);
     const idx = pend.findIndex(p => p.id === id);
     $('note-count').textContent = pend.length > 1 && idx >= 0 ? (idx + 1) + ' of ' + pend.length + ' waiting' : '';
@@ -221,7 +243,7 @@
   }
   function closeNote(dismiss) {
     if (dismiss && state.noteId) state.dismissed.add(state.noteId);
-    state.noteId = null;
+    state.noteId = null; state.noteFrom = null;
     if (/note=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
     if (dlg.open) dlg.close();
   }
@@ -245,7 +267,7 @@
       shellPoke();
       poll();
     } catch (err) {
-      const el = $('note-err'); el.textContent = err.message; el.hidden = false;
+      if (!staleAnswer(err)) { const el = $('note-err'); el.textContent = err.message; el.hidden = false; }
     } finally { state.busy = false; $('note-save').disabled = false; }
   });
   form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); form.requestSubmit(); } });
@@ -253,8 +275,12 @@
   $('note-later').addEventListener('click', () => closeNote(true));
   $('note-skip').addEventListener('click', async () => {
     if (!state.noteId) return;
-    try { await api('/api/play/skip', { session: state.noteId }); store('play-draft-' + state.noteId, null); closeNote(false); shellPoke(); poll(); }
-    catch (err) { const el = $('note-err'); el.textContent = err.message; el.hidden = false; }
+    try {
+      const j = await api('/api/play/skip', { session: state.noteId });
+      store('play-draft-' + state.noteId, null); closeNote(false);
+      if (j && j.session && j.session.noop) toast('That play note was already skipped.');
+      shellPoke(); poll();
+    } catch (err) { if (!staleAnswer(err)) { const el = $('note-err'); el.textContent = err.message; el.hidden = false; } }
   });
   window.addEventListener('hashchange', () => {
     const id = wantedNote();

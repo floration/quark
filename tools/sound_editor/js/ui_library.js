@@ -194,7 +194,7 @@
     const legend = U.$('#ovLegend'); legend.innerHTML = '';
     for (const p of packs) { const sv = s('svg', { width: 14, height: 14 }); sv.append(shape(p.shape, 7, 7, p.color)); legend.append(h('span', sv, p.name)); }
     if (kind === 'voice') lib.loadVoices();
-    const names = kind === 'voice' ? Q.LINES.filter(l => !Q.UNRECORDED.includes(l)) : rowGroups('sound').flatMap(g => g[1]);
+    const names = kind === 'voice' ? Q.LINES : rowGroups('sound').flatMap(g => g[1]);
     const rows = [];
     for (const n of names) {
       const pts = [];
