@@ -215,6 +215,8 @@ class ParseLog(unittest.TestCase):
         self.assertEqual((res["bots"]["status"], res["duel"]["status"], res["duel"]["fails"]), ("passed", "failed", 2))
         self.assertEqual([x.get("file") for x in res["duel"]["failLines"]], ["tests/rules_tests.h", None])
         self.assertEqual(res["votes"]["status"], "failed")                   # (a FAIL line without a file is still one)
+        _, res = serve.parse_log("  FAIL tests/r.h:1: x\n  FAIL tests/r.h:2: y\n  (group tickrate: 5 s)\n  (group tickrate: 1 failure(s))\n")
+        self.assertEqual((res["tickrate"]["fails"], len(res["tickrate"]["failLines"])), (1, 2))   # (timingTest's set-aside FAILs print too)
 
     def test_one_group_and_release_check(self):
         times, res = serve.parse_log("group bots: 3 s\nall tests passed\n", "bots")

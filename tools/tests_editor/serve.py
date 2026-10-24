@@ -232,7 +232,8 @@ def parse_log(text, group=None):
     if group is not None: r(group)["failLines"] = pending
     for x in res.values():
         if x["failLines"]: x["status"] = "failed"
-        if x["status"] == "failed": x["fails"] = max(x["fails"], len(x["failLines"]), 1)
+        if x["status"] == "failed": x["fails"] = x["fails"] or len(x["failLines"]) or 1   # (the group's own count first:
+                                                                                         #  timingTest's set-aside FAILs print too)
         x["failLines"] = x["failLines"][:FAILS_KEPT]
     return times, res
 

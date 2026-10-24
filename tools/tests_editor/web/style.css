@@ -238,7 +238,7 @@ body.bk-isdragging, body.bk-isdragging * { cursor: grabbing !important; }
 .wjob:hover { border-color: var(--qt-accent); text-decoration: none; }
 .gantt { position: relative; margin: 4px 0 2px; }
 .gbar { position: absolute; height: 13px; font: 600 10px/13px var(--qt-mono); padding: 0 4px; border-radius: 3px; overflow: hidden; white-space: nowrap; text-overflow: clip; cursor: pointer; color: var(--qt-text); }
-.gbar.par { background: color-mix(in srgb, var(--c-group) 50%, var(--qt-panel)); }
+.gbar.par { background: color-mix(in srgb, var(--c-group) 50%, var(--qt-panel)); overflow: visible; }   /* (one row each: a short bar's name runs on past it) */
 .gbar.alone { background: color-mix(in srgb, var(--c-lane) 70%, var(--qt-panel)); height: 28px; line-height: 26px; border: 1px solid var(--qt-line); color: #fff; }
 .gbar.warn { box-shadow: inset 0 0 0 1px var(--qt-warn); }
 .gbar.notime { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c-group) 30%, var(--qt-panel)) 0 5px, var(--qt-panel2) 5px 10px); color: var(--qt-muted); }
@@ -285,7 +285,7 @@ code.cmd { background: var(--qt-panel2); border: 1px solid var(--qt-line); borde
 /* run dock */
 #dock { border-top: 1px solid var(--qt-line); background: var(--qt-panel); display: flex; flex-direction: column; }
 #dockBar { display: flex; gap: 8px; align-items: center; padding: 3px var(--qt-s2); }
-#runOut { display: none; margin: 0; height: 200px; overflow: auto; padding: 6px 10px; background: var(--qt-bg); border-top: 1px solid var(--qt-line); white-space: pre-wrap; font-size: 11.5px; }
+#runOut { position: relative; display: none; margin: 0; height: 200px; overflow: auto; padding: 6px 10px; background: var(--qt-bg); border-top: 1px solid var(--qt-line); white-space: pre-wrap; font-size: 11.5px; }
 #dock.open #runOut { display: block; }
 #runOut .ofail { color: var(--qt-bad); background: color-mix(in srgb, var(--qt-bad) 12%, transparent); font-weight: 600; }
 #runOut .ofail.cur { outline: 1px solid var(--qt-bad); }
