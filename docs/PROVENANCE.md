@@ -80,6 +80,9 @@ apart.
 
 ## Editors: the sidecar
 
+The editor dashboard (`tools/editor_dashboard/`, README there) shows pending sidecar entries and writes the owner's
+own marks to `Quark\editor-dashboard\provenance.json` (tool `dashboard`), never into a git clone.
+
 A local editor (sound, model, map, bot editor, UI customizer) doesn't edit the registry in the repository. When it
 exports something, it writes or updates `provenance.json` in its own folder on the owner's PC
 (`Quark\<editor>\provenance.json`):
