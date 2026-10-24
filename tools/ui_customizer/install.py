@@ -69,13 +69,20 @@ def main(argv=None):
         extract.main(['--out', os.path.join(dest, 'extract')])
     sys.path.insert(0, HERE)
     import build
-    build.main(['--out-dir', dest])
+    info = build.main(['--out-dir', dest]) or {}
+    fresh = info.get('freshness') or {}
+    dump_line = f"dump {info.get('dump') or 'none'}: {fresh.get('dumpVersion') or '?'} {(fresh.get('dumpCommit') or '?')[:12]}"
+    if fresh.get('stale'):
+        dump_line += f" - OUT OF DATE ({fresh['why']}); refresh it: {fresh['refresh']}"
     with open(os.path.join(dest, 'INSTALLED.txt'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(f'ui-customizer.html built {datetime.datetime.now().isoformat(timespec="seconds")} by tools/ui_customizer/install.py\n'
                 f'from {REPO} at {ver} {sha}\n'
+                f'{dump_line}\n'
                 'Generated here (rewritten by each install): ui-customizer.html, fonts/catalog.json, this file.\n'
                 "Yours (never touched by the install): provenance.json, extract/, fonts/ofl/, and anything else.\n")
     print(f'  wrote ui-customizer.html, fonts/catalog.json, INSTALLED.txt')
+    if fresh.get('stale'):
+        print(f"  WARNING: the UI dump is out of date ({fresh['why']}); the page says so too. Refresh: {fresh['refresh']}")
     if a.open and os.environ.get('QUARK_SHELL') != '1':
         webbrowser.open('file:///' + os.path.join(dest, 'ui-customizer.html').replace('\\', '/'))
     print('ui-customizer install: done')
