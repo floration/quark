@@ -1,6 +1,6 @@
 /* Quark project manager page: renders GET /api/pm (see SPEC.md section 2/3).
    Vanilla JS, no build step, no external requests. Every value from the server is treated as untrusted text (it
-   comes from git, GitHub and Claude Docs): everything goes through esc(), links through linkAttrs(). Every field may
+   comes from git, GitHub and the Claude Manager): everything goes through esc(), links through linkAttrs(). Every field may
    be missing; a missing value renders as "unknown" and a section that still fails to draw shows its own error
    instead of breaking the page. */
 (function () {
@@ -18,12 +18,12 @@
   const REFRESH_MIN_MS = 10000;
   const FIXTURE_URL = 'static/fixtures/pm-sample.json';
   const DEFAULT_TAB_PORTS = { 8765: 'dashboard', 8766: 'docs', 8767: 'github', 8768: 'project' };
-  const TAB_NAMES = { dashboard: 'Editors', docs: 'Claude Docs', github: 'GitHub', project: 'Project' };
+  const TAB_NAMES = { dashboard: 'Editor Manager', docs: 'Claude Manager', github: 'GitHub Manager', project: 'Supervisor Board' };
 
   const SOURCES = {
-    github:    { name: 'GitHub manager',      every: 30,  local: true,  fix: 'Start the GitHub manager (github-manager.cmd in Quark\\github-manager).' },
-    docs:      { name: 'Claude Docs manager', every: 30,  local: true,  fix: 'Start the Claude Docs manager (docs-manager.cmd in Quark\\docs-manager).' },
-    editors:   { name: 'Editor dashboard',    every: 30,  local: true,  fix: 'Start the editor dashboard (editor-dashboard.cmd in Quark\\editor-dashboard).' },
+    github:    { name: 'GitHub Manager', label: 'GitHub Manager', every: 30, local: true, fix: 'Start the GitHub Manager (its tab in the Supervisor Board, or github-manager.cmd in Quark\\github-manager).' },
+    docs:      { name: 'Claude Manager', label: 'Claude Manager', every: 30, local: true, fix: 'Start the Claude Manager (its tab in the Supervisor Board, or docs-manager.cmd in Quark\\docs-manager).' },
+    editors:   { name: 'Editor Manager', label: 'Editor Manager', every: 30, local: true, fix: 'Start the Editor Manager (its tab in the Supervisor Board, or editor-dashboard.cmd in Quark\\editor-dashboard).' },
     builds:    { name: 'Local builds',        every: 60,  local: false, fix: 'Check that Quark\\production, testing and working exist and hold a BUILD.txt.' },
     repo:      { name: 'Repository',          every: 60,  local: false, fix: 'Check that Quark\\repository exists and git is on PATH.' },
     servers:   { name: 'Ranking Worker',      every: 120, local: false, fix: 'Check the internet connection (the server list comes from the ranking Worker over HTTPS).' },
@@ -244,7 +244,7 @@
       let cls = 'dot', note = '';
       if (s.ok !== true) { cls += ' dot-down'; note = ' (down)'; }
       else if (t != null && nowMs() - t > info.every * 3000 + 30000) { cls += ' dot-stale'; note = ' (stale)'; }
-      parts.push('<span class="' + cls + '"></span><b>' + esc(label && keys.length === 1 ? label : key) + '</b>' + esc(note) + ' ' + (t != null ? ageSpan(t) : '<span class="muted">never</span>'));
+      parts.push('<span class="' + cls + '"></span><b>' + esc(label && keys.length === 1 ? label : (info.label || key)) + '</b>' + esc(note) + ' ' + (t != null ? ageSpan(t) : '<span class="muted">never</span>'));
     }
     return '<span class="src" title="Where this card\'s data comes from, and how old it is">' + parts.join('<span class="muted">&middot;</span>') + '</span>';
   }
@@ -556,7 +556,7 @@
       html += '<div class="stack-chart" data-chart="stack" role="img" aria-label="' + esc('Per category, human / third-party / AI: ' + cats.map(c => c.name + ' ' + c.human + '/' + c.third + '/' + c.ai).join(', ')) + '"></div>';
     } else html += '<p class="empty">No per-category numbers.</p>';
     const progs = (Array.isArray(derived().programs) && derived().programs.length ? derived().programs : arr(e.programs)).filter(isObj);
-    html += '<div class="sub-head">Editors&rsquo; changes</div>';
+    html += '<div class="sub-head">Editor changes</div>';
     if (!progs.length) html += '<p class="empty">No programs reported.</p>';
     else {
       const cell = v => { const n = num(v); return '<td class="n' + (n ? '' : ' z') + '">' + (n == null ? '?' : n) + '</td>'; };
@@ -805,15 +805,34 @@
   }
 
   // ---------------------------------------------------------------- 9. tabs
+  // Tabs as a tree by each tab's optional `parent` (managers under "project", editors under "dashboard");
+  // a tab without a known parent is a root. The nav bar shows the same order, flattened.
+  function tabTree(tabs) {
+    const ids = new Set(tabs.map(t => String(t.id)));
+    const kids = {}, roots = [], seen = new Set(), out = [];
+    for (const t of tabs) {
+      const par = has(t.parent) && String(t.parent) !== String(t.id) && ids.has(String(t.parent)) ? String(t.parent) : null;
+      if (par) (kids[par] = kids[par] || []).push(t); else roots.push(t);
+    }
+    const walk = (t, depth) => {
+      if (seen.has(t)) return;
+      seen.add(t); out.push({ t, depth });
+      for (const k of kids[String(t.id)] || []) walk(k, depth + 1);
+    };
+    roots.forEach(r => walk(r, 0));
+    tabs.forEach(t => { if (!seen.has(t)) out.push({ t, depth: 0 }); }); // (a parent cycle: shown at the top level)
+    return out;
+  }
   function renderTabs() {
     const tabs = tabList().filter(isObj);
     const sec = document.getElementById('sec-tabs');
     const nav = document.getElementById('nav-tabs');
     if (EMBED) { sec.hidden = true; return null; }
+    const tree = tabTree(tabs);
     const item = (t, inNav) => {
       const installed = t.installed !== false;
       const up = t.up === true || (!has(t.port) && installed);
-      const name = esc(t.name || t.id || '?');
+      const name = esc(t.name || TAB_NAMES[t.id] || t.id || '?');
       const self = t.id === 'project';
       if (!installed) return inNav ? '<a class="off" title="not installed">' + name + '</a>' : '<span class="tablink off" title="not installed"><span class="sd"></span>' + name + ' <span class="small">not installed</span></span>';
       const href = typeof t.url === 'string' ? t.url.replace(/([?&])embed=1&?/, '$1').replace(/[?&]$/, '') : '';
@@ -822,10 +841,28 @@
       return inNav ? '<a ' + attrs + (has(t.port) && !up ? ' class="off" title="not running"' : '') + '>' + (has(t.port) ? '<span class="sd' + (up ? ' up' : '') + '"></span>' : '') + name + '</a>'
         : '<a class="tablink" ' + attrs + '><span class="sd' + (up ? ' up' : '') + '"></span>' + name + (has(t.port) && !up ? ' <span class="small muted">not running</span>' : '') + '</a>';
     };
-    if (nav) nav.innerHTML = tabs.map(t => item(t, true)).join('');
+    // nav: every tab but this page (the brand is this page), a separator before the editors
+    if (nav) {
+      let h = '', prev = -1;
+      for (const { t, depth } of tree) {
+        if (t.id === 'project') continue;
+        if (depth >= 2 && prev < 2 && h) h += '<span class="qt-nav-sep"></span>';
+        h += item(t, true); prev = depth;
+      }
+      nav.innerHTML = h;
+    }
     if (!tabs.length) { sec.hidden = true; return null; }
     sec.hidden = false;
-    return head('h-tabs', 'Tabs', '', '<span class="src"><b>/api/tabs</b></span>') + '<div class="tablinks">' + tabs.map(t => item(t, false)).join('') + '</div>';
+    // card: nested lists
+    let html = '', depth = -1;
+    for (const { t, depth: d } of tree) {
+      if (d > depth) html += '<ul class="tabtree">'.repeat(d - depth);
+      else html += '</li>' + '</ul></li>'.repeat(depth - d);
+      html += '<li>' + item(t, false);
+      depth = d;
+    }
+    html += '</li>' + '</ul></li>'.repeat(Math.max(0, depth)) + '</ul>';
+    return head('h-tabs', 'Tabs', '', '<span class="src"><b>/api/tabs</b></span>') + html;
   }
 
   // ---------------------------------------------------------------- render

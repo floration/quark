@@ -360,7 +360,10 @@ table.t .z { color: var(--ink-3); }
 .show-more { margin-top: 4px; }
 
 /* ---------- 9. tabs ---------- */
-.tablinks { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabtree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.tabtree .tabtree { margin: 8px 0 0 10px; padding-left: 16px; border-left: 2px solid var(--grid); }
+.tabtree .tabtree .tabtree { flex-direction: row; flex-wrap: wrap; }
+.tabtree > li { min-width: 0; max-width: 100%; }
 .tablink {
   display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: var(--radius-sm);
   background: var(--surface-2); border: 1px solid var(--border); font-weight: 600; font-size: 13px; color: var(--ink);

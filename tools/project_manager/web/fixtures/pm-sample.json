@@ -668,7 +668,7 @@
     "nextSteps": [
       {
         "text": "Answer: Should gantry stay a 5 min FFA, or go to 7 min now that it has the second lift?",
-        "why": "open question in Claude Docs (asked 4 h ago)",
+        "why": "open question in the Claude Manager (asked 4 h ago)",
         "owner": "q",
         "link": "http://127.0.0.1:8766/#entry=q-14",
         "source": "docs"
@@ -907,63 +907,71 @@
   "tabs": [
     {
       "id": "project",
-      "name": "Project",
+      "name": "Supervisor Board",
       "url": "http://127.0.0.1:8768/?embed=1",
       "port": 8768,
       "installed": true,
       "up": true
     },
     {
-      "id": "dashboard",
-      "name": "Editors",
-      "url": "http://127.0.0.1:8765/?embed=1",
-      "port": 8765,
-      "installed": true,
-      "up": true
-    },
-    {
-      "id": "docs",
-      "name": "Claude Docs",
-      "url": "http://127.0.0.1:8766/?embed=1",
-      "port": 8766,
-      "installed": true,
-      "up": true
-    },
-    {
       "id": "github",
-      "name": "GitHub",
+      "name": "GitHub Manager",
       "url": "http://127.0.0.1:8767/?embed=1",
       "port": 8767,
       "installed": true,
-      "up": true
+      "up": true,
+      "parent": "project"
     },
     {
-      "id": "ui",
-      "name": "UI",
-      "url": "file:///C:/Users/user/Desktop/Quark/ui-customizer/ui-customizer.html",
-      "installed": true
+      "id": "docs",
+      "name": "Claude Manager",
+      "url": "http://127.0.0.1:8766/?embed=1",
+      "port": 8766,
+      "installed": true,
+      "up": true,
+      "parent": "project"
+    },
+    {
+      "id": "dashboard",
+      "name": "Editor Manager",
+      "url": "http://127.0.0.1:8765/?embed=1",
+      "port": 8765,
+      "installed": true,
+      "up": true,
+      "parent": "project"
     },
     {
       "id": "sound",
-      "name": "Sound",
+      "name": "Sound Editor",
       "url": "file:///C:/Users/user/Desktop/Quark/sound-editor/sound-editor.html",
-      "installed": true
+      "installed": true,
+      "parent": "dashboard"
     },
     {
-      "id": "model",
-      "name": "Models",
-      "installed": false
+      "id": "ui",
+      "name": "UI Editor",
+      "url": "file:///C:/Users/user/Desktop/Quark/ui-customizer/ui-customizer.html",
+      "installed": true,
+      "parent": "dashboard"
     },
     {
       "id": "map",
-      "name": "Maps",
+      "name": "Map Editor",
       "url": "file:///C:/Users/user/Desktop/Quark/map-editor/index.html",
-      "installed": true
+      "installed": true,
+      "parent": "dashboard"
     },
     {
       "id": "bot",
-      "name": "Bots",
-      "installed": false
+      "name": "Bot Editor",
+      "installed": false,
+      "parent": "dashboard"
+    },
+    {
+      "id": "model",
+      "name": "Model Editor",
+      "installed": false,
+      "parent": "dashboard"
     }
   ]
 }
