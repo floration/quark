@@ -438,7 +438,7 @@ int Audio::voicesPlaying(int id) {
 
 void Audio::render(float* buf, int n) {
     QZONE("audio mix");
-    const float rateScale = rateScale_;   // (1, or our 48 kHz over an exclusive device's own rate)
+    const float rateScale = rateScale_;   // (1, or our 48 kHz over the device's own rate: exclusive, or shared in its mix format)
     std::memset(buf, 0, sizeof(float) * n * 2);
     {
         std::lock_guard<std::mutex> l(mixMu_);   // (the mixer's own: the game thread never waits on it)
@@ -491,9 +491,10 @@ void Audio::mix(int16_t* out, int frames) {
 // --- backends ------------------------------------------------------------------
 
 #if defined(_WIN32)
-// Output through WASAPI (shared mode, woken by the audio engine each period): about 20 ms from a sound to the speaker,
-// where WinMM needed a 30 ms queue on top of its own buffering (shorter WinMM queues broke up on the owner's PC). Our
-// 48 kHz 16-bit stereo is converted by Windows to the device's format. WinMM stays as the fallback (no WASAPI device).
+// Output through WASAPI (shared mode, woken by the audio engine each period): about 20 ms from a sound to the speaker at
+// the usual 10 ms period (less at the engine's shortest, Windows 10+ where the driver allows it), where WinMM needed a
+// 30 ms queue on top of its own buffering (shorter WinMM queues broke up on the owner's PC). At 10 ms our 48 kHz 16-bit
+// stereo is converted by Windows to the device's format. WinMM stays as the fallback (no WASAPI device).
 namespace {
 const GUID kClsidDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
 const GUID kIidDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
@@ -503,6 +504,28 @@ const GUID kSubtypePcm = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0
 const GUID kSubtypeFloat = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};   // ..._IEEE_FLOAT
 template <class T> void releaseCom(T*& p) { if (p) { p->Release(); p = nullptr; } }
 enum SampleFormat { kFmt16, kFmtFloat, kFmt24 };   // what the device's buffer takes (kFmt24: 24 bits at the top of 32)
+// IAudioClient3 (Windows 10+: shared mode at a shorter engine period), declared here as older MinGW headers lack it: the
+// IAudioClient2 methods before it are only slots (never called)
+const GUID kIidAudioClient3 = {0x7ED4EE07, 0x8E67, 0x4CD4, {0x8C, 0x1A, 0x2B, 0x7A, 0x59, 0x87, 0xAD, 0x42}};
+struct AudioClient3 : public IAudioClient {
+    virtual HRESULT STDMETHODCALLTYPE IsOffloadCapable_() = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetClientProperties_() = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetBufferSizeLimits_() = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetSharedModeEnginePeriod(const WAVEFORMATEX* fmt, UINT32* def, UINT32* fundamental, UINT32* mn, UINT32* mx) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetCurrentSharedModeEnginePeriod(WAVEFORMATEX** fmt, UINT32* cur) = 0;
+    virtual HRESULT STDMETHODCALLTYPE InitializeSharedAudioStream(DWORD flags, UINT32 periodFrames, const WAVEFORMATEX* fmt, LPCGUID session) = 0;
+};
+#ifndef AUDCLNT_E_ENGINE_PERIODICITY_LOCKED
+#define AUDCLNT_E_ENGINE_PERIODICITY_LOCKED AUDCLNT_ERR(0x028)
+#endif
+// the engine's mix format is one fill() writes: 32-bit float, front left and right first (any further channels silent)
+bool floatMix(const WAVEFORMATEX* f) {
+    if (f->wBitsPerSample != 32 || f->nChannels < 2) return false;
+    if (f->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) return true;
+    if (f->wFormatTag != WAVE_FORMAT_EXTENSIBLE || f->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) return false;
+    const WAVEFORMATEXTENSIBLE* x = (const WAVEFORMATEXTENSIBLE*)f;
+    return IsEqualGUID(x->SubFormat, kSubtypeFloat) && (x->dwChannelMask & 3) == 3;   // (SPEAKER_FRONT_LEFT | _RIGHT)
+}
 }
 
 void Audio::wasapiThread(std::atomic<int>* started) {
@@ -595,7 +618,45 @@ void Audio::wasapiThread(std::atomic<int>* started) {
                 ok = SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
             }
         }
+        UINT32 chans = 2, lowPeriod = 0;   // the buffer's channels; shared at the engine's shortest period: it, in frames
+        double periodMs = 0;               // (shared: the engine's period, for the log)
+        const char* why = "";              // (shared at the default period: why not the shortest)
         if (ok && !excl) {
+            // Shared at the engine's shortest period (Windows 10+, IAudioClient3; where the driver allows it, e.g. 3 ms
+            // against the usual 10): in the engine's own mix format (32-bit float at the device's rate, so nothing is
+            // converted on the way in; the mixer steps through our 48 kHz as for exclusive). Else the 10 ms path below,
+            // which QUARK_AUDIO_LEGACY=1 forces.
+            const char* legacy = getenv("QUARK_AUDIO_LEGACY");
+            AudioClient3* ac3 = nullptr;
+            WAVEFORMATEX* mf = nullptr;
+            UINT32 defF = 0, fundF = 0, minF = 0, maxF = 0;
+            bool tried = false;   // (a failed initialize: the fallback needs a fresh client)
+            if (legacy && *legacy && strcmp(legacy, "0") != 0) why = "QUARK_AUDIO_LEGACY";
+            else if (FAILED(ac->QueryInterface(kIidAudioClient3, (void**)&ac3))) { ac3 = nullptr; why = "no IAudioClient3, before Windows 10"; }
+            else if (FAILED(ac->GetMixFormat(&mf)) || !mf) { mf = nullptr; why = "no mix format"; }
+            else if (!floatMix(mf)) why = "the mix format isn't float stereo";
+            else if (FAILED(ac3->GetSharedModeEnginePeriod(mf, &defF, &fundF, &minF, &maxF)) || minF == 0 || minF >= defF)
+                why = "the driver has no shorter period";
+            else {
+                tried = true;
+                HRESULT hr = ac3->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minF, mf, nullptr);
+                if (SUCCEEDED(hr) && SUCCEEDED(ac->SetEventHandle(ev)) && SUCCEEDED(ac->GetBufferSize(&frames)) && frames > 0 &&
+                    SUCCEEDED(ac->GetService(kIidAudioRenderClient, (void**)&rc))) {
+                    // one period queued, as at 10 ms: the engine takes one per wake-up and we refill it straight away
+                    lowPeriod = minF; rate = mf->nSamplesPerSec; chans = mf->nChannels; fmt = kFmtFloat;
+                    target = std::min<UINT32>(frames, minF);
+                    periodMs = minF * 1000.0 / rate;
+                } else why = hr == AUDCLNT_E_ENGINE_PERIODICITY_LOCKED ? "another program holds the engine at its period" : "the shorter period failed to open";
+            }
+            if (mf) CoTaskMemFree(mf);
+            releaseCom(ac3);
+            if (!lowPeriod && tried) {
+                releaseCom(rc); releaseCom(ac);
+                frames = 0;
+                ok = SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
+            }
+        }
+        if (ok && !excl && !lowPeriod) {
             WAVEFORMATEX wf = pcm16(R);
             REFERENCE_TIME period = 0;   // the engine's period (10 ms usually)
             if (FAILED(ac->GetDevicePeriod(&period, nullptr)) || period <= 0) period = 100000;
@@ -607,12 +668,15 @@ void Audio::wasapiThread(std::atomic<int>* started) {
             // engine period queued: the engine takes exactly one per wake-up and we refill it straight away (the owner
             // tried 1-20 ms on 2026-10-23: 10 ms, one period, was clean; anything less got worse).
             target = std::min<UINT32>(frames, (UINT32)(period * R / 10000000));
-            // (testing where a PC starts cutting out: QUARK_AUDIO_MS=<ms queued>, e.g. 10 / 12 / 13 / 15)
+            periodMs = period / 10000.0;
+        }
+        // (testing where a PC starts cutting out: QUARK_AUDIO_MS=<ms queued>, e.g. 10 / 12 / 13 / 15; shared, either
+        // period, up to the buffer Windows gave)
+        if (ok && !excl)
             if (const char* e = getenv("QUARK_AUDIO_MS")) {
                 double ms = atof(e);
-                if (ms >= 1 && ms <= 200) target = std::min<UINT32>(frames, (UINT32)(ms * R / 1000));
+                if (ms >= 1 && ms <= 200) target = std::min<UINT32>(frames, (UINT32)(ms * rate / 1000));
             }
-        }
         rateScale_ = (float)R / (float)rate;   // (the mixer steps through our 48 kHz sounds at the device's rate)
         auto fill = [&](UINT32 n) {   // n frames of the mix into the device's buffer
             BYTE* p = nullptr;
@@ -620,12 +684,19 @@ void Audio::wasapiThread(std::atomic<int>* started) {
             for (UINT32 left = n; left > 0;) {
                 int k = (int)std::min<UINT32>(left, kMixFrames);
                 if (fmt == kFmt16) { mix((int16_t*)p, k); p += k * 4; }
-                else {   // (exclusive's 32-bit formats: the mix before it's made 16-bit)
+                else {   // (exclusive's 32-bit formats, and shared's float mix format: the mix before it's made 16-bit)
                     float f[kMixFrames * 2];
                     render(f, k);
-                    if (fmt == kFmtFloat) { float* o = (float*)p; for (int i = 0; i < k * 2; i++) o[i] = clampf(f[i], -1, 1); }
+                    if (fmt == kFmtFloat) {
+                        float* o = (float*)p;
+                        if (chans == 2) for (int i = 0; i < k * 2; i++) o[i] = clampf(f[i], -1, 1);
+                        else for (int i = 0; i < k; i++, o += chans) {   // (a surround mix format: the rest silent)
+                            o[0] = clampf(f[i * 2], -1, 1); o[1] = clampf(f[i * 2 + 1], -1, 1);
+                            for (UINT32 c = 2; c < chans; c++) o[c] = 0;
+                        }
+                    }
                     else { int32_t* o = (int32_t*)p; for (int i = 0; i < k * 2; i++) o[i] = (int32_t)(clampf(f[i], -1, 1) * 8388607.0f) * 256; }
-                    p += k * 8;
+                    p += k * 4 * chans;
                 }
                 left -= k;
             }
@@ -634,8 +705,11 @@ void Audio::wasapiThread(std::atomic<int>* started) {
         if (ok) ok = fill(target) && SUCCEEDED(ac->Start());
         exclusiveState_ = !wantExcl ? kExclOff : ok && excl ? kExclOn : busy ? kExclBusy : kExclUnsupported;
         static const char* const fmtName[] = {"16-bit", "32-bit float", "24-bit"};
-        if (ok) printf("audio: WASAPI %s, %u Hz %s, %.1f ms queued (%.1f ms buffer)%s\n", excl ? "exclusive" : "shared", (unsigned)rate,
-                       fmtName[fmt], target * 1000.0 / rate, frames * 1000.0 / rate,
+        char per[128] = "";   // (shared: the engine period it runs at, and why not a shorter one)
+        if (!excl && lowPeriod) snprintf(per, sizeof per, ", %.2f ms engine period (its shortest)", periodMs);
+        else if (!excl) snprintf(per, sizeof per, ", %.2f ms engine period (%s)", periodMs, why);
+        if (ok) printf("audio: WASAPI %s, %u Hz %s, %.1f ms queued (%.1f ms buffer)%s%s\n", excl ? "exclusive" : "shared", (unsigned)rate,
+                       fmtName[fmt], target * 1000.0 / rate, frames * 1000.0 / rate, per,
                        !wantExcl || excl ? "" : busy ? " (exclusive: the device is busy)" : " (exclusive: no format the device takes)");
         if (!reported) { reported = true; started->store(ok ? 1 : -1); if (!ok) { releaseCom(rc); releaseCom(ac); releaseCom(dev); releaseCom(en); break; } }
         int silent = 0;   // (exclusive: waits with no wake-up from the device; it's gone after a while)
