@@ -424,7 +424,7 @@ class Server(unittest.TestCase):
         self.assertEqual(st2["output"], "")
         code, r = self.j("/api/run", {"cmd": "group:duel"})
         self.assertEqual(wait(r["id"])["status"], "failed")
-        code, r = self.j("/api/run", {"cmd": "cmd:ladders"})
+        code, r = self.j("/api/run", {"cmd": "cmd:signing"})
         self.assertEqual(wait(r["id"])["status"], "passed")
         # timing from the local run feeds the model
         m = json.loads(self.req("/api/model")[2])
@@ -456,7 +456,7 @@ class Server(unittest.TestCase):
         else:
             self.fail("the run's child process survived the stop")
         code, runs = self.j("/api/runs")
-        self.assertEqual([x["cmd"] for x in runs[:4]], ["group:tourney", "cmd:ladders", "group:duel", "group:bots"])
+        self.assertEqual([x["cmd"] for x in runs[:4]], ["group:tourney", "cmd:signing", "group:duel", "group:bots"])
         self.assertEqual(json.loads(rd(os.path.join(self.state, "cache", "runs.json")))[-1]["status"], "stopped")
         os.remove(b)
 

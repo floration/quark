@@ -1,11 +1,11 @@
 #pragma once
 // COPIED from tests/mapreport.cpp at 07ef254 (the measurement half: everything before mapReport()), adapted for
 // quark_maptool: in namespace mr, no camera files written (the map shots' .cams block is gone), the movement envelope
-// cached on disk and the hot loops threaded (marked "maptool:"). DEDUPE LATER: move the measurement into a shared
-// header the map report and this tool both include (the tests thread owns tests/mapreport.cpp).
-// Map analysis: measures every shipped map from its geometry, the bot nav graph and line-of-sight rays, and
-// writes docs/MAP_REPORT.md. Metric definitions and score formulas: docs/MAP_METRICS.md.
-// Run: build/quark_tests mapreport
+// cached on disk and the hot loops threaded (marked "maptool:"). The map grading (tests/mapreport.cpp,
+// docs/MAP_REPORT.md, docs/MAP_METRICS.md, `quark_tests mapreport`) was removed from the tests (the owner: maps will be
+// human-designed); this copy is now the only one, and the old metric definitions are in git at 07ef254
+// (docs/MAP_METRICS.md). The tests keep only the out-of-bounds check, trimmed, in tests/mapbounds.cpp.
+// Map analysis: measures a map from its geometry, the bot nav graph and line-of-sight rays.
 #include <chrono>
 #include <cstring>
 #include <algorithm>

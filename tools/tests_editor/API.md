@@ -43,8 +43,8 @@ item (local group) = {
   "timing": {"sec": 31.0, "source": "release-tests/timing/step1.txt" | "local run 2026-10-24T..."} | null,
   "flaky": "text" | null
 }
-item (also kind "shortcut") = a one-off `if (argv[1] == "x")` command in main(): {"id": "cmd:ladders", "kind": "shortcut",
-  "name", "file", "line", "calls": [...], "run": {"cmd": "build/quark_tests ladders", "parallel": false}}  (may disappear;
+item (also kind "shortcut") = a one-off `if (argv[1] == "x")` command in main(): {"id": "cmd:signing", "kind": "shortcut",
+  "name", "file", "line", "calls": [...], "run": {"cmd": "build/quark_tests signing", "parallel": false}}  (may disappear;
   tool commands like exportassets/serverbench are kind "tool")
 fn = {"name": "testWeapons", "file": "tests/tests.cpp", "line": 3100, "endLine": 3290, "args": "uint16_t port",
       "doc": "comment block right above it", "checks": [{"line": 3110, "expr": "a.hp == 100"}], "calls": ["testX", ...],

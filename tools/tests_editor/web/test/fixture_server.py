@@ -12,7 +12,7 @@ from urllib.parse import urlparse, parse_qs
 
 WEB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = ["tests/tests.cpp", "tests/rules_tests.h", "tests/server_tests.h", "tests/governor_tests.h", "tests/assets_tests.cpp",
-         "tests/launcher_tests.cpp", "tests/mapreport.cpp", ".github/workflows/release.yml", ".github/workflows/main-guard.yml",
+         "tests/launcher_tests.cpp", "tests/mapbounds.cpp", "tests/brain_tests.cpp", "tests/mode_tests.cpp", ".github/workflows/release.yml", ".github/workflows/main-guard.yml",
          ".github/workflows/macos-retry.yml", "tools/release_check.sh", "tools/githooks/pre-commit", "CMakeLists.txt"]
 ALLOWED = re.compile(r"^(tests/[^\0]+|\.github/workflows/[^/]+|tools/[^/]+\.sh|tools/githooks/[^/]+|CMakeLists\.txt)$")
 NOW = "2026-10-24T15:00:00Z"
@@ -52,7 +52,7 @@ def match_brace(lines, i, open_ch="{", close_ch="}"):
         if depth <= 0 and (open_ch in l or j > i): return j
     return len(lines) - 1
 
-CALL = re.compile(r"(?:g_fail \+= )?\b(test\w+|\w+Tests|serverTests|launcherTests|assetTests|mapReport|ffaVsExperts|playtestMaps|serverBench|snapBench|exportAssets)\s*\(")
+CALL = re.compile(r"(?:g_fail \+= )?\b(test\w+|\w+Tests|serverTests|launcherTests|assetTests|outOfBoundsTests|ffaVsExperts|playtestMaps|serverBench|snapBench|exportAssets)\s*\(")
 def calls_in(text, line0):
     out = []
     for k, l in enumerate(text.split("\n")):
@@ -91,7 +91,7 @@ def parse_quark_tests(repo, fns):
         if not m or i < main: continue
         end = match_brace(lines, i) if "{" in l.split(")", 2)[-1] else i
         cs = [c for c in calls_in("\n".join(lines[i:end + 1]), i + 1) if c["fn"] in fns]
-        kind = "tool" if m.group(1) in ("playtest", "serverbench", "mapreport", "exportassets", "racefloors", "snapbench", "ffaexperts") else "shortcut"
+        kind = "tool" if m.group(1) in ("playtest", "serverbench", "exportassets", "racefloors", "snapbench", "ffaexperts", "bounds", "brainbench", "modebench") else "shortcut"
         items.append({"id": "cmd:" + m.group(1), "kind": kind, "name": m.group(1), "file": f, "line": i + 1, "endLine": end + 1, "calls": cs,
                       "run": {"cmd": "build/quark_tests " + m.group(1), "parallel": False}})
     groups = []
@@ -255,7 +255,7 @@ def build_model(repo):
                 if n not in ids: lint.append({"level": "error", "file": j["file"], "line": j["lines"]["needs"], "text": "job %s needs '%s', which doesn't exist" % (j["jobId"], n)})
             for st in j["steps"]:
                 if st["uses"] and not re.search(r"@[0-9a-f]{40}$", st["uses"]): lint.append({"level": "warn", "file": j["file"], "line": st["line"], "text": "action %s isn't pinned by a commit SHA" % st["uses"]})
-                if st["run"] and re.search(r"(^|\s)(\./)?build\S*/quark_tests(\.exe)?(\s+(group\s+\w+|serial|\w+))?\s*($|[;&|>])", st["run"], re.M) and not re.search(r"quark_tests(\.exe)? (exportassets|mapreport|groups|racefloors)", st["run"]) and "sanit" not in j["jobId"]:
+                if st["run"] and re.search(r"(^|\s)(\./)?build\S*/quark_tests(\.exe)?(\s+(group\s+\w+|serial|\w+))?\s*($|[;&|>])", st["run"], re.M) and not re.search(r"quark_tests(\.exe)? (exportassets|bounds|groups|racefloors)", st["run"]) and "sanit" not in j["jobId"]:
                     lint.append({"level": "error", "file": j["file"], "line": st["line"], "text": "CI scope: job %s runs quark_tests gameplay groups" % j["jobId"]})
         for i, l in enumerate(repo.read(s["file"]).split("\n")):
             if "[final]" in l and "case" not in l and not l.lstrip().startswith("#") and "HEAD_MSG" not in l and "'[final]'" not in l:
