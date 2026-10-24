@@ -14,7 +14,8 @@
 
   // --- parse ---------------------------------------------------------------------------------------------------------
   // bytes: Uint8Array (.glb or .gltf text); files: { 'name.bin': Uint8Array } for external buffers
-  // -> { prims: [{ material, slot, alpha, pos: Float32Array, nrm, col }] (flat triangle lists), tris, extras }
+  // -> { prims: [{ material, slot, alpha, pos: Float32Array, nrm, col }] (flat triangle lists), tris, extras,
+  //      provenance (asset.extras.provenance: who made it, as this editor writes it into every export) | null }
   G.parse = function (bytes, name, files) {
     let json = null, bin = null;
     const isGlb = bytes.length >= 12 && bytes[0] === 0x67 && bytes[1] === 0x6c && bytes[2] === 0x54 && bytes[3] === 0x46;
@@ -49,6 +50,8 @@
     const out = { prims: [], tris: 0, extras: null, name: name || '' };
     const meshes = root.meshes || [];
     if (meshes[0] && meshes[0].extras && meshes[0].extras.quark) out.extras = meshes[0].extras.quark;
+    const pv = root.asset && root.asset.extras && root.asset.extras.provenance;
+    out.provenance = pv && typeof pv === 'object' && !Array.isArray(pv) ? pv : null;
     const ID = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     const scenes = root.scenes;
     if (scenes && scenes.length) {
@@ -210,8 +213,9 @@
   };
 
   // --- write a .glb ------------------------------------------------------------------------------------------------
-  // mesh: { prims: [{ material, alpha, pos, nrm, col (Float32Array, 3 per vertex), idx (Uint32Array) }] }
-  G.writeGlb = function (mesh, name, extras) {
+  // mesh: { prims: [{ material, alpha, pos, nrm, col (Float32Array, 3 per vertex), idx (Uint32Array) }] }; provenance:
+  // the provenance.json entry, kept in asset.extras (the game ignores it) so the origin travels with the file
+  G.writeGlb = function (mesh, name, extras, provenance) {
     const chunks = [];
     let binLen = 0;
     const views = [], accessors = [], prims = [], materials = [];
@@ -244,7 +248,9 @@
     });
     const meshObj = { name, primitives: prims };
     if (extras) meshObj.extras = { quark: extras };
-    const gl = { asset: { version: '2.0', generator: 'quark model editor' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name, mesh: 0 }],
+    const asset = { version: '2.0', generator: 'quark model editor' };
+    if (provenance) asset.extras = { provenance };
+    const gl = { asset, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name, mesh: 0 }],
       meshes: [meshObj], materials, accessors, bufferViews: views, buffers: [{ byteLength: binLen }] };
     let js = new TextEncoder().encode(JSON.stringify(gl));
     const jpad = (4 - (js.length % 4)) % 4;
@@ -447,8 +453,9 @@
   G.exportBytes = function (key) {
     const cur = Q.current(key), m = Q.models[key];
     const name = m ? m.name : key.split('/').pop();
-    if (cur.type === 'boxes') { const mesh = B.toMesh(cur.parts, Q.refOf(key)); return G.writeGlb(mesh, name, mesh.extras); }
-    if (cur.type === 'mesh') return G.writeGlb(G.meshForWrite(cur.mesh), name, null);
+    const prov = Q.provFor ? Q.provFor(key) : null;
+    if (cur.type === 'boxes') { const mesh = B.toMesh(cur.parts, Q.refOf(key)); return G.writeGlb(mesh, name, mesh.extras, prov); }
+    if (cur.type === 'mesh') return G.writeGlb(G.meshForWrite(cur.mesh), name, null, prov);
     return null;
   };
 })();

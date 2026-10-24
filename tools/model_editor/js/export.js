@@ -7,11 +7,14 @@
   const Q = window.Q;
 
   Q.exportList = () => Object.keys(Q.state.edits).filter(k => Q.models[k] && Q.current(k).type !== 'none').sort();
+  Q.exportError = key => Q.problems(key).find(x => x.level === 'error') || null;   // (blocks that model's export)
+  Q.exportableList = () => Q.exportList().filter(k => !Q.exportError(k));
   Q.exportPath = key => key + '.glb';
 
   // --- provenance ----------------------------------------------------------------------------------------------------
-  // Q.state.prov[key] = { origin: 'human' | 'ai' | 'third-party', by, source, licence, note, auto } (auto: the note is
-  // the editor's own description of the tweak, rewritten as the model changes, until the user writes one)
+  // Q.state.prov[key] = { origin: 'human' | 'ai' | 'third-party', by, source, licence, note, auto, scratch } (auto: the
+  // note is the editor's own description of the tweak, rewritten as the model changes, until the user writes one;
+  // scratch: made with Start from scratch). It belongs to the edit: undo / redo carry it, Reset drops it.
   // Q.provLog: every entry this editor exported (kept in the browser), so a zip carries them all.
   Q.provId = key => key + '.gltf';   // ids are the export / override path with .gltf (the asset id the dashboard uses)
   Q.today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
@@ -20,11 +23,27 @@
   Q.provLog = {};
   try { Q.provLog = JSON.parse(localStorage.getItem('qme.provLog') || '{}') || {}; } catch (e) { Q.provLog = {}; }
   function saveLog() { try { localStorage.setItem('qme.provLog', JSON.stringify(Q.provLog)); } catch (e) { } }
-  // what changed against the default, in words (the "ai" tweak note)
+  Q.ORIGINS = ['human', 'ai', 'third-party'];
+  const SCRATCH_NOTE = 'made from scratch in the model editor';
+  // what an edit starts from: the shipped override when there is one (what the game draws now), else the default;
+  // its provenance is the repository's entry for the id (assets/provenance/*.json), a default without one is AI-made
+  Q.baseOf = function (key) {
+    const m = Q.models[key];
+    if (!m) return { shipped: false, parts: null, prov: { origin: 'ai' } };
+    const sh = m.shipped && m.shipped.mesh && !m.shipped.err ? m.shipped : null;
+    const rp = m.prov && Q.ORIGINS.indexOf(m.prov.origin) >= 0 ? m.prov : null;
+    return { shipped: !!sh, parts: sh ? sh.parts : m.defParts, prov: rp || { origin: 'ai', source: sh ? '' : 'box model in src/client/models.cpp' } };
+  };
+  Q.describeBase = function (key) {
+    const b = Q.baseOf(key), p = b.prov;
+    if (!b.shipped) return p.origin === 'ai' ? 'the AI default box model' : 'the default box model (' + p.origin + ')';
+    return 'the shipped model (assets/overrides, ' + p.origin + (p.by ? ', by ' + p.by : '') + ')';
+  };
+  // what changed against what the edit started from, in words (the tweak note)
   Q.describeTweak = function (key) {
     const m = Q.models[key], cur = Q.current(key);
     if (!m || cur.type !== 'boxes') return '';
-    const base = m.defParts || [], parts = cur.parts;
+    const base = Q.baseOf(key).parts || [], parts = cur.parts;
     const same = (a, b) => a.c.every((v, i) => Math.abs(v - b.c[i]) < 1e-6) && a.h.every((v, i) => Math.abs(v - b.h[i]) < 1e-6);
     const eq3 = (x, y) => (!x && !y) || (!!x && !!y && x.every((v, i) => Math.abs(v - y[i]) < 1e-6));
     const sameCol = (a, b) => eq3(a.color, b.color) && eq3(a.mul, b.mul) && eq3(a.add, b.add) && eq3(a.teamMul, b.teamMul) && (a.slot | 0) === (b.slot | 0) &&
@@ -37,19 +56,27 @@
     if (recol) bits.push(recol + ' recoloured / re-flagged');
     if (parts.length > base.length) bits.push((parts.length - base.length) + ' added');
     if (parts.length < base.length) bits.push((base.length - parts.length) + ' removed');
-    return 'tweak of the AI default box model in the model editor' + (bits.length ? ': ' + bits.join(', ') : '');
+    return 'tweak of ' + Q.describeBase(key) + ' in the model editor' + (bits.length ? ': ' + bits.join(', ') : '');
   };
-  // the entry for a model as it is now (defaults: an edited built-in model is "ai" with a note; an import "third-party")
+  // the entry for a model as it is now. Edited: the origin chosen (Start from scratch: human; an import: what its
+  // dialog said), else a mesh import is third-party and a box tweak keeps the origin of what it started from (a tweak
+  // of a shipped human-made model stays human, of the AI default ai). Not edited: the repository's entry.
   Q.provFor = function (key) {
-    const p = Q.state.prov && Q.state.prov[key];
-    const e = Q.state.edits[key];
-    const origin = p && p.origin ? p.origin : (e && e.type === 'mesh' ? 'third-party' : 'ai');
-    const out = { origin, by: (p && p.by) || Q.defaultBy(), date: Q.today(), source: (p && p.source) || '', note: '' };
-    if (p && p.licence) out.licence = p.licence;
-    if (p && p.note && !p.auto) out.note = p.note;
-    else if (origin === 'ai') out.note = Q.describeTweak(key);
-    else if (origin === 'human') out.note = 'made from scratch in the model editor';
-    if (!out.source) out.source = origin === 'third-party' ? '' : 'Quark model editor';
+    const e = Q.state.edits[key], base = Q.baseOf(key);
+    if (!e) {
+      const b = base.prov, out = { origin: b.origin, by: b.by || '', date: b.date || '', source: b.source || '', note: b.note || '' };
+      if (b.licence) out.licence = b.licence;
+      return out;
+    }
+    const p = (Q.state.prov && Q.state.prov[key]) || {};
+    const origin = Q.ORIGINS.indexOf(p.origin) >= 0 ? p.origin : (e.type === 'mesh' ? 'third-party' : base.prov.origin);
+    const out = { origin, by: p.by || Q.defaultBy(), date: Q.today(), source: p.source || '', note: '' };
+    if (p.licence) out.licence = p.licence;
+    else if (!p.origin && origin === 'third-party' && e.type === 'boxes' && base.prov.licence) out.licence = base.prov.licence;
+    if (p.note && !p.auto) out.note = p.note;
+    else if (p.scratch) out.note = SCRATCH_NOTE;
+    else if (e.type === 'boxes') out.note = Q.describeTweak(key);
+    if (!out.source) out.source = origin !== 'third-party' ? 'Quark model editor' : (!p.origin && base.prov.origin === 'third-party' ? base.prov.source || '' : '');
     return out;
   };
   Q.setProv = function (key, fields) {
@@ -57,13 +84,26 @@
     Q.state.prov[key] = Object.assign({}, Q.state.prov[key] || {}, fields);
     Q.onStateChanged && Q.onStateChanged('prov', key);
   };
+  // a provenance record (a file's embedded one, a provenance.json entry) as the state it came from: a note this editor
+  // wrote itself stays automatic (rewritten as the model changes)
+  Q.provState = function (rec) {
+    if (!rec || typeof rec !== 'object' || Q.ORIGINS.indexOf(rec.origin) < 0) return null;
+    const note = typeof rec.note === 'string' ? rec.note : '';
+    const auto = typeof rec.auto === 'boolean' ? rec.auto : (!note || note === SCRATCH_NOTE || /^tweak of /.test(note));
+    const out = { origin: rec.origin, auto };
+    for (const k of ['by', 'source', 'licence']) if (typeof rec[k] === 'string' && rec[k]) out[k] = rec[k];
+    if (note && !auto) out.note = note;
+    if (rec.scratch === true || note === SCRATCH_NOTE) out.scratch = true;
+    return out;
+  };
+  // what this editor exported before for a model (this browser's log, else Quark\model-editor\provenance.json at build)
+  Q.knownProv = key => Q.provLog[Q.provId(key)] || (Q.exportedProv || {})[Q.provId(key)] || null;
   Q.originOf = function (key) {   // the library's badge
-    if (Q.isEdited(key)) return Q.provFor(key).origin;
-    const c = Q.current(key);
-    return c.shipped ? 'shipped' : 'ai';
+    return Q.provFor(key).origin;
   };
   // provenance.json: merged with `existing` (its other entries kept), one entry per id, the latest export wins
-  Q.mergeProvenance = function (existingText, keys) {
+  // (removeKeys: models whose file was moved to .bak: their entries go)
+  Q.mergeProvenance = function (existingText, keys, removeKeys) {
     let doc = null;
     try { doc = existingText ? JSON.parse(existingText) : null; } catch (e) { doc = null; }
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) doc = {};
@@ -71,10 +111,15 @@
     for (const [k, v] of Object.entries(doc)) if (k !== 'format' && k !== 'tool' && k !== 'items') out[k] = v;   // (unknown fields kept)
     Object.assign(out.items, doc.items && typeof doc.items === 'object' ? doc.items : {});
     for (const [id, v] of Object.entries(Q.provLog)) if (!keys || keys.indexOf(id) < 0) { if (!out.items[id]) out.items[id] = v; }
+    for (const key of removeKeys || []) delete out.items[Q.provId(key)];
     for (const key of keys || []) out.items[Q.provId(key)] = Q.provFor(key);
     return JSON.stringify(out, null, 2) + '\n';
   };
-  Q.recordProvenance = function (keys) { for (const k of keys) Q.provLog[Q.provId(k)] = Q.provFor(k); saveLog(); };
+  Q.recordProvenance = function (keys, removeKeys) {
+    for (const k of removeKeys || []) delete Q.provLog[Q.provId(k)];
+    for (const k of keys) Q.provLog[Q.provId(k)] = Q.provFor(k);
+    saveLog();
+  };
 
   // --- zip (stored) ----------------------------------------------------------------------------------------------------
   const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -114,7 +159,7 @@
     keys = keys || Q.exportList();
     const files = [], skipped = [];
     for (const k of keys) {
-      const p = Q.problems(k).find(x => x.level === 'error');
+      const p = Q.exportError(k);
       if (p) { skipped.push({ key: k, why: p.text }); continue; }
       files.push({ key: k, name: Q.exportPath(k), data: Q.gltf.exportBytes(k) });
     }
@@ -131,8 +176,8 @@
     Q.recordProvenance(done);
     return Object.assign(r, { provenance: prov });
   };
-  Q.downloadProvenance = function () {
-    const text = Q.mergeProvenance('', Q.exportList());
+  Q.downloadProvenance = function () {   // (the models an export would write: not those its errors block)
+    const text = Q.mergeProvenance('', Q.exportableList());
     Q.download(new Blob([text], { type: 'application/json' }), 'provenance.json');
     return text;
   };
@@ -200,8 +245,8 @@
         if (h.kind === 'file' && m && m[1].toLowerCase() === stem) { await moveToBak(d, n, h); report.moved.push(parts.concat(n).join('/')); }
       }
     }
-    const done = r.files.map(f => f.key);
-    Q.recordProvenance(done);
+    const done = r.files.map(f => f.key), gone = (opts.removeKeys || []).filter(k => done.indexOf(k) < 0);
+    Q.recordProvenance(done, gone);
     // the sidecar: into the model editor's folder when one is chosen (merged with the file there)
     report.provenance = null;
     const pd = opts.provDir || null;
@@ -210,7 +255,7 @@
         if (await Q.folderPermission(pd)) {
           let existing = '';
           try { existing = await (await (await pd.getFileHandle('provenance.json')).getFile()).text(); } catch (e) { }
-          const text = Q.mergeProvenance(existing, done);
+          const text = Q.mergeProvenance(existing, done, gone);
           await writeFile(pd, 'provenance.json', new TextEncoder().encode(text));
           report.provenance = pd.name + '/provenance.json';
         }
@@ -225,9 +270,36 @@
       return (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
     } catch (e) { return false; }
   };
-  // load every model override in a folder as edits (to continue work, or to see what the game will draw)
-  Q.loadFromFolder = async function (root) {
+  async function readJson(dir, parts) {
+    try {
+      let d = dir;
+      for (const p of parts.slice(0, -1)) { d = await childDir(d, p); if (!d) return null; }
+      return JSON.parse(await (await (await d.getFileHandle(parts[parts.length - 1])).getFile()).text());
+    } catch (e) { return null; }
+  }
+  // the provenance entries that describe the files of an overrides folder, most specific last: the repository's
+  // assets/provenance/*.json (the folder is a checkout's assets/overrides), the model editor folder's provenance.json
+  // (a folder export writes there), the folder's own provenance.json (a zip unzipped there)
+  Q.folderProvenance = async function (root, res, provDir) {
+    const items = {}, add = doc => { if (doc && doc.items && typeof doc.items === 'object') for (const [id, v] of Object.entries(doc.items)) if (v && typeof v === 'object') items[id.toLowerCase()] = v; };
+    if (/\/assets\/overrides$/.test(res.where)) {
+      const prov = await childDir(await childDir(root, 'assets') || root, 'provenance');
+      if (prov) for await (const [n, h] of prov.entries()) if (h.kind === 'file' && /\.json$/i.test(n)) add(await readJson(prov, [n]));
+    }
+    if (provDir) {
+      let ok = false;
+      try { ok = !provDir.queryPermission || (await provDir.queryPermission({ mode: 'read' })) === 'granted' || (await provDir.requestPermission({ mode: 'read' })) === 'granted'; } catch (e) { }
+      if (ok) add(await readJson(provDir, ['provenance.json']));
+    }
+    add(await readJson(res.dir, ['provenance.json']));
+    return items;
+  };
+  // load every model override in a folder as edits (to continue work, or to see what the game will draw). Each keeps
+  // its origin: the provenance in the file (this editor writes it into every .glb), else the folder's provenance
+  // entries, else this editor's own export log; a file with none is taken as what it started from (Q.provFor)
+  Q.loadFromFolder = async function (root, opts) {
     const res = await Q.resolveOverrides(root), list = await Q.scanModels(res.dir), loaded = [], failed = [];
+    const sidecar = await Q.folderProvenance(root, res, opts && opts.provDir);
     for (const f of list) {
       if (!Q.models[f.key]) { failed.push({ name: f.key, why: 'no such model in this export' }); continue; }
       if (f.ext === 'gltf' && list.some(o => o.key === f.key && o.ext === 'glb')) continue;   // (the game takes the .glb)
@@ -237,7 +309,7 @@
         if (f.ext === 'gltf') {   // external buffers next to it
           for await (const [n, h] of f.dir.entries()) if (h.kind === 'file' && /\.bin$/i.test(n)) files[n] = new Uint8Array(await (await h.getFile()).arrayBuffer());
         }
-        Q.importInto(f.key, bytes, f.name, files, { silentProv: true });
+        Q.importInto(f.key, bytes, f.name, files, { provFrom: rec => rec || sidecar[Q.provId(f.key).toLowerCase()] || Q.knownProv(f.key) });
         loaded.push(f.key);
       } catch (e) { failed.push({ name: f.key, why: String(e.message || e) }); }
     }
@@ -247,7 +319,9 @@
   // --- import ---------------------------------------------------------------------------------------------------------
   // a .glb / .gltf replaces model `key`: as boxes when it is a box model (extras.quark version 2, what the game draws
   // as boxes) or exactly boxes as the exporter lays them out (an older export of this editor), else as a mesh. A box
-  // list the game would refuse is refused here too (the game logs it and keeps the default).
+  // list the game would refuse is refused here too (the game logs it and keeps the default). Its provenance replaces
+  // the model's (one undo step with the boxes): opts.prov (the import dialog's), or opts.provFrom(the file's embedded
+  // record) -> a record (loading a folder); with neither, Q.provFor's defaults apply.
   Q.importInto = function (key, bytes, name, files, opts) {
     const mesh = Q.gltf.parse(bytes, name, files);   // (throws: shown to the user)
     const parts = Q.boxes.partsOf(mesh, key, false);
@@ -261,11 +335,10 @@
       Q.sources[id] = { name, bytes: self, mesh: files && Object.keys(files).length ? Q.gltf.parse(self, name) : mesh };
       Q.state.edits[key] = { type: 'mesh', src: id };
     }
-    if (!(opts && opts.silentProv)) {
-      const prov = Object.assign({}, opts && opts.prov);
-      if (!parts && !prov.origin) prov.origin = 'third-party';
-      if (Object.keys(prov).length) { Q.state.prov = Q.state.prov || {}; Q.state.prov[key] = Object.assign({}, Q.state.prov[key] || {}, prov); }
-    }
+    Q.state.prov = Q.state.prov || {};
+    let prov = opts && opts.prov ? Object.assign({}, opts.prov) : null;
+    if (!prov && opts && opts.provFrom) prov = Q.provState(opts.provFrom(mesh.provenance));
+    if (prov && prov.origin) Q.state.prov[key] = prov; else delete Q.state.prov[key];
     Q.endChange(key, 'import');
     return parts ? 'boxes' : 'mesh';
   };
@@ -344,7 +417,7 @@
     if (p.format !== 'quark-model-editor') throw new Error('not a model editor project');
     for (const [id, s] of Object.entries(p.sources || {})) Q.sources[id] = { name: s.name, bytes: Q.b64ToBytes(s.file) };
     Q.state = Object.assign({ edits: {}, prov: {} }, p.state);
-    Q.normalizeEdits();
+    Q.normalizeEdits(); Q.dropStaleProv();
     for (const k of Object.keys(Q.state.edits)) Q.bump(k);
     Q.clearHistory();
     return p;
