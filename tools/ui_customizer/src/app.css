@@ -75,8 +75,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .o-human { background: #1f4d2c; color: var(--good); }
 .o-ai { background: #3d2f4d; color: #c9a6ff; }
 .o-unknown { background: #3a3a3a; color: var(--muted); }
-.origins { display: flex; align-items: center; gap: 4px; padding: 2px 8px 4px; color: var(--muted); font-size: 11px; }
-.ochip { padding: 0 6px; border-radius: 8px; cursor: pointer; font-size: 10px; border: 1px solid transparent; }
+.origins { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; padding: 2px 8px 4px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.ochip { padding: 0 6px; border-radius: 8px; cursor: pointer; font-size: 10px; border: 1px solid transparent; white-space: nowrap; }
 .ochip.on { border-color: var(--accent); }
 .badge { font-size: 9px; padding: 0 4px; border-radius: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
 .badge.new, .badge.added { background: #1f4d2c; color: var(--good); }

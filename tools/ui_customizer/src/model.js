@@ -620,7 +620,7 @@ const QModel = (() => {
     else if ((m = /^ingame\/console(\/.*)?$/.exec(id))) id = 'console' + (m[1] || '');
     else if ((m = /^ingame\/chat(\/.*)?$/.exec(id))) id = 'hud/chat' + (m[1] || '');
     else if ((m = /^ingame\/scores(\/.*)?$/.exec(id))) id = 'hud/scoreboard' + (m[1] || '');
-    else if (/^ingame\/perf(\/|$)/.test(id)) id = 'hud/perf-overlay';
+    else if (/^ingame\/perf(mini)?(\/|$)/.test(id)) id = 'hud/perf-overlay';   // (F3's overlay and its mini latency line)
     else if (id === 'ingame') id = 'hud/widgets';
     return 'ui/' + id;
   }

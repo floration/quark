@@ -38,6 +38,9 @@ warning. Refresh = `install.py --extract` (or `extract/extract.py --gz` to also 
   as the game scales: 720p units times ui.s() = height / 720, text at max(1, round(2s)). The dump has positions, not the
   code's anchors, so widgets (or the panel around them) that hug a side edge stay on it, full-width bars stretch, and
   everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. Read only.
+- Everything autosaves in the browser. A page still as the game has it is saved as a reference to the dump (a few KB
+  per save, not 1.7 MB), so after a dump refresh the pages you never touched show the new game; Export layout writes
+  every page.
 - **Export spec**: the changes, then widget tables of the changed pages (the spec window switches to every page, about
   800 KB, or to no tables). Dialogs are in the page (the Quark Project app's Electron has no `window.prompt`).
 
