@@ -1,7 +1,8 @@
 @echo off
 rem Quark Project: starts the Supervisor Board server (127.0.0.1:8768) if it is not running, then the app window.
 rem   project-manager.cmd          Electron (electron\electron.exe, put there by setup.ps1)
-rem   project-manager.cmd --edge   Edge (else Chrome) as an --app window with its own profile (no Electron needed)
+rem   project-manager.cmd --edge   Edge (else Chrome) as an --app window with its own profile in
+rem                                %LOCALAPPDATA%\QuarkProject\edge-profile (no Electron needed)
 rem Installed by tools\project_manager\setup.ps1 into Quark\project-manager\ (SPEC.md section 4).
 setlocal EnableExtensions
 set "PM=%~dp0"
@@ -43,7 +44,10 @@ echo Neither Edge nor Chrome was found. Open %URL% in a browser.
 pause
 exit /b 1
 :have_browser
-start "" "%BROWSER%" --app=%URL% --user-data-dir="%PM%profile" --no-first-run --no-default-browser-check
+rem (the profile lives outside the Desktop, which may be OneDrive-synced)
+set "PROFILE=%LOCALAPPDATA%\QuarkProject\edge-profile"
+if not exist "%PROFILE%" mkdir "%PROFILE%" >nul 2>&1
+start "" "%BROWSER%" --app=%URL% --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check
 exit /b 0
 
 :up
