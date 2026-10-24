@@ -147,6 +147,7 @@ add_library(quark_core STATIC
   src/game/gamemodes.cpp
   src/game/netclient.cpp
   src/game/bots.cpp
+  src/game/botbrain.cpp
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
@@ -354,7 +355,7 @@ endif()
 
 if(QUARK_BUILD_TESTS)
   # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
-  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp src/client/lightmap.cpp)
+  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp src/client/lightmap.cpp)
   target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs

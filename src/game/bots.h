@@ -139,3 +139,7 @@ struct NavGraph {
 
 // Produces this tick's input for bot `id`.
 UserCmd botThink(Server& s, int id);
+// Tests: when set, botThink calls this instead (the lockstep tests run two brains side by side through it, each
+// calling botThinkDirect, which is botThink without the hook).
+extern UserCmd (*g_botThinkHook)(Server& s, int id);
+UserCmd botThinkDirect(Server& s, int id);

@@ -3048,6 +3048,7 @@ static void testBotAim(uint16_t& port) {
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
 int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map scores are below 7)
+int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
@@ -6968,6 +6969,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "brains") { g_fail += brainTests(TP(29150)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
@@ -6988,6 +6990,7 @@ int main(int argc, char** argv) {
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); }},

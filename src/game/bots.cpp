@@ -2,6 +2,7 @@
 #include <atomic>
 #include <thread>
 #include "bots.h"
+#include "botbrain.h"
 #include "../common/profile.h"
 #include "gamemodes.h"
 #include "server.h"
@@ -264,60 +265,6 @@ bool NavGraph::ready(const Map& m) {
 
 namespace {
 
-// Everything that makes one level play differently. Times are game seconds (or ms where marked).
-struct SkillParams {
-    // perception
-    float fov;          // rad: full horizontal view cone in which someone is noticed
-    float hearSteps;    // m: footsteps / dashes heard within this
-    float hearGun;      // m: gunfire heard within this
-    float soundErr;     // a heard position is off by about this fraction of the distance
-    float memory;       // s: a last-seen position is hunted / aimed at for this long
-    // reaction
-    float reactMs;      // newly seen target -> starts aiming at it
-    float reacquire;    // fraction of the reaction time for a target lost under a second ago
-    // aim
-    float visDelayMs;   // sees the target as it was this long ago...
-    float predict;      // ...and extrapolates this fraction of that delay from its perceived velocity
-    float velTau;       // s: perceived velocity catches up with a change of direction this fast
-    float speedJudge;   // sd of the perceived speed (fraction)
-    float trackBase;    // rad: tracking error sd on a still target
-    float trackPerRad;  // rad of extra error sd per rad/s the target crosses the view
-    float noiseTau;     // s: how slowly that error wanders
-    float flickErr;     // sd of where a flick lands, as a fraction of its size
-    float overshoot;    // mean overshoot of a flick (fraction)
-    float settleTau;    // s: the flick's error is corrected this fast
-    float trackGain;    // 1/s: correction gain while tracking
-    float turnRate;     // rad/s: top hand speed
-    float turnAccel;    // rad/s^2
-    float fireCone;     // rad: clicks when the crosshair looks this close to the target
-    float leadMean, leadSd; // projectile lead: fraction of the needed lead given, per engagement
-    float aimHeight;    // m above the feet
-    // movement
-    float strafe;       // share of fight time spent dodging sideways
-    float jukeRate;     // dodge direction changes per second
-    float jumpRate;     // fight jumps per second
-    float dashRate;     // fight dashes per second
-    bool bhop;          // bunny-hops on routes
-    float airStrafe;    // 0..1: how well it air-strafes while hopping
-    bool grapple;       // hooks onto ledges / across open ground
-    float runDash;      // dashes per second on long straight routes
-    bool weapons;       // picks weapons by range (else rifle only)
-};
-const SkillParams kSkills[BOT_SKILLS] = {
-    // beginner: slow to notice and react, aims late and wide, stands and shoots, walks everywhere
-    {1.55f, 12, 45, 0.30f, 1.5f,   450, 0.75f,   160, 0.00f, 0.40f, 0.30f, 0.100f, 0.150f, 0.25f, 0.22f, 0.12f, 0.30f, 7,  4.0f, 25,  0.15f, 0.30f, 0.35f, 1.0f,
-     0.35f, 1.0f, 0.0f, 0.0f, false, 0.0f, false, 0.0f, false},
-    // intermediate
-    {1.70f, 16, 55, 0.22f, 2.5f,   300, 0.65f,   120, 0.30f, 0.28f, 0.20f, 0.060f, 0.100f, 0.20f, 0.15f, 0.09f, 0.22f, 10, 6.0f, 40,  0.10f, 0.60f, 0.30f, 1.1f,
-     0.70f, 1.4f, 0.10f, 0.05f, false, 0.0f, false, 0.0f, true},
-    // advanced
-    {1.85f, 20, 65, 0.15f, 3.5f,   200, 0.55f,    90, 0.60f, 0.16f, 0.12f, 0.045f, 0.075f, 0.15f, 0.10f, 0.06f, 0.15f, 15, 9.0f, 70,  0.07f, 0.85f, 0.20f, 1.2f,
-     1.00f, 2.0f, 0.35f, 0.20f, true, 0.6f, true, 0.15f, true},
-    // expert: strong but human (a 150 ms reaction, 60 ms visual lag, misjudges jukes)
-    {2.00f, 24, 75, 0.10f, 5.0f,   150, 0.45f,    60, 0.80f, 0.09f, 0.07f, 0.030f, 0.055f, 0.12f, 0.06f, 0.03f, 0.09f, 22, 13.0f, 120, 0.04f, 0.95f, 0.12f, 1.3f,
-     1.00f, 2.6f, 0.60f, 0.35f, true, 0.9f, true, 0.35f, true},
-};
-
 float rnd(BotBrain& b) { // xorshift, 0..1
     b.rng ^= b.rng << 13; b.rng ^= b.rng >> 17; b.rng ^= b.rng << 5;
     return (b.rng & 0xFFFFFF) / 16777216.0f;
@@ -455,25 +402,24 @@ bool safeHook(const Server& s, const ServerPlayer& me, const Vec3& anchor) {
 }
 
 // ---- perception: look (view cone + line of sight) and listen, at 20 Hz of game time
-constexpr double kLookEvery = 0.05;
-void perceive(Server& s, int id, BotBrain& b, const SkillParams& sp, const Vec3& eye, double now) {
+void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3& eye, double now) {
     const float scale = s.bodyScale();
     for (int i = 0; i < kMaxPlayers; i++) {
         BotAwareness& a = b.aware[i];
         if (!isThreat(s, id, i)) { a.visible = false; continue; }
         const ServerPlayer& o = s.players_[i];
-        Vec3 chest = o.move.pos + Vec3(0, 1.1f * scale, 0), head = o.move.pos + Vec3(0, 1.6f * scale, 0);
+        Vec3 chest = o.move.pos + Vec3(0, sp.chestHeight * scale, 0), head = o.move.pos + Vec3(0, sp.headHeight * scale, 0);
         Vec3 d = chest - eye;
         float dist = length(d);
         bool vis = false;
-        if (dist < 150.0f) {
+        if (dist < sp.viewDist) {
             float off = std::fabs(angleDiff(yawOf(d), b.aimYaw));
             float pOff = std::fabs(std::asin(clampf(d.y / std::max(dist, 0.01f), -1, 1)) - b.aimPitch);
-            bool inCone = (off <= sp.fov * 0.5f && pOff < 0.95f) || dist < 1.2f; // (bumping into someone: felt)
+            bool inCone = (off <= sp.fov * 0.5f && pOff < sp.vertCone) || dist < sp.feelDist; // (bumping into someone: felt)
             if (inCone) vis = canSee(s, eye, head) || canSee(s, eye, chest);
             if (vis && !a.visible) { // just came into view: the reaction starts now (slower out of the corner of the eye)
-                float react = sp.reactMs * 0.001f * (1.0f + 0.5f * off / (sp.fov * 0.5f)) * (dist > 40 ? 1.25f : 1.0f);
-                if (now - a.seenAt < 1.0) react *= sp.reacquire; // lost behind cover a moment ago: expected back
+                float react = sp.reactMs * 0.001f * (1.0f + 0.5f * off / (sp.fov * 0.5f)) * evalBrainCurve(sp.c_reactDist, dist);
+                if (now - a.seenAt < sp.reacquireWindow) react *= sp.reacquire; // lost behind cover a moment ago: expected back
                 a.reactedAt = now + react;
             }
         }
@@ -486,15 +432,15 @@ void perceive(Server& s, int id, BotBrain& b, const SkillParams& sp, const Vec3&
         }
         // hearing: gunfire, running footsteps, dashes; the direction (and distance) only roughly
         float hs = std::sqrt(o.move.vel.x * o.move.vel.x + o.move.vel.z * o.move.vel.z);
-        bool gun = now - o.lastFire < 0.2 && dist < sp.hearGun;
-        bool steps = (o.move.flags & MF_ONGROUND) && hs > 3.0f && dist < sp.hearSteps;
-        bool dash = o.move.dashTimer > 0 && dist < sp.hearSteps * 1.5f;
+        bool gun = now - o.lastFire < sp.hearGunWindow && dist < sp.hearGun;
+        bool steps = (o.move.flags & MF_ONGROUND) && hs > sp.hearStepSpeed && dist < sp.hearSteps;
+        bool dash = o.move.dashTimer > 0 && dist < sp.hearSteps * sp.hearDashMult;
         if (gun || steps || dash) {
-            if (now - a.heardAt > 0.6) { // a new sound: a fresh guess at where it came from
+            if (now - a.heardAt > sp.soundNewWindow) { // a new sound: a fresh guess at where it came from
                 float err = dist * sp.soundErr;
                 a.heardPos = o.move.pos + Vec3(gauss(b) * err, 0, gauss(b) * err);
             } else { // the same source again: the guess firms up a little
-                a.heardPos = a.heardPos + (o.move.pos - a.heardPos) * 0.15f;
+                a.heardPos = a.heardPos + (o.move.pos - a.heardPos) * sp.soundRefine;
             }
             a.heardAt = now;
         }
@@ -502,7 +448,7 @@ void perceive(Server& s, int id, BotBrain& b, const SkillParams& sp, const Vec3&
 }
 
 // Where the bot wants to go when it isn't fighting: the mode's objective, else roam.
-Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
+Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp) {
     const ModeState& m = s.ms_;
     const ServerPlayer& me = s.players_[id];
     const Map& map = s.map_;
@@ -543,10 +489,10 @@ Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
             auto randomNode = [&]() { const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
                                       return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
             if (me.it) { // seek: wander everywhere, toward anything heard or the locator's last find (targets are chased by the fight code once seen)
-                if (now - me.locatedAt < 0.1) { b.goal = me.locatedPos; b.goalUntil = now + 6.0; }
+                if (now - me.locatedAt < sp.seekLocatorWindow) { b.goal = me.locatedPos; b.goalUntil = now + sp.seekLocatorGoal; }
                 for (int i = 0; i < kMaxPlayers; i++)
-                    if (isEnemy(s, id, i) && now - b.aware[i].heardAt < 1.0 && now - b.aware[i].seenAt > 1.0) { b.goal = b.aware[i].heardPos; b.goalUntil = now + 4.0; }
-                if (now > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) { b.goal = randomNode(); b.goalUntil = now + 12.0; }
+                    if (isEnemy(s, id, i) && now - b.aware[i].heardAt < sp.seekHeardWindow && now - b.aware[i].seenAt > sp.seekUnseen) { b.goal = b.aware[i].heardPos; b.goalUntil = now + sp.seekHeardGoal; }
+                if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) { b.goal = randomNode(); b.goalUntil = now + sp.seekWanderGoal; }
                 return b.goal;
             }
             // only what this runner has seen or heard of "it" (no knowing where it is through walls)
@@ -556,27 +502,27 @@ Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
             bool threat = false;
             if (it >= 0) {
                 const BotAwareness& a = b.aware[it];
-                float range = m.mode == MODE_TAG ? 30.0f : 18.0f;
-                if (now - a.seenAt < 0.8 && length(a.seenPos - me.move.pos) < range) { threat = true; itPos = a.seenPos; }
-                else if (now - a.heardAt < 0.8 && length(a.heardPos - me.move.pos) < range * 0.5f) { threat = true; itPos = a.heardPos; }
+                float range = m.mode == MODE_TAG ? sp.evadeRangeTag : sp.evadeRangeHide;
+                if (now - a.seenAt < sp.evadeFresh && length(a.seenPos - me.move.pos) < range) { threat = true; itPos = a.seenPos; }
+                else if (now - a.heardAt < sp.evadeFresh && length(a.heardPos - me.move.pos) < range * sp.evadeHeardMult) { threat = true; itPos = a.heardPos; }
             }
             if (threat && now > b.fleeUntil) { // run: the reachable-looking spot farthest from it
                 Vec3 best = b.goal;
                 float bestScore = -1e9f;
-                for (int k = 0; k < 12; k++) {
+                for (int k = 0; k < sp.fleeCandidates; k++) {
                     Vec3 c = randomNode();
-                    float sc = length(c - itPos) - 0.5f * length(c - me.move.pos);
+                    float sc = length(c - itPos) - sp.fleeNearWeight * length(c - me.move.pos);
                     if (sc > bestScore) { bestScore = sc; best = c; }
                 }
-                b.goal = best; b.goalUntil = now + 6.0; b.fleeUntil = now + 1.5 + (1.0f - sp.predict) * 0.8f;
+                b.goal = best; b.goalUntil = now + sp.fleeGoal; b.fleeUntil = now + sp.fleeCommit + (1.0f - sp.fleePredict) * sp.fleeHesitate;
                 return b.goal;
             }
             if (m.mode == MODE_HIDE && !threat) { // pick a hiding spot once and stay put
-                if (now > b.goalUntil) { b.goal = randomNode(); b.goalUntil = now + 90.0; }
-                if (length(b.goal - me.move.pos) < 1.2f) return me.move.pos;
+                if (now > b.goalUntil) { b.goal = randomNode(); b.goalUntil = now + sp.hideHold; }
+                if (length(b.goal - me.move.pos) < sp.hideArrive) return me.move.pos;
                 return b.goal;
             }
-            if (now > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) { b.goal = randomNode(); b.goalUntil = now + 10.0; }
+            if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) { b.goal = randomNode(); b.goalUntil = now + sp.evadeWanderGoal; }
             return b.goal;
         }
         default: break;
@@ -585,36 +531,31 @@ Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
     double bestT = -1e9; Vec3 lead;
     for (int i = 0; i < kMaxPlayers; i++) {
         const BotAwareness& a = b.aware[i];
-        if (now - a.seenAt >= sp.memory && now - a.heardAt >= 3.0) continue; // (nothing recent: skip the checks)
+        if (now - a.seenAt >= sp.memory && now - a.heardAt >= sp.huntHeardWindow) continue; // (nothing recent: skip the checks)
         if (!isEnemy(s, id, i)) continue;
         if (now - a.seenAt < sp.memory && a.seenAt > bestT) { bestT = a.seenAt; lead = a.seenPos; }
-        else if (now - a.heardAt < 3.0 && a.heardAt > bestT) { bestT = a.heardAt; lead = a.heardPos; }
+        else if (now - a.heardAt < sp.huntHeardWindow && a.heardAt > bestT) { bestT = a.heardAt; lead = a.heardPos; }
     }
-    if (bestT > -1e9 && length(lead - me.move.pos) > 2.0f) return lead;
+    if (bestT > -1e9 && length(lead - me.move.pos) > sp.arriveDist) return lead;
     if (map.spawns.empty()) return me.move.pos;
-    if (now > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) {
+    if (now > b.goalUntil || length(b.goal - me.move.pos) < sp.arriveDist) {
         const auto& spn = map.spawns[(size_t)(rnd(b) * map.spawns.size()) % map.spawns.size()];
         b.goal = spn.pos;
-        b.goalUntil = now + 8.0 + rnd(b) * 6.0;
+        b.goalUntil = now + sp.roamGoal + rnd(b) * sp.roamGoalRand;
     }
     return b.goal;
 }
 
 // Best weapon for the range that this mode allows (1v1 rulesets / duel lives restrict the pool).
 // Beginners stick to the rifle when they can; levels that can't lead well prefer hitscan.
-int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
-    static const int close[] = {WPN_SHOTGUN, WPN_KNIFE, WPN_LASER, WPN_BUBBLE, WPN_ROCKET, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER, WPN_SYRINGE};
-    static const int mid[]   = {WPN_ROCKET, WPN_LASER, WPN_RIFLE, WPN_STICKY, WPN_BUBBLE, WPN_CROSSBOW, WPN_SHOTGUN, WPN_SNIPER, WPN_KNIFE, WPN_SYRINGE};
-    static const int midNoLead[] = {WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_ROCKET, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SNIPER, WPN_KNIFE, WPN_SYRINGE};
-    static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
-    static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
-    static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
+int pickWeapon(const Server& s, const BrainParams& sp, float dist) {
     const uint16_t mask = s.weaponMask();   // (once: weaponAllowed works it out on every call)
     auto allowed = [mask](int w) { return !mask || (mask >> w & 1); };
     if (!sp.weapons && allowed(WPN_RIFLE)) return WPN_RIFLE;
-    bool lead = sp.leadMean >= 0.8f;
-    const int* order = dist < 7 ? close : dist < 18 ? (lead ? mid : midNoLead) : dist < 35 ? (lead ? far : farNoLead) : (lead ? vfar : farNoLead);
-    for (size_t k = 0; k < sizeof close / sizeof close[0]; k++) if (allowed(order[k])) return order[k];   // (every list has every weapon but the locator)
+    const bool lead = sp.canLead;
+    const BrainList& order = dist < sp.weaponClose ? sp.l_close : dist < sp.weaponMid ? (lead ? sp.l_mid : sp.l_midNoLead)
+                           : dist < sp.weaponFar ? (lead ? sp.l_far : sp.l_farNoLead) : (lead ? sp.l_vfar : sp.l_farNoLead);
+    for (int k = 0; k < order.n; k++) if (allowed(order.w[k])) return order.w[k];
     return WPN_RIFLE;
 }
 
@@ -626,7 +567,7 @@ thread_local int g_pathsThisTick = 0;
 // botThink's per-tick constants (exp, sqrt, lround of the tick length and the skill's parameters), worked out once
 // per tick rate and skill instead of on every tick. Exactly the expressions botThink used inline, on the same float
 // values: the results are bit-identical (no -ffast-math, -ffp-contract=off: CMakeLists.txt).
-const BotBrain::TickConsts& tickConsts(BotBrain& b, int skill, const SkillParams& sp, float dt, int rate) {
+const BotBrain::TickConsts& tickConsts(BotBrain& b, int skill, const BrainParams& sp, float dt, int rate) {
     BotBrain::TickConsts& c = b.tc;
     if (c.dt != dt || c.rate != rate || c.skill != skill) {
         c.dt = dt; c.rate = rate; c.skill = skill;
@@ -636,7 +577,7 @@ const BotBrain::TickConsts& tickConsts(BotBrain& b, int skill, const SkillParams
         c.noiseKK = std::sqrt(std::max(0.0f, 1.0f - a * a));
         c.settle = std::exp(-dt / sp.settleTau);
         auto p = [dt](float r) { return 1.0f - std::exp(-r * dt); };
-        c.pJump = p(sp.jumpRate); c.pDash = p(sp.dashRate); c.pRunDash = p(sp.runDash); c.pPulledDash = p(3.0f);
+        c.pJump = p(sp.jumpRate); c.pDash = p(sp.dashRate); c.pRunDash = p(sp.runDash); c.pPulledDash = p(sp.pulledDashRate);
         c.seenTicks = seenAgoTicks(sp.visDelayMs, rate);
         c.olderTicks = seenAgoTicks(sp.visDelayMs + 16.0f, rate);
         c.turnSteps = std::max(1, (int)std::lround(dt * 1000.0f));
@@ -653,11 +594,14 @@ const char* botSkillName(int skill) {
     return n[skill < 0 || skill >= BOT_SKILLS ? 1 : skill];
 }
 
-UserCmd botThink(Server& s, int id) {
+UserCmd (*g_botThinkHook)(Server&, int) = nullptr;
+UserCmd botThink(Server& s, int id) { return g_botThinkHook ? g_botThinkHook(s, id) : botThinkDirect(s, id); }
+
+UserCmd botThinkDirect(Server& s, int id) {
     ServerPlayer& me = s.players_[id];
     BotBrain& b = s.bots_[id];
     const int skill = b.skill < 0 || b.skill >= BOT_SKILLS ? 1 : b.skill;
-    const SkillParams& sp = kSkills[skill];
+    const BrainParams& sp = defaultBrainParams(skill);
     const double now = s.time(); const float dt = s.dt();
     if (b.script) return b.script(s, id);
     UserCmd cmd;
@@ -684,9 +628,9 @@ UserCmd botThink(Server& s, int id) {
 
     // --- perception (20 Hz of game time, each bot at its own phase)
     bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);
-    if (b.nextLook <= 0) b.nextLook = now + (id % 10) * (kLookEvery / 10); // spread the bots' looks over the 50 ms
+    if (b.nextLook <= 0) b.nextLook = now + (id % 10) * (sp.lookEvery / 10); // spread the bots' looks over the 50 ms
     if (now >= b.nextLook) {
-        b.nextLook = std::max(b.nextLook + kLookEvery, now + kLookEvery * 0.5);
+        b.nextLook = std::max(b.nextLook + sp.lookEvery, now + sp.lookEvery * 0.5);
         { QZONE("bot perceive"); perceive(s, id, b, sp, eye, now); }
         // Edges: the void or lava within a stumble, a knockback or a hop (maps that have them). Eight directions at
         // 1.5 and 3 m (near: no jumping about), and 5 m (a fight drifts away from it: a laser or a blast pushes you
@@ -709,8 +653,8 @@ UserCmd botThink(Server& s, int id) {
         float bestScore = 1e9f;
         for (int i = 0; i < kMaxPlayers && damageOn; i++) {
             if (!b.aware[i].visible || !isEnemy(s, id, i)) continue;
-            Vec3 d = s.players_[i].move.pos + Vec3(0, 1.1f, 0) - eye;
-            float sc = length(d) + std::fabs(angleDiff(yawOf(d), b.aimYaw)) * 12.0f - (i == b.target ? 6.0f : 0.0f);
+            Vec3 d = s.players_[i].move.pos + Vec3(0, sp.targetAimHeight, 0) - eye;
+            float sc = length(d) + std::fabs(angleDiff(yawOf(d), b.aimYaw)) * sp.targetAngleWeight - (i == b.target ? sp.targetKeepBonus : 0.0f);
             if (sc < bestScore) { bestScore = sc; best = i; }
         }
         if (best < 0 && b.target >= 0 && damageOn && isEnemy(s, id, b.target) && now - b.aware[b.target].seenAt < sp.memory) best = b.target;
@@ -718,7 +662,7 @@ UserCmd botThink(Server& s, int id) {
             b.target = best;
             b.engagedAt = -1;
             b.rejudgeAt = 0;
-            if (best >= 0) b.velEst = b.aware[best].seenVel * 0.5f;
+            if (best >= 0) b.velEst = b.aware[best].seenVel * sp.initVelEst;
         }
     }
     if (b.target >= 0 && !isEnemy(s, id, b.target)) { b.target = -1; b.engagedAt = -1; }
@@ -731,7 +675,7 @@ UserCmd botThink(Server& s, int id) {
         Vec3 toWp = b.waypoint - me.move.pos;
         bool steerNow = now >= b.nextSteer || b.needPath || toWp.x * toWp.x + toWp.z * toWp.z < 1.0f || length(goal - b.pathGoal) > 1.0f;
         if (navOk && steerNow) { // (route progress and the next waypoint: every 20 ms of game time, or when needed)
-            b.nextSteer = now + 0.02;
+            b.nextSteer = now + sp.steerEvery;
             int cur = s.nav_.nodeAt(me.move.pos + Vec3(0, 0.1f, 0));
             // follow the kept route: drop the surfaces already reached; off it (fell, pushed): find a new one
             if (cur >= 0 && cur != b.pathPrev) {
@@ -755,7 +699,7 @@ UserCmd botThink(Server& s, int id) {
                     if (!s.nav_.findPath(cur, b.pathGoalNode, b.path)) b.path.clear();
                     b.pathPrev = cur;
                     b.needPath = false;
-                    b.repathAt = now + 1.5 + rnd(b) * 1.0; // (a moving goal re-plans when its surface changes)
+                    b.repathAt = now + sp.repathEvery + rnd(b) * sp.repathRand; // (a moving goal re-plans when its surface changes)
                 }
             }
             b.waypoint = b.path.empty() || b.pathPrev < 0 ? goal : s.nav_.steer(me.move.pos, b.pathPrev, b.path, goal);
@@ -774,10 +718,10 @@ UserCmd botThink(Server& s, int id) {
             bool inSite = false;
             for (auto& site : s.map_.bombSites) inSite |= hull.overlaps(site);
             if (m.bombState == BOMB_CARRIED && m.bombCarrier == id && inSite) { buttons |= BTN_USE; dirOut = {}; }
-            if (m.bombState == BOMB_PLANTED && me.team != m.attackers && length(m.bombPos - me.move.pos) < 1.5f) { buttons |= BTN_USE; dirOut = {}; }
+            if (m.bombState == BOMB_PLANTED && me.team != m.attackers && length(m.bombPos - me.move.pos) < sp.defuseDist) { buttons |= BTN_USE; dirOut = {}; }
         }
-        if (m.mode == MODE_KOTH && s.map_.hasHill && hull.overlaps(s.map_.hill)) dirOut = dirOut * 0.3f;
-        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && hull.overlaps(s.map_.points[m.point])) dirOut = dirOut * 0.3f;
+        if (m.mode == MODE_KOTH && s.map_.hasHill && hull.overlaps(s.map_.hill)) dirOut = dirOut * sp.objectiveSlow;
+        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && hull.overlaps(s.map_.points[m.point])) dirOut = dirOut * sp.objectiveSlow;
     };
     const ModeState& ms = s.ms_;
     bool urgent = ms.mode == MODE_BOMB && ((ms.bombState == BOMB_CARRIED && ms.bombCarrier == id) ||
@@ -831,14 +775,14 @@ UserCmd botThink(Server& s, int id) {
             }
             perceived += b.velEst * (sp.visDelayMs * 0.001f * sp.predict);
         } else { // behind cover: where it should be by now if it kept going
-            perceived = ta->seenPos + ta->seenVel * (float)std::min(now - ta->seenAt, 0.5) * sp.predict;
+            perceived = ta->seenPos + ta->seenVel * (float)std::min(now - ta->seenAt, sp.huntPredictCap) * sp.predict;
         }
         Vec3 aimAt = perceived + Vec3(0, sp.aimHeight * s.bodyScale(), 0);
         float dist = length(aimAt - eye);
         int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
         if (now < me.backAt(w) && me.weapon != w) w = me.weapon; // thrown it (knife / syringe): use what we switched to
         const WeaponDef& wd = weaponDef(w);
-        bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.leadMean >= 0.8f && !isItMode(s.ms_.mode); // out of reach: throw it
+        bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < sp.knifeThrowMax && sp.canLead && !isItMode(s.ms_.mode); // out of reach: throw it
         if (throwKnife) {
             float tf = dist / kKnifeThrowSpeed;
             aimAt += b.velEst * (tf * b.leadFactor);
@@ -847,7 +791,7 @@ UserCmd botThink(Server& s, int id) {
         if (wd.projectile) {
             float tf = dist / wd.projSpeed;
             aimAt += b.velEst * (tf * b.leadFactor);
-            if (w == WPN_ROCKET && sp.leadMean >= 0.8f) aimAt.y = perceived.y + 0.1f; // splash at the feet
+            if (w == WPN_ROCKET && sp.canLead) aimAt.y = perceived.y + sp.rocketFeetHeight; // splash at the feet
             if (wd.gravity > 0) aimAt.y += 0.5f * wd.gravity * tf * tf * b.dropFactor;
         }
         Vec3 d = normalize(aimAt - eye);
@@ -861,17 +805,17 @@ UserCmd botThink(Server& s, int id) {
             b.engagedAt = now;
             float fy = angleDiff(tgtYaw, b.aimYaw), fp = tgtPitch - b.aimPitch;
             float amp = std::sqrt(fy * fy + fp * fp);
-            if (amp > 0.05f) {
-                float along = sp.overshoot + gauss(b) * sp.flickErr, across = gauss(b) * sp.flickErr * 0.5f;
+            if (amp > sp.flickMin) {
+                float along = sp.overshoot + gauss(b) * sp.flickErr, across = gauss(b) * sp.flickErr * sp.flickAcross;
                 b.flickYaw = (fy * along - fp * across);
-                b.flickPitch = (fp * along + fy * across) * 0.6f;
+                b.flickPitch = (fp * along + fy * across) * sp.flickPitch;
             }
         }
         // tracking error: a random process in game time (exact for any tick length)
         float sigma = sp.trackBase + sp.trackPerRad * std::fabs(angSpeed);
         const float a = tc.noiseA, kk = tc.noiseKK;
         b.noiseYaw = b.noiseYaw * a + sigma * kk * gauss(b);
-        b.noisePitch = b.noisePitch * a + sigma * 0.6f * kk * gauss(b);
+        b.noisePitch = b.noisePitch * a + sigma * sp.trackPitch * kk * gauss(b);
         const float settle = tc.settle;
         b.flickYaw *= settle; b.flickPitch *= settle;
         wantYaw = tgtYaw + b.noiseYaw + b.flickYaw;
@@ -890,7 +834,7 @@ UserCmd botThink(Server& s, int id) {
                                          s.map_.raycast(eye, angleForward(b.aimYaw, b.aimPitch), held.splashRadius * 0.8f) >= 0; };
             if (ready && !knifeOut && !ownBlast()) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
             if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
-            if (w == WPN_RIFLE && dist > 30.0f && sp.leadMean >= 0.8f) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
+            if (w == WPN_RIFLE && dist > sp.rifleScopeDist && sp.canLead) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
             if (me.weapon == WPN_STICKY) { // set off our stickies when the target (as seen) is in the blast, or one is stuck on an enemy
                 for (const auto& pr : s.projectiles_)
                     if (pr.active && pr.owner == id && pr.type == WPN_STICKY &&
@@ -906,7 +850,7 @@ UserCmd botThink(Server& s, int id) {
             if (me.weapon != w || me.fireLocked) cmd.buttons &= ~(BTN_FIRE | BTN_ALTFIRE);
             // advanced and up, a close-range weapon out: now and then hook the target to drag the fight in (the hook
             // latches onto an enemy it hits and pulls the two together). Held by holdHook below once it catches.
-            const bool closeWeapon = w == WPN_SHOTGUN || w == WPN_KNIFE || w == WPN_LASER || w == WPN_BUBBLE;
+            const bool closeWeapon = (sp.l_hookWeapons.mask >> w & 1) != 0;
             const float hookRange = kGrappleRange * moveTuning().m[MV_HOOK_RANGE];
             const bool onTarget = err < 0.35f / std::max(dist, 1.0f);   // (the hook needs the body under the crosshair)
             if (now < b.fightHookUntil) {
@@ -919,11 +863,11 @@ UserCmd botThink(Server& s, int id) {
                 }
             } else if (sp.grapple && closeWeapon && moveTuning().grapple && !(me.move.mods & MOVE_RUN_ONLY) && s.ms_.mode != MODE_RACE &&
                 !(me.move.flags & (MF_HOOKED | MF_HOOKHELD)) && me.move.hookCooldown <= 0 && now >= b.nextHookTry &&
-                dist > 7.0f && dist < hookRange * 0.8f) {
-                b.nextHookTry = now + 0.5;
+                dist > sp.fightHookMin && dist < hookRange * 0.8f) {
+                b.nextHookTry = now + sp.fightHookRetry;
                 // (both are pulled to the middle: that's where the pull ends, and it must be safe ground)
-                if (rnd(b) < (sp.airStrafe > 0.8f ? 0.5f : 0.3f) && safeHook(s, me, (me.move.pos + perceived) * 0.5f + Vec3(0, 1.0f, 0))) {
-                    b.fightHookUntil = now + 0.3;
+                if (rnd(b) < sp.fightHookChance && safeHook(s, me, (me.move.pos + perceived) * 0.5f + Vec3(0, 1.0f, 0))) {
+                    b.fightHookUntil = now + sp.fightHookHold;
                     if (onTarget) cmd.buttons |= BTN_GRAPPLE;
                 }
             }
@@ -932,10 +876,9 @@ UserCmd botThink(Server& s, int id) {
         Vec3 to = perceived - me.move.pos;
         to.y = 0;
         Vec3 toN = normalize(to);
-        float ideal = w == WPN_SHOTGUN ? 4.0f : w == WPN_SNIPER ? 40.0f : w == WPN_KNIFE ? 1.5f : w == WPN_LASER ? 12.0f
-                    : w == WPN_STICKY ? 10.0f : w == WPN_BUBBLE ? 7.0f : w == WPN_CROSSBOW ? 22.0f : w == WPN_RIFLE ? 18.0f : 14.0f;
+        float ideal = sp.t_idealRange[w < 0 || w >= 16 ? 0 : w];
         if (ta->visible) {
-            moveDir = toN * (dist > ideal + 3 ? 1.0f : dist < ideal - 3 ? -1.0f : 0.0f);
+            moveDir = toN * (dist > ideal + sp.rangeBand ? 1.0f : dist < ideal - sp.rangeBand ? -1.0f : 0.0f);
             // decisions at a fixed game-time rate (not per tick): strafe or plant your feet, change direction
             if (now >= b.strafeSwitchAt) {
                 b.strafeDir = rnd(b) < sp.strafe ? (rnd(b) < 0.5f ? -1.0f : 1.0f) : 0.0f;
@@ -943,13 +886,13 @@ UserCmd botThink(Server& s, int id) {
             }
             Vec3 side = Vec3(-toN.z, 0, toN.x) * b.strafeDir;
             if (b.nearEdge || b.edgeFar) { // fighting by a drop: dodge along it or away, never toward it, and step back from it
-                if (dot(side, b.edgeAway) < -0.2f) { b.strafeDir = -b.strafeDir; side = side * -1.0f; }
-                moveDir += b.edgeAway * (b.nearEdge ? 1.5f : 0.7f);
+                if (dot(side, b.edgeAway) < sp.edgeFlipDot) { b.strafeDir = -b.strafeDir; side = side * -1.0f; }
+                moveDir += b.edgeAway * (b.nearEdge ? sp.edgePushNear : sp.edgePushFar);
             }
             moveDir += side;
             // held by the target's grapple and wanting range (no close-range weapon): advanced and up dash out of it
-            if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > 6.0f && dashReady(me.move) && !b.nearEdge && !b.edgeFar &&
-                chance(b, 3.0f, tc.pPulledDash)) {
+            if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > sp.pulledDashMinRange && dashReady(me.move) && !b.nearEdge && !b.edgeFar &&
+                chance(b, sp.pulledDashRate, tc.pPulledDash)) {
                 Vec3 out = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f);
                 if (groundAlong(s, me.move.pos, out, 10.0f)) { moveDir = out; cmd.buttons |= BTN_DASH; }
             }
@@ -957,7 +900,7 @@ UserCmd botThink(Server& s, int id) {
             if ((me.move.flags & MF_ONGROUND) && !b.nearEdge && !b.edgeFar) {
                 if (chance(b, sp.jumpRate, tc.pJump)) cmd.buttons |= BTN_JUMP;
                 if (dashReady(me.move) && chance(b, sp.dashRate, tc.pDash)) {
-                    if (dist > 20) moveDir = toN;                                  // close in
+                    if (dist > sp.dashCloseDist) moveDir = toN;                                  // close in
                     else moveDir = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f); // dodge sideways
                     if (groundAlong(s, me.move.pos, normalize(moveDir), 10.0f)) cmd.buttons |= BTN_DASH;
                 }
@@ -984,14 +927,14 @@ UserCmd botThink(Server& s, int id) {
                 else if (!me.fireLocked && !(me.buttons & BTN_FIRE)) cmd.buttons |= BTN_FIRE;
             } else if (me.weapon != WPN_KNIFE) cmd.weapon = WPN_KNIFE;
         }
-        gain = 10.0f;
+        gain = sp.lookGain;
         bool idle = length(moveDir) < 1e-3f;
         if (!idle) wantYaw = yawOf(normalize(moveDir));
         wantPitch = 0;
         // look toward a fresh sound, else glance around now and then (that's how flanks get noticed)
         double heardT = -1e9; Vec3 heard;
         for (int i = 0; i < kMaxPlayers; i++)
-            if (b.aware[i].heardAt > heardT && now - b.aware[i].heardAt < 1.2 && isThreat(s, id, i)) { heardT = b.aware[i].heardAt; heard = b.aware[i].heardPos; }
+            if (b.aware[i].heardAt > heardT && now - b.aware[i].heardAt < sp.soundLookWindow && isThreat(s, id, i)) { heardT = b.aware[i].heardAt; heard = b.aware[i].heardPos; }
         bool spotted = b.target >= 0 && ta->visible; // seen, still reacting: eyes stay on it, not on sounds
         if (spotted) {
             wantYaw = b.aimYaw;
@@ -1000,10 +943,10 @@ UserCmd botThink(Server& s, int id) {
             Vec3 d = heard + Vec3(0, 1.1f, 0) - eye;
             wantYaw = yawOf(d);
             wantPitch = std::asin(clampf(d.y / std::max(length(d), 0.01f), -1, 1));
-            gain = 14.0f;
+            gain = sp.soundGain;
         } else {
             if (now >= b.nextGlance) { // (moving: off the route's heading; standing: a new direction to face)
-                float off = (rnd(b) * 2 - 1) * (idle ? 2.6f : 1.6f);
+                float off = (rnd(b) * 2 - 1) * (idle ? sp.glanceIdle : sp.glanceMoving);
                 b.glanceYaw = idle ? wrapAngle(b.aimYaw + off) : off;
                 b.glanceUntil = now + (idle ? 1.0 + rnd(b) * 1.5 : 0.35 + rnd(b) * 0.4);
                 b.nextGlance = now + 1.5 + rnd(b) * 3.0;
@@ -1018,14 +961,13 @@ UserCmd botThink(Server& s, int id) {
                 Vec3 d = normalize(b.hookAnchor - eye);
                 wantYaw = yawOf(d);
                 wantPitch = std::asin(clampf(d.y, -1, 1));
-                gain = 25.0f;
+                gain = sp.hookAimGain;
                 // (the hook needs the aim on the anchor before it's fired)
                 if (me.move.flags & MF_HOOKED) holdHook();
-                else if (std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch) < 0.08f) cmd.buttons |= BTN_GRAPPLE;
+                else if (std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch) < sp.hookAimTol) cmd.buttons |= BTN_GRAPPLE;
             } else if (me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
-                b.nextHookTry = now + (grappleOnly ? 0.2 : sp.airStrafe > 0.8f ? 0.25 : 0.5); // (expert: hooks around all the time)
+                b.nextHookTry = now + (grappleOnly ? sp.hookRetryGrappleOnly : sp.hookRetry); // (expert: hooks around all the time)
                 // the next waypoint if it's a ledge up, else the end of the route if it's a long open stretch
-                bool expertish = sp.airStrafe > 0.8f;
                 // (and, on maps with pits, a few surfaces further along the route: the line to the route's end often
                 // crosses a pit where one to a point along the route doesn't)
                 Vec3 cands[5] = {b.waypoint, b.pathGoal};
@@ -1040,7 +982,7 @@ UserCmd botThink(Server& s, int id) {
                     const Vec3& cand = cands[ci];
                     Vec3 off = cand - me.move.pos;
                     float rise = off.y, hd = std::sqrt(off.x * off.x + off.z * off.z);
-                    bool want = grappleOnly ? hd > 2.0f : (rise > (expertish ? 1.2f : 2.0f) && hd < 30.0f) || (hd > (expertish ? 8.0f : 14.0f) && rise > -3.0f);
+                    bool want = grappleOnly ? hd > 2.0f : (rise > sp.hookRise && hd < sp.hookRiseReach) || (hd > sp.hookFlat && rise > sp.hookFlatDrop);
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
@@ -1064,7 +1006,7 @@ UserCmd botThink(Server& s, int id) {
         const float h = tc.turnH, dv = tc.turnDv;
         for (int k = 0; k < steps; k++) {
             float diff = wrap ? angleDiff(want, ang) : want - ang;
-            float brake = std::sqrt(2.0f * sp.turnAccel * std::fabs(diff)) * 0.85f;
+            float brake = std::sqrt(2.0f * sp.turnAccel * std::fabs(diff)) * sp.handBrake;
             float corr = clampf(diff * gain, -brake, brake);
             float target = clampf(ff + corr, -sp.turnRate, sp.turnRate);
             vel += clampf(target - vel, -dv, dv);
@@ -1086,7 +1028,7 @@ UserCmd botThink(Server& s, int id) {
         moveDir = moveDir / ml;
         Vec3 wish = moveDir;
         bool onGround = (me.move.flags & MF_ONGROUND) != 0;
-        bool hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > 3.0f &&
+        bool hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > sp.bhopMinDist &&
                        !(me.move.flags & MF_HOOKED);   // (hooked: no air-strafing off the pull)
         // air-strafe: push at the angle to the current velocity that gains speed, curving toward the route
         Vec3 hv = {me.move.vel.x, 0, me.move.vel.z};
@@ -1128,12 +1070,12 @@ UserCmd botThink(Server& s, int id) {
         if (hopping) cmd.buttons |= BTN_JUMP;
         // long straight stretch: dash along it (levels that would), when it lands on something
         if (!fighting && onGround && sp.runDash > 0 && dashReady(me.move) && !(me.move.mods & MOVE_RUN_ONLY) &&
-            length(b.waypoint - me.move.pos) > 9.0f && dot(moveDir, fwd) > 0.95f && chance(b, sp.runDash, tc.pRunDash)) {
+            length(b.waypoint - me.move.pos) > sp.runDashMinDist && dot(moveDir, fwd) > sp.runDashStraight && chance(b, sp.runDash, tc.pRunDash)) {
             if (groundAlong(s, me.move.pos, moveDir, 12.0f)) {
                 cmd.buttons |= BTN_DASH;
                 // experts with the room make it a dash jump: jump with it and keep the dash's 24 m/s through a
                 // jump's ~16 m flight (ground all the way, and the waypoint further than that)
-                dashJump = b.skill == BOT_EXPERT && hopping && length(b.waypoint - me.move.pos) > 20.0f &&
+                dashJump = sp.dashJump && hopping && length(b.waypoint - me.move.pos) > sp.dashJumpMinDist &&
                            groundAlong(s, me.move.pos, moveDir, 20.0f);
             }
         }
@@ -1178,16 +1120,16 @@ UserCmd botThink(Server& s, int id) {
 
     // unstick: if we've barely moved for a while, hop and sidestep; when just roaming, pick somewhere else
     if (now >= b.stuckCheckAt) {
-        if (ml > 1e-3f && length(me.move.pos - b.lastPos) < 0.5f && b.target < 0) {
+        if (ml > 1e-3f && length(me.move.pos - b.lastPos) < sp.stuckDist && b.target < 0) {
             b.strafeDir = rnd(b) < 0.5f ? -1.0f : 1.0f;
             if (!b.nearEdge) cmd.buttons |= BTN_JUMP;
             else if (dot(Vec3(-moveDir.z, 0, moveDir.x) * b.strafeDir, b.edgeAway) < 0) b.strafeDir = -b.strafeDir; // by a drop: no hop, sidestep away from it
-            b.unstickUntil = now + 0.8;
+            b.unstickUntil = now + sp.unstickTime;
             b.goalUntil = 0;
             b.needPath = true;
         }
         b.lastPos = me.move.pos;
-        b.stuckCheckAt = now + 1.5;
+        b.stuckCheckAt = now + sp.stuckEvery;
     }
     // jump with our own dash on the floor (a hop's landing, a fight jump) turns it into a dash jump: a 16 m flight
     // at dash speed, past what the dash checked for ground. Only when meant.
