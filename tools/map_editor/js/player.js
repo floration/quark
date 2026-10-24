@@ -3,9 +3,24 @@
 // (0.8 x 0.8 x 1.8 m, crouched 1.2 m) with its head box (top 20 % of the height, 45 % of the width) and eye height.
 import * as THREE from "../vendor/three.module.min.js";
 import { el, fill, check, select } from "./util.js";
-import { teamColor } from "./view.js";
 
 const HULL = { w: 0.8, h: 1.8, ch: 1.2, eye: 1.6, ceye: 1.05 };
+// the figures' geometry and materials, made once per pose and shared by every figure (a redraw makes no GPU buffers)
+const SHARED = {};
+function parts(crouch) {
+  const key = crouch ? "c" : "s";
+  if (SHARED[key]) return SHARED[key];
+  const H = crouch ? HULL.ch : HULL.h, k = crouch ? HULL.ch / HULL.h : 1, hw = HULL.w * 0.45, hh = H * 0.2;
+  const body = [[0.5, 0.85, 0.3, 0.425, 0], [0.62, 0.6, 0.34, 1.15, 0], [0.34, 0.34, 0.34, 1.62, 0], [0.26, 0.06, 0.04, 1.64, -0.18]]
+    .map(([w, h, d, y, z]) => new THREE.BoxGeometry(w, h * k, d).translate(0, y * k, z));
+  return (SHARED[key] = {
+    body, hull: new THREE.EdgesGeometry(new THREE.BoxGeometry(HULL.w, H, HULL.w).translate(0, H / 2, 0)),
+    head: new THREE.EdgesGeometry(new THREE.BoxGeometry(hw, hh, hw).translate(0, H - hh / 2, 0)),
+    eye: new THREE.BoxGeometry(0.9, 0.02, 0.02).translate(0, crouch ? HULL.ceye : HULL.eye, -0.41),
+  });
+}
+const MATS = { body: new THREE.MeshLambertMaterial({ color: 0x8c96a8 }), hull: new THREE.LineBasicMaterial({ color: 0x7cf0ff }), hullSel: new THREE.LineBasicMaterial({ color: 0xffc040 }),
+  head: new THREE.LineBasicMaterial({ color: 0xff5a5a }), eye: new THREE.MeshBasicMaterial({ color: 0xffe14d }) };
 
 // A small glTF 2.0 reader for what exportassets writes: one mesh, triangle primitives with POSITION / NORMAL /
 // COLOR_0 / indices, one base64 buffer.
@@ -44,7 +59,6 @@ export class Player {
     this.panel = document.getElementById("rp-player");
     this.doc.on("map", (keys, live) => { if (!keys || keys.some(k => k === "spawns" || k === "sc.figures" || k === "*")) this.redraw(); });
     this.doc.on("open", () => this.redraw());
-    this.doc.on("selection", () => this.redraw());
     this.render();
   }
   async model(name) {
@@ -54,7 +68,7 @@ export class Player {
   }
   drop(p, yaw) {
     const d = this.doc; let idx = -1;
-    d.edit("add figure", ["sc.figures"], (m, sc) => { sc.figures.push({ pos: p.map(v => Math.round(v * 1000) / 1000), yaw: yaw + Math.PI, model: this.opts.model, crouch: this.opts.crouch }); idx = sc.figures.length - 1; });
+    d.edit("add figure", ["sc.figures"], (m, sc) => { sc.figures.push({ pos: p.map(v => Math.round(v * 1000) / 1000), yaw: yaw + Math.PI, model: this.opts.model, crouch: this.opts.crouch }); idx = sc.figures.length - 1; }, { touch: [] });
     d.select([{ k: "figure", i: idx }]);
   }
   render() {
@@ -70,7 +84,7 @@ export class Player {
         el("label", {}, ""), check("a figure at every spawn", o.atSpawns, v => { o.atSpawns = v; this.redraw(); })),
       el("div", { class: "btnrow" },
         el("button", { onclick: () => this.app.setTool("figure") }, "Player tool"),
-        el("button", { onclick: () => { const d = this.doc; if (d.sidecar.figures.length) d.edit("clear figures", ["sc.figures"], (m, sc) => { sc.figures = []; }); } }, "Remove all figures")),
+        el("button", { onclick: () => { const d = this.doc; if (d.sidecar.figures.length) d.edit("clear figures", ["sc.figures"], (m, sc) => { sc.figures = []; }, { touch: [] }); } }, "Remove all figures")),
       this.models.length ? null : el("p", { class: "faint" }, "No player models in this build (models/player/*.gltf comes from quark_tests exportassets): figures show the hull."),
       el("h3", {}, "Scale"),
       el("p", {}, "The floor grid is 1 m (8 m lines stronger), the bar in the corner is to scale at the screen's centre. Step-up 0.55 m, a jump about 1.25 m, the in-game editor's grid 1/8 m .. 4 m."));
@@ -78,30 +92,15 @@ export class Player {
   async figure(f, selected) {
     const g = new THREE.Group();
     g.position.fromArray(f.pos); g.rotation.y = f.yaw || 0;
-    const crouch = !!f.crouch, H = crouch ? HULL.ch : HULL.h, col = teamColor(f.team || "any");
+    const crouch = !!f.crouch, P = parts(crouch);
     const mdl = await this.model(f.model || this.opts.model);
     if (mdl) {
       const m = mdl.clone();
       if (crouch) m.scale.y = HULL.ch / HULL.h;
       g.add(m);
-    } else {   // a plain body: legs, torso, head, facing -z like the models
-      const mat = new THREE.MeshLambertMaterial({ color: 0x8c96a8 });
-      const k = crouch ? HULL.ch / HULL.h : 1;
-      const part = (w, h, d, y, z = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h * k, d), mat); b.position.set(0, y * k, z); g.add(b); };
-      part(0.5, 0.85, 0.3, 0.425); part(0.62, 0.6, 0.34, 1.15); part(0.34, 0.34, 0.34, 1.62);
-      part(0.26, 0.06, 0.04, 1.64, -0.18);
-    }
-    if (this.opts.hitbox) {
-      const hull = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(HULL.w, H, HULL.w).translate(0, H / 2, 0)), new THREE.LineBasicMaterial({ color: selected ? 0xffc040 : 0x7cf0ff }));
-      const hw = HULL.w * 0.45, hh = H * 0.2;
-      const head = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(hw, hh, hw).translate(0, H - hh / 2, 0)), new THREE.LineBasicMaterial({ color: 0xff5a5a }));
-      g.add(hull, head);
-    }
-    if (this.opts.eye) {
-      const ey = crouch ? HULL.ceye : HULL.eye;
-      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 0.02).translate(0, ey, -0.41), new THREE.MeshBasicMaterial({ color: 0xffe14d }));
-      g.add(eye);
-    }
+    } else for (const b of P.body) g.add(new THREE.Mesh(b, MATS.body));   // a plain body: legs, torso, head, facing -z like the models
+    if (this.opts.hitbox) g.add(new THREE.LineSegments(P.hull, selected ? MATS.hullSel : MATS.hull), new THREE.LineSegments(P.head, MATS.head));
+    if (this.opts.eye) g.add(new THREE.Mesh(P.eye, MATS.eye));
     return g;
   }
   async redraw() {
@@ -113,7 +112,7 @@ export class Player {
     if (this.opts.atSpawns) for (const s of d.map.spawns) list.push(this.figure({ pos: s.pos, yaw: s.yaw, team: s.team, model: this.opts.model, crouch: this.opts.crouch }, false));
     const objs = await Promise.all(list);
     if (token !== this.token) return;
-    for (const c of L.children.slice()) L.remove(c);   // (small: the models' geometry is shared with the cache, so nothing is disposed)
+    for (const c of L.children.slice()) L.remove(c);   // (nothing to dispose: every geometry and material is shared, the models' with the cache)
     for (const o of objs) L.add(o);
     this.view.redraw();
   }

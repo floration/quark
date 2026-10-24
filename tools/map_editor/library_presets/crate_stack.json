@@ -1,0 +1,38 @@
+{
+ "kind": "object",
+ "name": "crate stack",
+ "note": "1.2 m crates stacked up",
+ "def": {
+  "unit": [
+   1.2,
+   1.2,
+   1.2
+  ],
+  "axes": [
+   false,
+   true,
+   false
+  ],
+  "spacing": [
+   1.2,
+   1.2,
+   1.2
+  ],
+  "boxes": [
+   {
+    "mat": 1,
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     1.2,
+     1.2,
+     1.2
+    ]
+   }
+  ],
+  "name": "crate stack"
+ }
+}

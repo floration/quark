@@ -68,7 +68,7 @@ Json Analysis::objectives(int mode, Json& routes, bool withPaths) {
     switch (mode) {
         case MODE_BOMB:
             for (size_t k = 0; k < m.bombSites.size(); k++) {
-                snprintf(nb, sizeof nb, "bomb site %zu", k + 1);
+                snprintf(nb, sizeof nb, "site %c", char('A' + k));   // the game's names: SITE A, POINT A
                 objective = nb;
                 float da = sideTo(spA, "attack", nb, &m.bombSites[k], Vec3()), db = sideTo(spB, "defend", nb, &m.bombSites[k], Vec3());
                 add(nb, "site", floorCentre(m.bombSites[k]), da, db, "a", "b");

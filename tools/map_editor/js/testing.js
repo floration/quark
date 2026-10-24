@@ -5,6 +5,7 @@ import { el, fill, $, select, check, numInput, banner, fmtS, fmt } from "./util.
 import { segmentMesh, polylineSegs, heat, label, dispose } from "./lines.js";
 import { MODES } from "./fallback_parse.js";
 import { TEAMS } from "./panels.js";
+import { objectiveName } from "./doc.js";
 
 export class Testing {
   constructor(app) {
@@ -82,14 +83,26 @@ export class Testing {
       for (const r of R) add(r.path, r.seconds || 0, maxS);
       for (const o of this.metrics.objectives || []) {
         if (!o.pos || (this.onlyObjective && o.name !== this.onlyObjective)) continue;
-        const s = label(o.name + "  A " + fmtS(o.attackers) + " / D " + fmtS(o.defenders), "#ffffff", 0.7);
-        s.position.set(o.pos[0], o.pos[1] + 5, o.pos[2]); L.add(s);
+        // over the zone's own label (POINT A ...) when it has one: same spot, drawn one label higher on screen
+        const s = label(o.name + "  A " + fmtS(o.attackers) + " / D " + fmtS(o.defenders), "#ffffff", 0.7), z = this.zoneOf(o.name);
+        if (z) { s.position.set((z.min[0] + z.max[0]) / 2, z.max[1] + 0.7, (z.min[2] + z.max[2]) / 2); s.center.set(0.5, -0.9); }
+        else s.position.set(o.pos[0], o.pos[1] + 5, o.pos[2]);
+        L.add(s);
       }
     }
     if (this.route && this.route.path) add(this.route.path, this.route.seconds || 1, this.route.seconds || 1);
     if (segs.length) L.add(segmentMesh(segs, { width: 0.22 }));
     if (this.routeMarks) for (const p of this.routeMarks) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), new THREE.MeshBasicMaterial({ color: 0x9cf })); s.position.fromArray(p); L.add(s); }
     this.view.redraw();
+  }
+
+  zoneOf(name) {   // "site A" / "point B" / "hill" / "checkpoint 2" -> that box
+    const m = this.doc.map, r = /^(site|point|checkpoint) (\w+)$/.exec(name || "");
+    if (name === "hill") return m.hill;
+    if (!r) return null;
+    const list = { site: m.sites, point: m.points, checkpoint: m.checkpoints }[r[1]];
+    const i = /^\d+$/.test(r[2]) ? +r[2] - 1 : r[2].charCodeAt(0) - 65;
+    return list[i] || null;
   }
 
   // ---- the route tool (two clicks)
@@ -160,10 +173,10 @@ export class Testing {
   }
   objectiveNames() {
     const m = this.doc.map, n = [];
-    m.sites.forEach((_, i) => n.push("site " + (i + 1)));
+    m.sites.forEach((_, i) => n.push(objectiveName(m, "site", i)));
     if (m.hill) n.push("hill");
-    m.points.forEach((_, i) => n.push("point " + String.fromCharCode(65 + i)));
-    m.checkpoints.forEach((_, i) => n.push("checkpoint " + (i + 1)));
+    m.points.forEach((_, i) => n.push(objectiveName(m, "point", i)));
+    m.checkpoints.forEach((_, i) => n.push(objectiveName(m, "checkpoint", i)));
     if (m.path.length) n.push("cart", "cart start", "cart end");
     for (const o of (this.metrics && this.metrics.objectives) || []) if (!n.includes(o.name)) n.push(o.name);
     return n;
@@ -217,7 +230,7 @@ export class Testing {
       out.push(tbl);
       out.push(el("p", { class: "faint" }, "diff = attackers - defenders arrival (the map report's bar: within -1 .. +1 s). Routes: green fast .. red slow."));
       const N = this.metrics.numbers || {};
-      if (Object.keys(N).length) out.push(el("table", { class: "t" }, Object.entries(N).filter(([k, v]) => v === null || typeof v !== "object").map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", { class: "n" }, typeof v === "number" ? fmt(v, 2) : JSON.stringify(v))))));
+      if (Object.keys(N).length) out.push(el("table", { class: "t" }, Object.entries(N).filter(([k, v]) => v === null || typeof v !== "object").map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", { class: "n" }, typeof v === "number" ? fmt(v, 2) : typeof v === "string" ? v : JSON.stringify(v))))));
     }
     // route
     out.push(el("h3", {}, "Route", el("span", { class: "spacer" }), el("button", { disabled: !tool, onclick: () => { this.app.setTool("route"); this.routeA = null; } }, "Pick two points")));

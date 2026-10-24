@@ -109,14 +109,36 @@ D.mountPanel = function (root, api) {
     }
 
     // ---- actions
+    // apply / remove / preview run in a Web Worker (js/worker_deco.js) when the page can make one: the page stays
+    // responsive while Midtown regenerates. Without one (node tests, an old browser) they run here.
+    let worker = null, wseq = 0, mapGen = 0;
+    const pending = new Map();
+    function engine(op, ...args) {
+        if (worker === null && typeof Worker !== 'undefined') {
+            try {
+                worker = new Worker('js/worker_deco.js');
+                worker.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.result); };
+                worker.onerror = (e) => { console.warn('decoration worker failed, running on the page:', e.message); worker = false; for (const [, p] of pending) p.retry(); pending.clear(); };
+            } catch (e) { worker = false; }
+        }
+        if (!worker) return Promise.resolve().then(() => D[op](...args));
+        return new Promise((resolve, reject) => {
+            const id = ++wseq;
+            pending.set(id, { resolve, reject, retry: () => { try { resolve(D[op](...args)); } catch (e) { reject(e); } } });
+            worker.postMessage({ id, op, args });
+        });
+    }
+    // runs fn (may be async) once; a map change while it ran (the result was made from the old map) drops its result
     function run(label, fn) {
         if (S.busy) return;
-        S.busy = true; status.textContent = label + '...';
-        setTimeout(() => {
-            try { fn(); } catch (e) { S.report = 'error: ' + (e && e.stack || e); console.error(e); }
+        S.busy = true; status.textContent = label + '... (the editor stays usable)';
+        const g0 = mapGen;
+        setTimeout(async () => {
+            try { await fn(() => mapGen === g0); } catch (e) { S.report = 'error: ' + (e && e.stack || e); console.error(e); }
             S.busy = false; status.textContent = ''; render();
         }, 10);
     }
+    const STALE = 'the map changed while this ran: nothing was applied, run it again';
     function reportText(rep, extra) {
         if (!rep) return '';
         const lines = [];
@@ -130,21 +152,24 @@ D.mountPanel = function (root, api) {
         for (const w of rep.warnings || []) lines.push('! ' + w);
         return lines.join('\n');
     }
-    const previewRules = (ids) => run('Preview', () => {
-        const p = D.preview(api.getMap(), S.deco, ids);
+    const previewRules = (ids) => run('Preview', async (fresh) => {
+        const p = await engine('preview', api.getMap(), S.deco, ids);
+        if (!fresh()) { S.report = STALE; return; }
         drawPreview(p.add, p.remove);
         S.report = reportText(p.report, 'preview: +' + p.add.length + ' boxes, -' + p.remove.length + ' (green: added, red: taken out)');
     });
-    const applyRules = (ids, label) => run(label, () => {
+    const applyRules = (ids, label) => run(label, async (fresh) => {
         clearPreview(false);
-        const a = D.apply(api.getMap(), S.deco, ids);
+        const a = await engine('apply', api.getMap(), S.deco, ids);
+        if (!fresh()) { S.report = STALE; return; }
         S.deco = a.deco; save();
         api.setMap(a.map, label);
         S.report = reportText(a.report, label + ': +' + a.added.length + ' boxes, -' + a.removed.length + (a.missing.length ? ', ' + a.missing.length + ' recorded boxes were no longer in the map (moved or deleted: left alone)' : ''));
     });
-    const removeRules = (ids, label) => run(label, () => {
+    const removeRules = (ids, label) => run(label, async (fresh) => {
         clearPreview(false);
-        const a = D.remove(api.getMap(), S.deco, ids);
+        const a = await engine('remove', api.getMap(), S.deco, ids);
+        if (!fresh()) { S.report = STALE; return; }
         S.deco = a.deco; save();
         api.setMap(a.map, label);
         S.report = label + ': -' + a.removed.length + ' boxes' + (a.missing.length ? ', ' + a.missing.length + ' no longer in the map' : '');
@@ -321,10 +346,12 @@ D.mountPanel = function (root, api) {
                 el('button', { class: 'primary', onclick: () => applyRules([r.id], 'Decorate: ' + r.name) }, r.generated.length ? 'Regenerate' : 'Apply'),
                 el('button', { disabled: !r.generated.length, onclick: () => removeRules([r.id], 'Remove decoration: ' + r.name) }, 'Remove'),
                 el('button', { class: 'mini', title: 'select the boxes this rule made', disabled: !r.generated.length, onclick: () => { const ix = D.decoIndices(api.getMap(), S.deco)[r.id] || []; api.select({ brushes: ix, groups: [] }); } }, 'Select made'),
-                el('button', { class: 'mini', title: 'apply this rule to the current selection only (once; the rule keeps its target)', onclick: () => run('Apply to selection', () => {
+                el('button', { class: 'mini', title: 'apply this rule to the current selection only (once; the rule keeps its target)', onclick: () => run('Apply to selection', async (fresh) => {
                     const one = Object.assign(clone(r), { target: Object.assign({ kind: 'set' }, D.tagFromSelection(api.getMap(), selection())) });
                     one.id = r.id; S.deco.rules[S.deco.rules.indexOf(r)] = one;
-                    const a = D.apply(api.getMap(), S.deco, [r.id]); S.deco = a.deco; save(); api.setMap(a.map, 'Decorate selection: ' + r.name);
+                    const a = await engine('apply', api.getMap(), S.deco, [r.id]);
+                    if (!fresh()) { S.report = STALE; return; }
+                    S.deco = a.deco; save(); api.setMap(a.map, 'Decorate selection: ' + r.name);
                     S.report = reportText(a.report, 'applied to the selection; the rule\'s target is now that selection'); }) }, 'Apply to selection')));
             kids.push(el('h4', {}, 'Target'), targetForm(r));
             kids.push(el('h4', {}, 'Parameters'), paramForm(r));
@@ -355,9 +382,17 @@ D.mountPanel = function (root, api) {
     }
     const offs = [];
     if (api.on) {
-        offs.push(api.on('map', () => { const d = D.normDeco(sc.get('deco')); if (JSON.stringify(d.rules.map((r) => r.id)) !== JSON.stringify(S.deco.rules.map((r) => r.id)) || d !== S.deco) { S.deco = d; if (!rule()) S.cur = null; } if (S.preview) clearPreview(); render(); }));
+        // a map change: the sidecar entry is read again only when it changed (it holds every generated box: a copy
+        // per nudge would cost Midtown ms each), the panel redraws when it is in sight
+        offs.push(api.on('map', (keys) => {
+            mapGen++;
+            if (!keys || keys.includes('sc.deco')) { S.deco = D.normDeco(sc.get('deco')); if (!rule()) S.cur = null; }
+            if (S.preview) clearPreview();
+            if (root.offsetParent !== null) render(); else S.stale = true;
+        }));
+        offs.push(api.on('rtab', (t) => { if (t === 'deco' && S.stale) { S.stale = false; render(); } }));
     }
-    mounted = { destroy() { clearPreview(); for (const f of offs) if (typeof f === 'function') f(); root.replaceChildren(); } };
+    mounted = { destroy() { if (worker) worker.terminate(); clearPreview(); for (const f of offs) if (typeof f === 'function') f(); root.replaceChildren(); } };
     render();
     loadPresets();
 };

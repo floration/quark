@@ -21,17 +21,31 @@ export function rayBox(o, d, mn, mx) {   // -> [tEnter, axis*2+side] or null
 export function normalOf(ax) { const n = [0, 0, 0]; if (ax >= 0) n[ax >> 1] = (ax & 1) ? 1 : -1; return n; }
 
 export class Picker {
-  constructor() { this.boxes = []; this.cells = new Map(); this.big = []; }
+  constructor() { this.boxes = []; this.cells = new Map(); this.big = []; this.at = []; }
   // items: [{min, max, ref}]
   build(items) {
-    this.boxes = items; this.cells = new Map(); this.big = [];
-    items.forEach((b, i) => {
-      const x0 = Math.floor(b.min[0] / CELL), x1 = Math.floor(b.max[0] / CELL), z0 = Math.floor(b.min[2] / CELL), z1 = Math.floor(b.max[2] / CELL);
-      if ((x1 - x0 + 1) * (z1 - z0 + 1) > 400) { this.big.push(i); return; }   // (huge floors / far scenery: tested always)
-      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
-        const k = x * 100003 + z; let c = this.cells.get(k); if (!c) this.cells.set(k, c = []); c.push(i);
-      }
-    });
+    this.boxes = items; this.cells = new Map(); this.big = []; this.at = new Array(items.length);
+    items.forEach((b, i) => this.insert(i));
+  }
+  insert(i) {
+    const b = this.boxes[i];
+    const x0 = Math.floor(b.min[0] / CELL), x1 = Math.floor(b.max[0] / CELL), z0 = Math.floor(b.min[2] / CELL), z1 = Math.floor(b.max[2] / CELL);
+    if ((x1 - x0 + 1) * (z1 - z0 + 1) > 400) { this.big.push(i); this.at[i] = null; return; }   // (huge floors / far scenery: tested always)
+    this.at[i] = [x0, x1, z0, z1];
+    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+      const k = x * 100003 + z; let c = this.cells.get(k); if (!c) this.cells.set(k, c = []); c.push(i);
+    }
+  }
+  // item i's box moved or resized (a drag, a nudge): only its cells change, not the whole grid
+  move(i, min, max) {
+    const a = this.at[i];
+    if (a === null) this.big = this.big.filter(j => j !== i);
+    else if (a) for (let x = a[0]; x <= a[1]; x++) for (let z = a[2]; z <= a[3]; z++) {
+      const c = this.cells.get(x * 100003 + z); if (!c) continue;
+      const n = c.indexOf(i); if (n >= 0) c.splice(n, 1);
+    }
+    this.boxes[i].min = min; this.boxes[i].max = max;
+    this.insert(i);
   }
   // every hit along the ray up to maxT, nearest first: [{t, ax, ref, inside}]
   cast(o, d, maxT = 3000, filter, all = false) {
