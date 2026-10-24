@@ -16,7 +16,7 @@
 #               production release VERSION names (which must exist and be latest). For a site deploy that failed or
 #               was skipped; it never makes a release.
 #   FINAL       a manual run with "final" ticked (any branch, usually `testing`): meta + the sanitizers on its current
-#               commit, nothing built or published. A push whose head commit message (a merged PR: its title) has
+#               commit, nothing built or published. A push whose head commit's subject line (a merged PR: its title) has
 #               [final] runs them too, beside its normal build. Nothing else runs them (owner: a human marks a final test).
 # Any other push (or a manual run) builds and checks only.
 name: build-and-release
@@ -109,14 +109,21 @@ jobs:
           fi
           # When the sanitizers run (owner, 2026-10-24): ONLY for a build a human marks as a final test, on any branch; this is
           # the one place to change it. Nothing waits for them. Agents never add the marker themselves.
-          #   (1) a push whose head commit message has [final] (a merged PR's commit carries the PR title), or
+          #   (1) a push whose head commit's SUBJECT line has [final] (for GitHub's "Merge pull request #N ..." commit: the
+          #       PR title, its first non-empty line after that), or
+          #       (only the subject: a commit body that merely mentions "[final]" in prose, as a tools PR's did, doesn't count)
           #   (2) a manual run with "final" ticked (channel final: meta + the sanitizers only)
           #   (to keep only one of the two: delete the line for the other, and for (2) the `final` input above)
           #   production tags (that commit ran them on testing) and site-only runs: never
           SANITIZERS=false
           case "$CHANNEL" in
             final) SANITIZERS=true ;;                                                 # (2)
-            none|testing) case "$HEAD_MSG" in *'[final]'*) SANITIZERS=true ;; esac ;;  # (1)
+            none|testing)                                                                # (1)
+              SUBJECT=${HEAD_MSG%%$'\n'*}
+              if [[ "$SUBJECT" == 'Merge pull request #'* ]]; then   # (the PR title: the merge message's first non-empty line after it)
+                SUBJECT=""; while IFS= read -r l; do [[ -n "${l//[[:space:]]/}" ]] && { SUBJECT=$l; break; }; done <<< "${HEAD_MSG#*$'\n'}"
+              fi
+              case "$SUBJECT" in *'[final]'*) SANITIZERS=true ;; esac ;;
           esac
           { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}$([ "$SANITIZERS" = true ] && echo ', sanitizers')" >> "$GITHUB_STEP_SUMMARY"
