@@ -104,6 +104,8 @@ main {
   color: var(--ink-3); font-size: 12.5px; min-height: 26px;
 }
 .statusline.bad { color: var(--crit-ink); }
+.statusline .playline { margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.statusline .playline b { color: var(--link); font-weight: 650; }
 .statusline #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* ---------- cards ---------- */

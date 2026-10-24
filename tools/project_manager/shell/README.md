@@ -178,6 +178,17 @@ A new tool with an installer is one more line, e.g.
   without cache), Ctrl+Shift+R re-read tabs.json, F11 full screen, Ctrl+= / Ctrl+- zoom every tab (Ctrl+0: back to 100%), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).
 
+## The Play tab
+
+The `play` tab is `http://127.0.0.1:8768/play?embed=1`, the Supervisor Board server's own page (SPEC.md 3b). Two tabs
+on one port share one server: a start of one waits for a start of the other already under way, update restarts skip
+the PM port, and a link to `127.0.0.1:8768/play` opens the Play tab (tabs on one origin are told apart by path).
+The shell polls `GET /api/play/pending` every 2 s while a game runs or a note waits, else every 15 s (and at once when
+the Play page calls `quarkShell.playChanged()` after starting a game or saving a note). The count of notes waiting is
+a blue badge on the Play tab. When a new note waits (a game it started closed), the shell opens the Play tab at
+`#note=<session>`, restores and shows the window, puts it on top for a moment and focuses it; when Windows refuses the
+focus the taskbar button flashes until the window is focused. Notes already waiting when the app starts only badge.
+
 ## Testing without Windows
 
 `--selftest-shot=<png>` (with `--selftest-wait=<ms>`, default 2500) captures the tab bar plus the active tab and quits.

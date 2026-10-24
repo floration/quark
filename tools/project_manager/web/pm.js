@@ -972,11 +972,24 @@
     return head('h-tabs', 'Tabs', '', '<span class="src"><b>/api/tabs</b></span>') + html;
   }
 
+  // ---------------------------------------------------------------- play notes (the Play tab, /play)
+  function renderPlay() {
+    const p = obj(state.pm && state.pm.play);
+    const el = document.getElementById('sec-play');
+    const open = num(p.openNotes), pend = num(p.pending), run = num(p.running);
+    el.hidden = open == null && pend == null;
+    if (el.hidden) return '';
+    const bits = [esc(plural(open || 0, 'play note')) + ' open'];
+    if (pend) bits.push('<b>' + esc(pend) + ' waiting for you to write</b>');
+    if (run) bits.push(esc(plural(run, 'game')) + ' running');
+    return '<a href="/play" data-tab="play" data-hash="" title="The Play tab: start a build, write play notes">Play</a> &middot; ' + bits.join(' &middot; ');
+  }
+
   // ---------------------------------------------------------------- render
   const SECTIONS = [
     ['sec-halting', renderHalting], ['sec-pipeline', renderPipeline], ['sec-needs', renderNeeds], ['sec-progress', renderProgress], ['sec-ci', renderCi],
     ['sec-assets', renderAssets], ['sec-servers', renderServers], ['sec-local', renderLocal], ['sec-tools', renderTools],
-    ['sec-changelogs', renderChangelogs], ['sec-history', renderHistory], ['sec-tabs', renderTabs],
+    ['sec-changelogs', renderChangelogs], ['sec-history', renderHistory], ['sec-tabs', renderTabs], ['sec-play', renderPlay],
   ];
   const DRAW = { buckets: drawBuckets, stack: drawStack, mem: drawMem, timeline: drawTimeline };
 

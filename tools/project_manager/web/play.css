@@ -1,0 +1,60 @@
+/* The Play tab (play.html): the tokens, cards, pills and buttons are pm.css's; this is what is Play-only.
+   Wide screens get more build cards across, not bigger ones (q's 2560x1440 screen). */
+
+main { max-width: 2600px; }
+.card-head .opts { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.card-head .opts input { width: min(420px, 60vw); font-family: var(--mono); font-size: 12.5px; padding: 4px 8px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+
+.builds { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.build { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface-2); min-width: 0;
+  display: flex; flex-direction: column; gap: 3px; }
+.build.off { opacity: .55; }
+.build.running { border-color: color-mix(in srgb, var(--good) 55%, var(--border)); }
+.build .n { font-weight: 650; display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+.build .kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); font-weight: 600; }
+.build .v { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.build .m { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.build .act { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.btn.primary, button.primary { background: var(--link); color: var(--qt-accent-ink, #0b1a2b); border-color: var(--link); }
+.btn.primary:hover:not(:disabled) { background: var(--link); filter: brightness(1.08); }
+.btn.danger { color: var(--crit-ink); }
+
+.play-pending { border-left: 4px solid var(--link); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.play-pending b { font-weight: 650; }
+
+/* notes and sessions (two columns, three on very wide screens: notes take two) */
+@media (min-width: 1800px) { .play-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
+.notes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 8px; }
+.note { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface-2); min-width: 0; }
+.note .t { font-weight: 650; display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+.note .f { font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; margin-top: 2px; }
+.note .f b { color: var(--ink); font-weight: 600; }
+.note .w { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+.sync { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.sync.bad { color: var(--warn-ink); }
+
+table.t td .btn { white-space: nowrap; }
+table.t tr.off td { color: var(--ink-3); }
+.prog { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--surface-sunk); border: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
+.prog i { display: block; height: 100%; background: var(--link); }
+.rel-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rel-wrap { max-height: 560px; overflow: auto; }
+@media (min-width: 1800px) { .rel-cols { columns: 2; column-gap: 24px; } }
+
+/* the note form */
+dialog#note-dlg { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: 0 10px 40px rgba(0, 0, 0, .45); }
+dialog#note-dlg::backdrop { background: rgba(0, 0, 0, .5); }
+#note-form { padding: 16px 20px 16px; display: flex; flex-direction: column; gap: 10px; }
+.dlg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.dlg-head h2 { font-size: 17px; }
+.note-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); background: var(--surface-2);
+  border-radius: var(--radius-sm); padding: 6px 10px; }
+.note-meta b { color: var(--ink); font-weight: 600; }
+#note-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; }
+#note-form textarea { font: 13.5px/1.4 var(--font); color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 6px 8px; resize: vertical; min-height: 44px; }
+#note-form textarea:focus, .card-head .opts input:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.dlg-buttons { display: flex; gap: 8px; align-items: center; }
+.toast { z-index: 20; }
