@@ -39,6 +39,15 @@ wontfix, `partly answered` -> answered). Entries keep their identity across edit
 fuzzy title match, then a cross-file match for moves), so each commit becomes "added / edited / status / moved /
 removed" items.
 
+**Priority** is `(P1)`-`(P3)` after the title, or `(HALT)` (also `(halting)`, any case; read as `HALT`), which ranks
+above P1 in every sort: a Claude agent is stopped and can't continue until q does something (a decision, a login, a
+step on the PC; not a failing test). The body starts with what q must do. An entry is **halting** while it is HALT,
+not fixed / done / answered / told / wontfix, and not archived: it gets `halting: true`, waits on `owner` first, its
+`waitingWhy` is "A Claude agent is stopped until q acts: <the body's first sentence>", and the page shows it in red
+everywhere (a banner above every tab, the Overview's "Halting" section, a red HALT pill and card border, the first
+Kanban column, red flow-graph rows and timeline dots). When an entry starts or stops halting, its change item says
+"Now halting a Claude agent: <title> (...)" / "No longer halting: <title> (...)" and carries `halting: true / false`.
+
 **Waiting on** (open / in-progress items only): 07 open = q's decision; text about the owner's push or "waiting on
 the owner" = q; an open linked PR = PR (and CI if its checks fail or run); a linked branch whose last CI run failed
 or is running = CI; failing tests / repro / "needs measuring" = tests; in-progress otherwise = Claude; open in
@@ -79,7 +88,15 @@ Overview (Needs q first, waiting-on board, latest changes), Board (kanban, timel
   changes, threads, github, quarkDir, fetchOk, ghOk).
 - `GET /api/summary`: `{generatedAt, mirrorHead, fetchOk, ghOk, inProgress[{id,title,thread,threadUrl,status,where,
   waitingOn,waitingWhy,date,lastChanged}], waiting{owner,push,pr,ci,tests,claude: [ids]},
-  questions[{id,title,body,thread,threadUrl,date,recommendation}], recentChanges[first 30 changes]}`.
+  questions[{id,title,body,thread,threadUrl,date,recommendation}], recentChanges[first 30 changes], halting[...],
+  haltingCount}`.
+- `GET /api/halting`: `{generatedAt, count, items}`, for the Supervisor Board's red "stopped until q acts" piece (same
+  CORS / ETag / 304 as `/api/summary`; its ETag changes only when the items do). `items` (= `/api/summary`'s
+  `halting`), newest first: `{id, title, thread, threadUrl, file, section, what (what q must do: the body's first
+  sentence), body, date, since (UTC ISO time it became halting, from the history; the entry's date if it isn't
+  pushed yet), url and link (both "http://127.0.0.1:8766/#entry=<id>"), blocks ("<thread>: <its in-progress 02 work
+  item>" preferring one that shares a branch/PR link, else "<thread>: <branch or PR>", else the thread),
+  blocksEntryId (that 02 entry or null), status}`. In `/api/data` every entry has `halting`, `haltingSince`, `haltWhat`.
 - `GET /api/health`, `POST /api/refresh` (fetch now). `/api/data` also has `canEdit`, `editReason`, `readOnly`.
 - Edits. Writes need the page's own origin (`Origin` exactly `http://127.0.0.1:<port>` / `http://localhost:<port>`, or
   none) AND `X-Claude-Manager: 1` and JSON; no CORS, and their preflights are refused. File names must match

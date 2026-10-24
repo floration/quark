@@ -333,7 +333,9 @@ class EndToEndTests(unittest.TestCase):
             st, h, body = get("/api/summary", {"Origin": "http://127.0.0.1:8768"})
             self.assertEqual(h.get("Access-Control-Allow-Origin"), "http://127.0.0.1:8768")
             s = json.loads(body)
-            self.assertEqual(set(s), {"generatedAt", "mirrorHead", "fetchOk", "ghOk", "inProgress", "waiting", "questions", "recentChanges"})
+            self.assertEqual(set(s), {"generatedAt", "mirrorHead", "fetchOk", "ghOk", "inProgress", "waiting", "questions", "recentChanges",
+                                      "halting", "haltingCount"})
+            self.assertEqual((s["halting"], s["haltingCount"]), ([], 0))
             self.assertEqual([e["title"] for e in s["inProgress"]], ["Feel review."])
             self.assertIn("claude/project-thread-t02bcv", s["inProgress"][0]["where"])
             self.assertNotIn("Access-Control-Allow-Origin", get("/api/summary", {"Origin": "http://evil.example"})[1])

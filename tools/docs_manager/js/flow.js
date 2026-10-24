@@ -84,17 +84,18 @@
       if (!groups.has(t)) groups.set(t, {name: t, entries: [], linked: [], unlinked: []});
       const g = groups.get(t);
       g.entries.push(e);
-      (e.links.some(l => GH_KINDS.has(l.kind)) ? g.linked : g.unlinked).push(e);
+      (e.links.some(l => GH_KINDS.has(l.kind)) || DM.isHalting(e) ? g.linked : g.unlinked).push(e); // (halting rows always show)
+      if (DM.isHalting(e)) g.halting = (g.halting || 0) + 1;
     }
     const last = e => Date.parse((e.lastChanged || {}).time || '') || 0;
-    const gl = [...groups.values()].sort((a, b) => (b.linked.length > 0) - (a.linked.length > 0) || Math.max(0, ...b.entries.map(last)) - Math.max(0, ...a.entries.map(last)));
+    const gl = [...groups.values()].sort((a, b) => (b.halting > 0) - (a.halting > 0) || (b.linked.length > 0) - (a.linked.length > 0) || Math.max(0, ...b.entries.map(last)) - Math.max(0, ...a.entries.map(last)));
 
     const rows = []; // {g, kind: entry|more|summary, entries[], y}
     const tnodes = [];
     let y = TOP;
     for (const g of gl) {
       const shown = p.linkedOnly ? g.linked : g.entries;
-      const collapsed = shown.length > 0 && (p.collapsed[g.name] != null ? p.collapsed[g.name] : shown.length > 8);
+      const collapsed = shown.length > 0 && (p.collapsed[g.name] != null ? p.collapsed[g.name] : shown.length > 8 && !g.halting);
       const top = y;
       const sorted = shown.slice().sort((a, b) => (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9) || last(b) - last(a));
       if (collapsed) rows.push({g, kind: 'summary', entries: shown, y: y + ROW / 2}), y += ROW;
@@ -159,7 +160,7 @@
         h('span', null, h('i', {class: 'sw f-open'}), 'PR open'), h('span', null, h('i', {class: 'sw f-merged'}), 'merged'),
         h('span', null, h('i', {class: 'sw f-closed'}), 'closed'), h('span', null, h('i', {class: 'sw f-fail'}), 'CI failing'),
         h('span', null, h('i', {class: 'sw f-run'}), 'CI running'), h('span', null, h('i', {class: 'sw f-testing'}), 'testing build'),
-        h('span', null, h('i', {class: 'sw f-prod'}), 'production'), h('span', null, h('i', {class: 'sw f-local'}), 'not released'),
+        h('span', null, h('i', {class: 'sw f-halt'}), 'halting (HALT)'), h('span', null, h('i', {class: 'sw f-prod'}), 'production'), h('span', null, h('i', {class: 'sw f-local'}), 'not released'),
         h('span', {title: 'The coloured bar on each entry is its status, same colours as the Overview'}, h('i', {class: 'sw stripe-key'}), 'entry bar = its status')));
     if (!G.rows.length) { body.appendChild(h('div', {class: 'empty'}, 'No entries to show with these options.')); return; }
 
@@ -195,7 +196,7 @@
     const rowEls = [];
     for (const tn of G.tnodes) {
       const hgt = tn.bottom - tn.top - 2;
-      const g = s('g', {class: 'fl-thread' + (tn.collapsed ? ' collapsed' : ''), tabindex: 0, role: 'button'});
+      const g = s('g', {class: 'fl-thread' + (tn.collapsed ? ' collapsed' : '') + (tn.g.halting ? ' halting' : ''), tabindex: 0, role: 'button'});
       g.appendChild(s('rect', {x: X.t, y: tn.top, width: cw.t, height: hgt, rx: 4}));
       const name = tn.g.name === '(no thread)' ? 'no thread' : tn.g.name;
       const maxLines = Math.max(1, Math.min(3, Math.floor((hgt - 6) / 15) - (hgt > ROW * 2.5 ? 1 : 0)));
@@ -214,11 +215,11 @@
     for (const r of G.rows) {
       edgeLayer.appendChild(Object.assign(s('line', {x1: X.t + cw.t, x2: X.e, y1: r.y, y2: r.y, class: 'fl-c'}), {_rows: new Set([r])}));
       edgeEls.push(edgeLayer.lastChild);
-      const g = s('g', {class: 'fl-row ' + r.kind, tabindex: 0, role: 'button'});
+      const g = s('g', {class: 'fl-row ' + r.kind + (r.kind !== 'more' && r.entries.some(DM.isHalting) ? ' halting' : ''), tabindex: 0, role: 'button'});
       let label, cls = '', title;
       if (r.kind === 'entry') {
         const e = r.entries[0], pl = DM.pill(e);
-        cls = pl.cls; label = DM.trimTitle(e.title);
+        cls = pl.cls; label = (DM.isHalting(e) ? 'HALT · ' : '') + DM.trimTitle(e.title);
         title = DM.plain(e.title) + '\n' + pl.label + (e.waitingWhy ? ': ' + e.waitingWhy : '') + '\n' + DM.fileTitle(e.file);
         g.addEventListener('click', () => DM.app.openEntry(e.id));
       } else if (r.kind === 'summary') {

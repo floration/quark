@@ -20,7 +20,7 @@
     timeline: {range: '3d', openOnly: false},
     flow: {showDone: false, linkedOnly: true, collapsed: {}},
     files: {sel: '', raw: false},
-    editSub: 'file', editFile: '', addFile: '',
+    editSub: 'file', editFile: '', addFile: '', haltOpen: true,
   };
   function merge(def, got) {
     const out = {};
@@ -62,6 +62,7 @@
 
   function dataChanged() {
     $('#loading').hidden = true;
+    DM.data.banners();
     if (DM.edit) DM.edit.dataChanged();
     if (st.prefs.tab === 'edit' && !DM.edit.showTab()) show('overview', {keepHash: true});
     for (const t of TABS) stale.add(t);

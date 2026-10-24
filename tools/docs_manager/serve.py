@@ -13,8 +13,8 @@ to the PC folder: pull, change, commit, push, under one lock; then the mirror is
 refreshed every 5 min into <state dir>/cache/github.json; the per-commit entry diffs are cached by sha in
 <state dir>/cache/changes.json. Python 3 standard library only.
 
-API: GET /api/data (everything, ETag / If-None-Match), GET /api/summary (small: in progress, waiting, questions,
-recent changes), GET /api/health, POST /api/refresh (fetch now); CORS for the sibling tools on 8765-8770 (reads
+API: GET /api/data (everything, ETag / If-None-Match), GET /api/summary (small: halting, in progress, waiting,
+questions, recent changes), GET /api/halting (just the HALT items stopping a Claude agent), GET /api/health, POST /api/refresh (fetch now); CORS for the sibling tools on 8765-8770 (reads
 only). Edits (same origin + X-Claude-Manager: 1 only): GET /api/doc?file=, GET /api/edit/status,
 POST /api/doc/save, POST /api/answer, POST /api/entry/add, POST /api/edit/push (send offline saves now).
 """
@@ -241,13 +241,25 @@ def _sentence(text, m):
     return (s[:117] + "...") if len(s) > 120 else s
 
 
+def halt_what(e):
+    """What q has to do for a HALT entry: the body's first sentence (the README asks for it there), else the title."""
+    text = re.sub(r"\s+", " ", (e.get("body") or "").replace("**", "").replace("`", "")).strip()
+    m = re.match(r"(.+?[.!?])(?=\s+[A-Z0-9(\"'\[]|\s*$)", text)
+    s = (m.group(1) if m else text).strip() or docsparse._short((e.get("title") or "").replace("**", "").replace("`", ""))
+    s = re.sub(r"\bthe owner'?s\b", "q's", s, flags=re.I)
+    s = re.sub(r"\bthe owner\b", "q", s, flags=re.I)
+    return (s[:197] + "...") if len(s) > 200 else s
+
+
 def waiting_on(e, links):
-    """(waitingOn list, waitingWhy sentence, notStarted) for one entry; see SPEC.md."""
+    """(waitingOn list, waitingWhy sentence, notStarted) for one entry; see SPEC.md. A halting entry (HALT, not
+    finished) always waits on q first, and its waitingWhy says what q has to do."""
     st, f = e["status"], e["file"][:2]
     if st in docsparse.DONE_STATUSES:
         return ["none"], "Nothing: %s." % {"done": "done", "fixed": "fixed", "wontfix": "won't fix", "answered": "answered",
                                              "told": "told"}[st], False
-    if f == "08" and st != "in-progress": return ["none"], "Nothing: a reference note.", False
+    halting = docsparse.is_halting(e)
+    if f == "08" and st != "in-progress" and not halting: return ["none"], "Nothing: a reference note.", False
     text = "\n".join(x for x in (e["title"], e["body"], e["statusNote"], e.get("statusText")) if x)
     w, why = [], []
 
@@ -255,8 +267,10 @@ def waiting_on(e, links):
         if k not in w: w.append(k)
         if s and s not in why: why.append(s)
 
-    if f == "07" and st in ("open", "unknown"): add("owner", "Waiting on q's decision")
-    if f == "06" and st in ("open", "unknown"): add("owner", "Not told yet: for q to read")
+    if halting: add("owner", "A Claude agent is stopped until q acts: " + halt_what(e).rstrip("."))
+
+    if f == "07" and st in ("open", "unknown") and not halting: add("owner", "Waiting on q's decision")
+    if f == "06" and st in ("open", "unknown") and not halting: add("owner", "Not told yet: for q to read")
     if f == "09" and st in ("open", "unknown"): add("claude", "q answered; no Claude has acted on it yet")
     m = _OWNER_RE.search(text)
     if m and (not w or _PUSH_RE.search(text)):
@@ -326,6 +340,7 @@ class Manager:
         self.writer = docsedit.Writer(self.docs, read_only=getattr(args, "read_only", False), thread_names=self.thread_names, log=log)
         self.lock = threading.Lock()
         self.body, self.etag, self.summary, self.summary_etag, self.data = None, None, None, None, None
+        self.halting, self.halting_etag = None, None
         self.started = time.time()
         self.last_error = None
 
@@ -379,11 +394,13 @@ class Manager:
             for it in recs[c["sha"]]["items"]:
                 if not it.get("entryId"): continue
                 what = it.get("what") or it["kind"]
-                if it["kind"] == "status": what = "status %s -> %s" % (it["from"], it["to"])
+                if it["kind"] == "status" and it.get("halting") is None: what = "status %s -> %s" % (it["from"], it["to"])
                 if it["kind"] == "removed": lineage.pop(it["entryId"], None); continue
                 rec = lineage.pop(it.get("fromId") or it["entryId"], None) if it["kind"] != "added" else None
                 if rec is None: rec = {"firstSeen": when}
                 rec["lastChanged"] = dict(when, what=what)
+                if it.get("halting") is True: rec["haltingSince"] = when
+                elif it.get("halting") is False: rec.pop("haltingSince", None)
                 lineage[it["entryId"]] = rec
 
         files, entries = [], []
@@ -414,6 +431,10 @@ class Manager:
                 e["recommendation"] = recommendation(e) if e["file"].startswith("07") else None
                 lin = lineage.get(e["id"], {})
                 e["firstSeen"], e["lastChanged"] = lin.get("firstSeen"), lin.get("lastChanged")
+                e["halting"] = docsparse.is_halting(e)
+                hs = (lin.get("haltingSince") or lin.get("firstSeen") or {}) if e["halting"] else {}
+                e["haltingSince"] = (hs.get("timeUtc") or e["date"]) if e["halting"] else None
+                e["haltWhat"] = halt_what(e) if e["halting"] else None
                 e["pcUnsynced"] = f["pcUnsynced"]
                 entries.append(e)
 
@@ -477,14 +498,18 @@ class Manager:
     def publish(self, data):
         stable = {k: v for k, v in data.items() if k not in VOLATILE}
         etag = '"%s"' % hashlib.sha1(json.dumps(stable, sort_keys=True).encode()).hexdigest()[:20]
-        summary = make_summary(data)
-        s_stable = {k: v for k, v in summary.items() if k != "generatedAt"}
-        s_etag = '"%s"' % hashlib.sha1(json.dumps(s_stable, sort_keys=True).encode()).hexdigest()[:20]
+        port = getattr(self.args, "port", None) or 8766
+        small_etag = lambda o: '"%s"' % hashlib.sha1(json.dumps({k: v for k, v in o.items() if k != "generatedAt"},
+                                                                sort_keys=True).encode()).hexdigest()[:20]
+        summary, halting = make_summary(data, port), make_halting(data, port)
+        s_etag, h_etag = small_etag(summary), small_etag(halting)
         with self.lock:
             if etag != self.etag or self.body is None:
                 self.body, self.etag = json.dumps(data, separators=(",", ":")).encode("utf-8"), etag
             if s_etag != self.summary_etag or self.summary is None:
                 self.summary, self.summary_etag = json.dumps(summary, separators=(",", ":")).encode("utf-8"), s_etag
+            if h_etag != self.halting_etag or self.halting is None:
+                self.halting, self.halting_etag = json.dumps(halting, separators=(",", ":")).encode("utf-8"), h_etag
             self.data = data
 
     def health(self):
@@ -504,7 +529,43 @@ class Manager:
                 if not e.get("archived")] + [c["subject"] for c in d.get("changes", [])[:100]]
 
 
-def make_summary(data):
+def _blocks(e, es):
+    """What a halting entry holds up: '<thread>: <its 02 work item>' (the in-progress 02 entry of the same thread,
+    preferring one that shares a branch / PR link), else '<thread>: <branch or PR>', else the thread title."""
+    thread = e.get("thread") or "a Claude agent"
+    keys = lambda x: {(l["kind"], l.get("label")) for l in x.get("links", []) if l["kind"] in ("branch", "pr")}
+    mine = keys(e)
+    work = [x for x in es if x["file"].startswith("02") and not x.get("archived") and x["status"] in ("in-progress", "open", "unknown")
+            and e.get("thread") and x.get("thread") == e.get("thread")]
+    work.sort(key=lambda x: (x["id"] != e["id"] and not (keys(x) & mine), x["status"] != "in-progress"))
+    if work: return "%s: %s" % (thread, docsparse._short(work[0]["title"]).replace("**", "")), work[0]["id"]
+    links = [l["label"] for l in e.get("links", []) if l["kind"] in ("pr", "branch")]
+    return ("%s: %s" % (thread, links[0]) if links else thread), None
+
+
+def halting_items(data, port=8766):
+    """HALT entries that stop a Claude agent, newest first (when they became halting)."""
+    es = [e for e in data["entries"] if not e.get("archived")]
+    out = []
+    for e in es:
+        if not e.get("halting"): continue
+        url = "http://127.0.0.1:%d/#entry=%s" % (port, urllib.parse.quote(e["id"], safe=""))
+        blocks, blocks_id = _blocks(e, es)
+        out.append({"id": e["id"], "title": e["title"], "thread": e["thread"], "threadUrl": e["threadUrl"], "file": e["file"],
+                    "section": e["section"], "what": e.get("haltWhat") or halt_what(e), "body": e["body"], "date": e["date"],
+                    "since": e.get("haltingSince") or e["date"], "url": url, "link": url, "blocks": blocks,
+                    "blocksEntryId": blocks_id, "status": e["status"]})
+    out.sort(key=lambda x: (x["since"] or ""), reverse=True)
+    return out
+
+
+def make_halting(data, port=8766):
+    """GET /api/halting: just the halting items, for the Supervisor Board's red piece."""
+    items = halting_items(data, port)
+    return {"generatedAt": data["generatedAt"], "count": len(items), "items": items}
+
+
+def make_summary(data, port=8766):
     """The small, stable /api/summary for the sibling project manager."""
     es = [e for e in data["entries"] if not e.get("archived")]
     inprog = [e for e in es if e["file"].startswith("02") and e["section"].lower().startswith("in progress")
@@ -523,7 +584,8 @@ def make_summary(data):
             "waiting": waiting,
             "questions": [{"id": e["id"], "title": e["title"], "body": e["body"], "thread": e["thread"],
                            "threadUrl": e["threadUrl"], "date": e["date"], "recommendation": e.get("recommendation")} for e in qs],
-            "recentChanges": data["changes"][:30]}
+            "recentChanges": data["changes"][:30],
+            "halting": halting_items(data, port), "haltingCount": sum(1 for e in es if e.get("halting"))}
 
 
 # ---- background refresh -------------------------------------------------------------------------------------
@@ -625,9 +687,10 @@ def make_handler(mgr, refresher, port, quiet):
         def do_GET(self):
             if not self._host_ok(): return
             path = self.path.split("?", 1)[0]
-            if path in ("/api/data", "/api/summary"):
+            if path in ("/api/data", "/api/summary", "/api/halting"):
                 with mgr.lock:
-                    body, etag = (mgr.body, mgr.etag) if path == "/api/data" else (mgr.summary, mgr.summary_etag)
+                    body, etag = {"/api/data": (mgr.body, mgr.etag), "/api/summary": (mgr.summary, mgr.summary_etag),
+                                  "/api/halting": (mgr.halting, mgr.halting_etag)}[path]
                 if body is None: return self._json(503, {"error": "starting", "detail": mgr.mirror.error or "loading"})
                 h = {"ETag": etag, "Cache-Control": "no-cache", "X-Mirror-Fetched-At": mgr.mirror.fetched_at or "",
                      "X-Gh-Fetched-At": str(mgr.gh.state.get("fetchedAt") or ""), "X-Fetch-Ok": "1" if mgr.mirror.fetch_ok else "0"}

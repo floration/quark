@@ -7,6 +7,7 @@
   const ADDED = {'01': 'New bug', '02': 'Work started', '03': 'New possible bug', '04': 'New performance fix', '05': 'New performance idea',
     '06': 'News for q', '07': 'New question for q', '08': 'New note', '00': 'Rules changed', 'RE': 'README changed'};
   const KIND_RANK = {status: 0, added: 1, removed: 2, moved: 3, edited: 4};
+  const rankOf = it => it.halting === true ? -2 : it.halting === false ? -1 : (KIND_RANK[it.kind] ?? 9);
 
   function titleLink(it) {
     const e = it.entryId && st.entryById[it.entryId];
@@ -21,14 +22,24 @@
   function sentence(it, short) {
     const f = String(it.file || '').slice(0, 2);
     const wrap = h('span', {class: 'sent', title: it.summary || null});
+    const halt = it.halting === true || it.halting === false
+      ? h('span', {class: it.halting ? 'lead halt-lead' : 'lead'}, it.halting ? 'Now halting a Claude agent' : 'No longer halting') : null;
     if (short === 'entry') { // inside the entry's own dialog: no title
-      if (it.kind === 'status') wrap.append(it.from ? stWord(it.from) : '', it.from ? ' \u2192 ' : 'now ', stWord(it.to));
+      if (halt) wrap.append(halt, it.kind === 'status' ? [' (', it.from ? stWord(it.from) : '', it.from ? ' \u2192 ' : 'now ', stWord(it.to), ')'] :
+        it.kind === 'added' ? ' (written' + (it.file ? ' in ' + DM.fileTitle(it.file) : '') + ')' : it.kind === 'removed' ? ' (removed)' : '');
+      else if (it.kind === 'status') wrap.append(it.from ? stWord(it.from) : '', it.from ? ' \u2192 ' : 'now ', stWord(it.to));
       else if (it.kind === 'added') wrap.append('Written', it.file ? ' in ' + DM.fileTitle(it.file) : '');
       else if (it.kind === 'moved') wrap.append('Moved (' + movePlace(it.from) + ' \u2192 ' + movePlace(it.to) + ')');
       else wrap.append({edited: 'Edited', removed: 'Removed'}[it.kind] || it.summary || it.kind || 'Changed');
       return wrap;
     }
-    switch (it.kind) {
+    if (halt) {
+      wrap.append(halt, ': ', titleLink(it));
+      if (it.kind === 'status') wrap.append(' (', it.from ? stWord(it.from) : '', it.from ? ' → ' : 'now ', stWord(it.to), ')');
+      else if (it.kind === 'added') wrap.append(h('span', {class: 'faint'}, ' (' + (ADDED[f] || 'new entry').toLowerCase() + ')'));
+      else if (it.kind === 'removed') wrap.append(h('span', {class: 'faint'}, ' (removed)'));
+      else if (it.kind === 'moved') wrap.append(h('span', {class: 'faint'}, ' (moved to ' + movePlace(it.to) + ')'));
+    } else switch (it.kind) {
       case 'added': wrap.append(h('span', {class: 'lead'}, (ADDED[f] || 'New entry') + ': '), titleLink(it)); break;
       case 'status': wrap.append(titleLink(it), ': ', it.from ? stWord(it.from) : '', it.from ? ' → ' : 'now ', stWord(it.to)); break;
       case 'removed': wrap.append(h('span', {class: 'lead'}, 'Removed: '), titleLink(it)); break;
@@ -42,7 +53,7 @@
   function movePlace(p) { return !p ? '?' : /\.md$/.test(p) ? DM.fileTitle(p) : p; }
 
   function commitBlock(c, full, maxItems) {
-    const items = c.items.slice().sort((a, b) => (KIND_RANK[a.kind] ?? 9) - (KIND_RANK[b.kind] ?? 9));
+    const items = c.items.slice().sort((a, b) => rankOf(a) - rankOf(b));
     const shown = maxItems ? items.slice(0, maxItems) : items;
     const head = h('div', {class: 'cm-h'},
       full ? null : DM.timeEl(c.time, 'smart'),
@@ -51,7 +62,7 @@
       full && c.author ? h('span', {class: 'faint'}, c.author) : null,
       full && c.sha ? DM.ext(DM.safeUrl(c.url) || DOCS_REPO + c.sha, String(c.sha).slice(0, 7), 'sha', 'This change on GitHub (Claude Documents repo)') : null);
     const rest = [head];
-    if (shown.length) rest.push(h('ul', {class: 'cm-items'}, shown.map(it => h('li', {class: 'k-' + (it.kind || 'edited')}, h('i', {class: 'kd'}), sentence(it)))));
+    if (shown.length) rest.push(h('ul', {class: 'cm-items'}, shown.map(it => h('li', {class: 'k-' + (it.halting === true ? 'halt' : it.kind || 'edited')}, h('i', {class: 'kd'}), sentence(it)))));
     if (items.length > shown.length) rest.push(h('div', {class: 'faint more-items'}, '+ ' + (items.length - shown.length) + ' more in this change'));
     const cl = full && Array.isArray(c.links) ? c.links.filter(l => l && l.kind !== 'thread') : [];
     if (cl.length) rest.push(h('div', {class: 'chips'}, cl.map(DM.chip)));

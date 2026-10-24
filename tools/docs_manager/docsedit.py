@@ -507,13 +507,13 @@ class Writer:
         if not isinstance(f, dict): raise EditError(400, "bad-request", "The page sent an empty entry.")
         name, section = f.get("file"), f.get("section", "")
         title, body = one_line(f.get("title")), str(f.get("body") or "")
-        prio, status = f.get("priority") or "", f.get("status") or "open"
+        prio, status = docsparse.norm_priority(f.get("priority") or ""), f.get("status") or "open"
         if not valid_name(name) or docsparse.file_kind(name) != "entries":
             raise EditError(400, "bad-name", "Entries go in files 01 to 09.")
         if not isinstance(section, str): raise EditError(400, "bad-request", "Pick a section.")
         if not title: raise EditError(400, "empty", "The entry needs a title.")
         if len(title) > 300 or len(body) > 20000: raise EditError(400, "too-long", "That entry is too long.")
-        if prio not in ("", "P1", "P2", "P3"): raise EditError(400, "bad-request", "Priority is P1, P2, P3 or none.")
+        if prio not in [""] + docsparse.PRIORITIES: raise EditError(400, "bad-request", "Priority is HALT, P1, P2, P3 or none.")
         if status not in docsparse.STATUSES: raise EditError(400, "bad-request", "Status is one of: " + ", ".join(docsparse.STATUSES))
         with self.lock:
             self._require()

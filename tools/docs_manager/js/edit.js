@@ -396,8 +396,8 @@
       const g = e.file.startsWith('07') ? 'Questions in "Things to ask q" (07)' : 'Other things waiting on you';
       if (g !== group) { group = g; ui.qList.appendChild(h('h3', {class: 'ed-qg'}, g)); }
       const rec = DM.overview && DM.overview.recommendation(e);
-      ui.qList.appendChild(h('article', {class: 'card ed-q' + (e.priority === 'P1' ? ' p1' : '')},
-        h('div', {class: 'card-h'}, e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null,
+      ui.qList.appendChild(h('article', {class: 'card ed-q' + (DM.isHalting(e) ? ' halting' : e.priority === 'P1' ? ' p1' : '')},
+        h('div', {class: 'card-h'}, DM.priEl(e),
           h('a', {class: 'ttl-w', href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }}, DM.md.into(h('span'), e.title, true)),
           h('span', {class: 'spacer'}), editButton(e)),
         h('div', {class: 'card-m'}, DM.fileTitle(e.file), e.section ? ' › ' + e.section : '', h('span', {class: 'dotsep'}), DM.data.threadLink(e.thread, e.threadUrl),
@@ -436,7 +436,8 @@
     af.file = h('select', {id: 'adFile', onchange: () => loadSections()});
     af.section = h('select', {id: 'adSection'});
     af.title = h('input', {type: 'text', id: 'adTitle', placeholder: 'Short title', maxlength: 300});
-    af.prio = h('select', {id: 'adPrio'}, [['', 'none'], ['P1', 'P1 (highest)'], ['P2', 'P2'], ['P3', 'P3 (lowest)']].map(([v, l]) => h('option', {value: v}, l)));
+    af.prio = h('select', {id: 'adPrio'}, [['', 'none'], ['HALT', 'HALT (a Claude is stopped)'], ['P1', 'P1 (highest)'], ['P2', 'P2'], ['P3', 'P3 (lowest)']].map(([v, l]) => h('option', {value: v}, l)));
+    af.prioHint = h('span', {class: 'faint ad-h'}, 'HALT: a Claude agent can’t continue until you act. Start the text with what has to be done.');
     af.status = h('select', {id: 'adStatus'}, STATUSES.map(s => h('option', {value: s}, s + ' (' + DM.statusWord(s).toLowerCase() + ')')));
     af.body = h('textarea', {id: 'adBody', rows: 6, placeholder: 'What and where. Source.'});
     af.out = h('pre', {class: 'rawtext ad-line'});
@@ -445,10 +446,11 @@
     af.btn = h('button', {class: 'primary', onclick: () => addEntry()}, 'Add entry');
     for (const el of [af.title, af.body]) el.addEventListener('input', paintAddPreview);
     for (const el of [af.prio, af.status, af.section]) el.addEventListener('change', paintAddPreview);
+    af.prio.addEventListener('change', () => af.prioHint.classList.toggle('halt-hint', af.prio.value === 'HALT'));
     const row = (lbl, el, hint) => h('label', {class: 'ad-row'}, h('span', {class: 'ad-l'}, lbl), el, hint ? h('span', {class: 'faint ad-h'}, hint) : null);
     return h('div', {class: 'ad-form'},
       h('p', {class: 'faint'}, 'Adds one entry at the top of a section (newest first), dated today, with q as its thread, and pushes it.'),
-      row('File', af.file), row('Section', af.section), row('Title', af.title), row('Priority', af.prio), row('Status', af.status),
+      row('File', af.file), row('Section', af.section), row('Title', af.title), h('label', {class: 'ad-row'}, h('span', {class: 'ad-l'}, 'Priority'), af.prio, af.prioHint), row('Status', af.status),
       row('Text', af.body, 'One paragraph; line breaks become spaces.'),
       h('div', {class: 'ad-row'}, h('span', {class: 'ad-l'}, 'Writes'), h('div', {class: 'ad-out'}, af.out, af.prev)),
       h('div', {class: 'ad-row'}, h('span', {class: 'ad-l'}), h('div', null, af.btn, af.msg)));

@@ -177,6 +177,7 @@ window.DM = window.DM || {};
 
   // What an entry waits on, as board columns. "claude" splits into working (in-progress) and nobody yet (open).
   const WAIT = [
+    {key: 'halt', label: 'Halting a Claude', pill: 'Claude stopped until q acts', cls: 'halt'},
     {key: 'owner', label: "q's decision", pill: 'Waiting on q', cls: 'q'},
     {key: 'push', label: 'q to push', pill: 'Waiting on q to push', cls: 'q'},
     {key: 'ci', label: 'CI', pill: 'Waiting for CI', cls: 'ci'},
@@ -188,12 +189,14 @@ window.DM = window.DM || {};
   const WAIT_BY = Object.fromEntries(WAIT.map(w => [w.key, w]));
   DM.WAIT = WAIT; DM.WAIT_BY = WAIT_BY;
   function isDone(e) { return DONE.has(e.status); }
+  // HALT priority, not finished: a Claude agent is stopped until q acts (the server sets e.halting).
+  function isHalting(e) { return !!e && (e.halting === true || (e.halting == null && e.priority === 'HALT' && !DONE.has(e.status) && !e.archived)); }
   // Board keys for an entry (several possible), most blocking first.
   function waitKeys(e) {
     if (isDone(e)) return [];
     const w = new Set(Array.isArray(e.waitingOn) ? e.waitingOn : []);
-    const out = [];
-    for (const k of ['push', 'owner', 'ci', 'pr', 'tests']) if (w.has(k)) out.push(k);
+    const out = isHalting(e) ? ['halt'] : [];
+    for (const k of ['push', 'owner', 'ci', 'pr', 'tests']) if (w.has(k) && !(k === 'owner' && out[0] === 'halt')) out.push(k);
     if (w.has('claude') || !out.length) out.push(e.status === 'in-progress' ? 'claude' : 'nobody');
     return out;
   }
@@ -213,7 +216,15 @@ window.DM = window.DM || {};
     return h('span', {class: 'pill ' + p.cls + (small ? ' sm' : ''), title: e.waitingWhy || statusWord(e.status)}, p.label);
   }
   function needsQ(e) { return !isDone(e) && Array.isArray(e.waitingOn) && (e.waitingOn.includes('owner') || e.waitingOn.includes('push')); }
-  const PRI_RANK = {P1: 1, P2: 2, P3: 3};
+  const PRI_RANK = {HALT: 1, P1: 2, P2: 3, P3: 4}; // (used as `PRI_RANK[p] || 9`: HALT first, no priority last)
+  const PRI_TITLE = {HALT: 'HALT: a Claude agent can’t continue until you act', P1: 'Priority 1 (highest)', P2: 'Priority 2', P3: 'Priority 3 (lowest)'};
+  // The priority mark: a solid red HALT pill (muted once it no longer halts), else the small P1-P3 tag.
+  function priEl(e) {
+    if (!e || !e.priority) return null;
+    if (e.priority === 'HALT') return h('span', {class: 'halt-pill' + (isHalting(e) ? '' : ' off'),
+      title: isHalting(e) ? PRI_TITLE.HALT : 'Was HALT; not stopping anyone now (' + statusWord(e.status).toLowerCase() + ')'}, 'HALT');
+    return h('span', {class: 'pri ' + e.priority, title: PRI_TITLE[e.priority] || e.priority}, e.priority);
+  }
 
   // Plain-text cleanup of a markdown snippet (for SVG labels, tooltips).
   function plain(md) { return String(md || '').replace(/`([^`]*)`/g, '$1').replace(/\*\*|__/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim(); }
@@ -273,6 +284,6 @@ window.DM = window.DM || {};
   }
 
   Object.assign(DM, {h, s, clear, $, $$, append, esc, safeUrl, safeHref, ext, dayKey, hhmm, dayLabel, full, dateOnly, rel, dayHeader,
-    timeEl, tickTimes, fileTitle, fileShort, statusWord, isDone, waitKeys, pill, pillEl, needsQ, PRI_RANK, plain, trimTitle, sentences,
+    timeEl, tickTimes, fileTitle, fileShort, statusWord, isDone, waitKeys, pill, pillEl, needsQ, PRI_RANK, priEl, isHalting, plain, trimTitle, sentences,
     chip, ghManagerUrl, shortBranch, loadPrefs, savePrefs, tip, toDate});
 })(window.DM);

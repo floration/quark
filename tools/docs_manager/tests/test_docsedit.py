@@ -330,6 +330,12 @@ class WriterTests(unittest.TestCase):
         # empty section (Archive, the last one) and a bad section
         self.w.add_entry({"file": B, "section": "Archive", "title": "Old", "status": "done"})
         self.assertEqual([x["title"] for x in docsparse.parse_file(B, self.w.read(B)["text"])["entries"] if x["archived"]], ["Old."])
+        res = self.w.add_entry({"file": B, "section": "Tools", "title": "Sign in to gh", "priority": "halting",
+                                "body": "Run gh auth login on the PC. The release thread can't push until then.", "status": "open"})
+        self.assertIn("- **Sign in to gh** (HALT). Run gh auth login on the PC.", res["entry"])
+        h = [x for x in docsparse.parse_file(B, self.w.read(B)["text"])["entries"] if x["title"] == "Sign in to gh"][0]
+        self.assertEqual(h["priority"], "HALT")
+        self.assertTrue(docsparse.is_halting(h))
         self.assert_crlf(B)
         with self.assertRaises(docsedit.EditError) as cm:
             self.w.add_entry({"file": B, "section": "Nope", "title": "x"})

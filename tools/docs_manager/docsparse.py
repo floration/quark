@@ -4,7 +4,10 @@ entry-level changes (added / edited / status / moved / removed). Pure functions,
 
 Entry shape in files 01-08 (README.md of Claude Documents):
 
-    - **Title** (P1-P3 if known). Body ... _YYYY-MM-DD, <thread title>, <status>[: note]_
+    - **Title** (P1-P3 if known, or HALT). Body ... _YYYY-MM-DD, <thread title>, <status>[: note]_
+
+Priority HALT (written `(HALT)` or `(halting)`, any case) ranks above P1: a Claude agent is stopped until q acts.
+An entry is *halting* while it is HALT, not finished and not archived (is_halting).
 
 (the date may carry a time, `_2026-10-24 01:12 CT, q, open_`, as in 09-answers-from-q.md).
 
@@ -15,7 +18,7 @@ Python 3 standard library only.
 """
 import difflib, re
 
-PARSER_VERSION = 5          # bump when parse/diff output changes: cached diffs are recomputed
+PARSER_VERSION = 6          # bump when parse/diff output changes: cached diffs are recomputed
 
 STATUSES = ["open", "in-progress", "fixed", "wontfix", "answered", "told", "done"]
 DONE_STATUSES = {"fixed", "wontfix", "answered", "told", "done"}
@@ -26,13 +29,25 @@ _ALIASES = {"in progress": "in-progress", "inprogress": "in-progress", "won't fi
 _ENTRY_RE = re.compile(r"^(\s{0,3})[-*]\s+(.*)$")
 _HEAD_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _TRAILER_RE = re.compile(r"(?:^|\s)_(\d{4}-\d{2}-\d{2})(?:\s+\d{1,2}:\d{2}(?:\s*[A-Z]{2,4})?)?((?:,[^\n]*?)?)_\s*$")
-_PRIO_RE = re.compile(r"\(\s*(P[1-3])(?:\s*/\s*P[1-3])?\s*\)")
+_PRIO_RE = re.compile(r"\(\s*(P[1-3]|(?i:halt|halting))(?:\s*/\s*(?:P[1-3]|(?i:halt|halting)))?\s*\)")
+PRIORITIES = ["HALT", "P1", "P2", "P3"]
+PRIORITY_RANK = {p: i for i, p in enumerate(PRIORITIES)}   # HALT first in every sort
 _BOLD_RE = re.compile(r"^\*\*(.+?)\*\*(.*)$", re.S)
 
 FILE_KINDS = {  # what one entry of each file is, for change sentences
     "01": "bug", "02": "work item", "03": "possible bug", "04": "performance improvement",
     "05": "possible performance improvement", "06": "note for q", "07": "question for q", "08": "note",
     "09": "answer from q"}
+
+
+def norm_priority(p):
+    """'(halting)' / 'Halt' -> 'HALT'; P1-P3 as written."""
+    return "HALT" if p and p.lower() in ("halt", "halting") else p
+
+
+def is_halting(e):
+    """A HALT entry that still stops a Claude agent: not fixed / done / answered / told / wontfix, not archived."""
+    return e.get("priority") == "HALT" and e.get("status") not in DONE_STATUSES and not e.get("archived")
 
 
 def file_kind(name):
@@ -112,9 +127,9 @@ def _split_title(text):
         title = sm.group(1) if sm and len(sm.group(1)) <= 120 else text[:80].rstrip() + ("..." if len(text) > 80 else "")
         body = text[len(sm.group(1)):].strip() if sm and len(sm.group(1)) <= 120 else text
     if not prio:
-        pm = _PRIO_RE.search(body)
+        pm = _PRIO_RE.search(re.sub(r"`[^`\n]*`", lambda m: " " * len(m.group(0)), body))   # not '`(HALT)`' quoted in text
         if pm: prio = pm.group(1)
-    return title, prio, body
+    return title, norm_priority(prio), body
 
 
 def parse_file(name, text, thread_names=()):
@@ -238,6 +253,24 @@ def _short(title):
     return (title or "").rstrip(" .:,;")
 
 
+HALT_ON, HALT_OFF = "Now halting a Claude agent", "No longer halting"
+
+
+def _halt_item(item, o, n):
+    """Mark an item where the entry starts or stops halting: 'Now halting a Claude agent: <title> (<what>)' /
+    'No longer halting: ...', with halting: True / False. Items that don't change it are returned as they are."""
+    was, now = bool(o and is_halting(o)), bool(n and is_halting(n))
+    if was == now: return item
+    e = n or o
+    t = _short(e["title"])
+    rest = item["summary"][len(t) + 2:] if item["summary"].startswith(t + ": ") else item["summary"]
+    if item["kind"] == "added": rest = "new " + FILE_KINDS.get(e["file"][:2], "entry")
+    item["summary"] = "%s: %s%s" % (HALT_ON if now else HALT_OFF, t, " (%s)" % rest if rest and rest != t else "")
+    item["what"] = ("now halting a Claude agent" if now else "no longer halting") + (" (%s)" % rest if rest and rest != t else "")
+    item["halting"] = now
+    return item
+
+
 def _added_summary(e):
     k = FILE_KINDS.get(e["file"][:2], "entry")
     t = _short(e["title"])
@@ -308,9 +341,9 @@ def diff_entries(old_entries, new_entries):
     pairs += [(o, n) for o, n in p if o["file"] != n["file"]] + [(o, n) for o, n in p if o["file"] == n["file"]]
     for o, n in pairs:
         it = _compare(o, n)
-        if it: items.append(it)
-    for n in ln: items.append(_item("added", n, _added_summary(n), to=n["status"]))
-    for o in lo: items.append(_item("removed", o, "%s: removed from %s" % (_short(o["title"]), o["file"]), **{"from": o["status"]}))
+        if it: items.append(_halt_item(it, o, n))
+    for n in ln: items.append(_halt_item(_item("added", n, _added_summary(n), to=n["status"]), None, n))
+    for o in lo: items.append(_halt_item(_item("removed", o, "%s: removed from %s" % (_short(o["title"]), o["file"]), **{"from": o["status"]}), o, None))
     order = {e["id"]: i for i, e in enumerate(new_entries)}
     items.sort(key=lambda it: (it["file"], order.get(it["entryId"], 1 << 30)))
     return items

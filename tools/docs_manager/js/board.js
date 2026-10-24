@@ -18,9 +18,9 @@
   function miniCard(e) {
     const keys = DM.waitKeys(e);
     const gh = e.links.filter(l => ['pr', 'branch', 'run'].includes(l.kind) && l.state);
-    return h('a', {class: 'kcard' + (DM.isDone(e) ? ' done' : ''), href: '#entry=' + encodeURIComponent(e.id), title: (e.waitingWhy || '') ,
+    return h('a', {class: 'kcard' + (DM.isDone(e) ? ' done' : '') + (DM.isHalting(e) ? ' halting' : ''), href: '#entry=' + encodeURIComponent(e.id), title: (e.waitingWhy || ''),
       onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }},
-      h('div', {class: 'kc-t'}, e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null, ' ', DM.trimTitle(e.title)),
+      h('div', {class: 'kc-t'}, DM.priEl(e), ' ', DM.trimTitle(e.title)),
       h('div', {class: 'kc-m'}, DM.fileShort(e.file), e.thread ? ' · ' + e.thread : '',
         e.lastChanged && e.lastChanged.time ? [' · ', DM.timeEl(e.lastChanged.time)] : null),
       keys.length > 1 || gh.length ? h('div', {class: 'kc-tags'},
@@ -48,9 +48,9 @@
     }
     const grid = h('div', {class: 'kanban', style: {gridTemplateColumns: 'repeat(' + cols.length + ', minmax(160px, 1fr))'}});
     for (const {w, list} of cols) {
-      grid.appendChild(h('div', {class: 'kcol ' + w.cls},
+      grid.appendChild(h('div', {class: 'kcol ' + w.cls + (list.length ? '' : ' empty'), title: w.key === 'halt' ? 'HALT items: a Claude agent can’t continue until you act' : null},
         h('div', {class: 'kcol-h'}, h('span', null, w.label), h('b', null, String(list.length))),
-        list.length ? list.map(miniCard) : h('div', {class: 'faint kempty'}, 'nothing')));
+        list.length ? list.map(miniCard) : h('div', {class: 'faint kempty'}, w.key === 'halt' ? 'no Claude is stopped' : 'nothing')));
     }
     body.appendChild(grid);
   }
