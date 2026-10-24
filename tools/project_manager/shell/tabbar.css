@@ -10,6 +10,9 @@
   --starting: #e0a43a;
   --down: #5d636c;
   --accent: #4c8dff;
+  --human: #3fbf7f;
+  --third: #36b3c4;
+  --ai: #c8664f;
 }
 * { box-sizing: border-box; }
 html, body {
@@ -18,10 +21,36 @@ html, body {
 }
 #bar { display: flex; align-items: center; height: 34px; padding: 0 8px 0 7px; gap: 6px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
 /* the bar moves the window (there is no title bar); everything clickable in it does not */
-.tab, .icon, #update, #clock, #err { -webkit-app-region: no-drag; }
+.tab, .icon, #update, #clock, #err, #stats { -webkit-app-region: no-drag; }
 #logo { flex: none; display: flex; align-items: center; padding-right: 4px; }
-#tabs { flex: 1 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 100%; }
+#tabs { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 100%; }
 #tabs::-webkit-scrollbar { display: none; }
+/* (the space between the tabs and the right-hand items; the tabs shrink only once it is gone) */
+#fill { flex: 1 1 0; min-width: 0; }
+/* the Editor Manager's facts: Testing · Production · Human-made · Refreshed. tabbar.js's fit() sets data-lv as the
+   window narrows: 1 short labels, 2 no Refreshed, 3 no Production / bar, 4 hidden; the tabs never shrink for them. */
+#stats { flex: none; display: flex; align-items: center; gap: 0; height: 26px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+#stats[hidden], #stats[data-lv="4"] { display: none; }
+#stats:hover { background: var(--hover); }
+#stats:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+#stats.stale { opacity: .5; }
+#stats .f { display: flex; align-items: baseline; gap: 5px; }
+#stats .f + .f { margin-left: 9px; padding-left: 10px; border-left: 1px solid var(--line); }
+#stats .k { color: var(--muted); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+#stats .k.s { display: none; }
+#stats .v { color: var(--strong); font-variant-numeric: tabular-nums; }
+#stats .v.none { color: var(--muted); }
+#stats .x { color: var(--muted); font-size: 11px; }
+#stats .hbar { align-self: center; display: flex; width: 44px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--down); margin-left: 2px; }
+#stats .hbar i { display: block; height: 100%; }
+#stats .hbar .h { background: var(--human); }
+#stats .hbar .t { background: var(--third); }
+#stats .hbar .a { background: var(--ai); }
+#stats[data-lv="1"] .k.l, #stats[data-lv="2"] .k.l, #stats[data-lv="3"] .k.l { display: none; }
+#stats[data-lv="1"] .k.s, #stats[data-lv="2"] .k.s, #stats[data-lv="3"] .k.s { display: inline; }
+#stats[data-lv="1"] .x, #stats[data-lv="2"] .x, #stats[data-lv="3"] .x { display: none; }
+#stats[data-lv="2"] .f.r, #stats[data-lv="3"] .f.r, #stats[data-lv="3"] .f.p, #stats[data-lv="3"] .hbar { display: none; }
 .tab {
   flex: none; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 8px; border: 0; border-radius: 6px;
   background: transparent; color: var(--text); font: inherit; cursor: pointer; position: relative; white-space: nowrap;

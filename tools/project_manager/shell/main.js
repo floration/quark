@@ -50,6 +50,12 @@ const PM_PORT_DEFAULT = 8768;
 // play note is waiting, else every PLAY_SLOW_MS; a new waiting note brings the window up on the Play tab
 const PLAY_FAST_MS = 2000;
 const PLAY_SLOW_MS = 15000;
+// the Editor Manager's facts on the tab bar's right (q, 2026-10-24): GET <Editor Manager>/api/summary every STATS_POLL_MS
+// (STATS_RETRY_MS while there is none yet or the last one failed; 4x slower while minimized), and at once when the
+// Editor Manager page says it refreshed (quarkShell.statsChanged()). Its snapshot only changes on a refresh, so this is
+// a cheap check, and the tab bar redraws only when the answer differs.
+const STATS_POLL_MS = 45000;
+const STATS_RETRY_MS = 15000;
 
 // ---------- paths ----------
 function argValue(name, argv = process.argv) {
@@ -378,6 +384,7 @@ function stopStartedServers() {
   clearTimeout(watchTimer);
   clearTimeout(updatesTimer);
   clearTimeout(playTimer);
+  clearTimeout(statsTimer);
   for (const s of sup.values()) clearTimeout(s.timer);
   for (const rec of started.values()) {
     if (!rec.exited) killTree(rec.pid);
@@ -856,6 +863,61 @@ function bringUpPlayNote(id) {
   }, 400);
 }
 
+// ---------- Editor Manager facts (tab bar, right side) ----------
+let statsTimer = null;
+let statsBusy = false;
+let editorStats = null; // { testing: {version, sha}, production: {version, tag, sha}, human: {pct, h, t, a}, at, fetched, stale }
+function localJSON(host, port, pathname, timeout) {
+  // -> the JSON answer, or null. From the main process: no Origin header, so the Editor Manager's host check accepts it
+  return new Promise((resolve) => {
+    const req = http.get({ host, port, path: pathname, timeout, headers: { 'User-Agent': 'quark-project-shell' } }, (res) => {
+      const chunks = [];
+      let size = 0;
+      res.on('data', (c) => { size += c.length; if (size < 1 << 20) chunks.push(c); });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return resolve(null);
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { resolve(null); }
+      });
+      res.on('error', () => resolve(null));
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+  });
+}
+const str = (v, n = 40) => (typeof v === 'string' ? v.slice(0, n) : '');
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+function statsFromSummary(s) {
+  if (!s || typeof s !== 'object' || !s.testing || !s.production) return null;
+  const p = s.provenance && typeof s.provenance === 'object' ? s.provenance : {};
+  return {
+    testing: { version: str(s.testing.version), sha: str(s.testing.sha) },
+    production: { version: str(s.production.version), tag: str(s.production.tag), sha: str(s.production.sha) },
+    human: { pct: num(p.pct_human), h: num(p.human) || 0, t: num(p.third_party) || 0, a: num(p.ai) || 0 },
+    at: str(s.generated_at), fetched: s.fetched === true, stale: false,
+  };
+}
+async function pollStats() {
+  clearTimeout(statsTimer);
+  if (stopped || statsBusy) return;
+  statsBusy = true;
+  let ok = false;
+  try {
+    const t = tabById('dashboard');
+    let next = null;
+    if (t && t.installed && t.probeHost && t.port) {
+      next = statsFromSummary(await localJSON(t.probeHost, t.port, '/api/summary', 4000));
+      ok = !!next;
+      // (server down or still on its first snapshot: keep the last facts, dimmed)
+      if (!next && editorStats) next = Object.assign({}, editorStats, { stale: true });
+    }
+    if (JSON.stringify(next) !== JSON.stringify(editorStats)) { editorStats = next; updateTabbar(); }
+  } finally {
+    statsBusy = false;
+    const ms = (ok ? STATS_POLL_MS : STATS_RETRY_MS) * (win && win.isMinimized() ? 4 : 1);
+    if (!stopped) statsTimer = setTimeout(pollStats, ms);
+  }
+}
+
 function updateTabbar() {
   // (a server's exit handler can run while the app quits, after the tab bar's webContents is gone)
   if (stopped || !tabbar || !tabbar.webContents || tabbar.webContents.isDestroyed()) return;
@@ -865,6 +927,7 @@ function updateTabbar() {
     error: tabsError,
     updated: selfUpdated,
     tabs: tabbarTabs(),
+    stats: editorStats,
   });
 }
 
@@ -1262,6 +1325,7 @@ function createWindow() {
   startKeepAlive();
   updatesTimer = setTimeout(pollUpdates, UPDATES_FIRST_MS);
   playTimer = setTimeout(pollPlay, UPDATES_FIRST_MS);
+  statsTimer = setTimeout(pollStats, UPDATES_FIRST_MS);
 }
 
 // ---------- IPC ----------
@@ -1279,6 +1343,11 @@ ipcMain.on('shell:play', (e) => {
   const entry = entryFor(e.sender);
   if (entry && entry.mode === 'page' && entry.tab.id === 'play') pollPlay();
 });
+ipcMain.on('shell:stats', (e) => {
+  // the Editor Manager page refreshed its snapshot (or a mark changed the human-made %): read its summary now
+  const entry = entryFor(e.sender);
+  if (entry && entry.mode === 'page' && entry.tab.id === 'dashboard') pollStats();
+});
 ipcMain.on('shell:retry', (e) => {
   const entry = entryFor(e.sender);
   if (entry && entry.mode !== 'page') bringUp(entry, entry.pendingHash, true);
@@ -1292,7 +1361,7 @@ ipcMain.on('shell:tabbar', (e, cmd) => {
 });
 ipcMain.handle('shell:tabs', (e) => {
   if (!tabbar || e.sender !== tabbar.webContents) return null;
-  return { active: activeId, error: tabsError, updated: selfUpdated, tabs: tabbarTabs() };
+  return { active: activeId, error: tabsError, updated: selfUpdated, tabs: tabbarTabs(), stats: editorStats };
 });
 
 // ---------- selftest (local verification only) ----------

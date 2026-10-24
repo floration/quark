@@ -29,14 +29,14 @@ DEFAULT_TABS = {"tabs": [
     # (the Play tab is a page of the Supervisor Board server: same port, kept up by the project tab, so no keepAlive)
     {"id": "play", "name": "Play", "parent": "project", "url": "http://127.0.0.1:8768/play?embed=1", "port": 8768,
      "start": "py -3 \"%PM%\\server.py\""},
+    {"id": "docs", "name": "Claude Manager", "parent": "project", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766,
+     "folder": "docs-manager", "start": "py -3 serve.py --docs \"%QUARK%\\Claude Documents\" --port 8766 --quiet",
+     "keepAlive": True},
     {"id": "github", "name": "GitHub Manager", "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767,
      "folder": "github-manager", "start": "py -3 -B server.py --data \"%QUARK%\\github-manager\"", "keepAlive": True,
      "lowPriority": True},
     {"id": "tests", "name": "Tests", "parent": "github", "url": "http://127.0.0.1:8775/?embed=1", "port": 8775,
      "folder": "tests-editor", "start": "py -3 serve.py --port 8775 --no-browser", "keepAlive": True},
-    {"id": "docs", "name": "Claude Manager", "parent": "project", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766,
-     "folder": "docs-manager", "start": "py -3 serve.py --docs \"%QUARK%\\Claude Documents\" --port 8766 --quiet",
-     "keepAlive": True},
     {"id": "dashboard", "name": "Editor Manager", "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
      "folder": "editor-dashboard", "start": "py -3 dashboard.py --quark \"%QUARK%\" --no-browser", "keepAlive": True,
      "childLabel": "Editors"},
@@ -277,7 +277,8 @@ def write_default(paths):
     except (OSError, ValueError):
         data = DEFAULT_TABS
     if isinstance(data, dict):
-        data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]), defaultsPlaced=list(PLACE_ONCE))
+        data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]), defaultsPlaced=list(PLACE_ONCE),
+                    defaultsMoved=sorted(MOVE_ONCE))
     util.write_json_atomic(path, data)
     return True
 
@@ -293,6 +294,10 @@ LEGACY_DEFAULT_IDS = ("project", "github", "docs", "dashboard", "sound", "ui", "
 
 # Default tabs whose place in q's file is fixed once by `upgrade` (see there).
 PLACE_ONCE = ("play",)
+# Reorders of the default tabs that `upgrade` applies once to a tabs.json that still has the older default order (q's
+# own order stays): name -> (tab moved, the tab it now goes right before, the default order before the change).
+# docs-before-github (q, 2026-10-24): the bar reads Supervisor Board | Play, Claude Manager, GitHub Manager, Editor Manager.
+MOVE_ONCE = {"docs-before-github": ("docs", "github", ("project", "play", "github", "tests", "docs", "dashboard"))}
 
 
 def _insert_in_default_place(lst, tab, order):
@@ -308,11 +313,36 @@ def _insert_in_default_place(lst, tab, order):
     lst.append(tab)
 
 
+def _move_once(lst, moved):
+    """MOVE_ONCE: each move runs once per tabs.json (`defaultsMoved` records it). It moves the tab only while q's file
+    still has the older default order for those tabs (same relative order of the ids it has, and the two tabs share a
+    parent), so a list q reordered himself is left as it is. Returns (ids moved, the new defaultsMoved list)."""
+    out = []
+    for name, (tid, before, old_order) in MOVE_ONCE.items():
+        if name in moved:
+            continue
+        moved = moved + [name]
+        ids = [x.get("id") if isinstance(x, dict) else None for x in lst]
+        if tid not in ids or before not in ids:
+            continue
+        a, b = lst[ids.index(tid)], lst[ids.index(before)]
+        if a.get("parent") != b.get("parent"):
+            continue
+        if [i for i in ids if i in old_order] != [i for i in old_order if i in ids]:
+            continue  # (q's own order)
+        lst.remove(a)
+        lst.insert(lst.index(b), a)
+        out.append(tid)
+    return out, moved
+
+
 def upgrade(paths):
     """Bring q's tabs.json up to the current defaults without touching what q changed:
     - a default tab that is new since this file was written (its id is neither in the file nor in its `defaultsSeen`
       list) is appended, so a new tool appears after setup; a default tab q removed stays removed;
     - a retired default tab (RETIRED_DEFAULTS, still pointing where it did) is removed;
+    - a default reorder (MOVE_ONCE: Claude Manager before GitHub Manager) is applied once while the file still has
+      the older default order;
     - for a default tab (same id, url, port and folder as the default), a start command that an older default used
       (or none) becomes the new one, and keepAlive / lowPriority are added when the tab does not set them.
     `defaultsSeen` (top level, next to `tabs`) lists the default ids already offered. The old file is kept as
@@ -351,6 +381,9 @@ def upgrade(paths):
             t["parent"] = d["parent"]  # (the Play tab belongs under the Supervisor Board; other tabs keep q's layout)
         if t != before:
             changed.append(t["id"])
+    moved = data.get("defaultsMoved") if isinstance(data.get("defaultsMoved"), list) else []
+    ids_moved, moved = _move_once(lst, moved)
+    changed += [i for i in ids_moved if i not in changed]
     order = [d["id"] for d in DEFAULT_TABS["tabs"]]
     for d in DEFAULT_TABS["tabs"]:
         if d["id"] not in have and d["id"] not in seen:
@@ -373,9 +406,10 @@ def upgrade(paths):
         if lst.index(t) != i and tid not in changed:
             changed.append(tid)
     all_seen = sorted((seen | set(defaults)) - set(RETIRED_DEFAULTS))
-    if changed or data.get("defaultsSeen") != all_seen or data.get("defaultsPlaced") != placed:
+    if changed or data.get("defaultsSeen") != all_seen or data.get("defaultsPlaced") != placed or data.get("defaultsMoved") != moved:
         data["defaultsSeen"] = all_seen
         data["defaultsPlaced"] = placed
+        data["defaultsMoved"] = moved
         try:
             with open(path, "rb") as f:
                 old = f.read()

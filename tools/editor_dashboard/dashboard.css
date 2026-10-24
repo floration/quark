@@ -16,6 +16,15 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .fact .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--qt-muted); }
 .fact .bar { width: 120px; margin-top: 3px; }
 .actions { display: flex; gap: 10px; align-items: center; }
+/* (?embed=1: the Quark Project tab bar shows the facts; the header row is only for the "no git clones" error, and
+   dashboard.js moves Refresh / fetch into the view tabs' row) */
+.embed #top { display: none; }
+.embed #top.alert { display: flex; padding: 6px 14px; }
+.embed #top.alert .brand, .embed #top.alert .fact:not(.err) { display: none; }
+.embed #tabs .actions { margin-left: 14px; }
+.embed #tabs #refresh { background: var(--qt-accent); color: var(--qt-accent-ink); border: 1px solid var(--qt-accent);
+  border-radius: var(--qt-radius); padding: 2px 12px; font-weight: 600; }
+.embed #tabs #refresh:disabled { opacity: .7; }
 
 #tabs { display: flex; gap: 2px; padding: 0 14px; background: var(--qt-panel); border-bottom: 1px solid var(--qt-line); align-items: center; }
 #tabs button { white-space: nowrap; background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 12px; color: var(--qt-muted); }

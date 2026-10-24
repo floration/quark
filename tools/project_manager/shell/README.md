@@ -14,7 +14,7 @@ Quark\project-manager\electron\electron.exe Quark\project-manager\shell [--tab=<
 |---|---|
 | `main.js` | window, tab views, tabs.json, server start / stop, navigation lock, permissions, downloads, shortcuts |
 | `preload.js` | `window.quarkShell` in every tab, `window.quarkTabbar` in the tab bar |
-| `tabbar.html` / `.css` / `.js` | the 34 px strip: Q logo, tabs with status dots, reload, Dallas time |
+| `tabbar.html` / `.css` / `.js` | the 34 px strip: Q logo, tabs with status dots, the Editor Manager's facts, reload, Dallas time |
 | `tabs.default.json` | used when `Quark\project-manager\tabs.json` is missing (setup can copy it there) |
 | `package.json` | app name / version (`quarkShell.version`), entry point |
 
@@ -40,8 +40,8 @@ project-manager-hidden.vbs`, which runs `project-manager.cmd --edge` with window
 
 Same rules as SPEC.md, plus two optional fields:
 
-- `parent`: the id of the tab this one sits under. The default tree is Supervisor Board → GitHub Manager, Claude
-  Manager, Editor Manager → the editors. Tabs are ordered depth first (siblings keep their file order); Ctrl+1..8 and
+- `parent`: the id of the tab this one sits under. The default tree is Supervisor Board → Play, Claude Manager,
+  GitHub Manager (→ Tests), Editor Manager → the editors. Tabs are ordered depth first (siblings keep their file order); Ctrl+1..8 and
   Ctrl+Tab follow that order, Ctrl+9 is the last tab. The top level and its children are always shown; deeper tabs (the editors) are shown as
   a labelled group after their parent while the parent or one of them is active, otherwise the parent shows a caret
   with the number of hidden tabs. An unknown parent or a cycle makes the tab top level.
@@ -195,8 +195,24 @@ focus the taskbar button flashes until the window is focused. Notes already wait
 `server.py --init` (tabs.upgrade) puts a new default tab right after the default tab before it that q's tabs.json has
 (Play: right after the Supervisor Board, its first child), not at the end; a Play tab an older upgrade appended (or
 one without its `parent`) is moved there once (`defaultsPlaced` in tabs.json), after which q's placement stays.
+A reorder of the defaults (`MOVE_ONCE` in pm/tabs.py; so far the Claude Manager moved before the GitHub Manager, q
+2026-10-24) is applied once to a tabs.json that still has the older default order (the default ids it has in the old
+relative order, the two tabs under the same parent) and recorded in `defaultsMoved`; an order q chose stays as it is.
 A note form whose session was saved or skipped elsewhere closes on the next refresh; Save / Skip on it answer 409
 `already-noted` (Skip of a skipped session is an ok no-op), so a note is never written twice.
+
+## The Editor Manager's facts (tab bar, right side)
+
+After the tabs, before reload and the clock, every tab shows the Editor Manager's snapshot: Testing version, Production
+version, Human-made % with a small human / third-party / AI bar, and the time of its last refresh (Dallas) with "no
+fetch" / "with fetch". The hover title adds the shas, the tag and the counts; a click opens the Editor Manager tab.
+main.js reads `GET http://127.0.0.1:8765/api/summary` from the main process (no Origin header, so the tab bar's CSP
+stays `default-src 'none'`) 3 s after start, then every 45 s (15 s while it has no answer, 4x slower minimized) and at
+once when the Editor Manager page calls `quarkShell.statsChanged()` after a Refresh or a mark; the tab bar redraws only
+when the answer changed. While the Editor Manager does not answer, the last facts stay, dimmed. As the window narrows
+the facts shrink before the tabs ever do (tabbar.js `fit()`, on render and resize only): short labels, then no
+Refreshed, then no Production and bar, then hidden. Embedded (`?embed=1`) the Editor Manager page drops its own header
+row (the facts) and puts Refresh / fetch to the right of its view tabs; in a browser it keeps the header.
 
 ## Testing without Windows
 
