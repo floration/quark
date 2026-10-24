@@ -741,7 +741,7 @@ static void testHideScoring(uint16_t port) {
 
 // B8: hide and seek ends tied for first -> rock paper scissors among the tied, synced to every client. `n` humans
 // (all tied); the server and the clients see the same throws. Returns false if the setup failed.
-static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls) {
+static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls, const std::vector<double>& hidden = {}) {
     cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
     if (!rulesStart(s, cfg, c, n, cls, false)) return false;
     s.command("forcestart");
@@ -749,8 +749,10 @@ static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vect
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // live
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // time's up: round end
     CHECK(s.ms_.phase == PHASE_ROUND_END);
-    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; }   // every round played, all on 3
+    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; p.hideSurvived = 0; }   // every round played, all on 3
+    for (size_t k = 0; k < hidden.size() && k < (size_t)n; k++) s.players_[c[k].clientId()].hideSurvived = hidden[k];   // (the time tiebreak, T23)
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    if (!hidden.empty()) return true;   // (the caller checks what the time decided)
     CHECK(s.ms_.phase == PHASE_ROUND_END && (s.ms_.flags & MS_RPS) && s.rps_.stage == RPS_PICK && s.rps_.throwNo == 1);
     for (auto* cl : cls) CHECK(cl->mode().flags & MS_RPS);
     return (s.ms_.flags & MS_RPS) != 0;
@@ -778,6 +780,25 @@ static int rpsShapeIn(const GameEvent& e, int id) {   // a player's shape in an 
     return -1;
 }
 
+// T23: hide and seek tied on score: the most time hidden wins first; only the ones level on that too play rock paper
+// scissors.
+static void testHideTimeTiebreak(uint16_t port) {
+    printf("hide and seek tiebreak: time hidden first, then rock paper scissors\n");
+    {
+        Server s; ServerConfig cfg; cfg.port = port; NetClient c[3]; std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls, {50, 10, 20})) { s.stop(); return; }
+        printf("  3 tied on score, hidden 50 / 10 / 20 s: %s\n", s.ms_.phase == PHASE_MATCH_END ? "match over, no rock paper scissors" : "still going");
+        CHECK(s.ms_.phase == PHASE_MATCH_END && !(s.ms_.flags & MS_RPS));
+        s.stop();
+    }
+    {
+        Server s; ServerConfig cfg; cfg.port = (uint16_t)(port + 1); NetClient c[3]; std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls, {40, 40, 20})) { s.stop(); return; }
+        int in = 0; for (int i = 0; i < kMaxPlayers; i++) in += s.rps_.in >> i & 1;
+        CHECK((s.ms_.flags & MS_RPS) && in == 2 && !(s.rps_.in >> c[2].clientId() & 1) && s.rps_.bestOf3);
+        s.stop();
+    }
+}
 static void testRpsTwo(uint16_t port) {
     printf("hide and seek tiebreak: two tied, best of 3, a draw is thrown again\n");
     Server s;
@@ -866,7 +887,7 @@ static void testRpsMany(uint16_t port) {
         pump(s, cls, 0.2, idle);
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
-        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; p.hideSurvived = 0; }   // (level on time too)
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
         CHECK((s.ms_.flags & MS_RPS) && bot >= 0 && s.rps_.pick[bot] >= RPS_ROCK && s.rps_.pick[bot] <= RPS_SCISSORS);
         s.stop();
@@ -1715,7 +1736,7 @@ static void testGameRules(const std::string& only) {
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
-        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
+        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
         {"locator", [] { testLocator(TP(29260)); }},
         {"aware", [] { testItAwareness(TP(29263)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
