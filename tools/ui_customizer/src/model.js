@@ -75,6 +75,28 @@ const QModel = (() => {
     };
   }
 
+  // The browser autosave stores a page the layout leaves exactly as the game has it as {$base: <its origId>, uid} (most
+  // of the 120 pages: the saved layout is a few KB, not 1.7 MB of copies, which file:// pages share one small storage
+  // quota for). Loading puts the dump's page back in its place, so after a dump refresh those pages are the new
+  // game's; a page the dump no longer has is dropped (nothing of it was the owner's). Other pages pass through.
+  const isBaseRef = (p) => !!p && typeof p === 'object' && typeof p.$base === 'string' && !Array.isArray(p.elements);
+  function expandBaseRefs(baseline, doc) {
+    if (!doc || !Array.isArray(doc.pages) || !doc.pages.some(isBaseRef)) return doc;
+    const fresh = new Map(makeWorking(baseline).pages.map((p) => [p.origId, p]));
+    const pages = doc.pages.map((p) => {
+      if (!isBaseRef(p)) return p;
+      const b = fresh.get(p.$base);
+      if (!b) return null;
+      fresh.delete(p.$base);
+      if (p.uid) b.uid = String(p.uid);
+      return b;
+    }).filter(Boolean);
+    return Object.assign({}, doc, { pages });
+  }
+  // A page's autosave text: the reference when the diff says it is the game's (no notes, no provenance mark), else json.
+  const baseRefJson = (entry, json) => (entry && entry.base && entry.status === 'unchanged' && !entry.page.prov && !entry.page.notes
+    ? JSON.stringify({ $base: entry.base.origId, uid: entry.page.uid }) : json);
+
   // Repairs a layout read from storage or a file: every page and element gets a uid, the expected arrays exist.
   function sanitizeWorking(doc) {
     if (!doc || !Array.isArray(doc.pages)) throw new Error('not a layout (no "pages" array)');
@@ -698,7 +720,7 @@ const QModel = (() => {
     return { data: { format: 1, tool: 'ui-customizer', items: sorted }, added, updated, kept, other: Object.keys(old).filter((k) => !(k in items)).length };
   }
 
-  return { KINDS, GAME_KINDS, NEW_KINDS, normalizeDump, makeWorking, sanitizeWorking, signature, newElement, copyElement, newPage,
+  return { KINDS, GAME_KINDS, NEW_KINDS, normalizeDump, makeWorking, sanitizeWorking, expandBaseRefs, baseRefJson, signature, newElement, copyElement, newPage,
     diff, elementChanges, specMarkdown, SPEC_LAYOUTS, fontHeadline, isDefaultFont, stamp, clone, uid, layoutFont, setLayoutFont, layoutFontDesc,
     ymd, provKey, registryKey, mapProvenanceItems, sanitizeProv, markHuman, markAi, provenanceItems, parseProvenance, mergeProvenance };
 })();

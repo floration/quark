@@ -18,17 +18,23 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 }, acceptDownloads: true });
   // a fake File System Access folder (the real picker can't be driven headless): provenance.json is written into it,
   // kept in localStorage across reloads; it starts with an item of another page that the merge must keep
+  // (read from localStorage on first use, never while the document starts: an init script touching localStorage on a
+  // file:// page can leave that page with an empty storage area in Chromium, so the reload would find no autosave)
   await ctx.addInitScript(() => {
-    let files = null;
-    try { files = JSON.parse(localStorage.getItem('__fakeFs') || 'null'); } catch (e) { /* none */ }
-    files = window.__fakeFiles = files || { 'build.py': '', 'provenance.json': JSON.stringify({ format: 1, tool: 'ui-customizer',
-      items: { 'ui/zz-other': { origin: 'ai', by: 'q', date: '2026-10-23', note: 'kept by the merge' } } }) };
-    const save = () => localStorage.setItem('__fakeFs', JSON.stringify(files));
-    const fileHandle = (name) => ({ kind: 'file', name, getFile: async () => ({ text: async () => files[name] }),
-      createWritable: async () => { let buf = ''; return { write: async (t) => { buf += t; }, close: async () => { files[name] = buf; save(); } }; } });
+    let cache = null;
+    const files = () => {
+      if (cache) return cache;
+      try { cache = JSON.parse(localStorage.getItem('__fakeFs') || 'null'); } catch (e) { /* none */ }
+      return (cache = cache || { 'build.py': '', 'provenance.json': JSON.stringify({ format: 1, tool: 'ui-customizer',
+        items: { 'ui/zz-other': { origin: 'ai', by: 'q', date: '2026-10-23', note: 'kept by the merge' } } }) });
+    };
+    Object.defineProperty(window, '__fakeFiles', { get: files });
+    const save = () => localStorage.setItem('__fakeFs', JSON.stringify(files()));
+    const fileHandle = (name) => ({ kind: 'file', name, getFile: async () => ({ text: async () => files()[name] }),
+      createWritable: async () => { let buf = ''; return { write: async (t) => { buf += t; }, close: async () => { files()[name] = buf; save(); } }; } });
     const dir = { kind: 'directory', name: 'ui-customizer', queryPermission: async () => 'granted', requestPermission: async () => 'granted',
       getFileHandle: async (name, o) => {
-        if (!(name in files)) { if (!o || !o.create) throw new DOMException('not found', 'NotFoundError'); files[name] = ''; }
+        if (!(name in files())) { if (!o || !o.create) throw new DOMException('not found', 'NotFoundError'); files()[name] = ''; }
         return fileHandle(name);
       } };
     window.__pickerCalls = 0;
@@ -164,10 +170,13 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
 
   // autosave survives a reload
   await page.waitForTimeout(600);
+  const stored = await ev(() => (localStorage.getItem('quark-ui-customizer/layout/v1') || '').length);
+  assert.ok(stored > 0 && stored < 200000, `autosave keeps only the changed pages whole (${stored} chars, the full layout is ~1.7 MB)`);
   await page.reload();
+  await page.waitForFunction(() => window.QApp && QApp.S && QApp.S.doc);   // (a busy machine can take longer than a fixed wait)
   await page.waitForTimeout(300);
   const kept = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
-  assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded');
+  assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded (got ' + (kept ? kept.label : 'no widget') + ')');
   assert.strictEqual((await provOf(target.page)).origin, 'human', 'mark autosaved');
 
   // ---- in-page dialogs (the Quark Project app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
@@ -349,10 +358,11 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   // autosave keeps the font and the upload across a reload
   await page.waitForTimeout(600);
   await page.reload();
+  await page.waitForFunction(() => window.QApp && QApp.S && QApp.S.doc);   // (a busy machine can take longer than a fixed wait)
   await page.waitForTimeout(300);
   if (upId) await page.waitForFunction((x) => !!QApp.fonts.get(x), upId, { timeout: 10000 });
   fstate = await ev(() => QApp.S.font);
-  assert.strictEqual(fstate.id, upId || trial, 'font kept after reload');
+  assert.strictEqual(fstate.id, upId || trial, 'font kept after reload: ' + JSON.stringify(fstate));
   assert.strictEqual(fstate.mult, 1.2, 'size kept after reload');
   if (upId) {   // remove it again (confirm dialog accepted above)
     await page.locator('#bFonts').click();
@@ -441,7 +451,7 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await ev(() => { const p = QApp.S.doc.pages.find((x) => x.id === 'main'); QApp.commit(() => { p.notes = 'provenance test'; }); });
   await ev(() => { window.showDirectoryPicker = undefined; });   // (a browser without the File System Access API)
   const provDl = page.waitForEvent('download', { predicate: (d) => d.suggestedFilename() === 'provenance.json' });
-  const [ldl] = await Promise.all([page.waitForEvent('download'), page.locator('#bExport').click()]);
+  const [ldl] = await Promise.all([page.waitForEvent('download', { predicate: (d) => d.suggestedFilename().startsWith('ui-layout-') }), page.locator('#bExport').click()]);
   const lexp = JSON.parse(fs.readFileSync(await ldl.path(), 'utf8'));
   assert.deepStrictEqual(lexp.doc.font, { id: 'rubik', weight: 700 }, 'exported layout carries its font');
   assert.ok(lexp.doc.pages.some((p) => p.prov && p.prov.origin === 'human'), 'exported layout carries the marks');

@@ -62,8 +62,10 @@
     if (raw) {
       try {
         const saved = JSON.parse(raw);
-        doc = QModel.sanitizeWorking(saved.doc);
-        if (saved.baseSig !== SIG) setTimeout(() => toast('The saved layout was made against a different dump (' + (saved.source && saved.source.commit) + '). Kept it; Reset starts over.', 6000), 300);
+        doc = QModel.sanitizeWorking(QModel.expandBaseRefs(baseline, saved.doc));
+        const refs = saved.doc && Array.isArray(saved.doc.pages) && saved.doc.pages.some((p) => p && p.$base);
+        if (saved.baseSig !== SIG) setTimeout(() => toast('The saved layout was made against another dump (' + String(saved.source && saved.source.commit || '?').slice(0, 8) + '). ' +
+          (refs ? 'Your changed pages are kept as you left them; the others now show this dump.' : 'Kept it as it was.') + ' Reset starts over.', 7000), 300);
         S.pageUid = store.get(PAGE_KEY) || saved.pageUid || null;
         if (saved.font) S.font = sanitizeFont(saved.font);
         else if (fontOfDoc(doc)) S.font = fontOfDoc(doc);
@@ -199,10 +201,13 @@
   const payloadHead = () => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: new Date().toISOString(), baseSig: SIG, source: baseline.source,
     pageUid: S.pageUid, font: S.font });
   const payload = () => Object.assign(payloadHead(), { doc: S.doc });
-  // the same JSON, the pages from the snapshot strings (no second stringify of the whole layout)
+  // The autosave: the pages from the snapshot strings (no second stringify of the whole layout), and a page that is
+  // still the game's as a reference to the dump (QModel.baseRefJson): a few KB instead of 1.7 MB per save.
   function payloadJson() {
     const head = payloadHead(), { pages, ...rest } = S.doc, open = (o) => JSON.stringify(o).slice(0, -1) + (Object.keys(o).length ? ',' : '');
-    return open(head) + '"doc":' + open(rest) + '"pages":[' + docSnap().join(',') + ']}}';
+    const entries = new Map(getDiff().pages.map((e) => [e.page, e]));
+    const snap = docSnap().map((j, i) => QModel.baseRefJson(entries.get(S.doc.pages[i]), j));
+    return open(head) + '"doc":' + open(rest) + '"pages":[' + snap.join(',') + ']}}';
   }
   function saveNow() {
     clearTimeout(saveTimer);

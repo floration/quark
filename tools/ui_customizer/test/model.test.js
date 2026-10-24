@@ -117,6 +117,28 @@ assert.ok(!md.includes('## Full layout'), 'the default spec has no full layout')
   assert.ok(!changedOnly.includes('out-of-date'));
 }
 
+// autosave: unchanged pages stored as references to the dump, expanded on load (and dropped when the dump lost them)
+{
+  const d4 = M.makeWorking(base);
+  d4.pages.find((p) => p.id === 'main').elements[0].x += 3;
+  const ents = new Map(M.diff(base, d4).pages.map((e) => [e.page, e]));
+  const saved = { pages: d4.pages.map((p) => JSON.parse(M.baseRefJson(ents.get(p), JSON.stringify(p)))) };
+  assert.strictEqual(saved.pages.filter((p) => p.$base).length, d4.pages.length - 1, 'every unchanged page is a reference');
+  assert.ok(Array.isArray(saved.pages.find((p) => p.id === 'main').elements), 'the changed page is stored whole');
+  assert.ok(JSON.stringify(saved).length < JSON.stringify(d4).length / 2);
+  const back = M.sanitizeWorking(M.expandBaseRefs(base, JSON.parse(JSON.stringify(saved))));
+  assert.deepStrictEqual(back.pages.map((p) => p.uid), d4.pages.map((p) => p.uid), 'page uids kept');
+  assert.strictEqual(M.diff(base, back).counts.moved, 1, 'the edit survives, nothing else changed');
+  assert.strictEqual(M.diff(base, back).counts.pagesChanged, 1);
+  // a page with a note or a provenance mark is stored whole even when its widgets are the game's
+  const pause = d4.pages.find((p) => p.id === 'ingame/pause');
+  pause.notes = 'keep this';
+  assert.ok(!JSON.parse(M.baseRefJson(M.diff(base, d4).pages.find((e) => e.page === pause), '{"whole":1}')).$base);
+  // a reference to a page the dump no longer has is dropped
+  const gone = M.expandBaseRefs(base, { pages: [{ $base: 'nope#1', uid: 'p1' }, saved.pages[0]] });
+  assert.strictEqual(gone.pages.length, 1);
+}
+
 // the diff's fast path (identical copies) agrees with the field by field compare
 {
   const d3 = M.makeWorking(base), e = d3.pages[0].elements[0];
