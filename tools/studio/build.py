@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Builds the Asset Studio page's files (build/studio/): every default asset of the game plus manifest.json.
+"""Builds the asset files for the website's /assets/ page (build/studio/, read by tools/site_assets.py): every default asset of the game plus manifest.json.
     build/quark_tests exportassets build/assets_export
     python3 tools/studio/build.py [export_dir]          (default: build/assets_export)
 export_dir is what `quark_tests exportassets` writes: manifest.json and every asset as a file - each sound of each of
 the five sound kits and of each announcer voice (WAV), every model (glTF), every map (.qmap), the UI font, the icon,
 the website's pictures - as the game has them now (its shipped overrides included). This copies them to build/studio/
-and marks the ones that are already the owner's own (assets/overrides/, assets/sfx/custom/), so the page shows them as
-"yours, in the game". Publish tools/studio/index.html with the files in build/studio/ (paths as they are) after each
-update, so the page always shows the game's current defaults (docs/ASSETS.md)."""
+and marks the ones that are already the owner's own (assets/overrides/, assets/sfx/custom/). (It once fed the Asset
+Studio page, retired 2026-10-24; docs/ASSETS.md.)"""
 import json, os, shutil, sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))

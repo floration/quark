@@ -1,5 +1,5 @@
-// Assets: the asset export (`quark_tests exportassets <dir>`: every default asset as a file, for the Asset Studio,
-// tools/studio/build.py) and the owner's overrides (docs/ASSETS.md): models <-> glTF, the decoders, the font atlas,
+// Assets: the asset export (`quark_tests exportassets <dir>`: every default asset as a file, for the editors and the
+// website's /assets/ page via tools/studio/build.py) and the owner's overrides (docs/ASSETS.md): models <-> glTF, the decoders, the font atlas,
 // override lookup and the audio replacing its sounds.
 #include <algorithm>
 #include <cmath>
