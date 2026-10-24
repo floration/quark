@@ -1,5 +1,5 @@
 # Builds every push and checks it: meta (VERSION, changelogs, no secrets), the Windows / Linux / macOS builds and
-# packages, the website's data, and (work branches and a testing "final test" build: meta's sanitizer trigger) the
+# packages, the website's data, and (only a build a human marks as a final test: meta's sanitizer trigger) the
 # sanitizers + fuzzers, which fail only on memory / undefined-behaviour errors and which no release waits for.
 # CI runs no gameplay or UI tests (owner, 2026-10-24): quark_tests and quark --uitest are run locally before every
 # push, and the testing build is play-tested by hand (docs/RELEASE_CHECKLIST.md) before production.
@@ -15,9 +15,9 @@
 #   SITE        a manual run on the default branch with "site" ticked: builds, then publishes only the website for the
 #               production release VERSION names (which must exist and be latest). For a site deploy that failed or
 #               was skipped; it never makes a release.
-#   FINAL       a manual run with "final" ticked (meant for `testing`): meta + the sanitizers on the branch's current
-#               commit, nothing built or published. A testing push whose head commit message (a merged PR: its title)
-#               has [final] runs them too, beside its normal prerelease.
+#   FINAL       a manual run with "final" ticked (any branch, usually `testing`): meta + the sanitizers on its current
+#               commit, nothing built or published. A push whose head commit message (a merged PR: its title) has
+#               [final] runs them too, beside its normal build. Nothing else runs them (owner: a human marks a final test).
 # Any other push (or a manual run) builds and checks only.
 name: build-and-release
 on:
@@ -31,7 +31,7 @@ on:
         type: boolean
         default: false
       final:
-        description: "Final test: run the sanitizers on this branch's current commit (only meaningful on testing; builds and publishes nothing)"
+        description: "Final test: run the sanitizers on this branch's current commit (builds and publishes nothing)"
         type: boolean
         default: false
 permissions:
@@ -107,18 +107,16 @@ jobs:
               echo "::error::release $TAG already exists: bump VERSION (releases are never replaced)"; exit 1
             fi
           fi
-          # When the sanitizers run (owner, 2026-10-24); this is the one place to change it. Nothing waits for them.
-          #   work branches (and a plain manual run): every time
-          #   testing: only for a "final test" build, the one meant for production (docs/RELEASE_CHECKLIST.md section 0):
-          #     (1) a push whose head commit message has [final] (a merged PR's commit carries the PR title), or
-          #     (2) a manual run with "final" ticked (channel final)
-          #     (to keep only one of the two: delete the line for the other, and for (2) the `final` input above)
+          # When the sanitizers run (owner, 2026-10-24): ONLY for a build a human marks as a final test, on any branch; this is
+          # the one place to change it. Nothing waits for them. Agents never add the marker themselves.
+          #   (1) a push whose head commit message has [final] (a merged PR's commit carries the PR title), or
+          #   (2) a manual run with "final" ticked (channel final: meta + the sanitizers only)
+          #   (to keep only one of the two: delete the line for the other, and for (2) the `final` input above)
           #   production tags (that commit ran them on testing) and site-only runs: never
           SANITIZERS=false
           case "$CHANNEL" in
-            none) SANITIZERS=true ;;
-            final) SANITIZERS=true ;;                                           # (2)
-            testing) case "$HEAD_MSG" in *'[final]'*) SANITIZERS=true ;; esac ;;  # (1)
+            final) SANITIZERS=true ;;                                                 # (2)
+            none|testing) case "$HEAD_MSG" in *'[final]'*) SANITIZERS=true ;; esac ;;  # (1)
           esac
           { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}$([ "$SANITIZERS" = true ] && echo ', sanitizers')" >> "$GITHUB_STEP_SUMMARY"
@@ -219,7 +217,7 @@ jobs:
 
   sanitizers:   # REVIEW ENG-3: a memory / undefined-behaviour check, not a gameplay test (those run locally before a push).
     # quark_tests only drives the code here: the job fails on a sanitizer report or a fuzzer crash, never on a test's own
-    # CHECK. When it runs is meta's sanitizer trigger (work branches; on testing a "final test" build only; never a
+    # CHECK. When it runs is meta's sanitizer trigger (only a build a human marks as a final test, any branch; never a
     # production tag or a site-only run), and no release job waits for it (owner, 2026-10-24).
     needs: meta
     if: needs.meta.outputs.sanitizers == 'true'
