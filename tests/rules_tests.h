@@ -2172,6 +2172,83 @@ static void testFfaSpawnChoice() {
     }
 }
 
+// X10: the client's own mode calls (src/client/modecalls.h). Bomb: your side's job as a round's freeze begins, the
+// halftime swap, the bomb dropped / picked up; payload checkpoints as the point lines; free for all: only your own
+// lead changes, and your place. Then a real bomb match (2 rounds to win: the sides switch for round 2), followed
+// through a client's own mode states.
+static void testModeCalls(uint16_t port) {
+    printf("mode calls: bomb objective / halftime / dropped, payload checkpoints, ffa lead and place\n");
+    auto st = [](int mode, int phase, int round, int att, int bomb = BOMB_NONE, int point = 0) {
+        ModeState m; m.mode = (uint8_t)mode; m.phase = (uint8_t)phase; m.round = (uint8_t)round; m.attackers = (uint8_t)att;
+        m.bombState = (uint8_t)bomb; m.point = (uint8_t)point; return m;
+    };
+    auto has = [](const ModeCall* c, int n, const char* text) { for (int i = 0; i < n; i++) if (strstr(c[i].text, text)) return true; return false; };
+    ModeCall c[4];
+    int n = modeCalls(st(MODE_BOMB, PHASE_WARMUP, 0, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 1, TEAM_A), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "ATTACK:"));
+    n = modeCalls(st(MODE_BOMB, PHASE_WARMUP, 0, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 1, TEAM_A), TEAM_B, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "DEFEND:"));
+    n = modeCalls(st(MODE_BOMB, PHASE_ROUND_END, 6, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 7, TEAM_B), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 2 && has(c, n, "SIDES SWITCHED: YOU DEFEND NOW") && has(c, n, "DEFEND:"));
+    n = modeCalls(st(MODE_BOMB, PHASE_ROUND_END, 2, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 3, TEAM_A), -1, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "TEAM A ATTACKS"));
+    n = modeCalls(st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_CARRIED), st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_DROPPED), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "PICK IT UP"));
+    n = modeCalls(st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_CARRIED), st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_PLANTED), TEAM_B, 7, 8, c, 4);
+    CHECK(n == 0);   // (planted: the announcer's own line)
+    n = modeCalls(st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 0), st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 1), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 1 && c[0].voice == 8 && !c[0].text[0]);
+    n = modeCalls(st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 0), st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 1), TEAM_B, 7, 8, c, 4);
+    CHECK(n == 1 && c[0].voice == 7);
+    // free for all: place and lead
+    std::vector<PlayerSnap> ps(4);
+    int sc[4] = {5, 9, 5, 2};
+    for (int i = 0; i < 4; i++) { ps[i].id = (uint8_t)i; ps[i].score = (int16_t)sc[i]; }
+    int of = 0; bool tied = false;
+    CHECK(ffaPlace(ps, 0, &of, &tied) == 2 && of == 4 && tied);
+    CHECK(ffaPlace(ps, 1, &of, &tied) == 1 && !tied);
+    CHECK(ffaPlace(ps, 3, &of, &tied) == 4 && !tied);
+    ps[3].flags = PS_SPECTATOR;
+    CHECK(ffaPlace(ps, 3, &of, &tied) == 0 && of == 3);
+    CHECK(ffaLeadCall(false, true) == 1 && ffaLeadCall(true, false) == 0 && ffaLeadCall(true, true) == -1 && ffaLeadCall(false, false) == -1);
+    CHECK(std::string(ordinalSuffix(1)) == "ST" && std::string(ordinalSuffix(2)) == "ND" && std::string(ordinalSuffix(3)) == "RD" &&
+          std::string(ordinalSuffix(11)) == "TH" && std::string(ordinalSuffix(12)) == "TH" && std::string(ordinalSuffix(22)) == "ND");
+    // a real bomb match: the objective at each freeze, the halftime swap at round 2
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false; cfg.roundsToWin = 2;
+    NetClient cl[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, cl, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    ModeState pv = cl[0].mode();
+    std::vector<std::string> heard;
+    auto follow = [&](double secs) {
+        for (double t = 0; t < secs; t += 0.02) {
+            pump(s, cls, 0.02, idle);
+            const ModeState& ms = cl[0].mode();
+            const PlayerSnap* me = cl[0].findPlayer(cl[0].clientId());
+            int team = me && me->team() != TEAM_SPECTATOR ? me->team() : -1;
+            for (int k = 0, m = modeCalls(pv, ms, team, 7, 8, c, 4); k < m; k++) heard.push_back(c[k].text);
+            pv = ms;
+        }
+    };
+    follow(0.5);
+    for (int k = 0; k < 40 && s.ms_.phase == PHASE_FREEZE; k++) { s.phaseEnd_ = s.time(); follow(0.05); }
+    int def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? TEAM_B : TEAM_A);
+    if (def >= 0) s.killPlayer(def, -1, 252);   // round 1 to the attack
+    follow(0.3);
+    for (int k = 0; k < 40 && s.ms_.round < 2; k++) { s.phaseEnd_ = s.time(); follow(0.05); }
+    follow(0.3);
+    std::string all;
+    for (auto& h : heard) all += "[" + h + "] ";
+    printf("  heard: %s\n", all.c_str());
+    int objective = 0, halftime = 0;
+    for (auto& h : heard) { objective += h.find("ATTACK:") == 0 || h.find("DEFEND:") == 0; halftime += h.find("HALFTIME") == 0; }
+    CHECK(s.ms_.round == 2 && objective == 2 && halftime == 1);
+    s.stop();
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -2198,6 +2275,7 @@ static void testGameRules(const std::string& only) {
         {"heal", [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", [] { testScoreboardValue(); }},
         {"hudclock", [] { testHudClock(TP(29280)); }},
+        {"modecalls", [] { testModeCalls(TP(29312)); }},
         {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
         {"customkeep", [] { testCustomRulesKeep(); }},
         {"modehooks", [] { testModeHooks(TP(29310)); }},
