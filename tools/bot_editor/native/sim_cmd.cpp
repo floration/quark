@@ -426,8 +426,8 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
     netInit();
     // one data folder for all the matches (the game's user data folder is global): the map written once
     fs::path dir = fs::temp_directory_path() / ("quark_simbatch_" + std::to_string((long long)(maptoolNow() * 1000)));
-    if (!BotSim::prepareSharedDir(dir.string(), S.cfg.mapText, &err)) return cmdError(out, err);
-    S.cfg.sharedDataDir = dir.string();
+    if (!BotSim::prepareSharedDir(dir.u8string(), S.cfg.mapText, &err)) return cmdError(out, err);
+    S.cfg.sharedDataDir = dir.u8string();
     {
         Json s = Json::object();
         s.set("type", "start"); s.set("map", S.mapLabel); s.set("mode", modeName(S.cfg.mode)); s.set("tickRate", S.cfg.tickRate);
