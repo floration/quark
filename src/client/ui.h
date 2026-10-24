@@ -135,6 +135,7 @@ public:
 private:
     bool hover(float x, float y, float w, float h) const;
     float fit(std::string& t, float maxW, bool* clipped = nullptr) const;   // scale for t to fit maxW; clips t if it can't
+    const std::string& fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tw, bool* clipped) const;   // (no copy; ts, width)
     bool buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped);
     void report(UiWidget::Kind k, float x, float y, float w, float h, const std::string& label, const std::string& value,
                 const UiExp& e, bool enabled, bool clipped);

@@ -52,6 +52,21 @@ float Ui::fit(std::string& t, float maxW, bool* clipped) const {
     return ts;
 }
 
+// fit() for drawing: no copy of t (buf holds it only when it has to be clipped), and its width at the scale (ts, tw)
+// from the measuring fit() does anyway, so the caller doesn't measure it again. Returns the text to draw: t or buf.
+const std::string& Ui::fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tw, bool* clipped) const {
+    ts = textScale_;
+    tw = t.empty() ? 0.0f : r_->textWidth(t, textScale_);
+    if (t.empty() || tw <= maxW) return t;
+    ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
+    tw = r_->textWidth(t, ts);
+    if (tw <= maxW + 0.01f) return t;   // (shrunk to exactly fit, rounding can come out a hair over: not cut)
+    buf = r_->textClip(t, ts, maxW);
+    if (clipped) *clipped = true;
+    tw = r_->textWidth(buf, ts);
+    return buf;
+}
+
 // ---- the UI test's record of each widget (only with a probe attached: never in normal play) ----
 void Ui::report(UiWidget::Kind k, float x, float y, float w, float h, const std::string& label, const std::string& value,
                 const UiExp& e, bool enabled, bool clipped) {
@@ -100,9 +115,10 @@ bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label
     r_->rect(x, y, w, h, bg);
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
-    std::string shown = label;
-    float ts = fit(shown, w - 8 * scale_, clipped);
-    r_->text(x + (w - r_->textWidth(shown, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc);
+    std::string buf;
+    float ts, tw;
+    const std::string& shown = fitText(label, w - 8 * scale_, buf, ts, tw, clipped);
+    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc);
     return hv && in_.pressed;
 }
 
@@ -156,10 +172,13 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
     if (buttonImpl(x + w - bw, y, bw, h, ">", true, nullptr)) { index = (index + 1) % count; changed = true; }
     r_->rect(x + bw, y, w - 2 * bw, h, {0.08f, 0.09f, 0.11f, 0.95f});
     // (the value names say what they are: no "LABEL: " prefix, it overflowed; the label is the widget's id)
-    std::string t = index >= 0 && index < (int)names.size() ? names[index] : "?";
+    static const std::string kUnknown = "?";
+    const std::string& name = index >= 0 && index < (int)names.size() ? names[index] : kUnknown;
     bool clipped = false;
-    float ts = fit(t, w - 2 * bw - 8 * scale_, &clipped);
-    r_->text(x + (w - r_->textWidth(t, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1});
+    std::string buf;
+    float ts, tw;
+    const std::string& t = fitText(name, w - 2 * bw - 8 * scale_, buf, ts, tw, &clipped);
+    r_->text(x + (w - tw) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1});
     if (probe && !muted) {
         UiWidget wd;
         wd.where = where; wd.scope = scope;
@@ -189,16 +208,18 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         const float maxW = w - 8 * scale_;
         lab = label;
         ts = textScale_;
-        if (r_->textWidth(lab + ": " + num, ts) <= maxW) return;
-        ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(lab + ": " + num, 10.0f) * 0.1f));
-        if (r_->textWidth(lab + ": " + num, ts) > maxW + 0.01f) lab = r_->textClip(lab, ts, std::max(0.0f, maxW - r_->textWidth(": " + num, ts)));
+        const std::string full = lab + ": " + num;   // (built once: it was three times)
+        if (r_->textWidth(full, ts) <= maxW) return;
+        ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(full, 10.0f) * 0.1f));
+        if (r_->textWidth(full, ts) > maxW + 0.01f) lab = r_->textClip(lab, ts, std::max(0.0f, maxW - r_->textWidth(": " + num, ts)));
     };
     std::string lab;
     float ls;
     layout(buf, lab, ls);
-    std::string prefix = lab + ": ";
-    float tw = r_->textWidth(prefix + buf, ls), tx = x + (w - tw) * 0.5f;
-    float nx = tx + r_->textWidth(prefix, ls), nw = std::max(r_->textWidth(buf, ls), 24 * scale_);
+    std::string prefix = lab + ": ", shown = prefix + buf;
+    float tw = r_->textWidth(shown, ls), tx = x + (w - tw) * 0.5f;
+    float pw = r_->textWidth(prefix, ls), bw = r_->textWidth(buf, ls);   // (kept for drawing below, unless the value changes)
+    float nx = tx + pw, nw = std::max(bw, 24 * scale_);
     bool overNumber = hover(nx - 6 * scale_, y, nw + 12 * scale_, h);
     bool changed = false;
     bool editing = editSlider_ == id && focus_ == kSliderFocus + id;
@@ -249,14 +270,18 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         caret(ex + ew, ey, es);
         r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     } else {
-        snprintf(buf, sizeof buf, fmt, v);
-        layout(buf, lab, ls);
-        std::string s = lab + ": " + buf;
-        clipped = r_->textWidth(buf, ls) > w - 8 * scale_;
-        float sx = x + (w - r_->textWidth(s, ls)) * 0.5f, sy = y + (h - r_->textHeight(ls)) * 0.5f;
-        r_->text(sx, sy, ls, s, {1, 1, 1, 1});
+        if (changed) {   // (v was set this frame: its text and layout again; else they're the ones above)
+            snprintf(buf, sizeof buf, fmt, v);
+            layout(buf, lab, ls);
+            prefix = lab + ": ";
+            shown = prefix + buf;
+            tw = r_->textWidth(shown, ls); pw = r_->textWidth(prefix, ls); bw = r_->textWidth(buf, ls);
+        }
+        clipped = bw > w - 8 * scale_;
+        float sx = x + (w - tw) * 0.5f, sy = y + (h - r_->textHeight(ls)) * 0.5f;
+        r_->text(sx, sy, ls, shown, {1, 1, 1, 1});
         // the number looks clickable: a faint box always, brighter with an underline under the mouse
-        float bx = sx + r_->textWidth(lab + ": ", ls), bw = r_->textWidth(buf, ls);
+        float bx = sx + pw;
         r_->rect(bx - 3 * scale_, y + 3 * scale_, bw + 6 * scale_, h - 6 * scale_, {1, 1, 1, overNumber ? 0.14f : 0.05f});
         if (overNumber) r_->rect(bx, sy + r_->textHeight(ls) + 1 * scale_, bw, 1 * scale_, {1, 1, 1, 0.7f});
         // under the mouse, away from its default: a small hint above it (a dark tag, the smallest text)

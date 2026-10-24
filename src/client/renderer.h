@@ -69,7 +69,7 @@ public:
     // each frame (~21 MB a frame on Midtown). Rebuild it only when the boxes change.
     void setStaticBoxes(const std::function<void()>& emit);
     void useStaticBoxes() { staticOn_ = staticCount_ > 0; }   // draw it this frame
-    void clearStaticBoxes() { staticCount_ = 0; staticItems_.clear(); staticItems_.shrink_to_fit(); }
+    void clearStaticBoxes() { staticCount_ = 0; staticItems_.clear(); staticItems_.shrink_to_fit(); std::vector<DynVertex>().swap(staticVerts_); }
     void line(const Vec3& a, const Vec3& b, float width, const Color& c);
 
     void drawScene(bool shadows);
@@ -112,6 +112,7 @@ public:
 
 private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
+    void aim(float yaw, float pitch);   // (setCamera's view half: the view, its vectors, viewProj_ and the frustum planes)
     void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
@@ -122,6 +123,15 @@ private:
 
     int width_ = 1280, height_ = 720;
     unsigned worldProg_ = 0, dynProg_ = 0, flatProg_ = 0, shadowProg_ = 0, uiProg_ = 0, skyProg_ = 0;
+    // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
+    // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
+    // each program's values).
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW; } uWorld_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
+    struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
+    GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1;
+    float uiScreen_[2] = {}, edgeRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)
+    float clear_[3] = {};                        // (the sky colour in display space: prepareScene works it out)
     Vec3 camFwd_, camRight_, camUp_;
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
@@ -140,7 +150,7 @@ private:
 public:
     bool inView(const Vec3& center, float radius) const; // sphere vs the current view frustum
 private:
-    unsigned dynVao_ = 0, dynVbo_ = 0, flatVao_ = 0, flatVbo_ = 0, uiVao_ = 0, uiVbo_ = 0, shadowVao_ = 0;
+    unsigned dynVao_ = 0, dynVbo_ = 0, flatVao_ = 0, flatVbo_ = 0, uiVao_ = 0, uiVbo_ = 0;
     unsigned shadowFbo_ = 0, shadowTex_ = 0;
     int shadowRes_ = 2048;
     bool shadowsOn_ = true;
@@ -152,7 +162,7 @@ private:
     std::vector<DynVertex> dynNoCast_;   // drawn with dyn_, but no shadow (and not in the shadow pass's caster rect)
     struct StaticItem { Vec3 c; float r; int first, count; };
     std::vector<StaticItem> staticItems_;
-    std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it)
+    std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it; its memory kept until clearStaticBoxes)
     std::vector<int> staticFirst_, staticCnt_;
     unsigned staticVao_ = 0, staticVbo_ = 0;
     int staticCount_ = 0;
@@ -163,11 +173,12 @@ private:
     std::vector<Vertex2D> ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
     bool prep_ = false, prepShadows_ = false;   // (prepareScene ran this frame; with the shadow pass)
-    size_t prepN_[4] = {};                      // (its upload: shadow only, lit casting, lit not casting, view model)
+    size_t prepN_[6] = {};                      // (its uploads: shadow only, lit casting, lit not casting, view model; flat, view flat)
     Mat4 shadowMat_;
 
     Vec3 camPos_, sunDir_ = {0, 1, 0};
-    float camYaw_ = 0, camPitch_ = 0, camFov_ = 90;
+    float camYaw_ = 0, camPitch_ = 0, camFov_ = 90, camAspect_ = 0;
     Mat4 viewFix_;   // (relatch: the old view to the new one, for the view model built for the old)
+    Mat4 viewProjFix_;   // (viewProj_ * viewFix_: the view model's pass)
     Mat4 view_m_, proj_, viewProj_;
 };
