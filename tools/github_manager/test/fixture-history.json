@@ -1,0 +1,412 @@
+[
+ {
+  "at": "2026-10-24T16:58:20Z",
+  "type": "run.started",
+  "ref": {
+   "run": 9013
+  },
+  "text": "build-and-release on claude/project-thread-ab12cd queued",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T16:58:00Z",
+  "type": "branch.moved",
+  "ref": {
+   "branch": "claude/project-thread-ab12cd"
+  },
+  "text": "claude/project-thread-ab12cd moved to f7cf22d (1 new commit)",
+  "data": {
+   "from": "968077c"
+  }
+ },
+ {
+  "at": "2026-10-24T16:56:00Z",
+  "type": "local.dirty",
+  "ref": {
+   "local": "working-repo"
+  },
+  "text": "working-repo: 3 uncommitted files (was 1)",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T16:52:48Z",
+  "type": "run.started",
+  "ref": {
+   "run": 9012
+  },
+  "text": "build-and-release on claude/project-thread-6l62d6 started",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T16:52:00Z",
+  "type": "local.commit",
+  "ref": {
+   "local": "thread-6l62d6"
+  },
+  "text": "thread-6l62d6: GitHub manager page: overview, branches, runs, history",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T16:48:00Z",
+  "type": "run.failed",
+  "ref": {
+   "run": 9010
+  },
+  "text": "build-and-release on claude/project-thread-ab12cd failed (windows-tests (net), linux-tests (net))",
+  "data": {
+   "jobs": [
+    "windows-tests (net)",
+    "linux-tests (net)"
+   ]
+  }
+ },
+ {
+  "at": "2026-10-24T16:48:00Z",
+  "type": "pr.updated",
+  "ref": {
+   "pr": 10
+  },
+  "text": "PR #10 checks: failure",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T16:14:00Z",
+  "type": "run.started",
+  "ref": {
+   "run": 9010
+  },
+  "text": "build-and-release on claude/project-thread-ab12cd started",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T15:00:00Z",
+  "type": "pr.opened",
+  "ref": {
+   "pr": 9
+  },
+  "text": "PR #9 opened: GitHub manager: a local page for branches, PRs, CI runs and their logs",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T14:55:00Z",
+  "type": "branch.created",
+  "ref": {
+   "branch": "claude/project-thread-6l62d6"
+  },
+  "text": "branch claude/project-thread-6l62d6 created",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T14:00:00Z",
+  "type": "poll.error",
+  "ref": {},
+  "text": "GitHub API: 502 Bad Gateway (retried in 60 s)",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T12:00:00Z",
+  "type": "pr.opened",
+  "ref": {
+   "pr": 10
+  },
+  "text": "PR #10 opened: Netcode: snapshot delta against the last acked baseline",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T05:24:00Z",
+  "type": "release.published",
+  "ref": {
+   "tag": "test-1.18.6-test.150"
+  },
+  "text": "prerelease test-1.18.6-test.150 published (1.18.6)",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T05:22:00Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 9009
+  },
+  "text": "build-and-release on testing succeeded in 35 min 40 s",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T05:22:00Z",
+  "type": "tag.created",
+  "ref": {
+   "tag": "test-1.18.6-test.150"
+  },
+  "text": "tag test-1.18.6-test.150 created",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T04:47:00Z",
+  "type": "run.started",
+  "ref": {
+   "run": 9009
+  },
+  "text": "build-and-release on testing started",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T04:46:00Z",
+  "type": "pr.merged",
+  "ref": {
+   "pr": 8
+  },
+  "text": "PR #8 merged into testing: 1.18.5 + 1.18.6",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T04:46:00Z",
+  "type": "branch.moved",
+  "ref": {
+   "branch": "testing"
+  },
+  "text": "testing moved to 4b917d7 (3 new commits)",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T04:45:00Z",
+  "type": "local.moved",
+  "ref": {
+   "local": "working-repo"
+  },
+  "text": "working-repo: testing pulled, now at 1.18.5",
+  "data": {}
+ },
+ {
+  "at": "2026-10-24T00:57:00Z",
+  "type": "run.failed",
+  "ref": {
+   "run": 9006
+  },
+  "text": "build-and-release on claude/project-thread-xq2e2m failed (linux-uitest)",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T22:00:00Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 9005
+  },
+  "text": "build-and-release on launcher succeeded in 10 min 40 s",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T18:29:00Z",
+  "type": "pr.merged",
+  "ref": {
+   "pr": 7
+  },
+  "text": "PR #7 merged into testing",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T15:30:00Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8990
+  },
+  "text": "build-and-release on testing success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T15:00:00Z",
+  "type": "pr.opened",
+  "ref": {
+   "pr": 12
+  },
+  "text": "PR #12 opened by dependabot[bot]: Bump actions/checkout from 4.2.1 to 4.2.2",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T11:30:37Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8989
+  },
+  "text": "build-and-release on claude/project-thread-t02bcv success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T11:00:00Z",
+  "type": "branch.deleted",
+  "ref": {
+   "branch": "claude/project-thread-zz9k1p"
+  },
+  "text": "branch claude/project-thread-zz9k1p deleted",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T07:31:14Z",
+  "type": "run.failed",
+  "ref": {
+   "run": 8988
+  },
+  "text": "build-and-release on claude/project-thread-k4337y failed",
+  "data": {}
+ },
+ {
+  "at": "2026-10-23T03:31:51Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8987
+  },
+  "text": "build-and-release on site success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T23:32:28Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8986
+  },
+  "text": "build-and-release on discord-bot success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T19:33:05Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8985
+  },
+  "text": "build-and-release on testing cancelled",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T15:33:42Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8984
+  },
+  "text": "build-and-release on claude/project-thread-t02bcv success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T14:00:00Z",
+  "type": "pr.opened",
+  "ref": {
+   "pr": 11
+  },
+  "text": "PR #11 opened (draft): Map editor: snap rotated brushes to the 15 degree grid",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T11:34:19Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8983
+  },
+  "text": "build-and-release on claude/project-thread-k4337y success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T07:34:56Z",
+  "type": "run.failed",
+  "ref": {
+   "run": 8982
+  },
+  "text": "build-and-release on site failed",
+  "data": {}
+ },
+ {
+  "at": "2026-10-22T03:35:33Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8981
+  },
+  "text": "build-and-release on discord-bot success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-21T23:36:10Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8980
+  },
+  "text": "build-and-release on testing success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-21T19:36:47Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8979
+  },
+  "text": "build-and-release on claude/project-thread-t02bcv cancelled",
+  "data": {}
+ },
+ {
+  "at": "2026-10-21T15:37:24Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8978
+  },
+  "text": "build-and-release on claude/project-thread-k4337y success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-21T11:38:01Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8977
+  },
+  "text": "build-and-release on site success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-21T07:38:38Z",
+  "type": "run.failed",
+  "ref": {
+   "run": 8976
+  },
+  "text": "build-and-release on discord-bot failed",
+  "data": {}
+ },
+ {
+  "at": "2026-10-21T03:39:15Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8975
+  },
+  "text": "build-and-release on testing success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-20T23:39:52Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8974
+  },
+  "text": "build-and-release on claude/project-thread-t02bcv success",
+  "data": {}
+ },
+ {
+  "at": "2026-10-20T19:40:29Z",
+  "type": "run.completed",
+  "ref": {
+   "run": 8973
+  },
+  "text": "build-and-release on claude/project-thread-k4337y cancelled",
+  "data": {}
+ },
+ {
+  "at": "2026-10-20T11:00:00Z",
+  "type": "pr.merged",
+  "ref": {
+   "pr": 6
+  },
+  "text": "PR #6 merged into testing",
+  "data": {}
+ },
+ {
+  "at": "2026-10-14T17:00:00Z",
+  "type": "pr.closed",
+  "ref": {
+   "pr": 4
+  },
+  "text": "PR #4 closed without merging",
+  "data": {}
+ }
+]

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub manager</title>
+<meta name="description" content="Quark's repository at a glance: production vs testing, branches, local copies, pull requests, CI runs and their logs, and a local history of all of it.">
+<script>
+  // ?embed=1: hosted in the project manager's tab (it has its own tab bar), so the shared nav is hidden.
+  if (/[?&]embed=1\b/.test(location.search)) document.documentElement.classList.add('embed');
+</script>
+<link rel="stylesheet" href="quark-tools.css">
+<link rel="stylesheet" href="github-manager.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='3.5' r='2' fill='%235aa9ff'/%3E%3Ccircle cx='4' cy='12.5' r='2' fill='%235aa9ff'/%3E%3Ccircle cx='12' cy='6' r='2' fill='%233fbf7f'/%3E%3Cpath d='M4 5.5v5M12 8c0 2-3 2.5-6.5 3.5' stroke='%2366707c' stroke-width='1.4' fill='none'/%3E%3C/svg%3E">
+</head>
+<body>
+<!-- ===== BEGIN shared quark-tools nav (same markup in every tool; hidden under ?embed=1) ===== -->
+<nav class="qt-nav" aria-label="Quark tools"><a class="qt-brand" href="http://127.0.0.1:8765/">Quark</a><a href="http://127.0.0.1:8765/" data-tool="dashboard" target="quark-dashboard">Dashboard</a><a href="http://127.0.0.1:8767/" data-tool="github" target="quark-github" aria-current="page">GitHub</a><a href="http://127.0.0.1:8766/" data-tool="docs" target="quark-docs">Claude Documents</a><span class="qt-nav-sep"></span><a href="http://127.0.0.1:8765/editors/sound-editor/sound-editor.html" target="quark-sound-editor">Sound editor</a><a href="http://127.0.0.1:8765/editors/model-editor/model-editor.html" target="quark-model-editor">Model editor</a><a href="http://127.0.0.1:8765/editors/map-editor/map-editor.html" target="quark-map-editor">Map editor</a><a href="http://127.0.0.1:8765/editors/bot-editor/bot-editor.html" target="quark-bot-editor">Bot editor</a><a href="http://127.0.0.1:8765/editors/ui-customizer/ui-customizer.html" target="quark-ui-customizer">UI customizer</a><span class="qt-nav-note"></span></nav>
+<!-- ===== END shared quark-tools nav ===== -->
+
+<header class="topbar">
+  <div class="tb-title"><h1>GitHub</h1><a id="repo-link" href="https://github.com/floration/quark" target="_blank" rel="noopener">floration/quark</a></div>
+  <div id="status" class="tb-status" aria-live="polite">Connecting…</div>
+  <button id="refresh" class="primary" type="button" title="Ask the server to poll GitHub now (at most once every 10 s)">Refresh</button>
+</header>
+<nav id="tabs" class="tabs" aria-label="Views">
+  <a href="#tab=overview" data-tab="overview">Overview</a>
+  <a href="#tab=branches" data-tab="branches">Branches <span class="count" hidden></span></a>
+  <a href="#tab=local" data-tab="local">Local copies <span class="count" hidden></span></a>
+  <a href="#tab=pulls" data-tab="pulls">Pull requests <span class="count" hidden></span></a>
+  <a href="#tab=runs" data-tab="runs">CI runs <span class="count" hidden></span></a>
+  <a href="#tab=history" data-tab="history">History</a>
+</nav>
+<div id="banner" class="banner" hidden></div>
+<main id="view" class="view"><p class="muted pad">Loading…</p></main>
+
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" hidden tabindex="-1" aria-label="Details">
+  <button id="drawer-close" class="drawer-close" type="button" title="Close (Esc)" aria-label="Close details">✕</button>
+  <div id="drawer-body" class="drawer-body"></div>
+</aside>
+
+<section id="logpanel" class="logpanel" hidden aria-label="Job log">
+  <header class="log-bar">
+    <div class="log-t"><h2 id="log-title">Log</h2><span id="log-meta" class="muted small"></span><span id="log-links" class="small"></span></div>
+    <div class="log-tools">
+      <span id="log-errnav" class="log-errnav" hidden><button id="log-err-prev" type="button" title="Previous error">◀ error</button><button id="log-err-next" type="button" title="Next error">error ▶</button></span>
+      <input id="log-q" type="search" placeholder="Search the log (Enter: next, Shift+Enter: previous)" autocomplete="off" spellcheck="false">
+      <span id="log-count" class="muted small log-count"></span>
+      <button id="log-prev" type="button" title="Previous match" aria-label="Previous match">↑</button>
+      <button id="log-next" type="button" title="Next match" aria-label="Next match">↓</button>
+      <button id="log-close" type="button" title="Close (Esc)" aria-label="Close the log">✕</button>
+    </div>
+  </header>
+  <div id="log-body" class="log-body"></div>
+</section>
+
+<div id="tip" class="tip" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="js/app.js"></script>
+<script type="module" src="js/nav.js"></script>
+</body>
+</html>
