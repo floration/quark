@@ -25,7 +25,7 @@ python3 dashboard.py [--quark <Quark folder>] [--repo <clone>] [--port 8765] [--
   installed in's parent (`Quark\editor-dashboard\` -> `Quark\`), else the folder holding the clone it runs from, else
   `%USERPROFILE%\Desktop\Quark`.
 - `--repo`: the clone whose `assets/provenance/` is the registry (a name in the Quark folder or a path). Default
-  `working-repo\` if present, else `repository\`.
+  `working-repo\` if it has the registry (it can lag behind testing), else `repository\`.
 - `--data-dir`: the game's user data folder; its `overrides\` is listed as "this PC: overrides" (default
   `%APPDATA%\quark`, `~/.local/share/quark`, `~/Library/Application Support/quark`).
 - `--sidecar`: where your marks go. Default `provenance.json` next to the program; when the program runs from inside a

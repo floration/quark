@@ -4,7 +4,7 @@
     python3 dashboard.py                          start on 127.0.0.1:8765 (or the next free port) and open the browser
     python3 dashboard.py --quark <root>           the Quark folder (default: found from where this is installed)
     python3 dashboard.py --repo <clone>           the clone whose assets/provenance/ is the registry
-                                                  (default: working-repo\\ if present, else repository\\)
+                                                  (default: working-repo\\ if it has the registry, else repository\\)
     python3 dashboard.py --install [<dir>]        copy the program to <dir> (default: <quark>\\editor-dashboard) and stop
     python3 dashboard.py --dump                   print every endpoint's JSON once and stop (tests, no server)
 
@@ -231,7 +231,10 @@ class Config:
         self.quark = os.path.abspath(a.quark or default_quark())
         repo = a.repo
         if not repo:
-            repo = next((n for n in ("working-repo", "repository") if os.path.isdir(os.path.join(self.quark, n))), "working-repo")
+            # the first clone that has the registry (working-repo\ can lag behind testing), else the first that exists
+            have = [n for n in ("working-repo", "repository") if os.path.isdir(os.path.join(self.quark, n))]
+            repo = next((n for n in have if os.path.isdir(os.path.join(self.quark, n, "assets", "provenance"))),
+                        have[0] if have else "working-repo")
         self.repo = os.path.abspath(repo if os.path.isabs(repo) else os.path.join(self.quark, repo))
         self.data_dir = os.path.abspath(a.data_dir or default_data_dir())
         # the dashboard's own sidecar: next to the program, unless the program runs from inside a git clone (then it
