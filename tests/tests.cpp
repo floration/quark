@@ -108,6 +108,31 @@ struct HumanMadeGrace {
     }
 };
 
+// Host pauses. The tick-rate tests run the server and its clients in real time on this one thread, and the server
+// rightly counts a tick more than its stall threshold late (4 ms at 1000 Hz / 500 snapshots/s) as a stall players see:
+// 1% of a window's ticks steps it down. A cloud VM sometimes doesn't run the thread at all: on a 4 vCPU sandbox with
+// nothing else running, a plain 1 ms sleep woke more than 4 ms late 25 times a minute and up to 21 ms late (a spin:
+// 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms, 1.6% of a 1 s window. That isn't the code
+// under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
+// the server's code does can lengthen it), and an attempt of a timing test that failed while the host paused past the
+// stall threshold is set aside and run again (timingTest). Every check is the same; the third attempt always counts.
+static double g_hostPause = 0;   // the longest host pause in this attempt (real seconds)
+static double wallNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+static void hostWaited(double t0, double asked) { g_hostPause = std::max(g_hostPause, wallNow() - t0 - std::max(asked, 0.0)); }
+static void hostSleepMs(int ms) { double t0 = wallNow(); sleepMs(ms); hostWaited(t0, ms * 1e-3); }
+constexpr double kHostPauseVoid = 0.004;   // (the server's stall threshold at 1000 Hz, 500/s: kStallSnaps x 2 ms)
+static void timingTest(const char* name, const std::function<void()>& run) {
+    for (int attempt = 1;; attempt++) {
+        int before = g_fail;
+        g_hostPause = 0;
+        run();
+        if (g_fail == before || attempt == 3 || g_hostPause <= kHostPauseVoid) return;
+        printf("  %s: the host paused this thread %.1f ms (over the %.0f ms stall threshold) in this attempt: its %d failure(s) "
+               "are set aside, attempt %d of 3\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1);
+        g_fail = before;
+    }
+}
+
 // Pump a server and some clients for `seconds` of real time, feeding each client an input.
 template <class F>
 static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input) {
@@ -120,7 +145,7 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
-        sleepMs(1);
+        hostSleepMs(1);
     }
 }
 
@@ -7701,7 +7726,14 @@ int main(int argc, char** argv) {
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
-        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); testRateJitter(TP(28720)); testUploadCap(TP(28721)); testSharedCongestion(TP(28722)); }},
+        {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
+            timingTest("tick rate fallback", [] { testTickRateFallback(TP(28710)); });
+            timingTest("rate between rounds", [] { testRateBetweenRounds(TP(28711)); });
+            timingTest("rate undo step up", [] { testRateUndoStepUp(TP(28712)); });
+            timingTest("rate jitter", [] { testRateJitter(TP(28720)); });
+            timingTest("upload cap", [] { testUploadCap(TP(28721)); });
+            timingTest("shared congestion", [] { testSharedCongestion(TP(28722)); });
+        }},
         {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},

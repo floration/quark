@@ -1359,9 +1359,13 @@ static void testRateJitter(uint16_t port) {
     auto rnd = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0; };
     double end = timeNow() + 3.0 * 3.3, next = timeNow();
     while (timeNow() < end) {
-        s.idle(s.frame());
+        double wait = s.frame(), t0 = wallNow();
+        s.idle(wait);
+        hostWaited(t0, wait);
         double late = rnd() < 0.02 ? 0.001 + 0.002 * rnd() : 0.001 * rnd();
+        t0 = wallNow();
         for (double t = timeNow() + late; timeNow() < t;) {}   // (woken that late)
+        hostWaited(t0, late);
         c[0].poll();
         while (timeNow() >= next) { c[0].tick(UserCmd()); next += c[0].tickPeriod(); }
     }
@@ -1448,7 +1452,7 @@ static void testSharedCongestion(uint16_t port) {
             s.frame();
             for (int i = 0; i < 3; i++) if (i >= slow || timeNow() - read[i] >= 0.15) { c[i].poll(); read[i] = timeNow(); }
             while (timeNow() >= next) { for (auto* cl : cls) cl->tick(UserCmd()); next += c[2].tickPeriod(); }
-            sleepMs(1);
+            hostSleepMs(1);
         }
     };
     run(2.2, 0);   // (each player's uncongested ping)
@@ -2203,5 +2207,11 @@ static void testGameRules(const std::string& only) {
         {"modehooks", [] { testModeHooks(TP(29310)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
-    if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")
+    if (only == "rate") {
+        timingTest("rate between rounds", [] { testRateBetweenRounds(TP(29252)); });
+        timingTest("rate undo step up", [] { testRateUndoStepUp(TP(29254)); });
+        timingTest("rate jitter", [] { testRateJitter(TP(29257)); });
+        timingTest("upload cap", [] { testUploadCap(TP(29258)); });
+        timingTest("shared congestion", [] { testSharedCongestion(TP(29259)); });
+    }   // (timing-sensitive: the suite runs it alone, with "tickrate")
 }
