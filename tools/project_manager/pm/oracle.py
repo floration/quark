@@ -44,7 +44,7 @@ def ssh_exe():
 def build_args(exe, host, user, key):
     """The whole ssh command line. host / user are checked against strict patterns first (no option injection)."""
     return [exe, "-T", "-i", key,
-            "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "BatchMode=yes", "-o", "GSSAPIAuthentication=no", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
             "-o", "IdentitiesOnly=yes", "-o", "LogLevel=ERROR",
             "%s@%s" % (user, host), REMOTE_COMMAND]
 
@@ -116,7 +116,7 @@ def fetch(ctx, runner=None):
     exe = ssh_exe()
     if not exe:
         raise util.SourceError("ssh.exe not found (Windows: Settings > Optional features > OpenSSH Client)")
-    code, out, err = (runner or util.run)(build_args(exe, host, user, key), timeout=15.0)
+    code, out, err = (runner or util.run)(build_args(exe, host, user, key), timeout=45.0)
     if "@@uptime" not in out:
         msg = (err.strip().splitlines() or ["exit code %s" % code])[-1]
         raise util.SourceError("SSH failed: %s" % msg[:200])
