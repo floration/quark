@@ -3050,12 +3050,32 @@ void Server::sendSnapshots() {
         w.u32(p.nonce);
         writeSnapshotClient(w, s);
         w.bytes(world, ww.size());
-        // Reliable events fill whatever room is left.
-        int room = kMaxPacket - w.size() - 1;
         // An event goes out at once, then again only after a round trip without an ack (not every snapshot).
-        int nEvents = 0;
         float resend = std::max(0.03f, p.ping * 0.001f + 0.01f);
         const double now = time();
+        // The oldest unacked event, when due, always gets its room: the client takes events in id order, so one that
+        // keeps not fitting would hold back every later one. Too little room: fewer projectiles this snapshot (as for
+        // an overflowing world), until it fits.
+        if (!p.events.empty()) {
+            const auto& e0 = p.events.front();
+            const int need = 10 + (int)e0.text.size() + 1;
+            if ((e0.sentAt < 0 || now - e0.sentAt >= resend) && need > kMaxPacket - w.size()) {
+                const int head = w.size() - ww.size();
+                while (need > kMaxPacket - head - ww.size() && !s.projectiles.empty()) {
+                    s.projectiles.resize(s.projectiles.size() / 2);
+                    ww = Writer(world, sizeof world);
+                    writeSnapshotWorld(ww, s, base);
+                }
+                w = Writer(buf, kMaxPacket);
+                writeHeader(w, PKT_SNAPSHOT);
+                w.u32(p.nonce);
+                writeSnapshotClient(w, s);
+                w.bytes(world, ww.size());
+            }
+        }
+        // Reliable events fill whatever room is left.
+        int room = kMaxPacket - w.size() - 1;
+        int nEvents = 0;
         for (auto& e : p.events) {
             if (nEvents >= 16 || room < 10) break;   // (full: no event is under 10 bytes)
             if (e.sentAt >= 0 && now - e.sentAt < resend) continue;
