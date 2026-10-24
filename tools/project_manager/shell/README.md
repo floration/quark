@@ -21,7 +21,7 @@ Quark\project-manager\electron\electron.exe Quark\project-manager\shell [--tab=<
 Next to the `shell` folder (`Quark\project-manager\`): `tabs.json` and `quark.ico`.
 
 The shell's own data lives in `%LOCALAPPDATA%\QuarkProject\` on Windows (off the Desktop, so OneDrive never syncs a
-live Chromium profile) and in `Quark\project-manager\` elsewhere: `state.json` (window bounds, maximized, last tab,
+live Chromium profile) and in `Quark\project-manager\` elsewhere: `shell-status.json` (what the tab bar shows: each tab's status, port, pid, plus selfUpdated and the last automatic relaunch; for checking the app without a screen, rewritten when it changes), `state.json` (window bounds, maximized, last tab,
 last download folder; an older `Quark\project-manager\state.json` is read once if the new one is missing),
 `electron-data\` (the Chromium profile: one `persist:<id>` partition per tab, so each editor's IndexedDB /
 localStorage autosaves stay separate) and `logs\<id>.log` (output of servers the shell started, with a timestamped

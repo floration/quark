@@ -846,6 +846,7 @@ function bringUpPlayNote(id) {
 }
 
 function updateTabbar() {
+  writeShellStatus();
   if (!tabbar || tabbar.webContents.isDestroyed()) return;
   tabbar.webContents.send('shell:tabs', {
     active: activeId,
@@ -853,6 +854,29 @@ function updateTabbar() {
     updated: selfUpdated,
     tabs: tabbarTabs(),
   });
+}
+
+// shell-status.json (next to state.json): what the tab bar shows, for checking the app without a screen (a Claude
+// session on the PC reads it; the display may be asleep). Written at most every 2 s, only when it changed.
+const SHELL_STATUS_FILE = path.join(DATA_DIR, 'shell-status.json');
+let statusWriteTimer = null;
+let lastStatusJSON = '';
+function writeShellStatus() {
+  if (statusWriteTimer) return;
+  statusWriteTimer = setTimeout(() => {
+    statusWriteTimer = null;
+    const body = JSON.stringify({
+      shellVersion: app.getVersion(), pid: process.pid, startedAt: new Date(APP_STARTED_AT).toISOString(),
+      autoRelaunchedAt: state.autoRelaunchedAt ? new Date(state.autoRelaunchedAt).toISOString() : null,
+      selfUpdated, active: activeId, tabsFile, tabsError: tabsError || null,
+      tabs: tabs.map((t) => ({ id: t.id, name: t.name, kind: t.kind, port: t.port || null, installed: !!t.installed,
+        keepAlive: !!t.keepAlive, status: tabStatus(t), pid: (started.get(t.id) && !started.get(t.id).exited) ? started.get(t.id).pid : null })),
+    }, null, 2);
+    if (body === lastStatusJSON) return;
+    lastStatusJSON = body;
+    try { fs.writeFileSync(SHELL_STATUS_FILE, JSON.stringify(Object.assign(JSON.parse(body), { writtenAt: new Date().toISOString() }), null, 2)); }
+    catch { /* read-only folder: ignore */ }
+  }, 2000);
 }
 
 function layout() {
