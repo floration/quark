@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
         else if (a == "--backdrop") opts.backdrop = next();
-        else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots)
+        else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots), or in a match
             opts.camSet = true;
             for (int k = 0; k < 3; k++) opts.camPos[k] = (float)atof(next().c_str());
             opts.camYaw = (float)atof(next().c_str()); opts.camPitch = (float)atof(next().c_str());
@@ -88,8 +88,10 @@ int main(int argc, char** argv) {
         else if (a == "--customshot") opts.debugCustom = atoi(next().c_str()) + 1;   // the custom mode editor on that tab (screenshots)
         else if (a == "--info") opts.debugInfo = atoi(next().c_str()) + 1;   // the info screen on that tab (screenshots)
         else if (a == "--menushot") opts.menuShot = true;
+        else if (a == "--menupage") { opts.menuShot = true; opts.menuPage = next(); }   // that menu page (screenshots): host/advanced, custom/dash, info/modes+2...
         else if (a == "--fonts") opts.debugFonts = 1;   // Settings > FONT open from the start (screenshots: with --menushot)
         else if (a == "--settingsmenu") opts.debugFonts = 2;   // the settings page from the main menu (screenshots)
+        else if (a == "--settingstab") opts.settingsTab = next();   // that settings page (screenshots): gameplay, controls/movement, video...
         else if (a == "--edfocus") opts.edFocus = true;
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();

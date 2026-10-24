@@ -4,6 +4,7 @@
 #pragma once
 #include <memory>
 #include "fontatlas.h"
+#include "textfit.h"
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
@@ -81,10 +82,23 @@ public:
 
     // 2D (pixels, origin top-left)
     void rect(float x, float y, float w, float h, const Color& c);
-    void text(float x, float y, float scale, const std::string& s, const Color& c);
+    // a rect whose corners have their own colours (blended across it): colour pickers' hue and value ramps
+    void rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl);
+    // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
+    // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
+    // `enemy` (the player's team colours); friendly's alpha fades all of it. In Rubik: the baked logo
+    // (tools/make_logo.py, logo_data.h), one mipmapped quad; in another UI font: the word in that font, the same size,
+    // its Q split by the text shader. Either way in the 2D batch: no extra pass or draw call.
+    void logo(float cx, float y, float ts, const Color& friendly, const Color& enemy);
+    // level: how far its letters are closed up (font units, each pair as far as its ink allows: textfit.h; Ui's fitting)
+    void text(float x, float y, float scale, const std::string& s, const Color& c, float level = 0);
     // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances
-    // and kerning
-    float textWidth(const std::string& s, float scale) const;
+    // and kerning. A font whose ink would leave the 8-unit line box (with its outline) is drawn a little smaller, the
+    // same everywhere (textfit.h lineFit; 1 for Rubik and every built-in that fits), and measured so.
+    float textWidth(const std::string& s, float scale, float level = 0) const;
+    // s fitted into maxW at scale: closed up (the letters' fills never touch), then smaller, then cut ("..."): textfit.h
+    TextFit fitText(const std::string& s, float scale, float maxW) const;
+    int fontGeneration() const { return fontGen_; }   // (changes when the UI font does: Ui's fit cache)
     void textMono(float x, float y, float scale, const std::string& s, const Color& c); // fixed advance (console)
     float textWidthMono(const std::string& s, float scale) const;
     size_t textFit(const std::string& s, float scale, float maxW) const; // how many leading chars fit in maxW
@@ -139,6 +153,7 @@ private:
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1;
+    GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;   // (the title: Renderer::logo)
     float uiScreen_[2] = {}, edgeRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)
     float clear_[3] = {};                        // (the sky colour in display space: prepareScene works it out)
     Vec3 camFwd_, camRight_, camUp_;
@@ -164,7 +179,13 @@ private:
     int shadowRes_ = 2048;
     bool shadowsOn_ = true;
     unsigned fontTex_ = 0;
+    unsigned logoTex_ = 0;     // (logo_data.h, RGBA, mipmapped; bound to unit 1 by a flush that draws it)
+    bool logoDrawn_ = false;   // (this frame's 2D batch has the logo in it)
+    bool splitDrawn_ = false;  // (...or the title in another font, its Q split: splitP_ / N_ / Seam_)
+    Color logoA_ = {1, 1, 1, 1}, logoB_ = {1, 1, 1, 1};
+    float splitP_[2] = {}, splitN_[2] = {1, 0}, splitSeam_ = 0;
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
+    int fontGen_ = 0;
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
     size_t uiUploaded_ = 0;   // (prepare2D: this many 2D vertices are in uiVbo_ already; 0: none)
 

@@ -102,4 +102,4 @@ Every Low finding is fixed. What's left:
 
 ## 7. Asset Studio
 
-The exporter is done (`quark_tests exportassets`): sounds, voices, glTF models, maps, font, icon and website pictures, with overrides loaded from `assets/overrides/` and the user folder (`docs/ASSETS.md`). It was rebuilt and republished for 1.17.0; from now on, after every push (CLAUDE.md). The page host needs explicit types for `.gltf` and `.qmap` files, and one publish takes at most 255 files (docs/HANDOVER.md section 0).
+Retired 2026-10-24 (owner): the owner replaces assets with their own project supervisor tools. The exporter (`quark_tests exportassets`) and `tools/studio/build.py` stay for the website's /assets/ page.

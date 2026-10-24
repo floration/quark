@@ -16,7 +16,7 @@
 #               production release VERSION names (which must exist and be latest). For a site deploy that failed or
 #               was skipped; it never makes a release.
 #   FINAL       a manual run with "final" ticked (any branch, usually `testing`): meta + the sanitizers on its current
-#               commit, nothing built or published. A push whose head commit message (a merged PR: its title) has
+#               commit, nothing built or published. A push whose head commit's subject line (a merged PR: its title) has
 #               [final] runs them too, beside its normal build. Nothing else runs them (owner: a human marks a final test).
 # Any other push (or a manual run) builds and checks only.
 name: build-and-release
@@ -54,7 +54,7 @@ jobs:
       tag: ${{ steps.c.outputs.tag }}
       sanitizers: ${{ steps.c.outputs.sanitizers }}   # 'true': the sanitizers job runs (the trigger is in step c)
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -109,14 +109,21 @@ jobs:
           fi
           # When the sanitizers run (owner, 2026-10-24): ONLY for a build a human marks as a final test, on any branch; this is
           # the one place to change it. Nothing waits for them. Agents never add the marker themselves.
-          #   (1) a push whose head commit message has [final] (a merged PR's commit carries the PR title), or
+          #   (1) a push whose head commit's SUBJECT line has [final] (for GitHub's "Merge pull request #N ..." commit: the
+          #       PR title, its first non-empty line after that), or
+          #       (only the subject: a commit body that merely mentions "[final]" in prose, as a tools PR's did, doesn't count)
           #   (2) a manual run with "final" ticked (channel final: meta + the sanitizers only)
           #   (to keep only one of the two: delete the line for the other, and for (2) the `final` input above)
           #   production tags (that commit ran them on testing) and site-only runs: never
           SANITIZERS=false
           case "$CHANNEL" in
             final) SANITIZERS=true ;;                                                 # (2)
-            none|testing) case "$HEAD_MSG" in *'[final]'*) SANITIZERS=true ;; esac ;;  # (1)
+            none|testing)                                                                # (1)
+              SUBJECT=${HEAD_MSG%%$'\n'*}
+              if [[ "$SUBJECT" == 'Merge pull request #'* ]]; then   # (the PR title: the merge message's first non-empty line after it)
+                SUBJECT=""; while IFS= read -r l; do [[ -n "${l//[[:space:]]/}" ]] && { SUBJECT=$l; break; }; done <<< "${HEAD_MSG#*$'\n'}"
+              fi
+              case "$SUBJECT" in *'[final]'*) SANITIZERS=true ;; esac ;;
           esac
           { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}$([ "$SANITIZERS" = true ] && echo ', sanitizers')" >> "$GITHUB_STEP_SUMMARY"
@@ -131,7 +138,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
@@ -141,7 +148,7 @@ jobs:
           cmake --build build -j --target quark
           build/quark --bake-maps bake
           python3 tools/pack_lightcache.py bake lightcache   # (~84 MB raw, ~12 MB as shipped: packages aren't compressed)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: lightcache, path: lightcache, retention-days: 7 }   # (the packaging jobs put it in their packages)
 
   windows:
@@ -149,10 +156,10 @@ jobs:
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (a final run builds nothing: meta + sanitizers only)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: lightcache, path: lightcache }
       - name: MinGW (x86-64, posix threads; apt retries a stalled mirror download instead of hanging)
         timeout-minutes: 15
@@ -178,7 +185,7 @@ jobs:
           mkdir -p quark-windows && cp -r pkg/* README.md quark-windows/
           zip -qr quark-windows.zip quark-windows
           cp build-launcher/quark_launcher.exe quark-launcher-windows.exe
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: windows, path: "quark-windows.zip\nquark-windows.qpak\nquark-launcher-windows.exe" }
 
   linux:
@@ -186,13 +193,13 @@ jobs:
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (as windows)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: lightcache, path: lightcache }
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
       - run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
@@ -210,9 +217,9 @@ jobs:
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
           tar czf quark-linux.tar.gz quark-linux
           cp build-launcher/quark_launcher quark-launcher-linux
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: site-assets, path: site-assets, retention-days: 7 }   # (the pages / release-testing jobs publish it)
 
   sanitizers:   # REVIEW ENG-3: a memory / undefined-behaviour check, not a gameplay test (those run locally before a push).
@@ -224,7 +231,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y clang-18 libclang-rt-18-dev
@@ -250,7 +257,7 @@ jobs:
           fi
           [ ${#reports[@]} -eq 0 ] || echo "::warning::sanitizer warnings, no errors (above)"
           echo "::notice::no sanitizer errors. quark_tests itself exited $rc$([ "$rc" = 124 ] && echo ' (timed out)') under the sanitizers: not counted here (gameplay tests run locally before a push)"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with: { name: sanitizer-reports, path: "${{ runner.temp }}/san/", retention-days: 7, if-no-files-found: ignore }
       - name: "fuzzers: every saved input (tests/data/fuzz), then 30 s of new ones each"
@@ -262,7 +269,7 @@ jobs:
             mkdir -p "corpus-$f" && cp ../tests/data/fuzz/$f/* "corpus-$f/"
             ./fuzz_$f -max_total_time=30 -timeout=10 -rss_limit_mb=4096 -artifact_prefix="crash-$f-" "corpus-$f"
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with: { name: fuzz-crashes, path: "build/crash-*", retention-days: 7, if-no-files-found: ignore }
 
@@ -273,10 +280,10 @@ jobs:
     timeout-minutes: 60
     continue-on-error: ${{ needs.meta.outputs.channel != 'production' }}   # required for production only
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: lightcache, path: lightcache }
       - run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
@@ -291,7 +298,7 @@ jobs:
           mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
           zip -qry quark-macos.zip quark-macos
           zip -j quark-launcher-macos.zip build-launcher/quark_launcher
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
 
   macos-watchdog:   # GitHub often has no macOS runner free: then the macos job waits in the queue for hours and holds the
@@ -339,10 +346,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { path: dist }
       - name: all three platforms are here (no macOS, no release)
         run: |
@@ -387,10 +394,10 @@ jobs:
       contents: write
     concurrency: { group: gh-pages, cancel-in-progress: false }   # (it and pages both rewrite gh-pages: one at a time)
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { path: dist }
       - name: sign the launchers, release manifest, sign every published file
         env:
@@ -425,7 +432,7 @@ jobs:
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "quark $VER (testing)" --notes-file notes.md \
             dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: site-assets, path: site-assets }
       - name: the website's TESTING assets (assets/data/testing/ on gh-pages; everything else as production left it), signed
         env:
@@ -462,11 +469,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: dl   # (no artifact when the macOS build failed: then nothing to add, and that's not an error)
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with: { name: macos, path: dist/macos }
       - name: sign + upload
@@ -496,12 +503,12 @@ jobs:
       contents: write
     concurrency: { group: gh-pages, cancel-in-progress: false }   # (as release-testing)
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: site-assets, path: site/assets/data/production }   # (the linux job's export of this release)
       - name: publish site/ to the gh-pages branch (served at floration.github.io/quark), signed
         env:
@@ -542,7 +549,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: production
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: D1 migrations, then the worker (tools/master/deploy.sh)

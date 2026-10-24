@@ -263,7 +263,8 @@ The figures depend on these speed-ups:
 
 ### Adding a command
 
-Any `.cpp` in this folder or in `tools/bot_editor/native/` is linked in (CMake globs both). A command is one line:
+Any `.cpp` in this folder, in `tools/bot_editor/native/` or in `tools/physics_editor/native/` is linked in (CMake globs
+them). A command is one line:
 
 ```cpp
 #include "maptool.h"

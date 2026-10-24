@@ -287,6 +287,7 @@ add_library(quark_assets STATIC
   src/client/decoders.cpp
   src/client/fontatlas.cpp
   src/client/uifonts.cpp
+  src/client/textfit.cpp
   src/client/codec_vorbis.c
   src/client/codec_flac_mp3.c
   src/client/codec_image_font.c
@@ -313,7 +314,7 @@ if(WIN32)
   target_link_libraries(quark_audio PUBLIC ole32 winmm)   # WASAPI output (COM), WinMM fallback
 endif()
 if(APPLE)
-  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreFoundation")
+  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")   # (CoreAudio: Settings > DEVICES' list)
 endif()
 
 if(QUARK_BUILD_CLIENT)
@@ -388,10 +389,10 @@ if(QUARK_BUILD_TESTS)
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
   endif()
-  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot editor's and the mode editor's
-  # commands linked into it (an empty or missing tools/mode_editor/native globs to nothing)
+  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics and mode editors' commands
+  # linked into it (an empty or missing tools/mode_editor/native globs to nothing)
   file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp)
+       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp)
   add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
   target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
   if(EXISTS ${CMAKE_SOURCE_DIR}/tools/mode_editor/native)

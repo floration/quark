@@ -62,7 +62,6 @@ The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shi
 
 **Either way:**
 - Before every push, run `tools/release_check.sh` (section 3) and get exit 0. From 1.17.1 on, the bot and map groups count again.
-- **The Asset Studio steps in CLAUDE.md** need claude.ai's artifact tools: reading the page's `replacements` collection, then rebuilding and republishing the page. Cloud sessions have them; a local session may not. Without them, do those steps from a cloud session, or download uploads from the page by hand into `assets/overrides/<target>`.
 - **Republishing the studio page:** the page host serves `.gltf` and `.qmap` files only with an explicit type (`application/json` and `text/plain`), and one publish takes at most 255 files. Compare the new `manifest.json` with the published one and send only what changed.
 
 ### How the owner works
@@ -121,7 +120,7 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 - **The clang-only unused warnings** are listed in REMAINING.md section 2.
 
 **Assets**
-- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them through the Asset Studio, which lists all 33 sounds of each kit.
+- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (tools/sound_editor), which lists all 33 sounds of each kit.
 
 
 ## 1. What quark is
@@ -144,7 +143,7 @@ A fast, minimal FPS on a custom C++17 engine:
 - a ranking server: a Cloudflare Worker with a D1 database;
 - a Discord bot;
 - a website on GitHub Pages;
-- the Asset Studio page, where the owner replaces AI-made assets.
+- the owner's local editors (model, sound, map, ...), where the owner replaces AI-made assets (the Asset Studio page was retired 2026-10-24).
 
 ## 2. Repository layout
 
@@ -161,7 +160,7 @@ A fast, minimal FPS on a custom C++17 engine:
 | `tools/pack.py`, `tools/sign/` | Release packaging (`quark-<platform>.qpak`) and Ed25519 signing |
 | `tools/master/` | The ranking server: `worker.js`, `schema.sql`, `test.mjs`, README with the deployment steps and the SQL to run per version |
 | `tools/server/` | Dedicated server install (`install.sh`), auto-update (`autoupdate.sh`), alerts |
-| `tools/studio/` | The Asset Studio page source and its file builder |
+| `tools/studio/` | `build.py`: the asset export's file builder for the website /assets/ page (the Asset Studio page was retired 2026-10-24) |
 | `tools/launcher_build.sh` | Builds the shipped launcher from the `launcher` branch (release jobs) |
 | `site/` (not in `testing`) | The website: the `site` branch, checked out there as a worktree (README) |
 | `assets/` | Fonts, sounds, voice, icons; `assets/overrides/` holds the owner's replacement assets |
@@ -212,7 +211,7 @@ A cloud session can push only its own `claude/...` branch, so its work reaches `
 
 **Release flow:**
 1. Work is committed on `testing`, with `VERSION` bumped and `changelogs/<VERSION>.md` written.
-2. The push to `testing` runs CI: meta checks and the Windows, Linux and macOS builds (no gameplay or UI tests: those run locally before the push). It publishes the signed testing prerelease (Windows + Linux; macOS files follow). The build meant for production is marked final (`[final]` in its head commit message or PR title, or a manual run with **final** ticked), which runs the sanitizers on it; nothing waits for them, but the checklist wants them green. Nothing else runs the sanitizers (work branches included; only a human adds the final mark, never an agent); production tags never do.
+2. The push to `testing` runs CI: meta checks and the Windows, Linux and macOS builds (no gameplay or UI tests: those run locally before the push). It publishes the signed testing prerelease (Windows + Linux; macOS files follow). The build meant for production is marked final (`[final]` in its head commit's subject line or the merged PR's title, or a manual run with **final** ticked), which runs the sanitizers on it; nothing waits for them, but the checklist wants them green. Nothing else runs the sanitizers (work branches included; only a human adds the final mark, never an agent); production tags never do.
 3. **The owner tests that build by hand with [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).** Nothing goes further until the owner says it passed.
 4. A PR from `testing` to the default branch; the owner merges it.
 5. The owner tags it: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. CI publishes the production release only when Windows, Linux and macOS all build; then it deploys the website. Dedicated servers update to it by themselves.
@@ -240,7 +239,6 @@ Workflows are in `.github/workflows/`:
 | Dedicated servers | Linux boxes (the Oracle one), installed with `tools/server/install.sh`: each runs a **production** server (`quark.service`, your port) and a **testing** server (`quark-testing.service`, the next port, "[TESTING]", ranked never rated; `--no-testing` to leave it out) | Automatic, each to the latest of its channel: production to production releases (every minute), testing to the newest testing prerelease (every 2 minutes), and the testing server runs only while that is newer than production (owner: off when both are on the same update). `autoupdate.sh` verifies the signed manifest, builds that exact commit (one build at a time), and restarts between matches. A load governor (`/var/lib/quark-governor`, `src/game/governor.h`) shares the box: throttles the empty server, then the one not in a ranked match, then the other, to 125 Hz; then closes testing until production is calm. Production never closes. Logs: `journalctl -u quark-update -u quark-testing-update`; failures at crit priority (`journalctl -p crit -t quark-update`, naming the instance), optionally sent to `QUARK_ALERT_WEBHOOK`. Behind a different forwarded port or in a container, run with `--own-addr host:port`. |
 | Discord bot | The bot's Linux box, installed with `install.sh` | Automatic after re-running `install.sh` once ([OPERATIONS.md](OPERATIONS.md) section 2): every 10 minutes it moves to the newest production release's bot, after its tests and a dry run, and rolls back on failure. Secrets in `/etc/quark-discord.env`. After the move to its own branch or repository, it follows that branch instead. |
 | Website | GitHub Pages (`gh-pages`) | Automatic, on each production release |
-| Asset Studio | https://claude.ai/artifact/JuDQckiZY15XUHz1xbD3pC | Rebuilt and republished after each push (CLAUDE.md "Asset Studio"). Replacements the owner uploads are pulled into `assets/overrides/` before each push. |
 
 **The owner's 1.17.0 deployment steps are all done** (2026-10-23): the 1.17 SQL and the Worker, the cron and `ADMIN_KEY`, `install.sh` on the server box (game server and bot), and new bot keys. Production 1.17.0 shipped before 50 testing prereleases piled up, so launchers 1.16 and older found it.
 
@@ -304,7 +302,7 @@ Workflows are in `.github/workflows/`:
 | [REVIEW.md](REVIEW.md), [FIXES_HANDOFF.md](FIXES_HANDOFF.md) | The second security/quality review and its fix plan |
 | [SIGNING.md](SIGNING.md) | Release signing and key handling |
 | [OPERATIONS.md](OPERATIONS.md) | Automatic updates for the dedicated servers, the Discord bot and the Cloudflare Worker; every secret and how to keep it secret |
-| [ASSETS.md](ASSETS.md) | The asset export, the Asset Studio, overrides |
+| [ASSETS.md](ASSETS.md) | The asset export, overrides |
 | [MAP_STRUCTURES.md](MAP_STRUCTURES.md), [MAP_METRICS.md](MAP_METRICS.md), [MAP_REPORT.md](MAP_REPORT.md) | Why each map is built the way it is, how maps are measured, the latest scores |
 | `tools/master/README.md`, the `discord-bot` branch's README | Deploying the ranking server and the bot |
 | [AUDIT.md](AUDIT.md), [RELEASE_PLAN.md](RELEASE_PLAN.md) | History from the road to 1.0.0 |

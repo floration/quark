@@ -97,6 +97,7 @@ struct ServerConfig {
     std::string governorDir;
     GovParams governor;              // (tests shorten its windows)
     double governorInterval = 1.0;   // seconds between status rounds
+    bool pauseWithoutHumans = false; // dedicated servers (src/server/main.cpp): no humans on, no ticks (bots wait; Server::updatePause)
     CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
@@ -474,6 +475,9 @@ public:
     void governorFrame(double now);
     bool applyGovernorCap(bool between);
     void setGovernorClosed(bool on);
+    // cfg_.pauseWithoutHumans: nobody to play for (bots alone, or empty): no ticks, no snapshots, the game clock stopped
+    bool paused_ = false;
+    void updatePause(double now);
     double nextFlagCheck_ = 0, restartAt_ = 0;
     void checkRestartFlag();
     std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended

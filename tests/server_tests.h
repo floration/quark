@@ -795,6 +795,54 @@ static void testExceptionBoundaries(uint16_t port) {
     s.stop();
 }
 
+// Dedicated servers pause with no humans on (cfg pauseWithoutHumans): bots alone don't tick, the game clock stays,
+// and the first human to connect gets a normal game at once. Off (hosted, these tests' servers): bots play on.
+static void testPauseWithoutHumans(uint16_t port) {
+    printf("dedicated server: paused with bots alone, resumed by a connect\n");
+    std::vector<std::string> lines;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.vsBots = true; cfg.botsEnemy = 2; cfg.pauseWithoutHumans = true;
+    s.setLog([&](const std::string& l) { lines.push_back(l); });
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::vector<NetClient*> none;
+    pump(s, none, 0.5, idle);
+    CHECK(s.paused_ && s.tick_ == 0 && s.timeMs_ == 0 && s.playerCount() == 2);
+    double t0 = timeNow(), w = s.frame();
+    s.idle(w);
+    printf("  paused: tick %llu, clock %llu ms; an idle() pass slept %.0f ms\n", (unsigned long long)s.tick_, (unsigned long long)s.timeMs_, (timeNow() - t0) * 1000);
+    CHECK(w >= 0.04 && timeNow() - t0 >= 0.03);   // (sleeps longer than the 5 ms of an unpaused bots-only server)
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "human");
+    std::vector<NetClient*> cls = {&c};
+    pump(s, cls, 1.0, idle);
+    CHECK(!s.paused_ && c.state() == ConnState::Connected && c.hasSnapshot() && s.tick_ > 0 && s.timeMs_ > 0);
+    CHECK(s.ms_.phase == PHASE_WARMUP || s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
+    // the human gone (past the grace): paused again, the bots' match dropped for warmup, and the clock stays
+    const int id = c.clientId();
+    c.disconnect();
+    pump(s, cls, 0.3, idle);
+    CHECK(!s.paused_);   // (away, in the reconnect grace: still a human)
+    if (id >= 0 && id < kMaxPlayers && s.players_[id].awayUntil > 0) s.players_[id].awayUntil = timeNow() - 1;   // the grace is over
+    pump(s, none, 0.3, idle);
+    uint64_t tick = s.tick_, ms = s.timeMs_;
+    pump(s, none, 0.3, idle);
+    CHECK(s.paused_ && s.tick_ == tick && s.timeMs_ == ms && s.ms_.phase == PHASE_WARMUP);
+    int said = 0;
+    for (auto& l : lines) said += l.find("paused: no humans") != std::string::npos ? 1 : l.find("resumed") != std::string::npos ? 100 : 0;
+    CHECK(said == 2 + 100);   // (once each way, each time)
+    s.stop();
+    // off: bots alone keep simulating
+    Server b;
+    cfg.pauseWithoutHumans = false;
+    b.setLog([](const std::string&) {});
+    if (!b.start(cfg)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+    pump(b, none, 0.3, idle);
+    printf("  flag off: %llu ticks with bots alone\n", (unsigned long long)b.tick_);
+    CHECK(!b.paused_ && b.tick_ > 50 && b.timeMs_ > 50);
+    b.stop();
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
@@ -813,4 +861,5 @@ static void serverTests() {
     testAutosaveOffTick(TP(28807));
     testRankDelaysRealTime();
     testExceptionBoundaries(TP(28808));
+    testPauseWithoutHumans(TP(28809));
 }

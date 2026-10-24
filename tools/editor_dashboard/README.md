@@ -1,7 +1,7 @@
 # Quark Editor Manager
 
-The owner's local page for the editors: Sound editor, UI editor (the UI customizer), Map editor, Bot editor and Model
-editor. It shows what each editor's files changed compared with TESTING and PRODUCTION, the editors' exports, how much of
+The owner's local page for the editors: Sound editor, UI editor (the UI customizer), Map editor, Bot editor, Model editor
+and Physics editor. It shows what each editor's files changed compared with TESTING and PRODUCTION, the editors' exports, how much of
 the game is human-made (the provenance registry, docs/PROVENANCE.md), what is left, and lets you mark assets human /
 third-party / AI. Python 3 standard library only, one small server on 127.0.0.1, no network, no CDN. Runs on Windows
 (the owner) and Linux (tests).
@@ -37,6 +37,9 @@ python3 dashboard.py [--quark <Quark folder>] [--repo <clone>] [--port 8765] [--
   `%APPDATA%\quark`, `~/.local/share/quark`, `~/Library/Application Support/quark`).
 - `--sidecar`: where your marks go. Default `provenance.json` next to the program; when the program runs from inside a
   git clone, `Quark\editor-dashboard\provenance.json` instead (it never writes into a clone).
+- `QUARK_SHELL=1` (environment): never opens a browser (the Quark Project app shows the page); if a server is
+  already on the port it just exits. The app installs / updates with `python tools/editor_dashboard/dashboard.py
+  --install` run in `repository\` (non-interactive, safe to re-run, keeps your marks).
 - `--dump`: build the snapshot once, print every endpoint's JSON, exit (tests; no server).
 
 ## What it reads, what it writes
@@ -63,7 +66,7 @@ python3 dashboard.py [--quark <Quark folder>] [--repo <clone>] [--port 8765] [--
 
 ## Views
 
-1. **Changes by editor**: Sound editor, UI editor, Map editor, Bot editor, Model editor. Overview: a count per editor,
+1. **Changes by editor**: Sound editor, UI editor, Map editor, Bot editor, Model editor, Physics editor. Overview: a count per editor,
    each working clone's editor commits not in testing / uncommitted / only-local editor files, the editor folders and
    their pages. Per editor: local commits ahead of testing in each clone (only that editor's files) and the
    uncommitted files; each file's state: **only local** (the change isn't in testing), **in testing** (in testing, not
@@ -120,7 +123,7 @@ All on 127.0.0.1, JSON. Requests must carry `Host: 127.0.0.1:<port>` or `localho
 
 | Endpoint | Shape |
 |---|---|
-| `GET /api/summary` | The compact, stable one for other tools: `{testing: {version, ref}, production: {version, tag}, provenance: {total, human, third_party, ai, pct_human, by_category: {<cat>: {total, human, third_party, ai}}}, pending_marks, programs: [{id, name, ahead_testing, ahead_production, uncommitted, files_changed}], remaining, generated_at}`. `programs` are the five editors, in order: `sound-editor` Sound editor, `ui-customizer` UI editor, `map-editor` Map editor, `bot-editor` Bot editor, `model-editor` Model editor. `pending_marks`: assets with a pending sidecar entry (editors' and the dashboard's); `remaining`: registry items still `ai`; per program `ahead_testing`: distinct local commits not in testing touching it (all working clones), `ahead_production`: those plus testing's commits since production touching it, `uncommitted`: uncommitted files, `files_changed`: files whose change is only local; `generated_at`: the snapshot's time, ISO 8601 UTC. |
+| `GET /api/summary` | The compact, stable one for other tools: `{testing: {version, ref}, production: {version, tag}, provenance: {total, human, third_party, ai, pct_human, by_category: {<cat>: {total, human, third_party, ai}}}, pending_marks, programs: [{id, name, ahead_testing, ahead_production, uncommitted, files_changed}], remaining, generated_at}`. `programs` are the six editors, in order: `sound-editor` Sound editor, `ui-customizer` UI editor, `map-editor` Map editor, `bot-editor` Bot editor, `model-editor` Model editor, `physics-editor` Physics editor. `pending_marks`: assets with a pending sidecar entry (editors' and the dashboard's); `remaining`: registry items still `ai`; per program `ahead_testing`: distinct local commits not in testing touching it (all working clones), `ahead_production`: those plus testing's commits since production touching it, `uncommitted`: uncommitted files, `files_changed`: files whose change is only local; `generated_at`: the snapshot's time, ISO 8601 UTC. |
 | `GET /api/status` | This page's header: `{app, quark, repo, refClone, testing: {ref, sha, version}, production: {tag, sha, version}, human: {counts: {human, third-party, ai}, total, humanPct}, refreshed (unix s), ms, gitCalls, gitMs, fetched, fetchErrors: [clone], noClones, ownSidecar, links}` |
 | `GET /api/changes` | `{programs: [{id, name, clones: [{clone, commits: [{sha, h, t, a, s, files: [[letter, path, state]]}], uncommitted: [[xy, path, state]]}], files: [[path, {clone: state}]], testing: [commit with files: [[letter, path]]], testingFiles: [[letter, path]], exports: [{source, path, mtime, size, program, asset?, repo?: same/differs/missing}]}], clones: [{name, path, role: mirror/work, outside, testingSha, stale, commits, uncommitted, local, errors}], exports: [{name, path, files, more}], editors: [{folder, program, present}], rules}`; only the editors' files; state = local / testing / both / none; per clone `commits` / `uncommitted` / `local` count the editor commits not in testing, uncommitted editor files, only-local editor files |
 | `GET /api/assets` | `{repo, registryFiles, errors, rows: [{id, cat, o (registry origin, null if not in it), by, date, tool, source, note, wip, version, p?: [{origin, by, date, note, tool, sidecar}] (pending, newest first)}], stats: {<cat>: {human, third-party, ai, pending, eff: {...with the pending marks}}}, sidecars: [{path, short, tool, items, pending, mtime, own}], ownSidecar, ownPending, mergeCmd, mergeCwd}` |

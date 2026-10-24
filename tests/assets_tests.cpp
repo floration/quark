@@ -1,5 +1,5 @@
-// Assets: the asset export (`quark_tests exportassets <dir>`: every default asset as a file, for the Asset Studio,
-// tools/studio/build.py) and the owner's overrides (docs/ASSETS.md): models <-> glTF, the decoders, the font atlas,
+// Assets: the asset export (`quark_tests exportassets <dir>`: every default asset as a file, for the editors and the
+// website's /assets/ page via tools/studio/build.py) and the owner's overrides (docs/ASSETS.md): models <-> glTF, the decoders, the font atlas,
 // override lookup and the audio replacing its sounds.
 #include <algorithm>
 #include <cmath>
@@ -13,6 +13,8 @@
 #include <vector>
 #include "../src/client/audio.h"
 #include "../src/client/fontatlas.h"
+#include "../src/client/font_ui.h"
+#include "../src/client/textfit.h"
 #include "../src/client/gltf.h"
 #include "../src/client/models.h"
 #include "../src/client/overrides.h"
@@ -100,6 +102,27 @@ const char* modelDesc(int kind) {
     }
     return "";
 }
+const char* propDesc(int prop) {
+    switch (prop) {
+        case PROP_GUN_ARM: return "the arm and gun other players hold out: metres, origin at the shoulder, reaching along -Z (turned with their aim, scaled with their body). No colour slots";
+        case PROP_ARM: return "the arm that holds out a weapon model (hide and seek / tag: whoever is it): origin at the shoulder, along -Z, the hand (the weapon's pivot) at z -0.5. No colour slots";
+        case PROP_BOMB_PACK: return "the bomb on its carrier's back: in the player's space (feet at the origin, facing -Z, the pack at +Z). Moves down with a crouch. No colour slots";
+        case PROP_BOMB: return "the bomb on the ground, dropped or planted: origin on the ground under it. Materials glow* blink red while a planted bomb ticks (drawn dark in the export)";
+        case PROP_CART: return "the payload cart: origin on the track under its middle, front (-Z) the way it is pushed. Materials team* = the pushing team (white = that colour; grey when neutral), metal* / accent* / glow* = the map's colours";
+        case PROP_GATE: return "a payload checkpoint: origin on the track, -Z the cart's way, posts either side (x +-1.8). Materials team* = grey, the attackers' colour once the cart has reached it";
+    }
+    return "";
+}
+// A model's default boxes with the export's colours (and each box's mul / add / crouch: a box model file)
+void defaultParts(int kind, int i, ModelParts& parts) { exportModelParts(kind, i, parts); }
+// The built-in model as drawn with this palette (and crouch: players)
+void builtIn(int kind, int i, const ModelPalette& pal, float hs, ModelParts& out) {
+    if (kind == MODEL_PLAYER) playerModelParts(i, hs, pal, out);
+    else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, out);
+    else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, out);
+    else if (kind == MODEL_PROP) propParts(i, pal, out);
+    else crownParts(pal, out);
+}
 
 struct Item { std::string id, category, kind, name, file, desc, kit; };
 std::string manifestJson(const std::vector<Item>& items) {
@@ -163,15 +186,12 @@ int exportAssets(const char* dirArg) {
     for (int kind = 0; kind < MODEL_KINDS; kind++)
         for (int i = 0; i < modelCount(kind); i++) {
             if (!modelExists(kind, i)) continue;
-            const ModelPalette& pal = referencePalette(kind);
-            if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-            else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-            else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-            else crownParts(pal, parts);
+            defaultParts(kind, i, parts);
             MeshData mesh;
             partsToMesh(parts, mesh);
             std::string path = modelPath(kind, i);
-            add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", modelDesc(kind), modelKindName(kind)}, writeGltf(mesh, modelName(kind, i)));
+            add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", kind == MODEL_PROP ? propDesc(i) : modelDesc(kind), modelKindName(kind)},
+                writeGltf(mesh, modelName(kind, i), &parts));
         }
     // maps: the shipped text (the generated map, or its override)
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
@@ -247,20 +267,47 @@ static void testModelExport() {
         for (int i = 0; i < modelCount(kind); i++) {
             if (!modelExists(kind, i)) continue;
             models++;
-            const ModelPalette& pal = referencePalette(kind);
-            if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-            else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-            else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-            else crownParts(pal, parts);
-            ACHECK(!parts.empty());
+            defaultParts(kind, i, parts);
+            ACHECK(!parts.empty() && parts.size() <= kMaxDefaultParts);
+            ACHECK(modelPath(kind, i).find("//") == std::string::npos && modelName(kind, i)[0]);
             MeshData a, b;
             partsToMesh(parts, a);
             ACHECK(a.triangleCount() == parts.size() * 12);
-            std::string g = writeGltf(a, modelName(kind, i));
+            std::string g = writeGltf(a, modelName(kind, i), &parts);
             std::string err;
-            bool ok = loadGltf((const uint8_t*)g.data(), g.size(), nullptr, b, &err);
+            ModelParts boxes;
+            bool ok = loadGltf((const uint8_t*)g.data(), g.size(), nullptr, b, &err, &boxes);
             if (!ok) printf("  %s: %s\n", modelPath(kind, i).c_str(), err.c_str());
             ACHECK(ok);
+            // the box model round trip: the file's boxes are the export's exactly (every float as written), and drawn
+            // with any palette (and crouched) they are the built-in model's boxes
+            ACHECK(boxes.size() == parts.size());
+            finishBoxModel(kind, i, boxes);
+            for (size_t k = 0; k < boxes.size() && k < parts.size(); k++) {
+                const ModelPart &p = parts[k], &q = boxes[k];
+                bool same = !memcmp(&p.c, &q.c, sizeof p.c) && !memcmp(&p.h, &q.h, sizeof p.h) && !memcmp(&p.color, &q.color, sizeof p.color) &&
+                            p.slot == q.slot && p.alpha == q.alpha && p.shadow == q.shadow && p.visOnly == q.visOnly && p.crouch == q.crouch &&
+                            (p.slot == TINT_NONE || (!memcmp(&p.mul, &q.mul, sizeof p.mul) && !memcmp(&p.add, &q.add, sizeof p.add) && !memcmp(&p.teamMul, &q.teamMul, sizeof p.teamMul)));
+                if (!same) printf("  %s box %zu differs after the round trip\n", modelPath(kind, i).c_str(), k);
+                ACHECK(same);
+            }
+            for (int v = 0; v < 3; v++) {
+                ModelPalette pal = referencePalette(kind, i);
+                const Vec3 cols[3] = {{0.2f, 0.4f, 0.8f}, {1.0f, 0.3f, 0.25f}, {0.05f, 0.9f, 0.1f}};
+                for (int s = 1; s < TINT_COUNT; s++) if (drivenSlots(kind, i) >> s & 1) pal.c[s] = cols[(v + s) % 3];
+                const float hs = kind == MODEL_PLAYER && v == 1 ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
+                ModelParts want, got;
+                builtIn(kind, i, pal, hs, want);
+                overrideBoxParts(kind, i, boxes, pal, hs, got);
+                ACHECK(want.size() == got.size());
+                for (size_t k = 0; k < want.size() && k < got.size(); k++) {
+                    const ModelPart &w = want[k], &o = got[k];
+                    bool geo = !memcmp(&w.c, &o.c, sizeof w.c) && !memcmp(&w.h, &o.h, sizeof w.h) && w.visOnly == o.visOnly && w.shadow == o.shadow && w.alpha == o.alpha;
+                    bool col = length(w.color - o.color) < 1e-5f * std::max(1.0f, length(w.color));   // (within float rounding)
+                    if (!geo || !col) printf("  %s box %zu drawn differently (palette %d)\n", modelPath(kind, i).c_str(), k, v);
+                    ACHECK(geo && col);
+                }
+            }
             ACHECK(b.triangleCount() == a.triangleCount());
             Vec3 amn, amx, bmn, bmx;
             ACHECK(a.bounds(amn, amx) && b.bounds(bmn, bmx));
@@ -271,13 +318,91 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 5 + 11 + 7 + 1);   // (weapons: 11 with the locator)
+    ACHECK(models == 5 + 11 + 7 + 1 + 6);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE)
+    ACHECK(modelPath(MODEL_PROP, PROP_CART) == "models/prop/CART" && modelPath(MODEL_PROP, PROP_BOMB_PACK) == "models/prop/BOMB_PACK");
+    // a prop's slot colours come from the palette (the cart: 11 boxes, its band the team colour, its rim the accent)
+    {
+        ModelPalette cp;
+        cp.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+        cp.c[TINT_ACCENT] = {0.5f, 0.1f, 0.1f};
+        propParts(PROP_CART, cp, parts);
+        ACHECK(parts.size() == 11 && parts[5].slot == TINT_TEAM && length(parts[5].color - cp.c[TINT_TEAM] * 0.9f) < 1e-6f);
+        ACHECK(parts[6].slot == TINT_ACCENT && length(parts[6].color - cp.c[TINT_ACCENT]) < 1e-6f);
+        ACHECK(tintSlotFromName("Accent_rim") == TINT_ACCENT);
+    }
     // the default parts are what drawWorld draws: a known box, the standard model's chest, team coloured
     ModelPalette pal;
     pal.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
     playerModelParts(0, 1.0f, pal, parts);
     ACHECK(parts.size() == 4 && std::fabs(parts[1].c.y - 1.15f) < 1e-6f && length(parts[1].color - pal.c[TINT_TEAM]) < 1e-6f && parts[3].visOnly);
     ACHECK(tintSlotFromName("Team_Armour.001") == TINT_TEAM && tintSlotFromName("GLOW") == TINT_GLOW && tintSlotFromName("skin") == TINT_NONE);
+}
+
+// Box model files: what the loader takes and what it refuses (a refused file keeps the default)
+static void testBoxModels() {
+    ModelParts p;
+    std::string err;
+    const std::string box = "{\"c\":[0,1,0],\"h\":[0.2,0.3,0.4],\"slot\":\"team\",\"color\":[0.5,0.5,0.5]";
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + ",\"mul\":[0.6,0.6,0.6],\"add\":[0.06,0.06,0.07],\"crouch\":true,\"name\":\"legs\"}]}", p, &err));
+    ACHECK(p.size() == 1 && p[0].slot == TINT_TEAM && p[0].crouch && p[0].shadow && !p[0].visOnly && std::fabs(p[0].add.z - 0.07f) < 1e-7f);
+    // no mul: the colour over the reference (team: white), as a mesh is tinted
+    ACHECK(parseBoxModel("{\"version\":2,\"boxes\":[" + box + "}]}", p, &err));
+    finishBoxModel(MODEL_PLAYER, 0, p);
+    ACHECK(p.size() == 1 && std::fabs(p[0].mul.x - 0.5f) < 1e-7f && p[0].add.x == 0);
+    ModelPalette team;
+    team.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+    ModelParts drawn;
+    overrideBoxParts(MODEL_PLAYER, 0, p, team, 0.5f, drawn);
+    ACHECK(drawn.size() == 1 && std::fabs(drawn[0].color.z - 0.4f) < 1e-6f && std::fabs(drawn[0].c.y - 0.5f) < 1e-6f && drawn[0].h.y == 0.3f);
+    const char* bad[] = {
+        "{\"version\":2,\"boxes\":[]}",                                                              // no boxes
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1],\"h\":[1,1,1],\"color\":[1,1,1]}]}",                   // c: 2 numbers
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1e999,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",             // not finite
+        "{\"version\":2,\"boxes\":[{\"c\":[0,100,0],\"h\":[1,1,1],\"color\":[1,1,1]}]}",               // too far
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,0,1],\"color\":[1,1,1]}]}",                 // flat
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,-1,1],\"color\":[1,1,1]}]}",                // negative
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[40,1,1],\"color\":[1,1,1]}]}",                // huge
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,-1,1]}]}",               // colour < 0
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,99,1]}]}",               // colour > 16
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"slot\":\"neon\"}]}",  // unknown slot
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"alpha\":0}]}",     // invisible
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"shadow\":1}]}",    // not a bool
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1],\"slot\":\"team\",\"mul\":[1,1]}]}",
+        "{\"version\":2,\"boxes\":[{\"c\":\"0 1 0\",\"h\":[1,1,1],\"color\":[1,1,1]}]}",
+        "{\"version\":1,\"boxes\":[]}",                                                              // not version 2
+        "{\"version\":2,\"boxes\":[{\"c\":[0,1,0]",                                                     // cut off
+    };
+    for (const char* b : bad) {
+        bool ok = parseBoxModel(b, p, &err);
+        if (ok) printf("  box model accepted: %s\n", b);
+        ACHECK(!ok && p.empty());
+    }
+    std::string many = "{\"version\":2,\"boxes\":[";   // too many boxes
+    for (size_t i = 0; i <= kMaxOverrideBoxes; i++) many += std::string(i ? "," : "") + "{\"c\":[0,1,0],\"h\":[1,1,1],\"color\":[1,1,1]}";
+    ACHECK(!parseBoxModel(many + "]}", p, &err));
+    // in a file: a bad box list fails the load (the default is kept); the model editor's older notes (version 1) and
+    // no extras at all are a plain mesh
+    ModelParts parts, boxes;
+    playerModelParts(0, 1.0f, referencePalette(MODEL_PLAYER), parts);
+    MeshData mesh, back;
+    partsToMesh(parts, mesh);
+    std::string g = writeGltf(mesh, "STANDARD");
+    ACHECK(loadGltf((const uint8_t*)g.data(), g.size(), nullptr, back, &err, &boxes) && boxes.empty());
+    parts[0].h.y = -1;
+    g = writeGltf(mesh, "STANDARD", &parts);
+    ACHECK(!loadGltf((const uint8_t*)g.data(), g.size(), nullptr, back, &err, &boxes) && boxes.empty() && err.find("box model") == 0);
+    std::string v1 = writeGltf(mesh, "STANDARD");
+    v1.replace(v1.find("\"primitives\""), 0, "\"extras\":{\"quark\":{\"version\":1,\"boxes\":[[{\"i\":0,\"name\":\"\",\"shadow\":true,\"visOnly\":false}]]}},");
+    ACHECK(loadGltf((const uint8_t*)v1.data(), v1.size(), nullptr, back, &err, &boxes) && boxes.empty());
+    // slots a model's drawing doesn't colour stay at the reference (an override's "glow" on a player: tint 1)
+    ModelPalette pl;
+    pl.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+    for (int kind : {MODEL_PLAYER, MODEL_CROWN, MODEL_PROJECTILE}) {
+        ModelPalette d = drivenPalette(kind, 0, pl);
+        ACHECK(length(d.c[TINT_TEAM] - pl.c[TINT_TEAM]) < 1e-7f);
+        for (int s : {(int)TINT_METAL, (int)TINT_BASE, (int)TINT_ACCENT}) ACHECK(length(d.c[s] - referencePalette(kind, 0).c[s]) < 1e-7f);
+        if (kind != MODEL_PROJECTILE) ACHECK(length(d.c[TINT_GLOW] - referencePalette(kind, 0).c[TINT_GLOW]) < 1e-7f);
+    }
 }
 
 static void testGltfLoader() {
@@ -524,12 +649,33 @@ static void testOverrides() {
     for (size_t i = 0; i < thud.size(); i++) thud[i] = 0.3f + 0.6f * std::sin(i * 0.012f) * (1.0f - (float)i / thud.size()) + 0.05f * std::sin(i * 0.4f);
     ACHECK(spit(root / "sounds/mouth/HIT_BRUTAL.wav", wavFile(thud, 48000)));
     ACHECK(spit(root / "models/player/HEAVY.gltf", "this is not glTF"));
+    {   // a player model of yours: a giant (the standard model, three times as wide)
+        ModelParts parts;
+        MeshData mesh;
+        playerModelParts(0, 1.0f, referencePalette(MODEL_PLAYER), parts);
+        for (ModelPart& q : parts) q.h = q.h * 3.0f;
+        partsToMesh(parts, mesh);
+        ACHECK(spit(root / "models/player/STANDARD.gltf", writeGltf(mesh, "STANDARD")));
+    }
     overrides::useUserFolder(true);   // (re-read the folder)
     ACHECK(overrides::any());
     std::vector<uint8_t> b;
     std::string matched, where;
     ACHECK(overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, &matched, &where) && where == "user" && matched == "sounds/default/hit.wav");
     ACHECK(!overrides::find("sounds/default/KILL", {".wav"}, b));
+    where.clear();   // (only the shipped ones / only yours)
+    if (overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, nullptr, &where, overrides::FROM_SHIPPED)) ACHECK(where == "shipped");
+    ACHECK(overrides::find("sounds/default/HIT", {".ogg", ".wav"}, b, nullptr, &where, overrides::FROM_USER) && where == "user");
+    ACHECK(!overrides::find("sounds/default/KILL", {".wav"}, b, nullptr, nullptr, overrides::FROM_USER));
+    // models: yours are drawn, but ranked draws only the shipped ones (or the box model): a giant or neon enemy model
+    // of your own would be an edge that nobody else has
+    ModelOverrides mo;
+    loadModelOverrides(mo);
+    ACHECK(mo.user[MODEL_PLAYER][0] && mo.get(MODEL_PLAYER, 0, false) == mo.user[MODEL_PLAYER][0].get());
+    ACHECK(mo.get(MODEL_PLAYER, 0, true) == mo.shipped[MODEL_PLAYER][0].get());
+    ACHECK(!mo.user[MODEL_PLAYER][1]);   // (HEAVY: not glTF, left out)
+    for (int kind = 0; kind < MODEL_KINDS; kind++)
+        for (int i = 0; i < kMaxModelsPerKind; i++) ACHECK(mo.get(kind, i, true) == mo.shipped[kind][i].get());
     Audio plain, mine;
     overrides::useUserFolder(false);
     plain.startOffline();
@@ -647,7 +793,7 @@ static void testExport() {
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) official++;
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
-    ACHECK(models == 24 && maps == official && missing == 0);
+    ACHECK(models == 30 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 6 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);
@@ -686,15 +832,179 @@ static void testVoiceSteal() {
     a.stop();
 }
 
+// Settings > SOUND's EFFECTS VOLUME and ANNOUNCER VOLUME: each scales its own category in the mix (on top of the
+// master), sounds already playing included, and leaves the other alone
+static void testCategoryVolumes() {
+    printf("audio: EFFECTS VOLUME and ANNOUNCER VOLUME scale their own sounds only\n");
+    Audio a;
+    a.startOffline();
+    a.setAnnouncer(1);   // (loads the lines)
+    a.setMasterVolume(0.5f);
+    int line = -1;
+    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(0, id).size() > (size_t)Audio::kRate / 4) { line = id; break; }
+    ACHECK(line >= 0 && a.samples(0, SND_RIFLE).size() > 2048);
+    ACHECK(a.categoryGain(SND_HIT) == 1.0f && a.categoryGain(SND_VOICE_GO) == 1.0f);   // (the defaults: as before)
+    auto energy = [&](int id, float fx, float ann) {   // the first 1024 frames of one sound at these volumes
+        a.setEffectsVolume(fx);
+        a.setAnnouncerVolume(ann);
+        std::vector<int16_t> out(2048);
+        for (int k = 0; k < 4000 && a.voicesPlaying(SND_RIFLE) + a.voicesPlaying(line) > 0; k++) a.mix(out.data(), 1024);   // (the last one ends first)
+        a.play(id, 1.0f);
+        a.mix(out.data(), 1024);
+        double e = 0;
+        for (int16_t v : out) e += std::fabs((double)v);
+        return e;
+    };
+    const double fx1 = energy(SND_RIFLE, 1, 1), fx0 = energy(SND_RIFLE, 0, 1), fxHalf = energy(SND_RIFLE, 0.5f, 1), fxAnn0 = energy(SND_RIFLE, 1, 0);
+    const double ln1 = energy(line, 1, 1), ln0 = energy(line, 1, 0), lnFx0 = energy(line, 0, 1);
+    printf("  rifle: %.0f at 1, %.0f at 0.5, %.0f at 0, %.0f with the announcer at 0; a line: %.0f, %.0f at 0, %.0f with effects at 0\n",
+           fx1, fxHalf, fx0, fxAnn0, ln1, ln0, lnFx0);
+    ACHECK(fx1 > 1000 && fx0 == 0 && fxHalf < fx1 * 0.6 && fxHalf > fx1 * 0.4);   // (the soft limiter bends it a little)
+    ACHECK(fxAnn0 == fx1);   // the announcer's volume doesn't touch effects
+    ACHECK(ln1 > 1000 && ln0 == 0 && lnFx0 == ln1);   // nor effects' the announcer
+    // a sound already playing follows a change from the next period
+    a.setEffectsVolume(1);
+    std::vector<int16_t> out(2048);
+    for (int k = 0; k < 4000 && a.voicesPlaying(SND_RIFLE) + a.voicesPlaying(line) > 0; k++) a.mix(out.data(), 1024);
+    a.play(SND_RIFLE, 1.0f);
+    a.mix(out.data(), 256);
+    a.setEffectsVolume(0);
+    a.mix(out.data(), 256);
+    bool silent = true;
+    for (int i = 0; i < 512; i++) silent = silent && out[i] == 0;
+    ACHECK(silent);
+    a.stop();
+}
+
+// Settings > DEVICES' rules (devices.h), no hardware needed: a saved id found in the list, the default for none, gone
+// when it's not there (the default is used, with a notice); two monitors of the same name told apart; an id as a
+// quark.cfg value. And the OS's lists can be asked for at all (empty on a machine with no sound devices: the page
+// then offers only the default).
+static void testDevices() {
+    printf("devices: saved ids found, gone ones fall back, same names told apart\n");
+    const std::vector<DeviceEntry> list = {{"{0.0.0.00000000}.{aaa}", "SPEAKERS"}, {"{0.0.0.00000000}.{bbb}", "HEADPHONES"}};
+    ACHECK(findDevice(list, "") == kDeviceDefault);
+    ACHECK(findDevice(list, "{0.0.0.00000000}.{bbb}") == 1 && findDevice(list, "{0.0.0.00000000}.{aaa}") == 0);
+    ACHECK(findDevice(list, "{0.0.0.00000000}.{ccc}") == kDeviceGone);   // (unplugged)
+    ACHECK(findDevice({}, "x") == kDeviceGone && findDevice({}, "") == kDeviceDefault);
+    const std::vector<std::string> u = uniqueNames({"DELL P2419H", "LG ULTRAGEAR", "DELL P2419H", "DELL P2419H"});
+    ACHECK(u.size() == 4 && u[0] == "DELL P2419H" && u[1] == "LG ULTRAGEAR" && u[2] == "DELL P2419H #2" && u[3] == "DELL P2419H #3");
+    ACHECK(deviceCfgValue("a\r\nb") == "ab" && deviceCfgValue("hw:CARD=PCH,DEV=0") == "hw:CARD=PCH,DEV=0");
+    std::string longName(300, 'x');
+    longName.replace(255, 2, "\xC3\xA9");   // (a 2-byte character across the 256 cut: dropped whole)
+    ACHECK(deviceCfgValue(longName).size() == 255);
+    std::string endsAtCut(300, 'x');
+    endsAtCut.replace(254, 2, "\xC3\xA9");   // (one ending right at it: kept)
+    ACHECK(deviceCfgValue(endsAtCut).size() == 256);
+    for (bool input : {false, true}) {
+        const std::vector<DeviceEntry> os = Audio::listDevices(input);
+        printf("  %s: %zu device(s) here\n", input ? "inputs" : "outputs", os.size());
+        for (const DeviceEntry& d : os) ACHECK(!d.id.empty() && !d.name.empty() && d.id.find('\n') == std::string::npos);
+    }
+    // choosing an output before the device opens: no reopen storm, and nothing missing yet
+    Audio a;
+    a.setOutputDevice("{0.0.0.00000000}.{gone}");
+    a.setOutputDevice("{0.0.0.00000000}.{gone}");
+    ACHECK(!a.outputMissing() && !a.takeOutputMissing());
+    a.setOutputDevice("");
+}
+
+// Every UI font fits its line by itself (textfit.h): each built-in's ink, with the outline, stays inside the line box
+// once its fit scale is applied (Rubik, which defines the box, at 1); and a long label in a narrow box is fitted by
+// tracking first (no two letters' ink touching, at most 15% tighter), then size, then "..." (Rubik and a pixel font).
+static void testTextFit() {
+    printf("text fitting: every built-in font inside the line box; tracking, then size, then \"...\"\n");
+    const FontAtlasLayout L = {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread, kUiCapHeight};
+    TextMetrics rubik;
+    rubik.adv = kUiAdv; rubik.kern = kUiKern;
+    measureInk(kUiAtlas, L, rubik.ink);
+    const LineBox box = lineBoxOf(rubik.ink);
+    LineFit lf = lineFit(rubik.ink, box);
+    rubik.fitScale = lf.scale; rubik.fitShift = lf.shift;
+    printf("  line box %.2f..%.2f units (8-unit line; Rubik's ink + its outline); Rubik fit %.3f\n", box.top, box.bottom, rubik.fitScale);
+    ACHECK(lf.scale == 1.0f && lf.shift == 0.0f && box.top <= 0 && box.bottom >= 8);
+    ACHECK(!rubik.ink['H' - 32].empty() && rubik.ink[0].empty());
+    ACHECK(std::fabs(rubik.ink['H' - 32].y0 - 0.75f) < 0.2f && std::fabs(rubik.ink['H' - 32].y1 - 6.0f) < 0.2f);   // (caps 0.75..6.0 units)
+    auto inside = [&](const TextMetrics& m, const char* name) {
+        float top = 1e9f, bottom = -1e9f;
+        for (int g = 0; g < 95; g++)
+            if (!m.ink[g].empty()) { top = std::min(top, fittedY(m.ink[g].y0, {m.fitScale, m.fitShift})); bottom = std::max(bottom, fittedY(m.ink[g].y1, {m.fitScale, m.fitShift})); }
+        bool ok = top - kLineOutline >= box.top - 0.01f && bottom + kLineOutline <= box.bottom + 0.01f && m.fitScale >= 0.8f;
+        printf("  %-18s ink %.2f..%.2f, fit scale %.3f, shift %+.2f%s\n", name, top, bottom, m.fitScale, m.fitShift, ok ? "" : "  OUTSIDE THE LINE BOX");
+        ACHECK(ok);
+    };
+    inside(rubik, "rubik");
+    std::vector<std::unique_ptr<FontAtlas>> keep;   // (the metrics point at their advances)
+    TextMetrics pixel;
+    std::string err;
+    for (const uifonts::Entry& e : uifonts::scan()) {
+        if (e.user || e.id == "rubik" || !uifonts::isBuiltin(e.id)) continue;
+        std::unique_ptr<FontAtlas> fa;
+        if (!uifonts::load(e.id, L, fa, &err) || !fa) { ACHECK(false); continue; }
+        TextMetrics m;
+        m.adv = fa->adv; m.kern = fa->kern;
+        m.minScale = fa->minScale > 0 ? fa->minScale : 1.3f;
+        measureInk(fa->tex.data(), L, m.ink);
+        LineFit f = lineFit(m.ink, box);
+        m.fitScale = f.scale; m.fitShift = f.shift;
+        inside(m, e.id.c_str());
+        if (e.id == "classic") pixel = m;
+        keep.push_back(std::move(fa));
+    }
+    ACHECK(pixel.adv != nullptr);   // (QUARK CLASSIC is built in)
+    // fitting a long label into narrower and narrower boxes
+    const std::string label = "OTHER PLAYERS' TRACERS / BEAMS: ON";
+    auto fits = [&](const TextMetrics& m, const char* name) {
+        const float ts = 2, w0 = textUnits(m, label, 0, ts * m.fitScale) * ts * m.fitScale;
+        // just too wide: closed up at the same size; no two letters' fills closer than an outline, no pair over 15%
+        TextFit f = fitText(m, label, ts, w0 * 0.97f);
+        const float sk = f.scale * m.fitScale, o = outlineUnits(sk);
+        float worst = 1e9f, most = 0;
+        for (size_t i = 1; i < label.size(); i++) {
+            int a = textGlyph(label[i - 1]), b = textGlyph(label[i]);
+            float c = m.closeUp(a, b, f.level, o);
+            most = std::max(most, c / m.adv[a]);
+            if (!m.ink[a].empty() && !m.ink[b].empty()) {
+                float before = m.advance(a, b) + m.ink[b].x0 - m.ink[a].x1;
+                worst = std::min(worst, before - c - std::min(before, o));   // (a pair already closer than an outline isn't closed up)
+            }
+        }
+        printf("  %s: 97%% wide: scale %.2f, closed up to %.3f units (at most %.0f%% of a letter), fills >= an outline apart: %s\n",
+               name, f.scale, f.level, most * 100, worst >= -1e-3f ? "yes" : "NO");
+        ACHECK(f.keep < 0 && f.scale == ts && f.level > 0 && worst >= -1e-3f && most <= kMaxTighten + 1e-4f);
+        ACHECK(textUnits(m, label, f.level, sk) * f.scale * m.fitScale <= w0 * 0.97f + 0.01f);
+        // too wide for that: smaller, closed up all that size allows
+        f = fitText(m, label, ts, w0 * 0.75f);
+        printf("  %s: 75%% wide: scale %.2f, closed up to %.3f\n", name, f.scale, f.level);
+        ACHECK(f.keep < 0 && f.scale < ts && f.scale >= m.minScale);
+        ACHECK(textUnits(m, label, f.level, f.scale * m.fitScale) * f.scale * m.fitScale <= w0 * 0.75f + 0.01f);
+        ACHECK(std::fabs(f.level - maxLevel(m, label, f.scale * m.fitScale)) < 1e-4f);
+        // far too wide even at the smallest size: cut short with "..."
+        f = fitText(m, label, ts, w0 * 0.2f);
+        printf("  %s: 20%% wide: scale %.2f, %d characters + \"...\"\n", name, f.scale, f.keep);
+        ACHECK(f.keep >= 0 && f.keep < (int)label.size() && f.scale == m.minScale);
+        ACHECK(textUnits(m, label.substr(0, f.keep) + "...", 0, f.scale * m.fitScale) * f.scale * m.fitScale <= w0 * 0.2f + 0.01f);
+        // it fits already: as it is
+        f = fitText(m, label, ts, w0 + 1);
+        ACHECK(f.keep < 0 && f.scale == ts && f.level == 0);
+    };
+    fits(rubik, "rubik");
+    fits(pixel, "classic");
+}
+
 int assetTests() {
     g_afail = 0;
     testModelExport();
     testGltfLoader();
+    testBoxModels();
     testDecoders();
     testFontAtlas();
     testUiFonts();
+    testTextFit();
     testHitTiers();
     testVoiceSteal();
+    testCategoryVolumes();
+    testDevices();
     testOverrides();
     testSoundLevels();
     testIconSource();

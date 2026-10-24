@@ -39,14 +39,17 @@ namespace fs = std::filesystem;
 // Game's side: where the UI is, what can be observed, and the interactive things that aren't widgets
 
 std::string Game::uiScreenPath() const {
-    auto settingsSub = [&]() -> std::string {
-        if (controlsOpen_) return filePick_ == 2 ? "/controls/files" : "/controls";
-        if (crosshairOpen_) return "/crosshair";
-        if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
-        if (hudOpen_) return hudDrop_ ? "/hud/elements" : "/hud";
-        if (visualsOpen_) return "/visuals";
-        if (fontsOpen_) return "/fonts";
-        return "";
+    auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
+        switch (setTab_) {
+            case TAB_GAMEPLAY: return "/gameplay";
+            case TAB_CONTROLS: return filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : "/controls";
+            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : "/video";
+            case TAB_CROSSHAIR: return "/crosshair";
+            case TAB_HUD:
+                if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
+                return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
+        }
+        return fontsOpen_ ? "/fonts" : "";
     };
     auto pickerName = [](int p) -> const char* {
         switch (p) {
@@ -63,17 +66,17 @@ std::string Game::uiScreenPath() const {
     };
     std::string pick = picker_ != PICK_NONE ? std::string("/picker:") + pickerName(picker_) : "";
     static const char* info[] = {"modes", "controls", "hud", "hosting", "editor", "maps"};
-    static const char* custom[] = {"general", "weapons", "maps", "movement"};
+    static const char* custom[] = {"general", "weapons", "maps", "movement", "dash"};
     switch (screen_) {
         case Screen::Main: return edPrompt_ ? "main/save-copy" : "main";   // (after someone else's session: keep a copy?)
         case Screen::Join: return "join";
-        case Screen::Host: return "host" + pick;
+        case Screen::Host: return hostAdvanced_ && pick.empty() ? "host/advanced" : "host" + pick;
         case Screen::VsBots: return "vsbots" + pick;
         case Screen::Settings: return "settings" + settingsSub();
         case Screen::Leaderboard: return raceStatsView_ ? "leaderboard/race-stats" : "leaderboard";
         case Screen::Info: return std::string("info/") + info[std::min(std::max(infoTab_, 0), 5)];
         case Screen::Demos: return "demos";
-        case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 3)];
+        case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
         case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
         case Screen::InGame: {
@@ -146,6 +149,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "edimport") return ed_.serialize() + b(edGroupMenu_);
     if (w == "browser") return std::to_string(browser_.refreshes());
     if (w == "fontscan") return std::to_string(fontScans_);
+    if (w == "devscan") return std::to_string(devScans_);
     if (w == "scores") return b(showScores_);
     if (w == "perf") return b(showPerf_);
     if (w == "perfmini") return b(perfMini_);
@@ -302,7 +306,7 @@ std::string cfgLines(const std::string& text, const std::string& key) {
 }
 
 const char* kindName(UiWidget::Kind k) {
-    static const char* n[] = {"button", "toggle", "cycle", "slider", "text", "key", "handle", "view"};
+    static const char* n[] = {"button", "toggle", "cycle", "slider", "text", "key", "handle", "view", "color", "dropdown"};
     return n[k];
 }
 const char* expName(UiExp::Kind k) {
@@ -316,7 +320,11 @@ std::string expText(const UiExp& e) {
     return t;
 }
 bool hasRect(const UiWidget& w) { return w.kind != UiWidget::KEY && w.kind != UiWidget::HANDLE && w.kind != UiWidget::VIEW; }
-bool hasValue(const UiWidget& w) { return w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE || w.kind == UiWidget::SLIDER || w.kind == UiWidget::TEXT; }
+bool hasValue(const UiWidget& w) {
+    return w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE || w.kind == UiWidget::SLIDER || w.kind == UiWidget::TEXT ||
+           w.kind == UiWidget::COLOR || w.kind == UiWidget::DROPDOWN;
+}
+std::string hexColor(int v) { char b[8]; snprintf(b, sizeof b, "#%06X", v & 0xFFFFFF); return b; }
 }
 
 class UiTest : public UiProbe {
@@ -476,7 +484,19 @@ private:
 
     // ---- the scenario's screens
     bool explorable(const std::string& p) const {
-        if (!o_.uiTestPath.empty() && p != sc_->root && p.rfind(o_.uiTestPath, 0) != 0) return false;   // (--uitest-path)
+        if (!o_.uiTestPath.empty() && p != sc_->root) {   // (--uitest-path a,b,-c: the screens under a or b, but not under c)
+            bool under = false, out = false;
+            size_t a = 0;
+            while (a <= o_.uiTestPath.size()) {
+                size_t b = o_.uiTestPath.find(',', a);
+                if (b == std::string::npos) b = o_.uiTestPath.size();
+                const bool minus = b > a && o_.uiTestPath[a] == '-';
+                const size_t a2 = a + (minus ? 1 : 0);
+                if (b > a2 && p.compare(0, b - a2, o_.uiTestPath, a2, b - a2) == 0) (minus ? out : under) = true;
+                a = b + 1;
+            }
+            if (!under || out) return false;
+        }
         bool in = false;
         for (auto& e : sc_->explore) in |= p.rfind(e, 0) == 0;
         for (auto& e : sc_->skip) in &= p.rfind(e, 0) != 0;
@@ -526,16 +546,21 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.controlsOpen_ = g.crosshairOpen_ = g.hudOpen_ = g.visualsOpen_ = g.fontsOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        for (int& d : g.devScroll_) d = 0;
+        g.setTab_ = Game::TAB_PLAYER;
+        g.controlsSub_ = 0;
+        g.ui_.closePopup();
         g.fontScroll_ = 0;   // (the font itself follows the settings put back below: Game::frame applies ui_font)
         if (g.widgetEdit_) g.widgets_.save(g.activeHudPath());
-        g.widgetEdit_ = g.hudDrop_ = g.valueDrop_ = false;
+        g.widgetEdit_ = g.valueDrop_ = false;
         g.widgetSel_ = -1;
         g.filePick_ = 0;
         g.captureAction_ = -1;
         g.picker_ = Game::PICK_NONE;
         g.multiSel_.clear();
         g.raceStatsView_ = false;
+        g.hostAdvanced_ = false;
         g.customTab_ = g.infoTab_ = 0;
         g.infoScroll_ = 0;
         g.hudSel_ = 0;
@@ -566,13 +591,17 @@ private:
         }
         // the settings as the test started (memory and file), and what follows from them
         Settings& c = g.cfg_;
-        bool display = c.displayMode != baseline_.displayMode || c.width != baseline_.width || c.height != baseline_.height;
+        bool display = c.displayMode != baseline_.displayMode || c.width != baseline_.width || c.height != baseline_.height ||
+                       c.monitor != baseline_.monitor || c.fullscreenHz != baseline_.fullscreenHz;
         c = baseline_;
         c.save();
         g.joinAddr_ = c.lastAddress;
         g.hostPortStr_ = std::to_string(c.hostPort);
         g.ui_.accent = rgba(c.colorFriendly);
         g.audio_.setMasterVolume(c.volume);
+        g.audio_.setEffectsVolume(c.volumeEffects);
+        g.audio_.setAnnouncerVolume(c.volumeAnnouncer);
+        g.audio_.setOutputDevice(c.audioOutput);
         g.audio_.setAnnouncer(c.announcerVoice);
         g.appliedMode_ = -2;
         if (display) g.applyDisplayMode();
@@ -623,6 +652,9 @@ private:
         lastReplay_.clear();
         for (auto* way : ways) {
             if (!toRoot()) { lastReplay_ += " [couldn't set the scenario up again]"; return false; }
+            // a CHECK AGAIN clicked a moment ago leaves the host's reachability check running for a few seconds, and
+            // CHECK AGAIN isn't drawn until it's done: wait for it, as the scenario's setup does (it was a flaky untested)
+            if (g_.host_) waitFor([&] { return g_.host_->reachability() != Server::REACH_CHECKING; }, 6);
             bool ok = true;
             for (auto& st : *way) if (!replay(st)) { ok = false; lastReplay_ += " [" + st.id + " not there]"; break; }
             step(2);
@@ -649,13 +681,44 @@ private:
     // ---- doing what a widget is for (verify: the activation is being tested, not replayed)
     void act(const UiWidget& w, bool verify, std::string* why = nullptr, const std::string& id = "") {
         float cx = w.x + w.w * 0.5f, cy = w.y + w.h * 0.5f;
-        if (w.kind == UiWidget::BUTTON || w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE) clickId_ = id;
+        if (w.kind == UiWidget::BUTTON || w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE || w.kind == UiWidget::COLOR || w.kind == UiWidget::DROPDOWN) clickId_ = id;
         switch (w.kind) {
             case UiWidget::BUTTON: case UiWidget::TOGGLE:
                 if (w.exp.kind == UiExp::BIND) { click(cx, cy); step(); key(GLFW_KEY_F7); break; }
                 click(cx, cy);
                 break;
             case UiWidget::VIEW: click(w.x + w.w * 0.42f, w.y + w.h * 0.62f); break;   // (off centre: not where handles tend to be)
+            case UiWidget::DROPDOWN: click(cx, cy); break;   // (opens its list: what it declares; the entries are widgets of that screen)
+            case UiWidget::COLOR: {
+                // a colour picker: it opens, a drag across its square and a click on its hue bar change the colour, a
+                // hex value typed into it is taken exactly, and Esc closes it
+                click(cx, cy);
+                step();
+                if (!g_.ui_.popupOpen()) { if (why) *why = "clicking it didn't open its colour picker"; break; }
+                const Ui::PopupRects r = g_.ui_.popupRects();
+                const float W = (float)g_.r_.width(), H = (float)g_.r_.height();
+                if (why && (r.box[0] < -0.5f || r.box[1] < -0.5f || r.box[0] + r.box[2] > W + 0.5f || r.box[1] + r.box[3] > H + 0.5f)) *why = "its colour picker is off screen";
+                auto valueNow = [&]() -> std::string { int j = find(id); return j >= 0 ? cur_[j].value : ""; };
+                const std::string v0 = valueNow();
+                press(r.sv[0] + r.sv[2] * 0.25f, r.sv[1] + r.sv[3] * 0.3f); step();
+                moveTo(r.sv[0] + r.sv[2] * 0.7f, r.sv[1] + r.sv[3] * 0.55f); step();
+                release(); step();
+                const std::string v1 = valueNow();
+                if (why && why->empty() && v1 == v0) *why = "dragging across its picker's square didn't change the colour";
+                click(r.hue[0] + r.hue[2] * 0.5f, r.hue[1] + r.hue[3] * 0.62f); step();
+                if (why && why->empty() && valueNow() == v1) *why = "clicking its picker's hue bar didn't change the colour";
+                const std::string want = valueNow() == "#3C78B4" ? "#B4783C" : "#3C78B4";
+                click(r.hex[0] + r.hex[2] * 0.5f, r.hex[1] + r.hex[3] * 0.5f); step();
+                for (int k = 0; k < 8; k++) { keyDown(GLFW_KEY_BACKSPACE); step(); keyUp(GLFW_KEY_BACKSPACE); }
+                type(want.substr(1));
+                key(GLFW_KEY_ENTER);
+                step();
+                if (why && why->empty() && valueNow() != want) *why = "typed " + want + " into its picker, it shows " + valueNow();
+                key(GLFW_KEY_ESCAPE);
+                step(2);
+                if (why && why->empty() && g_.ui_.popupOpen()) *why = "Esc didn't close its colour picker";
+                break;
+            }
             case UiWidget::CYCLE: click(w.x + w.w - w.h * 0.5f, cy); break;   // ">"
             case UiWidget::SLIDER: {
                 float lo = w.dx, hi = w.dy, v = (float)atof(w.value.c_str()), f = 0.1f;
@@ -705,6 +768,18 @@ private:
     // Activate the widget at cur_[i] and check it did what it declares. (A click the layout moved away from under is tried
     // once more from the state it left.)
     void activate(int i, bool again = false) {
+        // CHECK AGAIN (state "reach") drawn while the host's last check is still finishing: let it finish first, or the
+        // click lands on a check that's already running and nothing changes (it was a flaky failure)
+        if (!again && cur_[i].exp.kind == UiExp::STATE && cur_[i].exp.what && std::string(cur_[i].exp.what) == "reach" && g_.host_ &&
+            g_.host_->reachability() == Server::REACH_CHECKING) {
+            const std::string id = ids_[i];
+            waitFor([&] { return g_.host_->reachability() != Server::REACH_CHECKING; }, 6);
+            step(2);
+            int j = find(id);
+            if (j >= 0) { activate(j, true); return; }
+            i = -1;
+        }
+        if (i < 0) return;
         const UiWidget w = cur_[i];
         clickMoved_ = false;
         const std::string id = ids_[i], wkey = keyOf(i), path0 = path(), ctx0 = ctx();
@@ -802,12 +877,13 @@ private:
                     if (cfgLines(disk.toText(), k) != cfgLines(text, k)) fail(wkey, "the new bind wasn't saved");
                 } else pendingCfg_.push_back({k, wkey});
                 // (these change the window / frame pacing: back at once, and no "<" round trip)
-                static const char* live[] = {"display_mode", "present_mode", "maxfps", "low_latency"};
+                static const char* live[] = {"display_mode", "present_mode", "maxfps", "low_latency", "monitor", "fullscreen_hz"};
                 bool isLive = false;
                 for (const char* lk : live) isLive |= k == lk;
                 if (isLive) {
                     Settings& c = g_.cfg_;
                     c.displayMode = baseline_.displayMode; c.presentMode = baseline_.presentMode; c.maxFps = baseline_.maxFps; c.lowLatency = baseline_.lowLatency;
+                    c.monitor = baseline_.monitor; c.fullscreenHz = baseline_.fullscreenHz;
                     g_.applyDisplayMode();
                     g_.applyPresentMode();
                     pendingCfg_.pop_back();
@@ -847,6 +923,41 @@ private:
             }
         }
         if (w.kind == UiWidget::KEY && w.count > 0) { g_.testHeld_ = 0; step(); }
+        // a colour picker: a right-click puts its default back (and it's saved when the screen is left)
+        if (w.kind == UiWidget::COLOR && w.enabled && path() == path0 && e.kind == UiExp::CFG) {
+            int j = find(id);
+            if (j >= 0) {
+                const UiWidget c2 = cur_[j];
+                rclick(c2.x + c2.w * 0.3f, c2.y + c2.h * 0.5f);
+                step(2);
+                int k = find(id);
+                const std::string def = hexColor((int)c2.def);
+                if (k < 0) fail(wkey, "gone after a right-click");
+                else if (cur_[k].value != def) fail(wkey, "right-clicked (default " + def + "), it shows " + cur_[k].value);
+                else if (g_.ui_.popupOpen()) fail(wkey, "a right-click opened its colour picker");
+                else pendingCfg_.push_back({e.what, wkey});
+                resetChecks_++;
+            }
+        }
+        // a keybind slot: a right-click unbinds it, saved at once
+        if (e.kind == UiExp::BIND && path() == path0) {
+            int j = find(id);
+            if (j >= 0) {
+                const UiWidget b2 = cur_[j];
+                const std::string before = cfgLines(g_.cfg_.toText(), "bind_*");
+                rclick(b2.x + b2.w * 0.5f, b2.y + b2.h * 0.5f);
+                step(2);
+                const std::string after = cfgLines(g_.cfg_.toText(), "bind_*");
+                int k = find(id);
+                Settings disk;
+                disk.load();
+                if (k < 0) fail(wkey, "gone after a right-click");
+                else if (cur_[k].label != "-") fail(wkey, "a right-click didn't unbind it (it shows " + cur_[k].label + ")");
+                else if (after == before) fail(wkey, "a right-click didn't change the binds");
+                else if (cfgLines(disk.toText(), "bind_*") != after) fail(wkey, "the right-click's unbind wasn't saved");
+                unbindChecks_++;
+            }
+        }
         if (verbose_) printf("  %s %s -> %s%s\n", rec.ok ? "ok  " : "FAIL", wkey.c_str(), path().c_str(), rec.ok ? "" : (" : " + rec.fails.back()).c_str());
         // a slider: a number typed into it is kept exactly (off any grid a drag snaps to), and saved as typed
         if (w.kind == UiWidget::SLIDER && w.enabled && path() == path0) {
@@ -939,7 +1050,8 @@ private:
     }
 
     int typedChecks_ = 0;   // sliders a value was typed into (and kept)
-    int resetChecks_ = 0;   // sliders right-clicked back to their default
+    int resetChecks_ = 0;   // sliders and colour pickers right-clicked back to their default
+    int unbindChecks_ = 0;  // keybind slots right-clicked to unbind
 
     // the state an activation led to (a new screen, a selection...), before the test undid it
     std::string postPath_, postCtx_, postIdent_;
@@ -987,6 +1099,9 @@ private:
             UiExp::Kind pk = cur_[pick].exp.kind;
             activate(pick);
             if (pk == UiExp::EDIT && postPath_ == node.path && postCtx_ == node.ctx) postPath_.clear();
+            // (CONNECTING to a game this scenario just started - TIME TRIAL hosts one - is on its way in game, in a few
+            // frames: not a screen to come back to; the one JOIN > CONNECT leaves stays, and is found that way)
+            if (postPath_ == "connecting" && !sc_->healthy()) postPath_.clear();
             // somewhere new: explore it later (by replaying the way here)
             if (!postPath_.empty() && explorable(postPath_) && !idents_.count(postIdent_) && nodes_.size() < 600) {
                 idents_.insert(postIdent_);
@@ -1299,7 +1414,8 @@ private:
         std::ofstream f(utf8Path(out));
         f << "{\n  \"result\": " << jsonStr(ok ? "pass" : "fail") << ",\n  \"seconds\": " << (int)seconds << ",\n  \"frames\": " << frames_
           << ",\n  \"widgets\": " << widgets << ",\n  \"screens\": " << screens.size() << ",\n  \"passed\": " << passed << ",\n  \"failed\": " << failed
-          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"slider_reset_checks\": " << resetChecks_ << ",\n  \"per_screen\": {\n";
+          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"slider_reset_checks\": " << resetChecks_
+          << ",\n  \"unbind_checks\": " << unbindChecks_ << ",\n  \"per_screen\": {\n";
         size_t n = 0;
         for (auto& [p, c] : perScreen)
             f << "    " << jsonStr(p) << ": {\"widgets\": " << c[0] << ", \"pass\": " << c[1] << ", \"fail\": " << c[2] << "}" << (++n < perScreen.size() ? ",\n" : "\n");
@@ -1333,8 +1449,8 @@ private:
         f.close();
         // the summary
         printf("\n==== UI TEST: %s ====\n", ok ? "PASS" : "FAIL");
-        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into, %d right-clicked back to default; %zu layout issues; %.0f s, %ld frames\n",
-               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, resetChecks_, layout_.size(), seconds, frames_);
+        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into, %d sliders / colours right-clicked back to default, %d key slots right-clicked to unbind; %zu layout issues; %.0f s, %ld frames\n",
+               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, resetChecks_, unbindChecks_, layout_.size(), seconds, frames_);
         printf("per screen (widgets / pass / fail):\n");
         for (auto& [p, c] : perScreen) printf("  %-42s %4d %4d %4d\n", p.c_str(), c[0], c[1], c[2]);
         for (auto* r : bad) {

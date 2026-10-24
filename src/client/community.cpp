@@ -221,28 +221,30 @@ void Game::drawCrown(float x, float y, float w, int place, const char* letter) {
     }
 }
 
-// The queue list (pause menu > QUEUE): press a mode to join it, again to leave.
+// The queue list (pause menu > QUEUE): press a mode to join it, again to leave. A 776 panel in the in-game band: the
+// title at text 3, the note at 1.5, the modes in two columns of 360 (rows 32, 4 apart), BACK bottom-left and QUEUE
+// FOR ALL / LEAVE ALL bottom-right after a 20 px gap.
 void Game::drawQueueMenu(float cx, float y) {
-    // two columns of modes (16 full-width rows ran off the bottom at 720p), the actions under them
-    float s = ui_.s(), w = 640 * s, h = 26 * s, gap = 4 * s, x = cx - w * 0.5f, cw = (w - gap) * 0.5f;
-    int rows = (kQueueCount + 1) / 2;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 3) * (h + gap) + h * 0.7f + 24 * s);
-    ui_.labelCentered(cx, y, "QUEUES - SHARED WITH DISCORD", kTextWhite);
-    y += h + gap;
-    ui_.labelCentered(cx, y, "WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)", kTextGrey, 0.5f);
-    y += h * 0.7f;
+    (void)cx; (void)y;
+    const int rows = (kQueueCount + 1) / 2;
+    const float kH = 24 + 12 + 12 + 16 + rows * 36 - 4 + 20 + 36;
+    const SetLayout L = ingameLayout(776);
+    const float top = ingameTop(L, kH);
+    ui_.panel(L.X(252), L.Y(top - 16), L.L(776), L.L(kH + 32), 0.95f);
+    ui_.labelCentered(L.X(640), L.Y(top), "QUEUES - SHARED WITH DISCORD", kTextWhite, 1.5f, L.L(744));
+    ui_.hintCentered(L.X(640), L.Y(top + 36), "WHEN ONE FILLS, EVERYONE IN IT IS TOLD (HERE AND ON DISCORD)", kTextGrey, L.L(744));
+    const float y0 = top + 64;
     for (int i = 0; i < kQueueCount; i++) {
         const auto& q = kQueues[i];
         bool in = queued_.count(q.key) > 0;
         auto it = queueCounts_.find(q.key);
         int n = it == queueCounts_.end() ? 0 : it->second;
         std::string t = std::string(in ? "> " : "") + q.title + "  " + std::to_string(n) + "/" + std::to_string(q.size) + (in ? " (LEAVE)" : "");
-        if (ui_.button(x + (i % 2) * (cw + gap), y + (i / 2) * (h + gap), cw, h, t, UiExp::state("queue").withId(q.title))) queueAction(q.key, in ? "leave" : "join");
+        if (ui_.button(L.X(268 + (i % 2) * 384), L.Y(y0 + (i / 2) * 36), L.L(360), L.L(32), t, UiExp::state("queue").withId(q.title))) queueAction(q.key, in ? "leave" : "join");
     }
-    y += rows * (h + gap) + gap;
-    float tw = (w - 2 * gap) / 3;
+    const float by = L.Y(y0 + rows * 36 - 4 + 20), bw = L.L(176), bh = L.L(36);
+    if (ui_.button(L.X(268), by, bw, bh, "BACK", UiExp::nav("ingame/pause"))) queueMenu_ = false;
     // (greyed out when there's nothing left to join / leave)
-    if (ui_.button(x, y, tw, h, "QUEUE FOR ALL", UiExp::state("queue"), (int)queued_.size() < kQueueCount)) for (int i = 0; i < kQueueCount; i++) if (!queued_.count(kQueues[i].key)) queueAction(kQueues[i].key, "join");
-    if (ui_.button(x + tw + gap, y, tw, h, "LEAVE ALL", UiExp::state("queue"), !queued_.empty())) queueAction("", "leaveall");
-    if (ui_.button(x + 2 * (tw + gap), y, tw, h, "BACK", UiExp::nav("ingame/pause"))) queueMenu_ = false;
+    if (ui_.button(L.X(652), by, bw, bh, "QUEUE FOR ALL", UiExp::state("queue"), (int)queued_.size() < kQueueCount)) for (int i = 0; i < kQueueCount; i++) if (!queued_.count(kQueues[i].key)) queueAction(kQueues[i].key, "join");
+    if (ui_.button(L.X(836), by, bw, bh, "LEAVE ALL", UiExp::state("queue"), !queued_.empty())) queueAction("", "leaveall");
 }

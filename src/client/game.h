@@ -25,6 +25,15 @@
 
 struct GLFWwindow;
 
+// The redesign's coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s, y from oy
+// (Game::menuLayout: the menus' pages, narrowed on a squarer screen with their top kept under the title)
+struct SetLayout {
+    float s = 1, cx = 640, oy = 0;
+    float X(float px) const { return cx + (px - 640) * s; }
+    float Y(float py) const { return oy + py * s; }
+    float L(float px) const { return px * s; }
+};
+
 struct LaunchOptions {
     std::string connect;        // --connect addr
     int hostMode = -1;          // --host mode
@@ -49,13 +58,15 @@ struct LaunchOptions {
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
-    bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots)
+    bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
     bool timeTrial = false;      // --timetrial: start a Viaduct time trial
     bool debugRaceStats = false; // --racestats: the leaderboard's race stats page    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
+    std::string settingsTab;    // --settingstab PAGE: with --settings / --settingsmenu, that page (gameplay, controls/movement, hud/elements...)
+    std::string menuPage;       // --menupage PATH: that menu page (Game::uiScreenPath's name: host/advanced, custom/dash, info/controls+2...)
     std::string editMap;        // --editor MAP: open the map editor on that map
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
@@ -155,15 +166,45 @@ private:
     NetClient::PlayerArray framePlayers_{};
     bool framePlayersOk_ = false;
     void drawHud();
-    void drawRps(float W, float H, float s);   // the hide and seek tiebreak (rock paper scissors) panel
+    void drawRps(float W, float H, float s, float top);   // the hide and seek tiebreak (rock paper scissors) panel, from y top
     void drawRpsShape(float x, float y, float size, int shape, Color c);
     bool rpsPicking() const;                   // we're in the tiebreak and the throw is open
     void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
+    // where the scoreboard goes this frame (its panel; under the notice list) and its rows' text scale / height
+    struct ScoreboardBox { float x, y, w, h, ts, rowH; };
+    ScoreboardBox scoreboardBox(size_t players) const;
+    // the in-game list under the score bar (objective, banners, ranked notes, a running vote, host info): where it
+    // ended this frame, in screen px (the scoreboard and the pause menu's panels go under it)
+    float noticeEnd_ = 0;
     void drawMenu();
+    // the menus' pages (the redesign's 720p coordinates through a SetLayout: game.cpp "Menus")
+    SetLayout menuLayout(float designW) const;
+    // in game: the pause menu's pages between the notice list and the weapon bar (y 148..638 at 720p)
+    SetLayout ingameLayout(float designW) const;
+    float ingameTop(const SetLayout& L, float kH) const;   // where content kH design px tall starts there (its panel centred)
+    void drawMainMenu(const SetLayout& L);
+    void drawJoin(const SetLayout& L);
+    void drawHost(const SetLayout& L);
+    void drawHostAdvanced(const SetLayout& L);
+    void drawVsBots(const SetLayout& L);
+    void drawConnecting(const SetLayout& L);
+    void debugMenuPage();     // --menupage PATH: that menu page open (screenshots)
+    bool hostAdvanced_ = false;   // HOST > ADVANCED (UDP port, port forward, server log) open
     void drawPauseMenu(float cx, float y);
-    void drawSettings(float x, float y, float w);
+    // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
+    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD };
+    int setTab_ = TAB_PLAYER;
+    int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
+    void drawSettings();
+    void openSettingsTab(int tab);
+    void leaveSettings();
+    void debugSettingsTab();   // --settingstab
+    void drawPlayerSettings(const SetLayout& L);
+    void drawGameplaySettings(const SetLayout& L);
+    void drawVideoSettings(const SetLayout& L);
+    void drawImportDialog(const SetLayout& L);
     void captureMouse(bool on);
     Vec3 teamColor(int playerId) const;
     Vec3 outlineColor(int playerId) const; // the player outline (settings: friendly / enemy presets)
@@ -182,9 +223,18 @@ private:
     Renderer r_;
     // models (models.h): the box list being drawn (reused every frame), and the owner's glTF overrides (null: none)
     ModelParts parts_;
-    std::unique_ptr<ModelMesh> modelOv_[MODEL_KINDS][kProjectileModels];
-    const ModelMesh* modelOverride(int kind, int i) const { return i >= 0 && i < kProjectileModels ? modelOv_[kind][i].get() : nullptr; }
-    void overrideTints(int kind, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
+    ModelOverrides modelOv_;
+    bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
+    // the override drawn for a model: a mesh (drawn as triangles), or a box model (its boxes go through the box path
+    // in place of the built-in ones: overrideBoxParts); null: none of that kind
+    const ModelMesh* modelOverride(int kind, int i) const { const ModelMesh* m = modelOv_.get(kind, i, fairModels_); return m && m->boxes.empty() ? m : nullptr; }
+    const ModelParts* boxOverride(int kind, int i) const { const ModelMesh* m = modelOv_.get(kind, i, fairModels_); return m && !m->boxes.empty() ? &m->boxes : nullptr; }
+    void overrideTints(int kind, int idx, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
+    // a prop (models.h) at `origin`: its override turned by yaw, or its boxes at origin + right * x + y + back * z
+    // (model space), each box turned by boxYaw
+    void drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float yaw, const Vec3& right, const Vec3& back, float boxYaw, float sv);
+    // an arm prop (GUN_ARM / ARM) from the shoulder, along the aim, at body scale bs
+    void drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv);
     void loadAssetOverrides();
     Ui ui_;
     UiInput uiIn_;
@@ -222,16 +272,16 @@ private:
     std::string editOrigName_;
     int customTab_ = 0;
     std::vector<std::string> rulesParts_;
-    void drawCustomModeEditor(float cx, float y);
-    void drawInfo(float cx, float y);
-    void drawDemos(float cx, float y);      // the demos folder: newest first, click to watch
+    void drawCustomModeEditor(const SetLayout& L);
+    void drawInfo(const SetLayout& L);
+    void drawDemos(const SetLayout& L);     // the demos folder: newest first, click to watch
     void startRecording();
     bool playDemo(const std::string& path);
     std::vector<std::string> demoFiles_;
     std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
     double demoListAt_ = -1;
     int infoTab_ = 0;
-    float infoScroll_ = 0;
+    int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
     int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
@@ -271,7 +321,7 @@ private:
     bool helloPending_ = false;   // POST /hello in flight (retried in the background) until it took: then recorded in the config
     void updateRanked();
     double nextBoardFetch_ = 0;
-    void drawLeaderboard(float cx, float y);
+    void drawLeaderboard(const SetLayout& L);
     std::vector<std::string> rankIdsInGame() const;
     // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
     // alone, sent through the server in an edit session so everyone's copy stays the same.
@@ -355,7 +405,7 @@ private:
     bool edPlaceGroup(const std::string& text); // a "quark-group 1" text, added at the screen center
     void edImportGroup();               // clipboard first (saved to groups/), else the groups menu
     void edExportGroup();               // the selected group to groups/<new file> + clipboard, then open the folder
-    void drawEditorGroupMenu(float x, float y, float w);
+    void drawEditorGroupMenu();         // IMPORT's list / EXPORT's question: the editor's dialog template (drawEditorSavePrompt)
     std::vector<EdSel> edPickAll(const Vec3& o, const Vec3& dir) const;   // everything under the ray, nearest first
     float edLastClickX_ = -1e9f, edLastClickY_ = -1e9f, edLastClickYaw_ = 0, edLastClickPitch_ = 0;   // (clicking the same spot again cycles)
     Vec3 edLastClickCam_;
@@ -417,9 +467,11 @@ private:
     std::string feedPart_;   // (drawFeedText)
     double frameDt_ = 0;     // this frame's dt (frame)
     bool polledEarly_ = false;   // preInput read the network this frame
-    std::vector<std::pair<std::string, bool>> infoRows_;   // (drawInfo: the page wrapped to the panel, for this tab and size)
+    struct InfoRow { std::string text; bool head = false; float y = 0; };   // y: design px from the page's top
+    std::vector<InfoRow> infoRows_;          // (drawInfo: the page wrapped to its column, for this tab, size and font)
     int infoRowsTab_ = -1;
     float infoRowsW_ = 0, infoRowsTs_ = 0;
+    int infoRowsFont_ = -1;
     std::string perfTick_;   // (drawPerf: the version / server line, made with the numbers)
     struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
     JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
@@ -432,6 +484,7 @@ private:
     void sceneSettings();   // the renderer's world look from cfg_
     static const Settings& defaultSettings() { static const Settings d; return d; }   // (sliders' right-click: back to these)
     float edPanelX_ = 1e9f;   // the editor's side panel starts here (a right-click there is the UI's, not mouse look)
+    float edBarTop_ = 0;      // the top of the editor's key bar (the 3D view's status line + key help): its dialogs centre over it
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;
@@ -442,7 +495,7 @@ private:
     std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
     double perfNextUpdate_ = 0;
-    std::string perfText_;
+    std::string perfText_, perfText2_;   // F3's first two lines: the frame rates, then the worst frame and the ping
     void drawPerf();
 
     // display / latency
@@ -551,7 +604,7 @@ private:
     int specKeysOf() const;
     void drawChatBox(float W, float H, float s, float ts);
     void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
-    void drawVotePanel(float cx, float s, float ts);
+    float drawVotePanel(float cx, float s, float ts, float y = -1);   // a running vote, its box from y (-1: 122 at 720p); returns where it ends
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
     struct Crown { int place; const char* letter; };
     std::map<std::string, Crown> crowns_;
@@ -610,25 +663,45 @@ private:
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     bool pressInput(int code);
-    void drawControls(float x, float y, float w);
-    void drawHudSettings(float x0, float y0, float wTotal);
-    void drawCrosshairSettings(float x, float y, float w);
+    void drawControls(const SetLayout& L);
+    void drawHudSettings(const SetLayout& L);
+    void drawCrosshairSettings(const SetLayout& L);
     void drawCrosshair(float cx, float cy, float scale, bool hit);
-    bool controlsOpen_ = false;
-    bool crosshairOpen_ = false;
-    bool hudOpen_ = false;
-    bool visualsOpen_ = false;
-    void drawVisualSettings(float x0, float y0, float wTotal);
-    // FONT (settings/fonts): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The list is
-    // looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
+    // FONT (settings/fonts, from PLAYER): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The
+    // list is looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
     bool fontsOpen_ = false;
-    void drawFontSettings(float x0, float y0, float wTotal);
+    void drawFontSettings(const SetLayout& L);
     std::vector<uifonts::Entry> fontList_;
     bool fontListed_ = false;      // (fontList_ is current: cleared on opening the page and by REFRESH)
     int fontScans_ = 0, fontScroll_ = 0;
     std::string fontTried_;        // the ui_font value last applied (frame() applies cfg_.uiFont when it differs)
     bool loadUiFont(const std::string& id, std::string* err, std::string* name);   // built and on the GPU, or false
     void applyUiFontSetting();     // cfg_.uiFont, or Rubik with a notice when it can't be loaded
+    // DEVICES (settings/video/devices, from VIDEO + AUDIO): the sound output, the microphone, the monitor and exclusive
+    // fullscreen's refresh rate (devices.h). The OS is asked for the lists when the page opens and on REFRESH (and a
+    // monitor plugged in or out), never per frame; a pick is saved and applied at once.
+    bool devicesOpen_ = false;
+    void drawDeviceSettings(const SetLayout& L);
+    void listDevices();            // the page's lists, from the OS
+    void listRates();              // the chosen monitor's refresh rates at its desktop size (highest first)
+    bool devListed_ = false;       // (the lists are current: cleared on opening the page, by REFRESH, by a monitor change)
+    int devScans_ = 0;             // (how many times they were listed: the UI test's "devscan")
+    std::vector<DeviceEntry> devOut_, devIn_, devMons_;   // (names as shown: unique, upper case; monitors with their mode)
+    std::vector<int> devRates_;
+    int devScroll_[3] = {};        // the output / input / monitor lists' first row shown (the wheel over a list scrolls it)
+    float devListBox_[3][4] = {};  // (where each list was drawn: the wheel's target)
+    // the monitor: cfg_.monitor's, else the primary (gone: noticed once). Resolved on a change only (not per frame).
+    GLFWmonitor* chosenMonitor();
+    GLFWmonitor* chosenMon_ = nullptr;
+    std::string chosenMonId_, monGoneNoted_;
+    bool chosenGone_ = false;
+    GLFWmonitor* appliedMon_ = nullptr;   // (the monitor applyDisplayMode last put the window on)
+    // a monitor's desktop mode (its mode while the game isn't exclusive on it: then glfwGetVideoMode gives the game's)
+    struct DeskMode { int w = 0, h = 0, hz = 0; };
+    DeskMode desktopMode(GLFWmonitor* mon);
+    GLFWmonitor* deskMon_ = nullptr;
+    DeskMode desk_;
+    void monitorsChanged();        // (GLFW's monitor callback: one plugged in or out)
     // scriptable HUD: hud.cfg widgets, the verbose info block, and the in-game widget editor
     HudWidgets widgets_;
     HudVals hudVals_;
@@ -650,7 +723,7 @@ private:
     const RaceRun* bestRun(const std::string& map, bool trial) const;
     void onRaceSplit(int checkpoint, int ms);
     void startTimeTrial();
-    void drawRaceStats(float cx, float y);
+    void drawRaceStats(const SetLayout& L);
     // profiles: per-mode rules swap the HUD layout / controls while that mode is running
     Binds modeBinds_;
     bool modeCtlActive_ = false, modeAlt_ = false;
@@ -677,11 +750,9 @@ private:
     std::string activeHudPath() const;
     void applyModeRules(int mode);
     bool drawFileList(const char* sub, float x, float y, float w, std::string& picked);
-    void ruleRow(float x, float y, float w, float h, bool hud);
     void drawVerboseHud(float W, float s, float& y);
     void drawWidgetEditor();
-    int hudSel_ = 0;
-    bool hudDrop_ = false;   // HUD settings: the element dropdown is open
+    int hudSel_ = 0;         // HUD settings: the element (its ELEMENT dropdown)
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
     // tourney bracket (EV_BRACKET): rounds of player ids (-1 bye, -2 undecided), current match

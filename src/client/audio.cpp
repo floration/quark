@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <set>
 #include <string>
@@ -22,8 +23,10 @@
   #include <objbase.h>
   #include <mmdeviceapi.h>
   #include <audioclient.h>
+  #include <propidl.h>
 #elif defined(__APPLE__)
   #include <AudioToolbox/AudioToolbox.h>
+  #include <CoreAudio/CoreAudio.h>
 #else
   #include <dlfcn.h>
 #endif
@@ -448,14 +451,20 @@ void Audio::render(float* buf, int n) {
         takePending();
         const Vec3 right = rightOf(mixListenerYaw_);
         const float perFrame = n > 0 ? 1.0f / n : 0.0f;
+        const float fxVol = fxVolume_, annVol = annVolume_;   // (EFFECTS / ANNOUNCER VOLUME: read once a period)
         for (size_t k = 0; k < voices_.size();) {
             Voice& v = voices_[k];
             static const std::vector<float> none;
-            const std::vector<float>& s = v.id < SND_VOICE_THREE ? sounds_[v.pack][v.id]
+            const bool line = v.id >= SND_VOICE_THREE;
+            const std::vector<float>& s = !line ? sounds_[v.pack][v.id]
                                         : mixLines_ ? mixLines_->line[v.id - SND_VOICE_THREE] : none;
             // a 3D sound follows the listener: its gains worked out again each period, ramped to over it (no clicks)
             float gl = v.gainL, gr = v.gainR, dl = 0, dr = 0;
             if (v.spatial) { voiceGains(v, mixListener_, right); dl = (v.gainL - gl) * perFrame; dr = (v.gainR - gr) * perFrame; }
+            {   // its category's volume (the voice keeps its own gains: a change applies from the next period)
+                const float c = line ? annVol : fxVol;
+                gl *= c; gr *= c; dl *= c; dr *= c;
+            }
             // the frames it has left, counted once: no end check in the loop (it reads the sample after: it ends at size - 1)
             const uint64_t end = s.size() >= 2 ? (uint64_t)(s.size() - 1) << 32 : 0;
             const uint64_t step = (uint64_t)std::llround(std::max(0.0, (double)v.step * rateScale) * 4294967296.0);
@@ -489,6 +498,21 @@ void Audio::mix(int16_t* out, int frames) {
     render(buf, n);
     for (int i = 0; i < n * 2; i++) out[i] = (int16_t)clampf(buf[i] * 32767.0f, -32767, 32767);
     for (int i = n * 2; i < frames * 2; i++) out[i] = 0;
+}
+
+// Settings > DEVICES: a new output reopens the device the way a lost device or EXCLUSIVE AUDIO does (the backend's own
+// loop, the same buffers and period: nothing added to the latency); the same one again does nothing.
+void Audio::setOutputDevice(const std::string& id) {
+    {
+        std::lock_guard<std::mutex> l(devMu_);
+        if (id == outDevice_) return;
+        outDevice_ = id;
+    }
+#if defined(__APPLE__)
+    if (running_ && backend_) { closeQueue(); openQueue(); }   // (no thread of ours: the queue is made again here)
+#else
+    reopen_ = true;   // (before start(): the first open takes it anyway)
+#endif
 }
 
 // --- backends ------------------------------------------------------------------
@@ -532,6 +556,57 @@ bool floatMix(const WAVEFORMATEX* f) {
     const WAVEFORMATEXTENSIBLE* x = (const WAVEFORMATEXTENSIBLE*)f;
     return IsEqualGUID(x->SubFormat, kSubtypeFloat) && (x->dwChannelMask & 3) == 3;   // (SPEAKER_FRONT_LEFT | _RIGHT)
 }
+std::wstring wideOf(const std::string& s) {
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring w(n > 0 ? n : 0, L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
+    return w;
+}
+std::string utf8Of(const wchar_t* w) {
+    int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    std::string s(n > 1 ? n - 1 : 0, '\0');
+    if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w, -1, &s[0], n, nullptr, nullptr);
+    return s;
+}
+// PKEY_Device_FriendlyName ("Speakers (Realtek(R) Audio)"), declared here: MinGW's functiondiscoverykeys header
+// defines it only with INITGUID
+const PROPERTYKEY kFriendlyName = {{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
+}
+
+// The active endpoints (unplugged and disabled ones aren't offered), in Windows' order. On a thread of its own: COM in
+// its own apartment, whatever the game thread's is.
+std::vector<DeviceEntry> Audio::listDevices(bool input) {
+    std::vector<DeviceEntry> out;
+    std::thread t([&out, input] {
+        const bool com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+        IMMDeviceEnumerator* en = nullptr;
+        IMMDeviceCollection* col = nullptr;
+        UINT n = 0;
+        if (SUCCEEDED(CoCreateInstance(kClsidDeviceEnumerator, nullptr, CLSCTX_ALL, kIidDeviceEnumerator, (void**)&en)) &&
+            SUCCEEDED(en->EnumAudioEndpoints(input ? eCapture : eRender, DEVICE_STATE_ACTIVE, &col)) && SUCCEEDED(col->GetCount(&n)))
+            for (UINT i = 0; i < n; i++) {
+                IMMDevice* d = nullptr;
+                IPropertyStore* ps = nullptr;
+                LPWSTR id = nullptr;
+                if (SUCCEEDED(col->Item(i, &d)) && SUCCEEDED(d->GetId(&id)) && id) {
+                    DeviceEntry e{utf8Of(id), ""};
+                    if (SUCCEEDED(d->OpenPropertyStore(STGM_READ, &ps))) {
+                        PROPVARIANT v;
+                        PropVariantInit(&v);
+                        if (SUCCEEDED(ps->GetValue(kFriendlyName, &v)) && v.vt == VT_LPWSTR && v.pwszVal) e.name = utf8Of(v.pwszVal);
+                        PropVariantClear(&v);
+                    }
+                    if (e.name.empty()) e.name = e.id;
+                    out.push_back(e);
+                }
+                if (id) CoTaskMemFree(id);
+                releaseCom(ps); releaseCom(d);
+            }
+        releaseCom(col); releaseCom(en);
+        if (com) CoUninitialize();
+    });
+    t.join();
+    return out;
 }
 
 void Audio::wasapiThread(std::atomic<int>* started) {
@@ -555,9 +630,24 @@ void Audio::wasapiThread(std::atomic<int>* started) {
         IMMDevice* dev = nullptr;
         IAudioClient* ac = nullptr;
         IAudioRenderClient* rc = nullptr;
-        bool ok = ev && SUCCEEDED(CoCreateInstance(kClsidDeviceEnumerator, nullptr, CLSCTX_ALL, kIidDeviceEnumerator, (void**)&en)) &&
-                  SUCCEEDED(en->GetDefaultAudioEndpoint(eRender, eConsole, &dev)) &&
-                  SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
+        bool ok = ev && SUCCEEDED(CoCreateInstance(kClsidDeviceEnumerator, nullptr, CLSCTX_ALL, kIidDeviceEnumerator, (void**)&en));
+        // the output chosen in Settings > DEVICES (by its endpoint id), if it's there and working; else the default
+        const char* devNote = "";
+        if (ok) {
+            const std::string want = outputDevice();
+            bool missing = false;
+            if (!want.empty()) {
+                const std::wstring w = wideOf(want);
+                DWORD st = 0;
+                if (SUCCEEDED(en->GetDevice(w.c_str(), &dev)) && SUCCEEDED(dev->GetState(&st)) && st == DEVICE_STATE_ACTIVE &&
+                    SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac)))
+                    devNote = ", the chosen device";
+                else { releaseCom(ac); releaseCom(dev); missing = true; devNote = ", the default device (the chosen one is gone)"; }
+            }
+            if (!dev) ok = SUCCEEDED(en->GetDefaultAudioEndpoint(eRender, eConsole, &dev)) &&
+                           SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
+            noteOutput(missing);
+        }
         UINT32 frames = 0, target = 0;   // the buffer's size; how much of it we keep queued
         UINT32 rate = R;
         bool excl = false, busy = false;
@@ -714,9 +804,9 @@ void Audio::wasapiThread(std::atomic<int>* started) {
         char per[128] = "";   // (shared: the engine period it runs at, and why not a shorter one)
         if (!excl && lowPeriod) snprintf(per, sizeof per, ", %.2f ms engine period (its shortest)", periodMs);
         else if (!excl) snprintf(per, sizeof per, ", %.2f ms engine period (%s)", periodMs, why);
-        if (ok) printf("audio: WASAPI %s, %u Hz %s, %.1f ms queued (%.1f ms buffer)%s%s\n", excl ? "exclusive" : "shared", (unsigned)rate,
+        if (ok) printf("audio: WASAPI %s, %u Hz %s, %.1f ms queued (%.1f ms buffer)%s%s%s\n", excl ? "exclusive" : "shared", (unsigned)rate,
                        fmtName[fmt], target * 1000.0 / rate, frames * 1000.0 / rate, per,
-                       !wantExcl || excl ? "" : busy ? " (exclusive: the device is busy)" : " (exclusive: no format the device takes)");
+                       !wantExcl || excl ? "" : busy ? " (exclusive: the device is busy)" : " (exclusive: no format the device takes)", devNote);
         if (!reported) { reported = true; started->store(ok ? 1 : -1); if (!ok) { releaseCom(rc); releaseCom(ac); releaseCom(dev); releaseCom(en); break; } }
         int silent = 0;   // (exclusive: waits with no wake-up from the device; it's gone after a while)
         while (ok && !quit_ && !reopen_) {
@@ -816,8 +906,42 @@ static void aqCallback(void* user, AudioQueueRef q, AudioQueueBufferRef b) {
     b->mAudioDataByteSize = kPeriod * 4;
     AudioQueueEnqueueBuffer(q, b, 0, nullptr);
 }
-bool Audio::start() {
-    synthesize();
+namespace {
+std::string utf8Of(CFStringRef s) {
+    char buf[512];
+    return s && CFStringGetCString(s, buf, sizeof buf, kCFStringEncodingUTF8) ? std::string(buf) : std::string();
+}
+}
+// Every device with streams that way, by its UID (stable across restarts) and name.
+std::vector<DeviceEntry> Audio::listDevices(bool input) {
+    std::vector<DeviceEntry> out;
+    AudioObjectPropertyAddress all = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, 0};   // (0: the main element)
+    UInt32 size = 0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &all, 0, nullptr, &size) != noErr || size == 0) return out;
+    std::vector<AudioObjectID> ids(size / sizeof(AudioObjectID));
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &all, 0, nullptr, &size, ids.data()) != noErr) return out;
+    ids.resize(size / sizeof(AudioObjectID));
+    for (AudioObjectID id : ids) {
+        AudioObjectPropertyAddress streams = {kAudioDevicePropertyStreams, input ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput, 0};
+        UInt32 n = 0;
+        if (AudioObjectGetPropertyDataSize(id, &streams, 0, nullptr, &n) != noErr || n == 0) continue;   // (none that way)
+        AudioObjectPropertyAddress uidA = {kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal, 0};
+        AudioObjectPropertyAddress nameA = {kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, 0};
+        CFStringRef uid = nullptr, name = nullptr;
+        UInt32 sz = sizeof(CFStringRef);
+        if (AudioObjectGetPropertyData(id, &uidA, 0, nullptr, &sz, &uid) != noErr || !uid) continue;
+        sz = sizeof(CFStringRef);
+        if (AudioObjectGetPropertyData(id, &nameA, 0, nullptr, &sz, &name) != noErr) name = nullptr;
+        DeviceEntry e{utf8Of(uid), utf8Of(name)};
+        CFRelease(uid);
+        if (name) CFRelease(name);
+        if (e.name.empty()) e.name = e.id;
+        if (!e.id.empty()) out.push_back(e);
+    }
+    return out;
+}
+// The queue, on the chosen device when it's there (else the system's default output, with outputMissing())
+bool Audio::openQueue() {
     AudioStreamBasicDescription f{};
     f.mSampleRate = R;
     f.mFormatID = kAudioFormatLinearPCM;
@@ -825,7 +949,19 @@ bool Audio::start() {
     f.mBytesPerPacket = 4; f.mFramesPerPacket = 1; f.mBytesPerFrame = 4; f.mChannelsPerFrame = 2; f.mBitsPerChannel = 16;
     AudioQueueRef q = nullptr;
     if (AudioQueueNewOutput(&f, aqCallback, this, nullptr, nullptr, 0, &q) != 0) return false;
-    running_ = true;
+    const std::string want = outputDevice();
+    bool missing = false;
+    if (!want.empty()) {
+        bool there = false;
+        for (const DeviceEntry& d : listDevices(false)) there = there || d.id == want;
+        if (there) {
+            CFStringRef uid = CFStringCreateWithCString(nullptr, want.c_str(), kCFStringEncodingUTF8);
+            there = uid && AudioQueueSetProperty(q, kAudioQueueProperty_CurrentDevice, &uid, sizeof uid) == 0;
+            if (uid) CFRelease(uid);
+        }
+        missing = !there;
+    }
+    noteOutput(missing);
     for (int i = 0; i < 3; i++) {
         AudioQueueBufferRef b;
         AudioQueueAllocateBuffer(q, kPeriod * 4, &b);
@@ -835,12 +971,22 @@ bool Audio::start() {
     backend_ = q;
     return true;
 }
+void Audio::closeQueue() {
+    if (!backend_) return;
+    AudioQueueStop((AudioQueueRef)backend_, true);
+    AudioQueueDispose((AudioQueueRef)backend_, true);
+    backend_ = nullptr;
+}
+bool Audio::start() {
+    synthesize();
+    running_ = true;
+    if (!openQueue()) { running_ = false; return false; }
+    return true;
+}
 void Audio::backendThread() {}
 void Audio::stop() {
     if (!running_) return;
-    if (!backend_) { running_ = false; return; }
-    AudioQueueStop((AudioQueueRef)backend_, true);
-    AudioQueueDispose((AudioQueueRef)backend_, true);
+    closeQueue();
     running_ = false;
 }
 
@@ -851,22 +997,66 @@ typedef int (*p_set)(void*, int, int, unsigned, unsigned, int, unsigned);
 typedef long (*p_write)(void*, const void*, unsigned long);
 typedef int (*p_recover)(void*, int, int);
 typedef int (*p_close)(void*);
-struct Alsa { void* lib; void* pcm; p_write write; p_recover recover; p_close close; };
+typedef int (*p_hint)(int, const char*, void***);
+typedef char* (*p_gethint)(const void*, const char*);
+typedef int (*p_freehint)(void**);
+struct Alsa {
+    void* lib; void* pcm; p_open open; p_set set; p_write write; p_recover recover; p_close close;
+    // 2 = S16_LE, 3 = RW_INTERLEAVED, 20 ms total latency
+    bool openPcm(const char* name) {
+        void* p = nullptr;
+        if (open(&p, name, 0, 0) < 0) return false;
+        if (set(p, 2, 3, 2, R, 1, 20000) < 0) { close(p); return false; }
+        pcm = p;
+        return true;
+    }
+};
+// The per-card entries worth offering (ALSA lists every plugin route of every card: front, surround51, dmix...)
+bool alsaOffered(const std::string& n) {
+    return n.rfind("sysdefault:", 0) == 0 || n.rfind("hdmi:", 0) == 0 || n == "pulse" || n == "pipewire" || n == "jack";
+}
+}
+// ALSA's device hints (snd_device_name_hint), loaded at runtime like the output
+std::vector<DeviceEntry> Audio::listDevices(bool input) {
+    std::vector<DeviceEntry> out;
+    void* lib = dlopen("libasound.so.2", RTLD_NOW);
+    if (!lib) return out;
+    auto hint = (p_hint)dlsym(lib, "snd_device_name_hint");
+    auto get = (p_gethint)dlsym(lib, "snd_device_name_get_hint");
+    auto freeHint = (p_freehint)dlsym(lib, "snd_device_name_free_hint");
+    void** hints = nullptr;
+    if (hint && get && freeHint && hint(-1, "pcm", &hints) == 0 && hints) {
+        for (void** h = hints; *h; h++) {
+            char* name = get(*h, "NAME");
+            char* desc = get(*h, "DESC");
+            char* io = get(*h, "IOID");   // (none: both ways)
+            const std::string n = name ? name : "";
+            if ((!io || strcmp(io, input ? "Input" : "Output") == 0) && alsaOffered(n)) {
+                std::string d = desc ? desc : n;
+                for (size_t k; (k = d.find('\n')) != std::string::npos;) d.replace(k, 1, ", ");
+                out.push_back({n, d});
+            }
+            free(name); free(desc); free(io);
+        }
+        freeHint(hints);
+    }
+    dlclose(lib);
+    return out;
 }
 bool Audio::start() {
     synthesize();
     void* lib = dlopen("libasound.so.2", RTLD_NOW);
     if (!lib) return false;
-    auto open = (p_open)dlsym(lib, "snd_pcm_open");
-    auto set = (p_set)dlsym(lib, "snd_pcm_set_params");
-    auto write = (p_write)dlsym(lib, "snd_pcm_writei");
-    auto recover = (p_recover)dlsym(lib, "snd_pcm_recover");
-    auto close = (p_close)dlsym(lib, "snd_pcm_close");
-    void* pcm = nullptr;
-    // 2 = S16_LE, 3 = RW_INTERLEAVED, 20 ms total latency
-    if (!open || !set || !write || !recover || !close || open(&pcm, "default", 0, 0) < 0) { dlclose(lib); return false; }
-    if (set(pcm, 2, 3, 2, R, 1, 20000) < 0) { close(pcm); dlclose(lib); return false; }
-    backend_ = new Alsa{lib, pcm, write, recover, close};
+    Alsa a{lib, nullptr, (p_open)dlsym(lib, "snd_pcm_open"), (p_set)dlsym(lib, "snd_pcm_set_params"), (p_write)dlsym(lib, "snd_pcm_writei"),
+           (p_recover)dlsym(lib, "snd_pcm_recover"), (p_close)dlsym(lib, "snd_pcm_close")};
+    if (!a.open || !a.set || !a.write || !a.recover || !a.close) { dlclose(lib); return false; }
+    // the chosen device (Settings > DEVICES), else the default
+    const std::string want = outputDevice();
+    const bool missing = !want.empty() && !a.openPcm(want.c_str());
+    if (!a.pcm && !a.openPcm("default")) { dlclose(lib); return false; }
+    noteOutput(missing);
+    reopen_ = false;
+    backend_ = new Alsa(a);
     running_ = true;
     quit_ = false;
     thread_ = std::thread([this] { backendThread(); });
@@ -876,6 +1066,14 @@ void Audio::backendThread() {
     Alsa* a = (Alsa*)backend_;
     int16_t data[kPeriod * 2];
     while (!quit_) {
+        if (reopen_) {   // another device chosen: closed and opened again here, between two writes
+            reopen_ = false;
+            if (a->pcm) { a->close(a->pcm); a->pcm = nullptr; }
+            const std::string want = outputDevice();
+            const bool missing = !want.empty() && !a->openPcm(want.c_str());
+            if (!a->pcm && !a->openPcm("default")) { reopen_ = true; std::this_thread::sleep_for(std::chrono::milliseconds(500)); continue; }
+            noteOutput(missing);
+        }
         mix(data, kPeriod);
         long r = a->write(a->pcm, data, kPeriod); // blocks until there's room: paces the loop
         if (r < 0) a->recover(a->pcm, (int)r, 1);
@@ -889,7 +1087,7 @@ void Audio::stop() {
     Alsa* a = (Alsa*)backend_;
     if (!a) return;
     backend_ = nullptr;
-    a->close(a->pcm);
+    if (a->pcm) a->close(a->pcm);
     dlclose(a->lib);
     delete a;
 }

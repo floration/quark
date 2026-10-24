@@ -12,9 +12,20 @@
 #include <vector>
 #include "models.h"
 
-std::string writeGltf(const MeshData& mesh, const std::string& name);
+// boxes: also written as the mesh's extras.quark (a box model file: docs/ASSETS.md "Box models")
+std::string writeGltf(const MeshData& mesh, const std::string& name, const ModelParts* boxes = nullptr);
 using GltfResolver = std::function<bool(const std::string& uri, std::vector<uint8_t>& out)>;
-bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, MeshData& out, std::string* err = nullptr);
+// boxes (optional): filled from the first mesh's extras.quark when it is a box model (version 2), else left empty;
+// a box list that fails the checks (parseBoxModel) fails the load
+bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, MeshData& out, std::string* err = nullptr, ModelParts* boxes = nullptr);
+// extras.quark of a box model as JSON ({"version":2,"boxes":[...]}), and back (with the checks: finite numbers, at
+// most kMaxOverrideBoxes boxes, sizes and colours in range, known slots); false + err on anything wrong
+std::string boxModelJson(const ModelParts& boxes);
+bool parseBoxModel(const std::string& json, ModelParts& out, std::string* err = nullptr);
+
+// Every model's overrides (models.h ModelOverrides; docs/ASSETS.md): each model's file from the shipped overrides and
+// from yours, loaded and checked (a bad or too big file is logged and left out). Nothing to do when there are none.
+void loadModelOverrides(ModelOverrides& out);
 
 std::string base64Encode(const uint8_t* d, size_t n);
 bool base64Decode(const std::string& s, std::vector<uint8_t>& out);
