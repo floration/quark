@@ -504,6 +504,8 @@ const GUID kSubtypePcm = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0
 const GUID kSubtypeFloat = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};   // ..._IEEE_FLOAT
 template <class T> void releaseCom(T*& p) { if (p) { p->Release(); p = nullptr; } }
 enum SampleFormat { kFmt16, kFmtFloat, kFmt24 };   // what the device's buffer takes (kFmt24: 24 bits at the top of 32)
+}   // (out of the anonymous namespace: an abstract class there with no derived class in this file let GCC treat every
+    // call through it as unreachable, and the cold path called nowhere: a crash at audio start on Windows 10+)
 // IAudioClient3 (Windows 10+: shared mode at a shorter engine period), declared here as older MinGW headers lack it: the
 // IAudioClient2 methods before it are only slots (never called)
 const GUID kIidAudioClient3 = {0x7ED4EE07, 0x8E67, 0x4CD4, {0x8C, 0x1A, 0x2B, 0x7A, 0x59, 0x87, 0xAD, 0x42}};
@@ -515,6 +517,7 @@ struct AudioClient3 : public IAudioClient {
     virtual HRESULT STDMETHODCALLTYPE GetCurrentSharedModeEnginePeriod(WAVEFORMATEX** fmt, UINT32* cur) = 0;
     virtual HRESULT STDMETHODCALLTYPE InitializeSharedAudioStream(DWORD flags, UINT32 periodFrames, const WAVEFORMATEX* fmt, LPCGUID session) = 0;
 };
+namespace {
 #ifndef AUDCLNT_E_ENGINE_PERIODICITY_LOCKED
 #define AUDCLNT_E_ENGINE_PERIODICITY_LOCKED AUDCLNT_ERR(0x028)
 #endif
