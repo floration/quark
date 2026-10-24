@@ -1,9 +1,17 @@
 // Server and netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, the 64-bit clock, PERF-8 / PERF-9, autosave,
 // ENG-2). Included by tests.cpp after its helpers (pump, idle, CHECK, TP).
 
+// Each server test holds a Server (~1.2 MB) on its stack. Inlined into serverTests() they'd share one frame, and under
+// AddressSanitizer (no stack slot reuse) that frame was 14 Servers, ~17 MB: a stack overflow on Linux's 8 MB stack.
+#if defined(__GNUC__) || defined(__clang__)
+#define SERVER_TEST __attribute__((noinline)) static
+#else
+#define SERVER_TEST static
+#endif
+
 // REVIEW 2.9: a CONNECT with another protocol version is answered before any cookie check, so its source may be
 // spoofed: the reject must never be bigger than the request (a bare 11 byte one gets nothing).
-static void testVersionReject(uint16_t port) {
+SERVER_TEST void testVersionReject(uint16_t port) {
     printf("version mismatch reject: never bigger than the request\n");
     Server s;
     ServerConfig cfg;
@@ -97,7 +105,7 @@ struct SlowHttp {
 
 // FINAL_REVIEW 2.8: tourney seed ratings are fetched whenever someone with a ranked id joins; rotating keys could
 // queue ~150 lookups a second. Now one lookup per ladder waits behind the one in flight, with every new id in it.
-static void testSeedFetchDedupe() {
+SERVER_TEST void testSeedFetchDedupe() {
     printf("tourney seed ratings: one pending lookup per ladder\n");
 #ifndef _WIN32
     SlowHttp http(400, "");
@@ -136,7 +144,7 @@ static void testSeedFetchDedupe() {
 // FINAL_REVIEW 2.10: leaving a hosted game ran Server::stop() on the UI thread, which joined the reachability
 // thread (internet list + public IP lookups), the seed-rating thread, the list announcer and UPnP: up to ~15 s frozen.
 // Here every one of them is stuck on a slow ranking server when the host stops.
-static void testStopDoesNotBlock(uint16_t port) {
+SERVER_TEST void testStopDoesNotBlock(uint16_t port) {
     printf("stopping a hosted game doesn't wait on the network\n");
 #ifndef _WIN32
     SlowHttp http(2500, "");
@@ -171,7 +179,7 @@ static void testStopDoesNotBlock(uint16_t port) {
 
 // FINAL_REVIEW 2.11: a reconnect matched by its token but proving another ranked key (or none) used to take the slot
 // back with the old ranked id. And a free for all leaver back after the grace was counted twice in the result.
-static void testRestoreKeepsIdentity(uint16_t port) {
+SERVER_TEST void testRestoreKeepsIdentity(uint16_t port) {
     printf("reconnect token never carries a ranked id the connect didn't prove\n");
     Server s;
     ServerConfig cfg;
@@ -244,7 +252,7 @@ static void testRestoreKeepsIdentity(uint16_t port) {
 // FINAL_REVIEW 6.4: a giant (duel "double size") spawned at a random spawn when none had a giant's room, inside the
 // geometry on maps not built for duel (anvil's a / b spawns, some on furnace and summit). Every map, both sides,
 // every size: the hull a player spawns with is never in a wall.
-static void testGiantSpawns() {
+SERVER_TEST void testGiantSpawns() {
     printf("giant / tiny spawns: never inside a wall\n");
     int giant = -1, tiny = -1;
     for (int m = 0; m < DUEL_MOD_COUNT; m++) {
@@ -300,7 +308,7 @@ static void testGiantSpawns() {
 
 // FINAL_REVIEW 6.5: an admin's addbot during a tag match put the bot straight on a side (past the team lock), and a
 // bot reusing an eliminated bot's name was marked out at once (tag-outs were matched by name).
-static void testTagAddbot(uint16_t port) {
+SERVER_TEST void testTagAddbot(uint16_t port) {
     printf("tag: addbot mid-match waits for the next match; bots aren't matched by name\n");
     Server s;
     ServerConfig cfg;
@@ -344,7 +352,7 @@ static void testTagAddbot(uint16_t port) {
 // The server clock is 64 bits (timeMs_ wrapped after 49.7 days at 32); the wire keeps 32 and each side unwraps.
 // A server 1.5 s short of 2^32 ms: a client plays through the wrap - clock, ping, delta snapshots and lag-compensated
 // hits on a mover all carry on.
-static void testClockWrap(uint16_t port) {
+SERVER_TEST void testClockWrap(uint16_t port) {
     printf("server clock past 2^32 ms (49.7 days)\n");
     Server s;
     ServerConfig cfg;
@@ -451,7 +459,7 @@ struct SnapBenchResult { double avgUs = 0, p50Us = 0, p99Us = 0, maxUs = 0, allo
 // time of each send and of each tick's visibility + send, and heap allocations per send, after the first 2.4 s.
 // `rockets`: that many projectiles in flight the whole time, circling the players' spawns (each one's line of sight
 // to each client is checked too).
-static SnapBenchResult snapBench(const char* mapName, int humans, double seconds, uint16_t port, bool print = true, int rockets = 0) {
+SERVER_TEST SnapBenchResult snapBench(const char* mapName, int humans, double seconds, uint16_t port, bool print = true, int rockets = 0) {
     SnapBenchResult res;
     Server s;
     ServerConfig cfg;
@@ -556,7 +564,7 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
 
 // PERF-9: lines of sight are checked a share per tick (never more than the ray budget in one tick, which was ~31000
 // rays in one ~10 ms tick on Midtown with 32 players), yet every line still gets checked about every 50 ms.
-static void testVisibilitySpread(uint16_t port) {
+SERVER_TEST void testVisibilitySpread(uint16_t port) {
     printf("visibility: spread over the ticks, every line still fresh\n");
     Server s;
     ServerConfig cfg;
@@ -608,7 +616,7 @@ static void testVisibilitySpread(uint16_t port) {
 // The edit session's autosave ran on the tick: serializing Midtown (~10 ms) and parse-checking it (~2.5 ms) every
 // 5 s while edited. Now the tick only copies the map; the rest runs in the background, and a save that an edit
 // overtook leaves the session dirty for the next one.
-static void testAutosaveOffTick(uint16_t port) {
+SERVER_TEST void testAutosaveOffTick(uint16_t port) {
     printf("edit session autosave off the tick\n");
     Map base;
     CHECK(base.load("midtown"));
@@ -657,7 +665,7 @@ static void testAutosaveOffTick(uint16_t port) {
 // RankService's delays are real seconds (REMAINING 6: they were game time, slept as real time): a race board asked
 // for 2 s from now goes out 2 s later on the wall clock, even with the tests' 4x game clock and another job waking
 // the thread in between (which made it go at once).
-static void testRankDelaysRealTime() {
+SERVER_TEST void testRankDelaysRealTime() {
     printf("ranked service: delays in real time (game clock x%.0f)\n", kTestTimeScale);
 #ifndef _WIN32
     SlowHttp http(0, "");
@@ -690,7 +698,7 @@ static void testRankDelaysRealTime() {
 // ENG-2: exception boundaries. Every allocation in turn fails (bad_alloc, injected on this thread) while a demo is
 // opened and played, and while the server takes connects and input: each ends in an error or a dropped packet,
 // never std::terminate, and both carry on afterwards.
-static void testExceptionBoundaries(uint16_t port) {
+SERVER_TEST void testExceptionBoundaries(uint16_t port) {
     printf("exception boundaries: demos and packets with allocations failing\n");
     std::string path = userDataPath() + "/zz_eng2.qdemo";
     {   // a short demo
