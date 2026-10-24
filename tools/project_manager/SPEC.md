@@ -95,7 +95,7 @@ Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET
 ### The Oracle box check (live players: keep it tiny)
 
 One SSH connection per check, never more often than every 120 s, read-only, everything under
-`nice -n 19 ionice -c3`, 15 s timeout, `-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new`.
+`nice -n 19 ionice -c3`, 45 s timeout (login from the PC takes ~11 s), `-o BatchMode=yes -o GSSAPIAuthentication=no -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new`.
 Host / user / key path come from `Quark\project-manager\config.json` (`oracle: {host, user, key}`, default
 `ubuntu@129.151.8.15`, key `C:\Users\user\Downloads\SSH Keys\ssh-key.key`; Windows OpenSSH `ssh.exe`). If the key file
 is missing → `ok:false, error:"SSH key not found"` and no attempt. The remote command (one shell line) prints only:

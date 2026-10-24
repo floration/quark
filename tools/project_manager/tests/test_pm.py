@@ -322,7 +322,7 @@ class TestOracle(unittest.TestCase):
                     return 0, ORACLE_OUTPUT, ""
                 d = oracle.fetch(ctx, runner=runner)
                 self.assertEqual(d["host"], "ubuntu@203.0.113.1")
-                self.assertEqual(seen["timeout"], 15.0)
+                self.assertEqual(seen["timeout"], 45.0)
                 with self.assertRaises(util.SourceError) as e:
                     oracle.fetch(ctx, runner=lambda a, timeout: (255, "", "ubuntu@203.0.113.1: Permission denied (publickey)."))
                 self.assertIn("Permission denied", str(e.exception))
