@@ -2515,15 +2515,258 @@ void Game::drawRps(float W, float H, float s, float top) {
     }
 }
 
+// ---- The HUD's elements: each drawn from its values, so the live HUD and Settings > HUD's preview (sample values in
+// the main menu, the live ones in game) are the same code; each returns where it is on screen (draw false: only that,
+// for a hidden element's outline; a drawn one may return an empty rect, so the live HUD measures nothing extra).
+// Positions and sizes from the element's HUD settings.
+static Color hudTint(const Settings::HudElem& e, Color c) { return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; }
+
+Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float, float H, float s, int hp, Color num, Color bar, bool draw) {
+    // health: number + bar, bottom left
+    float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
+    if (draw) {
+        float hts = std::max(1.0f, std::round(ui_.textScale() * 2 * e.scale));
+        r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? num : kRed);
+        r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
+        r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? bar : kRed);
+    }
+    return {ox, oy - 70 * k, 200 * k, 50 * k};
+}
+
+Game::HudRect Game::drawHudWeaponName(const Settings::HudElem& e, float W, float H, float s, const std::string& wn, Color c, bool draw) {
+    // current weapon name, bottom right
+    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * e.scale)), tw = r_.textWidth(wn, wts);
+    float x = W - 24 * s + e.x * s - tw, y = H - 50 * s * e.scale + e.y * s;
+    if (draw) r_.text(x, y, wts, wn, c);
+    return {x, y, tw, r_.textHeight(wts)};
+}
+
+Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw) {
+    // dash + grapple cooldown bars under the crosshair (full = ready)
+    float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
+    // (rows 16 apart, captions at text 1.5 centred on their bar: text 1 was below the redesign's smallest)
+    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * e.scale), lh = r_.textHeight(lts);
+    const float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
+    if (!draw) {
+        const float left = bx - r_.textWidth("WEAPON", lts) - 6 * k;   // (the widest caption)
+        return {left, bcy + 36 * k - 1, bx + bw + 1 - left, 32 * k + bh + 2};
+    }
+    auto bar = [&](float y, const char* label, float remaining, float total) {
+        float f = clampf(1.0f - remaining / total, 0, 1);
+        r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
+        r_.rect(bx, y, bw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
+        r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
+    };
+    bar(bcy + 36 * k, "WEAPON", v.wRem, v.wTot);
+    {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
+        // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
+        // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
+        // wholly to the on color; a spent charge stays empty while it recharges (1.2 s) and after, until a refill
+        // (owner 1.18.7: "light grey that turns to blue, the whole bar not the slider"; a fill growing from empty
+        // made one dash look like it had spent both charges)
+        const int n = v.dashN, have = std::min(v.dashHave, n);
+        const Color pip = v.dashReady ? full : Color{0.6f, 0.62f, 0.66f, 0.9f};
+        float y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
+        for (int i = 0; i < n; i++) {
+            float px = bx + i * (pw + gap);
+            r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
+            if (i < have) r_.rect(px, y, pw, bh, pip);
+        }
+        r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && v.dashReady ? kWhite : kGrey);
+    }
+    bar(bcy + 68 * k, "HOOK", v.hookRem, v.hookTot);
+    return {};
+}
+
+Game::HudRect Game::drawHudSpeed(const Settings::HudElem& e, float W, float H, float s, float v, bool draw) {
+    // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve (1 - e^(-v/20)): half full
+    // at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
+    float k = s * e.scale, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
+    float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
+    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * e.scale), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
+    char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
+    const float left = bx - r_.textWidth("SPEED", lts) - 6 * k;
+    if (!draw) {
+        const float right = bx + bw + 6 * k + r_.textWidth(buf, lts), top = std::min(y - 1, ly), bottom = std::max(y + bh + 1, ly + lh);
+        return {left, top, right - left, bottom - top};
+    } else {
+        float f = 1.0f - std::exp(-v / 20.0f);
+        Color c = hudTint(e, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
+        r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
+        r_.rect(bx, y, bw * f, bh, c);
+        for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
+            r_.rect(bx + bw * (1.0f - std::exp(-m / 20.0f)), y, 1, bh, {0, 0, 0, 0.6f});
+        r_.text(left, ly, lts, "SPEED", kWhite);
+        r_.text(bx + bw + 6 * k, ly, lts, buf, kWhite);
+    }
+    return {};
+}
+
+Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, float s, int mode, uint32_t mask, int held, Color heldC, bool live, bool draw) {
+    // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ... right-aligned at the bottom right
+    const float x1 = W - 24 * s + e.x * s, y = H - 74 * s * e.scale + e.y * s;
+    float bx = x1;
+    float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * e.scale));
+    for (int k = WPN_COUNT - 1; k >= 0; k--) {
+        int wi = kWeaponSlots[k];
+        bool has = !mask || (mask >> wi & 1);
+        if (!weaponInMode(wi, mode) || (isItMode(mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
+        std::string t = std::to_string(weaponSlotKey(k)) + " " + weaponDef(wi).name;
+        double awayLeft = live ? weaponAwayLeft(wi) : 0;   // a thrown knife / syringe: disabled, greyed with its timer
+        if (awayLeft > 0) t += " " + std::to_string((int)std::ceil(awayLeft - 1e-6)); // (seconds until it's back)
+        float tw = r_.textWidth(t, sts);
+        bx -= tw + 14 * s * e.scale;
+        bool inPool = has && awayLeft <= 0;
+        if (draw) r_.text(bx, y, sts, t, wi == held && awayLeft <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+    }
+    return {bx, y, x1 - bx, r_.textHeight(sts)};
+}
+
+// The HUD while alive (drawHud; preview: Settings > HUD in game, where the cooldown bars and the speed meter show
+// although the game is paused)
+void Game::drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview) {
+    const auto* he = cfg_.hud;
+    if (!he[Settings::HUD_HEALTH].hidden) drawHudElement(Settings::HUD_HEALTH, W, H, s, false);
+    bool unarmed = isItMode(ms.mode) && !(mep && (mep->flags & PS_HASBOMB));
+    if (!unarmed && !he[Settings::HUD_WEAPON].hidden) drawHudElement(Settings::HUD_WEAPON, W, H, s, false);
+    const MoveState& mv = net_.predicted();
+    // (the bars and the meter: hidden behind menus / the bars without abilities)
+    if ((!paused_ || preview) && !(mv.mods & MOVE_RUN_ONLY) && !he[Settings::HUD_BARS].hidden) drawHudElement(Settings::HUD_BARS, W, H, s, false);
+    if ((!paused_ || preview) && !he[Settings::HUD_SPEED].hidden) drawHudElement(Settings::HUD_SPEED, W, H, s, false);
+    const float ts = ui_.textScale();
+    if (cfg_.stickyCounter && !unarmed) {   // stickies out (the 7th removes the oldest)
+        int out = 0;
+        for (auto& pr : lastProjectiles_) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();   // (this frame's)
+        if (out > 0 || heldWeapon_ == WPN_STICKY) {
+            const auto& e = he[Settings::HUD_WEAPON];
+            float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
+            std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(weaponAlt().stickyMax);
+            r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : hudTint(e, kWhite));
+        }
+    }
+    {   // enemy stickies stuck on you: a blinking warning under the crosshair
+        int on = 0;
+        for (auto& pr : lastProjectiles_) on += (pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == net_.clientId();
+        if (on > 0) {
+            float k = std::max(1.0f, std::round(ts * 1.2f));
+            std::string t = on > 1 ? std::to_string(on) + " STICKIES ON YOU" : "STICKY ON YOU";
+            float a = std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.55f;
+            r_.text(W * 0.5f - r_.textWidth(t, k) * 0.5f, H * 0.5f - 90 * s, k, t, Color{1, 0.25f, 0.2f, a});   // (above the crosshair: the cooldown bars are under it)
+        }
+    }
+    if (!unarmed && !he[Settings::HUD_SLOTS].hidden) drawHudElement(Settings::HUD_SLOTS, W, H, s, false);
+}
+
+// One element with its live values (sample: made-up ones, as Settings > HUD shows them outside a game: health 100, the
+// first slot's weapon held, the bars full with both dash charges ready, 12 m/s, free for all's weapon list, no key lit)
+Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sample, bool draw) {
+    const auto& e = cfg_.hud[el];
+    const Color fc = rgba(cfg_.colorFriendly);
+    switch (el) {
+        case Settings::HUD_HEALTH:
+            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(e, kWhite), hudTint(e, fc), draw);
+        case Settings::HUD_WEAPON:
+            return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(e, kWhite), draw);
+        case Settings::HUD_BARS: {
+            HudBarVals v;
+            if (!sample) {
+                const MoveState& mv = net_.predicted();
+                const int cw = heldWeapon_;
+                // (the locator: its recharge; else the last shot's refire: a scoped rifle's or the bubble stream's, F23)
+                v.wRem = (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_);
+                v.wTot = cw == WPN_LOCATOR || localRefire_ <= 0 ? weaponDef(cw).refire : localRefire_;
+                v.dashN = dashMaxCharges(mv, &net_.map());
+                v.dashHave = mv.dashCharges;
+                v.dashReady = dashReady(mv);   // (pmove's own rule; mid-burst a press is dropped, so not ready either: no
+                                               // blue flash before the cooldown starts)
+                v.hookRem = mv.hookCooldown;
+                v.hookTot = kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map());
+            }
+            return drawHudBars(e, W, H, s, v, hudTint(e, fc), draw);
+        }
+        case Settings::HUD_SPEED: {
+            const MoveState& mv = net_.predicted();
+            return drawHudSpeed(e, W, H, s, sample ? 12.0f : std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), draw);
+        }
+        case Settings::HUD_SLOTS: {
+            const ModeState& ms = net_.mode();
+            return drawHudSlots(e, W, H, s, sample ? (int)MODE_FFA : (int)ms.mode, sample ? 0u : ms.weaponMask,
+                                sample ? kWeaponSlots[0] : heldWeapon_, hudTint(e, fc), !sample, draw);
+        }
+        case Settings::HUD_KEYS: return drawKeyOverlay(W, H, s, sample, draw);
+        default: return {};
+    }
+}
+
+// Settings > HUD outside a game (and in one while dead): every shown element with sample values where it really goes
+void Game::drawHudSample(float W, float H, float s) {
+    static const int els[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS};
+    for (int el : els) if (!cfg_.hud[el].hidden) drawHudElement(el, W, H, s, true);
+    if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden) drawKeyOverlay(W, H, s, true);   // (verbose only, as in game)
+}
+
+// Settings > HUD, over the shell (drawSettings, before its popups): the selected element again at full strength while
+// it changes (a slider held, or for 1.5 s after any change or a new pick), so a move / resize / recolour shows even where
+// the panel covers it; then a thin accent outline round it (dashed and dim when it's hidden). Not the weapon model (3D).
+void Game::drawHudPreviewTop() {
+    const auto& e = cfg_.hud[hudSel_];
+    const bool same = hudSel_ == hudPrevSel_ && e.x == hudPrevElem_.x && e.y == hudPrevElem_.y && e.scale == hudPrevElem_.scale &&
+                      e.custom == hudPrevElem_.custom && e.hidden == hudPrevElem_.hidden && e.z == hudPrevElem_.z &&
+                      e.color.x == hudPrevElem_.color.x && e.color.y == hudPrevElem_.color.y && e.color.z == hudPrevElem_.color.z;
+    if (!same) { hudChangedAt_ = time_; hudPrevSel_ = hudSel_; hudPrevElem_ = e; }
+    if (hudSel_ == Settings::HUD_VIEWMODEL) return;
+    const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
+    const bool sample = !settingsInGame_ || !net_.selfAlive();
+    const bool shown = !e.hidden && (hudSel_ != Settings::HUD_KEYS || cfg_.hudVerbose);
+    if (shown && (ui_.sliderHeld() || time_ - hudChangedAt_ < 1.5)) drawHudElement(hudSel_, W, H, s, sample);
+    HudRect rc = drawHudElement(hudSel_, W, H, s, sample, false);
+    const float pad = 4 * s, t = std::max(1.0f, std::round(1.5f * s));
+    const float x = rc.x - pad, y = rc.y - pad, w = rc.w + 2 * pad, h = rc.h + 2 * pad;
+    const Color& a = ui_.accent;
+    if (shown) {   // a solid frame, gently pulsing
+        const Color c = {a.r, a.g, a.b, 0.7f + 0.3f * std::sin((float)time_ * 5.0f)};
+        r_.rect(x, y, w, t, c); r_.rect(x, y + h - t, w, t, c);
+        r_.rect(x, y + t, t, h - 2 * t, c); r_.rect(x + w - t, y + t, t, h - 2 * t, c);
+    } else {       // hidden: where it would be, dashed and dim
+        const Color c = {a.r, a.g, a.b, 0.45f};
+        const float d = 6 * s;
+        for (float u = 0; u < w; u += 2 * d) { float l = std::min(d, w - u); r_.rect(x + u, y, l, t, c); r_.rect(x + u, y + h - t, l, t, c); }
+        for (float u = 0; u < h; u += 2 * d) { float l = std::min(d, h - u); r_.rect(x, y + u, t, l, c); r_.rect(x + w - t, y + u, t, l, c); }
+    }
+}
+
 void Game::drawHud() {
     QZONE("drawHud");
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
     float ts = ui_.textScale();
+    if (paused_ && settingsInGame_ && !widgetEdit_ && hudPreviewOn()) {
+        // Settings > HUD: the HUD's own elements live under the see-through shell (the world only lightly dimmed, so they
+        // read clearly) and an edit shows as it's made; drawSettings outlines the selected one and draws it over the
+        // shell while it changes. The score box, feed and chat stay off (they'd sit under the tab row).
+        r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 0.25f});
+        drawCrosshair(W * 0.5f, H * 0.5f, s, false);   // (where the cooldown bars and the speed meter hang from)
+        if (net_.selfAlive()) {
+            drawHudLive(net_.mode(), net_.findPlayer(net_.clientId()), W, H, s, true);
+            if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden) drawKeyOverlay(W, H, s);
+        } else drawHudSample(W, H, s);   // (dead / spectating: made-up values, as the main menu's)
+        if (!rankedPlayer()) {
+            const bool wantWidgets = cfg_.hudWidgets;
+            if (wantWidgets && widgets_.pollDue()) widgets_.poll(activeHudPath());
+            if (cfg_.hudVerbose || (wantWidgets && !widgets_.empty())) computeHudVals();
+            float vy = 12 * s;
+            if (cfg_.hudVerbose) drawVerboseHud(W, s, vy);
+            if (wantWidgets && !widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
+        }
+        drawNotices(12 * s, ts, s);
+        drawPauseMenu(W * 0.5f, 96 * s);
+        if (ui_.probing()) uiTestActions();
+        return;
+    }
     if (paused_ && settingsInGame_ && !widgetEdit_) {
-        // settings in game: no HUD under the shell (it would cut the score and weapon bars), the world dimmed behind it;
-        // notices in the strip over it
+        // settings in game (every tab but HUD): no HUD under the shell (it would cut the score and weapon bars), the
+        // world dimmed behind it; notices in the strip over it
         r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 0.55f});
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
@@ -2814,124 +3057,10 @@ void Game::drawHud() {
 
     // health / weapon (each element moved / sized / recolored by the HUD settings); spectating: their health
     const PlayerSnap* specP = !net_.selfAlive() && specTarget_ >= 0 ? net_.findPlayer(specTarget_) : nullptr;
-    if (specP && (specP->flags & PS_ALIVE) && !cfg_.hud[Settings::HUD_HEALTH].hidden) {
-        const auto& e = cfg_.hud[Settings::HUD_HEALTH];
-        float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
-        int hp = specP->health;
-        float hts = std::max(1.0f, std::round(ts * 2 * e.scale));
-        r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? kWhite : kRed);
-        r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
-        r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? rgba(teamColor(specTarget_)) : kRed);
-    }
+    if (specP && (specP->flags & PS_ALIVE) && !cfg_.hud[Settings::HUD_HEALTH].hidden)
+        drawHudHealth(cfg_.hud[Settings::HUD_HEALTH], W, H, s, specP->health, kWhite, rgba(teamColor(specTarget_)));
     if (net_.selfAlive()) {
-        auto he = [&](int i) { return cfg_.hud[i]; };
-        auto tint = [&](int i, Color c) { const auto& e = cfg_.hud[i]; return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; };
-        if (!he(Settings::HUD_HEALTH).hidden) {   // health: number + bar, bottom left
-            auto e = he(Settings::HUD_HEALTH);
-            float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
-            int hp = net_.selfHealth();
-            float hts = std::max(1.0f, std::round(ts * 2 * e.scale));
-            r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? tint(Settings::HUD_HEALTH, kWhite) : kRed);
-            r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
-            r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? tint(Settings::HUD_HEALTH, fc) : kRed);
-        }
-        bool unarmed = isItMode(ms.mode) && !(mep && (mep->flags & PS_HASBOMB));
-        if (!unarmed && !he(Settings::HUD_WEAPON).hidden) {   // current weapon name, bottom right
-            auto e = he(Settings::HUD_WEAPON);
-            float wts = std::max(1.0f, std::round(ts * 1.5f * e.scale));
-            std::string wn = weaponDef(heldWeapon_).name;
-            r_.text(W - 24 * s + e.x * s - r_.textWidth(wn, wts), H - 50 * s * e.scale + e.y * s, wts, wn, tint(Settings::HUD_WEAPON, kWhite));
-        }
-        const MoveState& mv = net_.predicted();
-        if (!paused_ && !(mv.mods & MOVE_RUN_ONLY) && !he(Settings::HUD_BARS).hidden) {   // dash + grapple cooldown bars under the crosshair (full = ready); hidden behind menus / without abilities
-            auto e = he(Settings::HUD_BARS);
-            float k = s * e.scale, bcx = cx + e.x * s, bcy = cy + e.y * s;
-            Color full = tint(Settings::HUD_BARS, fc);
-            // (rows 16 apart, captions at text 1.5 centred on their bar: text 1 was below the redesign's smallest)
-            const float lts = std::max(r_.minTextScale(), ts * 0.75f * e.scale), lh = r_.textHeight(lts);
-            auto bar = [&](float y, const char* label, float remaining, float total) {
-                float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
-                float f = clampf(1.0f - remaining / total, 0, 1);
-                r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
-                r_.rect(bx, y, bw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
-                r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
-            };
-            int cw = heldWeapon_;
-            bar(bcy + 36 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), cw == WPN_LOCATOR || localRefire_ <= 0 ? weaponDef(cw).refire : localRefire_);   // (the locator: its recharge; else the last shot's refire: a scoped rifle's or the bubble stream's, F23)
-            {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
-                // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
-                // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
-                // wholly to the on color; a spent charge stays empty while it recharges (1.2 s) and after, until a refill
-                // (owner 1.18.7: "light grey that turns to blue, the whole bar not the slider"; a fill growing from empty
-                // made one dash look like it had spent both charges)
-                int n = dashMaxCharges(mv, &net_.map()), have = std::min<int>(mv.dashCharges, n);
-                const bool ready = dashReady(mv);   // (pmove's own rule; mid-burst a press is dropped, so not ready either: no
-                                                    // blue flash before the cooldown starts)
-                const Color pip = ready ? full : Color{0.6f, 0.62f, 0.66f, 0.9f};
-                float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
-                for (int i = 0; i < n; i++) {
-                    float px = bx + i * (pw + gap);
-                    r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
-                    if (i < have) r_.rect(px, y, pw, bh, pip);
-                }
-                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && ready ? kWhite : kGrey);
-            }
-            bar(bcy + 68 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map()));
-        }
-        if (!paused_ && !he(Settings::HUD_SPEED).hidden) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
-            // (1 - e^(-v/20)): half full at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
-            auto e = he(Settings::HUD_SPEED);
-            float k = s * e.scale, bcx = cx + e.x * s, y = cy + 84 * k + e.y * s;
-            float v = std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z);
-            float f = 1.0f - std::exp(-v / 20.0f);
-            float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
-            Color c = tint(Settings::HUD_SPEED, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
-            r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
-            r_.rect(bx, y, bw * f, bh, c);
-            for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
-                r_.rect(bx + bw * (1.0f - std::exp(-m / 20.0f)), y, 1, bh, {0, 0, 0, 0.6f});
-            const float lts = std::max(r_.minTextScale(), ts * 0.75f * e.scale), ly = y + (bh - r_.textHeight(lts)) * 0.5f;
-            char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
-            r_.text(bx - r_.textWidth("SPEED", lts) - 6 * k, ly, lts, "SPEED", kWhite);
-            r_.text(bx + bw + 6 * k, ly, lts, buf, kWhite);
-        }
-        if (cfg_.stickyCounter && !unarmed) {   // stickies out (the 7th removes the oldest)
-            int out = 0;
-            for (auto& pr : lastProjectiles_) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();   // (this frame's)
-            if (out > 0 || heldWeapon_ == WPN_STICKY) {
-                auto e = he(Settings::HUD_WEAPON);
-                float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
-                std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(weaponAlt().stickyMax);
-                r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : tint(Settings::HUD_WEAPON, kWhite));
-            }
-        }
-        {   // enemy stickies stuck on you: a blinking warning under the crosshair
-            int on = 0;
-            for (auto& pr : lastProjectiles_) on += (pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == net_.clientId();
-            if (on > 0) {
-                float k = std::max(1.0f, std::round(ts * 1.2f));
-                std::string t = on > 1 ? std::to_string(on) + " STICKIES ON YOU" : "STICKY ON YOU";
-                float a = std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.55f;
-                r_.text(W * 0.5f - r_.textWidth(t, k) * 0.5f, H * 0.5f - 90 * s, k, t, Color{1, 0.25f, 0.2f, a});   // (above the crosshair: the cooldown bars are under it)
-            }
-        }
-        if (!unarmed && !he(Settings::HUD_SLOTS).hidden) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
-            auto e = he(Settings::HUD_SLOTS);
-            float bx = W - 24 * s + e.x * s;
-            float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
-            for (int k = WPN_COUNT - 1; k >= 0; k--) {
-                int wi = kWeaponSlots[k];
-                bool has = !ms.weaponMask || (ms.weaponMask >> wi & 1);
-                if (!weaponInMode(wi, ms.mode) || (isItMode(ms.mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
-                std::string t = std::to_string(weaponSlotKey(k)) + " " + weaponDef(wi).name;
-                double awayLeft = weaponAwayLeft(wi);   // a thrown knife / syringe: disabled, greyed with its timer
-                if (awayLeft > 0) t += " " + std::to_string((int)std::ceil(awayLeft - 1e-6)); // (seconds until it's back)
-                float tw = r_.textWidth(t, sts);
-                bx -= tw + 14 * s * e.scale;
-                bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && awayLeft <= 0;
-                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == heldWeapon_ && awayLeft <= 0 ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
-            }
-        }
+        drawHudLive(ms, mep, W, H, s, false);
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
         const bool spectator = mep && (mep->flags & PS_SPECTATOR);
         std::string t = spectator ? "SPECTATING" : "DEAD";
@@ -3430,18 +3559,21 @@ float Game::drawVotePanel(float cx, float s, float ts, float y) {
     return y + vh + 4 * s;
 }
 
-void Game::drawKeyOverlay(float W, float H, float s) {
+Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool draw) {
     const auto& e = cfg_.hud[Settings::HUD_KEYS];
     float k = s * e.scale, u = 30 * k, g = 4 * k;
     float ox = W * 0.5f - (4 * u + 3 * g) * 0.5f + e.x * s, oy = H - 230 * s + e.y * s;
+    const HudRect rc{ox, oy, 4 * u + 3 * g, 4 * u + 3 * g};
+    if (!draw) return rc;
     Color lit = e.custom ? Color{e.color.x, e.color.y, e.color.z, 0.9f} : rgba(cfg_.colorFriendly, 0.9f);
     float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * e.scale));
     // alive: our own keys; spectating: what the watched player is holding (from the snapshot)
-    const int spec = net_.selfAlive() ? -1 : specKeysOf();
+    // (sample: Settings > HUD outside a game, nothing held)
+    const int spec = sample || net_.selfAlive() ? -1 : specKeysOf();
     const uint16_t held = spec >= 0 ? net_.findPlayer(spec)->keys : 0;
     auto key = [&](float col, float row, float wUnits, const char* label, int action, uint16_t bit) {
         float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
-        bool on = spec >= 0 ? (held & bit) != 0 : isDown(action);
+        bool on = spec >= 0 ? (held & bit) != 0 : !sample && isDown(action);
         r_.rect(x, y, w, u, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
         r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
     };
@@ -3450,6 +3582,7 @@ void Game::drawKeyOverlay(float W, float H, float s) {
     key(3, 0, 1, "LMB", A_FIRE, KEY_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE, KEY_ALT);
     key(0, 2, 2, "JUMP", A_JUMP, KEY_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH, KEY_CROUCH);
     key(0, 3, 2, "DASH", A_DASH, KEY_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE, KEY_HOOK);
+    return rc;
 }
 
 // The player we're spectating, if they're alive and in the snapshot (else -1).
@@ -4240,7 +4373,8 @@ void Game::leaveSettings() {
 }
 
 // --settingstab PAGE[+PICKER]: open that page (screenshots): player, fonts, gameplay, controls, controls/movement,
-// controls/files, video, video/devices, crosshair, hud, hud/elements, hud/widgets; "+LABEL" opens that colour picker on it
+// controls/files, video, video/devices, crosshair, hud, hud/elements, hud/widgets, hud/<element> (that element picked:
+// health, weapon, bars, speed, slots, keys); "+LABEL" opens that colour picker on it
 void Game::debugSettingsTab() {
     std::string t = opts_.settingsTab, pick;
     if (t.empty()) return;
@@ -4254,6 +4388,9 @@ void Game::debugSettingsTab() {
     if (t == "controls/files") filePick_ = 2;
     if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
     if (t == "hud/widgets") { widgetEdit_ = true; widgetSel_ = 0; }
+    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys"};
+    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
+    for (int i = 0; i < 6; i++) if (t == els[i]) hudSel_ = elIds[i];
     if (!pick.empty()) ui_.openPopup(pick, false);
 }
 
@@ -4262,7 +4399,10 @@ void Game::drawSettings() {
     const SetLayout L{ui_.s(), r_.width() * 0.5f};
     const bool modal = setTab_ == TAB_CONTROLS && filePick_ == 2;   // the import list: the page under it takes nothing
     ui_.muted = modal;
-    ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(656), 1.0f);
+    // HUD tab: the HUD under a see-through panel (in game drawHud drew the live one; the main menu's: sample values)
+    const bool hudPreview = hudPreviewOn();
+    if (hudPreview && !settingsInGame_) drawHudSample((float)r_.width(), (float)r_.height(), (float)r_.height() / 720.0f);
+    ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(656), hudPreview ? 0.6f : 1.0f);
     {   // the tab row, an accent line under it
         static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
         static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud"};
@@ -4294,6 +4434,7 @@ void Game::drawSettings() {
         return;
     }
     if (modal) drawImportDialog(L);
+    if (hudPreview) drawHudPreviewTop();   // (under the dropdown's list)
     ui_.popups();
 }
 

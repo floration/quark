@@ -618,7 +618,8 @@ private:
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;
-    void drawKeyOverlay(float W, float H, float s);
+    struct HudRect { float x = 0, y = 0, w = 0, h = 0; };
+    HudRect drawKeyOverlay(float W, float H, float s, bool sample = false, bool draw = true);   // (sample: no key lit; draw false: only where it is)
     // community (community.cpp): Discord link, queues shared with the Discord bot, leaderboard crowns
     struct QueueDef { const char* key; const char* title; int size; };
     static const QueueDef kQueues[];
@@ -790,6 +791,23 @@ private:
     void drawVerboseHud(float W, float s, float& y);
     void drawWidgetEditor();
     int hudSel_ = 0;         // HUD settings: the element (its ELEMENT dropdown)
+    // The HUD's elements, each drawn from its values (the live HUD and the HUD tab's preview share them); each returns
+    // where it is on screen when draw is false (nothing drawn: the preview's outline; drawn, it may return an empty rect)
+    struct HudBarVals { float wRem = 0, wTot = 1; int dashN = 2, dashHave = 2; bool dashReady = true; float hookRem = 0, hookTot = 1; };
+    HudRect drawHudHealth(const Settings::HudElem& e, float W, float H, float s, int hp, Color num, Color bar, bool draw = true);
+    HudRect drawHudWeaponName(const Settings::HudElem& e, float W, float H, float s, const std::string& name, Color c, bool draw = true);
+    HudRect drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw = true);
+    HudRect drawHudSpeed(const Settings::HudElem& e, float W, float H, float s, float v, bool draw = true);
+    HudRect drawHudSlots(const Settings::HudElem& e, float W, float H, float s, int mode, uint32_t mask, int held, Color heldC, bool live, bool draw = true);
+    // Settings > HUD's live preview: the tab is showing (not the widget editor, FONT or DEVICES)
+    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !fontsOpen_ && !devicesOpen_; }
+    void drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview);   // (alive)
+    HudRect drawHudElement(int el, float W, float H, float s, bool sample, bool draw = true);   // one element (the overlay)
+    void drawHudSample(float W, float H, float s);   // every element with made-up values (the main menu's settings)
+    void drawHudPreviewTop();                        // the selected element over the panel while it changes, and its outline
+    Settings::HudElem hudPrevElem_{};                // (what the selected element was last frame: a change restarts the overlay)
+    int hudPrevSel_ = -1;
+    double hudChangedAt_ = -10;
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
     // tourney bracket (EV_BRACKET): rounds of player ids (-1 bye, -2 undecided), current match
