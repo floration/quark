@@ -80,10 +80,10 @@
   "super_dash_jump": {
    "value": 0.5,
    "unit": "x",
-   "mult": 0.5774,
+   "mult": 0.5556,
    "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L46 (DuckSuperJumpYMult = .5f)",
    "confidence": "exact",
-   "note": "the hyper (a super jump out of a crouched dash) jumps at half the jump speed: Quark's super dash hop started at the same 0.5 until 1.18.28 raised it to 0.866"
+   "note": "the hyper (a super jump out of a crouched dash) jumps at half the jump speed: Quark's super dash hop was the same 0.5 until 1.18.28; since 1.18.31 this setting scales the share of the hyper's speed that goes up (at most 0.9), so the match is loose"
   },
   "dash": {
    "value": true,

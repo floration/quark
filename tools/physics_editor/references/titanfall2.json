@@ -100,11 +100,12 @@
    "confidence": "exact",
    "note": "Quark: 1.22 m"
   },
-  "runSpeed": {
+  "walkSpeed": {
    "value": 4.3375,
    "unit": "m/s",
    "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (stand speed 173.5)",
-   "confidence": "exact"
+   "confidence": "exact",
+   "note": "the stand speed without sprint (Quark's speed row is the sprint, 260 u/s)"
   },
   "crouchSpeed": {
    "value": 2.0,
