@@ -9,7 +9,7 @@
 //           shooter: {pos: [x,y,z], aim: "perfect"|"head"|"body"|"bot", skill?}, seconds, seed, health?}
 // answer:  {ok, weapon, alt, seconds, targets: [{index, hits, headHits, damage, kills, firstKill, shots}],
 //           shots: [{t, hit, head, dmg, target, dist}], frames: [{t, players: [{pos, yaw, pitch, health, alive}],
-//           projectiles: [{pos}], shots: [{from, to, hit}]}], totals: {shots, hits, headHits, damage, kills, dps}, notes}
+//           projectiles: [{pos}], shots: [{from, to, hit}]}], totals: {shots, hits, headHits, damage, kills, dps, shotsHit, accuracy}, notes}
 
 import { pelletOffset, burstOffset, bubbleCount, HALF_W, HEIGHT, HEAD_FRAC, HEAD_W_FRAC } from "./stats.js";
 import { runSlot, symbols, evalCurve } from "./ast.js";
@@ -101,7 +101,10 @@ export function mockRange(req, values, set, map = null) {
     const shots = [], frames = [];
     let frameShots = [];
     const projs = [];
-    let t = 0, cool = 0, nextFrame = 0, shotNo = 0;
+    let t = 0, cool = 0, nextFrame = 0, shotNo = 0, shotsHit = 0;
+    // shots and hits in one unit, as wpnrange counts them: a shot (a projectile carries its own), the laser's 1 ms beam
+    // ticks (a 10 ms slice is n of them); a target's hit = a shot that damaged it, however many pellets landed
+    let cur = { id: 0, n: 1, hit: false };
     const order = req.order || "lanes";   // "lanes": kill each target once in turn; "nearest": always the nearest alive
     let ptr = 0;
     const focus = () => {
@@ -129,7 +132,8 @@ export function mockRange(req, values, set, map = null) {
         const r = runSlot(set || { decls: [] }, "hit", w, S2, S, values);
         const d = r.outputs.damage;
         x.lastHit.push(t); if (x.lastHit.length > 64) x.lastHit.shift();
-        x.hits++; if (isHead) x.headHits++;
+        if (x.lastShot !== cur.id) { x.lastShot = cur.id; x.hits += cur.n; if (!cur.hit) { cur.hit = true; shotsHit += cur.n; } }
+        if (isHead && x.lastHead !== cur.id) { x.lastHead = cur.id; x.headHits++; }   // (a blast with a head pellet: one head hit)
         x.damage += Math.min(d, Math.max(0, x.health));
         x.health -= d;
         shots.push({ t: +t.toFixed(3), hit: true, head: isHead, dmg: +d.toFixed(3), target: x.index, dist: +dist.toFixed(2) });
@@ -170,13 +174,14 @@ export function mockRange(req, values, set, map = null) {
             hit(x, dmg * frac * fall(dist), false, dist, false, frac, p);
         }
     };
-    const fire = (x) => {
-        shotNo++;
+    const fire = (x, n = 1) => {
+        shotNo += n;
+        cur = { id: shotNo, n, hit: false };
         const tp = aimPoint(x);
         let aimErr = 0;
         if (shooter.aim === "bot") aimErr = (1 - Math.max(0, Math.min(1, shooter.skill))) * 0.03 + 0.002;
         const jitter = (d) => (aimErr > 0 ? offsetDir(d, rand() * 6.2831853, Math.abs(gauss(rand)) * aimErr) : d);
-        x.shots++;
+        x.shots += n;
         if (kind === "hitscan" || kind === "beam" || kind === "melee") {
             const d0 = jitter(norm(sub(tp, eye)));
             const maxT = range;
@@ -200,7 +205,7 @@ export function mockRange(req, values, set, map = null) {
             let d = jitter(norm(sub(p, eye)));
             const [a, r] = stream ? burstOffset(k, v("bubble.spread")) : burstOffset(shotNo, spread);
             d = offsetDir(d, a, r);
-            projs.push({ pos: eye.slice(), vel: [d[0] * sp, d[1] * sp, d[2] * sp], born: t, stuck: false, landed: 0, grav });
+            projs.push({ pos: eye.slice(), vel: [d[0] * sp, d[1] * sp, d[2] * sp], born: t, stuck: false, landed: 0, grav, shot: cur });
         }
     };
     let beamScale = 1;
@@ -218,12 +223,13 @@ export function mockRange(req, values, set, map = null) {
             if (beamAcc >= 0.01 - 1e-9) {   // the beam's ticks in 10 ms slices
                 const ticks = Math.round(beamAcc / refire);
                 beamAcc = 0;
-                if (x && ticks > 0) { beamScale = ticks * mult; fire(x); }
+                if (x && ticks > 0) { beamScale = ticks * mult; fire(x, ticks); }
             }
         } else if (x && cool <= 0) { fire(x); cool = Math.max(refire, away); }
         // projectiles
         for (let j = projs.length - 1; j >= 0; j--) {
             const p = projs[j];
+            cur = p.shot;
             if (p.stuck) { if (t - p.landed >= v("sticky.armTime")) { explode(p.pos, null); projs.splice(j, 1); } continue; }
             const o = p.pos.slice();
             p.vel[1] -= p.grav * DT;
@@ -263,7 +269,8 @@ export function mockRange(req, values, set, map = null) {
     function pub(x) { return { index: x.index, pos: x.base, hits: x.hits, headHits: x.headHits, damage: +x.damage.toFixed(2), kills: x.kills, firstKill: x.firstKill, shots: x.shots }; }
     function tot(sec) {
         const hits = T.reduce((a, x) => a + x.hits, 0), dmgSum = T.reduce((a, x) => a + x.damage, 0);
-        return { shots: shotNo, hits, headHits: T.reduce((a, x) => a + x.headHits, 0), damage: +dmgSum.toFixed(2), kills: T.reduce((a, x) => a + x.kills, 0), dps: sec ? +(dmgSum / sec).toFixed(2) : 0 };
+        return { shots: shotNo, hits, headHits: T.reduce((a, x) => a + x.headHits, 0), damage: +dmgSum.toFixed(2), kills: T.reduce((a, x) => a + x.kills, 0), dps: sec ? +(dmgSum / sec).toFixed(2) : 0,
+            shotsHit, accuracy: shotNo ? shotsHit / shotNo : null };
     }
 }
 function gauss(r) { let u = 0, v = 0; while (u === 0) u = r(); while (v === 0) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.2831853 * v); }

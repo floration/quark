@@ -129,11 +129,14 @@ distance), for reference. A set with errors: exit 1, `"weapons line L:C: msg"`.
   to fire; its movement keys are dropped.
 - **order** `lanes` (the default): the targets in turn, each killed once, then the next; `nearest`: always the
   nearest one alive.
-- **Numbers.** Per target `damage` and `kills` / `firstKill` (s from the start) come from the targets' health (exact);
-  `hits` / `headHits` and `shots[]` from EV_HIT (the game batches small hits, the laser's 1 ms ticks, into one
-  every 50 ms, so a hit there is a batch); `shots` per target = shots fired while it was the target; misses are in
-  `shots[]` for hitscan weapons only (a shot that damaged nobody that tick). `totals.shots` / `shotsHit` are the
-  game's own counters (`ServerPlayer::shotsFired` / `shotsHit`), `accuracy` = shotsHit / shots. Frames every
+- **Numbers.** Per target `damage` and `kills` / `firstKill` (s from the start) come from the targets' health (exact).
+  Shots and hits are counted in one unit, so `accuracy` means the same for every weapon: a shot is what the game
+  counts in `ServerPlayer::shotsFired` (a hitscan or projectile shot, one 1 ms tick of the laser's beam), except the
+  knife's swing, which the game counts once per tick of its cut window (~120 a swing) and the range counts once.
+  `hits` per target = shots (swings) that took health off it; `shots` per target = shots fired while it was the
+  target; `totals.shotsHit` = shots that hit anyone, `accuracy` = shotsHit / shots. `headHits` and `shots[]` (the
+  per hit feed) come from EV_HIT, which batches the laser's ticks every 50 ms (a feed, not a count); misses are in
+  `shots[]` for hitscan weapons only (a shot that damaged nobody that tick). Frames every
   `frameEvery` s: every player, the shooter's projectiles, the tick's hitscan traces (the aim ray, to the target hit
   or the first wall; at most 24 per frame).
 - **Deterministic**: the same request gives the same answer (each run on a fresh thread; `seed` seeds the server).
@@ -156,8 +159,8 @@ together; `simbatch`: every match). How those are counted: SIM.md "Weapon sets".
 
 ## Limits
 
-- `wpnrange`'s per hit list is the game's hit feedback: batched every 50 ms for rapid small hits, so the laser's hits
-  are batches, and a hit's `dist` is to the target's centre. Projectile misses aren't listed (only counted:
+- `wpnrange`'s per hit list is the game's hit feedback: batched every 50 ms for rapid small hits, so the laser's feed
+  entries are batches (its `hits` count every tick), and a hit's `dist` is to the target's centre. Projectile misses aren't listed (only counted:
   `totals.shots - totals.shotsHit`).
 - Moving targets slide (no legs): their speed is set every tick, so the game's friction never slows them.
 - The range's targets are free for all players: a rocket's splash hurts every target near it (as in a match).

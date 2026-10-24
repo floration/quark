@@ -304,8 +304,16 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     int ptr = 0;                 // lanes: the target in turn
     bool pressedLast = false;
     uint32_t seq = 1;
-    int shots0 = P.shotsFired, hits0 = P.shotsHit;
     int prevShots = P.shotsFired, prevHits = P.shotsHit;
+    // The tally counts shots and hits in one unit, so accuracy = hits / shots means the same for every weapon: a shot is
+    // what the game counts in shotsFired (a hitscan / projectile shot, one 1 ms tick of the laser's beam), except the
+    // knife's swing, which the game counts once per tick of its cut window (about 120 a swing): one swing here. A hit is
+    // a shot (a swing) that took health off that target; shotsHit = shots that hit anyone. (The per hit list below is
+    // the game's hit feedback, EV_HIT, which batches the laser's ticks every 50 ms: a feed, not a count.)
+    const bool swingUnit = S.weapon == WPN_KNIFE && !S.alt;
+    int shotsT = 0, shotsHitT = 0;
+    bool firingPrev = false, shotLanded = false;
+    std::vector<char> hitThisShot(N, 0);
     Json shots = Json::array(), frames = Json::array();
     int shotCount = 0;
     bool shotsCut = false;
@@ -345,7 +353,7 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
             if (e.type == EV_HIT && e.a == sh && e.b < kMaxPlayers && indexOf[e.b] >= 0) {
                 int k = indexOf[e.b];
                 bool head = e.text == "h";
-                tr[k].hits++; if (head) tr[k].headHits++;
+                if (head) tr[k].headHits++;
                 pushShot(t, true, head, e.c / 100.0, k, length(s.players_[e.b].move.pos + Vec3(0, kPlayerHeight * 0.5f, 0) - eyeOf()));
                 hitTarget = k;
             }
@@ -441,7 +449,15 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
         const int hitTarget = readEvents(runT);
         const int fired = P.shotsFired - prevShots, landed = P.shotsHit - prevHits;
         prevShots = P.shotsFired; prevHits = P.shotsHit;
-        if (fired > 0 && fk >= 0) tr[fk].shots += fired;
+        const bool newSwing = swingUnit && fired > 0 && !firingPrev;
+        firingPrev = fired > 0;
+        const int newShots = swingUnit ? (newSwing ? 1 : 0) : fired;
+        if (newShots > 0) {
+            shotsT += newShots;
+            if (fk >= 0) tr[fk].shots += newShots;
+            if (swingUnit) { shotLanded = false; std::fill(hitThisShot.begin(), hitThisShot.end(), 0); }
+        }
+        if (!swingUnit) shotsHitT += landed;
         if (fired > 0 && hitscanLike) {
             for (int m = landed; m < fired; m++) pushShot(runT, false, false, 0, -1, 0);
             if (S.frames && frameShots.size() < 24) {   // (the traces: the aim ray, to the target hit or the first wall)
@@ -460,7 +476,11 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
             if (ts[k].wasAlive) {
                 float took = ts[k].health - std::max(0.0f, q.health);
                 if (!q.alive) took = std::max(0.0f, ts[k].health);
-                if (took > 0) tr[k].damage += took;
+                if (took > 0) {
+                    tr[k].damage += took;
+                    if (!swingUnit) tr[k].hits++;   // (a tick's damage to a target: one shot's, or one beam tick's)
+                    else if (!hitThisShot[k]) { hitThisShot[k] = 1; tr[k].hits++; if (!shotLanded) { shotLanded = true; shotsHitT++; } }
+                }
                 if (!q.alive) {
                     tr[k].kills++;
                     if (tr[k].firstKill < 0) tr[k].firstKill = tNow;
@@ -476,7 +496,6 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     readEvents(S.seconds);
     const double simWall = maptoolNow() - simW0;
     const int tickRateRun = s.tickRate();
-    const int fired = P.shotsFired - shots0, landed = P.shotsHit - hits0;
     std::vector<float> healthOf(N);
     for (int k = 0; k < N; k++) healthOf[k] = targetHealth(k);
     sim.stop();   // (s and P are gone from here)
@@ -511,9 +530,9 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     a.set("frames", std::move(frames));
     a.set("frameEvery", S.frameEvery);
     Json tot = Json::object();
-    tot.set("shots", fired); tot.set("hits", hitSum); tot.set("headHits", headSum); tot.set("damage", r2(dmgSum)); tot.set("kills", killSum);
+    tot.set("shots", shotsT); tot.set("hits", hitSum); tot.set("headHits", headSum); tot.set("damage", r2(dmgSum)); tot.set("kills", killSum);
     tot.set("dps", S.seconds > 0 ? r2(dmgSum / S.seconds) : 0.0);
-    tot.set("shotsHit", landed); tot.set("accuracy", fired ? Json((double)landed / fired) : Json());
+    tot.set("shotsHit", shotsHitT); tot.set("accuracy", shotsT ? Json((double)shotsHitT / shotsT) : Json());
     a.set("totals", std::move(tot));
     a.set("notes", std::move(notes));
     Json perf = Json::object();
