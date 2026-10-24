@@ -20,11 +20,23 @@ export class DriveView {
         this.frames = new Float32Array(240); this.fi = 0;
         this.scene = new GLScene(this.c);
         if (!this.scene.gl) $("driveMsg").innerHTML = "<div>WebGL isn't available in this browser: the Drive tab needs it.</div>";
-        this.c.addEventListener("click", () => { if (document.pointerLockElement !== this.c) this.c.requestPointerLock && this.c.requestPointerLock(); });
-        document.addEventListener("pointerlockchange", () => { const on = document.pointerLockElement === this.c; $("driveMsg").style.display = on ? "none" : ""; if (!on) this.keys.clear(); });
-        document.addEventListener("mousemove", (e) => { if (document.pointerLockElement === this.c) { this.mdx += e.movementX; this.mdy += e.movementY; } });
+        // Pointer lock can be refused (the Quark Project app's Electron shell denied it until it allowed 'pointerLock';
+        // a sandboxed frame; an old browser): then Drive still starts, with the mouse looking while a button is held.
+        this.c.addEventListener("click", () => {
+            if (document.pointerLockElement === this.c || this.forceLocked) return;
+            let r;
+            try { r = this.c.requestPointerLock ? this.c.requestPointerLock() : null; } catch (_) { this._freeLook(); return; }
+            if (!this.c.requestPointerLock) this._freeLook();
+            else if (r && r.catch) r.catch(() => this._freeLook());
+        });
+        document.addEventListener("pointerlockerror", () => this._freeLook());
+        document.addEventListener("pointerlockchange", () => { const on = document.pointerLockElement === this.c; this._msg(on); if (!on) this.keys.clear(); });
+        document.addEventListener("mousemove", (e) => {
+            if (document.pointerLockElement === this.c || (this.forceLocked && this.freeLook && (e.buttons & 1))) { this.mdx += e.movementX; this.mdy += e.movementY; }
+        });
         const isGame = () => document.pointerLockElement === this.c || this.forceLocked;
         window.addEventListener("keydown", (e) => {
+            if (this.freeLook && this.forceLocked && e.code === "Escape") { this.forceLocked = false; this.keys.clear(); this._msg(false); return; }
             if (!isGame()) return;
             if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "KeyQ", "KeyC", "ControlLeft"].includes(e.code)) e.preventDefault();
             if (e.code === "KeyR" && !e.repeat) this.reset();
@@ -43,6 +55,15 @@ export class DriveView {
         app.on("scenario", () => this._starts());
         this._starts();
         this._loop = this._loop.bind(this);
+    }
+    _freeLook() {   // pointer lock refused: play without it (hold the left button and drag to look; Esc stops)
+        if (document.pointerLockElement === this.c || !this.active) return;
+        this.freeLook = true; this.forceLocked = true; this._msg(true);
+        $("driveHint").style.display = "";
+    }
+    _msg(playing) {
+        $("driveMsg").style.display = playing ? "none" : "";
+        if (!playing) $("driveHint").style.display = "none";
     }
     _starts() {
         const sel = $("driveStart"), keep = sel.value;
@@ -69,7 +90,11 @@ export class DriveView {
         this.last = performance.now(); this.acc = 0;
         cancelAnimationFrame(this.raf); this.raf = requestAnimationFrame(this._loop);
     }
-    leave() { this.active = false; cancelAnimationFrame(this.raf); if (document.pointerLockElement === this.c) document.exitPointerLock(); }
+    leave() {
+        this.active = false; cancelAnimationFrame(this.raf);
+        if (document.pointerLockElement === this.c) document.exitPointerLock();
+        if (this.freeLook && this.forceLocked) { this.forceLocked = false; this.keys.clear(); this._msg(false); }
+    }
     async restart() {
         if (this.d) { this.d.stop(); this.d = null; }
         if (!this.active) return;

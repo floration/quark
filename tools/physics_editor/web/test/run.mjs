@@ -263,7 +263,12 @@ async function browserChecks(browser, mode, shots) {
     await page.click("#tabs button[data-page=drive]");
     await page.waitForFunction(() => window.qpe.drive.d, null, { timeout: 10000 });
     await page.waitForTimeout(400);
-    await page.evaluate(() => { window.qpe.drive.forceLocked = true; });
+    // the window refuses pointer lock (the Quark Project app's shell did): a click still starts Drive, drag-to-look
+    await page.evaluate(() => { const c = document.getElementById("driveCanvas"); c.requestPointerLock = () => Promise.reject(new DOMException("denied", "NotAllowedError")); });
+    await page.click("#driveCanvas");
+    await page.waitForTimeout(100);
+    const fl = await page.evaluate(() => ({ on: !!window.qpe.drive.forceLocked, free: !!window.qpe.drive.freeLook, msg: document.getElementById("driveMsg").style.display, hint: document.getElementById("driveHint").style.display }));
+    ok(fl.on && fl.free && fl.msg === "none" && fl.hint === "", "Drive: a refused pointer lock still starts on click (drag to look)", JSON.stringify(fl));
     const p0 = await page.evaluate(() => [...window.qpe.drive.st.pos]);
     await page.keyboard.down("KeyW");
     await page.waitForTimeout(700);
