@@ -1,0 +1,465 @@
+diff --git a/src/client/game.cpp b/src/client/game.cpp
+index 076fc6d..4337078 100644
+--- a/src/client/game.cpp
++++ b/src/client/game.cpp
+@@ -122,7 +122,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
+     audio_.setAnnouncer(cfg_.announcerVoice);
+     audio_.setExclusive(cfg_.exclusiveAudio);
+     if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
+-    if (!audio_.start()) printf("audio: no output device - running without sound\n");
++    if (opts_.uiTest) printf("audio: off (extract)\n");   // (extract, scratch only) no sound device at all
++    else if (!audio_.start()) printf("audio: no output device - running without sound\n");
+     audio_.setMasterVolume(cfg_.volume);
+ 
+     botMapIdx_ = bestMapFor(cfg_.botMode);
+@@ -5703,6 +5704,13 @@ float Game::viewFov() const {
+ // display modes, present modes, low latency, latency measurement
+ 
+ void Game::applyDisplayMode() {
++    if (opts_.uiTest) {   // (extract, scratch only) always a hidden window far off screen, whatever the setting says
++        glfwSetWindowMonitor(win_, nullptr, -20000, -20000, cfg_.width, cfg_.height, 0);
++        glfwHideWindow(win_);
++        applyPresentMode();
++        r_.resize(cfg_.width, cfg_.height);
++        return;
++    }
+     vmStale_ = true;      // (the mode may change: read it again)
+     mouseHeld_ = false;   // (and the cursor held at the window's new centre)
+     GLFWmonitor* mon = glfwGetPrimaryMonitor();
+diff --git a/src/client/main.cpp b/src/client/main.cpp
+index 5daeac3..5c3208e 100644
+--- a/src/client/main.cpp
++++ b/src/client/main.cpp
+@@ -134,6 +134,11 @@ int main(int argc, char** argv) {
+     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE); // required on macOS
+     glfwWindowHint(GLFW_SAMPLES, 0);
++    if (opts.uiTest) {   // (extract, scratch only) never shown, never focused
++        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
++        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
++        glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
++    }
+ 
+     Settings pre;
+     pre.load();
+diff --git a/src/client/renderer.cpp b/src/client/renderer.cpp
+index f136eb8..62ebb9d 100644
+--- a/src/client/renderer.cpp
++++ b/src/client/renderer.cpp
+@@ -1143,12 +1143,14 @@ static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, flo
+ }
+ 
+ void Renderer::rect(float x, float y, float w, float h, const Color& c) {
++    if (drawLog && drawDepth == 0) drawLog->push_back({'R', x, y, w, h, 0, 0, c, c, c, c, ""});
+     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
+     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c), 0, 0);
+ }
+ 
+ void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
++    if (drawLog && drawDepth == 0) drawLog->push_back({'G', x, y, w, h, 0, 0, tl, tr, br, bl, ""});
+     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+     const size_t n = ui_.size();
+     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl), 0, 0);
+@@ -1164,6 +1166,11 @@ static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam =
+ 
+ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+     if (ts <= 0) return;
++    if (drawLog && drawDepth == 0) {
++        float lw = (!g_uiFont && logoTex_) ? kLogoAdv * 7.5f * ts * kLogoEmK / kLogoEm : textWidth("QUARK", ts * kLogoEmK);
++        drawLog->push_back({'L', cx - lw * 0.5f, y, lw, textHeight(ts), ts, 0, friendly, enemy, enemy, enemy, "QUARK"});
++    }
++    struct LogoDepth { int& d; LogoDepth(int& d) : d(d) { d++; } ~LogoDepth() { d--; } } logoDepth(drawDepth);
+     logoA_ = friendly; logoB_ = enemy;
+     if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
+         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
+@@ -1199,6 +1206,7 @@ static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[
+ 
+ void Renderer::text(float x, float y, float s, const std::string& str, const Color& c, float level) {
+     if (s <= 0) return;
++    if (drawLog && drawDepth == 0) drawLog->push_back({'T', x, y, textWidth(str, s, level), textHeight(s), s, level, c, c, c, c, str});
+     if (s < minScale_) s = minScale_;
+     // a font whose ink would leave the line box is drawn k times smaller, moved by its fit shift (k = 1: most fonts)
+     const float k = uiMetrics().fitScale, sk = s * k;
+@@ -1227,6 +1235,7 @@ static constexpr float kMonoAdv = 5.3f;
+ 
+ void Renderer::textMono(float x, float y, float s, const std::string& str, const Color& c) {
+     if (s <= 0) return;
++    if (drawLog && drawDepth == 0) drawLog->push_back({'M', x, y, textWidthMono(str, s), textHeight(s), s, 0, c, c, c, c, str});
+     if (s < minScale_) s = minScale_;
+     const float k = uiMetrics().fitScale;   // (the line-box fit, as text())
+     float sc = clampf(s * k, 1.0f / 256, 255);
+diff --git a/src/client/renderer.h b/src/client/renderer.h
+index cd145a9..53ecb56 100644
+--- a/src/client/renderer.h
++++ b/src/client/renderer.h
+@@ -22,6 +22,9 @@ struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scal
+ 
+ struct Color { float r, g, b, a; };
+ inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
++// (ui-customizer extract, scratch only) one 2D draw call or widget, in draw order. kind: R rect, G gradient rect (c, c2,
++// c3, c4: its corners tl tr br bl), T text, M mono text, L the title logo (c friendly, c2 enemy), J a ready JSON element
++struct DrawRec { char kind; float x, y, w, h, scale, level; Color c, c2, c3, c4; std::string text; };
+ 
+ class Renderer {
+ public:
+@@ -82,6 +85,8 @@ public:
+ 
+     // 2D (pixels, origin top-left)
+     void rect(float x, float y, float w, float h, const Color& c);
++    std::vector<DrawRec>* drawLog = nullptr;   // (extract) 2D calls made at drawDepth 0 are logged here
++    int drawDepth = 0;
+     // a rect whose corners have their own colours (blended across it): colour pickers' hue and value ramps
+     void rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl);
+     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
+diff --git a/src/client/ui.cpp b/src/client/ui.cpp
+index e17ac41..a6a9701 100644
+--- a/src/client/ui.cpp
++++ b/src/client/ui.cpp
+@@ -5,6 +5,67 @@
+ #include <cstring>
+ #include "../common/net.h"
+ 
++// ---- (ui-customizer extract, scratch only) every widget / label / panel as a JSON element in the renderer's draw log
++namespace {
++std::string jesc(const std::string& t) {
++    std::string o = "\"";
++    for (unsigned char c : t) {
++        if (c == '"' || c == '\\') { o += '\\'; o += (char)c; }
++        else if (c < 32) { char b[8]; snprintf(b, sizeof b, "\\u%04x", c); o += b; }
++        else o += (char)c;
++    }
++    return o + "\"";
++}
++std::string jnum(float v) { char b[32]; snprintf(b, sizeof b, "%.6g", std::isfinite(v) ? v : 0.0f); return b; }
++std::string jcol(const Color& c) { return "[" + jnum(c.r) + "," + jnum(c.g) + "," + jnum(c.b) + "," + jnum(c.a) + "]"; }
++std::string jexp(const UiExp& e, const char* key = "action") {
++    static const char* n[] = {"none", "nav", "cfg", "state", "cmd", "url", "quit", "edit", "local", "inert", "bind"};
++    std::string a = n[e.kind];
++    if (e.what) a += std::string(":") + e.what;
++    if (e.arg && e.kind == UiExp::STATE) a += std::string("=") + e.arg;
++    std::string o = std::string(",\"") + key + "\":" + jesc(a);
++    if (e.id) o += ",\"id\":" + jesc(e.id);
++    if (e.arg && e.kind != UiExp::STATE) o += ",\"typing\":" + jesc(e.arg);
++    if (e.flags & UiExp::OPTIONAL) o += ",\"dynamic\":true";
++    return o;
++}
++std::string jnames(const std::vector<std::string>& v) {
++    std::string o = "[";
++    for (size_t i = 0; i < v.size(); i++) o += (i ? "," : "") + jesc(v[i]);
++    return o + "]";
++}
++struct Depth { Renderer* r; Depth(Renderer* r) : r(r) { r->drawDepth++; } ~Depth() { r->drawDepth--; } };
++}
++std::string uiJsonEscape(const std::string& t) { return jesc(t); }
++void Ui::logEl(const char* kind, float x, float y, float w, float h, const std::string& rest) {
++    if (!r_ || !r_->drawLog || r_->drawDepth != 0) return;
++    std::string o = std::string("{\"kind\":\"") + kind + "\",\"x\":" + jnum(x) + ",\"y\":" + jnum(y) + ",\"w\":" + jnum(w) + ",\"h\":" + jnum(h) + rest;
++    if (where) o += ",\"where\":" + jesc(where);
++    if (scope) o += ",\"scope\":" + jesc(scope);
++    if (muted) o += ",\"muted\":true";
++    else if (blocked_ && !unblock_) o += ",\"blocked\":true";
++    r_->drawLog->push_back({'J', x, y, w, h, 0, 0, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, o + "}"});
++}
++// a label as drawn: the full text (shown: what was drawn when it was cut), its size, and how it was fitted to maxW
++void Ui::logLabel(float x, float y, const std::string& t, const Color& c, float ts, float maxW, bool centred, float cx) {
++    if (!r_ || !r_->drawLog || r_->drawDepth != 0) return;
++    float fs = ts, lv = 0;
++    std::string shown = t;
++    if (maxW > 0 && !t.empty() && r_->textWidth(t, ts) > maxW) {
++        TextFit f = fitted(t, ts, maxW);
++        fs = f.scale;
++        if (f.keep >= 0) shown = t.substr(0, f.keep) + "..."; else lv = f.level;
++    }
++    float w = r_->textWidth(shown, fs, lv);
++    if (centred) x = cx - w * 0.5f;
++    std::string o = ",\"label\":" + jesc(t) + (shown != t ? ",\"shown\":" + jesc(shown) : std::string()) + ",\"color\":" + jcol(c) +
++                    ",\"textScale\":" + jnum(ts) + (fs != ts ? ",\"fitScale\":" + jnum(fs) : std::string()) +
++                    (lv > 0 ? ",\"track\":" + jnum(lv) : std::string()) + (maxW > 0 ? ",\"maxW\":" + jnum(maxW) : std::string()) +
++                    ",\"align\":\"" + (centred ? "center" : "left") + "\"" + (centred ? ",\"cx\":" + jnum(cx) : std::string()) +
++                    (hintNow_ ? ",\"hint\":true" : "");
++    logEl("label", x, y, w, r_->textHeight(ts), o);
++}
++
+ void Ui::begin(Renderer* r, const UiInput& in, float scale) {
+     r_ = r;
+     in_ = in;
+@@ -37,9 +98,11 @@ bool Ui::hover(float x, float y, float w, float h) const {
+ 
+ float Ui::hintScale() const { return std::max(r_->minTextScale(), textScale_ * 0.75f); }
+ 
+-void Ui::hint(float x, float y, const std::string& t, const Color& c, float maxW) { drawFitted(x, y, t, c, hintScale(), maxW > 0 ? maxW : boxWidth(x)); }
++void Ui::hint(float x, float y, const std::string& t, const Color& c, float maxW) { hintNow_ = true; drawFitted(x, y, t, c, hintScale(), maxW > 0 ? maxW : boxWidth(x)); hintNow_ = false; }
+ 
+ void Ui::panel(float x, float y, float w, float h, float alpha) {
++    logEl("panel", x, y, w, h, ",\"color\":" + jcol({0.05f, 0.06f, 0.08f, alpha}) + ",\"topLine\":" + jcol(accent) + ",\"topLineH\":" + jnum(2 * scale_));
++    Depth dg(r_);
+     r_->rect(x, y, w, h, {0.05f, 0.06f, 0.08f, alpha});
+     r_->rect(x, y, w, 2 * scale_, accent);
+     box(x, x + w);   // (labels after it fit inside it, until a narrower box is set)
+@@ -48,6 +111,8 @@ void Ui::panel(float x, float y, float w, float h, float alpha) {
+ // A label's text in at most maxW (0: as wide as it is): tighter, then smaller, then cut (fitted()), vertically centred
+ // on where the full-size line would be.
+ void Ui::drawFitted(float x, float y, const std::string& t, const Color& c, float ts, float maxW) {
++    logLabel(x, y, t, c, ts, maxW, false, 0);
++    Depth dg(r_);
+     if (maxW <= 0 || t.empty() || r_->textWidth(t, ts) <= maxW) { r_->text(x, y, ts, t, c); return; }
+     TextFit f = fitted(t, ts, maxW);
+     float dy = (r_->textHeight(ts) - r_->textHeight(f.scale)) * 0.5f;
+@@ -61,6 +126,8 @@ void Ui::label(float x, float y, const std::string& t, const Color& c, float siz
+ }
+ 
+ void Ui::labelFit(float x, float y, float maxW, std::string t, const Color& c) {
++    logLabel(x, y, t, c, textScale_, maxW, false, 0);
++    Depth dg(r_);
+     float tk = 0, ts = fit(t, maxW, nullptr, &tk);
+     r_->text(x, y + (r_->textHeight(textScale_) - r_->textHeight(ts)) * 0.5f, ts, t, c, tk);
+ }
+@@ -69,10 +136,12 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c,
+     drawCentered(cx, y, t, c, std::max(1.0f, std::round(textScale_ * sizeMul)), maxW);
+ }
+ 
+-void Ui::hintCentered(float cx, float y, const std::string& t, const Color& c, float maxW) { drawCentered(cx, y, t, c, hintScale(), maxW); }
++void Ui::hintCentered(float cx, float y, const std::string& t, const Color& c, float maxW) { hintNow_ = true; drawCentered(cx, y, t, c, hintScale(), maxW); hintNow_ = false; }
+ 
+ void Ui::drawCentered(float cx, float y, const std::string& t, const Color& c, float ts, float maxW) {
+     if (maxW <= 0 && boxR_ > boxL_) maxW = 2 * std::max(0.0f, std::min(cx - boxL_, boxR_ - cx));   // (centred in its box)
++    logLabel(0, y, t, c, ts, maxW, true, cx);
++    Depth dg(r_);
+     float w = r_->textWidth(t, ts);
+     if (maxW <= 0 || t.empty() || w <= maxW) { r_->text(cx - w * 0.5f, y, ts, t, c); return; }
+     TextFit f = fitted(t, ts, maxW);
+@@ -184,6 +253,7 @@ void Ui::report(UiWidget::Kind k, float x, float y, float w, float h, const std:
+ }
+ 
+ void Ui::keyAction(const std::string& label, int key, int mods, const UiExp& e, int hold) {
++    logEl("key", 0, 0, 0, 0, ",\"label\":" + jesc(label) + ",\"key\":" + std::to_string(key) + ",\"mods\":" + std::to_string(mods) + (hold >= 0 ? ",\"hold\":" + std::to_string(hold) : std::string()) + jexp(e));
+     if (!reporting()) return;
+     UiWidget wd;
+     wd.where = where; wd.scope = scope;
+@@ -192,6 +262,7 @@ void Ui::keyAction(const std::string& label, int key, int mods, const UiExp& e,
+ }
+ 
+ void Ui::handle(float x, float y, float w, float h, float dx, float dy, const std::string& label, const UiExp& e) {
++    logEl("handle", x, y, w, h, ",\"label\":" + jesc(label) + ",\"dx\":" + jnum(dx) + ",\"dy\":" + jnum(dy) + jexp(e));
+     if (!reporting()) return;
+     UiWidget wd;
+     wd.where = where; wd.scope = scope;
+@@ -200,14 +271,18 @@ void Ui::handle(float x, float y, float w, float h, float dx, float dy, const st
+ }
+ 
+ void Ui::view(float x, float y, float w, float h, const std::string& label, const UiExp& e) {
++    logEl("view", x, y, w, h, ",\"label\":" + jesc(label) + jexp(e));
+     if (reporting()) report(UiWidget::VIEW, x, y, w, h, label, "", e, true, false);
+ }
+ 
+ void Ui::custom(float x, float y, float w, float h, const std::string& label, const UiExp& e) {
++    logEl("custom", x, y, w, h, ",\"label\":" + jesc(label) + jexp(e));
+     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, false);
+ }
+ 
+ bool Ui::button(float x, float y, float w, float h, const std::string& label, const UiExp& e, bool enabled) {
++    logEl("button", x, y, w, h, ",\"label\":" + jesc(label) + ",\"enabled\":" + (enabled ? "true" : "false") + jexp(e));
++    Depth dg(r_);
+     bool clipped = false;
+     bool hit = buttonImpl(x, y, w, h, label, enabled, &clipped);
+     if (reporting()) report(UiWidget::BUTTON, x, y, w, h, label, "", e, enabled, clipped);
+@@ -215,6 +290,8 @@ bool Ui::button(float x, float y, float w, float h, const std::string& label, co
+ }
+ 
+ bool Ui::tab(float x, float y, float w, float h, const std::string& label, bool current, const UiExp& e, bool sub) {
++    logEl("tab", x, y, w, h, ",\"label\":" + jesc(label) + ",\"current\":" + (current ? "true" : "false") + (sub ? ",\"sub\":true" : "") + jexp(e));
++    Depth dg(r_);
+     if (!current) return button(x, y, w, h, label, e);
+     const bool hv = hover(x, y, w, h);
+     const float k = sub ? 0.35f : 0.6f;
+@@ -245,6 +322,8 @@ bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label
+ bool Ui::textField(int id, float x, float y, float w, float h, std::string& value, size_t maxLen, const UiExp& e) {
+     if (in_.pressed && hover(x, y, w, h)) focus_ = id;
+     bool focused = focus_ == id;
++    logEl("text", x, y, w, h, ",\"label\":" + jesc("FIELD " + std::to_string(id)) + ",\"value\":" + jesc(value) + ",\"maxLen\":" + std::to_string(maxLen) + ",\"fieldId\":" + std::to_string(id) + (focused ? ",\"focused\":true" : "") + jexp(e));
++    Depth dg(r_);
+     bool changed = false;
+     if (focused) {
+         for (char c : in_.chars)
+@@ -278,6 +357,7 @@ float Ui::caretWidth() const { return std::max(1.0f, std::round(textScale_ * 0.6
+ void Ui::caret(float x, float y, float ts) {
+     if (std::fmod(timeNow(), 1.0) >= 0.5 && !steadyCaret) return;
+     if (ts <= 0) ts = textScale_;
++    Depth dg(r_);
+     float h = r_->textHeight(ts), w = std::max(1.0f, std::round(ts * 0.6f)), bx = x + scale_;
+     r_->rect(bx - 1, y - h * 0.05f - 1, w + 2, h * 1.05f + 2, {0, 0, 0, 0.8f});
+     r_->rect(bx, y - h * 0.05f, w, h * 1.05f, {1, 1, 1, 1});
+@@ -286,6 +366,8 @@ void Ui::caret(float x, float y, float ts) {
+ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int& index, int count,
+                const std::vector<std::string>& names, const UiExp& e) {
+     if (count <= 0) return false;
++    logEl("cycle", x, y, w, h, ",\"label\":" + jesc(label) + ",\"value\":" + jesc(index >= 0 && index < (int)names.size() ? names[index] : "?") + ",\"index\":" + std::to_string(index) + ",\"count\":" + std::to_string(count) + ",\"options\":" + jnames(names) + jexp(e));
++    Depth dg(r_);
+     float bw = h;
+     bool changed = false;
+     if (buttonImpl(x, y, bw, h, "<", true, nullptr)) { index = (index + count - 1) % count; changed = true; }
+@@ -310,6 +392,8 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
+ }
+ 
+ bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bool& v, const UiExp& e) {
++    logEl("toggle", x, y, w, h, ",\"label\":" + jesc(label) + ",\"value\":" + (v ? "true" : "false") + ",\"shown\":" + jesc(label + ": " + (v ? "ON" : "OFF")) + jexp(e));
++    Depth dg(r_);
+     bool clipped = false, hit = buttonImpl(x, y, w, h, label + ": " + (v ? "ON" : "OFF"), true, &clipped);
+     if (hit) v = !v;
+     if (reporting()) report(UiWidget::TOGGLE, x, y, w, h, label, v ? "1" : "0", e, true, clipped);
+@@ -319,6 +403,8 @@ bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bo
+ bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e, float def) {
+     int id = sliderCounter_++;
+     typed_ = false;
++    logEl("slider", x, y, w, h, ",\"label\":" + jesc(label) + ",\"value\":" + jnum(v) + ",\"min\":" + jnum(lo) + ",\"max\":" + jnum(hi) + ",\"def\":" + jnum(def) + ",\"fmt\":" + jesc(fmt) + jexp(e));
++    Depth dg(r_);
+     char buf[64];
+     snprintf(buf, sizeof buf, fmt, v);
+     // "LABEL: number", fitted to the slider: shrunk first, then the LABEL cut short - the number always shows whole
+@@ -457,6 +543,8 @@ static Vec3 unpackRgb(int v) { return {((v >> 16) & 255) / 255.0f, ((v >> 8) & 2
+ static std::string hexOf(const Vec3& c) { char b[8]; snprintf(b, sizeof b, "#%06X", packRgb(c)); return b; }
+ 
+ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label, Vec3& c, const UiExp& e, const Vec3& def) {
++    logEl("colorpicker", x, y, w, h, ",\"label\":" + jesc(label) + ",\"value\":" + jesc(hexOf(c)) + ",\"color\":" + jcol(rgba(c)) + ",\"def\":" + jesc(hexOf(def)) + (popup_.kind == POP_COLOR && popup_.id == label ? ",\"open\":true" : "") + jexp(e));
++    Depth dg(r_);
+     const float s = scale_;
+     bool open = popup_.kind == POP_COLOR && popup_.id == label;
+     int result = UNCHANGED;
+@@ -551,6 +639,8 @@ int Ui::colorPicker(float x, float y, float w, float h, const std::string& label
+ 
+ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label, int& index, const std::vector<std::string>& names,
+                   const UiExp& opened, const UiExp& closed, const UiExp& pick) {
++    logEl("dropdown", x, y, w, h, ",\"label\":" + jesc(label) + ",\"value\":" + std::to_string(index) + ",\"options\":" + jnames(names) + (popup_.kind == POP_DROP && popup_.id == label ? ",\"open\":true" : "") + jexp(opened) + jexp(pick, "pick"));
++    Depth dg(r_);
+     const float s = scale_;
+     const int n = (int)names.size();
+     bool open = popup_.kind == POP_DROP && popup_.id == label, changed = false;
+@@ -609,6 +699,14 @@ bool Ui::dropdown(float x, float y, float w, float h, const std::string& label,
+ void Ui::popups() {
+     const float s = scale_;
+     const float* b = popup_.box;
++    if (popup_.kind == POP_DROP)
++        logEl("popup", b[0], b[1], b[2], b[3], ",\"popup\":\"dropdown\",\"label\":" + jesc(popup_.id) + ",\"options\":" + jnames(popup_.names) + ",\"value\":" + std::to_string(popup_.index) + ",\"rowH\":" + jnum(popup_.ah));
++    else if (popup_.kind == POP_COLOR) {
++        auto r4 = [](const float* r) { return "[" + jnum(r[0]) + "," + jnum(r[1]) + "," + jnum(r[2]) + "," + jnum(r[3]) + "]"; };
++        logEl("popup", b[0], b[1], b[2], b[3], ",\"popup\":\"color\",\"label\":" + jesc(popup_.id) + ",\"value\":" + jesc(hexOf(popup_.last)) +
++              ",\"hsv\":[" + jnum(popup_.hh) + "," + jnum(popup_.ss) + "," + jnum(popup_.vv) + "],\"sv\":" + r4(rects_.sv) + ",\"hue\":" + r4(rects_.hue) + ",\"hex\":" + r4(rects_.hex));
++    }
++    Depth dg(r_);
+     if (popup_.kind == POP_DROP) {
+         r_->rect(b[0], b[1], b[2], b[3], {0.05f, 0.06f, 0.08f, 0.98f});
+         const float pad = 8 * s, rowH = popup_.ah, gap = 4 * s;
+diff --git a/src/client/ui.h b/src/client/ui.h
+index c1b3413..b047ad4 100644
+--- a/src/client/ui.h
++++ b/src/client/ui.h
+@@ -74,6 +74,7 @@ struct UiWidget {
+     const char* scope = nullptr;   // what it acts on, when that changes what it does (Ui::scope: the editor's selection)
+     UiExp exp;
+ };
++std::string uiJsonEscape(const std::string& t);   // (extract)
+ class UiProbe {
+ public:
+     virtual ~UiProbe() = default;
+@@ -177,6 +178,10 @@ public:
+     Color accent = {0.25f, 0.85f, 1.0f, 1.0f};
+ 
+ private:
++    // (extract, scratch only) the element log: a widget / label / panel as one JSON element in the renderer's draw log
++    void logEl(const char* kind, float x, float y, float w, float h, const std::string& rest);
++    void logLabel(float x, float y, const std::string& t, const Color& c, float ts, float maxW, bool centred, float cx);
++    bool hintNow_ = false;
+     bool hover(float x, float y, float w, float h) const;
+     bool reporting() const { return probe && !muted && (!blocked_ || unblock_); }
+     // the open picker / dropdown (one at a time; id: its label), what it edits, and its draw for popups()
+diff --git a/src/client/uitest.cpp b/src/client/uitest.cpp
+index b56da44..ab5e6fe 100644
+--- a/src/client/uitest.cpp
++++ b/src/client/uitest.cpp
+@@ -402,9 +402,14 @@ private:
+             // (the demo stays where it is while tested, once it has reached its first snapshot: held from the start, it
+             // only crept on by the moments between this and the frame's network read, and at CI's ~60 fps it never got there)
+             if (holdDemo_ && g_.net_.playback() && g_.net_.hasSnapshot()) g_.net_.holdPlaybackClock();
++            bool cap = !extractDir_.empty() && registering_ && !settingUp_ && sc_ && resW_ == 1280 && resH_ == 720;
++            drawLog_.clear();
++            g_.r_.drawLog = cap ? &drawLog_ : nullptr;
+             double now = timeNow(), dt = std::min(0.1, std::max(0.0005, now - last_));
+             last_ = now;
+             g_.frame(dt);
++            g_.r_.drawLog = nullptr;
++            if (cap && before == path() + "|" + ctx() && explorable(path()) && sc_->healthy()) capture();
+             glfwSwapBuffers(win_);
+             g_.afterSwap();
+             frames_++;
+@@ -422,6 +427,70 @@ private:
+         }
+     }
+     bool transitional_ = false;
++    // ---- (ui-customizer extract, scratch only): per scenario / screen / context, the frame with the most widgets
++    std::string extractDir_ = getenv("QUARK_EXTRACT_DIR") ? getenv("QUARK_EXTRACT_DIR") : "";
++    std::vector<DrawRec> drawLog_;
++    struct Cap { size_t score = 0; int n = 0; };
++    std::map<std::string, Cap> caps_;
++    int capN_ = 0;
++    static std::string jn(float v) { char b[32]; snprintf(b, sizeof b, "%.6g", std::isfinite(v) ? v : 0.0f); return b; }
++    static std::string jc(const Color& c) { return "[" + jn(c.r) + "," + jn(c.g) + "," + jn(c.b) + "," + jn(c.a) + "]"; }
++    // the screen path, plus HUD overlays that aren't screens of their own (held scoreboard, perf overlays)
++    std::string capPath() const {
++        std::string p = path();
++        if (g_.screen_ == Game::Screen::InGame) {
++            if (g_.showScores_) p += "#scores";
++            if (g_.showPerf_) p += "#perf";
++            if (g_.perfMini_) p += "#perfmini";
++        }
++        return p;
++    }
++    void capture() {
++        std::string where = capPath() + "\t" + ctx(), key = sc_->name + "\t" + where;
++        size_t score = 1 + cur_.size();
++        auto it = caps_.find(key);
++        if (it != caps_.end() && it->second.score >= score) return;
++        // the same frame again with the mouse parked off the window (no hover look, no hover hints), unless a button is held
++        if (!g_.uiIn_.down) {
++            std::vector<UiWidget> keepW = cur_;
++            float mx = g_.uiIn_.mx, my = g_.uiIn_.my;
++            g_.uiIn_.mx = g_.uiIn_.my = -10000;
++            drawLog_.clear();
++            g_.r_.drawLog = &drawLog_;
++            g_.frame(0.001);
++            g_.r_.drawLog = nullptr;
++            g_.uiIn_.mx = mx; g_.uiIn_.my = my;
++            cur_ = keepW;
++            if (capPath() + "\t" + ctx() != where) return;
++        }
++        Cap& c = caps_[key];
++        if (c.n == 0) c.n = ++capN_;
++        c.score = score;
++        std::string base = extractDir_ + "/raw/" + std::to_string(c.n);
++        std::ofstream f(fs::u8path(base + ".json"), std::ios::binary);
++        f << "{\"scenario\":" << uiJsonEscape(sc_->name) << ",\"path\":" << uiJsonEscape(capPath()) << ",\"ctx\":" << uiJsonEscape(ctx())
++          << ",\"widgets\":" << cur_.size() << ",\"frame\":" << frames_ << ",\"mouse\":[" << jn((float)g_.uiIn_.mx) << "," << jn((float)g_.uiIn_.my) << "]"
++          << ",\"accent\":" << jc(g_.ui_.accent) << ",\"enemy\":" << jc(rgba(g_.cfg_.colorEnemy)) << ",\"font\":" << uiJsonEscape(g_.cfg_.uiFont)
++          << ",\"scale\":" << jn(g_.ui_.s()) << ",\"textScale\":" << jn(g_.ui_.textScale()) << ",\"hintScale\":" << jn(g_.ui_.hintScale())
++          << ",\"inGame\":" << (g_.screen_ == Game::Screen::InGame ? "true" : "false") << ",\"editor\":" << (g_.screen_ == Game::Screen::Editor ? "true" : "false")
++          << ",\"elements\":[\n";
++        bool first = true;
++        for (auto& d : drawLog_) {
++            if (!first) f << ",\n";
++            first = false;
++            if (d.kind == 'J') { f << d.text; continue; }
++            std::string box = "\"x\":" + jn(d.x) + ",\"y\":" + jn(d.y) + ",\"w\":" + jn(d.w) + ",\"h\":" + jn(d.h);
++            if (d.kind == 'R') f << "{\"kind\":\"rect\"," << box << ",\"color\":" << jc(d.c) << "}";
++            else if (d.kind == 'G') f << "{\"kind\":\"rect\"," << box << ",\"color\":" << jc(d.c) << ",\"gradient\":[" << jc(d.c) << "," << jc(d.c2) << "," << jc(d.c3) << "," << jc(d.c4) << "]}";
++            else if (d.kind == 'L') f << "{\"kind\":\"label\",\"style\":\"logo\"," << box << ",\"textScale\":" << jn(d.scale) << ",\"label\":" << uiJsonEscape(d.text)
++                                       << ",\"color\":" << jc(d.c) << ",\"enemy\":" << jc(d.c2) << ",\"align\":\"center\",\"cx\":" << jn(d.x + d.w * 0.5f) << "}";
++            else f << "{\"kind\":\"" << (d.kind == 'M' ? "monotext" : "drawtext") << "\"," << box << ",\"textScale\":" << jn(d.scale)
++                   << (d.level > 0 ? ",\"track\":" + jn(d.level) : std::string()) << ",\"label\":" << uiJsonEscape(d.text) << ",\"color\":" << jc(d.c) << "}";
++        }
++        f << "\n]}\n";
++        f.close();
++        if (getenv("QUARK_EXTRACT_SHOTS")) g_.r_.screenshot(base + ".png");
++    }
+     bool settingUp_ = false;   // (a scenario being set up: its frames aren't explored)
+     bool setup() { settingUp_ = true; bool ok = sc_->setup(); settingUp_ = false; return ok; }
+     bool verbose_ = getenv("QUARK_UITEST_VERBOSE") != nullptr;

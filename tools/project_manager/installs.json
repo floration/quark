@@ -19,5 +19,7 @@
   {"id": "physics", "name": "Physics Editor", "sources": ["tools/physics_editor", "tools/map_editor/native", "src", "CMakeLists.txt", "VERSION"],
    "run": "py -3 tools\\physics_editor\\serve.py --install", "check": "physics-editor\\serve.py", "restartsPort": 8772},
   {"id": "gamemode", "name": "Gamemode Editor", "sources": ["tools/mode_editor", "tools/modes"],
-   "run": "py -3 tools\\mode_editor\\install.py \"%QUARK%\\gamemode-editor\"", "check": "gamemode-editor\\serve.py", "restartsPort": 8771}
+   "run": "py -3 tools\\mode_editor\\install.py \"%QUARK%\\gamemode-editor\"", "check": "gamemode-editor\\serve.py", "restartsPort": 8771},
+  {"id": "ui", "name": "UI Editor", "sources": ["tools/ui_customizer", "assets/fonts"],
+   "run": "py -3 tools\\ui_customizer\\install.py", "check": "ui-customizer\\ui-customizer.html"}
 ]}

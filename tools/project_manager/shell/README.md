@@ -150,8 +150,8 @@ The Supervisor Board's "Tools & updates" card shows the repository state, each e
 | `lowPriority` | optional: run at below-normal CPU priority (builds), inherited by everything it starts |
 | `enabled` | optional: `false` skips the entry |
 
-Not in the registry yet: the UI Editor (`ui-customizer\`), the Gamemode Editor (8771) and the Physics Editor (8772),
-whose source folders and installer commands are not decided. When one has an installer, add one line, e.g.
+Every tab's tool is in the registry (the UI Editor, `ui-customizer\`, since 2026-10-24: `tools/ui_customizer/install.py`).
+A new tool with an installer is one more line, e.g.
 
 ```
 {"id": "gamemode", "name": "Gamemode Editor", "sources": ["tools/<its folder>"], "run": "<its installer command>",
