@@ -77,8 +77,8 @@ struct Map {
     int formatVersion = kMapFormatVersion;   // the file's "version" (1 when it has none)
     std::vector<std::string> warnings;        // what the parse skipped (unknown keywords, modes, ladders): logged
     // "handmade": made or changed by a person (the editor writes it on every save), not by tools/make_maps.py.
-    // quark_tests grades a hand-made map like any other and reports its numbers, but doesn't fail on them (the owner's
-    // rule, docs/JUDGMENT_CALLS.md). humanMade(): that, or a file the generator didn't write (no header of its).
+    // quark_tests runs every map check on a hand-made map and reports what it misses, but doesn't fail on it (the
+    // owner's rule, docs/JUDGMENT_CALLS.md). humanMade(): that, or a file the generator didn't write (no header of its).
     bool handmade = false;
     bool humanMade() const;
     std::string setting;       // "setting <words>": the place the map is (a city block, a space station...)

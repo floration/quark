@@ -199,7 +199,7 @@ def build():
 
     # ---- spawns per stage, then cover scattered on the streets and in the yards
     # (each stage's two sides walk the same distance to its point, within a second at a run: owner decision B2, the
-    # attackers' arrival minus the defenders' is -1..+1 s at every point, measured by the map report)
+    # attackers' arrival minus the defenders' within -1..+1 s at every point)
     MSP = {
         "att0": (0, [(-62.5, -96), (-61, -96), (-62.5, -93), (-61, -93), (-62.5, -90), (-61, -90)], 180),   # (west of the avenue's median: clear of the parked cars)
         "def0": (0, [(54, -66), (56, -66), (58, -66), (54, -62), (56, -62), (58, -62)], 90),             # (up the avenue east of A)

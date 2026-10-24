@@ -92,7 +92,7 @@ static const double kTestTimeScale = testTimeScale();
 // pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
 // human-made when it says so ("handmade", which the editor writes), when tools/make_maps.py didn't write it, or when
 // it's the owner's override of a generated one (assets/overrides/maps). Generated maps keep the strict bar.
-bool isHumanMadeMap(const std::string& name, const Map& m) {   // (mapreport.cpp too)
+bool isHumanMadeMap(const std::string& name, const Map& m) {   // (mapbounds.cpp too)
     std::error_code ec;
     return m.humanMade() || (!sourceDir().empty() && std::filesystem::exists(std::filesystem::path(sourceDir()) / "assets" / "overrides" / "maps" / (name + ".qmap"), ec));
 }
@@ -1318,7 +1318,7 @@ static void testTickRateIndependence() {
     }
 }
 
-// The maps a test grades: listMaps() without the zz_* test maps other tests write (the forked groups each have their
+// The maps a test checks: listMaps() without the zz_* test maps other tests write (the forked groups each have their
 // own data dir, so none should be there; this keeps a stray one from failing the map checks if one is).
 static std::vector<std::string> testedMaps() {
     std::vector<std::string> v = listMaps();
@@ -1584,7 +1584,8 @@ static void testAllMaps() {
         std::string err;
         if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
         HumanMadeGrace hg(name, m);
-        if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
+        if (m.preferredMode < 0) printf("  %s: not built for one mode (no \"for <mode>\" line)\n", name.c_str());
+        CHECK(m.preferredMode >= 0 && m.supportsMode(m.preferredMode));   // (built for one mode, and it offers that one)
         if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
         {   // walked with the player's hull against the map's collision: a route that isn't there fails
@@ -1829,7 +1830,7 @@ static void testMapConverter() {
 }
 
 // Human-made maps: what counts as one, and their failed map checks are reported but taken off the count (a generated
-// map's stay). The map report does the same with its scores (mapreport.cpp).
+// map's stay). The out-of-bounds check does the same (mapbounds.cpp).
 static void testHumanMadeMaps() {
     printf("human-made maps: checked and reported, not failing the run\n");
     Map gen;
@@ -3903,7 +3904,7 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
-int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map scores are below 7)
+int outOfBoundsTests();              // tests/mapbounds.cpp (returns the failures)
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
 int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
@@ -7838,6 +7839,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "bounds") { g_fail += outOfBoundsTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); testSpawnSanity(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapsym") { testMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
@@ -7864,7 +7866,6 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "falls") { testBotFalls(TP(29060)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testBuiltInMapEditSession(TP(29606)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "assets") { g_fail += assetTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -7914,9 +7915,7 @@ int main(int argc, char** argv) {
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
-            printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
-            std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
-            if (mapReport(p.c_str())) g_fail++;
+            g_fail += outOfBoundsTests();
         }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
@@ -7981,7 +7980,7 @@ int main(int argc, char** argv) {
         size_t next = 0, printed = 0;
         auto tmp = std::filesystem::temp_directory_path();
         // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
-        // zz_* maps that the maps group would otherwise list and grade. Removed when the group ends.
+        // zz_* maps that the maps group would otherwise list and check. Removed when the group ends.
         auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + par[i].name); };
         auto start = [&](size_t i) {
             std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + par[i].name + ".log")).string();
