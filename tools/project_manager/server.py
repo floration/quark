@@ -10,6 +10,9 @@ Python 3 standard library only. Binds 127.0.0.1 only. Every source refreshes in 
 and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1]  /api/tabs
 /api/history?limit=N  /api/health  /api/updates;  POST /api/refresh?source=<key|all>  /api/updates/run
 /api/updates/ack?id=<restart request id>.
+The Play tab (pm/play.py): GET /play  /api/play[?refresh=1]  /api/play/pending;  POST (JSON body) /api/play/launch
+{build, args}  /api/play/note {session, did, noticed, change, other}  /api/play/skip {session}  /api/play/install {tag}
+/api/play/remove {tag}  /api/play/sync.
 """
 import argparse
 import json
@@ -23,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from pm import config, derive, scheduler, tabs, updater, util  # noqa: E402
+from pm import config, derive, play, scheduler, tabs, updater, util  # noqa: E402
 from pm.history import History  # noqa: E402
 
 DEFAULT_PORT = 8768
@@ -37,7 +40,8 @@ FALLBACK_PAGE = (b"<!doctype html><meta charset=utf-8><title>Supervisor Board</t
 
 
 class App:
-    def __init__(self, paths, port=DEFAULT_PORT, modules=scheduler.MODULES, prober=tabs.probe, update=False):
+    def __init__(self, paths, port=DEFAULT_PORT, modules=scheduler.MODULES, prober=tabs.probe, update=False,
+                 play_opts=None):
         self.paths = paths
         self.port = port
         self.history = History(paths)
@@ -48,10 +52,12 @@ class App:
         self.stop = self.store.stop
         # (off unless asked for: main() turns it on, --no-update and the tests leave it off)
         self.updater = updater.Updater(paths, enabled=update)
+        self.play = play.Play(paths, **(play_opts or {}))
 
     def start(self):
         self.store.start()
         self.updater.start()
+        self.play.start()
         threading.Thread(target=self._tabs_loop, name="pm-tabs", daemon=True).start()
 
     def _tabs_loop(self):
@@ -75,7 +81,8 @@ class App:
         upd = self.updater.view()
         out = {"generatedAt": self.store.generated_at, "sources": self.store.results(),
                "derived": derive.with_updates(self.store.derived, upd),  # (+ failed installs: halting)
-               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd}
+               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd,
+               "play": self.play.summary()}
         if refresh:
             ok, wait = self.store.refresh_all()
             out["refresh"] = {"accepted": ok, "nextAllowedIn": wait}
@@ -167,8 +174,16 @@ class Handler(BaseHTTPRequestHandler):
                 if os.path.isfile(path):
                     return self._static("index.html")
                 return self._send(200, FALLBACK_PAGE, "text/html; charset=utf-8")
+            if p in ("/play", "/play.html"):
+                return self._static("play.html")
             if p.startswith("/static/"):
                 return self._static(p[len("/static/"):])
+            if p == "/api/play/pending":
+                return self._json(self.app.play.pending())
+            if p == "/api/play":
+                if q.get("refresh", ["0"])[0] not in ("", "0", "false"):
+                    self.app.play.releases(force=True)
+                return self._json(self.app.play.view())
             if p == "/api/health":
                 return self._send(200, "ok", "text/plain; charset=utf-8")
             if p == "/api/pm":
@@ -193,11 +208,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self._host_ok() or not self._origin_ok():
+            self.close_connection = True  # (its body is never read)
             return self._send(403, "forbidden", "text/plain; charset=utf-8")
         n = util.to_int(self.headers.get("Content-Length"), 0) or 0
-        if n:
-            self.rfile.read(min(n, 65536))
+        if n > 65536:
+            self.close_connection = True
+            return self._send(413, "too big", "text/plain; charset=utf-8")
+        body = self.rfile.read(n) if n > 0 else b""
         u = urllib.parse.urlsplit(self.path)
+        if u.path.startswith("/api/play/"):
+            return self._play_post(u.path[len("/api/play/"):], body)
         if u.path == "/api/updates/run":
             ok, wait = self.app.updater.request()
             return self._json({"accepted": ok, "nextAllowedIn": wait, "enabled": self.app.updater.enabled})
@@ -215,6 +235,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"accepted": False, "error": "unknown source"}, 400)
             ok, wait = res
         self._json({"accepted": ok, "source": src, "nextAllowedIn": wait})
+
+
+    def _play_post(self, what, body):
+        # (a JSON body only: a page on another origin cannot send one without a preflight, which _origin_ok refuses)
+        if body and "json" not in (self.headers.get("Content-Type") or "").lower():
+            return self._json({"ok": False, "message": "Send JSON."}, 415)
+        try:
+            req = json.loads(body.decode("utf-8")) if body else {}
+        except (ValueError, UnicodeDecodeError):
+            return self._json({"ok": False, "message": "The page sent broken JSON."}, 400)
+        if not isinstance(req, dict):
+            req = {}
+        pl = self.app.play
+        try:
+            if what == "launch":
+                return self._json({"ok": True, "session": pl.launch(req.get("build"), req.get("args") or "")})
+            if what == "note":
+                note = pl.save_note(req.get("session"), req)
+                return self._json({"ok": True, "note": {k: note[k] for k in ("id", "title", "stamp", "line")},
+                                   "message": "Saved. It goes into Claude Documents (%s) in a moment." % play.DOCS_FILE})
+            if what == "skip":
+                return self._json({"ok": True, "session": pl.skip(req.get("session"))})
+            if what == "install":
+                return self._json({"ok": True, "install": pl.install(req.get("tag"))})
+            if what == "remove":
+                return self._json(dict(pl.remove(req.get("tag")), ok=True))
+            if what == "sync":
+                pl.wake.set()
+                return self._json({"ok": True})
+        except play.PlayError as e:
+            return self._json({"ok": False, "message": e.message, "reason": e.reason}, e.code)
+        return self._send(404, "not found", "text/plain; charset=utf-8")
 
 
 def make_server(app, port):
@@ -260,6 +312,7 @@ def main(argv=None):
     finally:
         app.store.shutdown()
         app.updater.shutdown()
+        app.play.shutdown()
         httpd.server_close()
     return 0
 

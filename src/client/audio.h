@@ -6,9 +6,11 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 #include "../common/qmath.h"
+#include "devices.h"
 
 // Announcer voices (Settings > VOICE): recorded lines (voice_recorded.h sets, in this order), generated for the rest.
 constexpr int kAnnouncerVoices = 7;
@@ -34,9 +36,9 @@ enum SoundId {
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,
     SND_VOICE_ROUND_LOST, SND_VOICE_OVERTIME, SND_VOICE_YOU_WIN, SND_VOICE_YOU_LOSE, SND_VOICE_HIGH_SCORE, SND_VOICE_NEW_LEADER,
-    SND_VOICE_YOU_DIED, SND_VOICE_HEADSHOT, SND_VOICE_AIRBORNE, SND_VOICE_AIR_ROCKET,
+    SND_VOICE_YOU_DIED, SND_VOICE_HEADSHOT, SND_VOICE_AIR_ROCKET,
     SND_VOICE_SPREE, SND_VOICE_RAMPAGE, SND_VOICE_UNSTOPPABLE, SND_VOICE_GODLIKE,
-    SND_VOICE_ONE_MINUTE, SND_VOICE_THIRTY_SECONDS, SND_VOICE_TEN_SECONDS, SND_VOICE_FIVE_SECONDS, SND_VOICE_ROUND_OVER,
+    SND_VOICE_ONE_MINUTE, SND_VOICE_THIRTY_SECONDS, SND_VOICE_ROUND_OVER,
     SND_COUNT
 };
 
@@ -80,6 +82,24 @@ public:
     // (game thread: play3D's copy, plus one handed to the mixer, which re-pans every playing 3D sound with it each period)
     void setListener(const Vec3& pos, float yaw);
     void setMasterVolume(float v) { master_ = v; }
+    // Two more volumes on top of the master (Settings > SOUND, 0..1): every sound effect (the hitsound, weapons,
+    // steps...) and the announcer's lines. Applied by the mixer each period, to sounds already playing too.
+    void setEffectsVolume(float v) { fxVolume_ = v; }
+    void setAnnouncerVolume(float v) { annVolume_ = v; }
+    // the gain the mixer gives a sound of this id (its category's volume; the master comes after the mix)
+    float categoryGain(int id) const { return id < SND_VOICE_THREE ? fxVolume_.load() : annVolume_.load(); }
+    // Settings > DEVICES. The output: "" = the system default; else a device id from listDevices(false). Reopens the
+    // output when it changes (the same path a device change or EXCLUSIVE AUDIO takes: the same buffers, no added
+    // latency). A saved device that isn't there opens the default instead and outputMissing() says so.
+    void setOutputDevice(const std::string& id);
+    // the chosen output wasn't there when the output was last opened (the default plays); takeOutputMissing: once
+    bool outputMissing() const { return outMissing_; }
+    bool takeOutputMissing() { return outMissingNew_.exchange(false); }
+    // REFRESH: try the chosen output again if it was missing (plugged back in); nothing otherwise
+    void retryOutputDevice() { if (outMissing_) reopen_ = true; }
+    // The OS's sound devices (input: microphones), by name. Asks the OS (a few ms): only when the DEVICES page opens
+    // and on its REFRESH, never per frame. Empty where the OS gives no list (the default is always there besides).
+    static std::vector<DeviceEntry> listDevices(bool input);
     // EXCLUSIVE AUDIO (Windows): the sound device to the game alone, past the system mixer (lower latency; other programs
     // are silent meanwhile). Reopens the output when it changes; falls back to shared when the device can't.
     void setExclusive(bool on) { if (exclusive_.exchange(on) != on) reopen_ = true; }
@@ -155,8 +175,19 @@ private:
     Vec3 mixListener_;        // (the mixer's)
     float mixListenerYaw_ = 0;
     std::atomic<float> master_{0.8f};
+    std::atomic<float> fxVolume_{1.0f}, annVolume_{1.0f};
     std::atomic<bool> running_{false}, quit_{false};
     std::atomic<bool> exclusive_{false}, reopen_{false};
+    // the chosen output (under devMu_: the game thread sets it, the backend reads it when it opens a device)
+    std::mutex devMu_;
+    std::string outDevice_;
+    std::string outputDevice() { std::lock_guard<std::mutex> l(devMu_); return outDevice_; }
+    void noteOutput(bool missing) { if (missing && !outMissing_) outMissingNew_ = true; outMissing_ = missing; }
+    std::atomic<bool> outMissing_{false}, outMissingNew_{false};
+#if defined(__APPLE__)
+    bool openQueue();    // macOS: the AudioQueue on the chosen device (setOutputDevice: closed and opened again)
+    void closeQueue();
+#endif
     std::atomic<int> exclusiveState_{kExclOff};
     float rateScale_ = 1.0f;   // (audio thread: our rate over the device's)
     std::thread thread_;

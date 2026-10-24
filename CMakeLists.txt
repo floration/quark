@@ -304,7 +304,7 @@ if(WIN32)
   target_link_libraries(quark_audio PUBLIC ole32 winmm)   # WASAPI output (COM), WinMM fallback
 endif()
 if(APPLE)
-  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreFoundation")
+  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")   # (CoreAudio: Settings > DEVICES' list)
 endif()
 
 if(QUARK_BUILD_CLIENT)

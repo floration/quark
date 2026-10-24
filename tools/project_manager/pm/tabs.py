@@ -26,6 +26,9 @@ from . import util
 DEFAULT_TABS = {"tabs": [
     {"id": "project", "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
      "start": "py -3 \"%PM%\\server.py\"", "keepAlive": True},
+    # (the Play tab is a page of the Supervisor Board server: same port, kept up by the project tab, so no keepAlive)
+    {"id": "play", "name": "Play", "parent": "project", "url": "http://127.0.0.1:8768/play?embed=1", "port": 8768,
+     "start": "py -3 \"%PM%\\server.py\""},
     {"id": "github", "name": "GitHub Manager", "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767,
      "folder": "github-manager", "start": "py -3 -B server.py --data \"%QUARK%\\github-manager\"", "keepAlive": True,
      "lowPriority": True},
@@ -39,8 +42,6 @@ DEFAULT_TABS = {"tabs": [
      "childLabel": "Editors"},
     {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
     {"id": "ui", "name": "UI Editor", "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
-    {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
-     "file": "ui-customizer-redesign.html"},
     {"id": "map", "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/", "port": 8770,
      "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": True},
     {"id": "bot", "name": "Bot Editor", "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769,
@@ -274,7 +275,7 @@ def write_default(paths):
     except (OSError, ValueError):
         data = DEFAULT_TABS
     if isinstance(data, dict):
-        data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]))
+        data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]), defaultsPlaced=list(PLACE_ONCE))
     util.write_json_atomic(path, data)
     return True
 
@@ -282,13 +283,34 @@ def write_default(paths):
 # Start commands an older tabs.default.json gave a tab (by id). `upgrade` replaces exactly these (q's own commands stay).
 OLD_DEFAULT_STARTS = {"dashboard": {None, "dashboard.cmd"}, "github": {None}, "docs": {None}, "bot": {None, "run.cmd"}}
 # The default tab ids before tabs.json recorded `defaultsSeen` (q's tabs.json may have dropped some on purpose).
+# Default tabs that were retired: upgrade() drops them from q's tabs.json while they still point where the old
+# default did. (ui-redesign: the redesign shipped in 1.18.13, so the UI Editor tab is the only UI tool.)
+RETIRED_DEFAULTS = {"ui-redesign": {"folder": "ui-customizer", "file": "ui-customizer-redesign.html"}}
 LEGACY_DEFAULT_IDS = ("project", "github", "docs", "dashboard", "sound", "ui", "ui-redesign", "map", "bot", "model")
+
+
+# Default tabs whose place in q's file is fixed once by `upgrade` (see there).
+PLACE_ONCE = ("play",)
+
+
+def _insert_in_default_place(lst, tab, order):
+    """Put `tab` right after the nearest default tab before it (in DEFAULT_TABS order) that q's list has (else at the
+    end): a new child of the Supervisor Board lands among its siblings where the defaults have it (the tab bar keeps
+    siblings in file order), not after the editors at the end."""
+    ids = [x.get("id") if isinstance(x, dict) else None for x in lst]
+    k = order.index(tab["id"]) if tab["id"] in order else len(order)
+    for prev in reversed(order[:k]):
+        if prev in ids:
+            lst.insert(ids.index(prev) + 1, tab)
+            return
+    lst.append(tab)
 
 
 def upgrade(paths):
     """Bring q's tabs.json up to the current defaults without touching what q changed:
     - a default tab that is new since this file was written (its id is neither in the file nor in its `defaultsSeen`
       list) is appended, so a new tool appears after setup; a default tab q removed stays removed;
+    - a retired default tab (RETIRED_DEFAULTS, still pointing where it did) is removed;
     - for a default tab (same id, url, port and folder as the default), a start command that an older default used
       (or none) becomes the new one, and keepAlive / lowPriority are added when the tab does not set them.
     `defaultsSeen` (top level, next to `tabs`) lists the default ids already offered. The old file is kept as
@@ -306,8 +328,13 @@ def upgrade(paths):
     defaults = {d["id"]: d for d in DEFAULT_TABS["tabs"]}
     seen = data.get("defaultsSeen")
     seen = set(seen) if isinstance(seen, list) else set(LEGACY_DEFAULT_IDS)
-    have = {t.get("id") for t in lst if isinstance(t, dict)}
     changed = []
+    for t in list(lst):
+        r = RETIRED_DEFAULTS.get(t.get("id")) if isinstance(t, dict) else None
+        if r and all(t.get(k) == v for k, v in r.items()):
+            lst.remove(t)
+            changed.append(t["id"])
+    have = {t.get("id") for t in lst if isinstance(t, dict)}
     for t in lst:
         d = defaults.get(t.get("id")) if isinstance(t, dict) else None
         if not d or any(t.get(k) != d.get(k) for k in ("url", "port", "folder")):
@@ -318,15 +345,35 @@ def upgrade(paths):
         for k in ("keepAlive", "lowPriority"):
             if k in d and k not in t:
                 t[k] = d[k]
+        if d["id"] in PLACE_ONCE and "parent" in d and not t.get("parent"):
+            t["parent"] = d["parent"]  # (the Play tab belongs under the Supervisor Board; other tabs keep q's layout)
         if t != before:
             changed.append(t["id"])
+    order = [d["id"] for d in DEFAULT_TABS["tabs"]]
     for d in DEFAULT_TABS["tabs"]:
         if d["id"] not in have and d["id"] not in seen:
-            lst.append(dict(d))
+            _insert_in_default_place(lst, dict(d), order)
             changed.append(d["id"])
-    all_seen = sorted(seen | set(defaults))
-    if changed or data.get("defaultsSeen") != all_seen:
+    # a tab an older upgrade appended at the end (the Play tab went after the editors, so it looked top level at the
+    # right end of the tab bar): moved once to its default place, then left where q puts it (`defaultsPlaced`)
+    placed = data.get("defaultsPlaced") if isinstance(data.get("defaultsPlaced"), list) else []
+    for tid in PLACE_ONCE:
+        if tid in placed:
+            continue
+        t = next((x for x in lst if isinstance(x, dict) and x.get("id") == tid), None)
+        d = defaults.get(tid)
+        placed = placed + [tid]
+        if t is None or d is None or any(t.get(k) != d.get(k) for k in ("url", "port", "parent")):
+            continue
+        i = lst.index(t)
+        lst.remove(t)
+        _insert_in_default_place(lst, t, order)
+        if lst.index(t) != i and tid not in changed:
+            changed.append(tid)
+    all_seen = sorted((seen | set(defaults)) - set(RETIRED_DEFAULTS))
+    if changed or data.get("defaultsSeen") != all_seen or data.get("defaultsPlaced") != placed:
         data["defaultsSeen"] = all_seen
+        data["defaultsPlaced"] = placed
         try:
             with open(path, "rb") as f:
                 old = f.read()

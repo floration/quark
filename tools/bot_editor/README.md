@@ -75,11 +75,16 @@ One brain, four views of the same tree; an edit in any view shows in the others.
 
 - **Code**: the `.qbrain` text (`tools/bots/GRAMMAR.md`), highlighted, with errors at their line and column. It is
   re-printed in the canonical form when you leave it.
-- **Blocks**: drag blocks from the palette (logic, maths, random, params, curves, sensors, actions, weapons / lists)
-  into a slot's statements; drag one out to the palette to delete it.
-- **Graph**: the slot as nodes: white edges give the order of statements, coloured edges carry values. Drag from a
-  port to connect, Alt-click an input to cut, Delete removes a node. **Overview** shows which slots use which
-  params and curves.
+- **Blocks**: opens on **Whole brain**: every param table, curve, list and slot on one canvas, grouped by area
+  (perception, targeting, aim, weapons, fight movement, roam, objectives per mode) under collapsible headers, with a
+  mini-map and outline; zoom 25-150% (ctrl+wheel, -/+, Fit all). Click a slot's header for **One at a time**
+  (breadcrumb back). Drag blocks from the palette (logic, maths, random, params, curves, sensors, actions, weapons /
+  lists) into a slot's statements; drag one out to the palette to delete it.
+- **Graph**: opens on **Whole brain**: every slot as a framed group of nodes, clustered by area; white edges give the
+  order of statements, coloured edges carry values. **Show shared inputs** adds one node per param / curve / list /
+  table (and sensors read by 2+ slots) wired to every use. Zoomed out, only frames, titles and edge bundles are
+  drawn. Search (Enter steps, Esc clears), mini-map, Fit all; double-click a frame title for one slot. Drag from a
+  port to connect, Alt-click an input to cut, Delete removes a node.
 - **Values**: every param per skill level (beginner / intermediate / advanced / expert) with its unit and what it
   does; shares and chances also as %. Curves as plots: drag points (steps / points curves) or the sliders (an
   expression's numbers). Lists and tables.

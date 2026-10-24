@@ -134,6 +134,7 @@ int main(int argc, char** argv) {
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }
     for (auto& l : upgradeMapDir(userMapsDir()).log) printf("maps: %s\n", l.c_str());   // older map formats: converted (originals in maps/old/v<N>/)
+    cfg.pauseWithoutHumans = true;   // nobody to play for: bots wait (Server::updatePause; hosted and test servers keep ticking)
     netInit();
     auto srv = std::make_unique<Server>();   // (~1 MB: on the heap, not half of the main thread's 2 MB MinGW stack)
     Server& server = *srv;

@@ -51,7 +51,8 @@
     GRAPPLE_HIT: [{ what: 'your hook, 3D at the anchor (30 m away: 0.225)', d: '3D', vol: 0.9 },
       { what: 'their hook latches', d: '3D', vol: 0.9, pack: 'theirs' },
       { what: 'the locator FOUND someone', d: '2D', vol: 0.6, pitch: 1.4, reuse: true }],
-    LOCATOR: [{ what: 'your locator ping (every 5 s)', d: '2D', vol: 0.8 }],
+    LOCATOR: [{ what: 'your locator ping (every 5 s)', d: '2D', vol: 0.8 },
+      { what: 'the seeker\'s / tagger\'s ping, heard by everyone else (even out of sight)', d: '3D', vol: 1.0, pack: 'theirs' }],
     DEATH: [{ what: 'you died', d: '2D', vol: 0.8 }],
     STREAK: [{ what: 'someone else\'s 3/5/7/10 streak', d: '2D', vol: 0.7 }, { what: 'ranked queue filled', d: '2D', vol: 1.0, reuse: true }],
     TYPING: [{ what: 'someone typing (max 4/s)', d: '3D', vol: 0.6, pitch: 'j90', pack: 'theirs' }, { what: 'a hidden typist', d: '2D', vol: 0.4 },
@@ -77,9 +78,6 @@
   Q.WEAK_LINES = {
     HILL_TAKEN: 'Repeats on every hill owner change (stepping on / off an empty hill).',
     HILL_LOST: 'Repeats on every hill owner change.',
-    AIRBORNE: 'Never played and not recorded in any voice (exported as 0.1 s of silence).',
-    TEN_SECONDS: 'Never played and not recorded in any voice (exported as 0.1 s of silence).',
-    FIVE_SECONDS: 'Never played and not recorded in any voice (exported as 0.1 s of silence).',
   };
 
   /* Events with no sound yet (audit section B). Each needs a game hook before it can be heard; the owner can design
@@ -148,9 +146,5 @@
     { area: 'UI', name: 'UI_BACK', pri: 'P3', d: '2D', when: 'menu: back', note: 'a lower click' },
     { area: 'UI', reuse: 'RIFLE + HIT', pri: 'P2', d: '2D', when: 'VOLUME slider / SOUND PACK cycle have no preview', note: 'game fix' },
     { area: 'UI', reuse: 'TYPING (low)', pri: 'P3', d: '2D', when: 'your own chat typing is silent', note: 'game fix' },
-    // existing voice lines with no recording and no hook
-    { area: 'Voice', name: 'AIRBORNE', kind: 'voice', existing: true, pri: 'P3', d: '2D', when: 'line 19: never played, no voice has a recording', note: 'record it (needs a hook) or remove it' },
-    { area: 'Voice', name: 'TEN_SECONDS', kind: 'voice', existing: true, pri: 'P3', d: '2D', when: 'line 27: never played, no recording', note: '"ten seconds"' },
-    { area: 'Voice', name: 'FIVE_SECONDS', kind: 'voice', existing: true, pri: 'P3', d: '2D', when: 'line 28: never played, no recording', note: '"five seconds"' },
   ];
 })();

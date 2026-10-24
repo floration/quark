@@ -4,9 +4,9 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { parse, print, printExpr, BrainError } from "../js/dsl.js";
-import { setCatalog, CATALOG, validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, diffBrains, declAreas, decompose, compose } from "../js/ast.js";
+import { setCatalog, CATALOG, validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, declKey, diffBrains, declAreas, decompose, compose, wholeGroups } from "../js/ast.js";
 import { brainToBlocks, blocksToBrain, toBlocks, fromBlocks } from "../js/blocks.js";
-import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
+import { toGraph, fromGraph, overviewGraph, wholeGraph, wholeGraphToBrain, sharedInputs, refitFrame, keepMoved } from "../js/graph.js";
 import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
@@ -154,6 +154,88 @@ t("overview graph links slots to what they read", () => {
     const ov = overviewGraph(plain(parse(DEFAULT)));
     const has = (a, b) => ov.edges.some((e) => e.from === a && e.to === b);
     if (!has("param:reactMs", "slot:react") || !has("curve:reactDist", "slot:react") || !has("table:idealRange", "slot:idealRange")) throw new Error("missing edges");
+});
+
+console.log("whole brain (blocks / graph)");
+t("whole-brain groups hold every declaration once, by area, file order inside", () => {
+    const ast = plain(parse(DEFAULT));
+    const groups = wholeGroups(ast);
+    const all = groups.flatMap((g) => g.decls);
+    same(all.length, ast.decls.length, "count");
+    same(new Set(all).size, ast.decls.length, "each once");
+    for (const g of groups) for (let i = 1; i < g.decls.length; i++) if (g.decls[i] < g.decls[i - 1]) throw new Error(g.area + " out of order");
+    const areaOf = new Map(groups.flatMap((g) => g.decls.map((i) => [declKey(ast.decls[i]), g.area])));
+    same(areaOf.get("slot:react"), "perception"); same(areaOf.get("slot:fire"), "aim"); same(areaOf.get("slot:objective.bomb"), "mode"); same(areaOf.get("slot:urgent"), "mode");
+    same(areaOf.get("param:knifeThrowMax"), "weapons");
+});
+t("whole-brain blocks export back to the identical AST (and one card's edit changes one declaration)", () => {
+    const ast = numberIds(plain(parse(DEFAULT)));
+    const m = brainToBlocks(ast);
+    // the whole canvas renders the model's declarations by group; exporting walks the model in file order
+    const shown = wholeGroups(ast).flatMap((g) => g.decls.map((i) => m.decls[i]));
+    same(shown.length, m.decls.length);
+    eq(blocksToBrain(m), ast);
+    same(print(blocksToBrain(m)), DEFAULT);
+    const ix = ast.decls.findIndex((d) => d.kind === "param" && d.name === "fov");
+    const old = m.decls[ix].fields.values[0];
+    m.decls[ix].fields.values[0] = 1.25;
+    const edited = blocksToBrain(m);
+    const changed = edited.decls.map((d, i) => (deepEqual(d, ast.decls[i]) ? null : i)).filter((x) => x !== null);
+    eq(changed, [ix]);
+    m.decls[ix].fields.values[0] = old;
+    eq(blocksToBrain(m), ast);
+});
+t("whole-brain graph exports back to the identical AST (shared inputs off and on)", () => {
+    const ast = numberIds(plain(parse(DEFAULT)));
+    for (const shared of [false, true]) {
+        const wg = wholeGraph(ast, { shared });
+        const want = ast.decls.filter((d) => d.kind === "slot" || (d.kind === "curve" && d.form === "expr")).length;
+        same(wg.frames.length, want, "one frame per slot / expression curve");
+        same(new Set(wg.frames.map((f) => f.key)).size, want);
+        const back = wholeGraphToBrain(ast, wg);
+        eq(back, ast, "shared " + shared);
+        same(print(back), DEFAULT);
+    }
+});
+t("whole-brain graph layout: frames don't overlap, nodes sit inside their frame, clusters by area", () => {
+    const wg = wholeGraph(plain(parse(DEFAULT)), { shared: true });
+    const F = wg.frames;
+    for (let i = 0; i < F.length; i++) for (let j = i + 1; j < F.length; j++) {
+        const a = F[i], b = F[j];
+        if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) throw new Error(`${a.key} overlaps ${b.key}`);
+    }
+    for (const f of F) for (const n of f.g.nodes) {
+        const x = f.x + f.dx + n.x, y = f.y + f.dy + n.y;
+        if (x < f.x || y < f.y || x + 176 > f.x + f.w + 0.5 || y > f.y + f.h) throw new Error(`${f.key}: node ${n.op} outside its frame`);
+    }
+    for (const c of wg.clusters) for (const f of c.frames) if (f.x < c.x || f.y < c.y || f.x + f.w > c.x + c.w + 0.5 || f.y + f.h > c.y + c.h + 0.5) throw new Error(`${f.key} outside cluster ${c.area}`);
+    same(wg.clusters.map((c) => c.area).join(","), "perception,targeting,aim,weapons,fight-movement,roam,mode");
+});
+t("shared inputs: one node per param / curve / list / table read, sensors read by 2+ slots, every use wired", () => {
+    const ast = plain(parse(DEFAULT));
+    const wg = wholeGraph(ast, { shared: true });
+    const by = new Map(wg.shared.nodes.map((n) => [n.id, n]));
+    for (const id of ["param:reactMs", "curve:reactDist", "list:close", "table:idealRange"]) if (!by.has(id)) throw new Error("missing " + id);
+    for (const n of wg.shared.nodes) {
+        if (n.kind === "sensor" && n.frames.length < 2) throw new Error("sensor " + n.name + " in one slot");
+        for (const u of n.uses) if (!wg.frames[u.f].g.nodes.some((x) => x.gid === u.gid)) throw new Error("dangling use of " + n.id);
+    }
+    const react = wg.frames.findIndex((f) => f.key === "slot:react");
+    if (!by.get("curve:reactDist").uses.some((u) => u.f === react)) throw new Error("reactDist not wired to react");
+});
+t("whole-brain graph: moved nodes are kept and a frame refits without moving them", () => {
+    const ast = plain(parse(DEFAULT));
+    const wg = wholeGraph(ast);
+    const f = wg.frames.find((x) => x.key === "slot:fire");
+    const n = f.g.nodes.find((x) => x.kind === "stmt");
+    const wx = f.x + f.dx + n.x - 300, wy = f.y + f.dy + n.y;
+    n.x -= 300; n.moved = true;
+    refitFrame(f);
+    same(f.x + f.dx + n.x, wx); same(f.y + f.dy + n.y, wy);
+    const again = wholeGraph(ast, { keep: new Map([[f.key, f.g]]) });
+    const n2 = again.frames.find((x) => x.key === "slot:fire").g.nodes.find((x) => x.fields.id === n.fields.id && x.op === n.op && x.moved);
+    if (!n2 || n2.x !== n.x) throw new Error("moved position lost");
+    eq(wholeGraphToBrain(ast, again), ast);
 });
 
 console.log("maps / simulation");

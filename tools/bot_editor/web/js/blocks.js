@@ -3,8 +3,10 @@
 // (drag between stacks), expressions plug into inputs, the palette has a category per kind of block, dropping on
 // the palette deletes, dropping on the workspace leaves a loose block (not in the brain; shown dashed).
 
-import { decompose, compose, CATALOG, WEAPONS, BRAIN_MODES, POINTS, symbols, slotKey, newExpr, newStmt, declKey } from "./ast.js";
-import { exprNumText, printDeclHead, roundTo } from "./dsl.js";
+import { decompose, compose, CATALOG, WEAPONS, BRAIN_MODES, POINTS, symbols, slotKey, newExpr, newStmt, declKey, wholeGroups } from "./ast.js";
+import { exprNumText, printDeclHead, roundTo, canonNum } from "./dsl.js";
+import { CurveWidget, LEVEL_COLORS, LEVEL_NAMES } from "./curves.js";
+import { docOf, unitOf } from "./values.js";
 
 let UID = 1;
 // ---------------------------------------------------------------- model (no DOM: node-testable)
@@ -45,23 +47,52 @@ const BIN_OPS = ["+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!=", "and", "o
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
 // ---------------------------------------------------------------- the view
+// Two modes: "whole" (the default) puts every declaration on one zoomable canvas, grouped by area (params as a table,
+// curves as small plots, lists / tables, every slot's full stack); "focus" shows one declaration. Both edit the same
+// block model, so every edit goes through blocksToBrain -> app.brainEdited (the one AST).
+const ZMIN = 0.25, ZMAX = 1.5;
 export class BlocksView {
     constructor(root, app) {
         this.root = root; this.app = app;
         this.model = null; this.declIx = -1; this.floating = new Map();   // declKey -> [{block, x, y}]
+        this.mode = "whole"; this.zoom = 1; this.collapsed = new Set(); this.curIx = -1;
         root.classList.add("blocks");
         this.paletteEl = el("div", "bk-palette");
         this.catsEl = el("div", "bk-cats");
         this.itemsEl = el("div", "bk-items");
         this.paletteEl.append(this.catsEl, this.itemsEl);
+        this.main = el("div", "bk-main");
+        this.barEl = el("div", "bk-bar");
+        const body = el("div", "bk-body");
         this.ws = el("div", "bk-ws");
         this.canvas = el("div", "bk-canvas");
         this.ws.append(this.canvas);
-        root.append(this.paletteEl, this.ws);
+        this.sideEl = el("div", "bk-side");
+        this.mini = el("canvas", "bk-minimap");
+        this.mini.title = "the whole brain: click or drag to move there";
+        this.outlineEl = el("div", "bk-outline");
+        this.sideEl.append(this.mini, this.outlineEl);
+        body.append(this.ws, this.sideEl);
+        this.main.append(this.barEl, body);
+        root.append(this.paletteEl, this.main);
         this.cat = "logic";
         this._drag = null;
         document.addEventListener("pointermove", (e) => this._dragMove(e));
         document.addEventListener("pointerup", (e) => this._dragEnd(e));
+        this._wsInput();
+    }
+
+    // the saved mode / zoom / collapsed groups (server-side state through the brain page)
+    restoreState(st) {
+        if (!st) return;
+        if (st.mode === "whole" || st.mode === "focus") this.mode = st.mode;
+        if (Number.isFinite(st.zoom)) this.zoom = Math.max(ZMIN, Math.min(ZMAX, st.zoom));
+        if (Array.isArray(st.collapsed)) this.collapsed = new Set(st.collapsed);
+        if (typeof st.focus === "string") this._focusKey = st.focus;
+    }
+    _save() {
+        const d = this.brain && this.brain.decls[this.declIx];
+        if (this.app.saveViewState) this.app.saveViewState("blocks", { mode: this.mode, zoom: this.zoom, collapsed: [...this.collapsed], focus: d ? declKey(d) : this._focusKey || null });
     }
 
     // the brain changed elsewhere (or first show): rebuild the model from the AST
@@ -69,21 +100,130 @@ export class BlocksView {
         this.brain = brain;
         this.S = symbols(brain);
         this.model = brainToBlocks(brain);
+        this._top = new WeakSet(this.model.decls.map((b) => b.stacks.body).filter(Boolean));
+        this.declJson = this.model.decls.map((b) => JSON.stringify(fromBlocks(b)));
+        if (this._focusKey && declKeySel === undefined) { declKeySel = this._focusKey; this._focusKey = null; }
         if (declKeySel !== undefined) this.declIx = brain.decls.findIndex((d) => declKey(d) === declKeySel);
         if (this.declIx < 0 || this.declIx >= brain.decls.length) this.declIx = brain.decls.findIndex((d) => d.kind === "slot");
+        if (this.curIx < 0 || this.curIx >= brain.decls.length || brain.decls[this.curIx].kind !== "slot") this.curIx = this.declIx;
         this.render();
     }
-    select(key) { const i = this.brain.decls.findIndex((d) => declKey(d) === key); if (i >= 0) { this.declIx = i; this.render(); } }
+    // open a declaration: in whole mode scroll to it (opening its group), else show it alone
+    select(key) {
+        const i = this.brain.decls.findIndex((d) => declKey(d) === key);
+        if (i < 0) return;
+        this.declIx = i;
+        if (this.brain.decls[i].kind === "slot") this.curIx = i;
+        if (this.mode === "whole") this.reveal(i); else this.render();
+        this._save();
+    }
+    setMode(m, ix) {
+        if (ix !== undefined && ix >= 0) { this.declIx = ix; if (this.brain.decls[ix].kind === "slot") this.curIx = ix; }
+        const was = this.mode;
+        this.mode = m;
+        this.render();
+        if (m === "whole" && was !== "whole" && this.declIx >= 0) this.reveal(this.declIx);
+        else if (m === "focus") this.ws.scrollTo(0, 0);
+        this._save();
+    }
+    reveal(ix) {
+        const g = this.groups && this.groups.find((x) => x.decls.includes(ix));
+        if (g && this.collapsed.has(g.area)) { this.collapsed.delete(g.area); this.render(); }
+        const card = this.cards && this.cards.get(ix);
+        if (!card) return;
+        const wr = this.ws.getBoundingClientRect(), cr = card.getBoundingClientRect();
+        this.ws.scrollTop += cr.top - wr.top - 24;
+        this.ws.scrollLeft += Math.min(0, cr.left - wr.left - 24);
+        card.classList.remove("bk-flash"); void card.offsetWidth; card.classList.add("bk-flash");
+    }
 
-    _changed() {
+    _changed(touched = []) {
         const brain = blocksToBrain(this.model);
         this.brain = brain;
         this.S = symbols(brain);
         this.app.brainEdited(brain, "blocks");
-        this.render();
+        const json = brain.decls.map((d) => JSON.stringify(d));
+        const dirty = new Set(touched);
+        json.forEach((j, i) => { if (j !== this.declJson[i]) dirty.add(i); });
+        this.declJson = json;
+        if (this.mode !== "whole" || !this.cards) return this.render();
+        // whole brain: redraw only the cards whose declaration changed (and the curve plots, which read params)
+        this._palette();
+        this._datalists();
+        this._refreshCards([...dirty]);
+        if ([...dirty].some((i) => brain.decls[i] && brain.decls[i].kind === "param")) this._drawCurves();
+        this._measure();
+    }
+
+    // ---- toolbar: mode, breadcrumb, zoom
+    _bar() {
+        const b = this.barEl;
+        b.textContent = "";
+        const btn = (t, f, on, title) => { const e = el("button", on ? "on" : "", t); e.onclick = f; if (title) e.title = title; b.append(e); return e; };
+        btn("Whole brain", () => this.setMode("whole"), this.mode === "whole", "every declaration on one canvas, grouped by area");
+        btn("One at a time", () => this.setMode("focus"), this.mode === "focus", "one slot or curve");
+        if (this.mode === "focus") {
+            const d = this.brain && this.brain.decls[this.declIx];
+            const crumb = el("span", "bk-crumb");
+            const a = el("a", null, "Whole brain"); a.href = "#"; a.onclick = (e) => { e.preventDefault(); this.setMode("whole"); };
+            crumb.append(a, el("span", "muted", " › "), el("span", "bk-title", d ? (d.kind === "slot" ? "slot " + slotKey(d) : d.kind + " " + d.name) : "—"));
+            b.append(crumb);
+        } else {
+            b.append(el("span", "muted bk-hint", "click a slot's header to open it alone"));
+        }
+        b.append(el("span", "bk-spacer"));
+        if (this.mode === "whole") {
+            btn("Collapse all", () => { this.collapsed = new Set((this.groups || []).map((g) => g.area)); this.render(); this._save(); });
+            btn("Expand all", () => { this.collapsed.clear(); this.render(); this._save(); });
+        }
+        btn("−", () => this.setZoom(this.zoom / 1.25), false, "zoom out (ctrl+wheel)");
+        this.zoomLabel = el("span", "bk-zoom", Math.round(this.zoom * 100) + "%");
+        this.zoomLabel.title = "click for 100%";
+        this.zoomLabel.onclick = () => this.setZoom(1);
+        b.append(this.zoomLabel);
+        btn("+", () => this.setZoom(this.zoom * 1.25), false, "zoom in (ctrl+wheel)");
+        btn("Fit all", () => this.fitAll(), false, "zoom so everything fits");
+    }
+    setZoom(z, px, py) {
+        z = Math.max(ZMIN, Math.min(ZMAX, Math.round(z * 100) / 100));
+        if (z === this.zoom) return;
+        const ws = this.ws;
+        if (px === undefined) { px = ws.clientWidth / 2; py = ws.clientHeight / 2; }
+        const cx = (ws.scrollLeft + px) / this.zoom, cy = (ws.scrollTop + py) / this.zoom;
+        this.zoom = z;
+        this.canvas.style.zoom = z;
+        this.canvas.style.setProperty("--z", z);
+        ws.scrollLeft = cx * z - px; ws.scrollTop = cy * z - py;
+        if (this.zoomLabel) this.zoomLabel.textContent = Math.round(z * 100) + "%";
+        this._measure();
+        clearTimeout(this._zsave); this._zsave = setTimeout(() => this._save(), 400);
+    }
+    // the largest zoom (25%..150%) at which everything fits the workspace (cards re-flow with the width, so search)
+    fitAll() {
+        const ws = this.ws, H = ws.clientHeight, Wd = ws.clientWidth;
+        if (!H) return;
+        const fits = (z) => { this.canvas.style.zoom = z; const r = this.canvas.getBoundingClientRect(); return r.height <= H + 1 && this.canvas.scrollWidth * z <= Wd + 2; };
+        let lo = ZMIN, hi = ZMAX;
+        if (fits(hi)) lo = hi;
+        else for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+        this.zoom = Math.floor(lo * 100) / 100;
+        this.canvas.style.zoom = this.zoom;
+        this.canvas.style.setProperty("--z", this.zoom);
+        if (this.zoomLabel) this.zoomLabel.textContent = Math.round(this.zoom * 100) + "%";
+        ws.scrollTo(0, 0);
+        this._measure();
+        this._save();
     }
 
     render() {
+        this.root.classList.toggle("bk-whole", this.mode === "whole");
+        this._bar();
+        this.canvas.style.zoom = this.zoom;
+        this.canvas.style.setProperty("--z", this.zoom);
+        if (this.mode === "whole") return this._renderWhole();
+        this.cards = null;
+        this._curves = [];
+        this.outlineEl.textContent = "";
         const dsel = this.brain && this.declIx >= 0 ? this.brain.decls[this.declIx] : null;
         this.slotCat = dsel && dsel.kind === "slot" ? CATALOG.slots[dsel.name] : null;
         this._palette();
@@ -94,18 +234,260 @@ export class BlocksView {
         const decl = this.brain.decls[this.declIx];
         this._datalists();
         const top = el("div", "bk-root");
-        top.append(this._renderDecl(b, decl));
+        top.append(decl.kind === "slot" || (decl.kind === "curve" && decl.form === "expr") ? this._renderDecl(b, decl) : this._card(this.declIx, true));
         c.append(top);
         const fl = this.floating.get(declKey(decl)) || [];
-        for (const f of fl) {
-            const w = el("div", "bk-float");
-            w.style.left = f.x + "px"; w.style.top = f.y + "px";
-            const be = f.block.cat === "stmt" ? this._renderStmt(f.block) : this._renderExpr(f.block);
-            be._src = { kind: "float", list: fl, item: f };
-            w.append(be);
-            c.append(w);
-        }
+        for (const f of fl) c.append(this._float(f, fl));
         if (fl.length) c.append(el("div", "bk-note", `${fl.length} loose block${fl.length > 1 ? "s" : ""} (not in the brain until plugged in)`));
+        if (this._curves) requestAnimationFrame(() => this._drawCurves());
+    }
+    _float(f, fl) {
+        const w = el("div", "bk-float");
+        w.style.left = f.x + "px"; w.style.top = f.y + "px";
+        const be = f.block.cat === "stmt" ? this._renderStmt(f.block) : this._renderExpr(f.block);
+        be._src = { kind: "float", list: fl, item: f };
+        w.append(be);
+        return w;
+    }
+
+    // ---- whole brain
+    _renderWhole() {
+        const c = this.canvas;
+        c.textContent = "";
+        this._curves = [];
+        this.cards = new Map();
+        if (!this.model) return;
+        const dcur = this.brain.decls[this.curIx];
+        this.slotCat = dcur && dcur.kind === "slot" ? CATALOG.slots[dcur.name] : null;
+        this._palette();
+        this._datalists();
+        this.groups = wholeGroups(this.brain);
+        for (const g of this.groups) c.append(this._group(g));
+        this._outline();
+        requestAnimationFrame(() => { this._drawCurves(); this._measure(); });
+    }
+    _group(g) {
+        const sec = el("section", "bk-group");
+        sec.dataset.area = g.area;
+        const coll = this.collapsed.has(g.area);
+        const head = el("button", "bk-ghead");
+        const count = {};
+        for (const i of g.decls) { const k = this.brain.decls[i].kind; count[k] = (count[k] || 0) + 1; }
+        const summary = Object.entries(count).map(([k, n]) => `${n} ${k}${n > 1 ? "s" : ""}`).join(" · ");
+        head.append(el("span", "bk-caret", coll ? "▸" : "▾"), el("span", "bk-glabel", g.label), el("span", "muted", summary));
+        head.onclick = () => { if (this.collapsed.has(g.area)) this.collapsed.delete(g.area); else this.collapsed.add(g.area); sec.replaceWith(this._group(g)); this._outline(); requestAnimationFrame(() => { this._drawCurves(); this._measure(); }); this._save(); };
+        sec.append(head);
+        if (coll) return sec;
+        const body = el("div", "bk-gbody");
+        const params = g.decls.filter((i) => this.brain.decls[i].kind === "param");
+        if (params.length) body.append(this._paramsCard(params));
+        const order = { curve: 0, list: 1, table: 2, slot: 3 };
+        const rest = g.decls.filter((i) => this.brain.decls[i].kind !== "param").sort((a, b) => order[this.brain.decls[a].kind] - order[this.brain.decls[b].kind] || a - b);
+        for (const i of rest) body.append(this._card(i));
+        sec.append(body);
+        return sec;
+    }
+    _refreshCards(ixs) {
+        const done = new Set();
+        for (const i of ixs) {
+            const old = this.cards.get(i);
+            if (!old || done.has(old)) continue;
+            done.add(old);
+            const nu = old._ixs.length > 1 || this.brain.decls[i].kind === "param" ? this._paramsCard(old._ixs) : this._card(i);
+            old.replaceWith(nu);
+        }
+        if (done.size) requestAnimationFrame(() => this._drawCurves());
+    }
+    _card(ix, alone = false) {
+        const b = this.model.decls[ix], d = this.brain.decls[ix];
+        const card = el("div", "bk-card bk-k-" + d.kind + (ix === this.curIx && d.kind === "slot" ? " cur" : ""));
+        card._ixs = [ix];
+        card.dataset.key = declKey(d);
+        if (!alone) this.cards.set(ix, card);
+        if (d.kind === "slot") card.append(this._renderDecl(b, d, ix));
+        else if (d.kind === "curve") {
+            const w = el("div", "bk-hat");
+            const head = el("div", "bk-hathead");
+            head.append(el("span", "bk-kw", "curve"), el("span", "bk-title", `${d.name}(${d.arg} ${d.argType})` + (d.form === "expr" ? " =" : " = " + d.form)));
+            w.append(this._comments(b.fields), head);
+            if (d.form === "expr") w.append(this._slot(b, "body"));
+            const plot = el("div", "bk-plot");
+            const curve = d.form === "expr" ? fromBlocks(b) : Object.assign({ kind: "curve" }, b.fields);
+            const cw = new CurveWidget(plot, curve, () => this.brain, () => { b.fields.points = curve.points; if (curve.form === "steps") b.fields.base = curve.base; this._changed(); }, { sliders: false });
+            this._curves.push(cw);
+            w.append(plot);
+            if (d.form !== "expr") w.append(el("div", "muted bk-small", "drag a point · double-click adds · right-click removes"));
+            if (b.fields.trail) w.append(el("div", "bk-trail", b.fields.trail));
+            card.append(w);
+        } else if (d.kind === "list") {
+            const w = el("div", "bk-hat");
+            const head = el("div", "bk-hathead");
+            head.append(el("span", "bk-kw", "list"), el("span", "bk-title", d.name));
+            const chips = el("div", "bk-chips");
+            b.fields.items.forEach((it, k) => chips.append(el("span", "chip c-data", (k + 1) + ". " + it)));
+            const inp = el("input", "bk-listin");
+            inp.value = b.fields.items.join(" ");
+            inp.title = "the weapons in order, separated by spaces";
+            inp.onchange = () => {
+                const ws = inp.value.trim().split(/[\s,]+/).filter(Boolean);
+                if (ws.length && ws.every((x) => WEAPONS.includes(x) || x === "none")) { b.fields.items = ws; this._changed(); }
+                else { inp.value = b.fields.items.join(" "); this.app.app && this.app.app.toast && this.app.app.toast("a list holds weapon names: " + WEAPONS.join(" "), 4000); }
+            };
+            w.append(this._comments(b.fields), head, chips, inp);
+            if (b.fields.trail) w.append(el("div", "bk-trail", b.fields.trail));
+            card.append(w);
+        } else if (d.kind === "table") {
+            const w = el("div", "bk-hat");
+            const head = el("div", "bk-hathead");
+            head.append(el("span", "bk-kw", "table"), el("span", "bk-title", d.name));
+            const t = el("table", "bk-ptable");
+            const row = (label, get, set) => {
+                const tr = el("tr");
+                const inp = this._numIn(get(), "f32", (v) => { set(v); this._changed(); });
+                const td = el("td"); td.append(inp);
+                tr.append(el("td", "n", label), td);
+                t.append(tr);
+            };
+            b.fields.entries.forEach((e) => row(e[0], () => e[1], (v) => (e[1] = v)));
+            if (b.fields.else !== undefined && b.fields.else !== null) row("else", () => b.fields.else, (v) => (b.fields.else = v));
+            w.append(this._comments(b.fields), head, t);
+            if (b.fields.trail) w.append(el("div", "bk-trail", b.fields.trail));
+            card.append(w);
+        } else if (d.kind === "param") return this._paramsCard([ix], alone);
+        const fl = this.floating.get(declKey(d)) || [];
+        if (!alone) for (const f of fl) card.append(this._float(f, fl));
+        return card;
+    }
+    _numIn(v, type, on) {
+        const inp = el("input", "bk-num");
+        inp.value = canonNum(v, type === "int" ? "int" : type);
+        inp.style.width = `calc(${Math.max(3, inp.value.length) + 1}ch + 12px)`;
+        inp.onchange = () => { const x = Number(inp.value); if (Number.isFinite(x)) on(roundTo(type === "int" ? Math.trunc(x) : x, type)); else inp.value = canonNum(v, type); };
+        return inp;
+    }
+    // the params of one area as a table: name, value (or one per level), what it does
+    _paramsCard(ixs, alone = false) {
+        const card = el("div", "bk-card bk-k-param");
+        card._ixs = ixs;
+        const w = el("div", "bk-hat");
+        const head = el("div", "bk-hathead");
+        head.append(el("span", "bk-kw", "params"), el("span", "muted", ixs.length + ""));
+        const t = el("table", "bk-ptable");
+        for (const i of ixs) {
+            if (!alone) this.cards.set(i, card);
+            const b = this.model.decls[i], f = b.fields;
+            const tr = el("tr");
+            tr.dataset.key = "param:" + f.name;
+            const nm = el("td", "n", f.name);
+            const doc = [docOf({ kind: "param", ...f }), unitOf({ kind: "param", ...f })].filter(Boolean).join(" · ");
+            nm.title = `${f.name} ${f.type}${doc ? "\n" + doc : ""}`;
+            const vals = el("td", "v");
+            f.values.forEach((v, k) => {
+                if (f.type === "bool") { const bt = el("button", "bk-toggle", v ? "yes" : "no"); bt.onclick = () => { f.values[k] = !v; this._changed(); }; vals.append(bt); }
+                else { const inp = this._numIn(v, f.type, (x) => { f.values[k] = x; this._changed(); }); if (f.values.length === 4) { inp.title = LEVEL_NAMES[k]; inp.style.borderBottomColor = LEVEL_COLORS[k]; } vals.append(inp); }
+            });
+            tr.append(nm, vals, el("td", "u muted", unitOf({ kind: "param", ...f })));
+            t.append(tr);
+        }
+        w.append(head, t);
+        card.append(w);
+        return card;
+    }
+    _drawCurves() {
+        if (!this._curves) return;
+        this._curves = this._curves.filter((w) => w.cv.isConnected);
+        for (const w of this._curves) w.draw();
+    }
+    _outline() {
+        const o = this.outlineEl;
+        o.textContent = "";
+        if (this.mode !== "whole" || !this.groups) return;
+        for (const g of this.groups) {
+            const h = el("div", "bk-ol-g" + (this.collapsed.has(g.area) ? " coll" : ""), g.label);
+            h.onclick = () => { if (this.collapsed.has(g.area)) { this.collapsed.delete(g.area); this.render(); this._save(); } const sec = this.canvas.querySelector(`section[data-area="${g.area}"]`); if (sec) this.ws.scrollTop += sec.getBoundingClientRect().top - this.ws.getBoundingClientRect().top - 4; };
+            o.append(h);
+            const np = g.decls.filter((i) => this.brain.decls[i].kind === "param").length;
+            if (np) { const it = el("div", "bk-ol-i muted", `params (${np})`); it.onclick = () => this.reveal(g.decls.find((i) => this.brain.decls[i].kind === "param")); o.append(it); }
+            for (const i of g.decls) {
+                const d = this.brain.decls[i];
+                if (d.kind === "param") continue;
+                const it = el("div", "bk-ol-i k-" + d.kind, d.kind === "slot" ? slotKey(d) : d.name);
+                it.title = d.kind;
+                it.onclick = () => this.reveal(i);
+                o.append(it);
+            }
+        }
+    }
+    // the mini-map: every card as a box (from one layout read), the visible part as a frame
+    _measure() {
+        if (this.mode !== "whole" || !this.cards) { this.miniRects = null; this._miniDraw(); return; }
+        const cr = this.canvas.getBoundingClientRect(), z = this.zoom;
+        const rects = [];
+        const seen = new Set();
+        for (const card of this.cards.values()) {
+            if (seen.has(card) || !card.isConnected) continue;
+            seen.add(card);
+            const r = card.getBoundingClientRect();
+            const d = this.brain.decls[card._ixs[0]];
+            rects.push({ x: (r.left - cr.left) / z, y: (r.top - cr.top) / z, w: r.width / z, h: r.height / z, kind: d ? d.kind : "slot" });
+        }
+        for (const sec of this.canvas.querySelectorAll(".bk-ghead")) { const r = sec.getBoundingClientRect(); rects.push({ x: (r.left - cr.left) / z, y: (r.top - cr.top) / z, w: r.width / z, h: r.height / z, kind: "group" }); }
+        this.miniRects = rects;
+        this.contentW = cr.width / z; this.contentH = cr.height / z;
+        this._miniDraw();
+    }
+    _miniDraw() {
+        const cv = this.mini;
+        const W = cv.clientWidth || 160, H = cv.clientHeight || 220;
+        const dpr = window.devicePixelRatio || 1;
+        if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+        const ctx = cv.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        if (!this.miniRects || !this.contentH) return;
+        const s = Math.min(W / this.contentW, H / this.contentH);
+        this._miniS = s;
+        const col = { slot: "#34506e", param: "#3b6fd1", curve: "#c2417c", list: "#6b7b8f", table: "#6b7b8f", group: "#9fb0c4" };
+        for (const r of this.miniRects) { ctx.fillStyle = col[r.kind] || "#555"; ctx.globalAlpha = r.kind === "group" ? 0.5 : 0.85; ctx.fillRect(r.x * s, r.y * s, Math.max(1, r.w * s), Math.max(1, r.kind === "group" ? 1.5 : r.h * s)); }
+        ctx.globalAlpha = 1;
+        const z = this.zoom, ws = this.ws;
+        ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 1.5;
+        ctx.strokeRect(ws.scrollLeft / z * s + 0.5, ws.scrollTop / z * s + 0.5, Math.min(W, ws.clientWidth / z * s) - 1, ws.clientHeight / z * s - 1);
+    }
+    _wsInput() {
+        const ws = this.ws;
+        ws.addEventListener("wheel", (e) => {
+            if (!e.ctrlKey && !e.metaKey) return;
+            e.preventDefault();
+            const r = ws.getBoundingClientRect();
+            this.setZoom(this.zoom * Math.exp(-e.deltaY * 0.002), e.clientX - r.left, e.clientY - r.top);
+        }, { passive: false });
+        ws.addEventListener("scroll", () => { if (this._miniQ) return; this._miniQ = requestAnimationFrame(() => { this._miniQ = 0; this._miniDraw(); }); }, { passive: true });
+        // the slot under the last click gives the palette its sensors
+        ws.addEventListener("pointerdown", (e) => {
+            if (this.mode !== "whole") return;
+            const card = e.target.closest && e.target.closest(".bk-card");
+            if (!card) return;
+            const i = card._ixs[0], d = this.brain.decls[i];
+            if (!d || d.kind !== "slot" || i === this.curIx) return;
+            const prev = this.cards.get(this.curIx);
+            if (prev) prev.classList.remove("cur");
+            card.classList.add("cur");
+            this.curIx = i;
+            this.slotCat = CATALOG.slots[d.name] || null;
+            this._palette();
+            this._datalists();
+        }, true);
+        const go = (e) => {
+            if (!this._miniS) return;
+            const r = this.mini.getBoundingClientRect();
+            const x = (e.clientX - r.left) / this._miniS, y = (e.clientY - r.top) / this._miniS;
+            ws.scrollLeft = x * this.zoom - ws.clientWidth / 2; ws.scrollTop = y * this.zoom - ws.clientHeight / 2;
+        };
+        this.mini.addEventListener("pointerdown", (e) => { this.mini.setPointerCapture(e.pointerId); this._miniDrag = true; go(e); });
+        this.mini.addEventListener("pointermove", (e) => { if (this._miniDrag) go(e); });
+        this.mini.addEventListener("pointerup", () => { this._miniDrag = false; });
+        new ResizeObserver(() => this._miniDraw()).observe(this.mini);
     }
 
     // ---- palette
@@ -123,6 +505,7 @@ export class BlocksView {
             const blk = toBlocks(node);
             const e = blk.cat === "stmt" ? this._renderStmt(blk, true) : this._renderExpr(blk, true);
             e._src = { kind: "palette", node };
+            this._draggable(e);
             const w = el("div", "bk-pitem");
             if (label) w.title = label;
             w.append(e);
@@ -151,7 +534,8 @@ export class BlocksView {
             for (const [n] of S.curves) add({ op: "call", fn: n, args: [{ op: "hole" }] });
         } else if (this.cat === "sensor") {
             const sc = this.slotCat;
-            if (sc) { H("this slot's sensors"); for (const k in sc.sensors) add({ op: "name", name: k }, sc.sensors[k]); H("outputs (set them)"); for (const k in sc.outputs) add({ op: "set", name: k, value: { op: "hole" } }, sc.outputs[k]); }
+            const scd = this.brain && this.brain.decls[this.mode === "whole" ? this.curIx : this.declIx];
+            if (sc) { H(`sensors of slot ${scd ? slotKey(scd) : ""}` + (this.mode === "whole" ? " (click a slot to switch)" : "")); for (const k in sc.sensors) add({ op: "name", name: k }, sc.sensors[k]); H("outputs (set them)"); for (const k in sc.outputs) add({ op: "set", name: k, value: { op: "hole" } }, sc.outputs[k]); }
             H("every slot"); for (const k in CATALOG.common) add({ op: "name", name: k }, CATALOG.common[k]);
         } else if (this.cat === "action") {
             add(newStmt("set", { name: "x" })); add(newStmt("return")); add(newStmt("return", { n: 0 }));
@@ -167,9 +551,14 @@ export class BlocksView {
     }
 
     // ---- rendering
-    _renderDecl(b, decl) {
+    _renderDecl(b, decl, ix) {
         const w = el("div", "bk-hat");
         const head = el("div", "bk-hathead");
+        if (this.mode === "whole" && ix !== undefined) {
+            head.classList.add("bk-focusable");
+            head.title = "click to work on this one alone";
+            head.onclick = (e) => { if (!e.target.closest("button,input,select")) this.setMode("focus", ix); };
+        }
         if (decl.kind === "slot") {
             head.append(el("span", "bk-kw", "slot"), el("span", "bk-title", decl.name === "objective" ? `objective ${decl.mode}` : decl.name));
             const cat = CATALOG.slots[decl.name];
@@ -373,7 +762,7 @@ export class BlocksView {
     }
     _settable() {
         const out = this.slotCat ? Object.keys(this.slotCat.outputs) : [];
-        const d = this.brain && this.brain.decls[this.declIx];
+        const d = this.brain && this.brain.decls[this.mode === "whole" ? this.curIx : this.declIx];
         if (d && d.kind === "slot") { const walk = (body) => body.forEach((s) => { if (s.op === "set") out.push(s.name); if (s.op === "if") { s.arms.forEach((a) => walk(a.body)); if (s.else) walk(s.else.body); } }); walk(d.body); }
         return out;
     }
@@ -434,13 +823,14 @@ export class BlocksView {
             d.dx = e.clientX - r.left; d.dy = e.clientY - r.top;
             d.ghost = d.el.cloneNode(true);
             d.ghost.classList.add("bk-ghost");
-            d.ghost.style.width = r.width + "px";
+            d.ghost.style.width = r.width / this.zoom + "px";
+            d.ghost.style.zoom = this.zoom;
             document.body.append(d.ghost);
             if (src.kind !== "palette") d.el.classList.add("bk-dragging");
             this.root.classList.add("dragging");
         }
-        d.ghost.style.left = e.clientX - d.dx + "px";
-        d.ghost.style.top = e.clientY - d.dy + "px";
+        d.ghost.style.left = (e.clientX - d.dx) / this.zoom + "px";
+        d.ghost.style.top = (e.clientY - d.dy) / this.zoom + "px";
         this._clearHints();
         const t = this._target(e, d);
         d.target = t;
@@ -477,8 +867,23 @@ export class BlocksView {
             }
             n = n.parentElement;
         }
+        // a loose block: on the canvas (one declaration) or on the card it was dropped on (whole brain)
+        const z = this.zoom;
+        if (this.mode === "whole") {
+            const card = under.closest(".bk-card");
+            const ix = card && card._ixs[0], dd = ix !== undefined && this.brain.decls[ix];
+            if (!dd || !(dd.kind === "slot" || (dd.kind === "curve" && dd.form === "expr"))) return null;
+            const r = card.getBoundingClientRect();
+            return { kind: "float", ix, x: (e.clientX - r.left - d.dx) / z, y: (e.clientY - r.top - d.dy) / z };
+        }
         const r = this.canvas.getBoundingClientRect();
-        return { kind: "float", x: e.clientX - r.left - d.dx, y: e.clientY - r.top - d.dy };
+        return { kind: "float", ix: this.declIx, x: (e.clientX - r.left - d.dx) / z, y: (e.clientY - r.top - d.dy) / z };
+    }
+    // the declaration a block element sits in
+    _ownerIx(elm) {
+        if (this.mode !== "whole") return this.declIx;
+        const card = elm && elm.closest && elm.closest(".bk-card");
+        return card ? card._ixs[0] : this.declIx;
     }
     _dragEnd(e) {
         const d = this._drag;
@@ -489,19 +894,21 @@ export class BlocksView {
         this.root.classList.remove("dragging");
         this._clearHints();
         const t = d.target;
-        if (!t) { this.render(); return; }
-        const key = declKey(this.brain.decls[this.declIx]);
-        if (!this.floating.has(key)) this.floating.set(key, []);
-        const fl = this.floating.get(key);
+        if (!t) { this._redrawAfterDrag(d); return; }
+        const tix = t.kind === "float" ? t.ix : t.kind === "trash" ? this._ownerIx(d.el) : this._ownerIx(t.el);
+        const flOf = (ix) => { const key = declKey(this.brain.decls[ix]); if (!this.floating.has(key)) this.floating.set(key, []); return this.floating.get(key); };
+        const fl = flOf(tix);
+        const touched = [tix];
+        if (d.from.kind !== "palette") touched.push(this._ownerIx(d.el));
         // take it out of where it was
         const src = d.from;
         let fixIndex = (list, i) => i;
         if (src.kind === "stack") {
             src.list.splice(src.index, 1);
-            if (src.list.length === 0 && src.list !== this.model.decls[this.declIx].stacks.body) src.list.push(toBlocks({ op: "pass" }));
+            if (src.list.length === 0 && !this._top.has(src.list)) src.list.push(toBlocks({ op: "pass" }));
             fixIndex = (list, i) => (list === src.list && src.index < i ? i - 1 : i);
         } else if (src.kind === "input") src.owner.inputs[src.key] = toBlocks({ op: "hole" });
-        else if (src.kind === "float") fl.splice(fl.indexOf(src.item), 1);
+        else if (src.kind === "float") src.list.splice(src.list.indexOf(src.item), 1);
         // and put it where it goes
         if (t.kind === "stack") {
             let i = fixIndex(t.list, t.index);
@@ -513,6 +920,10 @@ export class BlocksView {
             t.owner.inputs[t.key] = d.block;
         } else if (t.kind === "float") fl.push({ block: d.block, x: Math.max(0, t.x), y: Math.max(0, t.y) });
         // (trash: dropped)
-        this._changed();
+        this._changed(touched);
+    }
+    _redrawAfterDrag(d) {
+        if (this.mode === "whole" && this.cards && d.from.kind !== "palette") this._refreshCards([this._ownerIx(d.el)]);
+        else if (this.mode !== "whole") this.render();
     }
 }

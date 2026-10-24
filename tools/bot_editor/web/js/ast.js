@@ -513,6 +513,22 @@ export function declAreas(brain) {
 }
 export const declKey = (d) => d.kind + ":" + (d.kind === "slot" ? slotKey(d) : d.name);
 
+// the whole-brain views (blocks and graph) group declarations by area, in this order; objective slots (and urgent,
+// which is bomb's) go under one "objectives" group. Every declaration lands in exactly one group, file order inside.
+export const AREA_GROUPS = [["perception", "Perception"], ["targeting", "Targeting"], ["aim", "Aim"], ["weapons", "Weapons"],
+    ["fight-movement", "Fight movement"], ["roam", "Roam"], ["mode", "Objectives (per mode)"]];
+export const areaGroup = (a) => (a && a.startsWith("mode") ? "mode" : a || "other");
+export function wholeGroups(brain) {
+    const areas = declAreas(brain);
+    const by = new Map(AREA_GROUPS.map(([a, label]) => [a, { area: a, label, decls: [] }]));
+    brain.decls.forEach((d, i) => {
+        const a = areaGroup(areas.get(declKey(d)));
+        if (!by.has(a)) by.set(a, { area: a, label: a, decls: [] });
+        by.get(a).decls.push(i);
+    });
+    return [...by.values()].filter((g) => g.decls.length);
+}
+
 // what differs from the default brain, per declaration: [{key, kind, name, change: "changed"|"added"|"removed"|"default", area}]
 // A user brain only overrides what it writes, so a declaration it leaves out is the default one ("default").
 export function diffBrains(brain, def) {

@@ -73,6 +73,7 @@ constexpr double kVisInterval = 0.05;
 constexpr double kVisGrace = 0.6;          // a player stays sent this long after the line of sight breaks
 constexpr double kProjVisGrace = 0.3;      // a projectile, this long
 constexpr float kVisNear = 20.0f;          // within earshot: always sent, no rays
+constexpr float kVisNearHide = 24.0f;      // hide and seek: always sent this close (owner's call, NET-10)
 constexpr double kProjRevealTime = 0.05;   // a projectile that died out of sight is shown at the spot this long (its explosion)
 static inline int lowestBit(uint32_t m) {   // (m != 0)
 #if defined(__GNUC__) || defined(__clang__)
@@ -257,7 +258,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     resetRateWindow();
     windowBad_ = windowSevere_ = false; windowCheckedAt_ = -1e9;
     if (cfg_.channel != GOV_PROD && cfg_.channel != GOV_TESTING) cfg_.channel = testingBuild() ? GOV_TESTING : GOV_PROD;
-    closed_ = false; govPendingLogged_ = false; govReportAt_ = 0;
+    closed_ = paused_ = false; govPendingLogged_ = false; govReportAt_ = 0;
     gov_.reset();
     if (!cfg_.governorDir.empty()) {   // a production + testing pair on one machine (tools/server/install.sh)
         std::error_code ec;
@@ -374,6 +375,7 @@ void Server::run(std::atomic<bool>& quit) {
 
 void Server::idle(double wait) {
     if (closed_) { sock_.waitUs(100000); return; }   // closed by the governor: wake for packets (refused) and its decision
+    if (paused_) { if (wait > 0) sock_.waitUs((int)(std::min(wait, 0.05) * 1e6)); return; }   // (a connect wakes it: frame() resumes at once)
     bool anyHuman = false;
     for (auto& p : players_) anyHuman |= p.connected && !p.isBot;
     if (!anyHuman) { if (wait > 0) sock_.waitUs((int)std::min(wait * 1e6, 5000.0)); return; } // nobody to be on time for: no spinning
@@ -476,7 +478,7 @@ void Server::checkTickRate() {
     else if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown(("fell behind during the round: " + rateDownWhy_).c_str()); resetRateWindow(); return; }
     if (now - rateWindowStart_ < rateWindow_) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
-    if (editing_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) { resetRateWindow(); return; }
+    if (editing_ || paused_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
     double busy = windowBusy_ / std::max(1e-6, now - rateWindowStart_); // share of the time spent simulating + sending
@@ -631,6 +633,22 @@ void Server::setGovernorClosed(bool on) {
     glog(LOG_SIMPLE, "reopened by the load governor");
 }
 
+// Dedicated servers (cfg_.pauseWithoutHumans): bots alone don't play to nobody. No ticks, no snapshots, the game clock
+// (and every game timer on it) stopped; the network, the governor, timeouts and the restart check go on. Not while a
+// ranked match is live (its ticket deadline is game time) or an edit waits for its autosave (on the tick). The bots'
+// match and any vote are dropped: the first human back starts at warmup. Away players count as humans (their grace).
+void Server::updatePause(double now) {
+    const bool want = humanCount() == 0 && !rankedLive() && !(editing_ && ((editDirty_ && !tempEdit_) || autosaveRunning()));
+    if (want == paused_) return;
+    paused_ = want;
+    nextTick_ = now;   // (resuming: no catch-up burst)
+    resetRateWindow(); // (no rate verdict on a window across the pause)
+    if (!want) { log("resumed"); return; }
+    if (vote_.kind != VOTE_NONE) { vote_ = Vote(); ms_.voteActive = 0; }
+    if (!editing_ && ms_.phase != PHASE_WARMUP) rulesReset(*this);
+    log("paused: no humans (bots wait)");
+}
+
 bool Server::rated() const { return cfg_.channel != GOV_TESTING && !testingBuild(); }
 
 double Server::frame() {
@@ -649,6 +667,8 @@ double Server::frame() {
     if (probeSock_.isOpen() && now >= reachTickAt_) { reachTickAt_ = now + 0.01; tickReachability(); }
     if (gov_) governorFrame(now);
     if (closed_) { nextTick_ = now; checkRestartFlag(); return 0.1; }   // closed by the governor: no ticks
+    if (cfg_.pauseWithoutHumans) updatePause(now);
+    if (paused_) nextTick_ = now;   // no ticks: the clock stays where it is (the rest of the frame runs)
     double period = 1.0 / tickRate();
     if (now - nextTick_ > period * 20) { // fell far behind (debugger, hitch): skip ahead instead of spiralling
         windowLate_ += 20;
@@ -657,7 +677,7 @@ double Server::frame() {
         nextTick_ = now;
     }
     int caught = 0;
-    while (now >= nextTick_) {
+    while (!paused_ && now >= nextTick_) {
         if (++caught > 20) break; // 20 ticks per frame at most, then back to the network; the rest of the backlog
                                   // next frame (time stays continuous; a backlog past 20 periods is skipped above).
                                   // Catching up without a limit let a slow machine spin here forever.
@@ -697,7 +717,7 @@ double Server::frame() {
     }
     checkTickRate();
     checkRestartFlag();
-    return nextTick_ - timeNow();
+    return paused_ ? 0.05 : nextTick_ - timeNow();
 }
 
 int Server::findPlayer(const NetAddr& a) const {
@@ -2908,6 +2928,7 @@ uint32_t Server::perspectives(int id) const {
 // tick, inside the same ray budget): a client is sent a projectile it can see, or one near it, or its own.
 void Server::updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH) {
     const double now = time();
+    const float nearR = ms_.mode == MODE_HIDE ? kVisNearHide : kVisNear;   // (once a pass, not per pair)
     int slots[kMaxProjectiles], n = 0;
     for (int k = 0; k < kMaxProjectiles; k++) {
         const Projectile& pr = projectiles_[k];
@@ -2931,7 +2952,7 @@ void Server::updateProjectileVisibility(uint32_t need, int viewers, int& budget,
         const Projectile& pr = projectiles_[k];
         pv.projDue[k] = now + kVisInterval;
         quota--;
-        if (pr.owner == v || length(pr.pos - pv.move.pos) < kVisNear) { pv.projSeen[k] = now; continue; }
+        if (pr.owner == v || length(pr.pos - pv.move.pos) < nearR) { pv.projSeen[k] = now; continue; }
         // from your eye to the projectile, and to where it will be in 0.1 s (a rocket about to come round the corner
         // is there in time)
         const Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
@@ -2992,6 +3013,7 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
     // spreads out over the next interval instead of recurring), and never past the ray budget
     int quota = (int)std::ceil(active / (kVisInterval * tickRate())) + 1;
     const bool teams = modeIsTeamBased(ms_.mode);
+    const float nearR = ms_.mode == MODE_HIDE ? kVisNearHide : kVisNear;   // (once a pass, not per pair)
     uint32_t live = 0;   // (the targets: nothing below changes who is connected and alive)
     for (int i = 0; i < kMaxPlayers; i++) live |= players_[i].connected && players_[i].alive ? 1u << i : 0;
     for (int n = 0; n < pairs && budget > 0 && quota > 0; n++) {
@@ -3011,7 +3033,7 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         quota--;
         bool mate = teams && pt.team == pv.team;
         Vec3 d = pt.move.pos - pv.move.pos;
-        if (mate || length(d) < kVisNear) { pv.lastSeen[t] = now; continue; }
+        if (mate || length(d) < nearR) { pv.lastSeen[t] = now; continue; }
         // Generous on purpose (a player popping out of view while their shoulder shows is worse than a
         // wallhack seeing a little): rays from both sides of your head to the target's head, chest, knees
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
@@ -3556,7 +3578,8 @@ bool Server::switchMapKeepRules(const std::string& name) {
     return true;
 }
 
-// The tagger / seeker's locator fired: one random hider / runner's position, to them only (EV_LOCATE).
+// The tagger / seeker's locator fired: one random hider / runner's position, to them only (EV_LOCATE); everyone
+// else hears it (EV_SOUND).
 void Server::useLocator(int id) {
     ServerPlayer& p = players_[id];
     if (!isItMode(ms_.mode) || ms_.phase != PHASE_LIVE || !p.it || !p.alive || time() < p.locateAt) return;
@@ -3574,6 +3597,12 @@ void Server::useLocator(int id) {
     snprintf(pos, sizeof pos, "%.2f %.2f %.2f", p.locatedPos.x, p.locatedPos.y, p.locatedPos.z);
     GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
     sendEvent(id, e);
+    // everyone else hears the ping from where "it" stands (owner, 2026-10-24): the hiders / runners it hunts get a
+    // warning and a rough direction. An event, not PS_FIRING: hide and seek's seeker is usually out of a hider's sight,
+    // and a hidden player's snapshot carries no position or firing flag.
+    snprintf(pos, sizeof pos, "%.2f %.2f %.2f", p.move.pos.x, p.move.pos.y, p.move.pos.z);
+    GameEvent snd; snd.type = EV_SOUND; snd.a = (uint8_t)id; snd.c = WPN_LOCATOR; snd.text = pos;
+    for (int i = 0; i < kMaxPlayers; i++) if (i != id && players_[i].connected) sendEvent(i, snd);
 }
 
 uint16_t Server::weaponMask() const {

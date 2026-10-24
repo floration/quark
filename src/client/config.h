@@ -41,8 +41,15 @@ struct Settings {
     std::string modeHud[MODE_COUNT], modeCtl[MODE_COUNT];     // draw the widgets from hud.cfg
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
+    float volumeEffects = 1.0f;    // x volume: every sound effect (the hitsound too)
+    float volumeAnnouncer = 1.0f;  // x volume: the announcer's lines
     bool hitsounds = true;
     bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
+    // Settings > VIDEO + AUDIO > DEVICES (devices.h): stable ids, "" = the default; one that's gone falls back to it
+    std::string audioOutput;       // the sound output's id (a Windows endpoint id, an ALSA name, a CoreAudio UID)
+    std::string audioInput;        // the microphone's id (nothing records yet: kept for voice chat)
+    std::string monitor;           // fullscreen / borderless on this monitor (its name, "#2" for a second of the same); "" = primary
+    int fullscreenHz = 0;          // EXCLUSIVE FULLSCREEN's refresh rate; 0 = the monitor's desktop rate
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never

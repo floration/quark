@@ -460,7 +460,6 @@ class TestTabs(unittest.TestCase):
             self.assertTrue(t["pmvar"]["installed"])
             self.assertTrue(t["ui"]["installed"])
             self.assertTrue(t["ui"]["url"].startswith("file:///") and t["ui"]["url"].endswith("ui-customizer.html"))
-            self.assertFalse(t["ui-redesign"]["installed"])
             self.assertFalse(t["sound"]["installed"])          # sound-editor.html missing
             self.assertTrue(t["sound2"]["filePath"].endswith("other.html"))  # first *.html
             self.assertTrue(t["model"]["filePath"].endswith("index.html"))
@@ -519,9 +518,11 @@ class TestTabs(unittest.TestCase):
                     "folder": "docs-manager", "start": "my.cmd", "keepAlive": False},
                    {"id": "dashboard", "name": "Editor Manager", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765,
                     "folder": "editor-dashboard", "start": "dashboard.cmd"},
-                   {"id": "bot", "name": "Bots", "url": "http://127.0.0.1:9999/", "folder": "bot-editor"}]
+                   {"id": "bot", "name": "Bots", "url": "http://127.0.0.1:9999/", "folder": "bot-editor"},
+                   {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
+                    "file": "ui-customizer-redesign.html"}]
             write(paths.pm("tabs.json"), json.dumps({"tabs": old}))
-            self.assertEqual(tabs.upgrade(paths), ["project", "github", "dashboard", "tests", "gamemode", "physics"])
+            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "play", "tests", "gamemode", "physics"])
             got = {t["id"]: t for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]}
             d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
             self.assertEqual(got["project"]["name"], "Mine")
@@ -532,6 +533,7 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(got["dashboard"]["start"], d["dashboard"]["start"])
             self.assertEqual(got["bot"], old[4])
             self.assertNotIn("sound", got)  # (a default tab q removed stays removed)
+            self.assertNotIn("ui-redesign", got)  # (retired)
             self.assertEqual(got["tests"], d["tests"])  # (new since: added)
             self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"], old)
             saved = util.read_json_file(paths.pm("tabs.json"))
@@ -1079,8 +1081,8 @@ class TestServer(unittest.TestCase):
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])
         ids = [t["id"] for t in d["tabs"]]
-        self.assertEqual(ids[:5], ["project", "github", "tests", "docs", "dashboard"])
-        self.assertEqual([x["depth"] for x in d["tabs"]][:6], [0, 1, 2, 1, 1, 2])
+        self.assertEqual(ids[:6], ["project", "play", "github", "tests", "docs", "dashboard"])
+        self.assertEqual([x["depth"] for x in d["tabs"]][:7], [0, 1, 1, 2, 1, 1, 2])
         self.assertTrue(all("installed" in t and "up" in t for t in d["tabs"]))
         self.assertEqual(json.loads(self.req("/api/history?limit=5")[2]), {"events": []})
 

@@ -423,7 +423,7 @@ enum EventType : uint8_t {
     EV_PLAYERINFO,   // a = player id, text = name
     EV_SPAWN,        // a = player id, c = yaw in milliradians (sent to the spawned player)
     EV_VOTE,         // text = what's being voted on (vote started)
-    EV_SOUND,        // reserved
+    EV_SOUND,        // a sound someone made, for everyone else: a = who, c = what (a weapon id: WPN_LOCATOR, the locator's ping), text = "x y z" their feet
     EV_BRACKET,      // tourney bracket: text = rounds ("\n"), entries ("|"): player id, -1 bye, -2 not decided; last line "@round,match"
     EV_RANKINFO,     // a = player id, text = their ranked id (32 hex), empty = none
     EV_RANKED,       // ranked match over: text = "<matchId> <mode> slot:team:place,..." (each player reports it)

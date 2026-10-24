@@ -40,6 +40,10 @@ const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'm
 const UPDATES_POLL_MS = 15000;
 const UPDATES_FIRST_MS = 3000;
 const PM_PORT_DEFAULT = 8768;
+// the Play tab (pm/play.py): GET <Supervisor Board>/api/play/pending every PLAY_FAST_MS while a game it started runs or a
+// play note is waiting, else every PLAY_SLOW_MS; a new waiting note brings the window up on the Play tab
+const PLAY_FAST_MS = 2000;
+const PLAY_SLOW_MS = 15000;
 
 // ---------- paths ----------
 function argValue(name, argv = process.argv) {
@@ -356,6 +360,7 @@ function stopStartedServers() {
   stopped = true;
   clearTimeout(watchTimer);
   clearTimeout(updatesTimer);
+  clearTimeout(playTimer);
   for (const s of sup.values()) clearTimeout(s.timer);
   for (const rec of started.values()) {
     if (!rec.exited) killTree(rec.pid);
@@ -386,11 +391,14 @@ function ensureStarted(tab, why) {
   const e0 = views.get(tab.id);
   if (e0 && e0.mode === 'down') showStarting(e0);
   updateTabbar();
+  // another tab on the same port (the Play tab is a page of the Supervisor Board server) whose start is under way
+  const twin = tabs.find((t) => t.id !== tab.id && t.probeHost && t.port === tab.port && waiting.has(t.id));
   const p = (async () => {
     let up = false;
     let rec = null;
     try {
-      if (await probe(tab)) up = true; // (came up meanwhile: never start a second copy)
+      if (twin) up = (await waiting.get(twin.id)).up; // (one server, one start: wait for that one)
+      else if (await probe(tab)) up = true; // (came up meanwhile: never start a second copy)
       else {
         rec = startServer(tab, why);
         const t0 = Date.now();
@@ -573,7 +581,8 @@ async function stopForeignListener(port, folderName, logId) {
 async function restartForUpdate(r) {
   const port = Number(r.port);
   const tab = tabs.find((t) => t.kind === 'server' && t.probeHost && t.port === port && t.installed);
-  if (!tab || tab.id === 'project') return; // (no tab on that port; the Supervisor Board itself restarts with the app)
+  // (no tab on that port; the Supervisor Board itself, and the Play tab on its port, restart with the app)
+  if (!tab || tab.id === 'project' || port === pmPort()) return;
   const id = tab.id;
   const what = String(r.name || r.entry || 'its tool');
   const folderName = tab.folder ? path.basename(tab.folder) : String(r.folder || '');
@@ -717,9 +726,11 @@ function tabStatus(tab) {
   const st = status.get(tab.id) || 'unknown';
   return st !== 'up' && restartPending(tab.id) ? 'restarting' : st; // (down; the watchdog restarts it soon)
 }
+// badges: the Supervisor Board's halting count (red), the Play tab's play notes waiting to be written (blue)
 const tabbarTabs = () => tabs.map((t) => ({
   id: t.id, name: t.name, kind: t.kind, status: tabStatus(t), missing: t.missing, parent: t.parent, depth: t.depth, childLabel: t.childLabel,
-  badge: t.id === 'project' ? haltCount : 0,
+  badge: t.id === 'project' ? haltCount : t.id === 'play' ? playPending : 0,
+  badgeKind: t.id === 'play' ? 'note' : 'halt',
 }));
 
 // ---------- halting badge ----------
@@ -755,6 +766,51 @@ function setHalting(n) {
   } catch (err) { /* (cosmetic) */ }
   win.setTitle(n ? '(' + n + ') Quark Project' : 'Quark Project');
 }
+// ---------- play notes (the Play tab, pm/play.py) ----------
+// The Supervisor Board server starts the games and keeps the sessions; here: a cheap poll of /api/play/pending (fast
+// only while a game runs or a note waits), the Play tab's badge, and when a game has just closed, the window comes
+// up on the Play tab with the note form (#note=<session id>). Notes already waiting when the app starts only badge.
+let playTimer = null;
+let playPending = 0;
+let playFirst = true;
+const playAlerted = new Set();
+async function pollPlay() {
+  clearTimeout(playTimer);
+  if (stopped) return;
+  let fast = false;
+  try {
+    if (tabById('play')) {
+      const r = await pmRequest('GET', '/api/play/pending', 3000);
+      if (r && typeof r === 'object') {
+        const pend = (Array.isArray(r.pending) ? r.pending : []).filter((x) => x && typeof x.id === 'string');
+        if (pend.length !== playPending) { playPending = pend.length; updateTabbar(); }
+        fast = Number(r.running) > 0 || pend.length > 0;
+        const fresh = pend.filter((x) => !playAlerted.has(x.id));
+        fresh.forEach((x) => playAlerted.add(x.id));
+        if (fresh.length && !playFirst) bringUpPlayNote(fresh[0].id);
+        playFirst = false;
+      }
+    }
+  } finally {
+    if (!stopped) playTimer = setTimeout(pollPlay, fast ? PLAY_FAST_MS : PLAY_SLOW_MS);
+  }
+}
+function bringUpPlayNote(id) {
+  if (!win || win.isDestroyed()) return;
+  openTab('play', '#note=' + encodeURIComponent(id));
+  if (win.isMinimized()) win.restore();
+  win.show();
+  // Windows refuses focus to a background app (the game had it): on top for a moment, focus, and flash the
+  // taskbar button when focus was still refused (it stops when the window is focused)
+  try { win.setAlwaysOnTop(true); win.moveTop(); } catch { /* (cosmetic) */ }
+  win.focus();
+  setTimeout(() => {
+    if (!win || win.isDestroyed()) return;
+    try { win.setAlwaysOnTop(false); } catch { /* (cosmetic) */ }
+    if (!win.isFocused()) win.flashFrame(true);
+  }, 400);
+}
+
 function updateTabbar() {
   if (!tabbar || tabbar.webContents.isDestroyed()) return;
   tabbar.webContents.send('shell:tabs', {
@@ -774,11 +830,13 @@ function layout() {
 }
 
 function navTarget(url) {
-  // where a link that leaves its tab should go: another tab (by origin) or the default browser (https only)
+  // where a link that leaves its tab should go: another tab (by origin; of two tabs on one origin, the Supervisor
+  // Board and its Play page, the one whose path matches) or the default browser (https only)
   const p = parseURL(url);
   if (!p) return null;
   if (p.protocol === 'http:' || p.protocol === 'https:') {
-    const t = tabs.find((x) => x.kind === 'server' && x.origin === p.origin);
+    const same = tabs.filter((x) => x.kind === 'server' && x.origin === p.origin);
+    const t = same.find((x) => { const u = parseURL(x.url); return u && u.pathname === p.pathname; }) || same[0];
     if (t) return { tab: t, hash: p.hash };
   }
   if (p.protocol === 'https:') return { external: p.href };
@@ -1104,7 +1162,10 @@ function createWindow() {
   win.on('moved', rememberBounds);
   win.on('maximize', rememberBounds);
   win.on('unmaximize', rememberBounds);
-  win.on('focus', () => { const e = views.get(activeId); if (e) e.view.webContents.focus(); });
+  win.on('focus', () => {
+    try { win.flashFrame(false); } catch { /* (cosmetic) */ }
+    const e = views.get(activeId); if (e) e.view.webContents.focus();
+  });
   win.on('close', () => { rememberBounds(); saveState(true); });
   win.on('closed', () => {
     stopStartedServers();
@@ -1129,6 +1190,7 @@ function createWindow() {
   tabbar.webContents.loadFile(path.join(SHELL_DIR, 'tabbar.html'));
   startKeepAlive();
   updatesTimer = setTimeout(pollUpdates, UPDATES_FIRST_MS);
+  playTimer = setTimeout(pollPlay, UPDATES_FIRST_MS);
 }
 
 // ---------- IPC ----------
@@ -1140,6 +1202,11 @@ ipcMain.on('shell:badge', (e, n) => {
   const entry = entryFor(e.sender);
   if (!entry || entry.tab.id !== 'project' || entry.mode !== 'page' || typeof n !== 'number') return;
   setHalting(n);
+});
+ipcMain.on('shell:play', (e) => {
+  // the Play page started a game or saved a note: poll now (then fast while the game runs)
+  const entry = entryFor(e.sender);
+  if (entry && entry.mode === 'page' && entry.tab.id === 'play') pollPlay();
 });
 ipcMain.on('shell:retry', (e) => {
   const entry = entryFor(e.sender);
@@ -1180,7 +1247,7 @@ function runSelftest(file) {
   try {
     require(path.resolve(file))({ app, win: () => win, tabbar: () => tabbar, views, tabs: () => tabs, openTab, reloadTabList, reloadActive, status, started, activeId: () => activeId, onKey,
       sup, waiting, ensureStarted, watchdog, splitCommand, pollUpdates, restartForUpdate, handledRestarts, selfUpdated: () => selfUpdated,
-      updateRestarting, commandLine });
+      updateRestarting, commandLine, pollPlay, playAlerted, playPending: () => playPending });
   } catch (err) { console.error('selftest failed: ' + err.stack); app.exit(1); }
 }
 

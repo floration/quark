@@ -1,6 +1,6 @@
 # Quark Sound Editor
 
-A local page for designing and levelling Quark's sounds: every kit's 33 sounds, every voice's 30 announcer lines, the
+A local page for designing and levelling Quark's sounds: every kit's 33 sounds, every voice's 27 announcer lines, the
 events that have no sound yet, gameplay scenes to hear edits in context, and an export the game reads. It runs from
 disk (`file://`) in Chrome or Edge with no server and no network.
 
@@ -22,8 +22,10 @@ the browser and in the project files you save.
 
 **Install / update in one step** (non-interactive; the Quark Project app runs it): `python tools/sound_editor/install.py [out]`
 (default out: `<checkout>/../sound-editor`). It exports the sounds with the first `quark_tests` it finds (`$QUARK_TESTS`,
-`build-win`, `build`, `../working-repo-sound/build-win`, `../.src/testing/build-win`) and rebuilds page + data; with none it
-rebuilds only the page if data is already there. It writes `INSTALLED.txt` and never opens a browser.
+`build-win`, `build`, `../working-repo-sound/build-win`, `../.src/testing/build-win`) whose export names this checkout's
+`VERSION`, and rebuilds page + data. A build of another version is skipped with a warning, because it would export old
+sounds and voice lines. With no matching build it rebuilds only the page if data is already there, exiting 2 when it
+skipped stale builds so the app can show that the sounds weren't updated. It writes `INSTALLED.txt` and never opens a browser.
 
 ## Export to the game
 
