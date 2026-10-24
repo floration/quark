@@ -31,7 +31,7 @@ const notesSection = {
     if (focusId) { fs.set('kind', 'all'); fs.set('status', 'all'); fs.set('q', ''); }
     main.innerHTML = String(html`<section class="card">
         <h2>Notes <span class="tag">local + Claude Documents</span></h2>
-        <p class="hint">Write a note about a branch, PR, run, commit, version or local copy, or a general one. It shows on that item's rows and details; pinned notes show on the Overview. The server keeps them in <code>editor/notes.json</code> (previous version: <code>notes.json.bak</code>) and as <code>editor/notes.md</code> for other tools and agents, and writes them to the Claude Documents as <code>10-github-notes.md</code>; every change is in the History tab. Nothing is sent to GitHub.</p>
+        <p class="hint">Write a note about a branch, PR, run, commit, version or local copy, or a general one. It shows on that item's rows and details; pinned notes show on the Overview. The server keeps them in <code>editor/notes.json</code> (previous version: <code>notes.json.bak</code>) and as <code>editor/notes.md</code> for other tools and agents, and writes them to the Claude Documents as <code>11-github-notes.md</code>; every change is in the History tab. Nothing is sent to GitHub.</p>
         <div id="ed-compose"></div>
       </section>
       <div class="toolbar" id="ed-bar">
