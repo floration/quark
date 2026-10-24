@@ -282,8 +282,9 @@
     if (stage === 'testing') return { stage, version: v.testing || pick(g, 'testing.version'), sha: pick(g, 'testing.sha'), state: 'unknown' };
     return { stage, version: v.production || pick(g, 'production.version', 'production.tag'), sha: pick(g, 'production.sha'), state: 'unknown' };
   }
-  function openPrs() { const g = data('github'); return arr(pick(g, 'prs', 'pulls', 'openPrs', 'openPRs', 'pullRequests')).filter(isObj); }
-  function locals() { const g = data('github'); return arr(pick(g, 'locals', 'localCopies', 'local')).filter(isObj); }
+  // derived.* holds the server's normalized copies (prs, runs, localCopies, programs); the raw source data is the fallback
+  function openPrs() { const d = derived(); if (Array.isArray(d.prs) && srcOk('github')) return d.prs.filter(isObj); const g = data('github'); return arr(pick(g, 'prs', 'pulls', 'openPrs', 'openPRs', 'pullRequests')).filter(isObj); }
+  function locals() { const d = derived(); if (Array.isArray(d.localCopies) && srcOk('github')) return d.localCopies.filter(isObj); const g = data('github'); return arr(pick(g, 'locals', 'localCopies', 'local')).filter(isObj); }
   function workingCopy() { return locals().find(l => /working/i.test(String(l.name || ''))) || null; }
 
   function renderPipeline() {
@@ -327,11 +328,20 @@
     for (const pr of openPrs()) {
       if (String(pr.base || '') === 'testing' && num(pr.number) != null) wt.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' into testing'));
     }
-    const arrow = labels => '<div class="connector' + (labels.length ? ' pending' : '') + '">' +
+    const arrows = arr(d.arrows).filter(isObj);
+    const serverArrow = (from, list) => {
+      const a = arrows.find(x => x.from === from);
+      if (list.length || !a || !has(a.label)) return '';
+      if (/^(up to date|same version|in step)$/i.test(String(a.label))) return String(a.label);
+      list.push(linkAttrs(a.link) ? link(a.link, esc(a.label)) : esc(a.label));
+      return '';
+    };
+    const wtNone = serverArrow('working', wt), tpNone = serverArrow('testing', tp);
+    const arrow = (labels, none) => '<div class="connector' + (labels.length ? ' pending' : '') + '">' +
       '<div class="arrow-row"><svg class="arr-h" viewBox="0 0 100 18" preserveAspectRatio="none" aria-hidden="true"><line x1="2" y1="9" x2="97" y2="9" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"' + (labels.length ? '' : ' stroke-dasharray="4 4"') + '/></svg>' +
       '<svg class="arr-head" viewBox="0 0 12 18" aria-hidden="true"><path d="M2 3 10 9 2 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>' +
       '<svg class="arr-v" viewBox="0 0 18 34" aria-hidden="true"><line x1="9" y1="2" x2="9" y2="30" stroke="currentColor" stroke-width="2"' + (labels.length ? '' : ' stroke-dasharray="4 4"') + '/><path d="M3 24 9 31 15 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>' +
-      '<div class="conn-labels">' + (labels.length ? labels.map(l => '<span class="conn-label">' + l + '</span>').join('') : '<span class="conn-label none">nothing pending</span>') + '</div></div>';
+      '<div class="conn-labels">' + (labels.length ? labels.map(l => '<span class="conn-label">' + l + '</span>').join('') : '<span class="conn-label none">' + esc(none || 'nothing pending') + '</span>') + '</div></div>';
 
     // footer: prerelease, nextFree, checklist
     const g = data('github');
@@ -343,7 +353,7 @@
       ? (ck.length ? '<ol class="checklist">' + ck.map(h => '<li>' + esc(String(h).replace(/^\d+\.\s*/, '')) + '</li>').join('') + '</ol>' : '<p class="empty">The checklist has no sections.</p>')
       : downBlock('checklist');
     const html = head('h-pipeline', 'Release pipeline', '', srcMeta(['github', 'builds'])) +
-      '<div class="pipeline">' + stageHtml(stages[0]) + arrow(wt) + stageHtml(stages[1]) + arrow(tp) + stageHtml(stages[2]) + '</div>' +
+      '<div class="pipeline">' + stageHtml(stages[0]) + arrow(wt, wtNone) + stageHtml(stages[1]) + arrow(tp, tpNone) + stageHtml(stages[2]) + '</div>' +
       '<div class="pipe-foot">' +
       '<span class="kv">Testing prerelease <b>' + (has(preTag) ? link(preUrl, esc(preTag)) : '<span class="muted">unknown</span>') + '</b></span>' +
       '<span class="kv">Production tag <b>' + unk(prodTag) + '</b></span>' +
@@ -383,6 +393,7 @@
 
   // ---------------------------------------------------------------- 3. in progress
   function bucketOf(e) {
+    if (BUCKETS.some(b => b.id === e.bucket)) return e.bucket;
     const w = String(e.waitingOn || e.bucket || '').toLowerCase();
     if (/push/.test(w)) return 'push';
     if (/owner|\byou\b|^q$|\bq\b|user/.test(w)) return 'owner';
@@ -447,7 +458,7 @@
     let html = head('h-ci', 'CI & PRs', '', srcMeta(['github']));
     if (!srcOk('github')) return html + downBlock('github');
     const g = data('github');
-    const runsObj = obj(g.runs);
+    const runsObj = isObj(derived().runs) ? derived().runs : obj(g.runs);
     const running = arr(pick(runsObj, 'running', 'inProgress') || pick(g, 'running', 'runningRuns', 'runsRunning')).filter(isObj);
     const failed = obj(pick(runsObj, 'lastFailed', 'lastFailure') || pick(g, 'lastFailed', 'lastFailedRun', 'lastFailure'));
     const lastT = obj(pick(runsObj, 'lastTesting') || pick(g, 'lastTestingRun'));
@@ -525,14 +536,14 @@
       charts.stack = cats;
       html += '<div class="stack-chart" data-chart="stack" role="img" aria-label="' + esc('Per category, human / third-party / AI: ' + cats.map(c => c.name + ' ' + c.human + '/' + c.third + '/' + c.ai).join(', ')) + '"></div>';
     } else html += '<p class="empty">No per-category numbers.</p>';
-    const progs = arr(e.programs).filter(isObj);
+    const progs = (Array.isArray(derived().programs) && derived().programs.length ? derived().programs : arr(e.programs)).filter(isObj);
     html += '<div class="sub-head">Editors&rsquo; changes</div>';
     if (!progs.length) html += '<p class="empty">No programs reported.</p>';
     else {
       const cell = v => { const n = num(v); return '<td class="n' + (n ? '' : ' z') + '">' + (n == null ? '?' : n) + '</td>'; };
       html += '<div class="table-wrap"><table class="t"><thead><tr><th>Program</th><th class="n">ahead of testing</th><th class="n">ahead of production</th><th class="n">uncommitted</th><th class="n">files changed</th></tr></thead><tbody>' +
         progs.map(pg => '<tr><td>' + (has(pg.id) ? tabLink('dashboard', '#view=changes&program=' + encodeURIComponent(pg.id), unk(pg.name || pg.id)) : unk(pg.name)) + '</td>' +
-          cell(pg.ahead_testing) + cell(pg.ahead_production) + cell(pg.uncommitted) + cell(pg.files_changed) + '</tr>').join('') + '</tbody></table></div>';
+          cell(pick(pg, 'ahead_testing', 'aheadTesting')) + cell(pick(pg, 'ahead_production', 'aheadProduction')) + cell(pg.uncommitted) + cell(pick(pg, 'files_changed', 'filesChanged')) + '</tr>').join('') + '</tbody></table></div>';
     }
     return html;
   }
@@ -877,10 +888,12 @@
         const f = await getJson(FIXTURE_URL);
         apply(f, f.history, f.tabs);
       } else {
-        const [pm, hist, tabs] = await Promise.allSettled([
-          getJson('/api/pm' + (refresh ? '?refresh=1' : '')), getJson('/api/history?limit=30'), getJson('/api/tabs')]);
-        if (pm.status !== 'fulfilled') throw pm.reason;
-        apply(pm.value, hist.status === 'fulfilled' ? hist.value : state.history, tabs.status === 'fulfilled' ? tabs.value : state.tabs, hist.status === 'fulfilled');
+        const pm = await getJson('/api/pm' + (refresh ? '?refresh=1' : ''));
+        // /api/pm carries `history` (latest 30) and `tabs`; the separate endpoints are the fallback
+        const [hist, tabs] = await Promise.allSettled([
+          isObj(pm) && pm.history != null ? Promise.resolve(pm.history) : getJson('/api/history?limit=30'),
+          isObj(pm) && pm.tabs != null ? Promise.resolve(pm.tabs) : getJson('/api/tabs')]);
+        apply(pm, hist.status === 'fulfilled' ? hist.value : state.history, tabs.status === 'fulfilled' ? tabs.value : state.tabs, hist.status === 'fulfilled');
       }
       state.error = null;
     } catch (err) {

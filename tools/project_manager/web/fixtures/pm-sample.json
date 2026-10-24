@@ -278,6 +278,10 @@
       {"stage": "testing", "version": "1.18.6", "sha": "4fe65a7", "state": "ahead", "note": "prerelease test-1.18.6-test.231", "time": "2026-10-24T05:31:09Z"},
       {"stage": "production", "version": "1.17.0", "sha": "b81c0de", "state": "behind", "note": "waiting for the hand-test", "time": "2026-10-02T21:10:44Z"}
     ],
+    "arrows": [
+      {"from": "working", "to": "testing", "label": "3 commits"},
+      {"from": "testing", "to": "production", "label": "PR #9 open", "link": "http://127.0.0.1:8767/#pr=9"}
+    ],
     "inProgress": [
       {"title": "Build a map editor", "thread": "Map editor", "threadUrl": "https://claude.ai/code/session_01MapEditorThread", "status": "working", "where": "claude/project-thread-vgm0tm", "waitingOn": "Claude", "waitingWhy": "prefab palette done, brush snapping next"},
       {"title": "Tweak gameplay (waiting on push)", "thread": "Tweak gameplay", "threadUrl": "https://claude.ai/code/session_01TweakGameplay", "status": "done locally", "where": "working-repo, 3 commits", "waitingOn": "push", "waitingWhy": "3 local commits ready; say push to release them"},
