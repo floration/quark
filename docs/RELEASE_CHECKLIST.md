@@ -76,6 +76,7 @@ For each one: change it, check the effect in a game, quit, restart, check it was
 | ☐ | Crosshair: style, size and colour; the **hit-flash colour** setting, including **off**; the default is unchanged from the last release. |
 | ☐ | Audio: master, effects, announcer, music volumes; the announcer pack. |
 | ☐ | Audio (Windows): sound is clean with EXCLUSIVE AUDIO off (shared, 10 ms) and on (3 ms on the owner's PC; other programs go silent, back when it's turned off); unplugging or switching the output device mid-game moves the sound to the new default. |
+| ☐ | Sound levels: put a quiet `ROCKET.wav` in `%APPDATA%\quark\overrides\sounds\default\` and restart: the rocket is as loud as before (matched). Add `sounds/default/ROCKET` to `%APPDATA%\quark\overrides\sound-levels.txt` and restart: it is now quiet (its own level). Remove both after. The sound editor (`tools\sound_editor\build.cmd`) builds and its Export to game writes these files. |
 | ☐ | Controls: rebind every action you use. Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** in settings stays in sync with the toggle. |
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
 | ☐ | HUD editor: drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
