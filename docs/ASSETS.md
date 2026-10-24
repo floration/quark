@@ -1,11 +1,11 @@
-# Assets: the export, the Asset Studio and overrides
+# Assets: the export and overrides
 
 The owner replaces the AI-made default assets with human-made ones. Three pieces make that work:
 
 1. **The export** (`build/quark_tests exportassets <dir>`) writes every default asset as a file, plus
    `manifest.json` listing them.
-2. **The Asset Studio** (https://claude.ai/artifact/JuDQckiZY15XUHz1xbD3pC; `tools/studio/index.html`, its files built
-   by `tools/studio/build.py` from the export) shows every asset and takes the owner's uploads.
+2. **The owner's tools** (the model, sound and other editors in the project supervisor) show the assets and write
+   replacements. (The Asset Studio page that did this was retired 2026-10-24.)
 3. **Overrides**: a file at an asset's export path under `assets/overrides/` (shipped) or the per-user
    `overrides/` folder (this computer only) replaces that asset.
 
@@ -14,7 +14,7 @@ The owner replaces the AI-made default assets with human-made ones. Three pieces
 ```
 cmake --build build -j
 build/quark_tests exportassets build/assets_export
-python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ manifest.json), what the page publishes
+python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ manifest.json), the website /assets/ page's data (tools/site_assets.py)
 ```
 
 | Category | Files | Path (= the override path) |
@@ -216,13 +216,11 @@ shadow is paper: the UI draws its own black outline.
 hint, where the real font may be) and, for a bundled font, its row in `BUILTIN` (tools/make_font_atlas.py: kind,
 file, weight) plus the file and its licence in `assets/fonts/`; re-run the tool. Credit it in README.
 
-## Shipping the owner's uploads
+## Shipping the owner's replacements
 
-The studio keeps each upload in its `replacements` collection (status `waiting`) and the file in its asset store as
-JSON `{assetId, target, filename, mime, data: base64}`. For each waiting one: decode `data` into
-`assets/overrides/<target>` with the uploaded file's extension, build, run `build/quark_tests`, mention it in the
-changelog, then set the doc's status to `shipped` (`shippedIn: <VERSION>`). An icon also needs `tools/make_icon.py`.
-After the push, rebuild the studio files (commands above) and republish the page.
+The owner's editors (model editor, sound editor, ...) export files at their override paths. To ship one, put it in
+`assets/overrides/<path>` (keep its extension), merge the editor's `provenance.json` (below), build, run
+`build/quark_tests` and mention it in the changelog. An icon also needs `tools/make_icon.py`.
 
 ## Provenance
 
@@ -230,4 +228,4 @@ Which assets are still AI-made: `assets/provenance/<category>.json` lists every 
 as `ai`, `human` or `third-party`, with where it came from ([PROVENANCE.md](PROVENANCE.md)). After the export, run
 `python3 tools/provenance.py sync build/assets_export` (a shipped override or custom recording marks its item `human`)
 and `python3 tools/provenance.py merge <sidecar>` for an editor's `provenance.json`; `summary` shows how far along it
-is, and every release's notes end with that line. The studio's manifest.json carries each item's `origin`.
+is, and every release's notes end with that line. `tools/studio/build.py`'s manifest.json (the website /assets/ page's data) carries each item's `origin`.
