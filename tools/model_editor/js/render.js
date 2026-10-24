@@ -402,7 +402,8 @@ void main() { fragColor = vColor; }`;
   };
 
   // --- the frame -----------------------------------------------------------------------------------------------------
-  // scene: { cam: { pos, yaw, pitch, fov }, pal (map palette), sky, ground: { y, grid } | null, shadows, bright,
+  // scene: { cam: { pos, yaw, pitch, fov }, pal (map palette), sky, ground: { y, grid, z (an offset along z: the
+  //   in-flight view streams it) } | null, shadows, bright,
   //   items: [{ mesh, model (Float32Array 16), tint (Float32Array 18: the slot colours), outlineW, outline [3], sunVis, view (bool), highlight }],
   //   trails: { data: Float32Array, count }, lines: { data, count, depth } , overlay: { data, count } }
   const vp = new Float32Array(16), proj = new Float32Array(16), view = new Float32Array(16), shadowMat = new Float32Array(16), lv = new Float32Array(16);
@@ -462,14 +463,15 @@ void main() { fragColor = vColor; }`;
     if (sc.ground) {
       const g = P.ground, u = g.u;
       gl.useProgram(g.prog);
-      M.ident(gtrans); gtrans[13] = sc.ground.y;
+      const gz = sc.ground.z || 0;
+      M.ident(gtrans); gtrans[13] = sc.ground.y; gtrans[14] = gz;
       M.mul(tmp, vp, gtrans);
       gl.uniformMatrix4fv(u.uViewProj, false, tmp);
       M.mul(lv, shadowMat, gtrans);
       gl.uniformMatrix4fv(u.uShadowMat, false, lv);
       gl.uniform1i(u.uShadow, 1); gl.uniform1i(u.uShadowOn, useShadows ? 1 : 0); gl.uniform1f(u.uShadowTexel, 1 / SHADOW_RES);
       gl.uniform3fv(u.uSunColor, Q.SUN_COLOR); gl.uniform3fv(u.uSkyColor, Q.SKY_LIGHT); gl.uniform3fv(u.uSunDir, pal.sun);
-      gl.uniform3fv(u.uFogColor, sky); gl.uniform3f(u.uCamPos, cam[0], cam[1] - sc.ground.y, cam[2]);
+      gl.uniform3fv(u.uFogColor, sky); gl.uniform3f(u.uCamPos, cam[0], cam[1] - sc.ground.y, cam[2] - gz);
       const b = pal.base, mt = pal.metal, L = (c, k) => Math.pow(c, 2.2) * k;
       gl.uniform3f(u.uAlbedo, L(b[0], 1.5) * 0.45 + L(mt[0], 2) * 0.55, L(b[1], 1.5) * 0.45 + L(mt[1], 2) * 0.55, L(b[2], 1.5) * 0.45 + L(mt[2], 2) * 0.55);
       gl.uniform1f(u.uFogDensity, Q.FOG); gl.uniform1f(u.uBright, bright); gl.uniform1f(u.uGrid, sc.ground.grid ? 1 : 0);
@@ -578,12 +580,44 @@ void main() { fragColor = vColor; }`;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return { fbo, w, h, pixels: new Uint8Array(w * h * 4) };
   };
-  R.readTarget = function (t, ctx2d) {   // into a 2D canvas (flipped: GL rows are bottom-up)
+  function putFlipped(pixels, w, h, ctx2d) {   // into a 2D canvas (flipped: GL rows are bottom-up)
+    const img = ctx2d.createImageData(w, h), row = w * 4;
+    for (let y = 0; y < h; y++) img.data.set(pixels.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+    ctx2d.putImageData(img, 0, 0);
+  }
+  R.readTarget = function (t, ctx2d) {   // now (waits for the GPU: fixed-size shots only)
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
     gl.readPixels(0, 0, t.w, t.h, gl.RGBA, gl.UNSIGNED_BYTE, t.pixels);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const img = ctx2d.createImageData(t.w, t.h), row = t.w * 4;
-    for (let y = 0; y < t.h; y++) img.data.set(t.pixels.subarray((t.h - 1 - y) * row, (t.h - y) * row), y * row);
-    ctx2d.putImageData(img, 0, 0);
+    putFlipped(t.pixels, t.w, t.h, ctx2d);
+  };
+  // later, without a stall (thumbnails): the pixels are copied into a pixel-pack buffer on the GPU behind a fence, and
+  // read once the fence has passed (R.pollReads, every frame), so the page never waits for the GPU to finish the
+  // frames still queued (a synchronous readPixels waited for the viewport's whole frame, its 2048 shadow map too).
+  // done(pixels, w, h) gets the rows bottom-up; R.putFlipped draws them into a 2D canvas.
+  const reads = [], freePbos = [];
+  R.putFlipped = putFlipped;
+  R.readTargetAsync = function (t, done) {
+    const pbo = freePbos.pop() || gl.createBuffer(), bytes = t.w * t.h * 4;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, bytes, gl.STREAM_READ);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+    gl.readPixels(0, 0, t.w, t.h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    reads.push({ sync: gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0), pbo, w: t.w, h: t.h, bytes, done });
+    gl.flush();
+  };
+  R.pendingReads = () => reads.length;
+  R.pollReads = function () {
+    while (reads.length && gl.getSyncParameter(reads[0].sync, gl.SYNC_STATUS) === gl.SIGNALED) {   // (in order)
+      const r = reads.shift(), px = new Uint8Array(r.bytes);
+      gl.deleteSync(r.sync);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, r.pbo);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      freePbos.push(r.pbo);
+      try { r.done(px, r.w, r.h); } catch (e) { console.warn(e); }
+    }
   };
 })();

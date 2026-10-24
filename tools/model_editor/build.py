@@ -11,7 +11,9 @@ and any kind a later game adds). <out_dir> gets:
 
     model-editor.html          the editor (index.html with its .css / .js inlined)
     data/manifest.js           every model (its glTF, base64), the shipped overrides of models in this repository
-                               (assets/overrides/models/...), and each map's palette and sun (for the viewer)
+                               (assets/overrides/models/...), each model's provenance in this repository
+                               (assets/provenance/*.json), the entries of <out_dir>/provenance.json (what this editor
+                               exported before), and each map's palette and sun (for the viewer)
 
 A browser blocks fetch() on file://, so the data file is a script that calls window.qmeRegister(...).
 Python 3 standard library only.
@@ -70,6 +72,33 @@ def map_palette(path, name):
     return out
 
 
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def model_items(doc):
+    """The models/... entries of a provenance file ({"items": {id: {origin, ...}}})."""
+    items = doc.get("items") if isinstance(doc, dict) else None
+    if not isinstance(items, dict): return {}
+    return {k: v for k, v in items.items() if isinstance(v, dict) and k.lower().startswith("models/")}
+
+
+def repo_provenance():
+    """Every models/... entry of the repository's assets/provenance/*.json (who made each asset: human / ai /
+    third-party). An entry describes the asset at that id: the shipped override when there is one, else the default."""
+    out = {}
+    d = os.path.join(ROOT, "assets", "provenance")
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if n.endswith(".json"):
+                for k, v in model_items(read_json(os.path.join(d, n))).items(): out[k.lower()] = v   # (looked up by any case)
+    return out
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if len(args) < 2:
@@ -96,6 +125,7 @@ def main():
             if rel in shipped and shipped[rel]["name"].lower().endswith(".glb"): continue   # (the game takes the .glb first)
             shipped[rel] = {"name": n, "data": base64.b64encode(open(os.path.join(d, n), "rb").read()).decode("ascii")}
 
+    prov = repo_provenance()
     models, kinds = [], {}
     for it in man.get("items", []):
         if it.get("category") != "Models": continue
@@ -107,6 +137,7 @@ def main():
         m = {"key": key, "kind": kind, "name": it.get("name") or parts[-1], "desc": it.get("desc", ""), "file": it["file"],
              "data": base64.b64encode(open(f, "rb").read()).decode("ascii")}
         if key.lower() in shipped: m["shipped"] = shipped[key.lower()]
+        if (key + ".gltf").lower() in prov: m["prov"] = prov[(key + ".gltf").lower()]
         models.append(m)
         kinds[kind] = kinds.get(kind, 0) + 1
 
@@ -120,16 +151,19 @@ def main():
 
     data_dir = os.path.join(out, "data")
     os.makedirs(data_dir, exist_ok=True)
-    payload = {"type": "manifest", "version": man.get("version") or "", "models": models, "palettes": palettes}
+    # what this editor exported before (a folder export merges its entries into the model editor folder's
+    # provenance.json): the origin a model keeps when its file is loaded back
+    exported = model_items(read_json(os.path.join(out, "provenance.json")))
+    payload = {"type": "manifest", "version": man.get("version") or "", "models": models, "palettes": palettes, "exported": exported}
     with open(os.path.join(data_dir, "manifest.js"), "w", encoding="utf-8") as f:
         f.write("window.qmeRegister(")
         json.dump(payload, f, separators=(",", ":"))
         f.write(");\n")
     with open(page, "w", encoding="utf-8") as f: f.write(inline_page())
     size = os.path.getsize(os.path.join(data_dir, "manifest.js"))
-    print("model editor %s: %d models (%s), %d shipped overrides, %d map palettes, %.0f KB of data -> %s" % (
+    print("model editor %s: %d models (%s), %d shipped overrides, %d with provenance, %d exported entries, %d map palettes, %.0f KB of data -> %s" % (
         payload["version"], len(models), ", ".join("%d %s" % (v, k) for k, v in kinds.items()), sum(1 for m in models if "shipped" in m),
-        len(palettes), size / 1024, page))
+        sum(1 for m in models if "prov" in m), len(exported), len(palettes), size / 1024, page))
 
 
 main()
