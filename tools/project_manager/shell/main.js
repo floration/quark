@@ -38,6 +38,12 @@ const LOG_MAX = 4e6;
 const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'media', 'pointerLock']);
 // automatic updates: GET <Supervisor Board>/api/updates every UPDATES_POLL_MS (the first one a few seconds after start)
 const UPDATES_POLL_MS = 15000;
+// A self-update found in the first minutes after opening relaunches the app by itself (q opened it moments ago, so no
+// editor work is open yet), instead of asking for a second open. Later ones ask first (Restart button). Never twice
+// within AUTO_RELAUNCH_GAP_MS, so a server that keeps reporting the update cannot loop.
+const AUTO_RELAUNCH_WINDOW_MS = 5 * 60 * 1000;
+const AUTO_RELAUNCH_GAP_MS = 10 * 60 * 1000;
+const APP_STARTED_AT = Date.now();
 const UPDATES_FIRST_MS = 3000;
 const PM_PORT_DEFAULT = 8768;
 // the Play tab (pm/play.py): GET <Supervisor Board>/api/play/pending every PLAY_FAST_MS while a game it started runs or a
@@ -624,7 +630,15 @@ async function pollUpdates() {
     if (u && typeof u === 'object') {
       // once per app open: an install pass (the server's own one at its start makes this a no-op within a minute)
       if (!askedUpdate) { askedUpdate = true; pmRequest('POST', '/api/updates/run'); }
-      if (u.selfUpdated === true && !selfUpdated) { selfUpdated = true; updateTabbar(); }
+      if (u.selfUpdated === true && !selfUpdated) {
+        selfUpdated = true; updateTabbar();
+        const now = Date.now();
+        if (now - APP_STARTED_AT < AUTO_RELAUNCH_WINDOW_MS && !(now - (state.autoRelaunchedAt || 0) < AUTO_RELAUNCH_GAP_MS)) {
+          state.autoRelaunchedAt = now;
+          logNote('updates', 'Quark Project updated itself right after opening: relaunching with the new version');
+          relaunchApp(true);
+        }
+      }
       for (const r of Array.isArray(u.restart) ? u.restart : []) {
         if (!r || typeof r.id !== 'string' || handledRestarts.has(r.id)) continue;
         handledRestarts.add(r.id);
@@ -637,13 +651,13 @@ async function pollUpdates() {
     if (!stopped) updatesTimer = setTimeout(pollUpdates, win && win.isMinimized() ? UPDATES_POLL_MS * 2 : UPDATES_POLL_MS);
   }
 }
-async function relaunchApp() {
+async function relaunchApp(auto = false) {
   // the tab bar's Restart button after a self-update: a new shell with the new files; the old Supervisor Board server
   // goes too (stopped here when this shell started it, else when its command line is Quark\project-manager's), and
   // the new shell's supervisor starts the new one
   if (relaunching || !win) return;
   relaunching = true;
-  const r = await dialog.showMessageBox(win, {
+  const r = auto ? { response: 0 } : await dialog.showMessageBox(win, {
     type: 'question', title: 'Quark Project', noLink: true, defaultId: 0, cancelId: 1, buttons: ['Restart', 'Later'],
     message: 'Restart Quark Project with the new version?',
     detail: 'Every tab closes and opens again. Save open work in the editors first (their autosaves are kept).',

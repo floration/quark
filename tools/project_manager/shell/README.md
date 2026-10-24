@@ -123,7 +123,8 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    then runs the new `server.py --init` (tabs.json gets new default tabs). When any file changed, `selfUpdated` is set
    and the tab bar shows "Quark Project updated — reopen to finish" with a Restart button (it asks, then stops the old
    Supervisor Board server and the servers the shell started, and relaunches the app, whose supervisor starts the new
-   server).
+   server). When the update is found within 5 minutes of opening the app (the usual case: the pass runs at open), the
+   shell does that relaunch by itself without asking, so one open is enough; at most once every 10 minutes.
 
 The Supervisor Board's "Tools & updates" card shows the repository state, each entry with a status pill (`ok`,
 `updating`, `failed`, `pending`, `waiting`, `disabled`), the last run time (Dallas) and the log's last lines, and an
