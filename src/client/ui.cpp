@@ -91,6 +91,53 @@ TextFit Ui::fitted(const std::string& t, float ts, float maxW) const {
     return e.fit;
 }
 
+// Greedy word wrap, cached like fitted() (the text is kept too: a hash clash re-wraps instead of showing another text).
+const std::vector<std::string>& Ui::wrap(const std::string& t, float ts, float maxW, int maxChars) const {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+    for (unsigned char ch : t) mix(ch);
+    uint32_t wb, sb;
+    std::memcpy(&wb, &maxW, 4); std::memcpy(&sb, &ts, 4);
+    mix(wb); mix(sb); mix((uint64_t)(uint32_t)maxChars); mix((uint64_t)(uint32_t)r_->fontGeneration());
+    h |= 1;
+    WrapEntry& e = wrapCache_[h % kWrapCache];
+    if (e.key == h && e.text == t) return e.lines;
+    e.key = h;
+    e.text = t;
+    e.lines.clear();
+    auto fits = [&](size_t a, size_t n) {
+        return (maxChars <= 0 || (int)n <= maxChars) && r_->textWidth(t.substr(a, n), ts) <= maxW;
+    };
+    size_t a = 0;
+    while (a < t.size()) {
+        while (a < t.size() && t[a] == ' ') a++;
+        if (a >= t.size()) break;
+        size_t end = a, sp = t.find(' ', a);
+        // as many whole words as fit
+        while (true) {
+            size_t next = sp == std::string::npos ? t.size() : sp;
+            if (end > a && !fits(a, next - a)) break;
+            end = next;
+            if (sp == std::string::npos || !fits(a, end - a)) break;
+            sp = t.find(' ', sp + 1);
+        }
+        if (!fits(a, end - a)) {   // one word wider than the line: cut it where it fits (at least one character)
+            size_t n = 1;
+            while (a + n < end && fits(a, n + 1)) n++;
+            end = a + n;
+        }
+        e.lines.push_back(t.substr(a, end - a));
+        a = end;
+    }
+    return e.lines;
+}
+
+int Ui::hintWrapped(float x, float y, const std::string& t, const Color& c, float maxW, float lineH) {
+    const std::vector<std::string>& lines = wrap(t, hintScale(), maxW);
+    for (size_t i = 0; i < lines.size(); i++) hint(x, y + i * lineH, lines[i], c, maxW);
+    return (int)lines.size();
+}
+
 // Text scale that fits maxW: the normal size, else tighter letters, else shrunk only as much as needed. The renderer
 // never draws below Renderer::minTextScale() (the font's), so text that still doesn't fit at that size is clipped with
 // "..." (t is replaced). track: how far to close its letters up when it's drawn (Renderer::text's level).

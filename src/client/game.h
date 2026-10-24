@@ -25,11 +25,12 @@
 
 struct GLFWwindow;
 
-// The settings shell's design coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s
+// The redesign's coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s, y from oy
+// (Game::menuLayout: the menus' pages, narrowed on a squarer screen with their top kept under the title)
 struct SetLayout {
-    float s = 1, cx = 640;
+    float s = 1, cx = 640, oy = 0;
     float X(float px) const { return cx + (px - 640) * s; }
-    float Y(float py) const { return py * s; }
+    float Y(float py) const { return oy + py * s; }
     float L(float px) const { return px * s; }
 };
 

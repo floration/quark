@@ -99,6 +99,12 @@ public:
     float hintScale() const;
     void labelFit(float x, float y, float maxW, std::string t, const Color& c = {1, 1, 1, 1}); // shrunk / clipped to maxW
     void labelCentered(float cx, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f, float maxW = 0);
+    // t broken into lines at most maxW wide at text scale ts (and, given maxChars, at most that many characters): at
+    // spaces, a word longer than a line cut where it fits. From a small cache keyed by the text, the width, the size
+    // and the font: a paragraph is wrapped once, not every frame (no allocation on a hit).
+    const std::vector<std::string>& wrap(const std::string& t, float ts, float maxW, int maxChars = 0) const;
+    // t as hint lines (text 1.5, Ui::hint) wrapped to maxW, one every lineH from y; returns how many lines it took
+    int hintWrapped(float x, float y, const std::string& t, const Color& c, float maxW, float lineH);
     // the box labels fit into (x from x0 to x1; a centred one: centred in it); noBox(): none
     void box(float x0, float x1) { boxL_ = x0; boxR_ = x1; }
     void noBox() { boxL_ = boxR_ = 0; }
@@ -201,6 +207,9 @@ private:
     struct FitEntry { uint64_t key = 0; TextFit fit; };
     static constexpr int kFitCache = 256;
     mutable FitEntry fitCache_[kFitCache];
+    struct WrapEntry { uint64_t key = 0; std::string text; std::vector<std::string> lines; };
+    static constexpr int kWrapCache = 128;
+    mutable WrapEntry wrapCache_[kWrapCache];
     bool buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped);
     void report(UiWidget::Kind k, float x, float y, float w, float h, const std::string& label, const std::string& value,
                 const UiExp& e, bool enabled, bool clipped);

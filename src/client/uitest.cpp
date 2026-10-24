@@ -483,7 +483,17 @@ private:
 
     // ---- the scenario's screens
     bool explorable(const std::string& p) const {
-        if (!o_.uiTestPath.empty() && p != sc_->root && p.rfind(o_.uiTestPath, 0) != 0) return false;   // (--uitest-path)
+        if (!o_.uiTestPath.empty() && p != sc_->root) {   // (--uitest-path a,b,c: the screens under any of them)
+            bool under = false;
+            size_t a = 0;
+            while (a <= o_.uiTestPath.size()) {
+                size_t b = o_.uiTestPath.find(',', a);
+                if (b == std::string::npos) b = o_.uiTestPath.size();
+                if (b > a && p.compare(0, b - a, o_.uiTestPath, a, b - a) == 0) under = true;
+                a = b + 1;
+            }
+            if (!under) return false;
+        }
         bool in = false;
         for (auto& e : sc_->explore) in |= p.rfind(e, 0) == 0;
         for (auto& e : sc_->skip) in &= p.rfind(e, 0) != 0;
@@ -1064,6 +1074,9 @@ private:
             UiExp::Kind pk = cur_[pick].exp.kind;
             activate(pick);
             if (pk == UiExp::EDIT && postPath_ == node.path && postCtx_ == node.ctx) postPath_.clear();
+            // (CONNECTING to a game this scenario just started - TIME TRIAL hosts one - is on its way in game, in a few
+            // frames: not a screen to come back to; the one JOIN > CONNECT leaves stays, and is found that way)
+            if (postPath_ == "connecting" && !sc_->healthy()) postPath_.clear();
             // somewhere new: explore it later (by replaying the way here)
             if (!postPath_.empty() && explorable(postPath_) && !idents_.count(postIdent_) && nodes_.size() < 600) {
                 idents_.insert(postIdent_);
