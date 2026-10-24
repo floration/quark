@@ -302,7 +302,7 @@ std::string cfgLines(const std::string& text, const std::string& key) {
 }
 
 const char* kindName(UiWidget::Kind k) {
-    static const char* n[] = {"button", "toggle", "cycle", "slider", "text", "key", "handle", "view"};
+    static const char* n[] = {"button", "toggle", "cycle", "slider", "text", "key", "handle", "view", "color", "dropdown"};
     return n[k];
 }
 const char* expName(UiExp::Kind k) {
@@ -316,7 +316,11 @@ std::string expText(const UiExp& e) {
     return t;
 }
 bool hasRect(const UiWidget& w) { return w.kind != UiWidget::KEY && w.kind != UiWidget::HANDLE && w.kind != UiWidget::VIEW; }
-bool hasValue(const UiWidget& w) { return w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE || w.kind == UiWidget::SLIDER || w.kind == UiWidget::TEXT; }
+bool hasValue(const UiWidget& w) {
+    return w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE || w.kind == UiWidget::SLIDER || w.kind == UiWidget::TEXT ||
+           w.kind == UiWidget::COLOR || w.kind == UiWidget::DROPDOWN;
+}
+std::string hexColor(int v) { char b[8]; snprintf(b, sizeof b, "#%06X", v & 0xFFFFFF); return b; }
 }
 
 class UiTest : public UiProbe {
@@ -649,13 +653,44 @@ private:
     // ---- doing what a widget is for (verify: the activation is being tested, not replayed)
     void act(const UiWidget& w, bool verify, std::string* why = nullptr, const std::string& id = "") {
         float cx = w.x + w.w * 0.5f, cy = w.y + w.h * 0.5f;
-        if (w.kind == UiWidget::BUTTON || w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE) clickId_ = id;
+        if (w.kind == UiWidget::BUTTON || w.kind == UiWidget::TOGGLE || w.kind == UiWidget::CYCLE || w.kind == UiWidget::COLOR || w.kind == UiWidget::DROPDOWN) clickId_ = id;
         switch (w.kind) {
             case UiWidget::BUTTON: case UiWidget::TOGGLE:
                 if (w.exp.kind == UiExp::BIND) { click(cx, cy); step(); key(GLFW_KEY_F7); break; }
                 click(cx, cy);
                 break;
             case UiWidget::VIEW: click(w.x + w.w * 0.42f, w.y + w.h * 0.62f); break;   // (off centre: not where handles tend to be)
+            case UiWidget::DROPDOWN: click(cx, cy); break;   // (opens its list: what it declares; the entries are widgets of that screen)
+            case UiWidget::COLOR: {
+                // a colour picker: it opens, a drag across its square and a click on its hue bar change the colour, a
+                // hex value typed into it is taken exactly, and Esc closes it
+                click(cx, cy);
+                step();
+                if (!g_.ui_.popupOpen()) { if (why) *why = "clicking it didn't open its colour picker"; break; }
+                const Ui::PopupRects r = g_.ui_.popupRects();
+                const float W = (float)g_.r_.width(), H = (float)g_.r_.height();
+                if (why && (r.box[0] < -0.5f || r.box[1] < -0.5f || r.box[0] + r.box[2] > W + 0.5f || r.box[1] + r.box[3] > H + 0.5f)) *why = "its colour picker is off screen";
+                auto valueNow = [&]() -> std::string { int j = find(id); return j >= 0 ? cur_[j].value : ""; };
+                const std::string v0 = valueNow();
+                press(r.sv[0] + r.sv[2] * 0.25f, r.sv[1] + r.sv[3] * 0.3f); step();
+                moveTo(r.sv[0] + r.sv[2] * 0.7f, r.sv[1] + r.sv[3] * 0.55f); step();
+                release(); step();
+                const std::string v1 = valueNow();
+                if (why && why->empty() && v1 == v0) *why = "dragging across its picker's square didn't change the colour";
+                click(r.hue[0] + r.hue[2] * 0.5f, r.hue[1] + r.hue[3] * 0.62f); step();
+                if (why && why->empty() && valueNow() == v1) *why = "clicking its picker's hue bar didn't change the colour";
+                const std::string want = valueNow() == "#3C78B4" ? "#B4783C" : "#3C78B4";
+                click(r.hex[0] + r.hex[2] * 0.5f, r.hex[1] + r.hex[3] * 0.5f); step();
+                for (int k = 0; k < 8; k++) { keyDown(GLFW_KEY_BACKSPACE); step(); keyUp(GLFW_KEY_BACKSPACE); }
+                type(want.substr(1));
+                key(GLFW_KEY_ENTER);
+                step();
+                if (why && why->empty() && valueNow() != want) *why = "typed " + want + " into its picker, it shows " + valueNow();
+                key(GLFW_KEY_ESCAPE);
+                step(2);
+                if (why && why->empty() && g_.ui_.popupOpen()) *why = "Esc didn't close its colour picker";
+                break;
+            }
             case UiWidget::CYCLE: click(w.x + w.w - w.h * 0.5f, cy); break;   // ">"
             case UiWidget::SLIDER: {
                 float lo = w.dx, hi = w.dy, v = (float)atof(w.value.c_str()), f = 0.1f;
@@ -847,6 +882,41 @@ private:
             }
         }
         if (w.kind == UiWidget::KEY && w.count > 0) { g_.testHeld_ = 0; step(); }
+        // a colour picker: a right-click puts its default back (and it's saved when the screen is left)
+        if (w.kind == UiWidget::COLOR && w.enabled && path() == path0 && e.kind == UiExp::CFG) {
+            int j = find(id);
+            if (j >= 0) {
+                const UiWidget c2 = cur_[j];
+                rclick(c2.x + c2.w * 0.3f, c2.y + c2.h * 0.5f);
+                step(2);
+                int k = find(id);
+                const std::string def = hexColor((int)c2.def);
+                if (k < 0) fail(wkey, "gone after a right-click");
+                else if (cur_[k].value != def) fail(wkey, "right-clicked (default " + def + "), it shows " + cur_[k].value);
+                else if (g_.ui_.popupOpen()) fail(wkey, "a right-click opened its colour picker");
+                else pendingCfg_.push_back({e.what, wkey});
+                resetChecks_++;
+            }
+        }
+        // a keybind slot: a right-click unbinds it, saved at once
+        if (e.kind == UiExp::BIND && path() == path0) {
+            int j = find(id);
+            if (j >= 0) {
+                const UiWidget b2 = cur_[j];
+                const std::string before = cfgLines(g_.cfg_.toText(), "bind_*");
+                rclick(b2.x + b2.w * 0.5f, b2.y + b2.h * 0.5f);
+                step(2);
+                const std::string after = cfgLines(g_.cfg_.toText(), "bind_*");
+                int k = find(id);
+                Settings disk;
+                disk.load();
+                if (k < 0) fail(wkey, "gone after a right-click");
+                else if (cur_[k].label != "-") fail(wkey, "a right-click didn't unbind it (it shows " + cur_[k].label + ")");
+                else if (after == before) fail(wkey, "a right-click didn't change the binds");
+                else if (cfgLines(disk.toText(), "bind_*") != after) fail(wkey, "the right-click's unbind wasn't saved");
+                unbindChecks_++;
+            }
+        }
         if (verbose_) printf("  %s %s -> %s%s\n", rec.ok ? "ok  " : "FAIL", wkey.c_str(), path().c_str(), rec.ok ? "" : (" : " + rec.fails.back()).c_str());
         // a slider: a number typed into it is kept exactly (off any grid a drag snaps to), and saved as typed
         if (w.kind == UiWidget::SLIDER && w.enabled && path() == path0) {
@@ -939,7 +1009,8 @@ private:
     }
 
     int typedChecks_ = 0;   // sliders a value was typed into (and kept)
-    int resetChecks_ = 0;   // sliders right-clicked back to their default
+    int resetChecks_ = 0;   // sliders and colour pickers right-clicked back to their default
+    int unbindChecks_ = 0;  // keybind slots right-clicked to unbind
 
     // the state an activation led to (a new screen, a selection...), before the test undid it
     std::string postPath_, postCtx_, postIdent_;
@@ -1299,7 +1370,8 @@ private:
         std::ofstream f(utf8Path(out));
         f << "{\n  \"result\": " << jsonStr(ok ? "pass" : "fail") << ",\n  \"seconds\": " << (int)seconds << ",\n  \"frames\": " << frames_
           << ",\n  \"widgets\": " << widgets << ",\n  \"screens\": " << screens.size() << ",\n  \"passed\": " << passed << ",\n  \"failed\": " << failed
-          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"slider_reset_checks\": " << resetChecks_ << ",\n  \"per_screen\": {\n";
+          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"slider_reset_checks\": " << resetChecks_
+          << ",\n  \"unbind_checks\": " << unbindChecks_ << ",\n  \"per_screen\": {\n";
         size_t n = 0;
         for (auto& [p, c] : perScreen)
             f << "    " << jsonStr(p) << ": {\"widgets\": " << c[0] << ", \"pass\": " << c[1] << ", \"fail\": " << c[2] << "}" << (++n < perScreen.size() ? ",\n" : "\n");
@@ -1333,8 +1405,8 @@ private:
         f.close();
         // the summary
         printf("\n==== UI TEST: %s ====\n", ok ? "PASS" : "FAIL");
-        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into, %d right-clicked back to default; %zu layout issues; %.0f s, %ld frames\n",
-               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, resetChecks_, layout_.size(), seconds, frames_);
+        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into, %d sliders / colours right-clicked back to default, %d key slots right-clicked to unbind; %zu layout issues; %.0f s, %ld frames\n",
+               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, resetChecks_, unbindChecks_, layout_.size(), seconds, frames_);
         printf("per screen (widgets / pass / fail):\n");
         for (auto& [p, c] : perScreen) printf("  %-42s %4d %4d %4d\n", p.c_str(), c[0], c[1], c[2]);
         for (auto* r : bad) {
