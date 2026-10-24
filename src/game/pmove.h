@@ -37,7 +37,8 @@ struct MoveState {
     float dashTimer = 0;     // > 0 while the dash burst is active
     float dashDirX = 0, dashDirZ = 0;
     float dashUp = 0;        // vertical part of the dash (from look pitch, small)
-    float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends
+    float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends (after a wall bounce: the bounce's speed)
+    float dashFromSpeed = 0; // horizontal speed when this dash started (after a wall bounce: the bounce's): a super dash adds to it
     float jumpBuffer = 0;    // a fresh jump press still counts this long for a dash jump / super dash (frozen while dashing)
     float jumpGrace = 0;     // jumped off the ground by a press this recently: a dash now is still a ground dash jump
     uint8_t dashBounces = 0; // wall bounces this dash has made

@@ -29,7 +29,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
                   (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
     w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
-    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
+    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); w.f32(m.dashFromSpeed); }   // (43: + the speed the dash started from)
     if (opt & 4) {   // (43: charges | recharging << 4, the cooldown in ms, each recharge's ms; 42: charges + the cooldown; 41: the charges alone; before: the cooldown f32)
         const int n = std::min<int>(m.dashRecharging, kMaxDashCharges);
         w.u8((uint8_t)(std::min<int>(m.dashCharges, 15) | n << 4)); w.u16(m.dashCooldownMs);
@@ -57,7 +57,11 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     m.pos = r.vec(); m.vel = r.vec(); m.flags = r.u8(); m.mods = r.u8();
     uint8_t opt = r.u8();
     if (opt & 1) m.hookPoint = r.vec();
-    if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
+    if (opt & 2) {
+        m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32();
+        if (proto >= kSnapDashRechargeSince) m.dashFromSpeed = r.f32();
+        else m.dashFromSpeed = std::max(0.0f, m.dashExitSpeed - 1.0f);   // (older demos: about the speed it started from, from the exit's + 1)
+    }
     if (opt & 4) {
         if (proto >= kSnapDashRechargeSince) {
             const uint8_t b = r.u8();

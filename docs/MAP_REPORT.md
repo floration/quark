@@ -13,9 +13,9 @@ Measured with the game's movement code: the speed a good player builds with auto
 | 16 m/s | 0 m | 9.2 m | 48.0 m | 44.0 m | 33.0 m | 24 m/s |
 | 20 m/s | 0 m | 11.7 m | 48.5 m | 44.0 m | 37.0 m | 24 m/s |
 | 24 m/s | 0 m | 14.3 m | 57.5 m | 53.5 m | 48.0 m | 24 m/s |
-| 28 m/s | 0 m | 17.4 m | 70.5 m | 66.5 m | 61.0 m | 28 m/s |
-| 32 m/s | 17 m | 20.0 m | 81.5 m | 77.5 m | 72.0 m | 32 m/s |
-| 36 m/s | 20 m | 20.0 m | 83.0 m | 79.5 m | 73.5 m | 36 m/s |
+| 28 m/s | 24 m | 17.4 m | 70.5 m | 66.5 m | 61.0 m | 28 m/s |
+| 32 m/s | 38 m | 20.0 m | 81.5 m | 77.5 m | 72.0 m | 32 m/s |
+| 36 m/s | 44 m | 20.0 m | 83.0 m | 79.5 m | 73.5 m | 36 m/s |
 
 ## Scores
 
@@ -173,7 +173,7 @@ Tech payoff:
 - **railyard**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1412 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 61612 of 368259 leaps need a run-up
 - **summit**: movement tech shortens main trips by 1.72x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 92 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 8808 of 176619 leaps need a run-up
 - **temple**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 188 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 33590 of 313724 leaps need a run-up
-- **viaduct**: race: shortcut 10.0 (worst leg 8 at 1.20x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 8.0 on the tech path (9.4 jumps per 100 m, 16% narrow, 2% grappled) - legs: 1: 41 m run / 41 m with tech (1.01x), 5 jumps, 10 m narrow, 0 m grappled; 2: 34 m run / 34 m with tech (1.00x), 3 jumps, 0 m narrow, 0 m grappled; 3: 29 m run / 28 m with tech (1.01x), 3 jumps, 0 m narrow, 0 m grappled; 4: 36 m run / 34 m with tech (1.05x), 2 jumps, 0 m narrow, 0 m grappled; 5: 18 m run / 18 m with tech (1.00x), 2 jumps, 8 m narrow, 0 m grappled; 6: 59 m run / 52 m with tech (1.14x), 3 jumps, 3 m narrow, 0 m grappled; 7: 71 m run / 70 m with tech (1.01x), 9 jumps, 22 m narrow, 0 m grappled; 8: 32 m run / 27 m with tech (1.20x), 1 jumps, 0 m narrow, 0 m grappled; 9: 105 m run / 96 m with tech (1.10x), 11 jumps, 39 m narrow, 0 m grappled; 10: 60 m run / 59 m with tech (1.02x), 6 jumps, 12 m narrow, 0 m grappled; 11: 55 m run / 53 m with tech (1.04x), 1 jumps, 0 m narrow, 13 m grappled; 12: 95 m run / 84 m with tech (1.13x), 10 jumps, 4 m narrow, 0 m grappled; with every move a good player also reaches 168 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 1523 of 29611 leaps need a run-up
+- **viaduct**: race: shortcut 10.0 (worst leg 8 at 1.20x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 8.0 on the tech path (9.2 jumps per 100 m, 16% narrow, 2% grappled) - legs: 1: 41 m run / 41 m with tech (1.01x), 5 jumps, 10 m narrow, 0 m grappled; 2: 34 m run / 34 m with tech (1.00x), 2 jumps, 0 m narrow, 0 m grappled; 3: 29 m run / 28 m with tech (1.01x), 3 jumps, 0 m narrow, 0 m grappled; 4: 36 m run / 34 m with tech (1.05x), 2 jumps, 0 m narrow, 0 m grappled; 5: 18 m run / 18 m with tech (1.00x), 2 jumps, 8 m narrow, 0 m grappled; 6: 59 m run / 52 m with tech (1.14x), 3 jumps, 3 m narrow, 0 m grappled; 7: 71 m run / 70 m with tech (1.01x), 9 jumps, 22 m narrow, 0 m grappled; 8: 32 m run / 27 m with tech (1.20x), 1 jumps, 0 m narrow, 0 m grappled; 9: 105 m run / 96 m with tech (1.10x), 11 jumps, 39 m narrow, 0 m grappled; 10: 60 m run / 59 m with tech (1.02x), 6 jumps, 12 m narrow, 0 m grappled; 11: 55 m run / 53 m with tech (1.04x), 1 jumps, 0 m narrow, 13 m grappled; 12: 95 m run / 84 m with tech (1.13x), 10 jumps, 4 m narrow, 0 m grappled; with every move a good player also reaches 168 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 1523 of 29611 leaps need a run-up
 
 ### Mode fit
 
