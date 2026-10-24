@@ -5,18 +5,37 @@ exportmode (an installed copy without a build, say). Run it after the mode catal
     python3 tools/mode_editor/snapshot_catalog.py [--quark-tests build/quark_tests]
 
 It keeps only the catalog (not the built-in texts: those come from tools/modes/*.qlogic) and writes it sorted, so the
-diff shows what changed.
+diff shows what changed. It also copies tools/modes/*.qlogic into web/fixtures/, the texts the page falls back on when
+neither exportmode nor tools/modes is there (--fixtures-only: just that; run it after tools/modes changes; the web
+tests fail while the two differ).
 """
-import argparse, json, os, subprocess, sys, tempfile
+import argparse, json, os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "web", "js", "catalog_snapshot.js")
+MODES_DIR = os.path.join(HERE, "..", "modes")
+FIXTURES = os.path.join(HERE, "web", "fixtures")
+
+
+def refresh_fixtures():
+    """web/fixtures/*.qlogic = tools/modes/*.qlogic (stale ones removed)."""
+    if not os.path.isfile(os.path.join(MODES_DIR, "common.qlogic")):
+        print("no tools/modes/: fixtures left as they are"); return
+    want = sorted(f for f in os.listdir(MODES_DIR) if f.endswith(".qlogic"))
+    os.makedirs(FIXTURES, exist_ok=True)
+    for f in os.listdir(FIXTURES):
+        if f.endswith(".qlogic") and f not in want: os.remove(os.path.join(FIXTURES, f))
+    for f in want: shutil.copyfile(os.path.join(MODES_DIR, f), os.path.join(FIXTURES, f))
+    print("fixtures: %d texts from tools/modes" % len(want))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quark-tests", default=os.path.join(HERE, "..", "..", "build", "quark_tests" + (".exe" if os.name == "nt" else "")))
+    ap.add_argument("--fixtures-only", action="store_true", help="only copy tools/modes/*.qlogic into web/fixtures/")
     a = ap.parse_args()
+    refresh_fixtures()
+    if a.fixtures_only: return 0
     if not os.path.isfile(a.quark_tests):
         print("quark_tests not found: %s" % a.quark_tests); return 1
     with open(a.quark_tests, "rb") as f:

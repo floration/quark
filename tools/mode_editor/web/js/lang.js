@@ -309,6 +309,7 @@ function sameKind(a, b) {
 const LOOP_N = 32;
 
 // ---------------------------------------------------------------- validation (the editor's checks; checkmode is the judge)
+// opts: {base (the file's mode=), def (the built-in logic it is merged over: warnings only for what the file changes)}
 // returns {problems: [{severity, msg, line, col, where}], info: {slotKey: {insns, worst, interpreted?}}, errors}
 export function validate(ast, opts = {}) {
     const out = [];
@@ -383,7 +384,10 @@ export function validate(ast, opts = {}) {
         for (const p of seen) { if (!callers.has(p)) callers.set(p, []); callers.get(p).push(d); }
     }
     // (as checkmode says it: the game compiles a proc only where a slot inlines it)
-    for (const [n, d] of S.procs) if (!callers.has(n)) err(`proc ${n} is never called (so the game doesn't check it)`, d, "proc:" + n, "warning");
+    // (a built-in proc this file leaves as it is, common's firstToRounds in a mode without rounds say, isn't the file's
+    // doing: opts.def is the built-in logic, and only a proc that differs from it is reported)
+    const own = opts.def ? new Set(diffLogic(ast, opts.def).filter((x) => x.change !== "default").map((x) => x.key)) : null;
+    for (const [n, d] of S.procs) if (!callers.has(n) && (!own || own.has("proc:" + n))) err(`proc ${n} is never called (so the game doesn't check it)`, d, "proc:" + n, "warning");
 
     const info = {};
     const cost = costs(ast, S);
