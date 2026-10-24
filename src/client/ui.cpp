@@ -66,7 +66,12 @@ void Ui::labelFit(float x, float y, float maxW, std::string t, const Color& c) {
 }
 
 void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, float sizeMul, float maxW) {
-    float ts = std::max(1.0f, std::round(textScale_ * sizeMul));
+    drawCentered(cx, y, t, c, std::max(1.0f, std::round(textScale_ * sizeMul)), maxW);
+}
+
+void Ui::hintCentered(float cx, float y, const std::string& t, const Color& c, float maxW) { drawCentered(cx, y, t, c, hintScale(), maxW); }
+
+void Ui::drawCentered(float cx, float y, const std::string& t, const Color& c, float ts, float maxW) {
     if (maxW <= 0 && boxR_ > boxL_) maxW = 2 * std::max(0.0f, std::min(cx - boxL_, boxR_ - cx));   // (centred in its box)
     float w = r_->textWidth(t, ts);
     if (maxW <= 0 || t.empty() || w <= maxW) { r_->text(cx - w * 0.5f, y, ts, t, c); return; }

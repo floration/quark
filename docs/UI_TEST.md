@@ -12,7 +12,8 @@ DISPLAY=:99 xvfb-run -a ctest --test-dir build -R uitest  # the same through cte
 ```
 
 Development options: `--uitest-only menus,host-ffa` runs some scenarios, `--uitest-path settings` only explores the
-screens under one path (`--uitest-path host,custom`: under any of them; the scenario's first screen always), and
+screens under one path (`--uitest-path host,custom`: under any of them; `ingame,-ingame/pause/settings`: under
+ingame but not under its settings; the scenario's first screen always), and
 `QUARK_UITEST_VERBOSE=1` prints every activation as it happens. `quark --menupage <path> --screenshot out.png` opens a
 menu page by its path (below) for a screenshot, e.g. `host/advanced`, `vsbots/picker:maps`, `custom/dash`,
 `info/controls+15` (scrolled down 15 lines).

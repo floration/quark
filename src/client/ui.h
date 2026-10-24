@@ -99,6 +99,8 @@ public:
     float hintScale() const;
     void labelFit(float x, float y, float maxW, std::string t, const Color& c = {1, 1, 1, 1}); // shrunk / clipped to maxW
     void labelCentered(float cx, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f, float maxW = 0);
+    // a hint (text 1.5, as Ui::hint) centred on cx, fitted like labelCentered
+    void hintCentered(float cx, float y, const std::string& t, const Color& c = {0.7f, 0.72f, 0.75f, 1}, float maxW = 0);
     // t broken into lines at most maxW wide at text scale ts (and, given maxChars, at most that many characters): at
     // spaces, a word longer than a line cut where it fits. From a small cache keyed by the text, the width, the size
     // and the font: a paragraph is wrapped once, not every frame (no allocation on a hit).
@@ -202,6 +204,7 @@ private:
     const std::string& fitText(const std::string& t, float maxW, std::string& buf, float& ts, float& tk, float& tw, bool* clipped) const;
     TextFit fitted(const std::string& t, float ts, float maxW) const;
     void drawFitted(float x, float y, const std::string& t, const Color& c, float ts, float maxW);
+    void drawCentered(float cx, float y, const std::string& t, const Color& c, float ts, float maxW);
     float boxWidth(float x) const { return boxR_ > boxL_ ? std::max(1.0f, boxR_ - x) : 0; }
     float boxL_ = 0, boxR_ = 0;
     struct FitEntry { uint64_t key = 0; TextFit fit; };

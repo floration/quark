@@ -483,16 +483,18 @@ private:
 
     // ---- the scenario's screens
     bool explorable(const std::string& p) const {
-        if (!o_.uiTestPath.empty() && p != sc_->root) {   // (--uitest-path a,b,c: the screens under any of them)
-            bool under = false;
+        if (!o_.uiTestPath.empty() && p != sc_->root) {   // (--uitest-path a,b,-c: the screens under a or b, but not under c)
+            bool under = false, out = false;
             size_t a = 0;
             while (a <= o_.uiTestPath.size()) {
                 size_t b = o_.uiTestPath.find(',', a);
                 if (b == std::string::npos) b = o_.uiTestPath.size();
-                if (b > a && p.compare(0, b - a, o_.uiTestPath, a, b - a) == 0) under = true;
+                const bool minus = b > a && o_.uiTestPath[a] == '-';
+                const size_t a2 = a + (minus ? 1 : 0);
+                if (b > a2 && p.compare(0, b - a2, o_.uiTestPath, a2, b - a2) == 0) (minus ? out : under) = true;
                 a = b + 1;
             }
-            if (!under) return false;
+            if (!under || out) return false;
         }
         bool in = false;
         for (auto& e : sc_->explore) in |= p.rfind(e, 0) == 0;
@@ -644,6 +646,9 @@ private:
         lastReplay_.clear();
         for (auto* way : ways) {
             if (!toRoot()) { lastReplay_ += " [couldn't set the scenario up again]"; return false; }
+            // a CHECK AGAIN clicked a moment ago leaves the host's reachability check running for a few seconds, and
+            // CHECK AGAIN isn't drawn until it's done: wait for it, as the scenario's setup does (it was a flaky untested)
+            if (g_.host_) waitFor([&] { return g_.host_->reachability() != Server::REACH_CHECKING; }, 6);
             bool ok = true;
             for (auto& st : *way) if (!replay(st)) { ok = false; lastReplay_ += " [" + st.id + " not there]"; break; }
             step(2);
