@@ -38,7 +38,17 @@
   function opts(kind) {
     const p = kind === 'voice' ? 'v' : 's';
     return { metric: U.$('#' + p + 'Metric').value, which: U.$('#' + p + 'Which').value, filter: U.$('#' + p + 'Filter').value.trim().toLowerCase(),
-      edited: U.$('#' + p + 'Edited').checked, over: kind === 'sound' && U.$('#sOver').checked, fav: kind === 'sound' && U.$('#sFav').checked };
+      edited: U.$('#' + p + 'Edited').checked, over: U.$('#' + p + 'Over').checked, fav: U.$('#' + p + 'Fav').checked, origin: U.$('#' + p + 'Origin').value };
+  }
+  // the time a row's mini waveforms span: its longest clip (so the longest fills its cell, the others compare to it)
+  function rowSpan(kind, name, which) {
+    let n = 0;
+    for (const p of packsOf(kind)) {
+      const k = Q.key(kind, p.dir, name), a = Q.assets[k]; if (!a) continue;
+      const x = which === 'out' ? Q.outSync(k) : which === 'game' ? (Q.gameSync(k) || {}).v : null;
+      n = Math.max(n, (x || a.orig || []).length);
+    }
+    return Math.max(0.1, n / 48000 * 1.04);
   }
 
   function fillCell(td, key, o) {
@@ -63,13 +73,16 @@
     else if (!e && a.sameAsDefault) badges.append(h('span.badge', { title: 'Same as DEFAULT (a DEFAULT override also replaces it)' }, '=D'));
     else if (!e && a.derived === 'retro') badges.append(h('span.badge', { title: 'RETRO = DEFAULT chiptuned (x1.1 pitch, 4-bit)' }, '~D'));
     if (a.shippedOverride) badges.append(h('span.badge.ship', { title: 'Already replaced by a file in assets/overrides (shipped)' }, 'OWN'));
+    const og = Q.prov.currentOrigin(key);
+    if (og.origin !== 'empty') badges.append(h('span.badge.o-' + og.origin, { title: (og.origin === 'unset' ? 'Origin not set: say who made this file (editor panel or export)' : Q.prov.LABEL[og.origin]) + '\n' + og.why }, Q.prov.SHORT[og.origin]));
+    td.classList.toggle('dimmed', !!o.origin && og.origin !== o.origin);
     if (a.guide && m.dur > a.guide + 1e-3) badges.append(h('span.badge.over', { title: 'Longer than the length guide (' + a.guide + ' s)' }, '>' + a.guide + 's'));
     const outM = Q.metricsSync(key, 'out');
     if (outM && outM.dur > a.cap) badges.append(h('span.badge.cap', { title: 'The game cuts it at ' + a.cap + ' s' }, 'CUT'));
     td.append(badges);
     td.classList.toggle('silent', !x.length || m.peak < -90);
     td.title = a.name + ' / ' + Q.packName(a.kind, a.pack) + '\n' + (a.when || '') + '\nLUFS ' + fmt(m.lufs) + '  max momentary ' + fmt(m.mmax) + '  true peak ' + fmt(m.tp) + ' dBTP  heard ' + fmt(m.heard) + ' dB  ' + fmt(m.dur, 3) + ' s';
-    requestAnimationFrame(() => Q.drawMini(cv, x, a.kind === 'voice' ? 2.5 : Math.max(0.6, a.guide ? a.guide * 1.6 : 1.2), pack ? pack.color : '#6fb1ff'));
+    requestAnimationFrame(() => Q.drawMini(cv, x, rowSpan(a.kind, a.name, o.which), pack ? pack.color : '#6fb1ff'));
   }
   lib.fillCell = fillCell;
 
@@ -82,39 +95,87 @@
     }
     if (o.edited && !keys.some(k => Q.state.edits[k] || Q.inheritsFrom(k))) return false;
     if (o.fav && !meta.fav) return false;
-    if (o.over) {
+    if (o.over && kind === 'sound') {   // over the length guide
       const g = (Q.assets[keys[0]] || {}).guide;
       if (!g || !keys.some(k => { const m = Q.metricsSync(k, o.which); return m && m.dur > g + 1e-3; })) return false;
     }
+    if (o.over && kind === 'voice' && !keys.some(k => { const a = Q.assets[k], x = a && (Q.state.edits[k] ? Q.outSync(k) : a.orig); return x && x.length / 48000 > a.cap; })) return false;   // cut by the game
+    if (o.origin && !keys.some(k => Q.assets[k] && Q.prov.currentOrigin(k).origin === o.origin)) return false;
     return true;
   }
+
+  // who made what the game plays, counted per pack (header) and for the whole matrix (toolbar)
+  const ORDER = ['ai', 'third-party', 'human', 'unset'];
+  function originCounts(kind) {
+    const per = {}, all = {};
+    const names = rowGroups(kind).flatMap(g => g[1]);
+    for (const p of packsOf(kind)) {
+      const c = per[p.dir] = {};
+      for (const n of names) {
+        const k = Q.key(kind, p.dir, n); if (!Q.assets[k]) continue;
+        const og = Q.prov.currentOrigin(k).origin; if (og === 'empty') continue;
+        c[og] = (c[og] || 0) + 1; all[og] = (all[og] || 0) + 1;
+      }
+    }
+    return { per, all };
+  }
+  const countSpans = c => ORDER.filter(o => c[o]).map(o => h('span.oc.o-' + o, { title: c[o] + ' ' + (o === 'unset' ? 'with no origin set yet' : Q.prov.LABEL[o]) }, Q.prov.SHORT[o] + ' ' + c[o]));
 
   lib.renderMatrix = function (kind) {
     const table = U.$(kind === 'voice' ? '#voiceMatrix' : '#soundMatrix'), o = opts(kind), packs = packsOf(kind);
     const scrollTop = table.parentNode.scrollTop;
     table.innerHTML = '';
-    const head = h('tr', h('th', kind === 'voice' ? 'Line' : 'Sound'));
+    table.style.minWidth = (300 + 150 * packs.length) + 'px';
+    const counts = originCounts(kind), tot = Object.values(counts.all).reduce((s, n) => s + n, 0);
+    const cs = U.$(kind === 'voice' ? '#vCounts' : '#sCounts'); cs.innerHTML = '';
+    cs.append(h('span.faint', 'of ' + tot + ':'), ...countSpans(counts.all));
+    const head = h('tr', h('th.rowhead-h', kind === 'voice' ? 'Line' : 'Sound'));
     for (const p of packs) {
       const loaded = Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir];
       head.append(h('th.pack', h('div.pack-head', h('span.sw', { style: { background: p.color } }),
         h('span.nm', p.name, p.sub ? h('small', ' ' + p.sub) : null),
         U.smButtons('Pack', Q.packId(kind, p.dir), Q.packId(kind, p.dir)),
         h('button.mini', { type: 'button', title: 'Play every ' + (kind === 'voice' ? 'line' : 'sound') + ' of ' + p.name + ' in turn', disabled: !loaded,
-          onclick: () => lib.playSequence(visibleNames(kind).map(n => Q.key(kind, p.dir, n)).filter(k => Q.assets[k]), p.name) }, '▶'))));
+          onclick: () => lib.playSequence(visibleNames(kind).map(n => Q.key(kind, p.dir, n)).filter(k => Q.assets[k]), p.name) }, '▶')),
+        h('div.pack-counts', countSpans(counts.per[p.dir] || {}))));
     }
     table.append(h('thead', head));
-    const body = h('tbody');
+    const body = h('tbody'), fresh = new Map();
     for (const [gname, names] of rowGroups(kind)) {
       const rows = names.filter(n => rowVisible(kind, n, o));
       if (!rows.length) continue;
       body.append(h('tr.grp', h('td', { colSpan: packs.length + 1 }, gname)));
-      for (const name of rows) body.append(rowFor(kind, name, packs, o));
+      for (const name of rows) body.append(cachedRow(kind, name, packs, o, fresh));
     }
+    rowCache[kind] = fresh;
+    if (!body.children.length) body.append(h('tr.none', h('td', { colSpan: packs.length + 1 }, 'No ' + (kind === 'voice' ? 'lines' : 'sounds') + ' match these filters. ',
+      h('button.mini', { type: 'button', onclick: () => lib.clearFilters(kind) }, 'clear the filters'))));
     table.append(body);
     table.parentNode.scrollTop = scrollTop;
   };
   function visibleNames(kind) { const o = opts(kind); return rowGroups(kind).flatMap(g => g[1]).filter(n => rowVisible(kind, n, o)); }
   lib.visibleNames = visibleNames;
+
+  /* A commit re-renders the matrix; a row whose inputs didn't change is reused as it is (its canvases drawn, its
+     metrics filled), so a commit redraws only the rows it touched instead of all 165 / 245 cells (about 300 ms -> a few
+     ms at 2560). The signature is everything rowFor reads: the options, the row's note / favourite / solo / mute, and
+     per cell its pack being loaded, its edit, what the game plays (inherited DEFAULT edits too) and its origin. */
+  const rowCache = { sound: new Map(), voice: new Map() };
+  function rowSig(kind, name, packs, o) {
+    const parts = [o.metric, o.which, o.origin, JSON.stringify(Q.state.meta[kind + ':' + name] || {}), Q.mix.soloSound.has(Q.soundId(kind, name)), Q.mix.muteSound.has(Q.soundId(kind, name))];
+    for (const p of packs) {
+      const k = Q.key(kind, p.dir, name);
+      if (!Q.assets[k]) { parts.push('-'); continue; }
+      parts.push(!!Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir], Q.audible(kind, p.dir, name), Q.gameSig(k), Q.editSig(k), Q.prov.currentOrigin(k).origin);
+    }
+    return parts.join('\u0001');
+  }
+  function cachedRow(kind, name, packs, o, fresh) {
+    const sig = rowSig(kind, name, packs, o), c = rowCache[kind].get(name);
+    const tr = c && c.sig === sig ? c.tr : rowFor(kind, name, packs, o);
+    fresh.set(name, { sig, tr });
+    return tr;
+  }
 
   function rowFor(kind, name, packs, o) {
     const a0 = Q.assets[Q.key(kind, packs[0].dir, name)] || {}, meta = Q.state.meta[kind + ':' + name] || {};
@@ -157,22 +218,42 @@
     if (td) { U.select(td.dataset.key); td.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
   };
 
-  // voices: load every voice when the tab opens (one at a time, the page stays responsive)
-  let voicesStarted = false;
-  lib.loadVoices = async function () {
-    if (voicesStarted) return; voicesStarted = true;
-    for (const v of Q.VOICES) {
-      U.$('#voiceLoad').textContent = 'loading ' + v.name + '...';
-      try { await Q.loadPack('voice', v.dir); } catch (e) { U.fail('voice ' + v.dir, e); }
-      if (Q.tab === 'voices') lib.renderMatrix('voice');
-    }
-    U.$('#voiceLoad').textContent = '';
+  // voices: load every voice when the tab (or the overview of voices) opens, all at once: the scripts download and
+  // the clips decode in parallel (decodeAudioData runs off the main thread); each voice shows as soon as it is in
+  let voicesP = null;
+  lib.loadVoices = function () {
+    if (voicesP) return voicesP;
+    let done = 0;
+    const label = () => { U.$('#voiceLoad').textContent = done < Q.VOICES.length ? 'loading voices: ' + done + ' of ' + Q.VOICES.length + '...' : ''; };
+    label();
+    voicesP = Promise.all(Q.VOICES.map(v => Q.loadPack('voice', v.dir).catch(e => U.fail('voice ' + v.dir, e)).then(() => { done++; label(); })));
+    return voicesP;
+  };
+  // a pack finished loading: redraw the view that shows it (coalesced: seven voices landing together draw once or twice)
+  const landed = new Set(); let landT = 0;
+  lib.packLoaded = function (type) {
+    landed.add(type);
+    if (landT) return;
+    landT = setTimeout(() => {
+      landT = 0;
+      const t = new Set(landed); landed.clear();
+      if (Q.tab === 'sounds' && t.has('kit')) lib.renderMatrix('sound');
+      else if (Q.tab === 'voices' && t.has('voice')) lib.renderMatrix('voice');
+      else if (Q.tab === 'overview' && t.has(U.$('#ovSet').value === 'voice' ? 'voice' : 'kit')) U.views.overview.render();
+    }, 60);
+  };
+
+  lib.clearFilters = function (kind) {
+    const p = kind === 'voice' ? 'v' : 's';
+    U.$('#' + p + 'Filter').value = ''; U.$('#' + p + 'Origin').value = '';
+    for (const id of ['Edited', 'Over', 'Fav']) U.$('#' + p + id).checked = false;
+    lib.renderMatrix(kind);
   };
 
   U.views.sounds = { render: () => lib.renderMatrix('sound') };
   U.views.voices = { render: () => { lib.renderMatrix('voice'); lib.loadVoices(); } };
-  for (const id of ['sMetric', 'sWhich', 'sEdited', 'sOver', 'sFav']) document.getElementById(id).addEventListener('change', () => lib.renderMatrix('sound'));
-  for (const id of ['vMetric', 'vWhich', 'vEdited']) document.getElementById(id).addEventListener('change', () => lib.renderMatrix('voice'));
+  for (const id of ['sMetric', 'sWhich', 'sEdited', 'sOver', 'sFav', 'sOrigin']) document.getElementById(id).addEventListener('change', () => lib.renderMatrix('sound'));
+  for (const id of ['vMetric', 'vWhich', 'vEdited', 'vOver', 'vFav', 'vOrigin']) document.getElementById(id).addEventListener('change', () => lib.renderMatrix('voice'));
   let ft = 0;
   U.$('#sFilter').addEventListener('input', () => { clearTimeout(ft); ft = setTimeout(() => lib.renderMatrix('sound'), 150); });
   U.$('#vFilter').addEventListener('input', () => { clearTimeout(ft); ft = setTimeout(() => lib.renderMatrix('voice'), 150); });
@@ -188,9 +269,11 @@
     if (kind === 'cross') return s('path', { d: `M${x - r} ${y - r}L${x + r} ${y + r}M${x + r} ${y - r}L${x - r} ${y + r}`, stroke: color, 'stroke-width': 2.5, 'stroke-linecap': 'round' });
     return s('circle', { cx: x, cy: y, r, fill: color, stroke: ring, 'stroke-width': 1.5 });
   }
+  let ovTok = 0;
   lib.renderOverview = async function () {
     const kind = U.$('#ovSet').value, metric = U.$('#ovMetric').value, which = U.$('#ovWhich').value, packs = packsOf(kind);
-    const box = U.$('#overview');
+    const box = U.$('#overview'), tok = ++ovTok;
+    U.$('#ovTip').hidden = true;   // (the chart it belonged to is going)
     const legend = U.$('#ovLegend'); legend.innerHTML = '';
     for (const p of packs) { const sv = s('svg', { width: 14, height: 14 }); sv.append(shape(p.shape, 7, 7, p.color)); legend.append(h('span', sv, p.name)); }
     if (kind === 'voice') lib.loadVoices();
@@ -206,8 +289,10 @@
       }
       rows.push({ n, pts });
     }
+    if (tok !== ovTok) return;   // (a newer render started while this one measured)
     const all = rows.flatMap(r => r.pts.map(p => p.v));
-    if (!all.length) { box.innerHTML = '<div class="faint" style="padding:20px">Loading...</div>'; return; }
+    const waiting = packs.filter(p => !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]).length;
+    if (!all.length) { box.innerHTML = '<div class="faint" style="padding:20px">Loading' + (waiting ? ' (' + (packs.length - waiting) + ' of ' + packs.length + ' ' + (kind === 'voice' ? 'voices' : 'kits') + ' in)' : '') + '...</div>'; return; }
     const lo = Math.floor(Math.min(...all) - 1), hi = Math.ceil(Math.max(...all) + 1);
     const W = Math.max(600, box.clientWidth - 30), left = 150, right = 90, rowH = 20, top = 26, H = top + rows.length * rowH + 10;
     const X = v => left + (v - lo) / (hi - lo) * (W - left - right);
@@ -238,7 +323,9 @@
       }
       const sp = s('text', { x: W - right + 22, y: y + 4, fill: mx - mn > 6 ? '#ec835a' : '#a5abb6' }); sp.textContent = fmt(mx - mn, 1); svg.append(sp);
     });
-    box.innerHTML = ''; box.append(svg);
+    box.innerHTML = '';
+    if (waiting) box.append(h('div.faint', { style: { padding: '0 0 6px' } }, 'Loading ' + waiting + ' more ' + (kind === 'voice' ? 'voice' : 'kit') + (waiting > 1 ? 's' : '') + ': the chart fills in as they arrive.'));
+    box.append(svg);
   };
   U.views.overview = { render: () => lib.renderOverview().catch(e => U.fail('overview', e)) };
   for (const id of ['ovSet', 'ovMetric', 'ovWhich']) document.getElementById(id).addEventListener('change', () => U.views.overview.render());
