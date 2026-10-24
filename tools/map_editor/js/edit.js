@@ -39,12 +39,23 @@ export class Editor {
   rebuildPick() {
     const d = this.doc, m = d.map, items = [];
     const sh = this.view.show;
-    m.brushes.forEach((b, i) => { if ((b.mat === 9 && !sh.clip) || (b.mat === 5 && !sh.far)) return; items.push({ min: b.min, max: b.max, ref: { k: "brush", i } }); });
+    this.brushItem = new Array(m.brushes.length);
+    m.brushes.forEach((b, i) => { if ((b.mat === 9 && !sh.clip) || (b.mat === 5 && !sh.far)) return; this.brushItem[i] = items.length; items.push({ min: b.min, max: b.max, ref: { k: "brush", i } }); });
     if (sh.generated) m.generated.forEach((b, i) => {
       if (b.group !== undefined) items.push({ min: b.min, max: b.max, ref: { k: "group", i: b.group, gen: i } });
       else if (b.ladder !== undefined) items.push({ min: b.min, max: b.max, ref: { k: "ladder", i: b.ladder } });
     });
     this.picker.build(items); this.pickDirty = false;
+  }
+  // brushes changed in place: move their picking entries (a hidden one now shown, or the other way: rebuild)
+  pickMoved(indices) {
+    if (this.pickDirty) return;
+    const m = this.doc.map, sh = this.view.show;
+    for (const i of indices) {
+      const b = m.brushes[i], item = this.brushItem[i], vis = b && !((b.mat === 9 && !sh.clip) || (b.mat === 5 && !sh.far));
+      if (!b || (item === undefined) === vis) { this.pickDirty = true; return; }
+      if (item !== undefined) this.picker.move(item, b.min, b.max);
+    }
   }
   markers() {   // [{min, max, ref}] of the small things (tested one by one)
     const d = this.doc, m = d.map, out = [], sh = this.view.show;
@@ -150,8 +161,10 @@ export class Editor {
     if (e.button !== 0) return;
     if (e.altKey && v.camMode !== "top") { this.look = { x: e.clientX, y: e.clientY, mode: "orbit" }; if (v.camMode === "fly") v.setCamMode("orbit"); return; }
     if (this.tool !== "select") return;   // (tools act on the click: up())
+    // a gizmo handle drags once the mouse moves; a click on one without moving selects what is under it (so the
+    // handles over a small box don't stop "click again for what is behind")
     const gh = this.gizmoHit(e);
-    if (gh) { this.startHandleDrag(gh, e); return; }
+    if (gh) { this.pendingHandle = gh; return; }
     // on a selected object: slide it on the floor plane once the mouse moves
     const { hits } = this.pickAll(e);
     const first = hits[0];
@@ -179,7 +192,8 @@ export class Editor {
     const da = this.downAt;
     if (da && !da.moved && Math.hypot(e.clientX - da.x, e.clientY - da.y) > 4) {
       da.moved = true;
-      if (this.pendingSlide) { this.startSlide(this.pendingSlide.hit, da.e); this.pendingSlide = null; }
+      if (this.pendingHandle) { this.startHandleDrag(this.pendingHandle, da.e); this.pendingHandle = null; }
+      else if (this.pendingSlide) { this.startSlide(this.pendingSlide.hit, da.e); this.pendingSlide = null; }
       else if (!this.drag && da.button === 0 && this.tool === "select") {
         if (v.camMode === "orbit" && !e.shiftKey) this.look = { x: e.clientX, y: e.clientY, mode: "orbit" };
         else this.marquee = { x0: da.x, y0: da.y };
@@ -192,7 +206,7 @@ export class Editor {
   up(e) {
     const v = this.view;
     if (this.look) { this.look = null; v.keys.delete("RMB"); this.downAt = null; return; }
-    const da = this.downAt; this.downAt = null; this.pendingSlide = null;
+    const da = this.downAt; this.downAt = null; this.pendingSlide = null; this.pendingHandle = null;
     if (this.drag) { this.endDrag(); return; }
     if (this.marquee) { this.endMarquee(e); return; }
     if (!da || da.button !== 0 || da.moved || e.target !== this.canvas()) return;
@@ -260,12 +274,12 @@ export class Editor {
     const bb = d.selBounds();
     const ctr = [0, 1, 2].map(k => (bb.min[k] + bb.max[k]) / 2);
     const P0 = gh.handle === "size" ? ctr.map((v, k) => k === gh.axis ? (gh.side ? bb.max[k] : bb.min[k]) : v) : ctr;
-    this.drag = { kind: gh.handle, axis: gh.axis, side: gh.side, P0, s0: this.axisParam(e, P0, gh.axis), from: d.sel.map(s => structuredClone(d.obj(s))), sel: d.sel.slice(), tx: d.begin(gh.handle === "move" ? "move" : "resize", this.dragKeys()), bb0: bb, bb: null };
+    this.drag = { kind: gh.handle, axis: gh.axis, side: gh.side, P0, s0: this.axisParam(e, P0, gh.axis), from: d.sel.map(s => structuredClone(d.obj(s))), sel: d.sel.slice(), tx: d.begin(gh.handle === "move" ? "move" : "resize", this.dragKeys(), d.sel), bb0: bb, bb: null };
   }
   startSlide(hit, e) {
     const d = this.doc;
     const y = hit.p[1];
-    this.drag = { kind: "slide", y, p0: this.planePoint(e, y) || hit.p, from: d.sel.map(s => structuredClone(d.obj(s))), sel: d.sel.slice(), tx: d.begin("move", this.dragKeys()) };
+    this.drag = { kind: "slide", y, p0: this.planePoint(e, y) || hit.p, from: d.sel.map(s => structuredClone(d.obj(s))), sel: d.sel.slice(), tx: d.begin("move", this.dragKeys(), d.sel) };
   }
   axisParam(e, P0, a) {   // the point on the axis through P0 nearest the mouse ray: its parameter
     const r = this.view.ray(e.clientX, e.clientY);
@@ -306,9 +320,7 @@ export class Editor {
   }
   endDrag() {
     const dr = this.drag; this.drag = null; this.app.hudDrag = "";
-    const moved = dr.kind === "size" ? true : dr.last && dr.last.some(v => v !== 0);
-    if (moved) dr.tx.commit(); else dr.tx.cancel();
-    this.pickDirty = true;
+    dr.tx.commit();   // (no step when the objects came back where they were)
   }
   drawMarquee(e) {
     const r = this.canvas().parentElement.getBoundingClientRect();
@@ -358,7 +370,7 @@ export class Editor {
     const across = Math.abs(Math.sin(yaw)) > Math.abs(Math.cos(yaw)) ? 2 : 0;   // the axis across your view
     const add = (label, key, obj, k) => {
       let idx = -1;
-      d.edit("add " + label, [key], () => { const arr = d.get(key); arr.push(obj); idx = arr.length - 1; });
+      d.edit("add " + label, [key], () => { const arr = d.get(key); arr.push(obj); idx = arr.length - 1; }, { touch: [] });
       d.select([{ k, i: idx }]);
     };
     switch (this.tool) {
@@ -379,7 +391,7 @@ export class Editor {
       case "checkpoint": { const sz = across === 0 ? [8, 4, 1] : [1, 4, 8]; add("checkpoint", "checkpoints", onSurface(sz), "checkpoint"); break; }
       case "path": {
         const sel = d.selOf("path"); const at = sel.length ? Math.max(...sel) + 1 : d.map.path.length;
-        d.edit("add path point", ["path"], (m) => m.path.splice(at, 0, [S(p[0]), tidy(p[1]), S(p[2])]));
+        d.edit("add path point", ["path"], (m) => m.path.splice(at, 0, [S(p[0]), tidy(p[1]), S(p[2])]), { touch: [] });
         d.select([{ k: "path", i: at }]); break;
       }
       case "ladder": {
@@ -464,8 +476,7 @@ export class Editor {
           roundObj(o);
         }
       }
-    });
-    this.pickDirty = true;
+    }, { touch: d.sel });
   }
   cycleMaterial() {
     const d = this.doc;
@@ -478,14 +489,14 @@ export class Editor {
         if (s.k === "spawn") { o.team = teams[(teams.indexOf(o.team) + 1) % teams.length]; continue; }
         o.mat = (o.mat + 1) % 10; this.mat = o.mat;
       }
-    });
+    }, { touch: targets });
     this.app.emit("tool", this.tool);
   }
   turnSel(dir) {
     const d = this.doc;
     const targets = d.sel.filter(s => ["spawn", "figure", "botstart"].includes(s.k));
     if (!targets.length) return;
-    d.edit("turn", d.keysOf(targets), () => { for (const s of targets) { const o = d.obj(s); o.yaw = snapYaw(o.yaw + dir * Math.PI / 4); } });
+    d.edit("turn", d.keysOf(targets), () => { for (const s of targets) { const o = d.obj(s); o.yaw = snapYaw(o.yaw + dir * Math.PI / 4); } }, { touch: targets });
   }
   duplicate() {
     const d = this.doc, b = d.selBounds(); if (!b) return;
@@ -519,8 +530,7 @@ export class Editor {
           if (o.yaw !== undefined) o.yaw = snapYaw(o.yaw - Math.PI / 2);
         }
       }
-    });
-    this.pickDirty = true;
+    }, { touch: d.sel });
   }
 }
 

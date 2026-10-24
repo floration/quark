@@ -41,7 +41,8 @@ export function heat(f) {
 }
 
 export function dispose(obj) {
-  obj.traverse(o => { if (o.geometry && o.geometry !== unit && !o.geometry.userData.shared) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { if (m.userData.shared) return; if (m.map && !m.userData.sharedMap) m.map.dispose(); m.dispose(); }); });
+  obj.traverse(o => { if (o.isInstancedMesh) o.dispose();   // (frees its instance buffers on the GPU)
+    if (o.geometry && o.geometry !== unit && !o.geometry.userData.shared) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { if (m.userData.shared) return; if (m.map && !m.userData.sharedMap) m.map.dispose(); m.dispose(); }); });
 }
 
 const labelCache = new Map();
