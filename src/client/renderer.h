@@ -132,6 +132,7 @@ public:
     Vec3 accentColor = {0.40f, 0.40f, 0.43f};
     Vec3 metalColor = {0.30f, 0.33f, 0.37f};
     Vec3 glowColor = {1.00f, 0.55f, 0.15f};
+    float viewOpacity = 1.0f;  // GAMEPLAY > WEAPON MODEL OPACITY: the first-person gun and grapple launcher (0 = not drawn); one frame's, drawScene resets it
     bool fullbright = false;   // VISUALS > FULLBRIGHT: flat white world with black outlines
     Vec3 fullbrightColor = {1, 1, 1};   // ...that colour instead of white (VISUALS > FULLBRIGHT COLOUR)
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
@@ -156,6 +157,7 @@ private:
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW; } uWorld_ = {};
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
+    GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
     GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1;
     GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;   // (the title: Renderer::logo)
     float uiScreen_[2] = {}, edgeRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)

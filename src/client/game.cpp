@@ -585,10 +585,18 @@ bool Game::pressInput(int code) {
     const Binds& b = binds();
     if (b.has(A_PERF, code)) { const bool was = perfOn(); showPerf_ = !showPerf_; if (!was) pipeReset(); return true; }
     if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
-    if (b.has(A_SCREENSHOT, code)) {
-        static int n = 0;
-        r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
-        notify("screenshot saved");
+    if (b.has(A_SCREENSHOT, code)) {   // screenshots/<date>_<time>.png in your data folder (was screenshot_<n>.png in
+        // the working directory with n from 0 each launch: the first one of every session overwrote the last session's)
+        const std::string dir = userDataPath("screenshots");
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
+        time_t t = time(nullptr);
+        char stamp[32];
+        strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", localtime(&t));
+        std::string name = std::string(stamp) + ".png";
+        for (int k = 2; std::filesystem::exists(std::filesystem::u8path(dir + "/" + name), ec); k++)   // (two in one second)
+            name = std::string(stamp) + "_" + std::to_string(k) + ".png";
+        notify(r_.screenshot(dir + "/" + name) ? "SCREENSHOT SAVED: SCREENSHOTS/" + name : "COULDN'T SAVE THE SCREENSHOT", 3);
         return true;
     }
     if (screen_ != Screen::InGame || chatting_) return false;
@@ -2473,6 +2481,7 @@ void Game::drawWorld(float alpha) {
 
     // viewmodel (hide and seek / tag: only "it" holds anything)
     // (spectating: the gun of whoever we're watching)
+    r_.viewOpacity = cfg_.viewmodelOpacity;   // (GAMEPLAY > WEAPON MODEL OPACITY: the gun and the launcher, in the view pass)
     const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
     bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB)) && !(opts_.debugWeapon > 0 && !specGun);   // (--weapon: shown anyway, for screenshots)
     // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps; outside the view model's test: scoped, hidden
@@ -4777,6 +4786,10 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     f.next();
     ui_.slider(f.x(), f.top(), w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity"), defaultSettings().scopeOpacity);
     cfg_.scopeOpacity = clampf(cfg_.scopeOpacity, 0, 1);
+    f.next();
+    // the first-person gun (and grapple launcher) see-through: 1 solid, 0 not drawn; HUD > WEAPON MODEL still places it
+    ui_.slider(f.x(), f.top(), w, h, "WEAPON MODEL OPACITY", cfg_.viewmodelOpacity, 0, 1, "%.2f", UiExp::cfg("viewmodel_opacity"), defaultSettings().viewmodelOpacity);
+    cfg_.viewmodelOpacity = clampf(cfg_.viewmodelOpacity, 0, 1);
     f.next();
     // the sniper's and rifle's alt-fire zoom (degrees, as FOV). Client-side only.
     ui_.slider(f.x(), f.top(), w, h, "SNIPER ZOOM FOV", cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"), defaultSettings().zoomFovSniper);
