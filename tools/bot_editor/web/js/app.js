@@ -92,8 +92,9 @@ class App {
         for (let v = value; ;) {
             const n = await this.prompt(title, v, help);
             if (n == null || n === "") return null;
-            if (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n) && !n.includes("..") && !reserved.includes(n)) return n;
-            v = n; help = `“${n}” can't be used: letters, digits, _ . - (starting with a letter or digit, no “..”${reserved.length ? ", not " + reserved.map((x) => "“" + x + "”").join(" / ") : ""}).`;
+            const ok = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n) && !n.includes("..");
+            if (ok && !reserved.includes(n)) return n;
+            v = n; help = ok ? `“${n}” is taken${n === "default" ? " (the built-in brain)" : " (a saved brain)"}: pick another name.` : `“${n}” can't be used: letters, digits, _ . - (starting with a letter or digit, no “..”).`;
         }
     }
 

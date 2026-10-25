@@ -169,8 +169,27 @@ export class BrainPage {
         this._items();
         this._problems();
         this._info();
+        this._locateProblems();
         clearTimeout(this._persistT);
         this._persistT = setTimeout(() => this._persist(), 800);
+    }
+    // The views' AST carries no source positions (a copy of a copy), so a check problem has no line:col. When there are
+    // such problems, the Code view's text is parsed again when the page is idle and checked with its positions (a few
+    // ms, only while something is wrong; the text must still be the same by then).
+    _locateProblems() {
+        if (this.codeError || !this.check || !this.check.problems.some((p) => !p.line)) return;
+        const text = this.codeText, idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+        if (this._locating === text) return;
+        this._locating = text;
+        idle(() => {
+            if (this._locating !== text) return;
+            this._locating = null;
+            if (text !== this.codeText || this.codeError) return;
+            let v;
+            try { v = validate(parse(text)); } catch { return; }
+            this.check = v;
+            this._problems(); this._highlight();
+        }, { timeout: 500 });
     }
     // the work in progress as a file through serve.py (the shell's browser storage starts empty)
     _persist() { if (this.ast) api.saveState("brain", { name: this.name, text: print(this.ast), draft: this.codeError ? this.codeText : null, savedText: this.saved || null }).catch(() => {}); }
@@ -410,7 +429,13 @@ export class BrainPage {
     }
     // Save / Save as. A draft that doesn't parse can't be saved; a brain with check errors (the editor's or the game's
     // compiler's) only after a confirm, since a run or batch refuses a brain that doesn't compile. True: saved.
+    // (one at a time: a double click or Ctrl+S during a save's checks / dialogs is ignored)
     async save(asName) {
+        if (this._saving) return false;
+        this._saving = true;
+        try { return await this._save(asName); } finally { this._saving = false; }
+    }
+    async _save(asName) {
         if (!this.ast) return false;
         if (this.codeError) { this.app.toast("The code has an error: fix it first (" + this.codeError.message + ")", 5000); return false; }
         let name = asName || this.name;
@@ -513,7 +538,7 @@ export class BrainPage {
         };
         $("brainNew").onclick = async () => {
             if (!(await this.leaveOk("A new brain"))) return;
-            const n = await this.app.promptName("New brain", "mybrain", "Starts as a copy of the default brain.", ["default", ...this.app.brainList.map((b) => b.name)]);
+            const n = await this.app.promptName("New brain", freeName("mybrain", this.app.brainList.map((b) => b.name)), "Starts as a copy of the default brain.", [...new Set(["default", ...this.app.brainList.map((b) => b.name)])]);
             if (!n) return;
             const def = this.app.defaultAst();
             this.name = n; this.saved = null; this.hist = []; this.histIx = -1;
@@ -572,6 +597,7 @@ export class BrainPage {
         $("codeScroll").addEventListener("scroll", () => { $("gutter").scrollTop = $("codeScroll").scrollTop; });
         window.addEventListener("keydown", (e) => {
             if (this.app.page !== "brain") return;
+            if (document.querySelector(".modal")) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") e.preventDefault(); return; }   // (a dialog has the keys)
             const inCode = document.activeElement === ta;
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (inCode) this._codeEdited(true); this.save(); }
             else if (!inCode && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !/INPUT|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); this.undo(e.shiftKey ? 1 : -1); }
