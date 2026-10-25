@@ -106,7 +106,9 @@
   Q.decodeBytes = async function (bytes) {
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const buf = await Q.decodeCtx().decodeAudioData(ab);
-    const n = buf.length, out = new Float32Array(n), ch = buf.numberOfChannels;
+    const n = buf.length, ch = buf.numberOfChannels;
+    if (ch === 1) return buf.getChannelData(0).slice();   // (the data packs are mono: no averaging pass)
+    const out = new Float32Array(n);
     for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) out[i] += d[i] / ch; }
     return out;
   };
@@ -121,13 +123,16 @@
         await loadScript('data/' + type + '_' + dir + '.js');
         await waited;
       }
-      const clips = Q.raw[id], kind = type === 'kit' ? 'sound' : 'voice';
-      await Promise.all(Object.keys(clips).map(async name => {
+      // (six clips in flight: decodeAudioData runs off the main thread, and the base64 -> bytes work is spread out
+      // instead of one burst for the whole pack)
+      const clips = Q.raw[id], kind = type === 'kit' ? 'sound' : 'voice', names = Object.keys(clips);
+      const one = async name => {
         const a = Q.assets[Q.key(kind, dir, name)];
         if (!a) return;
         try { a.orig = await Q.decodeBytes(Q.b64ToBytes(clips[name].d)); }
         catch (e) { a.orig = new Float32Array(0); a.error = String(e); }
-      }));
+      };
+      await Promise.all(Array.from({ length: Math.min(6, names.length) }, async () => { while (names.length) await one(names.shift()); }));
       delete Q.raw[id];        // (decoded: the base64 can go)
       Q.loaded[id] = true;
       Q.onPackLoaded && Q.onPackLoaded(type, dir);

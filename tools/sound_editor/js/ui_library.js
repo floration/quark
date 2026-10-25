@@ -71,14 +71,14 @@
   const curMetric = { sound: 'lufs', voice: 'lufs' };
 
   function fillCell(td, key, o) {
-    const a = Q.assets[key], loadedId = (a.kind === 'voice' ? 'voice:' : 'kit:') + a.pack;
-    td.innerHTML = '';
+    const a = Q.assets[key], loadedId = (a.kind === 'voice' ? 'voice:' : 'kit:') + a.pack, tok = td._fill = {};
+    td.innerHTML = ''; td._draw = null; td._m = null;
     if (!Q.loaded[loadedId]) { td.append(h('div.loadcol', 'loading...')); return; }
     const x = o.which === 'orig' ? a.orig : o.which === 'out' ? Q.outSync(key) : (Q.gameSync(key) || {}).v;
     const m = Q.metricsSync(key, o.which);
     if (!x || !m) {
       td.append(h('div.loadcol', 'measuring...'));
-      Q.getMetrics(key, o.which).then(() => { if (td.isConnected) fillCell(td, key, o); }).catch(e => U.fail('measure ' + key, e));
+      Q.getMetrics(key, o.which).then(() => { if (td.isConnected && td._fill === tok) fillCell(td, key, o); }).catch(e => U.fail('measure ' + key, e));
       return;
     }
     const cv = h('canvas'), pack = (a.kind === 'voice' ? Q.voiceByDir(a.pack) : Q.kitByDir(a.pack));
@@ -101,7 +101,8 @@
     td.append(badges);
     td.classList.toggle('silent', !x.length || m.peak < -90);
     td.title = a.name + ' / ' + Q.packName(a.kind, a.pack) + '\n' + (a.when || '') + '\nLUFS ' + fmt(m.lufs) + '  max momentary ' + fmt(m.mmax) + '  true peak ' + fmt(m.tp) + ' dBTP  heard ' + fmt(m.heard) + ' dB  ' + fmt(m.dur, 3) + ' s';
-    queueMini(cv, (c, size) => Q.drawMini(c, x, rowSpan(a.kind, a.name, o.which), pack ? pack.color : '#6fb1ff', size));
+    td._draw = (c, size) => Q.drawMini(c, x, rowSpan(a.kind, a.name, o.which), pack ? pack.color : '#6fb1ff', size);
+    queueMini(cv, td._draw);
   }
   lib.fillCell = fillCell;
 
@@ -190,21 +191,34 @@
      (inherited DEFAULT edits too) and its origin. */
   const rowCache = { sound: new Map(), voice: new Map() };
   function rowSig(kind, name, packs, o) {
-    const parts = [o.origin, JSON.stringify(Q.state.meta[kind + ':' + name] || {}), Q.mix.soloSound.has(Q.soundId(kind, name)), Q.mix.muteSound.has(Q.soundId(kind, name))];
-    for (const p of packs) {
+    const row = [o.origin, JSON.stringify(Q.state.meta[kind + ':' + name] || {}), Q.mix.soloSound.has(Q.soundId(kind, name)), Q.mix.muteSound.has(Q.soundId(kind, name))].join('\u0001');
+    const cells = packs.map(p => {
       const k = Q.key(kind, p.dir, name);
-      if (!Q.assets[k]) { parts.push('-'); continue; }
+      if (!Q.assets[k]) return '-';
       // (the clip the cell shows, not the "show" option: an unedited sound is the same clip as shipped, file and in game,
       // so switching the option redraws only the rows it changes)
       const g = Q.gameSig(k), e = Q.editSig(k), shown = o.which === 'orig' || (o.which === 'out' ? e : g) === 'orig' ? 'orig' : o.which + ':' + (o.which === 'out' ? e : g);
-      parts.push(!!Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir], Q.audible(kind, p.dir, name), g, e, shown, Q.prov.currentOrigin(k).origin);
-    }
-    return parts.join('\u0001');
+      return [!!Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir], Q.audible(kind, p.dir, name), g, e, shown, Q.prov.currentOrigin(k).origin].join('\u0001');
+    });
+    return { row, cells };
   }
+  /* A row whose own parts (note, favourite, solo / mute, origin filter) are unchanged is kept; only its cells whose clip,
+     edit, origin or pack load changed are filled again (a voice landing fills its column, not all 245 cells), and the
+     other cells' mini waveforms are redrawn on the row's time scale. */
   function cachedRow(kind, name, packs, o, fresh) {
     const sig = rowSig(kind, name, packs, o), c = rowCache[kind].get(name);
-    const tr = c && c.sig === sig ? c.tr : rowFor(kind, name, packs, o);
-    if (c && c.tr === tr && c.metric !== o.metric) for (const td of tr.querySelectorAll('td.cell')) { const v = td._m && td.querySelector('.vals'); if (v) v.replaceWith(valsFor(td._m, o.metric)); }
+    let tr;
+    if (c && c.sig.row === sig.row && c.sig.cells.length === sig.cells.length) {
+      tr = c.tr;
+      const tds = tr.querySelectorAll('td.cell'), changed = sig.cells.map((cs, i) => cs !== c.sig.cells[i]);
+      if (changed.some(Boolean)) packs.forEach((p, i) => {
+        const td = tds[i], k = Q.key(kind, p.dir, name);
+        if (!td || !Q.assets[k]) return;
+        if (changed[i]) { td.classList.toggle('muted', !Q.audible(kind, p.dir, name)); fillCell(td, k, o); }
+        else if (td._draw) queueMini(td.querySelector('canvas'), td._draw);
+      });
+      if (c.metric !== o.metric) for (const td of tds) { const v = td._m && td.querySelector('.vals'); if (v) v.replaceWith(valsFor(td._m, o.metric)); }
+    } else tr = rowFor(kind, name, packs, o);
     fresh.set(name, { sig, tr, metric: o.metric });
     return tr;
   }
@@ -310,17 +324,16 @@
     for (const p of packs) { const sv = s('svg', { width: 14, height: 14 }); sv.append(shape(p.shape, 7, 7, p.color)); legend.append(h('span', sv, p.name)); }
     if (kind === 'voice') lib.loadVoices();
     const names = rowGroups(kind).flatMap(g => g[1]);
-    const rows = [];
-    for (const n of names) {
-      const pts = [];
-      for (const p of packs) {
+    // (every clip asked for at once: the measuring queue works through them in slices, js/engine.js)
+    const rows = await Promise.all(names.map(async n => {
+      const got = await Promise.all(packs.map(async p => {
         const k = Q.key(kind, p.dir, n);
-        if (!Q.assets[k] || !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]) continue;
+        if (!Q.assets[k] || !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]) return null;
         const m = await Q.getMetrics(k, which), v = m ? m[metric] : null;
-        if (v != null && isFinite(v)) pts.push({ p, k, v, m });
-      }
-      rows.push({ n, pts });
-    }
+        return v != null && isFinite(v) ? { p, k, v, m } : null;
+      }));
+      return { n, pts: got.filter(Boolean) };
+    }));
     if (tok !== ovTok) return;   // (a newer render started while this one measured)
     const all = rows.flatMap(r => r.pts.map(p => p.v));
     const waiting = packs.filter(p => !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]).length;

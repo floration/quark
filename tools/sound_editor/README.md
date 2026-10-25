@@ -117,7 +117,10 @@ folder, not into overrides.
   as the exported file, or as shipped. Click to play and edit; solo / mute per sound and per pack; play a row across
   kits (compare) or a column through a kit; filter by name, edited only, over guide (Voices: cut at 5 s), favourites, and
   origin ("still AI-made" keeps the rows with an AI-made cell and dims the other cells). The mini waveforms of a row share
-  one time scale, its longest clip. The seven voices load together (about twice as fast as one after another).
+  one time scale, its longest clip. The seven voices load together, in under a second, without blocking the page: clips decode off the main
+  thread, measuring is queued and done in slices of about 10 ms (the true peak skips stretches that can't beat the peak
+  found so far, an exact shortcut), and a voice landing fills only its column. A metric switch rewrites only the cells'
+  value lines and "show" redraws only rows whose clip differs.
 - **Editor** (bottom dock): source waveform (zoom with the wheel, Shift+wheel scrolls), draggable trim and fade handles,
   cursor, playhead, play selection (Shift+drag a region), auto trim (start by the game's rule: the first sample at 3 %
   of the peak; end under -60 dB), the guide and the game's cap as markers, the output with where the game starts it,

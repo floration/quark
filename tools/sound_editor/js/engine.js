@@ -95,11 +95,30 @@
     if (!m) { m = L.measure(x, R); metCache.set(x, m); }
     return m;
   };
+  /* The matrix and the overview measure hundreds of clips at once (seven voices landing): queued, and measured in slices of
+     about 10 ms with the page given back between them, so clicks and playback never wait behind a 2 s burst. */
+  const measQ = []; let measBusy = false;
+  const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
+  async function measPump() {
+    measBusy = true;
+    await yieldNow();   // (never in the asking task: a render asks for hundreds, one microtask at a time)
+    while (measQ.length) {
+      const t0 = performance.now();
+      while (measQ.length && performance.now() - t0 < 10) { const j = measQ.shift(); try { j.res(Q.measure(j.x)); } catch (e) { j.rej(e); } }
+      if (measQ.length) await yieldNow();
+    }
+    measBusy = false;
+  }
+  Q.measureAsync = function (x) {
+    if (!x) return Promise.resolve(null);
+    const m = metCache.get(x); if (m) return Promise.resolve(m);
+    return new Promise((res, rej) => { measQ.push({ x, res, rej }); if (!measBusy) measPump(); });
+  };
   // which: 'game' (as heard in the game), 'out' (the file), 'orig' (the shipped one)
   Q.getMetrics = async function (key, which) {
-    if (which === 'orig') return Q.measure(Q.assets[key].orig);
-    if (which === 'out') return Q.measure(await Q.getOut(key));
-    return Q.measure((await Q.getGame(key)).v);
+    if (which === 'orig') return Q.measureAsync(Q.assets[key].orig);
+    if (which === 'out') return Q.measureAsync(await Q.getOut(key));
+    return Q.measureAsync((await Q.getGame(key)).v);
   };
   Q.metricsSync = function (key, which) {
     const x = which === 'orig' ? Q.assets[key].orig : which === 'out' ? Q.outSync(key) : (Q.gameSync(key) || {}).v;

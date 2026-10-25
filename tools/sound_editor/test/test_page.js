@@ -135,6 +135,7 @@ async function open(b, vp, url) {
   console.log('     (matrix: metric switch ' + reuse.tMetric + ' ms, show switch ' + reuse.tWhich + ' ms)');
 
   // --- voices: parallel load, the same filters ------------------------------------------------------------------------
+  await p.evaluate(() => { window.__lt = []; new PerformanceObserver(l => l.getEntries().forEach(e => __lt.push(Math.round(e.duration)))).observe({ type: 'longtask' }); });
   const t0 = Date.now();
   await p.click('button[data-tab="voices"]');
   await p.waitForFunction(() => Q.VOICES.every(v => Q.loaded['voice:' + v.dir]), null, { timeout: 60000 });
@@ -146,7 +147,10 @@ async function open(b, vp, url) {
   ok(fav.length === 1 && fav[0] === 'GO', 'favourites filter on Voices', fav);
   await p.uncheck('#vFav');
   await p.evaluate(() => Q.ui.toggleFav('voices/male/GO'));
-  ok(await p.evaluate(() => document.querySelectorAll('#voiceMatrix td.cell .badge[class*="o-"]').length) >= 240, 'voice cells have origin chips');
+  await p.waitForFunction(() => document.querySelectorAll('#voiceMatrix td.cell .badge[class*="o-"]').length >= 240, null, { timeout: 20000 }).catch(() => {});
+  const lt = await p.evaluate(() => __lt);
+  ok(Math.max(0, ...lt) < 400, 'loading and measuring the voices never blocks the page for long (longest task < 400 ms)', lt);
+  ok(await p.evaluate(() => document.querySelectorAll('#voiceMatrix td.cell .badge[class*="o-"]').length) >= 240, 'voice cells have origin chips', await p.evaluate(() => ({ chips: document.querySelectorAll('#voiceMatrix td.cell .badge[class*="o-"]').length, measuring: [...document.querySelectorAll('#voiceMatrix td.cell')].filter(t => /measuring|loading/.test(t.textContent)).length })));
 
   // --- overview of voices draws without another change --------------------------------------------------------------------
   await p.click('button[data-tab="overview"]');

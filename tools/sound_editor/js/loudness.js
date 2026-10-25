@@ -97,15 +97,26 @@
     return ph;
   })();
 
+  /* The same result as interpolating every point, much faster: an output point is at most TP_GAIN times the largest
+     |sample| under its 12 taps, so a stretch whose block maxima can't beat the peak found so far is skipped (quiet
+     tails and most of a clip after its loudest hit). Exact, not an estimate. */
+  const TP_GAIN = Math.max(...tpFilter.map(f => f.reduce((s, v) => s + Math.abs(v), 0)));
   L.truePeak = function (x) {   // linear (not dB)
     let peak = 0;
-    const n = x.length;
-    for (let i = 0; i < n; i++) { const a = Math.abs(x[i]); if (a > peak) peak = a; }
-    for (let i = 0; i < n + TP_TAPS; i++) {
-      for (let p = 0; p < TP_PHASES; p++) {
-        const f = tpFilter[p]; let s = 0;
-        for (let k = 0; k < TP_TAPS; k++) { const j = i - k; if (j >= 0 && j < n) s += f[k] * x[j]; }
-        const a = Math.abs(s); if (a > peak) peak = a;
+    const n = x.length, nb = Math.ceil((n + TP_TAPS) / TP_TAPS) + 1, bmax = new Float64Array(nb);
+    for (let i = 0; i < n; i++) { const a = Math.abs(x[i]); if (a > peak) peak = a; const b = (i / TP_TAPS) | 0; if (a > bmax[b]) bmax[b] = a; }
+    for (let b = 0; b * TP_TAPS < n + TP_TAPS; b++) {
+      // outputs i in block b read x[i-11 .. i]: blocks b-1 and b
+      if (Math.max(bmax[b], b ? bmax[b - 1] : 0) * TP_GAIN <= peak) continue;
+      const end = Math.min(n + TP_TAPS, (b + 1) * TP_TAPS);
+      for (let i = b * TP_TAPS; i < end; i++) {
+        const inner = i >= TP_TAPS - 1 && i < n;
+        for (let p = 0; p < TP_PHASES; p++) {
+          const f = tpFilter[p]; let s = 0;
+          if (inner) for (let k = 0; k < TP_TAPS; k++) s += f[k] * x[i - k];
+          else for (let k = 0; k < TP_TAPS; k++) { const j = i - k; if (j >= 0 && j < n) s += f[k] * x[j]; }
+          const a = Math.abs(s); if (a > peak) peak = a;
+        }
       }
     }
     return peak;
