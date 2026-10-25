@@ -1,6 +1,7 @@
 // Headless checks for the physics editor (node 18+, Playwright from the environment; never `playwright install`).
 //
-//   node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--keep] [--port N]
+//   node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--keep] [--port N] [--maps-dir DIR]
+//   (--maps-dir: a folder of built .qmap files when the checkout's maps/ isn't built, for the map checks)
 //
 // 1. node checks: the page's .qmode merge equals serve.py's (/api/merge) on fixtures (CRLF, a logic section, a new
 //    file, duplicates), every preset round-trips through the Blocks tab, the MOCK's numbers match the game's.
@@ -73,7 +74,7 @@ if (!REFS_REAL) {
 const port = +opt("--port", 0) || 8790 + Math.floor(Math.random() * 150);
 const py = process.platform === "win32" ? "py" : "python3";
 const srvArgs = [...(process.platform === "win32" ? ["-3"] : []), path.join(TOOL, "serve.py"), "--port", String(port), "--no-open", "--data-dir", dataDir,
-    "--maptool", real ? maptool : path.join(tmp, "no_maptool"), ...(REFS_REAL ? [] : ["--references", refsDir])];
+    "--maptool", real ? maptool : path.join(tmp, "no_maptool"), ...(REFS_REAL ? [] : ["--references", refsDir]), ...(opt("--maps-dir") ? ["--maps-dir", opt("--maps-dir")] : [])];
 const srv = spawn(py, srvArgs, { env: { ...process.env, QUARK_SHELL: "1" }, stdio: ["ignore", "pipe", "pipe"] });
 let srvLog = "";
 srv.stdout.on("data", (d) => (srvLog += d)); srv.stderr.on("data", (d) => (srvLog += d));
@@ -359,6 +360,7 @@ async function browserChecks(browser, mode, shots) {
 
     await v2BrowserChecks(page, mode, shots);
     await fixBrowserChecks(page, mode, shots);
+    await fix2BrowserChecks(page, mode, shots);
 
     ok(!errors.length, "no page errors", errors.slice(0, 3).join(" | "));
     await page.close();
@@ -743,6 +745,16 @@ async function fix2NodeChecks(cat, ph) {
     for (const [what, pass, detail] of parserCases()) ok(pass, "source parser: " + what, detail);
     const r = checkSource(fs.readFileSync(path.join(REPO, "src/game/pmove.cpp"), "utf8"));
     ok(!r.problems.length, "the movement code is read: pmoveStep and every step and noted function found", r.problems.join(" | ") || `${r.steps.length} steps`);
+    // move_<top key> (move_gravity...): the game ignores it, so the page warns and leaves it out of physics.move
+    const { parseQmode } = await import(JS + "qmode.js");
+    const { compactPhysics } = await import(JS + "params.js");
+    const mg = parseQmode("custommode=mg\nmode=ffa\nmove_gravity=0.8\nmove_speed=2\nmove_air_accel=1.5\n", cat);
+    ok(!("gravity" in mg.physics.move) && !("speed" in mg.physics.move) && mg.physics.gravity === 1 && mg.physics.move.air_accel === 1.5, "move_gravity / move_speed stay out of the set (the game ignores them)", JSON.stringify(compactPhysics(mg.physics)));
+    ok(mg.problems.filter((x) => /unknown movement key '(gravity|speed)'/.test(x.msg)).length === 2, "  and are warned about at their lines", mg.problems.map((x) => x.line + ": " + x.msg).join(" | "));
+    if (real) {
+        const a = await post("/api/helper", { args: ["physsim"], request: { physics: compactPhysics(mg.physics), preset: "standing_jump" } });
+        ok(a.code === 0 && a.answer.runs, "  a run with that set works", JSON.stringify(a.answer).slice(0, 160));
+    }
 }
 
 async function fixBrowserChecks(page, mode, shots) {
@@ -864,6 +876,101 @@ async function fixBrowserChecks(page, mode, shots) {
     if (shots) await shot(page, "values-1280", "values");
     await page.setViewportSize({ width: 1500, height: 900 });
     await app(() => window.qpe.newSet());
+}
+
+async function fix2BrowserChecks(page, mode, shots) {
+    console.log(`second audit fixes (browser, ${mode})`);
+    const app = (f, ...a) => page.evaluate(f, ...a);
+    const ran = async (after) => { await page.waitForFunction((t) => !window.qpe._running && (window.qpe.runFailed || (window.qpe.results && window.qpe.results.at > t)), after, { timeout: 15000 }); await page.waitForTimeout(50); };
+    await app(() => window.qpe.newSet());
+    await page.click("#tabs button[data-page=values]");
+    await page.selectOption("#presetSel", "standing_jump");
+    // move_gravity in the Code text: warned there, left out of the set, and the run still works
+    let t = await app(() => Date.now());
+    await app(() => window.qpe.setCodeText("custommode=mg\nmode=ffa\nmove_gravity=0.8\nmove_air_accel=1.5\n"));
+    await ran(t);
+    const mg = await app(() => ({ err: document.querySelector("#runInfo .err") ? document.getElementById("runInfo").innerText : "", probs: (window.qpe.codeParse.problems || []).map((p) => p.msg).join(" | "), move: "gravity" in window.qpe.physics.move }));
+    ok(!mg.err && !mg.move && /unknown movement key 'gravity'/.test(mg.probs), "move_gravity: warned in the Code tab, not in the set, the run works", JSON.stringify(mg));
+    // a failed run: the old results greyed as the last good run, the error links to its line
+    t = await app(() => Date.now());
+    await app(() => window.qpe.setCodeText("custommode=mg\nmode=ffa\nmove_air_accel=1.6\n")); await ran(t);
+    await app(() => { const h = window.qpe.helper; h._sim = h.sim; h.sim = async () => { throw new Error("physics.move.air_accel isn't a movement setting (a test)"); }; window.qpe.run(); });
+    await page.waitForFunction(() => window.qpe.runFailed, null, { timeout: 5000 });
+    const f1 = await app(() => ({ stale: document.getElementById("miniMetrics").classList.contains("stale"), res: document.getElementById("resName").textContent, runs: window.qpe.results && window.qpe.results.runs.length, link: document.getElementById("runErrLine") && document.getElementById("runErrLine").textContent }));
+    ok(f1.stale && /last good run/.test(f1.res) && f1.runs > 0, "a failed run: the results stay, greyed, as the last good run", JSON.stringify(f1));
+    ok(f1.link === "line 3 of the .qmode", "  the error links to the line it names", String(f1.link));
+    await page.click("#tabs button[data-page=graph]"); await page.waitForTimeout(200);
+    ok(/last good run/.test(await page.innerText("#gNote")) && await app(() => document.getElementById("charts").classList.contains("stale")), "  the Movement graph says so too");
+    await page.click("#runErrLine");
+    await page.waitForTimeout(150);
+    const sel = await app(() => { const ta = document.getElementById("codeTa"); return { page: window.qpe.page, text: ta.value.slice(ta.selectionStart, ta.selectionEnd) }; });
+    ok(sel.page === "code" && sel.text === "move_air_accel=1.6", "  a click on it selects that line in the Code tab", JSON.stringify(sel));
+    const mapv = await app(() => { const o = [...document.querySelectorAll("#mapSel option")].find((x) => x.value.endsWith(":temple")); return o && o.value; });
+    if (mapv) {
+        await page.selectOption("#mapSel", mapv);
+        await page.waitForFunction(() => !window.qpe._running && window.qpe.mapChoice.name === "temple" && !window.qpe.results, null, { timeout: 8000 }).catch(() => {});
+        await page.click("#tabs button[data-page=path]"); await page.waitForTimeout(200);
+        const f2 = await app(() => ({ runs: window.qpe.allRuns().filter((r) => !r.drive).length, info: document.getElementById("pathInfo").innerText }));
+        ok(f2.runs === 0 && /run failed/.test(f2.info), "  failing on another map: the old run isn't drawn over it", JSON.stringify(f2));
+    }
+    await app(() => { const h = window.qpe.helper; h.sim = h._sim; delete h._sim; });
+    t = await app(() => Date.now()); await app(() => window.qpe.run()); await ran(t);
+    ok(await app(() => !window.qpe.runFailed && !document.getElementById("miniMetrics").classList.contains("stale")), "  the next good run clears it");
+    // a custom scenario back to the test room: its room start again (the origin when it never had one)
+    if (mapv) {
+        await app(() => { window.qpe.presetId = "custom"; document.getElementById("presetSel").value = "custom"; });
+        await page.selectOption("#mapSel", "room"); await page.waitForTimeout(300);
+        const r1 = await app(() => ({ ...window.qpe.scenario.start, want: window.qpe.presets.find((p) => p.id === "standing_jump").scenario.start }));
+        ok(r1.pos.join() === r1.want.pos.join() && r1.yaw === r1.want.yaw, "a custom scenario from a map back to the test room starts at the room's origin", JSON.stringify(r1));
+        await app(() => { const sc = window.qpe.scenario; sc.start = { ...sc.start, pos: [5, 0, 30], yaw: -80 }; window.qpe.setScenario(sc, "test"); });
+        await page.selectOption("#mapSel", mapv); await page.waitForTimeout(500);
+        await page.selectOption("#mapSel", "room"); await page.waitForTimeout(300);
+        const r2 = await app(() => window.qpe.scenario.start);
+        ok(r2.pos.join() === "5,0,30" && r2.yaw === -80, "  or where it started in the room before", JSON.stringify(r2));
+    }
+    // the Name field writes the Code text's custommode= line
+    await app(() => window.qpe.newSet());
+    await page.fill("#setName", "fastset");
+    ok(await app(() => /^custommode=fastset$/m.test(window.qpe.set.text) && /^custommode=fastset$/m.test(document.getElementById("codeTa").value)), "the Name field updates the Code text's custommode= line");
+    // names: another case is the same file (asked first); Windows device names are refused (page and serve.py)
+    await page.fill("#setName", "LowGrav");
+    await page.click("#setSave");
+    await page.waitForTimeout(200);
+    const dlg = await app(() => { const d = document.querySelector(".modal [role=alertdialog]"); return d ? d.textContent : ""; });
+    ok(/Write into lowgrav\.qmode/.test(dlg), "Save 'LowGrav' asks before writing into lowgrav.qmode", dlg.split("\n")[0]);
+    if (dlg) await page.keyboard.press("Escape");
+    await page.fill("#setName", "con");
+    await page.click("#setSave"); await page.waitForTimeout(150);
+    ok(/device name/.test(await page.innerText("#toast")), "  'con' is refused (a Windows device name)", await page.innerText("#toast"));
+    const srv = await fetch(BASE + "/api/mode?name=nul", { method: "POST", headers: H, body: JSON.stringify({ physics: {} }) });
+    ok(srv.status === 400, "  serve.py refuses it too", String(srv.status));
+    // a preset's headline metric that didn't happen: said why
+    await app(() => window.qpe.newSet());
+    await page.selectOption("#presetSel", "running_jump");
+    t = await app(() => Date.now());
+    await app(() => { const ph = JSON.parse(JSON.stringify(window.qpe.physics)); ph.gravity = 0.1; window.qpe.setPhysics(ph, "test"); }); await ran(t);
+    const mm = await page.innerText("#miniMetrics");
+    ok(/jump distance\s+didn't land within/.test(mm), "a jump that doesn't land: 'jump distance: didn't land within ...'", mm.split("\n")[0]);
+    // Blocks at 2560: the timeline beside the stack, tall, with the speed and height lanes; under it at 1280
+    await page.setViewportSize({ width: 2560, height: 1440 });
+    await page.click("#tabs button[data-page=blocks]"); await page.waitForTimeout(300);
+    const bw = await app(() => { const ws = document.getElementById("bkWs").getBoundingClientRect(), tl = document.getElementById("bkTl").getBoundingClientRect(); return { beside: tl.left >= ws.right - 2, h: Math.round(tl.height), w: Math.round(tl.width) }; });
+    ok(bw.beside && bw.h > 600 && bw.w > 900, "2560: Blocks' timeline beside the stack, the full height", JSON.stringify(bw));
+    if (shots) await shot(page, "blocks-2560");
+    await page.setViewportSize({ width: 1280, height: 720 }); await page.waitForTimeout(200);
+    const bn = await app(() => { const ws = document.getElementById("bkWs").getBoundingClientRect(), tl = document.getElementById("bkTl").getBoundingClientRect(); return { below: tl.top >= ws.bottom - 2, h: Math.round(tl.height) }; });
+    ok(bn.below && bn.h >= 60 && bn.h < 100, "1280: under the stack, as before", JSON.stringify(bn));
+    await page.setViewportSize({ width: 1500, height: 900 });
+    // Drive: the frame-time strip and the spike log
+    const dv = await app(() => {
+        const d = window.qpe.drive; d.fi = 0; d.medFt = 10; d.spikes = []; d.spikeN = 0;
+        for (let i = 0; i < 300; i++) d._frame(i === 200 ? 45 : 10);
+        window.qpe.showPage("drive"); d._ftAt = -1; d._frameStrip();
+        return { n: d.spikeN, log: document.getElementById("driveSpikes").textContent, w: document.getElementById("driveFrames").width };
+    });
+    ok(dv.n === 1 && /^1 spike\n/.test(dv.log) && /45\.0 ms/.test(dv.log) && dv.w > 0, "Drive: a 45 ms frame among 10 ms ones is a spike, logged and drawn", JSON.stringify(dv));
+    await app(() => { window.qpe.showPage("values"); window.qpe.newSet(); });
+    if (mapv) await page.selectOption("#mapSel", "room");
 }
 
 async function shot(page, name, tab) {

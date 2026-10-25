@@ -83,10 +83,16 @@ The left panel is always there:
   change** (on by default: each edit re-runs the scenario, debounced, one run at a time; a run of every set takes a
   few ms). The presets are made for the test room: on a real map the panel says so (a wall or a ledge ahead cuts them
   short) and **aim along open floor** starts from the spawn and direction with the longest run of floor ahead (walls
-  and drops checked every 0.5 m, 40 m at most).
+  and drops checked every 0.5 m, 40 m at most). Back in the test room from a map, a preset starts where it always
+  does, and a custom scenario (the Blocks tab, a saved one) keeps its steps and starts where it started in the room
+  before (the room's origin if it never was there). When a run fails, the line under **Run** says why, and links to
+  the line of the .qmode the error names (click: that line selected in the Code tab); the results of the last good
+  run stay, greyed and labelled "last good run" (Results, the Movement graph, Path), or are cleared when that run was
+  of another scenario or on another map.
 - **Compare with**: the standard physics (always) and any of your saved sets, run side by side.
 - **Results**: the scenario's main numbers for the edited set, with the difference from the standard (green up,
-  red down). The preset's own metrics come first.
+  red down). The preset's own metrics come first, always: one a run hasn't got says why (`jump distance: didn't
+  land within 2 s`, `no dash in 1 s`), here and in the Movement graph's table.
 
 ### Values
 
@@ -177,7 +183,9 @@ drag one back to the palette to delete it. Blocks: **Hold keys**, **Wait**, **Tu
 jump**, **Super dash**, **Grapple** (aim pitch), **Crouch** (ignored by the game), **Strafe-bot hops** (jump held,
 A / D at the best air-strafe angle every ms; swap off, at each landing, or weave 25° around the course) and a raw
 **Step** (any step field). The header holds the start: position, yaw, pitch, a start speed, on the floor, and the
-time after the last block. Under the stack the timeline shows each block and the edited set's horizontal speed.
+time after the last block. The timeline shows each block and the edited and standard runs' horizontal speed: under
+the stack on a narrow window; on a wide one (1800 px and more, q's 2560) in a column of its own beside the stack, the
+page's full height, with the height curve in a second lane and the block edges carried down through both.
 **{ } JSON** edits the scenario as JSON; a scenario the blocks can't express exactly is shown as raw steps.
 
 ### Movement graph
@@ -217,7 +225,9 @@ frame in pieces of at most 8 ms, and the view runs a few ms ahead of the last an
 is drawn only when something changes, and nothing is sent while the player stands still. The side panel picks the
 physics (the edited set or the standard), the camera, mouse speed (0.005..2 degrees per pixel), FOV (40..150) and the
 start (the scenario's, a room part, a map spawn); it shows the speed over the last 10 s, the events, and, while you
-play, the frame rate (average, 1% and 0.1% lows) and the helper's round trip. **→ Graph** sends the drive so far to the Movement graph and Path tabs as a run.
+play, the frame rate (average, 1% and 0.1% lows) and the helper's round trip, a frame-time strip (the last 600 frames
+played, lines at 60 / 30 / 15 fps, spikes in red) and a spike log (a frame over twice the median and 8 ms more: its
+game time, length, × the median and the helper's round trip then; cleared by a restart). **→ Graph** sends the drive so far to the Movement graph and Path tabs as a run.
 
 ### Export
 
@@ -237,7 +247,14 @@ them):
   added where the game would write it;
 - from a `logic` line to the end of the file is the gamemode editor's section and is never touched (`logic` at the
   start of the line, then the end, a space or a tab: `isModeLogicLine` in `src/game/customrules.cpp`);
-- a new file gets only the game's header (`custommode=<name>`, `mode=ffa`) and the movement lines.
+- a new file gets only the game's header (`custommode=<name>`, `mode=ffa`) and the movement lines;
+- a `move_` line whose key isn't a `move_` setting (`move_gravity`, `move_speed`: the game ignores them, only the
+  plain `gravity=` / `speed=` count) is warned about in the Code tab and left out of the set, as the game reads it.
+
+The Code text's `custommode=` line follows the **Name** field (it is what a save will write). Names are checked the
+way Windows sees them, on every system: a name that differs only in case from a saved set is that set's file (Save
+asks before writing into it, and keeps its name), and Windows device names (`con`, `nul`, `aux`, `com1`...) are
+refused by the page and by `serve.py` (custom modes and scenarios).
 
 The merge is done by `serve.py` on the file as it is on disk at save time (the old file is kept as `.bak`), so
 changes the gamemode editor made meanwhile are kept. **Save as** another name copies the open file's other lines and
@@ -277,9 +294,10 @@ Your data, all in the game's data folder: `custom_modes/<name>.qmode` (physics s
 
 ## Checks
 
-`node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--port N]` (Node 18+,
+`node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only] [--port N] [--maps-dir DIR]` (Node 18+,
 Playwright already installed; it never installs browsers). It starts `serve.py` on a spare port (or `--port`) with a
-temporary data folder and checks:
+temporary data folder (and `--maps-dir`, a folder of built maps, when the checkout's `maps/` isn't built: the map
+checks need one) and checks:
 
 - the page's .qmode merge against serve.py's on awkward files (CRLF, a logic section, duplicates, new files, `expr.`
   lines kept / dropped / added, an import line replaced in place);
@@ -301,7 +319,12 @@ temporary data folder and checks:
   Chromium undo / redo, Reset all and the unsaved-changes questions, the session written on pagehide, a filter that
   matches nothing, a saved scenario loaded back, a preset on a map and "aim along open floor", the theme button and
   Drive's key caps in light, Tidy, Export's debounce, two columns of lined-up groups at 2560 and nothing wider than
-  a 1280 window.
+  a 1280 window;
+- the 1.18.32 fixes: the movement code read (every step of `pmoveStep`, the parser on a 5000-line function, braces
+  in strings and comments, overloads), `move_gravity` / `move_speed` warned and left out (a run with them works), and
+  in Chromium a failed run (greyed last good run, the link to its line, cleared on another map), a custom scenario
+  back in the test room, the Name field's `custommode=` line, a name in another case and a Windows device name, a
+  jump that doesn't land, Blocks' timeline beside the stack at 2560 and under it at 1280, Drive's spike log.
 
 `python3 tools/physics_editor/native/test_phys.py [quark_maptool]` checks the helper's commands, physserve included.
 

@@ -56,10 +56,11 @@ export class CodeView {
         const n = text.split("\n").length;
         const byLine = new Map();
         const probs = [...p.problems];
-        // edits to lines that aren't movement: a save keeps the file's own line (only movement lines are written)
+        // edits to lines that aren't movement: a save keeps the file's own line (only movement lines are written;
+        // custommode= follows the Name field, as a save renames it)
         const base = this.app.set.baseText;
         if (base) {
-            const others = (t) => { const h = splitLogic(t)[0], k = lineKinds(h); return h.split("\n").filter((l, i) => k[i] === "other").map((l) => l.replace(/\r$/, "")).join("\n"); };
+            const others = (t) => { const h = splitLogic(t)[0], k = lineKinds(h); return h.split("\n").filter((l, i) => k[i] === "other" && !l.startsWith("custommode=")).map((l) => l.replace(/\r$/, "")).join("\n"); };
             if (others(base) !== others(text)) probs.push({ line: 0, level: "info", msg: "a line that isn't movement was changed here: a save keeps the file's own (only the movement lines are written; mode, weapons, health and the rest are the gamemode editor's)" });
         }
         for (const x of probs) if (x.line) { const cur = byLine.get(x.line); if (!cur || x.level === "error") byLine.set(x.line, x.level); }

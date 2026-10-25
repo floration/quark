@@ -136,10 +136,22 @@ export function metricRows(list, first) {
     const have = new Set();
     for (const m of list) for (const k of Object.keys(m || {})) if (m[k] != null && !HIDDEN_METRICS.has(k)) have.add(k);
     const rows = [], put = (k) => { if (!have.has(k)) return; have.delete(k); rows.push(BY_KEY.get(k) || { key: k, label: k, unit: "" }); };
-    for (const k of first || []) put(k);
+    // the preset's own metrics always get a row, even when no run has one (a jump that didn't land: missingMetric says why)
+    for (const k of first || []) if (!have.has(k) && !rows.some((r) => r.key === k)) rows.push({ ...(BY_KEY.get(k) || { key: k, label: k, unit: "" }), missing: true }); else put(k);
     for (const m of METRICS) put(m.key);
     for (const k of [...have]) put(k);
     return rows;
+}
+
+// why a run has no value for a metric (shown in its place, so a preset's headline number never just vanishes)
+const LANDING = new Set(["jumpDistance", "airTime", "landImpact"]);
+export function missingMetric(key, m, scenario) {
+    const s = (+(m && m.duration) || (scenario && scenario.durationMs / 1000) || 0).toFixed(1).replace(/\.0$/, "") + " s";
+    if (LANDING.has(key)) return m && m.takeoff ? `didn't land within ${s}` : key === "landImpact" ? `no landing in ${s}` : `no take-off in ${s}`;
+    if (key === "jumpHeight" || key === "takeoff") return `no take-off in ${s}`;
+    if (key.startsWith("dash") || key === "bounceSpeed" || key === "superDashSpeed") return `no ${key === "bounceSpeed" ? "wall bounce" : key === "superDashSpeed" ? "super dash" : "dash"} in ${s}`;
+    if (key.startsWith("hook") || key === "speedAtUnhook") return `the hook didn't catch in ${s}`;
+    return `not reached in ${s}`;
 }
 
 export function computeMetrics(run, scenario) {

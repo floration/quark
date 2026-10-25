@@ -54,6 +54,8 @@ button.icon { padding: 1px 7px; min-width: 26px; line-height: 1.2; }
 .field input:not([type=checkbox]):not([type=range]), .field select { width: 100%; min-width: 0; }
 .sep { border-top: 1px solid var(--line); margin: 10px 0 0; }
 #runInfo { font: 11.5px var(--mono); color: var(--fg3); margin-top: 4px; }
+/* results from the last good run while the current one failed: greyed (app.staleNote says so beside them) */
+.stale { opacity: 0.45; filter: grayscale(1); }
 #presetNote { margin: 2px 0 4px; padding: 4px 6px; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: 0 4px 4px 0; }
 #presetNote button { font-size: 11px; padding: 0 6px; margin-top: 3px; }
 #runInfo.busy::before { content: "running... "; color: var(--acc); }
