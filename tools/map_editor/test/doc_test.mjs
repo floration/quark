@@ -243,6 +243,14 @@ section("linked library objects and plurals");
   ok(o2.rot === 1 && eq(o2.min, [0, 0, 0]) && eq(R.repeatCounts(R.turnDef(def2, 1), o2), [1, 1, 4]) && o2.max[2] === 10 && o2.max[1] === 2 && o2.lib === "p", "relinked: same place, turn and 4 units, the new spacing");
 }
 
+section("the paste preview's boxes");
+{
+  const d = open(bigMap(3));
+  d.select([{ k: "brush", i: 1 }, { k: "spawn", i: 0 }]);
+  const c = G.copySelection(d), sb = G.stampBoxes({ kind: "group", clip: c });
+  ok(sb.length === 2 && eq(sb[0].min, [1.4, 0, 0.4]) && sb[1].max[1] === 1.8, "a box and a spawn's hull, relative to the paste corner");
+}
+
 section("flips and the point-symmetric twin (xform.js)");
 {
   const X = await import(pathToFileURL(path.join(tmp, "xform.js")));

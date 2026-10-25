@@ -83,7 +83,10 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
     objective zones, the hill, path points, stairs records, custom objects, bot starts, player figures; a pasted hill
     replaces the map's) to a clipboard that survives opening another map (kept by the server in `clipboard.json`, and put
     on the system clipboard as JSON `{"format":"quark-map-group",...}`, so it pastes into another editor window too).
-    Paste puts it at the cursor (or the view's centre), snapped to the grid, as one undo step, and selects it.
+    Paste (Ctrl+V, or **paste**) shows it as a preview under the cursor; a click puts it there, snapped to the grid,
+    as one undo step, and selects it (Shift + click pastes again; Esc cancels). **Ctrl+Shift+V** pastes in place, at
+    the coordinates it was copied from (moving a building between two versions of a map). Library items preview
+    the same way before each click.
   - **+ group**: saves the selection in the library under a name; click a saved group to paste it.
   - **+ object**: makes a **custom object** from the selected boxes and groups (they are replaced by it, when ticked): a unit that repeats along the axes you tick, with
     a spacing per axis (unit start to next unit start). Click it in the library, then click in the view to place it

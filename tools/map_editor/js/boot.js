@@ -353,7 +353,7 @@ class App extends Emitter {
     const K = [["Right mouse + WASD", "fly (Space / C up / down, Shift fast, wheel forward, Ctrl+wheel speed)"], ["Alt + drag", "orbit"], ["T", "top-down view"], ["F / Home", "frame the selection / the map"],
       ["Click", "select (Shift adds, again: what is behind, Ctrl: a group's part)"], ["Drag", "a rectangle selects; on a selected object: slide it"], ["Arrows / PgUp PgDn", "move by the grid (Shift / Ctrl: grow / shrink that face)"],
       ["[ ]", "grid 1/8 m .. 4 m"], ["M", "material (spawn: team)"], ["R", "rotate 90 degrees"], ["X / Z", "flip the selection left / right (across x) or front / back (across z)"], ["P", "mirror copy: the selection's point-symmetric twin through the map's centre (ranked maps)"], ["Q / E", "turn a spawn 45 degrees"], ["Ctrl+D", "duplicate"], ["Del", "delete"],
-      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+C / Ctrl+V", "copy the selection / paste it at the cursor (any map)"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
+      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+C / Ctrl+V", "copy the selection / paste it (any map): a preview follows the cursor, click places it"], ["Ctrl+Shift+V", "paste in place (the coordinates it was copied from)"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
     dialog([el("h2", {}, "Keys"), el("div", { class: "keys" }, K.flatMap(([k, t]) => [el("kbd", {}, k), el("span", {}, t)]))]);
   }
 

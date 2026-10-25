@@ -8,10 +8,12 @@ import { KINDS } from "./doc.js";
 import { snap, tidy } from "./util.js";
 import { repeatCounts, repeatLen, turnDef } from "./repeat.js";
 import { flipObj, twinObj } from "./xform.js";
+import { stampBoxes } from "./groups.js";
 
 export const GRIDS = [0.125, 0.25, 0.5, 1, 2, 4];
 const AX = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
 const AX_COL = [0xff5a5a, 0x5aff6a, 0x5a8cff];
+const GHOST_MAX = 20000;   // (boxes drawn in the paste preview; more: their bounds)
 
 export class Editor {
   constructor(app) {
@@ -35,7 +37,38 @@ export class Editor {
   }
   get grid() { return GRIDS[this.gridIdx]; }
   objDef(o) { return o && o.def ? turnDef(o.def, o.rot || 0) : null; }   // a custom object's definition as it is turned
-  setTool(t) { this.tool = t; this.routeA = null; this.app.emit("tool", t); this.view.redraw(); }
+  setTool(t) { this.tool = t; this.routeA = null; if (t !== "stamp") this.setGhost(null); this.app.emit("tool", t); this.view.redraw(); }
+  // ---- the stamp / paste preview: the item's box edges as one line mesh (built once per item), moved under the cursor
+  setGhost(item) {
+    const L = this.ghostLayer || (this.ghostLayer = this.view.addLayer("ghost"));
+    for (const c of L.children.slice()) { L.remove(c); c.geometry.dispose(); }
+    this.ghostItem = item;
+    if (!item) { this.view.redraw(); return; }
+    let boxes = stampBoxes(item);
+    if (boxes.length > GHOST_MAX) {   // (a huge clipboard: its bounds only, so moving the preview stays cheap)
+      const mn = [0, 1, 2].map(k => Math.min(...boxes.map(b => b.min[k]))), mx = [0, 1, 2].map(k => Math.max(...boxes.map(b => b.max[k])));
+      boxes = [{ min: mn, max: mx }];
+    }
+    const pos = new Float32Array(boxes.length * 72);
+    let n = 0;
+    const E = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+    for (const b of boxes) {
+      const c = [0, 1, 2, 3, 4, 5, 6, 7].map(j => [j & 1 ? b.max[0] : b.min[0], j & 4 ? b.max[1] : b.min[1], j & 2 ? b.max[2] : b.min[2]]);
+      for (const [a, z] of E) { pos.set(c[a], n); pos.set(c[z], n + 3); n += 6; }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const lines = new THREE.LineSegments(g, this.ghostMat || (this.ghostMat = new THREE.LineBasicMaterial({ color: 0x7fd0ff, transparent: true, opacity: 0.85, depthTest: false })));
+    lines.renderOrder = 10; lines.visible = false; lines.frustumCulled = false;
+    L.add(lines);
+    this.view.redraw();
+  }
+  ghostAt(e) {
+    const L = this.ghostLayer, item = this.ghostItem; if (!L || !item || !L.children.length) return;
+    const s = this.surface(e), m = L.children[0];
+    m.visible = !!s;
+    if (s) m.position.fromArray(this.app.library.stampBase(item, s.p));
+    this.view.redraw();
+  }
   // where a paste goes: the surface under the mouse when it is over the view, else under the view's centre
   pastePoint() {
     const r = this.canvas().getBoundingClientRect();
@@ -270,6 +303,7 @@ export class Editor {
     requestAnimationFrame(() => {
       const ev = this.hoverPending; this.hoverPending = null;
       if (!this.doc.map || this.look || this.drag) return;
+      if (this.tool === "stamp") this.ghostAt(ev);   // (the preview, once a frame like the tip)
       const tip = this.app.tip;
       const { hits } = this.pickAll(ev);
       const h = hits[0];
@@ -431,7 +465,7 @@ export class Editor {
         b.auto = true; add("ladder", "ladders", b, "ladder"); break;
       }
       case "figure": this.app.player.drop(p, yaw); break;
-      case "stamp": this.app.library.stampAt(s); break;
+      case "stamp": this.app.library.stampAt(s, e.shiftKey); break;
     }
     this.pickDirty = true;
   }

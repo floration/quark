@@ -80,6 +80,26 @@ export function replaceWithObject(d, name, def, boxes, lib = undefined) {
 // the boxes of the selection a custom object is made from: selected boxes and the parts of selected groups
 export const selectedBoxes = (d) => [...d.selOf("brush").map(i => d.map.brushes[i]), ...d.map.generated.filter(b => b.group !== undefined && d.isSel("group", b.group))];
 
+// what a stamp (a clipboard group, a library group or object) looks like, as boxes relative to the corner it is placed
+// at (Library.stampBase): the paste preview draws them under the cursor
+export function stampBoxes(item) {
+  if (item.kind === "object") return expandRepeat(item.def, fitBox(item.def, { min: [0, 0, 0] }, [1, 1, 1]));
+  const c = item.clip, out = [];
+  for (const l of Object.values(LISTS)) {
+    const kind = KIND_OF[l], K = KINDS[kind];
+    for (const o of itemsOf(c, l)) {
+      if (kind === "object" && o.def) { out.push(...expandRepeat(o.def, o, o.rot || 0)); continue; }
+      if (K.shape === "box") out.push({ min: o.min, max: o.max });
+      else if (K.shape === "stairs") out.push({ min: [Math.min(o.x0, o.x1), o.base, Math.min(o.z0, o.z1)], max: [Math.max(o.x0, o.x1), o.top, Math.max(o.z0, o.z1)] });
+      else {
+        const p = K.shape === "arr" ? o : o.pos, r = kind === "light" || kind === "path" ? 0.25 : 0.4, h = r === 0.4 ? 1.8 : 0.25;
+        out.push({ min: [p[0] - r, p[1] - (r === 0.4 ? 0 : r), p[2] - r], max: [p[0] + r, p[1] + h, p[2] + r] });
+      }
+    }
+  }
+  return out;
+}
+
 export class Library {
   constructor(app) {
     this.app = app; this.doc = app.doc; this.api = app.api;
@@ -96,12 +116,16 @@ export class Library {
       const c = this.copy(true);
       if (c) { e.clipboardData.setData("text/plain", JSON.stringify(c)); e.preventDefault(); }
     });
+    // (the paste event doesn't say whether Shift was down: Ctrl+Shift+V, paste in place, is noted from its keydown)
+    let inPlace = false;
+    document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.code === "KeyV") inPlace = e.shiftKey; }, true);
     document.addEventListener("paste", (e) => {
+      const here = inPlace; inPlace = false;
       if (typing(e.target) || document.querySelector("dialog[open]")) return;
       let c = null;
       try { const o = JSON.parse(e.clipboardData.getData("text/plain")); if (isClip(o)) c = o; } catch { /* not ours: the editor's clipboard */ }
       e.preventDefault();
-      this.paste(c);
+      this.paste(c, here);
     });
     this.doc.on("open", () => { this.editing = null; this.render(); });
     this.doc.on("map", (keys, live) => { if (!live && keys && keys.includes("sc.objects")) this.render(); });   // (the "update N" buttons)
@@ -120,17 +144,23 @@ export class Library {
     this.clip = c;
     this.api.setClipboard(c).catch(e => banner("The clipboard wasn't kept: " + e.message, true));
     if (!quiet && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(JSON.stringify(c)).catch(() => {});
-    banner("Copied " + plural(clipCount(c), "object") + ": Ctrl+V pastes them here or in another map", false, 3000);
+    banner("Copied " + plural(clipCount(c), "object") + ": Ctrl+V pastes them here or in another map (Ctrl+Shift+V: in place)", false, 3000);
     this.render();
     return c;
   }
-  async paste(clip = null) {
+  // Paste (Ctrl+V, the paste button): the clipboard follows the cursor as a preview and a click puts it there (Shift
+  // + click: and keeps pasting; Esc: cancel). inPlace (Ctrl+Shift+V): at once, at the coordinates it was copied from
+  async paste(clip = null, inPlace = false) {
     let c = clip || this.clip;
     if (!c) { try { const s = await this.api.clipboard(); if (isClip(s)) c = this.clip = s; } catch { /* (no server clipboard) */ } }
     if (!isClip(c)) { banner("Nothing copied yet: select objects and Copy (Ctrl+C)", true, 3000); return; }
     if (this.doc.readOnly) this.app.readOnlyNote();
-    pasteGroup(this.doc, c, pasteBase(c, this.app.editor.pastePoint(), this.app.editor.grid));
-    banner("Pasted " + plural(clipCount(c), "object") + (c.from ? " from " + c.from : ""), false, 2500);
+    if (inPlace && Array.isArray(c.origin)) {
+      pasteGroup(this.doc, c, c.origin);
+      banner("Pasted " + plural(clipCount(c), "object") + " in place" + (c.from ? " (where they were in " + c.from + ")" : ""), false, 2500);
+      return;
+    }
+    this.arm({ kind: "group", name: plural(clipCount(c), "copied object"), clip: c, paste: true });
   }
 
   // ---- the library
@@ -213,19 +243,30 @@ export class Library {
     if (!confirm("Delete " + item.name + " from the library?")) return;
     try { await this.api.deleteLibrary(item.file); await this.load(); } catch (e) { banner(e.message, true); }
   }
-  // the Stamp tool: the next click places the item (a group pasted there; an object one unit big, sitting on it)
+  // the Stamp tool: a preview of the item follows the cursor and a click places it (a group pasted there; an object one
+  // unit big, sitting on it). Library items keep stamping until Esc; a paste places once (Shift + click: again)
   arm(item) {
     const ed = this.app.editor;
-    ed.stamp = item; ed.setTool("stamp");
-    banner("Click where " + item.name + " goes (Esc: cancel)", false, 3000);
+    ed.stamp = item; ed.setTool("stamp"); ed.setGhost(item);
+    banner("Click to place " + item.name + (item.paste ? " (Shift + click: and paste again; Esc: cancel)" : " (Esc: stop)"), false, 3000);
   }
-  stampAt(s) {
-    const item = this.app.editor.stamp, d = this.doc, ed = this.app.editor;
+  // the min corner the item goes at when stamped on point p (the preview is drawn there too)
+  stampBase(item, p) {
+    const g = this.app.editor.grid;
+    if (item.kind === "group") return pasteBase(item.clip, p, g);
+    const size = fitBox(item.def, { min: [0, 0, 0] }, [1, 1, 1]).max;
+    return [snap(p[0] - size[0] / 2, g), tidy(p[1]), snap(p[2] - size[2] / 2, g)];
+  }
+  stampAt(s, again = false) {
+    const ed = this.app.editor, item = ed.stamp, d = this.doc;
     if (!item) return;
-    if (item.kind === "group") { pasteGroup(d, item.clip, pasteBase(item.clip, s.p, ed.grid)); return; }
-    const def = item.def, p = s.p, g = ed.grid;
-    const size = fitBox(def, { min: [0, 0, 0] }, [1, 1, 1]).max;
-    const min = [snap(p[0] - size[0] / 2, g), tidy(p[1]), snap(p[2] - size[2] / 2, g)];
+    const min = this.stampBase(item, s.p);
+    if (item.kind === "group") {
+      pasteGroup(d, item.clip, min);
+      if (item.paste && !again) { ed.stamp = null; ed.setTool("select"); }
+      return;
+    }
+    const def = item.def;
     let at = -1;
     d.edit("add " + item.name, ["sc.objects"], (m, sc) => { sc.objects.push({ name: item.name, def: structuredClone(def), rot: 0, ...fitBox(def, { min }, [1, 1, 1]), lib: item.file }); at = sc.objects.length - 1; }, { touch: [] });
     d.select([{ k: "object", i: at }]);
