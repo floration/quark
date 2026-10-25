@@ -140,9 +140,9 @@ export class GamesView {
         root.innerHTML = "";
         // toolbar
         const bar = el("div", "vbar");
-        const nW = others.length;
+        const nAlt = others.filter((r) => r.alt).length, nW = others.length - nAlt;
         bar.innerHTML = `<input placeholder="filter: game, weapon, class…" style="width:200px" value="${esc(this.q)}"><label class="check"><input type="checkbox" ${this.showStd ? "checked" : ""}> also Quark ${esc(app.cmpLabel)}</label>
-            <span class="grow"></span><span class="muted small">${this.games.length} games · ${nW} weapons · ${this.data.fallback ? '<span class="warn">web/data/games.json not found: a small unsourced sample</span>' : "web/data/games.json" + (this.data.updated ? " (" + esc(this.data.updated) + ")" : "")} · normalised by each game's health: shots and time to kill, DPS in % of health / s</span>`;
+            <span class="grow"></span><span class="muted small">${this.games.length} games · ${nW} weapons${nAlt ? `, ${nAlt} alt fires` : ""} · ${this.data.fallback ? '<span class="warn">web/data/games.json not found: a small unsourced sample</span>' : "web/data/games.json" + (this.data.updated ? " (" + esc(this.data.updated) + ")" : "")} · normalised by each game's health: shots and time to kill, DPS in % of health / s</span>`;
         const inp = bar.querySelector("input");
         inp.oninput = () => { this.q = inp.value.trim().toLowerCase(); this._refocus = true; clearTimeout(this._qt); this._qt = setTimeout(() => this.refresh(), 200); };
         bar.querySelector("input[type=checkbox]").onchange = (e) => { this.showStd = e.target.checked; this.refresh(); };
