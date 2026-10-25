@@ -422,3 +422,4 @@ table.score tr.sel td { background: var(--bg2); }
   #side { max-height: 40vh; border-right: none; border-bottom: 1px solid var(--line); }
   #rangeBody, #fightBody, #codeBody { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
 }
+#codeProblems .fixbtn { font: 11px var(--mono); padding: 0 6px; margin-left: 6px; }

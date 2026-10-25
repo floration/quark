@@ -320,6 +320,9 @@ async function browserChecks() {
                 const before = await p.inputValue("#codeTa");
                 await p.keyboard.type("param rifle.damage f32 = 9\n"); await p.keyboard.press("Control+z");
                 ok((await p.inputValue("#codeTa")) === before, "Ctrl+Z in the Code text undoes the typing");
+                await p.evaluate(() => window.weaponsApp.setText('version 1\nweapons "dec"\nslot hit rifle:\n  damage = damage * 1.1\n', "test"));
+                await p.waitForTimeout(200); await p.click("#codeProblems .fixbtn");
+                ok((await p.evaluate(() => window.weaponsApp.text)).includes("damage * 1.1f") && (await p.evaluate(() => window.weaponsApp.problems.length)) === 0, "a decimal in an f32 output: one click writes 1.1f and the error goes");
             } else {
                 fs.mkdirSync(path.join(dataDir, "custom_weapons"), { recursive: true });
                 const demoText = fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak"), "utf8");
