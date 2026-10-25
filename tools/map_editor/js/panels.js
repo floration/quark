@@ -67,8 +67,11 @@ export class Panels {
       rows.push(el("div", { class: "row", title: "select all", onclick: () => { d.select(Array.from({ length: n }, (_, i) => ({ k, i }))); } },
         el("span", {}, label), el("span", { class: "sub" }, String(n))));
     };
+    const objs = d.sidecar.objects || [], inObjects = m.generated.reduce((n, b) => n + (b.object !== undefined), 0);
     kind("brush", "Boxes", m.brushes.length);
-    rows.push(el("div", { class: "row faint" }, el("span", {}, "made from groups / ladders"), el("span", { class: "sub" }, String(m.generated.length))));
+    if (m.generated.length > inObjects) rows.push(el("div", { class: "row faint" }, el("span", {}, "made from groups / ladders"), el("span", { class: "sub" }, String(m.generated.length - inObjects))));
+    kind("object", "Custom objects", objs.length);
+    if (inObjects) rows.push(el("div", { class: "row faint" }, el("span", {}, "boxes in custom objects"), el("span", { class: "sub" }, String(inObjects))));
     kind("spawn", "Spawns", m.spawns.length);
     kind("light", "Lights", m.lights.length);
     kind("ladder", "Ladders", m.ladders.length);
@@ -84,6 +87,11 @@ export class Panels {
       rows.push(el("div", { class: "grp" }, "Groups"));
       m.groups.forEach((g, i) => rows.push(el("div", { class: "row" + (d.isSel("group", i) ? " on" : ""), onclick: (e) => { d.select([{ k: "group", i }], e.shiftKey); this.app.frameSel(); } },
         el("span", {}, "#" + i + " " + g.type), el("span", { class: "sub" }, g.type === "custom" ? g.parts.length + " parts" : MATERIALS[g.mat]))));
+    }
+    if (objs.length) {
+      rows.push(el("div", { class: "grp" }, "Custom objects"));
+      objs.forEach((o, i) => rows.push(el("div", { class: "row" + (d.isSel("object", i) ? " on" : ""), title: o.lib ? "placed from the library's " + o.lib : "", onclick: (e) => { d.select([{ k: "object", i }], e.shiftKey); this.app.frameSel(); } },
+        el("span", {}, "#" + i + " " + o.name), el("span", { class: "sub" }, repeatCounts(this.app.editor.objDef(o), o).join(" x ") + " units"))));
     }
     fill(this.outEl, ...rows);
   }
@@ -104,7 +112,7 @@ export class Panels {
     if (!sel.length) {
       out.push(el("h3", {}, "Nothing selected"));
       out.push(el("p", {}, "Click to select (Shift adds, drag a rectangle, click again for what is behind). Pick a tool above to add things. ? lists the keys."));
-      out.push(el("p", { class: "faint" }, `${m.brushes.length} boxes, ${m.generated.length} made from groups and ladders, ${m.spawns.length} spawns, ${m.lights.length} lights.`));
+      out.push(el("p", { class: "faint" }, [plural(m.brushes.length, "box"), plural(m.generated.length - m.generated.reduce((n, b) => n + (b.object !== undefined), 0), "box") + " made from groups and ladders", plural((d.sidecar.objects || []).length, "custom object"), plural(m.spawns.length, "spawn"), plural(m.lights.length, "light")].join(", ") + "."));
       fill(P, ...out); return;
     }
     if (sel.length > 1) {
