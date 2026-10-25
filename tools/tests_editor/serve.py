@@ -31,6 +31,7 @@ ARG_OK = re.compile(r"^(?![/\\])(?![A-Za-z]:)(?!.*\.\.)[\w.:,+/-]{1,160}$")   # 
 MAX_CHUNK = 512 << 10
 BACKUPS_KEPT = 50
 RUNS_KEPT = 500
+HIST_KEPT = 12                                          # (each group's last times in cache/groups.json)
 CLOUD_TIMING = "/mnt/project-files/release-tests/timing"
 WIN = os.name == "nt"
 NO_WINDOW = 0x08000000
@@ -339,7 +340,10 @@ class Runs:
                     if k in x: e[k] = x[k]
         for g, sec in times.items():
             e = self.groups.setdefault(g, {})
-            if (e.get("timeAt") or "") <= at: e.update(sec=sec, timeAt=at, timeRun=rec.get("id"), timeSource=src)
+            if (e.get("timeAt") or "") <= at:
+                h = e.get("hist") or ([{"sec": e["sec"], "at": e.get("timeAt"), "run": e.get("timeRun")}] if e.get("sec") is not None else [])
+                h = (h + [{"sec": sec, "at": at, "run": rec.get("id")}])[-HIST_KEPT:]      # (a short trend: spikes show)
+                e.update(sec=sec, timeAt=at, timeRun=rec.get("id"), timeSource=src, hist=h)
         for g, x in results.items():
             e = self.groups.setdefault(g, {})
             if (e.get("at") or "") <= at: e.update(status=x["status"], at=at, run=rec.get("id"), fails=x.get("fails", 0),
@@ -351,7 +355,7 @@ class Runs:
         atomic_write(self.gpath, json.dumps({"version": 1, "groups": self.groups, "maps": self.maps}, indent=0).encode("utf-8"))
 
     def group_state(self):
-        """(generation, {group: {sec, timeAt, timeRun, timeSource, status, at, run, fails, failLines}})."""
+        """(generation, {group: {sec, timeAt, timeRun, timeSource, hist: [{sec, at, run}], status, at, run, fails, failLines}})."""
         with self.lock: return self.gen, json.loads(json.dumps(self.groups))
 
     def map_state(self):

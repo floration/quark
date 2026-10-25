@@ -199,6 +199,7 @@ class Builder:
                 note, lr = tm.get(g["name"]), local.get(g["name"]) or {}
                 if lr.get("sec") is not None:
                     t = {"sec": lr["sec"], "source": lr.get("timeSource") or "local run %s" % lr.get("timeAt"), "at": lr.get("timeAt"), "run": lr.get("timeRun")}
+                    if lr.get("hist"): t.update(history=lr["hist"], slower=_slower(lr["hist"]))
                 elif note: t = {"sec": note["sec"], "source": note["source"], "at": iso_of(note["mtime"])}
                 if lr.get("status"):
                     last = {"status": lr["status"], "at": lr.get("at"), "run": lr.get("run"), "fails": lr.get("fails", 0),
@@ -374,6 +375,17 @@ class Builder:
         alone_lists = {l["name"]: [g["name"] for g in l["groups"]] for l in lists}
         model["lint"] = lint.run(model, texts, index, groups, cmds, suites_ci, script_suites, alone_lists)
         return model
+
+
+def _slower(hist):
+    """{sec, median, pct} when the newest time is over 50% (and 2 s) above the median of the ones before it (3 or
+    more), else None: a test, or the code it drives, got slower (q judges by spikes, not averages)."""
+    prev = sorted(h["sec"] for h in hist[:-1] if h.get("sec") is not None)
+    if len(prev) < 3: return None
+    med = prev[len(prev) // 2] if len(prev) % 2 else (prev[len(prev) // 2 - 1] + prev[len(prev) // 2]) / 2
+    new = hist[-1]["sec"]
+    if new > med * 1.5 and new - med >= 2: return {"sec": new, "median": med, "pct": round(100 * (new - med) / med) if med else None}
+    return None
 
 
 def _jobs_text(body):

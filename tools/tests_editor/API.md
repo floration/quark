@@ -144,7 +144,9 @@ three views (tabs): **Code**, **Graph**, **Blocks**.
 - shortcut items: `aliasOf` (a read-only alias of a by-hand command, e.g. checkbrain of exportbrain: its own entry,
   runnable); argsSpec params without a name in main() take the parameter name of the function argv[K] is handed to.
 - group / shortcut items: `ports` (`[[port, fn]]`), call `argsValue` (`p` resolved to `TP(28900)`) and `port`;
-  `timing.at` (and `timing.run` for a local run); shortcut `shadowsGroup`.
+  `timing.at` (and `timing.run` for a local run); `timing.history` (`[{sec, at, run}]`, this machine's last 12 times,
+  oldest first) and `timing.slower` (`{sec, median, pct}` when the newest is over 50% and 2 s above the median of
+  the ones before it, 3 or more; else null); shortcut `shadowsGroup`.
 - fn: `ret`, `checks[].macro`, `helpers` (non-test functions it calls), `calledBy`, `flaky`, `portOffsets` (the K of
   every `port + K`), `overloads`.
 - ci suite: `workflowName`, `env`, `concurrency`, `about` (header comment), `sanitizerTrigger` (`{file, job, step,

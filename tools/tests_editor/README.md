@@ -64,7 +64,8 @@ the script. Each map release_check.sh hosts keeps its last result, screenshot an
 aliases (checkbrain FILE, printweapons FILE, modeast FILE...) have entries of their own and are. An argument is a word
 or a repo-relative path (no `..`). The binary is `build/quark_tests[.exe]`,
 else the newest `build-*/quark_tests[.exe]`, else `quark_tests` from the config. Output: `cache/runs/<id>.log`,
-history `cache/runs.json` (last 500), each group's newest time and result (and each map's) `cache/groups.json`; each run gets its own temp folder (`cache/tmp/<id>`, last 5 kept). Stop ends
+history `cache/runs.json` (last 500), each group's newest time and result, its last 12 times (a ▲ in the tree and
+a note under Timing when the newest is over 50% above their median) and each map's result `cache/groups.json`; each run gets its own temp folder (`cache/tmp/<id>`, last 5 kept). Stop ends
 the run and everything it started (by its process id).
 
 ## tests_editor.json (beside serve.py; see tests_editor.example.json)

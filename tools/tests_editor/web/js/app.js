@@ -134,7 +134,7 @@ class App {
         return out;
     }
     _rowMeta(it) {
-        if (it.kind === "group") return it.timing ? secs(it.timing.sec) : "";
+        if (it.kind === "group") return it.timing ? (it.timing.slower ? "▲ " : "") + secs(it.timing.sec) : "";
         if (it.kind === "job") return (it.steps || []).length + " steps";
         if (it.kind === "shortcut" || it.kind === "tool") return (it.calls || []).length ? (it.calls || []).length + " calls" : "";
         return "";
@@ -200,7 +200,9 @@ class App {
         const b = e.querySelector(".tbadge");
         b.textContent = r.lint ? "⚠" + r.lint : "";
         b.title = r.lint ? r.lint + " lint finding(s)" : "";
-        if (r.item && r.item.flaky) e.title = "flaky: " + r.item.flaky;
+        const slow = r.item && r.item.timing && r.item.timing.slower;
+        e.querySelector(".tmeta").classList.toggle("warn", !!slow);
+        if (r.item && (r.item.flaky || slow)) e.title = [r.item.flaky ? "flaky: " + r.item.flaky : "", slow ? `slower: ${secs(slow.sec)}, its median was ${secs(slow.median)}` : ""].filter(Boolean).join("\n");
         e._row = r;
     }
     _ciDots() {
@@ -429,6 +431,7 @@ class App {
             sec("Timing");
             if (it.timing) kv("time", secs(it.timing.sec), "");
             if (it.timing) kv("from", it.timing.source, "small muted");
+            if (it.timing && (it.timing.history || []).length > 1) d.append(this._trend(it.timing));
             if (it.flaky) kv("flaky", it.flaky, "warn small");
         }
         if (it && it.kind === "group") {
@@ -704,6 +707,16 @@ class App {
         const r = el("div", "runrow");
         r.append(btn("▶ Run quark_tests " + it.name, go), el("span", "muted small", "low priority, one run at a time"));
         d.append(r);
+    }
+    // a group's last times here (oldest first): a bar each, the newest marked; a spike over its median is called out
+    _trend(t) {
+        const h = t.history, max = Math.max(...h.map((x) => x.sec), 0.5);
+        const w = el("div", "trend");
+        const bars = el("div", "trend-bars");
+        h.forEach((x, i) => { const b = el("i", "tbar" + (i === h.length - 1 ? " last" + (t.slower ? " slow" : "") : "")); b.style.height = Math.max(2, Math.round(28 * x.sec / max)) + "px"; b.title = secs(x.sec) + " · " + dallas(x.at); bars.append(b); });
+        w.append(bars, el("span", "small muted", `last ${h.length}: ${h.map((x) => secs(x.sec)).join(", ")}`));
+        if (t.slower) w.append(el("div", "small warn", `▲ the newest, ${secs(t.slower.sec)}, is ${t.slower.pct != null ? t.slower.pct + "% " : ""}over its median of ${secs(t.slower.median)}: the test or the code it drives got slower (or the machine was busy)`));
+        return w;
     }
     _failRow(f) {
         const r = el("div", "fline");

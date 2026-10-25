@@ -260,6 +260,13 @@ try {
     ok(await page.evaluate(() => document.activeElement !== document.querySelector(".code-ta")), "code: Esc then Tab leaves the editor");
     await page.keyboard.press("Escape");
 
+    // ---- a group's time trend: its last times, a spike over the median called out (tree ▲ too)
+    if (FIXTURE) {
+        await go("#group/weapons");
+        ok(/^▲/.test(await page.textContent('#tree .trow[data-key="quark_tests|group:weapons"] .tmeta')), "trend: the tree marks a slower group");
+        ok(await page.locator("#details .trend .tbar").count() === 5 && /55% over its median of 20 s/.test(await page.textContent("#details .trend")), "trend: last times and the spike");
+    }
+
     // ---- a command that takes a NAME: the page asks for it
     if (FIXTURE) {
         await go("#cmd/rules");

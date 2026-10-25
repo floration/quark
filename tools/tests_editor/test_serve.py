@@ -257,6 +257,26 @@ class ParseLog(unittest.TestCase):
         self.assertEqual((res["bots"]["status"], res["duel"]["status"]), ("passed", "failed"))
 
 
+class Trend(unittest.TestCase):
+    """Each group's last times (cache/groups.json hist) and the slowdown flag (model._slower)."""
+
+    def test_history_and_spike(self):
+        tmp = tempfile.mkdtemp(prefix="tests_editor_trend_")
+        try:
+            r = serve.Runs(tmp)
+            for i, sec in enumerate([10, 11, 10, 9, 25]):
+                r._note({"id": "r%d" % i, "endedAt": "2026-10-2%dT00:00:00Z" % i}, {"bots": sec}, {})
+            h = r.groups["bots"]["hist"]
+            self.assertEqual([x["sec"] for x in h], [10, 11, 10, 9, 25])
+            self.assertEqual(model._slower(h), {"sec": 25, "median": 10.0, "pct": 150})
+            self.assertIsNone(model._slower(h[:-1]))
+            self.assertIsNone(model._slower([{"sec": 0.4}, {"sec": 0.5}, {"sec": 0.4}, {"sec": 1.5}]))   # (under 2 s more: noise)
+            for i in range(20): r._note({"id": "x%d" % i, "endedAt": "2026-11-%02dT00:00:00Z" % (i + 1)}, {"bots": 10}, {})
+            self.assertEqual(len(r.groups["bots"]["hist"]), serve.HIST_KEPT)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class Yaml(unittest.TestCase):
     def test_shapes(self):
         y = yamlsub.parse("on: [push]\nk: 'it''s'\nn: 3\nb: true\nlist:\n- a\n- b: 1\n  c: 2\nblk: |-\n  x\n\n  y\nkeep: |+\n  z\n\nafter: 1\n")

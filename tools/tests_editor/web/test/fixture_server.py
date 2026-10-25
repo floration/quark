@@ -21,6 +21,9 @@ TIMING = {"bots": 160, "botaim": 120, "botfalls": 95, "tourney": 88, "duel": 60,
           "sessions2": 66, "modes": 80, "hidden": 25, "race": 50, "votes": 55, "edit": 48, "ranked": 75, "ranked2": 52, "rules": 64,
           "assets": 12, "server": 58, "netcode": 40, "tickrate": 62, "governor": 35, "resetmaps": 4, "userdata": 6}
 
+# a group whose newest time spiked (serve.py: cache/groups.json hist; model: timing.history / slower)
+TREND = {"weapons": {"history": [{"sec": s, "at": NOW, "run": "r0"} for s in (20, 21, 19, 20, 31)], "slower": {"sec": 31, "median": 20, "pct": 55}}}
+
 # the last local results (serve.py: cache/groups.json): duel failed with one FAIL line, weapons passed
 LAST = {"duel": {"status": "failed", "at": NOW, "run": "r0", "fails": 1, "source": "local run " + NOW,
                  "failLines": [{"text": "FAIL /src/quark/tests/tests.cpp:120: a == b", "file": "tests/tests.cpp", "line": 120}]},
@@ -117,7 +120,7 @@ def parse_quark_tests(repo, fns):
                 name = m.group(1)
                 groups.append({"id": "group:" + name, "kind": "group", "name": name, "list": lst, "order": order, "file": f, "line": j + 1, "endLine": end + 1,
                                "calls": cs, "run": {"cmd": "build/quark_tests group " + name, "parallel": lst == "par"},
-                               "timing": {"sec": TIMING.get(name, 30), "source": "release-tests/timing/step1.txt"} if name in TIMING else None,
+                               "timing": dict({"sec": TIMING.get(name, 30), "source": "release-tests/timing/step1.txt"}, **TREND.get(name, {})) if name in TIMING else None,
                                "flaky": "timing-sensitive: re-run alone on an idle machine before calling it a failure" if name in ("tickrate", "netcode") else None,
                                "lastRun": LAST.get(name)})
                 order += 1; j = end + 1
