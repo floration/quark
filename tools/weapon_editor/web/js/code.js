@@ -64,6 +64,15 @@ export class CodeView {
             pb.append(d);
         }
     }
+    // after an undo / redo: the caret where the text changed (the first and last characters that differ)
+    caretAtChange(before, after) {
+        let a = 0; const n = Math.min(before.length, after.length);
+        while (a < n && before[a] === after[a]) a++;
+        let b = 0; while (b < n - a && before[before.length - 1 - b] === after[after.length - 1 - b]) b++;
+        this.ta.focus(); this.ta.setSelectionRange(a, Math.max(a, after.length - b));
+        const line = after.slice(0, a).split("\n").length;
+        if (line * LH < this.scroll.scrollTop || line * LH > this.scroll.scrollTop + this.scroll.clientHeight) this.scroll.scrollTop = Math.max(0, (line - 4) * LH);
+    }
     goto(line) {
         const lines = this.ta.value.split("\n");
         let off = 0; for (let i = 0; i < line - 1 && i < lines.length; i++) off += lines[i].length + 1;

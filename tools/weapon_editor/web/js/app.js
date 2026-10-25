@@ -30,6 +30,7 @@ class App {
         this.text = ""; this.ast = null; this.parseOk = false; this.problems = []; this.gameProblems = null;
         this.sel = "rifle"; this.health = 100; this.dist = 0;
         this.cmp = { name: "", text: "", ast: null, values: null };
+        this.hist = { undo: [], redo: [], key: null, at: 0, since: 0 };
     }
     on(ev, f) { (this.handlers[ev] || (this.handlers[ev] = [])).push(f); }
     emit(ev, ...a) { for (const f of this.handlers[ev] || []) f(...a); }
@@ -79,6 +80,12 @@ class App {
         document.addEventListener("keydown", (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.save(); }
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && this.page === "range") { e.preventDefault(); this.rangeView.run(); }
+            // undo / redo: the set's own history everywhere, the Code text included; other boxes keep the browser's
+            const k = e.key.toLowerCase(), t = e.target;
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "z" || k === "y") && !(t && /^(INPUT|SELECT)$/.test(t.tagName)) && !(t && t.tagName === "TEXTAREA" && t.id !== "codeTa")) {
+                e.preventDefault();
+                if (k === "y" || e.shiftKey) this.redo(); else this.undo();
+            }
         });
         window.addEventListener("beforeunload", () => this._saveDraftNow());
         this.ready = true;
@@ -100,8 +107,37 @@ class App {
     // ---------------------------------------------------------------- the set
     get dirty() { if (!this.ready && !this.text) return false; return this.set.baseText === null ? this.text !== this._newText(this.set.name) : this.text !== this.set.baseText; }
     _newText(name) { return `version 1\nweapons "${name}"\n`; }
+    // ---- undo / redo: one history of the set's text, whatever changed it (Weapon fields, Copy values, Reset, Blocks,
+    // Graph, Code). Edits of one kind in a row (`key`: a slider's drag, a burst of typing) are one step while they come
+    // less than a second apart (and for 4 s at most); opening or starting a set starts a new history.
+    _record(prev, next, key) {
+        const H = this.hist, now = performance.now();
+        if (prev === next) return;
+        if (!(key && key === H.key && now - H.at < 1000 && now - H.since < 4000)) {
+            H.undo.push(prev); if (H.undo.length > 300) H.undo.shift();
+            H.since = now;
+        }
+        H.key = key; H.at = now; H.redo.length = 0;
+        this._histButtons();
+    }
+    _resetHistory() { this.hist = { undo: [], redo: [], key: null, at: 0, since: 0 }; this._histButtons(); }
+    _histButtons() { const u = $("undoBtn"), r = $("redoBtn"); if (u) u.disabled = !this.hist.undo.length; if (r) r.disabled = !this.hist.redo.length; }
+    undo() { this._step(this.hist.undo, this.hist.redo, "undo"); }
+    redo() { this._step(this.hist.redo, this.hist.undo, "redo"); }
+    _step(from, to, what) {
+        if (!from.length) { this.toast(`nothing to ${what}`, 1500); return; }
+        const prev = this.text, text = from.pop();
+        to.push(prev);
+        this.hist.key = null;
+        this.setText(text, "undo");
+        this._histButtons();
+        if (this.page === "code") this.codeView.caretAtChange(prev, text);
+    }
+
     // a new text (from the code view, a file, a load): parse, keep ids where the tree didn't change, derive, tell
     setText(text, from = null, quiet = false) {
+        if (from === null) this._resetHistory();
+        else if (from !== "undo") this._record(this.text, text, from);
         this.text = text;
         const c = this.helper.checkLocal(text);
         if (c.set) { this.ast = carryIds(this.ast, c.set); this.parseOk = true; }
@@ -115,9 +151,10 @@ class App {
         if (!quiet) this._saveDraft();
     }
     // a new tree (blocks / graph / a field): its text, re-read so problems have their lines
-    brainEdited(ast, from) {
+    brainEdited(ast, from, key = from) {
         numberIds(ast);
         const text = print(ast);
+        this._record(this.text, text, key);
         this.text = text;
         let parsed = null;
         try { parsed = parse(text); } catch { parsed = null; }
@@ -133,17 +170,17 @@ class App {
     }
     setField(key, v, from = "weapon") {
         if (!this.parseOk) { this.toast("the code has an error: fix it on the Code tab first (a field edit rewrites the text)", 4000); return false; }
-        this.brainEdited(withField(this.ast, key, v), from);
+        this.brainEdited(withField(this.ast, key, v), from, from + ":" + key);
         return true;
     }
     setLabel(weapon, text) {
         if (!this.parseOk) { this.toast("fix the code's error first", 3000); return; }
-        this.brainEdited(withLabel(this.ast, weapon, text), "weapon");
+        this.brainEdited(withLabel(this.ast, weapon, text), "weapon", "label:" + weapon);
     }
     resetWeapon(w) {
         if (!this.parseOk) return;
         const keys = new Set(this.cat.fieldsOf(w).map((f) => f.key));
-        this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && keys.has(d.name)) && !(d.kind === "label" && d.weapon === w)) }, "reset");
+        this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && keys.has(d.name)) && !(d.kind === "label" && d.weapon === w)) }, "reset", null);
     }
     // a variant: weapon `from`'s values (this set's, the comparison set's or the standard ones) onto weapon `to`, for
     // every field both have that a set can write (the alt fire's own fields and the kind stay `to`'s). The game has 11
@@ -161,7 +198,7 @@ class App {
             ast = withField(ast, g.key, v); n++;
         }
         if (!n) { this.toast("nothing to copy: the values are the same", 2500); return; }
-        this.brainEdited(ast, "copy");
+        this.brainEdited(ast, "copy", null);
         const fromT = (src === "set" && this.titles.get(from)) || this.cat.byId.get(from).title;
         this.toast(`${n} value${n > 1 ? "s" : ""} of ${fromT}${src === "cmp" ? ` ("${this.cmp.name}")` : src === "std" ? " (standard)" : ""} copied to ${this.cat.byId.get(to).title}; it stays a ${this.cat.byId.get(to).kind} weapon with its own alt fire`, 5000);
     }
@@ -329,6 +366,8 @@ class App {
         $("setSel").onchange = () => { const v = $("setSel").value; if (v) this.openSet(v); };
         $("setName").onchange = () => { const v = $("setName").value.trim(); if (SET_RE.test(v)) { this.set.name = v; this._sideRefresh(); } else this.toast("letters, digits, space, _ -; 36 at most", 3000); };
         $("setNew").onclick = () => this.newSet();
+        $("undoBtn").onclick = () => this.undo();
+        $("redoBtn").onclick = () => this.redo();
         $("setSave").onclick = () => this.save();
         $("setSaveAs").onclick = () => { const n = prompt("Save the set as (custom_weapons/<name>.qweapons):", this.set.name + " copy"); if (n) { $("setName").value = n.trim(); this.save(n.trim()); } };
         $("setOpenFile").onclick = () => $("fileIn").click();
@@ -358,7 +397,7 @@ class App {
             if (!this.parseOk) return;
             if (!confirm("Every weapon back to the standard values and names? (params of the set's own, curves and slots stay)")) return;
             const fields = this.cat.byKey;
-            this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && fields.has(d.name)) && d.kind !== "label") }, "reset");
+            this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && fields.has(d.name)) && d.kind !== "label") }, "reset", null);
         };
         const bm = $("baseMode");
         bm.innerHTML = BASE_MODES.map((m) => `<option>${m}</option>`).join("");

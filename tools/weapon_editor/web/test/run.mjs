@@ -297,6 +297,13 @@ async function browserChecks() {
                 await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "cv"\n', "code"); A.copyWeapon("sniper", "rifle", "std"); });
                 const cv = await p.evaluate(() => [window.weaponsApp.values.get("rifle.damage"), window.weaponsApp.values.get("rifle.refire"), window.weaponsApp.values.get("rifle.scopedRefire")]);
                 ok(cv[0] === 40 && Math.abs(cv[1] - 1.5) < 1e-6 && Math.abs(cv[2] - 1.1111112) < 1e-6, "Copy values: the sniper's numbers on the rifle, its alt fire field kept", JSON.stringify(cv));
+                // undo / redo: Copy values is one step, a run of one field's edits (a slider drag) one step, Ctrl+Z in the Code text
+                const un = await p.evaluate(() => { const A = window.weaponsApp, t0 = A.text; for (let v = 10; v < 15; v++) A.setField("rocket.damage", v); const t1 = A.text; A.undo(); const a = A.text === t0; A.undo(); const b = A.text === 'version 1\nweapons "cv"\n'; A.redo(); A.redo(); return [a, b, A.text === t1]; });
+                ok(un.every(Boolean), "undo: a slider's run of edits is one step, Copy values one step, redo puts them back", JSON.stringify(un));
+                await p.click('#tabs button[data-page="code"]'); await p.click("#codeTa"); await p.keyboard.press("Control+End");
+                const before = await p.inputValue("#codeTa");
+                await p.keyboard.type("param rifle.damage f32 = 9\n"); await p.keyboard.press("Control+z");
+                ok((await p.inputValue("#codeTa")) === before, "Ctrl+Z in the Code text undoes the typing");
             } else {
                 fs.mkdirSync(path.join(dataDir, "custom_weapons"), { recursive: true });
                 const demoText = fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak"), "utf8");
