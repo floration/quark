@@ -74,6 +74,8 @@ def main(argv=None):
     dump_line = f"dump {info.get('dump') or 'none'}: {fresh.get('dumpVersion') or '?'} {(fresh.get('dumpCommit') or '?')[:12]}"
     if fresh.get('stale'):
         dump_line += f" - OUT OF DATE ({fresh['why']}); refresh it: {fresh['refresh']}"
+    elif fresh.get('note'):
+        dump_line += f" - up to date ({fresh['note']})"
     with open(os.path.join(dest, 'INSTALLED.txt'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(f'ui-customizer.html built {datetime.datetime.now().isoformat(timespec="seconds")} by tools/ui_customizer/install.py\n'
                 f'from {REPO} at {ver} {sha}\n'

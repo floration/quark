@@ -22,10 +22,14 @@ and never deletes or rewrites anything else in that folder (the owner's provenan
 screenshots (about 15 MB) are not committed: without them the page works the same, minus the reference-screenshot
 overlay.
 
-**Out-of-date dump.** build.py compares the dump with the checkout: its `VERSION`, and the commits that changed
-`src/client` since the dump's commit. When either moved on, the build and the install print a WARNING, `INSTALLED.txt`
-says so, the page shows a red banner (with the refresh command and a Copy button) and an exported spec starts with a
-warning. Refresh = `install.py --extract` (or `extract/extract.py --gz` to also rewrite the committed dump), then reload.
+**Out-of-date dump.** build.py counts the commits that changed `src/client` since the dump's commit. When there are
+any, the build and the install print a WARNING, `INSTALLED.txt` says so, the page shows a red banner (with the refresh
+command and a Copy button) and an exported spec starts with a warning. A `VERSION`-only difference (every release bumps
+it; 0 UI commits) is only a note in the page's status bar and `INSTALLED.txt`: the pages match the game apart from the
+version label. Only when git can't count (no git, or the dump's commit is not in the checkout) does a `VERSION`
+difference raise the warning. Refresh = `install.py --extract` (or `extract/extract.py --gz` to also rewrite the
+committed dump), then reload. The Quark Project app re-runs the install when the UI code, `VERSION` or the provenance
+registry change (its `installs.json`), so the banner follows the game.
 
 ## Using it
 
@@ -54,7 +58,7 @@ warning. Refresh = `install.py --extract` (or `extract/extract.py --gz` to also 
 | `data/ui-dump.json.gz` | the game's UI at the commit in its `source` (every page's elements in draw order, 1280x720), made by `extract/` |
 | `extract/` | regenerating the dump: `extract.py`, `probe.patch`, `build_dump.py`, `style.json`, README |
 | `audit/audit.py` | a layout audit (balance, overlap / clipping, edges, text size) of a dump or an exported layout |
-| `test/` | `node test/model.test.js`, `provenance.test.js`, `fonts.test.js`; `e2e.js` and `overlay.js` drive the built page headless |
+| `test/` | `node test/model.test.js`, `provenance.test.js`, `fonts.test.js`, `python3 test/freshness.test.py`; `e2e.js` and `overlay.js` drive the built page headless |
 
 Fonts: the game's own (`assets/fonts`) are embedded; Windows fonts (Bahnschrift, Segoe UI, ...) are read from this PC's
 `C:\Windows\Fonts` at build time, preview only (Microsoft-licensed: never committed or shipped); open fonts downloaded
@@ -77,7 +81,7 @@ same way.
 ## Tests
 
 ```
-node test/model.test.js && node test/provenance.test.js && node test/fonts.test.js
+node test/model.test.js && node test/provenance.test.js && node test/fonts.test.js && python3 test/freshness.test.py
 node test/e2e.js [screenshot dir]                 (the installed page, or UIC_HTML=<file>)
 node test/overlay.js [html] [out dir] [page ids]  (the page drawn over the game's screenshots, with the difference)
 ```

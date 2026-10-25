@@ -133,8 +133,10 @@ def git(*args):
 
 def freshness(dump):
     """Is the dump still the game's UI? {gameVersion, gameCommit, dumpVersion, dumpCommit, uiCommits (commits that
-    touched the UI code since the dump's commit; None when git can't tell), stale, why, refresh}. Stale when the
-    checkout's VERSION differs from the dump's or a commit since the dump's changed the UI code."""
+    touched the UI code since the dump's commit; None when git can't tell), stale, why, note, refresh}. Stale when a
+    commit since the dump's changed the UI code. Every release bumps VERSION, so a VERSION-only difference (git counts
+    0 UI commits) is only a note: the pages match the game apart from the version label (the page shows it in grey,
+    not the red banner). The VERSION check decides only when git can't count (no git, or the dump's commit unknown)."""
     src = (dump or {}).get("source") or {}
     try:
         with open(os.path.join(REPO, "VERSION"), encoding="utf-8") as f:
@@ -147,13 +149,17 @@ def freshness(dump):
     if dsha and head and git("cat-file", "-e", dsha + "^{commit}") is not None:
         out = git("rev-list", "--count", dsha + "..HEAD", "--", *UI_PATHS)
         n = int(out) if out and out.isdigit() else None
-    why = []
-    if gver and dver and gver != dver:
+    why, note = [], ""
+    moved = bool(gver and dver and gver != dver)
+    if moved and n is None:
         why.append(f"the dump is {dver}, the game {gver}")
     if n:
-        why.append(f"{n} commit{'s' if n != 1 else ''} changed the UI code (src/client) since the dump's commit {dsha[:8]}")
+        why.append(f"{n} commit{'s' if n != 1 else ''} changed the UI code (src/client) since the dump's commit {dsha[:8]}"
+                   + (f" (the dump is {dver}, the game {gver})" if moved else ""))
+    elif moved and n == 0:
+        note = f"the dump is {dver}, the game {gver}; no UI code changed since, only the version label differs"
     return {"gameVersion": gver, "gameCommit": head, "dumpVersion": dver, "dumpCommit": dsha, "uiCommits": n,
-            "stale": bool(dump) and bool(why), "why": "; ".join(why), "refresh": REFRESH}
+            "stale": bool(dump) and bool(why), "why": "; ".join(why), "note": note if dump else "", "refresh": REFRESH}
 
 
 def check_shots(dump):
@@ -588,6 +594,8 @@ def main(argv=None):
     if fresh and fresh["stale"]:
         print(f"WARNING: the UI dump is out of date ({fresh['why']}): pages may not match the game. "
               f"Refresh it: {fresh['refresh']} (in the checkout)")
+    elif fresh and fresh["note"]:
+        print(f"note: {fresh['note']} (the dump is still the game's UI)")
     print(f"provenance: " + (f"{len(prov['items'])} items embedded" if prov is not None else "none (no provenance.json)"))
     if start is not None:
         print(f"start layout: {layout_name} ({len(start['doc']['pages'])} pages, PROPOSAL), browser storage '{store_ns}'")

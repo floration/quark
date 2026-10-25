@@ -1268,7 +1268,9 @@
   function renderStatus() {
     renderSelStatus();
     const src = baseline.source;
-    const from = (dump ? (build.dump || 'dump') + ' @ ' + (src.commit || '?') : 'NO DATA (run install.py)') + (startLayout ? '  -  proposal ' + (build.layout || '') : '');
+    const fr = build.freshness;   // (a VERSION-only difference: a note here, not the red banner; showFreshness)
+    const from = (dump ? (build.dump || 'dump') + ' @ ' + (src.commit || '?') + (fr && !fr.stale && fr.note ? ' (' + fr.note + ')' : '') : 'NO DATA (run install.py)') +
+      (startLayout ? '  -  proposal ' + (build.layout || '') : '');
     const sample = build.sample ? '  [SAMPLE DATA]' : '';
     const fe = QFonts.get(activeId());
     const fl = fe ? `  -  font ${fe.name}${S.flip ? ' (compare, F)' : ''} [${LIC_WORD[licOf(fe)]}]` : '';
@@ -1957,7 +1959,8 @@
     }
   }
 
-  // ---- an out-of-date dump (build.py freshness: the checkout's VERSION / UI code moved on since the extract) ----
+  // ---- an out-of-date dump (build.py freshness: commits changed the UI code since the extract; when git can't tell,
+  // the checkout's VERSION moved on). A VERSION-only bump is no reason for the red bar: renderStatus notes it. ----
   function showFreshness() {
     const f = build.freshness;
     if (!f || !f.stale) return;
