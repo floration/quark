@@ -18,7 +18,7 @@ if ((process.argv || []).includes('--quark-tabbar')) {
     version,
     open: (id) => ipcRenderer.send('shell:open', String(id), ''),
     // cmd: reload, reload-tabs, ready, relaunch, zoom-reset, tab-menu <id>, more-menu [ids], logo-menu, reorder <id> <beforeId|null>,
-    // dragging <bool>, find {text, forward, again, matchCase} | {close: true}
+    // dragging <bool>, find {text, forward, again} | {close: true}
     command: (cmd, arg, arg2) => ipcRenderer.send('shell:tabbar', String(cmd), arg === undefined ? null : arg, arg2 === undefined ? null : arg2),
     tabs: () => ipcRenderer.invoke('shell:tabs'),
     onTabs: (fn) => { ipcRenderer.on('shell:tabs', (e, data) => fn(data)); },
