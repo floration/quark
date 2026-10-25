@@ -18,13 +18,14 @@ if ((process.argv || []).includes('--quark-tabbar')) {
     version,
     open: (id) => ipcRenderer.send('shell:open', String(id), ''),
     // cmd: reload, reload-tabs, ready, relaunch, zoom-reset, tab-menu <id>, more-menu [ids], reorder <id> <beforeId|null>,
-    // find {text, forward, again} | {close: true}
+    // dragging <bool>, find {text, forward, again, matchCase} | {close: true}
     command: (cmd, arg, arg2) => ipcRenderer.send('shell:tabbar', String(cmd), arg === undefined ? null : arg, arg2 === undefined ? null : arg2),
     tabs: () => ipcRenderer.invoke('shell:tabs'),
     onTabs: (fn) => { ipcRenderer.on('shell:tabs', (e, data) => fn(data)); },
     onCtrl: (fn) => { ipcRenderer.on('shell:ctrl', (e, down) => fn(down === true)); },
     onFind: (fn) => { ipcRenderer.on('shell:find', (e, data) => fn(data)); },
     onFindResult: (fn) => { ipcRenderer.on('shell:find-result', (e, data) => fn(data)); },
+    onEscape: (fn) => { ipcRenderer.on('shell:escape', () => fn()); },
   });
 } else {
   contextBridge.exposeInMainWorld('quarkShell', {

@@ -247,7 +247,8 @@ in `electron.rejected` again (the row says so); a newer release is tried. A nati
 - Right-click in a page: Undo, Redo, Cut, Copy, Paste, Paste as plain text, Select all (enabled by what the page
   allows there), Open / Copy link for links, Find (the selection), Reload, Inspect element. Right-click on a tab: Open,
   Reload, Move left / right, Open its log, Developer tools.
-- Tab order: drag a tab among its siblings (an accent line shows where it lands), Ctrl+Shift+PageUp / PageDown, or
+- Tab order: drag a tab among its siblings (an accent line shows where it lands; the press opens the tab at once, as in
+  a browser, and Esc, in the bar or the page, cancels the drag and gives the previous tab back), Ctrl+Shift+PageUp / PageDown, or
   Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none,
   with its `defaults*` keys, so a later `server.py --init` never takes the dragged order for an older default order and
   "upgrades" it back), keeping every other field; a parent's children move with it.

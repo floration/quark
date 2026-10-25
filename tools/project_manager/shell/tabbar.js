@@ -65,6 +65,8 @@
       b.append(c);
     }
     if (n) { const k = document.createElement('span'); k.className = 'key'; k.textContent = String(n); b.append(k); }
+    // (opens on the press, like a browser's tabs: no click delay; a drag then moves the tab it opened, and Esc gives
+    //  the previous tab back)
     b.addEventListener('mousedown', (e) => { if (e.button === 0) api.open(t.id); });
     b.addEventListener('pointerdown', (e) => { if (e.button === 0) dragStart(e, b); });
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); api.command('tab-menu', t.id); });
@@ -80,6 +82,7 @@
     if (key === last || (drag && drag.active)) { if (key !== last) pending = data; return; } // nothing changed (or a drag runs): no DOM work
     last = key;
     pending = null;
+    shownActive = data.active;
     const byId = new Map(data.tabs.map((t) => [t.id, t]));
     const chain = new Set(); // the active tab and its ancestors
     for (let t = byId.get(data.active), n = 0; t && n < 50; t = byId.get(t.parent), n++) chain.add(t.id);
@@ -119,6 +122,7 @@
     fit();
   }
   let pending = null; // (a tab list that came during a drag: drawn when it ends)
+  let shownActive = null; // (the active tab as last drawn: a cancelled drag goes back to it)
 
   function renderZoom(z) {
     const pct = Math.round((Number(z) || 1) * 100);
@@ -235,13 +239,15 @@
   // ---- drag a tab among its siblings: the new order goes to main.js, which writes tabs.json ----
   let drag = null;
   function dragStart(e, b) {
-    drag = { b, id: b.dataset.id, parent: b.dataset.parent, x0: e.clientX, pointer: e.pointerId, active: false, sibs: [], to: -1 };
+    // (pointerdown comes before the mousedown that opens the tab: prev is the tab that was active before the press)
+    drag = { b, id: b.dataset.id, parent: b.dataset.parent, x0: e.clientX, pointer: e.pointerId, active: false, sibs: [], to: -1, prev: shownActive };
   }
   function dragEnd(commit) {
     const d = drag;
     drag = null;
     if (!d) return;
     if (d.active) {
+      api.command('dragging', false);
       d.b.classList.remove('dragging');
       d.b.style.transform = '';
       d.sibs.forEach((x) => x.el.classList.remove('drop-before', 'drop-after'));
@@ -267,6 +273,7 @@
         .map((el) => { const r = el.getBoundingClientRect(); return { el, mid: r.left + r.width / 2 }; });
       if (d.sibs.length < 2) { drag = null; return; }
       d.active = true;
+      api.command('dragging', true);
       d.b.classList.add('dragging');
       try { d.b.setPointerCapture(d.pointer); } catch { /* not down any more */ }
     }
@@ -280,7 +287,14 @@
   });
   addEventListener('pointerup', (e) => { if (drag && e.pointerId === drag.pointer) dragEnd(true); });
   addEventListener('pointercancel', () => dragEnd(false));
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && drag) { e.preventDefault(); dragEnd(false); } });
+  function cancelDrag() {
+    const d = drag;
+    dragEnd(false);
+    if (d && d.active && d.prev && d.prev !== d.id) api.open(d.prev); // (the whole gesture is undone: the old tab again)
+  }
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && drag) { e.preventDefault(); cancelDrag(); } });
+  // (the press opened the tab and gave its page the focus: main.js sends the page's Esc here while a drag runs)
+  api.onEscape(() => { if (drag) cancelDrag(); });
 
   // ---- find in page ----
   let findTimer = 0;

@@ -1683,6 +1683,7 @@ function cycle(dir) {
 
 // Ctrl held anywhere (a page has the focus nearly always) shows the tab bar's Ctrl+N numbers
 let ctrlHeld = false;
+let barDragging = false; // (a tab is being dragged in the tab bar: Esc in a page cancels the drag)
 function setCtrlHeld(down) {
   if (down === ctrlHeld) return;
   ctrlHeld = down;
@@ -1714,6 +1715,7 @@ function onKey(event, input) {
   else if (ctrl && key === 'PageDown') cycle(1);
   else if (ctrl && key === 'PageUp') cycle(-1);
   else if (key === 'F3' && findOpen) findQuery(findText, !input.shift, true);
+  else if (key === 'Escape' && barDragging && !fromBar) sendTabbar('shell:escape');
   else if (ctrl && !input.alt && !input.shift && (key === 'f' || key === 'F') && fromBar) openFind();
   else handled = false;
   if (handled) event.preventDefault();
@@ -1874,6 +1876,7 @@ ipcMain.on('shell:tabbar', (e, cmd, arg, arg2) => {
   else if (cmd === 'tab-menu' && typeof arg === 'string') tabMenu(arg);
   else if (cmd === 'more-menu') moreMenu(arg);
   else if (cmd === 'reorder' && typeof arg === 'string') reorderTab(arg, typeof arg2 === 'string' ? arg2 : null);
+  else if (cmd === 'dragging') barDragging = arg === true;
   else if (cmd === 'find' && arg && typeof arg === 'object') {
     if (arg.close) closeFind(true);
     else findQuery(arg.text, arg.forward !== false, arg.again === true);
