@@ -88,7 +88,7 @@ of it). The server checks the problem is still in the file as it is now; if not,
   <date>. _YYYY-MM-DD HH:MM CT, q, open_`, and a 07 question's trailer becomes `answered: <answer, ~120 chars> (q, via
   Claude Manager)`; nothing else in 07 changes. Other files' entries only get the 09 line. "Save all" = one commit.
 - **Add an entry**: file, section, title, priority, status, text -> `- **Title** (P2). Text. _date, q, status_` at the
-  top of the section. Archive isn't offered (new work doesn't go there).
+  top of the section. Archive isn't offered (the server refuses an open entry there).
 - **Mark told / done**: every open card has "Mark told" (06), "Mark fixed" (01, 03, 04, 05) or "Mark done" (the rest);
   the trailer's status becomes `told (q, via Claude Manager)` (date and thread kept), committed like an answer
   (`06: q set "<title>" told (Claude Manager)`). An item q answered in 09 also sets that 09 answer done. The
