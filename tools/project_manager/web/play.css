@@ -83,6 +83,8 @@ dialog#note-dlg::backdrop, dialog#log-dlg::backdrop { background: rgba(0, 0, 0, 
 .note-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--ink-2); background: var(--surface-2);
   border-radius: var(--radius-sm); padding: 6px 10px; }
 .note-meta b { color: var(--ink); font-weight: 600; }
+.note-draft { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--warn-ink); }
+.note-draft[hidden] { display: none; }
 .note-for { display: flex; gap: 10px; flex-wrap: wrap; }
 .note-for label { flex: 1 1 160px; }
 #note-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; position: relative; }

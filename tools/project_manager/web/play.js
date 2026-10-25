@@ -283,7 +283,10 @@
         '<div class="na"><button type="button" class="btn small ghost" data-more="' + esc(n.id) + '"' + (open || has(n.logTail) ? '' : ' hidden') + '>' + (open ? 'less' : 'more' + (has(n.logTail) ? ' (and the log lines)' : '')) + '</button><span class="grow"></span>' + acts + '</div></li>';
     }).join('') + '</ul>';
     if ((v.notesTotal || 0) > notes.length) html += '<p class="small muted more-notes">The newest ' + notes.length + ' of ' + esc(v.notesTotal) + '; every note is in ' + esc(file) + ' (Claude Manager) and project-manager\\play-notes.jsonl.</p>';
-    if (setHTML('sec-notes', html)) measureNotes();
+    if (setHTML('sec-notes', html)) {
+      measureNotes();
+      for (const n of notes) if (n.locked || n.removed) store('play-draft-edit-' + n.id, null);  // (no edit to finish)
+    }
   }
   function blockedButtons(id) {
     return '<button type="button" class="btn small" data-follow="' + esc(id) + '" title="Add a new note that refers to this one">Write a follow-up</button>' +
@@ -451,9 +454,45 @@
     for (const k of FIELDS) form.elements[k].value = typeof values[k] === 'string' ? values[k] : '';
     updateCounts();
   }
+  // Drafts (localStorage, per form): {did, noticed, change, other, at, base}. A draft is kept only while it differs
+  // from what the form started from (the saved note for an edit, empty boxes otherwise), is dropped after DRAFT_DAYS,
+  // and an edit's draft only counts for the saved text it was made from (`base`): changed or locked since, it's gone.
+  const DRAFT_DAYS = 14;
+  const fieldsSig = (f) => JSON.stringify(FIELDS.map(k => typeof obj(f)[k] === 'string' ? f[k] : ''));
+  function readDraft(key, base) {
+    const d = storeJSON(key, null);
+    if (!d || typeof d !== 'object') return null;
+    const stale = !d.at || Date.now() - d.at > DRAFT_DAYS * 864e5;
+    if ((stale && (key.startsWith('play-draft-edit-') || d.at)) || (base !== undefined && d.base !== base)) { store(key, null); return null; }
+    return d;
+  }
+  function formFields() { const d = {}; for (const k of FIELDS) d[k] = form.elements[k].value; return d; }
+  // the row over the boxes: shown while the form differs from where it started, with Discard draft
+  function updateDraftRow() {
+    const n = state.note;
+    const differs = !!n && fieldsSig(formFields()) !== fieldsSig(n.start);
+    $('note-draft').hidden = !differs;
+    if (!differs) return;
+    $('note-draft-txt').textContent = (n.kind === 'edit' ? 'Changed from the saved note' : 'Not saved yet') +
+      (n.restoredAt ? ' (your unsaved draft from ' + when(n.restoredAt) + ')' : '; kept as a draft if you close this');
+  }
+  function discardDraft() {
+    const n = state.note;
+    if (!n) return;
+    store(draftKey(), null);
+    n.restoredAt = null;
+    fillFields(n.start);
+    updateDraftRow();
+    form.elements.did.focus();
+  }
+  // at start: drafts too old, edit drafts from before `base` was recorded (they came back over the saved note)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('play-draft-')) readDraft(k); }
+  } catch (e) { /* storage blocked */ }
   function showDialog(title) {
     $('note-h').textContent = title;
     $('note-err').hidden = true;
+    updateDraftRow();
     try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
     setTimeout(() => form.elements.did.focus(), 30);
   }
@@ -479,7 +518,10 @@
       (has(s.args) ? '<span class="mono">' + esc(s.args) + '</span>' : '') +
       (x.kind && x.kind !== 'ok' ? '<span class="' + (x.kind === 'crash' ? 'err' : x.kind === 'error' ? 'warn' : 'muted') + '">' + esc(x.text) + '</span>' : '') +
       (s.hasLog ? '<button type="button" class="btn small ghost" data-log="' + esc(s.id) + '">Log</button>' : '');
-    fillFields(storeJSON(draftKey(), {}));
+    const draft = readDraft(draftKey());
+    state.note.start = {};
+    state.note.restoredAt = draft && draft.at;
+    fillFields(draft || {});
     $('note-attach').checked = x.kind === 'crash' || x.kind === 'error';
     setButtons('session', s);
     showDialog('How was it?');
@@ -491,7 +533,10 @@
     $('note-count').textContent = '';
     $('note-meta').hidden = true;
     const bl = arr(state.v && state.v.builds).filter(b => b.present);
-    const draft = obj(storeJSON(draftKey(), {}));
+    const saved = readDraft(draftKey());
+    const draft = obj(saved);
+    state.note.start = {};
+    state.note.restoredAt = saved && saved.at;
     if (about) {
       const line = 'Follow-up to my note "' + String(about.title || '').replace(/^Play note: /, '') + '" (' + (about.stamp || '') + '): my ' + about.change + ' didn\'t go in, ' + about.why + '. ';
       draft.build = bl.some(b => b.id === about.build) ? about.build : '';
@@ -510,11 +555,12 @@
   function openEdit(id) {
     const n = noteById(id);
     if (!n) return;
-    state.note = { kind: 'edit', id };
+    state.note = { kind: 'edit', id, start: obj(n.fields), base: fieldsSig(n.fields) };
     $('note-count').textContent = '';
     $('note-meta').hidden = false;
     $('note-meta').innerHTML = '<span><b>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</b></span><span>' + esc(n.stamp || '') + '</span><span class="muted">' + esc(n.where || '') + '</span>';
-    const draft = storeJSON(draftKey(), null);
+    const draft = readDraft(draftKey(), state.note.base);
+    state.note.restoredAt = draft && draft.at;
     fillFields(draft || obj(n.fields));
     setButtons('edit');
     showDialog('Edit play note');
@@ -545,12 +591,16 @@
   form.addEventListener('input', () => {
     updateCounts();
     if (!state.note) return;
-    const d = {};
-    for (const k of FIELDS) d[k] = form.elements[k].value;
+    const d = formFields();
+    if (fieldsSig(d) === fieldsSig(state.note.start)) { store(draftKey(), null); state.note.restoredAt = null; updateDraftRow(); return; }
     if (state.note.kind === 'free') { d.build = $('note-build').value; d.label = form.elements.label.value; d.version = form.elements.version.value; }
+    d.at = Date.now();
+    if (state.note.base) d.base = state.note.base;
     store(draftKey(), JSON.stringify(d));
+    updateDraftRow();
   });
   $('note-build').addEventListener('change', otherToggle);
+  $('note-discard').addEventListener('click', discardDraft);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const n = state.note;
