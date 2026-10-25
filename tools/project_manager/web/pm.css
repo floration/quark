@@ -96,7 +96,8 @@ main {
 /* masonry (pm.js sets each card's grid-row-end: span <its height / 4 px>; the gap is the card's bottom margin) */
 .grid.cards.masonry { grid-auto-rows: 4px; row-gap: 0; grid-auto-flow: row dense; }
 .grid.cards.masonry > .card { margin-bottom: 16px; }
-/* wide screens (q, 2026-10-24: more cards across, not bigger): three columns from 1800 px, four from 2200 px */
+/* wide screens (q, 2026-10-24: more cards across, not bigger): three columns from 1800 px, four from 2200 px, five
+   from 2400 px (2560 wide: five ~490 px columns, so a tall card leaves less blank under the others) */
 @media (min-width: 1800px) {
   main { max-width: 2600px; }
   .grid.two.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -105,6 +106,7 @@ main {
   main { max-width: none; }
   .grid.two.cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+@media (min-width: 2400px) { .grid.two.cards { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (max-width: 640px) { main { padding: 12px 16px 32px; } .top { padding: 10px 16px; } }
 
 .statusline {
@@ -148,6 +150,12 @@ main {
   padding: 12px 14px; color: var(--ink-2); display: flex; gap: 10px; align-items: flex-start;
 }
 .down + .down { margin-top: 8px; }
+/* a source that is down shows its last good data greyed (pm/scheduler.py keeps it: `kept`) */
+.kept { margin-top: 10px; filter: grayscale(1); opacity: 0.62; }
+.kept:hover, .kept:focus-within { opacity: 0.85; }
+.loc.kept { filter: grayscale(1); opacity: 0.62; }
+.stale-tag { display: inline-block; font-size: 11px; font-weight: 600; color: var(--ink-3); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; line-height: 16px; vertical-align: 1px; }
+.need.stale .txt { color: var(--ink-2); }
 .down svg { flex: none; width: 18px; height: 18px; color: var(--idle); margin-top: 1px; }
 .down strong { color: var(--ink); font-weight: 600; display: block; }
 .down .fix { font-size: 13px; }
@@ -235,6 +243,13 @@ main {
 .pipe-foot details[open] { flex-basis: 100%; margin-left: 0; }
 .ck-head { margin-top: 8px; }
 .ck-msg { color: var(--crit-ink); margin-top: 4px; }
+.ck-msg:empty { display: none; }
+.checklist .ck-items { margin: 0 0 4px 22px; }
+.checklist .ck-items > summary { cursor: pointer; font-size: 11.5px; color: var(--link); width: fit-content; }
+.checklist .ck-list ul { margin: 2px 0 6px; padding-left: 16px; list-style: disc; }
+.checklist .ck-list li { margin: 2px 0; color: var(--ink-2); overflow-wrap: anywhere; }
+.checklist .ck-list li.ck-group { list-style: none; margin: 6px 0 2px -16px; font-weight: 650; color: var(--ink-3); }
+.checklist .ck-list code { font-size: 0.92em; }
 .ck-bar { height: 6px; margin-top: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
 .ck-bar i { display: block; height: 100%; background: var(--good); }
 .ck-frac { font-variant-numeric: tabular-nums; color: var(--ink-3); font-weight: 600; }
@@ -260,7 +275,13 @@ main {
 .halting-card .src, .halting-card .src b { color: var(--halt-soft); }
 .halting-card a { color: var(--halt-ink); text-decoration: underline; text-underline-offset: 2px; font-weight: 600; }
 .halting-card a:focus-visible { outline-color: var(--halt-ink); }
-.halts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* (columns on wide screens: one item spans the whole card, several share it two or three across) */
+.halts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; align-items: start;
+         grid-template-columns: repeat(auto-fit, minmax(min(100%, 600px), 1fr)); }
+.halt.stale { opacity: 0.8; }
+.halt .h-stale { border: 1px dashed var(--halt-soft); border-radius: 999px; padding: 0 7px; line-height: 18px; font-size: 11.5px; font-weight: 600; }
+.halt-stale { margin: -4px 0 8px; font-size: 13px; color: var(--halt-soft); }
+.halt .h-what code, .halt-toast code { background: var(--halt-row); padding: 0 5px; border-radius: 4px; font-size: 0.92em; }
 .halt { background: var(--halt-row); border-radius: var(--radius-sm); padding: 9px 12px 9px; display: grid;
         grid-template-columns: minmax(0, 1fr) auto; gap: 3px 14px; align-items: baseline; }
 .halt .h-what { font-weight: 700; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
@@ -400,7 +421,7 @@ table.t .z { color: var(--ink-3); }
 .tools-banner { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--s1) 10%, var(--surface)); font-size: 13px; }
 .tools-repo { font-size: 13px; margin-bottom: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
 .tools-repo .err { flex-basis: 100%; color: var(--ink-2); }
-.tools { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.tools { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .tools li { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface-2); min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .tools .t-main { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .tools .t-name { font-weight: 650; margin-right: auto; overflow-wrap: anywhere; }
@@ -452,6 +473,8 @@ table.t .z { color: var(--ink-3); }
                                   border-radius: var(--radius-sm); padding: 3px 8px; min-width: 0; }
 .fh-head input { width: 220px; max-width: 100%; }
 .fh-body { overflow: auto; padding: 4px 16px 14px; min-height: 120px; }
+.log-text { margin: 8px 0 0; font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+.tools .t-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 
 /* ---------- 9. tabs ---------- */
 .tabtree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

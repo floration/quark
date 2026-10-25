@@ -10,8 +10,11 @@
   const Q = new URLSearchParams(location.search);
   const EMBED = Q.get('embed') === '1';
   const FIXTURE = Q.get('fixture') === '1';
-  // ?fixture=1&down=oracle,github marks those sources down in the sample (to see the grey cards).
+  // ?fixture=1&down=oracle,github marks those sources down in the sample (to see the grey cards); &kept=1 keeps their
+  // data as the server does for a source that fails (shown greyed as "last known"); &failing=1 makes the local
+  // managers answer with an error instead of not answering.
   const SIM_DOWN = FIXTURE ? (Q.get('down') || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+  const SIM_KEPT = FIXTURE && Q.get('kept') === '1', SIM_FAILING = FIXTURE && Q.get('failing') === '1';
   const TZ = 'America/Chicago';
   const POLL_MS = 15000;
   const ORACLE_MIN_MS = 120000;
@@ -20,6 +23,7 @@
   // after Refresh / Check now / Update now: poll this often until the new data is in (or the time is up)
   const SETTLE = { refresh: { every: 1500, max: 15000 }, oracle: { every: 3000, max: 55000 }, update: { every: 2000, max: 20000 } };
   const FULL_HISTORY_PAGE = 300;
+  const CHANGELOGS_SHOWN = 3;
   const FIXTURE_URL = 'static/fixtures/pm-sample.json';
   const DEFAULT_TAB_PORTS = { 8765: 'dashboard', 8766: 'docs', 8767: 'github', 8768: 'project' };
   const TAB_NAMES = { dashboard: 'Editor Manager', docs: 'Claude Manager', github: 'GitHub Manager', project: 'Supervisor Board' };
@@ -59,12 +63,13 @@
     pm: null, history: null, tabs: null,
     // nowAnchor: the server's clock (serverNow) at the last answer, fetchedPerf: performance.now() then
     genMs: 0, nowAnchor: 0, fetchedPerf: 0, lastOkMs: 0, error: null, historyAt: 0,
-    sig: '', timer: 0, lastPollPerf: -1e9, refreshAt: -1e9, oracleClickAt: -1e9, updateClickAt: -1e15, updateMsg: '',
-    showAllHistory: false, openDetails: new Set(), toast: '',
+    sig: '', etag: '', timer: 0, lastPollPerf: -1e9, refreshAt: -1e9, oracleClickAt: -1e9, updateClickAt: -1e15, updateMsg: '',
+    showAllHistory: false, showAllChangelogs: false, openDetails: new Set(), toast: '',
     shown: {},          // section id -> the html it shows, without its live ages (only a changed card is redrawn)
     settle: {},         // kind -> {until, done()}: re-poll soon after Refresh / Check now / Update now (SETTLE)
     haltKeys: null,     // the halting items seen last time (a new one brings up the notice)
-    ckBusy: new Set(),  // checklist sections being saved
+    haltReady: {},      // source -> whether its halting list was in at the last poll (haltListIn)
+    ckSeq: {}, ckChain: {}, // checklist saves per section: the newest click's number, the queue of saves
     ckMsg: '',
     full: null, fullLimit: FULL_HISTORY_PAGE, fullErr: '', // the full event history (dialog)
   };
@@ -197,6 +202,8 @@
     return a ? '<a ' + a + (cls ? ' class="' + cls + '"' : '') + '>' + html + '</a>' : html;
   }
   function tabLink(tabId, hash, html, cls) { return link(tabHref(tabId, hash), html, cls); }
+  // a deep link into the GitHub Manager only while it runs (its cache or kept data means it does not: plain text)
+  function ghLink(hash, html, cls) { const g = src('github'); return g.ok === true && !g.stale ? tabLink('github', hash, html, cls) : html; }
   function linkLabel(url) {
     const a = linkAttrs(url);
     if (!a) return '';
@@ -217,6 +224,8 @@
   function mdInline(s) {
     return esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/&#96;([^&]+?)&#96;/g, '<code>$1</code>');
   }
+  // the same text without its markup (what Copy puts on the clipboard, and the toast)
+  function mdPlain(s) { return String(s == null ? '' : s).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1'); }
 
   // icons -------------------------------------------------------------------
   const IC = {
@@ -243,11 +252,22 @@
   // sources -----------------------------------------------------------------
   function src(key) {
     const s = obj(obj(state.pm && state.pm.sources)[key]);
-    if (SIM_DOWN.indexOf(key) >= 0) return { ok: false, fetchedAt: s.fetchedAt, error: key === 'oracle' ? 'SSH key not found' : SOURCES[key] && SOURCES[key].local ? SOURCES[key].name + ' not running' : 'simulated failure' };
+    if (SIM_DOWN.indexOf(key) >= 0) {
+      const local = SOURCES[key] && SOURCES[key].local;
+      return { ok: false, fetchedAt: s.fetchedAt, lastOkAt: SIM_KEPT ? s.fetchedAt : null, kept: SIM_KEPT && s.data != null, data: SIM_KEPT ? s.data : null,
+        error: key === 'oracle' ? 'SSH key not found' : local ? SOURCES[key].name + (SIM_FAILING ? ' is running but /api/summary failed (HTTP 503 from /api/summary)' : ' not running') : 'simulated failure' };
+    }
     return s;
   }
   function srcOk(key) { return src(key).ok === true; }
-  function data(key) { const s = src(key); return s.ok === true ? obj(s.data) : {}; }
+  // a source that is down but whose last good data the server kept (shown greyed, "last known")
+  function srcKept(key) { const s = src(key); return s.ok !== true && s.kept === true; }
+  function data(key) { const s = src(key); return s.ok === true || srcKept(key) ? obj(s.data) : {}; }
+  // a card body from a source that is down: its grey card, then the kept data greyed (or nothing)
+  function orDown(key, body) {
+    if (srcOk(key)) return body();
+    return downBlock(key) + (srcKept(key) ? '<div class="kept" title="Last known data: this source is down">' + body() + '</div>' : '');
+  }
   function derived() { return obj(state.pm && state.pm.derived); }
   function srcMeta(keys, label) {
     const parts = [];
@@ -261,18 +281,23 @@
     }
     return '<span class="src" title="Where this card\'s data comes from, and how old it is">' + parts.join('<span class="muted">&middot;</span>') + '</span>';
   }
+  // a local manager that answers with an error (HTTP 500 / 503) is running but failing, not "not running"
+  function failing(key, err) { return !!(SOURCES[key] && SOURCES[key].local) && /is running but/i.test(String(err || '')); }
+  const SHELL_LOGS = '%LOCALAPPDATA%\\QuarkProject\\logs\\';
   function fixFor(key, err) {
     const e = String(err || '');
     if (/ssh key not found/i.test(e)) return 'Put the Oracle SSH key where Quark\\project-manager\\config.json says (oracle.key), or fix that path.';
     if (/ssh(\.exe)? not found|no ssh/i.test(e)) return 'Install the Windows OpenSSH client (Settings > Apps > Optional features).';
+    if (failing(key, e)) return 'Restart the ' + SOURCES[key].name + ' (it answers, but its /api/summary fails) and check its log, ' + SHELL_LOGS + (tabIdForPort({ github: 8767, docs: 8766, editors: 8765 }[key]) || key) + '.log.';
     return (SOURCES[key] && SOURCES[key].fix) || 'Check the PM server log.';
   }
   function downBlock(key) {
     const s = src(key), info = SOURCES[key] || { name: key, local: false };
-    const title = info.local ? info.name + ' not running' : info.name + ' unavailable';
-    const t = parseTime(s.fetchedAt);
+    const title = !info.local ? info.name + ' unavailable' : failing(key, s.error) ? info.name + ' running but failing' : info.name + ' not running';
+    const t = parseTime(s.lastOkAt); // (fetchedAt is the failed attempt; lastOkAt the last fetch that worked)
+    const last = srcKept(key) ? ' &middot; showing its last good data, from ' + ageSpan(t) : ' &middot; last good data ' + (t != null ? ageSpan(t) : '<span>never</span>');
     return '<div class="down">' + IC.down + '<div><strong>' + esc(title) + '</strong><div class="fix">' + esc(fixFor(key, s.error)) + '</div>' +
-      (has(s.error) ? '<div class="err">' + esc(s.error) + (t != null ? ' &middot; last good data ' + ageSpan(t) : '') + '</div>' : '') + '</div></div>';
+      (has(s.error) ? '<div class="err">' + esc(s.error) + last + '</div>' : '') + '</div></div>';
   }
   function head(id, title, extra, meta) {
     return '<div class="card-head"><h2 id="' + id + '">' + esc(title) + (extra || '') + '</h2>' + (meta || '') + '</div>';
@@ -316,8 +341,8 @@
       const stt = stateText[s.state] ? s.state : 'unknown';
       const t = stageTime(s.stage, s);
       const sha = short(s.sha);
-      const shaHtml = sha ? (s.stage === 'testing' ? tabLink('github', '#branch=testing', '<span class="mono">' + esc(sha) + '</span>') :
-        s.stage === 'working' ? tabLink('github', '#local=working-repo', '<span class="mono">' + esc(sha) + '</span>') : '<span class="mono">' + esc(sha) + '</span>') : '<span class="muted">sha unknown</span>';
+      const shaHtml = sha ? (s.stage === 'testing' ? ghLink('#branch=testing', '<span class="mono">' + esc(sha) + '</span>') :
+        s.stage === 'working' ? ghLink('#local=working-repo', '<span class="mono">' + esc(sha) + '</span>') : '<span class="mono">' + esc(sha) + '</span>') : '<span class="muted">sha unknown</span>';
       return '<div class="stage ' + stt + '"><div class="stage-name">' + esc(s.stage) + pill(stateText[stt][0], stateText[stt][1]) + '</div>' +
         '<div class="stage-ver">' + unk(s.version) + '</div>' +
         '<div class="stage-meta">' + shaHtml + '<span>' + ageSpan(t) + '</span></div>' +
@@ -330,17 +355,17 @@
     if (has(wItem.pending)) wt.push(esc(wItem.pending));
     if (w) {
       const ah = num(w.ahead);
-      if (ah) wt.push(tabLink('github', '#local=' + encodeURIComponent(w.name), esc(plural(ah, 'commit')) + ' to push'));
+      if (ah) wt.push(ghLink('#local=' + encodeURIComponent(w.name), esc(plural(ah, 'commit')) + ' to push'));
       const df = num(pick(w, 'dirtyFiles', 'dirtyCount', 'uncommitted'));
-      if (w.dirty || df) wt.push(tabLink('github', '#local=' + encodeURIComponent(w.name), df ? esc(plural(df, 'file')) + ' uncommitted' : 'uncommitted changes'));
+      if (w.dirty || df) wt.push(ghLink('#local=' + encodeURIComponent(w.name), df ? esc(plural(df, 'file')) + ' uncommitted' : 'uncommitted changes'));
     }
     const tItem = stages[1], pItem = stages[2];
     if (has(tItem.pending)) tp.push(esc(tItem.pending));
     for (const pr of openPrs()) {
       if (num(pr.number) == null) continue;
       // PRs into testing belong before testing, the testing -> default branch PR before production
-      if (intoTesting(pr)) wt.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' into testing'));
-      else tp.push(tabLink('github', '#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' open'));
+      if (intoTesting(pr)) wt.push(ghLink('#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' into testing'));
+      else tp.push(ghLink('#pr=' + num(pr.number), 'PR #' + esc(num(pr.number)) + ' open'));
     }
     const tv = tItem.version, pv = pItem.version;
     const ckp = checklistProgress();
@@ -365,10 +390,10 @@
     // footer: prerelease, nextFree, checklist
     const g = data('github');
     const preTag = v.testingPrerelease || pick(g, 'testing.prerelease.tag');
-    const preUrl = pick(g, 'testing.prerelease.url');
+    const preUrl = v.testingPrereleaseUrl || pick(g, 'testing.prerelease.url');
     const prodTag = pick(g, 'production.tag') || v.productionTag;
     const ck = checklistItems();
-    const ckHtml = srcOk('checklist') ? renderChecklist(ck, ckp) : downBlock('checklist');
+    const ckHtml = orDown('checklist', () => renderChecklist(ck, ckp));
     const html = head('h-pipeline', 'Release pipeline', '', srcMeta(['github', 'builds'])) +
       '<div class="pipeline">' + stageHtml(stages[0]) + arrow(wt, wtNone) + stageHtml(stages[1]) + arrow(tp, tpNone) + stageHtml(stages[2]) + '</div>' +
       '<div class="pipe-foot">' +
@@ -386,18 +411,36 @@
     const version = has(c.version) ? String(c.version) : (has(obj(derived().versions).testing) ? String(derived().versions.testing) : null);
     return { version, done: ck.filter(h => done[sectionKey(h)]).length, total: ck.length, ticks: done };
   }
+  // a check item's text: markdown links become their text, then **bold** and `code`
+  function ckText(t) { return mdInline(String(t || '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')); }
+  function ckItemsHtml(k) {
+    const sec = state.ckItems && state.ckItems.byKey[k];
+    if (state.ckItemsErr) return '<p class="small muted">' + esc(state.ckItemsErr) + '</p>';
+    if (!sec) return '<p class="small muted">Loading&hellip;</p>';
+    if (!sec.items.length) return '<p class="small muted">No check items in this section.</p>';
+    let g = null, out = '';
+    for (const it of sec.items) {
+      if (has(it.group) && it.group !== g) { g = it.group; out += '<li class="ck-group">' + ckText(g) + '</li>'; }
+      out += '<li>' + ckText(it.text) + '</li>';
+    }
+    return '<ul>' + out + '</ul>';
+  }
   function renderChecklist(ck, p) {
     if (!ck.length) return '<p class="empty">The checklist has no sections.</p>';
     const url = pick(src('checklist').data, 'url');
-    const items = ck.map(h => {
-      const k = sectionKey(h), t = obj(p.ticks[k]), on = !!p.ticks[k], at = parseTime(t.at);
+    const counts = arr(pick(src('checklist').data, 'itemCounts'));
+    const items = ck.map((h, i) => {
+      const k = sectionKey(h), t = obj(p.ticks[k]), on = !!p.ticks[k], at = parseTime(t.at), n = num(counts[i]);
+      // (its check items come from GET /api/checklist when the list is first opened: /api/pm carries headings only)
       return '<li><label' + (at != null ? ' title="' + esc('ticked ' + fmtFull(at) + (has(t.build) ? ' on ' + t.build : '')) + '"' : '') + '>' +
         '<input type="checkbox" data-ck="' + esc(k) + '"' + (on ? ' checked' : '') + (p.version ? '' : ' disabled') + '> ' +
-        '<span>' + esc(String(h).replace(/^\d+\.\s*/, '')) + '</span></label></li>';
+        '<span>' + esc(String(h).replace(/^\d+\.\s*/, '')) + '</span></label>' +
+        (n !== 0 ? '<details class="ck-items" data-key="cki-' + esc(k) + '" data-ck-sec="' + esc(k) + '"><summary title="This section\'s checks">' + (n ? esc(plural(n, 'check')) : 'checks') + '</summary>' +
+          (state.openDetails.has('cki-' + k) ? '<div class="ck-list">' + ckItemsHtml(k) + '</div>' : '') + '</details>' : '') + '</li>';
     }).join('');
     return '<div class="ck-head small muted">' + (p.version ? 'Hand-test of <b>' + esc(p.version) + '</b>: tick a section when it passed (saved on this PC, per version).' : 'Testing version unknown: ticks are saved per version.') +
       (linkAttrs(url) ? ' ' + link(url, 'RELEASE_CHECKLIST.md') + ' &#8599;' : '') + '</div>' +
-      (state.ckMsg ? '<div class="ck-msg small">' + esc(state.ckMsg) + '</div>' : '') +
+      '<div class="ck-msg small" role="status">' + esc(state.ckMsg) + '</div>' +
       '<div class="ck-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + p.total + '" aria-valuenow="' + p.done + '"><i style="width:' + (p.total ? Math.round(p.done / p.total * 100) : 0) + '%"></i></div>' +
       '<ol class="checklist">' + items + '</ol>';
   }
@@ -415,6 +458,14 @@
   const HALT_GOTO = { oracle: ['#sec-servers', 'Servers & bot'], updates: ['#sec-tools', 'Tools & updates'] };
   function haltingItems() { return arr(derived().halting).filter(isObj); }
   function haltKey(h) { return String(has(h.id) ? h.id : '') + '|' + String(h.source || '') + '|' + String(h.what || h.title || ''); }
+  // whether a HALT source's whole list is in: its data arrived (live or kept); the updater's once it has run
+  function haltListIn(source) {
+    if (source === 'updates') { const u = updatesInfo(); return u.enabled === false || has(u.lastRunAt); }
+    if (!SOURCES[source]) return true;
+    const s = src(source);
+    if (source === 'oracle') return s.pending !== true && has(s.fetchedAt); // (its HALT is made from its error)
+    return s.ok === true || srcKept(source);
+  }
   // the `code` spans of the entry text (a command, a setting, a path): each gets a Copy button
   function haltCodes(h) {
     const out = [], seen = new Set();
@@ -434,11 +485,13 @@
     const li = items.map(h => {
       const t = parseTime(h.since);
       const go = [];
+      // (a question: straight to its answer box in the Claude Manager)
+      if (linkAttrs(h.answerLink)) go.push(link(h.answerLink, 'Answer &rarr;'));
       if (linkAttrs(h.link)) go.push(link(h.link, (/^http:\/\/(127\.0\.0\.1|localhost):8766\//.test(String(h.link)) ? 'Open entry' : esc(linkLabel(h.link) || 'Open')) + ' &rarr;'));
       if (linkAttrs(h.threadUrl) && h.threadUrl !== h.link) go.push(link(h.threadUrl, esc(has(h.thread) ? h.thread : 'Thread') + ' &#8599;'));
       if (!go.length && HALT_GOTO[h.source]) go.push('<a href="' + HALT_GOTO[h.source][0] + '">' + esc(HALT_GOTO[h.source][1]) + ' &darr;</a>');
       const what = has(h.what) ? h.what : (has(h.title) ? h.title : 'Something needs you');
-      go.push(copyBtn(what, 'Copy'));
+      go.push(copyBtn(mdPlain(what), 'Copy'));
       const codes = haltCodes(h);
       const blocks = has(h.blocks) ? h.blocks : (has(h.thread) ? h.thread : null);
       const meta = [
@@ -447,13 +500,18 @@
       ];
       if (has(h.title) && h.title !== what) meta.push('<span>' + esc(h.title) + '</span>');
       if (has(h.detail)) meta.push('<span class="h-detail">' + esc(h.detail) + '</span>');
-      return '<li class="halt"><div class="h-what">' + esc(what) + '</div><div class="h-go">' + go.join('') + '</div>' +
+      if (h.stale === true) meta.unshift('<span class="h-stale" title="Its source is down: this is the last list it gave">last known</span>');
+      return '<li class="halt' + (h.stale === true ? ' stale' : '') + '"><div class="h-what">' + mdInline(what) + '</div><div class="h-go">' + go.join('') + '</div>' +
         (codes.length ? '<div class="h-codes">' + codes.map(c => '<span class="h-code"><code>' + esc(c) + '</code>' + copyBtn(c) + '</span>').join('') + '</div>' : '') +
         (blocks ? '<div class="h-blocks">Blocks <b>' + esc(blocks) + '</b></div>' : '') +
         '<div class="h-meta">' + meta.join('') + '</div></li>';
     }).join('');
+    // a source that is down keeps its last list (pm/scheduler.py): say so, with its age
+    const staleSrc = [...new Set(items.filter(h => h.stale === true).map(h => h.source))];
+    const note = staleSrc.map(k => '<p class="halt-stale">' + esc((SOURCES[k] || { name: k }).name) + ' is down: its items are the last list it gave, ' +
+      ageSpan(parseTime(src(k).lastOkAt)) + '. They stay until it answers again.</p>').join('');
     return head('h-halting', 'HALTING \u2014 Claude is blocked on you', count(items.length)).replace('<h2 id="h-halting">', '<h2 id="h-halting">' + IC.halt) +
-      '<ol class="halts">' + li + '</ol>';
+      note + '<ol class="halts">' + li + '</ol>';
   }
   // the count in the page title and for the Quark Project shell (red badge on this tab and the taskbar)
   let lastHaltBadge = null;
@@ -461,13 +519,18 @@
     const items = haltingItems(), n = items.length;
     window.quarkHalting = n;
     document.title = (n ? '(' + n + ') ' : '') + 'Supervisor Board';
-    // a HALT that was not there at the last poll (never on the first load: those are already on the badge)
-    const keys = new Set(items.map(haltKey));
+    // a HALT that was not there at the last poll. Never on the first load (those are already on the badge), and never
+    // for a source whose list was not in at the last poll (the Claude Manager starting after the board, or after
+    // an outage with nothing kept): its first list is where it stands, not news. While a source's list is not in,
+    // the keys seen from it are kept, so its return is not news either.
+    const keys = new Map(items.map(h => [haltKey(h), String(h.source || '')]));
     if (state.haltKeys) {
-      const fresh = items.filter(h => !state.haltKeys.has(haltKey(h)));
+      const fresh = items.filter(h => !state.haltKeys.has(haltKey(h)) && state.haltReady[String(h.source || '')] === true);
       if (fresh.length) haltNotice(fresh);
+      for (const [k, source] of state.haltKeys) if (!keys.has(k) && !haltListIn(source)) keys.set(k, source);
     }
     state.haltKeys = keys;
+    for (const k of new Set(Object.keys(HALT_SOURCES).concat([...keys.values()]))) state.haltReady[k] = haltListIn(k);
     if (!n) { const t = document.getElementById('halt-toast'); if (t) t.hidden = true; }
     if (n === lastHaltBadge) return;
     lastHaltBadge = n;
@@ -482,7 +545,7 @@
     if (!el) return;
     const h = fresh[0];
     el.innerHTML = IC.halt + '<div class="ht-txt"><b>' + esc(fresh.length > 1 ? fresh.length + ' new HALT items' : 'New HALT') + '</b> ' +
-      esc(has(h.what) ? h.what : (h.title || 'Claude is blocked on you')) + '</div>' +
+      mdInline(has(h.what) ? h.what : (h.title || 'Claude is blocked on you')) + '</div>' +
       '<a href="#sec-halting" class="ht-go" data-dismiss="1">Show</a>' +
       '<button type="button" class="btn small ghost ht-mute" id="halt-mute">' + (chimeMuted() ? 'Unmute' : 'Mute') + '</button>' +
       '<button type="button" class="btn small ghost ht-x" data-dismiss="1" aria-label="Dismiss">&times;</button>';
@@ -510,6 +573,8 @@
   }
 
   // ---------------------------------------------------------------- 2. needs you
+  // (an item without a link into another tab: this page's own card about it)
+  const NEED_GOTO = { local: ['#sec-local', 'Local copies'] };
   function renderNeeds() {
     const d = derived();
     const att = arr(d.attention).filter(isObj);
@@ -532,8 +597,12 @@
       const why = has(a.why) ? a.why : (a.source && SOURCES[a.source] ? 'from ' + SOURCES[a.source].name : (cls === 'step' ? '' : (a.level === 'red' ? 'needs fixing' : 'worth a look')));
       const lab = linkLabel(a.link);
       const pr = obj(a.progress), pt = num(pr.total), pd = num(pr.done);
-      return '<li class="need ' + cls + '">' + icon + '<span class="txt">' + unk(a.text, 'no text') + '</span>' +
-        (pt ? '<a href="#checklist" data-open="checklist" class="go">' + esc(pd + ' of ' + pt) + ' tested &rarr;</a>' : lab ? link(a.link, esc(lab) + ' &rarr;', 'go') : '<span></span>') +
+      const goto = NEED_GOTO[a.goto];
+      const go = pt ? '<a href="#checklist" data-open="checklist" class="go">' + esc(pd + ' of ' + pt) + ' tested &rarr;</a>' :
+        linkAttrs(a.answerLink) ? link(a.answerLink, 'Answer &rarr;', 'go') : lab ? link(a.link, esc(lab) + ' &rarr;', 'go') :
+        goto ? '<a href="' + goto[0] + '" class="go">' + esc(goto[1]) + ' &darr;</a>' : '<span></span>';
+      return '<li class="need ' + cls + (a.stale === true ? ' stale' : '') + '">' + icon + '<span class="txt">' + unk(a.text, 'no text') +
+        (a.stale === true ? ' <span class="stale-tag" title="Its source is down: this is from its last good data">last known</span>' : '') + '</span>' + go +
         (why ? '<span class="why">' + esc(why) + '</span>' : '') +
         (has(a.fix) ? '<span class="why"><b>Fix:</b> ' + esc(a.fix) + '</span>' : '') +
         (cls === 'step' && recFor(a) != null ? '<span class="rec"><b>Recommended:</b> ' + esc(recFor(a)) + '</span>' : '') + '</li>';
@@ -557,9 +626,11 @@
     const d = derived();
     const entries = arr(d.inProgress).filter(isObj);
     const meta = srcMeta(['docs']);
-    let html = head('h-progress', 'In progress', count(entries.length), meta);
-    if (!srcOk('docs')) html += downBlock('docs');
-    if (!entries.length) return html + '<p class="empty">No in-progress entries.</p>';
+    return head('h-progress', 'In progress', count(entries.length), meta) + orDown('docs', () => progressBody(entries));
+  }
+  function progressBody(entries) {
+    if (!entries.length) return '<p class="empty">No in-progress entries.</p>';
+    let html = '';
     const groups = {};
     for (const e of entries) (groups[bucketOf(e)] = groups[bucketOf(e)] || []).push(e);
     const shown = BUCKETS.filter(b => b.id !== 'other' || groups.other);
@@ -604,8 +675,10 @@
 
   // ---------------------------------------------------------------- 4. CI & PRs
   function renderCi() {
-    let html = head('h-ci', 'CI & PRs', '', srcMeta(['github']));
-    if (!srcOk('github')) return html + downBlock('github');
+    return head('h-ci', 'CI & PRs', '', srcMeta(['github'])) + orDown('github', ciBody);
+  }
+  function ciBody() {
+    let html = '';
     const g = data('github');
     const runsObj = isObj(derived().runs) ? derived().runs : obj(g.runs);
     const running = arr(pick(runsObj, 'running', 'inProgress') || pick(g, 'running', 'runningRuns', 'runsRunning')).filter(isObj);
@@ -618,7 +691,7 @@
       const id = pick(r, 'id', 'runId');
       const name = esc(pick(r, 'name', 'workflow') || 'run') + ' <span class="muted">on</span> ' + unk(r.branch, 'branch unknown');
       const bits = [has(r.job) ? esc(r.job) : null, has(r.event) ? esc(r.event) : null, has(r.sha) ? '<span class="mono">' + esc(short(r.sha)) + '</span>' : null].filter(Boolean);
-      html += '<div class="run">' + pill('run', 'running') + '<span class="t">' + (id != null ? tabLink('github', '#run=' + encodeURIComponent(id), name) : name) + ext(r.url) + '</span>' +
+      html += '<div class="run">' + pill('run', 'running') + '<span class="t">' + (id != null ? ghLink('#run=' + encodeURIComponent(id), name) : name) + ext(r.url) + '</span>' +
         '<span class="elapsed"' + (start != null ? ' data-start="' + start + '" title="started ' + esc(fmtFull(start)) + '"' : '') + '>' + (start != null ? '' : 'unknown') + '</span>' +
         '<span class="m">' + (bits.join(' &middot; ') || '&nbsp;') + (start != null ? ' &middot; started ' + esc(fmtWhen(start)) : '') + '</span></div>';
     }
@@ -627,7 +700,7 @@
       const id = pick(failed, 'id', 'runId');
       const ft = parseTime(pick(failed, 'finishedAt', 'updatedAt', 'completedAt'));
       const name = esc(pick(failed, 'name', 'workflow') || 'run') + ' <span class="muted">on</span> ' + unk(failed.branch, 'branch unknown');
-      html += '<div class="fail">' + pill('crit', failed.conclusion || 'failed') + '<span class="t">' + (id != null ? tabLink('github', '#run=' + encodeURIComponent(id), name) : name) + ext(failed.url) + '</span>' +
+      html += '<div class="fail">' + pill('crit', failed.conclusion || 'failed') + '<span class="t">' + (id != null ? ghLink('#run=' + encodeURIComponent(id), name) : name) + ext(failed.url) + '</span>' +
         '<span class="small muted">' + ageSpan(ft) + '</span>' +
         '<span class="m">' + [has(failed.job) ? esc(failed.job) : null, has(failed.sha) ? '<span class="mono">' + esc(short(failed.sha)) + '</span>' : null, ft != null ? esc(fmtWhen(ft)) : null].filter(Boolean).join(' &middot; ') + '</span></div>';
     } else html += '<p class="empty">No failed runs on record.</p>';
@@ -642,7 +715,7 @@
         /pend|run|queue|progress/.test(ck) ? pill('run', 'checks running', pr.checksText) : pill('idle', 'no checks', pr.checksText);
       const title = '<span class="prnum">#' + (n != null ? n : '?') + '</span> ' + unk(pr.title, 'untitled');
       const up = parseTime(pr.updatedAt);
-      html += '<div class="pr">' + ckPill + '<span class="t">' + (n != null ? tabLink('github', '#pr=' + n, title) : title) + ext(pr.url) + '</span>' +
+      html += '<div class="pr">' + ckPill + '<span class="t">' + (n != null ? ghLink('#pr=' + n, title) : title) + ext(pr.url) + '</span>' +
         (pr.draft ? pill('idle', 'draft') : '<span></span>') +
         '<span class="m"><span class="mono">' + esc(pr.head || '?') + '</span> &rarr; ' + (prBase(pr) != null ? '<span class="mono"' + (has(pr.base) ? '' : ' title="the GitHub Manager did not say; a PR from any branch but testing goes into testing"') + '>' + esc(prBase(pr)) + '</span>' : '<span class="muted" title="a PR from testing goes to the default branch (production)">default branch</span>') +
         (has(pr.checksText) ? ' &middot; ' + esc(pr.checksText) : '') + (up != null ? ' &middot; updated ' + ageSpan(up) : '') + '</span></div>';
@@ -660,13 +733,11 @@
     return out;
   }
   function renderAssets() {
-    let html = head('h-assets', 'Assets', '', srcMeta(['editors']));
+    return head('h-assets', 'Assets', '', srcMeta(['editors'])) + orDown('editors', assetsBody);
+  }
+  function assetsBody() {
+    let html = '';
     const d = derived();
-    if (!srcOk('editors')) {
-      html += downBlock('editors');
-      if (num(d.humanPct) != null) html += '<p class="small muted" style="margin-top:8px">Last known: ' + esc(num(d.humanPct)) + '% human-made.</p>';
-      return html;
-    }
     // derived.assets is the server's normalized copy; the raw editors data (snake or camel case) is the fallback
     const e = data('editors'), da = isObj(d.assets) ? d.assets : null;
     const p = da || obj(e.provenance);
@@ -750,25 +821,23 @@
     return t ? t.split(/\r?\n/).filter(l => l.trim()).length : 0;
   }
   function renderServers() {
-    let html = head('h-servers', 'Servers & bot', '', srcMeta(['servers', 'oracle']));
-    if (!srcOk('servers')) html += downBlock('servers');
-    else {
+    let html = head('h-servers', 'Servers & bot', '', srcMeta(['servers', 'oracle'])) + orDown('servers', () => {
       const s = data('servers');
       const lst = k => { const x = obj(s[k]); const addrs = arr(x.addresses); const c = num(x.count) != null ? num(x.count) : (Array.isArray(x.addresses) ? addrs.length : null); return { c, v: x.version, addrs }; };
       const p = lst('production'), t = lst('testing');
       const q = queueCount(pick(s, 'queued', 'queue'));
       const stat = (k, x, sub) => '<div class="stat" title="' + esc(x.addrs.join('\n')) + '"><div class="k">' + esc(k) + '</div><div class="v' + (x.c === 0 ? ' zero' : '') + '">' + (x.c == null ? '<span class="muted">?</span>' : esc(x.c)) + '</div><div class="d">' + esc(sub) + '</div></div>';
-      html += '<div class="stats">' + stat('Production servers', p, has(p.v) ? 'listed for ' + p.v : 'version unknown') + stat('Testing servers', t, has(t.v) ? 'listed for ' + t.v : 'version unknown') +
+      return '<div class="stats">' + stat('Production servers', p, has(p.v) ? 'listed for ' + p.v : 'version unknown') + stat('Testing servers', t, has(t.v) ? 'listed for ' + t.v : 'version unknown') +
         '<div class="stat"><div class="k">Players queued</div><div class="v">' + (q == null ? '<span class="muted">?</span>' : esc(q)) + '</div><div class="d">ranked queue</div></div></div>';
-    }
+    });
     // Oracle box
     const os = src('oracle'), od = data('oracle');
     const host = pick(od, 'host') || 'ubuntu@129.151.8.15';
     html += '<div class="box"><div class="box-head"><h3>Oracle box <span class="muted small mono">' + esc(host) + '</span></h3>' +
       '<span class="src">checked ' + (parseTime(os.fetchedAt) != null ? ageSpan(parseTime(os.fetchedAt)) : '<span class="muted">never</span>') +
       ' <button type="button" class="btn small" id="oracle-check" title="One read-only SSH check, at most every 2 minutes">Check now</button></span></div>';
-    if (!srcOk('oracle')) html += downBlock('oracle');
-    else {
+    html += orDown('oracle', () => {
+      let html = '';
       const load = arr(od.load).map(num);
       const used = num(od.memUsedMb), tot = num(od.memTotalMb);
       charts.mem = { used, tot };
@@ -785,8 +854,8 @@
         return pill(kind, n + (a ? ': ' + a : '') + (sub && sub !== a ? ' (' + sub + ')' : ''), since != null ? 'since ' + fmtFull(since) : '');
       }).join('') : '<span class="muted small">No units reported.</span>') + '</div>';
       const lines = (lab, l) => arr(l).length ? '<div class="loglines"><span class="lbl">' + esc(lab) + '</span>' + arr(l).map(x => esc(x)).join('\n') + '</div>' : '';
-      html += lines('Last bot update (quark-discord-update)', od.botUpdate) + lines('Last server update (quark-update)', od.serverUpdate);
-    }
+      return html + lines('Last bot update (quark-discord-update)', od.botUpdate) + lines('Last server update (quark-update)', od.serverUpdate);
+    });
     return html + '</div>';
   }
   function drawMem(el, w) {
@@ -800,7 +869,7 @@
 
   // ---------------------------------------------------------------- 7. local copies & builds
   function buildFolders() {
-    const b = src('builds').ok === true ? src('builds').data : null;
+    const b = srcOk('builds') || srcKept('builds') ? src('builds').data : null;
     let list = [];
     if (Array.isArray(b)) list = b;
     else if (isObj(b)) {
@@ -814,12 +883,13 @@
     let html = head('h-local', 'Local copies & builds', '', srcMeta(['builds', 'github']));
     const cards = [];
     if (!srcOk('builds')) cards.push('<div class="loc">' + downBlock('builds') + '</div>');
+    const keptB = srcKept('builds') ? ' kept' : '';
     for (const f of buildFolders()) {
       const missing = f.present === false || f.missing === true || f.exists === false;
       const noMarker = !missing && has(f.note) && !has(f.version); // (e.g. "no BUILD.txt")
       const mt = parseTime(pick(f, 'mtime', 'builtAt', 'time'));
       const lines = arr(f.lines || f.raw).map(String);
-      cards.push('<div class="loc"><div class="n"><span>' + esc(f.name) + '</span><span class="kind">game folder</span></div>' +
+      cards.push('<div class="loc' + keptB + '"><div class="n"><span>' + esc(f.name) + '</span><span class="kind">game folder</span></div>' +
         (missing ? '<div class="v muted">not found</div>' + (has(f.note) ? '<div class="m">' + esc(f.note) + '</div>' : '') :
           noMarker ? '<div class="v muted">' + esc(f.note) + '</div>' :
           '<div class="v">' + unk(f.version) + (has(f.commit) ? ' <span class="mono muted">' + esc(short(f.commit)) + '</span>' : '') + '</div>' +
@@ -839,7 +909,7 @@
       if (!flags.length) flags.push(pill('idle', 'state unknown'));
       const isRepo = /^repository$/i.test(String(l.name || ''));
       const name = esc(l.name || '?');
-      cards.push('<div class="loc"><div class="n"><span>' + (has(l.name) ? tabLink('github', '#local=' + encodeURIComponent(l.name), name) : name) + '</span><span class="kind">repo copy</span></div>' +
+      cards.push('<div class="loc"><div class="n"><span>' + (has(l.name) ? ghLink('#local=' + encodeURIComponent(l.name), name) : name) + '</span><span class="kind">repo copy</span></div>' +
         '<div class="v"><span class="mono">' + esc(l.branch || '?') + '</span> ' + (has(l.sha) ? '<span class="mono muted">' + esc(short(l.sha)) + '</span>' : '') + '</div>' +
         (isRepo && srcOk('repo') ? '<div class="m">VERSION ' + unk(repo.version) + ' &middot; full changelog ' + (repo.fullChangelog === true ? 'present' : repo.fullChangelog === false ? '<b>missing</b>' : 'unknown') + '</div>' : '') +
         '<div class="flags">' + flags.join('') + '</div></div>');
@@ -903,17 +973,24 @@
         '<span class="t-when small muted">' + (ran != null ? 'last run ' + whenSpan(ran) : 'never run here') + '</span></div>' +
         (has(e.note) ? '<div class="small muted">' + esc(e.note) + '</div>' : '') +
         tmeta(e, ports) +
-        (tailLines.length ? '<details data-key="tool-' + esc(e.id) + '"><summary>log</summary><pre>' + tailLines.map(esc).join('\n') + '</pre></details>' : '') + '</li>';
+        // (its whole install log in a dialog; Retry runs just this tool's install, when the updater can)
+        ((tailLines.length || has(e.log)) && has(e.id) ? '<div class="t-btns"><button type="button" class="btn ghost small" data-log="' + esc(e.id) + '" data-log-name="' + esc(e.name || e.id) + '"' +
+          (tailLines.length ? ' title="' + esc(tailLines.slice(-6).join('\n')) + '"' : '') + '>Log</button>' +
+          (e.state === 'failed' && u.canRetryOne === true && u.enabled !== false ? '<button type="button" class="btn small" data-retry="' + esc(e.id) + '"' + (u.running === true ? ' disabled' : '') + '>Retry</button>' : '') + '</div>' : '') + '</li>';
     }).join('') + '</ul>';
     return html;
   }
 
   // ---------------------------------------------------------------- 8. updates
   function renderChangelogs() {
-    let html = head('h-changelogs', 'Changelogs', '', srcMeta(['repo']));
-    if (!srcOk('repo')) return html + downBlock('repo');
+    return head('h-changelogs', 'Changelogs', '', srcMeta(['repo'])) + orDown('repo', changelogsBody);
+  }
+  function changelogsBody() {
+    let html = '';
     const r = data('repo');
-    const cls = arr(pick(r, 'changelogs', 'changes')).filter(isObj).slice(0, 8);
+    const all = arr(pick(r, 'changelogs', 'changes')).filter(isObj).slice(0, 8);
+    // (the newest few: eight make this card ~1000 px tall and leave the other columns short on a wide screen)
+    const cls = state.showAllChangelogs ? all : all.slice(0, CHANGELOGS_SHOWN);
     if (has(r.version)) html += '<p class="small muted" style="margin:-4px 0 8px">repository VERSION <b>' + esc(r.version) + '</b> &middot; full changelog ' + (r.fullChangelog === true ? 'written' : r.fullChangelog === false ? '<span class="warn">not written yet</span>' : 'unknown') + '</p>';
     if (!cls.length) return html + '<p class="empty">No changelogs found.</p>';
     cls.forEach((c, i) => {
@@ -934,6 +1011,8 @@
         (summary ? '<div class="cl-sum">' + mdInline(summary) + '</div>' : '') +
         (total ? (i === 0 ? blocks.map(bl).join('') : '<details data-key="cl-' + esc(c.version) + '"><summary>' + esc(plural(total, 'line')) + '</summary>' + blocks.map(bl).join('') + '</details>') : '') + '</div>';
     });
+    if (all.length > CHANGELOGS_SHOWN) html += '<div class="hist-btns"><button type="button" class="btn ghost small show-more" id="changelogs-more">' +
+      (state.showAllChangelogs ? 'Show fewer' : 'Show ' + (all.length - CHANGELOGS_SHOWN) + ' older') + '</button></div>';
     return html;
   }
   function laneOf(kind) {
@@ -1106,9 +1185,24 @@
     }
     state.shown[id] = key;
     el.querySelectorAll('details[data-key]').forEach(d => { if (d.open) state.openDetails.add(d.dataset.key); else state.openDetails.delete(d.dataset.key); });
+    const fk = focusKey(el);
     el.innerHTML = html;
     el.querySelectorAll('details[data-key]').forEach(d => { if (state.openDetails.has(d.dataset.key)) d.open = true; });
+    if (fk) { const n = el.querySelector(fk); if (n) n.focus({ preventScroll: true }); }
     return true;
+  }
+  // a selector for the focused control inside a card, to focus its new copy after a redraw (keyboard users)
+  function focusKey(el) {
+    const a = document.activeElement;
+    if (!(a instanceof HTMLElement) || a === el || !el.contains(a)) return null;
+    const q = v => '"' + CSS.escape(v) + '"';
+    if (a.id) return '#' + CSS.escape(a.id);
+    if (a.dataset.ck != null) return 'input[data-ck=' + q(a.dataset.ck) + ']';
+    if (a.dataset.copy != null) return '[data-copy=' + q(a.dataset.copy) + ']';
+    const d = a.closest('details[data-key]');
+    if (a.tagName === 'SUMMARY' && d) return 'details[data-key=' + q(d.dataset.key) + '] > summary';
+    if (a.tagName === 'A' && a.getAttribute('href')) return 'a[href=' + q(a.getAttribute('href')) + ']';
+    return null;
   }
   function renderAll() {
     const changed = [];
@@ -1154,6 +1248,10 @@
   // (every write is skipped when the value is the same: an idle page makes no DOM changes but the ones it shows)
   function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
   function tick() {
+    // a new Dallas day: "today" / "yesterday" times, the Event log's day headers and the timeline are redrawn
+    const day = dayKey(nowMs());
+    if (state.day && state.day !== day && state.pm) { state.day = day; renderAll(); drawCharts(document.getElementById('sec-history')); return; }
+    state.day = day;
     document.querySelectorAll('[data-age]').forEach(el => {
       const ms = Number(el.dataset.age);
       setText(el, (el.dataset.prefix || '') + fmtAge(ms));
@@ -1205,7 +1303,8 @@
         const f = await getJson(FIXTURE_URL);
         apply(f, f.history, f.tabs);
       } else {
-        const pm = await getJson('/api/pm' + (refresh ? '?refresh=1' : ''));
+        const pm = await getPm(refresh);
+        if (pm === NOT_MODIFIED) { tick(); state.error = null; endSettles(); schedule(); return; }
         // the sources refresh after this answer: poll again until each has fetched since (not 15 s later)
         if (refresh && isObj(pm) && obj(pm.refresh).accepted === true) {
           const since = (parseTime(pm.serverNow) || Date.now()) - 1000; // (fetchedAt has whole seconds)
@@ -1223,13 +1322,35 @@
       state.error = (err && err.name === 'AbortError') ? 'timed out' : String(err && err.message || err || 'error');
       if (!state.pm) renderAll(); else renderStatus();
     }
-    // a settle ends when its data is in or its time is up
+    endSettles();
+    schedule();
+    tick();
+  }
+  // a settle ends when its data is in or its time is up
+  function endSettles() {
     for (const k of Object.keys(state.settle)) {
       const st = state.settle[k];
       if (performance.now() > st.until || (state.pm && !state.error && st.done())) delete state.settle[k];
     }
-    schedule();
-    tick();
+  }
+  // /api/pm with If-None-Match: a 304 (nothing changed) has no body; its X-Server-Now keeps the page's clock right
+  const NOT_MODIFIED = {};
+  async function getPm(refresh) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const to = setTimeout(() => ctl && ctl.abort(), 8000);
+    try {
+      const h = state.etag && !refresh ? { 'If-None-Match': state.etag } : {};
+      const r = await fetch('/api/pm' + (refresh ? '?refresh=1' : ''), { cache: 'no-store', headers: h, signal: ctl ? ctl.signal : undefined });
+      const now = num(r.headers.get('X-Server-Now'));
+      if (r.status === 304 && state.pm) {
+        if (now != null) { state.nowAnchor = now; state.fetchedPerf = performance.now(); state.lastOkMs = now; state.historyAt = now; }
+        return NOT_MODIFIED;
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      state.etag = r.headers.get('ETag') || '';
+      return j;
+    } finally { clearTimeout(to); }
   }
   function settleOn(kind, done) {
     if (FIXTURE) return;
@@ -1276,8 +1397,14 @@
     const op = t.closest('[data-open]');
     if (op) { const d = document.getElementById(op.dataset.open); if (d) { e.preventDefault(); d.open = true; d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } return; }
     if (t.closest('#history-more')) { state.showAllHistory = !state.showAllHistory; rerender('sec-history'); return; }
+    if (t.closest('#changelogs-more')) { state.showAllChangelogs = !state.showAllChangelogs; rerender('sec-changelogs'); return; }
     if (t.closest('#history-all')) { openFullHistory(); return; }
     if (t.closest('#fh-close')) { document.getElementById('history-dialog').close(); return; }
+    if (t.closest('#lg-close')) { document.getElementById('log-dialog').close(); return; }
+    const lg = t.closest('[data-log]');
+    if (lg) { openLog(lg.dataset.log, lg.dataset.logName); return; }
+    const rt = t.closest('[data-retry]');
+    if (rt) { retryTool(rt.dataset.retry, rt); return; }
     if (t.closest('#fh-more')) { state.fullLimit += FULL_HISTORY_PAGE; renderFullHistory(); return; }
     const cp = t.closest('[data-copy]');
     if (cp) { copyText(cp.dataset.copy, cp); return; }
@@ -1346,35 +1473,130 @@
     else fallback();
   }
 
+  // a section's check items: loaded once per checklist file (GET /api/checklist) when a section is first opened
+  document.addEventListener('toggle', e => {
+    const d = e.target;
+    if (!(d instanceof HTMLDetailsElement) || d.dataset.key == null) return;
+    if (d.open) state.openDetails.add(d.dataset.key); else state.openDetails.delete(d.dataset.key);
+    if (!d.open || d.dataset.ckSec == null) return;
+    const mtime = pick(src('checklist').data, 'mtime') || '';
+    fillCkItems();
+    if (state.ckItems && state.ckItems.mtime === mtime) return;
+    if (state.ckItemsBusy || FIXTURE) { if (FIXTURE) { state.ckItemsErr = 'The sample has no check items (GET /api/checklist).'; fillCkItems(); } return; }
+    state.ckItemsBusy = true;
+    getJson('/api/checklist').then(j => {
+      const byKey = {};
+      for (const sec of arr(obj(j).sections).filter(isObj)) byKey[sectionKey(sec.heading)] = { items: arr(sec.items).filter(isObj) };
+      state.ckItems = { mtime: obj(j).mtime || mtime, byKey }; state.ckItemsErr = '';
+    }, err => { state.ckItemsErr = 'Could not load the checks (' + (err && err.message || 'error') + ').'; })
+      .finally(() => { state.ckItemsBusy = false; fillCkItems(); });
+  }, true);
+  // the open sections' lists, in place (no redraw of the card: focus and the other open lists stay)
+  function fillCkItems() {
+    const el = document.getElementById('sec-pipeline');
+    if (!el) return;
+    el.querySelectorAll('details.ck-items[open]').forEach(d => {
+      const html = ckItemsHtml(d.dataset.ckSec);
+      let box = d.querySelector('.ck-list');
+      if (!box) { box = document.createElement('div'); box.className = 'ck-list'; d.appendChild(box); }
+      if (box.innerHTML !== html) box.innerHTML = html;
+    });
+    syncShown('sec-pipeline');
+  }
+  // after a change made in place: what the card shows is what it would draw now (the next poll does not redraw it)
+  function syncShown(id) { const sec = SECTIONS.find(x => x[0] === id); if (sec) state.shown[id] = sec[1]().replace(LIVE_ATTR, ''); }
+
   // a checklist tick: saved on the PM server per testing version (POST /api/checklist), shown at once
   function tickSection(input) {
     const p = checklistProgress(), k = input.dataset.ck, on = input.checked;
-    if (!p.version || state.ckBusy.has(k)) { input.checked = !on; return; }
+    if (!p.version) { input.checked = !on; return; }
     const d = derived();
     const local = view => {
       d.checklist = Object.assign({}, obj(d.checklist), view, { count: Object.keys(obj(view.done)).length });
       const keys = checklistItems().map(sectionKey);
       for (const st of arr(d.nextSteps)) if (isObj(st) && isObj(st.progress)) st.progress = { done: keys.filter(x => obj(view.done)[x]).length, total: keys.length };
       state.sig = ''; // (the next poll redraws from the server's copy)
-      rerender('sec-pipeline'); rerender('sec-needs');
+      paintChecklist(); rerender('sec-needs');
     };
     const done = Object.assign({}, p.ticks);
     if (on) done[k] = { at: new Date(nowMs()).toISOString(), build: obj(d.versions).testingServer || null }; else delete done[k];
     state.ckMsg = '';
     local({ version: p.version, done });
     if (FIXTURE) return;
-    state.ckBusy.add(k);
-    fetch('/api/checklist', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+    // every click is saved, in order (a quick second click is a second save, never dropped); only the newest
+    // answer for a section is shown, and a failed save puts that click back
+    const seq = state.ckSeq[k] = (state.ckSeq[k] || 0) + 1;
+    const save = () => fetch('/api/checklist', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ version: p.version, section: k, done: on, build: obj(d.versions).testingServer || null }) })
       .then(r => r.json().then(j => ({ ok: r.ok, j })))
-      .then(({ ok, j }) => { if (!ok || obj(j).ok !== true) throw new Error(obj(j).message || 'not saved'); local(obj(j).checklist); })
+      .then(({ ok, j }) => { if (!ok || obj(j).ok !== true) throw new Error(obj(j).message || 'not saved'); if (seq === state.ckSeq[k]) local(obj(j).checklist); })
       .catch(err => {
-        const back = Object.assign({}, done);
-        if (on) delete back[k]; else back[k] = p.ticks[k];
+        if (seq !== state.ckSeq[k]) return;
+        const back = Object.assign({}, checklistProgress().ticks);
+        if (on) delete back[k]; else if (p.ticks[k]) back[k] = p.ticks[k];
         state.ckMsg = 'Not saved: ' + (err && err.message || 'the PM server did not answer') + '.';
         local({ version: p.version, done: back });
-      })
-      .finally(() => state.ckBusy.delete(k));
+      });
+    state.ckChain[k] = (state.ckChain[k] || Promise.resolve()).then(save);
+  }
+
+  // a tick shown in place: the boxes, bar, counts and message change, the card is not redrawn (keyboard focus stays on
+  // the box, and a quick second click lands on it)
+  function paintChecklist() {
+    const el = document.getElementById('sec-pipeline');
+    const html = renderPipeline();
+    if (!el || !el.querySelector('input[data-ck]')) { rerender('sec-pipeline'); return; }
+    const fresh = document.createElement('template');
+    fresh.innerHTML = html;
+    const f = fresh.content;
+    el.querySelectorAll('input[data-ck]').forEach(i => {
+      const n = f.querySelector('input[data-ck="' + CSS.escape(i.dataset.ck) + '"]');
+      if (!n) return;
+      if (i.checked !== n.checked) i.checked = n.checked;
+      const a = i.closest('label'), b = n.closest('label');
+      if (a.title !== b.title) a.title = b.title;
+    });
+    for (const sel of ['.ck-bar', '.ck-frac']) {
+      const a = el.querySelector(sel), b = f.querySelector(sel);
+      if (a && b && a.outerHTML !== b.outerHTML) a.outerHTML = b.outerHTML;
+    }
+    const sa = el.querySelector('#checklist > summary'), sb = f.querySelector('#checklist > summary');
+    if (sa && sb && sa.innerHTML !== sb.innerHTML) sa.innerHTML = sb.innerHTML;
+    const ma = el.querySelector('.ck-msg'), mb = f.querySelector('.ck-msg');
+    if (ma && mb) setText(ma, mb.textContent);
+    state.shown['sec-pipeline'] = html.replace(LIVE_ATTR, '');
+  }
+
+  // a tool's whole install log (GET /api/updates/log?id=), in a dialog; Retry one tool (POST /api/updates/run?id=)
+  function openLog(id, name) {
+    const dlg = document.getElementById('log-dialog');
+    if (!dlg) return;
+    const body = document.getElementById('lg-body'), meta = document.getElementById('lg-meta');
+    document.getElementById('lg-title').textContent = 'Install log: ' + (name || id);
+    meta.textContent = 'Quark\\project-manager\\logs\\install-' + id + '.log';
+    body.textContent = FIXTURE ? 'The sample has no logs.' : 'Loading\u2026';
+    if (!dlg.open) dlg.showModal();
+    if (FIXTURE) return;
+    fetch('/api/updates/log?id=' + encodeURIComponent(id), { cache: 'no-store' })
+      .then(r => r.text().then(t => {
+        // (no file: the last lines the updater reported, if any)
+        const tail = arr((arr(updatesInfo().entries).find(e => isObj(e) && e.id === id) || {}).logTail).map(String);
+        body.textContent = r.ok ? (t || '(empty)') : tail.length ? tail.join('\n') : 'No log for this tool yet.';
+        body.parentNode.scrollTop = body.parentNode.scrollHeight;
+      }), () => { body.textContent = 'The PM server did not answer.'; });
+  }
+  function retryTool(id, btn) {
+    if (FIXTURE) return;
+    btn.disabled = true;
+    const before = updatesInfo().lastRunAt;
+    fetch('/api/updates/run?id=' + encodeURIComponent(id), { method: 'POST', cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => {
+        const o = obj(j);
+        if (o.accepted === true) { state.updateMsg = ''; settleOn('update', () => updatesInfo().running === true || updatesInfo().lastRunAt !== before); return; }
+        state.updateMsg = o.message || 'Not started: an update ran less than a minute ago or is running.';
+        rerender('sec-tools');
+      }, () => { state.updateMsg = 'The PM server did not answer.'; rerender('sec-tools'); });
   }
 
   // ---------------------------------------------------------------- full event history (a dialog; /api/history)
