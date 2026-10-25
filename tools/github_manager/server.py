@@ -3485,6 +3485,20 @@ class Manager:
                 return f, places
         return None, places
 
+    def checklist_view(self):
+        """GET /api/checklist: docs/RELEASE_CHECKLIST.md (the Release testing tab) from <quarkDir>/repository (the
+        testing mirror), else a watched local copy, else the checkout this server runs from."""
+        q = self.cfg.get("quarkDir") or ""
+        places = [os.path.join(q, "repository")] if q else []
+        places += [e["path"] for e in self.locals_cfg if e.get("path")]
+        places.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+        for p in places:
+            f = os.path.join(p, "docs", "RELEASE_CHECKLIST.md")
+            if os.path.isfile(f):
+                with open(f, encoding="utf-8") as fh:
+                    return {"path": os.path.normpath(f), "text": fh.read()}
+        return {"path": None, "text": "", "looked": places}
+
     def start_tests_editor(self):
         """POST /api/tools/tests-editor: starts its serve.py hidden, at low priority, without a browser (the Tests tab
         then embeds it). A second press within TESTS_START_GAP s does nothing (it is still starting)."""
@@ -4445,6 +4459,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 body = dumps(make())
                 return self._cached("%s-%s" % (prefix, hashlib.sha1(body.encode("utf-8")).hexdigest()[:16]),
                                     lambda: body)
+            if path == "/api/checklist":
+                return self._json(200, m.checklist_view())
             if path == "/api/github/rulesets":
                 fresh = (q.get("fresh") or [""])[0] in ("1", "true", "yes")
                 return self._json(200, m.rulesets_view(fresh))
