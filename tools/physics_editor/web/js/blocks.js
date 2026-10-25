@@ -29,6 +29,7 @@ const CAT_ORDER = [["move", "move"], ["look", "view"], ["button", "buttons"], ["
 let nextId = 1;
 export const newBlock = (kind, f = {}) => ({ id: nextId++, kind, ...JSON.parse(JSON.stringify(KINDS[kind].fields)), ...f });
 
+const fmt1 = (v) => (+v).toFixed(1);
 const pressOf = (b, d) => Math.max(1, b.press == null || b.press === "" ? d : b.press | 0);
 
 // blocks -> steps (and the duration)
@@ -166,9 +167,9 @@ export class BlocksView {
         el.innerHTML = `<div class="blocks"><div class="bk-palette" id="bkPal"></div><div class="bk-main">
             <div class="cbar"><button id="bkRun" class="primary">▶ Run</button><button id="bkJson" title="the scenario as JSON (editable)">{ } JSON</button><button id="bkClear" class="danger">Clear</button>
             <span class="grow"></span><span class="muted small">drag blocks from the left into the stack · drag a block back to the left to delete it · times in ms</span></div>
-            <div class="bk-ws" id="bkWs"></div>
-            <div><div class="bk-tl"><canvas id="bkTl"></canvas></div><div class="bk-json" id="bkJsonBox"><textarea id="bkJsonTa" spellcheck="false"></textarea><div class="st" id="bkJsonSt"></div></div></div>
-            </div></div>`;
+            <div class="bk-body"><div class="bk-ws" id="bkWs"></div>
+            <div class="bk-side"><div class="bk-tl"><canvas id="bkTl"></canvas></div><div class="bk-json" id="bkJsonBox"><textarea id="bkJsonTa" spellcheck="false"></textarea><div class="st" id="bkJsonSt"></div></div></div>
+            </div></div></div>`;
         this.pal = el.querySelector("#bkPal"); this.ws = el.querySelector("#bkWs"); this.tl = el.querySelector("#bkTl");
         this._palette();
         el.querySelector("#bkRun").onclick = () => app.run();
@@ -344,7 +345,8 @@ export class BlocksView {
         };
         window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     }
-    // the timeline: each block as a stretch of time, the edited run's horizontal speed over it
+    // the timeline: each block as a stretch of time, then the runs over it: horizontal speed, and height too when the
+    // timeline is tall (a wide screen puts it in a column of its own beside the stack, the full height of the page)
     _timeline() {
         const c = this.tl;
         if (!c.clientWidth || this.app.page !== "blocks") return;
@@ -354,8 +356,10 @@ export class BlocksView {
         const sc = this.app.scenario, dur = sc.durationMs || 1, X = (ms) => 4 + (W - 8) * ms / dur;
         const css = getComputedStyle(this.el);
         const col = { move: css.getPropertyValue("--c-move"), button: css.getPropertyValue("--c-button"), look: css.getPropertyValue("--c-look"), bot: css.getPropertyValue("--c-bot"), wait: css.getPropertyValue("--c-wait") };
+        const fg3 = css.getPropertyValue("--fg3"), line = css.getPropertyValue("--line");
         let t = 0;
         g.font = "10px system-ui"; g.textBaseline = "middle";
+        const marks = [];   // (block edges, carried down through the curves)
         for (const b of this.blocks) {
             if (b.kind === "look") { g.fillStyle = col.look; g.fillRect(X(t) - 1, 2, 2, 22); continue; }
             const x0 = X(t), x1 = X(t + (b.ms | 0));
@@ -363,22 +367,42 @@ export class BlocksView {
             g.fillRect(x0, 4, Math.max(1, x1 - x0 - 1), 18); g.globalAlpha = 1;
             g.fillStyle = css.getPropertyValue("--fg");
             if (x1 - x0 > 30) g.fillText(KINDS[b.kind].label.slice(0, Math.floor((x1 - x0) / 6)), x0 + 3, 13);
-            t += b.ms | 0;
+            t += b.ms | 0; marks.push(x1);
         }
         // ruler
-        g.fillStyle = css.getPropertyValue("--fg3"); g.strokeStyle = css.getPropertyValue("--line");
+        g.fillStyle = fg3; g.strokeStyle = line;
         const stepS = dur > 8000 ? 1 : dur > 3000 ? 0.5 : 0.1;
         for (let s = 0; s * 1000 <= dur; s += stepS) { const x = X(s * 1000); g.fillRect(x, 24, 1, 4); if (Math.round(s / stepS) % (stepS < 0.5 ? 5 : 2) === 0) g.fillText(s.toFixed(stepS < 1 ? 1 : 0) + "s", x + 2, 32); }
-        // speed of the runs
+        // the runs: one lane (speed) on a short timeline, two (speed, height) on a tall one
         const runs = this.app.results && this.app.results.runs;
-        if (runs) {
-            let top = 1; for (const r of runs) for (const p of r.trace) top = Math.max(top, p.hspeed);
+        if (!runs) return;
+        const lanes = [{ key: "hspeed", label: "horizontal speed", unit: "m/s", v: (p) => p.hspeed }];
+        if (H >= 140) lanes.push({ key: "height", label: "height", unit: "m", v: (p, r) => p.pos[1] - r.trace[0].pos[1] });
+        const top = 40, gap = 14, lh = (H - top - 4 - gap * (lanes.length - 1)) / lanes.length;
+        g.globalAlpha = this.app.runFailed ? 0.4 : 1;   // (the last good run while the current one failed)
+        lanes.forEach((ln, li) => {
+            const y0 = top + li * (lh + gap), y1 = y0 + lh;
+            let lo = 0, hi = 1e-6;
+            for (const r of runs.slice(0, 2)) for (const p of r.trace) { const v = ln.v(p, r); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+            if (hi - lo < 1) hi = lo + 1;
+            const Y = (v) => y1 - (y1 - y0) * (v - lo) / (hi - lo);
+            if (lanes.length > 1) {   // (block edges and the zero line, so a curve reads against its blocks)
+                g.fillStyle = line; for (const x of marks) g.fillRect(x - 0.5, y0, 1, lh);
+                if (lo < 0) g.fillRect(4, Y(0), W - 8, 1);
+            }
             for (const r of runs.slice(0, 2)) {
                 g.strokeStyle = r.color; g.lineWidth = 1.4; g.beginPath();
-                r.trace.forEach((p, i) => { const x = X(p.t * 1000), y = H - 2 - (H - 40) * p.hspeed / top; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+                r.trace.forEach((p, i) => { const x = X(p.t * 1000), y = Y(ln.v(p, r)); i ? g.lineTo(x, y) : g.moveTo(x, y); });
                 g.stroke();
             }
-            g.fillStyle = css.getPropertyValue("--fg3"); g.fillText(`hspeed (top ${top.toFixed(1)} m/s)`, W - 130, H - 8);
+            g.fillStyle = fg3;
+            const txt = `${ln.label} (${lo < 0 ? fmt1(lo) + " to " : "top "}${fmt1(hi)} ${ln.unit})`;
+            g.fillText(txt, W - 8 - g.measureText(txt).width, lanes.length > 1 ? y0 + 6 : H - 8);
+        });
+        if (lanes.length > 1) {   // (which line is which: the tall timeline stands alone, away from the Results)
+            let lx = 8;
+            for (const r of runs.slice(0, 2)) { g.fillStyle = r.color; g.fillRect(lx, top + 2, 12, 3); g.fillStyle = fg3; g.fillText(r.label, lx + 16, top + 4); lx += 28 + g.measureText(r.label).width; }
         }
+        g.globalAlpha = 1;
     }
 }

@@ -246,7 +246,9 @@ td.gv:hover .guse { opacity: 1; }
 .bk-palette { border-right: 1px solid var(--line); background: var(--bg1); overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
 .bk-palette.bk-trash { background: color-mix(in srgb, var(--bad) 14%, var(--bg1)); outline: 2px dashed var(--bad); outline-offset: -4px; }
 .bk-ph { color: var(--fg3); font-size: 11px; margin-top: 6px; text-transform: uppercase; letter-spacing: .05em; }
-.bk-main { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; min-width: 0; }
+.bk-main { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+.bk-body { display: grid; grid-template-rows: 1fr auto; min-height: 0; min-width: 0; }
+.bk-side { min-width: 0; }
 .bk-ws { overflow: auto; position: relative; background: radial-gradient(circle, color-mix(in srgb, var(--line) 70%, transparent) 1px, transparent 1px) 0 0 / 18px 18px, var(--bg); padding: 12px 16px 60px; }
 .bk-hat { display: inline-block; min-width: 460px; max-width: 100%; background: var(--bg2); border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px 10px; }
 .bk-hathead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 12px; }
@@ -270,6 +272,13 @@ td.gv:hover .guse { opacity: 1; }
 .c-move { --cc: var(--c-move); } .c-button { --cc: var(--c-button); } .c-look { --cc: var(--c-look); } .c-bot { --cc: var(--c-bot); } .c-wait { --cc: var(--c-wait); } .c-start { --cc: var(--c-start); }
 .bk-tl { border-top: 1px solid var(--line); background: var(--bg1); padding: 6px 10px 8px; }
 .bk-tl canvas { width: 100%; height: 64px; display: block; }
+/* a wide screen (q's 2560): the timeline beside the stack, the full height, with the speed and the height curves */
+@media (min-width: 1800px) {
+  .bk-body { grid-template-rows: none; grid-template-columns: minmax(560px, 1fr) minmax(640px, 1.3fr); }
+  .bk-side { display: grid; grid-template-rows: 1fr auto; min-height: 0; border-left: 1px solid var(--line); }
+  .bk-tl { border-top: none; position: relative; min-height: 0; }
+  .bk-tl canvas { position: absolute; left: 10px; top: 8px; width: calc(100% - 20px); height: calc(100% - 16px); }   /* (absolute: the canvas's own size can't feed back) */
+}
 .bk-json { display: none; border-top: 1px solid var(--line); }
 .bk-json.on { display: block; }
 .bk-json textarea { width: 100%; height: 220px; border: none; border-radius: 0; font: 12px/1.45 var(--mono); background: var(--bg); padding: 8px 10px; resize: vertical; }
