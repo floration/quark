@@ -85,7 +85,7 @@ class App {
         this._polling = true;
         const r = await api.model();
         this._polling = false;
-        if (r.ok) this.setModel(r.data);
+        if (r.ok && r.data) this.setModel(r.data);   // (a 304: the model didn't change)
     }
     _header() {
         const m = this.ix.m, rp = m.repo || {};

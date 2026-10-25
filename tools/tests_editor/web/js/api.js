@@ -1,19 +1,24 @@
 // The server's JSON (tools/tests_editor/API.md). Every call resolves to {ok, status, data}; nothing throws on HTTP errors.
 
-async function call(method, url, body) {
+async function call(method, url, body, headers, onResponse) {
     try {
-        const r = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
+        const r = await fetch(url, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(headers || {}) }, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
+        if (r.status === 304) return { ok: true, status: 304, data: null };
         let data = null;
         const t = await r.text();
         try { data = t ? JSON.parse(t) : null; } catch { data = { error: t }; }
+        if (onResponse && r.ok) onResponse(r);
         return { ok: r.ok, status: r.status, data };
     } catch (e) {
         return { ok: false, status: 0, data: { error: "the tests editor server isn't answering (" + e.message + ")" } };
     }
 }
 const q = encodeURIComponent;
+// the model's ETag: a poll (every 15 s, and on every window focus) sends it back and gets a 304 with no body while
+// nothing changed, instead of the whole ~470 KB model parsed again
+let modelTag = null;
 export const api = {
-    model: () => call("GET", "/api/model"),
+    model: () => call("GET", "/api/model", null, modelTag ? { "If-None-Match": modelTag } : null, (r) => { modelTag = r.headers.get("ETag"); }),   // (304: data null, nothing new)
     file: (path) => call("GET", "/api/file?path=" + q(path)),
     save: (path, text, baseSha256) => call("POST", "/api/file", { path, text, baseSha256 }),
     diff: (path) => call("GET", "/api/diff" + (path ? "?path=" + q(path) : "")),
