@@ -104,8 +104,12 @@ export class FightsView {
     _three(on) { this.opts.three = on; this._save(); $("f2d").classList.toggle("on", !on); $("f3d").classList.toggle("on", on); $("pg-fights").classList.toggle("three", on); if (on && this.m3.gl) this.m3.start(); else this.m3.stop(); }
     async _loadMap(v) {
         if (!v) return;
-        const [src, ...rest] = v.split("/"); const name = rest.join("/");
-        if (!this.maps.some((m) => m.name === name)) { const m0 = this.maps.find((m) => m.for === "ffa") || this.maps[0]; if (!m0) return; return this._loadMap(m0.source + "/" + m0.name); }
+        const [want, ...rest] = v.split("/"); const name = rest.join("/");
+        // the listed map: this source's, else one of that name from another source (a saved "default/harbor" when the
+        // maps come from --maps-dir), else a free for all map; the select and opts.map then name the one drawn
+        const hit = this.maps.find((m) => m.name === name && m.source === want) || this.maps.find((m) => m.name === name);
+        if (!hit) { const m0 = this.maps.find((m) => m.for === "ffa") || this.maps[0]; if (!m0) return; return this._loadMap(m0.source + "/" + m0.name); }
+        const src = hit.source;
         try {
             const text = await api.map(name, src);
             this.map = parseQmap(text, name); this.map.text = text; this.map.source = src;
@@ -119,7 +123,7 @@ export class FightsView {
     _fit() {
         const e = $("fFit"); if (!e) return;
         const ok = !this.map || mapSupports(this.map, this.opts.mode);
-        const info = this.maps.find((m) => this.map && m.name === this.map.name);
+        const info = this.maps.find((m) => this.map && m.name === this.map.name && m.source === this.map.source);
         e.textContent = ok ? "" : `${this.map.name} isn't built for ${this.opts.mode}${info && info.for ? ` (it's a ${info.for} map)` : ""}: the match may not work`;
     }
     _request(text, secs = this.opts.secs) {

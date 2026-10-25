@@ -88,7 +88,10 @@ export class RangeView {
     async _loadMap(v) {
         if (!v) { this.map = this.builtin; this.mapText = null; this.mapName = null; }
         else {
-            const [src, ...rest] = v.split("/"); const name = rest.join("/");
+            let [src, ...rest] = v.split("/"); const name = rest.join("/");
+            // (a saved map from another source: the listed one of that name, so the select shows what is drawn)
+            const hit = this.maps.find((m) => m.name === name && m.source === src) || this.maps.find((m) => m.name === name);
+            if (hit && hit.source !== src) { src = hit.source; v = src + "/" + name; this.opts.map = v; this._save(); const e = $("rMap"); if (e) e.value = v; }
             try { this.mapText = await api.map(name, src); this.map = parseQmap(this.mapText, name); this.mapName = name; }
             catch (e) { this.app.toast("can't load " + name + ": " + e.message, 3500); return; }
         }
