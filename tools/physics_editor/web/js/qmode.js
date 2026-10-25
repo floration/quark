@@ -112,7 +112,13 @@ export function parseQmode(text, cat) {
             continue;
         }
         const key = isMove ? k.slice(5) : k;
-        if (isMove && cat && !cat.byKey.has(key)) { problems.push({ line: i + 1, level: "warning", msg: `unknown movement key '${key}': the game ignores it` }); continue; }
+        // only moveParamKey names count after move_ (customrules.cpp): move_gravity / move_speed... are ignored by the
+        // game, so they stay out of physics.move (the helper would refuse the set)
+        if (isMove && !(cat ? cat.byKey.has(key) && !cat.byKey.get(key).top : MV_KEYS.includes(key))) {
+            const top = TOP_KEYS.includes(key);
+            problems.push({ line: i + 1, level: "warning", msg: `unknown movement key '${key}': the game ignores it${top ? ` (the setting is the plain ${key}= line)` : ""}` });
+            continue;
+        }
         let f = scanf(v);
         if (f === null) { problems.push({ line: i + 1, level: "error", msg: `${k}: '${v.trim()}' is not a number (the game reads 0, then clamps it)` }); f = 0; }
         const [a, b] = lim(key);
