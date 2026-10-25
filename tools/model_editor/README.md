@@ -151,7 +151,8 @@ The editor never writes `assets/provenance/*.json` in the repository.
     alternate teams, crouch (per box, as the game; a mesh squashed whole), animations, shadows, in sun / in shade,
     outline colour and width, brightness, viewmodel position / size / colour, bomb mode, a planted bomb's red blink, a
     neutral cart, a reached gate, hitbox (0.8 x 1.8 x 0.8 m, head = the top 20 % at 45 % of the width; in orbit too),
-    grid, floor. Numbers are kept within their fields' ranges (field of view 60 to 140, as the game); an option that
+    ghost (an edited model: what it started from, the shipped model or the default, outlined faintly over it to compare
+    sizes), grid, floor. Numbers are kept within their fields' ranges (field of view 60 to 140, as the game); an option that
     does nothing in the current view is greyed out and says why.
   - **Draw as**: auto (as the game will: its own boxes for an unedited default, the box model file for anything edited
     or shipped as boxes, a mesh for an imported mesh), the game's own boxes, box model file, mesh (as a file without

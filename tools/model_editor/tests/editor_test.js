@@ -265,6 +265,15 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await ev(() => { Q.scene.resetView(); Q.ui.syncViewBar(); });
   st = await ev(() => { Q.scene.view.hitbox = true; Q.scene.build(); Q.scene.updateOverlay(); const n = Q.scene.current.overlay.count; Q.scene.view.hitbox = false; Q.scene.updateOverlay(); return n; });
   check(st > 0, 'hitbox shows in orbit', st);
+  st = await ev(() => {
+    Q.ui.select('models/player/SCOUT'); const off = document.querySelector('#vGhost').disabled;
+    Q.ui.change('models/player/SCOUT', null, parts => { parts[2].h[1] += 0.05; });
+    const on = !document.querySelector('#vGhost').disabled, n0 = Q.scene.current.overlay.count;
+    Q.scene.view.ghost = true; Q.scene.updateOverlay(); const n1 = Q.scene.current.overlay.count;
+    Q.scene.view.ghost = false; Q.scene.updateOverlay(); Q.undo();
+    return { off, on, added: n1 - n0 };
+  });
+  check(st.off && st.on && st.added === 4 * 24, 'ghost: the default\'s 4 boxes outlined over an edit (off when not edited)', st);
   await page.click('.card[data-key="models/projectile/ROCKET"]');
   await page.click('#tabs button[data-mode="flight"]');
   const zs = [];

@@ -152,7 +152,7 @@
 
   // --- view bar -------------------------------------------------------------------------------------------------------
   const binds = [
-    ['#vTeam', 'team'], ['#vDrawAs', 'drawAs'], ['#vPlay', 'play', 'chk'], ['#vCrouch', 'crouch', 'chk'], ['#vHitbox', 'hitbox', 'chk'], ['#vGrid', 'grid', 'chk'],
+    ['#vTeam', 'team'], ['#vDrawAs', 'drawAs'], ['#vPlay', 'play', 'chk'], ['#vCrouch', 'crouch', 'chk'], ['#vHitbox', 'hitbox', 'chk'], ['#vGhost', 'ghost', 'chk'], ['#vGrid', 'grid', 'chk'],
     ['#vShadows', 'shadows', 'chk'], ['#vSun', 'sunVis', 'sun'], ['#vOutline', 'outline'], ['#vOutlineW', 'outlineW', 'num'], ['#vFov', 'fov', 'num'], ['#vBright', 'bright', 'num'],
     ['#vYaw', 'yaw', 'num'], ['#vPitch', 'pitch', 'num'], ['#vVmX', 'vmX', 'num'], ['#vVmY', 'vmY', 'num'], ['#vVmZ', 'vmZ', 'num'], ['#vVmScale', 'vmScale', 'num'],
     ['#vHoldIt', 'holdIt', 'chk'], ['#vCrown', 'crown', 'chk'], ['#vCrownPlace', 'crownPlace', 'int'], ['#vLineupTeams', 'lineupTeams', 'chk'], ['#vLanded', 'landed', 'chk'],
@@ -179,6 +179,7 @@
     avail('#vBombLineup', !S.holdIt(), 'Off while players hold the weapon: "it" (hide and seek / tag) carries no bomb');
     avail('#vTeam', !(m && m.kind === 'weapon' && (mode === 'orbit' || (mode === 'fp' && !S.view.fpLineup))),
       'A weapon in your hands is drawn in the viewmodel colour (More > Viewmodel colour), not a team colour');
+    avail('#vGhost', S.ghostable(S.sel), 'Nothing to compare: this model is not edited (or what it replaces is not made of boxes)');
   };
   function viewChanged(rebuildThumbs) {
     S.saveView(); S.build(); S.updateOverlay(); U.renderHud(); U.syncTabs();
@@ -804,7 +805,7 @@
     const cur = key ? Q.current(key) : null;
     if (cur && cur.type === 'boxes' && S.part >= cur.parts.length) S.part = cur.parts.length - 1;
     if (cur && cur.type !== 'boxes') S.part = -1;
-    S.build(); S.updateOverlay(); U.renderHud();
+    S.build(); S.updateOverlay(); U.renderHud(); U.syncAvail();
     if (why !== 'typing') U.schedulePanel();
     else {   // typing / dragging: only the list row (the field being typed in stays)
       const row = document.querySelectorAll('.parts tr')[S.part], p = cur && cur.parts && cur.parts[S.part];

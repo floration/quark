@@ -19,7 +19,7 @@
   const DEFAULT_VIEW = { mode: 'orbit', palette: '', team: 'enemy', crouch: false, play: true, speed: 1, drawAs: 'auto', hitbox: false, grid: true,
     ground: true, shadows: true, sunVis: 1, outline: 'black', outlineW: 1, fov: 100, vmX: 0, vmY: 0, vmZ: 0, vmScale: 1, vmColor: '',
     yaw: 0, pitch: 0, fpWeapon: 'models/weapon/ROCKET', tpPlayer: 'models/player/STANDARD', holdIt: false, crown: false, crownPlace: 1,
-    landed: false, lineupTeams: false, bright: 1, fpLineup: true, noViewmodel: false, bombLineup: false, bombBlink: false, gateReached: false, cartNeutral: false };
+    landed: false, ghost: false, lineupTeams: false, bright: 1, fpLineup: true, noViewmodel: false, bombLineup: false, bombBlink: false, gateReached: false, cartNeutral: false };
   S.view = Object.assign({}, DEFAULT_VIEW);
   try { Object.assign(S.view, JSON.parse(localStorage.getItem('qme.view') || '{}')); } catch (e) { }
   S.saveView = () => { try { localStorage.setItem('qme.view', JSON.stringify(S.view)); } catch (e) { } };
@@ -481,8 +481,13 @@
         S.gizmoAxes = axes;
       }
     }
+    // the ghost: what the edit started from (the shipped override, else the default) as faint outlines over it, to
+    // compare sizes (and the hitbox) while editing; after the selection, so a full buffer drops ghost lines, not the gizmo
+    const base = v.ghost && f && Q.isEdited(f.key) ? Q.baseOf(f.key).parts : null;
+    if (base) for (const p0 of base) { const p = S.geom(p0, f); boxLines(O, f.model, p.c, p.h, [0.85, 0.9, 1, 0.38]); }
     S.dirty = true;
   };
+  S.ghostable = key => !!key && Q.isEdited(key) && !!Q.baseOf(key).parts;
   // a box where the item draws it (a crouch moves its centre, squashes its height where it says so); yk: what a
   // model-space y change becomes on screen (the gizmo divides by it)
   S.geom = function (p, it) {
