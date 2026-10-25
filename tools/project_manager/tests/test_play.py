@@ -543,8 +543,8 @@ class TestPlay(unittest.TestCase):
         self.assertGreaterEqual(got["durationSec"], 0.2)
         with open(got["log"], encoding="utf-8") as f:
             self.assertIn("started --host ffa --map bastion", f.read())  # (args reached the game; cwd = its folder)
-        saved = util.read_json_file(self.paths.pm("play-sessions.json"))["sessions"]
-        self.assertEqual(saved[0]["state"], "needsNote")
+        # (saved just after the state changes in memory: wait for the file)
+        self.assertTrue(wait_for(lambda: util.read_json_file(self.paths.pm("play-sessions.json"))["sessions"][0]["state"] == "needsNote"))
         # a restarted server still has it pending
         p2 = self.new()
         self.assertEqual([x["id"] for x in p2.pending()["pending"]], [s["id"]])
@@ -768,6 +768,53 @@ class TestPlay(unittest.TestCase):
                 with self.assertRaises(play.PlayError):
                     p.remove(bad)
             self.assertTrue(os.path.isdir(os.path.join(self.quark, "testing")))
+        finally:
+            fake.close()
+
+    def test_update_channel_folder(self):
+        # like fetch_release.ps1: a newer testing release copied over Quark\testing (merged, never emptied first)
+        zipped = make_zip({"quark.exe": "#!/bin/sh\nexit 0\n", "maps/a.qmap": "title A\nfor ffa\n"})
+        routes = {"/releases": (200, None), "/dl/test.zip": (200, zipped)}
+        routes.update(signed_release(zipped))
+        fake = FakeHTTP(routes)
+        fake.routes["/releases"] = (200, releases_fixture(fake.url))
+        t = os.path.join(self.quark, "testing")
+        write(os.path.join(t, "BUILD.txt"), "test-1.18.13-test.239 (GitHub release, published x)\n")
+        write(os.path.join(t, "mine.cfg"), "kept")
+        try:
+            p = self.new(releases_url=fake.url + "/releases", public_key=TEST_PUB)
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] is True))
+            row = p.view()["releases"]["list"][0]
+            self.assertEqual((row["tag"], row.get("newer")), ("test-1.18.14-test.240", "testing"))
+            for into, reason in (("production", 409), ("working", 400), ("../x", 400)):
+                with self.assertRaises(play.PlayError) as cm:
+                    p.install("test-1.18.14-test.240", into)
+                self.assertEqual(cm.exception.code, reason, into)
+            self.assertEqual(p.api_post("install-into", {"tag": "test-1.18.14-test.240", "into": "testing"})["install"]["into"],
+                             "testing")
+            st = self.wait_install(p, "test-1.18.14-test.240")
+            self.assertEqual((st["state"], st["check"]), ("done", "signed"), st)
+            with open(os.path.join(t, "BUILD.txt"), encoding="utf-8") as f:
+                self.assertTrue(f.read().startswith("test-1.18.14-test.240 (GitHub release, published 2026-10-24T05:00:00Z)"))
+            with open(os.path.join(t, "quark.exe"), encoding="utf-8") as f:
+                self.assertEqual(f.read(), "#!/bin/sh\nexit 0\n")
+            self.assertTrue(os.path.isfile(os.path.join(t, "mine.cfg")))  # (nothing deleted)
+            self.assertFalse(os.path.exists(os.path.join(self.quark, "versions", "test-1.18.14-test.240")))
+            b = p.find_build("testing")
+            self.assertEqual((b["version"], b["check"]), ("1.18.14-test.240", "signed"))
+            row = p.view()["releases"]["list"][0]
+            self.assertEqual((row.get("newer"), row["folders"]), (None, ["testing"]))
+            # play-install.json about another release than BUILD.txt names (fetch_release.ps1 ran since): ignored
+            write(os.path.join(t, "BUILD.txt"), "test-1.18.15-test.241 (GitHub release, published x)\n")
+            self.assertNotIn("check", p.find_build("testing"))
+            # once copying, too late to cancel
+            p.installs["x"] = {"state": "copying", "into": "testing"}
+            with self.assertRaises(play.PlayError) as cm:
+                p.cancel_install("x")
+            self.assertEqual(cm.exception.reason, "copying")
+            with self.assertRaises(play.PlayError):
+                p.launch("testing")  # (being updated)
         finally:
             fake.close()
 

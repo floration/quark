@@ -12,7 +12,7 @@
   const FAST_MS = 2500, SLOW_MS = 10000, HIDDEN_MS = 15000;
   const FIELDS = ['did', 'noticed', 'change', 'other'];
   const FIELD_LABELS = [['did', 'Did'], ['noticed', 'Noticed'], ['change', 'Wants changed'], ['other', 'Also']];
-  const ACTIVE = ['downloading', 'verifying', 'extracting'];
+  const ACTIVE = ['downloading', 'verifying', 'extracting', 'copying'];
   const MAX_FIELD = 4000;
   const RECENT_MAX = 10;
   // a few starting points for the options box (src/client/main.cpp flags); the boxes' own history comes first
@@ -147,7 +147,7 @@
       const last = sess.find(s => s.build === b.id && s.state !== 'running');
       const lines = arr(b.lines);
       const bd = '<div class="n"><span>' + esc(b.label) + '</span><span class="kind">' + (b.kind === 'version' ? 'older version' : 'game folder') + '</span></div>' +
-        '<div class="v">' + (has(b.version) ? esc(b.version) : '<span class="muted">' + (b.kind === 'version' ? 'no version in its tag' : 'unknown version') + '</span>') + (b.kind === 'version' ? ' ' + checkPill(b.check, b.checkNote) : '') + '</div>' +
+        '<div class="v">' + (has(b.version) ? esc(b.version) : '<span class="muted">' + (b.kind === 'version' ? 'no version in its tag' : 'unknown version') + '</span>') + (b.kind === 'version' ? ' ' + checkPill(b.check, b.checkNote) : b.check ? ' ' + checkPill(b.check, b.checkNote) : '') + '</div>' +
         (meta.length ? '<div class="m">' + meta.join(' &middot; ') + '</div>' : '') +
         (b.playable ? '' : '<div class="m">' + esc(b.missing || 'not playable') + '</div>') +
         (last ? '<div class="m">last played ' + esc(when(last.startedAt)) + ' for ' + esc(dur(last.durationSec)) + ' ' + exitPill(last.exit) + '</div>' : '') +
@@ -350,17 +350,23 @@
 
   function releaseRow(r, inst, showChannel) {
     const i = obj(inst[r.tag]);
+    const offered = r.zip && !(r.needsSig && !(r.sig && r.manifest && r.manifestSig));
+    // newer than the production / testing folder: one click puts it there (like tools/fetch_release.ps1)
+    const upd = offered && r.newer ? ' <button type="button" class="btn small" data-install="' + esc(r.tag) + '" data-into="' + esc(r.newer) + '" title="Check it like Install, then copy it over Quark\\' + esc(r.newer) + ' (files replaced or added, none deleted; BUILD.txt rewritten), like tools/fetch_release.ps1">Update ' + esc(r.newer) + '</button>' : '';
     let act;
     if (ACTIVE.includes(i.state)) {
       const f = i.total ? Math.min(1, (i.got || 0) / i.total) : 0;
-      act = '<span class="prog"><i style="width:' + (f * 100).toFixed(1) + '%"></i></span> <span class="small muted">' + esc(i.state === 'downloading' ? Math.round(f * 100) + '% of ' + size(i.total) : i.state + '…') + '</span>' +
-        (i.cancel ? ' <span class="small muted">cancelling&hellip;</span>' : ' <button type="button" class="btn small ghost" data-cancel="' + esc(r.tag) + '">Cancel</button>');
-    } else if (r.installed) {
-      act = '<button type="button" class="btn small primary" data-play="versions/' + esc(r.tag) + '">Play</button> <button type="button" class="btn small ghost danger" data-remove="' + esc(r.tag) + '">Remove</button> ' + checkPill(r.check, r.checkNote);
-    } else if (!r.zip) act = '<span class="muted small">no Windows zip</span>';
-    else if (r.needsSig && !(r.sig && r.manifest && r.manifestSig)) act = '<span class="muted small" title="It claims 1.17.0 or later but has no signature: the launcher doesn\'t offer it either">unsigned: not offered</span>';
-    else act = '<button type="button" class="btn small" data-install="' + esc(r.tag) + '" title="' + (r.needsSig ? 'Checked like the launcher: signature and signed release manifest' : 'From before signing: checked against SHA256SUMS when it has one') + '">Install</button>' +
-      (i.state === 'failed' ? ' <span class="err small">' + esc(i.error) + '</span>' : i.state === 'cancelled' ? ' <span class="small muted">cancelled</span>' : '');
+      act = '<span class="prog"><i style="width:' + (f * 100).toFixed(1) + '%"></i></span> <span class="small muted">' + (i.into ? 'into ' + esc(i.into) + ': ' : '') + esc(i.state === 'downloading' ? Math.round(f * 100) + '% of ' + size(i.total) : i.state + '…') + '</span>' +
+        (i.state === 'copying' ? '' : i.cancel ? ' <span class="small muted">cancelling&hellip;</span>' : ' <button type="button" class="btn small ghost" data-cancel="' + esc(r.tag) + '">Cancel</button>');
+    } else {
+      if (r.installed) {
+        act = '<button type="button" class="btn small primary" data-play="versions/' + esc(r.tag) + '">Play</button> <button type="button" class="btn small ghost danger" data-remove="' + esc(r.tag) + '">Remove</button> ' + checkPill(r.check, r.checkNote);
+      } else if (!r.zip) act = '<span class="muted small">no Windows zip</span>';
+      else if (!offered) act = '<span class="muted small" title="It claims 1.17.0 or later but has no signature: the launcher doesn\'t offer it either">unsigned: not offered</span>';
+      else act = '<button type="button" class="btn small" data-install="' + esc(r.tag) + '" title="Into Quark\\versions\\' + esc(r.tag) + '. ' + (r.needsSig ? 'Checked like the launcher: signature and signed release manifest' : 'From before signing: checked against SHA256SUMS when it has one') + '">Install</button>';
+      act += upd + (i.state === 'failed' ? ' <span class="err small">' + esc(i.error) + '</span>' : i.state === 'cancelled' ? ' <span class="small muted">cancelled</span>' :
+        i.state === 'done' && i.into ? ' <span class="small muted">' + esc(i.into) + ' updated</span>' : '');
+    }
     const ch = r.channel === 'production' ? pill('good', 'production') : r.channel === 'testing' ? pill('run', 'testing') : pill('idle', r.channel);
     const marks = (!showChannel && r.channel !== 'production' && r.channel !== 'testing' ? pill('idle', r.channel, 'Neither a production (v...) nor a testing (test-...) release') + ' ' : '') + arr(r.folders).map(f => pill('run', 'in ' + f, 'The ' + f + ' folder holds this release')).join(' ') +
       (r.newer ? ' ' + pill('warn', 'newer than ' + r.newer, 'Newer than what the ' + r.newer + ' folder holds') : '');
@@ -785,6 +791,11 @@
         openPath({ what: d.open, build: d.build });
       } else if (d.log) {
         openLog(d.log);
+      } else if (d.install && d.into) {
+        if (!confirm('Update the ' + d.into + ' folder to ' + d.install + '?\n\nIt is checked like Install, then copied over Quark\\' + d.into + ' (files replaced or added, none deleted), like tools/fetch_release.ps1.')) return;
+        b.disabled = true;
+        await api('/api/play/install-into', { tag: d.install, into: d.into });
+        await poll();
       } else if (d.install) {
         b.disabled = true;
         await api('/api/play/install', { tag: d.install });

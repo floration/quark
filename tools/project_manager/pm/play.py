@@ -942,7 +942,8 @@ class _Ctx:
         self.paths = paths
 
 
-ACTIVE = ("downloading", "verifying", "extracting")
+ACTIVE = ("downloading", "verifying", "extracting", "copying")   # (copying: into a game folder, past cancelling)
+CHANNEL_FOLDERS = ("production", "testing")   # (the local folders a release of that channel can update)
 
 
 class Play:
@@ -1173,11 +1174,14 @@ class Play:
         m = self._maps(e["path"]) if exe else None
         b["maps"] = m["sig"] if m else None
         b["plays"], b["crashes"] = counts.get(bid, (0, 0))
-        if kind == "version" and e.get("present"):
-            # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded)
+        if e.get("present") and (kind == "version" or b["fromRelease"]):
+            # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded. In
+            # a game folder only when it is about the release BUILD.txt names: fetch_release.ps1 leaves an old one)
             try:
                 info = util.read_json_file(os.path.join(e["path"], INSTALL_INFO))
             except (OSError, ValueError):
+                info = None
+            if kind == "local" and not (isinstance(info, dict) and e.get("tag") and info.get("tag") == e.get("tag")):
                 info = None
             if isinstance(info, dict) and info.get("check") in ("signed", "sha256", "none"):
                 b["check"], b["checkNote"] = info["check"], one_line(info.get("note") or "", 300)
@@ -1198,6 +1202,9 @@ class Play:
             raise PlayError(404, "That build is not on this PC.")
         if not b["playable"]:
             raise PlayError(409, "%s has no game in it (%s)." % (b["label"], b["missing"]))
+        with self.lock:
+            if any(i.get("into") == b["id"] and i.get("state") in ACTIVE for i in self.installs.values()):
+                raise PlayError(409, "The %s folder is being updated; play it when that is done." % b["id"])
         if not isinstance(args_text, str):
             raise PlayError(400, "The launch options must be text.")
         args = parse_args(args_text)
@@ -1858,12 +1865,25 @@ class Play:
                 self._save_releases()  # (a 304 too: its new time keeps a restart within 10 min from asking again)
 
     # -- installing older versions
-    def install(self, tag):
+    def install(self, tag, into=None):
+        """Install a release into versions\\<tag>, or (into: production / testing) copy it over that local game folder
+        the way tools/fetch_release.ps1 does (merged in, never emptied first; BUILD.txt rewritten), only with a
+        release of that folder's channel. Checked the same way either way."""
         tag = str(tag or "")
+        into = str(into) if into else None
         with self.lock:
             rel = next((x for x in self.rel["list"] if x["tag"] == tag), None)
             if not rel:
                 raise PlayError(404, "That release is not in the list (refresh it).")
+            if into is not None:
+                if into not in CHANNEL_FOLDERS:
+                    raise PlayError(400, "Only the production or testing folder can be updated from a release.")
+                if rel["channel"] != into:
+                    raise PlayError(409, "%s is not a %s release, so it doesn't go into the %s folder." % (tag, into, into))
+                if not os.path.isdir(self.paths.q(into)):
+                    raise PlayError(404, "There is no Quark\\%s folder on this PC." % into)
+                if self._build_running(into):
+                    raise PlayError(409, "A game is running from the %s folder; close it first." % into)
             if not rel["zip"]:
                 raise PlayError(409, "%s has no %s." % (tag, ZIP_NAME))
             if rel["needsSig"] and not (rel.get("sig") and rel.get("manifest") and rel.get("manifestSig")):
@@ -1874,8 +1894,8 @@ class Play:
             if self._in_use(tag):
                 raise PlayError(409, "%s is running; close the game first." % tag)
             self.installs[tag] = {"state": "downloading", "got": 0, "total": rel["zip"]["size"] or 0,
-                                  "startedAt": util.now_iso(), "error": None}
-        threading.Thread(target=self._install, args=(rel,), name="pm-play-install", daemon=True).start()
+                                  "startedAt": util.now_iso(), "error": None, "into": into}
+        threading.Thread(target=self._install, args=(rel, into), name="pm-play-install", daemon=True).start()
         return dict(self.installs[tag])
 
     def cancel_install(self, tag):
@@ -1884,11 +1904,16 @@ class Play:
             i = self.installs.get(tag)
             if not i or i.get("state") not in ACTIVE:
                 raise PlayError(409, "%s is not being installed." % (tag or "That version"), "not-installing")
+            if i.get("state") == "copying":
+                raise PlayError(409, "Too late to cancel: its files are being copied into the %s folder." % i.get("into"),
+                                "copying")
             i["cancel"] = True
         return {"cancelling": tag}
 
     def _in_use(self, tag):
-        bid = VERSIONS + "/" + tag
+        return self._build_running(VERSIONS + "/" + tag)
+
+    def _build_running(self, bid):
         return any(s.get("state") == "running" and s.get("build") == bid for s in self.sessions)
 
     def _set_install(self, tag, **kw):
@@ -1935,7 +1960,7 @@ class Play:
             return "sha256", why + ": matches its SHA256SUMS, no signature to check"
         return "none", why + ": no signature and no SHA256SUMS to check it against"
 
-    def _install(self, rel):
+    def _install(self, rel, into=None):
         tag = rel["tag"]
         vdir = self.paths.q(VERSIONS)
         tmp = os.path.join(vdir, ".download-%s.zip" % tag)
@@ -1974,12 +1999,15 @@ class Play:
             util.write_json_atomic(os.path.join(partial, INSTALL_INFO), {
                 "tag": tag, "publishedAt": rel.get("publishedAt"), "installedAt": util.now_iso(), "check": check,
                 "note": note, "sha256": h.hexdigest()})
-            dest = os.path.join(vdir, tag)
-            if self._in_use(tag):
-                raise PlayError(409, "%s started while installing; close it and install again." % tag)
-            self._check_cancel(tag)
-            _rmtree(dest)
-            os.replace(partial, dest)
+            if into:
+                self._copy_into(tag, partial, into)
+            else:
+                dest = os.path.join(vdir, tag)
+                if self._in_use(tag):
+                    raise PlayError(409, "%s started while installing; close it and install again." % tag)
+                self._check_cancel(tag)
+                _rmtree(dest)
+                os.replace(partial, dest)
             self._set_install(tag, state="done", verified=check != "none", check=check, doneAt=util.now_iso(),
                               note=note)
         except PlayError as e:
@@ -1993,6 +2021,20 @@ class Play:
             except OSError:
                 pass
             _rmtree(partial)
+
+    def _copy_into(self, tag, partial, into):
+        """The checked, unpacked release over Quark\\<into> (fetch_release.ps1's robocopy /E: files replaced or added,
+        none deleted; settings and q's own maps live in %APPDATA%\\quark anyway)."""
+        self._check_cancel(tag)
+        if self._build_running(into):
+            raise PlayError(409, "A game started from the %s folder while installing; close it and update again." % into)
+        self._set_install(tag, state="copying")
+        dest = self.paths.q(into)
+        try:
+            shutil.copytree(partial, dest, dirs_exist_ok=True)
+        except (OSError, shutil.Error) as e:
+            raise PlayError(500, "Quark\\%s was only partly updated (%s); update it again." % (
+                into, str(getattr(e, "strerror", None) or e)[:160]))
 
     def remove(self, tag):
         tag = str(tag or "")
@@ -2170,4 +2212,6 @@ class Play:
             return self.dismiss_blocked(req.get("id"))
         if what == "install-cancel":
             return self.cancel_install(req.get("tag"))
+        if what == "install-into":
+            return {"install": self.install(req.get("tag"), req.get("into") or "-")}
         return None
