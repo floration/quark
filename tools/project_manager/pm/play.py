@@ -6,7 +6,8 @@ tools/fetch_release.ps1, and play-install.json: how the download was checked). T
 GitHub API without signing in (60 requests an hour), every page of it (100 a page, until a short page, like the
 launcher: production releases stay listed behind any number of test builds), cached 10 min with page 1's ETag (a 304
 does not count against the limit and means nothing new was published) and refreshed in the background, so a page
-request never waits on GitHub.
+request never waits on GitHub. The list, its ETag and its time are saved (project-manager\\play-releases.json) and read
+back at start: shown at once after a restart, offline too, and GitHub is not asked again within the 10 min.
 
 Install checks a release the way the launcher does (docs/SIGNING.md): from 1.17.0 on (and any release that has a
 signature) the zip's Ed25519ph signature (quark-windows.zip.sig) must verify against the release key
@@ -14,6 +15,11 @@ signature) the zip's Ed25519ph signature (quark-windows.zip.sig) must verify aga
 (quark-release.txt + .sig) must verify and name this tag, version, channel and the zip's sha256, or nothing is
 installed. A release from before signing (<= 1.16.x) has neither: it installs without a prompt (owner decision B6),
 checked against its SHA256SUMS when it has one, and is marked "unsigned" on its card. A download can be cancelled.
+A release newer than the production / testing folder can also update that folder: checked the same way, then copied
+over it like tools/fetch_release.ps1 (files replaced or added, none deleted, BUILD.txt rewritten).
+
+Mode and map pickers: each build's maps/*.qmap headers (title, for, modes) and the game's modes (GAME_MODES, as
+gamedefs.h) fill two dropdowns that write --host / --map into its options box; a poll carries only their sig.
 
 Launching: the game's exe (quark.exe; it is a GUI-subsystem program, CMakeLists `add_executable(quark WIN32 ...)`)
 starts with its folder as working folder, normal priority, never elevated, stdout/stderr into
@@ -41,7 +47,10 @@ tools/docs_manager/docsedit.py does (fetch + rebase --autostash first; git never
 Offline, it stays committed on this PC and goes up on the next save or the retry every 5 min. A note can also be
 written without a session (a game played through the launcher). q can edit or remove a note while its entry is still
 `open` (no agent has taken it): the entry is changed in place, or removed. A note written once is never written
-again, even when an agent moves or removes it.
+again, even when an agent moves or removes it. When an agent took the entry before q's edit or removal reached the
+file (this PC had not pulled yet), the change stays out ("blocked"), the page lists it (a removed note stays shown,
+"not removed") with Write a follow-up / Dismiss, and it is tried again on each sync until it goes in or is dismissed.
+A Claude Documents copy without an upstream branch is reported as not going to GitHub (never "up to date").
 Python 3 standard library only.
 """
 import datetime
