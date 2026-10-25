@@ -1997,9 +1997,13 @@ class DocsSyncTest(unittest.TestCase):
         self.assertEqual(st["state"], "failed")
         self.assertIn("gh repo clone", st["lastError"])
         self.assertTrue(self.d.warnings()[0].startswith("Claude Documents sync failed"))
+        since = st["failingSince"]
+        self.assertEqual(since, st["lastAttempt"])
         os.makedirs(self.d.folder)
         write(os.path.join(self.d.folder, "x.txt"), "not a clone")
-        self.assertIn("is not a git clone", self.d.sync_now()["lastError"])
+        st = self.d.sync_now()
+        self.assertIn("is not a git clone", st["lastError"])
+        self.assertEqual(st["failingSince"], since)   # still the first failure of this run of failures
         off = S.DocsSync(self.d.folder, None, self.proc, dict, enabled=False, off_reason="off (test)")
         off.schedule()
         self.assertEqual((off.status()["state"], off.sync_now()["state"], off.warnings()), ("off", "off", []))
@@ -2027,6 +2031,7 @@ class DocsSyncTest(unittest.TestCase):
         self.assertTrue(d.retry_if_failed())
         self.assertFalse(d.retry_if_failed())   # already on its way
         self.assertTrue(self.wait(lambda: d.status()["state"] == "ok"), d.status())
+        self.assertIsNone(d.status()["failingSince"])
         self.assertFalse(d.retry_if_failed())
         self.assertNotIn("ci-scope", [x["id"] for x in mine.obj()["rules"]])
         self.assertFalse(mine.seeded)

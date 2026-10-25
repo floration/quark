@@ -430,6 +430,7 @@ a.ed-sec:hover { text-decoration: none; background: var(--gm-panel2); }
 .ed-sec-w { font-size: 10.5px; color: var(--gm-muted); opacity: .85; letter-spacing: .01em; }
 .ed-sec-bad { font-weight: 600; }
 .lock-ico { vertical-align: -1px; color: var(--gm-lock); flex: none; }
+.msg.info { border-color: color-mix(in srgb, var(--gm-run) 60%, transparent); background: color-mix(in srgb, var(--gm-run) var(--gm-tint), var(--gm-panel)); }
 .msg.good { border-color: var(--gm-good); background: color-mix(in srgb, var(--gm-good) var(--gm-tint), var(--gm-panel)); }
 .msg.small { padding: 6px var(--gm-s3); }
 .msg button { margin-left: 6px; }

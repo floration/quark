@@ -45,7 +45,7 @@ Two more tabs:
   The agent rules and the notes are also written to the Claude Documents (the private repo
   floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json`, `11-github-notes.md` and
   `github-notes.json`, 10 s after the last change, by the server's own clone (`claude-docs/`) with q's gh login; a
-  failure shows in the page and in the poll warnings and is retried on every poll until it works. On a first start the built-in rules give
+  failure shows on every tab (with when it started failing) and in the poll warnings and is retried on every poll until it works. On a first start the built-in rules give
   way to the `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data
   folder was lost), so the seed is never pushed over them, and the notes there are merged back into this PC's
   (`github-notes.json`, or `11-github-notes.md` read back from an older copy), so a new install never pushes empty
@@ -134,7 +134,7 @@ first start's backfill is still downloading). Refresh on the page polls at once 
   in-progress / waiting runs, and the jobs of runs that are still running. The rate limit is read from every answer
   and from `gh api rate_limit` every 30 min; when it is used up the GitHub part waits until it resets.
 - A completed run and its jobs are fetched once and kept in `cache/runs/<id>.json` for good (a re-run, which is a
-  new attempt, is fetched again). The first start backfills every run GitHub still lists (30 runs' jobs per poll).
+  new attempt, is fetched again). The first start backfills every run GitHub still lists (30 runs' jobs per poll; every tab shows what is left, and any poll warning, under the top bar).
 - A failed job's log is downloaded once into `logs/<run>/<job>.txt` and kept forever (10 per poll; a failed
   download is retried after 30 min, a log GitHub no longer has is marked gone). Other logs are downloaded when you
   open them on the page, then kept.

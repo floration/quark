@@ -55,8 +55,8 @@ runSummary = {"id": 123, "workflow": "build-and-release", "branch": "...", "sha"
 
 Extra keys the server also sends (the page may use or ignore them): `poll.lastAt` (start of the last poll),
 `poll.durationSec`, `poll.ghCalls`, `poll.ghChanged` (calls that were not a 304), `poll.backlog` ({jobs, logs} still to
-download from the first start's backfill), `poll.warnings` (e.g. a log download that will be retried; not a failed
-poll); runSummary `startedAt`, `runNumber`, `prs` (PR numbers), `workflowFile` (the workflow's file name from the runs
+download from the first start's backfill; the page shows it on every tab), `poll.warnings` (e.g. a log download that
+will be retried, the Claude Documents copy failing; not a failed poll; the page shows them on every tab); runSummary `startedAt`, `runNumber`, `prs` (PR numbers), `workflowFile` (the workflow's file name from the runs
 API's `path`, e.g. `release.yml`; `null` for a run cached before the server sent it, until GitHub lists it again); pulls `headSha`, `closedAt`; jobs `logGone: true`
 (GitHub no longer has the log and it was never saved); `testing.prerelease.sha`. `durationSec` of a running run is
 the time so far. Values the server can't know yet are `null` (e.g. ahead / behind before the mirror has the commit).
@@ -229,7 +229,8 @@ branch can't be set. With `rev`, a structure changed since answers 409. -> 200 w
  "docsSync": {"enabled": true, "state": "idle" | "waiting" | "syncing" | "ok" | "failed" | "off", "offReason": null,
               "repo": "floration/quark-claude-docs", "branch": "main", "files": [...], "dueAt": null,
               "lastOk": "...", "lastCommit": "<sha>", "lastAttempt": "...", "lastError": null,
-              "notesHeld": null | "text"}}   // notesHeld: the notes there are left as they are (below)
+              "failingSince": null | "...", "notesHeld": null | "text"}}
+              // failingSince: the first failure of the current run of failures; notesHeld: see below
 rule = {"id": "limit-open-prs-per-thread", "title": "...", "text": "markdown",
         "scope": {"type": "all" | "branch" | "tool", "match": "" | "<branch pattern>" | "<tool>"},
         "kind": "push" | "merge" | "version" | "ci" | "limit" | "other",

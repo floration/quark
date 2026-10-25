@@ -2998,6 +2998,7 @@ class DocsSync:
         self.state = "idle"
         self.last_error = None
         self.last_attempt = None
+        self.failing_since = None   # the first failure of the current run of failures
 
     def status(self):
         with self.lock:
@@ -3005,7 +3006,7 @@ class DocsSync:
                     "offReason": self.off_reason, "repo": self.repo, "branch": self.branch, "files": list(DOCS_FILES),
                     "dueAt": iso(datetime.datetime.fromtimestamp(self.due, UTC)) if self.due else None,
                     "lastOk": self.saved.get("lastOk"), "lastCommit": self.saved.get("lastCommit"),
-                    "lastAttempt": self.last_attempt, "lastError": self.last_error}
+                    "lastAttempt": self.last_attempt, "lastError": self.last_error, "failingSince": self.failing_since}
 
     def warnings(self):
         with self.lock:
@@ -3165,7 +3166,7 @@ class DocsSync:
                 with self.lock:
                     self.saved = {"digest": digest, "lastOk": at, "lastCommit": head if committed else
                                   self.saved.get("lastCommit") or head}
-                    self.state, self.last_error = "ok", None
+                    self.state, self.last_error, self.failing_since = "ok", None, None
                 if self.state_path:
                     try:
                         write_atomic(self.state_path, dumps(self.saved, pretty=True) + "\n")
@@ -3175,6 +3176,7 @@ class DocsSync:
             except (RuntimeError, OSError, ValueError) as e:
                 with self.lock:
                     self.state, self.last_error = "failed", str(e)
+                    self.failing_since = self.failing_since or self.last_attempt
                 LOG.warning("docs sync failed: %s", e)
         return self.status()
 
