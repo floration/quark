@@ -41,11 +41,14 @@ Two more tabs:
   each call.
 
   The agent rules and the notes are also written to the Claude Documents (the private repo
-  floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json` and `11-github-notes.md`, 10 s after the
-  last change, by the server's own clone (`claude-docs/`) with q's gh login; a failure shows in the page and in the
-  poll warnings and is retried on every poll until it works. On a first start the built-in rules give way to the
-  `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data folder was
-  lost), so the seed is never pushed over them.
+  floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json`, `11-github-notes.md` and
+  `github-notes.json`, 10 s after the last change, by the server's own clone (`claude-docs/`) with q's gh login; a
+  failure shows in the page and in the poll warnings and is retried on every poll until it works. On a first start the built-in rules give
+  way to the `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data
+  folder was lost), so the seed is never pushed over them, and the notes there are merged back into this PC's
+  (`github-notes.json`, or `11-github-notes.md` read back from an older copy), so a new install never pushes empty
+  notes over q's. Notes there that can't be read back (a hand-written file) are left as they are, with a warning,
+  until a note is written here.
 
   Notes: a note is
   plain text with a little markdown (paragraphs, lists, `` `code` ``, **bold**, links; everything else is shown as

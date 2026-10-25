@@ -111,7 +111,7 @@ const TYPE_ICON = {
   'run.started': '▶', 'run.completed': '✓', 'run.failed': '✕', 'pr.opened': '⊕', 'pr.merged': '⇥', 'pr.closed': '⊘', 'pr.updated': '↻',
   'branch.created': '+', 'branch.moved': '→', 'branch.deleted': '−', 'branch.renamed': '→', 'tag.created': '⌖', 'release.published': '★',
   'local.commit': '●', 'local.moved': '→', 'local.dirty': '✎', 'poll.error': '!', baseline: '◎',
-  'note.added': '✎', 'note.edited': '✎', 'note.done': '✓', 'note.deleted': '−',
+  'note.added': '✎', 'note.edited': '✎', 'note.done': '✓', 'note.deleted': '−', 'note.restored': '⤓',
   'github.branch.created': '+', 'github.branch.deleted': '−', 'github.branch.renamed': '→',
   'github.ruleset.created': '+', 'github.ruleset.updated': '✎', 'github.ruleset.deleted': '−', 'github.apply.failed': '✕',
   'github.apply.refused': '✕', 'github.apply.stale': '!',
@@ -139,7 +139,7 @@ function evClass(e) {
   if (e.type === 'pr.merged' || e.type === 'release.published') return 'merged';
   if (e.type === 'run.started') return 'run';
   if (e.type === 'note.done') return 'good';
-  if (e.type === 'note.added' || e.type === 'note.edited') return 'note';
+  if (e.type === 'note.added' || e.type === 'note.edited' || e.type === 'note.restored') return 'note';
   return 'off';
 }
 export function refChip(ref, type) {

@@ -1207,6 +1207,7 @@ class Notes:
         self.notes = collections.OrderedDict()
         self.load_error = None
         self._built = None      # (etag, body) of GET /api/notes
+        self.fresh = True       # nothing written on this PC yet (no notes.json, or none readable): see merge()
         if folder:
             self._load()
 
@@ -1232,6 +1233,7 @@ class Notes:
             LOG.warning("editor: %s", self.load_error)
             if not ok(d):
                 return
+        self.fresh = False
         for raw in d["notes"]:
             n = self._clean(raw)
             if n:
@@ -1279,6 +1281,7 @@ class Notes:
     def _save(self):
         """Caller holds the lock. Raises OSError when notes.json can't be written (the change is then undone)."""
         self._built = None
+        self.fresh = False
         if not self.folder:
             return
         os.makedirs(self.folder, exist_ok=True)
@@ -1400,6 +1403,48 @@ class Notes:
         self._emit([e])
         return nid
 
+    def merge(self, raws, source):
+        """Notes from the Claude Documents merged into this store: on the first sync from a data folder (a new PC, a
+        lost data folder, notes written here before that first sync) and while this PC has written none, so q's notes
+        come back instead of an empty file being pushed over them. A note both have keeps the newer copy (this PC's on
+        a tie). -> how many notes were added or updated (one note.restored event for them)."""
+        got = [n for n in (self._clean(r) for r in raws) if n]
+        with self.lock:
+            added, newer = [], []
+            for n in got:
+                old = self.notes.get(n["id"])
+                if old is None and len(self.notes) + len(added) < NOTE_MAX:
+                    added.append(n)
+                elif old is not None and (n["updatedAt"] or "") > (old["updatedAt"] or ""):
+                    newer.append(n)
+            if not added and not newer:
+                return 0
+            prev = collections.OrderedDict(self.notes)
+            fresh = self.fresh
+            for n in added + newer:
+                self.notes[n["id"]] = n
+            try:
+                self._save()
+            except OSError as e:
+                self.notes, self.fresh, self._built = prev, fresh, None
+                LOG.warning("editor: could not save the notes restored from the Claude Documents: %s", e)
+                return 0
+            at = self.now()
+            data = {"source": source, "added": [n["id"] for n in added], "updated": [n["id"] for n in newer]}
+            e = ev("note.restored:%s" % _digest(data)[:12], at, "note.restored", {},
+                   "Notes: %s restored from the Claude Documents (%s)%s" % (
+                       plural(len(added), "note"), source, ", %d updated to a newer copy" % len(newer) if newer else ""),
+                   data)
+        self._emit([e])
+        return len(added) + len(newer)
+
+    def export(self, repo):
+        """github-notes.json in the Claude Documents: every note as stored, so a new install can merge them back. No
+        volatile fields, so the same notes always give the same file."""
+        with self.lock:
+            return {"generatedBy": "GitHub Manager", "note": DOCS_GENERATED, "repo": repo, "version": 1,
+                    "notes": [dict(self.notes[k]) for k in sorted(self.notes)]}
+
     def markdown(self, for_docs=False):
         """notes.md: every note grouped by target (general first), pinned and open first, newest first. for_docs: the
         Claude Documents copy (11-github-notes.md): the "generated" header and no volatile time, so the same notes
@@ -1447,6 +1492,60 @@ class Notes:
                     out += [("> " + line).rstrip() for line in n["text"].strip("\n").split("\n")]
                     out.append("")
         return "\n".join(out)
+
+
+NOTE_MD_HEAD_RE = re.compile(r"^### (open|done)(, pinned)? · by (.*) · written (\S+?)(?:, changed (\S+))? · `(n[0-9a-f]{12})`$")
+NOTE_MD_TARGET_RES = [(k, re.compile("^## " + re.escape(v).replace(re.escape("%s"), "(.+)") + "$"))
+                      for k, v in NOTE_HEADING.items()]
+NOTE_MD_COUNT_RE = re.compile(r"^(\d+) notes?: ", re.M)
+
+
+def notes_from_markdown(text):
+    """11-github-notes.md (Notes.markdown's format) -> the notes in it as raw records, for a Claude Documents copy
+    written before github-notes.json existed. Trailing spaces on a line are lost (the file strips them)."""
+    out, target, cur = [], None, None
+    for line in text.split("\n") + ["## end"]:
+        if cur is not None:
+            if line == ">" or line.startswith("> "):
+                cur["lines"].append(line[2:])
+                continue
+            if not line and not cur["lines"]:   # the blank line under the heading
+                continue
+            if cur["lines"]:
+                n = cur.pop("lines")
+                cur["text"] = "\n".join(n)
+                out.append(cur)
+            cur = None
+        if line.startswith("## "):
+            target = next(({"kind": k, "key": m.group(1) if m.groups() else ""} for k, rx in NOTE_MD_TARGET_RES
+                           for m in [rx.match(line)] if m), None)
+            continue
+        m = NOTE_MD_HEAD_RE.match(line)
+        if m and target is not None:
+            cur = {"id": m.group(6), "target": dict(target), "status": m.group(1), "pinned": bool(m.group(2)),
+                   "author": m.group(3), "createdAt": m.group(4), "updatedAt": m.group(5) or m.group(4),
+                   "lines": []}
+    return out
+
+
+def docs_notes(folder):
+    """The notes in a Claude Documents clone -> (raw records, the file they came from, how many notes the files say
+    they hold). github-notes.json first; 11-github-notes.md (parsed back) when there is no json; a hand-written
+    11-github-notes.md counts as holding notes, so it is never overwritten with an empty file."""
+    doc = read_json(os.path.join(folder, "github-notes.json"))
+    if isinstance(doc, dict) and isinstance(doc.get("notes"), list):
+        return doc["notes"], "github-notes.json", len(doc["notes"])
+    try:
+        with open(os.path.join(folder, "11-github-notes.md"), encoding="utf-8") as f:
+            text = f.read()
+    except (OSError, ValueError):
+        return [], None, 0
+    raws = notes_from_markdown(text)
+    m = NOTE_MD_COUNT_RE.search(text)
+    count = int(m.group(1)) if m else 0
+    if DOCS_GENERATED not in text[:2000] and text.strip():
+        count = max(count, 1)
+    return raws, "11-github-notes.md", max(count, len(raws))
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -1500,7 +1599,7 @@ DOCS_DEBOUNCE_SEC = 10          # a burst of edits is one commit
 DOCS_START_DELAY = 30           # after a start, sync once if the files differ from what was last pushed
 DOCS_COMMIT_MSG = "GitHub Manager: rules/notes updated"
 DOCS_GENERATED = "Generated by the GitHub Manager; edit there, not here."
-DOCS_FILES = ("10-github-rules.md", "github-rules.json", "11-github-notes.md")
+DOCS_FILES = ("10-github-rules.md", "github-rules.json", "11-github-notes.md", "github-notes.json")
 # Names used before 2026-10-24 (09 is now the owner's answers file); removed from the clone when they still carry
 # DOCS_GENERATED, i.e. were written by this tool.
 DOCS_LEGACY_FILES = ("09-github-rules.md", "10-github-notes.md")
@@ -2860,7 +2959,8 @@ class DocsSync:
     def __init__(self, folder, state_path, proc, render, repo=DOCS_REPO, branch=DOCS_BRANCH, enabled=True,
                  off_reason=None, debounce=DOCS_DEBOUNCE_SEC, adopt=None):
         self.folder, self.state_path, self.proc, self.render = folder, state_path, proc, render
-        self.adopt = adopt      # adopt(clone folder): called on origin's files right before the files are rendered
+        self.adopt = adopt      # adopt(clone folder, first): called on origin's files right before the files are
+        #                         rendered; first: no sync from this data folder has worked yet
         self.repo, self.branch, self.enabled, self.off_reason, self.debounce = repo, branch, enabled, off_reason, debounce
         self.lock = threading.Lock()
         self.sync_lock = threading.Lock()
@@ -3017,7 +3117,9 @@ class DocsSync:
                 self._git_ok("fetch", "--quiet", "origin", self.branch, timeout=180)
                 self._git_ok("checkout", "-q", "-f", "-B", self.branch, "origin/" + self.branch)
                 if self.adopt:
-                    self.adopt(self.folder)
+                    with self.lock:
+                        first = not self.saved.get("lastOk")
+                    self.adopt(self.folder, first)
                 files = self.render()
                 digest = _digest(files)
                 committed = self._commit(files)
@@ -3115,7 +3217,8 @@ class Manager:
         self.docs = DocsSync(os.path.join(data_dir, "claude-docs"), os.path.join(editor, "docs-sync.json"), self.proc,
                              self.docs_files, repo=cfg.get("claudeDocsRepo") or DOCS_REPO,
                              branch=cfg.get("claudeDocsBranch") or DOCS_BRANCH, enabled=docs_on, off_reason=docs_off,
-                             adopt=self.adopt_docs_rules)
+                             adopt=self.adopt_docs)
+        self.notes_held = None  # why the Claude Documents' notes are kept as they are (see adopt_docs)
         self.rs_lock = threading.Lock()
         self.rs_view = None     # the last GET /api/github/rulesets answer
         self.rs_at = 0.0
@@ -3191,20 +3294,38 @@ class Manager:
                 self.bodies.clear()
 
     def docs_files(self):
-        """The three files the Claude Documents get: {name: text}."""
+        """The files the Claude Documents get: {name: text}. While the notes there are held (adopt_docs), only the
+        rules: the notes files there are left as they are."""
         db = self.default_branch
-        with self.notes.lock:
-            notes_md = self.notes.markdown(for_docs=True)
-        return {"10-github-rules.md": self.rules.markdown(self.repo, db),
-                "github-rules.json": dumps(self.rules.export(self.repo, db), pretty=True) + "\n",
-                "11-github-notes.md": notes_md}
+        files = {"10-github-rules.md": self.rules.markdown(self.repo, db),
+                 "github-rules.json": dumps(self.rules.export(self.repo, db), pretty=True) + "\n"}
+        if not self.notes_held:
+            with self.notes.lock:
+                files["11-github-notes.md"] = self.notes.markdown(for_docs=True)
+            files["github-notes.json"] = dumps(self.notes.export(self.repo), pretty=True) + "\n"
+        return files
 
-    def adopt_docs_rules(self, folder):
-        """Before the first push of a seeded rule set: take the Claude Documents' github-rules.json instead."""
+    def adopt_docs(self, folder, first=False):
+        """Right before a push, on origin's files: a still-seeded rule set takes the Claude Documents' github-rules.json
+        instead, and on the first sync from this data folder (or while this PC has written no note) the notes there
+        are merged in, so a new PC or a lost data folder gets q's rules and notes back instead of pushing empty ones
+        over them. Notes there that can't be read back are never replaced by this PC's empty store: they are held
+        (left as they are, with a warning) until a note is written here."""
         if self.rules.seeded:
             doc = read_json(os.path.join(folder, "github-rules.json"))
             if doc is not None and self.rules.adopt(doc):
                 LOG.info("editor: agent rules taken from the Claude Documents' github-rules.json")
+        held = None
+        if first or self.notes.fresh:
+            raws, source, count = docs_notes(folder)
+            if raws and self.notes.merge(raws, source):
+                LOG.info("editor: notes merged from the Claude Documents' %s", source)
+            if count and self.notes.fresh and not self.notes.all():
+                held = ("Claude Documents: %s there holds %s this PC could not read back, so it is left as it is "
+                        "(not replaced by this PC's empty notes) until a note is written here" % (
+                            source, plural(count, "note")))
+                LOG.warning("editor: %s", held)
+        self.notes_held = held
 
     def _after_apply(self, change):
         with self.rs_lock:
@@ -3234,8 +3355,10 @@ class Manager:
 
     def rules_view(self):
         o = self.rules.obj()
+        docs = self.docs.status()
+        docs["notesHeld"] = self.notes_held
         o.update({"kinds": list(RULE_KINDS), "scopes": list(RULE_SCOPES), "hardRule": HARD_RULE_ID,
-                  "defaultBranch": self.default_branch, "docsSync": self.docs.status(),
+                  "defaultBranch": self.default_branch, "docsSync": docs,
                   "limits": {"rules": RULES_MAX, "titleBytes": RULE_TITLE_MAX, "textBytes": RULE_TEXT_MAX}})
         return o
 
@@ -3702,7 +3825,7 @@ class Manager:
             if not errors:
                 self.last_ok = at
             self.last_error = "; ".join(errors) if errors else None
-            warnings += self.docs.warnings()
+            warnings += self.docs.warnings() + ([self.notes_held] if self.notes_held else [])
             self.docs.retry_if_failed()
             state["poll"] = {"lastOk": self.last_ok, "lastError": self.last_error,
                              "nextAt": iso(datetime.datetime.fromtimestamp(self.next_at, UTC)),

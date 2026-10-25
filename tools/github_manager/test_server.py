@@ -1996,7 +1996,7 @@ class DocsSyncTest(unittest.TestCase):
         mine = S.Rules(os.path.join(self.root, "data", "editor"))
         self.assertTrue(mine.seeded)
         render = lambda: {"github-rules.json": S.dumps(mine.export(REPO, DEFAULT), pretty=True) + "\n"}
-        adopt = lambda folder: mine.adopt(S.read_json(os.path.join(folder, "github-rules.json")))
+        adopt = lambda folder, first: mine.adopt(S.read_json(os.path.join(folder, "github-rules.json")))
         # first try fails (offline): retried by the next poll, and then it works
         moved = self.bare + ".away"
         os.rename(self.bare, moved)
@@ -2024,6 +2024,94 @@ class DocsSyncTest(unittest.TestCase):
         finally:
             os.environ["GHM_DOCS_SYNC"] = env
         self.assertFalse(S.docs_sync_wanted({"repo": REPO})[0])
+
+    def manager(self, name):
+        """A Manager whose Claude Documents copy goes to the local bare repo."""
+        data = os.path.join(self.root, name)
+        m = S.Manager({"repo": REPO, "port": 0, "quarkDir": data}, data, os.path.dirname(os.path.abspath(S.__file__)),
+                      quiet=True)
+        m.default_branch = DEFAULT
+        m.docs = S.DocsSync(os.path.join(data, "claude-docs"), os.path.join(data, "editor", "docs-sync.json"),
+                            self.proc, m.docs_files, repo=S.DOCS_REPO, debounce=30, adopt=m.adopt_docs)
+        return m
+
+    def push_seed(self, name, text, msg):
+        write(os.path.join(self.seed, name), text)
+        git("add", name, cwd=self.seed)
+        git("commit", "-qm", msg, cwd=self.seed)
+        git("push", "-q", "origin", "HEAD:main", cwd=self.seed)
+
+    def test_a_new_install_gets_the_notes_back(self):
+        # q's notes as an older version pushed them: 11-github-notes.md only (no github-notes.json yet)
+        old = self.manager("old")
+        old.notes.create({"target": {"kind": "general"}, "text": "General one\n\n- a list\n- `code` and **bold**",
+                          "pinned": True})
+        old.notes.create({"target": {"kind": "branch", "key": "claude/x-y"}, "text": "branch note", "author": "a · b"})
+        n3 = old.notes.create({"target": {"kind": "pr", "key": "12"}, "text": "pr note"})
+        old.notes.update(n3["id"], {"status": "done", "text": "pr note, edited"})
+        old.notes.create({"target": {"kind": "version", "key": "1.18.32"}, "text": "  indented\n\n\nthree lines"})
+        md = old.notes.markdown(for_docs=True)
+        self.push_seed("11-github-notes.md", md, "old notes")
+        keep = lambda m: sorted((n["id"], n["target"]["kind"], n["target"]["key"], n["text"], n["status"], n["pinned"],
+                                 n["author"], n["createdAt"], n["updatedAt"]) for n in m.notes.all())
+        # a new PC (an empty data folder): its first sync merges them back instead of pushing an empty file
+        new = self.manager("new")
+        self.assertTrue(new.notes.fresh)
+        self.assertTrue(new.docs.schedule_if_changed(30))   # no digest yet: it syncs, and the sync adopts first
+        st = new.docs.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(keep(new), keep(old))
+        self.assertFalse(new.notes.fresh)
+        self.assertEqual(self.show("11-github-notes.md"), md.rstrip("\n"))   # the same notes give the same file
+        self.assertEqual(len(json.loads(self.show("github-notes.json"))["notes"]), 4)
+        restored = [e for e in new.history.query() if e["type"] == "note.restored"]
+        self.assertEqual(len(restored), 1)
+        self.assertIn("4 notes restored from the Claude Documents (11-github-notes.md)", restored[0]["text"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, "new", "editor", "notes.json")))
+        # another new PC that wrote a note before its first sync (gh was signed out): both sets end up everywhere,
+        # read from github-notes.json this time
+        third = self.manager("third")
+        mine = third.notes.create({"target": {"kind": "run", "key": "77"}, "text": "written offline"})
+        self.assertFalse(third.notes.fresh)
+        st = third.docs.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(len(third.notes.all()), 5)
+        self.assertIn("(github-notes.json)", next(e["text"] for e in third.history.query() if e["type"] == "note.restored"))
+        self.assertIn("written offline", self.show("11-github-notes.md"))
+        self.assertIn(mine["id"], self.show("github-notes.json"))
+        # once synced, deleting every note here is q's choice: the empty file goes out
+        for n in third.notes.all():
+            third.notes.delete(n["id"])
+        third.docs.sync_now()
+        self.assertIn("No notes yet.", self.show("11-github-notes.md"))
+        self.assertEqual(json.loads(self.show("github-notes.json"))["notes"], [])
+
+    def test_unreadable_notes_are_held_not_overwritten(self):
+        self.push_seed("11-github-notes.md", "# q's own notes\n\nwritten by hand\n", "hand notes")
+        m = self.manager("m")
+        st = m.docs.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(self.show("11-github-notes.md"), "# q's own notes\n\nwritten by hand")
+        self.assertIn("github-rules.json", git("--git-dir", self.bare, "ls-tree", "--name-only", "main"))
+        self.assertIn("left as it is", m.notes_held)
+        self.assertEqual(m.rules_view()["docsSync"]["notesHeld"], m.notes_held)
+        m.docs.sync_now()   # a restart or the next change: still held
+        self.assertEqual(self.show("11-github-notes.md"), "# q's own notes\n\nwritten by hand")
+        # q writes a note here: that is the go-ahead
+        m.notes.create({"target": {"kind": "general"}, "text": "the first note here"})
+        m.docs.sync_now()
+        self.assertIsNone(m.notes_held)
+        self.assertIn("the first note here", self.show("11-github-notes.md"))
+
+    def test_notes_markdown_round_trip(self):
+        n = S.Notes(None)
+        n.create({"target": {"kind": "commit", "key": "ABCDEF12"}, "text": "> quoted\n>\nend  "})
+        n.create({"target": {"kind": "local", "key": "thread-6l62d6"}, "text": "local"})
+        got = S.notes_from_markdown(n.markdown(for_docs=True))
+        self.assertEqual(sorted((g["id"], g["target"]["kind"], g["target"]["key"], g["text"]) for g in got),
+                         sorted((x["id"], x["target"]["kind"], x["target"]["key"], x["text"].rstrip())
+                                for x in n.all()))
+        self.assertEqual(S.notes_from_markdown(S.Notes(None).markdown(for_docs=True)), [])
 
     def test_manager_files(self):
         data = os.path.join(self.root, "m")

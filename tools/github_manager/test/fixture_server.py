@@ -3,6 +3,7 @@
 
     python3 tools/github_manager/test/fixture_server.py [--port 8767] [--no-shift] [--poll-error TEXT] [--no-notes]
                                                          [--no-editor] [--docs-error TEXT] [--signed-out]
+                                                         [--notes-held]
 
 Every timestamp in the fixtures is shifted so the fixture's generatedAt is "now" (so elapsed timers and
 "5 min ago" look live); --no-shift serves them as written. /api/log returns a made-up GitHub Actions log for a
@@ -14,6 +15,7 @@ GitHub (test/fake_github.py) made from the fixture's branches and PRs: Apply rea
 It starts with sample changes: a ruleset diff and a branch delete waiting, one apply that failed, one that is out of
 date, one applied (--no-editor: an empty queue). --docs-error TEXT shows the Claude Documents copy as failed.
 --signed-out: gh signed out since the start (notRead: pulls, releases, runs; no PRs or releases, runs from "cache").
+--notes-held: a new install whose Claude Documents notes couldn't be read back (held, not overwritten).
 """
 import argparse, json, os, re, sys
 from datetime import datetime, timedelta, timezone
@@ -39,8 +41,12 @@ def parse(s):
 
 
 class Fixtures:
-    def __init__(self, shift, poll_error, sample_notes=True, sample_editor=True, docs_error=None, signed_out=False):
+    def __init__(self, shift, poll_error, sample_notes=True, sample_editor=True, docs_error=None, signed_out=False,
+                 notes_held=False):
         self.shift, self.poll_error, self.docs_error, self.signed_out = shift, poll_error, docs_error, signed_out
+        self.notes_held = ("Claude Documents: 11-github-notes.md there holds 3 notes this PC could not read back, so "
+                           "it is left as it is (not replaced by this PC's empty notes) until a note is written "
+                           "here") if notes_held else None
         self.note_events = []
         self.notes = S.Notes(None, self.note_events.extend, "floration/quark")
         if sample_notes:
@@ -91,7 +97,7 @@ class Fixtures:
     def docs_status(self):
         st = {"enabled": True, "state": "ok", "offReason": None, "repo": S.DOCS_REPO, "branch": S.DOCS_BRANCH,
               "files": list(S.DOCS_FILES), "dueAt": None, "lastOk": self.docs_at, "lastCommit": "4f1c2ab9" + "0" * 32,
-              "lastAttempt": self.docs_at, "lastError": None}
+              "lastAttempt": self.docs_at, "lastError": None, "notesHeld": self.notes_held}
         if self.docs_error:
             st.update(state="failed", lastError=self.docs_error)
         return st
@@ -369,8 +375,10 @@ def main():
     ap.add_argument("--no-editor", action="store_true", help="start with no sample structure / pending changes")
     ap.add_argument("--docs-error", default=None, help="show the Claude Documents copy as failed with this error")
     ap.add_argument("--signed-out", action="store_true", help="gh signed out since the start: GitHub parts unknown")
+    ap.add_argument("--notes-held", action="store_true", help="the Claude Documents' notes held on a new install")
     a = ap.parse_args()
-    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes, not a.no_editor, a.docs_error, a.signed_out)
+    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes, not a.no_editor, a.docs_error, a.signed_out,
+                          a.notes_held)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"fixture server on http://127.0.0.1:{a.port}/", flush=True)
     srv.serve_forever()
