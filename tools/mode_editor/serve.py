@@ -926,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
         409 when the file changed (or appeared, or went) on disk since the page loaded it; 400 when the text would
         change a line this editor doesn't own, or put a key line after `logic`."""
         if not valid_name(name): return self._err(400, "bad name (letters, digits, _ . -)")
-        if name in MODES: return self._err(400, "'%s' is a built-in mode's name: pick another" % name)
+        if name.lower() in MODES: return self._err(400, "'%s' is a built-in mode's name: pick another" % name)   # (FFA too: Windows names ignore case)
         body = self._json_body()
         text = body.get("text")
         if not isinstance(text, str) or not text.strip(): return self._err(400, "empty mode")

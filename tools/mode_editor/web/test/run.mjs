@@ -428,6 +428,7 @@ try {
         const r = await request(port, "POST", "/api/mode?name=lowgrav", { body: { text: newQmodeText("lowgrav", "ffa") }, headers: W });
         same(r.status, 409); ok(r.json.exists, r.text);
         same((await request(port, "POST", "/api/mode?name=koth", { body: { text: newQmodeText("koth", "koth") }, headers: W })).status, 400);
+        same((await request(port, "POST", "/api/mode?name=FFA", { body: { text: newQmodeText("FFA", "ffa") }, headers: W })).status, 400, "a built-in name in another case");
         same((await request(port, "POST", "/api/mode?name=..%2Fx", { body: { text: "mode=ffa\n" }, headers: W })).status, 400);
         same((await request(port, "GET", "/api/mode?name=nope")).status, 404);
         const n = await request(port, "POST", "/api/mode?name=fresh", { body: { text: newQmodeText("fresh", "ffa"), provenance: { human: true } }, headers: W });
