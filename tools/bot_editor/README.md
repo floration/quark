@@ -130,6 +130,23 @@ The Simulator's line-up, N matches on each chosen map (seed, seed + 1, ...), as 
 is the scenario's unless another is picked; maps are ticked in a grid with quick picks (**this map**, **for this
 mode**, **ranked**, **all**, **none**). Settings are kept in the state folder.
 
+For tuning, the line-up needn't be edited by hand:
+
+- **Line-up: brain A vs brain B**: brain A's bots on team a, brain B's on team b (1 to 5 a side, one skill); in a
+  free for all, A and B in turn.
+- **also with the sides swapped** (team modes): each map is played twice on the same seeds, the second time with
+  every bot on the other team, so a result doesn't hang on which side of the map a brain got. Everyone starts at
+  spawn points then.
+- **Sweep**: one brain of the line-up with one param at several values: `2, 3, 4` (every level), `×0.8, ×1.2` (each
+  level scaled) or `1/2/3/4` (per level). Each value plays as its own brain, `<brain>@<param>=<value>` (the whole
+  brain as a bot plays it, with that param changed), so the results and **Compare runs** show each value's win rate.
+  Add `×1` to see the brain as it is.
+
+Every setup (maps × sides × sweep values) goes to ONE `simbatch` (its `variants`, `native/SIM.md`): one pool of
+threads for the whole run, so no core idles at a map's tail and one process starts instead of one per map. An
+older `quark_maptool` that doesn't know `variants` is detected from its start line and gets one batch per setup.
+**Wins per map** shows each map's wall time per match and the run's matches per second.
+
 Results are cards side by side (more across on a wide screen): per brain, with each brain's win rate and its 95%
 interval (Wilson; n = matches the brain played, a match where several bots share one brain counts once) drawn as
 a small chart; per bot (wins, kills, deaths, K/D, damage, accuracy, objective time, time alive), wins per map (team or

@@ -5,7 +5,9 @@
 // With quark_maptool sim: one `simbatch` per map (every core but one). Else (MOCK, an older helper) one match at a time.
 
 import { MODES, MODE_TITLES, TEAM_MODES, parseQmap, mapKey, mapTitle, mapLabel } from "./qmap.js";
-import { buildRequest, runToEnd, runBatch } from "./helper.js";
+import { buildRequest, runToEnd, runBatch, toSimRequest } from "./helper.js";
+import { parse, print } from "./dsl.js";
+import { clone } from "./ast.js";
 import { api } from "./api.js";
 
 const $ = (id) => document.getElementById(id);
@@ -39,9 +41,9 @@ export function rateText(w, n, mirror = 0) {
 // dice: only what a brain edit changes differs), so each match of run A can be set against the same match in run B.
 // McNemar's exact test then looks only at the matches one run won and the other lost: far fewer matches tell a real
 // difference than two independent win rates would.
-// outcomes(matches): {keys: ["<map key>|<seed>[|<side>]", ...], brains: {name: "1" won / "0" lost / "-" absent or
+// outcomes(matches): {keys: ["<map key>|<seed>[|<side>][|<sweep>]", ...], brains: {name: "1" won / "0" lost / "-" absent or
 // alone in it (a mirror says nothing), one char per key}}: compact, so a pin can keep it.
-export const matchKey = (m) => `${m.mapKey || m.map}|${m.seed}${m.side ? "|" + m.side : ""}`;
+export const matchKey = (m) => `${m.mapKey || m.map}|${m.seed}${m.side ? "|" + m.side : ""}${m.sweep ? "|" + m.sweep : ""}`;
 export function outcomes(matches) {
     const ms = matches.filter((m) => !m.error), keys = ms.map(matchKey), brains = {};
     ms.forEach((m, i) => {
@@ -90,9 +92,9 @@ export function summarize(matches) {
     for (const m of matches) {
         // per map by source/name (a map of yours named like a shipped one is another map); map: its label
         const mk = m.mapKey || m.map;
-        const M = maps.get(mk) || maps.set(mk, { key: mk, map: m.mapLabel || m.map, matches: 0, errors: 0, a: 0, b: 0, draws: 0, timeouts: 0, players: new Map(), t: 0 }).get(mk);
+        const M = maps.get(mk) || maps.set(mk, { key: mk, map: m.mapLabel || m.map, matches: 0, errors: 0, a: 0, b: 0, draws: 0, timeouts: 0, players: new Map(), t: 0, wall: 0 }).get(mk);
         if (m.error) { M.errors++; continue; }
-        M.matches++; M.t += m.t || 0;
+        M.matches++; M.t += m.t || 0; M.wall += m.wallSeconds || 0;
         const w = m.winner;
         if (!w) M.timeouts++;
         else if (w.team === "a" || w.team === "b") M[w.team]++;
@@ -116,6 +118,51 @@ export function summarize(matches) {
     return { brains: [...brains.values()], bots: [...bots.values()], maps: [...maps.values()].map((M) => ({ ...M, players: [...M.players].map(([name, wins]) => ({ name, wins })) })) };
 }
 
+// ---------------------------------------------------------------- line-ups: A vs B, sweeps (pure but sweepBrains)
+const SKILLS = ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"];
+// brain A on team a, brain B on team b, `per` bots a side (free for all: 2 x per bots, A and B in turn)
+export function abLineup({ a, b, per, skill }, team) {
+    const out = [];
+    for (let i = 0; i < per; i++)
+        for (const [k, brain] of [["a", a], ["b", b]]) out.push({ name: `${k.toUpperCase()}${i + 1}`, team: team ? k : "any", skill, brain, pos: null, yaw: 0, objective: { kind: "default" } });
+    return out;
+}
+// "2, 3, 4" (every level), "×0.8, ×1.2" (each level scaled; x or * work too), "1/2/3/4" (per level) ->
+// [{tag, values: [4]}]; base: the param's 4 values now; int params round
+export function parseSweep(text, base, type = "f32") {
+    const b4 = base.length === 4 ? base : [base[0], base[0], base[0], base[0]];
+    const toks = String(text || "").split(/[,;]+/).map((t) => t.trim()).filter(Boolean);
+    if (!toks.length) throw new Error("no values (e.g. 2, 3, 4 · ×0.8, ×1.2 · 1/2/3/4)");
+    if (toks.length > 12) throw new Error("at most 12 values");
+    const num = (t) => { const v = Number(t); if (!Number.isFinite(v)) throw new Error(`“${t}” isn't a number`); return v; };
+    const out = toks.map((t) => {
+        let vals, tag;
+        const m = /^[×x*]\s*(.+)$/i.exec(t);
+        if (m) { const k = num(m[1]); vals = b4.map((v) => v * k); tag = "×" + k; }
+        else if (t.includes("/")) { const p = t.split("/").map((x) => num(x.trim())); if (p.length !== 4) throw new Error(`“${t}”: four values, one per level`); vals = p; tag = p.join("/"); }
+        else { const v = num(t); vals = [v, v, v, v]; tag = String(v); }
+        if (type === "int") vals = vals.map(Math.round);
+        else vals = vals.map((v) => +v.toPrecision(6));
+        return { tag, values: vals };
+    });
+    if (new Set(out.map((o) => o.tag)).size !== out.length) throw new Error("a value is given twice");
+    return out;
+}
+// one brain per sweep value: the whole brain (as a bot plays it) with the param changed, named <brain>@<param>=<tag>;
+// adds their texts to brains. -> [{from, key, tag}]
+function sweepBrains(app, sw, brains) {
+    const ast = app.effectiveAst(sw.brain);
+    const d = ast && ast.decls.find((x) => x.kind === "param" && x.name === sw.param);
+    if (!d) throw new Error(`${sw.brain} has no param ${sw.param}`);
+    return parseSweep(sw.values, d.values, d.type).map(({ tag, values }) => {
+        const key = `${sw.brain}@${sw.param}=${tag}`, a = clone(ast);
+        a.decls.find((x) => x.kind === "param" && x.name === sw.param).values = values.every((v) => v === values[0]) ? [values[0]] : values;
+        a.name = key;
+        brains[key] = print(a);
+        return { from: sw.brain, key, tag: `${sw.param}=${tag}` };
+    });
+}
+
 export class BatchPage {
     constructor(app) {
         this.app = app;
@@ -124,13 +171,16 @@ export class BatchPage {
         this.cmp = { a: null, b: "current" };   // compared runs: a pin id (or "current"), b likewise
         this.picked = new Set();   // "source/name" of the maps to run
         app.on("maps", () => this._fill());
-        app.on("page", (p) => { if (p === "batch") this._fillMode(); });
+        app.on("page", (p) => { if (p === "batch") { this._fillMode(); this._fillLineup(); } });
+        app.on("brains", () => this._fillLineup());
         $("bRun").onclick = () => this.run();
         $("bStop").onclick = () => { this.stopping = true; if (runBatch.current) runBatch.current.control("stop"); };
         $("bCsv").onclick = () => this._csv();
-        $("bMode").onchange = () => { this._paintPicks(); this._saveSettings(); };
+        $("bMode").onchange = () => { this._fillLineup(); this._paintPicks(); this._saveSettings(); };
         for (const id of ["bN", "bSecs", "bSeed"]) $(id).onchange = () => { this._paintPicks(); this._saveSettings(); };
         document.querySelectorAll("#bPicks [data-pick]").forEach((b) => (b.onclick = () => this._pick(b.dataset.pick)));
+        for (const id of ["bLineup", "bBrainA", "bBrainB", "bPer", "bSkill", "bSwap", "bSwBrain", "bSwParam"]) $(id).onchange = () => { this._fillLineup(); this._paintPicks(); this._saveSettings(); };
+        $("bSwVals").oninput = () => { this._design(); this._paintPicks(); this._saveSettings(); };
     }
     async start() {
         let st = null, pins = null, last = null;
@@ -144,15 +194,70 @@ export class BatchPage {
             if (Array.isArray(st.maps)) this.picked = new Set(st.maps);
             for (const [id, k] of [["bN", "n"], ["bSecs", "secs"], ["bSeed", "seed"]]) if (Number.isFinite(st[k])) $(id).value = st[k];
             this._wantMode = st.mode || "";
+            this._want = st.lineup && typeof st.lineup === "object" ? st.lineup : null;   // (filled once the brains are listed)
         }
         if (Array.isArray(pins)) this.pins = pins.filter((p) => p && p.summary).slice(-MAX_PINS);
         if (this.pins.length) this.cmp.a = (this.run0 && this.run0.pinned && this.pins.length > 1 ? this.pins[this.pins.length - 2] : this.pins[this.pins.length - 1]).id;
         this._fill();
+        this._fillLineup();
         this._render();
     }
     _saveSettings() {
         clearTimeout(this._st);
-        this._st = setTimeout(() => api.saveState("batch", { maps: [...this.picked], n: +$("bN").value, secs: +$("bSecs").value, seed: +$("bSeed").value, mode: $("bMode").value }).catch(() => {}), 500);
+        this._st = setTimeout(() => api.saveState("batch", { maps: [...this.picked], n: +$("bN").value, secs: +$("bSecs").value, seed: +$("bSeed").value, mode: $("bMode").value, lineup: this._lineupSettings() }).catch(() => {}), 500);
+    }
+
+    // ---- the line-up: the Simulator's bots or A vs B; sides swapped; a param sweep
+    _lineupSettings() {
+        return { kind: $("bLineup").value || "sim", a: $("bBrainA").value || "default", b: $("bBrainB").value || "default", per: +$("bPer").value || 2,
+            skill: $("bSkill").value || "ADVANCED", swap: $("bSwap").checked, sweep: { brain: $("bSwBrain").value, param: $("bSwParam").value, values: $("bSwVals").value } };
+    }
+    _fillLineup() {
+        const w = this._want || this._lineupSettings();
+        this._want = null;
+        const opt = (sel, list, v) => { sel.textContent = ""; for (const [k, t] of list) { const o = document.createElement("option"); o.value = k; o.textContent = t; sel.append(o); } sel.value = list.some((x) => x[0] === v) ? v : list.length ? list[0][0] : ""; };
+        const brains = [["default", "default (built in)"], ...this.app.brainList.filter((b) => b.source === "user").map((b) => [b.name, b.name]), ["(editor)", "(the brain open in the editor)"]];
+        $("bLineup").value = w.kind === "ab" ? "ab" : "sim";
+        opt($("bBrainA"), brains, w.a); opt($("bBrainB"), brains, w.b);
+        $("bPer").value = String(w.per || 2);
+        opt($("bSkill"), SKILLS.map((k) => [k, k.toLowerCase()]), w.skill || "ADVANCED");
+        $("bSwap").checked = !!w.swap;
+        $("bAB").hidden = $("bLineup").value !== "ab";
+        const team = TEAM_MODES.has(this._mode());
+        $("bSwap").disabled = !team;
+        $("bSwap").parentElement.title = team ? $("bSwap").parentElement.title.replace(/^\(.*?\) /, "") : "(free for all has no sides) " + $("bSwap").parentElement.title.replace(/^\(.*?\) /, "");
+        // the sweep: a brain the line-up plays, one of its number params
+        const ls = this._lineupSettings();
+        const inLineup = [...new Set((ls.kind === "ab" ? [ls.a, ls.b] : this.app.sim.sc.bots.map((b) => b.brain)))];
+        const sw = w.sweep || {};
+        opt($("bSwBrain"), [["", "no sweep"], ...inLineup.map((n) => [n, n])], sw.brain || "");
+        const ast = $("bSwBrain").value ? this.app.effectiveAst($("bSwBrain").value) : null;
+        const params = ast ? ast.decls.filter((d) => d.kind === "param" && d.type !== "bool").map((d) => [d.name, `${d.name} = ${d.values.join(" ")}`]).sort((x, y) => x[0].localeCompare(y[0])) : [];
+        opt($("bSwParam"), params, sw.param || "");
+        $("bSwParam").disabled = !ast;
+        if (sw.values != null && $("bSwVals").value === "") $("bSwVals").value = sw.values;
+        $("bSwValsRow").hidden = !ast;
+        this._design();
+    }
+    // what the next run plays, in a line (and why a sweep would fail)
+    _design() {
+        const ls = this._lineupSettings(), team = TEAM_MODES.has(this._mode());
+        const bots = ls.kind === "ab" ? 2 * ls.per : this.app.sim.sc.bots.length;
+        let sweep = "";
+        if (ls.sweep.brain && ls.sweep.param) {
+            const ast = this.app.effectiveAst(ls.sweep.brain), d = ast && ast.decls.find((x) => x.kind === "param" && x.name === ls.sweep.param);
+            try { sweep = d ? ` · ${ls.sweep.brain} at ${parseSweep(ls.sweep.values, d.values, d.type).map((x) => x.tag).join(", ")}` : ""; }
+            catch (e) { sweep = ` · <span class="warn">sweep: ${esc(e.message)}</span>`; }
+        }
+        $("bDesign").innerHTML = `${bots} bot${bots === 1 ? "" : "s"}${ls.kind === "ab" ? ` (${esc(ls.a)} vs ${esc(ls.b)})` : ""}${ls.swap && team ? " · each map on both sides" : ""}${sweep}`;
+        return this._setups();
+    }
+    // setups per map (sides x sweep values)
+    _setups() {
+        const ls = this._lineupSettings();
+        let k = ls.swap && TEAM_MODES.has(this._mode()) ? 2 : 1;
+        if (ls.sweep.brain && ls.sweep.param) k *= Math.max(1, String(ls.sweep.values || "").split(/[,;]+/).filter((t) => t.trim()).length);
+        return k;
     }
 
     // ---- settings: mode (the scenario's by default) and the map picks
@@ -196,74 +301,120 @@ export class BatchPage {
             l.classList.toggle("off", !!m && !this._offered(m, mode));   // (not offered for this mode: may not work)
         });
         const n = this.picked.size;
-        $("bPickInfo").textContent = n ? `${n} map${n > 1 ? "s" : ""} · ${(+$("bN").value || 10) * n} matches` : "none picked: the scenario's map";
+        const k = this._setups();
+        $("bPickInfo").textContent = n ? `${n} map${n > 1 ? "s" : ""} · ${(+$("bN").value || 10) * n * k} matches` : `none picked: the scenario's map · ${(+$("bN").value || 10) * k} matches`;
     }
 
     // ---- running
+    // Run batch (one at a time: the button is off from the click on, while brains and maps load too)
     async run() {
-        const sim = this.app.sim, sc = sim.sc;
-        if (!sc.bots.length) { this.app.toast("Add bots in the Simulator tab first (they are the batch's line-up)."); return; }
+        if (this._running) return;
+        this._running = true; $("bRun").disabled = true;
+        try { await this._run(); }
+        finally { this._running = false; $("bRun").disabled = false; $("bStop").disabled = true; this._render(); }
+    }
+    async _run() {
+        const sim = this.app.sim, sc = sim.sc, lu = this._lineupSettings();
+        const mode = this._mode(), team = TEAM_MODES.has(mode);
+        const lineup = lu.kind === "ab" ? abLineup(lu, team) : sc.bots;
+        if (!lineup.length) { this.app.toast("Add bots in the Simulator tab first (they are the batch's line-up), or pick “brain A vs brain B”."); return; }
         let maps = this.app.maps.filter((m) => this.picked.has(mapKey(m)));
         if (!maps.length && this.app.map) maps = [this.app.maps.find((m) => m.name === this.app.map.name && m.source === this.app.map.source) || { name: this.app.map.name, source: this.app.map.source, title: this.app.map.title }];
         const N = Math.max(1, Math.min(1000, +$("bN").value || 10)), secs0 = Math.max(5, Math.min(7200, +$("bSecs").value || 900)), seed0 = +$("bSeed").value || 1;
-        const mode = this._mode();
         // the helper plays each match to its end (until matchEnd) with this cap; the MOCK has no match end, so its
         // matches are the cap itself, kept short
         const secs = this.app.helper.batch ? secs0 : Math.min(secs0, 120);
-        this.stopping = false;
-        $("bRun").disabled = true; $("bStop").disabled = false; $("bCsv").disabled = true;
         const brains = {};
-        for (const b of sc.bots) if (b.brain !== "default") { if (!this.app.brainText.has(b.brain) && b.brain !== "(editor)") await this.app.loadBrainText(b.brain).catch(() => {}); const t = this.app.brainTextFor(b.brain); if (t) brains[b.brain] = t; }
-        const settings = { at: new Date().toISOString(), mode, N, seed0, secs, maps: maps.map(mapLabel), mapKeys: maps.map(mapKey),
-            lineup: sc.bots.map((b) => ({ name: b.name, team: b.team, skill: b.skill, brain: b.brain })), mock: this.app.helper.kind === "mock" };
-        const R = (this.run0 = { settings, matches: [], perf: {}, brainSupport: this.app.helper.brainSupport });
+        for (const b of lineup) if (b.brain !== "default" && !(b.brain in brains)) { if (!this.app.brainText.has(b.brain) && b.brain !== "(editor)") await this.app.loadBrainText(b.brain).catch(() => {}); const t = this.app.brainTextFor(b.brain); if (t) brains[b.brain] = t; }
+        // a sweep: one brain per value (<brain>@<param>=<value>), the whole brain with that param changed
+        let sweeps = [{}];
+        if (lu.sweep.brain && lu.sweep.param) {
+            try { sweeps = sweepBrains(this.app, lu.sweep, brains); }
+            catch (e) { this.app.toast("Sweep: " + e.message, 6000); return; }
+        }
+        const sides = lu.swap && team ? ["", "swapped"] : [""];
+        // every setup: map x sweep value x side. Placed starts and point objectives belong to the scenario's own map
+        // (and its sides: swapping starts everyone at spawn points); other maps start everyone at spawn points
+        const variants = [];
+        for (const row of maps) for (const sw of sweeps) for (const side of sides) {
+            const onMap = lu.kind === "sim" && sc.map && sc.map.name === row.name && sc.map.source === row.source;
+            const bots = lineup.map((b) => {
+                let x = onMap ? { ...b } : { ...b, objective: b.objective && b.objective.kind === "objective" ? b.objective : { kind: "default" } };
+                if (!onMap || lu.swap) x.pos = null;
+                if (side) x.team = x.team === "a" ? "b" : x.team === "b" ? "a" : x.team;
+                if (sw.key && x.brain === sw.from) x.brain = sw.key;
+                return x;
+            });
+            variants.push({ row, bots, tag: { map: row.name, mapKey: mapKey(row), mapLabel: mapLabel(row), ...(side ? { side } : {}), ...(sw.tag ? { sweep: sw.tag } : {}) } });
+        }
+        this.stopping = false;
+        $("bStop").disabled = false; $("bCsv").disabled = true;
+        const design = { kind: lu.kind, swap: sides.length > 1, ...(sweeps[0].tag ? { sweep: { brain: lu.sweep.brain, param: lu.sweep.param, values: sweeps.map((s) => s.tag) } } : {}) };
+        const settings = { at: new Date().toISOString(), mode, N, seed0, secs, maps: maps.map(mapLabel), mapKeys: maps.map(mapKey), design,
+            lineup: lineup.map((b) => ({ name: b.name, team: b.team, skill: b.skill, brain: b.brain })), mock: this.app.helper.kind === "mock" };
+        const R = (this.run0 = { settings, matches: [], perf: [], brainSupport: this.app.helper.brainSupport });
         this.cmp.b = "current";
-        const total = maps.length * N, ran = [];   // (the maps that ran: a Stop leaves the rest out)
+        const total = variants.length * N, texts = new Map();
         let done = 0, last = 0;
         const t0 = performance.now(), prog = (x) => ($("bProg").style.width = (x / total * 100).toFixed(1) + "%");
         const live = () => { if (performance.now() - last > 300) { last = performance.now(); this._render(); } };
-        for (const row of maps) {
-            if (this.stopping) break;
-            const { source, name } = row, mk = mapKey(row), ml = mapLabel(row), tag = { map: name, mapKey: mk, mapLabel: ml };
-            ran.push(ml);
-            const text = await api.map(name, source);
-            const map = parseQmap(text, name); map.text = text; map.source = source;
-            // placed positions belong to the scenario's map: other maps start everyone at spawn points
-            const bots = sc.bots.map((b) => (sc.map && sc.map.name === name && sc.map.source === source ? b : { ...b, pos: null, objective: b.objective && b.objective.kind === "objective" ? b.objective : { kind: "default" } }));
-            if (this.app.helper.batch) {
-                const req = buildRequest({ ...sc, bots, mode, seed: seed0, secs, mapSource: source, speed: "max" }, map, brains);
-                $("bStatus").textContent = `${ml}: starting ${N} matches (${MODE_TITLES[mode] || mode})…`;
+        const what = `${N} match${N > 1 ? "es" : ""} × ${variants.length} setup${variants.length > 1 ? "s" : ""} (${maps.length} map${maps.length > 1 ? "s" : ""}${sides.length > 1 ? " × 2 sides" : ""}${sweeps.length > 1 ? ` × ${sweeps.length} values` : ""}) of ${MODE_TITLES[mode] || mode}`;
+        // each setup as the page's run request (map texts read once)
+        const reqOf = async (v) => {
+            const k = v.tag.mapKey;
+            if (!texts.has(k)) { const text = await api.map(v.row.name, v.row.source); const m = parseQmap(text, v.row.name); m.text = text; texts.set(k, m); }
+            return buildRequest({ ...sc, bots: v.bots, mode, seed: seed0, secs, mapSource: v.row.source, speed: "max" }, texts.get(k), brains);
+        };
+        if (this.app.helper.batch) {
+            // one simbatch for every setup (SIM.md "Variants": one pool of threads, no idle tail per map); an older
+            // quark_maptool plays only the first: the rest then go one batch each
+            for (let i = 0; i < variants.length && !this.stopping;) {
+                const rest = this.app.helper.variants === false ? [variants[i]] : variants.slice(i);
+                let played = rest.length;
                 try {
-                    const end = await runBatch(req, N, (o) => {
-                        if (o.type === "start") $("bStatus").textContent = `${ml}: ${N} matches of ${MODE_TITLES[mode] || mode} on ${o.threads} threads${o.brainSupport ? "" : " (built-in brain: this build has no brain code)"}`;
-                        else if (o.type === "match") R.matches.push({ ...o, ...tag });
-                        else if (o.type === "progress") $("bStatus").textContent = `${ml}: ${o.done} / ${o.total} done, ${o.running} running`;
+                    const reqs = [];
+                    for (const v of rest) reqs.push(await reqOf(v));
+                    const extra = {};
+                    if (rest.length > 1) {
+                        extra.maps = {};
+                        for (const r of reqs) extra.maps[r.map.source + "/" + r.map.name] = { name: r.map.name, source: r.map.source, text: r.map.text };
+                        extra.variants = reqs.map((r) => ({ map: r.map.source + "/" + r.map.name, bots: toSimRequest(r).bots }));
+                    }
+                    $("bStatus").textContent = `starting ${what}…`;
+                    const end = await runBatch(reqs[0], N, (o) => {
+                        if (o.type === "start") {
+                            if (rest.length > 1 && !o.variants) { this.app.helper.variants = false; played = 1; }
+                            $("bStatus").textContent = `${what} on ${o.threads} threads${o.brainSupport ? "" : " (built-in brain: this build has no brain code)"}`;
+                        } else if (o.type === "match") R.matches.push({ ...o, ...rest[o.variant || 0].tag });
+                        else if (o.type === "progress") $("bStatus").textContent = `${done + o.done} / ${total} done, ${o.running} running · ${what}`;
                         if (o.done != null) { prog(done + o.done); live(); }
-                    });
-                    R.perf[mk] = end.perf;
-                } catch (e) { R.matches.push({ ...tag, seed: seed0, error: e.message }); }
+                    }, extra);
+                    R.perf.push(end.perf);
+                } catch (e) { for (const v of rest.slice(0, played)) R.matches.push({ ...v.tag, seed: seed0, error: e.message }); }
                 runBatch.current = null;
-                done += N;
-            } else {
+                done += played * N; i += played;
+                prog(done); this._render();
+            }
+        } else {
+            for (const v of variants) {
+                if (this.stopping) break;
+                const req0 = await reqOf(v), map = texts.get(v.tag.mapKey);
                 for (let k = 0; k < N && !this.stopping; k++) {
-                    const req = buildRequest({ ...sc, bots, mode, seed: seed0 + k, secs, mapSource: source, speed: "max" }, map, brains);
-                    $("bStatus").textContent = `${ml}: match ${k + 1} / ${N} (seed ${seed0 + k})`;
+                    const req = { ...req0, seed: seed0 + k };
+                    $("bStatus").textContent = `${v.tag.mapLabel}${v.tag.side ? " (sides swapped)" : ""}${v.tag.sweep ? " · " + v.tag.sweep : ""}: match ${k + 1} / ${N} (seed ${seed0 + k})`;
                     try {
                         const end = await runToEnd(this.app.helper, req, map, (n) => this.app.paramsOf(n), (f) => prog(done + Math.min(1, f)));
-                        R.matches.push({ ...fromEndLine(name, seed0 + k, end, req.bots), ...tag });
-                    } catch (e) { R.matches.push({ ...tag, seed: seed0 + k, error: e.message }); }
+                        R.matches.push({ ...fromEndLine(v.row.name, seed0 + k, end, req.bots), ...v.tag });
+                    } catch (e) { R.matches.push({ ...v.tag, seed: seed0 + k, error: e.message }); }
                     done++;
                     prog(done); live();
                 }
             }
-            prog(done);
-            this._render();
         }
-        const n = R.matches.filter((m) => !m.error).length;
+        const n = R.matches.filter((m) => !m.error).length, ran = [...new Set(R.matches.map((m) => m.mapLabel))];   // (the maps that ran: a Stop leaves the rest out)
         $("bStatus").textContent = `${this.stopping ? "stopped" : "done"}: ${n} matches of ${MODE_TITLES[mode] || mode} on ${ran.join(", ") || "no map"} in ${((performance.now() - t0) / 1000).toFixed(1)} s (${this.app.helper.batch ? "quark_maptool simbatch" : this.app.helper.kind === "mock" ? "MOCK simulation" : "quark_maptool"}${this.app.helper.batch && !this.app.helper.brainSupport ? "; every bot played the built-in brain: this build has no brain code" : ""})`;
-        $("bRun").disabled = false; $("bStop").disabled = true; $("bCsv").disabled = !n;
+        $("bCsv").disabled = !n;
         this._saveLast();
-        this._render();
     }
 
     // ---- pins
@@ -271,8 +422,8 @@ export class BatchPage {
         const R = this.run0;
         if (!this._has(R)) return;
         const s = R.settings, id = Date.now().toString(36);
-        const brainsTxt = [...new Set(s.lineup.map((b) => b.brain))].join(" vs ");
-        const title = `${brainsTxt} · ${MODE_TITLES[s.mode] || s.mode} · ${s.maps.length > 3 ? s.maps.length + " maps" : s.maps.join(", ")}`;
+        const brainsTxt = [...new Set(s.lineup.map((b) => b.brain))].join(" vs "), D = s.design || {};
+        const title = `${brainsTxt} · ${MODE_TITLES[s.mode] || s.mode} · ${s.maps.length > 3 ? s.maps.length + " maps" : s.maps.join(", ")}${D.swap ? " · both sides" : ""}${D.sweep ? ` · ${D.sweep.param} ${D.sweep.values.join(" / ")}` : ""}`;
         const summary = this._summary(R);
         for (const b of summary.bots) delete b.objective;
         this.pins.push({ id, title, at: s.at, settings: s, summary, outcomes: R.outcomes || outcomes(R.matches) });
@@ -321,7 +472,7 @@ export class BatchPage {
         }));
     }
     _pinsCard() {
-        const R = this.run0, canPin = this._has(R) && !R.pinned && $("bRun") && !$("bRun").disabled;
+        const R = this.run0, canPin = this._has(R) && !R.pinned && !this._running;
         if (!this.pins.length && !canPin) return "";
         const rows = this.pins.slice().reverse().map((p) => {
             const s = p.settings, top = p.summary.brains.slice().sort((a, b) => b.w / Math.max(1, b.n) - a.w / Math.max(1, a.n)).map((b) => `${esc(b.name)} ${rateText(b.w, b.n, b.mirror).text}`).join(" · ");
@@ -384,24 +535,27 @@ export class BatchPage {
     }
     _mapsCard(S, R) {
         const rows = S.maps.map((M) => {
-            const perf = R.perf[M.key];
             const res = M.a + M.b ? `team A ${M.a} · team B ${M.b} · draws ${M.draws}` : M.players.length ? M.players.map((p) => `${esc(p.name)} ${p.wins}`).join(" · ") + ` · draws ${M.draws}` : M.matches ? "no match ended (see timeouts)" : "";
-            return `<tr><td>${esc(M.map)}</td><td>${M.matches}${M.errors ? ` <span class="err">${M.errors} failed</span>` : ""}</td><td>${res}</td><td>${M.timeouts || "-"}</td><td>${M.matches ? (M.t / M.matches).toFixed(0) + " s" : "-"}</td><td class="muted">${perf ? perf.matchesPerSecond.toFixed(1) + "/s on " + perf.threads : ""}</td></tr>`;
+            return `<tr><td>${esc(M.map)}</td><td>${M.matches}${M.errors ? ` <span class="err">${M.errors} failed</span>` : ""}</td><td>${res}</td><td>${M.timeouts || "-"}</td><td>${M.matches ? (M.t / M.matches).toFixed(0) + " s" : "-"}</td><td class="muted" title="wall time a match took on one thread (its start included: map, nav graph)">${M.wall ? (M.wall / M.matches).toFixed(2) + " s" : ""}</td></tr>`;
         }).join("");
         const errs = (R.matches || []).filter((m) => m.error);
-        return `<section class="bcard"><h3>Wins per map</h3>${mapChart(S.maps)}<table class="score"><tr><th>map</th><th>matches</th><th>wins</th><th>timeouts</th><th>avg length</th><th>speed</th></tr>${rows}</table>${errs.length ? `<div class="err">${esc(errs[0].error)}</div>` : ""}</section>`;
+        // the whole run's speed (simbatch's perf: one per batch; older saved runs kept one per map)
+        const perfs = Array.isArray(R.perf) ? R.perf : Object.values(R.perf || {}), wall = perfs.reduce((a, p) => a + (p.wallSeconds || 0), 0);
+        const played = S.maps.reduce((a, M) => a + M.matches, 0), threads = Math.max(0, ...perfs.map((p) => p.threads || 0));
+        const speed = wall && played ? `<p class="muted" style="font-size:11px">${played} matches in ${wall.toFixed(1)} s: ${(played / wall).toFixed(1)} matches/s on ${threads} thread${threads === 1 ? "" : "s"}${perfs.length > 1 ? ` (${perfs.length} batches)` : ""}.</p>` : "";
+        return `<section class="bcard"><h3>Wins per map</h3>${mapChart(S.maps)}<table class="score"><tr><th>map</th><th>matches</th><th>wins</th><th>timeouts</th><th>avg length</th><th>wall/match</th></tr>${rows}</table>${speed}${errs.length ? `<div class="err">${esc(errs[0].error)}</div>` : ""}</section>`;
     }
     _matchesCard(R) {
         const ms = R.matches.filter((m) => !m.error).slice().sort(byMap);
         const wname = (m) => (m.winner ? m.winner.text || (m.winner.team ? "team " + m.winner.team : "#" + m.winner.player) : m.leader ? "(time) " + (m.leader.team ? "team " + m.leader.team : ((m.bots || []).find((b) => b.id === m.leader.player) || {}).name) + " ahead" : "-");
-        return `<section class="bcard"><h3>Matches</h3><div class="bscroll"><table class="score"><tr><th>map</th><th>seed</th><th>result</th><th>score</th><th>top fragger</th><th>length</th></tr>${ms.map((m) => `<tr><td>${esc(m.mapLabel || m.map)}</td><td>${m.seed}</td><td>${esc(wname(m))}</td><td>${m.score ? m.score.join("–") : ""}</td><td>${esc(((m.bots || []).slice().sort((a, b) => b.kills - a.kills)[0] || {}).name)}</td><td>${(m.t || 0).toFixed(0)} s</td></tr>`).join("")}</table></div></section>`;
+        return `<section class="bcard"><h3>Matches</h3><div class="bscroll"><table class="score"><tr><th>map</th><th>seed</th><th>result</th><th>score</th><th>top fragger</th><th>length</th></tr>${ms.map((m) => `<tr><td>${esc(m.mapLabel || m.map)}${m.side || m.sweep ? ` <span class="muted">${esc([m.side && "sides swapped", m.sweep].filter(Boolean).join(" · "))}</span>` : ""}</td><td>${m.seed}</td><td>${esc(wname(m))}</td><td>${m.score ? m.score.join("–") : ""}</td><td>${esc(((m.bots || []).slice().sort((a, b) => b.kills - a.kills)[0] || {}).name)}</td><td>${(m.t || 0).toFixed(0)} s</td></tr>`).join("")}</table></div></section>`;
     }
     _csv() {
         const R = this.run0;
         if (!R || !R.matches) return;
-        const lines = ["map,source,seed,bot,brain,skill,team,kills,deaths,damage,score,shots,hits,objTime,aliveTime,won,reason,length"];
+        const lines = ["map,source,side,sweep,seed,bot,brain,skill,team,kills,deaths,damage,score,shots,hits,objTime,aliveTime,won,reason,length"];
         const ms = R.matches.filter((m) => !m.error).slice().sort(byMap);
-        for (const m of ms) for (const b of m.bots || []) lines.push([m.map, (m.mapKey || "default/").split("/")[0], m.seed, b.name, b.brainLabel || b.brain, b.skill, b.team, b.kills, b.deaths, b.damage, b.score, b.shots, b.hits, b.objTime, b.aliveTime, b.won ? 1 : 0, m.reason, m.t].map((x) => (x == null ? "" : String(x).includes(",") ? `"${x}"` : x)).join(","));
+        for (const m of ms) for (const b of m.bots || []) lines.push([m.map, (m.mapKey || "default/").split("/")[0], m.side || "", m.sweep || "", m.seed, b.name, b.brainLabel || b.brain, b.skill, b.team, b.kills, b.deaths, b.damage, b.score, b.shots, b.hits, b.objTime, b.aliveTime, b.won ? 1 : 0, m.reason, m.t].map((x) => (x == null ? "" : String(x).includes(",") ? `"${x}"` : x)).join(","));
         this.app.download("batch.csv", lines.join("\n") + "\n", "text/csv");
     }
 }

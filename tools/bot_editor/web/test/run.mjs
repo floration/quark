@@ -11,7 +11,7 @@ import { parseQmap, mapObjectives, mapSupports, applyHelperParse, mapLabel, mapT
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
 import { pctKind } from "../js/values.js";
-import { wilson, rateDiff, rateText, summarize, outcomes, mcnemarP, pairedDiff } from "../js/batch.js";
+import { wilson, rateDiff, rateText, summarize, outcomes, mcnemarP, pairedDiff, parseSweep, abLineup, matchKey } from "../js/batch.js";
 import { freeName } from "../js/brainui.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -361,6 +361,18 @@ t("paired comparison: same matches set against each other (McNemar)", () => {
     // a mirror match (one brain only) is left out; another map / seed doesn't pair
     same(outcomes([{ map: "t", seed: 1, bots: [{ brain: "A", won: true }, { brain: "A", won: false }] }]).brains.A, undefined);
     same(pairedDiff(oa, outcomes(run((i) => i < 12).map((m) => ({ ...m, seed: m.seed + 100 }))), "A"), null);
+});
+
+t("line-ups: A vs B, sweep values, setups keyed apart", () => {
+    const L = abLineup({ a: "x", b: "y", per: 2, skill: "EXPERT" }, true);
+    same(L.length, 4); same(L.filter((b) => b.team === "a" && b.brain === "x").length, 2); same(L.filter((b) => b.team === "b" && b.brain === "y").length, 2);
+    same(abLineup({ a: "x", b: "y", per: 1, skill: "EXPERT" }, false).every((b) => b.team === "any"), true);
+    eq(parseSweep("2, 3", [1, 1, 1, 1]).map((x) => x.values), [[2, 2, 2, 2], [3, 3, 3, 3]]);
+    eq(parseSweep("×0.5; x2", [2, 4, 6, 8]).map((x) => [x.tag, x.values]), [["×0.5", [1, 2, 3, 4]], ["×2", [4, 8, 12, 16]]]);
+    eq(parseSweep("*1.5", [3], "int")[0].values, [5, 5, 5, 5], "int params round (4.5 -> 5)");
+    eq(parseSweep("1/2/3/4", [0])[0].values, [1, 2, 3, 4]);
+    for (const bad of ["", "abc", "1/2", "2, 2"]) { let threw = false; try { parseSweep(bad, [1]); } catch { threw = true; } same(threw, true, "refused: " + JSON.stringify(bad)); }
+    same(matchKey({ mapKey: "default/t", seed: 3, side: "swapped", sweep: "p=×2" }), "default/t|3|swapped|p=×2");
 });
 
 console.log("files");
