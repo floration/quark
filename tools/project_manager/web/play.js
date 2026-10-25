@@ -342,7 +342,7 @@
     else act = '<button type="button" class="btn small" data-install="' + esc(r.tag) + '" title="' + (r.needsSig ? 'Checked like the launcher: signature and signed release manifest' : 'From before signing: checked against SHA256SUMS when it has one') + '">Install</button>' +
       (i.state === 'failed' ? ' <span class="err small">' + esc(i.error) + '</span>' : i.state === 'cancelled' ? ' <span class="small muted">cancelled</span>' : '');
     const ch = r.channel === 'production' ? pill('good', 'production') : r.channel === 'testing' ? pill('run', 'testing') : pill('idle', r.channel);
-    const marks = arr(r.folders).map(f => pill('run', 'in ' + f, 'The ' + f + ' folder holds this release')).join(' ') +
+    const marks = (!showChannel && r.channel !== 'production' && r.channel !== 'testing' ? pill('idle', r.channel, 'Neither a production (v...) nor a testing (test-...) release') + ' ' : '') + arr(r.folders).map(f => pill('run', 'in ' + f, 'The ' + f + ' folder holds this release')).join(' ') +
       (r.newer ? ' ' + pill('warn', 'newer than ' + r.newer, 'Newer than what the ' + r.newer + ' folder holds') : '');
     return '<tr' + (r.zip ? '' : ' class="off"') + '><td><span class="mono">' + esc(r.tag) + '</span>' + (r.nameSaysMore ? ' <span class="muted small">' + esc(r.name) + '</span>' : '') + (marks ? ' ' + marks : '') + '</td>' +
       (showChannel ? '<td>' + ch + '</td>' : '') + '<td class="nowrap">' + esc(when(r.publishedAt)) + '</td><td class="num">' + (r.zip ? esc(size(r.zip.size)) : '') + '</td><td class="nowrap">' + act + '</td></tr>';
@@ -368,8 +368,9 @@
     }
     // wide screens: production and testing side by side instead of one long table with empty space beside it
     if (state.relFilter === 'all' && WIDE.matches) {
+      const rest = list.filter(r => r.channel !== 'production');
       html += '<div class="rel-cols">' + releaseTable(list.filter(r => r.channel === 'production'), inst, false, 'Production') +
-        releaseTable(list.filter(r => r.channel !== 'production'), inst, false, 'Testing') + '</div>';
+        releaseTable(rest, inst, false, rest.some(r => r.channel !== 'testing') ? 'Testing and other' : 'Testing') + '</div>';
     } else html += releaseTable(list, inst, true, '');
     setHTML('sec-releases', html);
     tickRefresh();
