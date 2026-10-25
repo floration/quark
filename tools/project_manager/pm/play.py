@@ -1455,6 +1455,7 @@ class Play:
         push. Returns the sync state."""
         with self.docs_lock:
             st = self._sync_once()
+            st.setdefault("noUpstream", False)
             st["at"] = util.now_iso()
             self.sync.update(st)
             self._save_sync()
@@ -1546,7 +1547,16 @@ class Play:
         applied.update(done)
         applied.update({n["id"]: n.get("rev", 0) for n in todo if n.get("rev")})
         self.sync.update(written=sorted(written), applied=applied, blocked=blocked)
-        unpushed = util.to_int(self._git("rev-list", "--count", "@{u}..HEAD")[1], 0) or 0
+        code, out, _ = self._git("rev-list", "--count", "@{u}..HEAD")
+        if code != 0:
+            # no upstream branch (unset, or its remote branch is gone): nothing goes to GitHub, whatever is committed
+            # here; count what no remote has, never read the failed count as "0 to push"
+            unpushed = util.to_int(self._git("rev-list", "--count", "HEAD", "--not", "--remotes")[1], 0) or 0
+            result.update(ok=False, pushed=False, unpushed=unpushed, noUpstream=True,
+                          error="Saved on this PC, not going to GitHub: the Claude Documents folder has no upstream "
+                                "branch (in that folder: git branch -u origin/main).")
+            return result
+        unpushed = util.to_int(out, 0) or 0
         if unpushed and online:
             for attempt in (0, 1):
                 code, _, err = self._git("push", "-q", timeout=120)
@@ -1573,7 +1583,7 @@ class Play:
         yet pushed."""
         written = set(self.sync.get("written") or [])
         applied = self.sync.get("applied") or {}
-        return bool(self.sync.get("unpushed")) or any(
+        return bool(self.sync.get("unpushed") or self.sync.get("noUpstream")) or any(
             n["id"] not in written or n.get("rev", 0) > applied.get(n["id"], 0) for n in self.notes(deleted=True))
 
     def _sync_loop(self):
@@ -1901,6 +1911,7 @@ class Play:
         written = set(self.sync.get("written") or [])
         applied, blocked = self.sync.get("applied") or {}, self.sync.get("blocked") or {}
         unpushed = bool(self.sync.get("unpushed"))
+        no_upstream = bool(self.sync.get("noUpstream"))
         present = os.path.isdir(self.docs_dir)
         records = self.notes(deleted=True)
         all_notes = [n for n in records if not n.get("deleted")]
@@ -1931,6 +1942,8 @@ class Play:
             elif n["id"] in blocked:
                 where = "%s: %s first" % ("not removed" if removed else "your edit is not in the file",
                                           blocked_why(blocked[n["id"]]))
+            elif no_upstream:
+                where = "saved on this PC, not going to GitHub (no upstream branch)"
             elif unpushed:
                 where = "saved on this PC, will go up later"
             else:

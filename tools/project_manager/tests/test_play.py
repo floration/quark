@@ -1049,6 +1049,23 @@ class TestNotesToDocs(unittest.TestCase):
         self.assertNotIn("FFA on bastion", self.remote_file())
         self.assertEqual(util.read_json_file(self.paths.pm(play.SYNC_FILE))["dismissed"], {n["id"]: 1})
 
+    def test_no_upstream_is_not_up_to_date(self):
+        p = self.play
+        git(self.docs, "branch", "--unset-upstream")
+        self.session("p20261024190000-aaaa")
+        p.save_note("p20261024190000-aaaa", {"did": "FFA"})
+        st = p.sync_docs()
+        self.assertEqual((st["ok"], st["pushed"], st["unpushed"], st["noUpstream"]), (False, False, 1, True), st)
+        self.assertIn("no upstream branch", st["error"])
+        self.assertIsNone(self.remote_file())
+        self.assertTrue(p.needs_sync())  # (tried again: fine once q sets the upstream)
+        self.assertEqual(p.view()["notes"][0]["where"], "saved on this PC, not going to GitHub (no upstream branch)")
+        git(self.docs, "branch", "-u", "origin/main")
+        st = p.sync_docs()
+        self.assertEqual((st["ok"], st["pushed"], st["noUpstream"]), (True, True, False), st)
+        self.assertIn("Play note: testing", self.remote_file())
+        self.assertFalse(p.needs_sync())
+
     def test_no_docs_folder(self):
         shutil.rmtree(self.docs)
         self.session("p20261024190000-aaaa")
