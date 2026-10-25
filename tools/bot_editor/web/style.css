@@ -79,8 +79,10 @@ kbd { font: 11px var(--mono); background: var(--bg3); border: 1px solid var(--li
 #mapHint { position: absolute; top: 8px; right: 8px; max-width: 280px; font-size: 12px; color: var(--fg2); background: var(--overlay); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); }
 #mapHint:empty { display: none; }
 #runBar { grid-column: 2; display: flex; gap: 6px; align-items: center; padding: 6px 10px; background: var(--bg1); border-top: 1px solid var(--line); flex-wrap: wrap; }
-#timeline { flex: 1; min-width: 200px; }
-#tlabel { font: 12px var(--mono); min-width: 120px; text-align: right; color: var(--fg2); }
+#timeline { flex: 1; min-width: 80px; }
+#tlabel { font: 12px var(--mono); text-align: right; color: var(--fg2); white-space: nowrap; }
+@media (max-width: 1500px) { #sim { grid-template-columns: 270px 1fr 270px; } }
+[hidden] { display: none !important; }
 .field { display: grid; grid-template-columns: 90px 1fr; gap: 6px; align-items: center; margin: 4px 0; }
 .field > span { color: var(--fg2); }
 .warn { color: var(--warn); font-size: 12px; }
@@ -350,6 +352,9 @@ table.params td.u { color: var(--fg2); font-size: 11px; }
 .bscroll { max-height: 420px; overflow: auto; }
 .nowrap { white-space: nowrap; }
 .ok { color: var(--ok); }
+.cmpSel { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 6px; }
+.cmpSel label { display: flex; gap: 6px; align-items: center; flex: 1 1 280px; min-width: 0; }
+.cmpSel select { flex: 1; min-width: 0; }
 .mpicks { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; margin-top: 4px; font-size: 12px; }
 .mpick { display: flex; gap: 4px; align-items: center; padding: 1px 3px; border-radius: 4px; cursor: pointer; min-width: 0; }
 .mpick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -372,7 +377,7 @@ svg.chart { display: block; max-width: 100%; height: auto; margin: 2px 0 6px; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 2000; }
 .modal > div { background: var(--bg1); border: 1px solid var(--line2); border-radius: 10px; padding: 14px 16px; min-width: 360px; max-width: 560px; }
 .modal h3 { margin-top: 0; }
-#toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--line2); padding: 6px 12px; border-radius: 6px; z-index: 3000; display: none; }
+#toast { position: fixed; bottom: 60px; left: 50%; pointer-events: none; max-width: min(900px, calc(100vw - 32px)); transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--line2); padding: 6px 12px; border-radius: 6px; z-index: 3000; display: none; }
 
 /* ?embed=1: inside the project manager (its own title bar): no logo / status, slimmer tabs */
 .embed #top .logo, .embed #status #dataDir { display: none; }

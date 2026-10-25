@@ -283,7 +283,9 @@ export class SimPage {
         const E = $("botEdit");
         E.textContent = "";
         const b = this.sc.bots[this.sel];
-        if (!b) return;
+        if (!b) { this._shownSel = -1; return; }
+        // a bot just picked: its editor (objective at the bottom) into view on a short screen
+        if (this._shownSel !== this.sel) { this._shownSel = this.sel; requestAnimationFrame(() => E.scrollIntoView({ block: "nearest" })); }
         const team = TEAM_MODES.has(this.sc.mode);
         const brains = ["default", ...this.app.brainList.filter((x) => x.source === "user").map((x) => x.name), "(editor)"];
         const objs = this.app.map ? mapObjectives(this.app.map) : [];
@@ -539,13 +541,15 @@ export class SimPage {
     _runButtons() {
         const on = !!this.run;
         $("runPause").disabled = !on; $("runStep").disabled = !on; $("runStop").disabled = !on;
+        // a finished run: "Back to editing" takes the place of the run's own controls (one row on a narrow screen)
+        for (const id of ["runPause", "runStep", "runStop"]) $(id).hidden = !on && !!this.rec;
         $("runPause").textContent = this.paused ? "Resume" : "Pause";
         $("timeline").disabled = !this.rec; $("runLive").disabled = !this.rec;
         let edit = $("runEdit");
         if (this.rec && !on && !edit) {
             edit = document.createElement("button"); edit.id = "runEdit"; edit.textContent = "Back to editing";
             edit.onclick = () => this._endLive();
-            $("runBar").append(edit);
+            $("runStart").after(edit);
         } else if ((!this.rec || on) && edit) edit.remove();
     }
     _tickSide(force) {

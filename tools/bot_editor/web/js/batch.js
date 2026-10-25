@@ -230,7 +230,7 @@ export class BatchPage {
         const ls = this._lineupSettings();
         const inLineup = [...new Set((ls.kind === "ab" ? [ls.a, ls.b] : this.app.sim.sc.bots.map((b) => b.brain)))];
         const sw = w.sweep || {};
-        opt($("bSwBrain"), [["", "no sweep"], ...inLineup.map((n) => [n, n])], sw.brain || "");
+        opt($("bSwBrain"), [["", "none"], ...inLineup.map((n) => [n, n])], sw.brain || "");
         const ast = $("bSwBrain").value ? this.app.effectiveAst($("bSwBrain").value) : null;
         const params = ast ? ast.decls.filter((d) => d.kind === "param" && d.type !== "bool").map((d) => [d.name, `${d.name} = ${d.values.join(" ")}`]).sort((x, y) => x[0].localeCompare(y[0])) : [];
         opt($("bSwParam"), params, sw.param || "");
@@ -518,7 +518,7 @@ export class BatchPage {
                 ${sameSeeds ? ` <b>Same seeds</b> (${A.settings.seed0}–${A.settings.seed0 + A.settings.N - 1} on each map): the two runs played the same matches.` : ""}
                 ${anyPaired ? " Paired rows set each match against the same match (map and seed) in the other run; “better / worse” is McNemar's exact test on the matches only one run won (p &lt; 0.05), which needs far fewer matches than two independent win rates." : " “Better / worse”: the 95% interval of the difference leaves out 0 (two independent samples). Runs on the same seeds are compared match by match instead."} More matches narrow it.</p>`;
         } else body = `<div class="muted">Pick two different runs.</div>`;
-        return `<section class="bcard"><h3>Compare runs</h3><div class="row" style="margin-bottom:6px"><span class="muted">A</span>${sel("a")}<span class="muted">B</span>${sel("b")}</div>${body}</section>`;
+        return `<section class="bcard"><h3>Compare runs</h3><div class="cmpSel"><label><span class="muted">A</span>${sel("a")}</label><label><span class="muted">B</span>${sel("b")}</label></div>${body}</section>`;
     }
     _brainsCard(S) {
         const per = (x, n, d) => (x / Math.max(1, n)).toFixed(d);
