@@ -18,7 +18,7 @@ import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, fieldProblem, batchModel, batchDelta, histogram, matchSpread, sharedAxes, endCardFields } from "../js/sim.js";
+import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, fieldProblem, batchModel, batchDelta, histogram, matchSpread, csvName, sharedAxes, endCardFields } from "../js/sim.js";
 import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -311,6 +311,8 @@ await t("sim batch compare: the difference from the built-in, histograms, a matc
     const ffa = batchDelta({ matchesPlayed: 4, draws: 0, timeouts: 0, length: { avg: 1, p50: 1 }, scoreSpread: 2, perf: {} }, { matchesPlayed: 4, draws: 2, timeouts: 0, length: { avg: 1, p50: 1 }, scoreSpread: 1, perf: {} });
     same(ffa.find((r) => r.label === "draws").d, -0.5); same(ffa.some((r) => /team/.test(r.label)), false);
     eq(histogram([0, 1, 2, 9.9, 10, 5], 5, 0, 10), [2, 1, 1, 0, 2]);
+    same(csvName("rush", { start: { map: "/x/maps/depot.qmap", seeds: [5, 6, 7] } }, false), "rush-depot-seeds5-7.csv");
+    same(csvName("rush", { start: { map: "depot", seeds: [5] } }, true), "rush-depot-seeds5-builtin.csv");
     same(matchSpread({ scoreA: 3, scoreB: 7 }, true), 4);
     same(matchSpread({ players: [{ score: 4 }, { score: 9 }, { score: 6 }] }, false), 3);
     same(matchSpread({ players: [] }, false), null);

@@ -152,6 +152,13 @@ export function batchModel(lines) {
     return b;
 }
 
+// a batch's CSV file name: the mode, the map and the seeds (and -builtin for a compare's built-in half)
+export function csvName(mode, B, builtin) {
+    const s = B.start || {}, seeds = Array.isArray(s.seeds) ? s.seeds : [];
+    const part = (x) => String(x || "").replace(/^.*[\\/]/, "").replace(/\.qmap$/, "").replace(/[^A-Za-z0-9_.-]+/g, "_");
+    const sd = seeds.length ? `seeds${seeds[0]}${seeds.length > 1 ? "-" + seeds[seeds.length - 1] : ""}` : "";
+    return [part(mode), part(s.map), sd].filter(Boolean).join("-") + (builtin ? "-builtin" : "") + ".csv";
+}
 // one match's score spread (as modebatch's scoreSpread: |A - B| in team modes, else the winner's score minus the
 // runner-up's)
 export function matchSpread(m, teams) {
@@ -346,7 +353,8 @@ export class SimView {
           <div class="row">
             <label title="paced at real time (else as fast as the CPU goes)"><input id="smReal" type="checkbox" ${f.real ? "checked" : ""}> real time</label>
             <label title="the interpreted slots' calls and cost per frame (the strip under the timeline) and per slot (the end card)"><input id="smTrace" type="checkbox" ${f.trace ? "checked" : ""}> trace slots</label>
-            <label title="also run the built-in ${esc(base)} with the same seed, on the same time axis"><input id="smCompare" type="checkbox" ${f.compare ? "checked" : ""}> compare with built-in</label>
+            ${this.app.differsFromBuiltin() ? `<label title="also run the built-in ${esc(base)} with the same seed, on the same time axis"><input id="smCompare" type="checkbox" ${f.compare ? "checked" : ""}> compare with built-in</label>`
+                : `<label class="muted" title="this mode's logic is the built-in ${esc(base)}'s and the keys go to both: the built-in run would be the same match"><input id="smCompare" type="checkbox" disabled ${f.compare ? "checked" : ""}> compare with built-in (nothing differs)</label>`}
             <button id="smRun" class="primary" ${this.busy ? "disabled" : ""}>▶ Run</button><button id="smStop" ${this.busy ? "" : "disabled"}>■ Stop</button>
             ${st.batch ? `<label>Batch seeds <input id="smN" type="number" value="${esc(f.n)}" min="2" max="1000" style="width:60px"></label><button id="smBatch" ${this.busy ? "disabled" : ""}>Run batch</button>` : '<span class="muted" title="quark_maptool has no modebatch">(no modebatch)</span>'}
             <span id="smErr" class="bad"></span>
@@ -433,7 +441,7 @@ export class SimView {
         this.stop(true);
         this.batches = [];
         this.runs = [this._entry({ label: "this file", kind: "run" })];
-        if (this.form.compare) this.runs.push(this._entry({ label: "built-in " + this.app.base, kind: "run" }));
+        if (this.form.compare && this.app.differsFromBuiltin()) this.runs.push(this._entry({ label: "built-in " + this.app.base, kind: "run" }));
         this._setBusy(true);
         this._drawRuns();
         await Promise.all(this.runs.map((r, i) => this._start(r, ["modesim", "--stream"], this._req(i === 0 ? rules : this._builtinRules()), () => this._soon())));
@@ -704,7 +712,7 @@ export class SimView {
         this.runs = [];
         const req = (r) => ({ ...this._req(r), realtime: false, trace: false, seeds: this.form.n, firstSeed: this.form.seed });
         this.batches = [this._entry({ label: "this file", kind: "batch", request: req(rules) })];
-        if (this.form.compare) this.batches.push(this._entry({ label: "built-in " + this.app.base, kind: "batch", request: req(this._builtinRules()) }));
+        if (this.form.compare && this.app.differsFromBuiltin()) this.batches.push(this._entry({ label: "built-in " + this.app.base, kind: "batch", request: req(this._builtinRules()) }));
         this._setBusy(true);
         this._drawBatches();
         this._persist();
@@ -725,7 +733,7 @@ export class SimView {
         const models = this.batches.map((b) => batchModel(b.lines));
         O.innerHTML = `<div class="sim-runs${this.batches.length > 1 ? " two" : ""}">${this.batches.map((b, i) => this._batchHtml(b, i)).join("")}</div>${this._batchCompareHtml(models)}`;
         this._batchHistograms(O, models);
-        O.querySelectorAll("[data-csv]").forEach((btn) => (btn.onclick = () => { const B = batchModel(this.batches[+btn.dataset.csv].lines); this.app.app.download("modebatch.csv", B.end.csv, "text/csv"); }));
+        O.querySelectorAll("[data-csv]").forEach((btn) => (btn.onclick = () => { const i = +btn.dataset.csv, B = models[i]; this.app.app.download(csvName(this.app.name, B, i > 0), B.end.csv, "text/csv"); }));
     }
     // under the cards: the difference from the built-in (when both halves of a compare are done) and the distributions
     // of match length and score spread, every batch on the same axes

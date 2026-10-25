@@ -270,6 +270,13 @@ export class ModePage {
     isPristineBuiltin() { return this.builtin && this.savedSig === this._sig(); }
     // whether the game takes this base as a custom mode's (customrules.cpp ignores mode=tourney)
     baseTakesCustom() { return !(CATALOG.modeInfo[this.base] && CATALOG.modeInfo[this.base].noCustom); }
+    // whether a run of this text differs from the built-in base mode with the same keys (Sim's compare): its logic
+    // differs, or the game would play it as another base (a mode=tourney custom file loads as a free for all)
+    differsFromBuiltin() {
+        if (this.isPristineBuiltin()) return false;
+        if (!this.baseTakesCustom()) return true;
+        try { return !this.def || logicTextFor(this.ast, this.def, false) !== ""; } catch { return true; }
+    }
 
     // ---------------------------------------------------------------- views
     _showView(v) {
