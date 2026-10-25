@@ -1578,7 +1578,7 @@ async function bringUp(entry, hash, forceStart) {
   if (await probe(tab)) { status.set(tab.id, 'up'); updateTabbar(); return loadPage(entry, entry.pendingHash); }
   if (waiting.has(tab.id)) { showStarting(entry); return; }
   status.set(tab.id, 'down');
-  if (!tab.start) { updateTabbar(); return showDown(entry, 'No start command was found for it.'); }
+  if (!tab.start) { updateTabbar(); return showDown(entry, ''); } // (the page's "No start command: ..." line says why)
   const prev = started.get(tab.id);
   if (prev && prev.exited && !forceStart && prev.code !== 0) { updateTabbar(); return showDown(entry, 'Its start command exited (code ' + prev.code + ').'); }
   showStarting(entry);
