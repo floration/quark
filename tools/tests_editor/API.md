@@ -87,8 +87,8 @@ the server keeps the previous text in `cache/backups/<path>/<time>.txt` (last 50
 
 ## POST /api/run {"cmd": "suite" | "group:<name>" | "cmd:<name>" | "script:release_check.sh" | "groups", "groups"?, "args"?} -> {"id"}
 `suite` runs `build/quark_tests` (the whole suite, as before a commit); with `"groups": ["a", "b"]` just those, as
-`QUARK_TEST_ONLY=a,b` (par at once, then alone). `cmd:<name>` takes `"args": ["5", "1"]` (short words only), checked
-against the command's `argsSpec` (400 otherwise); a command with `run.byHand` (writes files into the working copy:
+`QUARK_TEST_ONLY=a,b` (par at once, then alone). `cmd:<name>` takes `"args": ["5", "1"]` (short words or repo-relative paths, no `..`), checked
+against the command's `argsSpec` and, for a NAME, its `choices` (400 otherwise); a command with `run.byHand` (writes files into the working copy:
 exportassets, export*; the tests' own bot process) gets 403.
 Runs locally in the working copy, low priority (Windows: BELOW_NORMAL + no window; Linux: nice 10), one at a time
 (409 if one is running). The test binary is found at `build/quark_tests[.exe]`, else `build-*/quark_tests[.exe]`
@@ -141,6 +141,8 @@ three views (tabs): **Code**, **Graph**, **Blocks**.
 - model: `buildMs`, `buildGroups` (`{binary, builtAt, groups, error}` from `quark_tests groups` of the newest build,
   run in the background; null without a build), `timingSource`; `repo.git` (false: git unavailable).
 - quark_tests suite: `lists` (`[{name, line, endLine, groups, parallel}]`), `checkMacros` (CHECK, ACHECK, LCHECK...).
+- shortcut items: `aliasOf` (a read-only alias of a by-hand command, e.g. checkbrain of exportbrain: its own entry,
+  runnable); argsSpec params without a name in main() take the parameter name of the function argv[K] is handed to.
 - group / shortcut items: `ports` (`[[port, fn]]`), call `argsValue` (`p` resolved to `TP(28900)`) and `port`;
   `timing.at` (and `timing.run` for a local run); shortcut `shadowsGroup`.
 - fn: `ret`, `checks[].macro`, `helpers` (non-test functions it calls), `calledBy`, `flaky`, `portOffsets` (the K of

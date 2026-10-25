@@ -22,6 +22,9 @@ BY_HAND = {
     "exportmode": "writes mode files into the working copy: run it from a terminal",
     "bot": "a bot client the tests start themselves (quark_tests bot MAP SECS)",
 }
+# the aliases of a BY_HAND command that only read the file they're given (checkbrain FILE, printweapons FILE, modeast
+# FILE...): each gets an entry of its own that the page runs
+READ_ONLY = re.compile(r"^(?:check|print)\w+$|^\w+ast$")
 RULES = [
     ("ci-scope", "CI runs only meta, builds and sanitizers; no gameplay tests in CI.", "release.yml header / owner 2026-10-24",
      ".github/workflows/release.yml", r"CI runs no gameplay"),
@@ -219,12 +222,22 @@ class Builder:
                         ch = re.findall(r"\{\s*\"([\w-]+)\"\s*,", body)
                         if len(ch) >= 2: spec = dict(spec, choices=ch)
                         break
+            if spec and "choices" not in spec: spec = cpp.name_params(main["_src"], s["_body"], spec, index)   # (choices: NAME)
             run = {"cmd": "build/quark_tests %s" % s["name"], "parallel": False}
             if s["name"] in BY_HAND: run["byHand"] = BY_HAND[s["name"]]
             cmds.append({"id": "cmd:" + s["name"], "kind": kind, "name": s["name"], "aliases": s.get("aliases") or [],
                          "file": main["file"], "line": s["line"], "endLine": s["endLine"], "calls": calls, "run": run,
                          "argsSpec": spec, "shadowsGroup": any(g["name"] == s["name"] for g in groups),
                          "ports": [list(p) for p in s["ports"]]})
+            if s["name"] in BY_HAND:                                 # (the read-only aliases of a command that writes
+                for a in s.get("aliases") or []:                     #  files: an entry of their own, run from the page)
+                    if a in BY_HAND or not READ_ONLY.match(a): continue
+                    sp = dict(spec or {"min": 0, "max": 1, "params": [], "hint": None})
+                    sp.update(min=max(1, sp["min"]), max=sp["max"] if sp["max"] is None else max(1, sp["max"]),
+                              params=[{"name": "file", "default": None}] + (sp.get("params") or [])[1:],
+                              hint="reads the file, writes nothing")
+                    cmds.append(dict(cmds[-1], id="cmd:" + a, name=a, aliases=[], aliasOf=s["name"], argsSpec=sp, shadowsGroup=False,
+                                     run={"cmd": "build/quark_tests %s" % a, "parallel": False}))
 
         # functions: tests, anything a group / command calls, anything with checks
         direct = {}

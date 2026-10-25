@@ -125,6 +125,21 @@ class RealRepo(unittest.TestCase):
         self.assertIn("parallel groups", rc[0]["text"])
         self.assertIn("alone groups", rc[0]["text"])
 
+    def test_command_args(self):
+        # an argument without a name of its own takes the parameter name of the function argv[K] is handed to
+        cmds = {i["name"]: i for i in self.suite("quark_tests")["items"] if i["kind"] != "group"}
+        names = lambda n: [p["name"] for p in cmds[n]["argsSpec"]["params"]]
+        self.assertEqual(names("bot"), ["addr", "seconds", "name"])
+        self.assertEqual(names("navbench"), ["only", "surfaces"])
+        self.assertEqual(names("playtest"), ["seconds"])
+        self.assertIn("choices", cmds["rules"]["argsSpec"])                 # (a NAME from a list keeps no name: the page says NAME)
+        # the read-only aliases of the export commands: their own entries, runnable, FILE required
+        for a, of in (("checkbrain", "exportbrain"), ("weaponsast", "exportweapons"), ("printmode", "exportmode")):
+            self.assertEqual(cmds[a]["aliasOf"], of)
+            self.assertNotIn("byHand", cmds[a]["run"])
+            self.assertEqual((cmds[a]["argsSpec"]["min"], names(a)[0]), (1, "file"))
+            self.assertIn("byHand", cmds[of]["run"])
+
     def test_all_workflows_parse(self):
         for s in self.m["suites"]:
             self.assertNotIn("error", s, s["id"])
@@ -570,6 +585,13 @@ class Server(unittest.TestCase):
         code, r = self.j("/api/run", {"cmd": "cmd:rules", "args": ["overtime"]})
         self.assertIn("'rules', 'overtime'", wait(r["id"])["output"])
         self.assertEqual(self.j("/api/run", {"cmd": "cmd:exportassets"})[0], 403)
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:exportbrain"})[0], 403)
+        code, r = self.j("/api/run", {"cmd": "cmd:checkbrain", "args": ["tools/brains/x.brain"]})   # (its read-only alias runs)
+        self.assertEqual(code, 200, r)
+        self.assertIn("'checkbrain', 'tools/brains/x.brain'", wait(r["id"])["output"])
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:checkbrain"})[0], 400)                 # (FILE is required)
+        for bad in (["../x"], ["/etc/passwd"], ["C:/x"], ["a/../../b"]):
+            self.assertEqual(self.j("/api/run", {"cmd": "cmd:checkbrain", "args": bad})[0], 400, bad)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "assets_export")))
         # a log from a terminal run feeds the times too
         code, r = self.j("/api/import-log", {"text": "x\n  (group bots: 9 s)\n", "name": "pre-commit.log"})

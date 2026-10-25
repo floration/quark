@@ -388,6 +388,7 @@ class App {
             r.append(el("span", "chip c-when", "manual"), document.createTextNode(" only by hand: quark_tests " + it.name + this._argsHelp(it)));
             d.append(r);
             if ((it.aliases || []).length) d.append(el("div", "dline small muted", "the same code also answers: " + it.aliases.map((a) => "quark_tests " + a).join(", ")));
+            if (it.aliasOf) { const r2 = el("div", "dline small muted"); const a = el("span", "link", "quark_tests " + it.aliasOf); const o = this.ix.cmds.get(it.aliasOf); if (o) a.onclick = () => this.select({ kind: "item", item: o }); r2.append(document.createTextNode("the same code as "), a, document.createTextNode(" (that one writes files: run by hand); this one only reads")); d.append(r2); }
             if (it.shadowsGroup && it.argsSpec && it.argsSpec.min > 0) d.append(el("div", "dline small warn", `Without ${this._argsHelp(it).trim() || "its arguments"}, quark_tests ${it.name} runs the group ${it.name} instead.`));
         } else {
             for (const w of (suite && suite.when) || []) { const r = el("div", "dline"); r.append(el("span", "chip c-when", w.trigger), document.createTextNode(" " + w.text)); d.append(r); }
@@ -497,7 +498,7 @@ class App {
         const sp = it.argsSpec;
         if (!sp || sp.max === 0) return "";
         const ps = sp.params || [];
-        const words = ps.map((p, i) => { const n = p.name || (sp.choices ? "NAME" : "arg" + (i + 1)); return i < sp.min ? n.toUpperCase() : "[" + n + (p.default ? "=" + p.default.replace(/^"|"$/g, "") : "") + "]"; });
+        const words = ps.map((p, i) => { const n = p.name || (sp.choices ? "NAME" : "arg" + (i + 1)); return i < sp.min ? n.toUpperCase() : "[" + n + (p.default && !/^(nullptr|NULL)$/.test(p.default) ? "=" + p.default.replace(/^"|"$/g, "") : "") + "]"; });
         return words.length ? " " + words.join(" ") + (sp.max === null ? " …" : "") : sp.max === null ? " …" : "";
     }
     _runSection(d, s) {
@@ -690,7 +691,7 @@ class App {
             const args = input ? input.value.trim().split(/\s+/).filter(Boolean) : [];
             const n = args.length;
             if (n < sp.min || (sp.max !== null && n > sp.max)) { toast(`quark_tests ${it.name} takes ${sp.min === sp.max ? sp.min : sp.min + " to " + (sp.max === null ? "any" : sp.max)} argument(s)`, true); if (input) input.focus(); return; }
-            if (args.some((a) => !/^[\w.:,+-]{1,64}$/.test(a))) { toast("arguments: letters, digits and . _ - : , + only", true); return; }
+            if (args.some((a) => !/^(?![/\\])(?![A-Za-z]:)(?!.*\.\.)[\w.:,+/-]{1,160}$/.test(a))) { toast("arguments: letters, digits and . _ - : , + /, a path relative to the repo (no ..)", true); return; }
             if (sp.choices && n && !sp.choices.includes(args[0])) { toast(`no such name “${args[0]}”: one of ${sp.choices.join(", ")}`, true, 6000); if (input) input.focus(); return; }   // (quark_tests would print nothing and pass)
             try { const m = JSON.parse(localStorage.getItem("te.args") || "{}"); m[it.name] = args.join(" "); localStorage.setItem("te.args", JSON.stringify(m)); } catch { }
             this.startRun("cmd:" + it.name, args.length ? { args } : null);

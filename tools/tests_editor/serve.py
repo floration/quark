@@ -27,7 +27,7 @@ MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", 
         ".map": "application/json", ".txt": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8"}
 TEXT_EXT = {".cpp", ".h", ".hpp", ".c", ".cc", ".txt", ".md", ".json", ".py", ".sh", ".cmake", ".yml", ".yaml"}
 MAX_BODY = 8 << 20
-ARG_OK = re.compile(r"^[\w.:,+-]{1,64}$")
+ARG_OK = re.compile(r"^(?![/\\])(?![A-Za-z]:)(?!.*\.\.)[\w.:,+/-]{1,160}$")   # (a word, or a repo-relative path: checkbrain FILE)
 MAX_CHUNK = 512 << 10
 BACKUPS_KEPT = 50
 RUNS_KEPT = 500
@@ -698,7 +698,7 @@ class App:
         items = {it["id"]: it for it in qt["items"]}
         if not isinstance(cmd, str): return 400, {"error": "cmd must be a string"}
         if args is not None and (not isinstance(args, list) or not all(isinstance(a, str) and ARG_OK.match(a) for a in args)):
-            return 400, {"error": "args must be a list of short words (letters, digits, . _ - : , +)"}
+            return 400, {"error": "args must be a list of short words or repo-relative paths (letters, digits, . _ - : , + /; no ..)"}
         if groups is not None and (not isinstance(groups, list) or not all(isinstance(g, str) for g in groups)):
             return 400, {"error": "groups must be a list of group names"}
         if (args and not cmd.startswith("cmd:")) or (groups and cmd != "suite"):
