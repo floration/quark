@@ -1537,7 +1537,7 @@
   function updateButtons() {
     $('bUndo').disabled = !S.undo.length;
     $('bRedo').disabled = !S.redo.length;
-    $('bDup').disabled = $('bDel').disabled = !S.sel.size;
+    $('bDup').disabled = $('bDel').disabled = !S.sel.size || !!viewOf();   // (a preview is read only)
   }
   function renderAll() {
     renderPages();
