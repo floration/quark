@@ -235,6 +235,24 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const mainId = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid);
   await ev((u) => QApp.selectPage(u), mainId);
   const quit = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')));
+  // layout check (K): a button moved onto another and a label too long for its button are found, and marked
+  {
+    await page.keyboard.press('k');
+    assert.strictEqual(await ev(() => QApp.check().filter((f) => f.sev === 'bad').length), 0, 'the main menu has nothing bad');
+    await ev(() => QApp.commit(() => {
+      const els = QApp.S.doc.pages.find((p) => p.id === 'main').elements.filter((e) => e.kind === 'button');
+      els[1].x = els[0].x + 10; els[1].y = els[0].y + 5;
+      els[2].label = 'A LABEL MUCH TOO LONG FOR THIS BUTTON TO HOLD, EVEN SHRUNK '.repeat(3);
+    }));
+    const rules = await ev(() => QApp.check().map((f) => f.rule));
+    assert.ok(rules.includes('overlap') && rules.includes('text-cut'), 'the check finds the overlap and the cut text: ' + rules.join());
+    assert.ok((await page.locator('#inspector .chk.bad').count()) >= 2, 'the page inspector lists them');
+    await page.locator('#inspector .chk.bad').first().click();
+    assert.strictEqual(await ev(() => QApp.S.sel.size), 2, 'clicking a finding selects its widgets');
+    await ev(() => QApp.undo());
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('k');
+  }
   for (const [v, fw] of [['2560x1440', 1280], ['1920x1200', 1152], ['3440x1440', 1720]]) {
     await page.locator('#sView').selectOption(v);
     const pv = await ev(() => { const r = QApp.preview(); const q = r.page.elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')); return { fw: r.view.fw, x: q.x, k: r.view.k }; });

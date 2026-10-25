@@ -43,7 +43,7 @@
   const S = {
     doc: null, pageUid: null, sel: new Set(), undo: [], redo: [], clip: null, hover: null, drag: null, gesture: null,
     diff: null, search: '', guides: [], lastNudge: null, saveState: '', provState: '', pasteN: 0,
-    prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false, specLayout: 'changed' },
+    prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false, specLayout: 'changed', check: false },
     // font trial (saved with the layout): null = the font's own default
     font: { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null, mult: 1, minTs: 0, cmp: '', side: false },
     flip: false, sheet: false, tour: 0, originFilter: '', view: '',
@@ -201,7 +201,7 @@
   const markProposal = () => { if (startLayout) { QModel.markAi(baseline, S.doc); forgetPages(); S.diff = null; } };
 
   // ---- save ------------------------------------------------------------------------------------------------------
-  let saveTimer = 0;
+  let saveTimer = 0, editGen = 0;   // (editGen: +1 for every change of the layout, the layout check's cache key)
   // the layout carries its font too (doc.font {id, weight}: what a redesign script sets, e.g. redesign/logo/apply-logo.js)
   const syncDocFont = () => { if (S.doc) QModel.setLayoutFont(S.doc, S.font.id, S.font.weight != null ? S.font.weight : null); };
   // S.font from a layout's doc.font (null when it has none)
@@ -230,6 +230,7 @@
   // undo / redo / import / reset: opts.history, opts.noMark), save, redraw (the inspector too unless it's being typed in).
   function changed(opts = {}) {
     S.diff = null;
+    editGen++;
     if (opts.history || opts.noMark) syncSeen();
     else markEdits();
     scheduleSave();
@@ -424,6 +425,90 @@
     try { QRender.drawPage(c, pv.page, v.fw, H, null); } finally { QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs }); }
     return pv;
   }
+  // ---- layout check (K): the in-page version of audit/audit.py's rules that matter while editing ------------------
+  // On the page as drawn (at the preview's size and text rounding when one is on, so 21:9 / 32:9 problems show):
+  // interactive widgets overlapping, labels running into widgets, anything off the screen, text the game would cut
+  // ("...") or shrink, widgets sticking out of their panel, tiny text. Marked on the canvas (red = bad, amber = check
+  // it) and listed in the page inspector. Cached per layout change / page / view / font: a frame costs nothing.
+  const LIVE = new Set(['button', 'tab', 'toggle', 'cycle', 'slider', 'text', 'custom', 'colorpicker', 'dropdown', 'key']);
+  let checkCache = { key: '', res: [] };
+  const checkKey = () => [editGen, S.pageUid, S.view, fontGen, S.flip, S.font.mult, S.font.minTs, S.prefs.widgetsOnly].join('|');
+  function layoutCheck() {
+    const key = checkKey();
+    if (checkCache.key === key) return checkCache.res;
+    const p0 = curPage(), v = viewOf();
+    let res = [];
+    if (p0) {
+      if (v) {
+        QRender.setTextOpts({ mult: S.font.mult * v.k, minTs: S.font.minTs });
+        try { res = checkPage(previewPage(p0, v).page, v.fw); } finally { QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs }); }
+      } else res = checkPage(p0, W);
+    }
+    checkCache = { key, res };
+    return res;
+  }
+  function checkPage(p, fw) {
+    const out = [], name = (e) => e.kind + (e.label ? ' "' + String(e.label).slice(0, 28) + '"' : '');
+    const add = (sev, rule, text, els) => out.push({ sev, rule, text, uids: els.map((e) => e.uid), boxes: els.map((e) => boxOf(e)).filter(Boolean) });
+    // (a full-screen backdrop drawn after other things is a veil: a pause menu or dialog over the HUD / editor, which is
+    // checked on its own page; as audit.py, only what is drawn after the veil counts, and muted draws never)
+    let veil = -1;
+    p.elements.forEach((e, i) => { if (i > 2 && isBackdrop(e)) veil = i; });
+    const items = p.elements.map((e, i) => ({ e, i, b: boxOf(e) }))
+      .filter((x) => x.b && x.i > veil && !x.e.muted && !isBackdrop(x.e) && x.e.kind !== 'handle' && x.e.kind !== 'popup');
+    const live = items.filter((x) => LIVE.has(x.e.kind)), labels = items.filter((x) => x.e.kind === 'label' && String(x.e.label || '').trim());
+    const panels = items.filter((x) => x.e.kind === 'panel');
+    const inter = (a, b) => [Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)];
+    const inside = (o, i, t = 0.5) => i.x >= o.x - t && i.y >= o.y - t && i.x + i.w <= o.x + o.w + t && i.y + i.h <= o.y + o.h + t;
+    for (let a = 0; a < live.length; a++) {
+      for (let b = a + 1; b < live.length; b++) {
+        const A = live[a], B = live[b], [w, h] = inter(A.b, B.b);
+        if (w > 1 && h > 1 && !((A.e.kind === 'custom' || B.e.kind === 'custom') && (inside(A.b, B.b) || inside(B.b, A.b))))
+          add('bad', 'overlap', `${name(A.e)} and ${name(B.e)} overlap by ${Math.round(w)}x${Math.round(h)} px`, [A.e, B.e]);
+      }
+    }
+    for (const L of labels) {
+      for (const X of live) {
+        const [w, h] = inter(L.b, X.b);
+        if (w <= 1 || h <= 1 || X.e.kind === 'custom' || X.e.kind === 'text') continue;
+        add('warn', 'label-on-widget', `label "${String(L.e.label).slice(0, 28)}" runs into ${name(X.e)} (${Math.round(w)}x${Math.round(h)} px)`, [L.e, X.e]);
+        break;
+      }
+      if (Number(L.e.textScale) > 0 && Number(L.e.textScale) < 1.5 && !S.font.minTs)
+        add('warn', 'small-text', `label "${String(L.e.label).slice(0, 28)}" at text scale ${L.e.textScale} (drawn at the 1.3 minimum: hard to read)`, [L.e]);
+    }
+    const off = items.filter((x) => x.b.x < -0.5 || x.b.y < -0.5 || x.b.x + x.b.w > fw + 0.5 || x.b.y + x.b.h > H + 0.5);
+    for (const x of off) add('bad', 'off-screen', `${name(x.e)} is off the screen (${Math.round(x.b.x)},${Math.round(x.b.y)} to ${Math.round(x.b.x + x.b.w)},${Math.round(x.b.y + x.b.h)} in a ${Math.round(fw)}x${H} frame)`, [x.e]);
+    for (const X of live) {
+      const f = QRender.textFitOf(ctx, X.e);
+      if (f && f.cut) add('bad', 'text-cut', `"${f.t.slice(0, 32)}" is cut with "..." in ${name(X.e)} (needs ${Math.round(QRender.textWidth(ctx, f.t, f.want))} px, has ${Math.round(f.room)})`, [X.e]);
+      else if (f && f.ts < f.want * 0.875) add('warn', 'text-shrunk', `"${f.t.slice(0, 32)}" is shrunk to ${Math.round(f.ts / f.want * 100)}% to fit ${name(X.e)}`, [X.e]);
+      const P = panels.find((q) => { const cx = X.b.x + X.b.w / 2, cy = X.b.y + X.b.h / 2; return cx >= q.b.x && cx <= q.b.x + q.b.w && cy >= q.b.y && cy <= q.b.y + q.b.h; });
+      if (P && !inside(P.b, X.b, 1)) add('warn', 'out-of-panel', `${name(X.e)} sticks out of its panel`, [X.e, P.e]);
+    }
+    return out.sort((a, b) => (a.sev === b.sev ? 0 : a.sev === 'bad' ? -1 : 1));
+  }
+  // red / amber outlines of what the check found (o: the overlay, already in game units)
+  function drawCheckMarks(o, px) {
+    if (!S.prefs.check || S.drag) return;
+    o.setLineDash([]);
+    o.lineWidth = 2 * px;
+    for (const f of layoutCheck()) {
+      o.strokeStyle = f.sev === 'bad' ? 'rgba(255,70,70,0.95)' : 'rgba(255,179,71,0.9)';
+      for (const b of f.boxes) o.strokeRect(b.x - 2 * px, b.y - 2 * px, b.w + 4 * px, b.h + 4 * px);
+    }
+  }
+  function checkSection() {
+    if (!S.prefs.check) return null;
+    const res = layoutCheck(), bad = res.filter((f) => f.sev === 'bad').length;
+    const head = el('div', { class: 'sec-t', text: `Layout check${S.view ? ' at ' + S.view : ''}: ` + (res.length ? `${bad} bad, ${res.length - bad} to check` : 'nothing found') });
+    const list = el('div', { class: 'checks' }, res.slice(0, 60).map((f) => el('div', {
+      class: 'chk ' + f.sev, text: f.text, title: S.view ? '' : 'Click to select ' + (f.uids.length > 1 ? 'them' : 'it'),
+      onclick: () => { if (!viewOf()) { S.sel = new Set(f.uids.filter((u) => curPage().elements.some((e) => e.uid === u && !isBackdrop(e)))); renderAfterSelect(); } },
+    })), res.length > 60 ? el('div', { class: 'hint', text: `... and ${res.length - 60} more` }) : null);
+    return el('div', { class: 'sec' }, head, list);
+  }
+
   function setView(id) {
     S.view = VIEWS.some(([v]) => v === id) ? id : '';
     if (S.view) { S.sel = new Set(); S.hover = null; ov.style.cursor = ''; }
@@ -494,6 +579,7 @@
     o.strokeStyle = 'rgba(255,90,90,0.95)';
     o.lineWidth = 2 * px;
     for (const b of pv.clipped) o.strokeRect(Math.max(0, b.x), b.y, Math.min(v.fw, b.x + b.w) - Math.max(0, b.x), b.h);
+    drawCheckMarks(o, px);
     $('cap1').textContent = `${v.w}x${v.h}: UI scale ${v.s.toFixed(2)}, text scale ${v.ts}${v.k !== 1 ? ` (text ${Math.round(v.k * 100)}% of the 720p size)` : ''}` +
       `  -  ${pv.pinned} pinned to an edge${pv.clipped.length ? `, ${pv.clipped.length} off the screen (red)` : ''}  -  read only: View: 1280x720 to edit`;
   }
@@ -575,6 +661,7 @@
         o.strokeRect(h.x - s / 2, h.y - s / 2, s, s);
       }
     }
+    drawCheckMarks(o, px);
     if (S.drag && S.drag.mode === 'band') {
       const r = bandRect();
       o.fillStyle = 'rgba(255,79,216,0.08)';
@@ -1126,8 +1213,9 @@
     box.textContent = '';
     const sel = selected();
     const parts = sel.length === 1 ? elementInspector(sel[0]) : sel.length > 1 ? multiInspector(sel) : pageInspector(curPage());
-    if (!viewOf()) box.append(...parts);
-    else box.append(el('div', { class: 'sub ro-note', text: 'Preview at ' + S.view + ': read only (View: 1280x720 to edit)' }), el('fieldset', { class: 'ro', disabled: true }, ...parts));
+    const chk = sel.length ? null : checkSection();
+    if (!viewOf()) box.append(...parts, chk || '');
+    else box.append(el('div', { class: 'sub ro-note', text: 'Preview at ' + S.view + ': read only (View: 1280x720 to edit)' }), chk || '', el('fieldset', { class: 'ro', disabled: true }, ...parts));
   }
 
   function elementInspector(e) {
@@ -1509,6 +1597,7 @@
     const gen = ++fontGen;
     const set = () => {
       if (gen !== fontGen) return;
+      checkCache.key = '';   // (the font may have loaded since: text widths changed)
       QRender.setFontCfg(cfgFor(activeId()));
       QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs });
       syncFontUI();
@@ -1876,6 +1965,7 @@
     else if (lk === 'g') toggle('grid');
     else if (lk === 'w') { toggle('widgetsOnly'); renderOffCanvas(); }
     else if (lk === 'o') toggle('ghost');
+    else if (lk === 'k') { toggle('check'); renderInspector(); }
     else if (lk === 'r') toggle('shot');
     else if (lk === 'f') flipFont();
     else if (lk === 't') toggleTour();
@@ -1896,6 +1986,7 @@
     $('cGhost').checked = S.prefs.ghost;
     $('cWidgets').checked = S.prefs.widgetsOnly;
     $('cShot').checked = S.prefs.shot;
+    $('cCheck').checked = S.prefs.check;
     $('rShot').value = S.prefs.shotOpacity;
     $('sZoom').value = String(S.prefs.zoom);
   }
@@ -1909,6 +2000,7 @@
     $('cGrid').onchange = () => { S.prefs.grid = $('cGrid').checked; savePrefs(); requestRender(); };
     $('nGrid').onchange = () => { S.prefs.gridSize = Math.max(2, Math.min(100, Number($('nGrid').value) || 10)); savePrefs(); syncToolbar(); requestRender(); };
     $('cGhost').onchange = () => { S.prefs.ghost = $('cGhost').checked; savePrefs(); requestRender(); };
+    $('cCheck').onchange = () => { S.prefs.check = $('cCheck').checked; savePrefs(); requestRender(); renderInspector(); };
     $('cWidgets').onchange = () => { S.prefs.widgetsOnly = $('cWidgets').checked; savePrefs(); renderOffCanvas(); requestRender(); };
     $('cShot').onchange = () => { S.prefs.shot = $('cShot').checked; savePrefs(); requestRender(); };
     $('rShot').oninput = () => { S.prefs.shotOpacity = Number($('rShot').value); savePrefs(); requestRender(); };
@@ -2005,7 +2097,7 @@
   // for tests and the console
   window.QApp = { S, baseline, commit, undo, redo, addWidget, selectPage, paste, copySel, deleteSel, moveSelToPage, exportSpec,
     spec: (layout) => QModel.specMarkdown(baseline, S.doc, { dumpName: build.dump, font: fontDesc(), freshness: build.freshness, layout: layout || S.prefs.specLayout }).markdown,
-    zoom: () => zoom, setView, preview: () => { const v = viewOf(), p = curPage(); return v && p ? Object.assign(previewPage(p, v), { view: v }) : null; },
+    zoom: () => zoom, setView, check: () => layoutCheck(), preview: () => { const v = viewOf(), p = curPage(); return v && p ? Object.assign(previewPage(p, v), { view: v }) : null; },
     setFont, setFontOpt, showSheet, fontDesc, fonts: QFonts, addFontFile: (f) => addFonts([f]), tour: toggleTour,
     provItems, exportProvenance, forgetProvFolder: () => { provDir = null; } };
 })();

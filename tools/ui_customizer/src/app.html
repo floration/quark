@@ -26,6 +26,7 @@
     <input type="number" id="nGrid" min="2" max="100" value="10" title="Grid size (px)">
     <label title="Only interactive widgets can be picked: the game's label / rect / panel draws are left alone (W)"><input type="checkbox" id="cWidgets"> Widgets only</label>
     <label title="Dashed boxes where changed widgets were by default (O)"><input type="checkbox" id="cGhost" checked> Defaults</label>
+    <label title="Layout check (K): overlaps, text cut or shrunk, off the screen (at the View's resolution too), out of the panel, tiny text: marked on the page, listed in the page inspector"><input type="checkbox" id="cCheck"> Check</label>
   </div>
   <div class="group" id="shotGroup">
     <label title="Overlay the game's screenshot of this page (R)"><input type="checkbox" id="cShot"> Screenshot</label>
@@ -133,7 +134,7 @@
     <tr><td>Ctrl+A / Esc</td><td>select all / nothing</td></tr>
     <tr><td>Ctrl+Z / Ctrl+Y</td><td>undo / redo (also Ctrl+Shift+Z)</td></tr>
     <tr><td>PageUp / PageDown</td><td>previous / next page</td></tr>
-    <tr><td>G / O / R / W</td><td>grid snap / default-position ghosts / screenshot / widgets only</td></tr>
+    <tr><td>G / O / R / W / K</td><td>grid snap / default-position ghosts / screenshot / widgets only / layout check</td></tr>
     <tr><td>F</td><td>flip between the font and the compare font (Fonts...)</td></tr>
     <tr><td>T</td><td>tour: flip through every page by itself (any key stops)</td></tr>
     <tr><td>?</td><td>this help</td></tr>

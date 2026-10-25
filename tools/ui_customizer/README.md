@@ -46,6 +46,10 @@ registry change (its `installs.json`), so the banner follows the game.
   code's anchors, so widgets (or the panel around them) that hug a side edge stay on it, full-width bars stretch, and
   everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. Read only:
   the canvas, palette, + Page, keys (paste, delete, arrows) and the inspector are off until View is back on 1280x720.
+- **Check** (K) runs a layout check while you edit, the in-page version of `audit/audit.py`'s editing rules: widgets
+  overlapping, labels running into widgets, anything off the screen, text the game would cut ("...") or shrink, widgets
+  sticking out of their panel, tiny text. Red = bad, amber = check it; the page inspector lists them (click one to select
+  its widgets). With a View on, it checks the page at that resolution and text rounding (21:9, 32:9 ...).
 - Everything autosaves in the browser. A page still as the game has it is saved as a reference to the dump (a few KB
   per save, not 1.7 MB), so after a dump refresh the pages you never touched show the new game; Export layout writes
   every page.
