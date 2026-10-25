@@ -62,10 +62,15 @@ class Fixtures:
             gh.branches[b["name"]] = b["sha"]
             gh.ahead[b["sha"]] = b.get("ahead") or 0
         gh.pulls = [{"number": p["number"], "head": p["head"]} for p in st["pulls"] if p["state"] == "open"]
-        self.pending = S.Pending(None, gh, "floration/quark", self.note_events.extend)
+        self.pending = S.Pending(None, gh, "floration/quark", self.note_events.extend, on_applied=self.after_apply)
         self.docs_at = S.iso(datetime.now(timezone.utc) - timedelta(minutes=3))
         if sample_editor:
             self.seed_editor(st)
+
+    def after_apply(self, change):
+        """As the server's Manager._after_apply: an applied rename takes the description and notes along."""
+        if change.get("type") == "branch.rename" and change.get("status") == "applied":
+            S.follow_rename(self.structure, self.notes, change["params"]["name"], change["params"]["newName"])
 
     def seed_editor(self, st):
         add = self.structure.update

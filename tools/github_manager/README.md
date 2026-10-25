@@ -193,6 +193,8 @@ production lock (every refused case), previews and diffs, apply / stale / refuse
 (`test/fake_github.py`), the stale check, rules -> markdown, the Claude Documents copy against a local bare repo with
 a fake gh, the editor endpoints' protections, and an offline end-to-end poll against a local repository with canned
 gh answers; `GHM_LIVE=1 ... LiveRulesets` reads the real repo's rulesets, read-only), `test/fixture_server.py` (the
-page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply; `--no-editor`,
-`--docs-error`, `--signed-out`: gh signed out since the start, so the GitHub parts show as unknown),
+page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply (an applied rename
+takes the description and notes along, as on the server); `--no-editor`,
+`--docs-error`, `--signed-out`: gh signed out since the start, so the GitHub parts show as unknown, `--notes-held`,
+`--backlog`),
 `install.py` / `install.cmd`, `github-manager.cmd`; the page: `index.html`, the CSS and `js/`.

@@ -2521,6 +2521,18 @@ class Rules(_Store):
 
 # ---- pending GitHub changes ------------------------------------------------------------------------------------
 
+def follow_rename(structure, notes, old, new):
+    """An applied rename takes the branch's structure entry and its notes along (each note's move is a note.edited
+    event with the old target in "from"). The server and the fixture server both use it."""
+    structure.rename(old, new)
+    for n in notes.all():
+        if n["target"] == {"kind": "branch", "key": old}:
+            try:
+                notes.update(n["id"], {"target": {"kind": "branch", "key": new}, "rev": n["rev"]})
+            except NoteError as e:
+                LOG.warning("editor: could not move note %s to %s: %s", n["id"], new, e)
+
+
 class Pending(_Store):
     """Changes to GitHub that q queued in the page: each is previewed (before -> after, the exact `gh api` call) and
     sent only when q presses Apply. Right before the call the server reads the default branch and the affected
@@ -3362,15 +3374,7 @@ class Manager:
         self.wake.set()         # and the next poll runs now, so the branches show the change
 
     def follow_rename(self, old, new):
-        """An applied rename takes the branch's structure entry and its notes along (each note's move is a
-        note.edited event with the old target in "from")."""
-        self.structure.rename(old, new)
-        for n in self.notes.all():
-            if n["target"] == {"kind": "branch", "key": old}:
-                try:
-                    self.notes.update(n["id"], {"target": {"kind": "branch", "key": new}, "rev": n["rev"]})
-                except NoteError as e:
-                    LOG.warning("editor: could not move note %s to %s: %s", n["id"], new, e)
+        follow_rename(self.structure, self.notes, old, new)
 
     def structure_view(self):
         o = self.structure.obj()
