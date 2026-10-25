@@ -108,6 +108,8 @@ html.embed #top .brand { display: none; }   /* ?embed=1: the shell's tab has the
 .form .v3 { display: flex; gap: 3px; }
 .form .v3 input { width: 100%; }
 .btnrow { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; align-items: center; }
+.editbar { background: #1f2a3a; border: 1px solid var(--accent-dim); border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; }
+.editbar .btnrow { margin: 6px 0 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 2px 8px; }
 .chips label { color: var(--text); }
 

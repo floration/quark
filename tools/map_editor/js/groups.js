@@ -7,7 +7,7 @@
 // the shipped library_presets/.
 import { KINDS } from "./doc.js";
 import { el, fill, $, banner, dialog, prompt, check, numInput, validMapName, snap, tidy, plural } from "./util.js";
-import { defFromBoxes, expandRepeat, repeatCounts, turnDef } from "./repeat.js";
+import { defFromBoxes, expandRepeat, fitBox, repeatCounts, turnDef, partBoxes, withoutPiece, withPart } from "./repeat.js";
 export { expandRepeat } from "./repeat.js";
 
 export const CLIP_FORMAT = "quark-map-group";
@@ -72,7 +72,7 @@ export function replaceWithObject(d, name, def, boxes) {
   d.edit("make custom object " + name, ["brushes", "groups", "sc.objects"], (map, sc) => {
     if (goneB.size) map.brushes = map.brushes.filter((_, i) => !goneB.has(i));
     if (goneG.size) map.groups = map.groups.filter((_, i) => !goneG.has(i));
-    sc.objects.push({ name, def, rot: 0, min: mn, max: mn.map((v, k) => tidy(v + def.unit[k])) }); at = sc.objects.length - 1;
+    sc.objects.push({ name, def, rot: 0, ...fitBox(def, { min: mn }, [1, 1, 1]) }); at = sc.objects.length - 1;
   }, { touch: [] });
   d.select([{ k: "object", i: at }]);
   return at;
@@ -103,6 +103,7 @@ export class Library {
       e.preventDefault();
       this.paste(c);
     });
+    this.doc.on("open", () => { this.editing = null; });
     this.load();
   }
   async load() {
@@ -190,9 +191,10 @@ export class Library {
     if (!item) return;
     if (item.kind === "group") { pasteGroup(d, item.clip, pasteBase(item.clip, s.p, ed.grid)); return; }
     const def = item.def, p = s.p, g = ed.grid;
-    const min = [snap(p[0] - def.unit[0] / 2, g), tidy(p[1]), snap(p[2] - def.unit[2] / 2, g)];
+    const size = fitBox(def, { min: [0, 0, 0] }, [1, 1, 1]).max;
+    const min = [snap(p[0] - size[0] / 2, g), tidy(p[1]), snap(p[2] - size[2] / 2, g)];
     let at = -1;
-    d.edit("add " + item.name, ["sc.objects"], (m, sc) => { sc.objects.push({ name: item.name, def: structuredClone(def), rot: 0, min, max: min.map((v, k) => tidy(v + def.unit[k])) }); at = sc.objects.length - 1; }, { touch: [] });
+    d.edit("add " + item.name, ["sc.objects"], (m, sc) => { sc.objects.push({ name: item.name, def: structuredClone(def), rot: 0, ...fitBox(def, { min }, [1, 1, 1]) }); at = sc.objects.length - 1; }, { touch: [] });
     d.select([{ k: "object", i: at }]);
   }
   // a custom object back to the plain boxes it is made of
@@ -201,6 +203,44 @@ export class Library {
     const boxes = expandRepeat(o.def, o, o.rot || 0), n0 = d.map.brushes.length;
     d.edit("make plain boxes", ["brushes", "sc.objects"], (m, sc) => { m.brushes.push(...boxes); sc.objects.splice(i, 1); }, { touch: [] });
     d.select(boxes.map((_, j) => ({ k: "brush", i: n0 + j })));
+  }
+
+  // Editing a custom object's unit or start / end piece in place: the part goes out as plain boxes (selected; for a
+  // piece the object stays, without it, so you see where it joins), you move, resize, add or delete boxes, and Done
+  // takes the selected boxes back in as that part (an empty selection removes a piece). Each of start, Done and
+  // Cancel is one undo step. this.editing: {part, name, obj (the object as it is while edited), orig, at, added}
+  editPart(i, part) {
+    const d = this.doc, o = d.sidecar.objects[i]; if (!o) return;
+    if (this.editing) this.finishEdit(false);
+    const boxes = partBoxes(o, part), n0 = d.map.brushes.length, orig = structuredClone(o);
+    const obj = part === "unit" ? null : withoutPiece(o, part);
+    d.edit("edit the " + part + " of " + o.name, ["brushes", "sc.objects"], (m, sc) => {
+      m.brushes.push(...boxes);
+      if (obj) sc.objects[i] = obj; else sc.objects.splice(i, 1);
+    }, { touch: [] });
+    this.editing = { part, name: o.name, obj, orig, at: i, added: d.map.brushes.slice(n0) };
+    d.select(boxes.map((_, j) => ({ k: "brush", i: n0 + j })));
+    banner("Editing the " + part + " of " + o.name + ": change its boxes, then Done in Properties (the selected boxes become the " + part + ")", false, 6000);
+  }
+  // ok: the selected boxes become the part; else the object goes back as it was and the boxes put out are removed
+  finishEdit(ok) {
+    const d = this.doc, e = this.editing; if (!e) return;
+    this.editing = null;
+    const objs = d.sidecar.objects, at = e.obj ? objs.indexOf(e.obj) : -1;
+    if (e.obj && at < 0) { banner("The object being edited is gone (undone?): editing stopped", true); this.app.panels.renderProps(); return; }
+    const base = e.obj || e.orig;
+    const sel = d.selOf("brush"), boxes = ok ? sel.map(i => d.map.brushes[i]) : [];
+    const made = ok ? withPart(base, e.part, boxes.map(b => ({ mat: b.mat, min: b.min.slice(), max: b.max.slice() }))) : e.orig;
+    if (!made) { this.editing = e; banner("Select the boxes of the unit first (a unit can't be empty)", true, 3000); return; }
+    const gone = new Set(ok ? sel.map(i => d.map.brushes[i]) : e.added);
+    let idx = -1;
+    d.edit((ok ? "done editing the " : "cancel editing the ") + e.part + " of " + e.name, ["brushes", "sc.objects"], (m, sc) => {
+      m.brushes = m.brushes.filter(b => !gone.has(b));
+      if (at >= 0) { sc.objects[at] = made; idx = at; }
+      else { idx = Math.min(e.at, sc.objects.length); sc.objects.splice(idx, 0, made); }
+    }, { touch: [] });
+    d.select([{ k: "object", i: idx }]);
+    banner(ok ? "The " + e.part + " of " + e.name + " is now " + plural(boxes.length, "box") + (this.items.some(x => x.file === made.lib) ? " (the library's " + made.lib + " is unchanged: save to library to keep it there)" : "") : "Editing cancelled: " + e.name + " is as it was", false, 4000);
   }
 
   render() {

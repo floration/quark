@@ -1,8 +1,8 @@
 // The side panels: map list (defaults + yours, with provenance), outliner, properties of the selection, map settings.
-import { el, fill, $, numInput, select, check, fmt, tidy, rgbHex, hexRgb } from "./util.js";
+import { el, fill, $, numInput, select, check, fmt, tidy, rgbHex, hexRgb, plural } from "./util.js";
 import { KINDS, objectiveName } from "./doc.js";
 import { LIMITS } from "./validate.js";
-import { repeatCounts } from "./repeat.js";
+import { repeatCounts, repeatLen, capAxis } from "./repeat.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 export const TEAMS = ["a", "b", "any", "race", ...Array.from({ length: 10 }, (_, i) => "att" + i), ...Array.from({ length: 10 }, (_, i) => "def" + i)];
@@ -98,6 +98,9 @@ export class Panels {
     if (!m) { fill(P); return; }
     const sel = d.sel;
     const out = [];
+    const ed = this.app.library && this.app.library.editing;
+    if (ed) out.push(el("div", { class: "editbar" }, el("span", {}, "Editing the " + ed.part + " of " + ed.name + ": the selected boxes (" + d.selOf("brush").length + ") become it" + (ed.part === "unit" ? "" : "; none selected: no " + ed.part + " piece")),
+      el("div", { class: "btnrow" }, el("button", { class: "primary", onclick: () => this.app.library.finishEdit(true) }, "Done"), el("button", { onclick: () => this.app.library.finishEdit(false) }, "Cancel"))));
     if (!sel.length) {
       out.push(el("h3", {}, "Nothing selected"));
       out.push(el("p", {}, "Click to select (Shift adds, drag a rectangle, click again for what is behind). Pick a tool above to add things. ? lists the keys."));
@@ -168,12 +171,21 @@ export class Panels {
         add(this.field("object", el("span", {}, o.name)));
         add(this.field("", el("span", { class: "faint" }, "a custom object: it grows by whole units where it repeats (drag a face handle, or Shift / Ctrl + arrows); saved into the map as plain boxes")));
         add(this.field("units", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
-          ? numInput(n[k], v => this.set("units", s, x => { const len = (Math.max(1, Math.min(500, Math.round(v))) - 1) * Math.max(0.05, rep.spacing[k]) + rep.unit[k]; x.max[k] = tidy(x.min[k] + len); }), { step: 1, min: 1 })
+          ? numInput(n[k], v => this.set("units", s, x => { x.max[k] = tidy(x.min[k] + repeatLen(rep, k, Math.max(1, Math.min(500, Math.round(v))))); }), { step: 1, min: 1 })
           : el("span", { class: "faint num" }, "x1")))));
         add(this.field("spacing", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
-          ? numInput(rep.spacing[k], v => this.set("spacing", s, x => { const kk = (x.rot || 0) % 2 && k !== 1 ? 2 - k : k; x.def = { ...x.def, spacing: x.def.spacing.map((q, j) => j === kk ? Math.max(0.05, Math.min(64, v)) : q) }; const len = (n[k] - 1) * Math.max(0.05, Math.min(64, v)) + rep.unit[k]; x.max[k] = tidy(x.min[k] + len); }), { step: 0.25, min: 0.05 })
+          ? numInput(rep.spacing[k], v => this.set("spacing", s, x => { const kk = (x.rot || 0) % 2 && k !== 1 ? 2 - k : k; x.def = { ...x.def, spacing: x.def.spacing.map((q, j) => j === kk ? Math.max(0.05, Math.min(64, v)) : q) }; x.max[k] = tidy(x.min[k] + repeatLen({ ...rep, spacing: rep.spacing.map((q, j) => j === k ? Math.max(0.05, Math.min(64, v)) : q) }, k, n[k])); }), { step: 0.25, min: 0.05 })
           : el("span", { class: "faint num" }, "-")))));
         add(this.field("position", this.v3(o.min, (k, v) => this.set("move", s, (x) => { const d0 = tidy(v) - x.min[k]; x.min[k] = tidy(v); x.max[k] = tidy(x.max[k] + d0); }))));
+        const ca = capAxis(rep), pieceTxt = (p) => p ? plural(p.boxes.length, "box") + ", " + fmt(p.len) + " m" : "none";
+        const L = this.app.library, noCap = ca < 0 ? "start / end pieces need an object that repeats along one axis" : "";
+        add(this.field("unit", el("span", { class: "num dim" }, plural(rep.boxes.length, "box") + ", " + rep.unit.map(v => fmt(v)).join(" x ") + " m")));
+        add(this.field("start piece", el("span", { class: "num dim", title: noCap }, ca < 0 ? "-" : pieceTxt(rep.start))));
+        add(this.field("end piece", el("span", { class: "num dim", title: noCap }, ca < 0 ? "-" : pieceTxt(rep.end))));
+        add(this.field("edit", el("div", { class: "btnrow" },
+          el("button", { class: "mini", title: "the first unit becomes plain boxes; change them, then Done", onclick: () => L.editPart(s.i, "unit") }, "unit"),
+          el("button", { class: "mini", disabled: !!noCap, title: noCap || "the piece before the first unit (build or change it as plain boxes, then Done)", onclick: () => L.editPart(s.i, "start") }, "start piece"),
+          el("button", { class: "mini", disabled: !!noCap, title: noCap || "the piece after the last unit, e.g. a railing's closing post (build or change it as plain boxes, then Done)", onclick: () => L.editPart(s.i, "end") }, "end piece"))));
         add(this.field("", el("div", { class: "btnrow" },
           el("button", { class: "mini", title: "turn it into plain boxes (no longer a custom object)", onclick: () => this.app.library.explode(s.i) }, "make plain boxes"),
           el("button", { class: "mini", title: "save its definition (with this spacing) in the library", onclick: () => this.app.library.saveDef(o.def) }, "save to library"))));

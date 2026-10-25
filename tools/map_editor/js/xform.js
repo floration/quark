@@ -4,17 +4,26 @@
 // object at a time: edit.js wraps a selection's flips in one undo step.
 import { KINDS } from "./doc.js";
 import { tidy } from "./util.js";
-import { turnDef } from "./repeat.js";
+import { turnDef, capAxis } from "./repeat.js";
 
 const TWO_PI = 2 * Math.PI;
 const normYaw = (y) => Math.round((((y % TWO_PI) + TWO_PI) % TWO_PI) * 1e6) / 1e6;
 // the yaw after the flip (forward is (-sin yaw, -cos yaw): across x it is -yaw, across z PI - yaw, both: yaw + PI)
 export function flipYaw(yaw, fx, fz) { return normYaw(fx && fz ? yaw + Math.PI : fx ? -yaw : fz ? Math.PI - yaw : yaw); }
-// a custom object's definition mirrored inside its unit along axis k
+// a custom object's definition mirrored inside its unit along axis k (along its start / end pieces' axis the pieces
+// also swap ends)
 export function mirrorDef(def, k) {
-  return { ...def, boxes: def.boxes.map(b => { const mn = b.min.slice(), mx = b.max.slice(); mn[k] = tidy(def.unit[k] - b.max[k]); mx[k] = tidy(def.unit[k] - b.min[k]); return { ...b, min: mn, max: mx }; }) };
+  const a = capAxis(def);
+  const flip = (boxes, size) => boxes.map(b => { const mn = b.min.slice(), mx = b.max.slice(); mn[k] = tidy(size[k] - b.max[k]); mx[k] = tidy(size[k] - b.min[k]); return { ...b, min: mn, max: mx }; });
+  const piece = (p) => p && { len: p.len, boxes: flip(p.boxes, def.unit.map((v, j) => j === a ? p.len : v)) };
+  const out = { ...def, boxes: flip(def.boxes, def.unit) };
+  const st = piece(def.start), en = piece(def.end);
+  delete out.start; delete out.end;
+  const [s0, e0] = k === a ? [en, st] : [st, en];
+  if (s0) out.start = s0;
+  if (e0) out.end = e0;
+  return out;
 }
-
 // flips object o (of selection kind `kind`) across x = c[0] when fx, across z = c[1] when fz (both: the half turn)
 export function flipObj(kind, o, fx, fz, c) {
   const K = KINDS[kind], ax = [fx ? 0 : -1, fz ? 2 : -1].filter(k => k >= 0), cen = [c[0], 0, c[1]];

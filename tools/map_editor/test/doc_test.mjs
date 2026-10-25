@@ -192,6 +192,44 @@ section("+ object from a box and a group: both are replaced, nothing doubled");
   }
 }
 
+section("custom objects: start / end pieces, editing a part in place");
+{
+  const R = await import(pathToFileURL(path.join(tmp, "repeat.js")));
+  const rail = { name: "railing", unit: [1.5, 1.1, 0.1], axes: [true, false, false], spacing: [1.5, 1.1, 0.1],
+    boxes: [{ mat: 3, min: [0, 0, 0], max: [0.1, 1.1, 0.1] }, { mat: 3, min: [0.1, 1, 0.02], max: [1.5, 1.08, 0.08] }],
+    end: { len: 0.1, boxes: [{ mat: 3, min: [0, 0, 0], max: [0.1, 1.1, 0.1] }] } };
+  const box = R.fitBox(rail, { min: [0, 0, 0] }, [4, 1, 1]);
+  ok(Math.abs(box.max[0] - 6.1) < 1e-6, "4 units of 1.5 m and a 0.1 m closing post: 6.1 m");
+  const bx = R.expandRepeat(rail, box);
+  ok(bx.length === 9 && bx[8].min[0] === 6 && bx[8].max[0] === 6.1, "the closing post sits after the last rail");
+  ok(eq(R.repeatCounts(rail, box), [4, 1, 1]), "the pieces don't count as units");
+  // turned a quarter: along z, the post still closes the far end of the run (the boxes are the run's, turned)
+  const t = R.expandRepeat(rail, { min: [0, 0, 0], max: [0.1, 1.1, 6.1] }, 1);
+  ok(t.length === 9 && t.filter(b => b.max[1] === 1.1).length === 5, "turned: 4 posts + the closing one");
+  const zs = t.filter(b => b.max[1] === 1.1).map(b => b.min[2]).sort((a, b) => a - b);
+  ok(eq(zs, [0, 1.5, 3, 4.5, 6]), "turned: posts at both ends (" + zs.join(" ") + ")");
+  const h = R.expandRepeat(rail, box, 2).filter(b => b.max[1] - b.min[1] > 1).map(b => b.min[0]).sort((a, b) => a - b);
+  ok(eq(h, [0, 1.5, 3, 4.5, 6]), "a half turn: the closing post moves to the other end, the posts stay put (" + h.join(" ") + ")");
+  // a start piece: before the first unit
+  const st = { ...rail, start: { len: 0.5, boxes: [{ mat: 1, min: [0, 0, 0], max: [0.5, 0.2, 0.1] }] } };
+  const sb = R.expandRepeat(st, R.fitBox(st, { min: [10, 0, 0] }, [2, 1, 1]));
+  ok(sb[0].min[0] === 10 && sb[1].min[0] === 10.5 && sb[sb.length - 1].min[0] === 13.5, "start piece at the min, units after it, end piece last");
+  // edit the end piece: it comes out as boxes; a wider post goes back in
+  const o = { name: "railing", def: rail, rot: 0, ...box };
+  const eb = R.partBoxes(o, "end");
+  ok(eb.length === 1 && eb[0].min[0] === 6, "the end piece's boxes in the world");
+  const o2 = R.withoutPiece(o, "end");
+  ok(!o2.def.end && Math.abs(o2.max[0] - 6) < 1e-6 && R.repeatCounts(o2.def, o2)[0] === 4, "without its end piece: 4 units, 6 m");
+  const o3 = R.withPart(o2, "end", [{ mat: 1, min: [6, 0, 0], max: [6.3, 1.2, 0.1] }]);
+  ok(o3.def.end.len === 0.3 && Math.abs(o3.max[0] - 6.3) < 1e-6 && R.expandRepeat(o3.def, o3).length === 9, "a 0.3 m post as the new end piece");
+  ok(R.withPart(o2, "end", []).def.end === undefined, "no boxes: no end piece");
+  // edit the unit: a taller post; the spacing followed the unit (it touched), the end piece stays
+  const ub = R.partBoxes(o, "unit"); ub[0].max[1] = 1.5;
+  const o4 = R.withPart(o, "unit", ub);
+  ok(o4.def.unit[1] === 1.5 && o4.def.end && R.repeatCounts(o4.def, o4)[0] === 4 && o4.def.boxes.length === 2, "a taller unit: same 4 units, the end piece kept");
+  ok(R.withPart(o, "unit", []) === null, "a unit can't be empty");
+}
+
 section("flips and the point-symmetric twin (xform.js)");
 {
   const X = await import(pathToFileURL(path.join(tmp, "xform.js")));
@@ -225,6 +263,14 @@ section("flips and the point-symmetric twin (xform.js)");
   const fl = structuredClone(ob); X.flipObj("object", fl, true, false, [0, 0]);
   const flb = R.expandRepeat(fl.def, fl, fl.rot).map(x => [x.min[0], x.min[2]].join()).sort();
   ok(eq(flb, R.expandRepeat(ob.def, ob, 0).map(x => [-x.max[0], x.min[2]].join()).sort()) && fl.rot === 0, "a flipped object's boxes are the mirror image");
+  // a flip of an object with an end piece: the piece comes to the other end (the boxes are the mirror image)
+  const rail = { name: "r", unit: [1.5, 1, 0.1], axes: [true, false, false], spacing: [1.5, 1, 0.1], boxes: [{ mat: 0, min: [0, 0, 0], max: [0.1, 1, 0.1] }, { mat: 0, min: [0.1, 0.9, 0], max: [1.5, 1, 0.1] }],
+    end: { len: 0.1, boxes: [{ mat: 0, min: [0, 0, 0], max: [0.1, 1, 0.1] }] } };
+  const ro = { name: "r", def: rail, rot: 0, min: [0, 0, 0], max: [4.6, 1, 0.1] };
+  const key = (b) => [b.min[0], b.max[0], b.min[1]].join();
+  const want = R.expandRepeat(rail, ro).map(b => key({ min: [-b.max[0], b.min[1]], max: [-b.min[0]] })).sort();
+  const rf = structuredClone(ro); X.flipObj("object", rf, true, false, [0, 0]);
+  ok(rf.def.start && !rf.def.end && eq(R.expandRepeat(rf.def, rf, rf.rot).map(key).sort(), want), "flipped: the end piece became a start piece, boxes mirrored");
   // the Doc: a half map mirrored through the centre has every box's twin
   const d = open(bigMap(4));
   d.select(d.map.brushes.map((_, i) => ({ k: "brush", i })).concat([{ k: "spawn", i: 0 }]));

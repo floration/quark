@@ -6,7 +6,7 @@ import * as THREE from "../vendor/three.module.min.js";
 import { Picker, rayBox, normalOf } from "./pick.js";
 import { KINDS } from "./doc.js";
 import { snap, tidy } from "./util.js";
-import { repeatCounts, turnDef } from "./repeat.js";
+import { repeatCounts, repeatLen, turnDef } from "./repeat.js";
 import { flipObj, twinObj } from "./xform.js";
 
 export const GRIDS = [0.125, 0.25, 0.5, 1, 2, 4];
@@ -330,7 +330,7 @@ export class Editor {
         const sp = Math.max(0.05, rep.spacing[a]), n0 = repeatCounts(rep, f)[a];
         const moved = (this.axisParam(e, dr.P0, a) - dr.s0) * (dr.side ? 1 : -1);   // (+: longer)
         const n = Math.max(1, n0 + Math.round(moved / sp));
-        const len = (n - 1) * sp + rep.unit[a];
+        const len = repeatLen(rep, a, n);
         if (dr.side) box.max[a] = tidy(box.min[a] + len); else box.min[a] = tidy(box.max[a] - len);
         o.min = box.min; o.max = box.max;
         this.app.hudDrag = s.k + " " + repeatCounts(rep, box).join(" x ") + " units";
@@ -497,7 +497,7 @@ export class Editor {
           if (s.k === "light") { o.radius = Math.max(1, Math.min(60, o.radius + (grow ? 1 : -1))); continue; }
           if (s.k === "object") {   // one unit more / less where it repeats
             const rep = this.objDef(o); if (!rep.axes[axis]) continue;
-            const sp = Math.max(0.05, rep.spacing[axis]), n = Math.max(1, repeatCounts(rep, o)[axis] + (grow ? 1 : -1)), len = (n - 1) * sp + rep.unit[axis];
+            const n = Math.max(1, repeatCounts(rep, o)[axis] + (grow ? 1 : -1)), len = repeatLen(rep, axis, n);
             if (sign > 0) o.max[axis] = tidy(o.min[axis] + len); else o.min[axis] = tidy(o.max[axis] - len);
             continue;
           }

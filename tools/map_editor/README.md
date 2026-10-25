@@ -89,7 +89,12 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
     a spacing per axis (unit start to next unit start). Click it in the library, then click in the view to place it
     (Esc stops). Resizing it changes the number of units, never their size: drag a face handle (only the repeating
     axes have handles) or Shift / Ctrl + arrow keys; R turns it a quarter. Its properties panel sets units, spacing and
-    position, saves it back to the library, or makes it plain boxes. Objects live in the sidecar (`objects`), so they
+    position, saves it back to the library, or makes it plain boxes. An object that repeats along one axis can have a
+    **start piece** and an **end piece**, each placed once, before the first unit and after the last (the shipped
+    railing and fence end with a closing post). **edit unit / start piece / end piece** puts that part out as plain
+    boxes (selected; for a piece the object stays, without it, so you see where it joins): move, resize, add or
+    delete boxes, then **Done** takes the selected boxes back in as that part (none selected removes a piece), or
+    **Cancel**. Each is one undo step. Objects live in the sidecar (`objects`), so they
     stay editable; a save writes their boxes into the .qmap as plain boxes the game loads, and opening the map takes
     them out again (an object whose boxes were changed outside the editor turns into plain boxes). At most 20 000
     boxes per object.
