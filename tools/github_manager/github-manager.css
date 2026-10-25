@@ -397,8 +397,9 @@ button.danger:hover { border-color: var(--gm-bad); }
 .notes-card.is-empty h2, .notes-card.is-empty p { margin: 0; }
 .notes-card h2 a { font-weight: 400; }
 .notes.pinned { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; }
-/* long pinned notes are cut at about 5 lines, fading out (a short one is not faded: the fade is in absolute units) */
-.notes.pinned .n-text { max-height: 7.6em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 5.8em, transparent 7.6em); mask-image: linear-gradient(to bottom, #000 5.8em, transparent 7.6em); }
+/* long pinned notes are cut at about 5 lines, fading out, with "Show all" under them (notes.js decides which) */
+.n-text.clamped { max-height: 7.6em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 5.8em, transparent 7.6em); mask-image: linear-gradient(to bottom, #000 5.8em, transparent 7.6em); }
+.note .n-more { display: block; padding: 0; margin-top: 4px; }
 
 /* ---- the Editor tab ---- */
 .ed-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--gm-s3); align-items: start; }

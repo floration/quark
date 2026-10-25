@@ -21,7 +21,9 @@ export const notes = {
 };
 
 // UI state that must survive the redraws every poll causes: open forms, their drafts, pending deletes, errors.
-const ui = { open: new Set(), confirm: new Set(), busy: new Set(), errors: new Map() };
+const ui = { open: new Set(), confirm: new Set(), busy: new Set(), errors: new Map(), more: new Set() };
+// about how many lines a note takes in a ~340 px card (the Overview's pinned notes): over 5 it is cut, with "Show all"
+const estLines = (t) => String(t).split('\n').reduce((a, l) => a + Math.max(1, Math.ceil(l.length / 48)), 0);
 const drafts = new Map();
 let hooks = { onChange() {}, toast() {} };
 
@@ -238,11 +240,12 @@ export function noteForm({ fk, note = null, kind = 'general', key = '', pickTarg
 
 // One note: target, status, who / when, the text, and its actions. scope: "d" in the drawer, "e" in the Editor tab,
 // "o" on the Overview (read-only there: the card links to the Editor).
-export function noteCard(n, { scope, showTarget = true, actions = true } = {}) {
+export function noteCard(n, { scope, showTarget = true, actions = true, clamp = false } = {}) {
   const fk = `${scope}:edit:${n.id}`;
   if (ui.open.has(fk)) return html`<li class="note editing" id="${scope}-note-${n.id}">${noteForm({ fk, note: n })}</li>`;
   const done = n.status === 'done', ck = `${scope}:${n.id}`;
   const edited = n.updatedAt && n.updatedAt !== n.createdAt;
+  const long = clamp && estLines(n.text) > 5, more = ui.more.has(n.id);
   return html`<li class="note${n.pinned ? ' is-pinned' : ''}${done ? ' is-done' : ''}" id="${scope}-note-${n.id}" data-note="${n.id}">
     <div class="n-head">
       ${showTarget ? targetChip(n.target) : ''}
@@ -254,7 +257,8 @@ export function noteCard(n, { scope, showTarget = true, actions = true } = {}) {
         ? html`<span class="n-confirm" role="alert">Delete this note? It stays in the history. <button type="button" class="small danger" data-nact="delete-yes" data-id="${n.id}" data-ck="${ck}">Delete</button><button type="button" class="small" data-nact="delete-no" data-ck="${ck}">Keep</button></span>`
         : html`<button type="button" class="small" data-nact="edit" data-fk="${fk}">Edit</button><button type="button" class="small" data-nact="${done ? 'reopen' : 'done'}" data-id="${n.id}">${done ? 'Reopen' : 'Done'}</button><button type="button" class="small" data-nact="${n.pinned ? 'unpin' : 'pin'}" data-id="${n.id}">${n.pinned ? 'Unpin' : 'Pin'}</button><button type="button" class="small" data-nact="delete" data-ck="${ck}" title="Delete (asks first)">Delete</button>`}</span>` : ''}
     </div>
-    <div class="n-text md">${md(n.text)}</div>
+    <div class="n-text md${long && !more ? ' clamped' : ''}">${md(n.text)}</div>
+    ${long ? html`<button type="button" class="linkbtn small n-more" data-nact="more" data-id="${n.id}" aria-expanded="${more}">${more ? 'Show less' : 'Show all'}</button>` : ''}
   </li>`;
 }
 
@@ -361,6 +365,9 @@ export function initNotes(h) {
     } else if (a === 'cancel' && form) {
       const fk = form.dataset.nform;
       ui.open.delete(fk); drafts.delete(fk); ui.errors.delete(fk);
+      hooks.onChange();
+    } else if (a === 'more') {
+      if (ui.more.has(id)) ui.more.delete(id); else ui.more.add(id);
       hooks.onChange();
     } else if (a === 'delete') {
       ui.confirm.add(b.dataset.ck);

@@ -54,7 +54,7 @@ function pinnedNotes() {
   }
   return html`<section class="card notes-card">
     <h2>Notes <span class="count">${pinned.length} pinned</span><span class="grow"></span><a class="small" href="#tab=editor">${open ? `All notes (${open} open)` : 'All notes'}</a></h2>
-    <ul class="notes pinned">${pinned.slice(0, 6).map((n) => noteCard(n, { scope: 'o', actions: false }))}</ul>
+    <ul class="notes pinned">${pinned.slice(0, 6).map((n) => noteCard(n, { scope: 'o', actions: false, clamp: true }))}</ul>
     ${pinned.length > 6 ? html`<p class="small"><a href="#tab=editor">${plural(pinned.length - 6, 'more pinned note')}</a></p>` : ''}
   </section>`;
 }
