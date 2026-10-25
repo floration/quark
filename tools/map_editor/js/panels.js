@@ -227,6 +227,9 @@ export class Panels {
       el("button", { onclick: () => a.editor.duplicate(), title: "Ctrl+D" }, "Duplicate"),
       el("button", { class: "danger", onclick: () => { d.deleteSel(); a.editor.pickDirty = true; }, title: "Del" }, "Delete"),
       el("button", { onclick: () => a.editor.rotateSel(), title: "R: 90 degrees about Y" }, "Rotate"),
+      el("button", { onclick: () => a.editor.flipSel(true, false), title: "X: mirror left / right (across x, about the selection's centre)" }, "Flip X"),
+      el("button", { onclick: () => a.editor.flipSel(false, true), title: "Z: mirror front / back (across z, about the selection's centre)" }, "Flip Z"),
+      el("button", { onclick: () => a.mirrorCopy(), title: "P: add the selection's point-symmetric twin through the map's centre (0, 0), team A and B swapped: what a ranked map needs" }, "Mirror copy"),
       nb >= 1 ? el("button", { onclick: () => a.makeGroup(), title: "One custom group from the selected boxes (move / stretch them as one)" }, "Group boxes") : null);
   }
 

@@ -7,6 +7,7 @@ import { Picker, rayBox, normalOf } from "./pick.js";
 import { KINDS } from "./doc.js";
 import { snap, tidy } from "./util.js";
 import { repeatCounts, turnDef } from "./repeat.js";
+import { flipObj, twinObj } from "./xform.js";
 
 export const GRIDS = [0.125, 0.25, 0.5, 1, 2, 4];
 const AX = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
@@ -468,6 +469,9 @@ export class Editor {
       case "Insert": this.setTool("box"); return;
       case "m": case "M": this.cycleMaterial(); return;
       case "r": case "R": this.rotateSel(); return;
+      case "x": case "X": this.flipSel(true, false); return;
+      case "z": case "Z": this.flipSel(false, true); return;
+      case "p": case "P": this.app.mirrorCopy(); return;
       case "q": case "Q": case "e": case "E": this.turnSel(e.key.toLowerCase() === "q" ? 1 : -1); return;
       case "?": this.app.help(); return;
     }
@@ -556,6 +560,7 @@ export class Editor {
         } else if (K.shape === "stairs") {
           const [ax, az] = rot(o.x0, o.z0), [bx, bz] = rot(o.x1, o.z1);
           o.x0 = Math.min(ax, bx); o.x1 = Math.max(ax, bx); o.z0 = Math.min(az, bz); o.z1 = Math.max(az, bz);
+          if (o.axis === "z") o.rising = -(o.rising || 1);   // (+z turns to -x; +x turns to +z)
           o.axis = o.axis === "x" ? "z" : "x";
         } else {
           const p = K.shape === "arr" ? o : o.pos; const [x, z] = rot(p[0], p[2]); p[0] = x; p[2] = z;
@@ -563,6 +568,32 @@ export class Editor {
         }
       }
     }, { touch: d.sel });
+  }
+  // mirror the selection about its centre (snapped): across x (X, left / right) or z (Z, front / back). Boxes, groups
+  // (stairs turn round, custom parts flip), custom objects, spawns (yaw mirrored), stairs records, points
+  flipSel(fx, fz) {
+    const d = this.doc, bb = d.selBounds(); if (!bb) return;
+    const c = [snap((bb.min[0] + bb.max[0]) / 2, this.grid / 2), snap((bb.min[2] + bb.max[2]) / 2, this.grid / 2)];
+    d.edit(fx ? "flip x" : "flip z", d.keysOf(), () => { for (const s of d.sel) flipObj(s.k, d.obj(s), fx, fz, c); }, { touch: d.sel });
+    this.pickDirty = true;
+  }
+  // the point-symmetric twin of the selection through the map's centre (0, 0), as copies: what quark_maptool's
+  // ranked_mirror check looks for (x, z -> -x, -z; team A <-> B; yaw + 180). Objects that are their own twin (centred)
+  // and the hill (a map has one) are left out. One undo step; the copies are selected.
+  mirrorCopy() {
+    const d = this.doc, sel = d.sel.filter(s => !KINDS[s.k].single), hill = sel.length < d.sel.length;
+    if (!sel.length) return { added: 0, same: 0, hill };
+    const added = [];
+    let same = 0;
+    d.edit("mirror copy", d.keysOf(sel), () => {
+      for (const s of sel) {
+        const o = d.obj(s), t = twinObj(s.k, o);
+        if (JSON.stringify(t) === JSON.stringify(o)) { same++; continue; }
+        const arr = d.get(KINDS[s.k].key); arr.push(t); added.push({ k: s.k, i: arr.length - 1 });
+      }
+    }, { touch: [] });
+    d.select(added); this.pickDirty = true;
+    return { added: added.length, same, hill };
   }
 }
 

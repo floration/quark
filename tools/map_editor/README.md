@@ -62,7 +62,11 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
   selection (F). A 1 m grid on the floor and a scale bar.
 - **Edit**: click selects (Shift adds, Ctrl+click a group's part), drag the arrows to move, the face handles to
   resize, all snapped to the grid (`[` `]`: 1/8 m .. 4 m like the in-game editor). Ins / B add a box, Ctrl+D
-  duplicates, Del deletes, M cycles the material, Ctrl+Z / Ctrl+Y undo / redo. The properties panel edits numbers.
+  duplicates, Del deletes, M cycles the material, Ctrl+Z / Ctrl+Y undo / redo. R turns the selection a quarter, X / Z flip
+  it (mirror left / right across x, front / back across z, about its centre: stairs turn round, spawns' yaw mirrors,
+  a custom object's unit is mirrored), and P (**Mirror copy**) adds its point-symmetric twin through the map's centre
+  (0, 0) with team A and B swapped and yaws turned 180 degrees: build one half of a ranked map, select it, P, and
+  the `ranked_mirror` check passes. Objects already centred and the hill are left out (`js/xform.js`). The properties panel edits numbers.
   Each undo step holds only the objects it changed (a few KB on Midtown, not a copy of the map); an edit that changes
   nothing (a click on a handle, a value typed again) makes no step.
 - **Objects**: spawns (team colour, yaw arrow), bomb sites, hill, capture points, race checkpoints, payload path and
@@ -135,5 +139,5 @@ material, markers, cameras), `pick.js` (a uniform grid for picking), `edit.js` (
 `panels.js` (map list, properties, outliner), `player.js` (figures, glTF reader), `testing.js` (checks, metrics,
 routes, custom tests), `bots.js` (bot runs, live stream and playback), `markers.js` (spawns, lights, objectives as
 instanced meshes and merged lines, restyled in place on selection), `validate.js` (save checks), `groups.js`
-(clipboard, library), `repeat.js` (custom objects), `lines.js` (line helpers). Tests: `node test/doc_test.mjs` (undo,
-save checks, clipboard, custom objects), `node test/deco_test.js` (decoration).
+(clipboard, library), `repeat.js` (custom objects), `xform.js` (flips, mirror copy), `lines.js` (line helpers). Tests: `node test/doc_test.mjs` (undo,
+save checks, clipboard, custom objects, flips), `node test/deco_test.js` (decoration).

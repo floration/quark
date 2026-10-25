@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // the page's modules are plain ES modules in js/ (no package.json there): copy the ones under test next to one
 const JS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "js");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "qme-doc-"));
-for (const f of ["doc.js", "util.js", "fallback_parse.js", "validate.js", "groups.js", "repeat.js"]) if (fs.existsSync(path.join(JS, f))) fs.copyFileSync(path.join(JS, f), path.join(tmp, f));
+for (const f of ["doc.js", "util.js", "fallback_parse.js", "validate.js", "groups.js", "repeat.js", "xform.js"]) if (fs.existsSync(path.join(JS, f))) fs.copyFileSync(path.join(JS, f), path.join(tmp, f));
 fs.writeFileSync(path.join(tmp, "package.json"), '{"type":"module"}');
 const { Doc, objectiveName } = await import(pathToFileURL(path.join(tmp, "doc.js")));
 const { validateMap } = await import(pathToFileURL(path.join(tmp, "validate.js")));
@@ -174,6 +174,48 @@ if (G) {
   const edited = structuredClone(saved); edited.brushes.push({ mat: 3, min: [10, 0, 0], max: [10.5, 1, 0.5] });
   const side2 = { objects: structuredClone(d3.sidecar.objects) };
   ok(R.stripObjects(edited, side2).length === 1 && edited.brushes.length === 3 && side2.objects.length === 0, "posts no longer all there: the object goes, its boxes stay");
+}
+
+section("flips and the point-symmetric twin (xform.js)");
+{
+  const X = await import(pathToFileURL(path.join(tmp, "xform.js")));
+  const b = { mat: 1, min: [2, 0, 1], max: [5, 2, 3] };
+  X.flipObj("brush", b, true, false, [0, 0]);
+  ok(eq(b.min, [-5, 0, 1]) && eq(b.max, [-2, 2, 3]), "a box flipped across x = 0");
+  const g = { type: "stairs", dir: 0, mat: 0, min: [0, 0, 0], max: [4, 2, 2], parts: [] };
+  X.flipObj("group", g, true, false, [2, 0]);
+  ok(g.dir === 1 && eq(g.min, [0, 0, 0]), "stairs rising +x rise -x after a flip across x about their middle");
+  const cg = { type: "custom", dir: 0, mat: 0, min: [0, 0, 0], max: [2, 2, 2], parts: [{ mat: 0, min: [0, 0, 0], max: [0.25, 1, 1] }] };
+  X.flipObj("group", cg, false, true, [1, 1]);
+  X.flipObj("group", cg, true, false, [1, 1]);
+  ok(eq(cg.parts[0].min, [0.75, 0, 0]) && eq(cg.parts[0].max, [1, 1, 1]), "a custom group's parts flip with it");
+  const sp = { pos: [3, 0, 4], yaw: Math.PI / 2, team: "a" };
+  const tw = X.twinObj("spawn", sp);
+  ok(eq(tw.pos, [-3, 0, -4]) && tw.team === "b" && Math.abs(tw.yaw - 3 * Math.PI / 2) < 1e-5, "a spawn's twin: (-x, -z), team B, yaw + 180 (as ranked_mirror wants)");
+  const sx = { pos: [3, 0, 4], yaw: 0.5, team: "a" }; X.flipObj("spawn", sx, true, false, [0, 0]);
+  ok(sx.pos[0] === -3 && Math.abs(sx.yaw - (2 * Math.PI - 0.5)) < 1e-5 && sx.team === "a", "a flip across x mirrors the yaw and keeps the team");
+  const st = { x0: 1, z0: 0, x1: 3, z1: 2, base: 0, top: 2, rising: 1, axis: "x", solid: true };
+  X.flipObj("stairs", st, true, false, [0, 0]);
+  ok(st.x0 === -3 && st.x1 === -1 && st.rising === -1, "a stairs record flipped along its axis rises the other way");
+  // a custom object: the half turn turns it (the definition stays the library's); a flip mirrors the definition
+  const def = { name: "r", unit: [2, 1, 1], axes: [true, false, false], spacing: [2, 1, 1], boxes: [{ mat: 0, min: [0, 0, 0], max: [0.5, 1, 1] }] };
+  const R = await import(pathToFileURL(path.join(tmp, "repeat.js")));
+  const ob = { name: "r", def, rot: 0, min: [1, 0, 0], max: [7, 1, 1] };
+  const before = R.expandRepeat(ob.def, ob, 0).map(x => [-x.max[0], -x.max[2]].join()).sort();
+  const t = X.twinObj("object", ob);
+  ok(t.rot === 2 && eq(t.def, ob.def), "the object's twin is turned half way, same definition");
+  const after = R.expandRepeat(t.def, t, t.rot).map(x => [x.min[0], x.min[2]].join()).sort();
+  ok(eq(before, after), "its boxes are exactly the original's boxes through the centre");
+  const fl = structuredClone(ob); X.flipObj("object", fl, true, false, [0, 0]);
+  const flb = R.expandRepeat(fl.def, fl, fl.rot).map(x => [x.min[0], x.min[2]].join()).sort();
+  ok(eq(flb, R.expandRepeat(ob.def, ob, 0).map(x => [-x.max[0], x.min[2]].join()).sort()) && fl.rot === 0, "a flipped object's boxes are the mirror image");
+  // the Doc: a half map mirrored through the centre has every box's twin
+  const d = open(bigMap(4));
+  d.select(d.map.brushes.map((_, i) => ({ k: "brush", i })).concat([{ k: "spawn", i: 0 }]));
+  const keys = d.keysOf(), added = [];
+  d.edit("mirror copy", keys, () => { for (const s of d.sel.slice()) { const arr = d.get(keys.find(k => k === (s.k === "brush" ? "brushes" : "spawns"))); arr.push(X.twinObj(s.k, d.obj(s))); added.push(1); } }, { touch: [] });
+  const twin = (a) => d.map.brushes.some(o => o.mat === a.mat && eq(o.min, [-a.max[0], a.min[1], -a.max[2]]) && eq(o.max, [-a.min[0], a.max[1], -a.min[2]]));
+  ok(d.map.brushes.length === 8 && d.map.brushes.every(twin), "every box has its mirrored twin");
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
