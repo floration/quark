@@ -49,6 +49,8 @@
   Q.MAX_BOXES = 256;                                                   // kMaxOverrideBoxes
   Q.GUN_ARM = [0.12, 0.12, 0.14];                                      // the arm box colour (models.cpp propParts)
   // projectile speeds (m/s, gamedefs.h; the knife / syringe / orb ones are typical) and their trails (game.cpp)
+  // the game's weapon numbers (gamedefs.h WeaponId; --weapon N is that index + 1)
+  Q.WEAPON_ORDER = ['RIFLE', 'ROCKET', 'KNIFE', 'SNIPER', 'LASER', 'SHOTGUN', 'STICKY', 'CROSSBOW', 'BUBBLE', 'SYRINGE', 'LOCATOR'];
   Q.PROJ = {
     ROCKET: { speed: 48, trail: { from: -0.35, len: 3.5, w: 0.1, a: 0.4 } },
     STICKY: { speed: 22 },

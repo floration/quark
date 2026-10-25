@@ -69,6 +69,13 @@ website show) with the box list in the mesh's extras (what the game draws).
   dialog lists them; Cancel or Escape there writes nothing).
 - **Download .zip**: the same layout plus `provenance.json`, to unzip into the overrides folder (with a model-editor
   folder chosen, its `provenance.json` is updated too).
+- **Try in game** (the top bar, Chrome / Edge): writes every edited model that can be exported into the game's own
+  overrides folder (`%APPDATA%\quark\overrides`, or `%APPDATA%\quark`; remembered, a dialog asks the first time or when
+  a folder needs choosing or allowing, with the model-editor folder for provenance.json), then the game command for
+  this view (`U.gameArgs`: the lineup `--models --yaw --pitch`, a viewmodel `--weapon N`, "it" `--host hide`, bomb mode,
+  a projectile `--weapon N --fire`, the cart's `--cam`, on the chosen map or the mode's map). It is copied, and in the
+  Quark Project app the Play tab opens with `#args=<the options>`; otherwise the page shows it (a page on disk cannot
+  start a program).
 - **Download .glb** (the model panel): one model.
 - **Project > Load the models in an overrides folder**: reads every `models/<kind>/<NAME>.glb|.gltf` in a folder back
   as edits (to carry on, or to see what the game will draw).

@@ -195,7 +195,23 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   st = await ev(async () => ({ side: JSON.parse(await readText(pd, ['provenance.json'])).items, text: document.querySelector('#dlg').innerText }));
   check(st.side['models/player/SCOUT.gltf'] && !st.side['models/player/KNIGHT.gltf'] && /provenance.json updated: model-editor\/provenance.json/.test(st.text), 'export: provenance.json written into the chosen model-editor folder', st);
   await page.keyboard.press('Escape');
-  await ev(() => { Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad(); });
+  // Try in game: asks for the overrides folder and the model-editor folder, writes, hands the view's command to the Play tab
+  await ev(async () => {
+    Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad();
+    Q.ensureBoxEdit('models/weapon/RIFLE').parts[0].c[0] += 0.01; Q.bump('models/weapon/RIFLE');
+    Q.ui.select('models/weapon/RIFLE'); Q.ui.setMode('fp');
+    window.ov3 = mkDir('quark'); await ov3.getDirectoryHandle('overrides', { create: true });
+    window.showDirectoryPicker = async o => (o && o.id === 'quark-model-editor' ? pd : ov3);
+    window.quarkShell = { open: (id, hash) => { window.opened = [id, decodeURIComponent(hash)]; } };
+  });
+  await page.click('#btnTry');
+  await page.click('#dlg .prov-row button:has-text("Choose %APPDATA%")');
+  await page.click('#dlg .prov-row button:has-text("Choose the Quark")');
+  await page.click('#dlg button:has-text("Write and try")');
+  await page.waitForFunction(() => window.opened, null, { timeout: 10000 });
+  st = await ev(async () => ({ opened: window.opened, files: [...(await (await (await ov3.getDirectoryHandle('overrides')).getDirectoryHandle('models')).getDirectoryHandle('weapon')).children.keys()].join() }));
+  check(st.opened[0] === 'play' && /^#args=--host ffa --map \w+ --weapon 1 --yaw/.test(st.opened[1]) && st.files === 'RIFLE.glb', 'try in game: writes into quark/overrides, the Play tab gets the view\'s command', st);
+  await ev(() => { delete window.quarkShell; Q.ui.setMode('orbit'); Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad(); });
 
   // --- New project: undo off -----------------------------------------------------------------------------------------
   await page.click('.card[data-key="models/player/STANDARD"]');

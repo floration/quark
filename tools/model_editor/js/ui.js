@@ -600,6 +600,57 @@
     }
   };
 
+  // --- try in game ------------------------------------------------------------------------------------------------------
+  // the game's command line for what this view shows (src/client/main.cpp flags; the lineup and the cart camera are the
+  // ones the accuracy checks used): the selected model's map, or a map of the mode it belongs to
+  U.gameArgs = function () {
+    const key = S.sel, m = key && Q.models[key], v = S.view, kind = m ? m.kind : '', name = m ? m.name : '', map = v.palette || '';
+    const wnum = k => Math.max(0, Q.WEAPON_ORDER.indexOf(Q.models[k] ? Q.models[k].name : '')) + 1;
+    if (kind === 'prop' && (name === 'CART' || name === 'GATE')) return '--host payload --map railyard --cam 3 2.5 36 143.1 -18.8';
+    if (S.holdIt()) return '--host hide --map ' + (map || 'hamlet') + ' --models --weapon ' + wnum(S.weaponKey());
+    if (S.bombMode()) return '--host bomb --map ' + (map || 'depot') + ' --models --weapon 1 --yaw 180';
+    if (kind === 'weapon' && v.mode === 'fp') return '--host ffa --map ' + (map || 'temple') + ' --weapon ' + wnum(key) + ' --yaw ' + v.yaw + ' --pitch ' + v.pitch;
+    if (kind === 'projectile') { const i = Q.WEAPON_ORDER.indexOf(name); return '--host ffa --map ' + (map || 'temple') + (i >= 0 ? ' --weapon ' + (i + 1) + ' --fire' : ''); }
+    return '--host ffa --map ' + (map || 'temple') + ' --models --yaw ' + v.yaw + ' --pitch ' + v.pitch + (kind === 'weapon' ? ' --weapon ' + wnum(key) : '');
+  };
+  // Try in game: the edited models into the game's own overrides folder (%APPDATA%\quark\overrides, remembered; the
+  // first time, or when a folder needs choosing or allowing, a dialog asks), provenance.json into Quark\model-editor,
+  // then the game command for this view: in the Quark Project app the Play tab opens with it (#args=), else it is shown;
+  // it is copied either way. (A page on disk cannot start a program itself.)
+  U.tryInGame = async function () {
+    const keys = Q.exportableList();
+    if (!keys.length) { U.toast(Q.exportList().length ? 'Every edited model has an error that blocks its export (see the panel)' : 'No model is edited yet'); return; }
+    if (!Q.canPickFolder()) { U.dialog('Not in this browser', h('p', 'Writing into the game\'s overrides folder needs Chrome or Edge (or the Quark Project app). Use Export to game > Download .zip.')); return; }
+    let dir = await Q.loadHandle('tryDir'), ok = !!dir && await Q.folderPermission(dir, true);
+    const prov = await U.provPicker();
+    if (!ok || !prov.dir()) {
+      const name = h('code'), btn = h('button.mini', { type: 'button', onclick: async () => {
+        if (dir && !ok) ok = await Q.folderPermission(dir, true);
+        else { try { dir = await window.showDirectoryPicker({ id: 'quark-overrides', mode: 'readwrite' }); ok = true; await Q.saveHandle('tryDir', dir); } catch (e) { } }
+        sync();
+      } });
+      const row = h('div.prov-row', h('span', 'The game\'s overrides folder:'), name, btn);
+      const sync = () => { row.classList.toggle('bad', !ok); row.classList.remove('flash'); name.textContent = dir ? dir.name : 'none chosen'; btn.textContent = dir && !ok ? 'Allow access to ' + dir.name : ok ? 'Change...' : 'Choose %APPDATA%\\quark\\overrides...'; };
+      sync();
+      const go = await U.dialog('Try in game', [h('p', 'Writes your edited models (' + keys.length + ') into the game\'s own overrides folder, ', h('code', '%APPDATA%\\quark\\overrides'), ' (the folder ', h('code', '%APPDATA%\\quark'), ' works too), then starts the game on this model\'s view. Both folders are remembered.'), row, prov.row],
+        [{ label: 'Cancel', value: false }, { label: 'Write and try', value: true, primary: true, action: () => {
+          if (!ok) { row.classList.add('flash'); U.toast('Choose the game\'s overrides folder first'); return false; }
+          return prov.check();
+        } }]);
+      if (!go) return;
+    }
+    try {
+      const r = await Q.exportToFolder(dir, { keys, provDir: prov.dir() });
+      U.renderLibrary(); U.renderPanel();
+      const args = U.gameArgs();
+      try { await navigator.clipboard.writeText(args); } catch (e) { }
+      const where = r.written.length + ' model(s) written into ' + r.where + (r.provenance ? '' : ' (provenance.json not written' + (r.provenanceError ? ': ' + r.provenanceError : '') + ')');
+      if (window.quarkShell && window.quarkShell.open) { window.quarkShell.open('play', '#args=' + encodeURIComponent(args)); U.toast(where + '. The Play tab: start the game with ' + args + ' (copied)', 8000); return; }
+      U.dialog('Try in game', [h('p', where + '.'), h('p', 'Start the game (close it first if it is running: it reads overrides at start) with:'), h('p', h('code', 'quark ' + args)),
+        h('p.faint', 'Copied. Ranked matches and time trials ignore your own overrides.')]);
+    } catch (e) { U.fail('try in game', e); }
+  };
+
   // --- keys -------------------------------------------------------------------------------------------------------------
   const KEYS = [['Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y', 'undo / redo'], ['1 - 6', 'orbit, first person, third person, in flight, lineup, track'], ['F', 'frame the model'],
     ['W / E', 'gizmo: move / resize (Alt: both sides; Shift: 1 cm steps)'], ['click', 'pick a box (orbit, third person; first person: the viewmodel)'],
@@ -682,6 +733,7 @@
     $('#btnImport').addEventListener('click', () => $('#fileImport').click());
     $('#fileImport').addEventListener('change', e => { const f = e.target.files; if (f && f.length) U.importFiles(f); e.target.value = ''; });
     $('#btnExport').addEventListener('click', U.exportDialog);
+    $('#btnTry').addEventListener('click', U.tryInGame);
     $('#btnHelp').addEventListener('click', U.help);
     $('#btnSaveProject').addEventListener('click', () => { Q.download(new Blob([Q.projectJSON()], { type: 'application/json' }), 'quark-models-' + new Date().toISOString().slice(0, 10) + '.json'); });
     $('#btnLoadProject').addEventListener('click', () => $('#fileProject').click());
