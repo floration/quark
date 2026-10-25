@@ -7,14 +7,18 @@
                                   tabs.json's default tabs up to date), then exit (setup.ps1)
 
 Python 3 standard library only. Binds 127.0.0.1 only. Every source refreshes in the background on its own interval
-and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1]  /api/tabs
-/api/history?limit=N  /api/health  /api/updates;  POST /api/refresh?source=<key|all>  /api/updates/run
-/api/updates/ack?id=<restart request id>  /api/checklist (JSON {version, section, done}: q's release-checklist ticks).
+and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1][&raw=1] (ETag: a 304 when
+nothing changed; raw=1 keeps the siblings' raw data)  /api/tabs  /api/history?limit=N  /api/health  /api/updates
+/api/updates/log?id=<tool>  /api/checklist (sections with items, ticks);  POST /api/refresh?source=<key|all>
+/api/updates/run[?id=<tool>]  /api/updates/ack?id=<restart request id>  /api/checklist (JSON {version, section, done}:
+q's release-checklist ticks).
 The Play tab (pm/play.py): GET /play  /api/play[?refresh=1]  /api/play/pending;  POST (JSON body) /api/play/launch
 {build, args}  /api/play/note {session, did, noticed, change, other}  /api/play/skip {session}  /api/play/install {tag}
 /api/play/remove {tag}  /api/play/sync; and the routes pm/play.py answers itself (Play.api_get / api_post, SPEC.md 3b).
 """
 import argparse
+import hashlib
+import inspect
 import json
 import os
 import re
@@ -35,6 +39,9 @@ ALLOWED_ORIGIN = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(?:876[5-9]|877
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
          ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".map": "application/json; charset=utf-8"}
+SLIM_SOURCES = ("docs", "github", "editors")  # (/api/pm leaves out their raw data: `derived` holds what the page shows)
+LOG_ID = re.compile(r"^[\w.\-]{1,64}$")
+LOG_MAX = 256 * 1024
 FALLBACK_PAGE = (b"<!doctype html><meta charset=utf-8><title>Supervisor Board</title>"
                  b"<p>The Supervisor Board page (web/index.html) is not installed next to server.py. The API is up: "
                  b"<a href=/api/pm>/api/pm</a>, <a href=/api/tabs>/api/tabs</a>.</p>")
@@ -79,13 +86,58 @@ class App:
             r = self._tabs_cache
         return r if r is not None else self.tabs.resolved()  # (first moments: resolved without `up`)
 
-    def pm(self, refresh=False):
-        upd = self.updater.view()
+    def can_retry_one(self):
+        """Whether this updater can run one tool's install (Updater.request(only=<id>))."""
+        try:
+            return "only" in inspect.signature(self.updater.request).parameters
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def slim_sources(results):
+        """The sources as the page needs them: no raw sibling data (docs alone is ~50 KB of entry bodies and recent
+        changes), no checklist items (GET /api/checklist has them). Each envelope keeps ok / kept / times / error."""
+        out = {}
+        for k, r in results.items():
+            if k in SLIM_SOURCES and r.get("data") is not None:
+                r = dict(r, data={}, omitted=True)
+            elif k == "checklist" and isinstance(r.get("data"), dict) and "sections" in r["data"]:
+                d = {kk: v for kk, v in r["data"].items() if kk != "sections"}
+                d["itemCounts"] = [len(x.get("items") or []) for x in r["data"]["sections"] or []]
+                r = dict(r, data=d)
+            out[k] = r
+        return out
+
+    def checklist_view(self):
+        """GET /api/checklist: the checklist's sections with their items, and q's ticks for the testing version."""
+        res = self.store.results()
+        chk = derive.shown_data(res, "checklist") or {}
+        version = derive.versions(res).get("testing")
+        return {"version": version, "mtime": chk.get("mtime"), "url": chk.get("url"), "sections": chk.get("sections") or [],
+                "ticks": self.ticks.view(version)}
+
+    def install_log(self, eid):
+        """GET /api/updates/log?id=<tool id>: the end of Quark\\project-manager\\logs\\install-<id>.log (None: no log)."""
+        if not isinstance(eid, str) or not LOG_ID.match(eid):
+            return None
+        path = self.paths.pm("logs", "install-%s.log" % eid)
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - LOG_MAX))
+                text = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            return None
+        return ("[... the first %d KB left out ...]\n" % ((size - LOG_MAX) // 1024) if size > LOG_MAX else "") + text
+
+    def pm(self, refresh=False, raw=False):
+        upd = dict(self.updater.view(), canRetryOne=self.can_retry_one())
         d = derive.with_updates(self.store.derived, upd)  # (+ failed installs: halting)
         d = derive.with_checklist(d, self.ticks.view((d.get("versions") or {}).get("testing")))
         # serverNow: the page's clock (generatedAt is the last derive, up to a source interval old)
         out = {"generatedAt": self.store.generated_at, "serverNow": int(time.time() * 1000),
-               "sources": self.store.results(), "derived": d,
+               "sources": self.store.results() if raw else self.slim_sources(self.store.results()), "derived": d,
                "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd,
                "play": self.play.summary()}
         if refresh:
@@ -195,7 +247,14 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/health":
                 return self._send(200, "ok", "text/plain; charset=utf-8")
             if p == "/api/pm":
-                return self._json(self.app.pm(refresh=q.get("refresh", ["0"])[0] not in ("", "0", "false")))
+                return self._pm(q)
+            if p == "/api/checklist":
+                return self._json(self.app.checklist_view())
+            if p == "/api/updates/log":
+                text = self.app.install_log(q.get("id", [""])[0])
+                if text is None:
+                    return self._send(404, "no log for that tool", "text/plain; charset=utf-8")
+                return self._send(200, text, "text/plain; charset=utf-8")
             if p == "/api/tabs":
                 if q.get("refresh", ["0"])[0] not in ("", "0", "false"):
                     self.app.tabs.wake.set()
@@ -214,6 +273,19 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _pm(self, q):
+        """/api/pm with an ETag over everything but serverNow (sent as X-Server-Now too): a poll with nothing new is a
+        304 with no body, and the page keeps what it shows."""
+        flag = lambda k: q.get(k, ["0"])[0] not in ("", "0", "false")
+        out = self.app.pm(refresh=flag("refresh"), raw=flag("raw"))
+        now = out.pop("serverNow")
+        core = json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+        etag = '"%s"' % hashlib.sha1(core.encode("utf-8")).hexdigest()[:20]
+        extra = {"ETag": etag, "X-Server-Now": str(now)}
+        if self.headers.get("If-None-Match") == etag:
+            return self._send(304, b"", extra=extra)
+        self._send(200, core[:-1] + ',"serverNow":%d}' % now, extra=extra)
+
     def do_POST(self):
         if not self._host_ok() or not self._origin_ok():
             self.close_connection = True  # (its body is never read)
@@ -227,7 +299,10 @@ class Handler(BaseHTTPRequestHandler):
         if u.path.startswith("/api/play/"):
             return self._play_post(u.path[len("/api/play/"):], body)
         if u.path == "/api/updates/run":
-            ok, wait = self.app.updater.request()
+            only = urllib.parse.parse_qs(u.query).get("id", [None])[0]  # (one tool: its Retry button)
+            if only is not None and not self.app.can_retry_one():
+                return self._json({"accepted": False, "message": "This updater runs every tool at once (Update now)."}, 501)
+            ok, wait = self.app.updater.request(only=only) if only is not None else self.app.updater.request()
             return self._json({"accepted": ok, "nextAllowedIn": wait, "enabled": self.app.updater.enabled})
         if u.path == "/api/updates/ack":
             rid = urllib.parse.parse_qs(u.query).get("id", [""])[0]
@@ -251,11 +326,17 @@ class Handler(BaseHTTPRequestHandler):
         """{version, section, done, build?}: tick / untick one section of the release checklist for one version."""
         if "json" not in (self.headers.get("Content-Type") or "").lower():  # (no cross-site form posts)
             return self._json({"ok": False, "message": "Send JSON."}, 415)
+        res = self.app.store.results()
+        chk = derive.shown_data(res, "checklist")
         try:
             req = json.loads(body.decode("utf-8"))
-            view = self.app.ticks.set(req.get("version"), req.get("section"), req.get("done") is True, req.get("build"))
-        except (ValueError, UnicodeDecodeError, AttributeError):
-            return self._json({"ok": False, "message": "Needs {version, section, done}."}, 400)
+            if not isinstance(req, dict):
+                raise ValueError("not an object")
+            view = self.app.ticks.set(req.get("version"), req.get("section"), req.get("done"), req.get("build"),
+                                      sections=chk.get("headings") if chk else None,
+                                      newest=derive.versions(res).get("testing"))
+        except ValueError as e:  # (broken JSON and UTF-8 included)
+            return self._json({"ok": False, "message": "Needs {version, section, done}: %s." % str(e)[:120]}, 400)
         except OSError as e:
             return self._json({"ok": False, "message": "Not saved (%s)." % type(e).__name__}, 500)
         return self._json({"ok": True, "checklist": view})
