@@ -17,9 +17,11 @@ def facts(results, derived):
     """Snapshot of what is watched. A key is missing when its source is not up."""
     f = {}
     gh = derive.ok_data(results, "github")
-    v = derived["versions"]
-    if gh or derive.ok_data(results, "repo"):
-        tsha = next((s["sha"] for s in derived["pipeline"] if s["stage"] == "testing"), None)
+    repo = derive.ok_data(results, "repo")
+    v = derive.versions(results, derive.ok_data)  # (never the last known data a down source kept)
+    if gh or repo:
+        log0 = ((repo or {}).get("log") or [{}])[0]
+        tsha = util.short_sha((derive.gh_testing(gh).get("sha") if gh else None) or log0.get("sha"))
         if v.get("testing"):  # (`from`: GitHub's testing tip and the local mirror can differ; never compare across)
             f["testing"] = {"version": v["testing"], "sha": tsha, "from": "github" if gh else "repo"}
     if gh:
@@ -42,8 +44,9 @@ def facts(results, derived):
         f["inProgress"] = {str(e["id"] if e.get("id") is not None else e["title"]):
                            {"title": e["title"], "waitingOn": e.get("waitingOn"), "link": e.get("entryLink") or e["link"]}
                            for e in derived["inProgress"]}
-    if derived.get("humanPct") is not None:
-        f["humanPct"] = derived["humanPct"]
+    ed = derive.ok_data(results, "editors")
+    if ed and derive.human_pct(ed) is not None:
+        f["humanPct"] = derive.human_pct(ed)
     return f
 
 
