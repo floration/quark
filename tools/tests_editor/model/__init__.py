@@ -354,7 +354,9 @@ class Builder:
         qt = {"id": "quark_tests", "kind": "local", "title": "quark_tests", "file": main["file"] if main else "tests/tests.cpp",
               "line": main["line"] if main else 1, "when": qwhen, "items": groups + cmds,
               "lists": [{"name": l["name"], "line": l["line"], "endLine": l["endLine"], "groups": [g["name"] for g in l["groups"]],
-                         "parallel": any(g["run"]["parallel"] for g in groups if g["list"] == l["name"])} for l in lists],
+                         "parallel": any(g["run"]["parallel"] for g in groups if g["list"] == l["name"]),
+                         "jobs": _jobs_text(main["_src"].text[main["_open"]:main["_close"]]) if any(g["run"]["parallel"] for g in groups if g["list"] == l["name"]) else None}
+                        for l in lists],
               "checkMacros": macros}
 
         suites = [qt] + suites_ci + script_suites + hook_suites + ([ctest_suite] if ctest_suite else [])
@@ -372,6 +374,19 @@ class Builder:
         alone_lists = {l["name"]: [g["name"] for g in l["groups"]] for l in lists}
         model["lint"] = lint.run(model, texts, index, groups, cmds, suites_ci, script_suites, alone_lists)
         return model
+
+
+def _jobs_text(body):
+    """How many par groups main() runs at once, in words: its `jobs = N * hardware_concurrency()` (and the Windows
+    branch's, when it differs): "3 per core; Windows: 1 per core"; None when it isn't written that way."""
+    per = lambda t: [int(m.group(1) or 1) for m in re.finditer(r"\bjobs\s*=\s*(?:(\d+)\s*\*\s*)?(?:std::)?max\s*\(\s*1u?\s*,\s*(?:std::)?thread::hardware_concurrency", t)]
+    flat = r"((?:(?!#\s*(?:if|else|endif)).)*?)"                        # (a branch with no #if / #else inside)
+    for m in re.finditer(r"#\s*ifdef\s+_WIN32\b%s#\s*else\b%s#\s*endif" % (flat, flat), body, re.S):
+        if per(m.group(1)) and per(m.group(2)):
+            w, o = per(m.group(1))[0], per(m.group(2))[0]
+            return "%d per core" % o + ("" if w == o else "; Windows: %d per core" % w)
+    n = per(body)
+    return "%d per core" % n[0] if n else None
 
 
 def _runs_tests(text):

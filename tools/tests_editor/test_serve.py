@@ -63,6 +63,8 @@ class RealRepo(unittest.TestCase):
         for l in lists:
             lines = [g["line"] for g in groups if g["list"] == l]
             self.assertEqual(lines, sorted(lines))
+        par = next(l for l in qt["lists"] if l["name"] == "par")
+        self.assertRegex(par["jobs"], r"^\d+ per core")                    # (main()'s jobs = N * cores, for the Blocks header)
         src = rd(os.path.join(REPO, "tests", "tests.cpp"), encoding="utf-8").split("\n")
         for g in groups:
             self.assertIn('"%s"' % g["name"], src[g["line"] - 1])

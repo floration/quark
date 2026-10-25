@@ -92,7 +92,9 @@ class App {
         const f = $("facts");
         f.textContent = "";
         const add = (t, cls, title) => { const s = el("span", cls || "fact", t); if (title) s.title = title; f.append(s); return s; };
-        add(rp.branch || "?", "fact mono", rp.path || "");
+        if (rp.branch) add(rp.branch, "fact mono", rp.path || "");
+        else if (rp.git === false) add("no git", "fact warn", "git isn't available for " + (rp.path || "the working copy") + ": no branch, diff or revert");
+        else add("detached", "fact mono warn", `detached HEAD${rp.sha ? " at " + rp.sha : ""} in ${rp.path || "the working copy"}: check out a branch (git switch testing) before committing`);
         add((rp.sha || "").slice(0, 7), "fact mono muted");
         if (rp.version) add("v" + rp.version, "fact muted");
         const dirty = (rp.dirty || []).length;
