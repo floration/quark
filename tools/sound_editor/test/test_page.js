@@ -185,12 +185,25 @@ async function open(b, vp) {
   ok(focus.idx === 3 && focus.fade === 0.01, 'Tab after a trim / fade field lands on the next field', focus);
   const side = await p.evaluate(() => { const s = document.querySelector('.ed-side'), o = [...s.querySelectorAll('.side-h')].find(x => x.textContent === 'Origin'); const r = o.getBoundingClientRect(), sr = s.getBoundingClientRect(); return { w: Math.round(sr.width), originVisible: r.top >= sr.top && r.bottom <= sr.bottom }; });
   ok(side.originVisible && side.w > 400, 'at 2560 the side column is two columns with Origin in view', side);
-  await p.evaluate(() => { Q.commit('t', () => { delete Q.state.edits['sounds/default/ROCKET']; }); });
+  // a chain field: clamped to the step's range, and Tab off the dock's last field keeps the focus on it
+  await p.evaluate(() => { Q.commit('t', () => { Q.state.edits['sounds/default/ROCKET'].chain = [Q.newStep('highpass'), Q.newStep('gain')]; }); });
+  await p.waitForTimeout(150);
+  let cn = await p.$$('#editor .ed-chain input[type=number]');
+  await cn[0].click(); await cn[0].fill('900'); await p.keyboard.press('Tab'); await p.waitForTimeout(150);
+  const cf1 = await p.evaluate(() => ({ type: document.activeElement.type, f: Q.state.edits['sounds/default/ROCKET'].chain[0].p.freq }));
+  cn = await p.$$('#editor .ed-chain input[type=number]');
+  await cn[2].click(); await cn[2].fill('500'); await p.keyboard.press('Tab'); await p.waitForTimeout(150);
+  const cf2 = await p.evaluate(() => { const el = document.activeElement, all = [...document.querySelectorAll('#editor .ed-chain input[type=number]')]; return { idx: all.indexOf(el), val: el.value, db: Q.state.edits['sounds/default/ROCKET'].chain[1].p.db }; });
+  ok(cf1.type === 'range' && cf1.f === 900, 'Tab after a chain field lands on the next field', cf1);
+  ok(cf2.idx === 2 && cf2.db === 24 && cf2.val === '24', 'a chain field is clamped to its range and keeps the focus at the end of the dock', cf2);
+  await p.evaluate(() => { document.activeElement.blur(); Q.commit('t', () => { delete Q.state.edits['sounds/default/ROCKET']; }); });
 
   // --- scenes volume, upload folder ------------------------------------------------------------------------------------------
   await p.click('button[data-tab="scenes"]');
   await p.fill('#scMaster', '5'); await p.dispatchEvent('#scMaster', 'change');
   ok(await p.$eval('#scMaster', e => e.value) === '1', 'Scenes volume shows the clamped value');
+  await p.fill('#scMaster', ''); await p.dispatchEvent('#scMaster', 'change');
+  ok(await p.$eval('#scMaster', e => e.value) === '0.6' && await p.evaluate(() => Q.ui.scenes.opt().master) === 0.6, 'an empty Scenes volume shows and plays the default 0.6');
   ok(await p.$eval('#dirUpload', e => e.webkitdirectory), 'an Upload folder input (webkitdirectory)');
 
   ok(!logs.length, 'no console errors at 2560x1440', logs);

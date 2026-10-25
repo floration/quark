@@ -44,6 +44,9 @@
     if (!ae || ae === document.body || U.$('#editor').contains(ae)) { clearTimeout(refreshT); refreshT = setTimeout(() => { if (E.key && Q.assets[E.key]) build(); }, 0); return; }
     build();
   };
+  let tabAt = -1e9;
+  U.$('#editor').addEventListener('keydown', ev => { if (ev.key === 'Tab') tabAt = performance.now(); });
+  U.$('#editor').addEventListener('focusout', ev => { if (!ev.relatedTarget && performance.now() - tabAt < 100 && ev.target.matches(FIELDS)) lastOut = { el: ev.target, t: performance.now() }; });
   function idle() {
     U.$('#dock').classList.add('idle');
     const root = U.$('#editor'); root.innerHTML = ''; root.append(h('div.empty', 'Select a sound (click a cell) to edit it here.'));
@@ -51,10 +54,15 @@
 
   // what a rebuild must not lose: the focused field (by its place among the dock's fields) and the columns' scroll
   const FIELDS = 'input, select, textarea, button';
+  // (a field left with Tab towards nothing focusable, the dock's last chain field, keeps the focus: lastOut)
+  let lastOut = null;
   function uiState(root) {
     const f = [...root.querySelectorAll(FIELDS)], el = document.activeElement;
     const sc = sel => { const x = root.querySelector(sel); return x ? x.scrollTop : 0; };
-    return { focus: root.contains(el) ? f.indexOf(el) : -1, side: sc('.ed-side'), chain: sc('.ed-chain') };
+    let focus = root.contains(el) ? f.indexOf(el) : -1;
+    if (focus < 0 && (!el || el === document.body) && lastOut && performance.now() - lastOut.t < 1000) focus = f.indexOf(lastOut.el);
+    lastOut = null;
+    return { focus, side: sc('.ed-side'), chain: sc('.ed-chain') };
   }
   function restoreUI(root, st) {
     const set = (sel, v) => { const x = root.querySelector(sel); if (x) x.scrollTop = v; };
@@ -186,8 +194,10 @@
         const set = v => E.live(def.label + ' ' + p, ed => { ed.chain[i].p[p] = v; });
         rng.oninput = () => { const v = +(+fromR(+rng.value)).toFixed(step < 1 ? 3 : 0); numEl.value = v; set(v); };
         rng.onchange = () => E.liveEnd();
-        numEl.oninput = () => { const v = parseFloat(numEl.value); if (isFinite(v)) { rng.value = toR(v); set(v); } };
-        numEl.onchange = () => E.liveEnd();
+        // typed values are held to the step's range (a 500 dB gain would make a hard-clipped square); the field snaps on commit
+        const clamp = v => Math.max(min, Math.min(max, v));
+        numEl.oninput = () => { const v = parseFloat(numEl.value); if (isFinite(v)) { rng.value = toR(clamp(v)); set(clamp(v)); } };
+        numEl.onchange = () => { const v = parseFloat(numEl.value), c = isFinite(v) ? clamp(v) : st.p[p]; if (+numEl.value !== c || !isFinite(v)) { numEl.value = c; set(c); } E.liveEnd(); };
         grid.append(h('span', unit), rng, numEl);
       }
       box.append(grid);
