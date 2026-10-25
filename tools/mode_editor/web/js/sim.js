@@ -303,8 +303,10 @@ export class SimView {
         }
         const maps = this._maps(), base = this.app.base, f = this.form, map = this._value("map");
         const opt = (v, label, sel) => `<option value="${esc(v)}" ${sel ? "selected" : ""}>${esc(label)}</option>`;
-        const brainOpts = (sel, extra) => (extra ? opt("", extra, !sel) : "") + opt("default", "built-in", sel === "default") + this.brains.map((b) => opt(b, b, sel === b)).join("")
-            + (sel && sel !== "default" && !this.brains.includes(sel) ? opt(sel, sel + " (missing)", true) : "");
+        // (a user brain named default goes as "@default": "default" is the helper's built-in one, and serve.py sends the file)
+        const bv = (b) => (b === "default" ? "@default" : b), mine = this.brains.map(bv);
+        const brainOpts = (sel, extra) => (extra ? opt("", extra, !sel) : "") + opt("default", "built-in", sel === "default") + this.brains.map((b) => opt(bv(b), b === "default" ? "default (yours)" : b, sel === bv(b))).join("")
+            + (sel && sel !== "default" && !mine.includes(sel) ? opt(sel, (sel === "@default" ? "default (yours)" : sel) + " (missing)", true) : "");
         const brainTitle = this.brains.length ? `the bot editor's brains in ${this.brainsDir}` : `no brains yet in ${this.brainsDir || "<data>/bots"} (the bot editor saves them there)`;
         R.innerHTML = `<div class="sim-form">
           <div class="row">

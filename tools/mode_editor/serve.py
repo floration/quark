@@ -702,9 +702,20 @@ def resolve_request(request):
         for d in (CFG.user_maps_dir(), CFG.default_maps_dir()):
             p = os.path.join(d, m + ".qmap") if d else None
             if p and os.path.isfile(p): request["map"] = p; break
+    brains = dict(request.get("brains") or {}) if isinstance(request.get("brains"), dict) else {}
+    # "@default": the user's own bots/default.qbrain (the bot editor's default name). The helper takes "default" for
+    # its built-in brain, so the file goes under a name of its own.
+    bots = request.get("bots")
+    if request.get("brain") == "@default" or (isinstance(bots, list) and any(isinstance(b, dict) and b.get("brain") == "@default" for b in bots)):
+        mine, alias, k = list_brains(), "default_yours", 2
+        while alias in mine or alias in brains: alias, k = "default_yours%d" % k, k + 1
+        p = os.path.join(CFG.brains_dir(), "default.qbrain")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8", errors="replace") as f: brains[alias] = f.read()
+        if request.get("brain") == "@default": request["brain"] = alias
+        if isinstance(bots, list): request["bots"] = [dict(b, brain=alias) if isinstance(b, dict) and b.get("brain") == "@default" else b for b in bots]
     names = [request.get("brain")] + [b.get("brain") for b in request.get("bots") or [] if isinstance(b, dict)] \
         if isinstance(request.get("bots"), list) else [request.get("brain")]
-    brains = dict(request.get("brains") or {}) if isinstance(request.get("brains"), dict) else {}
     for n in names:
         if not isinstance(n, str) or n in ("", "default") or n in brains or not re.match(r"^[A-Za-z0-9_-]{1,64}$", n): continue
         p = os.path.join(CFG.brains_dir(), n + ".qbrain")
