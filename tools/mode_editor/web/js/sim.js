@@ -26,6 +26,7 @@ const NOT_MARKERS = new Set(["phase", "score", "bombCarried", "bombReset"]);
 const TEAM_COLOR = { a: "#f05252", b: "#3f83f8" };   // (style.css --team-a / --team-b)
 const SLOT_COLORS = ["#a78bfa", "#22d3ee", "#fbbf24", "#34d399", "#f472b6", "#fb923c", "#60a5fa", "#e879f9", "#a3e635", "#f87171"];
 const teamOf = (t) => (t === 1 || t === "b" || t === "B" ? "b" : t === 0 || t === "a" || t === "A" ? "a" : null);
+const BATCH_COLORS = ["#a78bfa", "#94a3b8"];   // the distributions: this file, the built-in
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const DRAW_MS = 250;      // the most often a streaming run redraws
 const LOG_LINES = 400;    // the event log keeps the last this many
@@ -149,6 +150,38 @@ export function batchModel(lines) {
         else if (L.type === "error" || L.error) b.errors.push(L.error || JSON.stringify(L));
     }
     return b;
+}
+
+// one match's score spread (as modebatch's scoreSpread: |A - B| in team modes, else the winner's score minus the
+// runner-up's)
+export function matchSpread(m, teams) {
+    if (teams) return m.scoreA != null && m.scoreB != null ? Math.abs(m.scoreA - m.scoreB) : null;
+    const s = (m.players || []).map((p) => p.score).filter((x) => typeof x === "number").sort((a, b) => b - a);
+    return s.length ? s[0] - (s[1] ?? 0) : null;
+}
+// values -> `bins` counts over [lo, hi] (hi itself in the last bin)
+export function histogram(values, bins, lo, hi) {
+    const out = new Array(bins).fill(0), w = (hi - lo) / bins || 1;
+    for (const v of values) if (typeof v === "number" && isFinite(v)) out[Math.max(0, Math.min(bins - 1, Math.floor((v - lo) / w)))]++;
+    return out;
+}
+// two modebatch end lines (this file, the built-in) -> the rows of the difference: [{label, a, b, d, fmt}], d = a - b
+export function batchDelta(a, b) {
+    const rows = [], row = (label, x, y, fmt) => { if (typeof x === "number" && typeof y === "number") rows.push({ label, a: x, b: y, d: x - y, fmt }); };
+    const pa = (e) => e.matchesPlayed || 0;
+    if (a.teams && b.teams) {
+        row("team A wins", a.teams.a.winRate, b.teams.a.winRate, "pct");
+        row("team B wins", a.teams.b.winRate, b.teams.b.winRate, "pct");
+        row("draws", pa(a) ? a.teams.draws / pa(a) : null, pa(b) ? b.teams.draws / pa(b) : null, "pct");
+    } else row("draws", pa(a) ? a.draws / pa(a) : null, pa(b) ? b.draws / pa(b) : null, "pct");
+    row("timeouts", pa(a) ? a.timeouts / pa(a) : null, pa(b) ? b.timeouts / pa(b) : null, "pct");
+    row("length avg", a.length && a.length.avg, b.length && b.length.avg, "s");
+    row("length median", a.length && a.length.p50, b.length && b.length.p50, "s");
+    if (a.rounds > 0 || b.rounds > 0) row("rounds", a.rounds, b.rounds, "n");
+    row("score spread", a.scoreSpread, b.scoreSpread, "n");
+    const ln = (e) => e.perf && e.perf.logicNs ? e.perf.logicNs.avg : 0;   // (no logic: 0 ns of it)
+    if (ln(a) || ln(b)) row("logic per tick", ln(a), ln(b), "ns");
+    return rows;
 }
 
 // The time and score axes runs share: compared runs are drawn on the same scale, so their curves read against each other
@@ -653,8 +686,62 @@ export class SimView {
     _drawBatches() {
         const O = this.root.querySelector("#smOut");
         if (!O) return;
-        O.innerHTML = `<div class="sim-runs${this.batches.length > 1 ? " two" : ""}">${this.batches.map((b, i) => this._batchHtml(b, i)).join("")}</div>`;
+        const models = this.batches.map((b) => batchModel(b.lines));
+        O.innerHTML = `<div class="sim-runs${this.batches.length > 1 ? " two" : ""}">${this.batches.map((b, i) => this._batchHtml(b, i)).join("")}</div>${this._batchCompareHtml(models)}`;
+        this._batchHistograms(O, models);
         O.querySelectorAll("[data-csv]").forEach((btn) => (btn.onclick = () => { const B = batchModel(this.batches[+btn.dataset.csv].lines); this.app.app.download("modebatch.csv", B.end.csv, "text/csv"); }));
+    }
+    // under the cards: the difference from the built-in (when both halves of a compare are done) and the distributions
+    // of match length and score spread, every batch on the same axes
+    _batchCompareHtml(models) {
+        let h = "";
+        const [a, b] = models;
+        if (models.length > 1 && a.end && b.end) {
+            const f = (x, fmt) => fmt === "pct" ? (100 * x).toFixed(0) + "%" : fmt === "s" ? x.toFixed(1) + " s" : fmt === "ns" ? us(x) : String(+x.toFixed(2));
+            const d = (r) => {
+                if (!r.d) return `<span class="muted">same</span>`;
+                const sg = r.d > 0 ? "+" : "−", v = Math.abs(r.d);
+                const txt = r.fmt === "pct" ? `${sg}${(100 * v).toFixed(0)} pp` : r.fmt === "s" ? `${sg}${v.toFixed(1)} s` : r.fmt === "ns" ? sg + us(v) : sg + (+v.toFixed(2));
+                const rel = r.fmt !== "pct" && r.b ? ` <span class="muted">(${sg}${Math.round(100 * v / Math.abs(r.b))}%)</span>` : "";
+                return `<b>${txt}</b>${rel}`;
+            };
+            h += `<div class="sim-run sim-delta"><h4>This file vs the built-in ${esc(this.app.base)} <span class="muted">(${esc(a.end.matchesPlayed)} and ${esc(b.end.matchesPlayed)} matches, the same seeds)</span></h4>
+                <table class="sim-tab"><tr><th></th><th>this file</th><th>built-in</th><th>difference</th></tr>${batchDelta(a.end, b.end).map((r) => `<tr><td>${esc(r.label)}</td><td>${esc(f(r.a, r.fmt))}</td><td>${esc(f(r.b, r.fmt))}</td><td>${d(r)}</td></tr>`).join("")}</table></div>`;
+        }
+        if (models.some((m) => m.matches.length)) h += `<div class="sim-run sim-dist"><h4>Distributions <span class="muted">(matches per bin${models.length > 1 ? ` · <span style="color:${BATCH_COLORS[0]}">■ this file</span> <span style="color:${BATCH_COLORS[1]}">■ built-in</span>` : ""})</span></h4><div class="sim-hists"><canvas data-h="len"></canvas><canvas data-h="spread"></canvas></div></div>`;
+        return h;
+    }
+    _batchHistograms(O, models) {
+        const teams = models.some((m) => m.start ? m.start.teams !== false : m.end && !!m.end.teams);
+        for (const cv of O.querySelectorAll(".sim-hists canvas")) {
+            const kind = cv.dataset.h;
+            const vals = models.map((m) => m.matches.map((x) => (kind === "len" ? x.t : matchSpread(x, teams))).filter((v) => typeof v === "number"));
+            const all = vals.flat();
+            if (!all.length) continue;
+            let lo = Math.min(...all), hi = Math.max(...all);
+            if (kind === "spread") { lo = 0; hi = Math.max(1, Math.ceil(hi)); }
+            const bins = kind === "spread" ? Math.min(20, hi + 1) : 20;
+            if (hi <= lo) hi = lo + 1;
+            if (kind === "spread") hi += 1;   // (integers: one bin each up to 20)
+            const counts = vals.map((v) => histogram(v, bins, lo, hi));
+            const W = cv.width = Math.max(280, cv.clientWidth || 400), H = cv.height = 150;
+            const g = cv.getContext("2d");
+            g.fillStyle = "#0b1020"; g.fillRect(0, 0, W, H);
+            const top = 18, bottom = H - 22, left = 28, bw = (W - left - 8) / bins, max = Math.max(1, ...counts.flat());
+            g.fillStyle = "#94a3b8"; g.font = "10px monospace";
+            g.fillText(kind === "len" ? "match length (s)" : teams ? "score spread |A - B|" : "score spread (winner - runner-up)", left, 12);
+            g.fillText(String(max), 2, top + 8); g.fillText("0", 2, bottom);
+            counts.forEach((c, k) => {
+                g.fillStyle = BATCH_COLORS[k]; g.globalAlpha = models.length > 1 ? 0.75 : 1;
+                const w = models.length > 1 ? bw / 2 - 1 : bw - 2;
+                c.forEach((n, i) => { if (n) { const h = (bottom - top) * n / max; g.fillRect(left + i * bw + 1 + k * (bw / 2), bottom - h, Math.max(1, w), h); } });
+            });
+            g.globalAlpha = 1; g.fillStyle = "#94a3b8";
+            const lab = (v) => (kind === "len" ? v.toFixed(0) : String(Math.round(v)));
+            g.fillText(lab(lo), left, H - 8);
+            const hiLab = lab(kind === "spread" ? hi - 1 : hi);
+            g.fillText(hiLab, W - 8 - g.measureText(hiLab).width, H - 8);
+        }
     }
     _batchHtml(b, i) {
         const B = batchModel(b.lines);

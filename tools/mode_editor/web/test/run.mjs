@@ -18,7 +18,7 @@ import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, batchModel, sharedAxes, endCardFields } from "../js/sim.js";
+import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, batchModel, batchDelta, histogram, matchSpread, sharedAxes, endCardFields } from "../js/sim.js";
 import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -301,6 +301,19 @@ await t("sim timeline grows line by line: fed in chunks equals read at once; sco
     eq(seriesPoints(m.players.get(1).score), [[0, 0], [100, 0]]);
     same(m.trail.length, 401 * 2 * 2); eq(m.bounds, [0, -400, 400, 6]);
     same(frameAt(m, 10.1).t, 10); same(frameAt(m, -1).t, 0); same(frameAt(m, 1e9).t, 100);
+});
+await t("sim batch compare: the difference from the built-in, histograms, a match's score spread", () => {
+    const end = (aw, bw, len, spread, ln) => ({ matchesPlayed: 10, timeouts: 1, teams: { a: { winRate: aw }, b: { winRate: bw }, draws: 1 }, length: { avg: len, p50: len }, rounds: 0, scoreSpread: spread, perf: { logicNs: ln ? { avg: ln } : null } });
+    const rows = batchDelta(end(0.6, 0.3, 300, 5, 900), end(0.5, 0.4, 400, 5, 0));
+    const by = Object.fromEntries(rows.map((r) => [r.label, r]));
+    ok(Math.abs(by["team A wins"].d - 0.1) < 1e-9 && by["team A wins"].fmt === "pct", JSON.stringify(by["team A wins"]));
+    same(by["length avg"].d, -100); same(by["score spread"].d, 0); same(by["logic per tick"].d, 900); same(by.rounds, undefined, "no rounds row when neither has rounds");
+    const ffa = batchDelta({ matchesPlayed: 4, draws: 0, timeouts: 0, length: { avg: 1, p50: 1 }, scoreSpread: 2, perf: {} }, { matchesPlayed: 4, draws: 2, timeouts: 0, length: { avg: 1, p50: 1 }, scoreSpread: 1, perf: {} });
+    same(ffa.find((r) => r.label === "draws").d, -0.5); same(ffa.some((r) => /team/.test(r.label)), false);
+    eq(histogram([0, 1, 2, 9.9, 10, 5], 5, 0, 10), [2, 1, 1, 0, 2]);
+    same(matchSpread({ scoreA: 3, scoreB: 7 }, true), 4);
+    same(matchSpread({ players: [{ score: 4 }, { score: 9 }, { score: 6 }] }, false), 3);
+    same(matchSpread({ players: [] }, false), null);
 });
 await t("sim: trace frames, a shared time axis for compared runs, the end card's fields per mode", () => {
     const m = timelineModel([{ type: "start", teams: false }, { type: "frame", t: 0, phase: "live", players: [] },
