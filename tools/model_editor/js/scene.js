@@ -26,7 +26,14 @@
   S.resetView = () => { Object.assign(S.view, DEFAULT_VIEW); S.saveView(); };
   S.orbit = { target: [0, 1, 0], dist: 4, yaw: 0.6, pitch: -0.25 };
   S.sel = null;        // the model being edited (key)
-  S.part = -1;         // its selected part
+  S.part = -1;         // its selected part (the one the fields and the gizmo show)
+  S.extra = new Set(); // more selected parts (Shift-click): moved, recoloured, copied, deleted with it
+  // every selected part, in order (S.part first is not implied: sorted indices)
+  S.selected = function () {
+    if (S.part < 0) return [];
+    const parts = S.sel && Q.current(S.sel).parts, n = parts ? parts.length : 0;
+    return [S.part, ...S.extra].filter((i, k, a) => i >= 0 && i < n && a.indexOf(i) === k).sort((a, b) => a - b);
+  };
   S.dirty = true;
   S.time = 0;
 
@@ -463,6 +470,7 @@
     const f = S.focus;
     if (f && S.part >= 0 && S.editable()) {
       const parts = Q.current(f.key).parts, p0 = parts && parts[S.part], p = p0 && S.geom(p0, f);
+      for (const j of S.extra) { const q = parts[j] && S.geom(parts[j], f); if (q) boxLines(O, f.model, q.c, q.h.map(x => x + 0.0005), [0.3, 0.75, 1, 0.55]); }
       if (p) {
         boxLines(O, f.model, p.c, p.h.map(x => x + 0.0005), [0.3, 0.75, 1, 1]);
         const c = S.xf(f.model, p.c), len = Math.max(0.04, Math.max(p.h[0], p.h[1], p.h[2]) * 1.6 + 0.03);

@@ -106,7 +106,7 @@ label.off { opacity: .45; }
 .desc { color: var(--text-dim); margin: 4px 0 6px; font-size: 11px; }
 .row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 5px 0; }
 .sect { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
-.sect h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); display: flex; align-items: center; gap: 6px; }
+.sect h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; white-space: nowrap; }
 .probs { margin: 6px 0; display: flex; flex-direction: column; gap: 3px; }
 .prob { padding: 3px 7px; border-radius: 4px; background: var(--panel2); border-left: 3px solid var(--line2); font-size: 11px; }
 .prob.warn { border-color: var(--warn); } .prob.error { border-color: var(--bad); } .prob.info { border-color: var(--accent); }
@@ -115,6 +115,7 @@ table.parts { width: 100%; border-collapse: collapse; font-size: 11px; }
 .parts tr { cursor: pointer; }
 .parts tr:hover td { background: var(--panel2); }
 .parts tr.sel td { background: #1b2738; }
+.parts tr.sel2 td { background: #172130; }
 .parts .sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #0006; display: inline-block; vertical-align: middle; }
 .parts .nm { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .partlist { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }

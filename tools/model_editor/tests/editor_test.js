@@ -267,6 +267,28 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   check(st2.n === st.n && st2.play === st.play && st2.visOnly === true && st2.sel === 1, 'Delete / Space on a box\'s checkbox: the box stays, Space ticks it', { st, st2 });
   await page.keyboard.press('Escape');
 
+  // several boxes: Shift-click, nudge together, recolour together, copy into another model, delete together
+  await ev(() => Q.ui.selectPart(-1));
+  await page.click('.parts tr:nth-child(1)');
+  await page.click('.parts tr:nth-child(3)', { modifiers: ['Shift'] });
+  const ms0 = await ev(() => Q.current('models/player/STANDARD').parts.map(p => p.c[0]));
+  await page.keyboard.press('ArrowRight'); await frames(page);
+  st = await ev(() => ({ sel: Q.scene.selected(), c: Q.current('models/player/STANDARD').parts.map(p => p.c[0]), rows: document.querySelectorAll('.parts tr.sel, .parts tr.sel2').length }));
+  check(st.sel.join() === '0,2' && st.rows === 2 && Math.abs(st.c[0] - ms0[0] - 0.001) < 1e-9 && Math.abs(st.c[2] - ms0[2] - 0.001) < 1e-9 && st.c[1] === ms0[1], 'multi-select: Shift-click, the arrow keys move both', { ms0, st });
+  await page.fill('#panel input[data-fid="col0"]', '0.9'); await page.press('#panel input[data-fid="col0"]', 'Enter'); await frames(page);
+  st = await ev(() => { const P = Q.current('models/player/STANDARD').parts, ref = Q.refOf('models/player/STANDARD'); return [0, 2].map(i => Q.colorAtRef(P[i], ref).map(v => +v.toFixed(4))); });
+  check(st[0].join() === st[1].join() && st[0][0] === 0.9, 'multi-select: a colour goes to every selected box', st);
+  await ev(() => document.activeElement.blur());   // (in a field, Ctrl+C copies its text)
+  await page.keyboard.press('Control+c');
+  await page.click('.card[data-key="models/player/ROBOT"]');
+  const rn = await ev(() => Q.current('models/player/ROBOT').parts.length);
+  await page.keyboard.press('Control+v'); await frames(page);
+  st = await ev(() => ({ n: Q.current('models/player/ROBOT').parts.length, sel: Q.scene.selected(), col: Q.colorAtRef(Q.current('models/player/ROBOT').parts.slice(-1)[0], Q.refOf('models/player/ROBOT')).map(v => +v.toFixed(4)) }));
+  check(st.n === rn + 2 && st.sel.join() === rn + ',' + (rn + 1) && st.col[0] === 0.9, 'copy / paste: two boxes into another model, selected, same colour', st);
+  await page.keyboard.press('Delete'); await frames(page);
+  check(await ev(() => Q.current('models/player/ROBOT').parts.length) === rn, 'multi-select: Delete removes every selected box');
+  await page.click('.card[data-key="models/player/STANDARD"]');
+
   // --- view options -----------------------------------------------------------------------------------------------------
   await page.click('#viewBar .menu > button');
   await page.fill('#vFov', '500'); await page.press('#vFov', 'Enter');

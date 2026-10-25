@@ -163,7 +163,11 @@ The editor never writes `assets/provenance/*.json` in the repository.
   moves through them and arrow keys step the focused one; a half size stops at 0.5 mm); the default boxes are named
   (legs, body, head, barrel...: `Q.DEFAULT_BOX_NAMES` in `js/data.js`, from the comments of the game's model builders in
   src/client/models.cpp, given only while a default's box count matches; the game ignores names); click a
-  box in the viewport; a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
+  box in the viewport; Shift-click (list or viewport) selects several and Ctrl+A every box: the arrow keys, the move gizmo,
+  duplicate, mirror and delete take them all, and colour, tint slot, alpha and flags typed for the box shown go to all
+  of them (a colour as the colour shown, each keeping its slot); Ctrl+C / Ctrl+V (or Copy / Paste) copy boxes within a
+  model or to another one (a visor from one player to another: same place, size, slot, flags and colour shown;
+  remembered in this browser); a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
   across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default (**Reset to shipped model** where a shipped override is what it started from); start from scratch (asks first when the model is edited).
 - **Import** a .glb / .gltf (drop it or Import; a .gltf with its .bin picked together): read exactly as the game's
   loader reads it (node transforms, strips / fans, normalised colours times baseColorFactor, BLEND = translucent,

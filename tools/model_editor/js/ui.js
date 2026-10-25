@@ -138,7 +138,7 @@
   U.select = function (key, keepMode) {
     if (!Q.models[key]) return;
     const prev = S.sel;
-    S.sel = key; S.part = -1;
+    S.sel = key; S.part = -1; S.extra.clear();
     try { localStorage.setItem('qme.sel', key); } catch (e) { }
     const m = Q.models[key], modes = S.modesFor(key);
     if (!keepMode || !modes.includes(S.view.mode)) S.view.mode = modes.includes(S.view.mode) && prev && Q.models[prev] && Q.models[prev].kind === m.kind ? S.view.mode : 'orbit';
@@ -149,9 +149,14 @@
     const c = document.querySelector('.card[data-key="' + CSS.escape(key) + '"]'); if (c) c.classList.add('sel');
     U.syncTabs(); U.syncAvail(); U.renderPanel(); U.renderHud();
   };
-  U.selectPart = function (i) {
-    S.part = i;
-    if (i >= 0 && !S.editable()) S.part = -1;
+  // add (Shift-click): box i joins the selection and becomes the one shown, or leaves it when it was selected
+  U.selectPart = function (i, add) {
+    if (add && S.part >= 0 && i >= 0) {
+      if (i === S.part) { const rest = [...S.extra]; S.extra.clear(); S.part = rest.length ? rest.pop() : -1; rest.forEach(j => S.extra.add(j)); }
+      else if (S.extra.has(i)) S.extra.delete(i);
+      else { S.extra.add(S.part); S.part = i; }
+    } else { S.part = i; S.extra.clear(); }
+    if (S.part >= 0 && !S.editable()) { S.part = -1; S.extra.clear(); }
     S.updateOverlay();
     U.renderPanel();
   };
@@ -257,7 +262,7 @@
     const acts = h('div.row'), toShipped = Q.baseOf(key).shipped;
     if (edited) acts.append(h('button.danger', { type: 'button', title: 'Throw the edits away: back to ' + (toShipped ? 'the shipped override (assets/overrides)' : 'the default') + ' (undo brings them back)', onclick: () => {
       Q.beginChange(key); delete Q.state.edits[key]; if (Q.state.prov) delete Q.state.prov[key];   // (its origin goes with it)
-      Q.endChange(key, 'reset'); S.part = -1; U.toast('Back to ' + (toShipped ? 'the shipped model' : 'the default') + ' (Ctrl+Z undoes it)');
+      Q.endChange(key, 'reset'); S.part = -1; S.extra.clear(); U.toast('Back to ' + (toShipped ? 'the shipped model' : 'the default') + ' (Ctrl+Z undoes it)');
     } }, toShipped ? 'Reset to shipped model' : 'Reset to default'));
     if (cur.type === 'mesh' && m.defParts) acts.append(h('span.faint', 'A mesh: edit it in a 3D program, or reset to edit the boxes.'));
     acts.append(h('button', { type: 'button', title: 'Replace this model with a .glb / .gltf', onclick: () => $('#fileImport').click() }, 'Import replacement...'));
@@ -318,7 +323,7 @@
   function partsSection(key, parts) {
     const tbody = h('tbody');
     parts.forEach((p, i) => {
-      tbody.append(h('tr' + (i === S.part ? '.sel' : ''), { onclick: () => U.selectPart(i === S.part ? -1 : i) },
+      tbody.append(h('tr' + (i === S.part ? '.sel' : S.extra.has(i) ? '.sel2' : ''), { title: 'Shift-click: select several', onclick: e => U.selectPart(i === S.part && !e.shiftKey ? -1 : i, e.shiftKey) },
         h('td.num.faint', i + 1), h('td', h('span.sw', { style: { background: slotColorCss(p) } })), h('td.nm', p.name || '-'),
         h('td.faint', Q.SLOT_NAMES[p.slot | 0] + ((p.alpha == null ? 1 : p.alpha) < 1 ? ' a' + fmt(p.alpha, 2) : '')),
         h('td.num.faint', fmt(p.h[0] * 200, 1) + 'x' + fmt(p.h[1] * 200, 1) + 'x' + fmt(p.h[2] * 200, 1) + ' cm')));
@@ -327,6 +332,8 @@
       h('button.mini', { type: 'button', onclick: () => addPart(key) }, '+ Add'),
       h('button.mini', { type: 'button', disabled: S.part < 0, onclick: () => dupPart(key, false) }, 'Duplicate'),
       h('button.mini', { type: 'button', disabled: S.part < 0, title: 'A copy mirrored across X = 0 (left / right)', onclick: () => dupPart(key, true) }, 'Mirror'),
+      h('button.mini', { type: 'button', disabled: S.part < 0, title: 'Copy the selected boxes (Ctrl+C), to paste into this or another model', onclick: () => U.copyParts() }, 'Copy'),
+      h('button.mini', { type: 'button', disabled: !U.clip, title: U.clip ? 'Paste ' + U.clip.parts.length + ' box(es) from ' + U.clip.from + ' (Ctrl+V)' : 'Copy boxes first', onclick: () => U.pasteParts() }, 'Paste'),
       h('button.mini.danger', { type: 'button', disabled: S.part < 0, onclick: () => delPart(key) }, 'Delete')),
     h('div.partlist', h('table.parts', tbody)));
     setTimeout(() => { const r = sec.querySelector('tr.sel'); if (r) r.scrollIntoView({ block: 'nearest' }); }, 0);
@@ -349,17 +356,52 @@
       S.part = parts.length - 1;
     }, 'add');
   }
+  // copies of the selected boxes after the last of them, selected (mirror: across x = 0)
   function dupPart(key, mirror) {
+    const sel = S.selected();
+    if (!sel.length) return;
     U.change(key, null, parts => {
-      const p = Q.clonePart(parts[S.part]);
-      if (mirror) p.c[0] = -p.c[0]; else p.c[0] += p.h[0] * 2 + 0.01;
-      if (p.name) p.name += mirror ? ' (mirror)' : ' copy';
-      parts.splice(S.part + 1, 0, p); S.part++;
+      const at = sel[sel.length - 1] + 1, copies = sel.map(i => {
+        const p = Q.clonePart(parts[i]);
+        if (mirror) p.c[0] = -p.c[0]; else p.c[0] += p.h[0] * 2 + 0.01;
+        if (p.name) p.name += mirror ? ' (mirror)' : ' copy';
+        return p;
+      });
+      parts.splice(at, 0, ...copies);
+      const prim = at + sel.indexOf(S.part);
+      S.extra.clear(); copies.forEach((c, k) => { if (at + k !== prim) S.extra.add(at + k); }); S.part = prim;
     }, 'dup');
   }
   function delPart(key) {
-    U.change(key, null, parts => { parts.splice(S.part, 1); S.part = Math.min(S.part, parts.length - 1); }, 'delete');
+    const sel = S.selected();
+    if (!sel.length) return;
+    U.change(key, null, parts => { for (let k = sel.length - 1; k >= 0; k--) parts.splice(sel[k], 1); S.extra.clear(); S.part = Math.min(sel[0], parts.length - 1); }, 'delete');
   }
+  // copy / paste boxes, within a model or to another (a visor from one player to another): pasted boxes keep their
+  // place, size, slot and flags, and show the colour they showed (at this model's reference palette)
+  U.clip = null;
+  try { const c = JSON.parse(localStorage.getItem('qme.clip') || 'null'); if (c && Array.isArray(c.parts) && c.parts.length) U.clip = c; } catch (e) { }
+  U.copyParts = function () {
+    const key = S.sel, sel = S.selected(), cur = key && Q.current(key);
+    if (!sel.length || !cur || cur.type !== 'boxes') return;
+    const ref = Q.refOf(key);
+    U.clip = { from: Q.models[key].name, parts: sel.map(i => Object.assign(Q.clonePart(cur.parts[i]), { shown: Q.colorAtRef(cur.parts[i], ref) })) };
+    try { localStorage.setItem('qme.clip', JSON.stringify(U.clip)); } catch (e) { }
+    U.toast(sel.length + ' box(es) copied: Ctrl+V pastes them into this or another model');
+    U.renderPanel();
+  };
+  U.pasteParts = function () {
+    const key = S.sel;
+    if (!U.clip || !key) return;
+    if (!S.editable()) { U.toast('Paste needs a model made of boxes (in a view that shows it)'); return; }
+    const ref = Q.refOf(key);
+    U.change(key, null, parts => {
+      const at = parts.length;
+      for (const c of U.clip.parts) { const p = Q.clonePart(c); if (c.shown) Q.recolor(p, c.shown, ref); parts.push(p); }
+      S.part = at; S.extra.clear(); for (let k = at + 1; k < parts.length; k++) S.extra.add(k);
+    }, 'paste');
+    U.toast(U.clip.parts.length + ' box(es) pasted from ' + U.clip.from);
+  };
   function num(val, step, on, title, fid, min) {
     return h('input', { type: 'number', step, min, value: fmt(val, 5), title: title || '', 'data-fid': fid, oninput: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) on(v, true); },
       onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) on(v, false); } });
@@ -368,12 +410,19 @@
   function partFields(key, p) {
     const i = S.part, ref = Q.refOf(key), m = Q.models[key], slot = p.slot | 0;
     const set = (group, fn) => (v, typing) => U.change(key, 'f' + i + group, parts => fn(parts[i], v), typing ? 'typing' : 'field');
+    // colour, tint slot, alpha and flags go to every selected box: the box shown is changed, then `copy` takes the
+    // changed thing over to the others (a colour as the colour shown, each keeping its own slot)
+    const others = S.selected().filter(j => j !== i), many = others.length > 0;
+    const apply = (fn, copy) => parts => { fn(parts[i]); for (const j of others) copy(parts[j], parts[i]); };
+    const sameColor = (q, p0) => Q.recolor(q, Q.colorAtRef(p0, ref), ref);
+    const setAll = (group, fn, copy) => (v, typing) => U.change(key, 'f' + i + group, apply(q => fn(q, v), copy || sameColor), typing ? 'typing' : 'field');
+    const flag = f => e => U.change(key, null, apply(q => { q[f] = e.target.checked; }, (q, p0) => { q[f] = p0[f]; }), 'field');
     const n3 = (group, vals, step, fn, title, min) => [0, 1, 2].map(k => num(vals[k], step, set(group + k, (q, v) => fn(q, v, k)), title, group + k, min));
     const shown = Q.colorAtRef(p, ref);   // (the colour at the export's palette: what the fields edit)
     const intensity = Math.max(1, shown[0], shown[1], shown[2]);
     const recol = (q, D) => Q.recolor(q, D, ref);
     const picker = h('input', { type: 'color', 'data-fid': 'picker', value: Q.linToHex(shown), title: 'sRGB colour (the game stores linear colour; over 1 = brighter, glowing)',
-      oninput: e => U.change(key, 'f' + i + 'col', parts => { const c = Q.hexToLin(e.target.value); recol(parts[i], c.map(x => x * intensity)); }, 'typing'),
+      oninput: e => U.change(key, 'f' + i + 'col', apply(q => { const c = Q.hexToLin(e.target.value); recol(q, c.map(x => x * intensity)); }, sameColor), 'typing'),
       onchange: () => U.renderPanel() });
     const formula = slot ? [
       h('div.grid3', { style: { marginTop: '6px' } },
@@ -381,24 +430,25 @@
         h('span', 'add'), n3('add', p.add || [0, 0, 0], 0.01, (q, v, k) => { q.add = (q.add || [0, 0, 0]).slice(); q.add[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }, 'added, whatever the slot colour (a grey that stays light in a dark team colour)', 0),
         slot !== 1 ? [h('span', 'teamMul'), n3('tm', p.teamMul || [0, 0, 0], 0.01, (q, v, k) => { q.teamMul = (q.teamMul || [0, 0, 0]).slice(); q.teamMul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }, 'times the team colour, on top (the cart\'s core)', 0)] : null),
       h('p.faint', 'Drawn = ' + Q.SLOT_NAMES[slot] + ' colour x mul' + (slot !== 1 ? ' + team colour x teamMul' : '') + ' + add. Recolouring rewrites mul (and keeps add while it fits).')] : null;
-    return h('div.sect', h('h3', 'Box ' + (i + 1)),
+    return h('div.sect', h('h3', 'Box ' + (i + 1) + (many ? ' (+' + others.length + ' selected)' : '')),
+      many ? h('p.faint', 'Colour, tint slot, alpha and flags change all ' + (others.length + 1) + ' selected boxes; the arrow keys and the move gizmo move them all.') : null,
       h('div.kv', h('span', 'Name'), h('input', { type: 'text', 'data-fid': 'name', value: p.name || '', placeholder: 'unnamed', onchange: e => U.change(key, null, parts => { parts[i].name = e.target.value; }, 'field') })),
       h('div.grid3', { style: { marginTop: '6px' } },
         h('span'), h('span.faint', 'x (right)'), h('span.faint', 'y (up)'), h('span.faint', 'z (back)'),
         h('span', 'Centre'), n3('c', p.c, 0.005, (q, v, k) => { q.c[k] = v; }, 'metres'),
         h('span', 'Half size'), n3('h', p.h, 0.005, (q, v, k) => { q.h[k] = Math.max(MIN_HALF, v); }, 'half the box\'s size, metres (at least ' + MIN_HALF + ')', MIN_HALF),
-        h('span', 'Colour'), [0, 1, 2].map(k => num(shown[k], 0.01, set('col' + k, (q, v) => { const D = Q.colorAtRef(q, ref); D[k] = Math.max(0, v); recol(q, D); }),
+        h('span', 'Colour'), [0, 1, 2].map(k => num(shown[k], 0.01, setAll('col' + k, (q, v) => { const D = Q.colorAtRef(q, ref); D[k] = Math.max(0, v); recol(q, D); }),
           'linear ' + 'rgb'[k] + (slot ? ' at the export\'s palette (team: white)' : '') + ' (over 1: brighter than the light)', 'col' + k, 0))),
       h('div.kv', { style: { marginTop: '6px' } },
         h('span', 'Picker'), h('div.row', { style: { margin: 0 } }, picker,
-          h('span.faint', 'x'), num(intensity, 0.05, set('int', (q, v) => { const D = Q.colorAtRef(q, ref), cur = Math.max(1, D[0], D[1], D[2]); recol(q, D.map(x => x / cur * Math.max(0, v))); }), 'intensity: the colour times this (over 1 glows)', 'int', 0),
+          h('span.faint', 'x'), num(intensity, 0.05, setAll('int', (q, v) => { const D = Q.colorAtRef(q, ref), cur = Math.max(1, D[0], D[1], D[2]); recol(q, D.map(x => x / cur * Math.max(0, v))); }), 'intensity: the colour times this (over 1 glows)', 'int', 0),
           h('span.faint.num', 'sRGB ' + Q.linToHex(shown))),
-        h('span', 'Tint slot'), h('select', { 'data-fid': 'slot', onchange: e => U.change(key, null, parts => { Q.setSlot(parts[i], +e.target.value, ref); }, 'field') },
+        h('span', 'Tint slot'), h('select', { 'data-fid': 'slot', onchange: e => U.change(key, null, apply(q => { Q.setSlot(q, +e.target.value, ref); }, (q, p0) => { Q.setSlot(q, p0.slot, ref); }), 'field') },
           Q.SLOT_TITLES.map((t, s2) => h('option', { value: s2, selected: slot === s2 }, Q.SLOT_NAMES[s2] + ': ' + t + (s2 && Q.drivenSlots(m.kind, m.name).indexOf(s2) < 0 ? ' (not set for this model)' : '')))),
-        h('span', 'Alpha'), num(p.alpha == null ? 1 : p.alpha, 0.05, set('a', (q, v) => { q.alpha = Math.max(0.01, Math.min(1, v)); }), 'under 1: see-through (projectiles only, drawn unlit, like the bubble)', 'alpha', 0.01),
-        h('span', 'Flags'), h('div', h('label.chk', { title: 'Casts a shadow' }, h('input', { type: 'checkbox', 'data-fid': 'shadow', checked: p.shadow !== false, onchange: e => U.change(key, null, parts => { parts[i].shadow = e.target.checked; }, 'field') }), ' shadow '),
-          h('label.chk', { title: 'Only seen from outside (face plates: not drawn on your own body in first person)' }, h('input', { type: 'checkbox', 'data-fid': 'visOnly', checked: !!p.visOnly, onchange: e => U.change(key, null, parts => { parts[i].visOnly = e.target.checked; }, 'field') }), ' outside only '),
-          m.kind === 'player' ? h('label.chk', { title: 'A crouch squashes this box\'s height too (every box\'s centre height follows a crouch anyway; the default legs and body have it, the head not)' }, h('input', { type: 'checkbox', 'data-fid': 'crouch', checked: !!p.crouch, onchange: e => U.change(key, null, parts => { parts[i].crouch = e.target.checked; }, 'field') }), ' crouch') : null)),
+        h('span', 'Alpha'), num(p.alpha == null ? 1 : p.alpha, 0.05, setAll('a', (q, v) => { q.alpha = Math.max(0.01, Math.min(1, v)); }, (q, p0) => { q.alpha = p0.alpha; }), 'under 1: see-through (projectiles only, drawn unlit, like the bubble)', 'alpha', 0.01),
+        h('span', 'Flags'), h('div', h('label.chk', { title: 'Casts a shadow' }, h('input', { type: 'checkbox', 'data-fid': 'shadow', checked: p.shadow !== false, onchange: flag('shadow') }), ' shadow '),
+          h('label.chk', { title: 'Only seen from outside (face plates: not drawn on your own body in first person)' }, h('input', { type: 'checkbox', 'data-fid': 'visOnly', checked: !!p.visOnly, onchange: flag('visOnly') }), ' outside only '),
+          m.kind === 'player' ? h('label.chk', { title: 'A crouch squashes this box\'s height too (every box\'s centre height follows a crouch anyway; the default legs and body have it, the head not)' }, h('input', { type: 'checkbox', 'data-fid': 'crouch', checked: !!p.crouch, onchange: flag('crouch') }), ' crouch') : null)),
       formula,
       h('p.faint', 'Slot: team = the team / accent colour, glow / metal / base / accent = the map\'s colours; the colour here is at the export\'s palette (team white). Exported as a box model (extras.quark version 2), the game draws these boxes exactly like its own: outlines, shadows, crouch, outside-only.'));
   }
@@ -418,10 +468,12 @@
         const f = S.focus, col = [f.model[ax.axis * 4], f.model[ax.axis * 4 + 1], f.model[ax.axis * 4 + 2]], s = Math.hypot(col[0], col[1], col[2]) || 1;
         const dir = col.map(c => c / s), ray = S.ray(x, y, r.width, r.height), t0 = S.axisParam(ax.origin, dir, ray);
         const p = Q.current(S.sel).parts[S.part];
-        drag = { kind: 'gizmo', axis: ax.axis, dir, origin: ax.origin, scale: s, t0, c0: p.c.slice(), h0: p.h.slice(), alt: e.altKey, group: 'g' + Date.now() };
+        const parts = Q.current(S.sel).parts, others = S.selected().filter(j => j !== S.part);
+        drag = { kind: 'gizmo', axis: ax.axis, dir, origin: ax.origin, scale: s, t0, c0: p.c.slice(), h0: p.h.slice(), alt: e.altKey, group: 'g' + Date.now(),
+          more: others.map(j => [j, parts[j].c[ax.axis]]) };   // (the other selected boxes: moved with it)
         return;
       }
-      drag = { kind: e.button === 0 && !e.shiftKey ? (orbiting ? 'orbit' : 'look') : 'pan', x: e.clientX, y: e.clientY, moved: 0, button: e.button };
+      drag = { kind: e.button === 0 && !e.shiftKey ? (orbiting ? 'orbit' : 'look') : 'pan', x: e.clientX, y: e.clientY, moved: 0, button: e.button, shift: e.shiftKey };
     });
     cv.addEventListener('pointermove', e => {
       if (!drag) return;
@@ -436,7 +488,7 @@
         const a = drag.axis, key = S.sel, i = S.part;
         U.change(key, drag.group, parts => {
           const p = parts[i];
-          if (gmode === 'move') p.c[a] = +(drag.c0[a] + d).toFixed(6);
+          if (gmode === 'move') { p.c[a] = +(drag.c0[a] + d).toFixed(6); for (const [j, c0] of drag.more) if (parts[j]) parts[j].c[a] = +(c0 + d).toFixed(6); }
           else if (drag.alt || e.altKey) p.h[a] = +Math.max(0.0005, drag.h0[a] + d).toFixed(6);   // both sides
           else { const nh = Math.max(0.0005, drag.h0[a] + d / 2); p.h[a] = +nh.toFixed(6); p.c[a] = +(drag.c0[a] + (nh - drag.h0[a])).toFixed(6); }
         }, 'typing');
@@ -458,10 +510,10 @@
       if (!d) return;
       if (d.kind === 'gizmo') { Q.closeGroup(); U.renderPanel(); U.refreshCard(S.sel); return; }
       if (d.kind === 'look') S.saveView();
-      if (d.moved < 4 && d.button === 0 && (d.kind === 'orbit' || d.kind === 'look')) {
+      if (d.moved < 4 && d.button === 0 && (d.kind === 'orbit' || d.kind === 'look' || d.shift)) {   // (a click; Shift-click adds)
         const r = cv.getBoundingClientRect();
         const i = S.pick(S.ray(e.clientX - r.left, e.clientY - r.top, r.width, r.height));
-        U.selectPart(i);
+        if (!d.shift || i >= 0) U.selectPart(i, d.shift);
       }
     });
     cv.addEventListener('wheel', e => {
@@ -681,7 +733,8 @@
   const KEYS = [['Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y', 'undo / redo'], ['1 - 6', 'orbit, first person, third person, in flight, lineup, track'], ['F', 'frame the model'],
     ['W / E', 'gizmo: move / resize (Alt: both sides; Shift: 1 cm steps)'], ['click', 'pick a box (orbit, third person; first person: the viewmodel)'],
     ['drag / right drag / wheel', 'orbit / pan / zoom (first person, lineup: look around / fov)'], ['arrows, PgUp / PgDn', 'nudge the box 1 mm in x / z, y (Shift: 1 cm)'],
-    ['Ctrl+D, Delete', 'duplicate, delete the box'], ['M', 'mirror the box across x = 0'], ['Space', 'animations on / off (a focused checkbox or button: presses it)'], ['Esc', 'close an open menu, else deselect the box'], ['?', 'this list']];
+    ['Ctrl+D, Delete', 'duplicate, delete the box'], ['M', 'mirror the box across x = 0'], ['Shift+click, Ctrl+A', 'select several boxes, every box (moved, recoloured, copied, deleted together)'],
+    ['Ctrl+C / Ctrl+V', 'copy the selected boxes / paste them (into this or another model)'], ['Space', 'animations on / off (a focused checkbox or button: presses it)'], ['Esc', 'close an open menu, else deselect the box'], ['?', 'this list']];
   U.help = () => U.dialog('Keys', h('table.keys', KEYS.map(([k, d]) => h('tr', h('td', k), h('td', d)))));
   U.closeMenus = function () {
     const open = document.querySelectorAll('.menu.open');
@@ -703,6 +756,12 @@
     if (ctrl && (k === 'z' || k === 'Z')) { e.preventDefault(); const r = e.shiftKey ? Q.redo() : Q.undo(); if (r) { if (r !== S.sel) U.select(r, true); } return; }
     if (ctrl && (k === 'y' || k === 'Y')) { e.preventDefault(); const r = Q.redo(); if (r && r !== S.sel) U.select(r, true); return; }
     if (ctrl && (k === 'd' || k === 'D')) { e.preventDefault(); if (S.part >= 0) dupPart(key, false); return; }
+    if (ctrl && (k === 'c' || k === 'C') && S.part >= 0) { e.preventDefault(); U.copyParts(); return; }
+    if (ctrl && (k === 'v' || k === 'V') && U.clip) { e.preventDefault(); U.pasteParts(); return; }
+    if (ctrl && (k === 'a' || k === 'A') && S.editable()) {   // every box
+      e.preventDefault(); const n = Q.current(key).parts.length; S.part = n ? 0 : -1; S.extra.clear(); for (let j = 1; j < n; j++) S.extra.add(j);
+      S.updateOverlay(); U.renderPanel(); return;
+    }
     if (ctrl) return;
     if (k >= '1' && k <= '6') { U.setMode(['orbit', 'fp', 'tp', 'flight', 'lineup', 'track'][+k - 1]); return; }
     if (k === 'f' || k === 'F') { S.frame(key); S.build(); S.updateOverlay(); return; }
@@ -715,7 +774,7 @@
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); delPart(key); return; }
     if (k === 'm' || k === 'M') { dupPart(key, true); return; }
     const st = e.shiftKey ? 0.01 : 0.001, ax = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [2, -1], ArrowDown: [2, 1], PageUp: [1, 1], PageDown: [1, -1] }[k];
-    if (ax) { e.preventDefault(); const i = S.part; U.change(key, 'nudge' + i, parts => { parts[i].c[ax[0]] = +(parts[i].c[ax[0]] + ax[1] * st).toFixed(6); }, 'field'); }
+    if (ax) { e.preventDefault(); const sel = S.selected(); U.change(key, 'nudge' + sel.join(), parts => { for (const i of sel) parts[i].c[ax[0]] = +(parts[i].c[ax[0]] + ax[1] * st).toFixed(6); }, 'field'); }
   }
 
   // --- wiring ------------------------------------------------------------------------------------------------------------
@@ -831,6 +890,7 @@
     const cur = key ? Q.current(key) : null;
     if (cur && cur.type === 'boxes' && S.part >= cur.parts.length) S.part = cur.parts.length - 1;
     if (cur && cur.type !== 'boxes') S.part = -1;
+    if (S.part < 0) S.extra.clear(); else if (cur) for (const j of S.extra) if (j >= cur.parts.length || j === S.part) S.extra.delete(j);
     S.build(); S.updateOverlay(); U.renderHud(); U.syncAvail();
     if (why !== 'typing') U.schedulePanel();
     else {   // typing / dragging: only the list row (the field being typed in stays)
