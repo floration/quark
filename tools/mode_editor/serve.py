@@ -328,11 +328,32 @@ def default_texts():
 
 # ---------------------------------------------------------------- files
 
+BACKUPS = 5   # <name>.qmode.bak (the newest), .bak2 ... .bak5 (the oldest); the game loads only *.qmode
+
+
+def backup_path(path, n):
+    return path + (".bak" if n == 1 else ".bak%d" % n)
+
+
+def backup_file(path, move=False):
+    """Keep the file as <path>.bak before it is overwritten (copy) or deleted / renamed (move). The older backups
+    move down one (.bak -> .bak2 ... the 5th is dropped), so a later save doesn't overwrite a deleted mode's only copy."""
+    if not os.path.isfile(path): return
+    for n in range(BACKUPS, 1, -1):
+        older = backup_path(path, n - 1)
+        if os.path.isfile(older):
+            try: os.replace(older, backup_path(path, n))
+            except OSError: pass
+    try:
+        if move: os.replace(path, backup_path(path, 1))
+        else: shutil.copyfile(path, backup_path(path, 1))
+    except OSError:
+        if move: raise
+
+
 def atomic_write(path, data, backup=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    if backup and os.path.isfile(path):
-        try: shutil.copyfile(path, path + ".bak")
-        except OSError: pass
+    if backup: backup_file(path)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-", suffix=".part")
     with os.fdopen(fd, "wb") as f: f.write(data)
     os.replace(tmp, path)
@@ -381,7 +402,8 @@ def mode_file_op(op, name, to, base_sha):
     if base_sha and sha256(data) != base_sha:
         return 409, {"error": "%s.qmode changed on disk since you opened it: nothing done." % name, "changed": True}
     if op == "delete":
-        os.replace(src, src + ".bak")
+        backup_file(src, move=True)
+        set_provenance_deleted("gamemodes/" + name, True)
         return 200, {"ok": True, "backup": name + ".qmode.bak"}
     if not valid_name(to): return 400, {"error": "bad name (letters, digits, _ . -)"}
     if to.lower() in MODES: return 400, {"error": "'%s' is a built-in mode's name: pick another" % to}
@@ -390,11 +412,54 @@ def mode_file_op(op, name, to, base_sha):
     text = patch_custommode(data.decode("utf-8", "replace"), to)
     out = text.encode("utf-8")
     atomic_write(dst, out, backup=False)
-    if op == "rename": os.replace(src, src + ".bak")
+    if op == "rename": backup_file(src, move=True)
     copy_provenance("gamemodes/" + name, "gamemodes/" + to, move=op == "rename")
     st = os.stat(dst)
     return 200, {"ok": True, "name": to, "text": text, "sha256": sha256(out), "mtime": st.st_mtime,
                  "backup": name + ".qmode.bak" if op == "rename" else None}
+
+
+BACKUP_RE = re.compile(r"^(.+)\.qmode\.bak([2-9]?)$")
+
+
+def list_backups():
+    """The modes' backups, newest first per name: [{name, n (1 = .bak), file, mtime, size, exists}] (exists: the
+    <name>.qmode is there now; else the mode was deleted or renamed)."""
+    d = CFG.modes_dir()
+    out = []
+    if os.path.isdir(d):
+        for f in os.listdir(d):
+            m = BACKUP_RE.match(f)
+            if not m or not valid_name(m.group(1)): continue
+            n = int(m.group(2) or 1)
+            if n > BACKUPS: continue
+            st = os.stat(os.path.join(d, f))
+            out.append({"name": m.group(1), "n": n, "file": f, "mtime": st.st_mtime, "size": st.st_size,
+                        "exists": os.path.isfile(os.path.join(d, m.group(1) + ".qmode"))})
+    return sorted(out, key=lambda b: (b["name"].lower(), b["n"]))
+
+
+def restore_backup(name, n, to, overwrite):
+    """A backup back as <to>.qmode (its custommode= line set to `to`) -> (status, answer). 409 when <to>.qmode exists
+    and overwrite isn't set (overwrite keeps the file it replaces as a backup too). A deleted mode's provenance comes
+    back with it."""
+    if not valid_name(to): return 400, {"error": "bad name (letters, digits, _ . -)"}
+    if to.lower() in MODES: return 400, {"error": "'%s' is a built-in mode's name: pick another" % to}
+    if not isinstance(n, int) or not 1 <= n <= BACKUPS: return 400, {"error": "bad backup number"}
+    d = CFG.modes_dir()
+    src = backup_path(os.path.join(d, name + ".qmode"), n)
+    if not os.path.isfile(src): return 404, {"error": "%s isn't in %s" % (os.path.basename(src), d)}
+    dst = os.path.join(d, to + ".qmode")
+    if os.path.exists(dst) and not overwrite: return 409, {"error": "%s.qmode already exists" % to, "exists": True}
+    with open(src, "rb") as f: data = f.read()
+    text = data.decode("utf-8", "replace")
+    if to != name: text = patch_custommode(text, to)
+    out = text.encode("utf-8")
+    atomic_write(dst, out)
+    if not set_provenance_deleted("gamemodes/" + name, False, "gamemodes/" + to) and to != name:
+        copy_provenance("gamemodes/" + name, "gamemodes/" + to, move=False)
+    st = os.stat(dst)
+    return 200, {"ok": True, "name": to, "text": text, "sha256": sha256(out), "mtime": st.st_mtime}
 
 
 def list_brains():
@@ -492,6 +557,27 @@ def copy_provenance(src, dst, move):
         if move: del items[src]
         doc["items"] = dict(sorted(items.items()))
         atomic_write(PROVENANCE, (json.dumps(doc, indent=1) + "\n").encode("utf-8"), backup=False)
+
+
+def set_provenance_deleted(key, deleted, back_to=None):
+    """A deleted mode's item leaves "items" (the counters count only what exists) for "deleted", and a restore brings it
+    back (as back_to). -> whether an item was moved."""
+    with PROV_LOCK:
+        doc = read_provenance()
+        items = doc.get("items") if isinstance(doc.get("items"), dict) else {}
+        gone = doc.get("deleted") if isinstance(doc.get("deleted"), dict) else {}
+        src, dst = (items, gone) if deleted else (gone, items)
+        if not isinstance(src.get(key), dict): return False
+        it = src.pop(key)
+        if deleted: it = dict(it, deletedOn=time.strftime("%Y-%m-%d"))
+        else: it.pop("deletedOn", None)
+        to = key if deleted or not back_to else back_to
+        if deleted or not isinstance(dst.get(to), dict): dst[to] = it
+        doc["items"] = dict(sorted(items.items()))
+        if gone: doc["deleted"] = dict(sorted(gone.items()))
+        else: doc.pop("deleted", None)
+        atomic_write(PROVENANCE, (json.dumps(doc, indent=1) + "\n").encode("utf-8"), backup=False)
+        return True
 
 
 # ---------------------------------------------------------------- checkmode
@@ -616,9 +702,20 @@ def resolve_request(request):
         for d in (CFG.user_maps_dir(), CFG.default_maps_dir()):
             p = os.path.join(d, m + ".qmap") if d else None
             if p and os.path.isfile(p): request["map"] = p; break
+    brains = dict(request.get("brains") or {}) if isinstance(request.get("brains"), dict) else {}
+    # "@default": the user's own bots/default.qbrain (the bot editor's default name). The helper takes "default" for
+    # its built-in brain, so the file goes under a name of its own.
+    bots = request.get("bots")
+    if request.get("brain") == "@default" or (isinstance(bots, list) and any(isinstance(b, dict) and b.get("brain") == "@default" for b in bots)):
+        mine, alias, k = list_brains(), "default_yours", 2
+        while alias in mine or alias in brains: alias, k = "default_yours%d" % k, k + 1
+        p = os.path.join(CFG.brains_dir(), "default.qbrain")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8", errors="replace") as f: brains[alias] = f.read()
+        if request.get("brain") == "@default": request["brain"] = alias
+        if isinstance(bots, list): request["bots"] = [dict(b, brain=alias) if isinstance(b, dict) and b.get("brain") == "@default" else b for b in bots]
     names = [request.get("brain")] + [b.get("brain") for b in request.get("bots") or [] if isinstance(b, dict)] \
         if isinstance(request.get("bots"), list) else [request.get("brain")]
-    brains = dict(request.get("brains") or {}) if isinstance(request.get("brains"), dict) else {}
     for n in names:
         if not isinstance(n, str) or n in ("", "default") or n in brains or not re.match(r"^[A-Za-z0-9_-]{1,64}$", n): continue
         p = os.path.join(CFG.brains_dir(), n + ".qbrain")
@@ -713,6 +810,7 @@ class Handler(BaseHTTPRequestHandler):
                 except FileNotFoundError: return self._err(404, "no such mode")
                 return self._send(200, {"name": n, "path": path, "text": data.decode("utf-8", "replace"), "mtime": mt, "sha256": sha256(data)})
             if p == "/api/maps": return self._send(200, {"maps": list_maps()})
+            if p == "/api/backups": return self._send(200, {"backups": list_backups(), "dir": CFG.modes_dir(), "keep": BACKUPS})
             if p == "/api/brains": return self._send(200, {"brains": list_brains(), "dir": CFG.brains_dir()})
             if p == "/api/scenarios": return self._send(200, {"scenarios": list_scenarios(), "dir": CFG.scenarios_dir()})
             if p == "/api/provenance":
@@ -754,6 +852,12 @@ class Handler(BaseHTTPRequestHandler):
                 n = q.get("name", "")
                 if not valid_name(n): return self._err(400, "bad name")
                 code, ans = mode_file_op(m.group(1), n, q.get("to", ""), self._json_body().get("baseSha256"))
+                return self._send(code, ans)
+            if p == "/api/mode/restore":   # a backup back as a mode: {n, to, overwrite}
+                n = q.get("name", "")
+                if not valid_name(n): return self._err(400, "bad name")
+                b = self._json_body()
+                code, ans = restore_backup(n, b.get("n", 1), b.get("to") or n, bool(b.get("overwrite")))
                 return self._send(code, ans)
             if p == "/api/scenario":   # Sim's saved setups: <data dir>/mode_editor/scenarios/<name>.json
                 n = q.get("name", "")
@@ -822,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
         409 when the file changed (or appeared, or went) on disk since the page loaded it; 400 when the text would
         change a line this editor doesn't own, or put a key line after `logic`."""
         if not valid_name(name): return self._err(400, "bad name (letters, digits, _ . -)")
-        if name in MODES: return self._err(400, "'%s' is a built-in mode's name: pick another" % name)
+        if name.lower() in MODES: return self._err(400, "'%s' is a built-in mode's name: pick another" % name)   # (FFA too: Windows names ignore case)
         body = self._json_body()
         text = body.get("text")
         if not isinstance(text, str) or not text.strip(): return self._err(400, "empty mode")

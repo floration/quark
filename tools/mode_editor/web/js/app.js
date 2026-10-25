@@ -123,6 +123,8 @@ class App {
         const dl = $("mapNames");
         dl.textContent = "";
         for (const m of maps) { const o = document.createElement("option"); o.value = m.name; o.label = `${m.name}${m.for ? " (" + m.for + ")" : ""}${m.source === "user" ? " [yours]" : ""}`; dl.append(o); }
+        this.mapNames = maps.length ? new Set(maps.map((m) => m.name)) : null;   // (null: unknown, so nothing is flagged)
+        this.emit("maps");
     }
     // ?embed=1 hides the header, so the left panel says the same in one line: catalog · built-in texts · modesim · folder
     _statusLine() {
