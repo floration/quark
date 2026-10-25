@@ -1,6 +1,6 @@
 // Export: save the set as a custom mode (the .qmode a save writes, merged into the file on disk by serve.py), and the
 // C++ constants list (physexport) for the owner, if a set should become the game's standard movement.
-import { api } from "./api.js";
+import { api, sameName } from "./api.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,7 +29,7 @@ export class ExportView {
         const seq = (this.seq = (this.seq || 0) + 1);
         try {
             // what a save would write: the movement lines merged into the file as it is on disk now (or a new file)
-            const exists = (app.modes || []).some((m) => m.name === name);
+            const exists = (app.modes || []).some((m) => sameName(m.name, name));
             const base = exists ? await api.mode(name) : (app.set.saved && app.set.saved !== name ? await api.mode(app.set.saved).then((t) => t.replace(/^custommode=.*$/m, "custommode=" + name)) : app.set.baseText ? app.set.baseText.replace(/^custommode=.*$/m, "custommode=" + name) : "");
             const m = await api.merge(base, app.physics, name);
             if (seq !== this.seq) return;

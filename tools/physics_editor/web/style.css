@@ -54,6 +54,8 @@ button.icon { padding: 1px 7px; min-width: 26px; line-height: 1.2; }
 .field input:not([type=checkbox]):not([type=range]), .field select { width: 100%; min-width: 0; }
 .sep { border-top: 1px solid var(--line); margin: 10px 0 0; }
 #runInfo { font: 11.5px var(--mono); color: var(--fg3); margin-top: 4px; }
+/* results from the last good run while the current one failed: greyed (app.staleNote says so beside them) */
+.stale { opacity: 0.45; filter: grayscale(1); }
 #presetNote { margin: 2px 0 4px; padding: 4px 6px; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: 0 4px 4px 0; }
 #presetNote button { font-size: 11px; padding: 0 6px; margin-top: 3px; }
 #runInfo.busy::before { content: "running... "; color: var(--acc); }
@@ -168,9 +170,9 @@ td.gv:hover .guse { opacity: 1; }
 #pg-code .sub.on { display: grid; }
 
 /* code › movement code */
-#mcWrap { grid-template-rows: auto 1fr; }
+#mcWrap { grid-template-rows: auto auto 1fr; }
 #mcFiles button { font: 12px var(--mono); padding: 1px 8px; }
-#mcBody { display: grid; grid-template-columns: 250px 1fr; min-height: 0; }
+#mcBody { display: grid; grid-template-columns: 250px 1fr; min-height: 0; grid-row: 3; }
 #mcSide { overflow: auto; border-right: 1px solid var(--line); background: var(--bg1); padding: 4px 8px 20px; font-size: 12px; }
 #mcSide h3 { margin: 8px 0 4px; }
 .mset .msi { display: grid; grid-template-columns: 1fr 22px 62px; gap: 4px; padding: 1px 4px; border-radius: 4px; cursor: pointer; font-family: var(--mono); font-size: 11.5px; }
@@ -206,8 +208,12 @@ td.gv:hover .guse { opacity: 1; }
 :root[data-theme="light"] .cK { color: #b4500f; } :root[data-theme="light"] .cM, :root[data-theme="light"] .cfn { color: #1f5fbf; } :root[data-theme="light"] .cn { color: #a25b00; } :root[data-theme="light"] .ck, :root[data-theme="light"] .cpp { color: #7a3fc4; } :root[data-theme="light"] .cs { color: #3c7a1e; } :root[data-theme="light"] .ct { color: #1b6f9a; } :root[data-theme="light"] .cF { color: #157a6e; }
 
 /* code graph */
-#cgWrap { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-#cgView { position: relative; min-height: 0; }
+#cgWrap { display: grid; grid-template-rows: auto auto 1fr; height: 100%; }
+/* the parser couldn't find part of the movement code (source.js sourceProblems): said, not a silently empty graph */
+.srcwarn { margin: 4px 0; padding: 5px 8px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 0 4px 4px 0; font-size: 12px; }
+.srcwarn[hidden] { display: none; }
+.srcwarn div + div { margin-top: 2px; }
+#cgView { position: relative; min-height: 0; grid-row: 3; }
 #cgCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #cgTip { position: absolute; display: none; max-width: 420px; pointer-events: none; background: color-mix(in srgb, var(--bg1) 95%, transparent); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: var(--qt-shadow); z-index: 3; }
 #cgTip code { font-size: 11px; }
@@ -242,7 +248,9 @@ td.gv:hover .guse { opacity: 1; }
 .bk-palette { border-right: 1px solid var(--line); background: var(--bg1); overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
 .bk-palette.bk-trash { background: color-mix(in srgb, var(--bad) 14%, var(--bg1)); outline: 2px dashed var(--bad); outline-offset: -4px; }
 .bk-ph { color: var(--fg3); font-size: 11px; margin-top: 6px; text-transform: uppercase; letter-spacing: .05em; }
-.bk-main { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; min-width: 0; }
+.bk-main { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+.bk-body { display: grid; grid-template-rows: 1fr auto; min-height: 0; min-width: 0; }
+.bk-side { min-width: 0; }
 .bk-ws { overflow: auto; position: relative; background: radial-gradient(circle, color-mix(in srgb, var(--line) 70%, transparent) 1px, transparent 1px) 0 0 / 18px 18px, var(--bg); padding: 12px 16px 60px; }
 .bk-hat { display: inline-block; min-width: 460px; max-width: 100%; background: var(--bg2); border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px 10px; }
 .bk-hathead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 12px; }
@@ -266,6 +274,13 @@ td.gv:hover .guse { opacity: 1; }
 .c-move { --cc: var(--c-move); } .c-button { --cc: var(--c-button); } .c-look { --cc: var(--c-look); } .c-bot { --cc: var(--c-bot); } .c-wait { --cc: var(--c-wait); } .c-start { --cc: var(--c-start); }
 .bk-tl { border-top: 1px solid var(--line); background: var(--bg1); padding: 6px 10px 8px; }
 .bk-tl canvas { width: 100%; height: 64px; display: block; }
+/* a wide screen (q's 2560): the timeline beside the stack, the full height, with the speed and the height curves */
+@media (min-width: 1800px) {
+  .bk-body { grid-template-rows: none; grid-template-columns: minmax(560px, 1fr) minmax(640px, 1.3fr); }
+  .bk-side { display: grid; grid-template-rows: 1fr auto; min-height: 0; border-left: 1px solid var(--line); }
+  .bk-tl { border-top: none; position: relative; min-height: 0; }
+  .bk-tl canvas { position: absolute; left: 10px; top: 8px; width: calc(100% - 20px); height: calc(100% - 16px); }   /* (absolute: the canvas's own size can't feed back) */
+}
 .bk-json { display: none; border-top: 1px solid var(--line); }
 .bk-json.on { display: block; }
 .bk-json textarea { width: 100%; height: 220px; border: none; border-radius: 0; font: 12px/1.45 var(--mono); background: var(--bg); padding: 8px 10px; resize: vertical; }
@@ -332,6 +347,8 @@ table.met td.hops { font-size: 11px; }
 #driveSide { border-left: 1px solid var(--line); }
 #driveSide canvas { width: 100%; height: 120px; display: block; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
 #driveEvents { font: 11px var(--mono); max-height: 160px; overflow: auto; color: var(--fg2); }
+#driveSide canvas.ft { height: 70px; }
+#driveSpikes { font: 11px var(--mono); white-space: pre-wrap; max-height: 120px; overflow: auto; margin-top: 3px; }
 
 /* export */
 #exportWrap { overflow: auto; height: 100%; padding: 12px 16px 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-content: start; }
