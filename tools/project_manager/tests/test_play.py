@@ -653,6 +653,21 @@ class TestPlay(unittest.TestCase):
         self.assertTrue(v["notes"][0]["freeform"])
         self.assertEqual(v["notes"][0]["where"], "kept on this PC only (no Claude Documents folder)")
 
+    def test_session_history_and_crash_counts(self):
+        p = self.new()
+        for i in range(40):
+            p.sessions.append({"id": "p202610241900%02d-aaaa" % i, "build": "testing", "label": "testing", "state": "noted",
+                               "exitCode": -11 if i % 4 == 0 else 0, "startedAt": "2026-10-24T19:00:00Z"})
+        v = p.view()
+        self.assertEqual((len(v["sessions"]), v["sessionsTotal"]), (30, 40))
+        self.assertEqual(v["sessions"][0]["id"], "p20261024190039-aaaa")  # (newest first)
+        code, all_ = p.api_get("sessions", {})
+        self.assertEqual((code, len(all_["sessions"]), all_["total"]), (200, 40, 40))
+        self.assertEqual(all_["sessions"][-1]["exit"]["kind"], "crash")
+        self.assertNotIn("pidCreated", all_["sessions"][0])
+        b = p.find_build("testing")
+        self.assertEqual((b["plays"], b["crashes"]), (40, 10))
+
     def test_injected_spawner_and_adoption(self):
         # any command can stand in for the game (cross-platform): it runs, exits, the session wants a note
         def spawner(argv, cwd, log):

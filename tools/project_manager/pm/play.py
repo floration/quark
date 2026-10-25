@@ -1109,8 +1109,15 @@ class Play:
     def builds(self):
         out = []
         ctx = _Ctx(self.paths)
+        counts = {}   # (games played and crashed per build, over the kept sessions: shown on its card)
+        with self.lock:
+            for s in self.sessions:
+                if s.get("state") != "running":
+                    c = counts.setdefault(s.get("build"), [0, 0])
+                    c[0] += 1
+                    c[1] += exit_info(s.get("exitCode"), s.get("stopped"))["kind"] == "crash"
         for name in LOCAL_FOLDERS:
-            out.append(self._build(builds.read_folder(ctx, name), name, name, "local"))
+            out.append(self._build(builds.read_folder(ctx, name), name, name, "local", counts))
         vdir = self.paths.q(VERSIONS)
         try:
             tags = [t for t in os.listdir(vdir) if TAG_RE.match(t) and os.path.isdir(os.path.join(vdir, t))]
@@ -1118,7 +1125,8 @@ class Play:
             tags = []
         tags.sort(key=lambda t: (util.version_key(t), t), reverse=True)
         for t in tags:
-            out.append(self._build(builds.read_folder(ctx, os.path.join(VERSIONS, t)), VERSIONS + "/" + t, t, "version"))
+            out.append(self._build(builds.read_folder(ctx, os.path.join(VERSIONS, t)), VERSIONS + "/" + t, t, "version",
+                                   counts))
         return out
 
     def _maps(self, folder):
@@ -1152,7 +1160,7 @@ class Play:
             m = {"sig": None, "maps": [], "modes": list(GAME_MODES)}
         return dict(m, build=b["id"], titles=dict(zip(GAME_MODES, GAME_MODE_TITLES)))
 
-    def _build(self, e, bid, label, kind):
+    def _build(self, e, bid, label, kind, counts):
         exe = find_exe(e["path"]) if e.get("present") else None
         with self.lock:
             running = [s["id"] for s in self.sessions if s.get("state") == "running" and s.get("build") == bid]
@@ -1164,6 +1172,7 @@ class Play:
              "missing": None if exe else ("folder missing" if not e.get("present") else "no quark.exe in it")}
         m = self._maps(e["path"]) if exe else None
         b["maps"] = m["sig"] if m else None
+        b["plays"], b["crashes"] = counts.get(bid, (0, 0))
         if kind == "version" and e.get("present"):
             # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded)
             try:
@@ -2102,23 +2111,33 @@ class Play:
                          "build": byid[k].get("build"), "label": byid[k].get("label"), "version": byid[k].get("version")}
                         for k, v in blocked.items() if k in byid and present]
         with self.lock:
-            sessions = [dict(s) for s in reversed(self.sessions[-30:])]
+            sessions = [self._session_view(s) for s in reversed(self.sessions[-30:])]
             installs = {k: dict(v) for k, v in self.installs.items()}
-        for s in sessions:
-            s.pop("pidCreated", None)
-            if s.get("state") != "running":
-                s["exit"] = exit_info(s.get("exitCode"), s.get("stopped"))
-            path = self._log_path(s)
-            s["hasLog"] = bool(path and os.path.isfile(path))
+            total = len(self.sessions)
         p = self.pending()
         return {"now": util.now_iso(), "builds": blist, "releases": releases, "installs": installs,
-                "sessions": sessions, "running": p["running"], "pending": p["pending"], "openNotes": p["openNotes"],
+                "sessions": sessions, "sessionsTotal": total, "running": p["running"], "pending": p["pending"], "openNotes": p["openNotes"],
                 "notes": notes, "notesTotal": len(all_notes), "blocked": blocked_list,
                 "docs": {"folder": self.docs_dir, "present": present, "file": DOCS_FILE,
                          "filePresent": os.path.isfile(os.path.join(self.docs_dir, DOCS_FILE)),
                          "sync": {k: v for k, v in self.sync.items() if k not in ("written", "applied", "blocked", "dismissed")}},
                 "limits": {"field": MAX_FIELD, "args": MAX_ARGS},
                 "platform": "windows" if util.IS_WINDOWS else sys.platform}
+
+    def _session_view(self, s):
+        """A session as the page shows it: how it ended, whether its log is still there."""
+        s = dict(s)
+        s.pop("pidCreated", None)
+        if s.get("state") != "running":
+            s["exit"] = exit_info(s.get("exitCode"), s.get("stopped"))
+        path = self._log_path(s)
+        s["hasLog"] = bool(path and os.path.isfile(path))
+        return s
+
+    def all_sessions(self):
+        """Every kept session (KEEP_SESSIONS), newest first: the page's "Show all" (a poll sends the newest 30)."""
+        with self.lock:
+            return {"sessions": [self._session_view(s) for s in reversed(self.sessions)], "total": len(self.sessions)}
 
     # -- the routes server.py hands over (GET /api/play/<what>, POST /api/play/<what>)
     def api_get(self, what, query):
@@ -2129,6 +2148,8 @@ class Play:
                 return 200, self.game_log(q("session"))
             if what == "maps":
                 return 200, self.build_maps(q("build"))
+            if what == "sessions":
+                return 200, self.all_sessions()
         except PlayError as e:
             return e.code, {"ok": False, "message": e.message, "reason": e.reason}
         return 404, {"ok": False, "message": "not found"}

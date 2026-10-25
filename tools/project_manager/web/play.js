@@ -151,6 +151,7 @@
         (meta.length ? '<div class="m">' + meta.join(' &middot; ') + '</div>' : '') +
         (b.playable ? '' : '<div class="m">' + esc(b.missing || 'not playable') + '</div>') +
         (last ? '<div class="m">last played ' + esc(when(last.startedAt)) + ' for ' + esc(dur(last.durationSec)) + ' ' + exitPill(last.exit) + '</div>' : '') +
+        (b.crashes ? '<div class="m"><span class="err">' + esc(b.crashes) + ' of ' + esc(b.plays) + ' games crashed</span></div>' : '') +
         (lines.length ? '<details><summary class="small muted">BUILD.txt</summary><pre class="small mono">' + lines.map(esc).join('\n') + '</pre></details>' : '');
       const r0 = run[0];
       const act = (b.playable ? '<button type="button" class="btn primary" data-play="' + esc(b.id) + '">Play</button>' : '') +
@@ -312,10 +313,27 @@
   }
 
   const SESSION_STATE = { running: ['good', 'running'], needsNote: ['warn', 'note waiting'], noted: ['good', 'noted'], skipped: ['idle', 'skipped'] };
+  // Recent games: the newest 15 of the 30 a poll sends; "Show all" fetches every kept one (200) once and keeps the
+  // poll's newest on top of it; "Crashed" keeps the crashes and error exits
+  const SESSIONS_SHOWN = 15;
+  const badEnd = (s) => ['crash', 'error'].includes(obj(s.exit).kind);
   function renderSessions() {
-    const list = arr(state.v.sessions).slice(0, 15);
-    let html = '<div class="card-head"><h2 id="h-sessions">Recent games</h2><span class="src">project-manager\\play-sessions.json</span></div>';
-    if (!list.length) return setHTML('sec-sessions', html + '<p class="empty">Nothing played from here yet.</p>');
+    const v = state.v, recent = arr(v.sessions), total = Number(v.sessionsTotal) || recent.length;
+    let list = recent;
+    if (state.sessAll && state.sessFull) {
+      const seen = new Set(recent.map(s => s.id));
+      list = recent.concat(state.sessFull.filter(s => !seen.has(s.id)));
+    }
+    if (state.sessCrashed) list = list.filter(badEnd);
+    const more = !state.sessAll && list.length > SESSIONS_SHOWN;
+    if (!state.sessAll) list = list.slice(0, SESSIONS_SHOWN);
+    const seg = [['all', 'All'], ['crashed', 'Crashed']].map(([k, t]) => '<button type="button" data-sessf="' + k + '"' + ((k === 'crashed') === !!state.sessCrashed ? ' class="on"' : '') +
+      (k === 'crashed' ? ' title="Crashes and error exits"' : '') + '>' + t + '</button>').join('');
+    let html = '<div class="card-head"><h2 id="h-sessions">Recent games' + (total ? ' <span class="count">' + esc(total) + '</span>' : '') + '</h2>' +
+      '<span class="rel-tools">' + (total ? '<span class="seg">' + seg + '</span>' : '') + '<span class="src">project-manager\\play-sessions.json</span></span></div>';
+    const tail = total > SESSIONS_SHOWN || state.sessAll ? '<p class="small muted more-notes">' + (state.sessAll ? 'All ' + esc(total) + ' kept games. ' : more || total > recent.length ? 'The newest ' + SESSIONS_SHOWN + ' of ' + esc(total) + '. ' : '') +
+      '<button type="button" class="btn small ghost" data-sessall="1">' + (state.sessAll ? 'Show the newest ' + SESSIONS_SHOWN : 'Show all ' + esc(total)) + '</button></p>' : '';
+    if (!list.length) return setHTML('sec-sessions', html + '<p class="empty">' + (state.sessCrashed && total ? 'No crashes or error exits' + (state.sessAll ? '.' : ' among these; Show all looks at every kept game.') : 'Nothing played from here yet.') + '</p>' + tail);
     html += '<table class="t"><thead><tr><th>Build</th><th>Started</th><th class="num">Played</th><th>State</th><th></th></tr></thead><tbody>' + list.map(s => {
       const st = SESSION_STATE[s.state] || ['idle', s.state || '?'];
       const played = s.state === 'running' ? dur((Date.now() - (ms(s.startedAt) || Date.now())) / 1000) : dur(s.durationSec);
@@ -326,7 +344,7 @@
       return '<tr><td>' + esc(s.label) + ' <span class="muted small">' + esc(s.version || '') + '</span>' + (has(s.args) ? '<div class="small mono muted">' + esc(s.args) + '</div>' : '') + '</td>' +
         '<td class="nowrap">' + esc(when(s.startedAt)) + '</td><td class="num">' + esc(played) + (s.endApprox ? '?' : '') + '</td><td>' + pill(st[0], st[1]) + ' ' + exitPill(s.exit) + '</td>' +
         '<td class="nowrap">' + btns.join(' ') + '</td></tr>';
-    }).join('') + '</tbody></table>';
+    }).join('') + '</tbody></table>' + tail;
     setHTML('sec-sessions', html);
   }
 
@@ -790,6 +808,12 @@
       } else if (d.more) {
         if (state.openNotes.has(d.more)) state.openNotes.delete(d.more); else state.openNotes.add(d.more);
         renderNotes();
+      } else if (d.sessf) {
+        state.sessCrashed = d.sessf === 'crashed'; renderSessions();
+      } else if (d.sessall) {
+        state.sessAll = !state.sessAll;
+        if (state.sessAll) { b.disabled = true; state.sessFull = arr((await api('/api/play/sessions')).sessions); }
+        renderSessions();
       } else if (d.oldrel) {
         state.relOld = !state.relOld; renderReleases();
       } else if (d.filter) {
