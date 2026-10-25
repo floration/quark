@@ -557,17 +557,21 @@ export class SimView {
             const wText = !w ? (e.leader ? `no winner yet: ${e.leader.team ? "TEAM " + e.leader.team.toUpperCase() : nm(e.leader.player)} ahead` : "no winner") : typeof w === "string" ? w : w.text || w.name || "winner";
             const pf = e.perf || {};
             const tn = pf.tickNs || {};
+            const maxAt = (x) => (x.maxAt != null && x.max > 0 ? ` <span class="muted" title="tick ${esc(x.maxTick)} of the match">at ${esc(x.maxAt.toFixed(1))} s</span>` : "");
             const lns = pf.logicNs;
             const lg = (s && s.logic) || {};
-            const logicLine = lns ? `<b>logic per tick</b> avg ${esc(us(lns.avg))} · p99 ${esc(us(lns.p99))} · max ${esc(us(lns.max))} <span class="muted">(${tn.avg ? esc((100 * lns.avg / tn.avg).toFixed(1)) + "% of the server tick" : ""})</span>`
+            const logicLine = lns ? `<b>logic per tick</b> avg ${esc(us(lns.avg))} · p99 ${esc(us(lns.p99))}${lns.p999 != null ? ` · p99.9 ${esc(us(lns.p999))}` : ""} · max ${esc(us(lns.max))}${maxAt(lns)} <span class="muted">(${tn.avg ? esc((100 * lns.avg / tn.avg).toFixed(1)) + "% of the server tick" : ""})</span>`
                 : !lg.present ? "no logic: every slot ran native" : s && s.logicApplied ? "logic per tick: not measured" : "logic per tick: the server didn't run the logic";
+            // a slot that runs on events (kill...) is idle most ticks, so per tick it reads as free: per call says what it costs
+            const cn = pf.callNs;
+            const callLine = cn && cn.calls ? `<div><b>per call</b> <span class="muted">(${esc(cn.calls)} interpreted slot call${cn.calls === 1 ? "" : "s"})</span> avg ${esc(us(cn.avg))} · p99 ${esc(us(cn.p99))} · max ${esc(us(cn.max))}${cn.sampled ? ` <span class="muted">(the first ${esc(cn.sampled)} calls)</span>` : ""}</div>` : "";
             const rows = ((e.result && e.result.players) || []).slice().sort((a, b) => (b.score - a.score) || (b.kills - a.kills));
             const len = e.t ?? M.t1;
             const slots = pf.slots || [];
             card = `<div class="sim-card"><b>${esc(wText)}</b> <span class="muted">(${esc(e.reason || "")})</span>
                 <div>${fields.rounds ? `rounds ${esc(e.rounds ?? "-")} · ` : ""}${teams && e.result ? `score ${esc(e.result.scoreA + " - " + e.result.scoreB)} · ` : ""}length ${esc(typeof len === "number" ? len.toFixed(1) : len)} s</div>
-                ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))} / max ${esc(us(tn.max))}</div>` : ""}
-                <div>${logicLine}</div>
+                ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))}${tn.p999 != null ? ` / p99.9 ${esc(us(tn.p999))}` : ""} / max ${esc(us(tn.max))}${maxAt(tn)}${tn.maxTick === 0 && tn.maxAfterFirst != null ? ` (the match's first tick: the round's setup; after it max ${esc(us(tn.maxAfterFirst))})` : ""}</div>` : ""}
+                <div>${logicLine}</div>${callLine}
                 ${rows.length ? `<table class="sim-tab"><tr><th></th><th>score</th><th>K</th><th>D</th>${fields.objTime ? "<th>obj s</th>" : ""}</tr>${rows.map((p) => `<tr><td style="color:${teams ? TEAM_COLOR[teamOf(p.team)] || "inherit" : r.colors.get(p.id) || "inherit"}">${p.won ? "★ " : ""}${esc(p.name)}</td><td>${esc(p.score)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td>${fields.objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>` : ""}
                 ${slots.length ? `<table class="sim-tab"><tr><th>slot</th><th>calls</th><th>total</th><th>avg</th><th>max</th></tr>${slots.map((x) => `<tr><td style="color:${this._slotColor(M, x.slot)}">${esc(x.slot)}</td><td>${esc(x.calls)}</td><td>${esc(us(x.ns))}</td><td>${esc(us(x.avg))}</td><td>${esc(us(x.max))}</td></tr>`).join("")}</table>` : ""}</div>`;
         }
@@ -793,7 +797,7 @@ export class SimView {
         const L = e.length || {}, ln = e.perf.logicNs;
         const objTime = (e.players || []).some((p) => p.objTime > 0);
         h += `<div class="sim-card" style="margin-top:6px">${e.matchesPlayed} played · ${e.timeouts} timeouts (hit the max s) · ${e.errors} errors<br>length avg ${esc(L.avg)} s (min ${esc(L.min)}, median ${esc(L.p50)}, max ${esc(L.max)})${e.teams || e.rounds > 0 ? ` · rounds ${esc(e.rounds)}` : ""} · score spread ${esc(e.scoreSpread)}
-              ${ln ? `<div><b>logic per tick</b> avg ${esc(us(ln.avg))} · worst p99 ${esc(us(ln.p99))} · worst max ${esc(us(ln.max))} <span class="muted">(${esc(ln.matches)} matches)</span></div>` : ""}
+              ${ln ? `<div><b>logic per tick</b> avg ${esc(us(ln.avg))} · worst p99 ${esc(us(ln.p99))}${ln.p999 != null ? ` · worst p99.9 ${esc(us(ln.p999))}` : ""} · worst max ${esc(us(ln.max))} <span class="muted">(${esc(ln.matches)} matches)</span></div>` : ""}
               <div class="muted">${esc((e.perf.matchesPerSecond || 0).toFixed(2))} matches/s · ${esc(Math.round(e.perf.speedupPerMatch || 0))}x real time per match · ${esc(e.perf.threads)} threads · ${esc((e.perf.wallSeconds || 0).toFixed(1))} s</div></div>`;
         h += `<table class="sim-tab"><tr><th>bot</th>${e.teams ? "<th>team</th>" : ""}<th>wins</th><th>K/match</th><th>D/match</th><th>score</th>${objTime ? "<th>obj s</th>" : ""}</tr>${(e.players || []).map((p) => `<tr><td>${esc(p.name)}</td>${e.teams ? `<td style="color:${TEAM_COLOR[p.team] || "inherit"}">${esc(p.team.toUpperCase())}</td>` : ""}<td>${pct(p.winRate)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td><td>${esc(p.score)}</td>${objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>`;
         h += `<button data-csv="${i}" style="margin-top:6px">⇩ CSV (one row per match)</button></div>`;

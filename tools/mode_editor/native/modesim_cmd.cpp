@@ -22,6 +22,7 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -84,7 +85,11 @@ public:
     // per slot since the last take (a frame's), and for the whole match
     Aggs takeFrame() { Aggs o = frame_; frame_ = Aggs(); return o; }
     const Aggs& totals() const { return total_; }
-    void clear() { pending_ = 0; frame_ = total_ = Aggs(); }
+    // every call's time (any slot, nested ones too), for the per-call p99: at most kMaxCalls kept (then only counted)
+    static constexpr size_t kMaxCalls = 4u << 20;
+    const std::vector<float>& callNs() const { return calls_; }
+    long long callCount() const { return callCount_; }
+    void clear() { pending_ = 0; frame_ = total_ = Aggs(); calls_.clear(); callCount_ = 0; }
 private:
     struct Scope {
         TimedHooks& h; int slot; Clock::time_point t0;
@@ -93,12 +98,16 @@ private:
             const double ns = std::chrono::duration<double, std::nano>(Clock::now() - t0).count();
             if (--h.depth_ == 0) h.pending_ += ns;
             for (Agg* a : {&h.frame_[slot], &h.total_[slot]}) { a->calls++; a->ns += ns; a->max = std::max(a->max, ns); }
+            h.callCount_++;
+            if (h.calls_.size() < kMaxCalls) h.calls_.push_back((float)ns);
         }
     };
     std::shared_ptr<ModeHooks> in_;
     int depth_ = 0;
     double pending_ = 0;
     Aggs frame_{}, total_{};
+    std::vector<float> calls_;
+    long long callCount_ = 0;
 };
 const char* hookSlotName(int slot) { return slot == MSLOT_TIMER ? "timers" : modeSlotNameOf(slot); }   // (MSLOT_TIMER: every timer)
 // --------------------------------------------------------------------------------------------------------------------
@@ -380,6 +389,7 @@ private:
     std::vector<float> tickNs_;
     std::shared_ptr<TimedHooks> timed_;   // the server's ModeHooks behind a stopwatch (null: no logic runs)
     std::vector<float> logicNs_;          // the logic's time per tick (its outermost slot calls), while it runs
+    std::vector<uint32_t> logicTick_;     // ... the tick (since the match start) each of those was
     long long ticks_ = 0;
     double simWall_ = 0;
     void tickOnce();
@@ -425,7 +435,7 @@ bool ModeMatch::start(const Setup& S, uint32_t seed, const std::string& dataDir,
         if (id >= 0 && !b.name.empty()) s.players_[id].name = b.name;
     }
     tickNs_.reserve((size_t)(S.seconds * S.tickRate) + 1024);
-    if (timed_) logicNs_.reserve(tickNs_.capacity());
+    if (timed_) { logicNs_.reserve(tickNs_.capacity()); logicTick_.reserve(tickNs_.capacity()); }
     // a second of warmup (the bots join and spawn), then the match starts as a vote would start it
     step(std::max(1, s.tickRate()), false);
     s.command("forcestart");
@@ -435,7 +445,7 @@ bool ModeMatch::start(const Setup& S, uint32_t seed, const std::string& dataDir,
     rounds_ = Json::array();
     matchOverAt_ = -1; matchText_.clear(); winTeam_ = winPlayer_ = -1;
     tickNs_.clear(); ticks_ = 0; simWall_ = 0;
-    logicNs_.clear();
+    logicNs_.clear(); logicTick_.clear();
     if (timed_) timed_->clear();
     pPhase_ = s.ms_.phase;
     started_ = true;
@@ -451,7 +461,10 @@ void ModeMatch::tickOnce() {
     s.tick_++;
     s.timeMs_ += 1000 / s.tickRate();
     if (s.tick_ % s.snapEvery() == 0) s.sendSnapshotsForTest();   // (no clients: bookkeeping, as frame() does it)
-    if (timed_) { const double ns = timed_->takeNs(); if (s.modeHooks_) logicNs_.push_back((float)ns); }   // (while the logic plays)
+    if (timed_) {   // (while the logic plays)
+        const double ns = timed_->takeNs();
+        if (s.modeHooks_) { logicNs_.push_back((float)ns); logicTick_.push_back((uint32_t)(tickNs_.size() - 1)); }
+    }
 }
 
 int ModeMatch::step(int ticks, bool stopAtMatchEnd) {
@@ -715,17 +728,22 @@ Json ModeMatch::result() const {
     return r;
 }
 
-// avg / p99 / max of per-tick nanoseconds (null: none)
-Json nsStats(const std::vector<float>& src) {
+// avg / p99 / p99.9 / max of nanoseconds per tick (or per call), and when the max was: maxAt (game seconds since the
+// match start) and maxTick, when tickOf(i) gives the tick of src[i] (ticks are 1 / tickRate s apart). null: none.
+Json nsStats(const std::vector<float>& src, const std::function<long long(size_t)>& tickOf = nullptr, int tickRate = 0) {
     if (src.empty()) return Json();
+    const size_t at = (size_t)(std::max_element(src.begin(), src.end()) - src.begin());
     std::vector<float> v = src;
     double sum = 0; for (float x : v) sum += x;
-    size_t k99 = v.size() * 99 / 100;
-    std::nth_element(v.begin(), v.begin() + k99, v.end());
-    float p99 = v[k99];
-    float mx = *std::max_element(v.begin(), v.end());
+    auto pct = [&](size_t per1000) { size_t k = std::min(v.size() - 1, v.size() * per1000 / 1000); std::nth_element(v.begin(), v.begin() + k, v.end()); return v[k]; };
+    const float p999 = pct(999), p99 = pct(990);
     Json o = Json::object();
-    o.set("avg", std::round(sum / v.size())); o.set("p99", std::round(p99)); o.set("max", std::round(mx)); o.set("ticks", (double)v.size());
+    o.set("avg", std::round(sum / v.size())); o.set("p99", std::round(p99)); o.set("p999", std::round(p999)); o.set("max", std::round(src[at]));
+    o.set("count", (double)v.size());
+    if (tickOf && tickRate > 0) {
+        const long long tk = tickOf(at);
+        o.set("maxTick", (double)tk); o.set("maxAt", r2((tk + 1) * (double)(1000 / tickRate) / 1000.0));   // (the server's clock steps 1000 / rate ms a tick)
+    }
     return o;
 }
 
@@ -793,9 +811,24 @@ Json ModeMatch::perf() const {
     p.set("simSeconds", simWall_);
     p.set("ticksPerSecond", simWall_ > 0 ? ticks_ / simWall_ : 0.0);
     p.set("speedup", simWall_ > 0 ? time() / simWall_ : 0.0);   // game seconds per wall second (x real time)
-    Json tn = nsStats(tickNs_);
+    const int rate = tickRate();
+    Json tn = nsStats(tickNs_, [](size_t i) { return (long long)i; }, rate);
+    if (!tn.isNull()) {   // the match's first tick (forcestart's round setup: spawns, the logic's first slots) apart, so a
+                          // one-off start-up spike reads as that, not as what a tick usually costs at its worst
+        tn.set("first", std::round(tickNs_[0]));
+        if (tickNs_.size() > 1) tn.set("maxAfterFirst", std::round(*std::max_element(tickNs_.begin() + 1, tickNs_.end())));
+        tn.set("ticks", (double)tickNs_.size());
+    }
     p.set("tickNs", tn.isNull() ? Json::object() : tn);   // Server::simulate per tick (everything: movement, bots, rules, logic)
-    p.set("logicNs", nsStats(logicNs_));   // the interpreted slots' share of each tick (null: no logic ran)
+    Json ln = nsStats(logicNs_, [this](size_t i) { return (long long)logicTick_[i]; }, rate);
+    if (!ln.isNull()) ln.set("ticks", (double)logicNs_.size());
+    p.set("logicNs", std::move(ln));   // the interpreted slots' share of each tick (null: no logic ran)
+    if (timed_ && timed_->callCount()) {   // one interpreted slot call (any slot): the cost of the logic when it does run
+        Json c = nsStats(timed_->callNs());
+        c.set("calls", (double)timed_->callCount());
+        if ((long long)timed_->callNs().size() < timed_->callCount()) c.set("sampled", (double)timed_->callNs().size());   // (the first this many)
+        p.set("callNs", std::move(c));
+    } else p.set("callNs", Json());
     return p;
 }
 
@@ -1214,11 +1247,13 @@ int runModeBatch(const Json& req, Json& out, CmdCtx& ctx) {
     perf.set("ticksPerSecondPerMatch", simWall > 0 ? ticks / simWall : 0.0);
     perf.set("speedupPerMatch", simWall > 0 ? gameSecs / simWall : 0.0);   // game seconds per wall second, one core
     perf.set("speedupTotal", wall > 0 ? gameSecs / wall : 0.0);            // ... all threads together
-    {   // the logic's time per tick over every match: the mean of the matches' averages, the worst p99 and max
-        double avg = 0, p99 = 0, mx = 0; int n = 0;
-        for (auto& R : results) if (R.logicNs.isObj()) { n++; avg += R.logicNs["avg"].num(); p99 = std::max(p99, R.logicNs["p99"].num()); mx = std::max(mx, R.logicNs["max"].num()); }
+    {   // the logic's time per tick over every match: the mean of the matches' averages, the worst p99, p99.9 and max
+        double avg = 0, p99 = 0, p999 = 0, mx = 0; int n = 0;
+        for (auto& R : results) if (R.logicNs.isObj()) {
+            n++; avg += R.logicNs["avg"].num(); p99 = std::max(p99, R.logicNs["p99"].num()); p999 = std::max(p999, R.logicNs["p999"].num()); mx = std::max(mx, R.logicNs["max"].num());
+        }
         Json l;
-        if (n) { l = Json::object(); l.set("avg", std::round(avg / n)); l.set("p99", p99); l.set("max", mx); l.set("matches", n); }
+        if (n) { l = Json::object(); l.set("avg", std::round(avg / n)); l.set("p99", p99); l.set("p999", p999); l.set("max", mx); l.set("matches", n); }
         perf.set("logicNs", std::move(l));
     }
     d.set("perf", std::move(perf));

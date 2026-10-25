@@ -121,8 +121,11 @@ space, a tab or a `\r`).
  "result":{"scoreA":0,"scoreB":3,"round":4,"phase":"matchEnd","players":[{"id","name","team","score","kills",
            "deaths","objTime","damage","won"},...]},
  "perf":{"ticks":48960,"simSeconds":1.4,"ticksPerSecond":35000,"speedup":280,
-         "tickNs":{"avg":25000,"p99":60000,"max":2000000,"ticks":48960},
-         "logicNs":{"avg":40,"p99":900,"max":5200,"ticks":48960},"slots":[{"slot","calls","ns","avg","max"},...],
+         "tickNs":{"avg":25000,"p99":60000,"p999":140000,"max":2000000,"maxAt":57.81,"maxTick":7225,"first":67000,
+                   "maxAfterFirst":2000000,"count":48960,"ticks":48960},
+         "logicNs":{"avg":40,"p99":900,"p999":1500,"max":5200,"maxAt":12.3,"maxTick":1537,"count":48960,"ticks":48960},
+         "callNs":{"avg":870,"p99":1500,"p999":1900,"max":5200,"count":300,"calls":300},
+         "slots":[{"slot","calls","ns","avg","max"},...],
          "wallSeconds":1.5,"startSeconds":0.02}}
 ```
 
@@ -157,7 +160,13 @@ space, a tab or a `\r`).
   was ahead when time ran out first (`{team}` or `{player}`, null when level). `rounds` counts round results.
   `perf.speedup` is game seconds per wall second while ticking. `perf.tickNs` is `Server::simulate` per tick (movement,
   bots, rules and logic together). `perf.logicNs` is the interpreted slots' share of each tick (null when no logic
-  ran); `perf.slots` lists each interpreted slot over the match, the costliest first.
+  ran); `perf.callNs` is one interpreted call of any slot (nested calls too; null when none ran): an event slot like
+  `kill` is idle most ticks, so per tick its p99 reads 0 while a call costs what `callNs` says (the first 4M calls
+  are kept for the percentiles, `sampled` says so past that). Each has avg, p99, p99.9 (`p999`) and max; `maxAt`
+  (game seconds since the match start) and `maxTick` say when the costliest tick was, so a one-off spike (a
+  scheduler hiccup, a nav rebuild) reads as one. `tickNs.first` is the match's first tick (forcestart's round setup)
+  and `maxAfterFirst` the max without it. `perf.slots` lists each interpreted slot over the match, the costliest
+  first.
 - **mapView**: the solid boxes (not distant scenery, trim, water, lava or clip) as `[x0, z0, x1, z1, top y]`, lowest
   first; spawns `[x, z, team]` (0 A, 1 B, else any / staged); the objectives' boxes; the cart track. 1 decimal.
 - **controls** (`--stream`, one per line): `pause`, `resume`, `step` (one frame while paused), `stop`,
@@ -190,7 +199,7 @@ The answer:
  "matches":[{"index","seed","reason","t","winner","leader"?,"rounds","scoreA","scoreB","wallSeconds"}],
  "csv":"index,seed,reason,seconds,rounds,winnerTeam,winnerPlayer,winnerName,scoreA,scoreB,wallSeconds\n...",
  "perf":{"wallSeconds","threads","matchesPerSecond","ticks","ticksPerSecondPerMatch","speedupPerMatch","speedupTotal",
-         "logicNs":{"avg","p99","max","matches"}}}      (logicNs: the matches' mean avg, worst p99 and max; null: no logic)
+         "logicNs":{"avg","p99","p999","max","matches"}}}      (logicNs: the matches' mean avg, worst p99, p99.9 and max; null: no logic)
 ```
 
 - A **timeout** is a match that reached `seconds` (or `matchTimeout`) before it ended. It counts in `timeouts`,

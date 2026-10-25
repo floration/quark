@@ -162,6 +162,12 @@ if s["logic"]["hook"] != "pending":   # an interpreted kill slot changes the res
     check(pf.get("logicNs") and pf["logicNs"]["max"] > 0 and pf["logicNs"]["ticks"] > 0 and pf["slots"][0]["slot"] == "kill"
           and pf["slots"][0]["calls"] == sum(x["calls"] for x in sl), "perf.logicNs (avg / p99 / max) and per-slot totals")
     check(tr[-1]["result"] == k[-1]["result"], "a traced run plays the same match")
+    ln, cn, tn = pf.get("logicNs") or {}, pf.get("callNs") or {}, pf.get("tickNs") or {}
+    check(ln.get("p999") is not None and ln["p99"] <= ln["p999"] <= ln["max"] and 0 <= ln["maxAt"] <= 120.01 and ln["maxTick"] >= 0,
+          "perf.logicNs: p99.9 and when the max was (maxAt / maxTick)")
+    check(cn.get("calls") == pf["slots"][0]["calls"] and 0 < cn["avg"] <= cn["max"] and cn["p99"] <= cn["max"], "perf.callNs: every interpreted call (per-call avg / p99 / max)")
+    check(tn["p99"] <= tn["p999"] <= tn["max"] and tn["first"] > 0 and tn["maxTick"] < tn["ticks"]
+          and abs(tn["maxAt"] - (tn["maxTick"] + 1) * (1000 // 125) / 1000) < 0.01, "perf.tickNs: p99.9, maxAt / maxTick, the first tick apart")
     check(run("modesim", {"map": "harbor", "bots": 2, "seconds": 5, "rules": ten})[1][-1]["perf"]["logicNs"] is not None
           and run("modesim", {"map": "harbor", "bots": 2, "seconds": 5})[1][-1]["perf"]["logicNs"] is None, "logicNs: null without logic")
 code, e = run("modesim", {"map": "depot", "rules": "custommode=x\nmode=bomb\nlogic 1\nslot tick:\n  foo = \n"})
