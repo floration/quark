@@ -18,7 +18,7 @@ import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, batchModel, batchDelta, histogram, matchSpread, sharedAxes, endCardFields } from "../js/sim.js";
+import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, fieldProblem, batchModel, batchDelta, histogram, matchSpread, sharedAxes, endCardFields } from "../js/sim.js";
 import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -314,6 +314,11 @@ await t("sim batch compare: the difference from the built-in, histograms, a matc
     same(matchSpread({ scoreA: 3, scoreB: 7 }, true), 4);
     same(matchSpread({ players: [{ score: 4 }, { score: 9 }, { score: 6 }] }, false), 3);
     same(matchSpread({ players: [] }, false), null);
+});
+await t("sim form: numbers out of range are refused with the reason", () => {
+    same(fieldProblem("smSeed", ""), "Seed: a number"); same(fieldProblem("smSeed", "0"), null);
+    same(fieldProblem("smSecs", "0"), "Max s: 5 to 7200"); same(fieldProblem("smSecs", "12.5"), null);
+    same(fieldProblem("smBots", "100"), "Bots: 1 to 32"); same(fieldProblem("smBots", "2.5"), "Bots: a whole number"); same(fieldProblem("smN", "1000"), null);
 });
 await t("sim: trace frames, a shared time axis for compared runs, the end card's fields per mode", () => {
     const m = timelineModel([{ type: "start", teams: false }, { type: "frame", t: 0, phase: "live", players: [] },

@@ -199,6 +199,16 @@ export function endCardFields(start, end) {
     return { teams, rounds: teams || (end && end.rounds > 0), objTime: players.some((p) => p.objTime > 0) };
 }
 
+// the number fields' limits (the helper refuses or misreads anything else): id -> [min, max, whole numbers only, name]
+const LIMITS = { smBots: [1, 32, true, "Bots"], smSeed: [0, 2147483647, true, "Seed"], smSecs: [5, 7200, false, "Max s"], smN: [2, 1000, true, "Batch seeds"] };
+// a field's text -> null when it will do, else why not
+export function fieldProblem(id, text) {
+    const [lo, hi, whole, name] = LIMITS[id], v = Number(text);
+    if (String(text).trim() === "" || !Number.isFinite(v)) return `${name}: a number`;
+    if (whole && !Number.isInteger(v)) return `${name}: a whole number`;
+    if (v < lo || v > hi) return `${name}: ${lo} to ${hi}`;
+    return null;
+}
 // perBase: {<base mode>: {map, bots}}, the map and bot count picked for each base mode (none: the mode's own map, 2 or
 // 8 bots), so a map chosen for one mode never carries over to another
 const FORM_DEFAULT = { perBase: {}, skill: 2, seed: 1, secs: 1800, hz: 125, real: false, trace: true, compare: false, brainA: "default", brainB: "", n: 20 };
@@ -243,14 +253,28 @@ export class SimView {
         if (mine.map || mine.bots !== null) perBase[this.app.base] = mine; else delete perBase[this.app.base];
         this.form.perBase = perBase;
     }
+    // the form into this.form; a number out of its range is marked (red, the reason beside the buttons) and not taken.
+    // -> the first problem, or null
     _readForm() {
         const R = this.root, v = (id) => R.querySelector("#" + id);
-        if (!v("smRun") || this._formBase !== this.app.base) return;   // (the form on screen is another mode's: a late change event)
-        this._setMine(v("smMap").value, +v("smBots").value);
+        if (!v("smRun") || this._formBase !== this.app.base) return null;   // (the form on screen is another mode's: a late change event)
+        const bad = [], num = (id, old) => {
+            const el = v(id);
+            if (!el) return old;
+            const p = fieldProblem(id, el.value);
+            el.classList.toggle("invalid", !!p); el.title = p || "";
+            if (p) { bad.push(p); return old; }
+            return +el.value;
+        };
+        const f = this.form;
+        this._setMine(v("smMap").value, num("smBots", this._value("bots")));
         this.form = { perBase: this.form.perBase,
-            skill: +v("smSkill").value, seed: +v("smSeed").value, secs: +v("smSecs").value, hz: +v("smHz").value, real: v("smReal").checked,
-            trace: v("smTrace").checked, compare: v("smCompare").checked, brainA: v("smBrainA").value, brainB: v("smBrainB").value, n: v("smN") ? +v("smN").value : this.form.n };
+            skill: +v("smSkill").value, seed: num("smSeed", f.seed), secs: num("smSecs", f.secs), hz: +v("smHz").value, real: v("smReal").checked,
+            trace: v("smTrace").checked, compare: v("smCompare").checked, brainA: v("smBrainA").value, brainB: v("smBrainB").value, n: num("smN", f.n) };
+        const e = v("smErr");
+        if (e) e.textContent = bad.join(" · ");
         this._persistSoon();
+        return bad[0] || null;
     }
     _persistSoon() { clearTimeout(this._pt); this._pt = setTimeout(() => this._persist(), 400); }
     // the runs started (by id) and the batches still waiting their turn (by request: a compare batch's built-in half
@@ -325,6 +349,7 @@ export class SimView {
             <label title="also run the built-in ${esc(base)} with the same seed, on the same time axis"><input id="smCompare" type="checkbox" ${f.compare ? "checked" : ""}> compare with built-in</label>
             <button id="smRun" class="primary" ${this.busy ? "disabled" : ""}>▶ Run</button><button id="smStop" ${this.busy ? "" : "disabled"}>■ Stop</button>
             ${st.batch ? `<label>Batch seeds <input id="smN" type="number" value="${esc(f.n)}" min="2" max="1000" style="width:60px"></label><button id="smBatch" ${this.busy ? "disabled" : ""}>Run batch</button>` : '<span class="muted" title="quark_maptool has no modebatch">(no modebatch)</span>'}
+            <span id="smErr" class="bad"></span>
             <span class="sp"></span>
             <label title="saved setups (${esc(this.scenariosDir || "<data>/mode_editor/scenarios")})">Scenario <select id="smScen">${opt("", "—", !this.scenario)}${this.scenarios.map((s) => opt(s.name, s.name, s.name === this.scenario)).join("")}</select></label>
             <button id="smScenSave" title="save this setup as a scenario">Save…</button><button id="smScenDel" title="delete the scenario" ${this.scenario ? "" : "disabled"}>✕</button>
@@ -401,7 +426,8 @@ export class SimView {
     // the compare run: the built-in base mode with this file's keys (none for a base the game won't take as custom)
     _builtinRules() { return this.app.baseTakesCustom() ? this.app.builtinText() : null; }
     async run() {
-        this._readForm();
+        const bad = this._readForm();
+        if (bad) { this.app.app.toast("Not run: " + bad, 5000); return; }
         const rules = this._rules();
         if (rules === undefined) return;
         this.stop(true);
@@ -565,7 +591,10 @@ export class SimView {
         for (const b of M.bands) { g.fillStyle = PHASE_COLORS[b.phase] || "#222"; g.globalAlpha = 0.55; g.fillRect(X(b.t0), top, Math.max(1, X(b.t1) - X(b.t0)), bottom - top); g.globalAlpha = 1; }
         g.strokeStyle = "#334155"; g.beginPath(); g.moveTo(30, bottom); g.lineTo(W - 10, bottom); g.stroke();
         g.fillStyle = "#94a3b8"; g.font = "10px monospace"; g.fillText(String(axes.maxScore), 2, 26); g.fillText("0", 2, bottom);
-        for (let k = 0; k <= 4; k++) { const t = axes.t0 + span * k / 4; g.fillText(t.toFixed(0) + "s", X(t) - 8, bottom + 12); }
+        for (let k = 0; k <= 4; k++) {   // (the last label ends at the axis' end: it would run off the canvas)
+            const t = axes.t0 + span * k / 4, l = t.toFixed(0) + "s";
+            g.fillText(l, k === 4 ? W - 10 - g.measureText(l).width : X(t) - 8, bottom + 12);
+        }
         const line = (pts, color) => { if (pts.length < 1) return; g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); pts.forEach(([t, v], i) => (i ? g.lineTo(X(t), Y(v)) : g.moveTo(X(t), Y(v)))); g.stroke(); g.lineWidth = 1; };
         const fa = seriesPoints(M.teamA), fb = seriesPoints(M.teamB);
         if (teams && (fa.length || fb.length)) { line(fa, TEAM_COLOR.a); line(fb, TEAM_COLOR.b); }
@@ -663,7 +692,8 @@ export class SimView {
     }
 
     async batch() {
-        this._readForm();
+        const bad = this._readForm();
+        if (bad) { this.app.app.toast("Not run: " + bad, 5000); return; }
         const rules = this._rules();
         if (rules === undefined) return;
         this.stop(true);

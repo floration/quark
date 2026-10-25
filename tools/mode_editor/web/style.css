@@ -19,6 +19,8 @@ button.danger { border-color: #7f2a2a; color: #fca5a5; }
 button:disabled { opacity: .45; cursor: default; }
 select, input[type=text], input[type=number], input:not([type]), textarea { background: var(--bg1); border: 1px solid var(--line2); border-radius: 4px; padding: 2px 5px; }
 input[type=range] { accent-color: var(--acc); }
+input.invalid { border-color: var(--bad); outline: 1px solid var(--bad); }
+#smErr { font-size: 12px; }
 input[type=checkbox] { accent-color: var(--acc); }
 .check { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; margin: 3px 0; cursor: pointer; }
 .check input { margin: 2px 0 0; flex: none; }
