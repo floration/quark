@@ -469,6 +469,14 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await page.keyboard.press('t');
   assert.strictEqual(await ev(() => QApp.S.tour), 0, 'tour stopped');
 
+  // ---- search: Enter opens the next page with a matching widget and selects it ----
+  await page.locator('#qSearch').fill('LEADERBOARD');
+  await page.locator('#qSearch').press('Enter');
+  assert.ok(await ev(() => QApp.S.sel.size >= 1 && QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).elements.filter((e) => QApp.S.sel.has(e.uid)).every((e) => /LEADERBOARD/i.test((e.label || '') + (e.action || '') + (e.id || '')))),
+    'Enter in the search selects the matching widgets');
+  await page.locator('#qSearch').fill('');
+  await page.keyboard.press('Escape');
+
   // ---- a sideways drag with a pixel of vertical jitter keeps y exactly (the spec reports no y move) ----
   {
     await ev((u) => QApp.selectPage(u), await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid));

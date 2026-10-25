@@ -1089,6 +1089,14 @@
   const visiblePageOrder = () => [...pageGroups(S.doc.pages).values()].flat();
   const ORIGIN_TAG = { human: 'HU', ai: 'AI', unknown: '?' };
   let pageRows = new Map();   // page uid -> its row in the list (renderPages)
+  // the widgets of page p the search matches (label, action or id)
+  const searchHits = (p, q) => p.elements.filter((e) => ((e.label || '') + ' ' + (e.action || '') + ' ' + (e.id || '')).toLowerCase().includes(q));
+  // a page picked in the list: with a search on, its matching widgets are selected (Enter in the search box: the first)
+  function openPage(p) {
+    selectPage(p.uid);
+    const q = S.search.trim().toLowerCase(), hits = q ? searchHits(p, q) : [];
+    if (hits.length) { S.sel = new Set(hits.map((e) => e.uid)); renderAfterSelect(); }
+  }
   function markCurrentPage() {
     for (const r of $('pageList').querySelectorAll('.pg.cur')) r.classList.remove('cur');
     const row = !S.sheet && pageRows.get(S.pageUid);
@@ -1109,7 +1117,7 @@
       let matches = 0;
       if (q) {
         const hitPage = (p.id + ' ' + p.title).toLowerCase().includes(q);
-        matches = p.elements.filter((e) => ((e.label || '') + ' ' + (e.action || '') + ' ' + (e.id || '')).toLowerCase().includes(q)).length;
+        matches = searchHits(p, q).length;
         if (!hitPage && !matches) continue;
       }
       shown.push(p);
@@ -1132,7 +1140,7 @@
         const st = entry ? entry.status : 'unchanged';
         const row = el('div', {
           class: 'pg' + (p.uid === S.pageUid && !S.sheet ? ' cur' : '') + (p.hidden ? ' hidden' : ''), title: p.id + (p.title !== p.id ? ' - ' + p.title : '') + '\nmade by: ' + o.origin + ' (' + o.why + ')',
-          onclick: () => selectPage(p.uid),
+          onclick: () => openPage(p),
         }, el('span', { class: 'org o-' + o.origin, text: ORIGIN_TAG[o.origin] }),
         el('span', { class: 't', text: p.title || p.id }),
         matches ? el('span', { class: 'badge match', text: matches }) : null,
@@ -2154,6 +2162,13 @@
     window.addEventListener('mousedown', (ev) => { if (!$('help').hidden && !$('help').contains(ev.target) && ev.target !== $('bHelp')) $('help').hidden = true; });
     $('bAddPage').onclick = addPage;
     $('qSearch').oninput = () => { S.search = $('qSearch').value; renderPages(); };
+    $('qSearch').addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      const q = S.search.trim().toLowerCase(), list = visiblePageOrder();
+      const from = list.findIndex((p) => p.uid === S.pageUid);   // (Enter again: the next page with a match)
+      const next = q && [...list.slice(from + 1), ...list.slice(0, from + 1)].find((p) => searchHits(p, q).length);
+      if (next) openPage(next); else if (q) toast('No widget matches "' + S.search.trim() + '"');
+    });
     $('mClose').onclick = () => { $('modal').hidden = true; };
     $('mCopy').onclick = copySpec;
     $('mDownload').onclick = () => { if (lastSpec) download(lastSpec.fileName, lastSpec.markdown, 'text/markdown'); };

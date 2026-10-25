@@ -39,6 +39,7 @@ registry change (its `installs.json`), so the banner follows the game.
 - Pages on the left, grouped by screen (main menu first). Each row shows who made the page: **HU** human, **AI** AI-made
   (a page changed in this layout counts as yours, or as the AI proposal's in a proposal build; the others are as the
   game's provenance registry, `assets/provenance/ui.json`, says). The counts at the top filter the list.
+- Search lists the pages whose name or widgets match; clicking one (or Enter for the next) selects its matching widgets.
 - Click / drag / resize / arrow keys on the page, the inspector on the right; `?` lists every key. Zoom up to 400 %,
   Ctrl+wheel zooms at the mouse.
 - **View** previews the page at another resolution / aspect ratio (1080p, 1440p, 4K, 16:10, 21:9, 32:9, 5:4), laid out
