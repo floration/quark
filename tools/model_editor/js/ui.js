@@ -597,7 +597,13 @@
   function onKey(e) {
     const t = e.target;
     if (e.key === 'Escape' && U.closeMenus()) { e.preventDefault(); if (t && t.blur && t.closest && t.closest('.menu')) t.blur(); return; }
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA') && t.type !== 'checkbox') return;
+    // a focused control keeps the keys it uses: a text field or select all of them, and so does every input in the
+    // panel or a dialog (a box's shadow / outside only / crouch: Delete there must not delete the box); a checkbox or
+    // button elsewhere (the view bar, the top bar) Space and Enter (they press it), the shortcuts pass through
+    const tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') {
+      if ((tag !== 'BUTTON' && (t.type !== 'checkbox' || t.closest('#panel, dialog'))) || e.key === ' ' || e.key === 'Enter') return;
+    }
     if ($('#dlg').open) return;
     const k = e.key, ctrl = e.ctrlKey || e.metaKey, key = S.sel;
     if (ctrl && (k === 'z' || k === 'Z')) { e.preventDefault(); const r = e.shiftKey ? Q.redo() : Q.undo(); if (r) { if (r !== S.sel) U.select(r, true); } return; }

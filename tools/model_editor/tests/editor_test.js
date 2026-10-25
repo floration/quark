@@ -218,6 +218,16 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await page.fill('#panel input[data-fid="h0"]', '-1'); await page.press('#panel input[data-fid="h0"]', 'Enter');
   check(await ev(() => Q.current('models/player/STANDARD').parts[1].h[0]) === 0.0005, 'a negative half size stops at 0.5 mm');
   await page.keyboard.press('Escape');
+  // a box's checkboxes keep their keys: Delete does not delete the box, Space toggles the checkbox (not the animation)
+  await ev(() => Q.ui.selectPart(1));
+  st = await ev(() => ({ n: Q.current('models/player/STANDARD').parts.length, play: Q.scene.view.play }));
+  await page.click('#panel input[data-fid="shadow"]');
+  await page.keyboard.press('Delete'); await page.keyboard.press('Backspace'); await frames(page);
+  await page.focus('#panel input[data-fid="visOnly"]');
+  await page.keyboard.press(' '); await frames(page);
+  const st2 = await ev(() => ({ n: Q.current('models/player/STANDARD').parts.length, play: Q.scene.view.play, visOnly: Q.current('models/player/STANDARD').parts[1].visOnly, sel: Q.scene.part }));
+  check(st2.n === st.n && st2.play === st.play && st2.visOnly === true && st2.sel === 1, 'Delete / Space on a box\'s checkbox: the box stays, Space ticks it', { st, st2 });
+  await page.keyboard.press('Escape');
 
   // --- view options -----------------------------------------------------------------------------------------------------
   await page.click('#viewBar .menu > button');
