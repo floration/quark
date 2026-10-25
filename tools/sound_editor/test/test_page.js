@@ -58,6 +58,30 @@ async function open(b, vp, url) {
   ok(m['voices/british/HEADSHOT.wav'] === 'british/HEADSHOT' && m['HEADSHOT.wav'] === 'male/HEADSHOT', 'a plain HEADSHOT is still the announcer line', m);
   ok(m['heavy_metal/ROCKET.ogg'] === 'heavy_metal/ROCKET', 'kit folders still match', m);
   ok(await p.evaluate(() => Q.ui.files.allNames('voice').filter(n => n.startsWith('quips/')).length === Q.QUIPS.length && Q.QUIPS.length > 0), 'the assign dialog lists the quips');
+  const m2 = await p.evaluate(() => Object.fromEntries(['oldman/GO.wav', 'egirl/GO.wav', 'egirl_quips_SPREE.wav', 'xyz_quips_SPREE.wav', 'HeavyMetal/ROCKET.wav', 'Kenney/impactMetal_heavy_000.ogg', 'male/quips/LAUGH.wav']
+    .map(f => { const r = Q.ui.files.match(f); return [f, r && r.pack + '/' + r.name + (r.guessed ? '?' : '') + (r.isNew ? '+' : '')]; })));
+  ok(m2['oldman/GO.wav'] === 'old_man/GO' && m2['egirl/GO.wav'] === 'e_girl/GO' && m2['egirl_quips_SPREE.wav'] === 'e_girl/quips/SPREE', 'the repository\'s voice folders (oldman, egirl) match their voice', m2);
+  ok(m2['xyz_quips_SPREE.wav'] === 'male/quips/SPREE' && m2['HeavyMetal/ROCKET.wav'] === 'heavy_metal/ROCKET', '_QUIPS_ anywhere in the name, HeavyMetal folder', m2);
+  ok(m2['Kenney/impactMetal_heavy_000.ogg'] === 'default/IMPACT?' && m2['male/quips/LAUGH.wav'] === 'male/quips/LAUGH+', 'a name only found inside the file name is a guess; a new quip name is offered', m2);
+  // the assign dialog: two files on one sound (one stays ticked), Upload (files) says it lost the folders, an unmatched
+  // file defaults to the dropped-on cell's pack
+  await p.evaluate(() => { const w = Q.encodeWav(new Float32Array(4800).fill(0.2)), f = n => ({ file: new File([w], n.split('/').pop(), { type: 'audio/wav' }), path: n });
+    Q.ui.files.autoAssign([f('ROCKET.wav'), f('rocket_v2.wav'), f('mystery.wav')], 'voices/india/TWO', { noFolders: true }); });
+  await p.waitForSelector('#dlg[open]');
+  const asg = await p.evaluate(() => ({ ticks: Q.ui.files.lastDialogRows.map(u => u.inc.checked), packs: Q.ui.files.lastDialogRows.map(u => u.ps.value), text: document.querySelector('#dlg').innerText }));
+  ok(asg.ticks.join() === 'true,false,false' && /only one can be kept|unticked/.test(asg.text), 'two files aimed at one sound: one stays ticked, the other is flagged', asg.ticks);
+  ok(/can't see folder names/.test(asg.text) && asg.packs[2] === 'voice:india', 'Upload (files) says it lost the folders; an unmatched file defaults to the cell\'s voice', asg.packs);
+  await p.evaluate(() => { const u = Q.ui.files.lastDialogRows[1]; u.inc.checked = true; u.inc.dispatchEvent(new Event('change')); });
+  await p.click('#dlg .dlg-f button.primary'); await p.waitForTimeout(150);
+  const stillOpen = await p.$eval('#dlg', d => d.open);
+  await p.click('#dlg .dlg-f button:has-text("Cancel")');
+  ok(stillOpen, 'Assign waits while two ticked rows share a target');
+  await p.evaluate(() => { const w = Q.encodeWav(new Float32Array(4800).fill(0.2)); Q.ui.files.autoAssign([{ file: new File([w], 'LAUGH.wav'), path: 'voices/male/quips/LAUGH.wav' }, { file: new File([w], 'GO.wav'), path: 'egirl/GO.wav' }]); });
+  await p.waitForSelector('#dlg[open]'); await p.click('#dlg .dlg-f button.primary'); await p.waitForTimeout(200);
+  const nq = await p.evaluate(() => { const r = { asset: !!Q.assets['voices/male/quips/LAUGH'], edit: !!Q.state.edits['voices/male/quips/LAUGH'], egirl: !!Q.state.edits['voices/e_girl/GO'], quips: Q.allQuips().includes('quips/LAUGH') }; Q.undo(); r.undone = !Q.assets['voices/male/quips/LAUGH'] && !Q.allQuips().includes('quips/LAUGH'); return r; });
+  ok(nq.asset && nq.edit && nq.egirl && nq.quips && nq.undone, 'a new quip name is added on assign (one undo step takes it back)', nq);
+  const names = await p.evaluate(() => ['my new-sound!', '123', 'quips/LAUGH'].map(t => Q.ui.missing.parseName(t, t.startsWith('quips') ? 'voice' : 'sound')));
+  ok(names[0].name === 'MY_NEW_SOUND' && names[1].error && names[2].name === 'quips/LAUGH' && names[2].quip, 'Add your own: tidy names, no leading digit, quips/LAUGH is a quip', names);
 
   // --- provenance --------------------------------------------------------------------------------------------------------
   const prov = await p.evaluate(() => {

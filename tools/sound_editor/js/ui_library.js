@@ -30,7 +30,7 @@
   // --- one matrix ---------------------------------------------------------------------------------------------------
   function packsOf(kind) { return kind === 'voice' ? Q.VOICES : Q.KITS; }
   function rowGroups(kind) {
-    if (kind === 'voice') return [['Announcer lines', Q.LINES], ['QUIPS', Q.QUIPS]];
+    if (kind === 'voice') return [['Announcer lines', Q.LINES], ['QUIPS', Q.allQuips()]];
     const seen = new Set(Q.SOUND_GROUPS.flatMap(g => g[1]));
     const extra = Q.SOUNDS.filter(s => !seen.has(s));
     return extra.length ? Q.SOUND_GROUPS.concat([['Other', extra]]) : Q.SOUND_GROUPS;

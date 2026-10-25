@@ -9,51 +9,69 @@
   // --- name matching: "ROCKET.wav", "heavy_metal/ROCKET.ogg", "male_GO.wav", "sounds/magical/hit-med.flac" -------------
   // quips: "male_quips_HEADSHOT.wav", "voices/male/quips/HEADSHOT.wav", "quips/HEADSHOT.wav" (a quips folder or prefix)
   const norm = s => s.toUpperCase().replace(/[\s\-.]+/g, '_').replace(/[^A-Z0-9_]/g, '');
-  const QUIP_TOK = /^QUIPS?$/, QUIP_PRE = /^QUIPS?_/;
+  const QUIP_TOK = /^QUIPS?$/, QUIP_IN = /(?:^|_)QUIPS?_(.+)$/;
   function allNames(kind) {
-    const base = kind === 'voice' ? Q.LINES.concat(Q.QUIPS) : Q.SOUNDS;
+    const base = kind === 'voice' ? Q.LINES.concat(Q.allQuips()) : Q.SOUNDS;
     const extra = Q.MISSING.filter(m => m.name && (m.kind || 'sound') === kind).map(m => m.name).concat(Q.state.customs.filter(c => c.kind === kind).map(c => c.name));
     return base.concat(extra.filter(n => !base.includes(n)));
   }
   F.allNames = allNames;
+  /* Every name a pack goes by in a folder or a file-name prefix: its folder (old_man), the repository's voice folders
+     and the setting's name (oldman, egirl, OLD MAN, HeavyMetal, heavy-metal), MOUTH's wooden. Longest first, so
+     heavy_metal_ROCKET never reads as a pack "heavy". */
+  F.packTokens = function () {
+    const out = [];
+    for (const [kind, list] of [['sound', Q.KITS], ['voice', Q.VOICES]]) for (const p of list) {
+      const t = new Set([norm(p.dir), norm(p.name)].concat(p.sub ? [norm(p.sub)] : []));
+      for (const x of [...t]) t.add(x.replace(/_/g, ''));
+      for (const x of t) out.push({ kind, dir: p.dir, tok: x });
+    }
+    return out.sort((a, b) => b.tok.length - a.tok.length);
+  };
+  // a new quip's name (any name the game would take: letters, digits, _; starts with a letter)
+  F.quipName = n => /^[A-Z][A-Z0-9_]{0,47}$/.test(n) ? n : null;
   F.match = function (path, fallback) {
     const segs = path.replace(/\\/g, '/').split('/').filter(Boolean), file = segs.pop() || '', stemRaw = file.replace(/\.[^.]+$/, '');
-    let stem = norm(stemRaw), kind = null, pack = null;
-    const packs = [...Q.KITS.map(p => ({ kind: 'sound', dir: p.dir })), ...Q.VOICES.map(p => ({ kind: 'voice', dir: p.dir }))].sort((a, b) => b.dir.length - a.dir.length);
-    const dirTok = d => norm(d);
+    let stem = norm(stemRaw), kind = null, pack = null, guessed = false;
+    const toks = F.packTokens();
     for (const s of segs.slice().reverse()) {   // the nearest folder naming a pack
-      const n = norm(s);
-      const p = packs.find(x => dirTok(x.dir) === n || (x.dir === 'mouth' && n === 'WOODEN'));
+      const n = norm(s), p = toks.find(x => x.tok === n || x.tok === n.replace(/_/g, ''));
       if (p) { kind = p.kind; pack = p.dir; break; }
     }
     if (!kind && segs.some(s => /^voices?$/i.test(s))) kind = 'voice';
     if (!kind && segs.some(s => /^(sounds?|sfx)$/i.test(s))) kind = 'sound';
-    if (!pack) {   // a prefix on the file name: male_GO, heavy_metal_ROCKET
-      for (const x of packs) { const t = dirTok(x.dir) + '_'; if (stem.startsWith(t)) { kind = x.kind; pack = x.dir; stem = stem.slice(t.length); break; } }
-      if (!pack && stem.startsWith('WOODEN_')) { kind = 'sound'; pack = 'mouth'; stem = stem.slice(7); }
+    if (!pack) {   // a prefix on the file name: male_GO, heavy_metal_ROCKET, egirl_quips_SPREE
+      const p = toks.find(x => stem.startsWith(x.tok + '_'));
+      if (p) { kind = p.kind; pack = p.dir; stem = stem.slice(p.tok.length + 1); }
     }
-    // a quip (never the announcer line of the same name): a quips folder, or quips_ in front of the name
+    // a quip (never the announcer line of the same name): a quips folder, or QUIPS_ in the name (after any prefix)
     let quip = kind !== 'sound' && segs.some(s => QUIP_TOK.test(norm(s)));
-    if (kind !== 'sound' && QUIP_PRE.test(stem)) { quip = true; stem = stem.replace(QUIP_PRE, ''); }
+    const qm = kind !== 'sound' && stem.match(QUIP_IN);
+    if (qm) { quip = true; stem = qm[1]; }
     if (quip) kind = 'voice';
-    // the sound / line name: exact, else the longest known name the stem starts with (ROCKET_V2 -> ROCKET)
+    // the sound / line name: exact, else the longest known name the stem starts with (ROCKET_V2 -> ROCKET), else (a guess,
+    // shown amber) the longest one inside it (impactMetal_heavy -> IMPACT)
     const find = k => {
-      const names = quip ? Q.QUIPS.map(n => n.slice(6)) : allNames(k).filter(n => !n.startsWith('quips/'));
-      const r = names.includes(stem) ? stem : names.filter(n => stem.startsWith(n + '_') || stem === n).sort((a, b) => b.length - a.length)[0] || names.filter(n => stem.includes(n)).sort((a, b) => b.length - a.length)[0] || null;
-      return r && quip ? 'quips/' + r : r;
+      const names = quip ? Q.allQuips().map(n => n.slice(6)) : allNames(k).filter(n => !n.startsWith('quips/'));
+      let r = names.includes(stem) ? stem : names.filter(n => stem.startsWith(n + '_')).sort((a, b) => b.length - a.length)[0] || null, g = false;
+      if (!r) { r = names.filter(n => stem.includes(n)).sort((a, b) => b.length - a.length)[0] || null; g = !!r; }
+      return r && { name: quip ? 'quips/' + r : r, guessed: g };
     };
-    let name = null;
-    if (kind) name = find(kind);
+    let hit = null;
+    if (kind) hit = find(kind);
     else {
       const s = find('sound'), v = find('voice');
-      // a name that is both: the existing one wins (HEADSHOT is a voice line; CHECKPOINT a sound)
-      if (s && Q.SOUNDS.includes(s)) { kind = 'sound'; name = s; }
-      else if (v && Q.LINES.includes(v)) { kind = 'voice'; name = v; }
-      else if (s) { kind = 'sound'; name = s; } else if (v) { kind = 'voice'; name = v; }
+      // a name that is both: the existing one wins (HEADSHOT is a voice line; CHECKPOINT a sound); an exact one beats a guess
+      if (s && !s.guessed && Q.SOUNDS.includes(s.name)) { kind = 'sound'; hit = s; }
+      else if (v && !v.guessed && Q.LINES.includes(v.name)) { kind = 'voice'; hit = v; }
+      else if (s && (!s.guessed || !v || v.guessed)) { kind = 'sound'; hit = s; } else if (v) { kind = 'voice'; hit = v; }
     }
-    if (!pack && kind) pack = fallback && fallback.kind === kind ? fallback.pack : (kind === 'voice' ? 'male' : 'default');
-    if (!name && fallback && (!quip || (fallback.name || '').startsWith('quips/'))) return { kind: fallback.kind, pack: fallback.pack, name: fallback.name, guessed: true };
-    return name ? { kind, pack, name, guessed: false } : null;
+    // a quip of a new name (male/quips/LAUGH.wav): offered as a new quip, added on assign
+    if (!hit && quip && F.quipName(stem)) hit = { name: 'quips/' + stem, guessed: false, isNew: true };
+    if (!pack && kind) { pack = fallback && fallback.kind === kind ? fallback.pack : (kind === 'voice' ? 'male' : 'default'); }
+    if (!hit && fallback && fallback.name && (!quip || fallback.name.startsWith('quips/'))) return { kind: fallback.kind, pack: fallback.pack, name: fallback.name, guessed: true };
+    if (hit) guessed = hit.guessed;
+    return hit ? { kind, pack, name: hit.name, guessed, isNew: !!hit.isNew } : null;
   };
 
   // --- collecting dropped files (folders too) ---------------------------------------------------------------------------
@@ -80,9 +98,12 @@
   }
 
   // put decoded files into assets: [{key, name, data, bytes}] -> one undo step
-  F.apply = function (list) {
+  // (newQuips: quip names to add first, state.customs, so their slots exist)
+  F.apply = function (list, newQuips) {
     if (!list.length) return;
-    Q.commit(list.length === 1 ? 'replace ' + Q.assets[list[0].key].name : 'replace ' + list.length + ' sounds', () => {
+    const nm = k => Q.parseKey(k).name;
+    Q.commit(list.length === 1 ? 'replace ' + nm(list[0].key) : 'replace ' + list.length + ' sounds', () => {
+      for (const n of newQuips || []) Q.state.customs.push({ name: n, kind: 'voice', when: 'your own quip' });   // (their slots: onStateChanged)
       for (const it of list) {
         const id = Q.addSource(it.name, it.data, it.bytes);
         const old = Q.state.edits[it.key];
@@ -101,8 +122,12 @@
     catch (e) { U.fail('could not decode ' + file.name, e); }
   };
 
-  // many files: match by name, show a confirm list
-  F.autoAssign = async function (found, fallbackKey) {
+  /* Many files: match by name, show a confirm list. Two ticked rows aimed at one sound are flagged (only the first exact
+     match stays ticked, and Assign waits until one is left), each file can be played first, and a quip of a new name
+     (male/quips/LAUGH.wav) is offered as a new quip, added on assign. opts.noFolders: the files came from Upload (files),
+     which can't see folder names. */
+  F.autoAssign = async function (found, fallbackKey, opts) {
+    opts = opts || {};
     if (!found.length) { U.toast('No audio files in that drop (wav, ogg, mp3, flac)'); return; }
     const fb = fallbackKey && Q.assets[fallbackKey] ? Q.parseKey(fallbackKey) : (Q.sel ? Q.parseKey(Q.sel) : null);
     const rows = [];
@@ -113,35 +138,58 @@
       rows.push({ f, d, err, m: m && m.name ? m : null, guessed: m && m.guessed });
     }
     const packSel = [...Q.KITS.map(p => ['sound', p]), ...Q.VOICES.map(p => ['voice', p])];
-    const table = h('table', h('tr', h('th', ''), h('th', 'file'), h('th', 'length'), h('th', 'pack'), h('th', 'sound / line'), h('th', '')));
-    const ui = [];
+    const table = h('table', h('tr', h('th', ''), h('th', 'file'), h('th', 'length'), h('th', ''), h('th', 'pack'), h('th', 'sound / line'), h('th', '')));
+    const ui = [], newQuips = new Set(rows.filter(r => r.m && r.m.isNew).map(r => r.m.name));
+    const namesFor = k => allNames(k).concat(k === 'voice' ? [...newQuips].filter(n => !allNames(k).includes(n)) : []);
+    const target = u => { const [k, p] = u.ps.value.split(':'); return Q.key(k, p, u.ns.value); };
+    function checkDupes() {
+      const by = new Map();
+      for (const u of ui) if (u.inc.checked) { const t = target(u); by.set(t, (by.get(t) || []).concat([u])); }
+      let dup = 0;
+      for (const u of ui) {
+        const same = u.inc.checked ? by.get(target(u)) : null, i = same ? same.indexOf(u) : -1;
+        u.dupe.textContent = same && same.length > 1 ? 'same target as ' + same.filter(x => x !== u).map(x => x.r.f.path).join(', ') + ': only one can be kept' : '';
+        if (same && same.length > 1 && i > 0) dup++;
+      }
+      return dup;
+    }
     for (const r of rows) {
       const inc = h('input', { type: 'checkbox', checked: !!(r.m && r.d) });
       const ps = h('select', packSel.map(([k, p]) => h('option', { value: k + ':' + p.dir }, (k === 'voice' ? 'voice ' : 'kit ') + p.name)));
       const ns = h('select');
-      const fillNames = () => { const [k] = ps.value.split(':'), cur = ns.value; ns.innerHTML = ''; for (const n of allNames(k)) ns.append(h('option', { value: n }, n)); if (allNames(k).includes(cur)) ns.value = cur; };
-      ps.onchange = fillNames;
-      if (r.m) { ps.value = r.m.kind + ':' + r.m.pack; fillNames(); ns.value = r.m.name; } else fillNames();
-      const exists = () => { const [k, p] = ps.value.split(':'); return Q.state.edits[Q.key(k, p, ns.value)]; };
-      const warn = h('span.faint');
-      const upd = () => { warn.textContent = exists() ? 'replaces your edit\'s audio' : ''; };
-      ps.addEventListener('change', upd); ns.addEventListener('change', upd); upd();
+      const fillNames = () => { const [k] = ps.value.split(':'), cur = ns.value, names = namesFor(k); ns.innerHTML = ''; for (const n of names) ns.append(h('option', { value: n }, n + (newQuips.has(n) ? ' (new quip)' : ''))); if (names.includes(cur)) ns.value = cur; };
+      if (r.m) { ps.value = r.m.kind + ':' + r.m.pack; fillNames(); ns.value = r.m.name; }
+      else { if (fb) ps.value = fb.kind + ':' + fb.pack; fillNames(); }   // (no match: the dropped-on / selected sound's pack)
+      const exists = () => Q.state.edits[target(u)];
+      const warn = h('span.faint'), dupe = h('span', { style: { color: 'var(--warn)' } });
+      const u = { r, inc, ps, ns, dupe };
+      const upd = u.upd = () => { warn.textContent = exists() ? 'replaces your edit\'s audio' : ''; checkDupes(); };
+      ps.addEventListener('change', () => { fillNames(); upd(); }); ns.addEventListener('change', upd); inc.addEventListener('change', upd);
       if (!r.d) { inc.disabled = true; inc.checked = false; }
-      table.append(h('tr', h('td', inc), h('td.num', { title: r.f.path }, r.f.path), h('td.num', r.d ? fmt(r.d.data.length / 48000, 2) + ' s' : h('span', { style: { color: 'var(--bad)' } }, r.err)),
-        h('td', ps), h('td', ns), h('td', r.m ? (r.guessed ? h('span', { style: { color: 'var(--warn)' } }, 'guessed') : h('span', { style: { color: '#8ee08e' } }, 'matched')) : h('span', { style: { color: 'var(--warn)' } }, 'no match: pick one'), ' ', warn)));
-      ui.push({ r, inc, ps, ns });
+      const play = h('button.mini', { type: 'button', title: 'Play this file', disabled: !r.d, onclick: () => Q.playPreview(r.d.data, { tag: 'drop' }) }, '▶');
+      const how = !r.m ? h('span', { style: { color: 'var(--warn)' } }, 'no match: pick one') : r.m.isNew ? h('span', { style: { color: '#9cc3ef' } }, 'new quip') : r.guessed ? h('span', { style: { color: 'var(--warn)' }, title: 'Only part of the name matched: check it' }, 'guessed') : h('span', { style: { color: '#8ee08e' } }, 'matched');
+      table.append(h('tr', h('td', inc), h('td.num', { title: r.f.path }, r.f.path), h('td.num', r.d ? fmt(r.d.data.length / 48000, 2) + ' s' : h('span', { style: { color: 'var(--bad)' } }, r.err)), h('td', play),
+        h('td', ps), h('td', ns), h('td', how, ' ', warn, ' ', dupe)));
+      ui.push(u);
     }
-    const ok = await U.dialog('Assign ' + rows.length + ' file' + (rows.length > 1 ? 's' : ''), [h('p', 'Matched by file name and folder (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav; a quip: male_quips_HEADSHOT.wav or voices/male/quips/HEADSHOT.wav). A file naming no kit / voice goes to ' + (fb ? 'the selected sound\'s ' + (fb.kind === 'voice' ? 'voice' : 'kit') + ' (' + Q.packName(fb.kind, fb.pack) + ')' : 'DEFAULT (voices: MALE)') + '. Check the targets, untick what to skip. An edit\'s filter chain stays on its new audio.'), table],
-      [{ label: 'Cancel', value: false }, { label: 'Assign', primary: true, value: true }]);
+    // several ticked rows on one target: keep the first exact match (else the first), untick the rest
+    const seen = new Map();
+    for (const u of ui) if (u.inc.checked) { const t = target(u), o = seen.get(t); if (!o) seen.set(t, u); else if (o.r.guessed && !u.r.guessed) { o.inc.checked = false; seen.set(t, u); } else u.inc.checked = false; }
+    ui.forEach(u => u.upd());
+    for (const u of ui) if (!u.inc.checked && u.r.m && u.r.d && seen.get(target(u)) !== u) u.dupe.textContent = 'same target as ' + seen.get(target(u)).r.f.path + ': unticked';
+    const folderNote = opts.noFolders && found.length > 1 ? h('p', { style: { color: 'var(--warn)' } }, 'Upload (files) can\'t see folder names: heavy_metal/ROCKET.wav arrives as ROCKET.wav, voices/male/quips/HEADSHOT.wav as HEADSHOT.wav (the announcer line). Use Upload folder, or drop the folder, to match by folder.') : null;
+    F.lastDialogRows = ui;   // (tests read it)
+    const ok = await U.dialog('Assign ' + rows.length + ' file' + (rows.length > 1 ? 's' : ''), [h('p', 'Matched by file name and folder (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav; a quip: male_quips_HEADSHOT.wav or voices/male/quips/HEADSHOT.wav). A file naming no kit / voice goes to ' + (fb ? 'the selected sound\'s ' + (fb.kind === 'voice' ? 'voice' : 'kit') + ' (' + Q.packName(fb.kind, fb.pack) + ')' : 'DEFAULT (voices: MALE)') + '. Check the targets, untick what to skip. An edit\'s filter chain stays on its new audio.'), folderNote, table],
+      [{ label: 'Cancel', value: false }, { label: 'Assign', primary: true, value: true, onclick: () => { const n = checkDupes(); if (n) { U.toast(n + ' file' + (n > 1 ? 's' : '') + ' aimed at a sound another row already fills: untick or retarget them', true); return false; } } }]);
     if (!ok) return [];
-    const list = [];
+    const list = [], add = new Set();
     for (const u of ui) {
       if (!u.inc.checked || !u.r.d) continue;
       const [k, p] = u.ps.value.split(':'), key = Q.key(k, p, u.ns.value);
-      if (!Q.assets[key]) continue;
+      if (newQuips.has(u.ns.value) && k === 'voice' && !Q.assets[key]) add.add(u.ns.value);
       list.push({ key, name: u.r.f.file.name, data: u.r.d.data, bytes: u.r.d.bytes });
     }
-    F.apply(list);
+    F.apply(list, [...add]);
     return list;
   };
   F.lastDialogRows = null;
@@ -347,7 +395,7 @@
       quipBox.innerHTML = '';
       if (!voices.length) return;
       const lose = voices.map(v => {
-        const have = Q.QUIPS.filter(n => all.includes(Q.key('voice', v, n))).map(n => n.slice(6)), gone = Q.QUIPS.map(n => n.slice(6)).filter(n => !have.includes(n));
+        const have = Q.allQuips().filter(n => all.includes(Q.key('voice', v, n))).map(n => n.slice(6)), gone = Q.QUIPS.map(n => n.slice(6)).filter(n => !have.includes(n));
         return Q.packName('voice', v) + ' keeps only ' + have.join(', ') + (gone.length ? ' and loses ' + gone.join(', ') : '');
       });
       quipBox.append(h('label', keepQuips, 'keep each voice\'s other quips: write its default quips too (any quip file replaces the voice\'s whole set in the game)'),
@@ -439,7 +487,7 @@
     U.$('#btnUpload').onclick = () => U.$('#fileUpload').click();
     U.$('#btnUploadDir').onclick = () => U.$('#dirUpload').click();
     // (a folder's files carry their path, webkitRelativePath, so the folder names pick the kit / voice / quips)
-    for (const id of ['#fileUpload', '#dirUpload']) U.$(id).onchange = ev => { const fs = [...ev.target.files].map(f => ({ file: f, path: f.webkitRelativePath || f.name })); ev.target.value = ''; F.autoAssign(fs.filter(x => AUDIO.test(x.file.name))); };
+    for (const id of ['#fileUpload', '#dirUpload']) U.$(id).onchange = ev => { const fs = [...ev.target.files].map(f => ({ file: f, path: f.webkitRelativePath || f.name })); ev.target.value = ''; F.autoAssign(fs.filter(x => AUDIO.test(x.file.name)), null, { noFolders: id === '#fileUpload' }); };
     U.$('#btnExport').onclick = () => F.exportDialog();
     U.$('#btnRemoveOverrides').onclick = () => F.removeDialog();
     U.$('#btnSaveProject').onclick = () => { Q.download(new Blob([Q.projectJSON()], { type: 'application/json' }), 'quark-sounds-project.json'); U.toast('Project saved (edits, groups, chains and your audio)'); };

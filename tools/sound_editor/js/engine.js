@@ -41,9 +41,17 @@
     if (a.sameAsDefault) return { key: dk, retro: false };
     return null;
   };
+  // a quip is levelled to the voice's line of its name as the game has it (a default quip is that line), a quip of any
+  // other name to the voice's HEADSHOT line (audio.cpp loadQuips)
+  Q.matchKey = function (key) {
+    const a = Q.assets[key];
+    if (a.kind !== 'voice' || !a.name.startsWith('quips/')) return null;
+    const n = a.name.slice(6);
+    return Q.key('voice', a.pack, Q.LINES.includes(n) ? n : 'HEADSHOT');
+  };
   Q.matchFor = function (key) {   // the clip the game levels a replacement to
     const a = Q.assets[key];
-    if (a.kind === 'voice') return a.orig;
+    if (a.kind === 'voice') { const mk = Q.matchKey(key); return mk && Q.assets[mk] ? Q.assets[mk].orig : a.orig; }
     const d = Q.assets[Q.key('sound', 'default', a.name)];
     return d ? d.orig : null;
   };
@@ -51,7 +59,7 @@
   Q.gameSig = function (key) {
     const inh = Q.inheritsFrom(key);
     if (inh) return 'inh:' + inh.retro + ':' + Q.gameSig(inh.key);
-    const a = Q.assets[key], dk = a && a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : null;
+    const a = Q.assets[key], dk = a && a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : a && Q.matchKey(key);
     return Q.editSig(key) + (dk && Q.state.edits[key] && Q.state.edits[dk] ? '|match:' + Q.gameSig(dk) : '');
   };
   Q.getGame = function (key) {
@@ -67,7 +75,8 @@
       const v = await Q.getOut(key), e = Q.state.edits[key];
       // a kit's replacement is matched to DEFAULT's sound as the game has it then: DEFAULT's own override when it has one
       // (loadOverrideSounds does DEFAULT first)
-      const dk = a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : null;
+      // (a quip: to its line as the game has it, your edit of the line included)
+      const dk = a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : Q.matchKey(key);
       const match = dk && Q.state.edits[dk] ? (await Q.getGame(dk)).v : Q.matchFor(key);
       const r = Q.prepareGame(v, a.cap, match, a.kind === 'sound' && Q.hitTier(a.name) >= 0, e && e.levelSet);
       return { v: r.v, info: r };

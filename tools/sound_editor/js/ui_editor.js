@@ -349,7 +349,7 @@
   // copy this sound's chain (and optionally trim / fades / level flag) to others
   E.copyChain = async function () {
     const a = Q.assets[E.key], e = edit(); if (!e) return;
-    const kind = a.kind, packs = kind === 'voice' ? Q.VOICES : Q.KITS, names = kind === 'voice' ? Q.LINES.concat(Q.QUIPS) : Q.SOUNDS;
+    const kind = a.kind, packs = kind === 'voice' ? Q.VOICES : Q.KITS, names = kind === 'voice' ? Q.LINES.concat(Q.allQuips()) : Q.SOUNDS;
     const boxes = [];
     const optChain = h('input', { type: 'checkbox', checked: true }), optTrim = h('input', { type: 'checkbox' }), optLevel = h('input', { type: 'checkbox' }), optReplace = h('input', { type: 'checkbox', checked: true });
     const grid = h('table', h('tr', h('th', ''), packs.map(p => h('th', p.name))));

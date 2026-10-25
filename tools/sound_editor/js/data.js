@@ -39,6 +39,9 @@
   // each voice's quips (the QUIP key; never a call-out), named 'quips/<NAME>' so a key is their file's path
   // (voices/<voice>/quips/<NAME>.wav): the manifest's list (build.py), the game's default set until recorded ones ship
   Q.QUIPS = [];
+  // the default quips plus your own new ones (Missing > Add your own > quip: state.customs 'quips/<NAME>'); the game takes
+  // any voices/<voice>/quips/<NAME> (up to 64 per voice), each levelled to the default quip of its name, else to HEADSHOT
+  Q.allQuips = () => Q.QUIPS.concat(Q.state.customs.filter(c => c.kind === 'voice' && c.name.startsWith('quips/') && !Q.QUIPS.includes(c.name)).map(c => c.name));
   Q.SOUND_GROUPS = [
     ['Hitsounds', ['HIT', 'HIT_MED', 'HIT_HEAVY', 'HIT_BRUTAL', 'KILL']],
     ['Weapons', ['RIFLE', 'ROCKET', 'KNIFE', 'SNIPER', 'LASER', 'SHOTGUN', 'STICKY', 'CROSSBOW', 'BUBBLE', 'SYRINGE']],
