@@ -258,7 +258,7 @@ class GitHub:
 
 _URL_RE = re.compile(r"https?://[^\s<>()\[\]`\"']+")
 _MDLINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
-_TAG_RE = re.compile(r"(?<![\w.-])(test-\d+\.\d+\.\d+-test\.\d+|v\d+\.\d+\.\d+)(?![\w-]|\.\d)")
+_TAG_RE = re.compile(r"(?<![\w.-])(test-\d+\.\d+\.\d+(?:\.testing|-test)\.\d+|v\d+\.\d+\.\d+)(?![\w-]|\.\d)")
 _VER_RE = re.compile(r"(?<![\w.])(\d\.\d{1,3}\.\d{1,3})(?![\w]|\.\d)")
 _PR_RE = re.compile(r"\bPRs?\s*#?(\d{1,5})(?![\w.]|\.\d)((?:\s*(?:,|/|&|and|or)\s*#\d{1,5}\b)*)")
 _HEX_RE = re.compile(r"(?<![\w/#])([0-9a-f]{7,40})(?![\w])")
@@ -332,7 +332,7 @@ class Linker:
         """The release to show for a version: production v<ver> first, else the newest test prerelease."""
         prod = [r for r in self.releases if r["tagName"] == "v" + ver]
         if prod: return prod[0]
-        tests = [r for r in self.releases if r["tagName"].startswith("test-%s-test." % ver)]
+        tests = [r for r in self.releases if r["tagName"].startswith(("test-%s-test." % ver, "test-%s.testing." % ver))]
         tests.sort(key=lambda r: int(r["tagName"].rsplit(".", 1)[1]) if r["tagName"].rsplit(".", 1)[1].isdigit() else 0)
         return tests[-1] if tests else None
 

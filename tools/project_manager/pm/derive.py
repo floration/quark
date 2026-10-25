@@ -511,16 +511,17 @@ def versions(results, data=shown_data):
         bv = b_test.get("version") or ""
         if str(b_test.get("tag") or "").startswith("test-"):
             pre = b_test["tag"]
-        elif "-test." in bv and (not testing or util.base_version(bv) == util.base_version(testing)):
-            pre = "test-" + bv  # (the prerelease tag is test-<VERSION>-test.<run>: CLAUDE.md "Releases")
+        elif ("-test." in bv or ".testing." in bv) and (not testing or util.base_version(bv) == util.base_version(testing)):
+            pre = "test-" + bv  # (the prerelease tag is test-<VERSION>.testing.<run>, before 1.19.0 test-<VERSION>-test.<run>)
     # production tags are exactly v<VERSION>
     prod_tag = p.get("tag") or get(ed, "production.tag") or \
         ((b_prod or {}).get("tag") if str((b_prod or {}).get("tag") or "").startswith("v") else None) or \
         ("v" + production if production else None)
-    # the version a testing server registers with (QUARK_VERSION of the CI build: <VERSION>-test.<run>)
+    # the version a testing server registers with (QUARK_VERSION of the CI build: <VERSION>.testing.<run>; before 1.19.0
+    # <VERSION>-test.<run>)
     testing_server = None
     for cand in (util.parse_version(pre), (b_test or {}).get("version")):
-        if cand and "-test" in cand and (not testing or util.base_version(cand) == util.base_version(testing)):
+        if cand and ("-test" in cand or ".testing." in cand) and (not testing or util.base_version(cand) == util.base_version(testing)):
             testing_server = cand
             break
     next_free = None

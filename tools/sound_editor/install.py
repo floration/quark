@@ -65,8 +65,8 @@ def checkout_version():
         return ""
 
 
-def base_version(v):   # "1.18.16-test.140+abc" -> "1.18.16"
-    return v.split("-")[0].split("+")[0].strip()
+def base_version(v):   # "1.18.16-test.140+abc" / "1.19.0.testing.5" (testing builds from 1.19.0 on) -> "1.18.16" / "1.19.0"
+    return ".".join(v.split("-")[0].split("+")[0].strip().split(".")[:3])
 
 
 def export_with(tests, export, tmp):

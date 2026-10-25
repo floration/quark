@@ -442,6 +442,12 @@ static void testGrapplePlayers(uint16_t port) {
     CHECK(sa.move.hookCooldown > 0);
     CHECK(maxErr[0] < 0.15f && maxErr[1] < 0.15f);
     pumpServerTime(s, cls, 0.3, [&](int i) { btn = 0; return in(i); });
+    // The clients are ahead of the server by the commands they sent after its last frame: as many as the last pump
+    // iteration's ticks, which wall-clock scheduling decides. Still sliding apart at ~3 m/s after letting go, a late
+    // wake-up there (16+ commands) put them 0.05 m apart with no misprediction. So the server runs the commands already
+    // sent and the same command is compared: no client tick or poll meanwhile, so no server answer replaces the prediction.
+    for (int k = 0; k < 500 && (sa.lastCmdSeq != c[0].nextSeq() - 1 || sb.lastCmdSeq != c[1].nextSeq() - 1); k++) { s.frame(); hostSleepMs(1); }
+    CHECK(sa.lastCmdSeq == c[0].nextSeq() - 1 && sb.lastCmdSeq == c[1].nextSeq() - 1);
     CHECK(length(sa.move.pos - c[0].predicted().pos) < 0.05f && length(sb.move.pos - c[1].predicted().pos) < 0.05f);
     // 2. through the head: 15 (a headshot hit event); letting go of the button ends it
     rearm();

@@ -316,12 +316,13 @@ def run_parallel(jobs, pool=None):
 
 # --- collecting --------------------------------------------------------------------------------------------------------
 
-TEST_TAG = re.compile(r"^test-(\d+\.\d+\.\d+-test\.(\d+))$")
+TEST_TAG = re.compile(r"^test-(\d+\.\d+\.\d+(?:\.testing|-test)\.(\d+))$")   # (.testing.<run> from 1.19.0 on)
 
 
 def repo_refs(cwd):
     """one for-each-ref: origin/testing (else a local testing), the production tag (the newest v<semver>) and the
-    testing build on testing's tip (its test-<VERSION>-test.<run> prerelease tag, when fetched)"""
+    testing build on testing's tip (its test-<VERSION>.testing.<run> prerelease tag, when fetched; before 1.19.0
+    test-<VERSION>-test.<run>)"""
     out = GIT(cwd, "for-each-ref", "--format=%(refname)%00%(objectname)%00%(*objectname)",
               "refs/remotes/origin/testing", "refs/heads/testing", "refs/tags/v*", "refs/tags/test-*")
     refs, tags, tests = {}, [], []
@@ -343,14 +344,14 @@ def repo_refs(cwd):
 
 def local_testing_build(quark, testing_sha, version):
     """the testing build in Quark\\testing\\ (its BUILD.txt, docs/LOCAL_BUILD.md) when it is testing's tip:
-    "<VERSION>-test.<run>", else None"""
+    "<VERSION>.testing.<run>" (before 1.19.0 "<VERSION>-test.<run>"), else None"""
     try:
         with open(os.path.join(quark, "testing", "BUILD.txt"), encoding="utf-8", errors="replace") as f: text = f.read(65536)
     except OSError:
         return None
-    m = re.search(r"\b(\d+\.\d+\.\d+-test\.\d+)\b", text)                    # (a release download names it)
-    if m: return m.group(1) if version and m.group(1).startswith(version + "-") else None
-    m = re.search(r"\b([0-9a-f]{40})(-test\.\d+)", text)                        # (tools/build_release.ps1: sha-test.<run>)
+    m = re.search(r"\b(\d+\.\d+\.\d+(?:\.testing|-test)\.\d+)\b", text)     # (a release download names it)
+    if m: return m.group(1) if version and m.group(1).startswith((version + "-", version + ".")) else None
+    m = re.search(r"\b([0-9a-f]{40})((?:\.testing|-test)\.\d+)", text)           # (tools/build_release.ps1: sha.testing.<run>)
     return version + m.group(2) if m and version and m.group(1) == testing_sha else None
 
 

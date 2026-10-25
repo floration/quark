@@ -4,14 +4,21 @@
 # CI runs no gameplay or UI tests (owner, 2026-10-24): quark_tests and quark --uitest are run locally before every
 # push, and the testing build is play-tested by hand (docs/RELEASE_CHECKLIST.md) before production.
 # Publishes only from two places (docs: CLAUDE.md "Releases"):
-#   TESTING     a push to the `testing` branch: a signed GitHub *prerelease* tagged test-<VERSION>-test.<run number>,
-#               built as version <VERSION>-test.<run number> (never "latest"; of the website only the testing
-#               channel's asset data, assets/data/testing/, is replaced). The tag
+#   TESTING     a push to the `testing` branch: a signed GitHub *prerelease* tagged test-<VERSION>.testing.<run number>,
+#               built as version <VERSION>.testing.<run number> (never "latest"; of the website only the testing
+#               channel's asset data, assets/data/testing/, is replaced). VERSION stays at the production release
+#               the build follows (owner, 2026-10-24): X.Y.Z.testing.N sorts above X.Y.Z and below the next release in
+#               the launcher (releases.cpp versionCmp) and the server updater (pick_release.py); its notes are
+#               changelogs/next.md (what's on testing since the last production release), or, while VERSION isn't
+#               released yet, changelogs/<VERSION>.md. Before 1.19.0 it was <VERSION>-test.<N> (a semver
+#               prerelease, below the release) and every push bumped VERSION. The tag
 #               must not start with v<digit> or a digit: launchers 0.12-1.16 install the highest such tag even when
 #               it's a prerelease. macOS is optional: the prerelease goes out with
 #               Windows + Linux, and the macOS files are added when (if) that build finishes.
 #   PRODUCTION  a pushed tag v<VERSION> (no suffix) on a commit of the protected default branch: a signed release
-#               marked latest, only when Windows, Linux AND macOS all built; then the website.
+#               marked latest, only when Windows, Linux AND macOS all built; then the website. It needs
+#               changelogs/<VERSION>.md and changelogs/full/<VERSION>.md, and no changelogs/next.md or
+#               changelogs/full/next.md left (the release PR renames them to <VERSION>.md, bumping VERSION).
 #   SITE        a manual run on the default branch with "site" ticked: builds, then publishes only the website for the
 #               production release VERSION names (which must exist and be latest). For a site deploy that failed or
 #               was skipped; it never makes a release.
@@ -37,8 +44,8 @@ on:
 permissions:
   contents: read   # every job only reads; release and pages get write below
 env:
-  # testing builds carry their own version (<VERSION>-test.<N>: below the production release it leads to)
-  QUARK_VERSION_SUFFIX: ${{ github.ref == 'refs/heads/testing' && github.event_name == 'push' && format('-test.{0}', github.run_number) || '' }}
+  # testing builds carry their own version (<VERSION>.testing.<N>: above the production release VERSION names, below the next)
+  QUARK_VERSION_SUFFIX: ${{ github.ref == 'refs/heads/testing' && github.event_name == 'push' && format('.testing.{0}', github.run_number) || '' }}
 concurrency:
   # (a final-test run gets its own group: a testing push queued after it must not replace it, nor it the push)
   group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && inputs.final && '-final' || '' }}
@@ -49,8 +56,9 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       channel: ${{ steps.c.outputs.channel }}
-      version: ${{ steps.c.outputs.version }}   # what the build says it is (testing: <VERSION>-test.<N>)
+      version: ${{ steps.c.outputs.version }}   # what the build says it is (testing: <VERSION>.testing.<N>)
       base: ${{ steps.c.outputs.base }}         # the VERSION file (changelogs/<base>.md)
+      notes: ${{ steps.c.outputs.notes }}       # testing: the changelog its prerelease shows (next.md, <base>.md or none)
       tag: ${{ steps.c.outputs.tag }}
       sanitizers: ${{ steps.c.outputs.sanitizers }}   # 'true': the sanitizers job runs (the trigger is in step c)
     steps:
@@ -84,12 +92,14 @@ jobs:
             fi
             CHANNEL=production
           elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/testing ]; then
-            TAG="test-$V$QUARK_VERSION_SUFFIX"
+            TAG="test-$V$QUARK_VERSION_SUFFIX"   # test-X.Y.Z.testing.N: never v<digit> or a digit first (see above)
             CHANNEL=testing
+            # VERSION stays at the production release (X.Y.Z.testing.N sorts above X.Y.Z), or names the next one; older
+            # than production, testing launchers and the testing server would see this build as older than production
             LATEST=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
             NEWEST=$(printf '%s\n%s\n' "${LATEST#v}" "$V" | sort -V | tail -n1)
-            if [ -n "$LATEST" ] && { [ "$NEWEST" != "$V" ] || [ "${LATEST#v}" = "$V" ]; }; then
-              echo "::warning::VERSION $V isn't newer than production $LATEST: testing launchers may see this build as older (bump VERSION)"
+            if [ -n "$LATEST" ] && [ "$NEWEST" != "$V" ]; then
+              echo "::warning::VERSION $V is older than production $LATEST: testing launchers may see this build as older (set VERSION to $LATEST or the next version)"
             fi
           elif [ "$SITE_ONLY" = true ]; then
             [ "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" ] || { echo "::error::a site-only run publishes the default branch's site: run it on $DEFAULT_BRANCH"; exit 1; }
@@ -99,12 +109,29 @@ jobs:
           elif [ "$FINAL_ONLY" = true ]; then
             CHANNEL=final   # (the build, package and publish jobs skip on a final run: only meta and the sanitizers)
           fi
-          if [ "$CHANNEL" = production ] || [ "$CHANNEL" = testing ]; then
-            [ -f "changelogs/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }; }
+          NOTES=""
+          if [ "$CHANNEL" = production ]; then
+            [ -f "changelogs/$V.md" ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }
             # the full changelog (what changed and why, in depth: the website's updates/<version> page)
-            [ -f "changelogs/full/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/full/$V.md is missing"; exit 1; }; }
+            [ -f "changelogs/full/$V.md" ] || { echo "::error::changelogs/full/$V.md is missing"; exit 1; }
+            for f in changelogs/next.md changelogs/full/next.md; do   # (testing's notes: the release PR renames them)
+              [ ! -e "$f" ] || { echo "::error::$f is still there: rename it to ${f%next.md}$V.md for the release"; exit 1; }
+            done
+          elif [ "$CHANNEL" = testing ]; then
+            # Testing pushes don't bump VERSION (owner, 2026-10-24): what they change goes in changelogs/next.md and
+            # changelogs/full/next.md, which the next production release PR renames to <VERSION>.md. While VERSION
+            # isn't released yet (its release PR is being tested), its own changelogs/<VERSION>.md is the notes.
+            if [ -n "$LATEST" ] && [ "${LATEST#v}" != "$V" ] && [ -e changelogs/next.md ]; then
+              echo "::warning::VERSION $V isn't released yet but changelogs/next.md is still there: the release PR renames it (and full/next.md) to $V.md, or the v$V tag fails"
+            fi
+            if [ -f changelogs/next.md ]; then NOTES=changelogs/next.md
+            elif [ "${LATEST#v}" != "$V" ] && [ -f "changelogs/$V.md" ]; then NOTES="changelogs/$V.md"
+            else echo "::warning::no changelogs/next.md: this testing build's prerelease has no notes (add what changed there)"
+            fi
+          fi
+          if [ "$CHANNEL" = production ] || [ "$CHANNEL" = testing ]; then
             if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "::error::release $TAG already exists: bump VERSION (releases are never replaced)"; exit 1
+              echo "::error::release $TAG already exists (releases are never replaced): bump VERSION"; exit 1
             fi
           fi
           # When the sanitizers run (owner, 2026-10-24): ONLY for a build a human marks as a final test, on any branch; this is
@@ -125,7 +152,7 @@ jobs:
               fi
               case "$SUBJECT" in *'[final]'*) SANITIZERS=true ;; esac ;;
           esac
-          { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
+          { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "notes=$NOTES"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}$([ "$SANITIZERS" = true ] && echo ', sanitizers')" >> "$GITHUB_STEP_SUMMARY"
       - name: no keys, tokens or secrets in the repository (tools/check_secrets.py; the pre-commit hook runs it too)
         run: python3 -I tools/check_secrets.py
@@ -427,12 +454,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
-          BASE: ${{ needs.meta.outputs.base }}
+          NOTES: ${{ needs.meta.outputs.notes }}   # (changelogs/next.md, or changelogs/<VERSION>.md before it's released)
         run: |
           {
             echo "**Testing build** $VER (\`${GITHUB_SHA::7}\`, branch \`testing\`). Not a production release."
             echo
-            if [ -f "changelogs/$BASE.md" ]; then cat "changelogs/$BASE.md"; fi
+            if [ -n "$NOTES" ] && [ -f "$NOTES" ]; then cat "$NOTES"; fi
             echo
             python3 -I tools/provenance.py summary --markdown   # (how much is human-made: docs/PROVENANCE.md)
           } > notes.md

@@ -276,6 +276,14 @@ class TestPure(unittest.TestCase):
             self.assertGreater(play.version_cmp(a, b), 0, (a, b))
             self.assertLess(play.version_cmp(b, a), 0, (a, b))
         self.assertEqual(play.version_cmp("1.2.3", "1.2.3"), 0)
+        # testing builds from 1.19.0 on (<VERSION>.testing.<run>): above the release, below the next, as the launcher
+        self.assertEqual(play.version_from_tag("test-1.19.0.testing.5"), "1.19.0.testing.5")
+        for a, b in (("1.19.0.testing.5", "1.19.0"), ("1.19.1", "1.19.0.testing.5"), ("1.19.0.testing.10", "1.19.0.testing.9"),
+                     ("1.19.0.testing.1", "1.19.0-test.400"), ("1.20.0", "1.19.0.testing.900")):
+            self.assertGreater(play.version_cmp(a, b), 0, (a, b))
+            self.assertLess(play.version_cmp(b, a), 0, (a, b))
+        self.assertEqual(play.version_cmp("1.16", "1.16.0"), 0)
+        self.assertEqual(play.version_cmp("1.19.0.testing.5+abc", "1.19.0.testing.5"), 0)
         self.assertFalse(play.needs_signature({"tag": "v1.16.0"}))
         self.assertTrue(play.needs_signature({"tag": "test-1.17.0-test.1"}))
         self.assertTrue(play.needs_signature({"tag": "v1.0.0", "sig": "https://x/y.sig"}))

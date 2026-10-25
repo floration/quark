@@ -166,7 +166,7 @@ A fast, minimal FPS on a custom C++17 engine:
 | `tools/launcher_build.sh` | Builds the shipped launcher from the `launcher` branch (release jobs) |
 | `site/` (not in `testing`) | The website: the `site` branch, checked out there as a worktree (README) |
 | `assets/` | Fonts, sounds, voice, icons; `assets/overrides/` holds the owner's replacement assets |
-| `changelogs/<VERSION>.md` | One per release, shown by the website, the launcher, the release notes and the bot |
+| `changelogs/<VERSION>.md` | One per release, shown by the website, the launcher, the release notes and the bot. `changelogs/next.md` (and `full/next.md`): what's on `testing` since the last production release, the testing prereleases' notes; the release PR renames them |
 | `docs/` | See section 10 |
 
 ## 3. Build and test
@@ -203,7 +203,7 @@ A cloud session can push only its own `claude/...` branch, so its work reaches `
 
 | Branch | What it is |
 |---|---|
-| `testing` | Where all new work lands. Every push publishes a signed prerelease `test-<VERSION>-test.<N>`. Dependabot targets it. |
+| `testing` | Where all new work lands. Every push publishes a signed prerelease `test-<VERSION>.testing.<N>`, built as version `<VERSION>.testing.<N>` (before 1.19.0: `test-<VERSION>-test.<N>`). Dependabot targets it. |
 | Default branch (protected) | Updated only by a PR from `testing`. Production releases come only from a `v<VERSION>` tag on it. |
 | `launcher` | The launcher that ships: a full copy of the tree, branched at 1.17.0. It should almost never change. Every platform job builds `quark_launcher` from it (`tools/launcher_build.sh`, without the testing suffix) and packages that one, so a release only changes the launcher when this branch does. A launcher change goes here (by PR) **with a higher `VERSION`**, or installed launchers won't take it (`selfupdate::isNewer`). `src/launcher/` stays in `testing` too: the game links its launcher-upgrade code, and the tests cover it. Keep the two compatible (release manifest, signatures, qpak format). |
 | `site` | The website source (its files at the top level). The linux job and the pages job check it out into `site/`; production releases build the site from it, plus the changelogs and weapon tables, into `gh-pages`. A change here goes live with the next production release or a site-only run. `master.txt` and its signature are committed here. |
@@ -212,10 +212,10 @@ A cloud session can push only its own `claude/...` branch, so its work reaches `
 | `map-tests` | Later: maps uploaded by the owner's dev map editor (section 9). |
 
 **Release flow:**
-1. Work is committed on `testing`, with `VERSION` bumped and `changelogs/<VERSION>.md` written.
+1. Work is committed on `testing`. `VERSION` stays at the last production release (owner, 2026-10-24): CI builds each testing push as `<VERSION>.testing.<run number>`, which the launcher and the server updater sort above that release and below the next one. Each change adds its notes to `changelogs/next.md` (short) and `changelogs/full/next.md` (full), which the testing prerelease shows. (Before 1.19.0 every push bumped `VERSION` and wrote `changelogs/<VERSION>.md`; testing builds were `<VERSION>-test.<N>`, below the release.)
 2. The push to `testing` runs CI: meta checks and the Windows, Linux and macOS builds (no gameplay or UI tests: those run locally before the push). It publishes the signed testing prerelease (Windows + Linux; macOS files follow). The build meant for production is marked final (`[final]` in its head commit's subject line or the merged PR's title, or a manual run with **final** ticked), which runs the sanitizers on it; nothing waits for them, but the checklist wants them green. Nothing else runs the sanitizers (work branches included; only a human adds the final mark, never an agent); production tags never do.
 3. **The owner tests that build by hand with [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).** Nothing goes further until the owner says it passed.
-4. A PR from `testing` to the default branch; the owner merges it.
+4. The release PR (on `testing`, before the final build of step 2) bumps `VERSION` to the new release and renames `changelogs/next.md` and `changelogs/full/next.md` to `<VERSION>.md` (a production tag fails while a `next.md` is left). Then a PR from `testing` to the default branch; the owner merges it.
 5. The owner tags it: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. CI publishes the production release only when Windows, Linux and macOS all build; then it deploys the website. Dedicated servers update to it by themselves.
 
 Workflows are in `.github/workflows/`:

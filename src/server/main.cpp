@@ -27,7 +27,7 @@ static void usage() {
         "  --restart-flag F when file F appears (an update was installed), restart once no match is being played\n"
         "  --ranked         rated matches (OpenSkill): every player's game reports the result; no bots\n"
         "  --channel C      prod | testing: the release channel this server runs for (default: testing for a\n"
-        "                   -test. build, else prod). A testing server plays ranked but never rates it.\n"
+        "                   testing build, else prod). A testing server plays ranked but never rates it.\n"
         "  --governor-dir D a directory shared with the other server on this machine (a prod + testing pair,\n"
         "                   tools/server/install.sh): they share the CPU and network, throttling and (testing\n"
         "                   only) closing in the owner's order when the machine can't carry both\n"

@@ -82,6 +82,15 @@ class Fixture(unittest.TestCase):
         write(os.path.join(self.quark, "testing", "BUILD.txt"), "testing origin/testing %s-test.9 (built on this PC)\n" % self.new)
         self.assertEqual(D.local_testing_build(self.quark, self.new, "1.2.3"), "1.2.3-test.9")
         self.assertIsNone(D.local_testing_build(self.quark, self.old, "1.2.3"))
+        # testing builds from 1.19.0 on: <VERSION>.testing.<run> (VERSION stays at the production release)
+        self.assertEqual(D.TEST_TAG.match("test-1.2.3.testing.12").groups(), ("1.2.3.testing.12", "12"))
+        self.assertEqual(D.TEST_TAG.match("test-1.2.3-test.7").groups(), ("1.2.3-test.7", "7"))
+        self.assertIsNone(D.TEST_TAG.match("test-1.2.3.nightly.7"))
+        write(os.path.join(self.quark, "testing", "BUILD.txt"), "testing origin/testing %s.testing.10 (built on this PC)\n" % self.new)
+        self.assertEqual(D.local_testing_build(self.quark, self.new, "1.2.3"), "1.2.3.testing.10")
+        write(os.path.join(self.quark, "testing", "BUILD.txt"), "quark 1.2.3.testing.11 (downloaded)\n")
+        self.assertEqual(D.local_testing_build(self.quark, self.new, "1.2.3"), "1.2.3.testing.11")
+        self.assertIsNone(D.local_testing_build(self.quark, self.new, "1.2.4"))
 
     def test_stale_clone_is_not_counted(self):
         st = os.path.join(self.quark, "working-repo-old")
