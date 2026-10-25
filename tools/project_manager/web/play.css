@@ -67,6 +67,11 @@ table.t tr.off td { color: var(--ink-3); }
 .prog { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--surface-sunk); border: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
 .prog i { display: block; height: 100%; background: var(--link); }
 .rel-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rel-search { width: 150px; min-width: 0; font-size: 12px; padding: 3px 6px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.rel-search:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.rel-tools label.chk { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); }
+.rel-old { margin: 8px 0 0; }
 /* the release table takes the screen's height; at 1800 px and wider production and testing sit side by side */
 .rel-wrap { max-height: max(420px, calc(100vh - 230px)); overflow: auto; }
 .rel-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }

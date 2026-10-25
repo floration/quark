@@ -354,18 +354,29 @@
       '<div class="rel-wrap"><table class="t"><thead><tr><th>Release</th>' + (showChannel ? '<th>Channel</th>' : '') + '<th>Published</th><th class="num">Size</th><th>On this PC</th></tr></thead><tbody>' +
       (list.length ? list.map(r => releaseRow(r, inst, showChannel)).join('') : '<tr><td class="muted" colspan="5">None.</td></tr>') + '</tbody></table></div></div>';
   }
+  // the head (filters, search, Refresh) is static so typing in the search box is never interrupted; only #rel-body is
+  // rebuilt. Releases before 1.0 are folded away unless asked for (or searched).
+  const isOld = (r) => /^0\./.test(String(r.version || ''));
   function renderReleases() {
     const v = state.v, rel = obj(v.releases), inst = obj(v.installs), all = state.relList;
-    const seg = ['all', 'production', 'testing'].map(f => '<button type="button" data-filter="' + f + '"' + (state.relFilter === f ? ' class="on"' : '') + '>' + f[0].toUpperCase() + f.slice(1) + '</button>').join('');
-    const list = all.filter(r => state.relFilter === 'all' || r.channel === state.relFilter);
-    const count = state.relFilter === 'all' ? String(all.length) : list.length + ' of ' + all.length;
-    let html = '<div class="card-head"><h2 id="h-releases">Older versions <span class="count" title="' + esc(state.relFilter === 'all' ? 'every release on GitHub' : state.relFilter + ' releases shown of all') + '">' + esc(count) + '</span></h2>' +
-      '<span class="rel-tools"><span class="seg">' + seg + '</span><span class="src">GitHub releases &middot; ' + (rel.busy ? 'fetching&hellip;' : rel.fetchedAt ? 'checked ' + esc(when(rel.fetchedAt)) : 'not fetched yet') + '</span>' +
-      '<button type="button" class="btn small" id="rel-refresh">Refresh</button></span></div>';
+    const q = $('rel-search').value.trim().toLowerCase(), mine = $('rel-installed').checked;
+    for (const b of $('rel-seg').children) b.classList.toggle('on', b.dataset.filter === state.relFilter);
+    let list = all.filter(r => state.relFilter === 'all' || r.channel === state.relFilter);
+    if (mine) list = list.filter(r => r.installed || arr(r.folders).length || ACTIVE.includes(obj(inst[r.tag]).state));
+    if (q) list = list.filter(r => [r.tag, r.name, r.version].some(x => String(x || '').toLowerCase().includes(q)));
+    const old = q ? [] : list.filter(isOld);
+    if (!state.relOld && old.length) list = list.filter(r => !isOld(r));
+    const filtered = state.relFilter !== 'all' || mine || q || (!state.relOld && old.length);
+    $('rel-count').textContent = filtered ? list.length + ' of ' + all.length : String(all.length);
+    $('rel-count').title = filtered ? 'shown of every release on GitHub' : 'every release on GitHub';
+    $('rel-src').innerHTML = 'GitHub releases &middot; ' + (rel.busy ? 'fetching&hellip;' : rel.fetchedAt ? 'checked ' + esc(when(rel.fetchedAt)) : 'not fetched yet');
+    let html = '';
     if (rel.ok === false) html += '<div class="down"><div><strong>Could not get the release list</strong><div class="err">' + esc(rel.error) + '</div></div></div>';
     else if (has(rel.error)) html += '<p class="small warn">' + esc(rel.error) + '</p>';
+    const fold = old.length ? '<p class="small muted rel-old"><button type="button" class="btn small ghost" data-oldrel="1">' + (state.relOld ? 'Hide' : 'Show') + ' the ' + old.length + ' release' + (old.length === 1 ? '' : 's') + ' before 1.0</button></p>' : '';
     if (!list.length) {
-      setHTML('sec-releases', html + (rel.ok === false ? '' : '<p class="empty">' + (rel.busy || rel.ok == null ? 'Loading the list from GitHub&hellip;' : 'No releases.') + '</p>'));
+      const why = !all.length ? (rel.ok === false ? '' : rel.busy || rel.ok == null ? 'Loading the list from GitHub&hellip;' : 'No releases.') : 'No release matches' + (q ? ' &ldquo;' + esc(q) + '&rdquo;' : '') + '.';
+      setHTML('rel-body', html + (why ? '<p class="empty">' + why + '</p>' : '') + fold);
       return tickRefresh();
     }
     // wide screens: production and testing side by side instead of one long table with empty space beside it
@@ -374,7 +385,7 @@
       html += '<div class="rel-cols">' + releaseTable(list.filter(r => r.channel === 'production'), inst, false, 'Production') +
         releaseTable(rest, inst, false, rest.some(r => r.channel !== 'testing') ? 'Testing and other' : 'Testing') + '</div>';
     } else html += releaseTable(list, inst, true, '');
-    setHTML('sec-releases', html);
+    setHTML('rel-body', html + fold);
     tickRefresh();
   }
   // the Refresh button: disabled while fetching and for the 30 s the server ignores another press, with a countdown
@@ -779,6 +790,8 @@
       } else if (d.more) {
         if (state.openNotes.has(d.more)) state.openNotes.delete(d.more); else state.openNotes.add(d.more);
         renderNotes();
+      } else if (d.oldrel) {
+        state.relOld = !state.relOld; renderReleases();
       } else if (d.filter) {
         state.relFilter = d.filter; store('play-filter', state.relFilter); renderReleases();
       } else if (d.follow) {
@@ -837,6 +850,9 @@
   }, 1000);
 
   state.relFilter = ['all', 'production', 'testing'].includes(store('play-filter')) ? store('play-filter') : 'all';
+  $('rel-installed').checked = store('play-rel-mine') === '1';
+  $('rel-search').addEventListener('input', () => { if (state.v) renderReleases(); });
+  $('rel-installed').addEventListener('change', () => { store('play-rel-mine', $('rel-installed').checked ? '1' : null); if (state.v) renderReleases(); });
   try { state.later = new Set(arr(JSON.parse(session('play-later') || '[]'))); } catch (e) { state.later = new Set(); }
   if (EMBED) document.body.classList.add('embed');
   renderOptsList();

@@ -46,7 +46,19 @@
     <section class="card" id="sec-sessions" aria-labelledby="h-sessions"></section>
   </div>
 
-  <section class="card" id="sec-releases" aria-labelledby="h-releases"></section>
+  <section class="card" id="sec-releases" aria-labelledby="h-releases">
+    <div class="card-head">
+      <h2 id="h-releases">Older versions <span class="count" id="rel-count"></span></h2>
+      <span class="rel-tools">
+        <input type="search" id="rel-search" class="rel-search" placeholder="find a version" aria-label="Find a release by version or name" spellcheck="false" autocomplete="off">
+        <label class="chk small" title="Releases this PC has: in versions\, in a game folder, or being installed"><input type="checkbox" id="rel-installed"> on this PC</label>
+        <span class="seg" id="rel-seg"><button type="button" data-filter="all">All</button><button type="button" data-filter="production">Production</button><button type="button" data-filter="testing">Testing</button></span>
+        <span class="src" id="rel-src"></span>
+        <button type="button" class="btn small" id="rel-refresh">Refresh</button>
+      </span>
+    </div>
+    <div id="rel-body"></div>
+  </section>
 </main>
 
 <dialog id="note-dlg" aria-labelledby="note-h">
