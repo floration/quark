@@ -254,6 +254,21 @@ class TestPure(unittest.TestCase):
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
+    @unittest.skipIf(util.IS_WINDOWS, "Windows opens with os.startfile")
+    def test_open_names_a_missing_opener(self):
+        empty = tempfile.mkdtemp()
+        old = os.environ.get("PATH")
+        os.environ["PATH"] = empty
+        try:
+            with self.assertRaises(play.PlayError) as cm:
+                play.open_with_system(HERE)
+        finally:
+            os.environ["PATH"] = old
+            shutil.rmtree(empty, ignore_errors=True)
+        self.assertIn("is not installed on this PC", cm.exception.message)
+        self.assertIn("open", cm.exception.message.split(":")[1])
+        self.assertNotIn("No such file", cm.exception.message)
+
     def test_versions_and_manifest(self):
         self.assertEqual(play.version_from_tag("test-1.18.6-test.231"), "1.18.6-test.231")
         for a, b in (("1.17.0", "1.17.0-test.3"), ("1.17.0-test.3", "1.17.0-test.2"), ("1.17.0-test.10", "1.17.0-test.9"),

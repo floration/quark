@@ -412,15 +412,22 @@ def terminate(proc, force):
 
 def open_with_system(path):
     """Open a folder in Explorer (Finder, the file manager) or a file in its default app. Raises PlayError."""
-    try:
-        if util.IS_WINDOWS:
+    if util.IS_WINDOWS:
+        try:
             os.startfile(path)  # (Explorer / the default app; no console)
-            return
-        cmd = ["open" if sys.platform == "darwin" else "xdg-open", path]
-        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        except OSError as e:
+            raise PlayError(500, "Couldn't open %s (%s)." % (path, e.strerror or type(e).__name__))
+        return
+    # (elsewhere a helper program opens it: when that is what's missing, say so, not that the file is)
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    exe = shutil.which(opener)
+    if not exe:
+        raise PlayError(500, "Couldn't open %s: %s is not installed on this PC." % (path, opener), "no-opener")
+    try:
+        subprocess.Popen([exe, path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True, close_fds=True)
     except OSError as e:
-        raise PlayError(500, "Couldn't open %s (%s)." % (path, e.strerror or type(e).__name__))
+        raise PlayError(500, "Couldn't start %s to open %s (%s)." % (opener, path, e.strerror or type(e).__name__))
 
 
 def _python_for_handoff():
