@@ -139,6 +139,11 @@ function versionDetail(v) {
   for (const l of locals) rows.push(html`<li>local copy ${localChip(l.name)} on ${branchChip(l.branch)}</li>`);
   const evs = eventsFor((e) => e.ref && e.ref.tag && (e.ref.tag === `v${v}` || e.ref.tag.startsWith(`test-${v}-`)), 20);
   const isProdOrOlder = p.version && cmp(v, p.version) <= 0;
+  // a version newer than testing has no changelog (nor release) yet: no links to files that don't exist
+  const future = t.version && cmp(v, t.version) > 0;
+  if (future) {
+    return html`${head('Version', v)}${notesBlock('version', v)}<p class="muted">${v} is newer than testing (${t.version}): it has no changelog or release yet.</p>`;
+  }
   return html`${head('Version', v, html`${ext(gh(`/blob/testing/changelogs/${v}.md`), 'Short changelog')} · ${ext(gh(`/blob/testing/changelogs/full/${v}.md`), 'Full changelog')}${isProdOrOlder ? html` · ${ext(gh(`/releases/tag/v${v}`), `Release v${v}`)} · ${ext(`https://floration.github.io/quark/updates/${enc(v)}/`, 'Website page')}` : t.version === v && t.prerelease ? html` · ${ext(t.prerelease.url, t.prerelease.tag)}` : ''}`)}
     ${notesBlock('version', v)}
     ${unread('releases') ? unknownLine('releases') : ''}

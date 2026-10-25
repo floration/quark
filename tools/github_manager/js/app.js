@@ -42,8 +42,14 @@ function route() {
   if (tab !== activeTab || filters) mountTab(tab);
   activeItem = item;
   renderDrawer(true);
-  if (item && item.kind === 'run' && item.log) openLog(item.id, item.log, logCloser(item.id));
+  if (wantsLog(item)) openLog(item.id, item.log, logCloser(item.id));
   else if (isLogOpen()) closeLog(true);
+}
+// a #run=&log= link opens the log only for a run the page knows (an older one is fetched first, then re-routed) and
+// a job of it; for one that doesn't exist the drawer says so and no log panel opens on a 404
+function wantsLog(item) {
+  const r = item && item.kind === 'run' && item.log && store.idx && store.idx.runs.get(String(item.id));
+  return !!r && (!(r.jobs || []).length || r.jobs.some((j) => String(j.id) === String(item.log)));
 }
 export function hashFor(extra) {
   return `#tab=${activeTab}${extra ? '&' + extra : ''}`;
@@ -191,7 +197,7 @@ function onState() {
     mountTab(r.tab);
     activeItem = r.item;
     renderDrawer(true);
-    if (r.item && r.item.kind === 'run' && r.item.log) openLog(r.item.id, r.item.log, logCloser(r.item.id));
+    if (wantsLog(r.item)) openLog(r.item.id, r.item.log, logCloser(r.item.id));
   } else if (changed) {
     redraw();
     if (store.historyLoaded) ensureHistory(true);
