@@ -62,7 +62,8 @@ class Fixtures:
             gh.branches[b["name"]] = b["sha"]
             gh.ahead[b["sha"]] = b.get("ahead") or 0
         gh.pulls = [{"number": p["number"], "head": p["head"]} for p in st["pulls"] if p["state"] == "open"]
-        self.pending = S.Pending(None, gh, "floration/quark", self.note_events.extend, on_applied=self.after_apply)
+        self.pending = S.Pending(None, gh, "floration/quark", self.note_events.extend, on_applied=self.after_apply,
+                                 checked_out=lambda b: S.checked_out_in(st["local"], b))
         self.docs_at = S.iso(datetime.now(timezone.utc) - timedelta(minutes=3))
         if sample_editor:
             self.seed_editor(st)

@@ -17,9 +17,9 @@ Two more tabs:
     into or behind testing). Per branch q sets a role and a
     description (local, `editor/structure.json`); they set the Branches tab's kind and show in the branch's details.
     Create a branch (from testing, another branch or a sha), rename or delete one (not the default branch, testing,
-    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs; an applied
-    rename takes the branch's role, description and notes along): these are GitHub changes, queued in Pending
-    changes.
+    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs, and a delete
+    or rename about a local copy or worktree on this PC that has the branch checked out; an applied rename takes the
+    branch's role, description and notes along): these are GitHub changes, queued in Pending changes.
   - **Rules & limits**, two kinds, labelled: *Enforced by GitHub*, the repository's branch rulesets (block force
     push, block deletion, require a PR, required status checks picked from the recent runs' job names, linear
     history), edited with a form and queued; and *Followed by every Claude*, the agent rules (push / merge / version

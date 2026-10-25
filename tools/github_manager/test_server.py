@@ -1488,6 +1488,17 @@ class ApplyAndStale(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
+    def test_checked_out_here_is_a_warning(self):
+        local = [{"name": "thread-x", "branch": "claude/a", "worktreeOf": "working-repo"},
+                 {"name": "working-repo", "branch": "testing"}]
+        p = S.Pending(None, self.gh, REPO, checked_out=lambda b: S.checked_out_in(local, b))
+        ch = p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.assertIn("claude/a is checked out in thread-x (worktree of working-repo) on this PC", " ".join(ch["warnings"]))
+        local[0]["branch"] = "claude/other"   # switched there: no new warning, and the preview is not stale for it
+        self.assertEqual(p.apply(ch["id"], {"previewHash": ch["previewHash"]})["status"], "applied")
+        ch = p.queue({"type": "branch.rename", "params": {"name": "claude/b", "newName": "claude/b2"}})
+        self.assertFalse(any("checked out" in w for w in ch["warnings"]))
+
     def test_undo_queues_the_reverse(self):
         # what the page's Undo queues: an applied delete's before.sha re-creates the branch there; a rename goes back
         ch = self.p.apply(self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})["id"])

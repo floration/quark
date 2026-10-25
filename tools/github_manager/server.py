@@ -2525,6 +2525,12 @@ class Rules(_Store):
 
 # ---- pending GitHub changes ------------------------------------------------------------------------------------
 
+def checked_out_in(local, branch):
+    """The local copies (state.local) that have branch checked out, as the warnings name them."""
+    return ["%s%s" % (l.get("name"), " (worktree of %s)" % l["worktreeOf"] if l.get("worktreeOf") else "")
+            for l in local if l.get("branch") == branch]
+
+
 def follow_rename(structure, notes, old, new):
     """An applied rename takes the branch's structure entry and its notes along (each note's move is a note.edited
     event with the old target in "from"). The server and the fixture server both use it."""
@@ -2544,12 +2550,13 @@ class Pending(_Store):
     was based on the change is refused (STALE_MSG). The call itself is rebuilt from the change's parameters, never
     taken from the file. editor/pending.json; results and history events (github.*) are recorded."""
 
-    def __init__(self, folder, gh, repo, on_events=None, now=None, on_applied=None):
+    def __init__(self, folder, gh, repo, on_events=None, now=None, on_applied=None, checked_out=None):
         _Store.__init__(self, folder, "pending.json",
                         lambda d: isinstance(d, dict) and isinstance(d.get("changes"), list), on_events, now)
         self.gh = gh
         self.repo = repo
         self.on_applied = on_applied
+        self.checked_out = checked_out  # branch -> ["thread-6l62d6 (worktree of working-repo)", ...] on this PC
         self.apply_lock = threading.Lock()
         self.changes = collections.OrderedDict()
         d = self.file.load()
@@ -2640,6 +2647,11 @@ class Pending(_Store):
                     state.append("open PR %s" % ", ".join("#%s" % n for n in prs))
                 before_text = "Branch %s at %s%s." % (name, short_sha(sha), " (%s)" % "; ".join(state) if state else "")
                 basis = {"defaultBranch": default, "sha": sha, "openPrs": prs}
+                # a local copy on this PC has it checked out (a warning only: it never makes the preview stale)
+                for where in (self.checked_out(name) if self.checked_out else []):
+                    pv["warnings"].append("%s is checked out in %s on this PC: %s" % (name, where, (
+                        "the copy keeps it, but its upstream on GitHub is gone" if typ == "branch.delete" else
+                        "the copy keeps the old name and its upstream is gone until it is renamed or switched there")))
                 if typ == "branch.delete":
                     if ahead:
                         pv["warnings"].append("%s on %s %s not in testing: after the delete they are reachable only "
@@ -3255,7 +3267,8 @@ class Manager:
         self.notes = Notes(editor, self._editor_events, self.repo)
         self.structure = Structure(editor, self._editor_events)
         self.rules = Rules(editor, self._editor_events)
-        self.pending = Pending(editor, self.gh, self.repo, self._editor_events, on_applied=self._after_apply)
+        self.pending = Pending(editor, self.gh, self.repo, self._editor_events, on_applied=self._after_apply,
+                               checked_out=self.checked_out)
         docs_on, docs_off = docs_sync_wanted(cfg)
         self.docs = DocsSync(os.path.join(data_dir, "claude-docs"), os.path.join(editor, "docs-sync.json"), self.proc,
                              self.docs_files, repo=cfg.get("claudeDocsRepo") or DOCS_REPO,
@@ -3379,6 +3392,11 @@ class Manager:
 
     def follow_rename(self, old, new):
         follow_rename(self.structure, self.notes, old, new)
+
+    def checked_out(self, branch):
+        with self.lock:
+            local = list(self.state.get("local") or [])
+        return checked_out_in(local, branch)
 
     def structure_view(self):
         o = self.structure.obj()
