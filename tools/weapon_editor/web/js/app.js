@@ -218,10 +218,12 @@ class App {
         this._checkInfo();
         this.emit("set", from);
     }
+    // the game's problems (authoritative), then the page's that the game didn't report: one at the same line and
+    // column (or line, when either has no column) with the same severity is the same mistake in other words
     allProblems() {
         const g = this.gameProblems ? this.gameProblems.problems : [];
-        const seen = new Set(g.map((p) => p.line + ":" + p.msg));
-        return [...g, ...this.problems.filter((p) => !seen.has(p.line + ":" + p.msg))];
+        const same = (p, q) => p.severity === q.severity && p.line === q.line && (p.col === q.col || !p.col || !q.col);
+        return [...g, ...this.problems.filter((p) => !g.some((q) => q.msg === p.msg && q.line === p.line || same(p, q)))];
     }
     _checkInfo() {
         const p = this.allProblems(), e = p.filter((x) => x.severity === "error").length, w = p.length - e;

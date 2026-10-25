@@ -323,6 +323,8 @@ async function browserChecks() {
                 await p.evaluate(() => window.weaponsApp.setText('version 1\nweapons "dec"\nslot hit rifle:\n  damage = damage * 1.1\n', "test"));
                 await p.waitForTimeout(200); await p.click("#codeProblems .fixbtn");
                 ok((await p.evaluate(() => window.weaponsApp.text)).includes("damage * 1.1f") && (await p.evaluate(() => window.weaponsApp.problems.length)) === 0, "a decimal in an f32 output: one click writes 1.1f and the error goes");
+                const dupes = await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "dup"\nslot hit rocket:\n  damage = damage * nope\n', "test"); A.gameProblems = { problems: [{ severity: "error", msg: "unknown name 'nope'", line: 4, col: 21 }], via: "test" }; const n = A.allProblems().length; A.gameProblems = null; return n; });
+                ok(dupes === 1, "a mistake the game and the page both report is listed once", String(dupes));
             } else {
                 fs.mkdirSync(path.join(dataDir, "custom_weapons"), { recursive: true });
                 const demoText = fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak"), "utf8");
