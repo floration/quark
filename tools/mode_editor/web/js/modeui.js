@@ -255,10 +255,10 @@ export class ModePage {
             fresh, keyBase: fresh ? this.keyBase : null,
             draft: this.codeError ? this.codeText : null, savedSig: this.savedSig || null }).catch(() => {});
     }
-    // the text a save would write (null while the code has an error)
-    saveText() {
+    // the text a save would write (null while the code has an error); keySet: the keys to write (default: the page's)
+    saveText(keySet = this.keySet) {
         if (this.codeError) return null;
-        return fileTextFor(this.keyBase, this.keySet, this.ast, this.def, $("modeWhole").checked);
+        return fileTextFor(this.keyBase, keySet, this.ast, this.def, $("modeWhole").checked);
     }
     // the built-in base mode with the same keys (Sim's compare): the key lines without a logic block
     builtinText() { return patchQmode(this.keyBase, this.keySet, ""); }
@@ -592,9 +592,11 @@ export class ModePage {
         }
         if (!NAME_RE.test(name)) { this.app.toast("Bad name: letters, digits, _ . - (up to 64)"); return; }
         const renamed = name !== this.name || this.builtin;
-        if (renamed) this.keySet = { ...this.keySet, custommode: name };
+        // the new name goes only into the text sent: a declined replace or a failed save leaves the page's keys as they
+        // were (else the next Save would write custommode=<other name> into this file)
+        const keySet = renamed ? { ...this.keySet, custommode: name } : this.keySet;
         let text;
-        try { text = this.saveText(); } catch (e) { this.app.toast("Can't write it: " + e.message, 8000); return; }
+        try { text = this.saveText(keySet); } catch (e) { this.app.toast("Can't write it: " + e.message, 8000); return; }
         const sameFile = !renamed && this.fileText !== null && this.fileMeta;
         const body = { text, baseSha256: sameFile ? this.fileMeta.sha256 : null, baseMtime: sameFile ? this.fileMeta.mtime : null, provenance: this._provenance(name), overwrite: false };
         let r;
