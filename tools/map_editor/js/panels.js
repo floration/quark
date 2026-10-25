@@ -184,6 +184,9 @@ export class Panels {
         add(this.field("spacing", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
           ? numInput(rep.spacing[k], v => this.set("spacing", s, x => { const kk = (x.rot || 0) % 2 && k !== 1 ? 2 - k : k; x.def = { ...x.def, spacing: x.def.spacing.map((q, j) => j === kk ? Math.max(0.05, Math.min(64, v)) : q) }; x.max[k] = tidy(x.min[k] + repeatLen({ ...rep, spacing: rep.spacing.map((q, j) => j === k ? Math.max(0.05, Math.min(64, v)) : q) }, k, n[k])); }), { step: 0.25, min: 0.05 })
           : el("span", { class: "faint num" }, "-")))));
+        const over = [0, 1, 2].filter(k => rep.axes[k] && rep.spacing[k] < rep.unit[k] - 1e-6);   // (world axes: rep is turned)
+        if (over.length) add(this.field("", el("div", { class: "btnrow" }, el("span", { class: "warn" }, "spacing under the unit's size along " + over.map(k => "xyz"[k]).join(", ") + ": units overlap (overlapping boxes, flicker)"),
+          el("button", { class: "mini", title: "spacing = the unit's size: units touch", onclick: () => this.set("spacing", s, x => { const t = (x.rot || 0) % 2; x.def = { ...x.def, spacing: x.def.spacing.map((q, j) => over.includes(t && j !== 1 ? 2 - j : j) ? x.def.unit[j] : q) }; x.max = [0, 1, 2].map(k => tidy(x.min[k] + repeatLen({ ...rep, spacing: rep.spacing.map((q, j) => over.includes(j) ? rep.unit[j] : q) }, k, n[k]))); }) }, "touching"))));
         add(this.field("position", this.v3(o.min, (k, v) => this.set("move", s, (x) => { const d0 = tidy(v) - x.min[k]; x.min[k] = tidy(v); x.max[k] = tidy(x.max[k] + d0); }))));
         const ca = capAxis(rep), pieceTxt = (p) => p ? plural(p.boxes.length, "box") + ", " + fmt(p.len) + " m" : "none";
         const L = this.app.library, noCap = ca < 0 ? "start / end pieces need an object that repeats along one axis" : "";

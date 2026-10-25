@@ -259,6 +259,8 @@ export class Library {
     const n = name.value.trim() || "object";
     if (!validMapName(n)) { banner("A name is 1-40 letters, digits, - and _", true); return; }
     if (!axes.some(Boolean)) { banner("Tick at least one axis to repeat along", true); return; }
+    const over = [0, 1, 2].filter(k => axes[k] && sp[k] < def.unit[k] - 1e-6);
+    if (over.length && !confirm("The spacing along " + over.map(k => "xyz"[k]).join(", ") + " is under the unit's size (" + over.map(k => def.unit[k]).join(", ") + " m): the units will overlap. Make it anyway?")) return;
     if (!this.nameFree(n)) return;
     const made = defFromBoxes(n, boxes, axes, sp);
     if (replace) replaceWithObject(d, n, made, boxes, n);
