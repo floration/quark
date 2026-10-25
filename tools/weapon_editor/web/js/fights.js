@@ -78,7 +78,9 @@ export class FightsView {
             <button id="fStop" class="danger">Stop</button>
             <span class="small warn" id="fFit"></span>
             <span class="grow"></span><button id="f2d">Top-down</button><button id="f3d">3D</button>`;
-        const bind = (id, k, num) => { const e = $(id); e.value = o[k]; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); else if (k === "mode") this._fit(); }; };
+        // (a number box keeps to its min / max and shows what runs; empty or unreadable keeps the value)
+        const numOf = (e, cur) => { const x = e.value.trim() === "" ? NaN : Math.round(+e.value); return Number.isFinite(x) ? Math.max(e.min === "" ? -Infinity : +e.min, Math.min(e.max === "" ? Infinity : +e.max, x)) : cur; };
+        const bind = (id, k, num) => { const e = $(id); e.value = o[k]; e.onchange = () => { o[k] = num ? (e.tagName === "SELECT" ? +e.value : numOf(e, o[k])) : e.value; if (num) e.value = o[k]; this._save(); if (k === "map") this._loadMap(e.value); else if (k === "mode") this._fit(); }; };
         bind("fMap", "map"); bind("fMode", "mode"); bind("fBots", "bots", true); bind("fSkill", "skill"); bind("fSecs", "secs", true); bind("fMatches", "matches", true); bind("fBSecs", "batchSecs", true);
         const pool = $("fPool");
         for (const w of WEAPONS.filter((x) => x !== "syringe" && x !== "locator")) {

@@ -407,7 +407,8 @@ class App {
         bm.onchange = () => { this.ui.base = bm.value; this.saveUi(); };
         $("playBtn").onclick = () => this.playInGame();
         $("cmpSel").onchange = () => this.setCompare($("cmpSel").value);
-        $("healthIn").onchange = () => { const h = Math.max(1, Math.min(1000, +$("healthIn").value || 100)); this.health = h; $("healthIn").value = h; this._derive(); this._changed("health"); this.saveUi(); };
+        // (empty or unreadable: the health stays; 0 or less is the minimum 1, not 100)
+        $("healthIn").onchange = () => { const x = $("healthIn").value.trim() === "" ? NaN : Math.round(+$("healthIn").value); const h = Number.isFinite(x) ? Math.max(1, Math.min(1000, x)) : this.health; this.health = h; $("healthIn").value = h; this._derive(); this._changed("health"); this.saveUi(); };
         $("distSel").onchange = () => { this.dist = +$("distSel").value || 0; this._derive(); this._changed("health"); };
     }
     async playInGame() {

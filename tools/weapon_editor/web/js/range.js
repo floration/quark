@@ -65,7 +65,10 @@ export class RangeView {
             <span class="grow"></span>
             <button id="r2d">Top-down</button><button id="r3d">3D</button>`;
         const sel = (id, k, num) => { const e = $(id); e.value = o[k] ?? ""; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); else this.run(); }; };
-        sel("rMap", "map"); sel("rPreset", "preset"); sel("rAim", "aim"); sel("rSkill", "skill", true);
+        sel("rMap", "map"); sel("rPreset", "preset"); sel("rAim", "aim");
+        // skill 0..1 (the bot's BEGINNER..EXPERT); the box shows what runs
+        const sk = $("rSkill"); sk.value = o.skill;
+        sk.onchange = () => { const x = sk.value.trim() === "" ? NaN : +sk.value; o.skill = Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : o.skill; sk.value = o.skill; this._save(); this.run(); };
         // seconds: 1..60, and the box shows what runs (0 or 99 used to run 10 or 60 s while the box kept 0 / 99)
         const secs = $("rSecs"); secs.value = o.seconds;
         secs.onchange = () => { const v = Math.round(+secs.value); o.seconds = Number.isFinite(v) && secs.value.trim() !== "" ? Math.max(1, Math.min(60, v)) : o.seconds; secs.value = o.seconds; this._save(); this.run(); };
