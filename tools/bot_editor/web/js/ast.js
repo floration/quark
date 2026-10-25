@@ -245,19 +245,19 @@ export function validate(brain) {
     for (const d of brain.decls) {
         if (d.kind === "slot") {
             const key = slotKey(d);
-            if (names.has("slot:" + key)) err(`slot ${key} is written twice`, d, key);
+            if (names.has("slot:" + key)) err(`written twice`, d, key);
             names.set("slot:" + key, d);
             if (!CATALOG.slots[d.name]) err(`no slot called '${d.name}' (the game calls: ${Object.keys(CATALOG.slots).join(", ")})`, d, key);
             if (d.name === "objective" && !BRAIN_MODES.includes(d.mode) && d.mode !== "default") err(`'${d.mode}' isn't a mode (${BRAIN_MODES.join(" ")} default)`, d, key);
             continue;
         }
-        if (names.has(d.name)) err(`'${d.name}' is declared twice`, d, d.name);
+        if (names.has(d.name)) err(`declared twice`, d, d.name);
         names.set(d.name, d);
-        if (WEAPONS.includes(d.name) || BRAIN_MODES.includes(d.name) || CATALOG.builtins[d.name]) err(`'${d.name}' is a weapon, mode or builtin name`, d, d.name);
+        if (WEAPONS.includes(d.name) || BRAIN_MODES.includes(d.name) || CATALOG.builtins[d.name]) err(`the name of a weapon, mode or builtin`, d, d.name);
         if (d.kind === "param") {
             const cp = CATALOG.params && CATALOG.params[d.name];
-            if (cp && cp.type && cp.type !== d.type) err(`${d.name} is ${cp.type} (the game reads it as that)`, d, d.name);
-            if (cp && typeof cp.min === "number") d.values.forEach((v) => { if (v < cp.min || v > cp.max) err(`${d.name}: ${v} is outside ${cp.min}..${cp.max}`, d, d.name, "warning"); });
+            if (cp && cp.type && cp.type !== d.type) err(`declared ${d.type}, but the game reads it as ${cp.type}`, d, d.name);
+            if (cp && typeof cp.min === "number") d.values.forEach((v) => { if (v < cp.min || v > cp.max) err(`${v} is outside ${cp.min}..${cp.max}`, d, d.name, "warning"); });
         }
         if (d.kind === "list") {
             const seen = new Set();

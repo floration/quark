@@ -2,8 +2,8 @@
 // bots (placed, or live) as columns. Orbit: left drag, pan: right / middle drag, zoom: wheel. One static vertex buffer
 // per map / slice; the bots' buffer is preallocated and refilled each frame (no allocation per frame).
 
-import { MATERIALS } from "./qmap.js";
-import { TEAM_COLORS } from "./mapview.js";
+import { MATERIALS, TEAM_MODES } from "./qmap.js";
+import { botColor } from "./mapview.js";
 
 const VS = `attribute vec3 p; attribute vec3 c; uniform mat4 m; varying vec3 vc; varying float vd;
 void main(){ gl_Position = m * vec4(p,1.0); vc = c; vd = gl_Position.w; }`;
@@ -79,8 +79,8 @@ export class Map3D {
         const live = this.sim.rec && this.sim.live;
         if (live && live.rec.frames.length) {
             const t = live.displayTime(), R = live.rec, F = R.frames[R.indexAt(t)], s = {};
-            for (let j = 0; j < F.bots.length; j++) { const b = live.botAt(j, t, s); if (!b || !b.alive) continue; const info = R.bots.get(b.id) || {}; put(b.x, b.y, b.z, hex(TEAM_COLORS[info.team] || info.color || "#cccccc")); }
-        } else for (const b of this.sim.sc.bots) if (b.pos) put(b.pos.x, b.pos.y, b.pos.z, hex(TEAM_COLORS[b.team] || "#cccccc"));
+            for (let j = 0; j < F.bots.length; j++) { const b = live.botAt(j, t, s); if (!b || !b.alive) continue; const info = R.bots.get(b.id) || {}; put(b.x, b.y, b.z, hex(info.color || "#cccccc")); }
+        } else { const teams = TEAM_MODES.has(this.sim.sc.mode); this.sim.sc.bots.forEach((b, i) => { if (b.pos) put(b.pos.x, b.pos.y, b.pos.z, hex(botColor(b.team, i, teams))); }); }
         return o / 6;
     }
 

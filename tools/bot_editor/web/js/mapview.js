@@ -17,6 +17,9 @@ const ZOOM_SETTLE = 140;   // ms after the last zoom step before the layer is re
 const BANDS = 20;          // height colour bands
 const RAMP = [[22, 34, 48], [26, 64, 84], [30, 104, 104], [70, 140, 92], [150, 160, 84], [214, 186, 112], [236, 222, 180]];
 export const TEAM_COLORS = { a: "#f05252", b: "#3f83f8", any: "#9ca3af", race: "#a78bfa", none: "#e5e7eb" };
+// free for all: a colour per bot (dot, trail, score row, kill feed), in line-up order, so bots can be told apart
+export const BOT_COLORS = ["#f97316", "#22c55e", "#eab308", "#06b6d4", "#e879f9", "#a3e635", "#fb7185", "#60a5fa", "#fbbf24", "#34d399", "#c084fc", "#f472b6"];
+export const botColor = (team, i, teams) => (teams ? TEAM_COLORS[team] || TEAM_COLORS.any : BOT_COLORS[i % BOT_COLORS.length]);
 
 function rampColor(t) {
     t = Math.max(0, Math.min(1, t)) * (RAMP.length - 1);

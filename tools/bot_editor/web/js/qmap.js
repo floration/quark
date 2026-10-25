@@ -12,6 +12,16 @@ export const TEAM_MODES = new Set(["vs", "bomb", "koth", "payload", "npayload", 
 
 // What a mode needs from the map: Map::canSupportMode (src/game/map.cpp), or the game's own answer when the helper
 // read the map. Staged spawns (att0 / def0 ...) are not team a / b spawns there.
+// A map row of /api/maps as the page names it: its title, plus its file name when a map of yours is titled otherwise
+// (mybox.qmap titled "Harbor": "Harbor · mybox.qmap"). mapLabel adds where it's from, for lists that mix sources
+// (batch results): a map of yours named like a shipped one is a different map.
+export const mapKey = (m) => m.source + "/" + m.name;
+export function mapTitle(m) {
+    const t = m.title || m.name;
+    return t + (m.source !== "default" && t.toLowerCase() !== m.name.toLowerCase() ? ` · ${m.name}.qmap` : "");
+}
+export function mapLabel(m) { return mapTitle(m) + (m.source === "default" ? "" : m.source === "user" ? " (yours)" : " (other folder)"); }
+
 export function mapSupports(map, mode) {
     if (map.modesPossible) return map.modesPossible.includes(mode);
     const has = (t) => map.spawns.some((s) => s.raw === t);

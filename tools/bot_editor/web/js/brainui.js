@@ -13,6 +13,12 @@ const $ = (id) => document.getElementById(id);
 const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LINE_H = 19;
 const OWN_HEADER = /^# .*: a bot brain made in the Quark bot editor/;
+// base, else base-2, base-3, ...: the first not in taken
+export function freeName(base, taken) {
+    const t = new Set(taken);
+    if (!t.has(base)) return base;
+    for (let i = 2; ; i++) if (!t.has(`${base}-${i}`)) return `${base}-${i}`;
+}
 
 export class BrainPage {
     constructor(app) {
@@ -163,8 +169,27 @@ export class BrainPage {
         this._items();
         this._problems();
         this._info();
+        this._locateProblems();
         clearTimeout(this._persistT);
         this._persistT = setTimeout(() => this._persist(), 800);
+    }
+    // The views' AST carries no source positions (a copy of a copy), so a check problem has no line:col. When there are
+    // such problems, the Code view's text is parsed again when the page is idle and checked with its positions (a few
+    // ms, only while something is wrong; the text must still be the same by then).
+    _locateProblems() {
+        if (this.codeError || !this.check || !this.check.problems.some((p) => !p.line)) return;
+        const text = this.codeText, idle = window.requestIdleCallback || ((f) => setTimeout(f, 50));
+        if (this._locating === text) return;
+        this._locating = text;
+        idle(() => {
+            if (this._locating !== text) return;
+            this._locating = null;
+            if (text !== this.codeText || this.codeError) return;
+            let v;
+            try { v = validate(parse(text)); } catch { return; }
+            this.check = v;
+            this._problems(); this._highlight();
+        }, { timeout: 500 });
     }
     // the work in progress as a file through serve.py (the shell's browser storage starts empty)
     _persist() { if (this.ast) api.saveState("brain", { name: this.name, text: print(this.ast), draft: this.codeError ? this.codeText : null, savedText: this.saved || null }).catch(() => {}); }
@@ -404,15 +429,22 @@ export class BrainPage {
     }
     // Save / Save as. A draft that doesn't parse can't be saved; a brain with check errors (the editor's or the game's
     // compiler's) only after a confirm, since a run or batch refuses a brain that doesn't compile. True: saved.
+    // (one at a time: a double click or Ctrl+S during a save's checks / dialogs is ignored)
     async save(asName) {
+        if (this._saving) return false;
+        this._saving = true;
+        try { return await this._save(asName); } finally { this._saving = false; }
+    }
+    async _save(asName) {
         if (!this.ast) return false;
         if (this.codeError) { this.app.toast("The code has an error: fix it first (" + this.codeError.message + ")", 5000); return false; }
         let name = asName || this.name;
         if (name === "default") {
             name = await this.app.promptName("Save as", "mybrain", "The built-in default can't be overwritten: save your brain under a name (letters, digits, _ . -). It goes to " + this.app.brainsDir);
-            if (!name || !(await this._overwriteOk(name))) return false;
+            if (!name) return false;
         }
         if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name) || name === "default") { this.app.toast("Bad name: letters, digits, _ . - (not 'default')"); return false; }
+        if (!(await this._overwriteOk(name))) return false;
         // the game's compiler on the Code view's text (so its line numbers are the Code view's), under the saved name:
         // the hash in its label is of what the brain does, the same for this text as for the file
         const g = await this.gameCheck(this.codeText.replace(/^brain "[^"\n]*"$/m, `brain "${name}"`));
@@ -442,8 +474,10 @@ export class BrainPage {
             return true;
         } catch (e) { this.app.toast("Save failed: " + e.message, 6000); return false; }
     }
+    // Writing <name>.qbrain replaces a saved brain: ask, unless it's the file this brain was opened from or last saved
+    // as (a brain never saved, from New or Open file, asks too: the file on disk is someone else's).
     async _overwriteOk(name) {
-        if (name === this.name || !this.app.brainList.some((b) => b.source === "user" && b.name === name)) return true;
+        if ((name === this.name && this.saved != null) || !this.app.brainList.some((b) => b.source === "user" && b.name === name)) return true;
         return (await this.app.choose(`${name}.qbrain exists`, `Replace it with this brain? (Its current version is kept as ${name}.qbrain.bak.)`,
             [{ k: "no", label: "Cancel" }, { k: "yes", label: "Replace", danger: true }])) === "yes";
     }
@@ -504,7 +538,7 @@ export class BrainPage {
         };
         $("brainNew").onclick = async () => {
             if (!(await this.leaveOk("A new brain"))) return;
-            const n = await this.app.promptName("New brain", "mybrain", "Starts as a copy of the default brain.", ["default", ...this.app.brainList.map((b) => b.name)]);
+            const n = await this.app.promptName("New brain", freeName("mybrain", this.app.brainList.map((b) => b.name)), "Starts as a copy of the default brain.", [...new Set(["default", ...this.app.brainList.map((b) => b.name)])]);
             if (!n) return;
             const def = this.app.defaultAst();
             this.name = n; this.saved = null; this.hist = []; this.histIx = -1;
@@ -514,7 +548,7 @@ export class BrainPage {
         $("brainSave").onclick = () => this.save();
         $("brainSaveAs").onclick = async () => {
             const n = await this.app.promptName("Save as", this.name === "default" ? "mybrain" : this.name + "2", "Letters, digits, _ . -");
-            if (n && (await this._overwriteOk(n))) this.save(n);
+            if (n) this.save(n);
         };
         $("brainDownload").onclick = () => {
             if (this.codeError) { this.app.toast("The code has an error"); return; }
@@ -528,7 +562,11 @@ export class BrainPage {
             if (!f) return;
             try {
                 const ast = numberIds(JSON.parse(JSON.stringify(parse(f.text))));
-                this.name = f.name.replace(/\.qbrain$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[^A-Za-z0-9]+/, "") || "uploaded";
+                // a file named like a saved brain (or the default) opens under a free name: a Save then can't replace
+                // that brain unasked, and the Open list doesn't show two of one name
+                const base = (f.name.replace(/\.qbrain$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[^A-Za-z0-9]+/, "") || "uploaded").slice(0, 60);
+                this.name = freeName(base, this.app.brainList.map((b) => b.name));
+                if (this.name !== base) this.app.toast(`${base}.qbrain is ${base === "default" ? "the built-in brain's name" : "already saved"}: the file opened as “${this.name}” (Save as to pick another name)`, 6000);
                 ast.name = this.name;   // (the game's label names the file, not what its header said)
                 this.saved = null; this.hist = []; this.histIx = -1;
                 this._set(this.mergeOverDefault(ast), null); this._fillSel();
@@ -559,6 +597,7 @@ export class BrainPage {
         $("codeScroll").addEventListener("scroll", () => { $("gutter").scrollTop = $("codeScroll").scrollTop; });
         window.addEventListener("keydown", (e) => {
             if (this.app.page !== "brain") return;
+            if (document.querySelector(".modal")) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") e.preventDefault(); return; }   // (a dialog has the keys)
             const inCode = document.activeElement === ta;
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (inCode) this._codeEdited(true); this.save(); }
             else if (!inCode && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !/INPUT|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); this.undo(e.shiftKey ? 1 : -1); }

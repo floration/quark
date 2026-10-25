@@ -2,16 +2,17 @@
 // goal, target line, trail, kill feed, scoreboard and the selected bot's inspector. Frames are kept as they came
 // (one JSON object per helper line); the draw loop reads them and allocates nothing per frame beyond a few numbers.
 
-import { TEAM_COLORS } from "./mapview.js";
-
-const BOT_COLORS = ["#f97316", "#22c55e", "#eab308", "#06b6d4", "#e879f9", "#a3e635", "#fb7185", "#60a5fa", "#fbbf24", "#34d399", "#c084fc", "#f472b6"];
+import { botColor } from "./mapview.js";
+import { TEAM_MODES } from "./qmap.js";
 
 export class Recording {
     constructor() { this.start = null; this.frames = []; this.events = []; this.end = null; this.bots = new Map(); this.lastT = 0; }
     push(line) {
         if (line.type === "start") {
             this.start = line;
-            for (const b of line.bots || []) this.bots.set(b.id, { ...b, color: BOT_COLORS[this.bots.size % BOT_COLORS.length] });
+            // team colours in team modes; a colour per bot in a free for all (the game puts everyone on team a there)
+            const teams = line.teams != null ? !!line.teams : TEAM_MODES.has(line.mode);
+            for (const b of line.bots || []) this.bots.set(b.id, { ...b, color: botColor(b.team, this.bots.size, teams) });
         } else if (line.type === "frame") {
             if (line.bots) { this.frames.push(line); this.lastT = line.t; }
             for (const e of line.events || []) this.events.push({ ...e, t: line.t });
@@ -111,7 +112,7 @@ export class LiveView {
                 ctx.beginPath(); ctx.moveTo(b.x - r, b.z - r); ctx.lineTo(b.x + r, b.z + r); ctx.moveTo(b.x + r, b.z - r); ctx.lineTo(b.x - r, b.z + r); ctx.stroke();
                 continue;
             }
-            const team = TEAM_COLORS[info.team] || info.color || "#ccc";
+            const team = info.color || "#ccc";
             // path and goal
             if (this.opts.paths && (sel || this.sel < 0)) {
                 if (src.path && src.path.length) {
@@ -204,7 +205,7 @@ export class LiveView {
         const scores = R.scoresAt(t).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
         const esc = (x) => String(x ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
         let h = `<h3>Score ${R.end ? "(final)" : ""}</h3><table class="score"><tr><th>Bot</th><th>Brain</th><th>K</th><th>D</th><th>Dmg</th></tr>`;
-        for (const s of scores) h += `<tr data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><td><span style="color:${TEAM_COLORS[s.team] || (R.bots.get(s.id) || {}).color}">●</span> ${esc(s.name)}</td><td class="muted"${s.brainStatus === "unsupported" ? ' title="not applied: this build plays the built-in brain"' : ""}>${esc(s.brain)}${s.brainStatus === "unsupported" ? " <span class=\"warn\">✕</span>" : ""}</td><td>${s.kills}</td><td>${s.deaths}</td><td>${Math.round(s.damage)}</td></tr>`;
+        for (const s of scores) h += `<tr data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><td><span style="color:${(R.bots.get(s.id) || {}).color || "#ccc"}">●</span> ${esc(s.name)}</td><td class="muted"${s.brainStatus === "unsupported" ? ' title="not applied: this build plays the built-in brain"' : ""}>${esc(s.brain)}${s.brainStatus === "unsupported" ? " <span class=\"warn\">✕</span>" : ""}</td><td>${s.kills}</td><td>${s.deaths}</td><td>${Math.round(s.damage)}</td></tr>`;
         h += "</table>";
         // inspector
         const i = R.indexAt(t);
@@ -230,7 +231,7 @@ export class LiveView {
         h += `<h3>Kill feed</h3><div class="feed">`;
         for (const e of kills) {
             const k = R.bots.get(e.killer), v = R.bots.get(e.victim);
-            h += `<div><span class="muted">${e.t.toFixed(1)}</span> ${k ? `<b style="color:${TEAM_COLORS[k.team] || k.color}">${esc(k.name)}</b>` : "<i>world</i>"} <span class="muted">[${esc(e.weapon)}]</span> <b style="color:${v ? TEAM_COLORS[v.team] || v.color : "#ccc"}">${esc(v ? v.name : e.victim)}</b></div>`;
+            h += `<div><span class="muted">${e.t.toFixed(1)}</span> ${k ? `<b style="color:${k.color}">${esc(k.name)}</b>` : "<i>world</i>"} <span class="muted">[${esc(e.weapon)}]</span> <b style="color:${v ? v.color : "#ccc"}">${esc(v ? v.name : e.victim)}</b></div>`;
         }
         if (!kills.length) h += `<div class="muted">no kills yet</div>`;
         h += "</div>";

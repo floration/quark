@@ -1,9 +1,9 @@
 // Simulator page: pick a map and mode, place bots (team, skill, brain, start + facing), give them objectives, save
 // scenarios, run a match live (pause / resume / speed / step / stop, scrub what was recorded), inspect bots.
 
-import { MapView, TEAM_COLORS } from "./mapview.js";
+import { MapView, botColor } from "./mapview.js";
 import { Map3D } from "./map3d.js";
-import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorOrNull } from "./qmap.js";
+import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorOrNull, mapTitle } from "./qmap.js";
 import { LiveView, Recording } from "./live.js";
 import { buildRequest } from "./helper.js";
 import { api } from "./api.js";
@@ -36,6 +36,9 @@ export class SimPage {
         this.mv.overlays = [this.editOverlay];
         this.mv.screenOverlays = [this.editScreen];
         this.run = null; this.rec = null;
+        this.scenarioNames = [];    // saved scenarios (for the replace confirm)
+        this.scFile = null;         // the saved scenario this line-up came from / was saved as
+        this._unsaved = false;      // changed since it was saved or loaded (Load and import ask first)
         this._wire();
         app.on("maps", () => this._fillMaps());
         app.on("brains", () => this.renderBots());
@@ -51,9 +54,15 @@ export class SimPage {
         const q = new URLSearchParams(location.search);
         const want = q.get("map") ? { name: q.get("map"), source: q.get("source") || "default" } : saved && saved.map;
         const m = want && this.app.maps.find((x) => x.name === want.name && x.source === want.source) || this.app.maps.find((x) => x.name === "temple") || this.app.maps[0];
-        if (saved && saved.format === "qbe-scenario" && !q.get("map")) this.sc = saved;
+        if (saved && saved.format === "qbe-scenario" && !q.get("map")) {
+            const { editor, ...sc } = saved;   // (the page's own notes on it: which saved scenario it is, unsaved changes)
+            this.sc = sc;
+            if (editor) { this.scFile = editor.file || null; this._unsaved = !!editor.unsaved; }
+        }
         if (q.get("mode")) this.sc.mode = q.get("mode");
-        if (m) { this.sc.map = { name: m.name, source: m.source }; await this.app.loadMap(m.name, m.source); }
+        this._loading = true;
+        try { if (m) { this.sc.map = { name: m.name, source: m.source }; await this.app.loadMap(m.name, m.source); } }
+        finally { this._loading = false; }
         this._scenarioFields();
         this._refreshScenarioList();
     }
@@ -106,16 +115,25 @@ export class SimPage {
         $("scSeed").onchange = () => { this.sc.seed = +$("scSeed").value || 1; this._save(); };
         $("scSecs").onchange = () => { this.sc.secs = Math.max(5, +$("scSecs").value || 120); this._save(); };
         $("scSave").onclick = async () => {
-            const n = (this.sc.name || "untitled").replace(/[^A-Za-z0-9_.-]/g, "_");
-            try { await api.saveScenario(n, this.sc); this.app.toast("Scenario saved: " + n); this._refreshScenarioList(); } catch (e) { this.app.toast("Save failed: " + e.message); }
+            const n = (this.sc.name || "untitled").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[^A-Za-z0-9]+/, "").slice(0, 64) || "untitled";
+            // another saved scenario of this name (not the one this line-up was loaded from or last saved as): ask
+            if (n !== this.scFile && this.scenarioNames.includes(n) && (await this.app.choose(`Scenario “${n}” exists`, `Replace it with this one? (Its current version is kept as ${n}.json.bak.)`,
+                [{ k: "no", label: "Cancel" }, { k: "yes", label: "Replace", danger: true }])) !== "yes") return;
+            try { await api.saveScenario(n, this.sc); this._markSaved(n); this.app.toast("Scenario saved: " + n); this._refreshScenarioList(); } catch (e) { this.app.toast("Save failed: " + e.message); }
         };
         $("scLoad").onchange = async () => {
             const n = $("scLoad").value; $("scLoad").value = "";
-            if (!n) return;
-            try { this._loadScenario(await api.scenario(n)); } catch (e) { this.app.toast("Load failed: " + e.message); }
+            if (!n || !(await this._replaceOk(`Loading “${n}”`))) return;
+            try { await this._loadScenario(await api.scenario(n)); this._markSaved(n); } catch (e) { this.app.toast("Load failed: " + e.message); }
         };
-        $("scExport").onclick = () => this.app.download((this.sc.name || "scenario") + ".json", JSON.stringify(this.sc, null, 1), "application/json");
-        $("scImport").onclick = async () => { const f = await this.app.pickFile(".json"); if (f) try { this._loadScenario(JSON.parse(f.text)); } catch (e) { this.app.toast("Not a scenario: " + e.message); } };
+        $("scExport").onclick = () => { this.app.download((this.sc.name || "scenario") + ".json", JSON.stringify(this.sc, null, 1), "application/json"); this._unsaved = false; };
+        $("scImport").onclick = async () => {
+            if (!(await this._replaceOk("Opening a scenario file"))) return;
+            const f = await this.app.pickFile(".json");
+            if (!f) return;
+            try { await this._loadScenario(JSON.parse(f.text)); this.scFile = null; this._unsaved = true; }
+            catch (e) { this.app.toast(`Not a scenario (${f.name}): ${e.message}`, 5000); }
+        };
         $("runStart").onclick = () => this.startRun();
         $("runPause").onclick = () => this._pause();
         $("runStep").onclick = () => { if (this.run) { this.run.control("step"); this.paused = true; this._runButtons(); } };
@@ -124,7 +142,7 @@ export class SimPage {
         $("timeline").oninput = () => { if (!this.rec) return; this.live.follow = false; this.live.t = +$("timeline").value; this.mv.invalidate(); this._tickSide(true); };
         $("runLive").onclick = () => { this.live.follow = true; this._tickSide(true); };
         window.addEventListener("keydown", (e) => {
-            if (this.app.page !== "sim" || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+            if (this.app.page !== "sim" || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || document.querySelector(".modal")) return;
             if (e.key === "f" || e.key === "F") this.mv.fit();
             if (e.key === "Escape") { this.pick = null; this._setTool("select"); this._hint(); }
             if ((e.key === "Delete" || e.key === "Backspace") && this.sel >= 0 && !this.rec) { this.sc.bots.splice(this.sel, 1); this.sel = -1; this.renderBots(); this._save(); }
@@ -141,7 +159,7 @@ export class SimPage {
             const ms = this.app.maps.filter((m) => m.source === src);
             if (!ms.length) continue;
             const og = document.createElement("optgroup"); og.label = label;
-            for (const m of ms) { const o = document.createElement("option"); o.value = m.source + "/" + m.name; o.textContent = `${m.title || m.name}${m.for ? "  (" + m.for + ")" : ""}${m.handmade ? " ✎" : ""}${m.shadows ? " · same name as a game map" : ""}`; if (m.shadows) o.title = `${m.name}.qmap in ${m.dir}: the game plays this file instead of its own ${m.name}`; og.append(o); }
+            for (const m of ms) { const o = document.createElement("option"); o.value = m.source + "/" + m.name; o.textContent = `${mapTitle(m)}${m.for ? "  (" + m.for + ")" : ""}${m.handmade ? " ✎" : ""}${m.shadows ? " · same name as a game map" : ""}`; if (m.shadows) o.title = `${m.name}.qmap in ${m.dir}: the game plays this file instead of its own ${m.name}`; og.append(o); }
             s.append(og);
         }
         if (cur) s.value = cur;
@@ -180,26 +198,42 @@ export class SimPage {
     }
 
     _scenarioFields() { $("scName").value = this.sc.name; $("scSeed").value = this.sc.seed; $("scSecs").value = this.sc.secs; $("modeSel").value = this.sc.mode; }
+    // before a Load / import replaces the line-up: a line-up changed since it was saved or loaded asks first (the
+    // autosave would write over it)
+    async _replaceOk(what) {
+        if (!this._unsaved || !this.sc.bots.length) return true;
+        const k = await this.app.choose("The current line-up isn't saved", `${what} replaces the scenario in the editor (${this.sc.bots.length} bot${this.sc.bots.length === 1 ? "" : "s"} on ${this.sc.map ? this.sc.map.name : "no map"}).`,
+            [{ k: "cancel", label: "Cancel" }, { k: "discard", label: "Replace it", danger: true }, { k: "save", label: "Save it first", primary: true }]);
+        if (k === "save") { await $("scSave").onclick(); return !this._unsaved; }
+        return k === "discard";
+    }
     async _refreshScenarioList() {
         try {
             const r = await api.scenarios();
+            this.scenarioNames = r.scenarios.map((x) => x.name);
             const s = $("scLoad"); s.textContent = "";
             const o = document.createElement("option"); o.value = ""; o.textContent = r.scenarios.length ? "Load…" : "Load… (none saved)"; s.append(o);
             for (const x of r.scenarios) { const e = document.createElement("option"); e.value = x.name; e.textContent = x.name; s.append(e); }
         } catch {}
     }
     async _loadScenario(s) {
-        if (!s || s.format !== "qbe-scenario") throw new Error("not a bot editor scenario");
+        if (!s || s.format !== "qbe-scenario" || !Array.isArray(s.bots)) throw new Error("not a bot editor scenario (no \"format\": \"qbe-scenario\")");
         this.sc = s; this.sel = -1;
         this._scenarioFields();
-        const m = s.map && this.app.maps.find((x) => x.name === s.map.name && x.source === s.map.source);
-        if (m) await this.app.loadMap(m.name, m.source); else { this.app.toast("The scenario's map isn't here: " + (s.map && s.map.name)); this.renderBots(); }
-        this._save();
+        this._loading = true;
+        try {
+            const m = s.map && this.app.maps.find((x) => x.name === s.map.name && x.source === s.map.source);
+            if (m) await this.app.loadMap(m.name, m.source); else { this.app.toast("The scenario's map isn't here: " + (s.map && s.map.name)); this.renderBots(); }
+            this._save();
+        } finally { this._loading = false; }
     }
+    // the line-up is now saved scenario `file` (loaded or saved): no unsaved changes
+    _markSaved(file) { this.scFile = file; this._unsaved = false; this._loading = true; this._save(); this._loading = false; }
     // the scenario being edited is autosaved as a file (<data dir>/bot_editor/state/scenario.json), debounced
     _save() {
+        if (!this._loading) this._unsaved = true;
         clearTimeout(this._saveT);
-        this._saveT = setTimeout(() => api.saveState("scenario", this.sc).catch(() => {}), 600);
+        this._saveT = setTimeout(() => api.saveState("scenario", { ...this.sc, editor: { file: this.scFile, unsaved: this._unsaved } }).catch(() => {}), 600);
     }
 
     // ---------------------------------------------------------------- bots
@@ -236,7 +270,7 @@ export class SimPage {
         this.sc.bots.forEach((b, i) => {
             const r = document.createElement("div");
             r.className = "botrow" + (i === this.sel ? " sel" : "");
-            const c = TEAM_COLORS[b.team] || TEAM_COLORS.any;
+            const c = botColor(b.team, i, TEAM_MODES.has(this.sc.mode));
             r.innerHTML = `<span class="dot" style="background:${c}"></span><div><b>${esc(b.name)}</b> <span class="sub">${b.skill.toLowerCase()} · ${esc(b.brain)}</span><div class="sub">${esc(objText(b.objective))}${b.pos ? "" : " · spawns at a spawn point"}</div></div><button title="remove">×</button>`;
             r.onclick = (e) => { if (e.target.tagName === "BUTTON") { this.sc.bots.splice(i, 1); if (this.sel >= this.sc.bots.length) this.sel = -1; this.renderBots(); this._save(); return; } this.sel = i; this.renderBots(); };
             L.append(r);
@@ -249,7 +283,9 @@ export class SimPage {
         const E = $("botEdit");
         E.textContent = "";
         const b = this.sc.bots[this.sel];
-        if (!b) return;
+        if (!b) { this._shownSel = -1; return; }
+        // a bot just picked: its editor (objective at the bottom) into view on a short screen
+        if (this._shownSel !== this.sel) { this._shownSel = this.sel; requestAnimationFrame(() => E.scrollIntoView({ block: "nearest" })); }
         const team = TEAM_MODES.has(this.sc.mode);
         const brains = ["default", ...this.app.brainList.filter((x) => x.source === "user").map((x) => x.name), "(editor)"];
         const objs = this.app.map ? mapObjectives(this.app.map) : [];
@@ -388,7 +424,7 @@ export class SimPage {
             const o = b.objective || {};
             const sel = i === this.sel;
             if (!b.pos) return;
-            const c = TEAM_COLORS[b.team] || TEAM_COLORS.any;
+            const c = botColor(b.team, i, TEAM_MODES.has(this.sc.mode));
             ctx.globalAlpha = sel ? 1 : 0.55;
             if (o.kind === "goto" && o.pos) { line(ctx, b.pos.x, b.pos.z, o.pos[0], o.pos[2], "#fde047", px, true); cross(ctx, o.pos[0], o.pos[2], 7 * px, "#fde047", px); }
             if (o.kind === "hold" && o.pos) { ctx.strokeStyle = "#fde047"; ctx.lineWidth = 2 * px; ctx.setLineDash([5 * px, 4 * px]); ctx.beginPath(); ctx.arc(o.pos[0], o.pos[2], o.radius || 4, 0, 7); ctx.stroke(); ctx.setLineDash([]); line(ctx, b.pos.x, b.pos.z, o.pos[0], o.pos[2], "#fde047", px, true); dot(ctx, o.pos[0], o.pos[2], 4 * px, "#fde047"); }
@@ -505,13 +541,15 @@ export class SimPage {
     _runButtons() {
         const on = !!this.run;
         $("runPause").disabled = !on; $("runStep").disabled = !on; $("runStop").disabled = !on;
+        // a finished run: "Back to editing" takes the place of the run's own controls (one row on a narrow screen)
+        for (const id of ["runPause", "runStep", "runStop"]) $(id).hidden = !on && !!this.rec;
         $("runPause").textContent = this.paused ? "Resume" : "Pause";
         $("timeline").disabled = !this.rec; $("runLive").disabled = !this.rec;
         let edit = $("runEdit");
         if (this.rec && !on && !edit) {
             edit = document.createElement("button"); edit.id = "runEdit"; edit.textContent = "Back to editing";
             edit.onclick = () => this._endLive();
-            $("runBar").append(edit);
+            $("runStart").after(edit);
         } else if ((!this.rec || on) && edit) edit.remove();
     }
     _tickSide(force) {

@@ -7,11 +7,12 @@ import { parse, print, printExpr, BrainError } from "../js/dsl.js";
 import { setCatalog, CATALOG, validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, declKey, diffBrains, declAreas, decompose, compose, wholeGroups } from "../js/ast.js";
 import { brainToBlocks, blocksToBrain, toBlocks, fromBlocks } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph, wholeGraph, wholeGraphToBrain, sharedInputs, refitFrame, keepMoved } from "../js/graph.js";
-import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
+import { parseQmap, mapObjectives, mapSupports, applyHelperParse, mapLabel, mapTitle } from "../js/qmap.js";
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
 import { pctKind } from "../js/values.js";
-import { wilson, rateDiff, rateText, summarize } from "../js/batch.js";
+import { wilson, rateDiff, rateText, summarize, outcomes, mcnemarP, pairedDiff, parseSweep, abLineup, matchKey } from "../js/batch.js";
+import { freeName } from "../js/brainui.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -333,6 +334,52 @@ t("win rates: Wilson interval, the difference of two runs, per brain counted per
     const S = summarize(ms), A = S.brains.find((b) => b.name === "A"), B = S.brains.find((b) => b.name === "B");
     same(A.n, 3, "two bots of one brain are one match"); same(A.w, 2); same(A.botMatches, 6); same(A.kills, 9); same(B.w, 0);
     same(S.maps[0].a, 2); same(S.maps[0].timeouts, 1); same(S.maps[0].errors, 1); same(S.bots.length, 4);
+});
+
+t("batch: a map of yours named like a shipped one is its own row", () => {
+    const m = (mapKey, mapLabel, seed) => ({ map: "temple", mapKey, mapLabel, seed, t: 30, winner: { team: "a" }, bots: [{ id: 0, name: "A", team: "a", brain: "default", won: true }] });
+    const S = summarize([m("default/temple", "Temple", 1), m("user/temple", "Temple (yours)", 1), m("user/temple", "Temple (yours)", 2)]);
+    same(S.maps.length, 2); same(S.maps.find((x) => x.key === "user/temple").matches, 2); same(S.maps.find((x) => x.key === "default/temple").map, "Temple");
+    same(mapLabel({ name: "mybox", source: "user", title: "Harbor" }), "Harbor · mybox.qmap (yours)");
+    same(mapLabel({ name: "temple", source: "default", title: "Temple" }), "Temple");
+    same(mapTitle({ name: "temple", source: "user", title: "Temple" }), "Temple");
+});
+
+t("paired comparison: same matches set against each other (McNemar)", () => {
+    same(mcnemarP(0, 0), 1); same(mcnemarP(3, 3), 1);
+    if (Math.abs(mcnemarP(0, 6) - 2 / 64) > 1e-12) throw new Error("p(0, 6) = 2/64");
+    if (Math.abs(mcnemarP(9, 1) - 22 / 1024) > 1e-12) throw new Error("p(9, 1) = 22/1024");
+    if (!(mcnemarP(500, 600) > 0 && mcnemarP(500, 600) < 0.01)) throw new Error("large n stays finite");
+    // 30 seeds; A wins 12 of them in run A; in run B it wins those 12 plus 6 more: independent rates can't tell, paired can
+    const run = (wins) => Array.from({ length: 30 }, (_, i) => ({ map: "t", mapKey: "default/t", seed: i + 1, bots: [{ brain: "A", won: wins(i) }, { brain: "B", won: !wins(i) }] }));
+    const oa = outcomes(run((i) => i < 12)), ob = outcomes(run((i) => i < 18));
+    same(oa.brains.A, "1".repeat(12) + "0".repeat(18));
+    const pd = pairedDiff(oa, ob, "A");
+    same(pd.pairs, 30); same(pd.b, 0); same(pd.c, 6); same(pd.sure, true, "6 of 6 discordant matches went to B");
+    same(rateDiff(12, 30, 18, 30).sure, false, "the independent test doesn't see it at n = 30");
+    same(pairedDiff(oa, outcomes(run((i) => i < 12)), "A").sure, false);
+    // a mirror match (one brain only) is left out; another map / seed doesn't pair
+    same(outcomes([{ map: "t", seed: 1, bots: [{ brain: "A", won: true }, { brain: "A", won: false }] }]).brains.A, undefined);
+    same(pairedDiff(oa, outcomes(run((i) => i < 12).map((m) => ({ ...m, seed: m.seed + 100 }))), "A"), null);
+});
+
+t("line-ups: A vs B, sweep values, setups keyed apart", () => {
+    const L = abLineup({ a: "x", b: "y", per: 2, skill: "EXPERT" }, true);
+    same(L.length, 4); same(L.filter((b) => b.team === "a" && b.brain === "x").length, 2); same(L.filter((b) => b.team === "b" && b.brain === "y").length, 2);
+    same(abLineup({ a: "x", b: "y", per: 1, skill: "EXPERT" }, false).every((b) => b.team === "any"), true);
+    eq(parseSweep("2, 3", [1, 1, 1, 1]).map((x) => x.values), [[2, 2, 2, 2], [3, 3, 3, 3]]);
+    eq(parseSweep("×0.5; x2", [2, 4, 6, 8]).map((x) => [x.tag, x.values]), [["×0.5", [1, 2, 3, 4]], ["×2", [4, 8, 12, 16]]]);
+    eq(parseSweep("*1.5", [3], "int")[0].values, [5, 5, 5, 5], "int params round (4.5 -> 5)");
+    eq(parseSweep("1/2/3/4", [0])[0].values, [1, 2, 3, 4]);
+    for (const bad of ["", "abc", "1/2", "2, 2"]) { let threw = false; try { parseSweep(bad, [1]); } catch { threw = true; } same(threw, true, "refused: " + JSON.stringify(bad)); }
+    same(matchKey({ mapKey: "default/t", seed: 3, side: "swapped", sweep: "p=×2" }), "default/t|3|swapped|p=×2");
+});
+
+console.log("files");
+t("an opened file named like a saved brain gets a free name", () => {
+    same(freeName("mine", ["default", "other"]), "mine");
+    same(freeName("audit1", ["default", "audit1", "audit1-2"]), "audit1-3");
+    same(freeName("default", ["default"]), "default-2");
 });
 
 console.log("catalog (quark_tests exportbrain)");

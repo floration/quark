@@ -52,13 +52,17 @@ class App {
             inp.value = value || "";
             const done = (ok) => { m.remove(); res(ok ? inp.value.trim() : null); };
             m.querySelectorAll("button").forEach((b) => (b.onclick = () => done(b.dataset.x === "1")));
-            inp.onkeydown = (e) => { if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); };
+            // (preventDefault: the same Enter must not go on to press a button in a dialog that opens next)
+            inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); done(true); } if (e.key === "Escape") { e.preventDefault(); done(false); } };
             document.body.append(m);
             inp.focus(); inp.select();
         });
     }
 
-    // A choice in a modal: buttons [{k, label, primary?, danger?}]; resolves with the chosen k (Escape: null)
+    // A choice in a modal: buttons [{k, label, primary?, danger?}]; resolves with the chosen k (Escape: null).
+    // Focus starts on the primary button, else the first that isn't a danger one (Cancel): Enter never picks a
+    // destructive choice by default. Keys count only after a key goes down in the dialog: the rest of a keypress that
+    // opened it (Enter in a name prompt, Ctrl+S) can't press its buttons.
     choose(title, text, buttons) {
         return new Promise((res) => {
             const m = document.createElement("div");
@@ -66,9 +70,11 @@ class App {
             m.innerHTML = `<div><h3></h3><p style="font-size:12px;white-space:pre-wrap"></p><div class="row" style="justify-content:flex-end;margin-top:10px"></div></div>`;
             m.querySelector("h3").textContent = title;
             m.querySelector("p").textContent = text;
-            const done = (k) => { removeEventListener("keydown", key, true); m.remove(); res(k); };
-            const key = (e) => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
-            addEventListener("keydown", key, true);
+            let armed = false;
+            const done = (k) => { for (const [t, f] of keys) removeEventListener(t, f, true); m.remove(); res(k); };
+            const stale = (e) => { if (!armed) { e.preventDefault(); e.stopPropagation(); } };
+            const keys = [["keydown", (e) => { armed = true; if (e.key === "Escape") { e.preventDefault(); done(null); } }], ["keypress", stale], ["keyup", stale]];
+            for (const [t, f] of keys) addEventListener(t, f, true);
             const row = m.querySelector(".row");
             for (const b of buttons) {
                 const e = document.createElement("button");
@@ -78,7 +84,7 @@ class App {
                 row.append(e);
             }
             document.body.append(m);
-            (row.querySelector(".primary") || row.lastChild).focus();
+            (row.querySelector(".primary") || row.querySelector("button:not(.danger)") || row.lastChild).focus();
         });
     }
     // a file name asked for until it's valid (letters, digits, _ . -; not reserved) or cancelled
@@ -86,8 +92,9 @@ class App {
         for (let v = value; ;) {
             const n = await this.prompt(title, v, help);
             if (n == null || n === "") return null;
-            if (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n) && !n.includes("..") && !reserved.includes(n)) return n;
-            v = n; help = `“${n}” can't be used: letters, digits, _ . - (starting with a letter or digit, no “..”${reserved.length ? ", not " + reserved.map((x) => "“" + x + "”").join(" / ") : ""}).`;
+            const ok = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n) && !n.includes("..");
+            if (ok && !reserved.includes(n)) return n;
+            v = n; help = ok ? `“${n}” is taken${n === "default" ? " (the built-in brain)" : " (a saved brain)"}: pick another name.` : `“${n}” can't be used: letters, digits, _ . - (starting with a letter or digit, no “..”).`;
         }
     }
 
