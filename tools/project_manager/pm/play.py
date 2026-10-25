@@ -835,6 +835,13 @@ def change_entry(text, key, line):
     return text, "gone"
 
 
+def blocked_why(status):
+    """Why q's edit or removal stayed out of 12-play-notes.md, from what sync_docs recorded."""
+    if status == "archived":
+        return "an agent moved or archived it"
+    return "an agent set it to %s" % status
+
+
 def add_note_lines(text, lines):
     """12-play-notes.md's text (None / empty: create it) with `lines` (newest first) at the top of ## Notes."""
     if text is None or not text.strip():
@@ -1349,12 +1356,25 @@ class Play:
         return dict(n, fields=clean, line=line)
 
     def delete_note(self, nid):
-        """Remove a saved note; its entry leaves 12-play-notes.md while it is still `open`."""
+        """Remove a saved note; its entry leaves 12-play-notes.md while it is still `open`. The page keeps showing it
+        ("removing") until the file has it out, or says it was not removed when an agent took the entry first."""
         with self.lock:
             n = self._editable_note(nid)
             self._append_note({"id": n["id"], "op": "delete", "at": util.iso(self.clock())})
         self.wake.set()
         return {"removed": n["id"], "title": n.get("title")}
+
+    def dismiss_blocked(self, nid):
+        """q has seen that an edit or removal of this note didn't reach 12-play-notes.md (an agent took the entry
+        first): it leaves the page's list and is not tried again."""
+        n = self._note_records().get(str(nid or ""))
+        with self.lock:
+            if not n or n["id"] not in (self.sync.get("blocked") or {}):
+                raise PlayError(404, "That change is not waiting any more.", "not-blocked")
+            self.sync.setdefault("dismissed", {})[n["id"]] = n.get("rev", 0)
+            self.sync["blocked"] = {k: v for k, v in self.sync["blocked"].items() if k != n["id"]}
+            self._save_sync()
+        return {"dismissed": n["id"]}
 
     # -- Claude Documents (git)
     def _git(self, *args, timeout=60):
@@ -1479,18 +1499,31 @@ class Play:
             if n["id"] not in written and ((n.get("title"), n.get("stamp")) in present or n.get("deleted")):
                 written.add(n["id"])
         # q's edits and removals of notes already in the file: only while the entry is still `open`
+        # (a change an agent blocked is tried again on every sync: it goes in if the entry is set back to `open`,
+        # until q dismisses it on the page)
+        dismissed = self.sync.get("dismissed") or {}
         changes, done = [], {}
         for n in records:
             rev = n.get("rev", 0)
-            if not rev or n["id"] not in written or rev <= applied.get(n["id"], 0) or text is None:
+            if (not rev or n["id"] not in written or text is None or dismissed.get(n["id"]) == rev
+                    or (rev <= applied.get(n["id"], 0) and n["id"] not in blocked)):
                 continue
             text, what = change_entry(text, (n.get("title"), n.get("stamp")), None if n.get("deleted") else n["line"])
-            if what in ("changed", "removed"):
-                changes.append("%s (%s)" % (n["title"], "edited" if what == "changed" else "removed"))
+            if what in ("changed", "removed", "same"):
+                if what != "same":
+                    changes.append("%s (%s)" % (n["title"], "edited" if what == "changed" else "removed"))
                 blocked.pop(n["id"], None)
-            elif what not in ("same", "gone"):
+            elif what == "gone" and n.get("deleted"):
+                blocked.pop(n["id"], None)  # (an agent moved or archived it: out of the file, as q wanted)
+            elif what == "gone":
+                blocked[n["id"]] = "archived"
+            else:
                 blocked[n["id"]] = what
             done[n["id"]] = rev
+        with self.lock:  # (dismissed on the page while this sync ran: stays dismissed)
+            dismissed = self.sync.get("dismissed") or {}
+            blocked = {k: v for k, v in blocked.items() if dismissed.get(k) != next(
+                (n.get("rev", 0) for n in records if n["id"] == k), None)}
         if todo or changes:
             new = add_note_lines(text, [n["line"] for n in reversed(todo)]) if todo else text  # (newest first)
             data = (new.replace("\n", "\r\n") if crlf else new).encode("utf-8")
@@ -1869,21 +1902,35 @@ class Play:
         applied, blocked = self.sync.get("applied") or {}, self.sync.get("blocked") or {}
         unpushed = bool(self.sync.get("unpushed"))
         present = os.path.isdir(self.docs_dir)
-        all_notes = self.notes()
+        records = self.notes(deleted=True)
+        all_notes = [n for n in records if not n.get("deleted")]
+
+        def removal(n):
+            """A removed note the page still shows: "pending" (its entry is not out of the file yet) or "blocked" (an
+            agent took the entry first, so it stays in the file); None: gone from the page."""
+            if not n.get("deleted") or not present or n["id"] not in written:
+                return None
+            if n["id"] in blocked:
+                return "blocked"
+            return "pending" if n.get("rev", 0) > applied.get(n["id"], 0) else None
         notes = []
-        for n in reversed(all_notes[-20:]):
+        for n in reversed([n for n in records if not n.get("deleted") or removal(n)][-20:]):
             key = (n.get("title"), n.get("stamp"))
             st = status.get(key)
             mine = n["id"] in written
             pending_edit = n.get("rev", 0) > applied.get(n["id"], 0)
+            removed = removal(n)
             if not present:
                 where = "kept on this PC only (no Claude Documents folder)"
             elif not mine:
                 where = "waiting to go into Claude Documents"
+            elif removed == "pending":
+                where = "your removal is waiting to go into Claude Documents"
             elif pending_edit:
                 where = "your edit is waiting to go into Claude Documents"
             elif n["id"] in blocked:
-                where = "your edit is not in the file: an agent set it to %s first" % blocked[n["id"]]
+                where = "%s: %s first" % ("not removed" if removed else "your edit is not in the file",
+                                          blocked_why(blocked[n["id"]]))
             elif unpushed:
                 where = "saved on this PC, will go up later"
             else:
@@ -1895,8 +1942,16 @@ class Play:
                           "fields": n.get("fields"), "label": n.get("label"), "version": n.get("version"),
                           "build": n.get("build"), "durationSec": n.get("durationSec"), "args": n.get("args"),
                           "status": st, "where": where, "editedAt": n.get("editedAt"), "freeform": bool(n.get("freeform")),
-                          "logTail": n.get("logTail"), "locked": locked,
+                          "logTail": n.get("logTail"), "locked": locked, "removed": removed,
+                          "blocked": n["id"] in blocked,
                           "exit": exit_info(n.get("exitCode"), n.get("stopped")) if n.get("session") else None})
+        # every change that didn't reach the file (not only the newest 20 notes'): the page lists them with a way to
+        # write a follow-up note
+        byid = {n["id"]: n for n in records}
+        blocked_list = [{"id": k, "title": byid[k].get("title"), "stamp": byid[k].get("stamp"),
+                         "change": "removal" if byid[k].get("deleted") else "edit", "why": blocked_why(v),
+                         "build": byid[k].get("build"), "label": byid[k].get("label"), "version": byid[k].get("version")}
+                        for k, v in blocked.items() if k in byid and present]
         with self.lock:
             sessions = [dict(s) for s in reversed(self.sessions[-30:])]
             installs = {k: dict(v) for k, v in self.installs.items()}
@@ -1909,10 +1964,10 @@ class Play:
         p = self.pending()
         return {"now": util.now_iso(), "builds": blist, "releases": releases, "installs": installs,
                 "sessions": sessions, "running": p["running"], "pending": p["pending"], "openNotes": p["openNotes"],
-                "notes": notes, "notesTotal": len(all_notes),
+                "notes": notes, "notesTotal": len(all_notes), "blocked": blocked_list,
                 "docs": {"folder": self.docs_dir, "present": present, "file": DOCS_FILE,
                          "filePresent": os.path.isfile(os.path.join(self.docs_dir, DOCS_FILE)),
-                         "sync": {k: v for k, v in self.sync.items() if k not in ("written", "applied", "blocked")}},
+                         "sync": {k: v for k, v in self.sync.items() if k not in ("written", "applied", "blocked", "dismissed")}},
                 "limits": {"field": MAX_FIELD, "args": MAX_ARGS},
                 "platform": "windows" if util.IS_WINDOWS else sys.platform}
 
@@ -1939,6 +1994,8 @@ class Play:
                     "message": "Saved. The entry in %s changes in a moment." % DOCS_FILE}
         if what == "note-delete":
             return dict(self.delete_note(req.get("id")), message="Removed. Its entry leaves %s in a moment." % DOCS_FILE)
+        if what == "note-dismiss":
+            return self.dismiss_blocked(req.get("id"))
         if what == "install-cancel":
             return self.cancel_install(req.get("tag"))
         return None

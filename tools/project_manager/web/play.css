@@ -45,6 +45,14 @@ body.down #main > section:not(#sec-down) button, body.down #main > div button, b
 .note .w { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
 .note .na { display: flex; gap: 4px; align-items: center; margin-top: 2px; min-height: 22px; }
 .note .tail { margin: 6px 0 0; padding: 6px 8px; background: var(--surface-sunk); border-radius: var(--radius-sm); max-height: 220px; overflow: auto; white-space: pre-wrap; }
+.note.removed-pending { opacity: .6; }
+.note.removed-pending .t > span:first-child { text-decoration: line-through; }
+.note.removed-blocked { border-color: color-mix(in srgb, var(--warn) 60%, var(--border)); }
+.blocked { font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border)); border-left-width: 4px; border-radius: var(--radius-sm);
+  padding: 6px 10px; margin-bottom: 10px; background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
+.blocked b { color: var(--warn-ink); font-weight: 650; }
+.blocked ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.blocked li { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .more-notes { margin: 8px 0 0; }
 .sync { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .sync.bad { color: var(--warn-ink); }

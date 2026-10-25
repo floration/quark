@@ -991,6 +991,64 @@ class TestNotesToDocs(unittest.TestCase):
         self.assertIn("in-progress", cm.exception.message)
         self.assertEqual(p.view()["notes"][0]["locked"], "an agent set it to in-progress")
 
+    def agent_sets(self, old, new):
+        """An agent's clone changes the status of the entries (a text replace) and pushes."""
+        git(self.seed, "pull", "-q", "origin", "main")
+        path = os.path.join(self.seed, play.DOCS_FILE)
+        with open(path, encoding="utf-8") as f:
+            write(path, f.read().replace(old, new))
+        git(self.seed, "commit", "-q", "-am", "agent")
+        git(self.seed, "push", "-q", "origin", "HEAD:main")
+
+    def test_removal_an_agent_blocked_is_shown(self):
+        # the audit's case: an agent takes the entry on GitHub, q removes the note before this PC pulls
+        p = self.play
+        self.session("p20261024190000-aaaa")
+        n = p.save_note("p20261024190000-aaaa", {"did": "FFA"})
+        self.assertTrue(p.sync_docs()["pushed"])
+        self.agent_sets(", q, open_", ", agent-thread, in-progress_")
+        p.delete_note(n["id"])  # (the local copy still says open: accepted)
+        v = p.view()
+        self.assertEqual((v["notes"][0]["removed"], v["notes"][0]["where"]),
+                         ("pending", "your removal is waiting to go into Claude Documents"))
+        self.assertEqual(v["notesTotal"], 0)
+        p.sync_docs()
+        self.assertIn("Play note: testing", self.remote_file())  # (the agent has it: it stays in the file)
+        v = p.view()
+        self.assertEqual(len(v["notes"]), 1)  # (still on the page, saying so)
+        self.assertEqual(v["notes"][0]["removed"], "blocked")
+        self.assertEqual(v["notes"][0]["where"], "not removed: an agent set it to in-progress first")
+        self.assertEqual([(b["id"], b["change"], b["why"]) for b in v["blocked"]],
+                         [(n["id"], "removal", "an agent set it to in-progress")])
+        # the agent sets it back to open: the removal goes in on the next sync
+        self.agent_sets(", agent-thread, in-progress_", ", agent-thread, open_")
+        p.sync_docs()
+        self.assertNotIn("Play note: testing", self.remote_file())
+        v = p.view()
+        self.assertEqual((v["notes"], v["blocked"]), ([], []))
+
+    def test_dismiss_blocked_edit(self):
+        p = self.play
+        self.session("p20261024190000-aaaa")
+        n = p.save_note("p20261024190000-aaaa", {"did": "FFA"})
+        p.sync_docs()
+        self.agent_sets(", q, open_", ", q, done_")
+        p.edit_note(n["id"], {"did": "FFA on bastion"})
+        p.sync_docs()
+        v = p.view()
+        self.assertEqual(v["notes"][0]["where"], "your edit is not in the file: an agent set it to done first")
+        self.assertEqual([b["change"] for b in v["blocked"]], ["edit"])
+        with self.assertRaises(play.PlayError):
+            p.dismiss_blocked("n20261024190000-zzzz")
+        p.dismiss_blocked(n["id"])
+        self.assertEqual(p.view()["blocked"], [])
+        self.assertEqual(p.view()["notes"][0]["where"], "in Claude Documents")
+        # dismissed: not tried again, even when the entry is open again
+        self.agent_sets(", q, done_", ", q, open_")
+        p.sync_docs()
+        self.assertNotIn("FFA on bastion", self.remote_file())
+        self.assertEqual(util.read_json_file(self.paths.pm(play.SYNC_FILE))["dismissed"], {n["id"]: 1})
+
     def test_no_docs_folder(self):
         shutil.rmtree(self.docs)
         self.session("p20261024190000-aaaa")

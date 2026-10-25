@@ -185,6 +185,14 @@
       : has(sy.error) ? sy.error : sy.at ? 'Up to date with GitHub (' + when(sy.pushedAt || sy.at) + ').' : 'Nothing sent yet.';
     html += '<div class="sync' + (bad || !d.present ? ' bad' : '') + '"><span>' + esc(syncTxt) + '</span>' +
       (bad ? '<button type="button" class="btn small" id="sync-now">Try again</button>' : '') + '</div>';
+    // edits and removals that never reached the file (an agent took the entry first): every one, until dismissed
+    const blocked = arr(v.blocked);
+    if (blocked.length) {
+      html += '<div class="blocked"><b>' + (blocked.length === 1 ? 'A change of yours didn\'t reach ' : blocked.length + ' changes of yours didn\'t reach ') + esc(file) + '</b>' +
+        '<span class="small muted"> An agent took the entry before it went in; it is tried again if the entry is set back to open.</span><ul>' +
+        blocked.map(x => '<li><span><span class="mono small">' + esc(x.stamp || '') + '</span> ' + esc(String(x.title || '').replace(/^Play note: /, '')) + ': your ' + esc(x.change) + ' wasn\'t applied (' + esc(x.why) + ')</span>' +
+          '<span class="grow"></span>' + blockedButtons(x.id)).join('') + '</ul></div>';
+    }
     const notes = arr(v.notes);
     if (!notes.length) return setHTML('sec-notes', html + '<p class="empty">No notes yet. Play a build above; when the game closes this page asks what you did.</p>');
     html += '<ul class="notes">' + notes.map(n => {
@@ -192,9 +200,11 @@
       const st = has(n.status) ? pill(STATUS_PILL[n.status] || 'idle', n.status, 'status in 12-play-notes.md (agents change it)') : pill('idle', d.present ? 'not in the file yet' : 'on this PC');
       const parts = FIELD_LABELS.filter(([k]) => has(f[k])).map(([k, l]) => '<div class="f"><b>' + l + ':</b> ' + esc(f[k]) + '</div>');
       const open = state.openNotes.has(n.id);
-      const acts = n.locked ? '<span class="small muted" title="Edits and removals stop once an agent has the entry">' + esc(n.locked) + '</span>'
+      const acts = n.removed === 'pending' ? '<span class="small muted">removing&hellip;</span>'
+        : n.blocked ? blockedButtons(n.id)
+        : n.locked ? '<span class="small muted" title="Edits and removals stop once an agent has the entry">' + esc(n.locked) + '</span>'
         : '<button type="button" class="btn small ghost" data-edit="' + esc(n.id) + '">Edit</button><button type="button" class="btn small ghost danger" data-del="' + esc(n.id) + '">Remove</button>';
-      return '<li class="note' + (open ? ' open' : '') + '" data-id="' + esc(n.id) + '"' + (has(n.logTail) ? ' data-tail="1"' : '') + '><div class="t"><span>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</span>' + st + '</div>' + parts.join('') +
+      return '<li class="note' + (open ? ' open' : '') + (n.removed ? ' removed-' + esc(n.removed) : '') + '" data-id="' + esc(n.id) + '"' + (has(n.logTail) ? ' data-tail="1"' : '') + '><div class="t"><span>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</span>' + st + '</div>' + parts.join('') +
         (has(n.logTail) && open ? '<pre class="tail small mono">' + esc(n.logTail) + '</pre>' : '') +
         '<div class="w">' + esc(n.stamp || '') + (n.freeform ? ' &middot; played outside the board' : ' &middot; played ' + esc(dur(n.durationSec))) + ' ' + exitPill(n.exit) +
         (has(n.args) ? ' &middot; <span class="mono">' + esc(n.args) + '</span>' : '') + (n.editedAt ? ' &middot; edited' : '') + ' &middot; ' + esc(n.where || '') + '</div>' +
@@ -202,6 +212,10 @@
     }).join('') + '</ul>';
     if ((v.notesTotal || 0) > notes.length) html += '<p class="small muted more-notes">The newest ' + notes.length + ' of ' + esc(v.notesTotal) + '; every note is in ' + esc(file) + ' (Claude Manager) and project-manager\\play-notes.jsonl.</p>';
     if (setHTML('sec-notes', html)) measureNotes();
+  }
+  function blockedButtons(id) {
+    return '<button type="button" class="btn small" data-follow="' + esc(id) + '" title="Add a new note that refers to this one">Write a follow-up</button>' +
+      '<button type="button" class="btn small ghost" data-dismiss="' + esc(id) + '" title="Seen: take it off this list (it is not tried again)">Dismiss</button>';
   }
   // "more" only where a box really is cut: measured after rendering (a 200-character box with one long line wraps past
   // the 4-line clamp, a 300-character one on a wide card may not), and again when the cards change width
@@ -398,12 +412,20 @@
     setButtons('session', s);
     showDialog('How was it?');
   }
-  function openFreeNote() {
+  // about: a change that didn't reach the file ({title, stamp, change, why, build, label, version}): the follow-up's
+  // build, and a first line in "Anything else" that names the earlier note
+  function openFreeNote(about) {
     state.note = { kind: 'free' };
     $('note-count').textContent = '';
     $('note-meta').hidden = true;
     const bl = arr(state.v && state.v.builds).filter(b => b.present);
-    const draft = storeJSON(draftKey(), {});
+    const draft = obj(storeJSON(draftKey(), {}));
+    if (about) {
+      const line = 'Follow-up to my note "' + String(about.title || '').replace(/^Play note: /, '') + '" (' + (about.stamp || '') + '): my ' + about.change + ' didn\'t go in, ' + about.why + '. ';
+      draft.build = bl.some(b => b.id === about.build) ? about.build : '';
+      if (!draft.build) { draft.label = about.label || 'launcher'; draft.version = about.version || ''; }
+      draft.other = line + (typeof draft.other === 'string' && draft.other ? '\n' + draft.other : '');
+    }
     $('note-build').innerHTML = bl.map(b => '<option value="' + esc(b.id) + '">' + esc(b.label) + (has(b.version) && b.version !== b.label ? ' ' + esc(b.version) : '') + '</option>').join('') + '<option value="">The launcher / another version</option>';
     $('note-build').value = typeof draft.build === 'string' && (draft.build === '' || bl.some(b => b.id === draft.build)) ? draft.build : (bl[0] ? bl[0].id : '');
     form.elements.label.value = typeof draft.label === 'string' ? draft.label : 'launcher';
@@ -608,6 +630,13 @@
         renderNotes();
       } else if (d.filter) {
         state.relFilter = d.filter; store('play-filter', state.relFilter); renderReleases();
+      } else if (d.follow) {
+        const x = arr(state.v.blocked).find(y => y.id === d.follow);
+        if (x) openFreeNote(x);
+      } else if (d.dismiss) {
+        b.disabled = true;
+        await api('/api/play/note-dismiss', { id: d.dismiss });
+        await poll();
       } else if (b.id === 'note-add') {
         openFreeNote();
       } else if (b.id === 'rel-refresh') {
