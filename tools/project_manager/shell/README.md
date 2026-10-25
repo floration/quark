@@ -196,8 +196,11 @@ pass, at most every 12 hours (a failed check is tried again on the next pass), t
 is newer than `electron\VERSION`, it downloads `electron-v<ver>-win32-x64.zip` and that release's `SHASUMS256.txt`,
 checks the zip's sha256 (streamed, capped at 400 MB), unpacks it into `electron.next.tmp\`, writes its `VERSION` and
 renames it to `electron.next\`. `electron\` itself is never touched while the app runs (Windows cannot replace a
-running exe). With no `electron\` (setup `-NoElectron`) nothing is downloaded. The card shows the note ("Electron
-45.1.0 is downloaded; it replaces 44.9.2 when Quark Project next closes or restarts").
+running exe). With no `electron\` (setup `-NoElectron`) nothing is downloaded. The Tools & updates row shows the
+installed version (-> the latest stable one when newer), a "downloaded: restart to finish" pill while `electron.next\`
+waits, and the note ("Electron 45.1.0 is downloaded; it replaces 44.9.2 when Quark Project next closes or restarts").
+Between two checks the row is rebuilt from `electron\VERSION` and `electron.next\` (local files only), so it follows
+the swap at once instead of repeating the last check's note for up to 12 hours.
 
 When the window closes, or the app relaunches, and `electron.next\` is complete, the shell starts
 `electron-swap.ps1` hidden (through cmd.exe, so libuv's job does not take it down with the shell; paths and arguments

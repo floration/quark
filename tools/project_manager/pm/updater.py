@@ -396,6 +396,23 @@ def installed_electron(folder, exe):
     return v if VERSION_RE.match(v) else None
 
 
+def electron_view(paths, latest, plat=None):
+    """(state, note, installed) of the Electron row from the local folders only (cheap; the 12 h gap between checks
+    uses it, so the row follows a swap or a download at once): "staged" while electron.next\ holds a newer Electron
+    than electron\, else "ok". (None, None, None) when there is no Electron build for this system or no electron\."""
+    plat = plat or electron_platform()
+    have = installed_electron(os.path.join(paths.pm_dir, ELECTRON_DIR), plat[1]) if plat else None
+    if not have:
+        return None, None, None
+    staged = installed_electron(os.path.join(paths.pm_dir, ELECTRON_NEXT), plat[1])
+    if staged and version_tuple(staged) > version_tuple(have):
+        return ("staged", "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts"
+                % (staged, have), have)
+    if version_tuple(latest) and version_tuple(latest) > version_tuple(have):
+        return "ok", "Electron %s is out; the next check downloads it" % latest, have
+    return "ok", "Electron %s is the latest" % have, have
+
+
 def _open_url(url, accept=None, timeout=ELECTRON_TIMEOUT):
     h = {"User-Agent": util.USER_AGENT}
     if accept:
@@ -728,12 +745,15 @@ class Updater:
 
     def electron(self, entry, now=None):
         """builtin:electron-update: at most once per ELECTRON_CHECK_GAP (a failed check is tried again next pass).
-        The versions go in installedVersion / latestVersion (the page shortens stamps to 7 characters)."""
+        The versions go in installedVersion / latestVersion (the Tools & updates row shows them); state "staged" while
+        a downloaded Electron waits for the app to close. Between checks the row is rebuilt from the local folders
+        (electron_view), so it never keeps saying "is downloaded" after the swap."""
         eid = entry["id"]
         now = now or time.time()
         rec = self.saved["entries"].setdefault(eid, {})
         if now - (rec.get("checkedTs") or 0) < ELECTRON_CHECK_GAP:
-            self._set(eid, state="ok", note=rec.get("note"), installedVersion=rec.get("installed"),
+            state, note, have = electron_view(self.paths, rec.get("latest"))
+            self._set(eid, state=state or "ok", note=note or rec.get("note"), installedVersion=have or rec.get("installed"),
                       latestVersion=rec.get("latest"))
             return True
         log_path = self.paths.pm("logs", "install-%s.log" % eid)
@@ -743,10 +763,12 @@ class Updater:
         now_iso = util.now_iso()
         rec.update(lastRunAt=now_iso, exitCode=code, durationSec=round(time.time() - started, 1), note=note,
                    installed=info["installed"], latest=info["latest"])
+        state = "failed"
         if code == 0:
             rec["checkedTs"] = now
+            state = electron_view(self.paths, info["latest"])[0] or "ok"
         self._save_state()
-        self._set(eid, state="ok" if code == 0 else "failed", lastRunAt=now_iso, exitCode=code, logTail=lines, note=note,
+        self._set(eid, state=state, lastRunAt=now_iso, exitCode=code, logTail=lines, note=note,
                   installedVersion=info["installed"], latestVersion=info["latest"], log=log_path)
         return code == 0
 
@@ -776,7 +798,7 @@ class Updater:
             self.entries = {e["id"]: {
                 "id": e["id"], "name": e["name"],
                 "state": "disabled" if not e["enabled"] else
-                         ((prev.get(e["id"]) or {}).get("state") if (prev.get(e["id"]) or {}).get("state") in ("ok", "failed", "waiting") else "pending"),
+                         ((prev.get(e["id"]) or {}).get("state") if (prev.get(e["id"]) or {}).get("state") in ("ok", "failed", "waiting", "staged") else "pending"),
                 "installedStamp": (saved.get(e["id"]) or {}).get("stamp"), "currentStamp": None,
                 "lastRunAt": (saved.get(e["id"]) or {}).get("lastRunAt"),
                 "exitCode": (saved.get(e["id"]) or {}).get("exitCode"),

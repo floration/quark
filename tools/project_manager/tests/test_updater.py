@@ -416,7 +416,7 @@ class TestElectronUpdate(unittest.TestCase):
     def test_stage_and_gap(self):
         nxt = os.path.join(self.paths.pm_dir, "electron.next")
         u, e = self.run_entry()
-        self.assertEqual(e["state"], "ok", e.get("logTail"))
+        self.assertEqual(e["state"], "staged", e.get("logTail"))
         self.assertIn("45.1.0 is downloaded", e["note"])
         self.assertEqual(read(os.path.join(nxt, "electron")), "new program 45.1.0")
         self.assertEqual(read(os.path.join(nxt, "VERSION")).strip(), "45.1.0")
@@ -427,14 +427,19 @@ class TestElectronUpdate(unittest.TestCase):
         # within 12 h: no request at all
         n = len(self.hits)
         _, e = self.run_entry()
-        self.assertEqual((len(self.hits), e["state"]), (n, "ok"))
+        self.assertEqual((len(self.hits), e["state"]), (n, "staged"))
         self.assertIn("45.1.0 is downloaded", e["note"])
         # after the gap, the same release already staged: only the API is asked
         _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 5)
         self.assertEqual(self.hits[n:], ["/latest"])
-        # the shell swapped it in (electron\ now 45.1.0): nothing newer, nothing staged
+        # the shell swapped it in (electron\ now 45.1.0): within the gap the row follows at once (local files only)
         shutil.rmtree(self.el)
         os.replace(nxt, self.el)
+        n = len(self.hits)
+        _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 60)
+        self.assertEqual((len(self.hits), e["state"], e["note"]), (n, "ok", "Electron 45.1.0 is the latest"))
+        self.assertEqual((e["installedVersion"], e["latestVersion"]), ("45.1.0", "45.1.0"))
+        # after the next gap: nothing newer, nothing staged
         _, e = self.run_entry(now=time.time() + 3 * updater.ELECTRON_CHECK_GAP)
         self.assertEqual(e["note"], "Electron 45.1.0 is the latest")
         self.assertFalse(os.path.exists(nxt))
