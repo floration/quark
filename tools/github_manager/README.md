@@ -14,7 +14,8 @@ Two more tabs:
   - **Notes** (below).
   - **Structure**: the branches grouped by role (production, testing, infra, work `claude/*`, other, stale: no
     commit in N days, the `limit-stale-days` rule, inside that rule's branch scope (`claude/*` by default), and merged
-    into or behind testing). Per branch q sets a role and a
+    into or behind testing; "Queue delete for all N" queues a delete for each, after a confirm listing them, still
+    reviewed and applied in Pending changes). Per branch q sets a role and a
     description (local, `editor/structure.json`); they set the Branches tab's kind and show in the branch's details.
     Create a branch (from testing, another branch or a sha), rename or delete one (not the default branch, testing,
     launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs, and a delete
