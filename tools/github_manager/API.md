@@ -242,7 +242,7 @@ A seeded set is marked `"seeded": true` in rules.json until q edits it; before i
 the server reads the `github-rules.json` already there and, when there is one, takes those rules instead (a
 `rules.changed` event "loaded from the Claude Documents"), so a new install never pushes the seed over rules edited
 elsewhere.
-A limit has a numeric `value` (0-100000); other kinds have `value: null`. `locked` on other rules is q's mark
+A limit has a numeric `value` (0-1000000000; a missing value and one out of range get their own message); other kinds have `value: null`. `locked` on other rules is q's mark
 ("agents never change it or work around it"); the page asks before changing one.
 
 `PUT /api/rules` `{"rules": [rule...], "rev"?}` replaces the whole list (`updatedAt` is ignored and set by the

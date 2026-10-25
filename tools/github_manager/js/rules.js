@@ -297,6 +297,10 @@ async function saveRules(fk, list, okText) {
   }
   return ok;
 }
+// a limit's value, checked here first (the server checks again): -> an error sentence or ''
+const LIMIT_MAX = 1e9;
+const limitError = (v) => (v === '' || v == null || !isFinite(Number(v)) ? 'Give the limit a value (a number).'
+  : Number(v) < 0 ? 'The limit must be 0 or more.' : Number(v) > LIMIT_MAX ? `The limit must be at most ${LIMIT_MAX}.` : '');
 function ruleFromDraft(d, id) {
   const r = { id: id || '', title: (d.title || '').trim(), text: d.text || '', kind: d.kind, scope: { type: d.scopeType, match: d.scopeType === 'all' ? '' : (d.scopeMatch || '').trim() }, locked: !!d.locked };
   if (d.kind === 'limit') { r.value = d.value === '' ? null : Number(d.value); r.unit = (d.unit || '').trim(); }
@@ -304,16 +308,19 @@ function ruleFromDraft(d, id) {
 }
 onSubmit('ar-edit', async (fk, d) => {
   const id = fk.slice('ar-edit:'.length);
+  if (d.kind === 'limit' && limitError(d.value)) { gui.errors.set(fk, limitError(d.value)); redraw(); return; }
   const list = ged.rules.rules.map((r) => (r.id === id ? ruleFromDraft(d, id) : r));
   if (await saveRules(fk, list, 'Rule saved')) { closeForm(fk); gui.drafts.delete(`lim:${id}`); redraw(); }
 });
 onSubmit('ar-new', async (fk, d) => {
   if (!(d.title || '').trim() || !(d.text || '').trim()) { gui.errors.set(fk, 'A rule needs a title and its text.'); redraw(); return; }
+  if (d.kind === 'limit' && limitError(d.value)) { gui.errors.set(fk, limitError(d.value)); redraw(); return; }
   const list = [...ged.rules.rules, ruleFromDraft(d)];
   if (await saveRules(fk, list, 'Rule added')) { closeForm(fk); redraw(); }
 });
 onSubmit('lim', async (fk, d) => {
   const id = fk.slice('lim:'.length);
+  if (limitError(d.value)) { gui.errors.set(fk, limitError(d.value)); redraw(); return; }
   const list = ged.rules.rules.map((r) => (r.id === id ? { ...r, value: d.value === '' ? null : Number(d.value) } : r));
   if (await saveRules(fk, list, 'Limit saved')) { gui.drafts.delete(fk); redraw(); }
 });

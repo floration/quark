@@ -1753,7 +1753,9 @@ class RulesStore(unittest.TestCase):
                           ({"title": "t", "text": "x", "x": 1}, "unknown field"),
                           ({"title": "t", "text": "x" * (S.RULE_TEXT_MAX + 1)}, "text is over"),
                           ({"title": "t\x07", "text": "x"}, "control character"),
-                          ({"title": "t", "text": "x", "kind": "limit", "value": True}, "needs a value")):
+                          ({"title": "t", "text": "x", "kind": "limit", "value": True}, "needs a value"),
+                          ({"title": "t", "text": "x", "kind": "limit", "value": -5}, "'t' must be 0 or more"),
+                          ({"title": "t", "text": "x", "kind": "limit", "value": 2e9}, "must be at most 1000000000")):
             with self.assertRaises(S.EditError) as cm:
                 self.r.replace({"rules": base + [bad]})
             self.assertEqual(cm.exception.code, 400, bad)

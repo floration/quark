@@ -1568,6 +1568,7 @@ RULE_FIELDS = frozenset(("id", "title", "text", "scope", "kind", "value", "unit"
 RULE_TITLE_MAX = 200
 RULE_TEXT_MAX = 4000
 RULE_UNIT_MAX = 24
+LIMIT_MAX = 1000000000          # a limit's value: 0 to this
 RULES_MAX = 200
 RULE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 HARD_RULE_ID = "only-q-production"
@@ -2292,8 +2293,11 @@ def rule_fields(raw):
     match = "" if st == "all" else edit_str(sc.get("match", ""), "scope.match", 1, 200)
     value, unit = raw.get("value"), raw.get("unit") or ""
     if kind == "limit":
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value != value or not 0 <= value <= 1e9:
-            raise EditError(400, "a limit needs a value (a number from 0 to 1000000000)")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value != value:
+            raise EditError(400, "the limit %r needs a value (a number from 0 to 1000000000)" % title)
+        if not 0 <= value <= LIMIT_MAX:
+            raise EditError(400, "the limit %r must be %s" % (title, "0 or more" if value < 0 else
+                                                               "at most %d" % LIMIT_MAX))
         if isinstance(value, float) and value.is_integer():
             value = int(value)
         unit = edit_str(unit, "unit", 0, RULE_UNIT_MAX)
