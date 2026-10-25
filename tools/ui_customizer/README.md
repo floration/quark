@@ -41,7 +41,8 @@ registry change (its `installs.json`), so the banner follows the game.
 - **View** previews the page at another resolution / aspect ratio (1080p, 1440p, 4K, 16:10, 21:9, 32:9, 5:4), laid out
   as the game scales: 720p units times ui.s() = height / 720, text at max(1, round(2s)). The dump has positions, not the
   code's anchors, so widgets (or the panel around them) that hug a side edge stay on it, full-width bars stretch, and
-  everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. Read only.
+  everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. Read only:
+  the canvas, palette, + Page, keys (paste, delete, arrows) and the inspector are off until View is back on 1280x720.
 - Everything autosaves in the browser. A page still as the game has it is saved as a reference to the dump (a few KB
   per save, not 1.7 MB), so after a dump refresh the pages you never touched show the new game; Export layout writes
   every page.

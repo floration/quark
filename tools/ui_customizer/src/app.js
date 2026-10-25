@@ -135,8 +135,10 @@
     if (S.undo.length > UNDO_MAX) S.undo.shift();
     S.redo = [];
   }
-  // Runs fn as one undo step (nothing is recorded when it changed nothing).
+  // Runs fn as one undo step (nothing is recorded when it changed nothing). Refused while a resolution preview is on
+  // (readOnly), except for what replaces the whole layout and shows in the preview (import, reset: opts.anyView).
   function commit(fn, opts = {}) {
+    if (!opts.anyView && readOnly()) return;
     const before = snap();
     fn();
     if (differs(before)) { pushUndo(before); changed(opts); }
@@ -155,6 +157,12 @@
     S.undo.push(snap());
     restore(S.redo.pop());
     changed({ history: true });
+  }
+  // The resolution preview is read only: every edit path asks this first (it says why when it refuses).
+  function readOnly() {
+    if (!viewOf()) return false;
+    toast('Preview at ' + S.view + ' is read only: pick View: 1280x720 to edit');
+    return true;
   }
   // Inspector typing: the first input of a field starts a gesture, its change event ends it (one undo step).
   function beginGesture() { if (!S.gesture) S.gesture = snap(); }
@@ -421,6 +429,8 @@
     if (S.view) { S.sel = new Set(); S.hover = null; ov.style.cursor = ''; }
     $('sView').value = S.view;
     $('stage').classList.toggle('preview', !!S.view);
+    // (read only: the palette and + Page are off, the inspector is drawn disabled; commit() refuses the rest)
+    for (const b of [$('bAddPage'), ...$('palette').children]) b.disabled = !!S.view;
     layoutStage();
     renderAfterSelect();
   }
@@ -633,7 +643,7 @@
     if (S.tour) toggleTour();
     if (ev.button !== 0) return;
     ev.preventDefault();
-    if (viewOf()) { toast('Preview at ' + S.view + ' is read only: pick View: 1280x720 to edit'); return; }
+    if (readOnly()) return;
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     endGesture();
     const rect = ov.getBoundingClientRect();
@@ -762,7 +772,7 @@
   }
   function deleteSel() {
     const ids = new Set(S.sel);
-    if (!ids.size) return;
+    if (!ids.size || readOnly()) return;
     commit(() => { const p = curPage(); p.elements = p.elements.filter((e) => !ids.has(e.uid)); S.sel = new Set(); });
     toast(`Deleted ${ids.size} widget${ids.size > 1 ? 's' : ''}`);
   }
@@ -777,7 +787,7 @@
   }
   function copySel(cut) {
     const sel = selected();
-    if (!sel.length) return;
+    if (!sel.length || (cut && readOnly())) return;
     S.clip = { mode: cut ? 'cut' : 'copy', items: QModel.clone(sel), fromPage: S.pageUid };
     S.pasteN = 0;
     if (cut) {
@@ -807,7 +817,7 @@
   }
   function nudge(dx, dy, resize) {
     const sel = selected();
-    if (!sel.length) return;
+    if (!sel.length || readOnly()) return;
     const key = [...S.sel].join() + (resize ? 'r' : 'm');
     const now = Date.now();
     const merge = S.lastNudge && S.lastNudge.key === key && now - S.lastNudge.t < 1000 && S.undo.length && S.lastNudge.depth === S.undo.length;
@@ -821,7 +831,7 @@
   }
   function moveSelToPage(uid) {
     const sel = selected(), target = S.doc.pages.find((p) => p.uid === uid);
-    if (!sel.length || !target || target.uid === S.pageUid) return;
+    if (!sel.length || !target || target.uid === S.pageUid || readOnly()) return;
     commit(() => {
       const ids = new Set(sel.map((e) => e.uid)), p = curPage();
       p.elements = p.elements.filter((e) => !ids.has(e.uid));
@@ -905,6 +915,7 @@
     selectPage(list[(i + d + list.length) % list.length].uid);
   }
   async function addPage() {
+    if (readOnly()) return;
     const id = await ask({ title: 'Add a page', text: 'Page id: a screen path, e.g. settings/accessibility (a taken id gets -2, -3 ...)',
       input: 'new-page', ok: 'Add page', check: (v) => (v.trim() ? '' : 'Give the page an id') });
     if (id === null) return;
@@ -931,7 +942,7 @@
   }
   async function deletePage() {
     const p = curPage();
-    if (p.origId) return;
+    if (p.origId || readOnly()) return;
     if (p.elements.length && !(await confirmed('Delete page', `Delete page "${p.id}" and its ${p.elements.length} widget(s)? (Undo brings it back.)`, 'Delete'))) return;
     if (!S.doc.pages.includes(p)) return;
     commit(() => {
@@ -1002,7 +1013,7 @@
 
   // A bound input: edits on 'input' (one undo step per field edit, ended by 'change').
   function bind(input, apply) {
-    input.addEventListener('input', () => { beginGesture(); apply(); changed({ keepInspector: true }); });
+    input.addEventListener('input', () => { if (readOnly()) { renderInspector(); return; } beginGesture(); apply(); changed({ keepInspector: true }); });
     input.addEventListener('change', () => { endGesture(); });
     return input;
   }
@@ -1114,9 +1125,9 @@
     const box = insp();
     box.textContent = '';
     const sel = selected();
-    if (sel.length === 1) box.append(...elementInspector(sel[0]));
-    else if (sel.length > 1) box.append(...multiInspector(sel));
-    else box.append(...pageInspector(curPage()));
+    const parts = sel.length === 1 ? elementInspector(sel[0]) : sel.length > 1 ? multiInspector(sel) : pageInspector(curPage());
+    if (!viewOf()) box.append(...parts);
+    else box.append(el('div', { class: 'sub ro-note', text: 'Preview at ' + S.view + ': read only (View: 1280x720 to edit)' }), el('fieldset', { class: 'ro', disabled: true }, ...parts));
   }
 
   function elementInspector(e) {
@@ -1257,7 +1268,7 @@
     for (const e of off) {
       box.append(el('span', { class: 'chip' + (S.sel.has(e.uid) ? ' sel' : ''), title: (e.action || '') + (e.origId ? '  ' + e.origId : ''),
         text: (isBackdrop(e) ? 'backdrop ' : '') + e.kind + ' ' + (e.label || (e.kind === 'key' ? '?' : '')) + (e.action ? ' -> ' + e.action : ''),
-        onclick: (ev) => { if (ev.shiftKey) { if (S.sel.has(e.uid)) S.sel.delete(e.uid); else S.sel.add(e.uid); } else S.sel = new Set([e.uid]); renderAfterSelect(); } }));
+        onclick: (ev) => { if (readOnly()) return; if (ev.shiftKey) { if (S.sel.has(e.uid)) S.sel.delete(e.uid); else S.sel.add(e.uid); } else S.sel = new Set([e.uid]); renderAfterSelect(); } }));
     }
   }
   function renderSelStatus() {
@@ -1406,7 +1417,7 @@
       try {
         const data = JSON.parse(fr.result);
         const doc = QModel.sanitizeWorking(data.doc || data);
-        commit(() => { S.doc = doc; S.pageUid = doc.pages[0] && doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+        commit(() => { S.doc = doc; S.pageUid = doc.pages[0] && doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
         markProposal();
         if (data.font) { S.font = sanitizeFont(data.font); applyFont(); }
         else if (fontOfDoc(doc)) { S.font = fontOfDoc(doc); applyFont(); scheduleSave(); }
@@ -1419,7 +1430,7 @@
   async function resetAll() {
     if (startLayout) return resetToProposal();
     if (!(await confirmed('Reset', 'Reset the whole layout to the game\'s default? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
-    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
     toast('Back to the default layout');
   }
   // proposal builds only: the font a start layout asks for (its saved font, else its doc.font), else the current one
@@ -1431,7 +1442,7 @@
     if (!(await confirmed('Reset', 'Reset the whole layout to the proposal this file was built with? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
     const doc = JSON.parse(startLayout.json);
     const pu = startLayout.data.pageUid;
-    commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+    commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
     markProposal();
     S.font = startFont(doc);
     applyFont();
@@ -1440,7 +1451,7 @@
   }
   async function resetToGameDefault() {
     if (!(await confirmed('Reset to game default', 'Reset the whole layout to the game\'s default layout and font, dropping the proposal? (Undo can bring the layout back while this tab is open; Reset goes back to the proposal.)', 'Reset'))) return;
-    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
     S.font = sanitizeFont(Object.assign({}, S.font, { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null }));
     applyFont();
     scheduleSave();
@@ -1850,7 +1861,7 @@
     else if (ctrl && lk === 'x') copySel(true);
     else if (ctrl && lk === 'v') paste();
     else if (ctrl && lk === 'd') duplicateSel();
-    else if (ctrl && lk === 'a' && viewOf()) toast('Preview is read only: pick View: 1280x720 to edit');
+    else if (ctrl && lk === 'a' && readOnly()) { /* (preview: nothing to select) */ }
     else if (ctrl && lk === 'a') { S.sel = new Set(curPage().elements.filter(pickable).map((e) => e.uid)); renderAfterSelect(); }
     else if (ctrl && lk === 's') { saveNow(); toast('Saved in this browser (it saves by itself too)'); }
     else if (ctrl) handled = false;

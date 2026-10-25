@@ -245,6 +245,19 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const ovBox = await page.locator('#ov').boundingBox();
   await page.mouse.click(ovBox.x + ovBox.width / 2, ovBox.y + ovBox.height / 2);
   assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'the preview is read only');
+  // ... every other edit path too: the palette, + Page, Ctrl+V, an off-canvas chip, the page inspector
+  {
+    const before = await ev(() => [QApp.S.undo.length, JSON.stringify(QApp.S.doc.pages.map((p) => [p.id, p.elements.length]))]);
+    assert.ok(await page.locator('#palette button').first().isDisabled() && await page.locator('#bAddPage').isDisabled(), 'palette and + Page are off in a preview');
+    await ev(() => QApp.addWidget('button'));
+    await page.keyboard.press('Control+v');
+    const chip = page.locator('#offCanvas .chip').first();
+    if (await chip.count()) await chip.click();
+    assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'an off-canvas chip is not selected in a preview');
+    assert.ok(await page.locator('#inspector fieldset.ro').evaluate((f) => f.disabled), 'the inspector is disabled in a preview');
+    const after = await ev(() => [QApp.S.undo.length, JSON.stringify(QApp.S.doc.pages.map((p) => [p.id, p.elements.length]))]);
+    assert.deepStrictEqual(after, before, 'nothing in the layout changed while previewing');
+  }
   if (shots) await page.screenshot({ path: path.join(shots, 'e2e-preview-3440.png') });
   await page.locator('#sView').selectOption('');
   assert.strictEqual(await ev(() => QApp.preview()), null, 'back to editing');
