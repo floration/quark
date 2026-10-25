@@ -161,8 +161,16 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     window.showDirectoryPicker = async o => (o && o.id === 'quark-model-editor' ? pd : ov2);
   });
   const files2 = () => ev(async () => [...(await (await ov2.getDirectoryHandle('models')).getDirectoryHandle('player')).children.keys()].sort().join());
+  await page.click('#btnExport');
+  await page.click('#dlg button:has-text("Choose folder and write")');
+  await page.waitForTimeout(100);
+  st = await ev(() => ({ h: document.querySelector('#dlg').open && document.querySelector('#dlg h2').textContent, row: document.querySelector('.prov-row').className }));
+  check(st.h === 'Export to game' && /bad/.test(st.row) && /flash/.test(st.row), 'export: no model-editor folder chosen, the write waits for it (in red)', st);
+  await page.keyboard.press('Escape');
   const bakDialog = async () => {
     await page.click('#btnExport');
+    await page.click('#dlg .prov-row button:has-text("Choose the Quark")');
+    await page.waitForFunction(() => !document.querySelector('.prov-row').classList.contains('bad'));
     await page.click('#dlg button:has-text("Choose folder and write")');
     await page.waitForSelector('#dlg h2:has-text("Model files for unedited models")');
     await page.waitForTimeout(150);
@@ -178,6 +186,8 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await page.click('#dlg button:has-text("Continue")');
   await page.waitForSelector('#dlg h2:has-text("Written")');
   check(await files2() === 'KNIGHT.glb.bak,SCOUT.glb', 'export: a ticked unedited model\'s file is moved to .bak', await files2());
+  st = await ev(async () => ({ side: JSON.parse(await readText(pd, ['provenance.json'])).items, text: document.querySelector('#dlg').innerText }));
+  check(st.side['models/player/SCOUT.gltf'] && !st.side['models/player/KNIGHT.gltf'] && /provenance.json updated: model-editor\/provenance.json/.test(st.text), 'export: provenance.json written into the chosen model-editor folder', st);
   await page.keyboard.press('Escape');
   await ev(() => { Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad(); });
 

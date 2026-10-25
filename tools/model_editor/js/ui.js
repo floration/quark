@@ -497,6 +497,34 @@
   };
 
   // --- export -----------------------------------------------------------------------------------------------------------
+  // Where provenance.json goes: the Quark\model-editor folder (remembered), the only place the Editor Manager's
+  // dashboard and tools/provenance.py read it. A row for a dialog: { row, dir() (the folder, when it can be written),
+  // check (a button action: false keeps the dialog open while no folder is chosen and "without" is not ticked) }.
+  // Choosing the folder and allowing access are clicks of their own (the browser wants a user gesture for each).
+  U.provPicker = async function () {
+    let dir = await Q.loadHandle('provDir'), ok = !!dir && await Q.folderPermission(dir, false), warn = '';
+    const can = Q.canPickFolder(), msg = h('span'), without = h('input', { type: 'checkbox' }), withoutLab = h('label.chk', without, ' go on without it');
+    const btn = h('button.mini', { type: 'button', onclick: async () => {
+      if (dir && !ok) ok = await Q.folderPermission(dir, true);
+      else { const p = await Q.pickProvDir(); if (p) { dir = p.dir; ok = true; warn = p.warn; } }
+      sync();
+    } });
+    const row = h('div.prov-row', msg, btn, withoutLab, h('button.mini', { type: 'button', title: 'provenance.json for the models an export would write', onclick: () => Q.downloadProvenance() }, 'Download provenance.json'));
+    function sync() {
+      row.classList.toggle('bad', !ok); row.classList.remove('flash');
+      btn.hidden = !can; withoutLab.hidden = ok || !can;
+      if (ok) { msg.textContent = 'provenance.json (who made each model) goes to ' + dir.name + '/provenance.json.' + (warn ? ' ' + warn : ''); btn.textContent = 'Change...'; }
+      else if (!can) msg.textContent = 'This browser cannot write to a folder: copy the zip\'s provenance.json into your Quark\\model-editor folder (the dashboard reads it only there).';
+      else if (dir) { msg.textContent = 'provenance.json goes to ' + dir.name + ', but this session has no access to it yet.'; btn.textContent = 'Allow access to ' + dir.name; }
+      else { msg.textContent = 'Choose your Quark\\model-editor folder (where model-editor.html is): provenance.json, who made each model, is written there, the only place the dashboard reads it.'; btn.textContent = 'Choose the Quark\\model-editor folder...'; }
+    }
+    sync();
+    return { row, dir: () => (ok ? dir : null), check: () => {
+      if (ok || !can || without.checked) return true;
+      row.classList.add('flash'); U.toast('First choose the Quark\\model-editor folder for provenance.json (or tick "go on without it")', 5000);
+      return false;
+    } };
+  };
   U.exportDialog = async function () {
     const keys = Q.exportList();
     if (!keys.length) { U.dialog('Nothing to export', h('p', 'No model is edited yet. Edit a model\'s boxes or import a replacement first.')); return; }
@@ -509,26 +537,22 @@
         err ? h('div', { style: { color: '#ff8b8b' } }, err.text) : null);
     }));
     const chosen = () => keys.filter(k => checks[k].checked);
-    let provDir = await Q.loadHandle('provDir');
-    const provName = h('code', provDir ? provDir.name : 'none chosen');
-    const provRow = h('div.row', h('span', 'provenance.json goes to:'), provName,
-      h('button.mini', { type: 'button', disabled: !Q.canPickFolder(), onclick: async () => {
-        try { const d = await window.showDirectoryPicker({ id: 'quark-model-editor', mode: 'readwrite' }); provDir = d; await Q.saveHandle('provDir', d); provName.textContent = d.name; } catch (e) { }
-      } }, 'Choose the Quark\\model-editor folder...'),
-      h('button.mini', { type: 'button', onclick: () => Q.downloadProvenance() }, 'Download provenance.json'));
+    const prov = await U.provPicker();
     const content = [
       h('p', 'Each model is written as ', h('code', 'models/<kind>/<NAME>.glb'), ', what the game loads in place of its model. A box model carries its box list (extras.quark version 2): the game draws it like its own boxes (outlines, crouch, shadows, team colours), only the rocket\'s flame flicker, the sticky\'s blink and the bubble\'s wobble stay still. An imported mesh is drawn lit and shadowed but without the 1 px outline.'),
       list,
       h('p', h('b', 'Choose folder and write'), ' (Chrome / Edge): pick ', h('code', '%APPDATA%\\quark\\overrides'), ' to try them in the game (restart it), or the repository\'s ', h('code', 'assets\\overrides'), ' to ship them. Picking ', h('code', '%APPDATA%\\quark'), ' or the repository folder works too. A same-named .gltf there is moved to .bak.'),
       h('p', h('b', 'Download .zip'), ': the same layout plus provenance.json, to unzip into the overrides folder.'),
-      provRow];
+      prov.row];
     const res = await U.dialog('Export to game', content, [
       { label: 'Cancel', value: null },
-      { label: 'Download .zip', value: 'zip' },
-      { label: 'Choose folder and write', value: 'folder', primary: true }]);
+      { label: 'Download .zip', value: 'zip', action: prov.check },
+      { label: 'Choose folder and write', value: 'folder', primary: true, action: prov.check }]);
     if (res === 'zip') {
       const r = Q.exportZip(chosen());
-      U.toast('quark-model-overrides.zip: ' + r.files.length + ' model(s) + provenance.json' + (r.skipped.length ? ', ' + r.skipped.length + ' skipped' : ''));
+      let side = '';
+      if (prov.dir()) { try { side = ', and ' + await Q.writeProvenance(prov.dir(), r.files.map(f => f.key)); } catch (e) { side = ' (' + (e.message || e) + ')'; } }
+      U.toast('quark-model-overrides.zip: ' + r.files.length + ' model(s) + provenance.json' + side + (r.skipped.length ? ', ' + r.skipped.length + ' skipped' : ''), 5000);
       U.renderLibrary();
     } else if (res === 'folder') {
       if (!Q.canPickFolder()) { U.dialog('Not in this browser', h('p', 'Writing to a folder needs Chrome or Edge. Use Download .zip.')); return; }
@@ -546,12 +570,12 @@
           if (!ok) { U.toast('Export cancelled: nothing written'); return; }
           removeKeys = there.filter((f, i) => cbs[i].checked).map(f => f.key);
         }
-        const r = await Q.exportToFolder(root, { keys: chosen(), removeKeys, provDir });
+        const r = await Q.exportToFolder(root, { keys: chosen(), removeKeys, provDir: prov.dir() });
         U.dialog('Written', [h('p', 'Into ' + r.where + (r.guess ? ' (no overrides folder found: written into the folder you picked)' : '') + ':'),
           h('ul', r.written.map(w => h('li', h('code', w)))),
           r.moved.length ? [h('p', 'Moved to .bak:'), h('ul', r.moved.map(w => h('li', h('code', w))))] : null,
           r.skipped.length ? [h('p', 'Skipped:'), h('ul', r.skipped.map(s => h('li', s.key + ': ' + s.why)))] : null,
-          r.provenance ? h('p', 'provenance.json updated: ' + r.provenance) : h('p', 'provenance.json: no model-editor folder chosen' + (r.provenanceError ? ' (' + r.provenanceError + ')' : '') + '. ',
+          r.provenance ? h('p', 'provenance.json updated: ' + r.provenance) : h('p.bad', 'provenance.json was not written' + (r.provenanceError ? ' (' + r.provenanceError + ')' : '') + ': the dashboard will not see who made these models. Download it and put it in your Quark\\model-editor folder. ',
             h('button.mini', { type: 'button', onclick: () => Q.downloadProvenance() }, 'Download provenance.json')),
           h('p.faint', 'Restart the game to load them. A file the game cannot read is logged ("override models/...: ...") and the default is kept.')]);
         U.renderLibrary();

@@ -247,28 +247,40 @@
     }
     const done = r.files.map(f => f.key), gone = (opts.removeKeys || []).filter(k => done.indexOf(k) < 0);
     Q.recordProvenance(done, gone);
-    // the sidecar: into the model editor's folder when one is chosen (merged with the file there)
+    // the sidecar: into the model editor's folder (the export dialog asks for it and its access first)
     report.provenance = null;
-    const pd = opts.provDir || null;
-    if (pd) {
-      try {
-        if (await Q.folderPermission(pd)) {
-          let existing = '';
-          try { existing = await (await (await pd.getFileHandle('provenance.json')).getFile()).text(); } catch (e) { }
-          const text = Q.mergeProvenance(existing, done, gone);
-          await writeFile(pd, 'provenance.json', new TextEncoder().encode(text));
-          report.provenance = pd.name + '/provenance.json';
-        }
-      } catch (e) { report.provenanceError = String(e.message || e); }
+    if (opts.provDir) {
+      try { report.provenance = await Q.writeProvenance(opts.provDir, done, gone); } catch (e) { report.provenanceError = String(e.message || e); }
     }
     return report;
   };
-  Q.folderPermission = async function (h) {
+  // provenance.json in the Quark\model-editor folder, merged with the file there (what the Editor Manager's dashboard
+  // and tools/provenance.py read): its path, or throws. No permission prompt here: that needs a click of its own (the
+  // export dialog's), and this runs after the long awaits of a write
+  Q.writeProvenance = async function (pd, done, gone) {
+    if (!(await Q.folderPermission(pd, false))) throw new Error('no access to ' + pd.name + ' (allow it in the export dialog)');
+    let existing = '';
+    try { existing = await (await (await pd.getFileHandle('provenance.json')).getFile()).text(); } catch (e) { }
+    await writeFile(pd, 'provenance.json', new TextEncoder().encode(Q.mergeProvenance(existing, done, gone)));
+    return pd.name + '/provenance.json';
+  };
+  // read / write access to a remembered folder; ask: show the browser's prompt (only from a click: it needs a user gesture)
+  Q.folderPermission = async function (h, ask) {
     try {
       if (!h.queryPermission) return true;
       if ((await h.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
-      return (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
+      return ask !== false && (await h.requestPermission({ mode: 'readwrite' })) === 'granted';
     } catch (e) { return false; }
+  };
+  // pick the Quark\model-editor folder (remembered): { dir, warn } (warn: it has neither model-editor.html nor
+  // provenance.json, so it may be the wrong folder), or null when the picker is cancelled
+  Q.pickProvDir = async function () {
+    let dir;
+    try { dir = await window.showDirectoryPicker({ id: 'quark-model-editor', mode: 'readwrite' }); } catch (e) { return null; }
+    let mine = false;
+    for (const n of ['model-editor.html', 'provenance.json']) { try { await dir.getFileHandle(n); mine = true; break; } catch (e) { } }
+    await Q.saveHandle('provDir', dir);
+    return { dir, warn: mine ? '' : dir.name + ' has no model-editor.html: is it the Quark\\model-editor folder?' };
   };
   async function readJson(dir, parts) {
     try {

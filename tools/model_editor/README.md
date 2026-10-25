@@ -65,8 +65,10 @@ website show) with the box list in the mesh's extras (what the game draws).
 - **Choose folder and write** (Chrome / Edge): pick `%APPDATA%\quark\overrides` to try models in the game without
   rebuilding (restart the game), or the repository's `assets\overrides` to ship them. Picking `%APPDATA%\quark` or the
   repository folder works too (the overrides folder inside is used). A same-named `.gltf` there is moved to `.bak` (the
-  game takes the `.glb` first); model files there for models you did not edit can be moved to `.bak` too.
-- **Download .zip**: the same layout plus `provenance.json`, to unzip into the overrides folder.
+  game takes the `.glb` first); model files there for models you did not edit can be moved to `.bak` too (a second
+  dialog lists them; Cancel or Escape there writes nothing).
+- **Download .zip**: the same layout plus `provenance.json`, to unzip into the overrides folder (with a model-editor
+  folder chosen, its `provenance.json` is updated too).
 - **Download .glb** (the model panel): one model.
 - **Project > Load the models in an overrides folder**: reads every `models/<kind>/<NAME>.glb|.gltf` in a folder back
   as edits (to carry on, or to see what the game will draw).
@@ -88,10 +90,13 @@ What the game does with an override (src/client/gltf.cpp, models.cpp, game.cpp):
 
 Every export writes or updates a provenance sidecar, `{"format":1,"tool":"model-editor","items":{"models/<kind>/<NAME>.gltf":
 {"origin","by","date","source","note"(,"licence")}}}`, one entry per model id (the export / override path with .gltf),
-the latest export winning, other entries kept. The zip carries it; a folder export merges it into
-`<Quark\model-editor folder>\provenance.json` once that folder is chosen in the export dialog (remembered); otherwise
-**Download provenance.json** (the models an export would write: not those its errors block). A model moved to `.bak` by a
-folder export loses its entry. Origins: `human` (made by a person: **Start from scratch**, a tweak of a human-made shipped
+the latest export winning, other entries kept. It belongs in `<Quark\model-editor folder>\provenance.json`, the only
+place the Editor Manager's dashboard and `tools/provenance.py merge` read it, so the export dialog asks for that folder
+(remembered; a red row until it is chosen, and **Allow access** when a new session has no access to it yet) and
+neither export button goes on without it unless **go on without it** is ticked. Folder exports and zips both merge it
+there; the zip carries a copy as well. A browser that cannot write to folders says to copy the zip's copy there;
+**Download provenance.json** gives the models an export would write (not those its errors block). A model moved to
+`.bak` by a folder export loses its entry. Origins: `human` (made by a person: **Start from scratch**, a tweak of a human-made shipped
 model, or chosen in the panel), `ai` (a tweak of an AI-made model; the note says what changed against what the edit
 started from, rewritten as you edit until you write your own), `third-party` (an imported file from a pack: the import asks
 for its source and licence).

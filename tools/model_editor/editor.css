@@ -130,5 +130,9 @@ dialog h2 { margin: 0 0 8px; font-size: 15px; }
 dialog p { margin: 6px 0; color: var(--text-dim); }
 dialog ul { margin: 6px 0; padding-left: 18px; max-height: 240px; overflow: auto; }
 .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.prov-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 10px 0 0; padding: 6px 8px; border-radius: 4px; background: var(--panel2); border-left: 3px solid var(--good); }
+.prov-row.bad { border-color: var(--bad); color: #ff8b8b; }
+.prov-row.flash { background: #3a1f1f; }
+dialog p.bad, .bad { color: #ff8b8b; }
 .keys td { padding: 2px 10px 2px 0; }
 .keys td:first-child { font: 11px var(--mono); color: var(--text); white-space: nowrap; }
