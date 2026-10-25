@@ -121,6 +121,24 @@
     saveLog();
   };
 
+  // --- what was exported (this browser): key -> { sig, where, at }, so the library can say which edits are not written
+  // out yet (what the game still lacks after a restart). sig: a checksum of the edit and its provenance as exported.
+  Q.exported = {};
+  try { Q.exported = JSON.parse(localStorage.getItem('qme.exported') || '{}') || {}; } catch (e) { Q.exported = {}; }
+  const editSig = key => Q.crc32(new TextEncoder().encode(Q.snapshot(key)));
+  Q.markExported = function (keys, where, removed) {
+    const at = new Date().toISOString();
+    for (const k of keys) Q.exported[k] = { sig: editSig(k), where, at };
+    for (const k of removed || []) delete Q.exported[k];
+    try { localStorage.setItem('qme.exported', JSON.stringify(Q.exported)); } catch (e) { }
+  };
+  // null (not edited), else { done: the edit is the one last exported, where, at }
+  Q.exportState = function (key) {
+    if (!Q.isEdited(key)) return null;
+    const x = Q.exported[key];
+    return x && x.sig === editSig(key) ? { done: true, where: x.where, at: x.at } : { done: false, where: x && x.where, at: x && x.at };
+  };
+
   // --- zip (stored) ----------------------------------------------------------------------------------------------------
   const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   Q.crc32 = function (u8) { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
@@ -174,6 +192,7 @@
     Q.lastZip = blob;
     Q.download(blob, 'quark-model-overrides.zip');
     Q.recordProvenance(done);
+    Q.markExported(done, 'quark-model-overrides.zip');
     return Object.assign(r, { provenance: prov });
   };
   Q.downloadProvenance = function () {   // (the models an export would write: not those its errors block)
@@ -247,6 +266,7 @@
     }
     const done = r.files.map(f => f.key), gone = (opts.removeKeys || []).filter(k => done.indexOf(k) < 0);
     Q.recordProvenance(done, gone);
+    Q.markExported(done, res.where, gone);
     // the sidecar: into the model editor's folder (the export dialog asks for it and its access first)
     report.provenance = null;
     if (opts.provDir) {

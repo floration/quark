@@ -186,6 +186,12 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await page.click('#dlg button:has-text("Continue")');
   await page.waitForSelector('#dlg h2:has-text("Written")');
   check(await files2() === 'KNIGHT.glb.bak,SCOUT.glb', 'export: a ticked unedited model\'s file is moved to .bak', await files2());
+  st = await ev(() => { const b = () => document.querySelector('.card[data-key="models/player/SCOUT"] .badges').innerText.toLowerCase();
+    const r = { after: b(), lib: document.querySelector('#libProgress').textContent };
+    Q.ui.change('models/player/SCOUT', null, parts => { parts[0].c[1] += 0.01; });
+    Q.ui.refreshCard('models/player/SCOUT');
+    return Object.assign(r, { edited: b(), lib2: document.querySelector('#libProgress').textContent }); });
+  check(/exported/.test(st.after) && !/not exported/.test(st.after + st.lib) && /not exported/.test(st.edited) && /1 not exported/.test(st.lib2), 'library: an edit since the export shows "not exported"', st);
   st = await ev(async () => ({ side: JSON.parse(await readText(pd, ['provenance.json'])).items, text: document.querySelector('#dlg').innerText }));
   check(st.side['models/player/SCOUT.gltf'] && !st.side['models/player/KNIGHT.gltf'] && /provenance.json updated: model-editor\/provenance.json/.test(st.text), 'export: provenance.json written into the chosen model-editor folder', st);
   await page.keyboard.press('Escape');

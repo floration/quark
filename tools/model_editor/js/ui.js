@@ -92,6 +92,8 @@
       list.append(cards);
     }
   };
+  const exportedWhere = ex => ex.where + ', ' + new Date(ex.at).toLocaleString();
+  U.exportedWhere = exportedWhere;
   // the human-made goal: how many models are human-made as they are now (edits included), the rest by origin
   U.renderProgress = function () {
     const n = { human: 0, ai: 0, 'third-party': 0 };
@@ -99,13 +101,17 @@
     const all = Q.order.length, el = $('#libProgress');
     el.innerHTML = '';
     el.append(h('b', 'human ' + n.human + '/' + all + ' (' + Math.round(all ? n.human * 100 / all : 0) + '%)'), ' ai ' + n.ai + (n['third-party'] ? ', 3rd party ' + n['third-party'] : ''));
+    const unexp = Q.exportList().filter(k => !Q.exportState(k).done).length;
+    if (unexp) el.append(' ', h('span.unexp', { title: 'edited models whose edit is not exported yet' }, unexp + ' not exported'));
   };
   function card(key) {
     const m = Q.models[key], t = thumbs[key];
     if (!t || t.sig !== thumbSig(key)) queueThumb(key);
     const probs = Q.problems(key), pv = Q.provFor(key), origin = pv.origin, edited = Q.isEdited(key), cur = Q.current(key);
     const badges = h('div.badges');
-    if (edited) badges.append(h('span.badge.edited', 'edited'));
+    const ex = Q.exportState(key);
+    if (ex) badges.append(ex.done ? h('span.badge.edited', { title: 'edited, and exported as it is now (' + exportedWhere(ex) + ')' }, 'exported')
+      : h('span.badge.unexp', { title: 'edited since its last export' + (ex.at ? ' (' + exportedWhere(ex) + ')' : '') + ': the game does not have this yet' }, 'not exported'));
     else if (cur.shipped) badges.append(h('span.badge.o-shipped', { title: 'the shipped override (assets/overrides): what the game draws' }, 'shipped'));
     badges.append(h('span.badge.o-' + origin, { title: 'origin: ' + origin + (pv.by ? ', by ' + pv.by : '') + (pv.source ? '\n' + pv.source : '') + (pv.note ? '\n' + pv.note : '') +
       (edited ? '' : '\n(' + (cur.shipped ? 'the shipped model' : 'the default') + ': assets/provenance)') }, origin === 'third-party' ? '3rd party' : origin));
@@ -232,7 +238,8 @@
       cur.shipped ? 'The shipped override (assets/overrides): ' + (cur.type === 'boxes' ? 'a box model, ' + cur.parts.length + ' boxes' : 'a mesh') :
         cur.type === 'boxes' ? 'Default: ' + cur.parts.length + ' boxes' : 'Default mesh';
     if (m.err) status = 'The export file could not be read: ' + m.err;
-    panel.append(h('div.row', h('b', status)));
+    const ex = Q.exportState(key);
+    panel.append(h('div.row', h('b', status), ex ? (ex.done ? h('span.faint', 'exported (' + exportedWhere(ex) + ')') : h('span.unexp', 'not exported yet')) : null));
     if (m.shipped && m.shipped.err) panel.append(h('div.probs', h('div.prob.error', 'The shipped override (assets/overrides/' + key.replace(/[^/]*$/, m.shipped.name) + ') is refused by the game: ' + m.shipped.err + '. The game logs it and draws the default (shown here).')));
     if (!edited) panel.append(h('div.row', h('span.badge.o-' + pv.origin, pv.origin), h('span.dim', [pv.by ? 'by ' + pv.by : '', pv.source, pv.note].filter(Boolean).join(' / ') || 'no details'),
       h('span.faint', '(assets/provenance, ' + (cur.shipped ? 'the shipped model' : 'the default') + ')')));

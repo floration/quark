@@ -74,6 +74,8 @@ code { font: 11px var(--mono); background: var(--panel2); padding: 0 3px; border
 .badge.edited { background: var(--accent-dim); color: #fff; }
 .badge.err { background: #6b1f1f; color: #fff; }
 .badge.warn { background: #6b4d10; color: #fff; }
+.badge.unexp { background: #7a5a0c; color: #fff; }
+span.unexp { color: var(--warn); }
 .badge.o-human { background: #1d5c2a; color: #fff; }
 .badge.o-ai { background: #333a46; color: #cfd5de; }
 .badge.o-third-party { background: #5a2d6b; color: #fff; }

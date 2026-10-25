@@ -119,7 +119,9 @@ The editor never writes `assets/provenance/*.json` in the repository.
 
 - **Library**: every model by kind with a thumbnail (in the chosen map's colours), badges for edited, shipped, origin and
   problems; filter, edited only, one origin only. Its header counts the human-made goal as the models are now, your
-  edits included (`human 1/30 (3%) ai 29`). As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
+  edits included (`human 1/30 (3%) ai 29`), and how many edits are **not exported** yet: a card says `exported` while
+  its edit is the one the last folder export or zip wrote (this browser remembers a checksum of each), `not exported`
+  once it changes (what the game will not have after a restart; the panel says where and when it was exported). As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
   resize it (remembered; double-click: the default). Thumbnails are read back from the GPU asynchronously (a pixel-pack
   buffer behind a fence), so drawing them never stalls the page.
 - **Viewer** (the game's renderer ported to WebGL2: the dynamic-object shader with sky light, sun, sun visibility,
