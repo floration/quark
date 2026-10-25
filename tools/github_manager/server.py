@@ -3269,6 +3269,33 @@ def ruleset_item(d, default_branch, repo):
 # ----------------------------------------------------------------------------------------------------------------
 # the manager: one poll at a time, state published as ready-made JSON bytes
 
+TESTS_EDITOR_PORT = 8775
+TESTS_START_GAP = 10            # POST /api/tools/tests-editor starts it at most once per this many seconds
+
+
+def windowless_python():
+    """pythonw.exe next to this Python on Windows (no console window), else this Python."""
+    exe = sys.executable or "python"
+    if WIN:
+        w = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        if os.path.isfile(w):
+            return w
+    return exe
+
+
+def start_detached(args, cwd):
+    """Starts a helper the way install.py starts this server: detached, no window, low priority. -> Popen."""
+    kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "cwd": cwd,
+          "close_fds": True}
+    if WIN:
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | IDLE_PRIORITY_CLASS (= start /low)
+        kw["creationflags"] = 0x00000008 | 0x00000200 | 0x08000000 | 0x00000040
+    else:
+        kw["start_new_session"] = True
+        kw["preexec_fn"] = lambda: os.nice(10)
+    return subprocess.Popen(args, **kw)
+
+
 def default_data_dir():
     return os.path.join(os.path.expanduser("~"), "Desktop", "Quark", "github-manager")
 
@@ -3347,6 +3374,7 @@ class Manager:
         self.saved_logs = set()
         self.log_retry = {}     # (run, job) -> no retry before this time; memory only, so a restart retries at once
         self.last_log_error = None
+        self.tests_started_at, self.tests_script = 0.0, None  # the tests editor, last started from the Tests tab
         self._load_runs()
         self._scan_logs()
         self.prev = read_json(self._p("state-prev.json"))
@@ -3437,6 +3465,46 @@ class Manager:
         with self.lock:
             local = list(self.state.get("local") or [])
         return checked_out_in(local, branch)
+
+    # -- the tests editor (the Tests tab embeds it): started from here when it isn't running ----------------------
+
+    def tests_editor_script(self):
+        """-> (serve.py of the tests editor or None, the places looked in). `testsEditor` in github-manager.json (the
+        file or its folder) first, then the Quark Project app's install (<quarkDir>/tests-editor), then each watched
+        local copy's tools/tests_editor, then <quarkDir>/repository's."""
+        q = self.cfg.get("quarkDir") or ""
+        places = []
+        if self.cfg.get("testsEditor"):
+            places.append(str(self.cfg["testsEditor"]))
+        places.append(os.path.join(q, "tests-editor"))
+        places += [os.path.join(e["path"], "tools", "tests_editor") for e in self.locals_cfg if e.get("path")]
+        places.append(os.path.join(q, "repository", "tools", "tests_editor"))
+        for p in places:
+            f = p if p.endswith(".py") else os.path.join(p, "serve.py")
+            if os.path.isfile(f):
+                return f, places
+        return None, places
+
+    def start_tests_editor(self):
+        """POST /api/tools/tests-editor: starts its serve.py hidden, at low priority, without a browser (the Tests tab
+        then embeds it). A second press within TESTS_START_GAP s does nothing (it is still starting)."""
+        with self.lock:
+            if time.time() - self.tests_started_at < TESTS_START_GAP:
+                return {"started": False, "script": self.tests_script,
+                        "port": TESTS_EDITOR_PORT, "note": "started a moment ago; give it a few seconds"}
+        script, places = self.tests_editor_script()
+        if not script:
+            raise EditError(404, "no tests editor found (looked for serve.py in %s); install it with "
+                                 "tools/tests_editor/install.py" % "; ".join(places))
+        try:
+            start_detached([windowless_python(), "-B", script, "--port", str(TESTS_EDITOR_PORT), "--no-browser",
+                            "--quiet"], os.path.dirname(script))
+        except OSError as e:
+            raise EditError(500, "could not start %s: %s" % (script, e))
+        with self.lock:
+            self.tests_started_at, self.tests_script = time.time(), script
+        self.say("started the tests editor: %s" % script)
+        return {"started": True, "script": script, "port": TESTS_EDITOR_PORT}
 
     def structure_view(self):
         o = self.structure.obj()
@@ -4386,7 +4454,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    WRITE_PATHS = ("/api/notes", "/api/structure", "/api/rules", "/api/pending")
+    WRITE_PATHS = ("/api/notes", "/api/structure", "/api/rules", "/api/pending", "/api/tools")
 
     @classmethod
     def is_write_path(cls, path):
@@ -4445,6 +4513,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if cmd != "POST":
                     return self._json(405, {"error": "POST a change here; DELETE / apply go to /api/pending/<id>"})
                 return self._json(201, {"change": m.pending.queue(body)})
+            if path == "/api/tools/tests-editor":
+                if cmd != "POST":
+                    return self._json(405, {"error": "POST to start the tests editor"})
+                edit_fields(body if body is not None else {}, ())
+                return self._json(200, m.start_tests_editor())
+            if path.startswith("/api/tools/"):
+                return self._json(404, {"error": "no such tool"})
             if path == "/api/pending/apply-all":
                 if cmd != "POST":
                     return self._json(405, {"error": "POST to apply every pending change"})
@@ -4506,7 +4581,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(403, "forbidden", "text/plain")
         upath = urllib.parse.urlsplit(self.path).path
         if upath == "/api/notes" or upath.startswith("/api/notes/") or upath == "/api/pending" or \
-                upath.startswith("/api/pending/"):
+                upath.startswith("/api/pending/") or upath.startswith("/api/tools/"):
             return self._write()
         n = int(self.headers.get("Content-Length") or 0)
         if n:

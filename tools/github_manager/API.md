@@ -338,6 +338,15 @@ touched. A failure shows in `docsSync` (above), in the page and in `poll.warning
 floration/quark without `claudeDocsRepo`.
 
 
+## POST /api/tools/tests-editor
+
+The Tests tab's **Start it**: starts the tests editor's `serve.py --port 8775 --no-browser --quiet` detached, with no
+window, at low priority. It is looked for in `testsEditor` (github-manager.json: the file or its folder), then
+`<quarkDir>/tests-editor`, then each watched local copy's `tools/tests_editor`, then `<quarkDir>/repository`'s.
+A write (own origin, JSON, body `{}` or none). -> 200 `{"started": true, "script": "<path>", "port": 8775}`;
+`{"started": false, "note"}` when it was started less than 10 s ago; 404 `{"error"}` naming the places looked in
+when there is none; 500 when it can't be started. The page then looks for it every second for up to 20 s.
+
 ## GET /api/log?run=<id>&job=<id>
 
 Plain text of a job's log, from `logs/<run>/<job>.txt` (failed jobs are downloaded once and kept forever; others on

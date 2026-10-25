@@ -2303,6 +2303,43 @@ class EditorHttp(NotesHttp):
         self.assertEqual(self.call("GET", "/claude-docs/x.html")[0], 404)
 
 
+class TestsEditorStart(NotesHttp):
+    """The Tests tab's start button: finds the tests editor's serve.py and starts it detached, without a browser."""
+
+    def test_crud_etag_history_and_safety(self):
+        pass  # the notes' own test runs in NotesHttp
+
+    def test_find_start_and_protect(self):
+        code, _, body = self.call("POST", "/api/tools/tests-editor", {})
+        self.assertEqual(code, 404)
+        self.assertIn("no tests editor found", json.loads(body)["error"])
+        folder = os.path.join(self.dir, "tests-editor")
+        marker = os.path.join(self.dir, "started.json")
+        os.makedirs(folder)
+        write(os.path.join(folder, "serve.py"), "import json, sys\njson.dump(sys.argv[1:], open(%r, 'w'))\n" % marker)
+        # only from the page's own origin, as JSON, with no fields
+        self.assertEqual(self.call("POST", "/api/tools/tests-editor", {}, headers={"Origin": "http://evil"})[0], 403)
+        self.assertEqual(self.call("POST", "/api/tools/tests-editor", {"x": 1})[0], 400)
+        self.assertEqual(self.call("POST", "/api/tools/nope", {})[0], 404)
+        code, _, body = self.call("POST", "/api/tools/tests-editor", {})
+        self.assertEqual(code, 200, body)
+        got = json.loads(body)
+        self.assertEqual((got["started"], got["script"], got["port"]), (True, os.path.join(folder, "serve.py"), 8775))
+        t = time.time() + 20
+        while not os.path.exists(marker) and time.time() < t:
+            time.sleep(0.05)
+        time.sleep(0.2)
+        self.assertEqual(json.load(open(marker)), ["--port", "8775", "--no-browser", "--quiet"])
+        # a second press right away doesn't start another one
+        self.assertFalse(json.loads(self.call("POST", "/api/tools/tests-editor", {})[2])["started"])
+        # testsEditor in the settings wins
+        other = os.path.join(self.dir, "elsewhere", "serve.py")
+        os.makedirs(os.path.dirname(other))
+        write(other, "")
+        self.m.cfg["testsEditor"] = os.path.dirname(other)
+        self.assertEqual(self.m.tests_editor_script()[0], other)
+
+
 @unittest.skipUnless(os.environ.get("GHM_LIVE") == "1", "set GHM_LIVE=1 for the read-only check against GitHub")
 class LiveRulesets(unittest.TestCase):
     """Read-only: GET /api/github/rulesets against the real floration/quark (needs gh signed in). Never writes."""

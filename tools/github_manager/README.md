@@ -65,8 +65,11 @@ Two more tabs:
   count on branch / PR / run rows and local-copy cards, all of them with "add note" in that item's details, and the
   pinned ones in a Notes card on the Overview. Every change is a `note.*` event in the History tab. Notes stay on this
   PC (and in the Claude Documents copy); nothing is sent to GitHub.
-- **Tests**: the separate tests editor (http://127.0.0.1:8775/) embedded, or a line saying it isn't running. A run's
-  jobs link to it (`#ci/<workflow file>/<job>?run=<id>`).
+- **Tests**: the separate tests editor (http://127.0.0.1:8775/) embedded, or a line saying it isn't running with
+  **Start it**: the server starts the tests editor's `serve.py` (`--no-browser`, detached, no window, low priority;
+  `testsEditor` in the settings, else `<quarkDir>\tests-editor`, else a watched local copy's or `<quarkDir>\repository`'s
+  `tools/tests_editor`) and the tab embeds it once it answers. A run's jobs link to it
+  (`#ci/<workflow file>/<job>?run=<id>`).
 
 ## Run it
 
@@ -124,6 +127,7 @@ Written with the defaults on the first start:
   10 minutes and on Refresh.
 - `originUrl` (optional): where the mirror fetches from (default `https://github.com/<repo>.git`; the repo is public, so
   no sign-in is needed for git).
+- `testsEditor` (optional): the tests editor's `serve.py` (or its folder) for the Tests tab's Start it.
 - `claudeDocs` (optional, default true): `false` turns the Claude Documents copy off (also `GHM_DOCS_SYNC=off` in the
   environment). `claudeDocsRepo` / `claudeDocsBranch` (default `floration/quark-claude-docs` / `main`): where it goes;
   with a `repo` other than floration/quark the copy is off unless `claudeDocsRepo` is set.
@@ -182,7 +186,7 @@ Delete `state-prev.json` and `history.jsonl` to start the history again; delete 
 `/api/notes`, `/api/structure`, `/api/rules`, `/api/pending`, `/api/github/rulesets[?fresh=1]`, `POST /api/refresh`,
 the note writes `POST /api/notes`, `PUT` / `DELETE /api/notes/<id>`, and the editor writes `PUT /api/structure`,
 `PUT /api/rules`, `POST /api/pending`, `DELETE /api/pending/<id>`, `POST /api/pending/<id>/preview`,
-`POST /api/pending/<id>/apply`, `POST /api/pending/apply-all`; see
+`POST /api/pending/<id>/apply`, `POST /api/pending/apply-all`, `POST /api/tools/tests-editor`; see
 `API.md` (the contract with the page). The JSON answers carry ETags (304 when nothing changed) and are gzipped when
 the browser asks, each version built once. `/api/*` sends CORS headers for the other local tools on 127.0.0.1 /
 localhost ports 8765-8768 and the tests editor's 8775. Writes (notes and the editor) are accepted only from this

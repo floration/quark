@@ -328,6 +328,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(fx.rules_view())
             if path == "/api/pending" and cmd == "POST":
                 return self.json({"change": fx.pending.queue(body)}, 201)
+            if path == "/api/tools/tests-editor" and cmd == "POST":
+                # the Tests tab's Start: nothing is started here (8775 isn't the fixture's to take)
+                return self.json({"started": True, "script": "(fixture: nothing started)", "port": 8775})
             if path == "/api/pending/apply-all" and cmd == "POST":
                 return self.json(fx.pending.apply_all(body))
             m = re.match(r"^/api/pending/(c[0-9a-f]{12})(/apply|/preview)?$", path)
