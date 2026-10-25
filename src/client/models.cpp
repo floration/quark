@@ -51,7 +51,7 @@ const char* modelName(int kind, int i) {
         case MODEL_PROJECTILE: return i >= 0 && i < WPN_COUNT ? w[i] : "ORB";
         case MODEL_CROWN: return "CROWN";
         case MODEL_PROP: {
-            static const char* p[PROP_COUNT] = {"GUN_ARM", "ARM", "BOMB_PACK", "BOMB", "CART", "GATE"};
+            static const char* p[PROP_COUNT] = {"GUN_ARM", "ARM", "BOMB_PACK", "BOMB", "CART", "GATE", "HOOK_ARM", "HOOK"};
             return p[i < 0 || i >= PROP_COUNT ? 0 : i];
         }
     }
@@ -74,12 +74,16 @@ static ModelPalette makeReference(int kind, int idx = 0) {
     if (kind == MODEL_PROP && idx == PROP_CART) p.c[TINT_METAL] = cartMetal({0.30f, 0.33f, 0.37f});
     if (kind == MODEL_PROP && idx == PROP_BOMB) p.c[TINT_GLOW] = {0.15f, 0.15f, 0.15f};
     if (kind == MODEL_PROP && idx == PROP_GATE) p.c[TINT_TEAM] = {0.8f, 0.8f, 0.8f};
+    // the grapple launcher and its claw: one fixed steel, not the map's metal (they must read on every map)
+    if (kind == MODEL_PROP && (idx == PROP_HOOK_ARM || idx == PROP_HOOK)) p.c[TINT_METAL] = {0.5f, 0.53f, 0.58f};
     return p;
 }
 const ModelPalette& referencePalette(int kind, int idx) {
     static const ModelPalette pals[MODEL_KINDS] = {makeReference(0), makeReference(1), makeReference(2), makeReference(3), makeReference(4)};
     static const ModelPalette props[PROP_COUNT] = {makeReference(MODEL_PROP, 0), makeReference(MODEL_PROP, 1), makeReference(MODEL_PROP, 2),
-                                                   makeReference(MODEL_PROP, 3), makeReference(MODEL_PROP, 4), makeReference(MODEL_PROP, 5)};
+                                                   makeReference(MODEL_PROP, 3), makeReference(MODEL_PROP, 4), makeReference(MODEL_PROP, 5),
+                                                   makeReference(MODEL_PROP, 6), makeReference(MODEL_PROP, 7)};
+    static_assert(PROP_COUNT == 8, "a reference palette per prop");
     if (kind == MODEL_PROP && idx >= 0 && idx < PROP_COUNT) return props[idx];
     return pals[kind < 0 || kind >= MODEL_KINDS ? 0 : kind];
 }
@@ -340,6 +344,28 @@ void propParts(int prop, const ModelPalette& pal, ModelParts& out) {
             e({1.8f, 1.4f, 0}, {0.12f, 1.4f, 0.12f}, pal.c[TINT_TEAM], TINT_TEAM);
             e({-1.8f, 1.4f, 0}, {0.12f, 1.4f, 0.12f}, pal.c[TINT_TEAM], TINT_TEAM);
             break;
+        case PROP_HOOK_ARM: { // the left arm with the grapple launcher strapped on the forearm: the arm, a gunmetal housing
+                              // with a team stripe on top and the cable drum on the outside (-X), the barrel on top at the
+                              // front (above the housing: seen from behind in first person), its mouth at kHookMuzzle. The
+                              // claw (PROP_HOOK) is drawn on its own: in the barrel, or out on the rope.
+            const Vec3 metal = pal.c[TINT_METAL];
+            const uint8_t M = TINT_METAL;
+            e({0, -0.01f, -0.27f}, {0.055f, 0.06f, 0.27f}, arm, N);                             // forearm
+            e({0, 0.015f, -0.42f}, {0.07f, 0.055f, 0.12f}, metal * 0.3f, M);                    // housing
+            e({0, 0.074f, -0.38f}, {0.025f, 0.004f, 0.07f}, pal.c[TINT_TEAM], TINT_TEAM, false); // team stripe
+            e({-0.082f, 0.015f, -0.38f}, {0.012f, 0.045f, 0.045f}, metal * 0.75f, M, false);     // cable drum
+            e({0, kHookMuzzle.y, kHookMuzzle.z + 0.07f}, {0.042f, 0.042f, 0.07f}, metal * 0.55f, M); // barrel
+        } break;
+        case PROP_HOOK: {     // the grapple's claw: a shank (the rope ties on at the origin), a head, three prongs
+            const Vec3 steel = pal.c[TINT_METAL] * 1.6f;
+            const uint8_t M = TINT_METAL;
+            e({0, 0, -0.03f}, {0.014f, 0.014f, 0.035f}, steel * 0.7f, M, false);
+            e({0, 0, -0.075f}, {0.036f, 0.036f, 0.016f}, steel, M, false);
+            for (int k = 0; k < 3; k++) {   // at 90, 210 and 330 degrees round the shank, splayed out
+                const float a = 1.5707963f + k * 2.0943951f;
+                e({std::cos(a) * 0.042f, std::sin(a) * 0.042f, -0.115f}, {0.012f, 0.012f, 0.035f}, steel, M, false);
+            }
+        } break;
     }
 }
 
@@ -350,7 +376,7 @@ unsigned drivenSlots(int kind, int idx) {
         case MODEL_PLAYER: case MODEL_CROWN: return T;
         case MODEL_PROJECTILE: return T | G;
         case MODEL_WEAPON: return T | G | M | B;
-        case MODEL_PROP: return idx == PROP_BOMB ? G : idx == PROP_CART ? T | M | A | G : idx == PROP_GATE ? T : 0;
+        case MODEL_PROP: return idx == PROP_BOMB ? G : idx == PROP_CART ? T | M | A | G : idx == PROP_GATE || idx == PROP_HOOK_ARM ? T : 0;
     }
     return 0;
 }

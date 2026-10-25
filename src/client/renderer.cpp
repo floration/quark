@@ -779,6 +779,10 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
     emitBox(view_, xf, half, color, 1.0f);
 }
 
+void Renderer::viewBoxXf(const Mat4& local, const Vec3& half, const Vec3& color) {
+    emitBox(view_, Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local, half, color, 1.0f);
+}
+
 // An override model (models.h): opaque triangles into `out` like a box's faces (lit, shadowed; no outline: the
 // edge attribute sits mid-face), translucent ones into `flatOut` (a flat layer; none: left out). Colours times tint[slot].
 void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut) {
@@ -829,6 +833,10 @@ void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, con
     s.m[0] = s.m[5] = s.m[10] = scale;
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
     emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);   // (translucent parts: drawn over the view model, in its pass)
+}
+
+void Renderer::viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint) {
+    emitMesh(view_, m, Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local, tint, 1.0f, &viewFlat_);
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {

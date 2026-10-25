@@ -169,7 +169,7 @@
     if (k === 'projectile') return ['orbit', 'flight'];
     if (k === 'crown') return ['orbit', 'tp', 'lineup'];
     if (k === 'prop') {
-      if (m.name === 'GUN_ARM' || m.name === 'ARM' || m.name === 'BOMB_PACK') return ['orbit', 'tp', 'lineup'];
+      if (m.name === 'GUN_ARM' || m.name === 'ARM' || m.name === 'BOMB_PACK' || m.name === 'HOOK_ARM' || m.name === 'HOOK') return ['orbit', 'tp', 'lineup'];
       if (m.name === 'BOMB') return ['orbit', 'lineup'];   // (bomb mode: the payload track has no bomb)
       if (m.name === 'CART' || m.name === 'GATE') return ['orbit', 'track'];
     }
@@ -207,6 +207,20 @@
       if (pk) {   // the bomb on its carrier's back (player space; crouched: its height follows, its size doesn't)
         const b = modelItem(item(n++), pk, { kind: 'prop', role: 'pack', crouch: crouch ? 'centres' : null });
         M.trs(b.model, px, py, pz, yaw, 0, bs, b.mode === 'mesh' ? bs * hs : bs, bs);
+      }
+    }
+    {   // the grapple launcher on the left arm, the claw in its barrel (game.cpp; the muzzle: kHookMuzzle, models.h)
+      const hk = prop('HOOK_ARM'), ck = prop('HOOK');
+      const lx = px - rx * 0.3 * bs, lz = pz - rz * 0.3 * bs;
+      if (hk) {
+        const a = modelItem(item(n++), hk, { kind: 'prop', role: 'arm' });
+        M.trs(a.model, lx, sy, lz, yaw, 0, bs, bs, bs);
+      }
+      if (hk && ck) {
+        const c = modelItem(item(n++), ck, { kind: 'prop', role: 'arm' });
+        M.trs(PM, 0, 0.07 * bs, -0.59 * bs, 0, 0, bs, bs, bs);
+        M.trs(TMP, lx, sy, lz, yaw, 0, 1, 1, 1);
+        M.mul(c.model, TMP, PM);
       }
     }
     if (opts.crown) {

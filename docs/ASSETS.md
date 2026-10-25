@@ -22,7 +22,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 | Sounds | 33 sounds x 5 kits = 165 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Quips | each voice's quip set (today the default: 8 x 7 = 56 WAV) | `voices/<voice>/quips/<NAME>.wav` |
-| Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 6 props = 30 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
+| Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 8 props = 32 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
 | Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
 | Images | the game icon | `images/icon.png` |
@@ -72,12 +72,20 @@ model's own space (metres, +Y up, front at -Z):
   - `CART`: the payload cart. Origin on the track under its middle, front (-Z) the way it's being pushed.
   - `GATE`: a payload checkpoint (both posts, either side of the track at x +-1.8). Origin on the track at the
     checkpoint, -Z the cart's way. (The default's posts stay square to the world; an override turns with the track.)
+  - `HOOK_ARM`: every player's left arm with the grapple launcher strapped on the forearm, in first and third person
+    (not drawn in a mode without the grapple). Origin at the left shoulder, reaching along -Z, turned and scaled like
+    `GUN_ARM`; first person draws it low on the left at 70% of the viewmodel size, mirroring the weapon's HUD
+    placement. The rope leaves the barrel's mouth at (0, 0.07, -0.66) (`kHookMuzzle`, models.h): keep an override's
+    barrel there. `team*` = the team colour (first person: your viewmodel accent colour).
+  - `HOOK`: the grapple's claw. Origin where the rope ties on, prongs toward -Z. It sits in the launcher's barrel
+    (origin at (0, 0.07, -0.59) of `HOOK_ARM`: the shank inside, the prongs out) and, while hooked, is drawn at the hook
+    point instead, turned along the rope.
 
 Material names pick a colour that changes at run time (prefix, any case: `team`, `Team_cloth`, `glow.001`):
 
 | Material | Follows | Draw it in |
 |---|---|---|
-| `team*` | players / projectiles: the team colour; weapon: your accent colour; crown: gold (#1) or silver; cart: the pushing team (grey when neutral); gate: grey, the attackers' colour once reached | white = exactly that colour (crown: the export's gold; gate: the export's grey) |
+| `team*` | players / projectiles: the team colour; weapon: your accent colour; crown: gold (#1) or silver; cart: the pushing team (grey when neutral); gate: grey, the attackers' colour once reached; hook arm: the team colour (first person: your accent colour) | white = exactly that colour (crown: the export's gold; gate: the export's grey) |
 | `glow*` | the map's glow colour; bomb: red while a planted one blinks | the export's orange (bomb: the export's dark grey) |
 | `metal*`, `base*` | the map's metal / base colours (viewmodels, the cart's metal) | the export's colours |
 | `accent*` | the map's accent colour (the cart's rim) | the export's colour |
@@ -85,7 +93,7 @@ Material names pick a colour that changes at run time (prefix, any case: `team`,
 
 An override's colour in a slot is multiplied by (the current colour / the colour shown in the export), so a model drawn
 in the exported colours looks like the default. A slot the model's drawing doesn't colour (`glow`, `metal`, `base`,
-`accent` on a player or the crown; `metal` / `base` / `accent` on a projectile; any slot on an arm or the backpack) is
+`accent` on a player or the crown; `metal` / `base` / `accent` on a projectile; any slot on an arm or the backpack but the hook arm's `team`; the hook arm's and claw's `metal`, a fixed steel) is
 drawn as authored (tint 1). Vertex colours (COLOR_0) times the material's baseColorFactor give the colour; textures
 are ignored. A material with alphaMode BLEND is drawn see-through (like the bubble's shell).
 

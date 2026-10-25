@@ -943,6 +943,7 @@ UserCmd Game::buildCmd() {
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
     if (opts_.debugScope) c.buttons |= BTN_ALTFIRE;
     if (opts_.debugFire) c.buttons |= BTN_FIRE;
+    if (opts_.debugHook && !opts_.debugModels) c.buttons |= BTN_GRAPPLE;   // (with --models: only the lineup hangs on ropes)
     if (opts_.debugPulse && (std::fmod(time_, 0.6) < 0.3 || (shotAt_ > 0 && time_ > shotAt_ - 0.4))) c.buttons &= (uint16_t)~(BTN_FIRE | BTN_ALTFIRE);
     if (opts_.debugPulse && shotAt_ > 0 && time_ > shotAt_ - 0.4) c.side = 127;   // (then a step aside: a bolt seen end on is a dot)
     return c;
@@ -1723,8 +1724,21 @@ Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
     return eye + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
 }
 
+// A point in an arm prop's space (offset from the shoulder, models.h) in the world: turned by the aim (rotX(pitch), then
+// rotY(yaw)), as drawArm turns the arm
+static Vec3 armPoint(const Vec3& shoulder, float yaw, float pitch, const Vec3& o) {
+    float cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
+    Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};
+    return shoulder + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
+}
+static Vec3 xfPoint(const Mat4& m, const Vec3& p) {
+    return {m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12], m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13],
+            m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14]};
+}
+
 void Game::drawWorld(float alpha) {
     QZONE("drawWorld");
+    drawFrame_++;
     r_.shadowCasters = cfg_.shadows;   // (shadows off: nothing off screen is built just to be thrown away)
     const Map& map = net_.map();
     const ModeState& ms = net_.mode();
@@ -1808,6 +1822,14 @@ void Game::drawWorld(float alpha) {
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
             ip.snap.yaw = yaw_ + 3.14159265f;
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
+            if (opts_.debugHook) {   // --hook: turned side-on (the launcher arm toward you); every other one hangs on a
+                                     // rope to a point up behind them, the rest have the claw in the barrel
+                ip.snap.yaw -= 1.3f;
+                if (k % 2) {
+                    ip.snap.hooked = 1;
+                    ip.snap.hookPoint = ip.snap.pos + f * 6.0f + rt * ((k - 2) * 2.0f) + Vec3(0, 7.0f, 0);
+                }
+            }
             if (isItMode(net_.mode().mode)) {   // hide and seek / tag: each as "it", holding the knife (or --weapon)
                 ip.snap.flags |= PS_HASBOMB;
                 ip.snap.yaw -= 1.0f;   // (turned aside: the weapon side-on)
@@ -1818,6 +1840,7 @@ void Game::drawWorld(float alpha) {
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
     const float bs = bodyScale();
     const bool ranked = rankedPlayer();
+    const bool grappleOn = moveTuning().grapple;   // (the mode's rules: no grapple, no launcher on anyone's arm)
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
         const PlayerSnap& p = players[i].snap;
@@ -1865,7 +1888,7 @@ void Game::drawWorld(float alpha) {
             if (p.flags & PS_HASBOMB) drawHeldWeapon(i, p.weapon, at(1.3f) + rgt * (0.3f * bs), yaw, pitch, bs, col, sv);
         } else if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
-            drawArm(PROP_GUN_ARM, shoulder, yaw, pitch, bs, sv);
+            drawArm(PROP_GUN_ARM, shoulder, yaw, pitch, bs, sv, kNoSlots);
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode)) {   // the bomb on its carrier's back (player space)
                 if (const ModelMesh* bov = modelOverride(MODEL_PROP, PROP_BOMB_PACK)) {
                     Vec3 tint[TINT_COUNT];
@@ -1883,6 +1906,16 @@ void Game::drawWorld(float alpha) {
                     }
                 }
             }
+        }
+        if (vis && grappleOn) {   // the grapple launcher on the left arm: the claw in its barrel, or out on the rope
+            const Vec3 lsh = at(1.3f) - rgt * (0.3f * bs);
+            ModelPalette hpal = referencePalette(MODEL_PROP, PROP_HOOK_ARM);
+            hpal.c[TINT_TEAM] = col;
+            drawArm(PROP_HOOK_ARM, lsh, yaw, pitch, bs, sv, hpal);
+            const bool hookOut = self && alive ? (net_.predicted().flags & MF_HOOKED) != 0 : p.hooked != 0;
+            if (!hookOut) drawHookClaw(lsh, (kHookMuzzle + kHookSeat) * bs, yaw, pitch, bs, sv);
+            hookMuzzle_[i] = armPoint(lsh, yaw, pitch, kHookMuzzle * bs);   // (their rope starts here)
+            hookMuzzleFrame_[i] = drawFrame_;
         }
         // hide and seek: the seeker is marked only where you can see them (hiders are never shown where the seeker is,
         // owner B8); tag: the HUD marks the tagger everywhere, through walls (drawTaggerMarker)
@@ -1996,15 +2029,68 @@ void Game::drawWorld(float alpha) {
         Vec3 at = target == me && alive ? net_.smoothedPos(alpha) : players[target].snap.pos;
         return at + Vec3(0, 1.0f * bs, 0);
     };
+    // The first-person grapple launcher, low on the left (the weapon's HUD placement mirrored, its size): placed here,
+    // before the ropes, so your rope leaves its muzzle; drawn with the viewmodel below. Not on a mode without the
+    // grapple, nor while the viewmodel is hidden or scoped. While hooked the claw is out on the rope and the arm comes
+    // up a little and turns toward the hook (eased).
+    const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
+    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    const bool fpHook = grappleOn && (alive || specGun) && !(alive && (net_.predicted().mods & MOVE_RUN_ONLY)) &&
+                        !(scoped_ && scopeOverlay_ && !specGun) && !vm.hidden;
+    bool fpHooked = false;
+    Vec3 fpHookTo;
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
-        Vec3 d = angleForward(yaw_, pitch_);
-        Vec3 right = normalize(cross(d, {0, 1, 0}));
-        const MoveState& pm = net_.predicted();
-        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, ropeEnd((int)pm.hookTarget - 1, pm.hookPoint), 0.03f, {0.1f, 0.1f, 0.1f, 1});
+        fpHooked = true;
+        fpHookTo = ropeEnd((int)net_.predicted().hookTarget - 1, net_.predicted().hookPoint);
+    } else if (specGun && players[viewing].snap.hooked) {
+        fpHooked = true;
+        fpHookTo = ropeEnd((int)players[viewing].snap.hooked - 2, players[viewing].snap.hookPoint);
+    }
+    const float hk = vm.scale * 0.7f;                 // (the launcher at 70% of the weapon's size: it's the off hand)
+    const Vec3 hookHousing = {0, 0.015f, -0.42f};      // (PROP_HOOK_ARM's housing: the point the arm is placed and turned by)
+    Mat4 fpHookXf;                                    // PROP_HOOK_ARM space (x hk) -> camera space
+    Vec3 fpMuzzle;                                    // its muzzle in the world
+    if (fpHook) {
+        const Vec3 base = {-0.2f - vm.x * 0.0005f, -0.19f - vm.y * 0.0005f, -0.58f - vm.z * 0.001f};
+        float tYaw = -0.06f, tPitch = 0, tRaise = 0;  // (at rest: the barrel turned in a touch, toward the crosshair)
+        if (fpHooked) {   // toward the hook, from where the launcher is (camera space), at most ~30 degrees
+            const Vec3 f = angleForward(camYaw, camPitch), rt = normalize(cross(f, {0, 1, 0})), up = cross(rt, f);
+            const Vec3 d = fpHookTo - r_.viewPoint(base);
+            const Vec3 c = {dot(d, rt), dot(d, up), -dot(d, f)};
+            const float l = length(c);
+            if (l > 0.3f) {
+                tYaw = clampf(std::atan2(-c.x, -c.z), -0.5f, 0.5f);
+                tPitch = clampf(std::asin(clampf(c.y / l, -1, 1)), -0.5f, 0.5f);
+            }
+            tRaise = 1;
+        }
+        const float e = 1.0f - std::exp(-14.0f * (float)frameDt_);
+        hookAimYaw_ += (tYaw - hookAimYaw_) * e;
+        hookAimPitch_ += (tPitch - hookAimPitch_) * e;
+        hookRaise_ += (tRaise - hookRaise_) * e;
+        fpHookXf = Mat4::translate(base + Vec3(0.01f, 0.035f, -0.03f) * hookRaise_) * Mat4::rotY(hookAimYaw_) *
+                   Mat4::rotX(hookAimPitch_) * Mat4::translate(hookHousing * -hk);
+        fpMuzzle = r_.viewPoint(xfPoint(fpHookXf, kHookMuzzle * hk));
+    } else {
+        hookAimYaw_ = -0.06f; hookAimPitch_ = hookRaise_ = 0;   // (shown again: from rest, not from where it was)
+    }
+    // a rope, and the claw at its far end (sunk into what it caught, turned along the rope)
+    auto rope = [&](const Vec3& from, const Vec3& to, float width) {
+        r_.line(from, to, width, {0.1f, 0.1f, 0.1f, 1});
+        Vec3 d = to - from;
+        const float l = length(d);
+        if (l < 0.1f) return;
+        d = d / l;
+        drawHookClaw(to - d * (0.06f * bs), {0, 0, 0}, std::atan2(-d.x, -d.z), std::asin(clampf(d.y, -1, 1)), bs, 1.0f);
+    };
+    if (alive && fpHooked) {   // yours: from the first-person launcher (hidden viewmodel: low left of the eye)
+        Vec3 right = normalize(cross(angleForward(yaw_, pitch_), {0, 1, 0}));
+        rope(fpHook ? fpMuzzle : eye - Vec3(0, 0.25f, 0) - right * 0.15f, fpHookTo, 0.03f);
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == me || !players[i].valid || !players[i].snap.hooked) continue;
-        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint), 0.04f, {0.1f, 0.1f, 0.1f, 1});
+        const Vec3 from = i == viewing && fpHook ? fpMuzzle : hookMuzzleFrame_[i] == drawFrame_ ? hookMuzzle_[i] : players[i].snap.pos + Vec3(0, 1.2f, 0);
+        rope(from, ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint), 0.04f);
     }
 
     // other players' shots: laser beams while firing, a tracer when a sniper fires
@@ -2292,10 +2378,8 @@ void Game::drawWorld(float alpha) {
 
     // viewmodel (hide and seek / tag: only "it" holds anything)
     // (spectating: the gun of whoever we're watching)
-    const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
     const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
     bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB)) && !(opts_.debugWeapon > 0 && !specGun);   // (--weapon: shown anyway, for screenshots)
-    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps; outside the view model's test: scoped, hidden
     // or dead it never decayed, and unscoping replayed the whole kick, and the muzzle stayed pushed back)
     recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);
@@ -2322,6 +2406,34 @@ void Game::drawWorld(float alpha) {
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
             for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
+        }
+    }
+    if (fpHook) {   // the grapple launcher (placed above, with the ropes); the claw in its barrel unless it's out
+        ModelPalette hpal = referencePalette(MODEL_PROP, PROP_HOOK_ARM);
+        hpal.c[TINT_TEAM] = vm.custom ? vm.color : cfg_.colorFriendly;   // (the weapon's accent)
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = hk;
+        if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK_ARM)) {   // the owner's model (docs/ASSETS.md)
+            Vec3 tint[TINT_COUNT];
+            overrideTints(MODEL_PROP, PROP_HOOK_ARM, hpal, tint);
+            r_.viewMeshXf(*ov, fpHookXf * sc, tint);
+        } else {
+            if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK_ARM)) overrideBoxParts(MODEL_PROP, PROP_HOOK_ARM, *bx, hpal, 1.0f, parts_);
+            else propParts(PROP_HOOK_ARM, hpal, parts_);
+            for (const ModelPart& q : parts_) r_.viewBoxXf(fpHookXf * Mat4::translate(q.c * hk), q.h * hk, q.color);
+        }
+        if (!fpHooked) {
+            const Mat4 seat = fpHookXf * Mat4::translate((kHookMuzzle + kHookSeat) * hk);
+            const ModelPalette& cpal = referencePalette(MODEL_PROP, PROP_HOOK);
+            if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK)) {
+                Vec3 tint[TINT_COUNT];
+                overrideTints(MODEL_PROP, PROP_HOOK, cpal, tint);
+                r_.viewMeshXf(*ov, seat * sc, tint);
+            } else {
+                if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK)) overrideBoxParts(MODEL_PROP, PROP_HOOK, *bx, cpal, 1.0f, parts_);
+                else propParts(PROP_HOOK, cpal, parts_);
+                for (const ModelPart& q : parts_) r_.viewBoxXf(seat * Mat4::translate(q.c * hk), q.h * hk, q.color);
+            }
         }
     }
     sceneSettings();
@@ -6829,25 +6941,40 @@ void Game::drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float
         r_.box(origin + Vec3(right.x * q.c.x + back.x * q.c.z, q.c.y, right.z * q.c.x + back.z * q.c.z), q.h, boxYaw, q.color, sv, q.shadow);
 }
 
-void Game::drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv) {
+void Game::drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv, const ModelPalette& pal) {
     if (const ModelMesh* ov = modelOverride(MODEL_PROP, prop)) {
         Vec3 tint[TINT_COUNT];
-        overrideTints(MODEL_PROP, prop, kNoSlots, tint);
+        overrideTints(MODEL_PROP, prop, pal, tint);
         Mat4 sc;
         sc.m[0] = sc.m[5] = sc.m[10] = bs;
         r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * sc, tint, sv, true);
         return;
     }
-    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, kNoSlots, 1.0f, parts_);
-    else propParts(prop, kNoSlots, parts_);
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, pal, 1.0f, parts_);
+    else propParts(prop, pal, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(shoulder, q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
+}
+
+void Game::drawHookClaw(const Vec3& pivot, const Vec3& offset, float yaw, float pitch, float bs, float sv) {
+    const ModelPalette& pal = referencePalette(MODEL_PROP, PROP_HOOK);   // (fixed steel: no slot follows anything)
+    if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK)) {
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_PROP, PROP_HOOK, pal, tint);
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = bs;
+        r_.mesh(*ov, Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset) * sc, tint, sv, false);
+        return;
+    }
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK)) overrideBoxParts(MODEL_PROP, PROP_HOOK, *bx, pal, 1.0f, parts_);
+    else propParts(PROP_HOOK, pal, parts_);
+    for (const ModelPart& q : parts_) r_.boxPitched(pivot, offset + q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
 }
 
 void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {
     if (w < 0 || w >= WPN_COUNT) w = WPN_KNIFE;
     float sw = (float)(time_ - knifeSlash_[i]) / 0.18f;   // a knife swing: the hand chops down and back up
     if (w == WPN_KNIFE && knifeSlash_[i] > 0 && sw < 1) pitch -= 0.7f * std::sin(sw * 3.14159f);
-    drawArm(PROP_ARM, shoulder, yaw, pitch, bs, sv);
+    drawArm(PROP_ARM, shoulder, yaw, pitch, bs, sv, kNoSlots);
     const Vec3 hand = Vec3(0, 0.02f, -0.5f) * bs;
     const float k = 2.0f * bs;   // the viewmodel's boxes at world size (a held weapon reads at a distance)
     ModelPalette pal;

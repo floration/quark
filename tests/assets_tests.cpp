@@ -110,6 +110,8 @@ const char* propDesc(int prop) {
         case PROP_BOMB: return "the bomb on the ground, dropped or planted: origin on the ground under it. Materials glow* blink red while a planted bomb ticks (drawn dark in the export)";
         case PROP_CART: return "the payload cart: origin on the track under its middle, front (-Z) the way it is pushed. Materials team* = the pushing team (white = that colour; grey when neutral), metal* / accent* / glow* = the map's colours";
         case PROP_GATE: return "a payload checkpoint: origin on the track, -Z the cart's way, posts either side (x +-1.8). Materials team* = grey, the attackers' colour once the cart has reached it";
+        case PROP_HOOK_ARM: return "every player's left arm with the grapple launcher (first and third person): origin at the left shoulder, reaching along -Z (turned with the aim, scaled with the body); the rope leaves the barrel's mouth at (0, 0.07, -0.66). Materials team* = the team colour (first person: your accent colour), metal* drawn as authored";
+        case PROP_HOOK: return "the grapple's claw: origin where the rope ties on, prongs toward -Z; sits in the launcher's barrel at (0, 0.07, -0.59) of HOOK_ARM, and flies out to the hook point, turned along the rope. Materials metal* drawn as authored";
     }
     return "";
 }
@@ -325,7 +327,7 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 5 + 11 + 7 + 1 + 6);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE)
+    ACHECK(models == 5 + 11 + 7 + 1 + 8);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE HOOK_ARM HOOK)
     ACHECK(modelPath(MODEL_PROP, PROP_CART) == "models/prop/CART" && modelPath(MODEL_PROP, PROP_BOMB_PACK) == "models/prop/BOMB_PACK");
     // a prop's slot colours come from the palette (the cart: 11 boxes, its band the team colour, its rim the accent)
     {
@@ -802,7 +804,7 @@ static void testExport() {
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices - quips == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
     ACHECK(quips >= (size_t)kAnnouncerVoices);   // (every voice has its quips: the default set, or the shipped quips/ files)
-    ACHECK(models == 30 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 6 props)
+    ACHECK(models == 32 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 8 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);

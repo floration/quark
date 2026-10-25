@@ -21,6 +21,8 @@
   "models/prop/CART.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/prop/GATE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/prop/GUN_ARM.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/prop/HOOK.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/prop/HOOK_ARM.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/weapon/BUBBLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/weapon/CROSSBOW.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/weapon/KNIFE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},

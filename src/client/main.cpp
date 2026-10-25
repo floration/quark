@@ -61,6 +61,7 @@ int main(int argc, char** argv) {
         else if (a == "--weapon") opts.debugWeapon = atoi(next().c_str());
         else if (a == "--scope") opts.debugScope = true;
         else if (a == "--fire") opts.debugFire = true;
+        else if (a == "--hook") opts.debugHook = true;   // the grapple held (screenshots)
         else if (a == "--pulse") opts.debugPulse = true;   // (with --fire: stuck bolt / knife screenshots)
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;

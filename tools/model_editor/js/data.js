@@ -76,6 +76,7 @@
     if (kind === 'prop' && name === 'CART') p[3] = Q.cartMetal([0.30, 0.33, 0.37]);
     if (kind === 'prop' && name === 'BOMB') p[2] = Q.BOMB_DARK;
     if (kind === 'prop' && name === 'GATE') p[1] = Q.GATE_GREY;
+    if (kind === 'prop' && (name === 'HOOK_ARM' || name === 'HOOK')) p[3] = [0.5, 0.53, 0.58];   // (a fixed steel: not the map's)
     return (refCache[id] = p.map(c => c.map(f32)));   // (the game's are floats)
   };
   Q.refOf = key => { const m = Q.models[key]; return Q.referencePalette(m ? m.kind : '', m ? m.name : ''); };
@@ -86,7 +87,7 @@
       case 'player': case 'crown': return [1];
       case 'projectile': return [1, 2];
       case 'weapon': return [1, 2, 3, 4];
-      case 'prop': return name === 'BOMB' ? [2] : name === 'CART' ? [1, 2, 3, 5] : name === 'GATE' ? [1] : [];
+      case 'prop': return name === 'BOMB' ? [2] : name === 'CART' ? [1, 2, 3, 5] : name === 'GATE' || name === 'HOOK_ARM' ? [1] : [];
     }
     return [1];
   };
@@ -104,6 +105,7 @@
         if (ctx.name === 'BOMB') p[2] = ctx.bombBlink ? Q.BOMB_BLINK : Q.BOMB_DARK;
         else if (ctx.name === 'CART') { p[1] = ctx.cartTeam === null ? Q.NEUTRAL_CART : (ctx.cartTeam || team); p[2] = m.glow; p[3] = Q.cartMetal(m.metal); p[5] = Q.cartAccent(m.accent || Q.DEFAULT_PALETTE.accent); }
         else if (ctx.name === 'GATE') p[1] = ctx.gateReached ? team : Q.GATE_GREY;
+        else if (ctx.name === 'HOOK_ARM') p[1] = team;
         break;
       default: p[1] = team;
     }
@@ -190,6 +192,8 @@
     'prop/BOMB': 'bomb',
     'prop/CART': 'wheel (left, -z)|wheel (right, -z)|wheel (left, +z)|wheel (right, +z)|chassis|team band|rim|cradle|core|lamp (+z)|lamp (-z)',
     'prop/GATE': 'right post|left post',
+    'prop/HOOK_ARM': 'forearm|housing|team stripe|cable drum|barrel',
+    'prop/HOOK': 'shank|head|prong (top)|prong (lower left)|prong (lower right)',
   };
   Q.nameDefaultParts = function (kind, name, parts) {
     const list = (Q.DEFAULT_BOX_NAMES[kind + '/' + name] || '').split('|');
