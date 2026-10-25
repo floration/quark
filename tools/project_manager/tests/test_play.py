@@ -845,6 +845,46 @@ class TestPlay(unittest.TestCase):
         finally:
             fake.close()
 
+    def test_release_list_survives_a_restart(self):
+        etags = []
+        data = releases_fixture("https://example.invalid")
+
+        def page(self_, n, etag=None):
+            etags.append(etag)
+            if etag == '"e1"':
+                return None, None  # (304)
+            return (data if n == 1 else []), '"e1"'
+        now = [1000000.0]
+        orig = play.Play._get_page
+        play.Play._get_page = page
+        try:
+            p = self.new(clock=lambda: now[0])
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] and not p.releases()["busy"]))
+            n = len(p.releases()["list"])
+            saved = util.read_json_file(self.paths.pm(play.RELEASES_FILE))
+            self.assertEqual((len(saved["list"]), saved["etag"], saved["complete"]), (n, '"e1"', True))
+            # a restart within 10 min: the list is there at once and GitHub isn't asked
+            p = self.new(clock=lambda: now[0] + 60)
+            r = p.releases()
+            self.assertEqual((len(r["list"]), r["ok"], r["busy"]), (n, True, False))
+            self.assertEqual(etags, [None])
+            # later: asked with the ETag (304: the same list, a new time saved)
+            now[0] += 3600
+            p = self.new(clock=lambda: now[0])
+            self.assertEqual(len(p.releases()["list"]), n)
+            self.assertTrue(wait_for(lambda: not p.releases()["busy"]))
+            self.assertEqual(etags, [None, '"e1"'])
+            self.assertEqual(util.read_json_file(self.paths.pm(play.RELEASES_FILE))["fetchedTs"], now[0])
+            # a tampered file: bad rows are dropped
+            saved = util.read_json_file(self.paths.pm(play.RELEASES_FILE))
+            saved["list"][0]["zip"]["url"] = "ftp://evil.example/x.zip"
+            saved["list"][1]["tag"] = "../x"
+            util.write_json_atomic(self.paths.pm(play.RELEASES_FILE), saved)
+            self.assertEqual(len(self.new(clock=lambda: now[0]).releases()["list"]), n - 2)
+        finally:
+            play.Play._get_page = orig
+
     def test_releases_offline_and_rate_limit(self):
         p = self.new(releases_url="http://127.0.0.1:9/releases")
         p.releases()

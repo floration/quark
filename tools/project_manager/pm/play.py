@@ -83,6 +83,7 @@ VERSIONS = "versions"
 SESSIONS_FILE = "play-sessions.json"
 NOTES_FILE = "play-notes.jsonl"
 SYNC_FILE = "play-notes-sync.json"
+RELEASES_FILE = "play-releases.json"   # (the release list, page 1's ETag and when it was read: shown at once after a restart)
 DOCS_FOLDER = "Claude Documents"
 DOCS_FILE = "12-play-notes.md"
 DOCS_SECTION = "Notes"
@@ -527,6 +528,22 @@ def parse_releases(data):
     return out
 
 
+def valid_release(x):
+    """A release row read back from play-releases.json is one parse_releases could have made (only https / local
+    links, a tag that is a plain name): anything else is dropped, never shown or installed."""
+    if not isinstance(x, dict) or not isinstance(x.get("tag"), str) or not TAG_RE.match(x["tag"]):
+        return False
+    if x.get("channel") not in ("production", "testing", "other") or not isinstance(x.get("name"), str):
+        return False
+    for k in ("url", "sums", "sig", "manifest", "manifestSig"):
+        if x.get(k) is not None and not _url_ok(x[k]):
+            return False
+    z = x.get("zip")
+    if z is not None and not (isinstance(z, dict) and _url_ok(z.get("url")) and isinstance(z.get("size"), int)):
+        return False
+    return all(x.get(k) is None or isinstance(x[k], str) for k in ("publishedAt", "version"))
+
+
 def page_url(base, n):
     return "%s%sper_page=%d&page=%d" % (base, "&" if "?" in base else "?", RELEASES_PER_PAGE, n)
 
@@ -942,6 +959,7 @@ class Play:
         self.sessions = self._load_sessions()
         self.rel = {"ok": None, "fetchedAt": None, "error": None, "list": [], "etag": None, "busy": False,
                     "forcedAt": -1e9, "fetchedTs": 0.0, "complete": None}
+        self._load_releases()
         self.installs = {}
         self.sync = self._load_json(SYNC_FILE, {})
         if not isinstance(self.sync, dict):
@@ -972,6 +990,30 @@ class Play:
             util.write_json_atomic(self.paths.pm(SESSIONS_FILE), data)
         except OSError as e:
             util.log("play: sessions not saved (%s)" % type(e).__name__)
+
+    def _load_releases(self):
+        """The last release list (play-releases.json): the page has it at once after a restart (offline too), and the
+        next fetch asks GitHub with its ETag (a 304 costs nothing against the 60 an hour)."""
+        d = self._load_json(RELEASES_FILE, None)
+        if not isinstance(d, dict) or not isinstance(d.get("list"), list):
+            return
+        lst = [dict(x, needsSig=needs_signature(x)) for x in d["list"] if valid_release(x)]
+        ts = util.to_float(d.get("fetchedTs")) or 0.0
+        if not lst or ts > self.clock() + 60:
+            return  # (nothing usable, or a time from the future: fetched again)
+        etag = d.get("etag") if isinstance(d.get("etag"), str) and len(d["etag"]) < 200 else None
+        self.rel.update(list=lst, ok=True, fetchedTs=ts, fetchedAt=util.iso(ts), complete=d.get("complete") is True,
+                        etag=etag)
+
+    def _save_releases(self):
+        with self.lock:
+            r = self.rel
+            data = {"list": r["list"], "etag": r["etag"], "fetchedTs": r["fetchedTs"], "complete": r["complete"]}
+        try:
+            self.paths.ensure_pm_dir()
+            util.write_json_atomic(self.paths.pm(RELEASES_FILE), data)
+        except OSError as e:
+            util.log("play: release list not saved (%s)" % type(e).__name__)
 
     def _save_sync(self):
         try:
@@ -1792,6 +1834,9 @@ class Play:
                 r["busy"] = False
                 r["fetchedTs"] = self.clock()
                 r["fetchedAt"] = util.iso(r["fetchedTs"])
+                keep = bool(r["ok"] and r["list"])
+            if keep:
+                self._save_releases()  # (a 304 too: its new time keeps a restart within 10 min from asking again)
 
     # -- installing older versions
     def install(self, tag):
