@@ -18,7 +18,7 @@ import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel, batchModel, sharedAxes, endCardFields } from "../js/sim.js";
+import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, batchModel, sharedAxes, endCardFields } from "../js/sim.js";
 import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -287,6 +287,20 @@ await t("sim timeline model reads the real modesim shapes (MODESIM.md): names, r
     const b = batchModel([{ type: "start", matches: 2 }, { type: "match", done: 1, total: 2, seed: 1 }, { type: "progress", done: 1, total: 2 },
         { type: "end", matchesPlayed: 2, teams: { a: { wins: 0, winRate: 0 }, b: { wins: 2, winRate: 1 }, draws: 0 }, csv: "index\n" }]);
     same(b.matches.length, 1); same(b.progress.done, 1); same(b.end.teams.b.wins, 2);
+});
+await t("sim timeline grows line by line: fed in chunks equals read at once; scores kept as their changes", () => {
+    const lines = [{ type: "start", teams: false, bots: [{ id: 0, name: "A" }, { id: 1, name: "B" }] }];
+    for (let i = 0; i <= 400; i++) lines.push({ type: "frame", t: i / 4, phase: i < 40 ? "warmup" : "live", players: [{ id: 0, pos: [i, 0, -i], score: Math.floor(i / 100) }, { id: 1, pos: [0, 0, i % 7], score: 0 }],
+        events: i % 50 === 0 ? [{ type: "kill", killer: 0, victim: 1, t: i / 4 }] : [] });
+    const whole = timelineModel(lines), m = newTimeline();
+    for (let i = 0; i < lines.length; i += 37) feedTimeline(m, lines.slice(0, i));
+    feedTimeline(m, lines);
+    for (const k of ["frames", "bands", "markers", "trail", "bounds", "t0", "t1", "maxScore"]) eq(plain(m[k]), plain(whole[k]), k);
+    same(m.fed, lines.length);
+    eq(seriesPoints(m.players.get(0).score), [[0, 0], [24.75, 0], [25, 1], [49.75, 1], [50, 2], [74.75, 2], [75, 3], [99.75, 3], [100, 4]]);
+    eq(seriesPoints(m.players.get(1).score), [[0, 0], [100, 0]]);
+    same(m.trail.length, 401 * 2 * 2); eq(m.bounds, [0, -400, 400, 6]);
+    same(frameAt(m, 10.1).t, 10); same(frameAt(m, -1).t, 0); same(frameAt(m, 1e9).t, 100);
 });
 await t("sim: trace frames, a shared time axis for compared runs, the end card's fields per mode", () => {
     const m = timelineModel([{ type: "start", teams: false }, { type: "frame", t: 0, phase: "live", players: [] },
