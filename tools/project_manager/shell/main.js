@@ -1675,6 +1675,13 @@ async function reloadTabList() {
   } finally { reloadingTabs = false; }
 }
 
+// the tabs the bar shows (tabbar.js render): the top level and its children always, deeper tabs while their parent
+// or a sibling is active (the Ctrl+N numbers count only these, so each hint matches its key)
+function shownTabs() {
+  const chain = new Set();
+  for (let t = tabById(activeId), n = 0; t && n < 50; t = tabById(t.parent), n++) chain.add(t.id);
+  return tabs.filter((t) => t.depth <= 1 || chain.has(t.parent));
+}
 function cycle(dir) {
   if (!tabs.length) return;
   const i = Math.max(0, tabs.findIndex((t) => t.id === activeId));
@@ -1697,8 +1704,9 @@ function onKey(event, input) {
   const fromBar = !!tabbar && event.sender === tabbar.webContents;
   let handled = true;
   if (ctrl && !input.alt && !input.shift && /^[1-9]$/.test(key)) {
-    // Ctrl+1..8 = that tab in tree order, Ctrl+9 = the last tab (browser convention)
-    const t = key === '9' ? tabs[tabs.length - 1] : tabs[Number(key) - 1];
+    // Ctrl+1..8 = that tab among the ones the bar shows (tree order), Ctrl+9 = the last one (browser convention)
+    const shown = shownTabs();
+    const t = key === '9' ? shown[shown.length - 1] : shown[Number(key) - 1];
     if (t) openTab(t.id);
   }
   else if (ctrl && key === 'Tab') cycle(input.shift ? -1 : 1);

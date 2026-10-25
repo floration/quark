@@ -18,7 +18,7 @@
   let last = '';
   let lastStats = '';
 
-  // Ctrl+1..8 = tabs 1..8, Ctrl+9 = the last tab (as in main.js)
+  // Ctrl+1..8 = the shown tabs 1..8, Ctrl+9 = the last shown tab (as in main.js: tabs inside a closed group don't count)
   const shortcut = (i, count) => (i < 8 ? i + 1 : i === count - 1 ? 9 : 0);
 
   function tabButton(t, i, count, active, kids, open) {
@@ -92,8 +92,8 @@
     const visible = (t) => t.depth <= 1 || chain.has(t.parent);
     tabsEl.textContent = '';
     let group = null;
-    data.tabs.forEach((t, i) => {
-      if (!visible(t)) return;
+    const shown = data.tabs.filter(visible);
+    shown.forEach((t, i) => {
       if (t.depth >= 2) {
         if (!group) {
           const p = byId.get(t.parent);
@@ -107,7 +107,7 @@
         group = null;
         const g = document.createElement('span'); g.className = 'gend'; tabsEl.append(g);
       }
-      const b = tabButton(t, i, data.tabs.length, data.active, kids.get(t.id) || 0, chain.has(t.id));
+      const b = tabButton(t, i, shown.length, data.active, kids.get(t.id) || 0, chain.has(t.id));
       (group || tabsEl).append(b);
       if (t.depth === 0 && kids.get(t.id)) { const s = document.createElement('span'); s.className = 'sep'; tabsEl.append(s); }
     });

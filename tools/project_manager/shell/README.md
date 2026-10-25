@@ -44,7 +44,8 @@ Same rules as SPEC.md, plus two optional fields:
 
 - `parent`: the id of the tab this one sits under. The default tree is Supervisor Board → Play, Claude Manager,
   GitHub Manager (→ Tests), Editor Manager → the editors. Tabs are ordered depth first (siblings keep their file order); Ctrl+1..8 and
-  Ctrl+Tab follow that order, Ctrl+9 is the last tab. The top level and its children are always shown; deeper tabs (the editors) are shown as
+  Ctrl+Tab follow that order (Ctrl+1..8 counting only the tabs the bar shows, so each hint held under Ctrl matches its
+  key), Ctrl+9 is the last shown tab. The top level and its children are always shown; deeper tabs (the editors) are shown as
   a labelled group after their parent while the parent or one of them is active, otherwise the parent shows a caret
   with the number of hidden tabs. An unknown parent or a cycle makes the tab top level.
 - `childLabel`: the small label in front of a parent's group of child tabs (default: the parent's name).
@@ -264,7 +265,7 @@ in `electron.rejected` again (the row says so); a newer release is tried. A nati
   keeps it: preload.js asks the shell only when the page did not call `preventDefault()`.
 - Hold Ctrl in any tab to see the Ctrl+N numbers on the tabs.
 - The taskbar button flashes when the Supervisor Board's halting count rises while the window is not focused.
-- Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+Shift+PageUp /
+- Keys: Ctrl+1..8 tab (of the ones shown), Ctrl+9 last shown tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+Shift+PageUp /
   PageDown move the active tab, Ctrl+R / F5 reload (Ctrl+F5 without cache), Ctrl+Shift+R re-read tabs.json, Ctrl+F find,
   F11 full screen, Ctrl+= / Ctrl+- / Ctrl+wheel zoom every tab (Ctrl+0: back to 100%), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).
