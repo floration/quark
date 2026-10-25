@@ -1,8 +1,10 @@
 # Quark project manager: spec (director's contract for the workers)
 
-Names (q, 2026-10-24): the PM page is the **Supervisor Board** (top level). Under it (in this order since 2026-10-24): **Claude
-Manager** (8766, the Claude Documents manager), **GitHub Manager** (8767), **Editor Manager** (8765, the editor dashboard, editors only),
-and under that the Sound, UI, Map, Bot and Model editors. Map editor = server on 8770, bot editor = server on 8769.
+Names (q, 2026-10-24): the PM page is the **Supervisor Board** (top level). Under it (in this order since 2026-10-24): **Play**
+(a page of the Supervisor Board server, 8768), **Claude Manager** (8766, the Claude Documents manager), **GitHub Manager** (8767;
+under it **Tests**, 8775), **Editor Manager** (8765, the editor dashboard, editors only), and under that the Sound, UI, Map,
+Bot, Model, Gamemode, Physics and Weapons editors. Map editor = server on 8770, bot editor = 8769, gamemode = 8771,
+physics = 8772, weapons = 8773; Sound, UI and Model are pages (no server).
 The tab tree uses a `parent` field in tabs.json (see `shell/tabs.default.json`, the source of truth for defaults).
 Where this file and the code differ, the code and `shell/README.md` win; this was the starting contract.
 
@@ -52,7 +54,10 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
 
 ### tabs.json (`Quark\project-manager\tabs.json`; the default is written by setup, q may edit)
 
-The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). An excerpt:
+The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). It also carries the
+bookkeeping keys a fresh tabs.json starts with (`defaultsSeen`, `defaultsPlaced`, `defaultsMoved`, `defaultsUpgraded`:
+every current default and one-time fix counts as done), because setup.ps1 and the shell's tab drag copy it as it is.
+An excerpt:
 
 ```json
 {"tabs": [

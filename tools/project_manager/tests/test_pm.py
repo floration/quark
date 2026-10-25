@@ -570,6 +570,22 @@ class TestTabs(unittest.TestCase):
             self.skipTest("shell/tabs.default.json missing")
         self.assertEqual(util.read_json_file(path), tabs.DEFAULT_TABS)
 
+    def test_copied_default_keeps_dragged_order(self):
+        # the shell's tab drag (and setup.ps1) copy shell\tabs.default.json as it is: its bookkeeping keys must stop
+        # MOVE_ONCE from undoing an order q dragged (GitHub Manager before Claude Manager is the older default order)
+        with tempfile.TemporaryDirectory() as tmp:
+            q = make_tree(tmp, with_git=False)
+            paths = config.Paths(PM_ROOT, q)
+            data = util.read_json_file(os.path.join(PM_ROOT, "shell", "tabs.default.json"))
+            self.assertEqual({k: v for k, v in data.items() if k != "tabs"}, tabs.DEFAULT_MARKS)
+            ids = [t["id"] for t in data["tabs"]]
+            gh = data["tabs"].pop(ids.index("github"))
+            data["tabs"].insert(ids.index("docs"), gh)
+            write(paths.pm("tabs.json"), json.dumps(data))
+            self.assertEqual(tabs.upgrade(paths), [])
+            got = [t["id"] for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]]
+            self.assertLess(got.index("github"), got.index("docs"))
+
     def test_upgrade(self):
         # q's tabs.json from an older setup: default tabs get the new start commands / keepAlive; q's own edits stay
         with tempfile.TemporaryDirectory() as tmp:

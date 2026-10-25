@@ -923,7 +923,7 @@
   function updatesInfo() { return obj(state.pm && state.pm.updates); }
   const TOOL_STATES = {
     ok: ['good', 'up to date'], updating: ['run', 'updating'], failed: ['crit', 'failed'], pending: ['idle', 'pending'],
-    disabled: ['idle', 'disabled'], waiting: ['warn', 'waiting (not merged yet)'],
+    disabled: ['idle', 'disabled'], waiting: ['warn', 'waiting (not merged yet)'], staged: ['ahead', 'downloaded: restart to finish'],
   };
   function updateWaitMs() {
     // what the server said (nextAllowedIn when it answered), or the last click here
@@ -937,6 +937,9 @@
     const inst = has(e.installedStamp) ? '<span class="mono" title="installed from these sources">' + esc(short(e.installedStamp)) + '</span>' : '';
     const cur = has(e.currentStamp) && e.currentStamp !== e.installedStamp ? '<span class="mono" title="repository\\ now">' + esc(short(e.currentStamp)) + '</span>' : '';
     if (inst || cur) parts.push(inst && cur ? inst + ' &rarr; ' + cur : inst || 'new: ' + cur);
+    // (Electron: the installed version, and the latest stable one when it is newer)
+    if (has(e.installedVersion)) parts.push('<span class="mono" title="installed">' + esc(e.installedVersion) + '</span>' +
+      (has(e.latestVersion) && e.latestVersion !== e.installedVersion ? ' &rarr; <span class="mono" title="latest stable">' + esc(e.latestVersion) + '</span>' : ''));
     if (ports.length) parts.push('restarts ' + ports.map(p => esc(p)).join(', '));
     return parts.length ? '<div class="t-meta small muted">' + parts.join(' &middot; ') + '</div>' : '';
   }

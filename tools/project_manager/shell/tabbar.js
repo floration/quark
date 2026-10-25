@@ -18,7 +18,7 @@
   let last = '';
   let lastStats = '';
 
-  // Ctrl+1..8 = tabs 1..8, Ctrl+9 = the last tab (as in main.js)
+  // Ctrl+1..8 = the shown tabs 1..8, Ctrl+9 = the last shown tab (as in main.js: tabs inside a closed group don't count)
   const shortcut = (i, count) => (i < 8 ? i + 1 : i === count - 1 ? 9 : 0);
 
   function tabButton(t, i, count, active, kids, open) {
@@ -34,8 +34,10 @@
     b.title = t.name + ': ' + what + (t.missing ? ' (' + t.missing + ')' : '') + (n ? '  [Ctrl+' + n + ']' : '');
     const dot = document.createElement('span'); dot.className = 'dot';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = t.name;
-    // (the short name fit() switches to when the bar is too narrow: "Map Editor" -> "Map", the group label says Editors)
-    const short = t.id === active ? '' : t.name.replace(/\s+(Editor|Manager)$/, '');
+    // (the short name fit() switches to when the bar is too narrow: "Map Editor" -> "Map", the group label says Editors;
+    //  "Editor Manager" -> "Editor Mgr", since a bare "Editor" next to the EDITORS label reads as one of them)
+    let short = t.id === active ? '' : t.name.replace(/\s+(Editor|Manager)$/, '');
+    if (/^(Editor|Manager)$/i.test(short)) short = t.name.replace(/\s+Manager$/, ' Mgr');
     if (short && short !== t.name) { name.dataset.long = t.name; name.dataset.short = short; }
     b.append(dot, name);
     const halt = Number(t.badge) || 0;
@@ -51,12 +53,20 @@
       b.title += '\n' + halt + ' halting: Claude is blocked on you';
       b.classList.add('halting');
     }
+    if (t.updated) {
+      // reinstalled while its page had unsaved changes: the old page stays until q reloads it
+      const u = document.createElement('span'); u.className = 'upd'; u.textContent = '\u21bb';
+      b.append(u);
+      b.title += '\nUpdated: save, then reload (Ctrl+R) to get the new version';
+    }
     if (kids && t.depth >= 1) {
       // a parent below the top level (Editor Manager): a caret that shows whether its child tabs are open
       const c = document.createElement('span'); c.className = 'caret' + (open ? ' open' : ''); c.textContent = open ? '' : String(kids);
       b.append(c);
     }
     if (n) { const k = document.createElement('span'); k.className = 'key'; k.textContent = String(n); b.append(k); }
+    // (opens on the press, like a browser's tabs: no click delay; a drag then moves the tab it opened, and Esc gives
+    //  the previous tab back)
     b.addEventListener('mousedown', (e) => { if (e.button === 0) api.open(t.id); });
     b.addEventListener('pointerdown', (e) => { if (e.button === 0) dragStart(e, b); });
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); api.command('tab-menu', t.id); });
@@ -72,6 +82,7 @@
     if (key === last || (drag && drag.active)) { if (key !== last) pending = data; return; } // nothing changed (or a drag runs): no DOM work
     last = key;
     pending = null;
+    shownActive = data.active;
     const byId = new Map(data.tabs.map((t) => [t.id, t]));
     const chain = new Set(); // the active tab and its ancestors
     for (let t = byId.get(data.active), n = 0; t && n < 50; t = byId.get(t.parent), n++) chain.add(t.id);
@@ -81,8 +92,8 @@
     const visible = (t) => t.depth <= 1 || chain.has(t.parent);
     tabsEl.textContent = '';
     let group = null;
-    data.tabs.forEach((t, i) => {
-      if (!visible(t)) return;
+    const shown = data.tabs.filter(visible);
+    shown.forEach((t, i) => {
       if (t.depth >= 2) {
         if (!group) {
           const p = byId.get(t.parent);
@@ -96,7 +107,7 @@
         group = null;
         const g = document.createElement('span'); g.className = 'gend'; tabsEl.append(g);
       }
-      const b = tabButton(t, i, data.tabs.length, data.active, kids.get(t.id) || 0, chain.has(t.id));
+      const b = tabButton(t, i, shown.length, data.active, kids.get(t.id) || 0, chain.has(t.id));
       (group || tabsEl).append(b);
       if (t.depth === 0 && kids.get(t.id)) { const s = document.createElement('span'); s.className = 'sep'; tabsEl.append(s); }
     });
@@ -111,6 +122,7 @@
     fit();
   }
   let pending = null; // (a tab list that came during a drag: drawn when it ends)
+  let shownActive = null; // (the active tab as last drawn: a cancelled drag goes back to it)
 
   function renderZoom(z) {
     const pct = Math.round((Number(z) || 1) * 100);
@@ -165,22 +177,29 @@
     fit();
   }
   // Narrowing: the facts shrink first (the first level at which every tab shows its whole name: 1 short labels,
-  // 2 no Refreshed, 3 no Production / bar, 4 hidden), then the tabs shorten, then the ones that still do not fit go
-  // behind "+N". Runs only on a render, a resize or a scroll of the strip (a few layouts, no timers).
+  // 2 no Refreshed, 3 no Production / bar, 4 hidden), then the tabs shorten, and with the room that frees the facts
+  // come back at the fullest level that still fits; then the tabs that still do not fit go behind "+N". Runs only on a
+  // render, a resize or a scroll of the strip (a few layouts, no timers).
   const squeezed = () => tabsEl.scrollWidth > tabsEl.clientWidth + 1
     || [...tabsEl.querySelectorAll('.tab .name')].some((n) => n.scrollWidth > n.clientWidth + 1);
   function shortNames(on) {
     for (const n of tabsEl.querySelectorAll('.tab .name[data-short]')) n.textContent = on ? n.dataset.short : n.dataset.long;
   }
+  function fitStats() {
+    // the fullest facts level (0..3) at which the tabs fit as they are now, else 4 (hidden) -> true when they fit
+    if (statsEl.hidden) return !squeezed();
+    for (let lv = 0; lv <= 4; lv++) {
+      statsEl.dataset.lv = String(lv);
+      if (lv === 4 || !squeezed()) break;
+    }
+    return statsEl.dataset.lv !== '4';
+  }
   function fit() {
     shortNames(false);
-    if (!statsEl.hidden) {
-      for (let lv = 0; lv <= 4; lv++) {
-        statsEl.dataset.lv = String(lv);
-        if (lv === 4 || !squeezed()) break;
-      }
+    if (!fitStats() && squeezed()) {
+      shortNames(true); // (then the names drop "Editor" / "Manager" before they are cut,
+      fitStats();       //  and the facts take what that frees)
     }
-    if (squeezed()) shortNames(true); // (then the names drop "Editor" / "Manager" before they are cut)
     updateMore();
   }
   let hiddenIds = [];
@@ -208,6 +227,9 @@
     requestAnimationFrame(() => { fitQueued = false; fit(); });
   });
   statsEl.addEventListener('click', () => api.open('dashboard'));
+  const logoEl = document.getElementById('logo');
+  logoEl.addEventListener('click', () => api.command('logo-menu'));
+  logoEl.addEventListener('contextmenu', (e) => { e.preventDefault(); api.command('logo-menu'); });
   moreEl.addEventListener('click', () => api.command('more-menu', hiddenIds));
   zoomEl.addEventListener('click', () => api.command('zoom-reset'));
   let scrollQueued = false;
@@ -220,13 +242,15 @@
   // ---- drag a tab among its siblings: the new order goes to main.js, which writes tabs.json ----
   let drag = null;
   function dragStart(e, b) {
-    drag = { b, id: b.dataset.id, parent: b.dataset.parent, x0: e.clientX, pointer: e.pointerId, active: false, sibs: [], to: -1 };
+    // (pointerdown comes before the mousedown that opens the tab: prev is the tab that was active before the press)
+    drag = { b, id: b.dataset.id, parent: b.dataset.parent, x0: e.clientX, pointer: e.pointerId, active: false, sibs: [], to: -1, prev: shownActive };
   }
   function dragEnd(commit) {
     const d = drag;
     drag = null;
     if (!d) return;
     if (d.active) {
+      api.command('dragging', false);
       d.b.classList.remove('dragging');
       d.b.style.transform = '';
       d.sibs.forEach((x) => x.el.classList.remove('drop-before', 'drop-after'));
@@ -252,6 +276,7 @@
         .map((el) => { const r = el.getBoundingClientRect(); return { el, mid: r.left + r.width / 2 }; });
       if (d.sibs.length < 2) { drag = null; return; }
       d.active = true;
+      api.command('dragging', true);
       d.b.classList.add('dragging');
       try { d.b.setPointerCapture(d.pointer); } catch { /* not down any more */ }
     }
@@ -265,7 +290,14 @@
   });
   addEventListener('pointerup', (e) => { if (drag && e.pointerId === drag.pointer) dragEnd(true); });
   addEventListener('pointercancel', () => dragEnd(false));
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && drag) { e.preventDefault(); dragEnd(false); } });
+  function cancelDrag() {
+    const d = drag;
+    dragEnd(false);
+    if (d && d.active && d.prev && d.prev !== d.id) api.open(d.prev); // (the whole gesture is undone: the old tab again)
+  }
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && drag) { e.preventDefault(); cancelDrag(); } });
+  // (the press opened the tab and gave its page the focus: main.js sends the page's Esc here while a drag runs)
+  api.onEscape(() => { if (drag) cancelDrag(); });
 
   // ---- find in page ----
   let findTimer = 0;

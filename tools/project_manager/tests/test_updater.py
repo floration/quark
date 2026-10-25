@@ -284,6 +284,39 @@ class TestUpdater(unittest.TestCase):
         self.assertGreater(wait, 50)
         self.assertEqual(updater.Updater(self.paths, enabled=False).request(), (False, None))
 
+    def test_request_only_one_tool(self):
+        # the Board's per-tool retry: request(only=id) installs just that entry, even when it is up to date
+        u, _, ents = self.run_pass(min_gap=0)
+        self.assertEqual((runs(self.q, "alpha"), runs(self.q, "beta")), (1, 1))
+        self.assertEqual(u.request(only="nope"), (False, 0))  # (unknown id)
+        self.assertEqual(u.request(only="alpha"), (True, 0.0))
+        self.assertEqual(u.request(only="beta")[0], False)  # (one pass at a time: pending)
+        u.run_once()
+        self.assertEqual((runs(self.q, "alpha"), runs(self.q, "beta")), (2, 1))
+        rows = {e["id"]: e for e in u.view()["entries"]}
+        self.assertEqual((rows["alpha"]["state"], rows["beta"]["state"]), ("ok", "ok"))
+        self.assertIsNone(u.only)
+        # the next plain pass is a normal one again (nothing changed: nothing runs)
+        self.assertEqual(u.request(), (True, 0.0))
+        u.run_once()
+        self.assertEqual((runs(self.q, "alpha"), runs(self.q, "beta")), (2, 1))
+        # the rate limit applies to it as to any request
+        slow = updater.Updater(self.paths, enabled=True)
+        self.assertEqual(slow.request(only="alpha"), (True, 0.0))
+        slow.pending = False
+        ok, wait = slow.request(only="alpha")
+        self.assertFalse(ok)
+        self.assertGreater(wait, 50)
+
+    def test_reload_requests_for_page_tools(self):
+        # a tool with no server (Sound, UI, Model): a reload request for its folder, so the shell reloads its open tab
+        self.set_registry([entry("alpha", restartsPort=8769), entry("beta")])
+        u, v, _ = self.run_pass()
+        by = {r["entry"]: r for r in v["restart"]}
+        self.assertEqual((by["alpha"]["port"], by["alpha"].get("reload")), (8769, None))
+        self.assertEqual((by["beta"]["port"], by["beta"]["reload"], by["beta"]["folder"]), (None, True, "beta"))
+        self.assertEqual(len(v["restart"]), 2)
+
     @unittest.skipUnless(hasattr(os, "nice"), "no os.nice")
     def test_low_priority(self):
         self.set_registry([entry("alpha", lowPriority=True), entry("beta")])
@@ -416,7 +449,7 @@ class TestElectronUpdate(unittest.TestCase):
     def test_stage_and_gap(self):
         nxt = os.path.join(self.paths.pm_dir, "electron.next")
         u, e = self.run_entry()
-        self.assertEqual(e["state"], "ok", e.get("logTail"))
+        self.assertEqual(e["state"], "staged", e.get("logTail"))
         self.assertIn("45.1.0 is downloaded", e["note"])
         self.assertEqual(read(os.path.join(nxt, "electron")), "new program 45.1.0")
         self.assertEqual(read(os.path.join(nxt, "VERSION")).strip(), "45.1.0")
@@ -427,17 +460,36 @@ class TestElectronUpdate(unittest.TestCase):
         # within 12 h: no request at all
         n = len(self.hits)
         _, e = self.run_entry()
-        self.assertEqual((len(self.hits), e["state"]), (n, "ok"))
+        self.assertEqual((len(self.hits), e["state"]), (n, "staged"))
         self.assertIn("45.1.0 is downloaded", e["note"])
         # after the gap, the same release already staged: only the API is asked
         _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 5)
         self.assertEqual(self.hits[n:], ["/latest"])
-        # the shell swapped it in (electron\ now 45.1.0): nothing newer, nothing staged
+        # the shell swapped it in (electron\ now 45.1.0): within the gap the row follows at once (local files only)
         shutil.rmtree(self.el)
         os.replace(nxt, self.el)
+        n = len(self.hits)
+        _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 60)
+        self.assertEqual((len(self.hits), e["state"], e["note"]), (n, "ok", "Electron 45.1.0 is the latest"))
+        self.assertEqual((e["installedVersion"], e["latestVersion"]), ("45.1.0", "45.1.0"))
+        # after the next gap: nothing newer, nothing staged
         _, e = self.run_entry(now=time.time() + 3 * updater.ELECTRON_CHECK_GAP)
         self.assertEqual(e["note"], "Electron 45.1.0 is the latest")
         self.assertFalse(os.path.exists(nxt))
+
+    def test_rolled_back_version_is_skipped(self):
+        # electron-swap.ps1 rolled 45.1.0 back (electron.rejected): it is never downloaded again; a newer one is
+        write(os.path.join(self.paths.pm_dir, "electron.rejected"), "45.1.0\n")
+        _, e = self.run_entry()
+        self.assertEqual((e["state"], self.hits), ("ok", ["/latest"]))
+        self.assertIn("45.1.0 did not run Quark Project", e["note"])
+        self.assertFalse(os.path.exists(os.path.join(self.paths.pm_dir, "electron.next")))
+        _, e = self.run_entry(now=time.time() + 60)  # (within the gap: the same note from the local files)
+        self.assertIn("rolled back", e["note"])
+        self.set_release("45.2.0")
+        _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 5)
+        self.assertEqual(e["state"], "staged")
+        self.assertIn("45.2.0 is downloaded", e["note"])
 
     def test_corrupt_prerelease_and_missing(self):
         self.set_release("45.1.0", corrupt=True)
@@ -524,8 +576,8 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(ids[0], "project-manager")
         self.assertEqual(entries[0]["run"], updater.SELF_UPDATE)
         self.assertIn("docs", ids)
-        for e in entries:
-            self.assertTrue(e["check"], e["id"])
+        for e in entries:  # (the Electron entry reads electron\VERSION itself: no check)
+            self.assertTrue(e["check"] or e["run"] == updater.ELECTRON_UPDATE, e["id"])
         self.assertEqual(entries[-1]["run"], updater.ELECTRON_UPDATE)  # (last: the big download never delays a tool)
         model = next(e for e in entries if e["id"] == "model")
         # install.cmd's default output is %USERPROFILE%\Desktop\Quark, which is not always the Quark folder

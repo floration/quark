@@ -10,14 +10,16 @@ in one background thread:
      the stamp is stored only when it exits with 0. An entry whose first source is not at HEAD yet (not merged) is
      "waiting" and skipped.
   3. A successful install of an entry with `restartsPort` queues a restart request (GET /api/updates); the shell
-     restarts that server and acknowledges it (POST /api/updates/ack?id=).
+     restarts that server and acknowledges it (POST /api/updates/ack?id=). One without (a page tool: Sound, UI, Model)
+     queues a reload request (port null, "reload": true, its folder): the shell reloads that open tab.
   4. `"run": "builtin:self-update"` copies this program from repository\\tools\\project_manager into
      Quark\\project-manager\\ (q's tabs.json / config.json / history / state are never touched), runs the new
      server.py --init (tabs.json upgrade), and sets `selfUpdated` when any file changed: the shell then offers a restart.
   5. `"run": "builtin:electron-update"` (no sources, no stamp; at most every ELECTRON_CHECK_GAP): when the latest
      stable Electron release is newer than Quark\\project-manager\\electron\\VERSION, downloads its zip, checks it
      against that release's SHASUMS256.txt and unpacks it into electron.next\\. The running electron.exe cannot be
-     replaced, so the shell swaps the folders after it exits (shell/electron-swap.ps1, on close or restart).
+     replaced, so the shell swaps the folders after it exits (shell/electron-swap.ps1, on close or restart). A version
+     that did not run the app was rolled back by that script and named in electron.rejected: never downloaded again.
 """
 import hashlib
 import json
@@ -53,6 +55,8 @@ ELECTRON_CHECK_GAP = 12 * 3600.0
 ELECTRON_MAX_ZIP = 400 * 1024 * 1024
 ELECTRON_TIMEOUT = 60
 ELECTRON_DIR, ELECTRON_NEXT = "electron", "electron.next"
+# a version that did not run the app and was rolled back (shell/electron-swap.ps1 writes it): never downloaded again
+ELECTRON_REJECTED = "electron.rejected"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # what setup.ps1 copies (quark.ico aside); q's files next to them (tabs.json, config.json, history.jsonl, state.json,
 # oracle-last.json, installs-state.json, logs\, electron\) are never written here
@@ -396,6 +400,39 @@ def installed_electron(folder, exe):
     return v if VERSION_RE.match(v) else None
 
 
+def rejected_electron(pm_dir):
+    """The version electron-swap.ps1 rolled back (electron.rejected), else None."""
+    try:
+        with open(os.path.join(pm_dir, ELECTRON_REJECTED), encoding="utf-8", errors="replace") as f:
+            v = f.readline().strip().lstrip("v")
+    except OSError:
+        return None
+    return v if VERSION_RE.match(v) else None
+
+
+def _rejected_note(ver, have):
+    return "Electron %s did not run Quark Project and was rolled back; staying on %s until a newer release" % (ver, have)
+
+
+def electron_view(paths, latest, plat=None):
+    """(state, note, installed) of the Electron row from the local folders only (cheap; the 12 h gap between checks
+    uses it, so the row follows a swap or a download at once): "staged" while electron.next\ holds a newer Electron
+    than electron\, else "ok". (None, None, None) when there is no Electron build for this system or no electron\."""
+    plat = plat or electron_platform()
+    have = installed_electron(os.path.join(paths.pm_dir, ELECTRON_DIR), plat[1]) if plat else None
+    if not have:
+        return None, None, None
+    staged = installed_electron(os.path.join(paths.pm_dir, ELECTRON_NEXT), plat[1])
+    if staged and version_tuple(staged) > version_tuple(have):
+        return ("staged", "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts"
+                % (staged, have), have)
+    if version_tuple(latest) and version_tuple(latest) > version_tuple(have):
+        if latest == rejected_electron(paths.pm_dir):
+            return "ok", _rejected_note(latest, have), have
+        return "ok", "Electron %s is out; the next check downloads it" % latest, have
+    return "ok", "Electron %s is the latest" % have, have
+
+
 def _open_url(url, accept=None, timeout=ELECTRON_TIMEOUT):
     h = {"User-Agent": util.USER_AGENT}
     if accept:
@@ -453,6 +490,11 @@ def electron_update(paths, log_path, releases_url=None, plat=None):
             note = "Electron %s is the latest" % have
             if staged:
                 shutil.rmtree(os.path.join(pm, ELECTRON_NEXT), ignore_errors=True)  # (an older download: not needed)
+            raise _Done
+        if ver == rejected_electron(pm):
+            note = _rejected_note(ver, have)
+            if staged:
+                shutil.rmtree(os.path.join(pm, ELECTRON_NEXT), ignore_errors=True)
             raise _Done
         if staged == ver:
             note = "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts" % (ver, have)
@@ -524,6 +566,7 @@ class Updater:
         self.stop = threading.Event()
         self.running = False
         self.pending = False
+        self.only = None      # the one entry id the requested pass installs (request(only=...)), else None
         self.last_request = -1e18
         self.last_run_at = None
         self.repo = {"head": None, "behind": None, "ffOk": None, "error": None}
@@ -557,9 +600,13 @@ class Updater:
             util.log("installs-state.json not saved (%s)" % type(e).__name__)
 
     # -- API -------------------------------------------------------------------------------------------------------
-    def request(self, now=None):
-        """Run soon (the page's "Update now", the shell at app open). -> (accepted, seconds until allowed)."""
+    def request(self, now=None, only=None):
+        """Run soon (the page's "Update now", the shell at app open). -> (accepted, seconds until allowed).
+        only = an installs.json entry id: that pass installs just that entry, even when it is up to date (the Board's
+        per-tool retry); the repository is still fast-forwarded first. Same rate limit; an unknown id -> (False, 0)."""
         now = now or time.time()
+        if only is not None and only not in {e["id"] for e in load_registry(self.paths)[0]}:
+            return False, 0
         with self.lock:
             if not self.enabled:
                 return False, None
@@ -570,6 +617,7 @@ class Updater:
                 return False, round(wait, 1)
             self.last_request = now
             self.pending = True
+            self.only = only
         self.wake.set()
         return True, 0.0
 
@@ -713,27 +761,37 @@ class Updater:
         if ok and entry["run"] == SELF_UPDATE and changed:
             with self.lock:
                 self.self_updated = True
-        if ok and entry.get("restartsPort"):
-            folder = None
-            if entry.get("check"):
-                folder = re.split(r"[\\/]+", entry["check"].strip("\\/"))[0] or None
+        folder = None
+        if entry.get("check"):
+            folder = re.split(r"[\\/]+", entry["check"].strip("\\/"))[0] or None
+        # a server tool: its server restarts (port); a page tool (no server: Sound, UI, Model): its open tab reloads
+        # (port None, reload true; the shell finds the tab by its folder and asks first when the page has unsaved work)
+        targets = entry["restartsPort"] or ([None] if folder and not entry["run"].startswith("builtin:") else [])
+        if ok and targets:
             with self.lock:
-                for port in entry["restartsPort"]:
+                for port in targets:
                     self._seq += 1
-                    self.restarts = [r for r in self.restarts if r["port"] != port]
-                    self.restarts.append({"id": "%s-%d-%d" % (eid, int(time.time()), self._seq), "entry": eid,
-                                          "name": entry["name"], "port": port, "folder": folder,
-                                          "at": now_iso, "atTs": time.time()})
+                    # (a newer request replaces one for the same server, or the same page tool)
+                    same = (lambda r: r["port"] == port) if port else (lambda r: not r["port"] and r["folder"] == folder)
+                    self.restarts = [r for r in self.restarts if not same(r)]
+                    req = {"id": "%s-%d-%d" % (eid, int(time.time()), self._seq), "entry": eid,
+                           "name": entry["name"], "port": port, "folder": folder, "at": now_iso, "atTs": time.time()}
+                    if port is None:
+                        req["reload"] = True
+                    self.restarts.append(req)
         return ok
 
-    def electron(self, entry, now=None):
+    def electron(self, entry, now=None, force=False):
         """builtin:electron-update: at most once per ELECTRON_CHECK_GAP (a failed check is tried again next pass).
-        The versions go in installedVersion / latestVersion (the page shortens stamps to 7 characters)."""
+        The versions go in installedVersion / latestVersion (the Tools & updates row shows them); state "staged" while
+        a downloaded Electron waits for the app to close. Between checks the row is rebuilt from the local folders
+        (electron_view), so it never keeps saying "is downloaded" after the swap."""
         eid = entry["id"]
         now = now or time.time()
         rec = self.saved["entries"].setdefault(eid, {})
-        if now - (rec.get("checkedTs") or 0) < ELECTRON_CHECK_GAP:
-            self._set(eid, state="ok", note=rec.get("note"), installedVersion=rec.get("installed"),
+        if not force and now - (rec.get("checkedTs") or 0) < ELECTRON_CHECK_GAP:
+            state, note, have = electron_view(self.paths, rec.get("latest"))
+            self._set(eid, state=state or "ok", note=note or rec.get("note"), installedVersion=have or rec.get("installed"),
                       latestVersion=rec.get("latest"))
             return True
         log_path = self.paths.pm("logs", "install-%s.log" % eid)
@@ -743,10 +801,12 @@ class Updater:
         now_iso = util.now_iso()
         rec.update(lastRunAt=now_iso, exitCode=code, durationSec=round(time.time() - started, 1), note=note,
                    installed=info["installed"], latest=info["latest"])
+        state = "failed"
         if code == 0:
             rec["checkedTs"] = now
+            state = electron_view(self.paths, info["latest"])[0] or "ok"
         self._save_state()
-        self._set(eid, state="ok" if code == 0 else "failed", lastRunAt=now_iso, exitCode=code, logTail=lines, note=note,
+        self._set(eid, state=state, lastRunAt=now_iso, exitCode=code, logTail=lines, note=note,
                   installedVersion=info["installed"], latestVersion=info["latest"], log=log_path)
         return code == 0
 
@@ -754,8 +814,9 @@ class Updater:
         with self.lock:
             self.running = True
             self.pending = False
+            only, self.only = self.only, None
         try:
-            self._run()
+            self._run(only)
         except Exception:  # (never let the thread die)
             util.log("updater: %s" % traceback.format_exc(limit=4))
             with self.lock:
@@ -765,7 +826,7 @@ class Updater:
                 self.running = False
                 self.last_run_at = util.now_iso()
 
-    def _run(self):
+    def _run(self, only=None):
         usable = self.update_repo()
         entries, where = load_registry(self.paths)
         saved = self.saved["entries"]
@@ -776,19 +837,21 @@ class Updater:
             self.entries = {e["id"]: {
                 "id": e["id"], "name": e["name"],
                 "state": "disabled" if not e["enabled"] else
-                         ((prev.get(e["id"]) or {}).get("state") if (prev.get(e["id"]) or {}).get("state") in ("ok", "failed", "waiting") else "pending"),
+                         ((prev.get(e["id"]) or {}).get("state") if (prev.get(e["id"]) or {}).get("state") in ("ok", "failed", "waiting", "staged") else "pending"),
                 "installedStamp": (saved.get(e["id"]) or {}).get("stamp"), "currentStamp": None,
                 "lastRunAt": (saved.get(e["id"]) or {}).get("lastRunAt"),
                 "exitCode": (saved.get(e["id"]) or {}).get("exitCode"),
                 "logTail": tail(self.paths.pm("logs", "install-%s.log" % e["id"])),
                 "restartsPort": e["restartsPort"], "check": e["check"], "note": None} for e in entries}
+            if only:  # (a one-tool pass: the other rows keep what they showed)
+                self.entries.update({k: v for k, v in prev.items() if k != only and k in self.entries})
         for e in entries:
             if self.stop.is_set():
                 return
-            if not e["enabled"]:
+            if not e["enabled"] or (only and e["id"] != only):
                 continue
             if e["run"] == ELECTRON_UPDATE:
-                self.electron(e)  # (needs no repository)
+                self.electron(e, force=bool(only))  # (needs no repository)
                 continue
             if not usable:
                 self._set(e["id"], state="pending", note=self.repo.get("error"))
@@ -801,7 +864,7 @@ class Updater:
             rec = saved.get(e["id"]) or {}
             check = self._check_path(e)
             missing = bool(check) and not os.path.exists(check)
-            if rec.get("stamp") == cur and not missing:
+            if rec.get("stamp") == cur and not missing and not only:
                 self._set(e["id"], state="ok")
                 continue
             # (a version that failed before is retried on each pass: app open or "Update now", never in a loop)
