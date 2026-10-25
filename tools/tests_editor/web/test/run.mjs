@@ -3,6 +3,7 @@
 //   node tools/tests_editor/web/test/run.mjs --url http://127.0.0.1:8775 --repo <the server's repo copy>
 //        against a running serve.py: --repo is where the 409 test edits the file "behind the page's back" (never the
 //        real working repo: saves write it). Screenshots: --shots DIR (default /mnt/project-files/tests-editor/shots).
+//        --port N: the fixture server's port (default: any free one)
 import { spawn, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, appendFileSync } from "node:fs";
@@ -21,7 +22,7 @@ const FIXTURE = !BASE;
 let fixture = null;
 if (FIXTURE) {
     const net = await import("node:net");
-    const port = await new Promise((res) => { const sv = net.createServer().listen(0, "127.0.0.1", () => { const p = sv.address().port; sv.close(() => res(p)); }); });
+    const port = +arg("--port", 0) || await new Promise((res) => { const sv = net.createServer().listen(0, "127.0.0.1", () => { const p = sv.address().port; sv.close(() => res(p)); }); });
     BASE = `http://127.0.0.1:${port}`;
     fixture = spawn("python3", [path.join(here, "fixture_server.py"), "--port", String(port)], { stdio: ["ignore", "pipe", "inherit"] });
     await new Promise((res) => fixture.stdout.once("data", res));
@@ -67,6 +68,12 @@ try {
     ok(await page.isVisible(".when"), "when view shows");
     ok(await page.locator("#lane-commit .gbar.par").count() === parCount, "before-commit lane: one bar per par group", await page.locator("#lane-commit .gbar.par").count());
     ok(await page.locator("#lane-commit .gbar.alone").count() === qt.items.filter((i) => i.kind === "group" && i.list !== "par").length, "before-commit lane: the alone groups in a row");
+    {   // (groups without a time: the estimate is a floor or unknown, never a guess printed as a time, never "0 s")
+        const untimed = qt.items.filter((i) => i.kind === "group" && !i.timing).length;
+        const head = await page.textContent("#lane-commit .wcard-h");
+        ok(untimed ? /at least \d|time unknown/.test(head) && new RegExp(untimed + " groups? not timed").test(head) && !/about \d/.test(head) : /about \d/.test(head), "chart estimate with untimed groups", head);
+        ok(!/(^|[^\d<])0 s/.test(await page.textContent("#lane-commit .gaxis") + head), "chart never prints 0 s");
+    }
     ok(/sanitizers/.test(await page.textContent("#lane-final")), "final lane has the sanitizers");
     ok(/release-testing/.test(await page.textContent("#lane-testing")) && !/sanitizers/.test(await page.textContent("#lane-testing")), "testing lane: release-testing, not the sanitizers");
     const tagJobs = await page.$$eval("#lane-tag .wjob b", (b) => b.map((x) => x.textContent));
@@ -224,6 +231,10 @@ try {
     await page.waitForTimeout(100);
     const hits = await page.$$eval("#tree .trow:not([hidden])", (r) => r.filter((x) => x.offsetParent).map((x) => x.dataset.key));
     ok(hits.includes("fn:testWallbang") && hits.includes("quark_tests|group:weapons") && hits.length < 10, "search finds the function and the groups that call it", hits.join());
+    await page.fill("#search", "drain in ");   // (a CHECK's text) and "running round clock" (a doc comment): found by what they check
+    ok(await page.isVisible('#tree .trow[data-key="fn:testHudClock"]'), "search finds a function by its CHECK text");
+    await page.fill("#search", "running round clock");
+    ok(await page.isVisible('#tree .trow[data-key="fn:testHudClock"]'), "search finds a function by its doc comment");
     await page.fill("#search", "zzzznomatch");
     await page.waitForTimeout(100);
     ok(await page.$$eval("#tree .trow, #tree .thead, #tree .tsub", (r) => r.filter((x) => x.offsetParent).length) === 0, "search with no match shows no rows");
@@ -249,12 +260,22 @@ try {
     ok(await page.evaluate(() => document.activeElement !== document.querySelector(".code-ta")), "code: Esc then Tab leaves the editor");
     await page.keyboard.press("Escape");
 
+    // ---- a group's time trend: its last times, a spike over the median called out (tree ▲ too)
+    if (FIXTURE) {
+        await go("#group/weapons");
+        ok(/^▲/.test(await page.textContent('#tree .trow[data-key="quark_tests|group:weapons"] .tmeta')), "trend: the tree marks a slower group");
+        ok(await page.locator("#details .trend .tbar").count() === 5 && /55% over its median of 20 s/.test(await page.textContent("#details .trend")), "trend: last times and the spike");
+    }
+
     // ---- a command that takes a NAME: the page asks for it
     if (FIXTURE) {
         await go("#cmd/rules");
         ok(/Without NAME, quark_tests rules runs the group rules/.test(await page.textContent("#details")) && await page.locator("#runArgs").count() === 1, "rules NAME: asked for, with the group warning");
         await page.click("#runBtn");
         ok(/takes 1 argument/.test(await page.textContent("#toast")), "rules NAME: refused without it");
+        await page.fill("#runArgs", "nosuchrule");
+        await page.click("#runBtn");
+        ok(/no such name “nosuchrule”/.test(await page.textContent("#toast")) && !(await page.locator("#dock.open").count() && /nosuchrule/.test(await page.textContent("#runTitle"))), "rules NAME: an unknown name refused");
         await page.fill("#runArgs", "overtime");
         await page.click("#runBtn");
         await page.waitForFunction(() => /passed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
@@ -280,6 +301,29 @@ try {
         await page.click("details.pick .runbtn");
         await page.waitForFunction(() => /duel/.test(document.querySelector("#runTitle").textContent) && /failed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
         ok(/only=duel/.test(await page.textContent("#runOut")) && /quark_tests: duel/.test(await page.textContent("#runTitle")), "suite: a chosen set runs as QUARK_TEST_ONLY");
+        // a group's run history: the suite runs it was in, with its own result there (not "not run here yet")
+        await go("#group/duel");
+        const hist = await page.textContent("#details .druns");
+        ok(/quark_tests \(whole suite\)/.test(hist) && /duel failed in it/.test(hist) && !/not run here yet/.test(hist), "group: suite runs that included it listed", hist);
+
+        // ---- release_check.sh: each map's last result; a map opens its screenshot and log
+        await go("#suite/script:release_check.sh");
+        ok(await page.locator("#details .mapcell").count() === 3 && await page.locator('#details .mapcell[data-map="furnace"] .cc-bad').count() === 1 && await page.locator('#details .mapcell[data-map="anvil"]:disabled').count() === 1, "maps hosted: a cell per map, failed marked, never hosted greyed");
+        ok(/1 ok, 1 failed, 1 not hosted yet/.test(await page.textContent("#details .dmaps")), "maps hosted: the count");
+        await page.click('#details .mapcell[data-map="temple"]');
+        await page.waitForFunction(() => { const i = document.querySelector(".modal img.mapshot"); return i && i.complete && i.naturalWidth > 0 && /hosting temple/.test(document.querySelector(".modal .maplog").textContent); }, null, { timeout: 5000 });
+        ok(true, "maps hosted: a map's screenshot and log");
+        await page.keyboard.press("Escape");
+        await go("#when");
+        ok(/maps hosted last time: 1 ok, 1 failed \(of 3\)/.test(await page.textContent("#lane-check")), "when: release_check's map results");
+
+        // ---- the UI test: run headless from the page, its report shown
+        await go("#suite/script:uitest.sh");
+        ok(/Run the UI test/.test(await page.textContent("#runBtn")) && /private Xvfb/.test(await page.textContent("#displayNote")) && /no report yet/.test(await page.textContent("#details .dreport")), "ui test: button, display note, no report yet");
+        await page.click("#runBtn");
+        await page.waitForFunction(() => /failed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
+        await page.waitForFunction(() => /VSYNC/.test((document.querySelector("#details .dreport") || {}).textContent || ""), null, { timeout: 5000 });
+        ok(/812 widgets on 64 screens/.test(await page.textContent("#details .dreport")) && /UNTESTED menus :: info > CREDITS/.test(await page.textContent("#details .dreport")), "ui test: the report after the run");
     }
 
     // ---- run

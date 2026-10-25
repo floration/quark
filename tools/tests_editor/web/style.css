@@ -294,7 +294,18 @@ code.cmd { background: var(--qt-panel2); border: 1px solid var(--qt-line); borde
 #runOut .olink { color: inherit; text-decoration: underline; cursor: pointer; }
 .ofailbtn { color: var(--qt-bad); border-color: var(--qt-bad); }
 .rstate { font-size: 12px; color: var(--qt-muted); }
-.rs-passed { color: var(--qt-ok); } .rs-failed { color: var(--qt-bad); } .rs-running { color: var(--qt-pending); } .rs-stopped { color: var(--qt-warn); }
+.rs-passed { color: var(--qt-ok); } .rs-failed { color: var(--qt-bad); } .rs-running { color: var(--qt-pending); } .rs-stopped { color: var(--qt-warn); } .rs-skipped { color: var(--cc-skip); }
+.trend { margin: 2px 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.trend-bars { display: flex; align-items: flex-end; gap: 2px; height: 30px; }
+.tbar { display: block; width: 8px; background: var(--qt-muted, #6b7480); opacity: .6; border-radius: 1px; }
+.tbar.last { background: var(--qt-accent, #4a8cff); opacity: 1; } .tbar.slow { background: var(--qt-warn); }
+.tmeta.warn { color: var(--qt-warn); }
+.mapgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 3px; margin: 4px 0 6px; }
+.mapcell { display: flex; align-items: center; gap: 5px; padding: 2px 6px; font-size: 12px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mapcell:disabled { opacity: .55; cursor: default; }
+.mapshow { display: flex; flex-direction: column; gap: 8px; }
+.mapshot { max-width: 100%; max-height: 60vh; object-fit: contain; border: 1px solid var(--qt-line); border-radius: 4px; background: #000; align-self: flex-start; }
+.maplog { max-height: 30vh; overflow: auto; white-space: pre-wrap; }
 
 /* modal, diff */
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }

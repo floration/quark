@@ -63,6 +63,8 @@ class RealRepo(unittest.TestCase):
         for l in lists:
             lines = [g["line"] for g in groups if g["list"] == l]
             self.assertEqual(lines, sorted(lines))
+        par = next(l for l in qt["lists"] if l["name"] == "par")
+        self.assertRegex(par["jobs"], r"^\d+ per core")                    # (main()'s jobs = N * cores, for the Blocks header)
         src = rd(os.path.join(REPO, "tests", "tests.cpp"), encoding="utf-8").split("\n")
         for g in groups:
             self.assertIn('"%s"' % g["name"], src[g["line"] - 1])
@@ -110,6 +112,35 @@ class RealRepo(unittest.TestCase):
         ids = [s["id"] for s in self.m["suites"]]
         self.assertEqual(ids[0], "quark_tests")
         self.assertEqual(ids[-1], "ctest")
+
+    def test_script_steps(self):
+        # the real release_check.sh: each step named once, by what it does (not by its raw shell or a progress echo)
+        names = [s["name"] for s in self.suite("script:release_check.sh")["items"]]
+        self.assertEqual(names.count("alone groups, one at a time"), 1, names)
+        self.assertEqual(len([n for n in names if n.startswith("parallel groups (")]), 1, names)
+        self.assertIn("every map hosted headless + screenshotted (Xvfb)", names)
+        for n in names: self.assertNotRegex(n, r"^(?:jobs=|echo |for |if )|\$", names)
+        # quark_tests' "when": the steps that run the groups, not one whose comment mentions quark_tests
+        rc = [w for w in self.suite("quark_tests")["when"] if w["trigger"] == "release-check"]
+        self.assertEqual(len(rc), 1)
+        self.assertNotIn("setup", rc[0]["text"])
+        self.assertIn("parallel groups", rc[0]["text"])
+        self.assertIn("alone groups", rc[0]["text"])
+
+    def test_command_args(self):
+        # an argument without a name of its own takes the parameter name of the function argv[K] is handed to
+        cmds = {i["name"]: i for i in self.suite("quark_tests")["items"] if i["kind"] != "group"}
+        names = lambda n: [p["name"] for p in cmds[n]["argsSpec"]["params"]]
+        self.assertEqual(names("bot"), ["addr", "seconds", "name"])
+        self.assertEqual(names("navbench"), ["only", "surfaces"])
+        self.assertEqual(names("playtest"), ["seconds"])
+        self.assertIn("choices", cmds["rules"]["argsSpec"])                 # (a NAME from a list keeps no name: the page says NAME)
+        # the read-only aliases of the export commands: their own entries, runnable, FILE required
+        for a, of in (("checkbrain", "exportbrain"), ("weaponsast", "exportweapons"), ("printmode", "exportmode")):
+            self.assertEqual(cmds[a]["aliasOf"], of)
+            self.assertNotIn("byHand", cmds[a]["run"])
+            self.assertEqual((cmds[a]["argsSpec"]["min"], names(a)[0]), (1, "file"))
+            self.assertIn("byHand", cmds[of]["run"])
 
     def test_all_workflows_parse(self):
         for s in self.m["suites"]:
@@ -226,6 +257,26 @@ class ParseLog(unittest.TestCase):
         self.assertEqual((res["bots"]["status"], res["duel"]["status"]), ("passed", "failed"))
 
 
+class Trend(unittest.TestCase):
+    """Each group's last times (cache/groups.json hist) and the slowdown flag (model._slower)."""
+
+    def test_history_and_spike(self):
+        tmp = tempfile.mkdtemp(prefix="tests_editor_trend_")
+        try:
+            r = serve.Runs(tmp)
+            for i, sec in enumerate([10, 11, 10, 9, 25]):
+                r._note({"id": "r%d" % i, "endedAt": "2026-10-2%dT00:00:00Z" % i}, {"bots": sec}, {})
+            h = r.groups["bots"]["hist"]
+            self.assertEqual([x["sec"] for x in h], [10, 11, 10, 9, 25])
+            self.assertEqual(model._slower(h), {"sec": 25, "median": 10.0, "pct": 150})
+            self.assertIsNone(model._slower(h[:-1]))
+            self.assertIsNone(model._slower([{"sec": 0.4}, {"sec": 0.5}, {"sec": 0.4}, {"sec": 1.5}]))   # (under 2 s more: noise)
+            for i in range(20): r._note({"id": "x%d" % i, "endedAt": "2026-11-%02dT00:00:00Z" % (i + 1)}, {"bots": 10}, {})
+            self.assertEqual(len(r.groups["bots"]["hist"]), serve.HIST_KEPT)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class Yaml(unittest.TestCase):
     def test_shapes(self):
         y = yamlsub.parse("on: [push]\nk: 'it''s'\nn: 3\nb: true\nlist:\n- a\n- b: 1\n  c: 2\nblk: |-\n  x\n\n  y\nkeep: |+\n  z\n\nafter: 1\n")
@@ -285,6 +336,25 @@ if a[:1] == ["group"]:
     sys.exit(1 if g == "duel" else 0)
 print("cmd", a); sys.exit(0)
 '''
+
+
+FAKE_GAME = r'''#!/usr/bin/env python3
+import json, sys
+a = sys.argv[1:]
+if a[:1] == ["--uitest"]:                  # the UI test: a report, exit 0 = pass
+    json.dump({"result": "pass", "widgets": 3, "passed": 3, "failed": 0, "untested": 0, "failures": []}, open(a[1], "w"))
+    print("==== UI TEST: PASS ===="); sys.exit(0)
+print("game", a); sys.exit(0)
+'''
+
+# release_check.sh as far as the maps go: a ok (with its screenshot and log), b failed
+FAKE_RELEASE_CHECK = """#!/bin/bash
+export TMPDIR="${TMPDIR:-/tmp}/quark_release_check.$$"; mkdir -p "$TMPDIR"
+printf 'PNG' > "$TMPDIR/a.png"; echo "a hosted" > "$TMPDIR/a.map.log"; echo "b broke" > "$TMPDIR/b.map.log"
+echo "map a ok"
+echo "map b FAILED rc=1"
+exit 1
+"""
 
 
 class Server(unittest.TestCase):
@@ -532,9 +602,18 @@ class Server(unittest.TestCase):
         self.assertEqual(self.j("/api/run", {"cmd": "cmd:rules"})[0], 400)                   # (NAME is required)
         for bad in (["a b"], ["$(x)"], "overtime", [1]):
             self.assertEqual(self.j("/api/run", {"cmd": "cmd:rules", "args": bad})[0], 400, bad)
+        code, r = self.j("/api/run", {"cmd": "cmd:rules", "args": ["nosuchrule"]})   # (not one of its names: refused)
+        self.assertEqual(code, 400); self.assertIn("no such name nosuchrule", r["error"])
         code, r = self.j("/api/run", {"cmd": "cmd:rules", "args": ["overtime"]})
         self.assertIn("'rules', 'overtime'", wait(r["id"])["output"])
         self.assertEqual(self.j("/api/run", {"cmd": "cmd:exportassets"})[0], 403)
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:exportbrain"})[0], 403)
+        code, r = self.j("/api/run", {"cmd": "cmd:checkbrain", "args": ["tools/brains/x.brain"]})   # (its read-only alias runs)
+        self.assertEqual(code, 200, r)
+        self.assertIn("'checkbrain', 'tools/brains/x.brain'", wait(r["id"])["output"])
+        self.assertEqual(self.j("/api/run", {"cmd": "cmd:checkbrain"})[0], 400)                 # (FILE is required)
+        for bad in (["../x"], ["/etc/passwd"], ["C:/x"], ["a/../../b"]):
+            self.assertEqual(self.j("/api/run", {"cmd": "cmd:checkbrain", "args": bad})[0], 400, bad)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "assets_export")))
         # a log from a terminal run feeds the times too
         code, r = self.j("/api/import-log", {"text": "x\n  (group bots: 9 s)\n", "name": "pre-commit.log"})
@@ -544,6 +623,68 @@ class Server(unittest.TestCase):
         self.assertEqual(bots["timing"]["sec"], 9.0)
         self.assertTrue(bots["timing"]["source"].startswith("imported log"))
         os.remove(b)
+
+
+    def test_script_runs(self):
+        def wait(rid):
+            for _ in range(400):
+                code, st = self.j("/api/run?id=%s&from=0" % rid)
+                if st["status"] != "running": return st
+                time.sleep(0.05)
+            self.fail("run never ended")
+        game = os.path.join(self.repo, "build", "quark")
+        if os.path.exists(game): os.remove(game)
+        self.assertEqual(self.j("/api/run", {"cmd": "script:uitest.sh"}), (404, {"error": "no game build (build/quark): build quark first"}))
+        os.makedirs(os.path.dirname(game), exist_ok=True)
+        with open(game, "w") as f: f.write(FAKE_GAME.replace("#!/usr/bin/env python3", "#!" + sys.executable))
+        os.chmod(game, 0o755)
+        self.assertEqual(self.j("/api/env")[1]["quark"], "build/quark")
+        # no display at all: uitest.sh skips itself (exit 77), and the run says skipped, not failed
+        real, old_disp = serve.start_display, os.environ.pop("DISPLAY", None)
+        serve.start_display = lambda: (None, None, None)
+        try:
+            code, r = self.j("/api/run", {"cmd": "script:uitest.sh"})
+            st = wait(r["id"])
+        finally:
+            serve.start_display = real
+            if old_disp is not None: os.environ["DISPLAY"] = old_disp
+        self.assertEqual((st["status"], st["exit"]), ("skipped", 77), st["output"])
+        self.assertIn("no display here", st["output"])
+        # with a display (a private Xvfb here, when installed): quark --uitest <report> runs, the report is kept
+        if not WIN and shutil.which("Xvfb"):
+            code, r = self.j("/api/run", {"cmd": "script:uitest.sh"})
+            st = wait(r["id"])
+            self.assertEqual(st["status"], "passed", st["output"])
+            self.assertRegex(st["display"], r"^a private Xvfb :\d+$")
+            self.assertTrue(st["hasReport"])
+            code, rep = self.j("/api/run/report?id=" + r["id"])
+            self.assertEqual((code, rep["result"], rep["widgets"]), (200, "pass", 3))
+            self.assertFalse(os.path.exists("/tmp/.X11-unix/X%s" % st["display"].rsplit(":", 1)[1]))   # (stopped with the run)
+        self.assertEqual(self.j("/api/run/report?id=nope")[0], 404)
+        # release_check.sh's maps: each one's result, screenshot and log kept (cache/maps), served by name
+        rc = os.path.join(self.repo, "tools", "release_check.sh")
+        orig = rd(rc)
+        try:
+            wr(rc, FAKE_RELEASE_CHECK)
+            os.makedirs(os.path.join(self.repo, "maps"), exist_ok=True)
+            for n in ("a", "b", "c"): wr(os.path.join(self.repo, "maps", n + ".qmap"), "version 1\n")
+            code, r = self.j("/api/run", {"cmd": "script:release_check.sh"})
+            self.assertEqual(wait(r["id"])["status"], "failed")
+            code, m = self.j("/api/maps")
+            self.assertEqual(m["known"], ["a", "b", "c"])
+            self.assertEqual((m["maps"]["a"]["status"], m["maps"]["a"]["shot"], m["maps"]["a"]["log"]), ("passed", True, True))
+            self.assertEqual((m["maps"]["b"]["status"], m["maps"]["b"]["rc"], m["maps"]["b"]["shot"]), ("failed", 1, False))
+            self.assertNotIn("c", m["maps"])
+            code, h, raw = self.req("/api/map-file?name=a&kind=shot")
+            self.assertEqual((code, h["Content-Type"], raw), (200, "image/png", b"PNG"))
+            self.assertEqual(self.req("/api/map-file?name=b&kind=log")[2], b"b broke\n")
+            for bad in ("../x", "a/b", ""):
+                self.assertEqual(self.req("/api/map-file?name=%s&kind=shot" % bad)[0], 404)
+            self.assertEqual(self.j("/api/import-log", {"text": "map c ok\n"})[1]["maps"], 1)
+            self.assertEqual(self.j("/api/maps")[1]["maps"]["c"]["status"], "passed")
+        finally:
+            wr(rc, orig)
+            os.remove(game)
 
 
 class Install(unittest.TestCase):

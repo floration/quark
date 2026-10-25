@@ -22,6 +22,9 @@ BY_HAND = {
     "exportmode": "writes mode files into the working copy: run it from a terminal",
     "bot": "a bot client the tests start themselves (quark_tests bot MAP SECS)",
 }
+# the aliases of a BY_HAND command that only read the file they're given (checkbrain FILE, printweapons FILE, modeast
+# FILE...): each gets an entry of its own that the page runs
+READ_ONLY = re.compile(r"^(?:check|print)\w+$|^\w+ast$")
 RULES = [
     ("ci-scope", "CI runs only meta, builds and sanitizers; no gameplay tests in CI.", "release.yml header / owner 2026-10-24",
      ".github/workflows/release.yml", r"CI runs no gameplay"),
@@ -196,6 +199,7 @@ class Builder:
                 note, lr = tm.get(g["name"]), local.get(g["name"]) or {}
                 if lr.get("sec") is not None:
                     t = {"sec": lr["sec"], "source": lr.get("timeSource") or "local run %s" % lr.get("timeAt"), "at": lr.get("timeAt"), "run": lr.get("timeRun")}
+                    if lr.get("hist"): t.update(history=lr["hist"], slower=_slower(lr["hist"]))
                 elif note: t = {"sec": note["sec"], "source": note["source"], "at": iso_of(note["mtime"])}
                 if lr.get("status"):
                     last = {"status": lr["status"], "at": lr.get("at"), "run": lr.get("run"), "fails": lr.get("fails", 0),
@@ -219,12 +223,22 @@ class Builder:
                         ch = re.findall(r"\{\s*\"([\w-]+)\"\s*,", body)
                         if len(ch) >= 2: spec = dict(spec, choices=ch)
                         break
+            if spec and "choices" not in spec: spec = cpp.name_params(main["_src"], s["_body"], spec, index)   # (choices: NAME)
             run = {"cmd": "build/quark_tests %s" % s["name"], "parallel": False}
             if s["name"] in BY_HAND: run["byHand"] = BY_HAND[s["name"]]
             cmds.append({"id": "cmd:" + s["name"], "kind": kind, "name": s["name"], "aliases": s.get("aliases") or [],
                          "file": main["file"], "line": s["line"], "endLine": s["endLine"], "calls": calls, "run": run,
                          "argsSpec": spec, "shadowsGroup": any(g["name"] == s["name"] for g in groups),
                          "ports": [list(p) for p in s["ports"]]})
+            if s["name"] in BY_HAND:                                 # (the read-only aliases of a command that writes
+                for a in s.get("aliases") or []:                     #  files: an entry of their own, run from the page)
+                    if a in BY_HAND or not READ_ONLY.match(a): continue
+                    sp = dict(spec or {"min": 0, "max": 1, "params": [], "hint": None})
+                    sp.update(min=max(1, sp["min"]), max=sp["max"] if sp["max"] is None else max(1, sp["max"]),
+                              params=[{"name": "file", "default": None}] + (sp.get("params") or [])[1:],
+                              hint="reads the file, writes nothing")
+                    cmds.append(dict(cmds[-1], id="cmd:" + a, name=a, aliases=[], aliasOf=s["name"], argsSpec=sp, shadowsGroup=False,
+                                     run={"cmd": "build/quark_tests %s" % a, "parallel": False}))
 
         # functions: tests, anything a group / command calls, anything with checks
         direct = {}
@@ -320,17 +334,15 @@ class Builder:
         m = re.search(r"^.*Before committing.*$", cl, re.M)
         qwhen.append(_when("before-commit", "before every commit: build, then build/quark_tests (CLAUDE.md)", "CLAUDE.md",
                            cl.count("\n", 0, m.start()) + 1 if m else 1))
-        for s in script_suites:
-            for st in s["items"]:
-                if re.search(r"quark_tests", st["text"]):
-                    qwhen.append(dict(s["when"][0], text="%s: %s" % (s["title"], st["name"]), file=s["file"], line=st["line"], via=s["id"]))
-                    break
+        for s in script_suites:                                          # (the steps that run tests: code, not comments,
+            runs = [st for st in s["items"] if _runs_tests(st["text"])]  #  and not `quark_tests groups` / a tool command)
+            if runs:
+                qwhen.append(dict(s["when"][0], text="%s: %s" % (s["title"], " → ".join(st["name"] for st in runs)),
+                                  file=s["file"], line=runs[0]["line"], via=s["id"]))
         for s in suites_ci:
             for j in s["items"]:
                 for st in j["steps"]:
-                    run = "\n".join(lint._code_part(l) for l in (st.get("run") or "").split("\n"))
-                    hits = [x for x in lint._QT.finditer(run) if (x.group(1).split() or [""])[0] not in lint.TOOL_CMDS]
-                    if hits:
+                    if _runs_tests(st.get("run") or ""):
                         qwhen.append(_when("push", "CI %s job %s: %s" % (s["file"].rsplit("/", 1)[-1], j["jobId"],
                                                                           j["ifText"] or "every run"), s["file"],
                                            st.get("runLine") or st["line"], via="%s/%s" % (s["id"], j["id"])))
@@ -343,7 +355,9 @@ class Builder:
         qt = {"id": "quark_tests", "kind": "local", "title": "quark_tests", "file": main["file"] if main else "tests/tests.cpp",
               "line": main["line"] if main else 1, "when": qwhen, "items": groups + cmds,
               "lists": [{"name": l["name"], "line": l["line"], "endLine": l["endLine"], "groups": [g["name"] for g in l["groups"]],
-                         "parallel": any(g["run"]["parallel"] for g in groups if g["list"] == l["name"])} for l in lists],
+                         "parallel": any(g["run"]["parallel"] for g in groups if g["list"] == l["name"]),
+                         "jobs": _jobs_text(main["_src"].text[main["_open"]:main["_close"]]) if any(g["run"]["parallel"] for g in groups if g["list"] == l["name"]) else None}
+                        for l in lists],
               "checkMacros": macros}
 
         suites = [qt] + suites_ci + script_suites + hook_suites + ([ctest_suite] if ctest_suite else [])
@@ -361,6 +375,36 @@ class Builder:
         alone_lists = {l["name"]: [g["name"] for g in l["groups"]] for l in lists}
         model["lint"] = lint.run(model, texts, index, groups, cmds, suites_ci, script_suites, alone_lists)
         return model
+
+
+def _slower(hist):
+    """{sec, median, pct} when the newest time is over 50% (and 2 s) above the median of the ones before it (3 or
+    more), else None: a test, or the code it drives, got slower (q judges by spikes, not averages)."""
+    prev = sorted(h["sec"] for h in hist[:-1] if h.get("sec") is not None)
+    if len(prev) < 3: return None
+    med = prev[len(prev) // 2] if len(prev) % 2 else (prev[len(prev) // 2 - 1] + prev[len(prev) // 2]) / 2
+    new = hist[-1]["sec"]
+    if new > med * 1.5 and new - med >= 2: return {"sec": new, "median": med, "pct": round(100 * (new - med) / med) if med else None}
+    return None
+
+
+def _jobs_text(body):
+    """How many par groups main() runs at once, in words: its `jobs = N * hardware_concurrency()` (and the Windows
+    branch's, when it differs): "3 per core; Windows: 1 per core"; None when it isn't written that way."""
+    per = lambda t: [int(m.group(1) or 1) for m in re.finditer(r"\bjobs\s*=\s*(?:(\d+)\s*\*\s*)?(?:std::)?max\s*\(\s*1u?\s*,\s*(?:std::)?thread::hardware_concurrency", t)]
+    flat = r"((?:(?!#\s*(?:if|else|endif)).)*?)"                        # (a branch with no #if / #else inside)
+    for m in re.finditer(r"#\s*ifdef\s+_WIN32\b%s#\s*else\b%s#\s*endif" % (flat, flat), body, re.S):
+        if per(m.group(1)) and per(m.group(2)):
+            w, o = per(m.group(1))[0], per(m.group(2))[0]
+            return "%d per core" % o + ("" if w == o else "; Windows: %d per core" % w)
+    n = per(body)
+    return "%d per core" % n[0] if n else None
+
+
+def _runs_tests(text):
+    """True when shell / yaml run text runs quark_tests tests (in its code, not a comment; not a tool command)."""
+    code = "\n".join(lint._code_part(l) for l in text.split("\n"))
+    return any((x.group(1).split() or [""])[0] not in lint.TOOL_CMDS for x in lint._QT.finditer(code))
 
 
 def _script(rel, text):

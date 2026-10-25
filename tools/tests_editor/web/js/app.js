@@ -50,12 +50,14 @@ class App {
     }
 
     async start() {
-        const r = await api.model();
+        const [r, env] = await Promise.all([api.model(), api.env()]);   // (in parallel: no extra round trip)
+        if (env.ok) this.env = env.data;
         if (!r.ok) { $("tree").innerHTML = `<div class="err pad">${esc((r.data && r.data.error) || "no model")}</div>`; $("main").classList.add("nomodel"); return; }
         this.setModel(r.data, true);
         this.route();
         api.ci().then((c) => { if (c.ok) { this.ci = c.data; this._afterCi(); } });
         this.loadRuns();
+        this.loadMaps();
         setInterval(() => { if (!document.hidden) this.pollModel(); }, POLL_MODEL_MS);
         setInterval(() => { if (!document.hidden) api.ci().then((c) => { if (c.ok) { this.ci = c.data; this._afterCi(); } }); }, POLL_CI_MS);
         setInterval(() => { if (!document.hidden) this.checkDisk(); }, 30000);
@@ -83,14 +85,16 @@ class App {
         this._polling = true;
         const r = await api.model();
         this._polling = false;
-        if (r.ok) this.setModel(r.data);
+        if (r.ok && r.data) this.setModel(r.data);   // (a 304: the model didn't change)
     }
     _header() {
         const m = this.ix.m, rp = m.repo || {};
         const f = $("facts");
         f.textContent = "";
         const add = (t, cls, title) => { const s = el("span", cls || "fact", t); if (title) s.title = title; f.append(s); return s; };
-        add(rp.branch || "?", "fact mono", rp.path || "");
+        if (rp.branch) add(rp.branch, "fact mono", rp.path || "");
+        else if (rp.git === false) add("no git", "fact warn", "git isn't available for " + (rp.path || "the working copy") + ": no branch, diff or revert");
+        else add("detached", "fact mono warn", `detached HEAD${rp.sha ? " at " + rp.sha : ""} in ${rp.path || "the working copy"}: check out a branch (git switch testing) before committing`);
         add((rp.sha || "").slice(0, 7), "fact mono muted");
         if (rp.version) add("v" + rp.version, "fact muted");
         const dirty = (rp.dirty || []).length;
@@ -115,7 +119,8 @@ class App {
                 if (!items.length) continue;
                 if (sub) {
                     const tsec = (items.reduce((a, g) => (sub === "par" ? Math.max(a, (g.timing && g.timing.sec) || 0) : a + ((g.timing && g.timing.sec) || 0)), 0));
-                    out.push({ subhead: true, sec: secId, sub: secId + ":" + sub, label: title, meta: items.length + (tsec && (sub === "par" || sub === "alone") ? " · ~" + secs(tsec) : "") });
+                    const untimed = items.some((g) => !g.timing || g.timing.sec == null);   // (then it's a floor, not a time)
+                    out.push({ subhead: true, sec: secId, sub: secId + ":" + sub, label: title, meta: items.length + (tsec >= 1 && (sub === "par" || sub === "alone") ? (untimed ? " · ≥" : " · ~") + secs(tsec) : "") });
                 }
                 if (sub === "par" || sub === "alone") items.sort((a, b) => a.order - b.order);
                 for (const it of items) out.push({ sec: secId, sub: sub ? secId + ":" + sub : null, key: itemKey(it), label: it.kind === "job" ? it.jobId : it.name, meta: this._rowMeta(it), sel: { kind: "item", item: it }, lint: (ix.itemLint.get(itemKey(it)) || []).length, item: it });
@@ -123,11 +128,13 @@ class App {
         }
         const fns = Object.values(ix.m.functions || {}).sort((a, b) => a.name.localeCompare(b.name));
         out.push({ head: true, sec: "fns", label: "test functions", kind: "fn", meta: String(fns.length) });
-        for (const f of fns) out.push({ sec: "fns", key: "fn:" + f.name, label: f.name, meta: (f.checks || []).length + "", sel: { kind: "fn", fn: f }, lint: (ix.fnLint.get(f.name) || []).length, fn: f });
+        // (search also finds a function by its doc comment and its CHECK expressions: one lowercase haystack, made once)
+        for (const f of fns) out.push({ sec: "fns", key: "fn:" + f.name, label: f.name, meta: (f.checks || []).length + "", sel: { kind: "fn", fn: f }, lint: (ix.fnLint.get(f.name) || []).length, fn: f,
+                                        hay: [f.doc || "", ...(f.checks || []).map((c) => c.expr || "")].join("\n").toLowerCase() });
         return out;
     }
     _rowMeta(it) {
-        if (it.kind === "group") return it.timing ? secs(it.timing.sec) : "";
+        if (it.kind === "group") return it.timing ? (it.timing.slower ? "▲ " : "") + secs(it.timing.sec) : "";
         if (it.kind === "job") return (it.steps || []).length + " steps";
         if (it.kind === "shortcut" || it.kind === "tool") return (it.calls || []).length ? (it.calls || []).length + " calls" : "";
         return "";
@@ -193,7 +200,9 @@ class App {
         const b = e.querySelector(".tbadge");
         b.textContent = r.lint ? "⚠" + r.lint : "";
         b.title = r.lint ? r.lint + " lint finding(s)" : "";
-        if (r.item && r.item.flaky) e.title = "flaky: " + r.item.flaky;
+        const slow = r.item && r.item.timing && r.item.timing.slower;
+        e.querySelector(".tmeta").classList.toggle("warn", !!slow);
+        if (r.item && (r.item.flaky || slow)) e.title = [r.item.flaky ? "flaky: " + r.item.flaky : "", slow ? `slower: ${secs(slow.sec)}, its median was ${secs(slow.median)}` : ""].filter(Boolean).join("\n");
         e._row = r;
     }
     _ciDots() {
@@ -236,7 +245,7 @@ class App {
         const seen = new Set(), subSeen = new Set();
         for (const e of tree.querySelectorAll(".trow")) {
             const r = e._row;
-            const hit = !q || r.label.toLowerCase().includes(q) || (r.item && r.item.calls && r.item.calls.some((c) => c.fn.toLowerCase().includes(q))) || (r.item && r.item.kind === "job" && (r.item.steps || []).some((s) => (s.name || "").toLowerCase().includes(q)));
+            const hit = !q || r.label.toLowerCase().includes(q) || (r.item && r.item.calls && r.item.calls.some((c) => c.fn.toLowerCase().includes(q))) || (r.item && r.item.kind === "job" && (r.item.steps || []).some((s) => (s.name || "").toLowerCase().includes(q))) || (r.hay && r.hay.includes(q));
             e.hidden = !hit;
             if (hit) { seen.add(e.dataset.sec); if (e.dataset.sub) subSeen.add(e.dataset.sub); }
         }
@@ -385,6 +394,7 @@ class App {
             r.append(el("span", "chip c-when", "manual"), document.createTextNode(" only by hand: quark_tests " + it.name + this._argsHelp(it)));
             d.append(r);
             if ((it.aliases || []).length) d.append(el("div", "dline small muted", "the same code also answers: " + it.aliases.map((a) => "quark_tests " + a).join(", ")));
+            if (it.aliasOf) { const r2 = el("div", "dline small muted"); const a = el("span", "link", "quark_tests " + it.aliasOf); const o = this.ix.cmds.get(it.aliasOf); if (o) a.onclick = () => this.select({ kind: "item", item: o }); r2.append(document.createTextNode("the same code as "), a, document.createTextNode(" (that one writes files: run by hand); this one only reads")); d.append(r2); }
             if (it.shadowsGroup && it.argsSpec && it.argsSpec.min > 0) d.append(el("div", "dline small warn", `Without ${this._argsHelp(it).trim() || "its arguments"}, quark_tests ${it.name} runs the group ${it.name} instead.`));
         } else {
             for (const w of (suite && suite.when) || []) { const r = el("div", "dline"); r.append(el("span", "chip c-when", w.trigger), document.createTextNode(" " + w.text)); d.append(r); }
@@ -421,6 +431,7 @@ class App {
             sec("Timing");
             if (it.timing) kv("time", secs(it.timing.sec), "");
             if (it.timing) kv("from", it.timing.source, "small muted");
+            if (it.timing && (it.timing.history || []).length > 1) d.append(this._trend(it.timing));
             if (it.flaky) kv("flaky", it.flaky, "warn small");
         }
         if (it && it.kind === "group") {
@@ -494,7 +505,7 @@ class App {
         const sp = it.argsSpec;
         if (!sp || sp.max === 0) return "";
         const ps = sp.params || [];
-        const words = ps.map((p, i) => { const n = p.name || (sp.choices ? "NAME" : "arg" + (i + 1)); return i < sp.min ? n.toUpperCase() : "[" + n + (p.default ? "=" + p.default.replace(/^"|"$/g, "") : "") + "]"; });
+        const words = ps.map((p, i) => { const n = p.name || (sp.choices ? "NAME" : "arg" + (i + 1)); return i < sp.min ? n.toUpperCase() : "[" + n + (p.default && !/^(nullptr|NULL)$/.test(p.default) ? "=" + p.default.replace(/^"|"$/g, "") : "") + "]"; });
         return words.length ? " " + words.join(" ") + (sp.max === null ? " …" : "") : sp.max === null ? " …" : "";
     }
     _runSection(d, s) {
@@ -517,18 +528,95 @@ class App {
             filter = "cmd:" + it.name;
             if (it.run && it.run.byHand) d.append(el("div", "dline small muted", "Not run from here: " + it.run.byHand + "."));
             else this._argsRunner(d, it, btn);
-        } else if (su && su.kind === "script") {
+        } else if ((su && su.kind === "script") || (it && it.script && this.ix.suites.get(it.script))) {   // (a script, or ctest's uitest entry)
+            const ss = su && su.kind === "script" ? su : this.ix.suites.get(it.script);
+            const sc = ((this.env || {}).scripts || {})[ss.id] || {};
             d.append(h);
             const r = el("div", "runrow");
-            r.append(btn("▶ Run " + su.title, () => this.startRun(su.id)), el("span", "muted small", su.id === "script:release_check.sh" ? "every group, then every map: minutes" : "low priority"));
+            const label = ss.id === "script:uitest.sh" ? "▶ Run the UI test (quark --uitest)" : "▶ Run " + ss.title;
+            const note = { "script:release_check.sh": "every group, then every map: minutes", "script:uitest.sh": "every button in the game: 10-15 min, low priority" }[ss.id] || "low priority";
+            r.append(btn(label, () => this.startRun(ss.id)), el("span", "muted small", note));
             d.append(r);
-            filter = su.id;
+            if (sc.display) d.append(this._displayNote(ss));
+            filter = ss.id;
+            if (ss.id === "script:release_check.sh") { d.append(el("h3", null, "Maps hosted")); this._mapsBox = el("div", "dmaps"); d.append(this._mapsBox); this._fillMaps(); }
+            if (sc.report) { d.append(el("h3", null, "Last UI test report")); this._reportBox = el("div", "dreport"); d.append(this._reportBox); this._fillReport(); }
         }
         if (!filter) { this._runsBox = null; return; }
         this._runsBox = el("div", "druns");
         this._runsBox.dataset.cmd = filter;
         d.append(this._runsBox);
         this._fillRuns();
+    }
+    // a script that needs a display: its own words, then what this machine will do (env from GET /api/env)
+    _displayNote(ss) {
+        const own = ((ss.about || "").match(/[^.;\n(]*needs a display[^.;\n)]*/i) || ["needs a display"])[0].trim();
+        const e = this.env;
+        const none = e && !e.win && !e.xvfb && !e.display;
+        const how = !e ? "" : e.win ? "here it opens a normal game window" : e.xvfb ? "here it runs headless, under a private Xvfb started for the run" : e.display ? "here it uses your desktop's display (no Xvfb installed)" : "no Xvfb and no display here: install Xvfb (apt install xvfb), or it skips / fails";
+        const n = el("div", "dline small " + (none || (e && !e.quark) ? "warn" : "muted"), own.charAt(0).toUpperCase() + own.slice(1) + (how ? ": " + how : "") + (e && !e.quark ? " · no build/quark yet: build the game first" : ""));
+        n.id = "displayNote";
+        return n;
+    }
+    // release_check.sh's map check: each map's last result (from the "map X ok / FAILED" lines), its screenshot and log
+    async loadMaps() { const r = await api.maps(); if (r.ok) { this.maps = r.data; this._fillMaps(); if (this.sel && this.sel.kind === "when") renderWhen($("vWhen"), this); } }
+    _fillMaps() {
+        const box = this._mapsBox;
+        if (!box || !box.isConnected) return;
+        box.textContent = "";
+        if (!this.maps) { box.append(el("div", "muted small", "loading…")); return; }
+        const res = this.maps.maps || {};
+        const names = [...new Set([...(this.maps.known || []), ...Object.keys(res)])].sort();
+        if (!names.length) { box.append(el("div", "muted small", "no maps in maps/ yet (they're made by the build)")); return; }
+        const ok = names.filter((n) => res[n] && res[n].status === "passed").length, bad = names.filter((n) => res[n] && res[n].status === "failed").length;
+        box.append(el("div", "dline small " + (bad ? "warn" : "muted"), `last check: ${ok} ok, ${bad} failed, ${names.length - ok - bad} not hosted yet · click a map for its screenshot and log`));
+        const grid = el("div", "mapgrid");
+        for (const n of names) {
+            const x = res[n];
+            const c = el("button", "mapcell");
+            c.dataset.map = n;
+            c.append(el("i", "dot cc-" + (!x ? "none" : x.status === "passed" ? "ok" : "bad")), document.createTextNode(n));
+            c.title = x ? `${x.status}${x.rc ? " (rc=" + x.rc + ")" : ""} · ${dallas(x.at)}${x.source && /^imported/.test(x.source) ? " · imported log" : ""}` : "not hosted by release_check.sh yet";
+            if (x) c.onclick = () => this._showMap(n, x); else c.disabled = true;
+            grid.append(c);
+        }
+        box.append(grid);
+    }
+    async _showMap(n, x) {
+        const body = el("div", "mapshow");
+        body.append(el("div", "small " + (x.status === "passed" ? "muted" : "err"), `${x.status}${x.rc ? " · rc=" + x.rc : ""} · ${dallas(x.at)}${x.run ? " · run " + x.run : ""}`));
+        if (x.shot) { const img = el("img", "mapshot"); img.alt = n + " screenshot"; img.src = api.mapFile(n, "shot") + "&t=" + encodeURIComponent(x.at || ""); body.append(img); }
+        else body.append(el("div", "muted small", "no screenshot from that run"));
+        if (x.log) {
+            const pre = el("pre", "dpre mono small maplog", "…");
+            body.append(pre);
+            fetch(api.mapFile(n, "log")).then((r) => r.text()).then((t) => { pre.textContent = t.length > 20000 ? "…" + t.slice(-20000) : t || "(empty log)"; });
+        }
+        await modal({ title: "map " + n, body, wide: true, buttons: [{ label: "Close", value: null, cls: "primary" }] });
+    }
+    // the UI test: the newest report a run left (cache/runs/<id>.report.json)
+    async _fillReport() {
+        const box = this._reportBox;
+        if (!box || !box.isConnected) return;
+        const run = this.runs.find((r) => r.cmd === "script:uitest.sh" && r.hasReport);
+        if (!run) { box.textContent = ""; box.append(el("div", "muted small", "no report yet: run the UI test")); return; }
+        if (!this._report || this._report.id !== run.id) {
+            const r = await api.report(run.id);
+            this._report = { id: run.id, data: r.ok ? r.data : null };
+            if (this._reportBox !== box) return;
+        }
+        box.textContent = "";
+        const x = this._report.data;
+        if (!x) { box.append(el("div", "muted small", "the report of run " + run.id + " can't be read")); return; }
+        const pass = x.result === "pass";
+        const head = el("div", "dline");
+        head.append(el("i", "dot cc-" + (pass ? "ok" : "bad")), el("b", null, " " + (pass ? "passed" : "failed")), el("span", "muted small", ` · ${x.widgets} widgets on ${x.screens} screens · ${x.passed} passed, ${x.failed} failed, ${x.untested} never tested · ${secs(x.seconds)} · ${dallas(run.startedAt)}`));
+        box.append(head);
+        const issues = [...(x.failures || []).map((f) => `FAIL ${f.scenario} :: ${f.screen} > ${f.widget} [${f.kind}, ${f.expects}]: ${f.why}`),
+                        ...(x.untested_widgets || []).map((f) => `UNTESTED ${f.scenario} :: ${f.screen} > ${f.widget} [${f.expects}]`),
+                        ...(x.layout || []).map((t) => "LAYOUT " + t), ...(x.esc || []).map((t) => "ESC " + t), ...(x.setup || []).map((t) => "SETUP " + t)];
+        for (const t of issues.slice(0, 30)) { const r = el("div", "fline"); r.append(el("span", "mono small", clip(t, 300))); box.append(r); }
+        if (issues.length > 30) box.append(el("div", "muted small", `…and ${issues.length - 30} more in the report (open the run's output)`));
     }
     // quark_tests: the whole suite, the failed groups again, or a chosen set (QUARK_TEST_ONLY)
     _suiteRunner(d, btn) {
@@ -576,8 +664,10 @@ class App {
             const r2 = await api.importLog(await f.text(), f.name);
             file.value = "";
             if (!r2.ok) { toast("import failed: " + ((r2.data && r2.data.error) || r2.status), true); return; }
-            toast(r2.data.groups ? `imported ${r2.data.groups} group${r2.data.groups > 1 ? "s" : ""} from ${f.name}` : "no '(group X: N s)' lines in " + f.name, !r2.data.groups);
+            const ng = r2.data.groups, nm = r2.data.maps || 0;
+            toast(ng || nm ? `imported ${[ng ? ng + " group" + (ng > 1 ? "s" : "") : "", nm ? nm + " map" + (nm > 1 ? "s" : "") : ""].filter(Boolean).join(" and ")} from ${f.name}` : "no '(group X: N s)' or 'map X ok' lines in " + f.name, !ng && !nm);
             this.pollModel();
+            if (nm) this.loadMaps();
         };
         imp.onclick = () => file.click();
         const ir = el("div", "dline");
@@ -608,7 +698,8 @@ class App {
             const args = input ? input.value.trim().split(/\s+/).filter(Boolean) : [];
             const n = args.length;
             if (n < sp.min || (sp.max !== null && n > sp.max)) { toast(`quark_tests ${it.name} takes ${sp.min === sp.max ? sp.min : sp.min + " to " + (sp.max === null ? "any" : sp.max)} argument(s)`, true); if (input) input.focus(); return; }
-            if (args.some((a) => !/^[\w.:,+-]{1,64}$/.test(a))) { toast("arguments: letters, digits and . _ - : , + only", true); return; }
+            if (args.some((a) => !/^(?![/\\])(?![A-Za-z]:)(?!.*\.\.)[\w.:,+/-]{1,160}$/.test(a))) { toast("arguments: letters, digits and . _ - : , + /, a path relative to the repo (no ..)", true); return; }
+            if (sp.choices && n && !sp.choices.includes(args[0])) { toast(`no such name “${args[0]}”: one of ${sp.choices.join(", ")}`, true, 6000); if (input) input.focus(); return; }   // (quark_tests would print nothing and pass)
             try { const m = JSON.parse(localStorage.getItem("te.args") || "{}"); m[it.name] = args.join(" "); localStorage.setItem("te.args", JSON.stringify(m)); } catch { }
             this.startRun("cmd:" + it.name, args.length ? { args } : null);
         };
@@ -616,6 +707,16 @@ class App {
         const r = el("div", "runrow");
         r.append(btn("▶ Run quark_tests " + it.name, go), el("span", "muted small", "low priority, one run at a time"));
         d.append(r);
+    }
+    // a group's last times here (oldest first): a bar each, the newest marked; a spike over its median is called out
+    _trend(t) {
+        const h = t.history, max = Math.max(...h.map((x) => x.sec), 0.5);
+        const w = el("div", "trend");
+        const bars = el("div", "trend-bars");
+        h.forEach((x, i) => { const b = el("i", "tbar" + (i === h.length - 1 ? " last" + (t.slower ? " slow" : "") : "")); b.style.height = Math.max(2, Math.round(28 * x.sec / max)) + "px"; b.title = secs(x.sec) + " · " + dallas(x.at); bars.append(b); });
+        w.append(bars, el("span", "small muted", `last ${h.length}: ${h.map((x) => secs(x.sec)).join(", ")}`));
+        if (t.slower) w.append(el("div", "small warn", `▲ the newest, ${secs(t.slower.sec)}, is ${t.slower.pct != null ? t.slower.pct + "% " : ""}over its median of ${secs(t.slower.median)}: the test or the code it drives got slower (or the machine was busy)`));
+        return w;
     }
     _failRow(f) {
         const r = el("div", "fline");
@@ -756,7 +857,7 @@ class App {
     }
 
     // ---------------------------------------------------------------- runs
-    async loadRuns() { const r = await api.runs(); if (r.ok && Array.isArray(r.data)) { this.runs = r.data; this._fillRuns(); const cur = r.data.find((x) => x.status === "running"); if (cur && !this.run) this._follow(cur.id, cur); } }
+    async loadRuns() { const r = await api.runs(); if (r.ok && Array.isArray(r.data)) { this.runs = r.data; this._fillRuns(); this._fillReport(); const cur = r.data.find((x) => x.status === "running"); if (cur && !this.run) this._follow(cur.id, cur); } }
     runLabel(r) {
         const c = r.cmd || "";
         if (c === "suite") return r.only && r.only.length ? "quark_tests: " + clip(r.only.join(", "), 60) : "quark_tests (whole suite)";
@@ -770,13 +871,16 @@ class App {
         if (!box) return;
         box.textContent = "";
         const cmd = box.dataset.cmd;
-        const list = this.runs.filter((r) => !cmd || r.cmd === cmd).slice(0, 8);
+        const g = cmd && cmd.startsWith("group:") ? cmd.slice(6) : null;   // (a group: its own runs, and the suite / release_check runs it was in)
+        const list = this.runs.filter((r) => !cmd || r.cmd === cmd || (g && r.groupResults && r.groupResults[g])).slice(0, 8);
         if (!list.length) { box.append(el("div", "muted small", cmd ? "not run here yet" : "none yet")); return; }
         for (const r of list) {
             const row = el("div", "runh link");
             const gr = r.groupResults ? Object.values(r.groupResults) : [];
             const bad = gr.filter((x) => x.status === "failed").length;
-            row.append(el("i", "dot cc-" + (r.status === "passed" ? "ok" : r.status === "failed" ? "bad" : r.status === "running" ? "run" : "skip")), el("span", "small", this.runLabel(r)), el("span", "small muted", dallas(r.startedAt) + (r.sec ? " · " + secs(r.sec) : "") + " · " + r.status + (gr.length > 1 ? ` · ${gr.length - bad}/${gr.length} groups passed` : "")));
+            const mine = g && r.cmd !== cmd ? r.groupResults[g] : null;
+            const st = mine ? mine.status : r.status;
+            row.append(el("i", "dot cc-" + (st === "passed" ? "ok" : st === "failed" ? "bad" : st === "running" ? "run" : "skip")), el("span", "small", this.runLabel(r)), el("span", "small muted", dallas(r.startedAt) + (r.sec ? " · " + secs(r.sec) : "") + " · " + (mine ? g + " " + mine.status + " in it" : r.status + (gr.length > 1 ? ` · ${gr.length - bad}/${gr.length} groups passed` : ""))));
             row.onclick = () => this._follow(r.id, r, true);
             box.append(row);
         }
@@ -816,6 +920,7 @@ class App {
             if (this.run.partial) { this._appendOut("\n"); }   // (the last line had no newline)
             $("runStop").disabled = true;
             this.loadRuns();
+            if (!past && x.cmd === "script:release_check.sh") this.loadMaps();   // (its "map X ok / FAILED" lines)
             if (!past) this.pollModel();   // (a finished run feeds each group's time and result)
         };
         tick();

@@ -8,6 +8,7 @@ SKIP=" "
 [ "$1" = "--skip" ] && SKIP=" $2 "
 export TMPDIR="${TMPDIR:-/tmp}/quark_release_check.$$"; mkdir -p "$TMPDIR"
 fail=0
+hint=""   # (the RESULT line's advice: only when a timing-sensitive group failed)
 alone="tickrate netcode weaponpredict"   # (timing-sensitive: after the others, on an idle machine; as quark_tests orders them)
 par=""
 for g in $(build/quark_tests groups); do case "$SKIP$alone " in *" $g "*) ;; *) par="$par $g";; esac; done
@@ -19,7 +20,7 @@ for g in $alone; do
   case "$SKIP" in *" $g "*) continue;; esac
   echo "... $g (alone)"
   build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; rc=$?
-  echo "$g rc=$rc $(grep '^group ' "$TMPDIR/$g.log")"; [ $rc = 0 ] || fail=1
+  echo "$g rc=$rc $(grep '^group ' "$TMPDIR/$g.log")"; [ $rc = 0 ] || { fail=1; hint="; timing groups: re-run alone on an idle machine"; }
 done
 if command -v Xvfb >/dev/null; then
   Xvfb :97 >/dev/null 2>&1 & xpid=$!
@@ -35,5 +36,5 @@ else
   echo "(no Xvfb: map load check skipped; host each map once by hand instead)"
 fi
 echo "logs: $TMPDIR"
-[ $fail = 0 ] && echo "RESULT: all passed" || echo "RESULT: FAILURES (see the logs; timing groups: re-run alone on an idle machine)"
+[ $fail = 0 ] && echo "RESULT: all passed" || echo "RESULT: FAILURES (see the logs$hint)"
 exit $fail
