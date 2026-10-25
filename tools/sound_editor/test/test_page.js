@@ -92,6 +92,20 @@ async function open(b, vp) {
   ok(await p.$eval('#sFilter', e => e.value) === '' && await p.$('#soundMatrix tr.none') === null, '"clear the filters" brings the rows back');
   const widths = await p.$$eval('#soundMatrix th.pack', ths => ths.map(t => Math.round(t.getBoundingClientRect().width)));
   ok(Math.max(...widths) - Math.min(...widths) <= 2, 'kit columns are even', widths);
+  // re-rendering keeps unchanged rows: a metric switch rewrites only the value lines, "show" redraws only rows it changes
+  const reuse = await p.evaluate(async () => {
+    const rows = () => [...document.querySelectorAll('#soundMatrix tbody tr')], before = rows(), sel = id => document.getElementById(id);
+    const td = document.querySelector('#soundMatrix td.cell[data-key="sounds/default/ROCKET"]'), v0 = td.querySelector('.vals .main').textContent;
+    sel('sMetric').value = 'dur'; let t = performance.now(); sel('sMetric').dispatchEvent(new Event('change')); const tMetric = performance.now() - t;
+    const v1 = td.querySelector('.vals .main').textContent, kept1 = rows().every((r, i) => r === before[i]);
+    sel('sMetric').value = 'lufs'; sel('sMetric').dispatchEvent(new Event('change'));
+    sel('sWhich').value = 'orig'; t = performance.now(); sel('sWhich').dispatchEvent(new Event('change')); const tWhich = performance.now() - t;
+    const kept2 = rows().every((r, i) => r === before[i]);
+    sel('sWhich').value = 'game'; sel('sWhich').dispatchEvent(new Event('change'));
+    return { v0, v1, kept1, kept2, tMetric: Math.round(tMetric), tWhich: Math.round(tWhich) };
+  });
+  ok(reuse.kept1 && /s$/.test(reuse.v1) && reuse.v1 !== reuse.v0 && reuse.kept2, 'metric / show switches keep the rows and update the values', reuse);
+  console.log('     (matrix: metric switch ' + reuse.tMetric + ' ms, show switch ' + reuse.tWhich + ' ms)');
 
   // --- voices: parallel load, the same filters ------------------------------------------------------------------------
   const t0 = Date.now();

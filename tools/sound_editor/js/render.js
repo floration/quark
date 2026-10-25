@@ -4,8 +4,9 @@
   'use strict';
   const Q = window.Q, R = 48000;
 
-  Q.fitCanvas = function (cv) {
-    const dpr = window.devicePixelRatio || 1, w = Math.max(1, cv.clientWidth), h = Math.max(1, cv.clientHeight);
+  // (size: {w, h} already read, so a batch of canvases reads the layout once instead of once per canvas)
+  Q.fitCanvas = function (cv, size) {
+    const dpr = window.devicePixelRatio || 1, w = Math.max(1, size ? size.w : cv.clientWidth), h = Math.max(1, size ? size.h : cv.clientHeight);
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
     return { g, w, h };
@@ -131,8 +132,8 @@
   };
 
   // mini waveform (matrix cells): peak envelope, fixed 0..maxT seconds so lengths compare at a glance
-  Q.drawMini = function (cv, x, maxT, color) {
-    const { g, w, h } = Q.fitCanvas(cv);
+  Q.drawMini = function (cv, x, maxT, color, size) {
+    const { g, w, h } = Q.fitCanvas(cv, size);
     g.clearRect(0, 0, w, h);
     if (!x || !x.length) return;
     const n = x.length, per = maxT * R / w, mid = h / 2;
