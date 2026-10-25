@@ -81,7 +81,8 @@ function again(app, suite, chartLane, whys) {
 }
 
 // quark_tests: the par groups side by side in time (bar = its timing), then the alone groups one after another. A
-// group with no time yet (never run on this machine) gets the median time, hatched, so its name still shows.
+// group with no time yet (never run on this machine) is drawn hatched at a guessed length so its name still shows;
+// the guess never becomes a printed time: with untimed groups the total is "at least" what the timed ones add up to.
 function gantt(app, suite) {
     const ix = app.ix;
     const groups = (suite.items || []).filter((g) => g.kind === "group");
@@ -89,15 +90,19 @@ function gantt(app, suite) {
     const alone = groups.filter((g) => g.list !== "par").sort((a, b) => a.order - b.order);
     const has = (g) => !!(g.timing && g.timing.sec != null);
     const known = groups.filter(has).map((g) => g.timing.sec).sort((a, b) => a - b);
-    const guess = known.length ? Math.max(1, known[known.length >> 1]) : 10;
+    // (the median when most groups have a time; else a plain 10 s, so a few 0 s groups don't shrink the rest to slivers)
+    const guess = known.length * 2 >= groups.length ? Math.max(1, known[known.length >> 1]) : 10;
     const t = (g) => (has(g) ? Math.max(g.timing.sec, 0.5) : guess);   // (a 0 s group: a sliver, not "no time")
     const missing = groups.filter((g) => !has(g)).length;
     const parWall = Math.max(1, ...par.map(t));
     const total = parWall + alone.reduce((s, g) => s + Math.max(t(g), 1), 0);
+    const atLeast = Math.max(0, ...par.filter(has).map((g) => g.timing.sec)) + alone.filter(has).reduce((s, g) => s + g.timing.sec, 0);
+    const untimed = `${missing} group${missing > 1 ? "s" : ""} not timed`;
+    const est = !missing ? `about ${secs(total)} with enough cores` : atLeast >= 1 ? `at least ${secs(atLeast)} (${untimed})` : `time unknown (${untimed})`;
     const { c, h } = card("quark_tests", "w-local", () => app.select({ kind: "suite", suite }));
-    h.append(el("span", "muted small", `${par.length} par groups at once, then ${alone.length} alone · about ${secs(total)} with enough cores · ` + ((suite.when || [])[0] || {}).text));
+    h.append(el("span", "muted small", `${par.length} par groups at once, then ${alone.length} alone · ${est} · ` + ((suite.when || [])[0] || {}).text));
     if (missing) {
-        const n = el("span", "warn small", `${missing} group${missing > 1 ? "s have" : " has"} no time yet (hatched, drawn at the median): `);
+        const n = el("span", "warn small", `${missing} group${missing > 1 ? "s have" : " has"} no time yet (hatched, drawn at a guessed length): `);
         const go = el("span", "link", "run the whole suite once");
         go.onclick = () => app.select({ kind: "suite", suite });
         n.append(go);
@@ -122,7 +127,8 @@ function gantt(app, suite) {
     for (const grp of alone) { const w = Math.max(t(grp), 1); bar(grp, x, 0, w, "alone"); x += w; }
     const sep = el("div", "gsep"); sep.style.left = pct(parWall); g.append(sep);
     const ax = el("div", "gaxis");
-    ax.append(el("span", null, "0"), el("span", "gmid", "par done ~" + secs(parWall)), el("span", null, secs(total)));
+    const parTimed = par.every(has);
+    ax.append(el("span", null, "0"), el("span", "gmid", parTimed ? "par done ~" + secs(parWall) : "par done"), el("span", null, missing ? (atLeast >= 1 ? "≥ " + secs(atLeast) : "?") : secs(total)));
     ax.querySelector(".gmid").style.left = pct(parWall);
     g.append(ax);
     c.append(g);

@@ -115,7 +115,8 @@ class App {
                 if (!items.length) continue;
                 if (sub) {
                     const tsec = (items.reduce((a, g) => (sub === "par" ? Math.max(a, (g.timing && g.timing.sec) || 0) : a + ((g.timing && g.timing.sec) || 0)), 0));
-                    out.push({ subhead: true, sec: secId, sub: secId + ":" + sub, label: title, meta: items.length + (tsec && (sub === "par" || sub === "alone") ? " · ~" + secs(tsec) : "") });
+                    const untimed = items.some((g) => !g.timing || g.timing.sec == null);   // (then it's a floor, not a time)
+                    out.push({ subhead: true, sec: secId, sub: secId + ":" + sub, label: title, meta: items.length + (tsec >= 1 && (sub === "par" || sub === "alone") ? (untimed ? " · ≥" : " · ~") + secs(tsec) : "") });
                 }
                 if (sub === "par" || sub === "alone") items.sort((a, b) => a.order - b.order);
                 for (const it of items) out.push({ sec: secId, sub: sub ? secId + ":" + sub : null, key: itemKey(it), label: it.kind === "job" ? it.jobId : it.name, meta: this._rowMeta(it), sel: { kind: "item", item: it }, lint: (ix.itemLint.get(itemKey(it)) || []).length, item: it });
