@@ -73,7 +73,7 @@
     const t = $('toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false;
     clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3500);
   }
-  function setHTML(id, html) { if (state.sigs[id] === html) return; state.sigs[id] = html; $(id).innerHTML = html; }
+  function setHTML(id, html) { if (state.sigs[id] === html) return false; state.sigs[id] = html; $(id).innerHTML = html; return true; }
   async function api(path, body) {
     const opts = body === undefined ? { cache: 'no-store' } : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
     let r;
@@ -191,18 +191,33 @@
       const f = obj(n.fields);
       const st = has(n.status) ? pill(STATUS_PILL[n.status] || 'idle', n.status, 'status in 12-play-notes.md (agents change it)') : pill('idle', d.present ? 'not in the file yet' : 'on this PC');
       const parts = FIELD_LABELS.filter(([k]) => has(f[k])).map(([k, l]) => '<div class="f"><b>' + l + ':</b> ' + esc(f[k]) + '</div>');
-      const long = FIELD_LABELS.some(([k]) => has(f[k]) && (String(f[k]).length > 220 || String(f[k]).split('\n').length > 4)) || has(n.logTail);
       const open = state.openNotes.has(n.id);
       const acts = n.locked ? '<span class="small muted" title="Edits and removals stop once an agent has the entry">' + esc(n.locked) + '</span>'
         : '<button type="button" class="btn small ghost" data-edit="' + esc(n.id) + '">Edit</button><button type="button" class="btn small ghost danger" data-del="' + esc(n.id) + '">Remove</button>';
-      return '<li class="note' + (open ? ' open' : '') + '"><div class="t"><span>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</span>' + st + '</div>' + parts.join('') +
+      return '<li class="note' + (open ? ' open' : '') + '" data-id="' + esc(n.id) + '"' + (has(n.logTail) ? ' data-tail="1"' : '') + '><div class="t"><span>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</span>' + st + '</div>' + parts.join('') +
         (has(n.logTail) && open ? '<pre class="tail small mono">' + esc(n.logTail) + '</pre>' : '') +
         '<div class="w">' + esc(n.stamp || '') + (n.freeform ? ' &middot; played outside the board' : ' &middot; played ' + esc(dur(n.durationSec))) + ' ' + exitPill(n.exit) +
         (has(n.args) ? ' &middot; <span class="mono">' + esc(n.args) + '</span>' : '') + (n.editedAt ? ' &middot; edited' : '') + ' &middot; ' + esc(n.where || '') + '</div>' +
-        '<div class="na">' + (long ? '<button type="button" class="btn small ghost" data-more="' + esc(n.id) + '">' + (open ? 'less' : 'more' + (has(n.logTail) ? ' (and the log lines)' : '')) + '</button>' : '') + '<span class="grow"></span>' + acts + '</div></li>';
+        '<div class="na"><button type="button" class="btn small ghost" data-more="' + esc(n.id) + '"' + (open || has(n.logTail) ? '' : ' hidden') + '>' + (open ? 'less' : 'more' + (has(n.logTail) ? ' (and the log lines)' : '')) + '</button><span class="grow"></span>' + acts + '</div></li>';
     }).join('') + '</ul>';
     if ((v.notesTotal || 0) > notes.length) html += '<p class="small muted more-notes">The newest ' + notes.length + ' of ' + esc(v.notesTotal) + '; every note is in ' + esc(file) + ' (Claude Manager) and project-manager\\play-notes.jsonl.</p>';
-    setHTML('sec-notes', html);
+    if (setHTML('sec-notes', html)) measureNotes();
+  }
+  // "more" only where a box really is cut: measured after rendering (a 200-character box with one long line wraps past
+  // the 4-line clamp, a 300-character one on a wide card may not), and again when the cards change width
+  function measureNotes() {
+    for (const li of document.querySelectorAll('#sec-notes li.note:not(.open)')) {
+      const b = li.querySelector('[data-more]');
+      if (b) b.hidden = !li.dataset.tail && !Array.from(li.querySelectorAll('.f')).some(f => f.scrollHeight > f.clientHeight + 1);
+    }
+  }
+  if (window.ResizeObserver) {
+    let w = 0, raf = 0;
+    new ResizeObserver((es) => {
+      const nw = Math.round(es[0].contentRect.width);
+      if (nw === w) return;
+      w = nw; cancelAnimationFrame(raf); raf = requestAnimationFrame(measureNotes);
+    }).observe($('sec-notes'));
   }
 
   const SESSION_STATE = { running: ['good', 'running'], needsNote: ['warn', 'note waiting'], noted: ['good', 'noted'], skipped: ['idle', 'skipped'] };
