@@ -10,7 +10,7 @@
 
 import { parse, print, printDecl, highlightLine, ModeError } from "./qmode.js";
 import { validate, clone, numberIds, carryIds, declKey, slotKey, diffLogic, interpretedSlots, highlightSets, CATALOG, symbols, deepEqual, stripIds, mergeLogic } from "./lang.js";
-import { splitQmode, patchQmode, modeKeys, newQmodeText, MODE_KEYS, OWNER_TEXT, PHYSICS_EDITOR_URL } from "./qfile.js";
+import { splitQmode, patchQmode, modeKeys, newQmodeText, unknownMaps, MODE_KEYS, OWNER_TEXT, PHYSICS_EDITOR_URL } from "./qfile.js";
 import { MODES, MODE_TITLES, logicBase } from "./catalog.js";
 import { BlocksView } from "./blocks.js";
 import { GraphView, overviewGraph } from "./graph.js";
@@ -111,6 +111,7 @@ export class ModePage {
         this._wire();
         app.on("modes", () => this._fillSel());
         app.on("catalog", () => this._afterChange(null));
+        app.on("maps", () => this._afterChange(null));
     }
 
     async start() {
@@ -242,6 +243,8 @@ export class ModePage {
         if (!located) { try { located = parse(this.codeText); } catch { located = this.ast; } }
         this.check = validate(located, { base: this.base, def: this.def });
         if (this.ast.base && this.ast.base !== logicBase(this.base)) this.check.problems.unshift({ severity: "error", msg: `base ${this.ast.base} doesn't match the file's mode=${this.base}`, where: "base", line: 2, col: 1 });
+        const unknown = unknownMaps(this.currentKeys().maps, this.app.mapNames);
+        if (unknown.length) this.check.problems.push({ severity: "warning", where: "maps", msg: `maps=${unknown.join(", ")}: not a shipped map or one of yours (the game can't load ${unknown.length > 1 ? "them" : "it"} in the rotation)` });
         this.check.errors = this.check.problems.filter((p) => p.severity === "error");
         this.interp = this.def ? interpretedSlots(this.ast, this.def) : new Set();
         for (const v of VIEWS) if (v !== from) this.dirtyViews.add(v);

@@ -6,7 +6,7 @@
 import { symbols, clone, declKey, CATALOG, walkStmts, paramDefault } from "./lang.js";
 import { canonNum, roundTo, printExpr, dataText } from "./qmode.js";
 import { CurveWidget } from "./curves.js";
-import { OWNER_TEXT, PHYSICS_EDITOR_URL } from "./qfile.js";
+import { OWNER_TEXT, PHYSICS_EDITOR_URL, unknownMaps } from "./qfile.js";
 
 const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const catParam = (d) => (d.kind === "param" && CATALOG.params[d.name]) || null;
@@ -71,10 +71,14 @@ export class ValuesView {
                 const td = document.createElement("td"); td.colSpan = 2;
                 const inp = document.createElement("input"); inp.style.width = "100%"; inp.style.textAlign = "left";
                 inp.value = mk.maps ?? ""; inp.placeholder = "empty: the host's map only"; inp.setAttribute("list", "mapNames");
+                const flag = (val) => { const u = unknownMaps(val, this.app.app.mapNames); inp.classList.toggle("invalid", u.length > 0); inp.title = u.length ? `not a shipped map or one of yours: ${u.join(", ")}` : ""; return u; };
+                flag(inp.value);
                 inp.onchange = () => {
                     const v = inp.value.split(",").map((x) => x.trim()).filter(Boolean);
                     if (v.some((x) => !/^[A-Za-z0-9 _-]{1,40}$/.test(x))) { this.app.app.toast("map names: letters, digits, space, _ and - (comma separated)"); inp.value = mk.maps ?? ""; return; }
                     if (v.length > 32) { this.app.app.toast("at most 32 maps"); return; }
+                    const u = flag(v.join(","));
+                    if (u.length) this.app.app.toast(`maps: ${u.join(", ")} isn't a shipped map or one of yours (a warning in Checks)`, 5000);
                     this.app.setKey("maps", v.join(","));
                 };
                 td.append(inp); tr.append(td);

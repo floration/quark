@@ -15,7 +15,7 @@ import { parse, print, printExpr, ModeError } from "../js/qmode.js";
 import { CATALOG, walkStmts, validate, deepEqual, firstDiff, stripIds, numberIds, clone, slotKey, declKey, mergeLogic, diffLogic, interpretedSlots, costs } from "../js/lang.js";
 import { logicToBlocks, blocksToLogic } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
-import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
+import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash, unknownMaps } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
 import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, fieldProblem, batchModel, batchDelta, histogram, matchSpread, csvName, sharedAxes, endCardFields } from "../js/sim.js";
@@ -258,6 +258,10 @@ await t("phases: built-in slots native, a changed slot interpreted, object event
     same(all.find((s) => s.name === "respawnDelay").status, "native");
     ok(m.columns.find((c) => c.id === "live").objects.some((o) => o.name === "bomb" && o.on), "bomb object on the round");
     same(all.find((s) => s.name === "timeUp").status === "unwritten" || all.find((s) => s.name === "timeUp").status === "native", true);
+});
+await t("maps key: names that aren't shipped or the user's are flagged (nothing when the map list is unknown)", () => {
+    eq(unknownMaps("depot, bogusmap,harbor", new Set(["depot", "harbor"])), ["bogusmap"]);
+    eq(unknownMaps("bogusmap", null), []); eq(unknownMaps("", new Set()), []);
 });
 await t("sim timeline model reads modesim NDJSON without inventing values", () => {
     const lines = [{ type: "start", label: "x", base: "koth", interpreted: ["tick"] },
