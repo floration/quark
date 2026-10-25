@@ -177,8 +177,11 @@ export class SimView {
         this._persistSoon();
     }
     _persistSoon() { clearTimeout(this._pt); this._pt = setTimeout(() => this._persist(), 400); }
+    // the runs started (by id) and the batches still waiting their turn (by request: a compare batch's built-in half
+    // starts after the first, so a reload in between must still start it)
     _persist() {
-        const ids = [...this.runs, ...this.batches].filter((r) => r.id).map((r) => ({ id: r.id, label: r.label, kind: r.kind }));
+        const ids = [...this.runs, ...this.batches].filter((r) => r.id || (r.kind === "batch" && !r.done))
+            .map((r) => (r.id ? { id: r.id, label: r.label, kind: r.kind } : { label: r.label, kind: r.kind, request: r.request }));
         api.saveState("sim", { form: this.form, scenario: this.scenario, runs: ids }).catch(() => {});
     }
     async _restore() {
@@ -189,14 +192,26 @@ export class SimView {
         this.scenario = st.scenario || "";
         // the runs the page had going: serve.py keeps their lines, so they replay from the start and go on streaming
         for (const x of st.runs || []) {
+            if (!x.id) {   // (a batch that hadn't started: it runs after the ones before it)
+                if (x.kind === "batch" && x.request) this.batches.push(this._entry({ label: x.label, kind: "batch", request: x.request }));
+                continue;
+            }
             let info;
             try { info = await api.run(x.id); } catch { continue; }
-            const r = { label: x.label, kind: x.kind, lines: [], model: null, id: x.id, done: false };
+            const r = this._entry({ label: x.label, kind: x.kind, id: x.id });
             (x.kind === "batch" ? this.batches : this.runs).push(r);
             this._attach(r, x.kind === "batch" ? () => this._soonBatch() : () => this._soon(), info.args && info.args[0]);
         }
         this.busy = [...this.runs, ...this.batches].some((r) => !r.done);
+        if (this.batches.some((b) => !b.done)) this._runBatches();
     }
+    // a run or batch: its lines, and `finished`, which resolves once it is done (ended, failed or stopped)
+    _entry(o) {
+        const r = { lines: [], model: null, done: false, ...o };
+        r.finished = new Promise((res) => (r._fin = res));
+        return r;
+    }
+    _finish(r) { r.done = true; r._fin(); }
 
     render() {
         const R = this.root, st = this.status;
@@ -310,8 +325,8 @@ export class SimView {
         if (rules === undefined) return;
         this.stop(true);
         this.batches = [];
-        this.runs = [{ label: "this file", kind: "run", lines: [], model: null }];
-        if (this.form.compare) this.runs.push({ label: "built-in " + this.app.base, kind: "run", lines: [], model: null });
+        this.runs = [this._entry({ label: "this file", kind: "run" })];
+        if (this.form.compare) this.runs.push(this._entry({ label: "built-in " + this.app.base, kind: "run" }));
         this._setBusy(true);
         this._drawRuns();
         await Promise.all(this.runs.map((r, i) => this._start(r, ["modesim", "--stream"], this._req(i === 0 ? rules : this._builtinRules()), () => this._soon())));
@@ -323,7 +338,7 @@ export class SimView {
             const { id } = await api.post("/api/run", { args, request }, "json");
             r.id = id;
             this._attach(r, onLine, args[0]);
-        } catch (e) { r.lines.push({ type: "error", error: e.message }); r.done = true; onLine(); this._allDone(); }
+        } catch (e) { r.lines.push({ type: "error", error: e.message }); this._finish(r); onLine(); this._allDone(); }
     }
     _attach(r, onLine, cmd) {
         const es = new EventSource(`/api/run/${r.id}/events`);
@@ -333,19 +348,19 @@ export class SimView {
             onLine();
         };
         es.addEventListener("exit", (ev) => {
-            es.close(); r.done = true;
+            es.close(); this._finish(r);
             try { const x = JSON.parse(ev.data); r.code = x.code; if (x.code && !r.lines.some((l) => l.type === "error" || l.error)) r.lines.push({ type: "error", error: `${cmd || "the helper"} exited with ${x.code}: ${x.stderr || ""}` }); } catch {}
             onLine();
             this._allDone();
         });
-        es.onerror = () => { if (!r.done) { es.close(); r.done = true; onLine(); this._allDone(); } };
+        es.onerror = () => { if (!r.done) { es.close(); this._finish(r); onLine(); this._allDone(); } };
     }
     stop(quiet) {
         let any = false;
         for (const r of [...this.runs, ...this.batches]) {
             if (r.es) r.es.close();
             if (r.id && !r.done) { api.post(`/api/run/${r.id}/stop`, {}).catch(() => {}); r.stopped = true; any = true; }
-            r.done = true;
+            if (!r.done) this._finish(r);
         }
         this._setBusy(false);
         if (quiet) return;
@@ -511,14 +526,19 @@ export class SimView {
         this.stop(true);
         this.runs = [];
         const req = (r) => ({ ...this._req(r), realtime: false, trace: false, seeds: this.form.n, firstSeed: this.form.seed });
-        this.batches = [{ label: "this file", kind: "batch", lines: [], request: req(rules) }];
-        if (this.form.compare) this.batches.push({ label: "built-in " + this.app.base, kind: "batch", lines: [], request: req(this._builtinRules()) });
+        this.batches = [this._entry({ label: "this file", kind: "batch", request: req(rules) })];
+        if (this.form.compare) this.batches.push(this._entry({ label: "built-in " + this.app.base, kind: "batch", request: req(this._builtinRules()) }));
         this._setBusy(true);
         this._drawBatches();
-        // one after the other (each already uses every core but one)
+        this._persist();
+        await this._runBatches();
+    }
+    // the batches one after the other (each already uses every core but one): a running one (reattached after a
+    // reload) is waited for, a waiting one is started. Stop marks them all done, which ends this loop.
+    async _runBatches() {
         for (const b of this.batches) {
-            if (b.done) continue;
-            await new Promise((res) => { this._start(b, ["modebatch", "--stream"], b.request, () => { this._soonBatch(); if (b.done) res(); }); this._persist(); });
+            if (!b.done && !b.id) { await this._start(b, ["modebatch", "--stream"], b.request, () => this._soonBatch()); this._persist(); }
+            await b.finished;
         }
     }
     _soonBatch() { if (this._rafB) return; this._rafB = requestAnimationFrame(() => { this._rafB = 0; this._drawBatches(); }); }
