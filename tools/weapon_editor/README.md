@@ -87,7 +87,8 @@ selected weapon's quick numbers. An unsaved set is kept as a draft and comes bac
 
 ## Files
 
-- `serve.py`: the server (port 8773). Writes need the `X-Quark-Editor: 1` header the page sends.
+- `serve.py`: the server (port 8773). Writes need the `X-Quark-Editor: 1` header the page sends. A Fights run (live
+  sim or batch) that no page has watched for 5 s (a closed window, a killed browser) is stopped.
 - `build_catalog.py`: writes `web/js/catalog_data.js` from `quark_tests exportweapons` (`--check` only compares).
 - `web/`: the page. `js/dsl.js` reads and writes `.qweapons`, `js/ast.js` checks and runs it, `js/catalog.js` reads
   the catalog (`js/catalog_data.js`, generated: never edit it by hand), `js/stats.js` the numbers, `js/mockrange.js` the MOCK range, `js/helper.js` talks to the game's

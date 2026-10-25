@@ -267,6 +267,18 @@ async function serverChecks({ STD, DEMO }) {
     const hp = await post("/api/helper", { args: ["simcheck"], request: {} });
     ok(maptool ? hp.status === 200 && typeof hp.json.code === "number" : hp.status === 501, "/api/helper", maptool ? "code " + (hp.json && hp.json.code) : "501 without quark_maptool");
     ok((await post("/api/run", { args: ["rm", "-rf"] })).status === 400, "/api/run only runs the streaming commands");
+    if (maptool && fs.existsSync(path.join(REPO, "maps", "harbor.qmap"))) {
+        // a live sim whose page went away without saying so (a killed window) is stopped by the server
+        const text = fs.readFileSync(path.join(REPO, "maps", "harbor.qmap"), "utf8");
+        const r = await post("/api/run", { args: ["sim", "--stream"], request: { map: { name: "harbor", text }, mode: "ffa", seconds: 600, realtime: true, rate: 20, bots: [{ name: "a" }, { name: "b" }] } });
+        const ac = new AbortController();
+        const es = await fetch(`${BASE}/api/run/${r.json.id}/events`, { signal: ac.signal });
+        const rd = es.body.getReader(); await rd.read(); ac.abort();
+        await new Promise((res) => setTimeout(res, 15000));
+        const ac2 = new AbortController(); setTimeout(() => ac2.abort(), 3000);
+        let tail = ""; try { const e2 = await fetch(`${BASE}/api/run/${r.json.id}/events?from=999999`, { signal: ac2.signal }); tail = await e2.text(); } catch {}
+        ok(/event: exit/.test(tail), "a live sim nobody watches any more is stopped (a hard-closed page)");
+    }
     const bad = await post("/api/helper", { args: ["rm"], request: {} });
     ok(maptool ? bad.status === 400 && /not a helper command/.test(bad.json.error) : bad.status === 501 && /not found/.test(bad.json.error), "/api/helper names why it refused", bad.json && bad.json.error);
 }
