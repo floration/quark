@@ -419,8 +419,18 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
   function saveLater() { session('play-later', JSON.stringify(Array.from(state.later))); }
+  // The form opens by itself only once the page has been left alone for IDLE_MS: a game that closes while q is
+  // clicking or typing here (Stop on one of two games, an options box) shows the banner first instead of a modal that
+  // takes the next click. "Write the note" opens it at once.
+  const IDLE_MS = 4000;
+  let lastUse = 0, openTimer = 0;
+  for (const ev of ['pointerdown', 'keydown', 'input', 'wheel']) {
+    document.addEventListener(ev, (e) => { if (!(e.target instanceof Node && (dlg.contains(e.target) || $('log-dlg').contains(e.target)))) lastUse = Date.now(); }, { capture: true, passive: true });
+  }
   function maybeOpenNote() {
     if (dlg.open || $('log-dlg').open || !state.v) return;
+    const wait = lastUse + IDLE_MS - Date.now();
+    if (wait > 0) { clearTimeout(openTimer); openTimer = setTimeout(maybeOpenNote, wait + 50); return; }
     const pend = arr(state.v.pending);
     const want = wantedNote();
     const s = want ? sessionById(want) : null;
