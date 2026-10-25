@@ -175,6 +175,13 @@ async function nodeChecks() {
     const dset = parse(DEMO), dvals = fieldValues(dset);
     tryOk("a curve replaces the falloff fields (rocket x0.6 from 20 m)", () => { const r = computeStats(dvals, { set: dset, health: 100 }).rows.find((r) => r.weapon === "rocket"); return near(r.per(40, false) / r.per(0, false), 0.6, 0.02) || String(r.per(40, false) / r.per(0, false)); });
 
+    tryOk("Values count a hit slot: sniper head x1.2 = 60, 2 shots; a slot reading victimHealth goes hit by hit", () => {
+        const t = STD + "\nparam bonus f32 = 1.2\nslot hit sniper:\n  if head: damage = damage * bonus\nslot hit rifle:\n  if victimHealth < 50: damage = damage * 2\n";
+        const a = parse(t), R = computeStats(fieldValues(a), { set: a, health: 100 }).rows;
+        const sn = R.find((r) => r.id === "sniper:primary"), rf = R.find((r) => r.id === "rifle:primary"), rk = R.find((r) => r.id === "rocket:primary:direct");
+        return (near(sn.head, 60) && sn.stkHead === 2 && near(sn.base(0, true), 50) && sn.logic === "hit sniper" && rf.stkBody === 16 && !rk.logic) || JSON.stringify([sn.head, sn.stkHead, rf.stkBody, rk.logic]);
+    });
+
     console.log("try a hit");
     const S = symbols(dset);
     tryOk("slot hit: head at 40 m x1.5", () => near(runSlot(dset, "hit", "rifle", { weapon: "rifle", damage: 10, head: true, dist: 40 }, S, dvals).outputs.damage, 15));

@@ -71,7 +71,7 @@ export class ValuesView {
         const app = this.app;
         if (!app.stats) return;
         const rows = this._rows();
-        this.root.querySelector("#vNote").textContent = `${app.health} hp target${app.dist ? ", hits at " + app.dist + " m" : ""} · differences vs ${app.cmpLabel} · green: stronger, red: weaker`;
+        this.root.querySelector("#vNote").textContent = `${app.health} hp target${app.dist ? ", hits at " + app.dist + " m" : ""} · differences vs ${app.cmpLabel} · green: stronger, red: weaker${app.stats.rows.some((r) => r.logic) ? " · ƒ: the set's hit logic counted (a standing victim, the first hit; the Range runs all of it)" : ""}`;
         const groups = [];
         for (const c of COLS) { const g = groups[groups.length - 1]; if (g && g.name === c[2]) g.n++; else groups.push({ name: c[2], n: 1 }); }
         let h = `<table class="vt"><thead><tr><th class="grp"></th>${groups.map((g) => `<th class="grp" colspan="${g.n}">${g.name}</th>`).join("")}<th class="grp"></th></tr>`;
@@ -79,7 +79,7 @@ export class ValuesView {
         h += `<tr><th data-k="label"${sc("label")}>weapon · fire mode</th>${COLS.map(([k, t]) => `<th data-k="${k}"${sc(k)}${COL_TIP[k] ? ` title="${esc(COL_TIP[k])}"` : ""}>${t}</th>`).join("")}<th>notes</th></tr></thead><tbody>`;
         const f = (v, kind) => (kind === "int" ? fin(v) : kind === "t" ? (v == null ? "–" : fmtT(v)) : v == null ? "–" : fmtNum(v));
         for (const { r, c, changed } of rows) {
-            h += `<tr class="${changed ? "changed" : ""}${r.weapon === app.sel ? " sel" : ""}" data-w="${r.weapon}"><td>${esc(r.label)}</td>`;
+            h += `<tr class="${changed ? "changed" : ""}${r.weapon === app.sel ? " sel" : ""}" data-w="${r.weapon}"><td>${esc(r.label)}${r.logic ? ` <span class="logic" title="the set's slot ${esc(r.logic)} is counted in these numbers">ƒ</span>` : ""}</td>`;
             for (const [k, , , lower, kind] of COLS) {
                 const a = r[k], b = c ? c[k] : undefined;
                 const blank = ((k === "splashMax" || k === "splashRadius") && !r.splashRadius && !(c && c.splashRadius)) || ((k === "wallbang" || k === "selfDmg") && a == null && !(c && c[k] != null));

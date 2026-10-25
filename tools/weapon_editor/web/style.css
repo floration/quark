@@ -319,7 +319,7 @@ h4 { margin: 6px 0; font-size: 12.5px; }
 .wrow .lab { font-family: var(--mono); font-size: 11px; color: var(--fg2); }
 .wrow .k { font-size: 10.5px; color: var(--fg3); }
 .wrow .mod { color: var(--warn); font-size: 11px; font-weight: 600; min-width: 18px; text-align: right; }
-.wrow .logic { color: var(--c-curve); font-size: 10.5px; }
+.wrow .logic, .vt .logic, #quick .logic { color: var(--c-curve); font-size: 10.5px; }
 .mini th { text-align: right; color: var(--fg3); font-weight: 500; font-size: 11px; padding: 1px 3px; }
 .mini th:first-child { text-align: left; }
 

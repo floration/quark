@@ -457,7 +457,7 @@ class App {
         let h = `<tr><th></th><th>STK b/h</th><th>TTK b/h</th><th>DPS b</th></tr>`;
         for (const r of rows) {
             const c = cmp.get(r.id) || {};
-            h += `<tr><td title="${r.label}">${r.label.split(" · ").slice(1).join(" · ") || "primary"}</td><td class="n">${fin(r.stkBody)}/${fin(r.stkHead)}${d(r.stkBody, c.stkBody, true)}</td><td class="n">${fmtT(r.ttkBody)}/${fmtT(r.ttkHead)}${d(r.ttkBody, c.ttkBody, true)}</td><td class="n">${fmtNum(r.dpsBody)}${d(r.dpsBody, c.dpsBody)}</td></tr>`;
+            h += `<tr><td title="${r.label}${r.logic ? "\nthe set's slot " + r.logic + " is counted" : ""}">${r.label.split(" · ").slice(1).join(" · ") || "primary"}${r.logic ? ' <span class="logic">ƒ</span>' : ""}</td><td class="n">${fin(r.stkBody)}/${fin(r.stkHead)}${d(r.stkBody, c.stkBody, true)}</td><td class="n">${fmtT(r.ttkBody)}/${fmtT(r.ttkHead)}${d(r.ttkBody, c.ttkBody, true)}</td><td class="n">${fmtNum(r.dpsBody)}${d(r.dpsBody, c.dpsBody)}</td></tr>`;
         }
         if (!rows.length) h += `<tr><td colspan="4" class="muted">a support item: no damage</td></tr>`;
         t.innerHTML = h;

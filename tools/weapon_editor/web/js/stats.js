@@ -9,11 +9,16 @@
 //   rockets        = a direct hit does at least directDamage; "splash" rows are the blast's centre without a direct hit
 //   at a distance  = x falloff (the fields, or the set's <weapon>.falloff curve); 0 beyond a hitscan's range or a
 //                    projectile's speed x life; shotgun pellets that miss a 0.8 x 1.8 m body at that distance don't count
+//   the set's logic = a weapon's hit slot (`slot hit <weapon>`, else `slot hit`) runs on each hit, as in the game, with
+//                    head, dist, alt, direct and splash from the row; what a table can't know is taken as a standing
+//                    victim, a standing shooter at full health, 30 s into the round, the first hit (airborne no, speeds
+//                    0, streak 1); a slot that reads victimHealth is run hit by hit for shots to kill. `base` keeps the
+//                    damage before the slot (wpnstats doesn't run logic: it matches `base`)
 //
 // The game's own numbers come from quark_maptool wpnstats when it has it; this is the same arithmetic on the same fields.
 
 import { WEAPONS } from "./catalog.js";
-import { evalCurve } from "./ast.js";
+import { evalCurve, runSlot, symbols, walkStmts, stmtExprs, walkExpr } from "./ast.js";
 
 export const HALF_W = 0.4, HEIGHT = 1.8, HEAD_FRAC = 0.2, HEAD_W_FRAC = 0.45;
 export const DISTANCES = [10, 20, 40];
@@ -109,9 +114,10 @@ export function computeStats(values, opts = {}) {
     const v = (k) => { const x = values.get(k); return x === undefined ? FIXED[k] || 0 : typeof x === "boolean" ? (x ? 1 : 0) : Math.fround(+x); };
     const curves = new Map();
     if (opts.set) for (const d of opts.set.decls) if (d.kind === "curve") curves.set(d.name, d);
+    const L = opts.set ? hitLogic(opts.set, values, H) : null;
     const rows = [];
     for (const [w, mode, variant, suffix] of ROW_DEFS) {
-        const r = row(w, mode, variant, v, curves, opts.set, H, D);
+        const r = row(w, mode, variant, v, curves, opts.set, H, D, L);
         if (!r) continue;
         r.label = (opts.titles && opts.titles.get(w) || w) + (suffix ? " · " + suffix : mode === "alt" ? " · alt" : "");
         rows.push(r);
@@ -127,7 +133,23 @@ function falloffFn(w, v, curves, set) {
     return (d) => (d <= s ? 1 : d >= e ? m : 1 + (m - 1) * (d - s) / (e - s));
 }
 
-function row(w, mode, variant, v, curves, set, H, D) {
+// the set's hit slots, run the way the game runs them on a hit (see the header); null: the set has none
+function hitLogic(set, values, H) {
+    const S = symbols(set);
+    if (![...S.slots.keys()].some((k) => k === "hit" || k.startsWith("hit "))) return null;
+    const readsHp = new Map();   // slot -> does it read victimHealth (then shots to kill go hit by hit)
+    const slotOf = (w) => S.slots.get("hit " + w) || S.slots.get("hit") || null;
+    return {
+        slotOf,
+        readsHp(d) {
+            if (!readsHp.has(d)) { let r = false; walkStmts(d.body, (st) => stmtExprs(st).forEach((e) => walkExpr(e, (x) => { if (x.op === "name" && x.name === "victimHealth") r = true; }))); readsHp.set(d, r); }
+            return readsHp.get(d);
+        },
+        run: (w, s) => runSlot(set, "hit", w, { self: false, airborne: false, shooterHealth: H, victimSpeed: 0, shooterSpeed: 0, time: 30, streak: 1, ...s }, S, values).outputs.damage,
+    };
+}
+
+function row(w, mode, variant, v, curves, set, H, D, L) {
     const kindOf = { rifle: "hitscan", sniper: "hitscan", shotgun: "hitscan", laser: "beam", knife: "melee", rocket: "projectile", sticky: "projectile",
         crossbow: "projectile", bubble: "projectile", syringe: "support", locator: "support" };
     const r = { id: `${w}:${mode}${variant ? ":" + variant : ""}`, weapon: w, mode, variant, kind: kindOf[w], notes: [] };
@@ -187,6 +209,49 @@ function row(w, mode, variant, v, curves, set, H, D) {
         r.reach = reach;
         if (gravity) r.notes.push(`drops ${fmt(gravity)} m/s²`);
     }
+    // the set's hit slot on each hit (a stream's bubbles hit one by one); per(d, h) is then the damage after it
+    r.base = per;
+    let stkOf = null;
+    const slot = L && !r.support ? L.slotOf(w) : null;
+    if (slot) {
+        const raw = per, count = w === "bubble" && mode === "alt" ? (d) => bubbleCount(v, d) : () => 1, memo = new Map();
+        const hitOnce = (x, d, h, hp) => L.run(w, { damage: x, alt: mode === "alt", dist: d, head: h && r.headshots, direct: r.kind === "projectile" && variant !== "splash", splash: 1, victimHealth: hp });
+        per = (d, h) => {
+            const k = d * 2 + (h ? 1 : 0);
+            let y = memo.get(k);
+            if (y === undefined) { const x = raw(d, h), n = count(d); y = x > 0 ? hitOnce(x / n, d, h, H) * n : 0; memo.set(k, y); }
+            return y;
+        };
+        // hit by hit, the victim's health going down; runs of equal hits are taken in growing steps (a run of s hits
+        // when its last hit still does the same), each at most 2% of the health, so a band of health where the slot
+        // does something else is skipped only when it is narrower than that (the laser's 2500 ticks: ~100 slot runs).
+        // A slot whose damage changes with every hit is run 150 times, then once per 2% of the health (each run's
+        // damage for the hits up to the next: a slider drag stays smooth), and the row says it's that close.
+        if (L.readsHp(slot)) stkOf = (h) => {
+            let runs = 0;
+            const x = raw(D, h), n = count(D), at = (hp) => { runs++; return hitOnce(x / n, D, h, hp) * n; };
+            if (!(x > 0)) return Infinity;
+            let hp = H, k = 0, step = 1;
+            while (hp > 1e-9) {
+                const y = at(hp);
+                if (!(y > 1e-9)) return Infinity;
+                const left = Math.ceil(hp / y - 1e-9);   // hits to finish at this damage
+                if (runs > 150) {
+                    if (!r.notes.some((t) => t.startsWith("≈"))) r.notes.push("≈ shots to kill: the slot's damage changes with every hit; after 150 of them it is run once per 2% of the health");
+                    const c = Math.min(left, Math.max(1, Math.floor(H * 0.02 / y)));
+                    if (c >= left) return k + left;
+                    hp -= c * y; k += c; continue;
+                }
+                let s = Math.min(step, left, Math.max(1, Math.floor(H * 0.02 / y)));
+                while (s > 1 && at(hp - (s - 1) * y) !== y) s = s >> 1;
+                if (s >= left) return k + left;
+                hp -= s * y; k += s; step = s === step ? step * 2 : Math.max(2, s);
+            }
+            return k;
+        };
+        r.logic = slot.weapon ? `hit ${w}` : "hit";
+        r.notes.push(`ƒ slot ${r.logic} counted (a standing victim, the first hit, 30 s in)`);
+    }
     r.refire = refire;
     r.pellets = pellets;
     r.range = r.kind === "hitscan" || r.kind === "beam" || r.kind === "melee" ? range : r.reach || 0;
@@ -203,7 +268,7 @@ function row(w, mode, variant, v, curves, set, H, D) {
     r.head = per(D, true);
     r.burst = r.body;
     const stk = (x) => (x > 1e-9 ? Math.ceil(H / x - 1e-9) : Infinity);
-    r.stkBody = stk(r.body); r.stkHead = stk(r.head);
+    r.stkBody = stkOf ? stkOf(false) : stk(r.body); r.stkHead = stkOf ? stkOf(true) : stk(r.head);
     const ttk = (n) => (Number.isFinite(n) ? (n - 1) * refire + extraTtk : Infinity);
     r.ttkBody = ttk(r.stkBody); r.ttkHead = ttk(r.stkHead);
     r.dpsBody = r.body / refire; r.dpsHead = r.head / refire;

@@ -138,7 +138,7 @@ export class CodeView {
         const t = this.trial, s = t.s, rows = this.app.stats.rows.filter((r) => r.weapon === t.weapon && r.variant !== "splash");
         const row = rows.find((r) => r.mode === (s.alt ? "alt" : "primary")) || rows[0];
         if (!row || row.support) return 10;
-        return +row.per(Number.isFinite(s.dist) ? s.dist : 10, !!s.head).toFixed(3);
+        return +(row.base || row.per)(Number.isFinite(s.dist) ? s.dist : 10, !!s.head).toFixed(3);   // (before the slot: its input)
     }
     _run() {
         const app = this.app, t = this.trial;
