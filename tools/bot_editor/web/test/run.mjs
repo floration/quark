@@ -7,7 +7,7 @@ import { parse, print, printExpr, BrainError } from "../js/dsl.js";
 import { setCatalog, CATALOG, validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, declKey, diffBrains, declAreas, decompose, compose, wholeGroups } from "../js/ast.js";
 import { brainToBlocks, blocksToBrain, toBlocks, fromBlocks } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph, wholeGraph, wholeGraphToBrain, sharedInputs, refitFrame, keepMoved } from "../js/graph.js";
-import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
+import { parseQmap, mapObjectives, mapSupports, applyHelperParse, mapLabel, mapTitle } from "../js/qmap.js";
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
 import { pctKind } from "../js/values.js";
@@ -334,6 +334,15 @@ t("win rates: Wilson interval, the difference of two runs, per brain counted per
     const S = summarize(ms), A = S.brains.find((b) => b.name === "A"), B = S.brains.find((b) => b.name === "B");
     same(A.n, 3, "two bots of one brain are one match"); same(A.w, 2); same(A.botMatches, 6); same(A.kills, 9); same(B.w, 0);
     same(S.maps[0].a, 2); same(S.maps[0].timeouts, 1); same(S.maps[0].errors, 1); same(S.bots.length, 4);
+});
+
+t("batch: a map of yours named like a shipped one is its own row", () => {
+    const m = (mapKey, mapLabel, seed) => ({ map: "temple", mapKey, mapLabel, seed, t: 30, winner: { team: "a" }, bots: [{ id: 0, name: "A", team: "a", brain: "default", won: true }] });
+    const S = summarize([m("default/temple", "Temple", 1), m("user/temple", "Temple (yours)", 1), m("user/temple", "Temple (yours)", 2)]);
+    same(S.maps.length, 2); same(S.maps.find((x) => x.key === "user/temple").matches, 2); same(S.maps.find((x) => x.key === "default/temple").map, "Temple");
+    same(mapLabel({ name: "mybox", source: "user", title: "Harbor" }), "Harbor · mybox.qmap (yours)");
+    same(mapLabel({ name: "temple", source: "default", title: "Temple" }), "Temple");
+    same(mapTitle({ name: "temple", source: "user", title: "Temple" }), "Temple");
 });
 
 console.log("files");

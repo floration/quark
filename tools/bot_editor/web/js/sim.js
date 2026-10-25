@@ -3,7 +3,7 @@
 
 import { MapView, TEAM_COLORS } from "./mapview.js";
 import { Map3D } from "./map3d.js";
-import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorOrNull } from "./qmap.js";
+import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorOrNull, mapTitle } from "./qmap.js";
 import { LiveView, Recording } from "./live.js";
 import { buildRequest } from "./helper.js";
 import { api } from "./api.js";
@@ -141,7 +141,7 @@ export class SimPage {
             const ms = this.app.maps.filter((m) => m.source === src);
             if (!ms.length) continue;
             const og = document.createElement("optgroup"); og.label = label;
-            for (const m of ms) { const o = document.createElement("option"); o.value = m.source + "/" + m.name; o.textContent = `${m.title || m.name}${m.for ? "  (" + m.for + ")" : ""}${m.handmade ? " ✎" : ""}${m.shadows ? " · same name as a game map" : ""}`; if (m.shadows) o.title = `${m.name}.qmap in ${m.dir}: the game plays this file instead of its own ${m.name}`; og.append(o); }
+            for (const m of ms) { const o = document.createElement("option"); o.value = m.source + "/" + m.name; o.textContent = `${mapTitle(m)}${m.for ? "  (" + m.for + ")" : ""}${m.handmade ? " ✎" : ""}${m.shadows ? " · same name as a game map" : ""}`; if (m.shadows) o.title = `${m.name}.qmap in ${m.dir}: the game plays this file instead of its own ${m.name}`; og.append(o); }
             s.append(og);
         }
         if (cur) s.value = cur;
