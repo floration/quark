@@ -129,7 +129,7 @@ The editor never writes `assets/provenance/*.json` in the repository.
   edits included (`human 1/30 (3%) ai 29`), and how many edits are **not exported** yet: a card says `exported` while
   its edit is the one the last folder export or zip wrote (this browser remembers a checksum of each), `not exported`
   once it changes (what the game will not have after a restart; the panel says where and when it was exported). As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
-  resize it (remembered; double-click: the default). Thumbnails are read back from the GPU asynchronously (a pixel-pack
+  resize it (remembered; double-click: the default; the viewport keeps at least 480 px, also after the window shrinks). Thumbnails are read back from the GPU asynchronously (a pixel-pack
   buffer behind a fence), so drawing them never stalls the page.
 - **Viewer** (the game's renderer ported to WebGL2: the dynamic-object shader with sky light, sun, sun visibility,
   fog, the 2048 shadow map with its 4 taps, the 1 px screen-space box outlines, translucent parts unlit and blended, the

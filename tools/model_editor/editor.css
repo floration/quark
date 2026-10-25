@@ -53,7 +53,8 @@ code { font: 11px var(--mono); background: var(--panel2); padding: 0 3px; border
 #banner.err { background: #3a1f1f; border-color: var(--bad); }
 
 #main { flex: 1; min-height: 0; display: flex; }
-#lib { width: clamp(250px, 21vw, 760px); flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+#lib { width: clamp(250px, 21vw, 760px); max-width: max(160px, calc(100vw - 866px)); flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+/* (max-width: the viewport keeps at least 480 px beside the 380 px panel, also after the window shrinks; ui.js clampW) */
 #libResize { flex: none; width: 6px; margin: 0 -3px; position: relative; z-index: 5; cursor: col-resize; touch-action: none; }
 #libResize:hover, #libResize.on { background: var(--accent-dim); }
 .lib-head { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid var(--line); align-items: center; }

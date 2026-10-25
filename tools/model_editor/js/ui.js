@@ -773,10 +773,11 @@
     U.syncViewBar();
   };
   // the library's width: drag its edge (remembered; double-click: back to the default, about a fifth of the window,
-  // so a 2560 px screen shows five cards across and 1280 two)
+  // so a 2560 px screen shows five cards across and 1280 two). The viewport keeps at least 480 px beside the panel
+  // (the CSS max-width does the same when the window shrinks later)
   function initLibResize() {
     const lib = $('#lib'), grip = $('#libResize'), KEY = 'qme.libW';
-    const clampW = w => Math.round(Math.max(160, Math.min(window.innerWidth * 0.6, w)));
+    const clampW = w => Math.round(Math.max(160, Math.min(window.innerWidth - 866, w)));
     try { const w = +localStorage.getItem(KEY); if (w > 0) lib.style.width = clampW(w) + 'px'; } catch (e) { }
     let start = null;
     grip.addEventListener('pointerdown', e => { grip.setPointerCapture(e.pointerId); start = { x: e.clientX, w: lib.getBoundingClientRect().width }; grip.classList.add('on'); e.preventDefault(); });

@@ -293,6 +293,16 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     const c = await o.page.evaluate(() => { const c = [...document.querySelectorAll('.cards')[0].children]; return c.filter(x => x.offsetTop === c[0].offsetTop).length; });
     const sw = await o.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
     check(c >= 2 && sw, '1280 px: two cards across, no horizontal scroll', c);
+    // the library dragged as wide as it goes keeps the viewport 480 px wide, also after the window shrinks to 900
+    const g = await o.page.evaluate(() => { const r = document.querySelector('#libResize').getBoundingClientRect(); return [r.x + r.width / 2, r.y + 200]; });
+    await o.page.mouse.move(g[0], g[1]); await o.page.mouse.down(); await o.page.mouse.move(1270, g[1], { steps: 4 }); await o.page.mouse.up();
+    const vw = () => o.page.evaluate(() => ({ vp: document.querySelector('#viewport').clientWidth, sw: document.documentElement.scrollWidth <= innerWidth }));
+    const wide = await vw();
+    await o.page.setViewportSize({ width: 900, height: 720 });
+    const small = await vw();
+    check(wide.vp >= 478 && wide.sw && small.vp > 300 && small.sw, 'library resize: the viewport keeps its room, no sideways scroll at 900 px', { wide, small });
+    await o.page.setViewportSize({ width: 1280, height: 720 });
+    await o.page.dblclick('#libResize');
     check(o.log.length === 0, '1280 px: no console errors', o.log);
     await o.ctx.close();
   }
