@@ -371,6 +371,20 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     await p.click('#dlg button.primary');
     st = { cancelled: n1, after: await p.evaluate(() => Q.current('models/player/KNIGHT').parts.length) };
     check(st.cancelled > 1 && st.after === 1, 'start from scratch on an edited model asks first', st);
+    // Import: picking another target in the dialog moves the origin default to that target's (a box model of the
+    // human-made shipped KNIGHT stays human)
+    st = await p.evaluate(async () => {
+      const key = 'models/player/SCOUT', mesh = Q.boxes.toMesh(Q.models[key].defParts.map(Q.clonePart), Q.refOf(key));
+      Q.ui.select(key);
+      const pr = Q.ui.importFiles([new File([Q.gltf.writeGlb(mesh, 'X', mesh.extras, null)], 'X.glb')]);
+      await new Promise(r => setTimeout(r, 200));
+      const sels = [...document.querySelectorAll('#dlg select')], before = sels[1].value;
+      sels[0].value = 'models/player/KNIGHT'; sels[0].dispatchEvent(new Event('change'));
+      const after = sels[1].value;
+      [...document.querySelectorAll('#dlg button')].find(b => b.textContent === 'Cancel').click(); await pr;
+      return { before, after };
+    });
+    check(st.before === 'ai' && st.after === 'human', 'import: the origin default follows the chosen target', st);
     check(o.log.length === 0, 'shipped build: no console errors', o.log);
     await o.ctx.close();
   }

@@ -481,31 +481,47 @@
     const bytes = new Uint8Array(await main.arrayBuffer());
     let mesh;
     try { mesh = Q.gltf.parse(bytes, main.name, extra); } catch (e) { U.dialog('Cannot read ' + main.name, h('p', String(e.message || e) + '. The game would not load it either (it keeps the default).')); return; }
-    let boxes = Q.boxes.partsOf(mesh, key, false);
-    if (boxes && boxes.error) { U.dialog('Cannot use ' + main.name, h('p', 'Its box list (extras.quark version 2) fails the game\'s checks: ' + boxes.error + '. The game would log it and keep the default.')); return; }
-    // the origin it comes with: written into the file by this editor, else what this editor last exported for the
-    // model, else a box model is taken as a tweak of what it replaces and a mesh as third-party
-    const rec = Q.provState(mesh.provenance) || Q.provState(Q.knownProv(key));
-    const fields = rec ? rec : { origin: boxes ? Q.baseOf(key).prov.origin : 'third-party' };
-    const originSel = h('select', ['third-party', 'human', 'ai'].map(o => h('option', { value: o, selected: fields.origin === o }, o)));
-    const src = h('input', { type: 'text', placeholder: 'pack name, URL', value: fields.source || '' }), lic = h('input', { type: 'text', placeholder: 'CC0, CC-BY 4.0 (author), ...', value: fields.licence || '' });
-    const note = h('input', { type: 'text', value: fields.note || '' });
-    const target = h('select', Q.order.map(k => h('option', { value: k, selected: k === key }, k)));
+    // what the file is for a target model, and the origin it comes with: written into the file by this editor, else
+    // what this editor last exported for the model, else a box model is taken as a tweak of what it replaces (its
+    // origin) and a mesh as third-party. Worked out again when the dialog's target changes.
+    const forTarget = k => {
+      const boxes = Q.boxes.partsOf(mesh, k, false), rec = Q.provState(mesh.provenance) || Q.provState(Q.knownProv(k));
+      return { boxes, rec, fields: rec || { origin: boxes && !boxes.error ? Q.baseOf(k).prov.origin : 'third-party' } };
+    };
+    let t = forTarget(key);
+    if (t.boxes && t.boxes.error) { U.dialog('Cannot use ' + main.name, h('p', 'Its box list (extras.quark version 2) fails the game\'s checks: ' + t.boxes.error + '. The game would log it and keep the default.')); return; }
+    let touched = false;   // (the provenance fields follow the target until edited by hand)
+    const touch = { oninput: () => { touched = true; }, onchange: () => { touched = true; } };
+    const originSel = h('select', touch, ['third-party', 'human', 'ai'].map(o => h('option', { value: o }, o)));
+    const src = h('input', Object.assign({ type: 'text', placeholder: 'pack name, URL' }, touch)), lic = h('input', Object.assign({ type: 'text', placeholder: 'CC0, CC-BY 4.0 (author), ...' }, touch));
+    const note = h('input', Object.assign({ type: 'text' }, touch));
+    const what = h('p');
+    const fill = () => {
+      const b = t.boxes;
+      what.textContent = b && b.error ? 'Its box list fails the game\'s checks for this model: ' + b.error + '.'
+        : b ? (mesh.extras && mesh.extras.version === 2 ? 'A box model (' + b.length + ' boxes in its extras): the game draws it like its own boxes.' : 'It is made of ' + b.length + ' boxes.') + ' It opens as boxes you can edit.'
+          : 'A mesh: shown as the game draws it (no outline, tinted by material name).';
+      what.style.color = b && b.error ? '#ff8b8b' : '';
+      if (touched) return;
+      originSel.value = t.fields.origin; src.value = t.fields.source || ''; lic.value = t.fields.licence || ''; note.value = t.fields.note || '';
+    };
+    const target = h('select', { onchange: e => { t = forTarget(e.target.value); fill(); } }, Q.order.map(k => h('option', { value: k, selected: k === key }, k)));
+    fill();
     const ok = await U.dialog('Import ' + main.name, [
       h('div.kv', h('span', 'Replaces'), target),
       h('p', mesh.tris + ' triangles in ' + mesh.prims.length + ' material(s): ' + mesh.prims.map(p => p.material + ' -> ' + Q.SLOT_NAMES[p.slot]).join(', ') + '.'),
-      boxes ? h('p', (mesh.extras && mesh.extras.version === 2 ? 'A box model (' + boxes.length + ' boxes in its extras): the game draws it like its own boxes.' : 'It is made of ' + boxes.length + ' boxes') + ' It opens as boxes you can edit.')
-        : h('p', 'A mesh: shown as the game draws it (no outline, tinted by material name).'),
+      what,
       mesh.tris > Q.MAX_TRIS ? h('p', { style: { color: '#ff8b8b' } }, 'Over the game\'s ' + Q.MAX_TRIS + ' triangle limit: the game would refuse it.') : null,
       h('div.kv', h('span', 'Origin'), originSel, h('span', 'Source'), src, h('span', 'Licence'), lic, h('span', 'Note'), note),
       mesh.provenance ? h('p', 'The file says: ' + (mesh.provenance.origin || '?') + (mesh.provenance.by ? ', by ' + mesh.provenance.by : '') + (mesh.provenance.date ? ', ' + mesh.provenance.date : '') + (mesh.provenance.note ? ' (' + mesh.provenance.note + ')' : '') + '.') : null,
       h('p.faint', 'For provenance.json: a model from a pack is third-party (fill in where it is from and its licence); human = you made it yourself.')],
     [{ label: 'Cancel', value: false }, { label: 'Replace', value: true, primary: true, action: () => {
+      if (t.boxes && t.boxes.error) { U.toast('Its box list fails the game\'s checks for ' + target.value); return false; }
       if (originSel.value === 'third-party' && !src.value.trim()) { U.toast('Third-party: say where it is from (Source)'); src.focus(); return false; }
     } }]);
     if (!ok) return;
     key = target.value;
-    const prov = { origin: originSel.value, auto: true };
+    const rec = t.rec, prov = { origin: originSel.value, auto: true };
     if (rec && rec.origin === prov.origin) { if (rec.by) prov.by = rec.by; if (rec.scratch) prov.scratch = true; }
     if (src.value.trim()) prov.source = src.value.trim();
     if (lic.value.trim()) prov.licence = lic.value.trim();
