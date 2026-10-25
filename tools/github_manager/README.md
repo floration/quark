@@ -31,7 +31,9 @@ Two more tabs:
     an Apply the page follows the server's own poll and redraws as soon as GitHub's new state is in. Nothing
     is sent to GitHub before Apply. Right before the call the server reads GitHub again, re-checks the production
     lock and refuses a change whose preview is out of date ("changed on GitHub since preview, review again"). The
-    result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events).
+    result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events). An applied
+    branch change has **Undo**: it queues the reverse as a new pending change (a delete: re-create the branch at the
+    sha it had; a rename: rename it back; a create: delete it), reviewed and applied like any other.
 
   **The production lock**: only q pushes to production, and the editor can't change that. It refuses any change to
   a ruleset that targets the default branch (read from GitHub each time; a pattern such as `claude/*` that covers it
@@ -134,7 +136,8 @@ first start's backfill is still downloading). Refresh on the page polls at once 
   in-progress / waiting runs, and the jobs of runs that are still running. The rate limit is read from every answer
   and from `gh api rate_limit` every 30 min; when it is used up the GitHub part waits until it resets.
 - A completed run and its jobs are fetched once and kept in `cache/runs/<id>.json` for good (a re-run, which is a
-  new attempt, is fetched again). The first start backfills every run GitHub still lists (30 runs' jobs per poll; every tab shows what is left, and any poll warning, under the top bar).
+  new attempt, is fetched again). The first start backfills every run GitHub still lists (30 runs' jobs per poll;
+  every tab shows what is left, and any poll warning, under the top bar).
 - A failed job's log is downloaded once into `logs/<run>/<job>.txt` and kept forever (10 per poll; a failed
   download is retried after 30 min, a log GitHub no longer has is marked gone). Other logs are downloaded when you
   open them on the page, then kept.

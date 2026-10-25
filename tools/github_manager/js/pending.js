@@ -3,7 +3,7 @@
 // try. Nothing reaches GitHub until Apply; the server re-reads GitHub and re-checks the production lock right
 // before each call.
 import { html, raw, relOnly, plural, branchChip } from './util.js';
-import { ged, gui, act, onAction, waitingChanges, applyChange, applyAll, discardChange, repreviewChange, loadRulesets, redraw, toast, reloadState, LOCK } from './ghedit.js';
+import { ged, gui, act, onAction, waitingChanges, queuedFor, queueChange, applyChange, applyAll, discardChange, repreviewChange, loadRulesets, redraw, toast, reloadState, LOCK } from './ghedit.js';
 
 const STATUS = {
   pending: ['wait', 'waiting'], applying: ['run', 'applying…'], applied: ['good', 'applied'], failed: ['bad', 'failed'],
@@ -48,6 +48,25 @@ function result(c) {
   return html`<div class="msg ${c.status === 'stale' ? 'warn' : 'bad'} small pd-err" role="alert"><b>${what}</b> <span class="muted">${relOnly(r.at)}</span><code class="pd-errtext">${r.error}</code></div>`;
 }
 
+// The reverse of an applied branch change: queued as a new pending change (previewed, lock-checked and applied like
+// any other), so a mistaken delete doesn't mean hunting for the sha in History.
+function undoOf(c) {
+  if (c.status !== 'applied') return null;
+  const p = c.params || {}, sha = (c.before || {}).sha || (c.after || {}).sha;
+  if (c.type === 'branch.delete' && sha) return { type: 'branch.create', params: { name: p.name, from: sha }, label: `Re-create ${p.name} at ${sha.slice(0, 7)}` };
+  if (c.type === 'branch.rename') return { type: 'branch.rename', params: { name: p.newName, newName: p.name }, label: `Rename ${p.newName} back to ${p.name}` };
+  if (c.type === 'branch.create') return { type: 'branch.delete', params: { name: p.name }, label: `Delete ${p.name} again` };
+  return null;
+}
+const sameParams = (a, b) => Object.keys(b).every((k) => a[k] === b[k]) && Object.keys(a).every((k) => a[k] === b[k]);
+function undoButton(c) {
+  const u = undoOf(c);
+  if (!u) return '';
+  const queued = queuedFor((x) => x.type === u.type && sameParams(x.params, u.params))[0];
+  if (queued) return html`<button type="button" class="linkbtn small" data-action="scrollto" data-target="pd-${queued.id}" title="${queued.summary}">undo queued ↑</button>`;
+  return html`<button type="button" data-gact="pd-undo" data-id="${c.id}"${gui.busy.has(`undo:${c.id}`) ? ' disabled' : ''} title="${u.label}: queued in Pending changes for you to review and apply">Undo</button>`;
+}
+
 function changeCard(c) {
   const busy = gui.busy.has(`apply:${c.id}`) || gui.busy.has('apply-all');
   const done = c.status === 'applied';
@@ -65,6 +84,7 @@ function changeCard(c) {
       <span class="pd-acts">
         ${done || review || confirming ? '' : html`<button type="button" class="primary" data-gact="pd-apply" data-id="${c.id}"${busy ? ' disabled' : ''} title="${needsConfirm(c) ? 'Asks first: this one deletes something or has warnings' : 'Send this one change to GitHub now'}">${gui.busy.has(`apply:${c.id}`) ? 'Applying…' : `${c.status === 'failed' ? 'Apply again' : 'Apply'}${needsConfirm(c) ? '…' : ''}`}</button>`}
         ${done ? '' : html`<button type="button"${review ? ' class="primary"' : ''} data-gact="pd-preview" data-id="${c.id}"${busy ? ' disabled' : ''} title="Read GitHub again and rebuild the before / after">Preview again</button>`}
+        ${undoButton(c)}
         <button type="button" data-gact="pd-discard" data-id="${c.id}"${busy ? ' disabled' : ''}>${done ? 'Clear' : 'Discard'}</button>
       </span>
     </div>
@@ -72,7 +92,7 @@ function changeCard(c) {
     ${confirming ? html`<div class="msg warn pd-confirm" role="alert"><b>${c.summary} on GitHub now?</b>${(c.warnings || []).length ? ' Read the warnings below first.' : ' This can\'t be undone from here.'}
       <span class="grow"></span><button type="button" class="danger" data-gact="pd-apply-yes" data-id="${c.id}">Yes, apply it</button><button type="button" data-gact="pd-apply-no" data-id="${c.id}">Cancel</button></div>` : ''}
     ${result(c)}
-    ${gui.errors.has(`apply:${c.id}`) ? html`<p class="msg bad small" role="alert">${gui.errors.get(`apply:${c.id}`)}</p>` : ''}
+    ${[`apply:${c.id}`, `undo:${c.id}`].filter((k) => gui.errors.has(k)).map((k) => html`<p class="msg bad small" role="alert">${gui.errors.get(k)}</p>`)}
     ${warnList(c.warnings)}
     <div class="pd-ba">
       <div class="pd-b"><span class="eyebrow">${done ? 'Before' : 'Before (GitHub now)'}</span><p>${c.beforeText}</p></div>
@@ -142,6 +162,11 @@ onAction('pd-preview', async (b) => {
 onAction('pd-discard', async (b) => {
   const c = find(b.dataset.id);
   await act(`apply:${b.dataset.id}`, () => discardChange(b.dataset.id), c && c.status === 'applied' ? 'Cleared' : 'Discarded: nothing was sent to GitHub');
+});
+onAction('pd-undo', async (b) => {
+  const u = undoOf(find(b.dataset.id) || {});
+  if (!u) return;
+  await act(`undo:${b.dataset.id}`, () => queueChange(u.type, u.params), `Queued: ${u.label}. Review it above and apply it when it looks right`);
 });
 onAction('pd-apply-all', () => { gui.confirm.add('apply-all'); redraw(); });
 onAction('pd-apply-all-no', () => { gui.confirm.delete('apply-all'); redraw(); });

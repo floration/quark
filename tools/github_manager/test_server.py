@@ -1488,6 +1488,21 @@ class ApplyAndStale(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
+    def test_undo_queues_the_reverse(self):
+        # what the page's Undo queues: an applied delete's before.sha re-creates the branch there; a rename goes back
+        ch = self.p.apply(self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})["id"])
+        self.assertEqual(ch["status"], "applied")
+        back = self.p.queue({"type": "branch.create", "params": {"name": "claude/a", "from": ch["before"]["sha"]}})
+        self.assertEqual(self.p.apply(back["id"])["status"], "applied")
+        self.assertEqual(self.gh.branches["claude/a"], sha_of("claude/a"))
+        ch = self.p.apply(self.p.queue({"type": "branch.rename", "params": {"name": "claude/a", "newName": "claude/z"}})
+                          ["id"])
+        back = self.p.queue({"type": "branch.rename", "params": {"name": ch["params"]["newName"],
+                                                                 "newName": ch["params"]["name"]}})
+        self.assertEqual(self.p.apply(back["id"])["status"], "applied")
+        self.assertIn("claude/a", self.gh.branches)
+        self.assertNotIn("claude/z", self.gh.branches)
+
     def test_apply_ok_events_and_file(self):
         ch = self.p.queue({"type": "branch.create", "params": {"name": "claude/new", "from": "claude/a"}})
         out = self.p.apply(ch["id"], {"previewHash": ch["previewHash"]})
