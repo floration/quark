@@ -412,7 +412,7 @@ int runSim(const Json& req, Json& out, CmdCtx& ctx) {
 // ---- simbatch -------------------------------------------------------------------------------------------------------
 constexpr double kTallyEvery = 0.2;   // s of game time per step: the per weapon tally's sample (a weapon held is counted per sample)
 struct MatchResult {
-    int index = 0;
+    int variant = 0, index = 0;         // index: the match's place in its variant's seeds
     uint32_t seed = 0;
     std::string reason, error;
     double t = 0, wall = 0;
@@ -421,52 +421,203 @@ struct MatchResult {
     std::vector<Json> botRows;
     wpn::Tally tally;                   // per weapon (the end line's `weapons`)
 };
+// One setup of the batch with its seeds. A request is one; `variants` makes several (other maps, line-ups, brains),
+// all played by one pool of threads, so no thread idles at one setup's tail while another's matches wait.
+struct Variant {
+    Setup S;
+    std::vector<uint32_t> seeds;
+    std::vector<std::string> labels, statuses;   // per bot: brain label and status (from its first match)
+    bool labelled = false;
+};
+
+// the start line's description of one setup
+Json variantStart(const Variant& V) {
+    const Setup& S = V.S;
+    Json s = Json::object();
+    s.set("map", S.mapLabel); s.set("mode", modeName(S.cfg.mode)); s.set("tickRate", S.cfg.tickRate);
+    s.set("matches", (int)V.seeds.size()); s.set("seconds", S.seconds); s.set("until", S.untilMatchEnd ? "matchEnd" : "seconds");
+    Json sj = Json::array(); for (auto x : V.seeds) sj.push((double)x); s.set("seeds", sj);
+    s.set("teams", modeIsTeamBased(S.cfg.mode));
+    s.set("brainSupport", BotSim::brainsSupported());
+    Json bots = Json::array();
+    for (size_t k = 0; k < S.cfg.bots.size(); k++) {
+        const BotSpec& b = S.cfg.bots[k];
+        Json o = Json::object();
+        o.set("index", (int)k); o.set("name", b.name); o.set("team", modeIsTeamBased(S.cfg.mode) ? teamStr(b.team) : "a");
+        o.set("skill", botSkillName(b.skill)); o.set("brain", b.brain.empty() ? "default" : b.brain);
+        o.set("objective", overrideJson(b.override_));
+        bots.push(std::move(o));
+    }
+    s.set("bots", bots);
+    wpn::startJson(s, S.wr);
+    return s;
+}
+
+// The end line's numbers for one setup's matches (results of other variants are skipped): matchesPlayed, errors,
+// timeouts, bots, brains, weapons, teamWins | playerWins + draws, matches; matchWall / ticks / played for perf
+Json variantReport(const Variant& V, int v, const std::vector<MatchResult>& results, double& matchWall, long long& ticks, int& played) {
+    const Setup& S = V.S;
+    const bool teams = modeIsTeamBased(S.cfg.mode);
+    struct Agg { int matches = 0, wins = 0, kills = 0, deaths = 0, score = 0, shots = 0, hits = 0; double damage = 0, objTime = 0, alive = 0, t = 0; };
+    auto aggJson = [](const Agg& a, bool brain) {
+        Json o = Json::object();
+        o.set(brain ? "botMatches" : "matches", a.matches); o.set("wins", a.wins); o.set("winRate", a.matches ? (double)a.wins / a.matches : 0.0);
+        o.set("kills", a.kills); o.set("deaths", a.deaths); o.set("kd", a.deaths ? (double)a.kills / a.deaths : (double)a.kills);
+        o.set("damage", a.damage); o.set("score", a.score); o.set("objTime", a.objTime);
+        o.set("shots", a.shots); o.set("hits", a.hits); o.set("accuracy", a.shots ? (double)a.hits / a.shots : 0.0);
+        o.set("aliveTime", a.alive); o.set("aliveShare", a.t > 0 ? a.alive / a.t : 0.0);
+        double mins = a.t / 60.0;
+        o.set("killsPerMin", mins > 0 ? a.kills / mins : 0.0); o.set("damagePerMin", mins > 0 ? a.damage / mins : 0.0);
+        return o;
+    };
+    std::vector<Agg> perBot(S.cfg.bots.size());
+    wpn::Tally weapons;
+    std::map<std::string, Agg> perBrain;
+    std::vector<std::string> brainOrder;
+    int winsA = 0, winsB = 0, draws = 0, timeouts = 0, errors = 0, n = 0;
+    std::map<int, int> playerWins;
+    const MatchResult* first = nullptr;
+    for (auto& R : results) {
+        if (R.variant != v || R.reason.empty()) continue;   // (another setup's, or never started: stopped)
+        if (!R.error.empty()) { errors++; continue; }
+        if (!first) first = &R;
+        n++;
+        matchWall += R.wall; ticks += R.ticks;
+        weapons.merge(R.tally);
+        if (R.reason != "matchEnd") timeouts++;
+        else if (teams) {
+            const Json& wt = R.winner["team"];
+            if (wt.str() == "a") winsA++; else if (wt.str() == "b") winsB++; else draws++;
+        } else if (R.winner["player"].isNum()) playerWins[R.winner["player"].i()]++;
+        else draws++;
+        for (size_t k = 0; k < R.botRows.size() && k < perBot.size(); k++) {
+            const Json& r = R.botRows[k];
+            for (Agg* a : {&perBot[k], &perBrain[V.labels[k]]}) {
+                a->matches++; a->wins += r["won"].boolean() ? 1 : 0;
+                a->kills += r["kills"].i(); a->deaths += r["deaths"].i(); a->score += r["score"].i();
+                a->damage += r["damage"].num(); a->objTime += r["objTime"].num(); a->shots += r["shots"].i(); a->hits += r["hits"].i();
+                a->alive += r["aliveTime"].num(); a->t += R.t;
+            }
+            if (std::find(brainOrder.begin(), brainOrder.end(), V.labels[k]) == brainOrder.end()) brainOrder.push_back(V.labels[k]);
+        }
+    }
+    played += n;
+    Json d = Json::object();
+    d.set("matchesPlayed", n); d.set("errors", errors); d.set("timeouts", timeouts);
+    Json bj = Json::array();
+    for (size_t k = 0; k < perBot.size(); k++) {
+        const BotSpec& b = S.cfg.bots[k];
+        Json o = aggJson(perBot[k], false);
+        o.set("index", (int)k); o.set("name", !first || first->botRows.size() <= k ? b.name : first->botRows[k]["name"].str());
+        o.set("team", teams ? teamStr(b.team) : "a"); o.set("skill", botSkillName(b.skill));
+        o.set("brain", b.brain.empty() ? "default" : b.brain); o.set("brainLabel", V.labels[k]); o.set("brainStatus", V.statuses[k]);
+        o.set("objective", overrideJson(b.override_));
+        bj.push(std::move(o));
+    }
+    d.set("bots", std::move(bj));
+    Json brj = Json::array();
+    for (auto& name : brainOrder) { Json o = aggJson(perBrain[name], true); o.set("brain", name); brj.push(std::move(o)); }
+    d.set("brains", std::move(brj));
+    d.set("weapons", weapons.json());
+    if (teams) { Json t = Json::object(); t.set("a", winsA); t.set("b", winsB); t.set("draws", draws); d.set("teamWins", t); }
+    else {
+        Json pw = Json::array();
+        for (auto& kv : playerWins) { Json o = Json::object(); o.set("player", kv.first); o.set("wins", kv.second); pw.push(o); }
+        d.set("playerWins", pw); d.set("draws", draws);
+    }
+    Json ms = Json::array();
+    for (auto& R : results) {
+        if (R.variant != v || R.reason.empty()) continue;
+        Json o = Json::object();
+        o.set("index", R.index); o.set("seed", (double)R.seed); o.set("reason", R.reason); o.set("t", R.t);
+        if (!R.error.empty()) o.set("error", R.error);
+        o.set("winner", R.winner); if (!R.leader.isNull()) o.set("leader", R.leader);
+        o.set("score", R.score); o.set("wallSeconds", R.wall);
+        ms.push(std::move(o));
+    }
+    d.set("matches", std::move(ms));
+    return d;
+}
 
 int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
     const double w0 = maptoolNow();
-    Setup S;
     std::string err;
-    if (!parseSetup(req, S, true, err)) return cmdError(out, err);
-    std::vector<uint32_t> seeds;
-    for (auto& s : req["seeds"].items()) if (s.isNum()) seeds.push_back((uint32_t)s.num());
-    if (seeds.empty()) {
-        int n = std::clamp(req["matches"].i(8), 1, 10000);
-        for (int k = 0; k < n; k++) seeds.push_back(S.cfg.seed + (uint32_t)k);
+    // the setups: the request itself, or each of its `variants` laid over it (a variant's keys replace the request's)
+    const bool multi = req["variants"].isArr();
+    std::vector<Variant> V;
+    std::vector<Json> reqs;
+    if (multi) {
+        const auto& vs = req["variants"].items();
+        if (vs.empty() || vs.size() > 1000) return cmdError(out, "variants: 1 to 1000 setups");
+        for (auto& v : vs) {
+            if (!v.isObj()) return cmdError(out, "variants: each one is an object of request keys");
+            Json r = Json::object();
+            for (auto& kv : req.members()) if (kv.first != "variants" && kv.first != "maps") r.set(kv.first, kv.second);
+            for (auto& kv : v.members()) r.set(kv.first, kv.second);
+            // "map": a key of the request's "maps" {key: map}: many variants on one map send its text once
+            if (r["map"].isStr() && req["maps"].has(r["map"].str())) r.set("map", req["maps"][r["map"].str()]);
+            reqs.push_back(std::move(r));
+        }
+    } else reqs.push_back(req);
+    V.resize(reqs.size());
+    int N = 0;
+    for (size_t v = 0; v < reqs.size(); v++) {
+        const Json& r = reqs[v];
+        if (!parseSetup(r, V[v].S, true, err)) return cmdError(out, multi ? "variant " + std::to_string(v) + ": " + err : err);
+        for (auto& s : r["seeds"].items()) if (s.isNum()) V[v].seeds.push_back((uint32_t)s.num());
+        if (V[v].seeds.empty()) {
+            int n = std::clamp(r["matches"].i(8), 1, 10000);
+            for (int k = 0; k < n; k++) V[v].seeds.push_back(V[v].S.cfg.seed + (uint32_t)k);
+        }
+        V[v].labels.assign(V[v].S.cfg.bots.size(), "default"); V[v].statuses.assign(V[v].S.cfg.bots.size(), "default");
+        N += (int)V[v].seeds.size();
     }
-    const int N = (int)seeds.size();
+    if (N > 100000) return cmdError(out, "at most 100000 matches in one batch");
     const int T = std::clamp(req["threads"].i(maptoolThreads()), 1, std::max(1, std::min(N, 64)));
     const double progressEvery = std::max(0.0, req["progressEvery"].num(0.5));   // s of wall time between progress lines
     netInit();
-    // one data folder for all the matches (the game's user data folder is global): the map written once
+    // one data folder for all the matches (the game's user data folder is global), each map written once: one request's
+    // as zz_maptool (as sim does), several as zz_simbatch_<k>, each variant playing its own by name
     fs::path dir = fs::temp_directory_path() / ("quark_simbatch_" + std::to_string((long long)(maptoolNow() * 1000)));
-    if (!BotSim::prepareSharedDir(dir.u8string(), S.cfg.mapText, &err)) return cmdError(out, err);
-    S.cfg.sharedDataDir = dir.u8string();
-    {
-        Json s = Json::object();
-        s.set("type", "start"); s.set("map", S.mapLabel); s.set("mode", modeName(S.cfg.mode)); s.set("tickRate", S.cfg.tickRate);
-        s.set("matches", N); s.set("threads", T); s.set("seconds", S.seconds); s.set("until", S.untilMatchEnd ? "matchEnd" : "seconds");
-        Json sj = Json::array(); for (auto x : seeds) sj.push((double)x); s.set("seeds", sj);
-        s.set("teams", modeIsTeamBased(S.cfg.mode));
-        s.set("brainSupport", BotSim::brainsSupported());
-        Json bots = Json::array();
-        for (size_t k = 0; k < S.cfg.bots.size(); k++) {
-            const BotSpec& b = S.cfg.bots[k];
-            Json o = Json::object();
-            o.set("index", (int)k); o.set("name", b.name); o.set("team", modeIsTeamBased(S.cfg.mode) ? teamStr(b.team) : "a");
-            o.set("skill", botSkillName(b.skill)); o.set("brain", b.brain.empty() ? "default" : b.brain);
-            o.set("objective", overrideJson(b.override_));
-            bots.push(std::move(o));
+    if (!BotSim::prepareSharedDir(dir.u8string(), multi ? "" : V[0].S.cfg.mapText, &err)) return cmdError(out, err);
+    if (multi) {
+        std::map<std::string, std::string> written;   // map text -> its name in the folder
+        for (auto& x : V) {
+            auto it = written.find(x.S.cfg.mapText);
+            if (it == written.end()) {
+                std::string name = "zz_simbatch_" + std::to_string(written.size());
+                if (!saveMapFile((dir / "maps" / (name + ".qmap")).u8string(), x.S.cfg.mapText)) { std::error_code ec; fs::remove_all(dir, ec); return cmdError(out, "can't write the map"); }
+                it = written.emplace(x.S.cfg.mapText, name).first;
+            }
+            x.S.cfg.mapName = it->second;
+            x.S.cfg.mapText.clear();
         }
-        s.set("bots", bots);
-        wpn::startJson(s, S.wr);
-        ctx.emit(s);
-        for (auto& w : S.warnings) { Json j = Json::object(); j.set("type", "warning"); j.set("warning", w); ctx.emit(j); }
+    }
+    for (auto& x : V) x.S.cfg.sharedDataDir = dir.u8string();
+    {
+        Json s = variantStart(V[0]);
+        Json line = Json::object();
+        line.set("type", "start");
+        for (auto& kv : s.members()) line.set(kv.first, kv.second);
+        line.set("matches", N); line.set("threads", T);
+        if (multi) {
+            Json vj = Json::array();
+            for (size_t v = 0; v < V.size(); v++) { Json o = Json::object(), sv = variantStart(V[v]); o.set("variant", (int)v); for (auto& kv : sv.members()) o.set(kv.first, kv.second); vj.push(std::move(o)); }
+            line.set("variants", std::move(vj));
+        }
+        ctx.emit(line);
+        for (auto& x : V) for (auto& w : x.S.warnings) { Json j = Json::object(); j.set("type", "warning"); j.set("warning", w); ctx.emit(j); }
+    }
+    // the jobs in order, setup after setup: the pool starts the next setup's matches while the last ones finish
+    std::vector<MatchResult> results(N);
+    {
+        int i = 0;
+        for (size_t v = 0; v < V.size(); v++)
+            for (size_t k = 0; k < V[v].seeds.size(); k++, i++) { results[i].variant = (int)v; results[i].index = (int)k; results[i].seed = V[v].seeds[k]; }
     }
     auto ctl = readControls(ctx);
     std::atomic<bool> cancel{false};
     std::atomic<int> next{0};
-    std::vector<MatchResult> results(N);
-    std::vector<std::string> labels(S.cfg.bots.size(), "default"), statuses(S.cfg.bots.size(), "default");
     std::mutex mu;
     std::condition_variable cv;
     std::deque<int> finished;
@@ -474,10 +625,11 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
     // same match as `sim`, whichever thread ran what before)
     auto playOne = [&](int i) {
         MatchResult& R = results[i];
-        R.index = i; R.seed = seeds[i];
+        Variant& X = V[R.variant];
+        const Setup& S = X.S;
         double a = maptoolNow();
         BotSimConfig cfg = S.cfg;
-        cfg.seed = seeds[i];
+        cfg.seed = R.seed;
         BotSim sim;
         std::string e;
         if (!sim.start(cfg, &e)) { R.error = e; R.reason = "error"; return; }
@@ -501,9 +653,9 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
         R.score = Json::array(); R.score.push((int)sim.server().ms_.scoreA); R.score.push((int)sim.server().ms_.scoreB);
         std::vector<BotState> st; sim.sample(st);
         for (size_t k = 0; k < st.size(); k++) R.botRows.push_back(botStats(sim, k, st[k], S));
-        if (i == 0) {
+        {
             std::lock_guard<std::mutex> l(mu);
-            for (size_t k = 0; k < labels.size(); k++) { labels[k] = sim.brainLabel(k); statuses[k] = sim.brainStatus(k); }
+            if (!X.labelled) { X.labelled = true; for (size_t k = 0; k < X.labels.size(); k++) { X.labels[k] = sim.brainLabel(k); X.statuses[k] = sim.brainStatus(k); } }
         }
         sim.stop();
         R.wall = maptoolNow() - a;
@@ -539,7 +691,9 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
             done++;
             const MatchResult& R = results[i];
             Json p = Json::object();
-            p.set("type", "match"); p.set("done", done); p.set("total", N); p.set("index", i); p.set("seed", (double)R.seed);
+            p.set("type", "match"); p.set("done", done); p.set("total", N);
+            if (multi) p.set("variant", R.variant);
+            p.set("index", R.index); p.set("seed", (double)R.seed);
             if (!R.error.empty()) p.set("error", R.error);
             p.set("reason", R.reason); p.set("t", R.t); p.set("winner", R.winner);
             if (!R.leader.isNull()) p.set("leader", R.leader);
@@ -560,86 +714,31 @@ int runSimBatch(const Json& req, Json& out, CmdCtx& ctx) {
     for (auto& d : drivers) d.join();
     std::error_code ec;
     fs::remove_all(dir, ec);
-    // ---- the report
-    const bool teams = modeIsTeamBased(S.cfg.mode);
-    struct Agg { int matches = 0, wins = 0, kills = 0, deaths = 0, score = 0, shots = 0, hits = 0; double damage = 0, objTime = 0, alive = 0, t = 0; };
-    auto aggJson = [](const Agg& a, bool brain) {
-        Json o = Json::object();
-        o.set(brain ? "botMatches" : "matches", a.matches); o.set("wins", a.wins); o.set("winRate", a.matches ? (double)a.wins / a.matches : 0.0);
-        o.set("kills", a.kills); o.set("deaths", a.deaths); o.set("kd", a.deaths ? (double)a.kills / a.deaths : (double)a.kills);
-        o.set("damage", a.damage); o.set("score", a.score); o.set("objTime", a.objTime);
-        o.set("shots", a.shots); o.set("hits", a.hits); o.set("accuracy", a.shots ? (double)a.hits / a.shots : 0.0);
-        o.set("aliveTime", a.alive); o.set("aliveShare", a.t > 0 ? a.alive / a.t : 0.0);
-        double mins = a.t / 60.0;
-        o.set("killsPerMin", mins > 0 ? a.kills / mins : 0.0); o.set("damagePerMin", mins > 0 ? a.damage / mins : 0.0);
-        return o;
-    };
-    std::vector<Agg> perBot(S.cfg.bots.size());
-    wpn::Tally weapons;
-    std::map<std::string, Agg> perBrain;
-    std::vector<std::string> brainOrder;
-    int winsA = 0, winsB = 0, draws = 0, timeouts = 0, errors = 0, played = 0;
-    std::map<int, int> playerWins;
-    double matchWall = 0; long long ticks = 0;
-    for (auto& R : results) {
-        if (R.reason.empty()) continue;   // (never started: stopped)
-        if (!R.error.empty()) { errors++; continue; }
-        played++;
-        matchWall += R.wall; ticks += R.ticks;
-        weapons.merge(R.tally);
-        if (R.reason != "matchEnd") timeouts++;
-        else if (teams) {
-            const Json& wt = R.winner["team"];
-            if (wt.str() == "a") winsA++; else if (wt.str() == "b") winsB++; else draws++;
-        } else if (R.winner["player"].isNum()) playerWins[R.winner["player"].i()]++;
-        else draws++;
-        for (size_t k = 0; k < R.botRows.size() && k < perBot.size(); k++) {
-            const Json& r = R.botRows[k];
-            for (Agg* a : {&perBot[k], &perBrain[labels[k]]}) {
-                a->matches++; a->wins += r["won"].boolean() ? 1 : 0;
-                a->kills += r["kills"].i(); a->deaths += r["deaths"].i(); a->score += r["score"].i();
-                a->damage += r["damage"].num(); a->objTime += r["objTime"].num(); a->shots += r["shots"].i(); a->hits += r["hits"].i();
-                a->alive += r["aliveTime"].num(); a->t += R.t;
-            }
-            if (std::find(brainOrder.begin(), brainOrder.end(), labels[k]) == brainOrder.end()) brainOrder.push_back(labels[k]);
-        }
-    }
+    // ---- the report: one setup's numbers on the end line itself; several: per variant, with the totals on top
+    double matchWall = 0; long long ticks = 0; int played = 0;
     Json d = Json::object();
     d.set("type", "end");
     d.set("reason", cancel ? "stopped" : "done");
-    d.set("matchesPlayed", played); d.set("errors", errors); d.set("timeouts", timeouts);
-    Json bj = Json::array();
-    for (size_t k = 0; k < perBot.size(); k++) {
-        const BotSpec& b = S.cfg.bots[k];
-        Json o = aggJson(perBot[k], false);
-        o.set("index", (int)k); o.set("name", results.empty() || results[0].botRows.size() <= k ? b.name : results[0].botRows[k]["name"].str());
-        o.set("team", teams ? teamStr(b.team) : "a"); o.set("skill", botSkillName(b.skill));
-        o.set("brain", b.brain.empty() ? "default" : b.brain); o.set("brainLabel", labels[k]); o.set("brainStatus", statuses[k]);
-        o.set("objective", overrideJson(b.override_));
-        bj.push(std::move(o));
+    if (!multi) {
+        Json r = variantReport(V[0], 0, results, matchWall, ticks, played);
+        for (auto& kv : r.members()) d.set(kv.first, kv.second);
+    } else {
+        Json vj = Json::array();
+        wpn::Tally weapons;
+        int errors = 0, timeouts = 0;
+        for (size_t v = 0; v < V.size(); v++) {
+            Json r = variantReport(V[v], (int)v, results, matchWall, ticks, played);
+            errors += r["errors"].i(); timeouts += r["timeouts"].i();
+            Json o = Json::object();
+            o.set("variant", (int)v); o.set("map", V[v].S.mapLabel); o.set("mode", modeName(V[v].S.cfg.mode));
+            for (auto& kv : r.members()) o.set(kv.first, kv.second);
+            vj.push(std::move(o));
+        }
+        for (auto& R : results) if (R.error.empty() && !R.reason.empty()) weapons.merge(R.tally);
+        d.set("matchesPlayed", played); d.set("errors", errors); d.set("timeouts", timeouts);
+        d.set("weapons", weapons.json());
+        d.set("variants", std::move(vj));
     }
-    d.set("bots", std::move(bj));
-    Json brj = Json::array();
-    for (auto& name : brainOrder) { Json o = aggJson(perBrain[name], true); o.set("brain", name); brj.push(std::move(o)); }
-    d.set("brains", std::move(brj));
-    d.set("weapons", weapons.json());
-    if (teams) { Json t = Json::object(); t.set("a", winsA); t.set("b", winsB); t.set("draws", draws); d.set("teamWins", t); }
-    else {
-        Json pw = Json::array();
-        for (auto& kv : playerWins) { Json o = Json::object(); o.set("player", kv.first); o.set("wins", kv.second); pw.push(o); }
-        d.set("playerWins", pw); d.set("draws", draws);
-    }
-    Json ms = Json::array();
-    for (auto& R : results) {
-        if (R.reason.empty()) continue;
-        Json o = Json::object();
-        o.set("index", R.index); o.set("seed", (double)R.seed); o.set("reason", R.reason); o.set("t", R.t);
-        if (!R.error.empty()) o.set("error", R.error);
-        o.set("winner", R.winner); if (!R.leader.isNull()) o.set("leader", R.leader);
-        o.set("score", R.score); o.set("wallSeconds", R.wall);
-        ms.push(std::move(o));
-    }
-    d.set("matches", std::move(ms));
     Json perf = Json::object();
     double wall = maptoolNow() - w0;
     perf.set("wallSeconds", wall); perf.set("threads", T);
@@ -668,5 +767,5 @@ int runSimCheck(const Json& req, Json& out, CmdCtx&) {
 }  // namespace
 
 MAPTOOL_COMMAND("sim", runSim, "{map, mode?, bots: [{team, skill, name, brain, pos, yaw, objective}], seconds?, until?, seed?, tickRate?, rate?, realtime?, speed?, brains?, weapons?, qmode?, weaponsAllowed?} [--stream] -> NDJSON start / frame / end (SIM.md)");
-MAPTOOL_COMMAND("simbatch", runSimBatch, "{...sim's setup, matches? | seeds?, threads?} [--stream] -> NDJSON start / match / progress / end, per bot / brain / match (SIM.md)");
+MAPTOOL_COMMAND("simbatch", runSimBatch, "{...sim's setup, matches? | seeds?, threads?, variants?: [{setup keys}]} [--stream] -> NDJSON start / match / progress / end, per bot / brain / match (SIM.md)");
 MAPTOOL_COMMAND("simcheck", runSimCheck, "{text | brain, brains?} -> {brainSupport, ok, label?, error?}: compiles a brain the way sim does");
