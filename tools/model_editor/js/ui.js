@@ -247,14 +247,16 @@
     const known = Q.knownProv(key);
     if (known && known.origin) panel.append(h('div.row.faint', 'Last exported from this editor: ' + known.origin + (known.date ? ' on ' + known.date : '') + (known.note ? ' (' + known.note + ')' : '') +
       '. Loading that file back (Import, Project > Load an overrides folder) keeps its origin.'));
-    const acts = h('div.row');
-    if (edited) acts.append(h('button.danger', { type: 'button', title: 'Throw the edits away (undo brings them back)', onclick: () => {
+    const acts = h('div.row'), toShipped = Q.baseOf(key).shipped;
+    if (edited) acts.append(h('button.danger', { type: 'button', title: 'Throw the edits away: back to ' + (toShipped ? 'the shipped override (assets/overrides)' : 'the default') + ' (undo brings them back)', onclick: () => {
       Q.beginChange(key); delete Q.state.edits[key]; if (Q.state.prov) delete Q.state.prov[key];   // (its origin goes with it)
-      Q.endChange(key, 'reset'); S.part = -1; U.toast('Back to ' + (cur.shipped || Q.baseOf(key).shipped ? 'the shipped model' : 'the default') + ' (Ctrl+Z undoes it)');
-    } }, 'Reset to default'));
+      Q.endChange(key, 'reset'); S.part = -1; U.toast('Back to ' + (toShipped ? 'the shipped model' : 'the default') + ' (Ctrl+Z undoes it)');
+    } }, toShipped ? 'Reset to shipped model' : 'Reset to default'));
     if (cur.type === 'mesh' && m.defParts) acts.append(h('span.faint', 'A mesh: edit it in a 3D program, or reset to edit the boxes.'));
     acts.append(h('button', { type: 'button', title: 'Replace this model with a .glb / .gltf', onclick: () => $('#fileImport').click() }, 'Import replacement...'));
-    acts.append(h('button', { type: 'button', title: 'Start from one box: a model you make yourself (origin: human)', onclick: () => {
+    acts.append(h('button', { type: 'button', title: 'Start from one box: a model you make yourself (origin: human)', onclick: async () => {
+      if (edited && !(await U.dialog('Start ' + m.name + ' from scratch?', h('p', 'Its edit (' + (cur.type === 'boxes' ? cur.parts.length + ' boxes' : 'an imported mesh') + ') is replaced by one box. Ctrl+Z brings it back.'),
+        [{ label: 'Cancel', value: false }, { label: 'Start from scratch', value: true, primary: true }]))) return;
       Q.beginChange(key); Q.state.edits[key] = { type: 'boxes', parts: [Object.assign(Q.newPart(), { name: 'box', c: [0, m.kind === 'player' ? 1 : 0, 0], h: m.kind === 'player' ? [0.3, 0.5, 0.2] : [0.03, 0.03, 0.1] })] };
       Q.state.prov = Q.state.prov || {}; Q.state.prov[key] = { origin: 'human', auto: true, scratch: true };   // (part of the undo step)
       Q.endChange(key, 'scratch'); U.selectPart(0);

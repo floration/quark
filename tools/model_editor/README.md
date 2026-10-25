@@ -111,7 +111,7 @@ for its source and licence).
 - An edit starts from the shipped override when there is one (what the game draws now), else the default, and keeps its
   origin: the repository's entry for that id (`assets/provenance/*.json`; a default without one is `ai`). Editing a
   shipped human-made model stays `human`, and its note is diffed against the shipped model, not the AI default.
-- The origin is part of the edit: undo / redo carry it, **Reset to default** drops it (a later tweak is labelled from
+- The origin is part of the edit: undo / redo carry it, **Reset to default** (or **to shipped model**) drops it (a later tweak is labelled from
   scratch again). An origin left without an edit by an older version is dropped when a session or project loads.
 - Every exported `.glb` carries its entry in `asset.extras.provenance` (the game ignores it). Loading a file back keeps
   its origin: **Project > Load the models in an overrides folder** takes the file's own entry, else the folder's
@@ -163,7 +163,7 @@ The editor never writes `assets/provenance/*.json` in the repository.
   (legs, body, head, barrel...: `Q.DEFAULT_BOX_NAMES` in `js/data.js`, from the comments of the game's model builders in
   src/client/models.cpp, given only while a default's box count matches; the game ignores names); click a
   box in the viewport; a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
-  across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default; start from scratch.
+  across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default (**Reset to shipped model** where a shipped override is what it started from); start from scratch (asks first when the model is edited).
 - **Import** a .glb / .gltf (drop it or Import; a .gltf with its .bin picked together): read exactly as the game's
   loader reads it (node transforms, strips / fans, normalised colours times baseColorFactor, BLEND = translucent,
   material name = slot, textures ignored, the box list when it has one). A box model (or a mesh made of boxes the way

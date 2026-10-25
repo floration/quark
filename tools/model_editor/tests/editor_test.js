@@ -331,6 +331,17 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     await p.keyboard.press('ArrowRight');
     st = await p.evaluate(() => Q.provFor('models/player/KNIGHT'));
     check(st.origin === 'human' && /^tweak of the shipped model \(assets\/overrides, human, by alex\) in the model editor: 1 box moved/.test(st.note), 'editing a shipped human model stays human, diffed against it', st);
+    await p.waitForTimeout(100);
+    st = await p.evaluate(() => [...document.querySelectorAll('#panel button.danger')].map(b => b.textContent).join());
+    check(st.includes('Reset to shipped model'), 'an edited shipped model resets to the shipped model (its button says so)', st);
+    await p.click('#panel button:has-text("Start from scratch")');
+    await p.waitForSelector('#dlg h2:has-text("from scratch?")');
+    await p.click('#dlg button:has-text("Cancel")');
+    const n1 = await p.evaluate(() => Q.current('models/player/KNIGHT').parts.length);
+    await p.click('#panel button:has-text("Start from scratch")');
+    await p.click('#dlg button.primary');
+    st = { cancelled: n1, after: await p.evaluate(() => Q.current('models/player/KNIGHT').parts.length) };
+    check(st.cancelled > 1 && st.after === 1, 'start from scratch on an edited model asks first', st);
     check(o.log.length === 0, 'shipped build: no console errors', o.log);
     await o.ctx.close();
   }
