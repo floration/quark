@@ -188,6 +188,7 @@ async function nodeChecks() {
     tryOk("rifle on the lanes kills every target", () => { a = mockRange(req, vals, sset); const k = a.targets.map((t) => t.kills).join(" "); return a.targets.every((t) => t.kills >= 1) ? { info: "kills " + k } : "kills " + k; });
     tryOk("the same seed gives the same answer", () => { b = mockRange(req, vals, sset); return JSON.stringify(a.totals) === JSON.stringify(b.totals); });
     tryOk("frames every 20 ms with the shooter in them", () => a.frames.length >= 900 && a.frames[0].players.some((p) => p.shooter));
+    for (const w of ["syringe", "locator"]) tryOk(`${w}: no damage, one frame (no error)`, () => { const r = mockRange({ ...req, weapon: w, seconds: 2 }, vals, sset); return (r.ok && r.frames.length === 1 && r.totals.shots === 0 && /no damage/.test(r.notes[0])) || JSON.stringify(r.totals); });
     for (const w of ["rocket", "laser", "shotgun", "sticky", "bubble", "crossbow", "knife", "sniper"]) tryOk(`${w} fires`, () => { const r = mockRange({ ...req, weapon: w, seconds: 6 }, vals, sset); return r.totals.shots > 0 && (w === "knife" || r.totals.hits > 0) ? { info: `${r.totals.hits} hits / ${r.totals.shots} shots, ${r.totals.kills} kills` } : JSON.stringify(r.totals); });
     return { STD, DEMO };
 }

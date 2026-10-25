@@ -183,8 +183,18 @@ export class RangeView {
         $("rangeMsg").textContent = "firing…";
         const notes = [];
         const ctx = (text, ast, values) => ({ text, set: ast, values, map: this.map === this.builtin ? null : this.map, mapText: this.mapText, mapName: this.mapName, onNote: (n) => notes.push(n) });
-        const res = await app.helper.range(req, ctx(app.text, app.ast, app.values));
-        const cmp = this.opts.compare ? await app.helper.range(req, ctx(app.cmp.text, app.cmp.ast, app.cmp.values)) : null;
+        let res, cmp;
+        try {
+            res = await app.helper.range(req, ctx(app.text, app.ast, app.values));
+            cmp = this.opts.compare ? await app.helper.range(req, ctx(app.cmp.text, app.cmp.ast, app.cmp.values)) : null;
+        } catch (e) {
+            // (never left on "firing…": the message says what broke, the side panel drops the last weapon's run)
+            if (token !== this._tok) return;
+            console.warn("range:", e);
+            $("rangeMsg").textContent = "the range failed: " + (e && e.message || e);
+            this.res = null; this._side();
+            return;
+        }
         if (token !== this._tok) return;
         $("rangeMsg").textContent = "";
         this.req = req; this.res = res; this.cmp = cmp; this._stale = false; this.notes = notes;
