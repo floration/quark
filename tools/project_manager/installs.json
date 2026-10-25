@@ -22,6 +22,8 @@
    "run": "py -3 tools\\weapon_editor\\serve.py --install", "check": "weapons-editor\\serve.py", "restartsPort": 8773},
   {"id": "gamemode", "name": "Gamemode Editor", "sources": ["tools/mode_editor", "tools/modes"],
    "run": "py -3 tools\\mode_editor\\install.py \"%QUARK%\\gamemode-editor\"", "check": "gamemode-editor\\serve.py", "restartsPort": 8771},
+  {"id": "hud", "name": "HUD Editor", "sources": ["tools/hud_editor"],
+   "run": "py -3 tools\\hud_editor\\serve.py --install", "check": "hud-editor\\serve.py", "restartsPort": 8774},
   {"id": "ui", "name": "UI Editor", "sources": ["tools/ui_customizer", "assets/fonts"],
    "run": "py -3 tools\\ui_customizer\\install.py", "check": "ui-customizer\\ui-customizer.html"},
   {"id": "electron", "name": "Electron (the app window)", "run": "builtin:electron-update"}

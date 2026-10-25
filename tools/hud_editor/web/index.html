@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark HUD Editor</title>
+<link rel="stylesheet" href="quark-tools.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <b class="brand">HUD Editor</b>
+  <span class="muted small" id="dataDir"></span>
+  <span class="grow"></span>
+  <span id="dirty" class="small warn"></span>
+  <button id="undo" title="Ctrl+Z">Undo</button>
+  <button id="redo" title="Ctrl+Y">Redo</button>
+  <button id="reload" title="Read hud.cfg and quark.cfg again (drops unsaved changes)">Reload</button>
+  <button id="save" class="primary" title="Ctrl+S: writes hud.cfg and the HUD lines of quark.cfg">Save</button>
+</header>
+<div id="gameNote" class="note warn" hidden>The game is running. Widgets (hud.cfg) show in it within a second; built-in element changes (quark.cfg) are read when the game starts, and the game writes quark.cfg back when its settings change, so close it before saving those.</div>
+<main>
+  <section class="stage">
+    <div class="stagebar">
+      <label class="chk"><input type="checkbox" id="showHidden" checked> show hidden</label>
+      <label class="chk"><input type="checkbox" id="showGrid"> grid</label>
+      <label class="chk"><input type="checkbox" id="showVerbose"> info block (hud_verbose)</label>
+      <label class="chk"><input type="checkbox" id="widgetsOn" checked> widgets on (hud_widgets)</label>
+      <span class="grow"></span>
+      <label class="small">FOV <input id="fov" type="number" min="60" max="140" step="1" style="width:56px"></label>
+    </div>
+    <div class="canvaswrap"><canvas id="cv" width="1280" height="720"></canvas></div>
+    <p class="small muted">Drag anything to move it; the mouse wheel sizes the selection; arrow keys nudge it (Shift: 10). Built-in shapes are close to the game's, not exact; the weapon and grapple launcher are outlines of where the models sit. Check in game with Settings &gt; HUD.</p>
+  </section>
+  <aside class="side">
+    <div class="seg" id="tabs">
+      <button data-tab="elements" class="on">Built-in HUD</button>
+      <button data-tab="widgets">Widgets (hud.cfg)</button>
+      <button data-tab="profiles">Profiles</button>
+      <button data-tab="text">Text</button>
+    </div>
+    <div id="tab-elements" class="tab">
+      <div id="elList" class="list"></div>
+      <div id="elInspector" class="inspector"></div>
+    </div>
+    <div id="tab-widgets" class="tab" hidden>
+      <div class="row">
+        <button id="wAdd">Add widget</button><button id="wDup">Duplicate</button><button id="wDel">Delete</button>
+        <button id="wUp" title="Draw earlier">Up</button><button id="wDown" title="Draw later">Down</button>
+      </div>
+      <div id="wList" class="list"></div>
+      <div id="wInspector" class="inspector"></div>
+    </div>
+    <div id="tab-profiles" class="tab" hidden>
+      <p class="small muted">HUD profiles live in the game's huds/ folder (Settings &gt; HUD &gt; widgets EXPORT writes them; per-mode HUD rules pick one). Opening one loads its widgets here; Save then writes hud.cfg.</p>
+      <div id="pList" class="list"></div>
+      <div class="row"><input id="pName" placeholder="profile name" class="grow"><button id="pSave">Save widgets as profile</button></div>
+    </div>
+    <div id="tab-text" class="tab" hidden>
+      <p class="small muted">hud.cfg as it will be written. Edit and press Apply to read it back.</p>
+      <textarea id="txt" spellcheck="false"></textarea>
+      <div class="row"><button id="txtApply">Apply text</button><button id="txtCopy">Copy</button><span id="txtErr" class="small err"></span></div>
+    </div>
+  </aside>
+</main>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
