@@ -1452,6 +1452,24 @@ class Previews(unittest.TestCase):
         self.assertTrue(all(l.startswith(("-", "@@")) for l in ch["diff"]))
         self.assertEqual(ch["summary"], "Delete ruleset 'testing guard' (testing)")
 
+    def test_new_push_requirements_warn(self):
+        p = S.Pending(None, self.gh, REPO)
+        ch = p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form(
+            requirePr=True, requiredChecks=["meta", "linux"], linearHistory=True)}})
+        w = " ".join(ch["warnings"])
+        self.assertIn("required a pull request for every change (0 approvals); passing checks linux, meta; linear "
+                      "history (no merge commits) on testing, where every Claude's work lands", w)
+        p.discard(ch["id"])
+        # nothing new that blocks (only force-push / deletion), a disabled ruleset, or work branches: worded to fit
+        self.assertEqual(p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form(
+            blockDeletion=False)}})["warnings"], [])
+        self.assertEqual(p.queue({"type": "ruleset.create", "params": {"form": guard_form(
+            name="off", enforcement="disabled", requirePr=True)}})["warnings"], [])
+        ch = p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="work", include=["claude/project-*"],
+                                                                             requiredChecks=["meta"])}})
+        self.assertIn("passing check meta on claude/project-*", " ".join(ch["warnings"]))
+        self.assertEqual(S.ruleset_new_blocks(ch["after"], ch["after"]), [])
+
     def test_form_keeps_what_it_does_not_show(self):
         rs = testing_guard()
         rs["rules"].append({"type": "required_signatures"})

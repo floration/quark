@@ -27,7 +27,8 @@ Two more tabs:
     locally (`editor/rules.json`) at once.
   - **Pending changes**: each queued GitHub change with its before -> after (a sentence for a branch, the JSON diff
     for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). A delete,
-    or a change with warnings, asks before it goes; Apply all's confirm lists every change with its warnings. After
+    or a change with warnings (among them a ruleset change that adds a required PR, required checks or linear
+    history: it can stop every Claude pushing to testing), asks before it goes; Apply all's confirm lists every change with its warnings. After
     an Apply the page follows the server's own poll and redraws as soon as GitHub's new state is in. Nothing
     is sent to GitHub before Apply. Right before the call the server reads GitHub again, re-checks the production
     lock and refuses a change whose preview is out of date ("changed on GitHub since preview, review again"). The

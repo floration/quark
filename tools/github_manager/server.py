@@ -1952,6 +1952,45 @@ def ruleset_applies(n):
     return s
 
 
+def ruleset_new_blocks(before, after):
+    """What a ruleset change adds that can refuse pushes (a required PR or more approvals, required checks, linear
+    history), on the branches it covers, as sentences; [] when it adds nothing of that kind (or isn't active)."""
+    if not after or after.get("enforcement") != "active":
+        return []
+
+    def blocking(n):
+        out = {}
+        if n and n.get("enforcement") == "active":
+            for r in n["rules"]:
+                p = r.get("parameters") or {}
+                if r["type"] == "pull_request":
+                    out["pr"] = int(p.get("required_approving_review_count") or 0)
+                elif r["type"] == "required_status_checks":
+                    out["checks"] = set(c.get("context") for c in p.get("required_status_checks") or [])
+                elif r["type"] == "required_linear_history":
+                    out["linear"] = True
+        return out
+    b, a = blocking(before), blocking(after)
+    added = []
+    if "pr" in a and "pr" not in b:
+        added.append("a pull request for every change (%s)" % plural(a["pr"], "approval"))
+    elif a.get("pr", 0) > b.get("pr", 0):
+        added.append("%s per pull request (was %d)" % (plural(a["pr"], "approval"), b["pr"]))
+    new_checks = sorted(a.get("checks", set()) - b.get("checks", set()))
+    if new_checks:
+        added.append("passing check%s %s" % ("s" if len(new_checks) > 1 else "", ", ".join(new_checks)))
+    if a.get("linear") and not b.get("linear"):
+        added.append("linear history (no merge commits)")
+    if not added:
+        return []
+    rn = after["conditions"]["ref_name"]
+    on_testing = any(pattern_hits_branch(p, "testing") for p in rn["include"]) and not any(
+        pattern_surely_hits_branch(x, "testing") for x in rn["exclude"])
+    where = "testing, where every Claude's work lands" if on_testing else ruleset_applies(after)
+    return ["it adds required %s on %s: a push that doesn't meet %s is refused, for every Claude too" % (
+        "; ".join(added), where, "them" if len(added) > 1 else "it")]
+
+
 def pretty_json(obj):
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False)
 
@@ -2711,6 +2750,7 @@ class Pending(_Store):
                         summary = "Delete ruleset %r (%s)" % ((cur or {}).get("name") or rid,
                                                              ruleset_applies(cur) if cur else "not found")
                     pv["ref"] = {"ruleset": rid}
+                pv["warnings"] += ruleset_new_blocks(cur, after)
                 pv.update(summary=summary, before=cur, after=after, basis=basis, call=call,
                           diff=json_diff(cur, after),
                           beforeText=("Rules: %s; on %s; %s." % (", ".join(ruleset_summary(cur)), ruleset_applies(cur),
