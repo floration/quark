@@ -308,12 +308,13 @@ export class ModePage {
         else if (this.view === "values") this.values.scrollTo(key);
         this._items(); this._info();
     }
-    // Phases: a slot nobody writes -> add an empty one (the native default runs until it does something)
+    // Phases: a slot nobody writes -> add an empty one. The game interprets every slot the file writes, an empty one too
+    // (quark_tests checkmode: `slot reset:` / `pass` is interpreted, 1 instruction), so the dialog says so.
     async addSlot(name) {
         const cat = CATALOG.slots[name];
         if (!cat) return;
         if (cat.timer) { this.app.toast("a timer slot is `slot timer <name>:` after a `timer <name>` declaration (write it in Code)"); return; }
-        if (!confirm(`Add an empty slot ${name}? (${cat.when})\n\nIt runs interpreted once it does anything; an empty ${cat.kind === "query" ? "query falls back to the native answer" : "event does nothing"}.`)) return;
+        if (!confirm(`Add an empty slot ${name}? (${cat.when})\n\nIt runs interpreted from now on (the game interprets every slot the file writes, an empty one too: about one instruction a call). Empty, ${cat.kind === "query" ? "the query falls back to the native answer" : "the event does nothing"}.`)) return;
         const ast = clone(this.ast);
         ast.decls.push({ kind: "slot", name, body: [{ op: "pass" }], comments: [], trail: null });
         this.brainEdited(ast, null);
