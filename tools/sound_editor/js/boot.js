@@ -19,8 +19,9 @@
     // edits whose audio didn't survive (a source missing) fall back to the shipped sound
     for (const e of Object.values(Q.state.edits)) if (e.src && !Q.sources[e.src]) e.src = null;
     if (s.mix) Q.mixFromJSON(s.mix);
+    if (s.lastExport) Q.lastExport = s.lastExport;
     if (n) banner('Restored your last session (' + Object.keys(Q.state.edits).length + ' edited sounds, ' + Q.state.groups.length + ' groups), saved ' + new Date(s.saved).toLocaleString() + '.', false,
-      [h('button.mini', { type: 'button', onclick: async () => { Q.state = { edits: {}, groups: [], customs: [], meta: {} }; Q.clearHistory(); await Q.clearAutosave(); U.$('#banner').hidden = true; Q.onStateChanged('discard'); } }, 'start fresh instead')]);
+      [h('button.mini', { type: 'button', onclick: async () => { Q.state = { edits: {}, groups: [], customs: [], meta: {} }; Q.lastExport = {}; Q.clearHistory(); await Q.clearAutosave(); U.$('#banner').hidden = true; Q.onStateChanged('discard'); } }, 'start fresh instead')]);
   }
 
   async function boot() {

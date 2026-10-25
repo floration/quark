@@ -102,6 +102,7 @@ td.cell.playing canvas { filter: brightness(1.6); }
 .cell .badges { position: absolute; top: 2px; right: 4px; display: flex; gap: 3px; }
 .badge { font: 600 9px/13px var(--mono); padding: 0 3px; border-radius: 3px; background: var(--raise); color: var(--text-dim); }
 .badge.ed { background: var(--edited); color: #fff; }
+.badge.noop { background: var(--raise); color: var(--text-faint); border: 1px dashed var(--line2); }
 .badge.over { background: var(--serious); color: #111; }
 .badge.cap { background: var(--bad); color: #fff; }
 .badge.inh { background: #2a3442; color: #9cc3ef; }
@@ -248,6 +249,8 @@ dialog::backdrop { background: #0009; }
 .dlg-b table { border-collapse: collapse; width: 100%; }
 .dlg-b td, .dlg-b th { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: left; }
 .dlg-b th { color: var(--text-faint); font-weight: 600; }
+.dlg-b tr.off td:not(:first-child) { opacity: .45; }
+.dlg-b tr.comp td { color: var(--text-dim); font-style: italic; }
 .dlg-b td select { max-width: 280px; }
 .dlg-b p { margin: 4px 0 8px; color: var(--text-dim); }
 .keys { display: grid; grid-template-columns: 130px 1fr; gap: 3px 12px; }

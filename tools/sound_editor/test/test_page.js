@@ -3,10 +3,13 @@
      node tools/sound_editor/test/test_page.js <sound-editor folder>
 
    The folder is a built editor (build.py / install.py output: sound-editor.html + data/). Rebuild its page first
-   (build.py - <folder> --page-only) so it runs this checkout's code. Exit code 0 = every check passed. Each check is
+   (build.py - <folder> --page-only) so it runs this checkout's code. Exit code 0 = every check passed. The export checks
+   serve the folder over http on 127.0.0.1 (port $QSE_TEST_PORT, default any free one). Each check is
    one regression the 2026-10 app audit found, or a feature added then. */
 'use strict';
 const path = require('path');
+const fs = require('fs');
+const http = require('http');
 const { chromium } = require('playwright');
 
 const dir = path.resolve(process.argv[2] || '');
@@ -15,12 +18,12 @@ const URL = 'file://' + path.join(dir, 'sound-editor.html');
 let failed = 0;
 const ok = (cond, what, extra) => { console.log((cond ? 'ok   ' : 'FAIL ') + what + (cond || extra === undefined ? '' : '  ' + JSON.stringify(extra))); if (!cond) failed++; };
 
-async function open(b, vp) {
+async function open(b, vp, url) {
   const ctx = await b.newContext({ viewport: vp, acceptDownloads: true });
   const p = await ctx.newPage(), logs = [];
   p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') logs.push(m.type() + ': ' + m.text()); });
   p.on('pageerror', e => logs.push('PAGEERROR: ' + e.message));
-  await p.goto(URL);
+  await p.goto(url || URL);
   await p.waitForFunction(() => window.Q && Q.ready, null, { timeout: 60000 });
   return { ctx, p, logs };
 }
@@ -221,6 +224,78 @@ async function open(b, vp) {
   ok(await p.$eval('#dirUpload', e => e.webkitdirectory), 'an Upload folder input (webkitdirectory)');
 
   ok(!logs.length, 'no console errors at 2560x1440', logs);
+
+  // --- export over http (the folder writes go to the origin-private file system, standing in for the picker) ------------
+  {
+    const srv = http.createServer((q, r) => {
+      const f = path.join(dir, decodeURIComponent(q.url.split('?')[0]));
+      if (!f.startsWith(dir)) { r.writeHead(403); r.end(); return; }
+      fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': f.endsWith('.html') ? 'text/html' : 'text/javascript' }); r.end(d); });
+    });
+    await new Promise(res => srv.listen(+(process.env.QSE_TEST_PORT || 0), '127.0.0.1', res));
+    const { ctx, p: q, logs: hlogs } = await open(b, { width: 1280, height: 720 }, 'http://127.0.0.1:' + srv.address().port + '/sound-editor.html');
+    const ex = await q.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      for await (const [n] of root.entries()) await root.removeEntry(n, { recursive: true });
+      const ov = await root.getDirectoryHandle('overrides', { create: true });
+      const put = async (d, path, text) => { const parts = path.split('/'), f = parts.pop(); for (const s of parts) d = await d.getDirectoryHandle(s, { create: true }); const w = await (await d.getFileHandle(f, { create: true })).createWritable(); await w.write(text); await w.close(); };
+      const has = async (d, path) => { try { const parts = path.split('/'), f = parts.pop(); for (const s of parts) d = await d.getDirectoryHandle(s); await d.getFileHandle(f); return true; } catch (e) { return false; } };
+      const read = async (d, path) => { const parts = path.split('/'), f = parts.pop(); for (const s of parts) d = await d.getDirectoryHandle(s); return (await (await d.getFileHandle(f)).getFile()).text(); };
+      await put(ov, 'voices/male/quips/SPREE.wav', 'mine');
+      await put(ov, 'sound-levels.txt', '# hand\nsounds/retro/HIT\n');
+      await Q.loadPack('voice', 'male');
+      Q.commit('t', () => {
+        const e = Q.newEdit(); e.chain.push(Q.newStep('gain', { db: -3 })); Q.state.edits['voices/male/quips/HEADSHOT'] = e;
+        const n = Q.newEdit(); n.chain.push(Q.newStep('gain')); n.chain[0].on = false; Q.state.edits['sounds/default/KILL'] = n;   // (no-op)
+        const l = Q.newEdit(); l.chain.push(Q.newStep('gain', { db: 2 })); l.levelSet = true; Q.state.edits['sounds/default/ROCKET'] = l;
+      });
+      const out = { list: Q.exportList(), noop: Q.isNoop('sounds/default/KILL') };
+      const keys = out.list, companions = Q.quipCompanions(keys);
+      out.comp = companions.map(c => c.key.split('/').pop());
+      // zip: never a sound-levels.txt of its own, unless merged with the picked one
+      await Q.exportZip(null, { keys, companions });
+      out.zip1 = Q.lastZipNames.slice();
+      await Q.exportZip(null, { keys, companions, levelsText: '# hand\nsounds/retro/HIT\n' });
+      out.zip2 = Q.lastZipNames.slice();
+      // folder: a default quip already there stays, sound-levels.txt is merged
+      const r = await Q.exportToFolder(ov, { keys, companions });
+      Q.markExported(r.keys, r.companions);
+      out.kept = r.keptQuips; out.spree = await read(ov, 'voices/male/quips/SPREE.wav'); out.godlike = await has(ov, 'voices/male/quips/GODLIKE.wav');
+      out.kill = await has(ov, 'sounds/default/KILL.wav'); out.levels = await read(ov, 'sound-levels.txt');
+      out.changed = Q.exportList().filter(Q.changedSinceExport);
+      out.prov = Object.keys(Q.prov.entries(r.keys, r.companions)).filter(k => k.includes('quips')).length;
+      // remove from the game: renamed to .bak, its level line goes
+      Q.commit('t', () => { delete Q.state.edits['sounds/default/ROCKET']; });
+      out.listed = (await Q.listOverrides(ov)).map(f => f.key).includes('sounds/default/ROCKET');
+      await Q.removeOverrides(ov, ['sounds/default/ROCKET.wav']);
+      out.gone = !(await has(ov, 'sounds/default/ROCKET.wav')) && await has(ov, 'sounds/default/ROCKET.wav.bak');
+      out.levels2 = await read(ov, 'sound-levels.txt');
+      // a folder with no overrides inside: asked first
+      const desk = await root.getDirectoryHandle('Desktop', { create: true });
+      window.showDirectoryPicker = async () => desk;
+      return out;
+    });
+    ok(ex.noop && !ex.list.includes('sounds/default/KILL'), 'an edit that plays the shipped sound is left out of the export', ex.list);
+    ok(ex.comp.length === 7 && !ex.comp.includes('HEADSHOT.wav'), 'one quip exported: the voice\'s other default quips go with it', ex.comp);
+    ok(!ex.zip1.includes('sound-levels.txt') && ex.zip1.includes('sound-levels-add.txt') && ex.zip1.filter(n => n.includes('/quips/')).length === 8, 'the zip never overwrites sound-levels.txt (lines to add instead)', ex.zip1);
+    ok(ex.zip2.includes('sound-levels.txt') && !ex.zip2.includes('sound-levels-add.txt'), 'the zip carries a merged sound-levels.txt when the old one is picked', ex.zip2);
+    ok(ex.kept.includes('voices/male/quips/SPREE.wav') && ex.spree === 'mine' && ex.godlike && !ex.kill, 'folder export keeps a quip already there and writes the missing ones', ex);
+    ok(/sounds\/retro\/HIT/.test(ex.levels) && /sounds\/default\/ROCKET/.test(ex.levels), 'folder export merges sound-levels.txt', ex.levels);
+    ok(!ex.changed.length && ex.prov === 7, 'after an export nothing is "changed since"; companions get provenance entries', ex);
+    ok(ex.listed && ex.gone && !/default\/ROCKET/.test(ex.levels2) && /retro\/HIT/.test(ex.levels2), 'Remove from the game: .bak, its sound-levels.txt line gone', ex.levels2);
+    await q.click('#btnExport'); await q.waitForSelector('#dlg[open]');
+    const rows = await q.$$eval('#dlg table.exp tr', t => t.length);
+    await q.click('#dlg .dlg-f button:has-text("Choose folder and write")');
+    await q.waitForSelector('#dlg2[open]');
+    const ask = await q.$eval('#dlg2', d => d.innerText);
+    await q.click('#dlg2 .dlg-f button:has-text("Cancel")');
+    await q.waitForTimeout(200);
+    const wrote = await q.evaluate(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('Desktop'); for await (const e of d.entries()) return true; return false; });
+    ok(/no overrides folder/.test(ask) && !wrote && rows > 1, 'a folder with no overrides folder in it is asked about first; Cancel writes nothing', ask.slice(0, 120));
+    await q.click('#dlg .dlg-f button:has-text("Close")');
+    ok(!hlogs.length, 'no console errors in the export run', hlogs);
+    await ctx.close(); srv.close();
+  }
   await b.close();
   console.log(failed ? failed + ' check(s) FAILED' : 'all checks passed');
   process.exit(failed ? 1 : 0);

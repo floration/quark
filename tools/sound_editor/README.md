@@ -37,16 +37,36 @@ writes `INSTALLED.txt` and never opens a browser.
 
 - **Choose folder and write** (Chrome / Edge): pick `%APPDATA%\quark\overrides` to try sounds in the game without
   rebuilding (restart the game), or the repository's `assets\overrides` to ship them. Picking `%APPDATA%\quark` or the
-  repository folder works too (the overrides folder inside is used). A same-named `.ogg` / `.flac` / `.mp3` already
-  there is moved to `.bak`, since the game would pick either.
-- **Download .zip**: the same layout, to unzip into the overrides folder.
+  repository folder works too (the overrides folder inside is used). A folder with no overrides folder in it (Desktop...)
+  is asked about before anything is written. A same-named `.ogg` / `.flac` / `.mp3` already there is moved to `.bak`,
+  since the game would pick either.
+- **Download .zip**: the same layout, to unzip into the overrides folder. A zip can't see the `sound-levels.txt` already
+  there, so it never carries one of its own (unzipping would wipe the lines written before): pick that file in the dialog
+  (**Zip: merge with the sound-levels.txt there...**) and the zip carries the merged file; otherwise it carries
+  `sound-levels-add.txt`, the lines to add by hand.
+
+The dialog has a tick per file: at first only the edits changed since you last exported them are ticked (**every edit** /
+**only changed since the last export**), so unchanged files aren't rewritten and their provenance date stays true. An
+edit that plays exactly the shipped sound (a step added then removed, every step bypassed, an auto trim inside the
+silence the game cuts anyway) shows `ED=` / NO CHANGE and is left out: its file would only pin the old sound.
+
+**Quips**: any quip file of a voice replaces its whole default set in the game, so exporting one quip also writes that
+voice's other default quips, as the game plays them now (its line, or your edit of that line), marked "default quip" in
+the dialog (untick **keep each voice's other quips** to leave them out: the dialog then says which quips the voice keeps
+and loses). A folder export skips a default quip already in the folder (an earlier export of yours stays). A voice with
+shipped quip files has its set already, so nothing is added.
+
+**Remove sounds from the game...** (Project menu, or the export dialog) lists the sounds and lines in an overrides
+folder and moves the ticked ones to `.bak` (the game plays the shipped sound again; delete the `.bak` files once sure),
+with their `sound-levels.txt` lines and `provenance.json` entries. Ticked at first: files the editor wrote whose edit is
+no longer in the project (reverted).
 
 The game normally rescales a replacement to the loudness of the sound it replaces (DEFAULT's for every kit, by heard
 loudness for the four hitsound tiers; the line it replaces for a voice). `sound-levels.txt` lists, one per line without
 extension (`sounds/default/ROCKET`), the exported files whose level you set here (a levelling group, or "keep my level"):
-the game keeps their own level. It is merged with the file already there: lines for files exported now follow this
-export, all other lines and comments stay. Sounds for missing events export the same way (`sounds/<kit>/<NAME>.wav`);
-the game ignores them until it has a hook for them.
+the game keeps their own level. A folder export merges it with the file already there: lines for files exported now
+follow this export, all other lines and comments stay. Sounds for missing events export the same way
+(`sounds/<kit>/<NAME>.wav`); the game ignores them until it has a hook for them.
 
 ## Provenance: who made each sound
 
@@ -89,7 +109,7 @@ folder, not into overrides.
   loudness and peak per cell; when it plays, the length guide, where it is reused, and the audit's weak spots per row.
   The Voices tab also has a **QUIPS** group: each voice's quips (the QUIP key), rows `quips/<NAME>`, exported to
   `voices/<voice>/quips/<NAME>.wav` (provenance id the same path). Any quip files for a voice replace its whole default
-  set in the game (docs/ASSETS.md), so export every quip you want that voice to keep.
+  set in the game (docs/ASSETS.md), so the export writes the voice's other default quips with it (see Export).
   Flags: over the length guide, cut by the game's cap (3 s sounds, 5 s lines), edited, level yours, `=D` (this kit uses
   DEFAULT's sound, so a DEFAULT edit plays here; RETRO is DEFAULT chiptuned), and who made it: `AI`, `3P` (third-party),
   `HUM` (human) or `SET?` (a dropped file whose origin isn't chosen yet). Each kit / voice header counts its origins and the

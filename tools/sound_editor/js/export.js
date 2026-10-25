@@ -7,11 +7,57 @@
 
   // --- which assets to export ----------------------------------------------------------------------------------
   Q.exportList = function () {
-    return Object.keys(Q.state.edits).filter(k => Q.assets[k]).sort();
+    return Object.keys(Q.state.edits).filter(k => Q.assets[k] && !Q.isNoop(k)).sort();
   };
+  /* An edit that plays exactly the shipped sound (a step added then removed, every step bypassed, an auto trim inside the
+     leading silence the game cuts anyway) is left out of the export: its file would only pin the old sound over a later
+     shipped improvement (and a kit's copy would be levelled to DEFAULT's instead of keeping its own level). */
+  Q.isNoop = function (key) {
+    const e = Q.state.edits[key], a = Q.assets[key];
+    if (!e || !a || a.custom || e.src || e.made || e.fadeIn > 0 || e.fadeOut > 0 || (e.chain || []).some(st => st.on)) return false;
+    const x = a.orig, t0 = e.trim[0] || 0;
+    if (!x) return false;
+    if (e.trim[1] != null && e.trim[1] < x.length / Q.RATE - 1e-6) return false;
+    return t0 <= 0 || t0 * Q.RATE <= Q.leadingSilence(x);
+  };
+  Q.noopList = () => Object.keys(Q.state.edits).filter(k => Q.assets[k] && Q.isNoop(k)).sort();
   Q.levelList = function () {   // exported files whose level was set in the editor (the game keeps their level)
     return Q.exportList().filter(k => Q.state.edits[k].levelSet);
   };
+  /* Quips: any quip file for a voice replaces that voice's whole default set in the game (audio.cpp loadQuips), so an
+     export with one quip of a voice also writes the voice's other default quips, as the game plays them now (its line;
+     your edit of that line when there is one), unless the voice already has shipped quip files (its set is those then)
+     or the line is silent (the game has no quip of it). Returns [{key, line (the line key whose clip it is), voice}]. */
+  Q.isQuip = key => /^voices\/[^/]+\/quips\//.test(key);
+  Q.quipCompanions = function (keys) {
+    const voices = [...new Set(keys.filter(Q.isQuip).map(k => Q.parseKey(k).pack))], out = [];
+    for (const v of voices) {
+      const mine = Q.QUIPS.map(n => Q.key('voice', v, n)).filter(k => Q.assets[k]);
+      if (mine.some(k => Q.assets[k].shippedOverride)) continue;
+      for (const k of mine) {
+        if (keys.includes(k) || (Q.state.edits[k] && !Q.isNoop(k))) continue;   // (your quip edits: exported now or before)
+        const line = Q.key('voice', v, Q.parseKey(k).name.slice(6));
+        if (!Q.state.edits[line]) { const x = Q.assets[k].orig; if (!x || x.length < 2 || QLoud.samplePeak(x) < 1e-5) continue; }
+        out.push({ key: k, line, voice: v });
+      }
+    }
+    return out;
+  };
+  /* What was last exported (key -> {sig: the edit as exported, date}): the export dialog ticks only what changed since,
+     so files are not rewritten and their provenance dates stay true. Kept in the autosave and the project file (not in
+     the undoable state: an undo doesn't un-write a file). */
+  Q.lastExport = {};
+  Q.exportSig = key => Q.editSig(key);
+  Q.changedSinceExport = key => !Q.lastExport[key] || Q.lastExport[key].sig !== Q.exportSig(key);
+  Q.markExported = function (keys, companions) {
+    const date = new Date().toISOString();
+    for (const k of keys) Q.lastExport[k] = { sig: Q.exportSig(k), date };
+    for (const c of companions || []) Q.lastExport[c.key] = { sig: 'companion:' + Q.editSig(c.line), date };
+    Q.autosaveSoon && Q.autosaveSoon();
+  };
+  // what the game plays as that default quip now: your edit of its line, else the shipped quip (= the line)
+  Q.companionOut = async function (c) { return Q.state.edits[c.line] ? Q.getOut(c.line) : Q.assets[c.key].orig; };
+  Q.ensureVoicesFor = keys => Promise.all([...new Set(keys.filter(Q.isQuip).map(k => Q.parseKey(k).pack))].map(v => Q.loadPack('voice', v)));
   // sound-levels.txt: merge with an existing file. Lines for files exported now follow this export (listed when their
   // level is yours, dropped when not); every other line (other files, comments) is kept as it was.
   Q.mergeLevels = function (existing, exported, levelSet) {
@@ -69,28 +115,49 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   };
 
-  // every exported file: [{path, data}] + sound-levels.txt (merged with `existingLevels`)
-  Q.buildExportFiles = async function (existingLevels, onProgress) {
-    const keys = Q.exportList(), files = [];
+  /* every exported file: [{name, data}] + sound-levels.txt (merged with `existingLevels`; opts.noLevels leaves it out).
+     opts.keys: the edits to write (default all), opts.companions: the default quips written with them (Q.quipCompanions),
+     opts.skip(name): a companion not to write (already in the folder). */
+  Q.buildExportFiles = async function (existingLevels, onProgress, opts) {
+    opts = opts || {};
+    const keys = opts.keys || Q.exportList(), comp = (opts.companions || []).filter(c => !(opts.skip && opts.skip(c.key + '.wav'))), files = [];
+    const n = keys.length + comp.length;
     for (let i = 0; i < keys.length; i++) {
       files.push({ name: keys[i] + '.wav', data: await Q.renderExport(keys[i]) });
-      onProgress && onProgress(i + 1, keys.length);
+      onProgress && onProgress(i + 1, n);
     }
-    const levels = Q.mergeLevels(existingLevels, keys, Q.levelList());
-    files.push({ name: 'sound-levels.txt', data: new TextEncoder().encode(levels) });
-    return { files, keys, levels };
+    for (let i = 0; i < comp.length; i++) {
+      files.push({ name: comp[i].key + '.wav', data: Q.encodeWav(await Q.companionOut(comp[i]), 48000), companion: true });
+      onProgress && onProgress(keys.length + i + 1, n);
+    }
+    // (a default quip the game levels itself: an old line of it in sound-levels.txt goes)
+    const levelSet = keys.filter(k => Q.state.edits[k] && Q.state.edits[k].levelSet);
+    const levels = Q.mergeLevels(existingLevels, keys.concat(comp.map(c => c.key)), levelSet);
+    if (!opts.noLevels) files.push({ name: 'sound-levels.txt', data: new TextEncoder().encode(levels) });
+    return { files, keys, companions: comp, levels, levelSet };
   };
 
-  // the zip also carries provenance.json at its root (it belongs in the sound-editor folder, not in overrides): every
-  // entry this editor has exported, with this export's on top (js/provenance.js)
-  Q.exportZip = async function (onProgress) {
-    const r = await Q.buildExportFiles('', onProgress);
+  /* The zip also carries provenance.json at its root (it belongs in the sound-editor folder, not in overrides): every
+     entry this editor has exported, with this export's on top (js/provenance.js). A zip can't merge sound-levels.txt
+     with the one in the overrides folder, so it never carries that name (unzipping would wipe the lines written before):
+     with opts.levelsText (the existing file, picked in the dialog) it carries the merged sound-levels.txt, else only
+     sound-levels-add.txt, the lines to add by hand (r.levelsAdd). */
+  Q.LEVELS_ADD = 'sound-levels-add.txt';
+  Q.exportZip = async function (onProgress, opts) {
+    opts = opts || {};
+    const merged = typeof opts.levelsText === 'string';
+    const r = await Q.buildExportFiles(merged ? opts.levelsText : '', onProgress, Object.assign({}, opts, { noLevels: !merged }));
+    if (!merged && r.levelSet.length) {
+      r.levelsAdd = r.levelSet.slice();
+      r.files.push({ name: Q.LEVELS_ADD, data: new TextEncoder().encode('# Add these lines to sound-levels.txt in the overrides folder (create it if there is none):\n# the game keeps these files\' own level.\n' + r.levelSet.join('\n') + '\n') });
+    }
     if (Q.prov) {
-      r.provenance = await Q.prov.offline(Q.prov.entries(r.keys));
+      r.provenance = await Q.prov.offline(Q.prov.entries(r.keys, r.companions));
       r.files.push({ name: Q.prov.FILE, data: new TextEncoder().encode(Q.prov.text(r.provenance)) });
     }
     const blob = Q.zip(r.files);
     Q.lastZip = blob;   // (tests read it back)
+    Q.lastZipNames = r.files.map(f => f.name);
     Q.download(blob, 'quark-overrides.zip');
     return r;
   };
@@ -107,12 +174,24 @@
     if (assets) { const o2 = await childDir(assets, 'overrides'); if (o2) return { dir: o2, where: dir.name + '/assets/overrides' }; }
     return { dir, where: dir.name, guess: true };
   };
+  async function hasAudio(dir, path) {   // the folder has this file (any audio extension the game reads)
+    const parts = path.split('/'), file = parts.pop(), stem = file.replace(/\.[^.]+$/, '').toLowerCase();
+    let d = dir;
+    for (const p of parts) { d = await childDir(d, p); if (!d) return false; }
+    for await (const [n, h] of d.entries()) { const m = n.match(/^(.*)\.(ogg|flac|mp3|wav)$/i); if (h.kind === 'file' && m && m[1].toLowerCase() === stem) return true; }
+    return false;
+  }
+  /* opts: replaceOther (move a same-named .ogg / .flac / .mp3 to .bak), keys / companions (Q.buildExportFiles). A default
+     quip already in the folder is not written again: it is already part of that voice's set (maybe your earlier edit). */
   Q.exportToFolder = async function (root, opts, onProgress) {
     opts = opts || {};
     const res = await Q.resolveOverrides(root), dir = res.dir;
     let existing = '';
     try { existing = await (await (await dir.getFileHandle('sound-levels.txt')).getFile()).text(); } catch (e) { }
-    const r = await Q.buildExportFiles(existing, onProgress), report = { where: res.where, guess: !!res.guess, written: [], conflicts: [], removed: [] };
+    const there = new Set();
+    for (const c of opts.companions || []) if (await hasAudio(dir, c.key + '.wav')) there.add(c.key + '.wav');
+    const r = await Q.buildExportFiles(existing, onProgress, Object.assign({}, opts, { skip: n => there.has(n) }));
+    const report = { where: res.where, guess: !!res.guess, written: [], conflicts: [], removed: [], keptQuips: [...there], keys: r.keys, companions: r.companions };
     for (const f of r.files) {
       const parts = f.name.split('/'), file = parts.pop();
       let d = dir;
@@ -140,6 +219,44 @@
     return report;
   };
 
+  /* Taking files back out of the overrides folder (sounds you reverted, or no longer want): each is renamed to .bak
+     (the game ignores it; delete it by hand once sure), its sound-levels.txt line goes. Returns {moved, where}. */
+  const AUDIO_EXT = /^(.*)\.(wav|ogg|flac|mp3)$/i;
+  Q.listOverrides = async function (dir) {
+    const out = [];
+    const files = async (d, pre) => { const r = []; for await (const [n, hd] of d.entries()) { const m = n.match(AUDIO_EXT); if (hd.kind === 'file' && m) r.push({ path: pre + n, key: pre + m[1].toUpperCase() }); } return r; };
+    for (const [top, packs] of [['sounds', Q.KITS], ['voices', Q.VOICES]]) {
+      const t = await childDir(dir, top); if (!t) continue;
+      for (const p of packs) {
+        const d = await childDir(t, p.dir); if (!d) continue;
+        out.push(...await files(d, top + '/' + p.dir + '/'));
+        if (top === 'voices') { const qd = await childDir(d, 'quips'); if (qd) out.push(...await files(qd, top + '/' + p.dir + '/quips/')); }
+      }
+    }
+    return out.sort((a, b) => a.path.localeCompare(b.path));
+  };
+  Q.removeOverrides = async function (dir, paths) {
+    const moved = [];
+    for (const path of paths) {
+      const parts = path.split('/'), file = parts.pop();
+      let d = dir;
+      for (const p of parts) d = await d.getDirectoryHandle(p);
+      const h = await d.getFileHandle(file), bak = await d.getFileHandle(file + '.bak', { create: true }), w = await bak.createWritable();
+      await w.write(await (await h.getFile()).arrayBuffer()); await w.close();
+      await d.removeEntry(file);
+      moved.push(path);
+    }
+    const keys = paths.map(p => p.replace(/\.[^.]+$/, ''));
+    try {
+      const fh = await dir.getFileHandle('sound-levels.txt'), text = await (await fh.getFile()).text();
+      const merged = Q.mergeLevels(text, keys, []);
+      if (merged !== text) { const w = await fh.createWritable(); await w.write(merged); await w.close(); }
+    } catch (e) { }
+    for (const k of keys) for (const e of Object.keys(Q.lastExport)) if (e.toLowerCase() === k.toLowerCase()) delete Q.lastExport[e];
+    Q.autosaveSoon && Q.autosaveSoon();
+    return { moved };
+  };
+
   // --- project file (all edits, groups, chains, the dropped audio embedded) -----------------------------------------
   function f32ToB64(f) { return Q.bytesToB64(new Uint8Array(f.buffer, f.byteOffset, f.byteLength)); }
   function b64ToF32(b) { const u = Q.b64ToBytes(b); return new Float32Array(u.buffer, u.byteOffset, u.byteLength / 4); }
@@ -151,7 +268,7 @@
       sources[id] = s.bytes ? { name: s.name, file: Q.bytesToB64(s.bytes) } : { name: s.name, f32: f32ToB64(s.data) };
     }
     return JSON.stringify({ format: 'quark-sound-editor', version: 1, game: Q.manifest && Q.manifest.version, saved: new Date().toISOString(),
-      state: Q.state, mix: Q.mixToJSON(), sources });
+      state: Q.state, mix: Q.mixToJSON(), lastExport: Q.lastExport, sources });
   };
   Q.importProject = async function (text) {
     const p = JSON.parse(text);
@@ -162,6 +279,7 @@
     }
     Q.state = Object.assign({ edits: {}, groups: [], customs: [], meta: {} }, p.state);
     if (p.mix) Q.mixFromJSON(p.mix);
+    Q.lastExport = p.lastExport && typeof p.lastExport === 'object' ? p.lastExport : {};
     Q.clearHistory();
     return p;
   };
@@ -182,7 +300,7 @@
       for (const id of Q.usedSources()) { const s = Q.sources[id]; if (s) sources[id] = { name: s.name, data: s.data, bytes: s.bytes }; }
       await new Promise((res, rej) => {
         const tx = db.transaction('kv', 'readwrite');
-        tx.objectStore('kv').put({ state: Q.state, mix: Q.mixToJSON(), sources, saved: Date.now() }, 'autosave');
+        tx.objectStore('kv').put({ state: Q.state, mix: Q.mixToJSON(), lastExport: Q.lastExport, sources, saved: Date.now() }, 'autosave');
         tx.oncomplete = res; tx.onerror = () => rej(tx.error);
       });
       db.close();

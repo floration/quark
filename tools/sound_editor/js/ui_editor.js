@@ -82,7 +82,7 @@
     // header
     const head = h('div.ed-head',
       h('span.ed-title', a.name, h('small', pack + (a.custom ? ' (new: needs a game hook)' : ''))),
-      e ? h('span.chip.ed', 'EDITED') : null,
+      e ? (Q.isNoop(E.key) ? h('span.chip', { title: 'Your edit plays exactly the shipped sound (no step on, no trim past the silence the game cuts): it is left out of the export' }, 'NO CHANGE: NOT EXPORTED') : h('span.chip.ed', 'EDITED')) : null,
       e && e.levelSet ? h('span.chip.lvl', { title: 'In sound-levels.txt: the game keeps this level' }, 'LEVEL YOURS') : null,
       inh ? h('span.chip.warn', { title: 'No edit of its own: in the game it uses your DEFAULT edit' + (inh.retro ? ', chiptuned' : '') }, inh.retro ? 'PLAYS DEFAULT EDIT, CHIPTUNED' : 'PLAYS DEFAULT EDIT') : null,
       h('span.ed-when', { title: a.desc || a.when || '' }, a.when || ''),

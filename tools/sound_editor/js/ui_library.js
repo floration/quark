@@ -86,7 +86,7 @@
     td._m = m;
     td.append(valsFor(m, curMetric[a.kind]));
     const badges = h('div.badges'), e = Q.state.edits[key], inh = Q.inheritsFrom(key);
-    if (e) badges.append(h('span.badge.ed', { title: 'Edited: exported with your changes' }, 'ED'));
+    if (e) badges.append(Q.isNoop(key) ? h('span.badge.noop', { title: 'Edited, but it plays the same as the shipped sound: not exported' }, 'ED=') : h('span.badge.ed', { title: 'Edited: exported with your changes' }, 'ED'));
     if (e && e.levelSet) badges.append(h('span.badge.lvl', { title: 'Level set by you: listed in sound-levels.txt, the game keeps it' }, 'LVL'));
     if (inh) badges.append(h('span.badge.inh', { title: inh.retro ? 'RETRO is DEFAULT chiptuned: your DEFAULT edit plays here (chiptuned) in the game' : 'This kit uses DEFAULT\'s sound: your DEFAULT edit plays here in the game' }, inh.retro ? '=D~' : '=D'));
     else if (!e && a.sameAsDefault) badges.append(h('span.badge', { title: 'Same as DEFAULT (a DEFAULT override also replaces it)' }, '=D'));
