@@ -6,11 +6,14 @@ import * as THREE from "../vendor/three.module.min.js";
 import { Picker, rayBox, normalOf } from "./pick.js";
 import { KINDS } from "./doc.js";
 import { snap, tidy } from "./util.js";
-import { repeatCounts, turnDef } from "./repeat.js";
+import { repeatCounts, repeatLen, turnDef } from "./repeat.js";
+import { flipObj, twinObj } from "./xform.js";
+import { stampBoxes } from "./groups.js";
 
 export const GRIDS = [0.125, 0.25, 0.5, 1, 2, 4];
 const AX = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
 const AX_COL = [0xff5a5a, 0x5aff6a, 0x5a8cff];
+const GHOST_MAX = 20000;   // (boxes drawn in the paste preview; more: their bounds)
 
 export class Editor {
   constructor(app) {
@@ -34,7 +37,38 @@ export class Editor {
   }
   get grid() { return GRIDS[this.gridIdx]; }
   objDef(o) { return o && o.def ? turnDef(o.def, o.rot || 0) : null; }   // a custom object's definition as it is turned
-  setTool(t) { this.tool = t; this.routeA = null; this.app.emit("tool", t); this.view.redraw(); }
+  setTool(t) { this.tool = t; this.routeA = null; if (t !== "stamp") this.setGhost(null); this.app.emit("tool", t); this.view.redraw(); }
+  // ---- the stamp / paste preview: the item's box edges as one line mesh (built once per item), moved under the cursor
+  setGhost(item) {
+    const L = this.ghostLayer || (this.ghostLayer = this.view.addLayer("ghost"));
+    for (const c of L.children.slice()) { L.remove(c); c.geometry.dispose(); }
+    this.ghostItem = item;
+    if (!item) { this.view.redraw(); return; }
+    let boxes = stampBoxes(item);
+    if (boxes.length > GHOST_MAX) {   // (a huge clipboard: its bounds only, so moving the preview stays cheap)
+      const mn = [0, 1, 2].map(k => Math.min(...boxes.map(b => b.min[k]))), mx = [0, 1, 2].map(k => Math.max(...boxes.map(b => b.max[k])));
+      boxes = [{ min: mn, max: mx }];
+    }
+    const pos = new Float32Array(boxes.length * 72);
+    let n = 0;
+    const E = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+    for (const b of boxes) {
+      const c = [0, 1, 2, 3, 4, 5, 6, 7].map(j => [j & 1 ? b.max[0] : b.min[0], j & 4 ? b.max[1] : b.min[1], j & 2 ? b.max[2] : b.min[2]]);
+      for (const [a, z] of E) { pos.set(c[a], n); pos.set(c[z], n + 3); n += 6; }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const lines = new THREE.LineSegments(g, this.ghostMat || (this.ghostMat = new THREE.LineBasicMaterial({ color: 0x7fd0ff, transparent: true, opacity: 0.85, depthTest: false })));
+    lines.renderOrder = 10; lines.visible = false; lines.frustumCulled = false;
+    L.add(lines);
+    this.view.redraw();
+  }
+  ghostAt(e) {
+    const L = this.ghostLayer, item = this.ghostItem; if (!L || !item || !L.children.length) return;
+    const s = this.surface(e), m = L.children[0];
+    m.visible = !!s;
+    if (s) m.position.fromArray(this.app.library.stampBase(item, s.p));
+    this.view.redraw();
+  }
   // where a paste goes: the surface under the mouse when it is over the view, else under the view's centre
   pastePoint() {
     const r = this.canvas().getBoundingClientRect();
@@ -110,53 +144,56 @@ export class Editor {
     return null;
   }
 
-  // ---- the gizmo
-  updateGizmo() {
-    const g = this.gizmo;
-    for (const c of g.children.slice()) { g.remove(c); c.geometry && c.geometry.dispose(); }
-    const d = this.doc;
-    if (!d.map || this.tool !== "select" || !d.sel.length || this.app.bots?.playing) return;
-    const bb = (this.drag && this.drag.bb) || d.selBounds(); if (!bb) return;
-    const ctr = [0, 1, 2].map(k => (bb.min[k] + bb.max[k]) / 2);
-    const ppm = this.view.pxPerMetre(ctr), L = 70 / ppm, R = 3 / ppm;
-    const mat = (c, a) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a ?? 0.95, depthTest: false });
-    const top = this.view.camMode === "top";
+  // ---- the gizmo: built once (shared geometry and materials), then only shown, moved and scaled each frame, so a
+  // drawn frame makes no meshes, materials or garbage. Arrows (move) sit at the selection's centre, one face handle
+  // (resize) per side; all keep their screen size (scale 1 / pixels per metre).
+  buildGizmo() {
+    const g = this.gizmo, L = 70, R = 3, s = 6;   // (sizes in pixels: the scale makes them metres)
+    const mat = (c, a) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a, depthTest: false });
+    const shaftG = new THREE.CylinderGeometry(R, R, L, 6).translate(0, L / 2, 0), headG = new THREE.ConeGeometry(R * 3, R * 8, 10).translate(0, L + R * 4, 0);
+    const cube = new THREE.BoxGeometry(s, s, s), ringG = new THREE.BoxGeometry(s * 1.5, s * 1.5, s * 1.5), white = mat(0xffffff, 0.9);
+    this.gz = { arrows: [], faces: [] };
+    for (let a = 0; a < 3; a++) for (const sgn of [1, -1]) {
+      const m = mat(AX_COL[a], sgn > 0 ? 0.95 : 0.4), q = new THREE.Quaternion().setFromUnitVectors(AX[1], AX[a].clone().multiplyScalar(sgn));
+      for (const geo of [shaftG, headG]) { const o = new THREE.Mesh(geo, m); o.quaternion.copy(q); o.userData = { handle: "move", axis: a }; g.add(o); this.gz.arrows.push(o); }
+    }
     for (let a = 0; a < 3; a++) {
-      if (top && a === 1) continue;
-      for (const sgn of [1, -1]) {
-        const dir = AX[a].clone().multiplyScalar(sgn);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(R, R, L, 6).translate(0, L / 2, 0), mat(AX_COL[a], sgn > 0 ? 0.95 : 0.4));
-        shaft.quaternion.setFromUnitVectors(AX[1], dir); shaft.position.fromArray(ctr);
-        const head = new THREE.Mesh(new THREE.ConeGeometry(R * 3, R * 8, 10).translate(0, L + R * 4, 0), mat(AX_COL[a], sgn > 0 ? 0.95 : 0.4));
-        head.quaternion.copy(shaft.quaternion); head.position.fromArray(ctr);
-        shaft.userData = head.userData = { handle: "move", axis: a };
-        g.add(shaft, head);
+      const rm = mat(AX_COL[a], 0.5);
+      for (const side of [0, 1]) {
+        const ud = { handle: "size", axis: a, side }, ring = new THREE.Mesh(ringG, rm), h = new THREE.Mesh(cube, white);
+        ring.userData = h.userData = ud; g.add(ring, h); this.gz.faces.push({ a, side, meshes: [ring, h] });
       }
     }
-    // face handles: one object with a box (resize)
-    if (d.sel.length === 1 && ["box", "stairs"].includes(KINDS[d.sel[0].k].shape)) {
-      const rep = d.sel[0].k === "object" ? this.objDef(d.obj(d.sel[0])) : null;
-      for (let a = 0; a < 3; a++) for (const side of [0, 1]) {
-        if (top && a === 1) continue;
-        if (rep && !rep.axes[a]) continue;   // (a custom object only grows where it repeats)
-        const p = ctr.slice(); p[a] = side ? bb.max[a] : bb.min[a];
-        const s = 6 / ppm;
-        const h = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat(0xffffff, 0.9));
-        h.position.fromArray(p); h.userData = { handle: "size", axis: a, side };
-        const ring = new THREE.Mesh(new THREE.BoxGeometry(s * 1.5, s * 1.5, s * 1.5), mat(AX_COL[a], 0.5));
-        ring.position.fromArray(p); ring.userData = h.userData;
-        g.add(ring, h);
+  }
+  updateGizmo() {
+    if (!this.gz) this.buildGizmo();
+    const g = this.gizmo, d = this.doc;
+    const hide = () => { g.visible = false; };
+    if (!d.map || this.tool !== "select" || !d.sel.length || this.app.bots?.playing) return hide();
+    const bb = (this.drag && this.drag.bb) || d.selBounds(); if (!bb) return hide();
+    g.visible = true;
+    const ctr = [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2];
+    const k = 1 / this.view.pxPerMetre(ctr), top = this.view.camMode === "top";
+    for (const o of this.gz.arrows) { o.visible = !(top && o.userData.axis === 1); o.position.set(ctr[0], ctr[1], ctr[2]); o.scale.setScalar(k); }
+    // face handles: one object with a box (resize); a custom object only grows where it repeats
+    const one = d.sel.length === 1 && (KINDS[d.sel[0].k].shape === "box" || KINDS[d.sel[0].k].shape === "stairs");
+    const rep = one && d.sel[0].k === "object" ? this.objDef(d.obj(d.sel[0])) : null;
+    for (const f of this.gz.faces) {
+      const vis = one && !(top && f.a === 1) && !(rep && !rep.axes[f.a]);
+      for (const o of f.meshes) {
+        o.visible = vis; if (!vis) continue;
+        o.position.set(ctr[0], ctr[1], ctr[2]); o.position.setComponent(f.a, f.side ? bb.max[f.a] : bb.min[f.a]); o.scale.setScalar(k);
       }
     }
   }
   gizmoHit(e) {
     this.view.applyCamera(); this.view.camera.updateMatrixWorld();
     this.updateGizmo(); this.gizmo.updateMatrixWorld(true);   // (as it is now, even before the next frame draws it)
-    if (!this.gizmo.children.length) return null;
+    if (!this.gizmo.visible) return null;
     const r = this.canvas().getBoundingClientRect();
-    const rc = new THREE.Raycaster();
+    const rc = this.rc || (this.rc = new THREE.Raycaster());
     rc.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.view.camera);
-    const hit = rc.intersectObjects(this.gizmo.children, false)[0];
+    const hit = rc.intersectObjects(this.gizmo.children, false).find(h => h.object.visible);
     return hit ? hit.object.userData : null;
   }
   canvas() { return this.view.canvas; }
@@ -269,6 +306,7 @@ export class Editor {
     requestAnimationFrame(() => {
       const ev = this.hoverPending; this.hoverPending = null;
       if (!this.doc.map || this.look || this.drag) return;
+      if (this.tool === "stamp") this.ghostAt(ev);   // (the preview, once a frame like the tip)
       const tip = this.app.tip;
       const { hits } = this.pickAll(ev);
       const h = hits[0];
@@ -329,7 +367,7 @@ export class Editor {
         const sp = Math.max(0.05, rep.spacing[a]), n0 = repeatCounts(rep, f)[a];
         const moved = (this.axisParam(e, dr.P0, a) - dr.s0) * (dr.side ? 1 : -1);   // (+: longer)
         const n = Math.max(1, n0 + Math.round(moved / sp));
-        const len = (n - 1) * sp + rep.unit[a];
+        const len = repeatLen(rep, a, n);
         if (dr.side) box.max[a] = tidy(box.min[a] + len); else box.min[a] = tidy(box.max[a] - len);
         o.min = box.min; o.max = box.max;
         this.app.hudDrag = s.k + " " + repeatCounts(rep, box).join(" x ") + " units";
@@ -430,7 +468,7 @@ export class Editor {
         b.auto = true; add("ladder", "ladders", b, "ladder"); break;
       }
       case "figure": this.app.player.drop(p, yaw); break;
-      case "stamp": this.app.library.stampAt(s); break;
+      case "stamp": this.app.library.stampAt(s, e.shiftKey); break;
     }
     this.pickDirty = true;
   }
@@ -468,6 +506,9 @@ export class Editor {
       case "Insert": this.setTool("box"); return;
       case "m": case "M": this.cycleMaterial(); return;
       case "r": case "R": this.rotateSel(); return;
+      case "x": case "X": this.flipSel(true, false); return;
+      case "z": case "Z": this.flipSel(false, true); return;
+      case "p": case "P": this.app.mirrorCopy(); return;
       case "q": case "Q": case "e": case "E": this.turnSel(e.key.toLowerCase() === "q" ? 1 : -1); return;
       case "?": this.app.help(); return;
     }
@@ -493,7 +534,7 @@ export class Editor {
           if (s.k === "light") { o.radius = Math.max(1, Math.min(60, o.radius + (grow ? 1 : -1))); continue; }
           if (s.k === "object") {   // one unit more / less where it repeats
             const rep = this.objDef(o); if (!rep.axes[axis]) continue;
-            const sp = Math.max(0.05, rep.spacing[axis]), n = Math.max(1, repeatCounts(rep, o)[axis] + (grow ? 1 : -1)), len = (n - 1) * sp + rep.unit[axis];
+            const n = Math.max(1, repeatCounts(rep, o)[axis] + (grow ? 1 : -1)), len = repeatLen(rep, axis, n);
             if (sign > 0) o.max[axis] = tidy(o.min[axis] + len); else o.min[axis] = tidy(o.max[axis] - len);
             continue;
           }
@@ -556,6 +597,7 @@ export class Editor {
         } else if (K.shape === "stairs") {
           const [ax, az] = rot(o.x0, o.z0), [bx, bz] = rot(o.x1, o.z1);
           o.x0 = Math.min(ax, bx); o.x1 = Math.max(ax, bx); o.z0 = Math.min(az, bz); o.z1 = Math.max(az, bz);
+          if (o.axis === "z") o.rising = -(o.rising || 1);   // (+z turns to -x; +x turns to +z)
           o.axis = o.axis === "x" ? "z" : "x";
         } else {
           const p = K.shape === "arr" ? o : o.pos; const [x, z] = rot(p[0], p[2]); p[0] = x; p[2] = z;
@@ -563,6 +605,32 @@ export class Editor {
         }
       }
     }, { touch: d.sel });
+  }
+  // mirror the selection about its centre (snapped): across x (X, left / right) or z (Z, front / back). Boxes, groups
+  // (stairs turn round, custom parts flip), custom objects, spawns (yaw mirrored), stairs records, points
+  flipSel(fx, fz) {
+    const d = this.doc, bb = d.selBounds(); if (!bb) return;
+    const c = [snap((bb.min[0] + bb.max[0]) / 2, this.grid / 2), snap((bb.min[2] + bb.max[2]) / 2, this.grid / 2)];
+    d.edit(fx ? "flip x" : "flip z", d.keysOf(), () => { for (const s of d.sel) flipObj(s.k, d.obj(s), fx, fz, c); }, { touch: d.sel });
+    this.pickDirty = true;
+  }
+  // the point-symmetric twin of the selection through the map's centre (0, 0), as copies: what quark_maptool's
+  // ranked_mirror check looks for (x, z -> -x, -z; team A <-> B; yaw + 180). Objects that are their own twin (centred)
+  // and the hill (a map has one) are left out. One undo step; the copies are selected.
+  mirrorCopy() {
+    const d = this.doc, sel = d.sel.filter(s => !KINDS[s.k].single), hill = sel.length < d.sel.length;
+    if (!sel.length) return { added: 0, same: 0, hill };
+    const added = [];
+    let same = 0;
+    d.edit("mirror copy", d.keysOf(sel), () => {
+      for (const s of sel) {
+        const o = d.obj(s), t = twinObj(s.k, o);
+        if (JSON.stringify(t) === JSON.stringify(o)) { same++; continue; }
+        const arr = d.get(KINDS[s.k].key); arr.push(t); added.push({ k: s.k, i: arr.length - 1 });
+      }
+    }, { touch: [] });
+    d.select(added); this.pickDirty = true;
+    return { added: added.length, same, hill };
   }
 }
 

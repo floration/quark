@@ -342,11 +342,12 @@ export class View {
       this.applyCamera();
       this.onBeforeRender && this.onBeforeRender();
       this.scaleLabels();
+      this.declutterLabels();
       const r = this.renderer;
       r.info.reset();
       r.clear();
       r.render(this.scene, this.camera);
-      if (this.overlay.children.length) { r.clearDepth(); r.render(this.overlay, this.camera); }
+      if (this.overlay.children.some(c => c.visible)) { r.clearDepth(); r.render(this.overlay, this.camera); }
       this.frameTimes.push({ t, ms: performance.now() - t0 });
       this.onAfterRender && this.onAfterRender();
     }
@@ -358,6 +359,39 @@ export class View {
     if (k === 1 && this.labelK === 1) return;
     this.labelK = k;
     this.scene.traverse(o => { if (o.userData.label && o.userData.base) o.scale.set(o.userData.base[0] * k, o.userData.base[1] * k, 1); });
+  }
+  // Labels drawn on top keep their screen size, so far ones land on near ones (Midtown's POINT A under POINT B, a stage's
+  // ATT / DEF labels in a pile). Each drawn frame, in screen space: objective labels (userData.prio 2, then 1) move up
+  // a label's height at a time until they are clear (up to 3 steps); the rest (spawn stages) hide where they would
+  // overlap one already placed. Nearer first. A few hundred labels: well under a millisecond.
+  declutterLabels() {
+    const cam = this.camera, P = cam.projectionMatrix.elements, W = this.w, H = this.h;
+    const list = [];
+    for (const name of ["markers", "routes"]) this.layers[name].traverse(o => { if (o.isSprite && o.userData.label) list.push(o); });
+    if (!list.length || list.length > 1500) return;
+    cam.updateMatrixWorld();   // (the camera as this frame draws it, not as the last one did)
+    const v = this.tmpLabelV || (this.tmpLabelV = new THREE.Vector3()), inv = cam.matrixWorldInverse, items = [];
+    for (const s of list) {
+      if (s.userData.c0 === undefined) s.userData.c0 = s.center.y;
+      s.center.y = s.userData.c0;
+      v.copy(s.position).applyMatrix4(inv);
+      const depth = -v.z;
+      if (depth <= 0) { s.visible = true; continue; }
+      v.copy(s.position).project(cam);
+      const w = s.scale.x * P[0] * W / 2, h = s.scale.y * P[5] * H / 2;   // (sizeAttenuation off: the scale is in clip space)
+      const x = (v.x + 1) / 2 * W - s.center.x * w, y = (1 - v.y) / 2 * H - (1 - s.center.y) * h;
+      items.push({ s, x, y, w, h, depth, prio: s.userData.prio || 0 });
+    }
+    items.sort((a, b) => b.prio - a.prio || a.depth - b.depth);
+    const placed = [], hit = (r) => placed.some(q => r.x < q.x + q.w + 2 && q.x < r.x + r.w + 2 && r.y < q.y + q.h + 1 && q.y < r.y + r.h + 1);
+    for (const it of items) {
+      let r = it, steps = 0;
+      while (hit(r) && it.prio && steps < 3) { steps++; r = { ...it, y: it.y - steps * (it.h + 2) }; }
+      const ok = !hit(r);
+      it.s.visible = ok || it.prio > 0;
+      if (steps && ok) it.s.center.y = it.s.userData.c0 - steps * (1 + 2 / it.h);
+      if (ok) placed.push(r);
+    }
   }
   // frame stats over the last 2 s of drawn frames: average fps, 1 % and 0.1 % lows (the game's F3 measure)
   stats() {
