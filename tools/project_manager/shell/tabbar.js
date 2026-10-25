@@ -227,6 +227,9 @@
     requestAnimationFrame(() => { fitQueued = false; fit(); });
   });
   statsEl.addEventListener('click', () => api.open('dashboard'));
+  const logoEl = document.getElementById('logo');
+  logoEl.addEventListener('click', () => api.command('logo-menu'));
+  logoEl.addEventListener('contextmenu', (e) => { e.preventDefault(); api.command('logo-menu'); });
   moreEl.addEventListener('click', () => api.command('more-menu', hiddenIds));
   zoomEl.addEventListener('click', () => api.command('zoom-reset'));
   let scrollQueued = false;

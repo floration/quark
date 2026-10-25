@@ -22,8 +22,8 @@ html, body {
 }
 #bar { display: flex; align-items: center; height: 34px; padding: 0 8px 0 7px; gap: 6px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
 /* the bar moves the window (there is no title bar); everything clickable in it does not */
-.tab, .icon, #update, #clock, #err, #stats, #more, #find, #zoom { -webkit-app-region: no-drag; }
-#logo { flex: none; display: flex; align-items: center; padding-right: 4px; }
+.tab, .icon, #update, #clock, #err, #stats, #more, #find, #zoom, #logo { -webkit-app-region: no-drag; }
+#logo { flex: none; display: flex; align-items: center; padding-right: 4px; cursor: pointer; }
 #tabs { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 100%; }
 /* past the right end (still tabs to scroll to): the strip fades out there; #more says how many and lists them */
 #tabs.cut { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }

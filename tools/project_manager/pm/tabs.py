@@ -9,6 +9,8 @@
 - A missing folder or file -> installed: false, note "not installed".
 - `keepAlive` (bool): the shell starts that local server when the app starts and restarts it whenever it stops
   (watchdog). `lowPriority` (bool): the shell runs it at low (idle) CPU priority, like `start /low`.
+- `hidden` (bool, the tab menu's "Hide this tab"): the shell leaves the tab out, with its child tabs and their servers;
+  it is passed through here unchanged.
 `up` comes from a background probe (GET http://127.0.0.1:<port>/, 500 ms); requests never wait for it.
 """
 import http.client

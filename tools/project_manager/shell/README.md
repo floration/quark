@@ -247,7 +247,11 @@ in `electron.rejected` again (the row says so); a newer release is tried. A nati
   save it once more); a page that does not answer within 1.5 s counts as clean, so a hung page never blocks closing.
 - Right-click in a page: Undo, Redo, Cut, Copy, Paste, Paste as plain text, Select all (enabled by what the page
   allows there), Open / Copy link for links, Find (the selection), Reload, Inspect element. Right-click on a tab: Open,
-  Reload, Move left / right, Open its log, Developer tools.
+  Reload, Restart its server (server tabs: stops it, the same folder check as an update restart for one the shell did
+  not start, and starts it again), Move left / right, Hide this tab (`"hidden": true` in tabs.json; its child tabs and
+  servers go too), Open its folder, Open its log, Developer tools. The Q logo (click or right-click): Reset tab order
+  (the default tabs back in tabs.default.json's order; q's own tabs stay after the tab they followed), Show hidden tab,
+  Re-read tabs.json.
 - Tab order: drag a tab among its siblings (an accent line shows where it lands; the press opens the tab at once, as in
   a browser, and Esc, in the bar or the page, cancels the drag and gives the previous tab back), Ctrl+Shift+PageUp / PageDown, or
   Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none,

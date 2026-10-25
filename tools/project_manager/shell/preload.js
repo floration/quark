@@ -17,7 +17,7 @@ if ((process.argv || []).includes('--quark-tabbar')) {
   contextBridge.exposeInMainWorld('quarkTabbar', {
     version,
     open: (id) => ipcRenderer.send('shell:open', String(id), ''),
-    // cmd: reload, reload-tabs, ready, relaunch, zoom-reset, tab-menu <id>, more-menu [ids], reorder <id> <beforeId|null>,
+    // cmd: reload, reload-tabs, ready, relaunch, zoom-reset, tab-menu <id>, more-menu [ids], logo-menu, reorder <id> <beforeId|null>,
     // dragging <bool>, find {text, forward, again, matchCase} | {close: true}
     command: (cmd, arg, arg2) => ipcRenderer.send('shell:tabbar', String(cmd), arg === undefined ? null : arg, arg2 === undefined ? null : arg2),
     tabs: () => ipcRenderer.invoke('shell:tabs'),
