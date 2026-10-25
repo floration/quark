@@ -74,9 +74,9 @@ model's own space (metres, +Y up, front at -Z):
     checkpoint, -Z the cart's way. (The default's posts stay square to the world; an override turns with the track.)
   - `HOOK_ARM`: every player's left arm with the grapple launcher strapped on the forearm, in first and third person
     (not drawn in a mode without the grapple). Origin at the left shoulder, reaching along -Z, turned and scaled like
-    `GUN_ARM`; first person draws it low on the left at 70% of the viewmodel size, mirroring the weapon's HUD
-    placement. The rope leaves the barrel's mouth at (0, 0.07, -0.66) (`kHookMuzzle`, models.h): keep an override's
-    barrel there. `team*` = the team colour (first person: your viewmodel accent colour).
+    `GUN_ARM`; first person draws it low on the left at 70% of a weapon's size (its own HUD element, GRAPPLE MODEL:
+    position, depth, size, tilt). The rope leaves the barrel's mouth at (0, 0.07, -0.66) (`kHookMuzzle`, models.h):
+    keep an override's barrel there. `team*` = the team colour (first person: the GRAPPLE MODEL accent colour).
   - `HOOK`: the grapple's claw. Origin where the rope ties on, prongs toward -Z. It sits in the launcher's barrel
     (origin at (0, 0.07, -0.59) of `HOOK_ARM`: the shank inside, the prongs out) and, while hooked, is drawn at the hook
     point instead, turned along the rope.

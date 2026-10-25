@@ -1746,13 +1746,51 @@ static const Vec3 kMuzzle[WPN_COUNT] = {
     {0, 0, -0.125f},        // locator (its emitter)
 };
 
+// The first-person models (the weapon, the grapple launcher): their pivots in camera space (+x right, +y up, -z ahead)
+// in the reference view, 16:9 at a 100 degree horizontal FOV (the default), low in the bottom corners; the HUD
+// element's x / y (720p units, 0.5 mm each, +y down the screen) and depth (mm) move it from there.
+static constexpr Vec3 kWeaponBase = {0.33f, -0.28f, -0.66f};    // (was 0.2, -0.17, -0.55)
+static constexpr Vec3 kHookBase = {-0.33f, -0.295f, -0.68f};    // (was -0.2, -0.19, -0.58)
+static constexpr float kHookViewScale = 0.7f;                   // the launcher at 70% of a weapon's size (the off hand)
+static constexpr float kRefAspect = 16.0f / 9.0f, kRefTanY = 1.19175359f / kRefAspect;   // (tan 50 degrees / aspect)
+
+// A first-person model's pivot (camera space) on this screen: kept at the same spot on the screen (as a fraction of
+// it) and the same height, whatever the aspect or FOV: x follows the aspect (out to the corner on an ultrawide, in on
+// 4:3), depth the vertical FOV (so a wider FOV or a zoom doesn't shrink or grow the model).
+Vec3 Game::viewAnchor(const Settings::HudElem& e, const Vec3& base) const {
+    const Vec3 p = base + Vec3(e.x * 0.0005f, -e.y * 0.0005f, -e.z * 0.001f);
+    const float tx = r_.tanX(), ty = r_.tanY();
+    if (!(tx > 0) || !(ty > 0)) return p;
+    return {p.x * (tx / ty) / kRefAspect, p.y, p.z * kRefTanY / ty};
+}
+
+// A HUD model element's tilt about its pivot (degrees: + pitch = up, + yaw = right, + roll = clockwise)
+static Mat4 viewTilt(const Settings::HudElem& e) {
+    const float r = -deg2rad(e.roll), c = std::cos(r), s = std::sin(r);
+    Mat4 rz;
+    rz.m[0] = c; rz.m[1] = s; rz.m[4] = -s; rz.m[5] = c;
+    return Mat4::rotY(-deg2rad(e.yaw)) * Mat4::rotX(deg2rad(e.pitch)) * rz;
+}
+static bool tilted(const Settings::HudElem& e) { return e.pitch != 0 || e.yaw != 0 || e.roll != 0; }
+
+// The weapon model's frame (weapon space x its size -> camera space): at its pivot, pushed back by the kick, tilted
+Mat4 Game::weaponFrame(float kick) const {
+    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    Vec3 at = viewAnchor(vm, kWeaponBase);
+    at.z += kick;
+    return tilted(vm) ? Mat4::translate(at) * viewTilt(vm) : Mat4::translate(at);
+}
+
 // Where your shots come out: the muzzle of the weapon model wherever the HUD settings put it (x / y / depth /
-// size), so beams, tracers and your projectiles leave the gun you see. Hidden model: a spot low and right.
+// size / tilt), so beams, tracers and your projectiles leave the gun you see. Hidden model: a spot low and right.
 Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     Vec3 d = angleForward(yaw_, pitch_), right = normalize(cross(d, {0, 1, 0}));
     if (weapon < 0 || weapon >= WPN_COUNT) return eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0); // (hidden model: where it would be)
-    Vec3 o = Vec3(0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + (float)recoil_ * 0.06f) + kMuzzle[weapon] * vm.scale;
+    const Mat4 f = weaponFrame((float)recoil_ * 0.06f);
+    const Vec3 m = kMuzzle[weapon] * vm.scale;
+    Vec3 o = {f.m[0] * m.x + f.m[4] * m.y + f.m[8] * m.z + f.m[12], f.m[1] * m.x + f.m[5] * m.y + f.m[9] * m.z + f.m[13],
+              f.m[2] * m.x + f.m[6] * m.y + f.m[10] * m.z + f.m[14]};
     float cp = std::cos(pitch_), sp = std::sin(pitch_), cy = std::cos(yaw_), sy = std::sin(yaw_);
     Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};           // the viewmodel's own transform (rotX, then rotY)
     return eye + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
@@ -2066,14 +2104,15 @@ void Game::drawWorld(float alpha) {
         Vec3 at = target == me && alive ? net_.smoothedPos(alpha) : players[target].snap.pos;
         return at + Vec3(0, 1.0f * bs, 0);
     };
-    // The first-person grapple launcher, low on the left (the weapon's HUD placement mirrored, its size): placed here,
-    // before the ropes, so your rope leaves its muzzle; drawn with the viewmodel below. Not on a mode without the
-    // grapple, nor while the viewmodel is hidden or scoped. While hooked the claw is out on the rope and the arm comes
-    // up a little and turns toward the hook (eased).
+    // The first-person grapple launcher, low on the left (its own HUD element, GRAPPLE MODEL: x / y / depth / size /
+    // tilt / accent colour): placed here, before the ropes, so your rope leaves its muzzle; drawn with the viewmodel
+    // below. Not on a mode without the grapple, nor while hidden or scoped. While hooked the claw is out on the rope and
+    // the arm comes up a little and turns toward the hook (eased).
     const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    const auto& gm = cfg_.hud[Settings::HUD_GRAPPLE];
     const bool fpHook = grappleOn && (alive || specGun) && !(alive && (net_.predicted().mods & MOVE_RUN_ONLY)) &&
-                        !(scoped_ && scopeOverlay_ && !specGun) && !vm.hidden;
+                        !(scoped_ && scopeOverlay_ && !specGun) && !gm.hidden;
     bool fpHooked = false;
     Vec3 fpHookTo;
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
@@ -2083,12 +2122,12 @@ void Game::drawWorld(float alpha) {
         fpHooked = true;
         fpHookTo = ropeEnd((int)players[viewing].snap.hooked - 2, players[viewing].snap.hookPoint);
     }
-    const float hk = vm.scale * 0.7f;                 // (the launcher at 70% of the weapon's size: it's the off hand)
+    const float hk = gm.scale * kHookViewScale;
     const Vec3 hookHousing = {0, 0.015f, -0.42f};      // (PROP_HOOK_ARM's housing: the point the arm is placed and turned by)
     Mat4 fpHookXf;                                    // PROP_HOOK_ARM space (x hk) -> camera space
     Vec3 fpMuzzle;                                    // its muzzle in the world
     if (fpHook) {
-        const Vec3 base = {-0.2f - vm.x * 0.0005f, -0.19f - vm.y * 0.0005f, -0.58f - vm.z * 0.001f};
+        const Vec3 base = viewAnchor(gm, kHookBase);
         float tYaw = -0.06f, tPitch = 0, tRaise = 0;  // (at rest: the barrel turned in a touch, toward the crosshair)
         if (fpHooked) {   // toward the hook, from where the launcher is (camera space), at most ~30 degrees
             const Vec3 f = angleForward(camYaw, camPitch), rt = normalize(cross(f, {0, 1, 0})), up = cross(rt, f);
@@ -2105,8 +2144,9 @@ void Game::drawWorld(float alpha) {
         hookAimYaw_ += (tYaw - hookAimYaw_) * e;
         hookAimPitch_ += (tPitch - hookAimPitch_) * e;
         hookRaise_ += (tRaise - hookRaise_) * e;
-        fpHookXf = Mat4::translate(base + Vec3(0.01f, 0.035f, -0.03f) * hookRaise_) * Mat4::rotY(hookAimYaw_) *
-                   Mat4::rotX(hookAimPitch_) * Mat4::translate(hookHousing * -hk);
+        fpHookXf = Mat4::translate(base + Vec3(0.01f, 0.035f, -0.03f) * hookRaise_) * Mat4::rotY(hookAimYaw_) * Mat4::rotX(hookAimPitch_);
+        if (tilted(gm)) fpHookXf = fpHookXf * viewTilt(gm);   // (about the housing, inside the turn toward the hook)
+        fpHookXf = fpHookXf * Mat4::translate(hookHousing * -hk);
         fpMuzzle = r_.viewPoint(xfPoint(fpHookXf, kHookMuzzle * hk));
     } else {
         hookAimYaw_ = -0.06f; hookAimPitch_ = hookRaise_ = 0;   // (shown again: from rest, not from where it was)
@@ -2457,24 +2497,35 @@ void Game::drawWorld(float alpha) {
         vpal.c[TINT_BASE] = viewmodelBase(r_.baseColor);
         vpal.c[TINT_TEAM] = vm.custom ? vm.color : cfg_.colorFriendly;
         vpal.c[TINT_GLOW] = r_.glowColor;
-        // placed from the HUD settings: x / y in 720p units (+y down the screen), depth in mm, scale
-        Vec3 at = {0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + kick};
+        // placed from the HUD settings: x / y in 720p units (+y down the screen), depth in mm, scale, tilt
+        // (untilted: the plain camera-space boxes, no matrix per box)
+        const Mat4 wf = weaponFrame(kick);
+        const bool tilt = tilted(vm);
+        const Vec3 at = {wf.m[12], wf.m[13], wf.m[14]};
         const float k = vm.scale;
         if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_WEAPON, w, vpal, tint);
-            r_.viewMesh(*ov, at, k, tint);
+            if (tilt) {
+                Mat4 sc;
+                sc.m[0] = sc.m[5] = sc.m[10] = k;
+                r_.viewMeshXf(*ov, wf * sc, tint);
+            } else r_.viewMesh(*ov, at, k, tint);
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_WEAPON, w)) overrideBoxParts(MODEL_WEAPON, w, *bx, vpal, 1.0f, parts_);
             else viewmodelParts(w, vpal, parts_);
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
-            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
+            for (const ModelPart& q : parts_) {
+                const Vec3 c = q.slot == TINT_GLOW ? q.color * glow : q.color;
+                if (tilt) r_.viewBoxXf(wf * Mat4::translate(q.c * k), q.h * k, c);
+                else r_.viewBox(at + q.c * k, q.h * k, c);
+            }
         }
     }
     if (fpHook) {   // the grapple launcher (placed above, with the ropes); the claw in its barrel unless it's out
         ModelPalette hpal = referencePalette(MODEL_PROP, PROP_HOOK_ARM);
-        hpal.c[TINT_TEAM] = vm.custom ? vm.color : cfg_.colorFriendly;   // (the weapon's accent)
+        hpal.c[TINT_TEAM] = gm.custom ? gm.color : cfg_.colorFriendly;   // (its stripe: the element's accent colour)
         Mat4 sc;
         sc.m[0] = sc.m[5] = sc.m[10] = hk;
         if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK_ARM)) {   // the owner's model (docs/ASSETS.md)
@@ -2888,9 +2939,10 @@ void Game::drawHudPreviewTop() {
     const auto& e = cfg_.hud[hudSel_];
     const bool same = hudSel_ == hudPrevSel_ && e.x == hudPrevElem_.x && e.y == hudPrevElem_.y && e.scale == hudPrevElem_.scale &&
                       e.custom == hudPrevElem_.custom && e.hidden == hudPrevElem_.hidden && e.z == hudPrevElem_.z &&
+                      e.pitch == hudPrevElem_.pitch && e.yaw == hudPrevElem_.yaw && e.roll == hudPrevElem_.roll &&
                       e.color.x == hudPrevElem_.color.x && e.color.y == hudPrevElem_.color.y && e.color.z == hudPrevElem_.color.z;
     if (!same) { hudChangedAt_ = time_; hudPrevSel_ = hudSel_; hudPrevElem_ = e; }
-    if (hudSel_ == Settings::HUD_VIEWMODEL) return;
+    if (Settings::isModelElem(hudSel_)) return;
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     const bool sample = !settingsInGame_ || !net_.selfAlive();
     const bool shown = !e.hidden && (hudSel_ != Settings::HUD_KEYS || cfg_.hudVerbose);
@@ -4564,9 +4616,10 @@ void Game::debugSettingsTab() {
     if (t == "controls/files") filePick_ = 2;
     if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
     if (t == "hud/widgets") { widgetEdit_ = true; widgetSel_ = 0; }
-    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys"};
-    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
-    for (int i = 0; i < 6; i++) if (t == els[i]) hudSel_ = elIds[i];
+    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys", "hud/viewmodel", "hud/grapple"};
+    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS,
+                                Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE};
+    for (int i = 0; i < 8; i++) if (t == els[i]) hudSel_ = elIds[i];
     if (!pick.empty()) ui_.openPopup(pick, false);
 }
 
@@ -5281,16 +5334,19 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
 
 void Game::drawHudSettings(const SetLayout& L) {
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), x2 = L.X(kColL + 184);
-    // the element: one dropdown (the weapon model, a 3D model and not a HUD element, is its first entry)
-    static const int order[] = {Settings::HUD_VIEWMODEL, Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
-    static const std::vector<std::string> names = {"WEAPON MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "KEY OVERLAY (VERBOSE)"};
+    // the element: one dropdown (the weapon and grapple models, 3D models and not HUD elements, are its first entries)
+    static const int order[] = {Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE, Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS,
+                                Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
+    static const std::vector<std::string> names = {"WEAPON MODEL", "GRAPPLE MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
+                                                   "KEY OVERLAY (VERBOSE)"};
+    static_assert(sizeof(order) / sizeof(order[0]) == Settings::HUD_COUNT, "every HUD element in the dropdown");
     SetFlow f{ui_, L, kColL, 90};
     f.header("ELEMENT");
     const float dropY = f.top();
     f.next();
     auto& e = cfg_.hud[hudSel_];
     const auto& de = defaultSettings().hud[hudSel_];   // (right-click on a slider: the element's default)
-    const bool vm = hudSel_ == Settings::HUD_VIEWMODEL;
+    const bool vm = Settings::isModelElem(hudSel_);   // (a 3D model: depth, tilt, an accent colour)
     const UiExp he = UiExp::cfg("hud_*");
     bool shown = !e.hidden;
     ui_.toggle(f.x(), f.top(), w, h, "SHOW", shown, he);
@@ -5303,11 +5359,18 @@ void Game::drawHudSettings(const SetLayout& L) {
     ui_.slider(f.x(), f.top(), hw, h, "SIZE", e.scale, 0.5f, 3, "%.2f", he, de.scale); e.scale = clampf(e.scale, 0.5f, 3);
     if (vm) { ui_.slider(x2, f.top(), hw, h, "DEPTH", e.z, -300, 300, "%.0f", he, de.z); e.z = clampf(std::round(e.z), -300, 300); }
     f.next();
+    if (vm) {   // the tilt about its pivot, in degrees
+        ui_.slider(f.x(), f.top(), hw, h, "PITCH", e.pitch, -90, 90, "%.0f", he, de.pitch); e.pitch = clampf(std::round(e.pitch), -90, 90);
+        ui_.slider(x2, f.top(), hw, h, "YAW", e.yaw, -90, 90, "%.0f", he, de.yaw); e.yaw = clampf(std::round(e.yaw), -90, 90);
+        f.next();
+        ui_.slider(f.x(), f.top(), hw, h, "ROLL", e.roll, -90, 90, "%.0f", he, de.roll); e.roll = clampf(std::round(e.roll), -90, 90);
+        f.next();
+    }
     // (a RESET with nothing to reset is greyed out)
     auto isDefault = [](const Settings::HudElem& el) {
         Settings::HudElem d;
         return el.x == d.x && el.y == d.y && el.scale == d.scale && el.custom == d.custom && el.hidden == d.hidden && el.z == d.z &&
-               el.color.x == d.color.x && el.color.y == d.color.y && el.color.z == d.color.z;
+               el.pitch == d.pitch && el.yaw == d.yaw && el.roll == d.roll && el.color.x == d.color.x && el.color.y == d.color.y && el.color.z == d.color.z;
     };
     if (ui_.button(f.x(), f.top(), w, h, "RESET ELEMENT", he, !isDefault(e))) e = Settings::HudElem{};
     f.next();
@@ -5332,7 +5395,7 @@ void Game::drawHudSettings(const SetLayout& L) {
         for (auto& el : cfg_.hud) el = Settings::HudElem{};
     // the dropdown last: its list opens over the rows under it
     int di = 0;
-    for (int k = 0; k < 7; k++) if (order[k] == hudSel_) di = k;
+    for (int k = 0; k < Settings::HUD_COUNT; k++) if (order[k] == hudSel_) di = k;
     if (ui_.dropdown(f.x(), dropY, w, h, "ELEMENT", di, names, UiExp::nav("~settings/hud/elements").withId("HUD ELEMENT"), UiExp::nav("~settings/hud"), UiExp::state("hudsel")))
         hudSel_ = order[di];
 }
@@ -6027,7 +6090,7 @@ static const char* const kInfoPages[][48] = {
         "Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.",
         "# HUD LAYOUT (Settings > HUD LAYOUT)",
         "Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.",
-        "WEAPON MODEL (its own button): move the gun model left / right / up / down, change its size and depth, give it its own accent colour, or hide it. Your shots come out of the model wherever you put it.",
+        "WEAPON MODEL and GRAPPLE MODEL (the first two entries): move the gun / the grapple launcher left / right / up / down, change its size and depth, tilt it (pitch / yaw / roll), give it its own accent colour, or hide it. Your shots come out of the gun and your rope out of the launcher wherever you put them.",
         "CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.",
         "# CROSSHAIR (Settings > CROSSHAIR)",
         "Style, length, thickness, gap, colour and outline, with a live preview.",

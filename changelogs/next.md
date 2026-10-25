@@ -7,7 +7,10 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - **Server owners, once:** a testing server's updater from before this change doesn't know the new tags and keeps the testing server stopped. Run `sudo sh tools/server/install.sh` once from a checkout of `v1.19.0` or newer (docs/OPERATIONS.md).
 
 ## Grapple
-- **Everyone now wears a grapple launcher on their left arm**, in first person (low on the left, like the gun on the right) and on other players. The rope comes out of its barrel, and the hook's claw flies out to where it latched; while you're hooked your arm lifts toward it. It follows the viewmodel's HIDE setting and size, and isn't shown in modes without the grapple.
+- **Everyone now wears a grapple launcher on their left arm**, in first person (low on the left, like the gun on the right) and on other players. The rope comes out of its barrel, and the hook's claw flies out to where it latched; while you're hooked your arm lifts toward it. It has its own HUD > GRAPPLE MODEL setting and isn't shown in modes without the grapple.
+- **The gun and the grapple launcher now sit further back in the bottom corners** by default, covering less of the screen, and in the same place at every aspect ratio (16:9, 4:3, ultrawide) and FOV.
+- **New HUD > GRAPPLE MODEL setting**: move, size, hide and colour the launcher on its own, separately from the WEAPON MODEL.
+- **Tilt for both models**: PITCH, YAW and ROLL sliders (-90 to 90 degrees) next to x / y / depth, so each can be placed on all 6 axes. Your shots and the rope leave the moved, tilted barrels.
 
 ## Shots and explosions
 - **Impact sparks everywhere**: hitscan shots (rifle, sniper, shotgun, laser) now spark where they hit a wall, not only on enemies, and other players' shots spark too. Settings > GAMEPLAY > SHOTS > IMPACT SPARKS turns them off.

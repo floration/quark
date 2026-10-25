@@ -52,6 +52,8 @@ public:
     float cullPad = 0;
     const Vec3& cameraPos() const { return camPos_; }
     float cameraYaw() const { return camYaw_; }
+    float tanX() const { return tanX_; }   // tan(half the field of view): horizontal / vertical (the last setCamera)
+    float tanY() const { return tanY_; }
     float cameraPitch() const { return camPitch_; }
     // Projects a world point to screen pixels; returns false if behind the camera.
     bool project(const Vec3& p, float& sx, float& sy) const;

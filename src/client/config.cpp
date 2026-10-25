@@ -151,9 +151,13 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), MODE_COUNT - 1);   // (the vs-bots picker offers every mode)
         else if (k.rfind("hud_", 0) == 0) {
             int i = atoi(k.c_str() + 4), c = 0, hid = 0; HudElem e;
-            if (i >= 0 && i < HUD_COUNT && sscanf(v.c_str(), "%f,%f,%f,%d,%f,%f,%f,%d,%f", &e.x, &e.y, &e.scale, &c, &e.color.x, &e.color.y, &e.color.z, &hid, &e.z) >= 7) {
+            // (the tilt, pitch / yaw / roll, was added at the end: an older line without it loads untilted)
+            if (i >= 0 && i < HUD_COUNT && sscanf(v.c_str(), "%f,%f,%f,%d,%f,%f,%f,%d,%f,%f,%f,%f", &e.x, &e.y, &e.scale, &c, &e.color.x, &e.color.y, &e.color.z, &hid, &e.z,
+                                                  &e.pitch, &e.yaw, &e.roll) >= 7) {
                 e.x = clampf(e.x, -1280, 1280); e.y = clampf(e.y, -720, 720); e.scale = clampf(e.scale, 0.5f, 3); e.custom = c != 0;
                 e.hidden = hid != 0; e.z = clampf(e.z, -300, 300);
+                e.pitch = std::isfinite(e.pitch) ? clampf(e.pitch, -90, 90) : 0; e.yaw = std::isfinite(e.yaw) ? clampf(e.yaw, -90, 90) : 0;
+                e.roll = std::isfinite(e.roll) ? clampf(e.roll, -90, 90) : 0;
                 hud[i] = e;
             }
         }
@@ -211,7 +215,8 @@ std::string Settings::toText() const {
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
     for (int i = 0; i < HUD_COUNT; i++)
         f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","
-          << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "," << hud[i].hidden << "," << hud[i].z << "\n";
+          << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "," << hud[i].hidden << "," << hud[i].z << ","
+          << hud[i].pitch << "," << hud[i].yaw << "," << hud[i].roll << "\n";
     for (int m = 0; m < MODE_COUNT; m++) {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";

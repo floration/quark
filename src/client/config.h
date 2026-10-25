@@ -109,10 +109,16 @@ struct Settings {
     bool chHitFlash = true;     // a hit flashes the crosshair in chHitColor (and a center square on styles without a dot)
     Vec3 chHitColor = {1, 1, 1};
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
-    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_COUNT }; // (keys: after the model, so saved layouts keep their indices)
-    // x / y / scale move and size an element (720p units); hidden removes it. For the weapon model, x / y / depth
-    // move it in front of the camera (depth: z, + = further away) and colour tints its accent parts.
-    struct HudElem { float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; bool hidden = false; float z = 0; };
+    // (keys, then the grapple launcher: after the weapon model, so saved layouts keep their indices)
+    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_GRAPPLE, HUD_COUNT };
+    // x / y / scale move and size an element (720p units); hidden removes it. For the two first-person models (the
+    // weapon, the grapple launcher), x / y / depth move it in front of the camera (depth: z, + = further away), pitch /
+    // yaw / roll tilt it about its pivot (degrees) and colour tints its accent parts (the launcher: its stripe).
+    struct HudElem {
+        float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; bool hidden = false; float z = 0;
+        float pitch = 0, yaw = 0, roll = 0;
+    };
+    static bool isModelElem(int el) { return el == HUD_VIEWMODEL || el == HUD_GRAPPLE; }
     HudElem hud[HUD_COUNT];
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
