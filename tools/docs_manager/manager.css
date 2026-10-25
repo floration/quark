@@ -255,6 +255,10 @@ h3.day { position: sticky; top: 0; z-index: 2; background: var(--qt-bg); margin:
 .stw.s-in-progress { color: color-mix(in srgb, var(--qt-accent) 80%, var(--qt-text)); }
 .stw.s-open { color: color-mix(in srgb, var(--dm-q) 80%, var(--qt-text)); }
 .more-items { font-size: 11px; margin: 2px 0 0 15px; }
+button.linkish { background: none; border: 0; padding: 0; color: var(--qt-accent); cursor: pointer; font: inherit; text-decoration: underline dotted; }
+button.linkish.more-items { font-size: 11px; display: block; }
+button.linkish:hover { text-decoration: underline; }
+.day-box > .commit.full { content-visibility: auto; contain-intrinsic-size: auto 90px; }
 .more-btn { margin: 12px 0; }
 
 /* files */
@@ -270,6 +274,8 @@ h3.day { position: sticky; top: 0; z-index: 2; background: var(--qt-bg); margin:
 .f-title { font-size: 14px; }
 .doc { padding: 6px 24px 40px; max-width: 1050px; }
 .doc.raw { max-width: none; }
+/* Long files (13-app-audit.md): blocks off screen skip layout and paint until scrolled to. */
+.doc.md.long > *, .doc.raw.long .rl { content-visibility: auto; contain-intrinsic-size: auto 22px; }
 .rawtext { font: 12px/1.5 var(--qt-mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
 
 /* threads */
@@ -395,6 +401,9 @@ ul.hist li { margin: 2px 0; }
 /* entries and threads as balanced columns (filled in order, left to right): six across at 2560 px */
 .cards.cols, .threads.cols { display: flex; gap: 10px; align-items: flex-start; }
 .cards.cols > .col, .threads.cols > .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* Cards off screen skip style, layout and paint (their last size is kept), so a re-sort or a new filter lays out a
+   screenful, not 800 cards. */
+.cards.cols > .col > .card, .threads.cols > .col > .card { content-visibility: auto; contain-intrinsic-size: auto 200px; }
 .legend .sw.stripe-key { width: 4px; height: 12px; border-radius: 1px; background: linear-gradient(var(--dm-q) 33%, var(--dm-claude) 33% 66%, var(--dm-ci) 66%); }
 
 /* edit tab: edit a file, answer questions, add an entry; the answer box and Edit button on cards */

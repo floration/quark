@@ -99,12 +99,14 @@ window.DM = window.DM || {};
     if (!d) return '';
     return fmt({weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'short'}).format(d) + ' (Dallas)';
   }
-  // A date-only value ("2026-10-24") is a calendar day, not an instant: format it without a zone shift.
+  // A date-only value ("2026-10-24") is a calendar day, not an instant: format it without a zone shift. (One formatter
+  // for all: a new Intl.DateTimeFormat per card was a tenth of an Entries re-render.)
+  let dayFmt = null;
   function dateOnly(ymd) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
     if (!m) return ymd || '';
     const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
-    return new Intl.DateTimeFormat('en-US', {timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric'}).format(d).replace(',', '');
+    return (dayFmt || (dayFmt = new Intl.DateTimeFormat('en-US', {timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric'}))).format(d).replace(',', '');
   }
   function rel(iso, now) {
     const d = toDate(iso);
@@ -123,11 +125,13 @@ window.DM = window.DM || {};
     return fut ? 'in ' + t : t + ' ago';
   }
   // Day header in the change log: "Today, Sat Oct 24", "Yesterday, Fri Oct 23", "Thu Oct 22".
+  let longDayFmt = null;
   function dayHeader(key) {
     const today = dayKey(new Date());
     const y = dayKey(new Date(Date.now() - 86400000));
     const [Y, M, D] = key.split('-').map(Number);
-    const lbl = new Intl.DateTimeFormat('en-US', {timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric'}).format(new Date(Date.UTC(Y, M - 1, D, 12))).replace(',', '');
+    const lbl = (longDayFmt || (longDayFmt = new Intl.DateTimeFormat('en-US', {timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric'})))
+      .format(new Date(Date.UTC(Y, M - 1, D, 12))).replace(',', '');
     return key === today ? 'Today, ' + lbl : key === y ? 'Yesterday, ' + lbl : lbl;
   }
   // <time> that shows relative time and the exact Dallas time on hover; refreshed by DM.tickTimes().

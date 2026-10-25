@@ -107,8 +107,13 @@ now, then reloads. Keys: `/` search, 1-7 tabs, Ctrl+S save, F8 next clash, `?` h
 for the Supervisor Board's HALT links; else the entry), `#search=<text>`, `#file=` (`#file=__problems`). Text from
 the docs is escaped before the small markdown renderer runs.
 
-Speed: entry cards are cached per entry (rebuilt only when that entry's data changes), a refresh that keeps the
-order swaps only the changed cards, and cards not built yet are built in ~8 ms slices between frames.
+Speed (judged by the longest main-thread task, 4x CPU throttle in headless Chromium): entry cards are cached per
+entry (rebuilt only when that entry's data changes), a refresh that keeps the order swaps only the changed cards,
+cards not built yet are built ~8 ms of script per frame, and cards off screen use `content-visibility: auto`, so a
+re-sort or a new filter lays out one screenful (787 cards: re-sort 470 -> 60 ms, "Any status" 930 -> 350 ms). Files
+keeps each rendered file until its text changes and long files skip layout off screen (13: 630 -> ~170 ms); Problems
+renders 150 rows at a time. The change log shows 25 items per change, "+ N more" shows the rest (PR #70's commit has
+440); on the Overview "+ N more" opens the change.
 
 ## API (127.0.0.1 only; CORS for 127.0.0.1 / localhost ports 8765-8770 on reads only; ETag / 304)
 
