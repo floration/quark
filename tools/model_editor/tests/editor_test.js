@@ -79,6 +79,10 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   const names = await ev(() => [...document.querySelectorAll('.parts td.nm')].map(td => td.textContent));
   check(names.join('|') === 'legs|body|head|visor', 'default box names (SCOUT)', names);
   check(await ev(() => Q.order.every(k => (Q.models[k].defParts || []).every(p => p.name))), 'every default box is named');
+  const filt = async q => { await page.fill('#libFilter', q); return ev(() => ({ cards: [...document.querySelectorAll('.card')].map(c => c.dataset.key.split('/').pop()), empty: (document.querySelector('.lib-empty') || {}).textContent || '' })); };
+  const fl = { scope: await filt('scope'), none: await filt('zzz') };
+  await filt('');
+  check(fl.scope.cards.join() === 'SNIPER' && fl.none.cards.length === 0 && /No model matches "zzz"/.test(fl.none.empty), 'library filter: box names, and a line when nothing matches', fl);
 
   // --- provenance: undo / reset ----------------------------------------------------------------------------------------
   await page.click('#panel button:has-text("Start from scratch")');

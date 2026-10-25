@@ -125,7 +125,8 @@ The editor never writes `assets/provenance/*.json` in the repository.
 ## What it does
 
 - **Library**: every model by kind with a thumbnail (in the chosen map's colours), badges for edited, shipped, origin and
-  problems; filter, edited only, one origin only. Its header counts the human-made goal as the models are now, your
+  problems; filter (the path, the description, box names: "visor", "scope"; a line says when nothing matches), edited
+  only, one origin only. Its header counts the human-made goal as the models are now, your
   edits included (`human 1/30 (3%) ai 29`), and how many edits are **not exported** yet: a card says `exported` while
   its edit is the one the last folder export or zip wrote (this browser remembers a checksum of each), `not exported`
   once it changes (what the game will not have after a restart; the panel says where and when it was exported). As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
@@ -173,7 +174,8 @@ The editor never writes `assets/provenance/*.json` in the repository.
   opaque), the projectile animations a box model loses.
 
 Keyboard: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, 1-6 views, F frame, W / E gizmo, arrows / PgUp / PgDn nudge (Shift: 1 cm),
-Ctrl+D duplicate, M mirror, Delete, Space animations, Esc closes an open menu (else deselects), ? the list. Without model
+Ctrl+D duplicate, M mirror, Delete, Space animations, Esc closes an open menu (else deselects), ? the list. A focused
+checkbox or button keeps Space and Enter, and an input in the panel or a dialog keeps every key. Without model
 data (or WebGL2) the toolbars are disabled under the banner that says how to build it.
 
 ## Accuracy (checked against the game)

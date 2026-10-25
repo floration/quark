@@ -84,14 +84,20 @@
     list.innerHTML = '';
     U.renderProgress();
     for (const kind of Q.kinds) {
-      const keys = Q.order.filter(k => Q.models[k].kind === kind && (!f || k.toLowerCase().includes(f)) && (!onlyEdited || Q.isEdited(k)) && (!origin || Q.originOf(k) === origin));
+      const keys = Q.order.filter(k => Q.models[k].kind === kind && (!f || matches(k, f)) && (!onlyEdited || Q.isEdited(k)) && (!origin || Q.originOf(k) === origin));
       if (!keys.length) continue;
       list.append(h('div.kind', Q.kindTitle(kind) + ' (' + keys.length + ')'));
       const cards = h('div.cards');
       for (const key of keys) cards.append(card(key));
       list.append(cards);
     }
+    if (!list.firstChild) list.append(h('div.lib-empty', 'No model matches' + (f ? ' "' + f + '"' : '') + (onlyEdited ? ', edited' : '') + (origin ? ', ' + origin : '') + '.'));
   };
+  // the filter: the model's path, its description, its box names (the edit's, else the default's: "visor", "scope")
+  function matches(key, f) {
+    const m = Q.models[key], cur = Q.current(key);
+    return key.toLowerCase().includes(f) || m.desc.toLowerCase().includes(f) || (cur.parts || []).some(p => p.name && p.name.toLowerCase().includes(f));
+  }
   const exportedWhere = ex => ex.where + ', ' + new Date(ex.at).toLocaleString();
   U.exportedWhere = exportedWhere;
   // the human-made goal: how many models are human-made as they are now (edits included), the rest by origin
@@ -675,7 +681,7 @@
   const KEYS = [['Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y', 'undo / redo'], ['1 - 6', 'orbit, first person, third person, in flight, lineup, track'], ['F', 'frame the model'],
     ['W / E', 'gizmo: move / resize (Alt: both sides; Shift: 1 cm steps)'], ['click', 'pick a box (orbit, third person; first person: the viewmodel)'],
     ['drag / right drag / wheel', 'orbit / pan / zoom (first person, lineup: look around / fov)'], ['arrows, PgUp / PgDn', 'nudge the box 1 mm in x / z, y (Shift: 1 cm)'],
-    ['Ctrl+D, Delete', 'duplicate, delete the box'], ['M', 'mirror the box across x = 0'], ['Space', 'animations on / off'], ['Esc', 'deselect'], ['?', 'this list']];
+    ['Ctrl+D, Delete', 'duplicate, delete the box'], ['M', 'mirror the box across x = 0'], ['Space', 'animations on / off (a focused checkbox or button: presses it)'], ['Esc', 'close an open menu, else deselect the box'], ['?', 'this list']];
   U.help = () => U.dialog('Keys', h('table.keys', KEYS.map(([k, d]) => h('tr', h('td', k), h('td', d)))));
   U.closeMenus = function () {
     const open = document.querySelectorAll('.menu.open');
