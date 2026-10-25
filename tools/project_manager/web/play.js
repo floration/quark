@@ -557,6 +557,9 @@
   }
 
   // ---------------------------------------------------------------- actions
+  // A pressed button is disabled until the request and the poll after it are done, then enabled again: the cards and
+  // tables keep their HTML when it doesn't change, so a game that crashed before that poll (the card is "not running"
+  // again, the same HTML) would otherwise keep a disabled Play button until a reload.
   async function launch(id, btn) {
     const c = cards.get(id);
     const text = c ? c.input.value : argsFor(id);
@@ -566,8 +569,8 @@
       remember(text);
       toast('Started ' + (j.session.label || '') + (j.session.args ? ' with ' + j.session.args : '') + '.');
       shellPoke();
-      poll();
-    } catch (err) { toast(err.message, true); if (btn) btn.disabled = false; }
+      await poll();
+    } catch (err) { toast(err.message, true); } finally { if (btn) btn.disabled = false; }
   }
   document.addEventListener('input', (e) => {
     const t = e.target;
@@ -595,12 +598,12 @@
     if (!b) return;
     const d = b.dataset;
     try {
-      if (d.play) return launch(d.play, b);
+      if (d.play) { await launch(d.play, b); return; }
       if (d.stop) {
         b.disabled = true;
         const j = await api('/api/play/stop', { session: d.stop });
         toast(j.session && j.session.noop ? 'It is already being stopped.' : 'Asking ' + ((j.session && j.session.label) || 'the game') + ' to close…');
-        poll();
+        await poll();
       } else if (d.open) {
         openPath({ what: d.open, build: d.build });
       } else if (d.log) {
@@ -608,11 +611,11 @@
       } else if (d.install) {
         b.disabled = true;
         await api('/api/play/install', { tag: d.install });
-        poll();
+        await poll();
       } else if (d.cancel) {
         b.disabled = true;
         await api('/api/play/install-cancel', { tag: d.cancel });
-        poll();
+        await poll();
       } else if (d.remove) {
         if (!confirm('Remove ' + d.remove + '?\n\nThis deletes the folder Quark\\versions\\' + d.remove + ' (you can install it again).')) return;
         await api('/api/play/remove', { tag: d.remove });
@@ -642,14 +645,16 @@
       } else if (b.id === 'rel-refresh') {
         b.disabled = true; apply(await api('/api/play?refresh=1' + (state.relSig ? '&rel=' + encodeURIComponent(state.relSig) : ''))); setTimeout(poll, 1500);
       } else if (b.id === 'sync-now') {
-        b.disabled = true; await api('/api/play/sync', {}); setTimeout(poll, 2500);
+        b.disabled = true; await api('/api/play/sync', {}); await new Promise(r => setTimeout(r, 2500)); await poll();
       } else if (b.id === 'down-retry') {
         poll();
       }
     } catch (err) {
       if (err.down) { state.error = err.detail || err.message; renderStatus(); }
       toast(err.message, true);
-      b.disabled = false;
+    } finally {
+      b.disabled = false;  // (see launch; a button the poll replaced is gone anyway)
+      if (b.id === 'rel-refresh') tickRefresh();
     }
   });
 
