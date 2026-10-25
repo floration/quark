@@ -8,8 +8,10 @@
   const LANE = 20, HEAD = 22;
   const WHO = { me: { label: 'you', color: '#4f9cf5' }, enemy: { label: 'enemy', color: '#ec835a' }, ann: { label: 'announcer', color: '#b48cf0' } };
 
+  // the game's VOLUME: a typed value is held to 0..1, an empty or unreadable field plays (and shows) the default 0.6
+  S.master = function () { const t = U.$('#scMaster').value.trim(), v = parseFloat(t); return t === '' || !isFinite(v) ? 0.6 : Math.max(0, Math.min(1, v)); };
   S.opt = function () {
-    return { myKit: U.$('#scMyKit').value, enemyKit: U.$('#scEnemyKit').value, voice: U.$('#scVoice').value, master: Math.max(0, Math.min(1, +U.$('#scMaster').value || 0)),
+    return { myKit: U.$('#scMyKit').value, enemyKit: U.$('#scEnemyKit').value, voice: U.$('#scVoice').value, master: S.master(),
       limiter: U.$('#scLimiter').checked, jitter: U.$('#scJitter').checked, missing: U.$('#scMissing').checked, loop: U.$('#scLoop').checked };
   };
 
@@ -166,7 +168,7 @@
     U.$('#scRender').onclick = () => S.renderMix();
     for (const id of ['#scMyKit', '#scEnemyKit', '#scVoice', '#scMissing']) U.$(id).addEventListener('change', () => { S.render(); S.applyMix(); });
     // (the field shows the volume that plays: typed values outside 0..1 snap to it)
-    U.$('#scMaster').addEventListener('change', ev => { const v = S.opt().master; if (+ev.target.value !== v) ev.target.value = v; });
+    U.$('#scMaster').addEventListener('change', ev => { const v = S.master(); if (ev.target.value.trim() === '' || +ev.target.value !== v) ev.target.value = v; });
     for (const id of ['#scMaster', '#scLimiter']) U.$(id).addEventListener('change', () => { if (S.playing) S.play(); });
   };
 })();
