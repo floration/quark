@@ -34,8 +34,10 @@
     b.title = t.name + ': ' + what + (t.missing ? ' (' + t.missing + ')' : '') + (n ? '  [Ctrl+' + n + ']' : '');
     const dot = document.createElement('span'); dot.className = 'dot';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = t.name;
-    // (the short name fit() switches to when the bar is too narrow: "Map Editor" -> "Map", the group label says Editors)
-    const short = t.id === active ? '' : t.name.replace(/\s+(Editor|Manager)$/, '');
+    // (the short name fit() switches to when the bar is too narrow: "Map Editor" -> "Map", the group label says Editors;
+    //  "Editor Manager" -> "Editor Mgr", since a bare "Editor" next to the EDITORS label reads as one of them)
+    let short = t.id === active ? '' : t.name.replace(/\s+(Editor|Manager)$/, '');
+    if (/^(Editor|Manager)$/i.test(short)) short = t.name.replace(/\s+Manager$/, ' Mgr');
     if (short && short !== t.name) { name.dataset.long = t.name; name.dataset.short = short; }
     b.append(dot, name);
     const halt = Number(t.badge) || 0;
@@ -171,22 +173,29 @@
     fit();
   }
   // Narrowing: the facts shrink first (the first level at which every tab shows its whole name: 1 short labels,
-  // 2 no Refreshed, 3 no Production / bar, 4 hidden), then the tabs shorten, then the ones that still do not fit go
-  // behind "+N". Runs only on a render, a resize or a scroll of the strip (a few layouts, no timers).
+  // 2 no Refreshed, 3 no Production / bar, 4 hidden), then the tabs shorten, and with the room that frees the facts
+  // come back at the fullest level that still fits; then the tabs that still do not fit go behind "+N". Runs only on a
+  // render, a resize or a scroll of the strip (a few layouts, no timers).
   const squeezed = () => tabsEl.scrollWidth > tabsEl.clientWidth + 1
     || [...tabsEl.querySelectorAll('.tab .name')].some((n) => n.scrollWidth > n.clientWidth + 1);
   function shortNames(on) {
     for (const n of tabsEl.querySelectorAll('.tab .name[data-short]')) n.textContent = on ? n.dataset.short : n.dataset.long;
   }
+  function fitStats() {
+    // the fullest facts level (0..3) at which the tabs fit as they are now, else 4 (hidden) -> true when they fit
+    if (statsEl.hidden) return !squeezed();
+    for (let lv = 0; lv <= 4; lv++) {
+      statsEl.dataset.lv = String(lv);
+      if (lv === 4 || !squeezed()) break;
+    }
+    return statsEl.dataset.lv !== '4';
+  }
   function fit() {
     shortNames(false);
-    if (!statsEl.hidden) {
-      for (let lv = 0; lv <= 4; lv++) {
-        statsEl.dataset.lv = String(lv);
-        if (lv === 4 || !squeezed()) break;
-      }
+    if (!fitStats() && squeezed()) {
+      shortNames(true); // (then the names drop "Editor" / "Manager" before they are cut,
+      fitStats();       //  and the facts take what that frees)
     }
-    if (squeezed()) shortNames(true); // (then the names drop "Editor" / "Manager" before they are cut)
     updateMore();
   }
   let hiddenIds = [];

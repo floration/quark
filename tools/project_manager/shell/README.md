@@ -252,8 +252,9 @@ in `electron.rejected` again (the row says so); a newer release is tried. A nati
   with its `defaults*` keys, so a later `server.py --init` never takes the dragged order for an older default order and
   "upgrades" it back), keeping every other field; a parent's children move with it.
 - Narrow windows: first the Editor Manager's facts shrink (below), then the tabs shorten (inactive tabs drop
-  "Editor" / "Manager", then end in an ellipsis; the active tab keeps its whole name; the full name is the tooltip),
-  then the tabs that still do not fit go behind a "+N" button (a list of them; the strip also fades out and scrolls
+  "Editor" / "Manager", "Editor Manager" becomes "Editor Mgr", then they end in an ellipsis; the active tab keeps its
+  whole name; the full name is the tooltip) and the facts come back at the fullest level that fits beside the short
+  names, then the tabs that still do not fit go behind a "+N" button (a list of them; the strip also fades out and scrolls
   with the mouse wheel).
 - Zoom: Ctrl+= / Ctrl+- / Ctrl+mouse wheel (at most one 10 % step per 40 ms) for every tab, Ctrl+0 back to 100 %.
   While the zoom is not 100 % a pill in the bar shows it; a click resets it.

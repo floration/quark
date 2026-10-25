@@ -59,9 +59,10 @@ html, body {
 #stats[data-lv="1"] .x, #stats[data-lv="2"] .x, #stats[data-lv="3"] .x { display: none; }
 #stats[data-lv="2"] .f.r, #stats[data-lv="3"] .f.r, #stats[data-lv="3"] .f.p, #stats[data-lv="3"] .hbar { display: none; }
 /* Tabs shorten (ellipsis, longest names most) once the facts have shrunk away and before any tab is cut off; the
-   active tab keeps its whole name. Groups are display: contents so every tab is a flex item of #tabs. */
+   active tab keeps its whole name. Groups are display: contents so every tab is a flex item of #tabs. A short name
+   ("UI") in a tab held at min-width sits in the middle, so the gaps between the tabs stay even. */
 .tab {
-  flex: 0 1 auto; min-width: 58px; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 8px; border: 0;
+  flex: 0 1 auto; min-width: 58px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 26px; padding: 0 9px 0 8px; border: 0;
   border-radius: 6px; background: transparent; color: var(--text); font: inherit; cursor: pointer; position: relative; white-space: nowrap;
 }
 .tab.active { flex-shrink: 0; }
