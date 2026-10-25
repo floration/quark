@@ -2,15 +2,26 @@
 import re
 
 # a few well-known blocks get a name of their own; anything else is named by its comment or its first command
+# (each is tried on the step's code lines, comments left out; a pattern given (rx, fn(m, code)) gets the whole code)
 _NAMES = [
-    (re.compile(r"xargs\s+-P\s*(\d+)"), lambda m: "parallel groups (%s at a time)" % m.group(1)),
-    (re.compile(r"for\s+g\s+in\s+\$\(\S*quark_tests\s+groups\)"), lambda m: "list the groups (quark_tests groups)"),
-    (re.compile(r"for\s+g\s+in\s+\$alone"), lambda m: "alone groups, one at a time"),
-    (re.compile(r"exit 77"), lambda m: "skipped without a display (exit 77)"),
-    (re.compile(r"command -v Xvfb|Xvfb :\d+ "), lambda m: "every map hosted headless + screenshotted (Xvfb)"),
-    (re.compile(r"check_secrets\.py"), lambda m: "secrets check (tools/check_secrets.py)"),
-    (re.compile(r"--uitest"), lambda m: "the UI test (quark --uitest)"),
+    (re.compile(r"xargs\s+-P\s*(\d+|\$\{?\w+\}?)"), lambda m, code: "parallel groups (%s)" % _jobs(m.group(1), code)),
+    (re.compile(r"^\s*for\s+g\s+in\s+\$\(\S*quark_tests\s+groups\)", re.M), lambda m, code: "list the groups (quark_tests groups)"),
+    (re.compile(r"^\s*for\s+g\s+in\s+\$alone\b", re.M), lambda m, code: "alone groups, one at a time"),
+    (re.compile(r"exit 77"), lambda m, code: "skipped without a display (exit 77)"),
+    (re.compile(r"command -v Xvfb|Xvfb :\S+ "), lambda m, code: "every map hosted headless + screenshotted (Xvfb)"),
+    (re.compile(r"check_secrets\.py"), lambda m, code: "secrets check (tools/check_secrets.py)"),
+    (re.compile(r"--uitest"), lambda m, code: "the UI test (quark --uitest)"),
 ]
+
+
+def _jobs(p, code):
+    """xargs -P's value in words: a number, or the variable's `v=$(( N * $(nproc ...) ))` as "N per core"."""
+    if p.isdigit(): return "%s at a time" % p
+    v = p.strip("${}")
+    m = re.search(r"^\s*%s=\$\(\(\s*(\d+)\s*\*\s*\$\(nproc\b" % re.escape(v), code, re.M)
+    if m: return "%s per core" % m.group(1)
+    m = re.search(r"^\s*%s=(\d+)\b" % re.escape(v), code, re.M)
+    return "%s at a time" % (m.group(1) if m else "$" + v)
 _OPEN = re.compile(r"^\s*(?:if|for|while|until|case)\b|\{\s*$|\(\s*$")
 _CLOSE = re.compile(r"(?:^|[;\s])(?:fi|done|esac)\s*(?:[;|&>].*)?$|^\s*[})]\s*(?:[;|&>].*)?$")
 _FUNC = re.compile(r"^\s*(?:function\s+)?[A-Za-z_]\w*\s*\(\)\s*\{")
@@ -66,7 +77,8 @@ def steps(text):
             cont = code.rstrip().endswith(("\\", "|", "&&", "||"))
             j += 1
             if depth <= 0 and not cont: break
-        compound = j - 1 > start or bool(re.search(r"(?:^|[\s;&|])(?:for|while|until|if|case)\s", _code(lines[start])))
+        # (a one-line `for ...; done` is compound too; a for inside `$(...)` of an echo is not)
+        compound = j - 1 > start or bool(re.match(r"\s*(?:!\s*)?(?:for|while|until|if|case)\s", _code(lines[start])))
         units.append((cstart if cstart is not None else start, j - 1, pend_comment, compound, start))
         pend_comment, cstart = [], None
         i = j
@@ -89,10 +101,11 @@ def steps(text):
     res = []
     for k, st in enumerate(out):
         body = "\n".join(lines[st["line"] - 1:st["endLine"]])
+        code = "\n".join(_code(l) for l in body.split("\n") if not l.lstrip().startswith("#"))
         name = None
         for rx, fn in _NAMES:
-            m = rx.search(body)
-            if m: name = fn(m); break
+            m = rx.search(code)
+            if m: name = fn(m, "\n".join(_code(l) for l in lines)); break
         if not name and k == 0 and re.search(r"^\s*(?:cd |set -e|export |[A-Z_]+=)", body, re.M): name = "setup"
         if not name and k == len(out) - 1 and re.search(r"\bexit\s+\$\w+|RESULT", body): name = "the result (exit code)"
         if not name and st["comment"]: name = st["comment"].split("\n")[0].strip(" .:")[:80]

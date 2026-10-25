@@ -320,17 +320,15 @@ class Builder:
         m = re.search(r"^.*Before committing.*$", cl, re.M)
         qwhen.append(_when("before-commit", "before every commit: build, then build/quark_tests (CLAUDE.md)", "CLAUDE.md",
                            cl.count("\n", 0, m.start()) + 1 if m else 1))
-        for s in script_suites:
-            for st in s["items"]:
-                if re.search(r"quark_tests", st["text"]):
-                    qwhen.append(dict(s["when"][0], text="%s: %s" % (s["title"], st["name"]), file=s["file"], line=st["line"], via=s["id"]))
-                    break
+        for s in script_suites:                                          # (the steps that run tests: code, not comments,
+            runs = [st for st in s["items"] if _runs_tests(st["text"])]  #  and not `quark_tests groups` / a tool command)
+            if runs:
+                qwhen.append(dict(s["when"][0], text="%s: %s" % (s["title"], " → ".join(st["name"] for st in runs)),
+                                  file=s["file"], line=runs[0]["line"], via=s["id"]))
         for s in suites_ci:
             for j in s["items"]:
                 for st in j["steps"]:
-                    run = "\n".join(lint._code_part(l) for l in (st.get("run") or "").split("\n"))
-                    hits = [x for x in lint._QT.finditer(run) if (x.group(1).split() or [""])[0] not in lint.TOOL_CMDS]
-                    if hits:
+                    if _runs_tests(st.get("run") or ""):
                         qwhen.append(_when("push", "CI %s job %s: %s" % (s["file"].rsplit("/", 1)[-1], j["jobId"],
                                                                           j["ifText"] or "every run"), s["file"],
                                            st.get("runLine") or st["line"], via="%s/%s" % (s["id"], j["id"])))
@@ -361,6 +359,12 @@ class Builder:
         alone_lists = {l["name"]: [g["name"] for g in l["groups"]] for l in lists}
         model["lint"] = lint.run(model, texts, index, groups, cmds, suites_ci, script_suites, alone_lists)
         return model
+
+
+def _runs_tests(text):
+    """True when shell / yaml run text runs quark_tests tests (in its code, not a comment; not a tool command)."""
+    code = "\n".join(lint._code_part(l) for l in text.split("\n"))
+    return any((x.group(1).split() or [""])[0] not in lint.TOOL_CMDS for x in lint._QT.finditer(code))
 
 
 def _script(rel, text):

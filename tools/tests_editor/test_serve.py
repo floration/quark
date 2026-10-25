@@ -111,6 +111,20 @@ class RealRepo(unittest.TestCase):
         self.assertEqual(ids[0], "quark_tests")
         self.assertEqual(ids[-1], "ctest")
 
+    def test_script_steps(self):
+        # the real release_check.sh: each step named once, by what it does (not by its raw shell or a progress echo)
+        names = [s["name"] for s in self.suite("script:release_check.sh")["items"]]
+        self.assertEqual(names.count("alone groups, one at a time"), 1, names)
+        self.assertEqual(len([n for n in names if n.startswith("parallel groups (")]), 1, names)
+        self.assertIn("every map hosted headless + screenshotted (Xvfb)", names)
+        for n in names: self.assertNotRegex(n, r"^(?:jobs=|echo |for |if )|\$", names)
+        # quark_tests' "when": the steps that run the groups, not one whose comment mentions quark_tests
+        rc = [w for w in self.suite("quark_tests")["when"] if w["trigger"] == "release-check"]
+        self.assertEqual(len(rc), 1)
+        self.assertNotIn("setup", rc[0]["text"])
+        self.assertIn("parallel groups", rc[0]["text"])
+        self.assertIn("alone groups", rc[0]["text"])
+
     def test_all_workflows_parse(self):
         for s in self.m["suites"]:
             self.assertNotIn("error", s, s["id"])
