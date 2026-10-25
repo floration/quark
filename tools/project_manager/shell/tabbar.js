@@ -51,6 +51,12 @@
       b.title += '\n' + halt + ' halting: Claude is blocked on you';
       b.classList.add('halting');
     }
+    if (t.updated) {
+      // reinstalled while its page had unsaved changes: the old page stays until q reloads it
+      const u = document.createElement('span'); u.className = 'upd'; u.textContent = '\u21bb';
+      b.append(u);
+      b.title += '\nUpdated: save, then reload (Ctrl+R) to get the new version';
+    }
     if (kids && t.depth >= 1) {
       // a parent below the top level (Editor Manager): a caret that shows whether its child tabs are open
       const c = document.createElement('span'); c.className = 'caret' + (open ? ' open' : ''); c.textContent = open ? '' : String(kids);

@@ -10,7 +10,8 @@ in one background thread:
      the stamp is stored only when it exits with 0. An entry whose first source is not at HEAD yet (not merged) is
      "waiting" and skipped.
   3. A successful install of an entry with `restartsPort` queues a restart request (GET /api/updates); the shell
-     restarts that server and acknowledges it (POST /api/updates/ack?id=).
+     restarts that server and acknowledges it (POST /api/updates/ack?id=). One without (a page tool: Sound, UI, Model)
+     queues a reload request (port null, "reload": true, its folder): the shell reloads that open tab.
   4. `"run": "builtin:self-update"` copies this program from repository\\tools\\project_manager into
      Quark\\project-manager\\ (q's tabs.json / config.json / history / state are never touched), runs the new
      server.py --init (tabs.json upgrade), and sets `selfUpdated` when any file changed: the shell then offers a restart.
@@ -754,17 +755,24 @@ class Updater:
         if ok and entry["run"] == SELF_UPDATE and changed:
             with self.lock:
                 self.self_updated = True
-        if ok and entry.get("restartsPort"):
-            folder = None
-            if entry.get("check"):
-                folder = re.split(r"[\\/]+", entry["check"].strip("\\/"))[0] or None
+        folder = None
+        if entry.get("check"):
+            folder = re.split(r"[\\/]+", entry["check"].strip("\\/"))[0] or None
+        # a server tool: its server restarts (port); a page tool (no server: Sound, UI, Model): its open tab reloads
+        # (port None, reload true; the shell finds the tab by its folder and asks first when the page has unsaved work)
+        targets = entry["restartsPort"] or ([None] if folder and not entry["run"].startswith("builtin:") else [])
+        if ok and targets:
             with self.lock:
-                for port in entry["restartsPort"]:
+                for port in targets:
                     self._seq += 1
-                    self.restarts = [r for r in self.restarts if r["port"] != port]
-                    self.restarts.append({"id": "%s-%d-%d" % (eid, int(time.time()), self._seq), "entry": eid,
-                                          "name": entry["name"], "port": port, "folder": folder,
-                                          "at": now_iso, "atTs": time.time()})
+                    # (a newer request replaces one for the same server, or the same page tool)
+                    same = (lambda r: r["port"] == port) if port else (lambda r: not r["port"] and r["folder"] == folder)
+                    self.restarts = [r for r in self.restarts if not same(r)]
+                    req = {"id": "%s-%d-%d" % (eid, int(time.time()), self._seq), "entry": eid,
+                           "name": entry["name"], "port": port, "folder": folder, "at": now_iso, "atTs": time.time()}
+                    if port is None:
+                        req["reload"] = True
+                    self.restarts.append(req)
         return ok
 
     def electron(self, entry, now=None):

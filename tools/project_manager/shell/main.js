@@ -729,6 +729,26 @@ async function restartForUpdate(r) {
   const e = views.get(id);
   if (res.up && e && e.mode === 'page' && !e.view.webContents.isDestroyed()) e.view.webContents.reload();
 }
+async function reloadForUpdate(r) {
+  // a page tool (no server: Sound, UI, Model editors) was reinstalled: its open tab loads the new files now; one with
+  // unsaved changes keeps its page and is marked "updated" on the tab bar until q reloads it (a tab not open yet
+  // simply loads the new files when opened)
+  const folder = String(r.folder || '').toLowerCase();
+  const what = String(r.name || r.entry || 'its tool');
+  const list = tabs.filter((t) => t.kind === 'file' && t.folder && path.basename(t.folder).toLowerCase() === folder);
+  for (const tab of list) {
+    const e = views.get(tab.id);
+    if (!e || e.mode !== 'page' || e.view.webContents.isDestroyed()) continue;
+    if (await pageDirty(e)) {
+      e.updated = true;
+      logNote('updates', what + ' was reinstalled; ' + tab.name + ' has unsaved changes, so it keeps the old page (marked "updated": reload it after saving)');
+    } else {
+      logNote('updates', what + ' was reinstalled; reloading ' + tab.name);
+      e.view.webContents.reload();
+    }
+  }
+  updateTabbar();
+}
 // A tool installed (or the tab list changed) while the app is open: its tab was resolved as "not installed" when the
 // app started, so its server would wait for the next open. Each update poll re-reads the tab list while some tab is
 // missing or tabs.json changed, and reloads it when anything differs (startKeepAlive then starts the new server).
@@ -775,8 +795,8 @@ async function pollUpdates() {
       for (const r of Array.isArray(u.restart) ? u.restart : []) {
         if (!r || typeof r.id !== 'string' || handledRestarts.has(r.id)) continue;
         handledRestarts.add(r.id);
-        restartForUpdate(r)
-          .catch((err) => logNote('updates', 'restart for port ' + r.port + ' failed: ' + (err && err.message)))
+        (r.reload === true ? reloadForUpdate(r) : restartForUpdate(r))
+          .catch((err) => logNote('updates', (r.reload === true ? 'reload of ' + r.folder : 'restart for port ' + r.port) + ' failed: ' + (err && err.message)))
           .finally(() => pmRequest('POST', '/api/updates/ack?id=' + encodeURIComponent(r.id)));
       }
     }
@@ -1039,6 +1059,7 @@ const tabbarTabs = () => tabs.map((t) => ({
   id: t.id, name: t.name, kind: t.kind, status: tabStatus(t), missing: t.missing, parent: t.parent, depth: t.depth, childLabel: t.childLabel,
   badge: t.id === 'project' ? haltCount : t.id === 'play' ? playPending : 0,
   badgeKind: t.id === 'play' ? 'note' : 'halt',
+  updated: !!(views.get(t.id) && views.get(t.id).updated), // (reinstalled while its page had unsaved changes)
 }));
 
 // ---------- halting badge ----------
@@ -1504,6 +1525,7 @@ function createView(tab) {
   });
   wc.on('did-finish-load', () => {
     wc.setZoomFactor(zoom());
+    if (entry.updated) { entry.updated = false; updateTabbar(); } // (the new files are loaded)
     if (entry.mode === 'page' && entry.pendingHash) { const h = entry.pendingHash; entry.pendingHash = ''; setHash(entry, h); }
   });
   wc.on('render-process-gone', (e, d) => {

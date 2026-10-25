@@ -135,6 +135,10 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    is left alone and the tab's log says so; a keepAlive server that is down is started; any other down server starts
    with the new code when its tab is opened. A loaded page is then reloaded (a page with unsaved changes asks). Each
    request is acknowledged (`POST /api/updates/ack?id=`) so it never repeats; unacknowledged ones expire after 10 min.
+   An entry without `restartsPort` (a page tool: Sound, UI, Model editors) queues a reload request instead
+   (`{id, port: null, reload: true, folder, name}`, the folder being the first part of `check`): the shell reloads each
+   open file tab in that folder; one with unsaved changes keeps its old page and shows a blue ↻ on its tab ("Updated:
+   save, then reload") until its next load.
 4. The `project-manager` entry (`"run": "builtin:self-update"`) copies `server.py`, `project-manager.cmd`,
    `project-manager-hidden.vbs`, `installs.json`, `pm\`, `web\` and `shell\` from `repository\tools\project_manager`
    into `Quark\project-manager\` (file by file, only what changed, files deleted from the repo go; `tabs.json`,
@@ -175,7 +179,7 @@ The Supervisor Board's "Tools & updates" card shows the repository state, each e
 | `sources` | repo paths (folders or files); the first one is the tool's own folder (none for `builtin:electron-update`) |
 | `run` | the install command, run in `repository\`; `%QUARK%`, `%PM%`, `%REPO%` are expanded; `py -3` becomes `python` when the py launcher is missing; `builtin:self-update` is the app itself, `builtin:electron-update` its Electron. Pass the Quark folder to installers that take an output folder (`install.cmd "%QUARK%\model-editor"`): their own default is `%USERPROFILE%\Desktop\Quark`, which is not always it |
 | `check` | optional: a file relative to `Quark\` that must exist (installs again when it is missing) |
-| `restartsPort` | optional: a port or a list of ports whose server is restarted after an install |
+| `restartsPort` | optional: a port or a list of ports whose server is restarted after an install (without it, the open tabs of the folder in `check` reload) |
 | `timeoutSec` | optional, default 600 |
 | `lowPriority` | optional: run at below-normal CPU priority (builds), inherited by everything it starts |
 | `enabled` | optional: `false` skips the entry |

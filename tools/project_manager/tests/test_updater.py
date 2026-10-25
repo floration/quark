@@ -284,6 +284,15 @@ class TestUpdater(unittest.TestCase):
         self.assertGreater(wait, 50)
         self.assertEqual(updater.Updater(self.paths, enabled=False).request(), (False, None))
 
+    def test_reload_requests_for_page_tools(self):
+        # a tool with no server (Sound, UI, Model): a reload request for its folder, so the shell reloads its open tab
+        self.set_registry([entry("alpha", restartsPort=8769), entry("beta")])
+        u, v, _ = self.run_pass()
+        by = {r["entry"]: r for r in v["restart"]}
+        self.assertEqual((by["alpha"]["port"], by["alpha"].get("reload")), (8769, None))
+        self.assertEqual((by["beta"]["port"], by["beta"]["reload"], by["beta"]["folder"]), (None, True, "beta"))
+        self.assertEqual(len(v["restart"]), 2)
+
     @unittest.skipUnless(hasattr(os, "nice"), "no os.nice")
     def test_low_priority(self):
         self.set_registry([entry("alpha", lowPriority=True), entry("beta")])
