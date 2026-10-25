@@ -813,10 +813,11 @@ Json ModeMatch::perf() const {
     p.set("speedup", simWall_ > 0 ? time() / simWall_ : 0.0);   // game seconds per wall second (x real time)
     const int rate = tickRate();
     Json tn = nsStats(tickNs_, [](size_t i) { return (long long)i; }, rate);
-    if (!tn.isNull()) {   // the match's first tick (forcestart's round setup: spawns, the logic's first slots) apart, so a
-                          // one-off start-up spike reads as that, not as what a tick usually costs at its worst
+    if (!tn.isNull()) {   // the match's first second (forcestart's round setup: spawns, the logic's first slots) apart, so
+                          // a one-off start-up spike reads as that, not as what a tick usually costs at its worst
         tn.set("first", std::round(tickNs_[0]));
-        if (tickNs_.size() > 1) tn.set("maxAfterFirst", std::round(*std::max_element(tickNs_.begin() + 1, tickNs_.end())));
+        const size_t startTicks = (size_t)std::max(1, rate);
+        if (tickNs_.size() > startTicks) tn.set("maxAfterStart", std::round(*std::max_element(tickNs_.begin() + startTicks, tickNs_.end())));
         tn.set("ticks", (double)tickNs_.size());
     }
     p.set("tickNs", tn.isNull() ? Json::object() : tn);   // Server::simulate per tick (everything: movement, bots, rules, logic)

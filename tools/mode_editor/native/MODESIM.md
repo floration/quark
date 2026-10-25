@@ -122,7 +122,7 @@ space, a tab or a `\r`).
            "deaths","objTime","damage","won"},...]},
  "perf":{"ticks":48960,"simSeconds":1.4,"ticksPerSecond":35000,"speedup":280,
          "tickNs":{"avg":25000,"p99":60000,"p999":140000,"max":2000000,"maxAt":57.81,"maxTick":7225,"first":67000,
-                   "maxAfterFirst":2000000,"count":48960,"ticks":48960},
+                   "maxAfterStart":2000000,"count":48960,"ticks":48960},
          "logicNs":{"avg":40,"p99":900,"p999":1500,"max":5200,"maxAt":12.3,"maxTick":1537,"count":48960,"ticks":48960},
          "callNs":{"avg":870,"p99":1500,"p999":1900,"max":5200,"count":300,"calls":300},
          "slots":[{"slot","calls","ns","avg","max"},...],
@@ -165,7 +165,7 @@ space, a tab or a `\r`).
   are kept for the percentiles, `sampled` says so past that). Each has avg, p99, p99.9 (`p999`) and max; `maxAt`
   (game seconds since the match start) and `maxTick` say when the costliest tick was, so a one-off spike (a
   scheduler hiccup, a nav rebuild) reads as one. `tickNs.first` is the match's first tick (forcestart's round setup)
-  and `maxAfterFirst` the max without it. `perf.slots` lists each interpreted slot over the match, the costliest
+  and `maxAfterStart` the max after the match's first second. `perf.slots` lists each interpreted slot over the match, the costliest
   first.
 - **mapView**: the solid boxes (not distant scenery, trim, water, lava or clip) as `[x0, z0, x1, z1, top y]`, lowest
   first; spawns `[x, z, team]` (0 A, 1 B, else any / staged); the objectives' boxes; the cart track. 1 decimal.
