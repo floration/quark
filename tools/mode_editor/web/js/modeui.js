@@ -231,11 +231,11 @@ export class ModePage {
         this._afterChange(null);
     }
 
-    _afterChange(from) {
+    // located: the tree the Code view's text parsed to (its nodes carry line:col; this.ast is a clone, which drops them)
+    _afterChange(from, located) {
         if (!this.ast) return;
         // checks run on the canonical text so problems carry line:col of the Code view
-        let located = this.ast;
-        if (from !== "code") { try { located = parse(this.codeText); } catch { located = this.ast; } }
+        if (!located) { try { located = parse(this.codeText); } catch { located = this.ast; } }
         this.check = validate(located, { base: this.base, def: this.def });
         if (this.ast.base && this.ast.base !== logicBase(this.base)) this.check.problems.unshift({ severity: "error", msg: `base ${this.ast.base} doesn't match the file's mode=${this.base}`, where: "base", line: 2, col: 1 });
         this.check.errors = this.check.problems.filter((p) => p.severity === "error");
@@ -347,11 +347,11 @@ export class ModePage {
         this.codeText = text;
         const hadError = !!this.codeError;
         try {
-            const ast = carryIds(this.ast, clone(parse(text)));
+            const parsed = parse(text), ast = carryIds(this.ast, clone(parsed));
             this.codeError = null;
             const same = this.ast && deepEqual(stripIds(ast), stripIds(this.ast));
             this.ast = ast;
-            if (!same) { this._push(); this._afterChange("code"); }
+            if (!same) { this._push(); this._afterChange("code", parsed); }
             if (final) { const canon = print(ast); if (canon !== text) { this.codeText = canon; this._codeFromText(canon); this._afterChange(null); } }
         } catch (e) {
             if (!(e instanceof ModeError)) throw e;
