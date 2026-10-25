@@ -23,9 +23,11 @@
   {"id": "physics",     "name": "Physics Editor",   "parent": "dashboard", "url": "http://127.0.0.1:8772/?embed=1", "port": 8772, "folder": "physics-editor",
    "start": "py -3 serve.py --port 8772 --no-open", "keepAlive": true},
   {"id": "weapons",     "name": "Weapons Editor",   "parent": "dashboard", "url": "http://127.0.0.1:8773/?embed=1", "port": 8773, "folder": "weapons-editor",
-   "start": "py -3 serve.py --port 8773 --no-open", "keepAlive": true}
+   "start": "py -3 serve.py --port 8773 --no-open", "keepAlive": true},
+  {"id": "hud",         "name": "HUD Editor",       "parent": "dashboard", "url": "http://127.0.0.1:8774/?embed=1", "port": 8774, "folder": "hud-editor",
+   "start": "py -3 serve.py --port 8774 --no-open", "keepAlive": true}
 ],
- "defaultsSeen": ["bot", "dashboard", "docs", "gamemode", "github", "map", "model", "physics", "play", "project", "sound", "tests", "ui", "weapons"],
+ "defaultsSeen": ["bot", "dashboard", "docs", "gamemode", "github", "hud", "map", "model", "physics", "play", "project", "sound", "tests", "ui", "weapons"],
  "defaultsPlaced": ["play"],
  "defaultsMoved": ["docs-before-github-2"],
  "defaultsUpgraded": ["map-embed"]

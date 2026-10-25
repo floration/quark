@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Quark Editor Manager: the owner's local page for the editors (sound, UI, map, bot, model, gamemode, physics and
-weapons editor) only. GitHub, Claude Documents, game code and tooling changes live in the Supervisor Board
+weapons and HUD editor) only. GitHub, Claude Documents, game code and tooling changes live in the Supervisor Board
 (127.0.0.1:8768), not here.
 
     python3 dashboard.py                          start on 127.0.0.1:8765 (or the next free port) and open the browser
@@ -65,6 +65,7 @@ EDITORS = [
     ("gamemode-editor", "Gamemode editor", "mode-editor"),   # (its page: http://127.0.0.1:8771/, tools/mode_editor/serve.py)
     ("physics-editor", "Physics editor", "physics-editor"),
     ("weapons-editor", "Weapons editor", "weapons-editor"),
+    ("hud-editor", "HUD editor", "hud-editor"),           # (its page: http://127.0.0.1:8774/, tools/hud_editor/serve.py)
 ]
 PROGRAMS = [p for _, p, _ in EDITORS]
 PROGRAM_ID = {p: f for f, p, _ in EDITORS}
@@ -82,7 +83,7 @@ PATH_RULES = [
                       "src/client/sfx_recorded.h", "src/client/voice_data.h", "tools/import_sfx.py",
                       "tools/import_voice.py", "tools/make_voice.py"]),
     ("UI editor", ["tools/ui_customizer/", "ui-customizer/", "*ui-customizer*", "src/client/ui*",
-                   "src/client/hudwidgets.*", "src/client/fontatlas.*", "src/client/font_ui.h", "assets/fonts/",
+                   "src/client/fontatlas.*", "src/client/font_ui.h", "assets/fonts/",
                    "assets/overrides/fonts/", "assets/overrides/ui/", "tools/make_font_atlas.py"]),
     ("Map editor", ["tools/map_editor/", "tools/maps/", "tools/make_maps.py", "tools/embed_maps.py",
                     "assets/overrides/maps/", "src/client/editor.cpp", "docs/map_*"]),
@@ -91,6 +92,7 @@ PATH_RULES = [
     ("Gamemode editor", ["tools/mode_editor/", "tools/modes/"]),
     ("Physics editor", ["tools/physics_editor/", "src/game/pmove.*"]),
     ("Weapons editor", ["tools/weapon_editor/", "src/game/weaponset.*"]),
+    ("HUD editor", ["tools/hud_editor/", "src/client/hudwidgets.*"]),
 ]
 
 
@@ -1046,7 +1048,7 @@ def root_pages(d, folder):
 
 def editor_links(cfg):
     """each editor (EDITORS order): its Quark Project tab and its link, unprobed. A server editor (its tab has a local
-    http url: map, bot, gamemode, physics, weapons) runs its own serve.py on the tab's port and is linked there (without
+    http url: map, bot, gamemode, physics, weapons, hud) runs its own serve.py on the tab's port and is linked there (without
     ?embed=1, which is for the app); a page editor (a folder + file tab: sound, UI, model) is served from here under
     /editors/<folder>/ (Chrome / Edge won't follow a file:// link from an http page). -> (editors, tabs file)"""
     tabs, src = tabs_list(cfg)
