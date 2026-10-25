@@ -65,7 +65,10 @@ export class RangeView {
             <span class="grow"></span>
             <button id="r2d">Top-down</button><button id="r3d">3D</button>`;
         const sel = (id, k, num) => { const e = $(id); e.value = o[k] ?? ""; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); else this.run(); }; };
-        sel("rMap", "map"); sel("rPreset", "preset"); sel("rAim", "aim"); sel("rSkill", "skill", true);
+        sel("rMap", "map"); sel("rPreset", "preset"); sel("rAim", "aim");
+        // skill 0..1 (the bot's BEGINNER..EXPERT); the box shows what runs
+        const sk = $("rSkill"); sk.value = o.skill;
+        sk.onchange = () => { const x = sk.value.trim() === "" ? NaN : +sk.value; o.skill = Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : o.skill; sk.value = o.skill; this._save(); this.run(); };
         // seconds: 1..60, and the box shows what runs (0 or 99 used to run 10 or 60 s while the box kept 0 / 99)
         const secs = $("rSecs"); secs.value = o.seconds;
         secs.onchange = () => { const v = Math.round(+secs.value); o.seconds = Number.isFinite(v) && secs.value.trim() !== "" ? Math.max(1, Math.min(60, v)) : o.seconds; secs.value = o.seconds; this._save(); this.run(); };
@@ -83,11 +86,15 @@ export class RangeView {
         $("pg-range").classList.toggle("three", !!o.three);
         this._syncWeapon();
     }
-    _three(on) { this.opts.three = on; this._save(); $("r2d").classList.toggle("on", !on); $("r3d").classList.toggle("on", on); $("pg-range").classList.toggle("three", on); if (on && this.m3.gl) this.m3.start(); else this.m3.stop(); }
+    // (placing works on the top-down view only: 3D ends it, Place switches back to top-down)
+    _three(on) { if (on && this.placing) this._setPlacing(false); this.opts.three = on; this._save(); $("r2d").classList.toggle("on", !on); $("r3d").classList.toggle("on", on); $("pg-range").classList.toggle("three", on); if (on && this.m3.gl) this.m3.start(); else this.m3.stop(); }
     async _loadMap(v) {
         if (!v) { this.map = this.builtin; this.mapText = null; this.mapName = null; }
         else {
-            const [src, ...rest] = v.split("/"); const name = rest.join("/");
+            let [src, ...rest] = v.split("/"); const name = rest.join("/");
+            // (a saved map from another source: the listed one of that name, so the select shows what is drawn)
+            const hit = this.maps.find((m) => m.name === name && m.source === src) || this.maps.find((m) => m.name === name);
+            if (hit && hit.source !== src) { src = hit.source; v = src + "/" + name; this.opts.map = v; this._save(); const e = $("rMap"); if (e) e.value = v; }
             try { this.mapText = await api.map(name, src); this.map = parseQmap(this.mapText, name); this.mapName = name; }
             catch (e) { this.app.toast("can't load " + name + ": " + e.message, 3500); return; }
         }
@@ -135,6 +142,7 @@ export class RangeView {
     _storePlaced(P) { this.opts.placed[this._mapKey] = P; if (this.opts.preset !== "placed") { this.opts.preset = "placed"; $("rPreset").value = "placed"; } this._save(); this._stale = !!this.res; this._side(); this.mv.invalidate(); }
     _floor(x, z) { return this.map === this.builtin ? 0 : floorAt(this.map, x, z, this.mv.slice); }
     _setPlacing(on) {
+        if (on && this.opts.three) { this._three(false); this.app.toast("placing is on the top-down view", 2500); }
         this.placing = on;
         if (on) $("rangeMsg").textContent = "";
         $("rPlace").classList.toggle("on", on);
@@ -183,8 +191,18 @@ export class RangeView {
         $("rangeMsg").textContent = "firing…";
         const notes = [];
         const ctx = (text, ast, values) => ({ text, set: ast, values, map: this.map === this.builtin ? null : this.map, mapText: this.mapText, mapName: this.mapName, onNote: (n) => notes.push(n) });
-        const res = await app.helper.range(req, ctx(app.text, app.ast, app.values));
-        const cmp = this.opts.compare ? await app.helper.range(req, ctx(app.cmp.text, app.cmp.ast, app.cmp.values)) : null;
+        let res, cmp;
+        try {
+            res = await app.helper.range(req, ctx(app.text, app.ast, app.values));
+            cmp = this.opts.compare ? await app.helper.range(req, ctx(app.cmp.text, app.cmp.ast, app.cmp.values)) : null;
+        } catch (e) {
+            // (never left on "firing…": the message says what broke, the side panel drops the last weapon's run)
+            if (token !== this._tok) return;
+            console.warn("range:", e);
+            $("rangeMsg").textContent = "the range failed: " + (e && e.message || e);
+            this.res = null; this._side();
+            return;
+        }
         if (token !== this._tok) return;
         $("rangeMsg").textContent = "";
         this.req = req; this.res = res; this.cmp = cmp; this._stale = false; this.notes = notes;

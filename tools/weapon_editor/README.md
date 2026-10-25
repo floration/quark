@@ -68,7 +68,8 @@ Build them: `cmake --build build --target quark_maptool quark_tests`.
 ## The page
 
 The left panel is always there: open / save / rename / delete a set (`custom_weapons/*.qweapons`, the old file kept
-as `.bak`), open or download a `.qweapons` file, the weapon list (how many values each weapon changes, and an
+as `.bak`; Save as or a new name asks before replacing another set), open or download a `.qweapons` file, undo / redo (↶ ↷, Ctrl+Z / Ctrl+Y: one history of the set for every tab, a
+slider's drag or a burst of typing being one step), the weapon list (how many values each weapon changes, and an
 ƒ mark for weapons with their own logic), **Play in game** (base mode, writes `wpn-<set>.qmode`), what to
 compare with (the standard weapons or another set), the target's health, the distance for the numbers, and the
 selected weapon's quick numbers. An unsaved set is kept as a draft and comes back next time.
@@ -76,17 +77,18 @@ selected weapon's quick numbers. An unsaved set is kept as a draft and comes bac
 | tab | what it does |
 |---|---|
 | Weapon | one weapon: its label (the name shown in game), a slider, number and reset for every field, grouped (damage, fire, projectile, spread / scope, alt fire, knockback, falloff, the weapon's own fields), shots and time to kill against the comparison, damage against distance for each fire mode, and the logic that applies to it. **Copy values from…** puts another weapon's numbers (this set, the comparison or the standard) on this one in one edit: a variant is one of the 11 retuned (a 12th weapon needs game code: the game has 11 slots) |
-| Values | every weapon and fire mode in one table (damage, shots to kill, time to kill, DPS, refire, range, speed, splash, falloff, knockback, wallbang, self damage; the syringe's healing in its own table; a dropping projectile's range is how far it really reaches from eye height), changes marked green (stronger) or red (weaker), filters, and charts: DPS and time to kill against the comparison, damage against distance for each weapon |
+| Values | every weapon and fire mode in one table (damage, shots to kill, time to kill, DPS, refire, range, speed, splash, falloff, knockback, wallbang, self damage; the syringe's healing in its own table; a dropping projectile's range is how far it really reaches from eye height), changes marked green (stronger) or red (weaker); a weapon's hit slot (`slot hit <weapon>`, else `slot hit`) is counted in every number (ƒ on the row: head, dist, alt and splash from the row, a standing victim and the first hit for what a table can't know; a slot that reads `victimHealth` goes hit by hit), filters, and charts: DPS and time to kill against the comparison, damage against distance for each weapon |
 | Other games | Quark's weapons next to 228 weapons from 19 games (`web/data/games.json`, sources in `web/data/SOURCES.md`), normalised by each game's health: shots and time to kill, DPS as a share of health per second. The weapons closest to the selected one, a time-to-kill against shots-to-kill chart, and per game the target health (hero / class games: whose health) and a damage multiplier |
-| Code | the set's text: highlighted, problems in the gutter (the game's check when there is one), Tidy, and **Try a hit**: run the hit or kill logic with sensors you set and see the outputs and the lines that ran |
+| Code | the set's text: highlighted, problems in the gutter (the game's check when there is one; a decimal like `1.1` where an f32 is wanted, an f64 to the game, gets a one-click "make it an f32" fix that writes `1.1f`), Tidy, and **Try a hit**: run the hit or kill logic with sensors you set and see the outputs and the lines that ran |
 | Blocks | the same text as blocks: drag from the palette (logic, maths, params, curves, sensors, outputs, weapons), one card per weapon with its values. **+ Add** starts a slot (hit / kill, for every weapon or one), a curve or a param; a set with no logic says what slots and curves are and offers one-click starts |
 | Graph | the logic as nodes and wires, one frame per weapon; the same **+ Add** and empty-set starts as Blocks |
 | Range | fire the selected weapon at targets at 5, 10, 20, 40 and 80 m (still, strafing, a group) on the built-in range or any map, or targets you **Place** on a map (click: a target, shift+click: the shooter, drag to move, ctrl+click to remove, 16 at most), with perfect body, perfect head or bot aim; watch it top-down or in 3D, scrub the timeline, and compare hits, damage, kills and first-kill times with the comparison set |
-| Fights | bots fight on any map in any of 12 modes (ffa, vs, duel, 1v1, tourney, koth, bomb, payload, npayload, points, tag, hide; a warning when the map isn't built for it) with the weapons you allow: watch one match live, or run a batch of matches with the comparison set and then the edited set on the same seeds and compare win rates (team modes: each team's share of the matches that ended; matches that ran out of time are counted apart) and, per weapon, kills, fights won, damage, accuracy, TTK and DPS |
+| Fights | bots fight on any map in any of 12 modes (ffa, vs, duel, 1v1, tourney, koth, bomb, payload, npayload, points, tag, hide; a warning when the map isn't built for it) with the weapons you allow: watch one match live, or run a batch of matches with the comparison set and then the edited set on the same seeds (each match runs to its own end by default, as in the game: an FFA match is 600 s; or cut at 60-900 s, when whoever was ahead wins it) and compare the match length, win rates (team modes: each team's share; in free for all every bot has the same set, so the per weapon table is the comparison) and, per weapon, kills, fights won, damage, accuracy, TTK and DPS |
 
 ## Files
 
-- `serve.py`: the server (port 8773). Writes need the `X-Quark-Editor: 1` header the page sends.
+- `serve.py`: the server (port 8773). Writes need the `X-Quark-Editor: 1` header the page sends. A Fights run (live
+  sim or batch) that no page has watched for 5 s (a closed window, a killed browser) is stopped.
 - `build_catalog.py`: writes `web/js/catalog_data.js` from `quark_tests exportweapons` (`--check` only compares).
 - `web/`: the page. `js/dsl.js` reads and writes `.qweapons`, `js/ast.js` checks and runs it, `js/catalog.js` reads
   the catalog (`js/catalog_data.js`, generated: never edit it by hand), `js/stats.js` the numbers, `js/mockrange.js` the MOCK range, `js/helper.js` talks to the game's

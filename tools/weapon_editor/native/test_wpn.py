@@ -201,6 +201,12 @@ check(lz["totals"]["hits"] == lz["totals"]["shotsHit"] and lz["totals"]["accurac
 kn, _, _ = run("wpnrange", {"weapon": "knife", "seconds": 6, "frames": False, "targets": [{"pos": [0, 0, -2]}]})
 swings = 6 / R["knife:primary"]["refire"]
 check(0 < kn["totals"]["shots"] <= swings + 1 and kn["totals"]["accuracy"] == 1, "knife: one shot per swing (%d in 6 s), every swing hits" % kn["totals"]["shots"])
+kt, _, _ = run("wpnrange", {"weapon": "knife", "alt": True, "seconds": 6, "frames": False, "targets": [{"pos": [0, 0, -2]}]})
+check(kt["totals"]["shots"] > 0 and kt["totals"]["shotsHit"] == kt["targets"][0]["hits"] > 0 and kt["targets"][0]["shots"] == kt["totals"]["shots"], "knife throw: shots counted (%d), every throw hits" % kt["totals"]["shots"])
+bs, _, _ = run("wpnrange", {"weapon": "bubble", "alt": True, "seconds": 4, "frames": False, "targets": [{"pos": [0, 0, -4]}]})
+check(bs["totals"]["shots"] >= bs["totals"]["shotsHit"] > 0 and 0 < bs["totals"]["accuracy"] <= 1, "bubble stream: one shot per bubble (%d shots, %d hit)" % (bs["totals"]["shots"], bs["totals"]["shotsHit"]))
+lc, rc_lc, _ = run("wpnrange", {"weapon": "locator", "seconds": 1, "frames": False})
+check(rc_lc == 0 and "error" not in lc and lc["totals"]["shots"] == 0 and any("no damage" in n for n in lc["notes"]), "the locator: no damage, like the syringe (not refused)")
 mv, _, _ = run("wpnrange", {"weapon": "crossbow", "seconds": 6, "targets": [{"pos": [0, 0, -25], "moving": {"axis": "x", "speed": 6, "amplitude": 3}}]})
 check(mv["totals"]["accuracy"] == 1 and mv["totals"]["kills"] >= 1, "a moving target: perfect lead hits every bolt")
 rk, _, _ = run("wpnrange", {"weapon": "rocket", "seconds": 4, "targets": [{"pos": [0, 0, -15], "health": 200}]})

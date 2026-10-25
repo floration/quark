@@ -73,7 +73,8 @@ async function nodeChecks() {
     const { computeStats } = await import(JS + "stats.js");
     const { mockRange, rangeTargets } = await import(JS + "mockrange.js");
     const { brainToBlocks, blocksToBrain } = await import(JS + "blocks.js");
-    const { toGraph, fromGraph, wholeGraph, wholeGraphToBrain } = await import(JS + "graph.js");
+    const graphMod = await import(JS + "graph.js");
+    const { toGraph, fromGraph, wholeGraph, wholeGraphToBrain } = graphMod;
     const plain = (x) => JSON.parse(JSON.stringify(x));
 
     console.log("text");
@@ -138,6 +139,13 @@ async function nodeChecks() {
         for (const shared of [false, true]) { const back = wholeGraphToBrain(ast, wholeGraph(ast, { shared })); if (print(back) !== DEMO) return "shared " + shared; }
     });
 
+    tryOk("Overview: an unused curve or param sits on the canvas (y from 0), not a billion units up", () => {
+        const { overviewGraph } = graphMod;
+        const g = overviewGraph(parse(STD + "\nparam lone f32 = 1\ncurve rifle.falloff(dist f32) = points 0: 1, 30: 0.5\n"));
+        const bad = g.nodes.filter((n) => !(n.y >= 0 && n.y < 1e5));
+        return bad.length === 0 || JSON.stringify(bad.map((n) => [n.gid, n.y]));
+    });
+
     console.log("starting logic (Blocks / Graph + Add)");
     const { addDecl } = await import(JS + "newdecl.js");
     {
@@ -167,6 +175,13 @@ async function nodeChecks() {
     const dset = parse(DEMO), dvals = fieldValues(dset);
     tryOk("a curve replaces the falloff fields (rocket x0.6 from 20 m)", () => { const r = computeStats(dvals, { set: dset, health: 100 }).rows.find((r) => r.weapon === "rocket"); return near(r.per(40, false) / r.per(0, false), 0.6, 0.02) || String(r.per(40, false) / r.per(0, false)); });
 
+    tryOk("Values count a hit slot: sniper head x1.2 = 60, 2 shots; a slot reading victimHealth goes hit by hit", () => {
+        const t = STD + "\nparam bonus f32 = 1.2\nslot hit sniper:\n  if head: damage = damage * bonus\nslot hit rifle:\n  if victimHealth < 50: damage = damage * 2\n";
+        const a = parse(t), R = computeStats(fieldValues(a), { set: a, health: 100 }).rows;
+        const sn = R.find((r) => r.id === "sniper:primary"), rf = R.find((r) => r.id === "rifle:primary"), rk = R.find((r) => r.id === "rocket:primary:direct");
+        return (near(sn.head, 60) && sn.stkHead === 2 && near(sn.base(0, true), 50) && sn.logic === "hit sniper" && rf.stkBody === 16 && !rk.logic) || JSON.stringify([sn.head, sn.stkHead, rf.stkBody, rk.logic]);
+    });
+
     console.log("try a hit");
     const S = symbols(dset);
     tryOk("slot hit: head at 40 m x1.5", () => near(runSlot(dset, "hit", "rifle", { weapon: "rifle", damage: 10, head: true, dist: 40 }, S, dvals).outputs.damage, 15));
@@ -180,6 +195,7 @@ async function nodeChecks() {
     tryOk("rifle on the lanes kills every target", () => { a = mockRange(req, vals, sset); const k = a.targets.map((t) => t.kills).join(" "); return a.targets.every((t) => t.kills >= 1) ? { info: "kills " + k } : "kills " + k; });
     tryOk("the same seed gives the same answer", () => { b = mockRange(req, vals, sset); return JSON.stringify(a.totals) === JSON.stringify(b.totals); });
     tryOk("frames every 20 ms with the shooter in them", () => a.frames.length >= 900 && a.frames[0].players.some((p) => p.shooter));
+    for (const w of ["syringe", "locator"]) tryOk(`${w}: no damage, one frame (no error)`, () => { const r = mockRange({ ...req, weapon: w, seconds: 2 }, vals, sset); return (r.ok && r.frames.length === 1 && r.totals.shots === 0 && /no damage/.test(r.notes[0])) || JSON.stringify(r.totals); });
     for (const w of ["rocket", "laser", "shotgun", "sticky", "bubble", "crossbow", "knife", "sniper"]) tryOk(`${w} fires`, () => { const r = mockRange({ ...req, weapon: w, seconds: 6 }, vals, sset); return r.totals.shots > 0 && (w === "knife" || r.totals.hits > 0) ? { info: `${r.totals.hits} hits / ${r.totals.shots} shots, ${r.totals.kills} kills` } : JSON.stringify(r.totals); });
     return { STD, DEMO };
 }
@@ -225,6 +241,8 @@ async function serverChecks({ STD, DEMO }) {
     ok(c.status === 409 && c.json.text === DEMO, "a changed-on-disk save is refused with the disk text (409)");
     ok((await post("/api/set?name=demo", { text: DEMO + "\n", expect: "something else", force: true })).status === 200, "force overwrites");
     ok(fs.existsSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak")), "the old file is kept as .bak");
+    const ex = await post("/api/set?name=demo", { text: STD, expect: null });
+    ok(ex.status === 409 && ex.json.exists === true && fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons"), "utf8") === DEMO + "\n", "Save as onto an existing name (expect null) is refused, not overwritten (409 exists)");
     const pm = await post("/api/playmode", { set: "demo", base: "koth" });
     ok(pm.status === 200 && pm.json.text === "custommode=wpn-demo\nmode=koth\nweaponset=demo\n", "Play in game writes a new wpn-demo.qmode", JSON.stringify(pm.json && pm.json.text));
     const pk = await post("/api/playmode", { set: "keep", base: "ffa" });
@@ -249,6 +267,18 @@ async function serverChecks({ STD, DEMO }) {
     const hp = await post("/api/helper", { args: ["simcheck"], request: {} });
     ok(maptool ? hp.status === 200 && typeof hp.json.code === "number" : hp.status === 501, "/api/helper", maptool ? "code " + (hp.json && hp.json.code) : "501 without quark_maptool");
     ok((await post("/api/run", { args: ["rm", "-rf"] })).status === 400, "/api/run only runs the streaming commands");
+    if (maptool && fs.existsSync(path.join(REPO, "maps", "harbor.qmap"))) {
+        // a live sim whose page went away without saying so (a killed window) is stopped by the server
+        const text = fs.readFileSync(path.join(REPO, "maps", "harbor.qmap"), "utf8");
+        const r = await post("/api/run", { args: ["sim", "--stream"], request: { map: { name: "harbor", text }, mode: "ffa", seconds: 600, realtime: true, rate: 20, bots: [{ name: "a" }, { name: "b" }] } });
+        const ac = new AbortController();
+        const es = await fetch(`${BASE}/api/run/${r.json.id}/events`, { signal: ac.signal });
+        const rd = es.body.getReader(); await rd.read(); ac.abort();
+        await new Promise((res) => setTimeout(res, 15000));
+        const ac2 = new AbortController(); setTimeout(() => ac2.abort(), 3000);
+        let tail = ""; try { const e2 = await fetch(`${BASE}/api/run/${r.json.id}/events?from=999999`, { signal: ac2.signal }); tail = await e2.text(); } catch {}
+        ok(/event: exit/.test(tail), "a live sim nobody watches any more is stopped (a hard-closed page)");
+    }
     const bad = await post("/api/helper", { args: ["rm"], request: {} });
     ok(maptool ? bad.status === 400 && /not a helper command/.test(bad.json.error) : bad.status === 501 && /not found/.test(bad.json.error), "/api/helper names why it refused", bad.json && bad.json.error);
 }
@@ -295,6 +325,18 @@ async function browserChecks() {
                 await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "cv"\n', "code"); A.copyWeapon("sniper", "rifle", "std"); });
                 const cv = await p.evaluate(() => [window.weaponsApp.values.get("rifle.damage"), window.weaponsApp.values.get("rifle.refire"), window.weaponsApp.values.get("rifle.scopedRefire")]);
                 ok(cv[0] === 40 && Math.abs(cv[1] - 1.5) < 1e-6 && Math.abs(cv[2] - 1.1111112) < 1e-6, "Copy values: the sniper's numbers on the rifle, its alt fire field kept", JSON.stringify(cv));
+                // undo / redo: Copy values is one step, a run of one field's edits (a slider drag) one step, Ctrl+Z in the Code text
+                const un = await p.evaluate(() => { const A = window.weaponsApp, t0 = A.text; for (let v = 10; v < 15; v++) A.setField("rocket.damage", v); const t1 = A.text; A.undo(); const a = A.text === t0; A.undo(); const b = A.text === 'version 1\nweapons "cv"\n'; A.redo(); A.redo(); return [a, b, A.text === t1]; });
+                ok(un.every(Boolean), "undo: a slider's run of edits is one step, Copy values one step, redo puts them back", JSON.stringify(un));
+                await p.click('#tabs button[data-page="code"]'); await p.click("#codeTa"); await p.keyboard.press("Control+End");
+                const before = await p.inputValue("#codeTa");
+                await p.keyboard.type("param rifle.damage f32 = 9\n"); await p.keyboard.press("Control+z");
+                ok((await p.inputValue("#codeTa")) === before, "Ctrl+Z in the Code text undoes the typing");
+                await p.evaluate(() => window.weaponsApp.setText('version 1\nweapons "dec"\nslot hit rifle:\n  damage = damage * 1.1\n', "test"));
+                await p.waitForTimeout(200); await p.click("#codeProblems .fixbtn");
+                ok((await p.evaluate(() => window.weaponsApp.text)).includes("damage * 1.1f") && (await p.evaluate(() => window.weaponsApp.problems.length)) === 0, "a decimal in an f32 output: one click writes 1.1f and the error goes");
+                const dupes = await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "dup"\nslot hit rocket:\n  damage = damage * nope\n', "test"); A.gameProblems = { problems: [{ severity: "error", msg: "unknown name 'nope'", line: 4, col: 21 }], via: "test" }; const n = A.allProblems().length; A.gameProblems = null; return n; });
+                ok(dupes === 1, "a mistake the game and the page both report is listed once", String(dupes));
             } else {
                 fs.mkdirSync(path.join(dataDir, "custom_weapons"), { recursive: true });
                 const demoText = fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak"), "utf8");

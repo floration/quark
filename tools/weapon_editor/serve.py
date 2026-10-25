@@ -421,6 +421,7 @@ class Run:
         self.id = uuid.uuid4().hex[:12]
         self.lines, self.cond, self.done, self.code, self.err = [], threading.Condition(), False, None, ""
         self.started = time.time()
+        self.clients, self.gone_at = 0, None   # open event streams; when the last one closed (see reap_runs)
         flags = subprocess.CREATE_NO_WINDOW if IS_WIN else 0
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      bufsize=1, text=True, encoding="utf-8", errors="replace", creationflags=flags)
@@ -466,6 +467,22 @@ class Run:
 
 RUNS = {}
 RUNS_LOCK = threading.Lock()
+ORPHAN_SECONDS = 5      # a run with no page watching it for this long is stopped (a closed window, a killed browser)
+UNWATCHED_SECONDS = 30  # ...and one no page ever opened the events of
+
+
+def reap_runs():
+    """Stops runs nobody watches any more: the page's pagehide stop covers a reload, not a window that was killed or a
+    browser that was closed, and `sim --stream` would play on in real time until its seconds end."""
+    while True:
+        time.sleep(1)
+        now = time.time()
+        with RUNS_LOCK:
+            idle = [r for r in RUNS.values() if not r.done and r.clients == 0 and not getattr(r, "reaped", False)
+                    and ((r.gone_at is not None and now - r.gone_at > ORPHAN_SECONDS)
+                         or (r.gone_at is None and now - r.started > UNWATCHED_SECONDS))]
+            for r in idle: r.reaped = True
+        for r in idle: r.stop()
 
 
 # ---------------------------------------------------------------- HTTP
@@ -583,7 +600,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if p == "/api/set":
                 # {text, expect?}: write custom_weapons/<name>.qweapons (the old one kept as .bak). `expect` (the text
-                # the page loaded) refuses the write when the file changed on disk since, unless `force`.
+                # the page loaded) refuses the write when the file changed on disk since, unless `force`; `expect: null`
+                # (a new name: Save as, a renamed set) refuses it when the file is already there.
                 n = q.get("name", "")
                 if not valid_set(n): return self._err(400, "bad name (letters, digits, space, _ -; 36 at most)")
                 body = self._json_body()
@@ -591,6 +609,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(text, str) or not text.strip(): return self._err(400, "no text")
                 path = set_path(n)
                 cur = read_text(path)
+                if cur is not None and "expect" in body and body["expect"] is None and not body.get("force"):
+                    return self._send(409, {"error": "a set with this name already exists", "exists": True, "text": cur})
                 if cur is not None and isinstance(body.get("expect"), str) and cur != body["expect"] and not body.get("force"):
                     return self._send(409, {"error": "changed on disk since it was opened", "text": cur})
                 atomic_write(path, text.encode("utf-8"))
@@ -702,11 +722,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True
+        with RUNS_LOCK: run.clients += 1
+        try: self._stream(run, start)
+        finally:
+            with RUNS_LOCK:
+                run.clients -= 1
+                if run.clients == 0: run.gone_at = time.time()
+
+    def _stream(self, run, start):
         i = max(0, start)
         while True:
             with run.cond:
                 while i >= len(run.lines) and not run.done:
-                    run.cond.wait(timeout=10)
+                    run.cond.wait(timeout=4)
                     if i >= len(run.lines) and not run.done: break   # (keepalive)
                 batch = run.lines[i:]
                 done = run.done and i + len(batch) >= len(run.lines)
@@ -809,6 +837,7 @@ def main():
         print("can't listen on 127.0.0.1:%d (%s): is the weapons editor already running? (another port: --port or weapon_editor.json)" % (CFG.port, ex))
         sys.exit(1)
     srv.daemon_threads = True
+    threading.Thread(target=reap_runs, daemon=True).start()
     url = "http://127.0.0.1:%d/" % CFG.port
     print("Quark Weapons Editor on %s" % url)
     print("  data dir     %s" % CFG.data_dir)

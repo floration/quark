@@ -85,7 +85,6 @@ export function mockRange(req, values, set, map = null) {
         else if (w === "bubble") { stream = true; refire = v("bubble.streamRefire"); }
         else if (w === "sticky") notes.push("alt sets the stickies off: the mock sets each one off as soon as it is armed");
     }
-    if (kind === "support") return { ok: true, weapon: w, alt, seconds, targets: T.map(pub), shots: [], frames: [frame(0, [])], totals: tot(0), notes: [`the ${w} does no damage: nothing to test on the range`] };
     if (sticky) notes.push("stickies are set off as soon as they arm (the fastest a player could)");
     if (w === "knife" && !alt) { range = v("knife.range") + v("knife.grow"); if (T.every((x) => len(sub(x.base, shooter.pos)) > range + HALF_W)) notes.push(`every target is out of the knife's reach (${range.toFixed(2)} m): put one closer`); }
     // the map's solid boxes (walls block shots and projectiles)
@@ -113,6 +112,8 @@ export function mockRange(req, values, set, map = null) {
         for (const x of T) if (x.alive) { const d = len(sub(x.pos, eye)); if (d < bd) { bd = d; best = x; } }
         return best;
     };
+    // (a support weapon: one still frame; here, after focus and projs, which frame() reads)
+    if (kind === "support") return { ok: true, weapon: w, alt, seconds, targets: T.map(pub), shots: [], frames: [frame(0, [])], totals: tot(0), notes: [`the ${w} does no damage: nothing to test on the range`], via: "mock" };
     const aimPoint = (x) => [x.pos[0], x.pos[1] + (shooter.aim === "head" ? HEIGHT - HEAD_H / 2 : HEIGHT / 2), x.pos[2]];
     const moveTargets = (dt) => {
         for (const x of T) {
