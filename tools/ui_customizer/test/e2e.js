@@ -179,6 +179,19 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const kept = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
   assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded (got ' + (kept ? kept.label : 'no widget') + ')');
   assert.strictEqual((await provOf(target.page)).origin, 'human', 'mark autosaved');
+  // undo survives a reload too, even of a Reset (the steps are written next to the autosave, at the latest on unload)
+  assert.ok(await ev(() => QApp.S.undo.length) > 0, 'undo steps kept across the reload');
+  await page.locator('#bReset').click();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction((u) => !QApp.S.doc.pages.flatMap((p) => p.elements).some((e) => e.label === 'RENAMED BY TEST'), target.uid);
+  await page.reload();
+  await page.waitForFunction(() => window.QApp && QApp.S && QApp.S.doc);
+  await page.waitForTimeout(300);
+  const hist = await ev(() => (localStorage.getItem('quark-ui-customizer/undo/v1') || '').length);
+  assert.ok(hist > 0 && hist < 400000, `the undo history is small (${hist} chars: unchanged pages are dump references)`);
+  await page.keyboard.press('Control+z');
+  const back = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
+  assert.ok(back && back.label === 'RENAMED BY TEST', 'Undo after a reload brings back the layout from before the Reset');
 
   // ---- in-page dialogs (the Quark Project app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
   page.on('dialog', (d) => { errors.push('native dialog: ' + d.type() + ' ' + d.message()); d.dismiss(); });

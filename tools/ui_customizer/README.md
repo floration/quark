@@ -59,6 +59,8 @@ registry change (its `installs.json`), so the banner follows the game.
 - Everything autosaves in the browser. A page still as the game has it is saved as a reference to the dump (a few KB
   per save, not 1.7 MB), so after a dump refresh the pages you never touched show the new game; Export layout writes
   every page.
+  The last 30 undo steps (up to 1 MB) are kept with it, written in idle time and on closing: Undo still works after a
+  reload or an app restart, even for an Import or a Reset.
 - **Export spec**: the changes, then widget tables of the changed pages (the spec window switches to every page, about
   800 KB, or to no tables). Dialogs are in the page (the Quark Project app's Electron has no `window.prompt`).
 

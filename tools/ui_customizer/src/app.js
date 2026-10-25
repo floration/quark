@@ -16,6 +16,7 @@
   const STORE_KEY = NS + '/layout/v1';
   const PREFS_KEY = NS + '/prefs/v1';
   const PAGE_KEY = NS + '/page/v1';   // the page on screen (small, written on every page switch; the layout is not)
+  const HIST_KEY = NS + '/undo/v1';   // the last undo steps, so a reload / app restart can still undo (saveHistory)
   const UNDO_MAX = 200;
   const INTERACTIVE = new Set(['button', 'toggle', 'cycle', 'slider', 'text', 'key', 'custom', 'colorpicker', 'dropdown', 'handle', 'view']);
   const KNOWN = new Set(['kind', 'x', 'y', 'w', 'h', 'label', 'value', 'options', 'min', 'max', 'def', 'fmt', 'maxLen', 'enabled', 'color',
@@ -59,7 +60,7 @@
 
   function loadInitial() {
     try { Object.assign(S.prefs, JSON.parse(store.get(PREFS_KEY) || '{}')); } catch (e) { /* defaults */ }
-    let doc = null;
+    let doc = null, at = '';
     const raw = store.get(STORE_KEY);
     if (raw) {
       try {
@@ -69,9 +70,10 @@
         if (saved.baseSig !== SIG) setTimeout(() => toast('The saved layout was made against another dump (' + String(saved.source && saved.source.commit || '?').slice(0, 8) + '). ' +
           (refs ? 'Your changed pages are kept as you left them; the others now show this dump.' : 'Kept it as it was.') + ' Reset starts over.', 7000), 300);
         S.pageUid = store.get(PAGE_KEY) || saved.pageUid || null;
+        at = String(saved.savedAt || '');
         if (saved.font) S.font = sanitizeFont(saved.font);
         else if (fontOfDoc(doc)) S.font = fontOfDoc(doc);
-      } catch (e) { console.warn('saved layout unreadable, starting from the default', e); doc = null; }
+      } catch (e) { console.warn('saved layout unreadable, starting from the default', e); doc = null; at = ''; }
     }
     if (!doc && startLayout) {
       doc = JSON.parse(startLayout.json);
@@ -83,6 +85,7 @@
     if (!page()) S.pageUid = firstPageUid();
     markProposal();
     syncSeen();
+    loadHistory(at);
   }
 
   const page = () => S.doc.pages.find((p) => p.uid === S.pageUid) || null;
@@ -210,13 +213,13 @@
   const syncDocFont = () => { if (S.doc) QModel.setLayoutFont(S.doc, S.font.id, S.font.weight != null ? S.font.weight : null); };
   // S.font from a layout's doc.font (null when it has none)
   const fontOfDoc = (doc) => { const f = QModel.layoutFont(doc); return f ? sanitizeFont(Object.assign({}, S.font, { id: f.id, weight: f.weight, ls: null, upper: null, sizeK: null })) : null; };
-  const payloadHead = () => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: new Date().toISOString(), baseSig: SIG, source: baseline.source,
+  const payloadHead = (at) => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: at || new Date().toISOString(), baseSig: SIG, source: baseline.source,
     pageUid: S.pageUid, font: S.font });
   const payload = () => Object.assign(payloadHead(), { doc: S.doc });
   // The autosave: the pages from the snapshot strings (no second stringify of the whole layout), and a page that is
   // still the game's as a reference to the dump (QModel.baseRefJson): a few KB instead of 1.7 MB per save.
-  function payloadJson() {
-    const head = payloadHead(), { pages, ...rest } = S.doc, open = (o) => JSON.stringify(o).slice(0, -1) + (Object.keys(o).length ? ',' : '');
+  function payloadJson(at) {
+    const head = payloadHead(at), { pages, ...rest } = S.doc, open = (o) => JSON.stringify(o).slice(0, -1) + (Object.keys(o).length ? ',' : '');
     const entries = new Map(getDiff().pages.map((e) => [e.page, e]));
     const snap = docSnap().map((j, i) => QModel.baseRefJson(entries.get(S.doc.pages[i]), j));
     return open(head) + '"doc":' + open(rest) + '"pages":[' + snap.join(',') + ']}}';
@@ -224,8 +227,79 @@
   function saveNow() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    S.saveState = store.set(STORE_KEY, payloadJson()) ? 'saved in this browser' : 'NOT saved (browser storage unavailable: export the layout)';
+    const at = new Date().toISOString();
+    const ok = store.set(STORE_KEY, payloadJson(at));
+    S.saveState = ok ? 'saved in this browser' : 'NOT saved (browser storage unavailable: export the layout)';
+    if (ok) { savedAt = at; scheduleHistory(); }
     renderStatus();
+  }
+  // ---- undo across reloads ----
+  // The newest undo steps (at most HIST_MAX, HIST_BYTES of text) are kept next to the autosave, written in idle time
+  // after it (never in an edit's frame) and on unload. A step's page is stored as the index of the autosaved layout's
+  // page when it is the same text (most pages of most steps), else in a string table, where a page that is still the
+  // game's (as after Reset) becomes a reference to the dump: an Import or a Reset can be undone after a reload too.
+  // Read back only with the autosave it was written with (savedAt) and the same dump.
+  const HIST_MAX = 30, HIST_BYTES = 1024 * 1024;
+  let savedAt = '', histTimer = 0;
+  const baseText = new Map();   // origId -> the dump's page as a working page without uids (made when first needed)
+  const histText = new Map();   // page text -> its table text (a dump reference or itself): each new text costs once
+  const noUids = (j) => JSON.stringify(JSON.parse(j), (k, v) => (k === 'uid' ? undefined : v));
+  function tableText(j) {
+    let t = histText.get(j);
+    if (t !== undefined) return t;
+    t = j;
+    try {
+      const p = JSON.parse(j), bp = p.origId && baseline.pages.find((b) => b.origId === p.origId);
+      if (bp && !baseText.has(p.origId))
+        baseText.set(p.origId, JSON.stringify(QModel.sanitizeWorking(QModel.makeWorking({ pages: [bp] })).pages[0], (k, v) => (k === 'uid' ? undefined : v)));
+      if (bp && baseText.get(p.origId) === noUids(j)) t = JSON.stringify({ $base: p.origId, uid: p.uid });
+    } catch (e) { /* kept as it is */ }
+    histText.set(j, t);
+    return t;
+  }
+  function scheduleHistory() {
+    clearTimeout(histTimer);
+    histTimer = setTimeout(() => (window.requestIdleCallback || setTimeout)(saveHistory, { timeout: 4000 }), 1500);
+  }
+  function saveHistory() {
+    clearTimeout(histTimer);
+    histTimer = 0;
+    if (!savedAt) return;
+    if (!S.undo.length) { store.del(HIST_KEY); return; }
+    const cur = docSnap(), at = new Map(cur.map((j, i) => [j, i]));
+    const table = [], tix = new Map(), steps = [];
+    let bytes = 0;
+    for (let i = S.undo.length - 1; i >= 0 && steps.length < HIST_MAX; i--) {
+      const n0 = table.length;
+      const pages = S.undo[i].pages.map((j) => {
+        if (at.has(j)) return at.get(j);
+        let k = tix.get(j);
+        if (k === undefined) { k = table.length; table.push(tableText(j)); tix.set(j, k); }
+        return -1 - k;
+      });
+      const add = table.slice(n0).reduce((n, t) => n + t.length, 0) + pages.length * 4;
+      if (bytes + add > HIST_BYTES) { table.length = n0; break; }   // (older steps than this one are dropped)
+      bytes += add;
+      steps.unshift({ p: pages, u: S.undo[i].pageUid });
+    }
+    if (!store.set(HIST_KEY, JSON.stringify({ v: 1, sig: SIG, at: savedAt, n: cur.length, table, steps }))) store.del(HIST_KEY);
+    for (const k of histText.keys()) if (!tix.has(k)) histText.delete(k);   // (only the texts still in use stay cached)
+  }
+  // after loading the autosave written at `at`: its undo steps back (refs to the loaded pages, table texts expanded)
+  function loadHistory(at) {
+    let h = null;
+    try { h = JSON.parse(store.get(HIST_KEY) || 'null'); } catch (e) { /* none */ }
+    if (!h || h.v !== 1 || h.sig !== SIG || !at || h.at !== at || !Array.isArray(h.steps) || !Array.isArray(h.table)) return;
+    const cur = docSnap();
+    if (cur.length !== h.n) return;
+    try {
+      const table = h.table.map((t) => {
+        const o = JSON.parse(t);
+        return o && o.$base ? JSON.stringify(QModel.sanitizeWorking(QModel.expandBaseRefs(baseline, { pages: [o] })).pages[0]) : t;
+      });
+      const steps = h.steps.map((st) => ({ pages: st.p.map((i) => (i >= 0 ? cur[i] : table[-1 - i])), pageUid: st.u, sel: [] }));
+      if (steps.every((st) => st.pages.length && st.pages.every((j) => typeof j === 'string'))) { S.undo = steps; savedAt = at; }
+    } catch (e) { console.warn('saved undo history unreadable', e); }
   }
   function scheduleSave() { clearTimeout(saveTimer); S.saveState = 'saving...'; saveTimer = setTimeout(saveNow, 400); }
   const savePrefs = () => store.set(PREFS_KEY, JSON.stringify(S.prefs));
@@ -2188,7 +2262,7 @@
     }
     wireFonts();
     window.addEventListener('resize', () => { layoutStage(); placePopovers(); if (S.sheet) requestRender(); });
-    window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
+    window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); if (histTimer) saveHistory(); });
     if (document.fonts) {
       document.fonts.load('700 15px QuarkUI').then(() => { S.diff = null; requestRender(); }, () => {});
       document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', requestRender);
