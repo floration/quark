@@ -236,7 +236,7 @@ kbd { font: 11px var(--mono); background: var(--bg2); border: 1px solid var(--li
 .gr-edge.ov.sel { stroke: #fbbf24; opacity: .9; stroke-width: 2; }
 .gr-ov rect { fill: color-mix(in srgb, var(--cc) 35%, var(--gr-node)); stroke: var(--cc); }
 .gr-ov.sel rect { stroke: #fff; stroke-width: 2; }
-.gr-ov text { fill: #e5e7eb; font: 11px var(--mono); pointer-events: none; }
+.gr-ov text { fill: var(--qt-text, #e5e7eb); font: 11px var(--mono); pointer-events: none; }
 .gr-ov { cursor: pointer; }
 .gr-muted { fill: var(--fg3); font-size: 13px; }
 /* whole brain */

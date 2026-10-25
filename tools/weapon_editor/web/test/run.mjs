@@ -73,7 +73,8 @@ async function nodeChecks() {
     const { computeStats } = await import(JS + "stats.js");
     const { mockRange, rangeTargets } = await import(JS + "mockrange.js");
     const { brainToBlocks, blocksToBrain } = await import(JS + "blocks.js");
-    const { toGraph, fromGraph, wholeGraph, wholeGraphToBrain } = await import(JS + "graph.js");
+    const graphMod = await import(JS + "graph.js");
+    const { toGraph, fromGraph, wholeGraph, wholeGraphToBrain } = graphMod;
     const plain = (x) => JSON.parse(JSON.stringify(x));
 
     console.log("text");
@@ -136,6 +137,13 @@ async function nodeChecks() {
     });
     tryOk("the whole-set graph exports back (shared inputs off and on)", () => {
         for (const shared of [false, true]) { const back = wholeGraphToBrain(ast, wholeGraph(ast, { shared })); if (print(back) !== DEMO) return "shared " + shared; }
+    });
+
+    tryOk("Overview: an unused curve or param sits on the canvas (y from 0), not a billion units up", () => {
+        const { overviewGraph } = graphMod;
+        const g = overviewGraph(parse(STD + "\nparam lone f32 = 1\ncurve rifle.falloff(dist f32) = points 0: 1, 30: 0.5\n"));
+        const bad = g.nodes.filter((n) => !(n.y >= 0 && n.y < 1e5));
+        return bad.length === 0 || JSON.stringify(bad.map((n) => [n.gid, n.y]));
     });
 
     console.log("starting logic (Blocks / Graph + Add)");
