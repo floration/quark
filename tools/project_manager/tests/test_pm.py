@@ -212,6 +212,13 @@ class TestUtil(unittest.TestCase):
         self.assertEqual(util.base_version("1.18.6-test.231"), "1.18.6")
         self.assertGreater(util.version_key("1.18.10"), util.version_key("1.18.9"))
         self.assertGreater(util.version_key("1.18.6"), util.version_key("1.18.6-test.231"))
+        self.assertEqual(util.parse_version("test-1.19.0.testing.341"), "1.19.0.testing.341")
+        self.assertEqual(util.parse_version("quark 1.19.0.testing.5 (testing)"), "1.19.0.testing.5")
+        self.assertEqual(util.base_version("1.19.0.testing.341"), "1.19.0")
+        self.assertGreater(util.version_key("1.19.0.testing.5"), util.version_key("1.19.0"))
+        self.assertGreater(util.version_key("1.19.0.testing.10"), util.version_key("1.19.0.testing.9"))
+        self.assertGreater(util.version_key("1.19.1"), util.version_key("1.19.0.testing.900"))
+        self.assertGreater(util.version_key("1.19.0.testing.1"), util.version_key("1.19.0-test.400"))
 
     def test_get(self):
         d = {"a": {"b": [1, {"c": 2}]}, "x": None}

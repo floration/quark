@@ -55,6 +55,11 @@ class FindTests(unittest.TestCase):
         if rc != 0: return "", rc
         with open(os.path.join(out, "INSTALLED.txt")) as f: return f.read(), rc
 
+    def test_base_version(self):
+        self.assertEqual(inst.base_version("1.18.16-test.140+abc"), "1.18.16")
+        self.assertEqual(inst.base_version("1.19.0.testing.5"), "1.19.0")   # (testing builds from 1.19.0 on)
+        self.assertEqual(inst.base_version("1.19.0"), "1.19.0")
+
     def test_newest_matching_build_wins(self):
         fake_tests(os.path.join(self.root, "build-win"), "1.18.30", 10)                 # stale, newest
         old = fake_tests(os.path.join(self.root, "build-model-editor"), "1.18.31", 500)

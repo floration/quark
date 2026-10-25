@@ -10,12 +10,13 @@ if(MSVC)
 endif()
 
 # The version lives in one generated .cpp (src/common/version.h), not a global define: a bump recompiles one file.
-# QUARK_VERSION_SUFFIX: testing builds are <VERSION>-test.<N> (release.yml), so they sort below the production release.
-set(QUARK_VERSION_SUFFIX "" CACHE STRING "Appended to VERSION (CI testing builds: -test.<run number>)")
+# QUARK_VERSION_SUFFIX: testing builds are <VERSION>.testing.<N> (release.yml, from 1.19.0 on): VERSION stays at the
+# production release they follow, and they sort above it (and below the next one). Before: <VERSION>-test.<N>.
+set(QUARK_VERSION_SUFFIX "" CACHE STRING "Appended to VERSION (CI testing builds: .testing.<run number>)")
 file(STRINGS ${CMAKE_SOURCE_DIR}/VERSION QUARK_VERSION LIMIT_COUNT 1)
 string(STRIP "${QUARK_VERSION}${QUARK_VERSION_SUFFIX}" QUARK_VERSION)
-if(NOT QUARK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$")
-  message(FATAL_ERROR "version '${QUARK_VERSION}' isn't x.y.z[-suffix]")
+if(NOT QUARK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(\\.testing\\.[0-9]+|-[0-9A-Za-z.]+)?$")
+  message(FATAL_ERROR "version '${QUARK_VERSION}' isn't x.y.z[.testing.N|-suffix]")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/VERSION)
 # (the launcher marker is found in launcher files by src/launcher/selfupdate.cpp, so it's one contiguous string)
@@ -26,7 +27,7 @@ file(WRITE ${CMAKE_BINARY_DIR}/generated/version.cpp.tmp
 configure_file(${CMAKE_BINARY_DIR}/generated/version.cpp.tmp ${CMAKE_BINARY_DIR}/generated/version.cpp COPYONLY)
 
 # Windows resources for every shipped exe (src/win/app.rc.in, app.manifest.in): the icon, a VERSIONINFO (product quark,
-# company floration, a description, the version incl. a -test.N suffix: FILEVERSION x.y.z.N, flagged prerelease) and an
+# company floration, a description, the version incl. a .testing.N (or -test.N) suffix: FILEVERSION x.y.z.N, flagged prerelease) and an
 # application manifest (asInvoker, Windows 7-11, per-monitor DPI for the windowed ones, as GLFW sets at runtime).
 # Anonymous exes without them are what antivirus heuristics flag most (docs/SIGNING.md). Exes are never packed.
 if(WIN32)
@@ -36,10 +37,10 @@ if(WIN32)
   set(QV_PATCH ${CMAKE_MATCH_3})
   set(QV_BUILD 0)
   set(QV_FLAGS 0x0L)
-  if(QUARK_VERSION MATCHES "-")
+  if(QUARK_VERSION MATCHES "-|\\.testing\\.")
     set(QV_FLAGS 0x2L)   # VS_FF_PRERELEASE
-    if(QUARK_VERSION MATCHES "-test\\.([0-9]+)$")
-      set(QV_BUILD ${CMAKE_MATCH_1})
+    if(QUARK_VERSION MATCHES "(-test|\\.testing)\\.([0-9]+)$")
+      set(QV_BUILD ${CMAKE_MATCH_2})
       if(QV_BUILD GREATER 65535)
         set(QV_BUILD 65535)
       endif()

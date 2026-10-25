@@ -77,7 +77,7 @@ class Fixtures:
         add = self.structure.update
         add({"branches": {
             "testing": {"role": None, "description": "Where every Claude's work lands. Each push publishes a TESTING "
-                                                     "prerelease (`test-<VERSION>-test.<run>`)."},
+                                                     "prerelease (`test-<VERSION>.testing.<run>`)."},
             "launcher": {"role": None, "description": "The launcher's own release line."},
             "site": {"role": None, "description": "The website (floration.github.io/quark)."},
             "claude/macos-skip": {"role": "other", "description": "Experiment from the macOS runner wait; kept "

@@ -69,7 +69,7 @@
       if (!v) return null;
       if (!vers.has(v)) {
         const prod = gh.releases.find(r => r.tag === 'v' + v);
-        const test = gh.releases.filter(r => String(r.tag || '').startsWith('test-' + v + '-')).sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))[0];
+        const test = gh.releases.filter(r => (String(r.tag || '').startsWith('test-' + v + '-') || String(r.tag || '').startsWith('test-' + v + '.testing.'))).sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))[0];
         const state = prod ? 'prod' : test ? 'testing' : 'local';
         vers.set(v, {key: 'v:' + v, kind: 'version', label: v, state, url: (prod || test || {}).url || l.url,
           sub: prod ? 'production' : test ? 'testing build ' + String(test.tag).replace(/^test-/, '') : 'not released yet'});

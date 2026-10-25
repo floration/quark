@@ -2277,10 +2277,11 @@ SEED_RULES = [
     HARD_RULE,
     _rule("claude-pushes-non-production", "Claude may push and merge to testing", "merge",
           "Claude may push and merge to testing and the other non-production branches when it judges it right."),
-    _rule("testing-version-bump", "Every testing push takes the next VERSION", "version",
-          "Every push to testing takes the next free VERSION (semver) and adds both changelogs, "
-          "changelogs/<VERSION>.md (short) and changelogs/full/<VERSION>.md (full). Tooling-only PRs may skip the "
-          "bump.", ("branch", "testing")),
+    _rule("testing-version-bump", "Testing pushes keep VERSION; notes go in next.md", "version",
+          "Testing pushes keep VERSION at the production release (CI builds them as <VERSION>.testing.<run>, owner "
+          "2026-10-24) and add their notes to changelogs/next.md (short) and changelogs/full/next.md (full). The "
+          "production release PR bumps VERSION and renames both to <VERSION>.md. Tooling-only PRs may skip the "
+          "notes.", ("branch", "testing")),
     _rule("sanitizers-final-only", "Sanitizers only for a [final] build", "ci",
           "Sanitizers run only for a test build a human marked \"[final]\". They never block."),
     _rule("ci-scope", "CI runs meta, builds and sanitizers", "ci",

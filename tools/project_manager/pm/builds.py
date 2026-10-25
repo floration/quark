@@ -3,7 +3,8 @@
 BUILD.txt is one line whose format depends on what wrote it (docs/LOCAL_BUILD.md), for example
   v1.18.5 (GitHub release, published ...)                         tools/fetch_release.ps1
   quark-1.18.6-9c2e1f0-dirty (local build, 2026-10-24 18:58)      tools/build_windows.ps1 (build-working.cmd)
-  testing origin/testing <40-hex sha>-test.231 (built on this PC ...; unsigned)   tools/build_release.ps1
+  testing origin/testing <40-hex sha>.testing.341 (built on this PC ...; unsigned)   tools/build_release.ps1
+                                                    (before 1.19.0: <sha>-test.231)
 so it is parsed loosely and the raw lines are always kept.
 """
 import os
@@ -25,8 +26,8 @@ def parse_build_txt(text):
         out["tag"] = m.group(1)
     out["version"] = util.parse_version(joined)
     if out["version"] is None:
-        # build_release.ps1's testing marker has no VERSION, only "-test.<n>" after the sha
-        s = re.search(r"[0-9a-f]{7,40}(-test\.\d+)", joined)
+        # build_release.ps1's testing marker has no VERSION, only ".testing.<n>" (before 1.19.0 "-test.<n>") after the sha
+        s = re.search(r"[0-9a-f]{7,40}((?:\.testing|-test)\.\d+)", joined)
         if s:
             out["suffix"] = s.group(1)
     c = (re.search(r"\b([0-9a-f]{40})", joined) or

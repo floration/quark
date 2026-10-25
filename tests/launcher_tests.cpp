@@ -85,6 +85,19 @@ static void testVersions() {
     LCHECK(releases::versionFromTag("v1.16.0") == "1.16.0");
     LCHECK(releases::versionFromTag("test-1.17.0-test.3") == "1.17.0-test.3");
     LCHECK(releases::versionFromTag("nightly").empty());
+    // testing builds from 1.19.0 on: <production VERSION>.testing.<run> (release.yml), tagged test-<that>. Installed
+    // launchers (the launcher branch's releases.cpp, same versionCmp) read "testing" as a 0 core part, so the build
+    // sorts above the production release it follows and below the next one, and above every older -test.N build.
+    LCHECK(versionCmp("1.19.0.testing.5", "1.19.0") > 0);
+    LCHECK(versionCmp("1.19.0.testing.5", "1.19.1") < 0);
+    LCHECK(versionCmp("1.19.0.testing.5", "1.20.0") < 0);
+    LCHECK(versionCmp("1.19.0.testing.10", "1.19.0.testing.9") > 0);   // numeric run numbers, not text
+    LCHECK(versionCmp("1.19.0.testing.1", "1.19.0-test.400") > 0);     // the first new-style build beats the old ones
+    LCHECK(versionCmp("1.19.0.testing.1", "1.18.9-test.999") > 0);
+    LCHECK(versionCmp("1.19.1-test.3", "1.19.0.testing.900") > 0);     // (an old-style build of the next version)
+    LCHECK(versionCmp("1.19.0.testing.7", "1.19.0.testing.7") == 0);
+    LCHECK(versionCmp("1.19.0.testing.7+abc", "1.19.0.testing.7") == 0);
+    LCHECK(releases::versionFromTag("test-1.19.0.testing.5") == "1.19.0.testing.5");
 }
 
 static void testChannels() {
@@ -133,6 +146,26 @@ static void testChannels() {
     LCHECK(releases::shouldAutoInstall("1.16.0", "1.15.1", false));
     LCHECK(!releases::shouldAutoInstall("1.16.0", "1.16.0", false));
     LCHECK(!releases::shouldAutoInstall("1.16.0", "1.17.0-test.2", false)); // back to production with a newer test build
+    LCHECK(releases::shouldAutoInstall("1.19.0.testing.2", "1.19.0", false));      // testing channel after production
+    LCHECK(releases::shouldAutoInstall("1.19.0.testing.2", "1.19.0-test.339", false));
+    LCHECK(releases::shouldAutoInstall("1.19.0.testing.10", "1.19.0.testing.9", false));
+    LCHECK(!releases::shouldAutoInstall("1.19.0", "1.19.0.testing.2", false));     // back to production: no downgrade
+    LCHECK(releases::shouldAutoInstall("1.19.1", "1.19.0.testing.2", false));      // the next production release
+    {   // a testing channel across the switch: old -test.N tags and new .testing.N ones, newest first by version
+        auto pre = [](const std::string& v) {
+            releases::Release r;
+            r.tag = "test-" + v; r.version = v; r.prerelease = true;
+            r.url = "https://example.invalid/" + v + "/quark-linux.qpak"; r.sigUrl = r.url + ".sig";
+            return r;
+        };
+        std::vector<releases::Release> mixed = {pre("1.19.0-test.339"), pre("1.19.0.testing.341"), pre("1.19.0.testing.1000"),
+                                      pre("1.18.9-test.320"), pre("1.19.0.testing.999")};
+        std::vector<std::string> got;
+        for (auto& r : releases::forChannel(mixed, releases::Channel::Testing)) got.push_back(r.version);
+        LCHECK((got == std::vector<std::string>{"1.19.0.testing.1000", "1.19.0.testing.999", "1.19.0.testing.341",
+                                                 "1.19.0-test.339", "1.18.9-test.320"}));
+        LCHECK(releases::forChannel(mixed, releases::Channel::Production).empty());   // prereleases never production
+    }
     LCHECK(releases::shouldAutoInstall("1.15.1", "1.16.0", true));
     LCHECK(!releases::shouldAutoInstall("", "1.16.0", false));
 
@@ -419,6 +452,7 @@ static void testLauncherSwap() {
     LCHECK(selfupdate::fileVersion(t / "missing").empty());
     LCHECK(selfupdate::isNewer("1.17.0", ""));           // any pre-marker launcher is older
     LCHECK(selfupdate::isNewer("1.17.0", "1.17.0-test.2"));
+    LCHECK(selfupdate::isNewer("1.19.0.testing.4", "1.19.0") && !selfupdate::isNewer("1.19.0", "1.19.0.testing.4"));
     LCHECK(!selfupdate::isNewer("1.17.0", "1.17.0"));
     LCHECK(!selfupdate::isNewer("1.16.0", "1.17.0"));    // an older package (picked by hand) never downgrades it
     LCHECK(!selfupdate::isNewer("", ""));

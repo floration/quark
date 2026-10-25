@@ -39,8 +39,8 @@ channel, tag, version and commit, and the sha256 of every package (`tools/sign/r
 ```
 quark release
 channel testing
-tag test-1.17.0-test.3
-version 1.17.0-test.3
+tag test-1.19.0.testing.3
+version 1.19.0.testing.3
 commit <40 hex>
 sha256 quark-linux.qpak <64 hex>
 sha256 quark-windows.qpak <64 hex>
@@ -112,7 +112,9 @@ whatever a branch put in `master.txt`. The pages job only has to publish `site/`
 ## Release channels and launcher updates
 
 - **Production** = normal GitHub releases, tag `v<VERSION>`. **Testing** = GitHub *prereleases*, tag
-  `test-<VERSION>-test.<N>` (e.g. `test-1.17.0-test.3`; the launcher reads the version from the first digit on).
+  `test-<VERSION>.testing.<N>` (e.g. `test-1.19.0.testing.341`; the launcher reads the version from the first digit on,
+  and its versionCmp sorts 1.19.0.testing.N above 1.19.0 and below 1.19.1). Before 1.19.0 it was `test-<VERSION>-test.<N>`
+  (a semver prerelease, below its release); those tags stay readable.
   Testing tags must never start with `v<digit>` or a digit: launchers 0.12 - 1.16 install the highest
   `v<digit>`/digit tag they see, prerelease or not. Both channels use the same asset names
   (`quark-<platform>.qpak` + `.qpak.sig`) and are signed with the same key; drafts are never offered.

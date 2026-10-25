@@ -90,7 +90,7 @@ struct ServerConfig {
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
-    // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a -test. version).
+    // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a testing version).
     // A testing server (or any testing build) plays ranked normally but never sends anything to the ranking server.
     int channel = -1;
     // Load governor (governor.h): a directory shared with the other server on this machine (tools/server/install.sh
@@ -490,7 +490,7 @@ public:
     bool restartRequested() const { return restartNow_; }
     bool matchInProgress() const;
     bool restartNow_ = false, restartAnnounced_ = false;
-    // Ranked here is rated: not a testing server (--channel testing) and not a testing build (a -test. version).
+    // Ranked here is rated: not a testing server (--channel testing) and not a testing build (isTestingVersion).
     // Otherwise ranked plays normally (queue, lock, everything) but no ticket, result or race run leaves the server.
     bool rated() const;
     // Load governor (cfg_.governorDir): its thread decides; the tick thread reports a few times a second and applies

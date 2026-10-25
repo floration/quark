@@ -653,19 +653,24 @@ def ed25519ph_verify(prehash, sig_hex, pub_hex):
 
 
 def version_from_tag(tag):
-    """The launcher's versionFromTag: the tag from its first digit on ('test-1.18.6-test.231' -> '1.18.6-test.231')."""
+    """The launcher's versionFromTag: the tag from its first digit on ('test-1.18.6-test.231' -> '1.18.6-test.231',
+    'test-1.19.0.testing.5' -> '1.19.0.testing.5')."""
     m = re.search(r"\d", tag or "")
     return tag[m.start():] if m else ""
 
 
 def version_cmp(a, b):
     """releases.cpp versionCmp: semver order, '1.17.0' > '1.17.0-test.3' > '1.17.0-test.2' > '1.16.9'; a missing part
-    counts as 0; prerelease identifiers compare dot by dot (numbers numerically, numbers before words). <0, 0, >0."""
+    counts as 0; prerelease identifiers compare dot by dot (numbers numerically, numbers before words). Every core
+    part counts and a word in it reads as 0, so '1.19.1' > '1.19.0.testing.5' > '1.19.0' (testing builds from 1.19.0
+    on). '+build' is ignored. <0, 0, >0."""
     def split(v):
-        core, _, pre = (v or "").partition("-")
-        nums = [int(x) if x.isdigit() else 0 for x in (core.split(".") + ["0", "0", "0"])[:3]]
-        return nums, pre
+        core, _, pre = (v or "").split("+")[0].partition("-")
+        nums = [int(x) if x.isdigit() else 0 for x in core.split(".")]
+        return nums + [0] * (3 - len(nums)), pre
     (na, pa), (nb, pb) = split(a), split(b)
+    width = max(len(na), len(nb))
+    na, nb = na + [0] * (width - len(na)), nb + [0] * (width - len(nb))
     if na != nb:
         return -1 if na < nb else 1
     if not pa or not pb:

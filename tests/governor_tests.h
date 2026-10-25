@@ -15,6 +15,7 @@ static void testGovernorPolicy() {
     const int F = kTickRateLevels - 1;   // 125 Hz
     CHECK(kTickRates[F] == 125 && kTickRates[0] == 1000);
     CHECK(isTestingVersion("1.17.0-test.42") && !isTestingVersion("1.17.0") && !isTestingVersion(""));
+    CHECK(isTestingVersion("1.19.0.testing.5") && isTestingVersion("1.19.0.testing.5+abc") && !isTestingVersion("1.19.0+abc"));
     CHECK(govChannelFromName("prod") == GOV_PROD && govChannelFromName("testing") == GOV_TESTING && govChannelFromName("x") < 0);
     // A run of the policy: `s` are the statuses; the servers follow the caps (an empty one at once, one with players
     // only when the governor says now or `brk` (a break)), like Server::applyGovernorCap.

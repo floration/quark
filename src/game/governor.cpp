@@ -14,7 +14,15 @@ int govChannelFromName(const std::string& s) {
     if (s == "testing" || s == "test") return GOV_TESTING;
     return -1;
 }
-bool isTestingVersion(const char* v) { return v && strchr(v, '-') != nullptr; }
+bool isTestingVersion(const char* v) {
+    if (!v) return false;
+    int dots = 0;   // "1.19.0.testing.5" (CI's testing builds from 1.19.0 on): anything past x.y.z; "1.18.9-test.3": a suffix
+    for (const char* c = v; *c && *c != '+'; c++) {
+        if (*c == '-') return true;
+        if (*c == '.' && ++dots > 2) return true;
+    }
+    return false;
+}
 static int g_pinTesting = -1;
 bool testingBuild() { return g_pinTesting >= 0 ? g_pinTesting != 0 : isTestingVersion(QUARK_VERSION); }
 void pinTestingBuildForTests(int testing) { g_pinTesting = testing; }

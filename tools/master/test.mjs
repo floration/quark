@@ -443,6 +443,10 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   for (let i = 0; i < 9; i++) last = await ann({ port: String(28000 + i), v: "t2" }, "198.51.100.8");
   check(last === "too many servers from this address", "per-address cap " + last);
   check((await call("/list?v=t2")).split("\n").length === 8, "one address can't flood the list");
+  // testing builds' versions are long (<VERSION>.testing.<run>): two runs that share 16 characters are listed apart
+  await ann({ port: "27530", v: "1.19.0.testing.341" }, "198.51.100.30");
+  await ann({ port: "27531", v: "1.19.0.testing.342" }, "198.51.100.31");
+  check((await call("/list?v=1.19.0.testing.341")) === "198.51.100.30:27530", "a testing run lists only its own servers");
   let limited = false;
   for (let i = 0; i < 100 && !limited; i++) limited = (await call("/link", { secret: secret(140 + i) }, "192.0.2.50")) === "rate limited";
   check(limited, "writes rate-limited per IP");
@@ -609,8 +613,10 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
 // Testing servers (a prerelease version: the testing server every box runs next to production) are never rated
 {
   check(isTestingVersion("1.17.0-test.42") && isTestingVersion("~1.17.0-test.4") && !isTestingVersion("1.17.0") && !isTestingVersion("~1.17.0"), "testing versions");
+  check(isTestingVersion("1.19.0.testing.42") && isTestingVersion("~1.19.0.testing.4") && isTestingVersion("1.19.0.testing.4+abc") &&
+        !isTestingVersion("1.19.0+abc") && !isTestingVersion(""), "testing versions from 1.19.0 on (<VERSION>.testing.<run>)");
   const nr = "testing server: ranked not rated";
-  const T = await server("1.17.0-test.42");
+  const T = await server("1.19.0.testing.42");
   check((await T.ticket("7a7a7a7a7a7a7a7a", "vanilla", [41, 42])) === nr, "a testing server can't open a match ticket");
   check((await T.race("7b7b7b7b7b7b7b7b", 43)) === nr, "nor a race ticket");
   check((await T.result("7a7a7a7a7a7a7a7a", `${id(41)}:0:0,${id(42)}:1:1`)) === nr, "nor post a result");

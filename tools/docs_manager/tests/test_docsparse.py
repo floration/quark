@@ -145,6 +145,10 @@ class LinkTests(unittest.TestCase):
         r = self.find("prereleases test-1.18.3-test.148 and test-1.18.4-test.149", "release")
         self.assertEqual([l["label"] for l in r], ["test-1.18.3-test.148", "test-1.18.4-test.149"])
         self.assertEqual(self.find("test-1.18.3-test.148", "version"), [])
+        # testing builds from 1.19.0 on: test-<VERSION>.testing.<run>
+        r = self.find("prerelease test-1.19.0.testing.341 is out", "release")
+        self.assertEqual([(l["label"], l["prerelease"]) for l in r], [("test-1.19.0.testing.341", True)])
+        self.assertEqual(self.find("test-1.19.0.testing.341", "version"), [])
 
     def test_branches_runs_files(self):
         links = self.L.links("cloud branch claude/project-thread-b4pufp and branch `ui-fonts`; see `src/common/profile.h:17`")

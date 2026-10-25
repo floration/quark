@@ -7,15 +7,19 @@
 
 namespace releases {
 
-// PRODUCTION = normal GitHub releases (tag v<VERSION>); TESTING = GitHub *prereleases* (tag test-<VERSION>-test.<N>).
+// PRODUCTION = normal GitHub releases (tag v<VERSION>); TESTING = GitHub *prereleases* (tag test-<VERSION>.testing.<N>;
+// before 1.19.0 test-<VERSION>-test.<N>).
 enum class Channel { Production, Testing };
 const char* channelName(Channel c);            // "production" / "testing" (launcher.cfg)
 Channel channelFromName(const std::string& s); // anything unknown = production
 
 // Semantic version compare: "1.17.0" > "1.17.0-test.3" > "1.17.0-test.2" > "1.16.9". A missing part counts as 0;
-// prerelease identifiers compare dot by dot (numbers numerically, numbers before words). <0, 0, >0.
+// prerelease identifiers compare dot by dot (numbers numerically, numbers before words).
+// Testing builds from 1.19.0 on are "1.19.0.testing.5": no '-', so its core is {1,19,0,0 ("testing"),5}, newer than
+// 1.19.0 and older than 1.19.1 (the launcher branch's copy of this code reads it the same way). <0, 0, >0.
 int versionCmp(const std::string& a, const std::string& b);
-// The version a tag names: "v1.16.0" -> "1.16.0", "test-1.17.0-test.3" -> "1.17.0-test.3". Empty if no digit.
+// The version a tag names: "v1.16.0" -> "1.16.0", "test-1.17.0-test.3" -> "1.17.0-test.3",
+// "test-1.19.0.testing.5" -> "1.19.0.testing.5". Empty if no digit.
 std::string versionFromTag(const std::string& tag);
 
 struct Release {

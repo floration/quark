@@ -24,10 +24,10 @@ foreach ($ch in $channels) {
     if (-not $ref) { Write-Warning 'No production tag yet'; continue }
   } else {
     $ref = 'origin/testing'
-    # CI builds testing as <VERSION>-test.<run number> and tags the commit test-<that>: use the same version when tagged
-    # (an untagged tip builds as plain <VERSION>)
-    $tag = git -C $Root tag --points-at $ref -l 'test-*' | Select-Object -First 1
-    if ($tag -match '(-test\.\d+)$') { $suffix = $Matches[1] }
+    # CI builds testing as <VERSION>.testing.<run number> (before 1.19.0: <VERSION>-test.<run number>) and tags the
+    # commit test-<that>: use the same version when tagged (an untagged tip builds as plain <VERSION>)
+    $tag = git -C $Root tag --points-at $ref -l 'test-*' --sort=-creatordate | Select-Object -First 1
+    if ($tag -match '((\.testing|-test)\.\d+)$') { $suffix = $Matches[1] }
   }
   $sha = (git -C $Root rev-parse "$ref^{commit}").Trim()
   $dest = Join-Path $Base $ch

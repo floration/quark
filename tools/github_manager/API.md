@@ -19,7 +19,7 @@ revalidates.
   "generatedAt": "...", "repo": "floration/quark", "defaultBranch": "claude/compassionate-ritchie-07ah6i",
   "poll": {"lastOk": "...", "lastError": null | "text", "nextAt": "...", "intervalSec": 60, "rateRemaining": 4800},
   "production": {"tag": "v1.17.0", "sha": "...", "version": "1.17.0", "publishedAt": "...", "url": "..."},
-  "testing": {"sha": "...", "version": "1.18.6", "date": "...", "subject": "...", "prerelease": {"tag": "test-1.18.6-test.150", "publishedAt": "...", "url": "..."} | null,
+  "testing": {"sha": "...", "version": "1.19.0", "date": "...", "subject": "...", "prerelease": {"tag": "test-1.19.0.testing.341", "publishedAt": "...", "url": "..."} | null,
               "aheadOfProduction": 42, "commitsSinceProduction": [commit, ...]},     // first-parent, newest first, max 200
   "branches": [{"name": "...", "sha": "...", "date": "...", "subject": "...", "author": "...",
                 "kind": "production" | "testing" | "claude" | "infra" | "other",       // infra = launcher, site, discord-bot

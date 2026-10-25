@@ -137,7 +137,7 @@ function versionDetail(v) {
   if (p.version === v) rows.push(html`<li><b>production</b>: ${ext(p.url, p.tag)} published ${when(p.publishedAt)}</li>`);
   if (t.version === v) rows.push(html`<li><b>testing</b>: head ${commitChip(t.sha)} ${t.prerelease ? html`· prerelease ${ext(t.prerelease.url, t.prerelease.tag)} ${relOnly(t.prerelease.publishedAt)}` : '· no prerelease yet'}</li>`);
   for (const l of locals) rows.push(html`<li>local copy ${localChip(l.name)} on ${branchChip(l.branch)}</li>`);
-  const evs = eventsFor((e) => e.ref && e.ref.tag && (e.ref.tag === `v${v}` || e.ref.tag.startsWith(`test-${v}-`)), 20);
+  const evs = eventsFor((e) => e.ref && e.ref.tag && (e.ref.tag === `v${v}` || e.ref.tag.startsWith(`test-${v}-`) || e.ref.tag.startsWith(`test-${v}.testing.`)), 20);
   const isProdOrOlder = p.version && cmp(v, p.version) <= 0;
   // a version newer than testing has no changelog (nor release) yet: no links to files that don't exist
   const future = t.version && cmp(v, t.version) > 0;

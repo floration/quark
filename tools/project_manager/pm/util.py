@@ -111,12 +111,14 @@ def to_float(v, default=None):
     return default
 
 
-# (a suffix starts with a letter: "1.18.6-test.231"; never the "-9c2e1f0" commit of "quark-1.18.6-9c2e1f0")
-VERSION_RE = re.compile(r"(?<![\d.])(\d+)\.(\d+)\.(\d+)((?:-[A-Za-z]+(?:\.\d+)*)?)(?!\d|\.\d)")
+# (a suffix starts with a letter: "1.18.6-test.231"; never the "-9c2e1f0" commit of "quark-1.18.6-9c2e1f0"; testing
+# builds from 1.19.0 on are "1.19.0.testing.341": the production VERSION plus .testing.<run>, above that release)
+VERSION_RE = re.compile(r"(?<![\d.])(\d+)\.(\d+)\.(\d+)((?:\.testing\.\d+|-[A-Za-z]+(?:\.\d+)*)?)(?!\d|\.\d)")
 
 
 def parse_version(s):
-    """'v1.18.6', 'test-1.18.6-test.231', '1.18.6' -> '1.18.6' / '1.18.6-test.231' (None if there is none)."""
+    """'v1.18.6', 'test-1.18.6-test.231', 'test-1.19.0.testing.5', '1.18.6' -> '1.18.6' / '1.18.6-test.231' /
+    '1.19.0.testing.5' (None if there is none)."""
     if not isinstance(s, str):
         return None
     m = VERSION_RE.search(s)
@@ -124,7 +126,7 @@ def parse_version(s):
 
 
 def base_version(s):
-    """'1.18.6-test.231' -> '1.18.6'."""
+    """'1.18.6-test.231' / '1.19.0.testing.5' -> '1.18.6' / '1.19.0'."""
     v = parse_version(s)
     if not v:
         return None
@@ -133,14 +135,16 @@ def base_version(s):
 
 
 def version_key(s):
-    """Sort key: (major, minor, patch, is-release, suffix number). Unknown sorts lowest."""
+    """Sort key: (major, minor, patch, kind, suffix number); kind 0: an old -test.N prerelease (below its release),
+    1: the release, 2: a .testing.N build (above it, below the next release). Unknown sorts lowest."""
     v = parse_version(s)
     if not v:
         return (-1, -1, -1, -1, -1)
     m = VERSION_RE.match(v)
     suffix = m.group(4)
     n = re.findall(r"\d+", suffix)
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 0 if suffix else 1, int(n[-1]) if n else 0)
+    kind = 2 if suffix.startswith(".testing.") else 0 if suffix else 1
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), kind, int(n[-1]) if n else 0)
 
 
 def short_sha(s):
