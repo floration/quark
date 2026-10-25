@@ -1370,7 +1370,8 @@ function moreMenu(ids) {
 
 // ---------- tab order (drag in the tab bar, Move left / right, Ctrl+Shift+PageUp / PageDown) ----------
 // Tabs move among their siblings (same parent); the new order is written into Quark\project-manager\tabs.json (made
-// from tabs.default.json when q has none yet), keeping every other field, and the tab list is reloaded.
+// from tabs.default.json when q has none yet, with its defaults* keys: pm/tabs.py upgrade() then never "restores" an
+// older default order over q's), keeping every other field, and the tab list is reloaded.
 const siblings = (tab) => tabs.filter((t) => t.parent === tab.parent);
 function moveTab(id, dir) {
   const t = tabById(id);

@@ -52,7 +52,10 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
 
 ### tabs.json (`Quark\project-manager\tabs.json`; the default is written by setup, q may edit)
 
-The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). An excerpt:
+The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). It also carries the
+bookkeeping keys a fresh tabs.json starts with (`defaultsSeen`, `defaultsPlaced`, `defaultsMoved`, `defaultsUpgraded`:
+every current default and one-time fix counts as done), because setup.ps1 and the shell's tab drag copy it as it is.
+An excerpt:
 
 ```json
 {"tabs": [

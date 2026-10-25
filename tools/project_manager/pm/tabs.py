@@ -22,7 +22,7 @@ import urllib.request
 from . import util
 
 # Used only when Quark\project-manager\tabs.json and shell\tabs.default.json are both missing; kept identical to
-# shell/tabs.default.json (a test checks it).
+# shell/tabs.default.json (a test checks it; DEFAULT_MARKS below adds the bookkeeping keys).
 DEFAULT_TABS = {"tabs": [
     {"id": "project", "name": "Supervisor Board", "url": "http://127.0.0.1:8768/?embed=1", "port": 8768,
      "start": "py -3 \"%PM%\\server.py\"", "keepAlive": True},
@@ -277,8 +277,7 @@ def write_default(paths):
     except (OSError, ValueError):
         data = DEFAULT_TABS
     if isinstance(data, dict):
-        data = dict(data, defaultsSeen=sorted(t["id"] for t in DEFAULT_TABS["tabs"]), defaultsPlaced=list(PLACE_ONCE),
-                    defaultsMoved=sorted(MOVE_ONCE), defaultsUpgraded=sorted(URL_ONCE))
+        data = dict(data, **DEFAULT_MARKS)
     util.write_json_atomic(path, data)
     return True
 
@@ -305,6 +304,12 @@ MOVE_ONCE = {"docs-before-github-2": ("docs", "github", ("play", "github", "docs
 # map-embed (2026-10-24): the Map Editor tab loads ?embed=1 like every other tool, so the page drops its own brand /
 # title row, which repeated the shell's tab name.
 URL_ONCE = {"map-embed": ("map", ("http://127.0.0.1:8770/",))}
+# A fresh tabs.json starts with every current default id and one-time fix marked as done, so `upgrade` never takes a
+# later change by q (a dragged tab order) for an older default. write_default adds these; shell\tabs.default.json
+# carries the same keys (a test checks it), because setup.ps1 and the shell's tab drag copy that file as it is.
+DEFAULT_MARKS = {"defaultsSeen": sorted(t["id"] for t in DEFAULT_TABS["tabs"]), "defaultsPlaced": list(PLACE_ONCE),
+                 "defaultsMoved": sorted(MOVE_ONCE), "defaultsUpgraded": sorted(URL_ONCE)}
+DEFAULT_TABS.update(DEFAULT_MARKS)
 
 
 def _insert_in_default_place(lst, tab, order):

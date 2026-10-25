@@ -230,8 +230,9 @@ same arguments. If the swap never works the old Electron stays and the next clos
   allows there), Open / Copy link for links, Find (the selection), Reload, Inspect element. Right-click on a tab: Open,
   Reload, Move left / right, Open its log, Developer tools.
 - Tab order: drag a tab among its siblings (an accent line shows where it lands), Ctrl+Shift+PageUp / PageDown, or
-  Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none),
-  keeping every other field; a parent's children move with it.
+  Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none,
+  with its `defaults*` keys, so a later `server.py --init` never takes the dragged order for an older default order and
+  "upgrades" it back), keeping every other field; a parent's children move with it.
 - Narrow windows: first the Editor Manager's facts shrink (below), then the tabs shorten (inactive tabs drop
   "Editor" / "Manager", then end in an ellipsis; the active tab keeps its whole name; the full name is the tooltip),
   then the tabs that still do not fit go behind a "+N" button (a list of them; the strip also fades out and scrolls
