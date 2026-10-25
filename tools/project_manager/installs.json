@@ -24,6 +24,5 @@
    "run": "py -3 tools\\mode_editor\\install.py \"%QUARK%\\gamemode-editor\"", "check": "gamemode-editor\\serve.py", "restartsPort": 8771},
   {"id": "ui", "name": "UI Editor", "sources": ["tools/ui_customizer", "assets/fonts"],
    "run": "py -3 tools\\ui_customizer\\install.py", "check": "ui-customizer\\ui-customizer.html"},
-  {"id": "electron", "name": "Electron (the app window)", "run": "builtin:electron-update",
-   "check": "project-manager\\electron\\VERSION"}
+  {"id": "electron", "name": "Electron (the app window)", "run": "builtin:electron-update"}
 ]}

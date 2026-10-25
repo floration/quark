@@ -552,8 +552,8 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(ids[0], "project-manager")
         self.assertEqual(entries[0]["run"], updater.SELF_UPDATE)
         self.assertIn("docs", ids)
-        for e in entries:
-            self.assertTrue(e["check"], e["id"])
+        for e in entries:  # (the Electron entry reads electron\VERSION itself: no check)
+            self.assertTrue(e["check"] or e["run"] == updater.ELECTRON_UPDATE, e["id"])
         self.assertEqual(entries[-1]["run"], updater.ELECTRON_UPDATE)  # (last: the big download never delays a tool)
         model = next(e for e in entries if e["id"] == "model")
         # install.cmd's default output is %USERPROFILE%\Desktop\Quark, which is not always the Quark folder

@@ -1,8 +1,10 @@
 # Quark project manager: spec (director's contract for the workers)
 
-Names (q, 2026-10-24): the PM page is the **Supervisor Board** (top level). Under it (in this order since 2026-10-24): **Claude
-Manager** (8766, the Claude Documents manager), **GitHub Manager** (8767), **Editor Manager** (8765, the editor dashboard, editors only),
-and under that the Sound, UI, Map, Bot and Model editors. Map editor = server on 8770, bot editor = server on 8769.
+Names (q, 2026-10-24): the PM page is the **Supervisor Board** (top level). Under it (in this order since 2026-10-24): **Play**
+(a page of the Supervisor Board server, 8768), **Claude Manager** (8766, the Claude Documents manager), **GitHub Manager** (8767;
+under it **Tests**, 8775), **Editor Manager** (8765, the editor dashboard, editors only), and under that the Sound, UI, Map,
+Bot, Model, Gamemode, Physics and Weapons editors. Map editor = server on 8770, bot editor = 8769, gamemode = 8771,
+physics = 8772, weapons = 8773; Sound, UI and Model are pages (no server).
 The tab tree uses a `parent` field in tabs.json (see `shell/tabs.default.json`, the source of truth for defaults).
 Where this file and the code differ, the code and `shell/README.md` win; this was the starting contract.
 

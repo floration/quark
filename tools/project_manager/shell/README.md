@@ -179,7 +179,7 @@ The Supervisor Board's "Tools & updates" card shows the repository state, each e
 | `name` | shown on the card |
 | `sources` | repo paths (folders or files); the first one is the tool's own folder (none for `builtin:electron-update`) |
 | `run` | the install command, run in `repository\`; `%QUARK%`, `%PM%`, `%REPO%` are expanded; `py -3` becomes `python` when the py launcher is missing; `builtin:self-update` is the app itself, `builtin:electron-update` its Electron. Pass the Quark folder to installers that take an output folder (`install.cmd "%QUARK%\model-editor"`): their own default is `%USERPROFILE%\Desktop\Quark`, which is not always it |
-| `check` | optional: a file relative to `Quark\` that must exist (installs again when it is missing) |
+| `check` | optional: a file relative to `Quark\` that must exist (installs again when it is missing); its first folder names the tool's folder for restart / reload requests. Not used by `builtin:electron-update`, which reads `electron\VERSION` itself |
 | `restartsPort` | optional: a port or a list of ports whose server is restarted after an install (without it, the open tabs of the folder in `check` reload) |
 | `timeoutSec` | optional, default 600 |
 | `lowPriority` | optional: run at below-normal CPU priority (builds), inherited by everything it starts |
