@@ -75,7 +75,7 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
 - **Player**: drops life-size figures (the game's player models, or the 0.8 x 0.8 x 1.8 m hull with its eye height and
   crouched hull); a toggle shows one at every spawn; the hitbox / head box wireframe toggle.
 - **Testing**: Checks (click a result to fly to its `where` points), Metrics (time to every objective per team, the
-  routes drawn in 3D coloured by time), Route (click two points), Custom tests (a form, kept in the sidecar), Bots
+  routes drawn in 3D coloured by time), Route (click two points), Custom tests (a form, kept in the sidecar; a test whose from / to place isn't set is marked and not run), Bots
   (place bot starts, choose mode / count / seconds, run: watch it live as the helper streams it, then scrub the
   timeline with speed, trails, per-bot toggles and event markers). The tabs are Properties, Map, Tests, Bots, Player
   and Decor.

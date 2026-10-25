@@ -115,13 +115,32 @@ export class Testing {
   }
 
   // ---- custom tests (sidecar.tests: [{kind, name, ...fields}])
+  // the fields a test can't run without (a place or a point left unset), by name
+  missing(t) {
+    const K = this.kinds && this.kinds.find(k => k.kind === t.kind);
+    return K ? (K.fields || []).filter(fd => (fd.type === "place" || fd.type === "point") && (t[fd.name] === null || t[fd.name] === undefined)).map(fd => fd.name) : [];
+  }
+  // runs the complete tests; the incomplete ones are listed as skipped, never sent (they ran with null and said so)
+  async runTests() {
+    const all = this.tests, ready = all.filter(t => !this.missing(t).length);
+    const r = ready.length ? await this.run("custom", { tests: ready }, "custom tests") : { results: [] };
+    if (!r) return;
+    const res = (r.results || []).slice(), out = [];
+    for (const t of all) {
+      const miss = this.missing(t);
+      out.push(miss.length ? { name: t.name || t.kind, skipped: true, detail: "not run: set " + miss.join(", ") } : res.shift());
+    }
+    this.customResults = { ...r, results: out.filter(Boolean) };
+    this.render();
+  }
   get tests() { const sc = this.doc.sidecar; if (!Array.isArray(sc.tests)) sc.tests = []; return sc.tests; }
   editTests(label, fn) { this.doc.edit(label, ["sc.tests"], (m, sc) => { if (!Array.isArray(sc.tests)) sc.tests = []; fn(sc.tests); }); this.render(); }
   testForm(t, i) {
     const K = this.kinds && this.kinds.find(k => k.kind === t.kind);
     const box = el("div", { class: "result" + (this.editing === i ? " on" : "") });
     const head = el("div", { class: "btnrow" },
-      el("b", {}, t.name || t.kind || "test"), el("span", { class: "faint" }, t.kind || ""), el("span", { class: "spacer" }),
+      el("b", {}, t.name || t.kind || "test"), el("span", { class: "faint" }, t.kind || ""),
+      this.missing(t).length ? el("span", { class: "warn", title: "it is skipped until these are set" }, "set " + this.missing(t).join(", ")) : null, el("span", { class: "spacer" }),
       el("button", { class: "mini", onclick: () => { this.editing = this.editing === i ? null : i; this.render(); } }, this.editing === i ? "done" : "edit"),
       el("button", { class: "mini", onclick: () => this.editTests("copy test", T => T.splice(i + 1, 0, structuredClone(t))) }, "copy"),
       el("button", { class: "mini", onclick: () => this.editTests("remove test", T => T.splice(i, 1)) }, "x"));
@@ -239,13 +258,13 @@ export class Testing {
     // custom
     out.push(el("h3", {}, "Custom tests", el("span", { class: "faint" }, "(saved with the map)"), el("span", { class: "spacer" }),
       el("button", { onclick: () => this.editTests("add test", T => { const k = this.kinds ? this.kinds[0] : null; const t = { kind: k ? k.kind : "reach", name: "test " + (T.length + 1) }; if (k) for (const fd of k.fields || []) t[fd.name] = fd.default ?? null; T.push(t); this.editing = T.length - 1; }) }, "Add"),
-      el("button", { disabled: !tool || !!this.busy || !this.tests.length, onclick: async () => { const r = await this.run("custom", { tests: this.tests }, "custom tests"); if (r) { this.customResults = r; this.render(); } } }, "Run")));
+      el("button", { disabled: !tool || !!this.busy || !this.tests.some(t => !this.missing(t).length), title: "runs the tests whose places are set", onclick: () => this.runTests() }, "Run")));
     this.tests.forEach((t, i) => out.push(this.testForm(t, i)));
     if (this.customResults) {
-      const R = this.customResults.results || [];
-      out.push(el("p", {}, R.filter(r => r.pass).length + " of " + R.length + " passed"));
-      R.forEach((r, i) => out.push(el("div", { class: "result " + (r.pass ? "pass" : "fail"), onclick: () => this.showWhere(r.where, r.pass, true, r.paths) },
-        el("div", {}, r.name, r.value !== undefined ? el("span", { class: "faint num" }, "  " + (typeof r.value === "number" ? fmt(r.value, 2) : JSON.stringify(r.value))) : null), r.detail ? el("div", { class: "d" }, r.detail) : null)));
+      const R = this.customResults.results || [], ran = R.filter(r => !r.skipped), skipped = R.length - ran.length;
+      out.push(el("p", {}, ran.filter(r => r.pass).length + " of " + ran.length + " passed" + (skipped ? ", " + skipped + " not run (incomplete)" : "")));
+      R.forEach((r, i) => out.push(el("div", { class: "result " + (r.skipped ? "" : r.pass ? "pass" : "fail"), onclick: () => !r.skipped && this.showWhere(r.where, r.pass, true, r.paths) },
+        el("div", {}, r.name, r.value !== undefined && r.value !== null ? el("span", { class: "faint num" }, "  " + (typeof r.value === "number" ? fmt(r.value, 2) : JSON.stringify(r.value))) : null), r.detail ? el("div", { class: r.skipped ? "d warn" : "d" }, r.detail) : null)));
     }
     fill(P, ...out);
   }
