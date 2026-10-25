@@ -41,3 +41,7 @@ Every change on `testing` since production 1.19.0, with what changed and why. Th
 ## Weapon model opacity (q, 2026-10-25: "add ability to change viewmodel opacity")
 
 - **GAMEPLAY > VIEW > WEAPON MODEL OPACITY** (`viewmodel_opacity`, 0-1, default 1): your first-person gun and the grapple launcher, everything in the renderer's view pass. Between 0 and 1 it draws the view model's depth first (no colour), then its colour blended over only its nearest faces, so it fades as one solid object instead of showing its inner boxes through each other (`uFade` in the dynamic and flat shaders; `Renderer::viewOpacity`, reset every frame so the editor's handles stay solid). Cost: the view model's few hundred triangles drawn twice, only while it's see-through; at 1 nothing changes, and at 0 the view pass is skipped (cheaper than now). Why a renderer setting and not a HUD element field: it covers the gun and the launcher at once without touching their placement code.
+
+## Screenshot key (bug)
+
+- **F12 screenshots overwrote each other across launches**: the name was `screenshot_<n>.png` with `n` a static counter from 0, written in the working directory (wherever the game was started from), so the first screenshot of every session replaced the first of the last one, and the notice didn't say where it went. Now `screenshots/<YYYY-MM-DD_HH-MM-SS>.png` in the user data folder (next to demos/; `_2`, `_3`... for more than one in a second), and the notice names the file (or says it couldn't save). Found by the settings audit (item 167).
