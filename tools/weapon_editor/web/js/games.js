@@ -108,6 +108,8 @@ export class GamesView {
         this.app = app; this.root = root;
         this.games = null; this.gopt = {}; this.offGames = new Set(); this.fams = new Set(); this.q = ""; this.sort = { key: "ttkBody", asc: true }; this.showStd = false;
         this.load();
+        // the Closest card and the table's highlighted row follow the weapon list
+        app.on("select", () => { if (app.page === "games") this.refresh(); });
     }
     async load() {
         try {
