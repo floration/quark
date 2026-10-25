@@ -1706,11 +1706,30 @@ def ref_glob_re(pattern):
     return re.compile("".join(out) + r"\Z")
 
 
+def ref_glob_re_narrow(pattern):
+    """A ref pattern as a regex that matches AT MOST what GitHub matches (* stays inside one '/' part, ** crosses
+    them, ? is one character but not '/'); None for a [class], which it won't guess at. For an 'Except' entry: an
+    exclusion only counts for the lock when it surely covers the branch."""
+    if "[" in pattern:
+        return None
+    out = []
+    for part in re.split(r"(\*\*|\*|\?)", pattern):
+        out.append({"**": ".*", "*": "[^/]*", "?": "[^/]"}.get(part) or re.escape(part))
+    return re.compile("".join(out) + r"\Z")
+
+
 def pattern_hits_branch(pattern, branch):
     if pattern in ("~ALL",):
         return True
     rx = ref_glob_re(pattern)
     return bool(rx.match("refs/heads/" + branch) or rx.match(branch))
+
+
+def pattern_surely_hits_branch(pattern, branch):
+    """For 'Except': True only when the pattern certainly matches the branch on GitHub (~DEFAULT_BRANCH is resolved by
+    the caller)."""
+    rx = ref_glob_re_narrow(pattern)
+    return bool(rx and (rx.match("refs/heads/" + branch) or (not pattern.startswith("refs/") and rx.match(branch))))
 
 
 def ruleset_lock_reasons(rs, default_branch):
@@ -1722,7 +1741,9 @@ def ruleset_lock_reasons(rs, default_branch):
     if name.strip().lower() in LOCKED_RULESET_NAMES:
         out.append("the %r ruleset guards production and is locked" % name)
     target = rs.get("target") or "branch"
-    include = (((rs.get("conditions") or {}).get("ref_name") or {}).get("include") or [])
+    ref_name = (rs.get("conditions") or {}).get("ref_name") or {}
+    include = ref_name.get("include") or []
+    exclude = ref_name.get("exclude") or []
     if target != "branch":
         tags = [p for p in include if p == "~ALL" or ref_glob_re(p).match("refs/tags/v1.0.0") or
                 ref_glob_re(p).match("v1.0.0")]
@@ -1734,13 +1755,17 @@ def ruleset_lock_reasons(rs, default_branch):
     if not default_branch:
         out.append("the default branch could not be read from GitHub, so the production lock can't be checked")
         return out
+    # a pattern such as claude/* may cover the default branch (claude/compassionate-ritchie-07ah6i) when 'Except'
+    # surely takes it out again; ~ALL and ~DEFAULT_BRANCH stay refused whatever the excludes say
+    spared = any(x == "~DEFAULT_BRANCH" or pattern_surely_hits_branch(x, default_branch) for x in exclude)
     for p in include:
         if p == "~DEFAULT_BRANCH":
             out.append("it targets the default branch (~DEFAULT_BRANCH = %s)" % default_branch)
         elif p == "~ALL":
             out.append("it targets every branch, the default branch %s too" % default_branch)
-        elif pattern_hits_branch(p, default_branch):
-            out.append("its pattern %s matches the default branch %s" % (p, default_branch))
+        elif pattern_hits_branch(p, default_branch) and not spared:
+            out.append("its pattern %s matches the default branch %s (add it under Except to leave it out)" % (
+                p, default_branch))
     return out
 
 

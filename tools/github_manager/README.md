@@ -34,7 +34,9 @@ Two more tabs:
     result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events).
 
   **The production lock**: only q pushes to production, and the editor can't change that. It refuses any change to
-  a ruleset that targets the default branch (read from GitHub each time) or v* tags (every non-branch ruleset), the
+  a ruleset that targets the default branch (read from GitHub each time; a pattern such as `claude/*` that covers it
+  passes only when an *Except* entry surely leaves it out again, e.g. the default branch's own name or
+  `~DEFAULT_BRANCH`; `~ALL` is always refused) or v* tags (every non-branch ruleset), the
   rulesets "production rule" and "tagging rule" (shown locked, with why), deleting or renaming the default branch,
   testing, launcher, site, discord-bot and gh-pages, and any tag change; the agent rule "Only q pushes to
   production" can't be edited or removed. Checked in the page, when queueing, and again on the server right before

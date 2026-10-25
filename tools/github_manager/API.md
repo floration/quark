@@ -193,7 +193,9 @@ the API). The server refuses, with 422 and `"locked": true`, when queueing, prev
 before the call to GitHub:
 - any ruleset create / update / delete when the ruleset (before or after the change) targets the default branch
   (read from `repos/<repo>` every time, never cached), `~DEFAULT_BRANCH`, `~ALL`, or a pattern that could match it
-  (matched conservatively: `*`, `**`, `?` and `[...]` all widen the match; exclude patterns are ignored); any
+  (matched conservatively: `*`, `**`, `?` and `[...]` all widen the match) unless an exclude pattern surely matches
+  it (matched narrowly: `*` and `?` stay inside one `/` part, `**` crosses them, a `[...]` never counts; or
+  `~DEFAULT_BRANCH`), so `claude/*` minus the default branch passes; `~ALL` is refused whatever it excludes; any
   ruleset whose target is not `branch` (tag and push rulesets: `v*` tags); and the rulesets named `production rule`
   and `tagging rule`;
 - deleting or renaming the default branch, `testing`, `launcher`, `site`, `discord-bot` or `gh-pages` (and renaming

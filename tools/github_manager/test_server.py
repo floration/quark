@@ -1305,6 +1305,25 @@ class HardLock(unittest.TestCase):
         # excluding the default branch does not make a wide pattern acceptable
         self.refused("ruleset.create", {"form": guard_form(name="n", include=["~ALL"], exclude=["~DEFAULT_BRANCH"])},
                      "every branch")
+        # an Except that only might cover it (wider on GitHub's side than on ours, or a [class]) doesn't count
+        for exc in (["claude/compassionate"], ["claude/*/x"], ["claude/[c]ompassionate-ritchie-07ah6i"], ["testing"],
+                    ["refs/heads/claude/compassionate-ritchie-07ah6"]):
+            self.refused("ruleset.create", {"form": guard_form(name="n", include=["claude/*"], exclude=exc)},
+                         "add it under Except")
+
+    def test_except_that_surely_covers_the_default_branch_passes(self):
+        # the real default branch sits under claude/: guarding work branches as a group needs claude/* minus it
+        for exc in ([DEFAULT], ["refs/heads/" + DEFAULT], ["~DEFAULT_BRANCH"], ["claude/compassionate-*"],
+                    ["claude/*-07ah6i"], ["claude/**"], ["claude/compassionate-ritchie-07ah6?"]):
+            for inc in (["claude/*"], ["claude/**"], ["testing", "claude/*"]):
+                ch = self.p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="work %s" % exc,
+                                                                                             include=inc, exclude=exc)}})
+                self.assertEqual(ch["status"], "pending", (inc, exc))
+                self.p.discard(ch["id"])
+        self.assertEqual(self.gh.writes, [])
+        self.assertTrue(S.pattern_surely_hits_branch("claude/*", "claude/x"))
+        self.assertFalse(S.pattern_surely_hits_branch("claude/*", "claude/x/y"))   # narrower than GitHub: on purpose
+        self.assertFalse(S.pattern_surely_hits_branch("refs/heads/claude/[x]", "claude/x"))
         # the locked rulesets themselves: production (default branch), tagging (v* tags), by name too
         self.refused("ruleset.update", {"id": 25727099, "form": guard_form()}, "the ruleset as it is on GitHub")
         self.refused("ruleset.delete", {"id": 25727099}, "targets the default branch")

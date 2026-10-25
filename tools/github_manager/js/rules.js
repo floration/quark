@@ -14,18 +14,21 @@ const KIND_LABEL = { push: 'push', merge: 'merge', version: 'version', ci: 'CI',
 let fs;
 
 // ---- the production lock, as the page can tell before asking the server (the server decides) ----
+// wide: matches at least what GitHub matches (for Branches); narrow: at most (for Except, so it counts only when it
+// surely leaves the default branch out). The same two the server uses.
 const globRe = (p) => new RegExp(`^${p.replace(/\[[^\]]*\]/g, '\u0001').replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*+/g, '.*').replace(/\?/g, '.').replace(/\u0001/g, '.')}$`);
-function lockProblems(include, defaultBranch) {
+const narrowRe = (p) => (p.includes('[') ? null : new RegExp(`^${p.split(/(\*\*|\*|\?)/).map((x) => ({ '**': '.*', '*': '[^/]*', '?': '[^/]' }[x] || x.replace(/[.+^${}()|\\]/g, '\\$&'))).join('')}$`));
+const full = (p) => (p.startsWith('refs/') ? p : `refs/heads/${p}`);
+function lockProblems(include, exclude, defaultBranch) {
   const out = [];
+  // claude/* may cover the default branch (it sits under claude/) when Except surely takes it out again
+  const spared = defaultBranch && exclude.some((x) => x === '~DEFAULT_BRANCH' || narrowRe(full(x))?.test(`refs/heads/${defaultBranch}`));
   for (const raw0 of include) {
     const p = raw0.trim();
     if (!p) continue;
     if (p === '~DEFAULT_BRANCH') out.push('~DEFAULT_BRANCH is the default branch');
     else if (p === '~ALL') out.push('~ALL includes the default branch');
-    else if (defaultBranch) {
-      const full = p.startsWith('refs/heads/') ? p : `refs/heads/${p}`;
-      if (globRe(full).test(`refs/heads/${defaultBranch}`)) out.push(`${p} matches the default branch ${defaultBranch}`);
-    }
+    else if (defaultBranch && !spared && globRe(full(p)).test(`refs/heads/${defaultBranch}`)) out.push(`${p} matches the default branch ${defaultBranch} (add it under Except to leave it out)`);
   }
   return out;
 }
@@ -42,7 +45,7 @@ function rulesetForm(fk, rs) {
   const base = rs ? rs.form : { name: '', enforcement: 'active', include: ['testing'], exclude: [], blockForcePush: true, blockDeletion: true, linearHistory: false, requirePr: false, approvals: 0, requiredChecks: [], strictChecks: false, adminBypass: false };
   const d = draft(fk, () => ({ ...base, include: base.include.join('\n'), exclude: base.exclude.join('\n'), requiredChecks: [...base.requiredChecks], chkq: '' }));
   const err = gui.errors.get(fk), busy = gui.busy.has(fk);
-  const problems = lockProblems(lines(d.include), v.defaultBranch);
+  const problems = lockProblems(lines(d.include), lines(d.exclude), v.defaultBranch);
   const checks = [...new Set([...(v.checks || []), ...d.requiredChecks])].sort((a, b) => a.localeCompare(b));
   const shown = checks.filter((c) => d.requiredChecks.includes(c) || matches(c, d.chkq));
   const ck = (f, label, hint) => html`<label class="chk rs-opt"><input type="checkbox" data-gf="${f}"${d[f] ? ' checked' : ''}> <span><b>${label}</b>${hint ? html` <span class="muted small">${hint}</span>` : ''}</span></label>`;
@@ -55,7 +58,7 @@ function rulesetForm(fk, rs) {
       <label class="f f-col"><span class="f-l">Branches (one per line; <code>*</code> and <code>**</code> patterns work)</span><textarea data-gf="include" rows="3" spellcheck="false" placeholder="testing">${d.include}</textarea></label>
       <label class="f f-col"><span class="f-l">Except (optional)</span><textarea data-gf="exclude" rows="3" spellcheck="false">${d.exclude}</textarea></label>
     </div>
-    ${problems.length ? html`<p class="msg bad small" role="alert">${raw(LOCK)} The production lock will refuse this: ${problems.join('; ')}. Name the branches instead (production is q's; only q changes its rules, on GitHub).</p>` : ''}
+    ${problems.length ? html`<p class="msg bad small" role="alert">${raw(LOCK)} The production lock will refuse this: ${problems.join('; ')}. Name the branches instead, or leave the default branch out under Except (production is q's; only q changes its rules, on GitHub).</p>` : ''}
     <fieldset class="rs-rules"><legend>Rules</legend>
       ${ck('blockForcePush', 'Block force pushes', '(non_fast_forward)')}
       ${ck('blockDeletion', 'Block deletion', '(deletion)')}
@@ -260,8 +263,8 @@ onAction('rl-del', async (b) => {
   if (ok) { gui.confirm.delete(b.dataset.ck); redraw(); }
 });
 // redraw when a field that changes the form's shape changes
-onInput('rs-edit', (fk, d, n) => { if (['requirePr', 'include', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
-onInput('rs-new', (fk, d, n) => { if (['requirePr', 'include', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
+onInput('rs-edit', (fk, d, n) => { if (['requirePr', 'include', 'exclude', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
+onInput('rs-new', (fk, d, n) => { if (['requirePr', 'include', 'exclude', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
 onInput('ar-edit', (fk, d, n) => { if (['kind', 'scopeType'].includes(n.dataset.gf)) redraw(); });
 onInput('ar-new', (fk, d, n) => { if (['kind', 'scopeType'].includes(n.dataset.gf)) redraw(); });
 onInput('lim', () => redraw());
