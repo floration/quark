@@ -37,16 +37,36 @@ writes `INSTALLED.txt` and never opens a browser.
 
 - **Choose folder and write** (Chrome / Edge): pick `%APPDATA%\quark\overrides` to try sounds in the game without
   rebuilding (restart the game), or the repository's `assets\overrides` to ship them. Picking `%APPDATA%\quark` or the
-  repository folder works too (the overrides folder inside is used). A same-named `.ogg` / `.flac` / `.mp3` already
-  there is moved to `.bak`, since the game would pick either.
-- **Download .zip**: the same layout, to unzip into the overrides folder.
+  repository folder works too (the overrides folder inside is used). A folder with no overrides folder in it (Desktop...)
+  is asked about before anything is written. A same-named `.ogg` / `.flac` / `.mp3` already there is moved to `.bak`,
+  since the game would pick either.
+- **Download .zip**: the same layout, to unzip into the overrides folder. A zip can't see the `sound-levels.txt` already
+  there, so it never carries one of its own (unzipping would wipe the lines written before): pick that file in the dialog
+  (**Zip: merge with the sound-levels.txt there...**) and the zip carries the merged file; otherwise it carries
+  `sound-levels-add.txt`, the lines to add by hand.
+
+The dialog has a tick per file: at first only the edits changed since you last exported them are ticked (**every edit** /
+**only changed since the last export**), so unchanged files aren't rewritten and their provenance date stays true. An
+edit that plays exactly the shipped sound (a step added then removed, every step bypassed, an auto trim inside the
+silence the game cuts anyway) shows `ED=` / NO CHANGE and is left out: its file would only pin the old sound.
+
+**Quips**: any quip file of a voice replaces its whole default set in the game, so exporting one quip also writes that
+voice's other default quips, as the game plays them now (its line, or your edit of that line), marked "default quip" in
+the dialog (untick **keep each voice's other quips** to leave them out: the dialog then says which quips the voice keeps
+and loses). A folder export skips a default quip already in the folder (an earlier export of yours stays). A voice with
+shipped quip files has its set already, so nothing is added.
+
+**Remove sounds from the game...** (Project menu, or the export dialog) lists the sounds and lines in an overrides
+folder and moves the ticked ones to `.bak` (the game plays the shipped sound again; delete the `.bak` files once sure),
+with their `sound-levels.txt` lines and `provenance.json` entries. Ticked at first: files the editor wrote whose edit is
+no longer in the project (reverted).
 
 The game normally rescales a replacement to the loudness of the sound it replaces (DEFAULT's for every kit, by heard
 loudness for the four hitsound tiers; the line it replaces for a voice). `sound-levels.txt` lists, one per line without
 extension (`sounds/default/ROCKET`), the exported files whose level you set here (a levelling group, or "keep my level"):
-the game keeps their own level. It is merged with the file already there: lines for files exported now follow this
-export, all other lines and comments stay. Sounds for missing events export the same way (`sounds/<kit>/<NAME>.wav`);
-the game ignores them until it has a hook for them.
+the game keeps their own level. A folder export merges it with the file already there: lines for files exported now
+follow this export, all other lines and comments stay. Sounds for missing events export the same way
+(`sounds/<kit>/<NAME>.wav`); the game ignores them until it has a hook for them.
 
 ## Provenance: who made each sound
 
@@ -89,7 +109,7 @@ folder, not into overrides.
   loudness and peak per cell; when it plays, the length guide, where it is reused, and the audit's weak spots per row.
   The Voices tab also has a **QUIPS** group: each voice's quips (the QUIP key), rows `quips/<NAME>`, exported to
   `voices/<voice>/quips/<NAME>.wav` (provenance id the same path). Any quip files for a voice replace its whole default
-  set in the game (docs/ASSETS.md), so export every quip you want that voice to keep.
+  set in the game (docs/ASSETS.md), so the export writes the voice's other default quips with it (see Export).
   Flags: over the length guide, cut by the game's cap (3 s sounds, 5 s lines), edited, level yours, `=D` (this kit uses
   DEFAULT's sound, so a DEFAULT edit plays here; RETRO is DEFAULT chiptuned), and who made it: `AI`, `3P` (third-party),
   `HUM` (human) or `SET?` (a dropped file whose origin isn't chosen yet). Each kit / voice header counts its origins and the
@@ -97,7 +117,10 @@ folder, not into overrides.
   as the exported file, or as shipped. Click to play and edit; solo / mute per sound and per pack; play a row across
   kits (compare) or a column through a kit; filter by name, edited only, over guide (Voices: cut at 5 s), favourites, and
   origin ("still AI-made" keeps the rows with an AI-made cell and dims the other cells). The mini waveforms of a row share
-  one time scale, its longest clip. The seven voices load together (about twice as fast as one after another).
+  one time scale, its longest clip. The seven voices load together, in under a second, without blocking the page: clips decode off the main
+  thread, measuring is queued and done in slices of about 10 ms (the true peak skips stretches that can't beat the peak
+  found so far, an exact shortcut), and a voice landing fills only its column. A metric switch rewrites only the cells'
+  value lines and "show" redraws only rows whose clip differs.
 - **Editor** (bottom dock): source waveform (zoom with the wheel, Shift+wheel scrolls), draggable trim and fade handles,
   cursor, playhead, play selection (Shift+drag a region), auto trim (start by the game's rule: the first sample at 3 %
   of the peak; end under -60 dB), the guide and the game's cap as markers, the output with where the game starts it,
@@ -125,14 +148,21 @@ folder, not into overrides.
   (0.6) and the mixer's soft limit follow the game. Loop them while you edit (each pass uses the edits as they are),
   see every event on a timeline, solo / mute live, render a scene offline (its mix loudness and a WAV).
 - **Missing**: the audit's events with no sound (priority, 2D / 3D, when it would play, a design note), each with a
-  slot per kit (or voice) to drop a file into or design one; marked "needs a game hook". Add your own names too; removing
-  one removes its slots' sounds as well (after a confirm; undo brings them back), so they are not exported.
+  slot per kit (or voice) to drop a file into or design one; marked "needs a game hook". Add your own names too (upper
+  case, letters / digits / _, starting with a letter); removing one removes its slots' sounds as well (after a confirm;
+  undo brings them back), so they are not exported. **New quips**: the kind "quip (every voice)" (or a name typed as
+  `quips/LAUGH`) adds a quip to every voice, a row in Voices > QUIPS, exported as `voices/<voice>/quips/LAUGH.wav`: the
+  game plays any quip name with no hook needed (up to 64 per voice), levelled to the voice's HEADSHOT line.
 - **Overview**: a dot plot of every sound's loudness per kit (or every line per voice) with the spread per row; the voices
   chart fills in as the voices load.
 - **Files**: drop a file on a cell to replace it; drop many files or a folder anywhere to assign them by name
-  (`ROCKET.wav`, `heavy_metal/ROCKET.ogg`, `male_GO.wav`, `wooden/STEP.flac`; a quip: `male_quips_HEADSHOT.wav`,
-  `voices/male/quips/HEADSHOT.wav`, `quips/HEADSHOT.wav`) with a confirm list; or Upload (files) / Upload folder (matched
-  by its folder names too). Project
+  (`ROCKET.wav`, `heavy_metal/ROCKET.ogg`, `HeavyMetal/ROCKET.ogg`, `male_GO.wav`, `wooden/STEP.flac`, the repository's
+  voice folders `oldman/GO.wav` / `egirl/GO.wav`; a quip: `male_quips_HEADSHOT.wav`, `voices/male/quips/HEADSHOT.wav`,
+  `quips/HEADSHOT.wav`, `QUIPS_` anywhere in the name; `male/quips/LAUGH.wav` offers a new quip) with a confirm list:
+  "matched", "guessed" (amber: only part of the file name matched, e.g. `impactMetal_heavy` -> IMPACT), "no match" (the
+  dropped-on cell's kit / voice is preselected). Each file can be played there; two ticked files aimed at one sound are
+  flagged and only the first exact match stays ticked. Upload (files) can't see folder names (the dialog says so): use
+  Upload folder, or drop the folder, to match by folder. Project
   files (.json: every edit, chain, group and note with your audio embedded) save and open; the session autosaves in the
   browser.
 

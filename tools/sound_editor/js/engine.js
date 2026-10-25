@@ -41,9 +41,17 @@
     if (a.sameAsDefault) return { key: dk, retro: false };
     return null;
   };
+  // a quip is levelled to the voice's line of its name as the game has it (a default quip is that line), a quip of any
+  // other name to the voice's HEADSHOT line (audio.cpp loadQuips)
+  Q.matchKey = function (key) {
+    const a = Q.assets[key];
+    if (a.kind !== 'voice' || !a.name.startsWith('quips/')) return null;
+    const n = a.name.slice(6);
+    return Q.key('voice', a.pack, Q.LINES.includes(n) ? n : 'HEADSHOT');
+  };
   Q.matchFor = function (key) {   // the clip the game levels a replacement to
     const a = Q.assets[key];
-    if (a.kind === 'voice') return a.orig;
+    if (a.kind === 'voice') { const mk = Q.matchKey(key); return mk && Q.assets[mk] ? Q.assets[mk].orig : a.orig; }
     const d = Q.assets[Q.key('sound', 'default', a.name)];
     return d ? d.orig : null;
   };
@@ -51,7 +59,7 @@
   Q.gameSig = function (key) {
     const inh = Q.inheritsFrom(key);
     if (inh) return 'inh:' + inh.retro + ':' + Q.gameSig(inh.key);
-    const a = Q.assets[key], dk = a && a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : null;
+    const a = Q.assets[key], dk = a && a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : a && Q.matchKey(key);
     return Q.editSig(key) + (dk && Q.state.edits[key] && Q.state.edits[dk] ? '|match:' + Q.gameSig(dk) : '');
   };
   Q.getGame = function (key) {
@@ -67,7 +75,8 @@
       const v = await Q.getOut(key), e = Q.state.edits[key];
       // a kit's replacement is matched to DEFAULT's sound as the game has it then: DEFAULT's own override when it has one
       // (loadOverrideSounds does DEFAULT first)
-      const dk = a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : null;
+      // (a quip: to its line as the game has it, your edit of the line included)
+      const dk = a.kind === 'sound' && a.pack !== 'default' ? Q.key('sound', 'default', a.name) : Q.matchKey(key);
       const match = dk && Q.state.edits[dk] ? (await Q.getGame(dk)).v : Q.matchFor(key);
       const r = Q.prepareGame(v, a.cap, match, a.kind === 'sound' && Q.hitTier(a.name) >= 0, e && e.levelSet);
       return { v: r.v, info: r };
@@ -86,11 +95,30 @@
     if (!m) { m = L.measure(x, R); metCache.set(x, m); }
     return m;
   };
+  /* The matrix and the overview measure hundreds of clips at once (seven voices landing): queued, and measured in slices of
+     about 10 ms with the page given back between them, so clicks and playback never wait behind a 2 s burst. */
+  const measQ = []; let measBusy = false;
+  const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
+  async function measPump() {
+    measBusy = true;
+    await yieldNow();   // (never in the asking task: a render asks for hundreds, one microtask at a time)
+    while (measQ.length) {
+      const t0 = performance.now();
+      while (measQ.length && performance.now() - t0 < 10) { const j = measQ.shift(); try { j.res(Q.measure(j.x)); } catch (e) { j.rej(e); } }
+      if (measQ.length) await yieldNow();
+    }
+    measBusy = false;
+  }
+  Q.measureAsync = function (x) {
+    if (!x) return Promise.resolve(null);
+    const m = metCache.get(x); if (m) return Promise.resolve(m);
+    return new Promise((res, rej) => { measQ.push({ x, res, rej }); if (!measBusy) measPump(); });
+  };
   // which: 'game' (as heard in the game), 'out' (the file), 'orig' (the shipped one)
   Q.getMetrics = async function (key, which) {
-    if (which === 'orig') return Q.measure(Q.assets[key].orig);
-    if (which === 'out') return Q.measure(await Q.getOut(key));
-    return Q.measure((await Q.getGame(key)).v);
+    if (which === 'orig') return Q.measureAsync(Q.assets[key].orig);
+    if (which === 'out') return Q.measureAsync(await Q.getOut(key));
+    return Q.measureAsync((await Q.getGame(key)).v);
   };
   Q.metricsSync = function (key, which) {
     const x = which === 'orig' ? Q.assets[key].orig : which === 'out' ? Q.outSync(key) : (Q.gameSync(key) || {}).v;

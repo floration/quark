@@ -136,8 +136,25 @@
 
   P.today = function () { const d = new Date(), z = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()); };
   // the sidecar entries of an export: {id: entry}, ids = the export paths (sounds/<kit>/<SOUND>.wav)
-  P.entries = function (keys) {
+  // a default quip written only to keep the voice's set whole (Q.quipCompanions): what the game played for it before
+  P.companionOrigin = function (c) {
+    const line = c.line.split('/').pop();
+    if (Q.state.edits[c.line]) {
+      const o = P.originOf(c.line);
+      return { origin: o.origin, note: 'default quip: your ' + line + ' line (' + (o.choose ? o.file : o.note) + '), written so the voice keeps its whole quip set', source: o.source || '' };
+    }
+    const d = P.defaultOrigin(c.key);
+    return d && { origin: d.origin, note: 'unchanged default quip (' + d.what + '), written so the voice keeps its whole quip set', source: d.source };
+  };
+  P.entries = function (keys, companions) {
     const out = {}, date = P.today();
+    for (const c of companions || []) {
+      const o = P.companionOrigin(c);
+      if (!o || !o.origin) continue;
+      const it = { origin: o.origin, by: P.BY, date, tool: P.TOOL, note: o.note };
+      if (o.source) it.source = o.source;
+      out[c.key + '.wav'] = it;
+    }
     for (const k of keys || Q.exportList()) {
       const o = P.originOf(k);
       if (!o.origin) continue;          // (the export dialog doesn't let this happen)
@@ -221,6 +238,19 @@
     await w.write(P.text(obj)); await w.close();
     await P.setCache(P.merge(await P.getCache(), obj.items));
     return { count: Object.keys(entries).length, total: Object.keys(obj.items).length, obj };
+  };
+  // files taken back out of the game: their entries leave provenance.json (when the folder is at hand) and the cache
+  P.forget = async function (ids) {
+    const drop = o => { const items = Object.assign({}, o.items || {}); for (const id of ids) delete items[id]; return Object.assign({}, o, { items }); };
+    await P.setCache(drop(await P.getCache()));
+    const dir = await P.getDir();
+    if (!dir || await P.permission(dir, false) !== 'granted') return false;
+    const t = await readText(dir, P.FILE); if (!t) return true;
+    let obj; try { obj = JSON.parse(t); } catch (e) { return false; }
+    if (!ids.some(id => obj.items && id in obj.items)) return true;
+    const fh = await dir.getFileHandle(P.FILE, { create: true }), w = await fh.createWritable();
+    await w.write(P.text(drop(obj))); await w.close();
+    return true;
   };
   // the sidecar to download / zip: everything this editor has exported, with these entries on top
   P.offline = async function (entries) {

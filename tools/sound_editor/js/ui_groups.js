@@ -21,7 +21,7 @@
     if (p.arg === 'kits') argEl = h('div', Q.KITS.map(k => h('label', { style: { marginRight: '10px' } }, h('input', { type: 'checkbox', checked: true, value: k.dir }), k.name)));
     else if (p.arg === 'sound') { argEl = h('select', Q.SOUNDS.map(s => h('option', { value: s }, s))); }
     else if (p.arg === 'voice') { argEl = h('select', Q.VOICES.map(v => h('option', { value: v.dir }, v.name))); }
-    else if (p.arg === 'line') { argEl = h('select', h('optgroup', { label: 'Announcer lines' }, Q.LINES.map(l => h('option', { value: l }, l))), h('optgroup', { label: 'Quips' }, Q.QUIPS.map(l => h('option', { value: l }, l)))); }
+    else if (p.arg === 'line') { argEl = h('select', h('optgroup', { label: 'Announcer lines' }, Q.LINES.map(l => h('option', { value: l }, l))), h('optgroup', { label: 'Quips' }, Q.allQuips().map(l => h('option', { value: l }, l)))); }
     let arg = null;
     if (argEl) {
       const ok = await U.dialog(p.name, [h('p', p.arg === 'kits' ? 'One group per kit you tick.' : 'Pick one:'), argEl], [{ label: 'Cancel', value: false }, { label: 'Create', primary: true, value: true }]);
@@ -38,6 +38,7 @@
     if (fresh.length) Q.commit('add ' + label, () => { Q.state.groups.push(...fresh); });
     if (dup.length) U.toast((fresh.length ? 'Added ' + fresh.length + '; ' : '') + 'already in the list: ' + dup.map(g => g.name).join(', '));
     else if (!fresh.length) U.toast('Nothing to add: those sounds are not loaded');
+    else U.toast('Added ' + (fresh.length === 1 ? 'group ' + fresh[0].name + ' (' + fresh[0].members.length + ' members)' : fresh.length + ' groups: ' + fresh.map(g => g.name).join(', ')));
     const first = fresh[0] || dup[0];
     G.selId = first ? first.id : G.selId; G.plan = null; G.render();
     return fresh;
@@ -87,7 +88,7 @@
     const fill = () => {
       packs.innerHTML = ''; names.innerHTML = '';
       for (const p of (kind.value === 'voice' ? Q.VOICES : Q.KITS)) packs.append(h('option', { value: p.dir }, p.name));
-      if (kind.value === 'voice') names.append(h('optgroup', { label: 'Announcer lines' }, Q.LINES.map(n => h('option', { value: n }, n))), h('optgroup', { label: 'Quips' }, Q.QUIPS.map(n => h('option', { value: n }, n))));
+      if (kind.value === 'voice') names.append(h('optgroup', { label: 'Announcer lines' }, Q.LINES.map(n => h('option', { value: n }, n))), h('optgroup', { label: 'Quips' }, Q.allQuips().map(n => h('option', { value: n }, n))));
       else for (const n of Q.SOUNDS) names.append(h('option', { value: n }, n));
     };
     kind.onchange = fill; fill();
