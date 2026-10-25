@@ -340,6 +340,27 @@ class TestChecklistServers(unittest.TestCase):
         hs = checklist.parse("# T\n## 0. A\n```\n## no\n```\n### sub\n## 1. B ##\n")
         self.assertEqual(hs, ["0. A", "1. B"])
 
+    def test_sections(self):
+        text = ("# T\n## 0. A\n| ✓ | Check |\n|---|---|\n| ☐ | First **check** |\n| ☐ | Tag | Foundry | runs |\n"
+                "```\n- not an item\n```\n### Sub\n- a bullet\n## 1. B\ntext only\n### Sign-off record\n| Build | Date |\n")
+        secs = checklist.parse_sections(text)
+        self.assertEqual([s["heading"] for s in secs], checklist.parse(text))
+        self.assertEqual(secs[0]["items"], [{"text": "First **check**", "group": None},
+                                            {"text": "Tag · Foundry · runs", "group": None},
+                                            {"text": "a bullet", "group": "Sub"}])
+        self.assertEqual(secs[1]["items"], [])
+
+    def test_ticks_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            t = checklist.Ticks(config.Paths(PM_ROOT, tmp))
+            heads = ["0. Before", "4. Settings"]
+            for args in (("1.18.6", {"a": 1}, True), ("1.18.6", "4. Settings", "yes"), ("1.18.6", "4. Settings", None),
+                         ("1.18.6", "9. Nope", True), ("9.9.9", "4. Settings", True)):
+                with self.assertRaises(ValueError, msg=repr(args)):
+                    t.set(*args, sections=heads, newest="1.18.6")
+            self.assertEqual(t.data, {})
+            self.assertIn("Settings", t.set("1.18.5", "Settings", True, sections=heads, newest="1.18.6")["done"])
+
     def test_ticks(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = config.Paths(PM_ROOT, tmp)
@@ -835,6 +856,53 @@ class TestDerive(unittest.TestCase):
         self.assertEqual(pick(derive.derive(res, now=t0 + 2 * derive.DISAGREE_GRACE, memo=memo)), [])
         self.assertEqual(memo["disagreeSince"], {})
 
+    def test_kept_data(self):
+        """A source that fails keeps its last good data (scheduler): HALT items, in-progress entries and questions
+        stay, marked stale; the "X is down" item itself is not stale; disagreements never use kept data."""
+        halts = {"halting": [{"id": "07-q.md:a", "what": "Run `gh auth login`", "file": "07-q.md"}],
+                 "questions": [{"id": "07-q.md:b", "text": "5 or 7?"}], "inProgress": DOCS_SUMMARY["inProgress"]}
+        down = {"ok": False, "kept": True, "data": halts, "error": "Claude Manager is running but /api/summary failed (HTTP 503)",
+                "lastOkAt": "2026-10-25T01:00:00Z"}
+        d = derive.derive({"docs": down})
+        self.assertEqual(d["kept"], ["docs"])
+        self.assertEqual([(h["id"], h.get("stale")) for h in d["halting"]], [("07-q.md:a", True)])
+        self.assertEqual(d["halting"][0]["answerLink"], "http://127.0.0.1:8766/#answer=07-q.md:a")
+        self.assertEqual(len(d["inProgress"]), 4)
+        q = next(s for s in d["nextSteps"] if s["text"] == "Answer: 5 or 7?")
+        self.assertEqual((q.get("stale"), q["answerLink"]), (True, "http://127.0.0.1:8766/#answer=07-q.md:b"))
+        a = next(a for a in d["attention"] if a["source"] == "docs")
+        self.assertNotIn("stale", a)
+        self.assertIn("restart the Claude Manager", a["fix"])  # (it answers: running but failing, not "start it")
+        self.assertEqual(derive.source_fix("docs", "Claude Manager not running"), "start the Claude Manager")
+        # without kept data (or with ok data) nothing is stale
+        self.assertEqual(derive.derive({"docs": dict(down, kept=False)})["halting"], [])
+        self.assertFalse(any(h.get("stale") for h in derive.derive({"docs": env(halts)})["halting"]))
+        # kept GitHub data: the versions stay, no disagreement from it, no links into the GitHub Manager's tab
+        res = {"github": {"ok": False, "kept": True, "data": GITHUB_SUMMARY, "error": "GitHub Manager not running"},
+               "repo": env({"version": "1.18.5", "log": [], "locals": [{"name": "working-repo", "present": True, "ahead": 2}]})}
+        d = derive.derive(res)
+        self.assertEqual(d["versions"]["testing"], "1.18.6")
+        self.assertEqual(derive.disagreements(res, None), [])
+        self.assertTrue(d["localCopies"] and all(x["link"] is None for x in d["localCopies"]))
+        step = next(s for s in d["nextSteps"] if s["text"].startswith("working-repo has"))
+        self.assertEqual((step["link"], step["goto"]), (None, "local"))
+        self.assertEqual(derive.derive(dict(res, github=env(GITHUB_SUMMARY)))["localCopies"][0]["link"],
+                         "http://127.0.0.1:8767/#local=working-repo")
+
+    def test_failed_installs_grouped(self):
+        ents = [{"id": t, "name": t.title(), "state": "failed", "exitCode": 2, "note": "py -3: not found",
+                 "lastRunAt": "2026-10-25T01:0%dZ" % i} for i, t in enumerate(("docs", "map", "model"))]
+        h = derive.updates_halting({"enabled": True, "entries": ents + [{"id": "ok", "state": "ok"}]})
+        self.assertEqual(len(h), 1)
+        self.assertEqual(h[0]["title"], "3 installs failed")
+        self.assertIn("all exit 2", h[0]["what"])
+        self.assertIn("Docs, Map, Model", h[0]["blocks"])
+        self.assertEqual((h[0]["detail"], h[0]["since"]), ("all: py -3: not found", "2026-10-25T01:02Z"))
+        ents[1] = dict(ents[1], exitCode=1, note="other")
+        h = derive.updates_halting({"enabled": True, "entries": ents})
+        self.assertNotIn("all exit", h[0]["what"])
+        self.assertIsNone(h[0]["detail"])
+
     def test_with_checklist(self):
         d = {"nextSteps": [{"text": "Hand-test 1.18.6 with RELEASE_CHECKLIST", "steps": ["0. Before", "1. Install", "2. Menus"]},
                            {"text": "Other"}]}
@@ -1080,6 +1148,19 @@ class TestHistory(unittest.TestCase):
             self.assertEqual(h.update(r2, derive.derive(r2)), [])
             self.assertEqual(h.update(r, derive.derive(r)), [])
 
+    def test_kept_data_is_not_an_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = history.History(config.Paths(PM_ROOT, tmp))
+            gh = {"testing": {"version": "1.18.6", "sha": "aaaaaaa1"}}
+            res = {"github": env(gh), "repo": env({"version": "1.18.5", "log": [{"sha": "bbbbbbb2"}]}),
+                   "docs": env({"inProgress": [{"id": "x", "title": "X"}]})}
+            h.update(res, derive.derive(res))
+            # the GitHub Manager and the Claude Manager go down, keeping their data: no "testing is now", no "Finished"
+            res2 = dict(res, github={"ok": False, "kept": True, "data": gh}, docs={"ok": False, "kept": True, "data": res["docs"]["data"]})
+            self.assertEqual(h.update(res2, derive.derive(res2)), [])
+            res3 = dict(res2, docs=env({"inProgress": []}))
+            self.assertEqual([e["text"] for e in h.update(res3, derive.derive(res3))], ["Finished: X"])
+
     def test_no_duplicate_ci(self):
         with tempfile.TemporaryDirectory() as tmp:
             h = history.History(config.Paths(PM_ROOT, tmp))
@@ -1130,6 +1211,33 @@ class TestScheduler(unittest.TestCase):
             for _ in range(scheduler.RETRY_LIMIT):
                 st.runners["wait"].run_once()
             self.assertNotIn("pending", st.results()["wait"])
+
+    def test_failure_keeps_last_good_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, tmp)
+            box = {"fail": False}
+
+            def fetch(ctx):
+                if box["fail"]:
+                    raise util.SourceError("Claude Manager not running")
+                return {"halting": [1]}
+            st = scheduler.Store(paths, None, (FakeSource("docs", fetch),))
+            r = st.runners["docs"]
+            box["fail"] = True
+            r.run_once()
+            self.assertIsNone(st.results()["docs"]["data"])  # (never fetched: nothing to keep)
+            self.assertNotIn("kept", st.results()["docs"])
+            box["fail"] = False
+            r.run_once()
+            box["fail"] = True
+            r.run_once()
+            r.run_once()  # (kept across several failures)
+            env_ = st.results()["docs"]
+            self.assertEqual((env_["ok"], env_["kept"], env_["data"]), (False, True, {"halting": [1]}))
+            self.assertIsNotNone(env_["lastOkAt"])
+            box["fail"] = False
+            r.run_once()
+            self.assertNotIn("kept", st.results()["docs"])
 
     def test_rate_limits_and_oracle_persistence(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1241,8 +1349,44 @@ class TestServer(unittest.TestCase):
         self.assertEqual(self.req("/api/checklist", "POST", {"Content-Type": "text/plain"}, body)[0], 415)
         self.assertEqual(self.req("/api/checklist", "POST", js, b'{"version": "nope", "section": "x"}')[0], 400)
         self.assertEqual(self.req("/api/checklist", "POST", js, b'[1]')[0], 400)
+        for bad in ({"version": "1.18.6", "section": {"a": 1}, "done": True}, {"version": "1.18.6", "section": "1. Install", "done": "yes"},
+                    {"version": "1.18.6", "section": "7. Not in the file", "done": True}, {"version": "9.9.9", "section": "1. Install", "done": True}):
+            self.assertEqual(self.req("/api/checklist", "POST", js, json.dumps(bad).encode())[0], 400, bad)
         self.assertEqual(self.req("/api/checklist", "POST", dict(js, Origin="https://evil.example"), body)[0], 403)
         self.req("/api/checklist", "POST", js, json.dumps({"version": "1.18.6", "section": "1. Install", "done": False}).encode())
+
+    def test_slim_etag_and_checklist_items(self):
+        code, hdr, body = self.req("/api/pm")
+        d = json.loads(body)
+        self.assertEqual((d["sources"]["docs"]["data"], d["sources"]["docs"]["omitted"]), ({}, True))  # (derived has it)
+        self.assertNotIn("sections", d["sources"]["checklist"]["data"])
+        self.assertEqual(d["sources"]["checklist"]["data"]["itemCounts"], [0, 0, 0])
+        self.assertEqual(json.loads(self.req("/api/pm?raw=1")[2])["sources"]["docs"]["data"]["questions"][0]["id"], "q-14")
+        self.assertTrue(hdr["ETag"].startswith('"'))
+        self.assertLessEqual(abs(int(hdr["X-Server-Now"]) - d["serverNow"]), 0)
+        c, h2, b2 = self.req("/api/pm", headers={"If-None-Match": hdr["ETag"]})
+        if c == 200:  # (a source refreshed in between: then it is a new ETag)
+            self.assertNotEqual(h2["ETag"], hdr["ETag"])
+        else:
+            self.assertEqual((c, b2), (304, b""))
+            self.assertIn("X-Server-Now", h2)
+        self.assertEqual(self.req("/api/pm", headers={"If-None-Match": '"nope"'})[0], 200)
+        ck = json.loads(self.req("/api/checklist")[2])
+        self.assertEqual([s["heading"] for s in ck["sections"]], ["0. Before you start", "1. Install", "16. Sign-off"])
+        self.assertEqual(ck["version"], "1.18.6")
+
+    def test_install_log_and_retry_one(self):
+        logs = self.app.paths.pm("logs")
+        os.makedirs(logs, exist_ok=True)
+        with open(os.path.join(logs, "install-docs.log"), "w") as f:
+            f.write("x" * (server.LOG_MAX + 10) + "\nlast line\n")
+        code, h, body = self.req("/api/updates/log?id=docs")
+        self.assertEqual(code, 200)
+        self.assertTrue(body.endswith(b"last line\n") and body.startswith(b"[... the first"))
+        for bad in ("../x", "", "a/b", "nope"):
+            self.assertEqual(self.req("/api/updates/log?id=" + bad)[0], 404, bad)
+        if not self.app.can_retry_one():
+            self.assertEqual(self.req("/api/updates/run?id=docs", "POST")[0], 501)
 
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])
