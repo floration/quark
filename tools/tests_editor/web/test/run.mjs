@@ -290,6 +290,29 @@ try {
         await page.click("details.pick .runbtn");
         await page.waitForFunction(() => /duel/.test(document.querySelector("#runTitle").textContent) && /failed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
         ok(/only=duel/.test(await page.textContent("#runOut")) && /quark_tests: duel/.test(await page.textContent("#runTitle")), "suite: a chosen set runs as QUARK_TEST_ONLY");
+        // a group's run history: the suite runs it was in, with its own result there (not "not run here yet")
+        await go("#group/duel");
+        const hist = await page.textContent("#details .druns");
+        ok(/quark_tests \(whole suite\)/.test(hist) && /duel failed in it/.test(hist) && !/not run here yet/.test(hist), "group: suite runs that included it listed", hist);
+
+        // ---- release_check.sh: each map's last result; a map opens its screenshot and log
+        await go("#suite/script:release_check.sh");
+        ok(await page.locator("#details .mapcell").count() === 3 && await page.locator('#details .mapcell[data-map="furnace"] .cc-bad').count() === 1 && await page.locator('#details .mapcell[data-map="anvil"]:disabled').count() === 1, "maps hosted: a cell per map, failed marked, never hosted greyed");
+        ok(/1 ok, 1 failed, 1 not hosted yet/.test(await page.textContent("#details .dmaps")), "maps hosted: the count");
+        await page.click('#details .mapcell[data-map="temple"]');
+        await page.waitForFunction(() => { const i = document.querySelector(".modal img.mapshot"); return i && i.complete && i.naturalWidth > 0 && /hosting temple/.test(document.querySelector(".modal .maplog").textContent); }, null, { timeout: 5000 });
+        ok(true, "maps hosted: a map's screenshot and log");
+        await page.keyboard.press("Escape");
+        await go("#when");
+        ok(/maps hosted last time: 1 ok, 1 failed \(of 3\)/.test(await page.textContent("#lane-check")), "when: release_check's map results");
+
+        // ---- the UI test: run headless from the page, its report shown
+        await go("#suite/script:uitest.sh");
+        ok(/Run the UI test/.test(await page.textContent("#runBtn")) && /private Xvfb/.test(await page.textContent("#displayNote")) && /no report yet/.test(await page.textContent("#details .dreport")), "ui test: button, display note, no report yet");
+        await page.click("#runBtn");
+        await page.waitForFunction(() => /failed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
+        await page.waitForFunction(() => /VSYNC/.test((document.querySelector("#details .dreport") || {}).textContent || ""), null, { timeout: 5000 });
+        ok(/812 widgets on 64 screens/.test(await page.textContent("#details .dreport")) && /UNTESTED menus :: info > CREDITS/.test(await page.textContent("#details .dreport")), "ui test: the report after the run");
     }
 
     // ---- run

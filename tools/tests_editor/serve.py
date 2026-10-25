@@ -36,6 +36,14 @@ WIN = os.name == "nt"
 NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
 NEW_GROUP = 0x00000200
+# how the page runs a script beyond `bash <file>`: its arguments and env ({quark}: the game binary, {tmp}: the run's own
+# temp folder), whether it needs a display (Linux: a private Xvfb started for the run and stopped with it, else the
+# desktop's DISPLAY; Windows: a normal window) and the report it leaves. release_check.sh starts its own Xvfb.
+SCRIPT_RUN = {
+    "script:uitest.sh": {"args": ["{quark}", "{tmp}/uitest-report.json"], "display": True, "report": "uitest-report.json"},
+    "script:test_editor.sh": {"env": {"QUARK": "{quark}"}, "display": True},
+}
+MAP_LINE = re.compile(r"^map ([\w-]+) (ok|FAILED)(?: rc=(\d+))?", re.M)    # (release_check.sh, one per map hosted)
 
 
 # ---- logging: cache/serve.log (never a console window; also stderr when there is a terminal) ------------------
@@ -167,6 +175,49 @@ def find_binary(repo, cfg_bin=None):
     return None
 
 
+def find_game(repo):
+    """build/quark[.exe], else the newest build-*/quark[.exe], else None."""
+    exe = "quark.exe" if WIN else "quark"
+    p = os.path.join(repo, "build", exe)
+    if os.path.isfile(p): return p
+    alt = [q for q in glob.glob(os.path.join(repo, "build-*", exe)) if os.path.isfile(q)]
+    return max(alt, key=os.path.getmtime) if alt else None
+
+
+def start_display():
+    """(DISPLAY value or None, its Xvfb process or None, in words) for a run that needs a display."""
+    if WIN: return ":0", None, "a normal window"         # (any window works there; uitest.sh only checks DISPLAY is set)
+    xv = shutil.which("Xvfb")
+    for n in (range(100, 200) if xv else ()):             # (clear of :97, release_check.sh's, and :99, CLAUDE.md's)
+        if os.path.exists("/tmp/.X%d-lock" % n) or os.path.exists("/tmp/.X11-unix/X%d" % n): continue
+        try:
+            p = subprocess.Popen([xv, ":%d" % n, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            break
+        t = time.time() + 10
+        while time.time() < t and p.poll() is None:
+            if os.path.exists("/tmp/.X11-unix/X%d" % n): return ":%d" % n, p, "a private Xvfb :%d" % n
+            time.sleep(0.05)
+        stop_display(p)                                   # (taken meanwhile, or it never came up: the next one)
+        if time.time() >= t: break
+    if os.environ.get("DISPLAY"): return os.environ["DISPLAY"], None, "the desktop's DISPLAY=%s" % os.environ["DISPLAY"]
+    return None, None, None
+
+
+def stop_display(p):
+    if p is None or p.poll() is not None: return
+    p.terminate()
+    try: p.wait(3)
+    except subprocess.TimeoutExpired: p.kill()
+
+
+def parse_maps(text):
+    """{map: {status, rc}} from release_check.sh's "map X ok" / "map X FAILED rc=N" lines."""
+    return {m.group(1): {"status": "passed" if m.group(2) == "ok" else "failed", "rc": int(m.group(3)) if m.group(3) else (0 if m.group(2) == "ok" else None)}
+            for m in MAP_LINE.finditer(text)}
+
+
 def find_bash():
     b = shutil.which("bash")
     if b: return b
@@ -262,10 +313,12 @@ class Runs:
             if r.get("status") == "running":
                 r["status"], r["endedAt"], changed = "stopped", r.get("endedAt") or now_iso(), True
         if changed: self.save()
-        self.groups, self.gen = {}, 0
+        self.groups, self.maps, self.gen = {}, {}, 0
+        self.mdir = os.path.join(self.dir, "maps")                      # (each map's newest screenshot and log)
         try:
             with open(self.gpath, encoding="utf-8") as f: g = json.load(f)
             if isinstance(g, dict) and isinstance(g.get("groups"), dict): self.groups = g["groups"]
+            if isinstance(g, dict) and isinstance(g.get("maps"), dict): self.maps = g["maps"]
         except (OSError, ValueError):
             for r in self.hist:                                         # (first start: what the history already has)
                 self._note(r, r.get("groupTimes") or {}, r.get("groupResults") or {})
@@ -274,10 +327,16 @@ class Runs:
         os.makedirs(self.dir, exist_ok=True)
         atomic_write(self.path, json.dumps(self.hist[-RUNS_KEPT:], indent=0).encode("utf-8"))
 
-    def _note(self, rec, times, results, source=None):
-        """Fold one run's group times / results into self.groups (newest wins)."""
+    def _note(self, rec, times, results, source=None, maps=None):
+        """Fold one run's group times / results (and release_check.sh's maps) into self.groups / self.maps (newest wins)."""
         at = rec.get("endedAt") or rec.get("startedAt") or now_iso()
         src = source or "local run %s" % at
+        for n, x in (maps or {}).items():
+            e = self.maps.setdefault(n, {})
+            if (e.get("at") or "") <= at:
+                e.update(status=x["status"], rc=x.get("rc"), at=at, run=rec.get("id"), source=src)
+                for k in ("shot", "log"):
+                    if k in x: e[k] = x[k]
         for g, sec in times.items():
             e = self.groups.setdefault(g, {})
             if (e.get("timeAt") or "") <= at: e.update(sec=sec, timeAt=at, timeRun=rec.get("id"), timeSource=src)
@@ -289,20 +348,26 @@ class Runs:
 
     def save_groups(self):
         os.makedirs(self.dir, exist_ok=True)
-        atomic_write(self.gpath, json.dumps({"version": 1, "groups": self.groups}, indent=0).encode("utf-8"))
+        atomic_write(self.gpath, json.dumps({"version": 1, "groups": self.groups, "maps": self.maps}, indent=0).encode("utf-8"))
 
     def group_state(self):
         """(generation, {group: {sec, timeAt, timeRun, timeSource, status, at, run, fails, failLines}})."""
         with self.lock: return self.gen, json.loads(json.dumps(self.groups))
 
+    def map_state(self):
+        """{map: {status, rc, at, run, source, shot, log}} (shot / log: kept in cache/maps/)."""
+        with self.lock: return json.loads(json.dumps(self.maps))
+
     def import_log(self, text, name=None):
-        """Feed a run's output from elsewhere (a terminal run of build/quark_tests): its group times and results."""
+        """Feed a run's output from elsewhere (a terminal run of build/quark_tests or release_check.sh): its group times
+        and results, and its maps' results. (groups, maps) counts."""
         times, results = parse_log(text)
-        if not times and not results: return 0
+        maps = parse_maps(text)
+        if not times and not results and not maps: return 0, 0
         with self.lock:
-            self._note({"id": None, "endedAt": now_iso()}, times, results, "imported log %s%s" % (now_iso(), " (%s)" % name if name else ""))
+            self._note({"id": None, "endedAt": now_iso()}, times, results, "imported log %s%s" % (now_iso(), " (%s)" % name if name else ""), maps)
             self.save_groups()
-        return len(set(times) | set(results))
+        return len(set(times) | set(results)), len(maps)
 
     def history(self):
         with self.lock: return list(self.hist)
@@ -316,15 +381,25 @@ class Runs:
     def log_path(self, rid):
         return os.path.join(self.dir, "runs", rid + ".log")
 
-    def start(self, cmd, argv, cwd, group=None, extra=None, env_add=None):
+    def start(self, cmd, argv, cwd, group=None, extra=None, env_add=None, display=False):
+        """display: give the run a display (start_display; its Xvfb stops with the run). "{tmp}" in argv / env_add is
+        the run's own temp folder."""
         with self.lock:
             if self.cur: return None, self.cur["rec"]["id"]
             rid = time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-" + os.urandom(2).hex()
             os.makedirs(os.path.join(self.dir, "runs"), exist_ok=True)
             tmp = os.path.join(self.dir, "tmp", rid)
             os.makedirs(tmp, exist_ok=True)
-            env = dict(os.environ, TMPDIR=tmp, TMP=tmp, TEMP=tmp, PYTHONUNBUFFERED="1", **(env_add or {}))
+            sub = lambda v: os.path.normpath(v.replace("{tmp}", tmp)) if "{tmp}" in v else v
+            argv = [sub(a) for a in argv]
+            env = dict(os.environ, TMPDIR=tmp, TMP=tmp, TEMP=tmp, PYTHONUNBUFFERED="1", **{k: sub(v) for k, v in (env_add or {}).items()})
+            xvfb, shown = None, None
+            if display:
+                d, xvfb, shown = start_display()
+                if d: env["DISPLAY"] = d
             out = open(self.log_path(rid), "wb")
+            if display:                                                 # (the first line says where it draws)
+                out.write(("(tests editor: %s)\n" % ("display: " + shown if shown else "no display here (no Xvfb, no DISPLAY)")).encode()); out.flush()
             kw = {}
             if WIN:
                 kw["creationflags"] = BELOW_NORMAL | NO_WINDOW | NEW_GROUP
@@ -336,13 +411,15 @@ class Runs:
                                         stdin=subprocess.DEVNULL, **kw)
             except OSError as e:
                 out.close()
+                stop_display(xvfb)
                 return None, "cannot start: %s" % e
             rec = {"id": rid, "cmd": cmd, "argv": argv, "status": "running", "exit": None, "startedAt": now_iso(),
                    "endedAt": None, "sec": None, "pid": proc.pid, "group": group}
+            if display: rec["display"] = shown
             rec.update(extra or {})
             self.hist.append(rec)
             self.hist = self.hist[-RUNS_KEPT:]
-            self.cur = {"rec": rec, "proc": proc, "stopping": False, "t0": time.time(), "out": out, "tmp": tmp}
+            self.cur = {"rec": rec, "proc": proc, "stopping": False, "t0": time.time(), "out": out, "tmp": tmp, "xvfb": xvfb}
             self.save()
         threading.Thread(target=self._wait, args=(self.cur,), daemon=True).start()
         log("run %s: %s (pid %d)" % (rid, " ".join(argv), proc.pid))
@@ -350,6 +427,7 @@ class Runs:
 
     def _wait(self, cur):
         code = cur["proc"].wait()
+        stop_display(cur.get("xvfb"))
         cur["out"].close()
         sec = round(time.time() - cur["t0"], 1)
         rec = cur["rec"]
@@ -362,6 +440,7 @@ class Runs:
             pass
         group = rec.get("group")
         times, results = parse_log(text, group)
+        maps = {}
         if rec["cmd"] == "script:release_check.sh":                     # (its groups' own logs: their FAIL lines)
             for lp in glob.glob(os.path.join(cur["tmp"], "quark_release_check.*", "*.log")):
                 g = os.path.basename(lp)[:-4]
@@ -370,7 +449,14 @@ class Runs:
                         with open(lp, encoding="utf-8", errors="replace") as f: results[g]["failLines"] = parse_log(f.read(), g)[1][g]["failLines"]
                     except OSError:
                         pass
-        status = "stopped" if cur["stopping"] else ("passed" if code == 0 else "failed")
+            maps = self._keep_maps(parse_maps(text), cur["tmp"])
+        status = "stopped" if cur["stopping"] else ("passed" if code == 0 else "skipped" if code == rec.get("skipCode") else "failed")
+        if rec.get("report"):                                           # (the UI test's report.json, kept beside the log)
+            try:
+                shutil.copyfile(os.path.join(cur["tmp"], rec["report"]), self.log_path(rec["id"])[:-4] + ".report.json")
+                rec["hasReport"] = True
+            except OSError:
+                pass
         if group:
             if status == "stopped": times, results = {}, {}             # (stopped: not a time, not a result)
             else:
@@ -380,8 +466,8 @@ class Runs:
             rec.update(exit=code, endedAt=now_iso(), sec=sec, status=status)
             if times: rec["groupTimes"] = times                         # (a stopped suite run: the groups that finished)
             if results: rec["groupResults"] = {g: {"status": x["status"], "fails": x["fails"]} for g, x in results.items()}
-            if times or results:
-                self._note(rec, times, results)
+            if times or results or maps:
+                self._note(rec, times, results, maps=maps)
                 self.save_groups()
             self.cur = None
             self.save()
@@ -396,12 +482,35 @@ class Runs:
         except OSError:
             return
         for d in ds[:-5]: shutil.rmtree(os.path.join(root, d), ignore_errors=True)
-        logs = sorted(glob.glob(os.path.join(self.dir, "runs", "*.log")))
+        logs = sorted(glob.glob(os.path.join(self.dir, "runs", "*.log")) + glob.glob(os.path.join(self.dir, "runs", "*.report.json")))
         keep = {r["id"] for r in self.hist}
         for p in logs:
-            if os.path.basename(p)[:-4] not in keep:
+            if os.path.basename(p).split(".", 1)[0] not in keep:
                 try: os.remove(p)
                 except OSError: pass
+
+    def _keep_maps(self, maps, tmp):
+        """Copy each hosted map's screenshot and log out of the run's temp folder (only the last 5 runs keep theirs)
+        into cache/maps/<map>.png / .log; marks which ones it has."""
+        os.makedirs(self.mdir, exist_ok=True)
+        for n, x in maps.items():
+            for k, src, dst in (("shot", n + ".png", n + ".png"), ("log", n + ".map.log", n + ".log")):
+                found = glob.glob(os.path.join(tmp, "quark_release_check.*", src))
+                x[k] = False
+                if found:
+                    try: shutil.copyfile(found[0], os.path.join(self.mdir, dst)); x[k] = True
+                    except OSError: pass
+                elif os.path.exists(os.path.join(self.mdir, dst)):     # (not this run's: an old one would mislead)
+                    try: os.remove(os.path.join(self.mdir, dst))
+                    except OSError: pass
+        return maps
+
+    def report(self, rid):
+        """The UI test report a run left (parsed JSON), or None."""
+        try:
+            with open(self.log_path(rid)[:-4] + ".report.json", encoding="utf-8") as f: return json.load(f)
+        except (OSError, ValueError):
+            return None
 
     def stop(self, rid):
         with self.lock:
@@ -594,13 +703,23 @@ class App:
             return 400, {"error": "groups must be a list of group names"}
         if (args and not cmd.startswith("cmd:")) or (groups and cmd != "suite"):
             return 400, {"error": "args go with cmd:<name>, groups with suite"}
-        extra, env, group = {}, None, None
+        extra, env, group, display = {}, None, None, False
         if cmd.startswith("script:"):
             s = next((s for s in m["suites"] if s["id"] == cmd and s["kind"] == "script"), None)
             if not s: return 404, {"error": "no such script", "cmd": cmd}
             bash = find_bash()
             if not bash: return 404, {"error": "no bash (install Git for Windows)"}
-            argv = [bash, s["file"]]
+            how = SCRIPT_RUN.get(cmd, {})
+            game = find_game(self.repo)
+            if not game and any("{quark}" in v for v in how.get("args", []) + list(how.get("env", {}).values())):
+                return 404, {"error": "no game build (build/quark): build quark first"}
+            q = lambda v: v.replace("{quark}", game or "")
+            argv = [bash, s["file"]] + [q(a) for a in how.get("args", [])]
+            env = {k: q(v) for k, v in how.get("env", {}).items()} or None
+            display = bool(how.get("display"))
+            if how.get("report"): extra["report"] = how["report"]
+            if any(re.search(r"^\s*[^#]*\bexit 77\b", st["text"], re.M) for st in s.get("items") or []):
+                extra["skipCode"] = 77                                  # (it skips itself, as ctest's SKIP_RETURN_CODE)
         else:
             if cmd.startswith(("group:", "cmd:")) and cmd not in items: return 404, {"error": "no such test", "cmd": cmd}
             if not cmd.startswith(("group:", "cmd:")) and cmd not in ("groups", "suite"): return 400, {"error": "unknown cmd", "cmd": cmd}
@@ -630,7 +749,7 @@ class App:
                 if args: extra["args"] = args
             else:
                 argv = [b, "groups"]
-        rec, err = self.runs.start(cmd, argv, self.repo, group, extra, env)
+        rec, err = self.runs.start(cmd, argv, self.repo, group, extra, env, display)
         if not rec:
             if err and err.startswith("cannot"): return 500, {"error": err}
             return 409, {"error": "busy", "running": err}
@@ -654,6 +773,7 @@ class App:
             except ValueError:
                 pass
         return 200, {"id": rid, "cmd": r["cmd"], "args": r.get("args"), "only": r.get("only"), "groupResults": r.get("groupResults"),
+                     "display": r.get("display"), "hasReport": r.get("hasReport", False),
                      "status": r["status"], "exit": r["exit"], "startedAt": r["startedAt"],
                      "endedAt": r["endedAt"], "sec": sec, "output": data.decode("utf-8", "replace"), "size": size,
                      "from": frm, "next": frm + len(data), "more": frm + len(data) < size, "groupTimes": r.get("groupTimes")}
@@ -687,6 +807,28 @@ class App:
         val = {"available": True, "jobs": jobs, "polledAt": (state.get("poll") or {}).get("lastOk")}
         self.ci_cache = (time.time(), val)
         return val
+
+    def maps(self):
+        """Each map's last release_check.sh result, and every map in the working copy's maps/ (hosted or not)."""
+        known = sorted(os.path.basename(p)[:-5] for p in glob.glob(os.path.join(self.repo, "maps", "*.qmap")))
+        return {"maps": self.runs.map_state(), "known": known}
+
+    def map_file(self, name, kind):
+        """(bytes, content type) of a map's kept screenshot / log, or None."""
+        if not re.match(r"^[\w-]{1,64}$", name or "") or kind not in ("shot", "log"): return None
+        p = os.path.join(self.runs.mdir, name + (".png" if kind == "shot" else ".log"))
+        try:
+            with open(p, "rb") as f: b = f.read()
+        except OSError:
+            return None
+        return b, "image/png" if kind == "shot" else "text/plain; charset=utf-8"
+
+    def env(self):
+        """What this machine can run: the page shows it beside a script's Run button."""
+        g = find_game(self.repo)
+        return {"win": WIN, "xvfb": bool(not WIN and shutil.which("Xvfb")), "display": bool(WIN or os.environ.get("DISPLAY")),
+                "bash": bool(find_bash()), "quark": os.path.relpath(g, self.repo).replace("\\", "/") if g else None,
+                "scripts": {k: {"display": bool(v.get("display")), "report": bool(v.get("report"))} for k, v in SCRIPT_RUN.items()}}
 
     def summary(self):
         m, _, _ = self.model()
@@ -809,9 +951,18 @@ def make_handler(app, port):
                     except ValueError: frm = 0
                     return self._json(*app.run_status(q.get("id", ""), frm))
                 if path == "/api/runs":
-                    return self._json(200, [{k: r.get(k) for k in ("id", "cmd", "status", "exit", "startedAt", "endedAt", "sec", "args", "only", "groupResults")}
+                    return self._json(200, [{k: r.get(k) for k in ("id", "cmd", "status", "exit", "startedAt", "endedAt", "sec", "args", "only", "groupResults", "hasReport", "display")}
                                             for r in reversed(app.runs.history())])
                 if path == "/api/ci": return self._json(200, app.ci())
+                if path == "/api/maps": return self._json(200, app.maps())
+                if path == "/api/map-file":
+                    hit = app.map_file(q.get("name", ""), q.get("kind", ""))
+                    if not hit: return self._json(404, {"error": "no such file"})
+                    return self._send(200, hit[0], hit[1], headers={"Cache-Control": "no-cache"})
+                if path == "/api/run/report":
+                    rep_ = app.runs.report(q.get("id", ""))
+                    return self._json(200, rep_) if rep_ is not None else self._json(404, {"error": "no report"})
+                if path == "/api/env": return self._json(200, app.env())
                 if path == "/api/summary": return self._json(200, app.summary())
                 if path == "/api/health": return self._json(200, {"ok": True, "version": VERSION, "repo": app.repo, "tool": "tests-editor"})
                 if path.startswith("/api/"): return self._json(404, {"error": "no such endpoint"})
@@ -852,7 +1003,8 @@ def make_handler(app, port):
                 if path == "/api/import-log":
                     text = body.get("text")
                     if not isinstance(text, str): return self._json(400, {"error": "text must be a string"})
-                    return self._json(200, {"ok": True, "groups": app.runs.import_log(text, str(body.get("name") or "")[:80] or None)})
+                    ng, nm = app.runs.import_log(text, str(body.get("name") or "")[:80] or None)
+                    return self._json(200, {"ok": True, "groups": ng, "maps": nm})
                 if path == "/api/run/stop":
                     ok = app.runs.stop(body.get("id", ""))
                     return self._json(200 if ok else 404, {"ok": ok} if ok else {"error": "not running"})

@@ -25,4 +25,8 @@ export const api = {
     runs: () => call("GET", "/api/runs"),
     ci: () => call("GET", "/api/ci"),
     summary: () => call("GET", "/api/summary"),
+    env: () => call("GET", "/api/env"),                          // what this machine can run (Xvfb, a display, build/quark)
+    maps: () => call("GET", "/api/maps"),                        // each map's last release_check.sh result
+    report: (id) => call("GET", "/api/run/report?id=" + q(id)),   // the UI test report a run left
+    mapFile: (name, kind) => `/api/map-file?name=${q(name)}&kind=${q(kind)}`,   // (a URL: kind "shot" | "log")
 };

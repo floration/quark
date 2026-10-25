@@ -68,6 +68,11 @@ function stepsCard(app, suite, whys) {
         chain.append(b);
     });
     c.append(chain);
+    if (suite.id === "script:release_check.sh" && app.maps) {   // (its map check: the last result of each map)
+        const res = Object.values(app.maps.maps || {}), bad = res.filter((x) => x.status === "failed").length;
+        const n = (app.maps.known || []).length || res.length;
+        if (res.length || n) c.append(el("div", "small " + (bad ? "warn" : "muted"), res.length ? `maps hosted last time: ${res.length - bad} ok, ${bad} failed (of ${n})` : `${n} maps, none hosted by it yet`));
+    }
     return c;
 }
 

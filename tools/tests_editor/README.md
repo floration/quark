@@ -54,9 +54,14 @@ the file had them. It never commits, pushes or changes git state.
 
 Runs (one at a time, low priority, no window): `build/quark_tests` (the whole suite, or `QUARK_TEST_ONLY=a,b`),
 `build/quark_tests group NAME`, `build/quark_tests NAME [args]`, `tools/release_check.sh` (needs bash: Git for
-Windows). Commands that write files into the working copy (exportassets, export*) are not run from the page. The binary is `build/quark_tests[.exe]`,
+Windows), the UI test (`tools/uitest.sh build/quark <report>`, about 10-15 minutes) and `tools/test_editor.sh`
+(`QUARK=build/quark`). The last two need a display: on Linux the server starts a private Xvfb (:100 and up) for the
+run and stops it with the run (else it uses the desktop's DISPLAY); on Windows the game opens a normal window. A
+script's exit 77 (no display) shows as skipped. The UI test's report is kept beside the run's log and shown under
+the script. Each map release_check.sh hosts keeps its last result, screenshot and log (`cache/maps/`), shown as
+"Maps hosted" under release_check.sh. Commands that write files into the working copy (exportassets, export*) are not run from the page. The binary is `build/quark_tests[.exe]`,
 else the newest `build-*/quark_tests[.exe]`, else `quark_tests` from the config. Output: `cache/runs/<id>.log`,
-history `cache/runs.json` (last 500), each group's newest time and result `cache/groups.json`; each run gets its own temp folder (`cache/tmp/<id>`, last 5 kept). Stop ends
+history `cache/runs.json` (last 500), each group's newest time and result (and each map's) `cache/groups.json`; each run gets its own temp folder (`cache/tmp/<id>`, last 5 kept). Stop ends
 the run and everything it started (by its process id).
 
 ## tests_editor.json (beside serve.py; see tests_editor.example.json)

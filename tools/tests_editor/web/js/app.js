@@ -50,12 +50,14 @@ class App {
     }
 
     async start() {
-        const r = await api.model();
+        const [r, env] = await Promise.all([api.model(), api.env()]);   // (in parallel: no extra round trip)
+        if (env.ok) this.env = env.data;
         if (!r.ok) { $("tree").innerHTML = `<div class="err pad">${esc((r.data && r.data.error) || "no model")}</div>`; $("main").classList.add("nomodel"); return; }
         this.setModel(r.data, true);
         this.route();
         api.ci().then((c) => { if (c.ok) { this.ci = c.data; this._afterCi(); } });
         this.loadRuns();
+        this.loadMaps();
         setInterval(() => { if (!document.hidden) this.pollModel(); }, POLL_MODEL_MS);
         setInterval(() => { if (!document.hidden) api.ci().then((c) => { if (c.ok) { this.ci = c.data; this._afterCi(); } }); }, POLL_CI_MS);
         setInterval(() => { if (!document.hidden) this.checkDisk(); }, 30000);
@@ -518,18 +520,95 @@ class App {
             filter = "cmd:" + it.name;
             if (it.run && it.run.byHand) d.append(el("div", "dline small muted", "Not run from here: " + it.run.byHand + "."));
             else this._argsRunner(d, it, btn);
-        } else if (su && su.kind === "script") {
+        } else if ((su && su.kind === "script") || (it && it.script && this.ix.suites.get(it.script))) {   // (a script, or ctest's uitest entry)
+            const ss = su && su.kind === "script" ? su : this.ix.suites.get(it.script);
+            const sc = ((this.env || {}).scripts || {})[ss.id] || {};
             d.append(h);
             const r = el("div", "runrow");
-            r.append(btn("▶ Run " + su.title, () => this.startRun(su.id)), el("span", "muted small", su.id === "script:release_check.sh" ? "every group, then every map: minutes" : "low priority"));
+            const label = ss.id === "script:uitest.sh" ? "▶ Run the UI test (quark --uitest)" : "▶ Run " + ss.title;
+            const note = { "script:release_check.sh": "every group, then every map: minutes", "script:uitest.sh": "every button in the game: 10-15 min, low priority" }[ss.id] || "low priority";
+            r.append(btn(label, () => this.startRun(ss.id)), el("span", "muted small", note));
             d.append(r);
-            filter = su.id;
+            if (sc.display) d.append(this._displayNote(ss));
+            filter = ss.id;
+            if (ss.id === "script:release_check.sh") { d.append(el("h3", null, "Maps hosted")); this._mapsBox = el("div", "dmaps"); d.append(this._mapsBox); this._fillMaps(); }
+            if (sc.report) { d.append(el("h3", null, "Last UI test report")); this._reportBox = el("div", "dreport"); d.append(this._reportBox); this._fillReport(); }
         }
         if (!filter) { this._runsBox = null; return; }
         this._runsBox = el("div", "druns");
         this._runsBox.dataset.cmd = filter;
         d.append(this._runsBox);
         this._fillRuns();
+    }
+    // a script that needs a display: its own words, then what this machine will do (env from GET /api/env)
+    _displayNote(ss) {
+        const own = ((ss.about || "").match(/[^.;\n(]*needs a display[^.;\n)]*/i) || ["needs a display"])[0].trim();
+        const e = this.env;
+        const none = e && !e.win && !e.xvfb && !e.display;
+        const how = !e ? "" : e.win ? "here it opens a normal game window" : e.xvfb ? "here it runs headless, under a private Xvfb started for the run" : e.display ? "here it uses your desktop's display (no Xvfb installed)" : "no Xvfb and no display here: install Xvfb (apt install xvfb), or it skips / fails";
+        const n = el("div", "dline small " + (none || (e && !e.quark) ? "warn" : "muted"), own.charAt(0).toUpperCase() + own.slice(1) + (how ? ": " + how : "") + (e && !e.quark ? " · no build/quark yet: build the game first" : ""));
+        n.id = "displayNote";
+        return n;
+    }
+    // release_check.sh's map check: each map's last result (from the "map X ok / FAILED" lines), its screenshot and log
+    async loadMaps() { const r = await api.maps(); if (r.ok) { this.maps = r.data; this._fillMaps(); if (this.sel && this.sel.kind === "when") renderWhen($("vWhen"), this); } }
+    _fillMaps() {
+        const box = this._mapsBox;
+        if (!box || !box.isConnected) return;
+        box.textContent = "";
+        if (!this.maps) { box.append(el("div", "muted small", "loading…")); return; }
+        const res = this.maps.maps || {};
+        const names = [...new Set([...(this.maps.known || []), ...Object.keys(res)])].sort();
+        if (!names.length) { box.append(el("div", "muted small", "no maps in maps/ yet (they're made by the build)")); return; }
+        const ok = names.filter((n) => res[n] && res[n].status === "passed").length, bad = names.filter((n) => res[n] && res[n].status === "failed").length;
+        box.append(el("div", "dline small " + (bad ? "warn" : "muted"), `last check: ${ok} ok, ${bad} failed, ${names.length - ok - bad} not hosted yet · click a map for its screenshot and log`));
+        const grid = el("div", "mapgrid");
+        for (const n of names) {
+            const x = res[n];
+            const c = el("button", "mapcell");
+            c.dataset.map = n;
+            c.append(el("i", "dot cc-" + (!x ? "none" : x.status === "passed" ? "ok" : "bad")), document.createTextNode(n));
+            c.title = x ? `${x.status}${x.rc ? " (rc=" + x.rc + ")" : ""} · ${dallas(x.at)}${x.source && /^imported/.test(x.source) ? " · imported log" : ""}` : "not hosted by release_check.sh yet";
+            if (x) c.onclick = () => this._showMap(n, x); else c.disabled = true;
+            grid.append(c);
+        }
+        box.append(grid);
+    }
+    async _showMap(n, x) {
+        const body = el("div", "mapshow");
+        body.append(el("div", "small " + (x.status === "passed" ? "muted" : "err"), `${x.status}${x.rc ? " · rc=" + x.rc : ""} · ${dallas(x.at)}${x.run ? " · run " + x.run : ""}`));
+        if (x.shot) { const img = el("img", "mapshot"); img.alt = n + " screenshot"; img.src = api.mapFile(n, "shot") + "&t=" + encodeURIComponent(x.at || ""); body.append(img); }
+        else body.append(el("div", "muted small", "no screenshot from that run"));
+        if (x.log) {
+            const pre = el("pre", "dpre mono small maplog", "…");
+            body.append(pre);
+            fetch(api.mapFile(n, "log")).then((r) => r.text()).then((t) => { pre.textContent = t.length > 20000 ? "…" + t.slice(-20000) : t || "(empty log)"; });
+        }
+        await modal({ title: "map " + n, body, wide: true, buttons: [{ label: "Close", value: null, cls: "primary" }] });
+    }
+    // the UI test: the newest report a run left (cache/runs/<id>.report.json)
+    async _fillReport() {
+        const box = this._reportBox;
+        if (!box || !box.isConnected) return;
+        const run = this.runs.find((r) => r.cmd === "script:uitest.sh" && r.hasReport);
+        if (!run) { box.textContent = ""; box.append(el("div", "muted small", "no report yet: run the UI test")); return; }
+        if (!this._report || this._report.id !== run.id) {
+            const r = await api.report(run.id);
+            this._report = { id: run.id, data: r.ok ? r.data : null };
+            if (this._reportBox !== box) return;
+        }
+        box.textContent = "";
+        const x = this._report.data;
+        if (!x) { box.append(el("div", "muted small", "the report of run " + run.id + " can't be read")); return; }
+        const pass = x.result === "pass";
+        const head = el("div", "dline");
+        head.append(el("i", "dot cc-" + (pass ? "ok" : "bad")), el("b", null, " " + (pass ? "passed" : "failed")), el("span", "muted small", ` · ${x.widgets} widgets on ${x.screens} screens · ${x.passed} passed, ${x.failed} failed, ${x.untested} never tested · ${secs(x.seconds)} · ${dallas(run.startedAt)}`));
+        box.append(head);
+        const issues = [...(x.failures || []).map((f) => `FAIL ${f.scenario} :: ${f.screen} > ${f.widget} [${f.kind}, ${f.expects}]: ${f.why}`),
+                        ...(x.untested_widgets || []).map((f) => `UNTESTED ${f.scenario} :: ${f.screen} > ${f.widget} [${f.expects}]`),
+                        ...(x.layout || []).map((t) => "LAYOUT " + t), ...(x.esc || []).map((t) => "ESC " + t), ...(x.setup || []).map((t) => "SETUP " + t)];
+        for (const t of issues.slice(0, 30)) { const r = el("div", "fline"); r.append(el("span", "mono small", clip(t, 300))); box.append(r); }
+        if (issues.length > 30) box.append(el("div", "muted small", `…and ${issues.length - 30} more in the report (open the run's output)`));
     }
     // quark_tests: the whole suite, the failed groups again, or a chosen set (QUARK_TEST_ONLY)
     _suiteRunner(d, btn) {
@@ -577,8 +656,10 @@ class App {
             const r2 = await api.importLog(await f.text(), f.name);
             file.value = "";
             if (!r2.ok) { toast("import failed: " + ((r2.data && r2.data.error) || r2.status), true); return; }
-            toast(r2.data.groups ? `imported ${r2.data.groups} group${r2.data.groups > 1 ? "s" : ""} from ${f.name}` : "no '(group X: N s)' lines in " + f.name, !r2.data.groups);
+            const ng = r2.data.groups, nm = r2.data.maps || 0;
+            toast(ng || nm ? `imported ${[ng ? ng + " group" + (ng > 1 ? "s" : "") : "", nm ? nm + " map" + (nm > 1 ? "s" : "") : ""].filter(Boolean).join(" and ")} from ${f.name}` : "no '(group X: N s)' or 'map X ok' lines in " + f.name, !ng && !nm);
             this.pollModel();
+            if (nm) this.loadMaps();
         };
         imp.onclick = () => file.click();
         const ir = el("div", "dline");
@@ -758,7 +839,7 @@ class App {
     }
 
     // ---------------------------------------------------------------- runs
-    async loadRuns() { const r = await api.runs(); if (r.ok && Array.isArray(r.data)) { this.runs = r.data; this._fillRuns(); const cur = r.data.find((x) => x.status === "running"); if (cur && !this.run) this._follow(cur.id, cur); } }
+    async loadRuns() { const r = await api.runs(); if (r.ok && Array.isArray(r.data)) { this.runs = r.data; this._fillRuns(); this._fillReport(); const cur = r.data.find((x) => x.status === "running"); if (cur && !this.run) this._follow(cur.id, cur); } }
     runLabel(r) {
         const c = r.cmd || "";
         if (c === "suite") return r.only && r.only.length ? "quark_tests: " + clip(r.only.join(", "), 60) : "quark_tests (whole suite)";
@@ -772,13 +853,16 @@ class App {
         if (!box) return;
         box.textContent = "";
         const cmd = box.dataset.cmd;
-        const list = this.runs.filter((r) => !cmd || r.cmd === cmd).slice(0, 8);
+        const g = cmd && cmd.startsWith("group:") ? cmd.slice(6) : null;   // (a group: its own runs, and the suite / release_check runs it was in)
+        const list = this.runs.filter((r) => !cmd || r.cmd === cmd || (g && r.groupResults && r.groupResults[g])).slice(0, 8);
         if (!list.length) { box.append(el("div", "muted small", cmd ? "not run here yet" : "none yet")); return; }
         for (const r of list) {
             const row = el("div", "runh link");
             const gr = r.groupResults ? Object.values(r.groupResults) : [];
             const bad = gr.filter((x) => x.status === "failed").length;
-            row.append(el("i", "dot cc-" + (r.status === "passed" ? "ok" : r.status === "failed" ? "bad" : r.status === "running" ? "run" : "skip")), el("span", "small", this.runLabel(r)), el("span", "small muted", dallas(r.startedAt) + (r.sec ? " · " + secs(r.sec) : "") + " · " + r.status + (gr.length > 1 ? ` · ${gr.length - bad}/${gr.length} groups passed` : "")));
+            const mine = g && r.cmd !== cmd ? r.groupResults[g] : null;
+            const st = mine ? mine.status : r.status;
+            row.append(el("i", "dot cc-" + (st === "passed" ? "ok" : st === "failed" ? "bad" : st === "running" ? "run" : "skip")), el("span", "small", this.runLabel(r)), el("span", "small muted", dallas(r.startedAt) + (r.sec ? " · " + secs(r.sec) : "") + " · " + (mine ? g + " " + mine.status + " in it" : r.status + (gr.length > 1 ? ` · ${gr.length - bad}/${gr.length} groups passed` : ""))));
             row.onclick = () => this._follow(r.id, r, true);
             box.append(row);
         }
@@ -818,6 +902,7 @@ class App {
             if (this.run.partial) { this._appendOut("\n"); }   // (the last line had no newline)
             $("runStop").disabled = true;
             this.loadRuns();
+            if (!past && x.cmd === "script:release_check.sh") this.loadMaps();   // (its "map X ok / FAILED" lines)
             if (!past) this.pollModel();   // (a finished run feeds each group's time and result)
         };
         tick();

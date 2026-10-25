@@ -93,7 +93,7 @@ exportassets, export*; the tests' own bot process) gets 403.
 Runs locally in the working copy, low priority (Windows: BELOW_NORMAL + no window; Linux: nice 10), one at a time
 (409 if one is running). The test binary is found at `build/quark_tests[.exe]`, else `build-*/quark_tests[.exe]`
 (newest), else `quark_tests` in `tests_editor.json`; 404 `{"error": "no build"}` if none.
-## GET /api/run?id=<id>&from=<byte> -> {"id", "cmd", "args", "only", "status": "running" | "passed" | "failed" | "stopped", "exit", "startedAt", "endedAt", "sec", "output" (from byte `from`), "size", "groupResults"}
+## GET /api/run?id=<id>&from=<byte> -> {"id", "cmd", "args", "only", "status": "running" | "passed" | "failed" | "stopped" | "skipped", "exit", "startedAt", "endedAt", "sec", "output" (from byte `from`), "size", "groupResults"}
 ## POST /api/run/stop {"id"}
 ## GET /api/runs -> [{"id", "cmd", "args", "only", "status", "exit", "startedAt", "endedAt", "sec", "groupResults"}]   (local history, cache/runs.json, last 500)
 Every finished run feeds `cache/groups.json` (the tool's data folder, kept across updates): per group its newest time,
@@ -101,7 +101,19 @@ from the `(group X: N s)` lines of the whole suite, `group X: N s` of one group 
 release_check.sh, and its newest result (passed / failed, its FAIL lines; release_check.sh: from the group's own log).
 A stopped suite run keeps the groups that finished; a stopped single group gives nothing. That file is
 `item.timing` (it beats the release-tests notes) and `item.lastRun`.
-## POST /api/import-log {"text", "name"?} -> {"ok", "groups": n}
+`script:<name>`: `bash tools/<name>` plus, for uitest.sh, `build/quark[.exe] <run temp>/uitest-report.json` and for
+test_editor.sh `QUARK=build/quark` (404 `no game build` without one); those two get a display (Linux: a private Xvfb
+started for the run, its DISPLAY, stopped with the run; else the desktop's DISPLAY; Windows: `DISPLAY=:0`, a normal
+window). The run's first output line says which. A script with `exit 77` in its code gets status `skipped` on exit 77.
+Run records also have `display` (in words) and `hasReport`.
+## GET /api/run/report?id=<id> -> the UI test's report.json (docs/UI_TEST.md) that run left (404 none)
+## GET /api/maps -> {"maps": {"<map>": {"status": "passed" | "failed", "rc", "at", "run", "source", "shot": bool, "log": bool}}, "known": ["<map>", ...]}
+Each map's newest result from release_check.sh's `map X ok` / `map X FAILED rc=N` lines (a run from the page, or an
+imported log); `known` = the working copy's maps/*.qmap. Kept in `cache/groups.json` (`maps`), screenshot and log in
+`cache/maps/<map>.png` / `.log`.
+## GET /api/map-file?name=<map>&kind=shot|log -> the PNG / the log text (404 none)
+## GET /api/env -> {"win", "xvfb", "display", "bash", "quark": "build/quark" | null, "scripts": {"script:uitest.sh": {"display", "report"}}}
+## POST /api/import-log {"text", "name"?} -> {"ok", "groups": n, "maps": n}
 The output of a run made elsewhere (`build/quark_tests > log.txt` in a terminal): its group times and results go into
 `cache/groups.json` as above ("imported log <time>").
 
