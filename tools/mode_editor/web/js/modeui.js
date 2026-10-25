@@ -149,11 +149,15 @@ export class ModePage {
             const r = await api.mode(name);
             text = r.text; meta = { mtime: r.mtime, sha256: r.sha256 };
         }
+        this._adoptText(name, builtin, text, meta, quiet);
+    }
+    // a mode's text into the page; logic that doesn't parse is kept as text: the key lines are known, the logic goes to
+    // the Code view as a draft (its error at line:col)
+    _adoptText(name, builtin, text, meta, quiet) {
         let m;
         try { m = loadModeText(text, (b) => this.app.defaultFor(b), builtin ? name : null); }
         catch (e) {
             if (!(e instanceof ModeError)) throw e;
-            // keep it as text: the key lines are known, the logic goes to the Code view as a draft
             this._adopt(name, builtin, text, meta, loadModeText(patchQmode(text, {}, ""), (b) => this.app.defaultFor(b)));
             this.codeText = splitQmode(text).logicText; $("codeTa").value = this.codeText; this._codeEdited(false);
             if (!quiet) this.app.toast(`${name}.qmode's logic doesn't parse (${e.message}): it's in the Code view`, 8000);
@@ -719,11 +723,19 @@ export class ModePage {
         $("modeUpload").onclick = async () => {
             const f = await this.app.pickFile(".qmode,.txt");
             if (!f) return;
+            // its name: the file's, unless that's a built-in mode's or one of yours (then asked for, as Save as would)
+            let name = f.name.replace(/\.qmode$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[_.-]+/, "").slice(0, 64) || "uploaded";
+            const problem = (n) => this.app.modeNameProblem(n) || (this.app.userModes.some((u) => u.name.toLowerCase() === n.toLowerCase()) ? `${n}.qmode is one of your modes already: open it from the list, or pick another name.` : null);
+            if (problem(name)) {
+                let alt = "my" + name;
+                for (let k = 2; problem(alt) && k < 100; k++) alt = `my${name}${k}`;
+                name = await this.app.prompt(`Open ${f.name}`, alt, `${problem(name)} The file opens under this name (nothing is written until you save).`, problem);
+                if (!name) return;
+            }
             try {
-                const m = loadModeText(f.text, (b) => this.app.defaultFor(b));
-                const name = f.name.replace(/\.qmode$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[_.-]+/, "") || "uploaded";
-                this._adopt(name, false, f.text, null, m);
-                this.fileText = null; this.savedSig = null; this._fillSel(); this._modeInfo();
+                this._adoptText(name, false, f.text, null, false);   // (logic that doesn't parse: a Code view draft, as open() keeps it)
+                if (this.currentKeys().custommode !== name) this.keySet = { ...this.keySet, custommode: name };   // (the in-game name follows the file's)
+                this.fileText = null; this.savedSig = null; this._fillSel(); this._modeInfo(); this._persist();
             } catch (e) { this.app.toast("Can't read it: " + e.message, 6000); }
         };
         $("modeResetAll").onclick = () => this.resetAll();
