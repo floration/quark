@@ -393,6 +393,60 @@ class WriterTests(unittest.TestCase):
         ok = self.w.save("14-pass-two.md", rep, rep + "\nOne more line.\n")                    # a report itself can still be edited
         self.assertTrue(ok["ok"] and ok["pushed"])
 
+    def test_set_status(self):
+        n = "06-things-to-tell-the-user.md"
+        git(self.r.other, "pull", "-q")
+        wr(os.path.join(self.r.other, n), "# Tell\n\n## News\n\n- **Shipped 1.18.32.** On testing. _2026-10-24, Tweak gameplay, open_\n"
+                                           "- **Old news.** Done. _2026-10-23, Tweak gameplay, told_\n")
+        git(self.r.other, "add", "-A"); git(self.r.other, "commit", "-q", "-m", "06"); git(self.r.other, "push", "-q")
+        res = self.w.set_status([{"entryId": n + ":shipped-1-18-32", "status": "told"},
+                                 {"entryId": B + ":map-tool-leaks-a-handle", "status": "fixed"},
+                                 {"entryId": n + ":old-news", "status": "told"}])                # (already told: skipped)
+        self.assertTrue(res["ok"] and res["pushed"])
+        self.assertEqual([m["entryId"] for m in res["marked"]], [n + ":shipped-1-18-32", B + ":map-tool-leaks-a-handle"])
+        self.assertEqual(self.head_subject(), "03/06: q set 2 items fixed/told (Claude Manager)")
+        t = self.r.remote_text(n)
+        self.assertIn("_2026-10-24, Tweak gameplay, told (q, via Claude Manager)_", t)
+        self.assertIn("Old news.** Done. _2026-10-23, Tweak gameplay, told_", t)
+        e = {x["title"]: x for x in docsparse.parse_file(B, self.r.remote_text(B), ["Map editor"])["entries"]}["Map tool leaks a handle."]
+        self.assertEqual((e["status"], e["thread"]), ("fixed", "Map editor"))
+        self.assert_crlf(B)
+        again = self.w.set_status([{"entryId": n + ":shipped-1-18-32", "status": "told"}])
+        self.assertFalse(again["committed"])
+        for bad in ([], [{"entryId": B + ":x", "status": "open"}], [{"entryId": "13-app-audit.md:x", "status": "done"}]):
+            with self.assertRaises(docsedit.EditError):
+                self.w.set_status(bad)
+        with self.assertRaises(docsedit.EditError) as cm:
+            self.w.set_status([{"entryId": B + ":no-such-entry", "status": "done"}])
+        self.assertEqual(cm.exception.error, "gone")
+
+    def test_fix_problems(self):
+        text = ("# Possible bugs\n\n## Game\n\n- **Split.** Text that wrapped\n## 42 here. _2026-10-22, Tweak gameplay, open_\n"
+                "- **Odd.** Body. _2026-10-22, Tweak gameplay, added in PR #70: Open, Reload_\n"
+                "- **Tail.** Body. _2026-10-22, Tweak gameplay, done_ More words.\n\n## Archive\n\n"
+                "- **Old.** Body. _2026-10-01, Tweak gameplay, fixed_\n\n## Late\n\n- **Below.** Body. _2026-10-22, Tweak gameplay, open_\n")
+        base = self.w.read(B)["text"]
+        self.w.save(B, base, text)
+        codes = lambda: {x["code"]: x for x in docsparse.lint(B, self.w.read(B)["text"], thread_names=["Tweak gameplay"])}
+        for code in ("heading-in-entry", "odd-status", "text-after-status", "after-archive"):
+            prob = codes()[code]
+            res = self.w.fix({"file": B, "code": code, "line": prob["line"], "entryId": prob["entryId"]})
+            self.assertTrue(res["ok"] and res["pushed"], code)
+            self.assertNotIn(code, codes(), code)
+            self.assertEqual(self.head_subject(), "03: q %s at line %d (Claude Manager)" % (docsedit.FIXES[code], prob["line"]))
+        t = self.r.remote_text(B)
+        self.assertIn("- **Split.** Text that wrapped ## 42 here. _2026-10-22, Tweak gameplay, open_", t)
+        self.assertIn("_2026-10-22, Tweak gameplay, done: added in PR #70: Open, Reload_", t)
+        self.assertIn("- **Tail.** Body. More words. _2026-10-22, Tweak gameplay, done_", t)
+        self.assertTrue(t.rstrip().endswith("## Archive\n\n- **Old.** Body. _2026-10-01, Tweak gameplay, fixed_"), t)
+        self.assertLess(t.index("## Late"), t.index("## Archive"))
+        with self.assertRaises(docsedit.EditError) as cm:                              # fixed already: nothing to do
+            self.w.fix({"file": B, "code": "after-archive", "line": 3})
+        self.assertEqual(cm.exception.code, 409)
+        with self.assertRaises(docsedit.EditError) as cm:
+            self.w.fix({"file": B, "code": "no-status", "line": 3})
+        self.assertEqual(cm.exception.error, "not-fixable")
+
     def test_read_only(self):
         w = docsedit.Writer(self.r.pc, read_only=True)
         self.assertFalse(w.editable()[0])

@@ -51,8 +51,8 @@
   }
   // The writer's status ({unpushed, pushError, busy, ...}) and how old it is, for the banner.
   function editStatus() { return {status: ed.status, at: ed.statusAt || 0}; }
-  // After a write the server fetches its mirror; pick that up soon.
-  function reloadSoon() { setTimeout(() => DM.data.load(), 1500); setTimeout(() => DM.data.load(), 6000); setTimeout(refreshStatus, 1600); }
+  // After a write the server fetches its mirror; load the new data as soon as it is built.
+  function reloadSoon() { DM.data.refreshAndLoad().then(refreshStatus); }
 
   const clock = d => new Intl.DateTimeFormat('en-US', {timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit'}).format(d ? new Date(d) : new Date());
   // "Saved and pushed at 1:12 AM" or what went wrong, from a write result.
@@ -625,6 +625,65 @@
     }
   }
 
+  // ---------- mark told / done (one commit, like answers) ----------
+  // What "done" means per file: 06 news is told, bugs and performance items are fixed, the rest done.
+  function markWord(e) { return e.file.startsWith('06') ? 'told' : /^0[1345]-/.test(e.file) ? 'fixed' : 'done'; }
+  function canMark(e) { return canEdit() && DM.isOpen(e) && editable(e.file) && !e.answerOf; }
+  // The status changes one click makes: the entry itself, plus its open 09 answer when q's answer waits on a Claude.
+  function markChanges(e) {
+    const out = [{entryId: e.id, title: e.title, status: markWord(e)}];
+    const a = e.answerId && st.entryById[e.answerId];
+    if (a && (DM.isOpen(a) || a.answerOf === e.id)) out.push({entryId: a.id, title: a.title, status: 'done'});
+    return out;
+  }
+  const marked = new Map();   // entryId -> status, marked from this page until the data shows it
+  async function mark(es, btn) {
+    const changes = es.flatMap(markChanges);
+    if (!changes.length) return;
+    if (btn) btn.disabled = true;
+    const r = await post('/api/entry/status', {changes});
+    if (btn) btn.disabled = false;
+    const res = resultText(r.js, es.length === 1 ? 'Marked ' + markWord(es[0]) : es.length + ' items marked');
+    if (r.js.ok) {
+      for (const c of changes) marked.set(c.entryId, c.status);
+      DM.app.toast(res.text); say(res); reloadSoon();
+      for (const e of es) for (const el of document.querySelectorAll('.mark-btn[data-entry="' + CSS.escape(e.id) + '"]')) {
+        el.replaceWith(h('span', {class: 'faint mark-done'}, 'Marked ' + markWord(e)));
+      }
+    } else DM.app.toast(res.text);
+    return r.js.ok;
+  }
+  function markButton(e) {
+    if (!canMark(e)) return null;
+    if (marked.has(e.id)) return h('span', {class: 'faint mark-done'}, 'Marked ' + marked.get(e.id));
+    const w = markWord(e), a = e.answerId && st.entryById[e.answerId];
+    return h('button', {class: 'mini mark-btn', dataset: {entry: e.id}, onclick: ev => { ev.stopPropagation(); mark([e], ev.currentTarget); },
+      title: 'Set this entry ' + w + (a ? ' and q’s answer in 09 done' : '') + ' (one commit, pushed)'}, 'Mark ' + w);
+  }
+  // "Mark all N told / done" for a list (Overview sections).
+  function markAllButton(es, label) {
+    const ok = es.filter(e => canMark(e) && !marked.has(e.id));
+    if (ok.length < 2) return null;
+    return h('button', {class: 'mini', onclick: ev => {
+      if (confirm(label + ': ' + ok.length + ' items, one commit?')) mark(ok, ev.currentTarget);
+    }}, label + ' (' + ok.length + ')');
+  }
+
+  // ---------- one-click fixes in Files › Problems ----------
+  const FIXABLE = {'after-archive': 'Move ## Archive to the bottom of the file', 'heading-in-entry': 'Join this ## line back onto the entry',
+    'odd-status': 'Write the status word it is read as in front of the status text', 'text-after-status': 'Move the text after the status line in front of it'};
+  function fixButton(x) {
+    if (!canEdit() || !FIXABLE[x.code] || !editable(x.file)) return null;
+    return h('button', {class: 'mini', title: FIXABLE[x.code] + ' (one commit, pushed)', onclick: async ev => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      const r = await post('/api/fix', {file: x.file, code: x.code, line: x.line, entryId: x.entryId});
+      const res = resultText(r.js, 'Fixed (' + (r.js.did || x.code) + ')');
+      DM.app.toast(res.text);
+      if (r.js.ok) { b.replaceWith(h('span', {class: 'faint mark-done'}, 'Fixed')); reloadSoon(); } else b.disabled = false;
+    }}, 'Fix');
+  }
+
   // ---------- used elsewhere ----------
   function editButton(e) {
     if (!canEdit() || !editable(e.file)) return null;
@@ -667,9 +726,11 @@
     const b = $('#tabs button[data-tab="edit"]');
     if (b) b.hidden = !showTab();
     for (const id of [...answered.keys()]) { const e = st.entryById[id]; if (!e || DM.isDone(e)) answered.delete(id); }
+    for (const id of [...marked.keys()]) { const e = st.entryById[id]; if (!e || DM.isDone(e)) marked.delete(id); }
     if (ed.sub === 'answer' && st.prefs.tab === 'edit') renderQuestions();
   }
 
-  DM.edit = {canEdit, showTab, answerBox, canAnswer, editButton, openAt, dataChanged, refreshStatus, resultText, editStatus, pushNow, editable, openAnswer};
+  DM.edit = {canEdit, showTab, answerBox, canAnswer, editButton, openAt, dataChanged, refreshStatus, resultText, editStatus, pushNow, editable, openAnswer,
+    markButton, markAllButton, canMark, fixButton};
   (DM.views = DM.views || {}).edit = {render: () => { render(); refreshStatus(); }, scroller: () => ed.sub === 'file' ? null : (ed.sub === 'answer' ? ui.paneAnswer : ui.paneAdd)};
 })(window.DM);

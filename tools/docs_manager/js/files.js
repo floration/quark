@@ -158,7 +158,8 @@
           h('span', {class: 'prob-act'},
             h('button', {class: 'mini', title: 'Show this line in the file', onclick: () => { jump = {file: name, line: x.line}; st.prefs.files.raw = false; DM.app.openFile(name); }}, 'Show'),
             DM.edit && DM.edit.canEdit() && !(st.fileByName[name] || {}).generated ?
-              h('button', {class: 'mini', title: 'Open the file in the Edit tab at this line', onclick: () => DM.edit.openAt(name, x.line, e ? e.title : null)}, 'Edit') : null));
+              h('button', {class: 'mini', title: 'Open the file in the Edit tab at this line', onclick: () => DM.edit.openAt(name, x.line, e ? e.title : null)}, 'Edit') : null,
+            DM.edit ? DM.edit.fixButton(x) : null));
       })));
     }
     if (shown.length > page.length) body.appendChild(h('button', {class: 'more-btn', onclick: () => { probLimit += 300; render(); }},

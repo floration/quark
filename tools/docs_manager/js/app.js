@@ -188,15 +188,12 @@
 
   // ---------- events ----------
   for (const b of $$('#tabs button')) b.addEventListener('click', () => show(b.dataset.tab));
-  // Refresh: have the server fetch the docs repo now (it otherwise fetches every 60 s), then load what it built.
+  // Refresh: have the server fetch the docs repo now (it otherwise fetches every 60 s) and wait until it has built the
+  // new data (?wait=1, ~1-3 s), then load it once. An older server answers at once: then look again at 2 and 6 s.
   async function refreshNow() {
     const b = $('#btnRefresh');
     b.disabled = true;
-    try {
-      if (st.source === '/api/data') await fetch('/api/refresh', {method: 'POST', cache: 'no-store'}).catch(() => null);
-      await DM.data.load();
-      if (st.source === '/api/data') for (const ms of [2000, 6000]) setTimeout(() => DM.data.load(), ms);   // (a fetch from GitHub takes a moment)
-    } finally { b.disabled = false; }
+    try { await DM.data.refreshAndLoad(); } finally { b.disabled = false; }
   }
   $('#btnRefresh').addEventListener('click', refreshNow);
   $('#btnHelp').addEventListener('click', help);

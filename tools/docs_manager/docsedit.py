@@ -8,7 +8,7 @@ file changed since, the edit is 3-way merged (`git merge-file`); a clean merge i
 (ConflictError, with both texts). A failed push keeps the local commit (pushed: False) and is retried on the next
 write and every 5 minutes. Line endings (CRLF / LF) and a UTF-8 BOM are kept as the file has them.
 
-Text helpers (decode / merge3 / set_answer_trailer / insert_entry / add_answers) are pure; Writer does the git.
+Text helpers (decode / merge3 / set_trailer_status / fix_problem / insert_entry / add_answers) are pure; Writer does the git.
 Python 3 standard library only, Windows + Linux.
 """
 import datetime, hashlib, os, re, tempfile, threading, time
@@ -166,10 +166,15 @@ def _trailer_note(answer):
 def set_answer_trailer(lines, entry, answer, today, thread_names=()):
     """Turns the status in the trailer of one entry (its last line) into `answered: <answer> (q, via Claude
     Manager)`, in place; nothing else in `lines` changes. Adds a trailer if the entry has none."""
+    return set_trailer_status(lines, entry, "answered: %s %s" % (_trailer_note(answer), VIA), today, thread_names)
+
+
+def set_trailer_status(lines, entry, status, today, thread_names=()):
+    """Puts `status` (the text after the thread) in the trailer of one entry (its last line), in place, keeping the
+    date and thread; nothing else in `lines` changes. Adds a trailer if the entry has none."""
     i = entry["endLine"] - 1
     line = lines[i]
     body, tail = line.rstrip(), line[len(line.rstrip()):]
-    status = "answered: %s %s" % (_trailer_note(answer), VIA)
     m = docsparse.find_trailer(body)                                       # (text may follow it: kept as it is)
     if m:
         thread = docsparse.parse_trailer(m.group(2), thread_names)[0]
@@ -178,6 +183,53 @@ def set_answer_trailer(lines, entry, answer, today, thread_names=()):
     else:
         lines[i] = body + " _%s, %s_" % (today, status) + tail
     return lines
+
+
+# ---- one-click fixes for the Problems list (docsparse.lint codes) ------------------------------------------------
+
+FIXES = {"after-archive": "moved ## Archive to the bottom", "heading-in-entry": "joined a split ## line back",
+         "odd-status": "wrote the status word", "text-after-status": "moved the text after the status line before it"}
+
+
+def fix_problem(text, prob, entry=None, thread_names=()):
+    """text (LF) with one lint problem fixed, or None when it can't be done safely. prob: {code, line} as lint gives
+    it for this very text; entry: its parsed entry (for the status fixes)."""
+    lines = text.split("\n")
+    code, i = prob["code"], prob["line"] - 1
+    if code == "after-archive":                       # the Archive section (to the next heading of its level) goes last
+        heads = [(k, docsparse._HEAD_RE.match(l)) for k, l in enumerate(lines)]
+        heads = [(k, m) for k, m in heads if m and len(m.group(1)) > 1]
+        a = next(((k, m) for k, m in heads if m.group(2).strip().lower() == "archive"), None)
+        if not a: return None
+        lvl = len(a[1].group(1))
+        end = next((k for k, m in heads if k > a[0] and len(m.group(1)) <= lvl), len(lines))
+        block = lines[a[0]:end]
+        rest = lines[:a[0]] + lines[end:]
+        while block and not block[-1].strip(): block.pop()
+        while rest and not rest[-1].strip(): rest.pop()
+        return "\n".join(rest + [""] + block + [""])
+    if code == "heading-in-entry":                    # '## ...' that a wrap split out of an entry: back onto its line
+        k = i - 1
+        while k >= 0 and not lines[k].strip(): k -= 1
+        if k < 0 or not 0 <= i < len(lines) or docsparse._HEAD_RE.match(lines[k]): return None
+        lines[k] = lines[k].rstrip() + " " + lines[i].strip()
+        del lines[k + 1:i + 1]
+        return "\n".join(lines)
+    if not entry: return None
+    if code == "odd-status":                          # 'added in PR #70: x' -> 'done: added in PR #70: x'
+        st = entry.get("statusText") or ""
+        if not st or entry.get("status") in (None, "unknown"): return None
+        set_trailer_status(lines, entry, "%s: %s" % (entry["status"], st), "", thread_names)
+        return "\n".join(lines)
+    if code == "text-after-status":                   # '... _date, t, done_ More.' -> '... More. _date, t, done_'
+        k = entry["endLine"] - 1
+        m = docsparse.find_trailer(lines[k])
+        if not m: return None
+        tail = lines[k][m.end():].strip()
+        if not tail: return None
+        lines[k] = lines[k][:m.start()].rstrip() + " " + tail + " " + lines[k][m.start():m.end()].strip()
+        return "\n".join(lines)
+    return None
 
 
 def _section_bounds(lines, section):
@@ -552,6 +604,84 @@ class Writer:
             self._write(name, new, eol, bom)
             res = {"ok": True, "file": name, "line": at, "entry": line, "text": new, "sha256": sha256(new), "online": online}
             return self._finish([name], '%s: q added "%s" (Claude Manager)' % (name[:2], docsparse._short(title)[:80]), res)
+
+    MARKS = ("told", "done", "fixed", "wontfix")
+
+    def set_status(self, changes):
+        """q marks entries told / done / fixed / wontfix from the page: each trailer's status becomes `<status> (q, via
+        Claude Manager)`; one commit for all of them."""
+        if not isinstance(changes, list) or not changes: raise EditError(400, "bad-request", "Nothing to mark was sent.")
+        if len(changes) > 100: raise EditError(400, "bad-request", "Too many at once (100 at most).")
+        clean = []
+        for c in changes:
+            if not isinstance(c, dict) or not isinstance(c.get("entryId"), str) or c.get("status") not in self.MARKS:
+                raise EditError(400, "bad-request", "Each change needs an entry and a status (%s)." % ", ".join(self.MARKS))
+            name = c["entryId"].split(":", 1)[0]
+            if not entry_file_name(name): raise EditError(400, "bad-name", "That doesn't point at an entry in Claude Documents.")
+            clean.append((name, c["entryId"], c["status"], c.get("title") if isinstance(c.get("title"), str) else None))
+        with self.lock:
+            self._require()
+            online = self._sync()
+            today = dallas_now().strftime("%Y-%m-%d")
+            texts, parsed, done = {}, {}, []
+            for name, eid, status, title in clean:
+                if name not in texts:
+                    got = self._read(name)
+                    if got is None: raise EditError(404, "missing", "%s isn't in the Claude Documents folder any more." % name)
+                    _entries_text(name, got[0])
+                    texts[name] = [got[0].split("\n"), got[1], got[2], got[0]]
+                    parsed[name] = docsparse.parse_file(name, got[0], self.thread_names)
+                e = self._find(parsed[name], eid, title)
+                if e is None:
+                    raise EditError(404, "gone", "Couldn't find “%s” in %s any more (someone may have moved or renamed it). Nothing "
+                                                 "was saved; reload and try again." % (title or eid, name), entryId=eid)
+                if e["status"] == status: continue
+                set_trailer_status(texts[name][0], e, "%s %s" % (status, VIA), today, self.thread_names)
+                done.append({"entryId": e["id"], "title": e["title"], "file": name, "status": status})
+            if not done:
+                return {"ok": True, "marked": [], "online": online, "pushed": True, "committed": False, "unpushed": self.unpushed(),
+                        "savedAt": now_iso(), "message": "Nothing to save: already marked."}
+            files = []
+            for name, (lines, eol, bom, old) in texts.items():
+                new = "\n".join(lines)
+                if new != old: self._write(name, new, eol, bom); files.append(name)
+            sts = sorted({d["status"] for d in done})
+            what = ('"%s" %s' % (docsparse._short(one_line(done[0]["title"]))[:80], sts[0])) if len(done) == 1 else \
+                "%d items %s" % (len(done), "/".join(sts))
+            prefix = "/".join(sorted({f[:2] for f in files}))
+            return self._finish(files, "%s: q set %s (Claude Manager)" % (prefix, what), {"ok": True, "marked": done, "files": files, "online": online})
+
+    def fix(self, req):
+        """One Problems-list fix (FIXES) in one file, checked against the file as it is now: the problem must still be
+        there (same code, same entry or line), else nothing is written (409)."""
+        if not isinstance(req, dict): raise EditError(400, "bad-request", "The page sent an empty fix.")
+        name, code = req.get("file"), req.get("code")
+        if code not in FIXES: raise EditError(400, "not-fixable", "That problem can't be fixed with one click; edit the file instead.")
+        if not entry_file_name(name): raise EditError(400, "bad-name", "That isn't one of the Claude Documents entry files.")
+        try: line = int(req.get("line"))
+        except (TypeError, ValueError): raise EditError(400, "bad-request", "The fix needs the problem's line.")
+        with self.lock:
+            self._require()
+            online = self._sync()
+            got = self._read(name)
+            if got is None: raise EditError(404, "missing", "%s isn't in the Claude Documents folder any more." % name)
+            text, eol, bom = got
+            _entries_text(name, text)
+            p = docsparse.parse_file(name, text, self.thread_names)
+            probs = [x for x in docsparse.lint(name, text, p, self.thread_names) if x["code"] == code]
+            want = req.get("entryId")
+            hit = next((x for x in probs if want and x["entryId"] == want), None) or next((x for x in probs if x["line"] == line), None)
+            if hit is None:
+                raise EditError(409, "gone", "That problem isn't in %s any more (fixed already, or the file changed). Reload to see "
+                                             "what is left." % name)
+            entry = next((e for e in p["entries"] if e["id"] == hit["entryId"]), None)
+            new = fix_problem(text, hit, entry, self.thread_names)
+            if new is None or new == text:
+                raise EditError(409, "cant-fix", "The manager couldn't fix that one safely; edit the file instead.")
+            self._write(name, new, eol, bom)
+            res = {"ok": True, "file": name, "code": code, "line": hit["line"], "text": new, "sha256": sha256(new), "online": online,
+                   "did": FIXES[code]}
+            return self._finish([name], "%s: q %s at line %d (Claude Manager)" % (name[:2], FIXES[code], hit["line"]), res)
 
     # -- status + background push retry
     def status(self):

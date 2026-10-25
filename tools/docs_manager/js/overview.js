@@ -111,13 +111,21 @@
     if (decisions.length) nq.appendChild(h('div', {class: 'nq-group'}, h('h3', null, 'Decisions (' + decisions.length + ')'), decisions.map(needItem)));
     if (pushes.length) nq.appendChild(h('div', {class: 'nq-group'}, h('h3', null, 'Ready for you to push (' + pushes.length + ')'), pushes.map(needItem)));
     left.appendChild(nq);
-    if (tell.length) {
-      const sec = section('Not told yet', tell.length, 'news for q in "Things to tell q"; nothing to decide');
-      sec.appendChild(h('ul', {class: 'tell'}, tell.map(e => h('li', null,
+    // Short lists q clears with one click per item (or all at once): news read, answers acted on.
+    const quickList = (title, list, sub, allLabel) => {
+      const sec = section(title, list.length, sub);
+      const all = DM.edit && DM.edit.markAllButton(list, allLabel);
+      if (all) sec.querySelector('h2').appendChild(all);
+      sec.appendChild(h('ul', {class: 'tell'}, list.map(e => h('li', null,
         h('a', {href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }}, DM.md.into(h('span'), e.title, true)),
-        ' ', h('span', {class: 'faint'}, e.thread || '', e.firstSeen && e.firstSeen.time ? [' · ', DM.timeEl(e.firstSeen.time)] : '')))));
+        ' ', h('span', {class: 'faint'}, e.thread || '', e.firstSeen && e.firstSeen.time ? [' · ', DM.timeEl(e.firstSeen.time)] : '',
+          e.file.startsWith('06') ? '' : ' · ' + DM.fileShort(e.file)),
+        DM.edit ? [' ', DM.edit.markButton(e)] : null))));
       left.appendChild(sec);
-    }
+    };
+    if (tell.length) quickList('Not told yet', tell, 'news for q in "Things to tell q"; nothing to decide', 'Mark all told');
+    const acted = open.filter(e => DM.waitKeys(e).includes('answered')).sort(byPriThenNew);
+    if (acted.length) quickList('Answered, Claude to act', acted, 'q answered these (09); once acted on, mark them done', 'Mark all done');
     const right = h('div', {class: 'ov-col'});
     const latest = section('Latest changes', null, null);
     // On a wide screen the board and the table sit under Needs q, so Latest changes (beside them) can be longer.

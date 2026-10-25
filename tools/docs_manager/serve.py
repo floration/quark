@@ -14,11 +14,13 @@ refreshed every 5 min into <state dir>/cache/github.json; the per-commit entry d
 <state dir>/cache/changes.json. Python 3 standard library only.
 
 API: GET /api/data (everything, ETag / If-None-Match), GET /api/summary (small: halting, in progress, waiting,
-questions, recent changes), GET /api/halting (just the HALT items stopping a Claude agent), GET /api/health, POST /api/refresh (fetch now); CORS for the sibling tools on 8765-8770 (reads
+questions, recent changes), GET /api/halting (just the HALT items stopping a Claude agent), GET /api/health, POST /api/refresh (fetch now;
+?wait=1 answers once the new data is built); CORS for the sibling tools on 8765-8770 (reads
 only). Edits (same origin + X-Claude-Manager: 1 only): GET /api/doc?file=, GET /api/edit/status,
-POST /api/doc/save, POST /api/answer, POST /api/entry/add, POST /api/edit/push (send offline saves now).
+POST /api/doc/save, POST /api/answer, POST /api/entry/add, POST /api/entry/status (mark told / done), POST /api/fix (a
+Problems fix), POST /api/edit/push (send offline saves now).
 """
-import argparse, datetime, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.parse, urllib.request, webbrowser
+import argparse, datetime, gzip, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.parse, urllib.request, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,7 +35,7 @@ MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", 
         ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json"}
 CORS_PORTS = range(8765, 8771)
 VOLATILE = ("generatedAt", "mirrorFetchedAt", "ghFetchedAt")
-WRITE_PATHS = {"/api/doc/save", "/api/answer", "/api/entry/add", "/api/edit/push"}             # same origin + X-Claude-Manager: 1 only
+WRITE_PATHS = {"/api/doc/save", "/api/answer", "/api/entry/add", "/api/entry/status", "/api/fix", "/api/edit/push"}             # same origin + X-Claude-Manager: 1 only
 MAX_BODY = 4 * 1024 * 1024
 
 
@@ -360,6 +362,7 @@ class Manager:
         self.writer = docsedit.Writer(self.docs, read_only=getattr(args, "read_only", False), thread_names=self.thread_names, log=log)
         self.lock = threading.Lock()
         self.body, self.etag, self.summary, self.summary_etag, self.data = None, None, None, None, None
+        self.body_gz = None                                                 # /api/data gzipped once per change (2 MB -> ~0.3 MB)
         self.halting, self.halting_etag = None, None
         self.started = time.time()
         self.last_error = None
@@ -540,7 +543,7 @@ class Manager:
         entry_thread = entry_thread or {}
         known = known if known is not None else self.thread_lookup(entry_thread)
         subj = subject.strip()
-        if re.match(r"^(?:q:|[\d/]+:\s*q (?:answered|added|edited)\b)", subj, re.I) or subj.endswith("(Claude Manager)"):
+        if re.match(r"^(?:q:|[\d/]+:\s*q (?:answered|added|edited|set|moved|joined|wrote)\b)", subj, re.I) or subj.endswith("(Claude Manager)"):
             return "q", None
         for g in reversed(re.findall(r"\(([^()]+)\)", subj)):
             hit = known.get(g.strip().lower()) or (linker.thread(g) if linker.thread(g)[0] else None)
@@ -571,8 +574,12 @@ class Manager:
         summary, halting = make_summary(data, port), make_halting(data, port)
         s_etag, h_etag = small_etag(summary), small_etag(halting)
         with self.lock:
-            if etag != self.etag or self.body is None:
-                self.body, self.etag = json.dumps(data, separators=(",", ":")).encode("utf-8"), etag
+            new_body = etag != self.etag or self.body is None
+        if new_body:                                                        # (compressed outside the lock: readers keep going)
+            body = json.dumps(data, separators=(",", ":")).encode("utf-8")
+            body_gz = gzip.compress(body, 6, mtime=0)
+        with self.lock:
+            if new_body: self.body, self.body_gz, self.etag = body, body_gz, etag
             if s_etag != self.summary_etag or self.summary is None:
                 self.summary, self.summary_etag = json.dumps(summary, separators=(",", ":")).encode("utf-8"), s_etag
             if h_etag != self.halting_etag or self.halting is None:
@@ -665,14 +672,25 @@ class Refresher(threading.Thread):
         self.mgr, self.interval, self.gh_interval = mgr, interval, gh_interval
         self.wake, self.next_fetch, self.next_gh = threading.Event(), 0.0, 0.0
         self.ready = threading.Event()
+        self.cond, self.started, self.finished = threading.Condition(), 0, 0     # loop passes begun / done
 
     def poke(self):
+        """Fetch and rebuild now. Returns the pass that will see it (for wait())."""
+        with self.cond:
+            target = self.started + 1                                     # (a pass already running may have fetched before)
         self.next_fetch = self.next_gh = 0.0
         self.wake.set()
+        return target
+
+    def wait(self, target, timeout):
+        """True once loop pass `target` is done (fetched, rebuilt if anything changed), False after timeout s."""
+        with self.cond:
+            return self.cond.wait_for(lambda: self.finished >= target, timeout)
 
     def run(self):
         m, sig, last = self.mgr, None, None
         while True:
+            with self.cond: self.started += 1
             try:
                 changed = m.body is None
                 if time.time() >= self.next_fetch:
@@ -686,6 +704,8 @@ class Refresher(threading.Thread):
                 changed |= s != sig; sig = s
                 if changed: m.build()                                    # (docs first: GitHub can take a while)
                 self.ready.set()
+                with self.cond:                                          # (the docs are in: a waiting refresh can answer)
+                    self.finished = self.started; self.cond.notify_all()
                 if time.time() >= self.next_gh:
                     self.next_gh = time.time() + self.gh_interval
                     if m.refresh_gh(m.entry_texts()): m.build()
@@ -695,6 +715,7 @@ class Refresher(threading.Thread):
                 m.last_error = "%s: %s" % (type(e).__name__, e)
                 log("refresh failed: %s" % traceback.format_exc().strip().splitlines()[-1])
             self.ready.set()
+            with self.cond: self.finished = self.started; self.cond.notify_all()
             self.wake.wait(5.0); self.wake.clear()
 
 
@@ -760,11 +781,15 @@ def make_handler(mgr, refresher, port, quiet):
                 with mgr.lock:
                     body, etag = {"/api/data": (mgr.body, mgr.etag), "/api/summary": (mgr.summary, mgr.summary_etag),
                                   "/api/halting": (mgr.halting, mgr.halting_etag)}[path]
+                    gz = mgr.body_gz if path == "/api/data" else None
                 if body is None: return self._json(503, {"error": "starting", "detail": mgr.mirror.error or "loading"})
                 h = {"ETag": etag, "Cache-Control": "no-cache", "X-Mirror-Fetched-At": mgr.mirror.fetched_at or "",
                      "X-Gh-Fetched-At": str(mgr.gh.state.get("fetchedAt") or ""), "X-Fetch-Ok": "1" if mgr.mirror.fetch_ok else "0"}
+                if gz is not None: h["Vary"] = "Accept-Encoding"
                 inm = self.headers.get("If-None-Match", "")
                 if etag and etag in [t.strip() for t in inm.split(",")]: return self._send(304, headers=h)
+                if gz is not None and re.search(r"\bgzip\b", self.headers.get("Accept-Encoding", "")):
+                    h["Content-Encoding"] = "gzip"; body = gz
                 return self._send(200, body, headers=h)
             if path == "/api/health": return self._json(200, mgr.health())
             if path == "/api/edit/status": return self._json(200, writer.status())
@@ -815,6 +840,8 @@ def make_handler(mgr, refresher, port, quiet):
             try:
                 if path == "/api/doc/save": res = writer.save(req.get("file"), req.get("base"), req.get("text"))
                 elif path == "/api/answer": res = writer.answer(req.get("answers"))
+                elif path == "/api/entry/status": res = writer.set_status(req.get("changes"))
+                elif path == "/api/fix": res = writer.fix(req)
                 elif path == "/api/edit/push":
                     if not writer.editable()[0]: raise docsedit.EditError(423, "not-editable", writer.editable()[1])
                     pushed = writer.retry_push()
@@ -838,9 +865,13 @@ def make_handler(mgr, refresher, port, quiet):
             path = self.path.split("?", 1)[0]
             if path in WRITE_PATHS: return self._post_write(path, n)
             if n: self.rfile.read(min(n, 65536))
-            if path == "/api/refresh":
-                refresher.poke()
-                return self._json(202, {"ok": True, "detail": "refreshing"})
+            if path == "/api/refresh":                                      # ?wait=1: answer once the new data is built
+                target = refresher.poke()
+                if "wait=1" not in (self.path.split("?", 1) + [""])[1].split("&"):
+                    return self._json(202, {"ok": True, "detail": "refreshing"})
+                done = refresher.wait(target, 25)
+                return self._json(200, {"ok": True, "done": done, "etag": mgr.etag, "mirrorHead": mgr.mirror.head(),
+                                        "fetchOk": mgr.mirror.fetch_ok})
             return self._json(404, {"error": "no such endpoint"})
 
     return H

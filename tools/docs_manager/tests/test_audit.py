@@ -1,7 +1,7 @@
 """Tests for the app-audit fixes: trailers followed by text, generated / report files as documents, the lint
 (Problems list), what reference / archived / 06 / answered items wait on, HALT 'blocks' and commit threads.
 python3 -m unittest discover tools/docs_manager/tests"""
-import os, shutil, subprocess, sys, tempfile, unittest
+import gzip, http.client, json, os, shutil, socket, subprocess, sys, tempfile, threading, unittest
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(TESTS))
@@ -218,6 +218,49 @@ class AnsweredOnceTests(unittest.TestCase):
             self.assertEqual(w["claude"], ["02-currently-working-on.md:bot-sim"])
             self.assertEqual(w["nobody"], ["03-possible-bugs.md:rocket-jump"])
         finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+@unittest.skipUnless(HAVE_GIT, "needs git")
+class RefreshAndGzipTests(unittest.TestCase):
+    """POST /api/refresh?wait=1 answers once the new commit is built (the page reloads once, not at 0 / 2 / 6 s);
+    /api/data is sent gzipped to a client that takes it."""
+    def test_refresh_waits_and_gzip(self):
+        tmp = tempfile.mkdtemp(prefix="docsmgr-ref-")
+        srv = mgr = None
+        try:
+            mgr, _ = build_from({"03-possible-bugs.md": "# Bugs\n\n## Game\n\n- **One.** Body. _2026-10-24, T, open_\n"}, tmp)
+            ref = serve.Refresher(mgr, 1e9, 1e9)
+            ref.start(); ref.ready.wait(20)
+            with socket.socket() as so:
+                so.bind(("127.0.0.1", 0)); port = so.getsockname()[1]
+            srv = serve.http.server.ThreadingHTTPServer(("127.0.0.1", port), serve.make_handler(mgr, ref, port, True))
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+            def req(method, path, headers=None):
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=40)
+                c.request(method, path, headers=headers or {})
+                r = c.getresponse(); body = r.read(); c.close()
+                return r.status, dict(r.getheaders()), body
+            repo = os.path.join(tmp, "repo")
+            with open(os.path.join(repo, "03-possible-bugs.md"), "a") as f: f.write("- **Two.** Body. _2026-10-24, T, open_\n")
+            subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qam", "two"], check=True)
+            head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+            st, _, body = req("POST", "/api/refresh?wait=1")
+            r = json.loads(body)
+            self.assertEqual((st, r["done"], r["mirrorHead"]), (200, True, head))
+            st, hd, body = req("GET", "/api/data", {"Accept-Encoding": "gzip, deflate"})
+            self.assertEqual((st, hd.get("Content-Encoding"), hd.get("ETag")), (200, "gzip", r["etag"]))
+            d = json.loads(gzip.decompress(body))
+            self.assertEqual(sorted(e["title"] for e in d["entries"]), ["One.", "Two."])
+            st, hd, plain = req("GET", "/api/data")
+            self.assertIsNone(hd.get("Content-Encoding"))
+            self.assertEqual(json.loads(plain)["mirrorHead"], head)
+            self.assertLess(len(body), len(plain))
+            self.assertEqual(req("POST", "/api/refresh")[0], 202)                         # (no wait: as before)
+        finally:
+            if srv: srv.shutdown(); srv.server_close()
+            if mgr: mgr.mirror.close()
             shutil.rmtree(tmp, ignore_errors=True)
 
 
