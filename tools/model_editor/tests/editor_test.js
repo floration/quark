@@ -150,6 +150,35 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     return { list: Q.exportableList(), text: JSON.parse(Q.mergeProvenance('', Q.exportableList())).items };
   });
   check(st.list.join() === 'models/weapon/KNIFE' && !st.text['models/weapon/RIFLE.gltf'], 'provenance.json leaves out a model with export errors', st.list);
+  // Export to game, clicked through: the .bak dialog for unedited models' files stays up (a dialog's close event used
+  // to answer the next dialog), Escape there cancels, Continue moves what is ticked
+  await ev(async () => {
+    Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad();
+    Q.ensureBoxEdit('models/player/SCOUT').parts[0].c[0] += 0.01; Q.bump('models/player/SCOUT');
+    window.ov2 = mkDir('overrides');
+    const kd = await (await ov2.getDirectoryHandle('models', { create: true })).getDirectoryHandle('player', { create: true });
+    const f = await kd.getFileHandle('KNIGHT.glb', { create: true }), w = await f.createWritable(); await w.write(Q.gltf.exportBytes('models/player/KNIGHT')); await w.close();
+    window.showDirectoryPicker = async o => (o && o.id === 'quark-model-editor' ? pd : ov2);
+  });
+  const files2 = () => ev(async () => [...(await (await ov2.getDirectoryHandle('models')).getDirectoryHandle('player')).children.keys()].sort().join());
+  const bakDialog = async () => {
+    await page.click('#btnExport');
+    await page.click('#dlg button:has-text("Choose folder and write")');
+    await page.waitForSelector('#dlg h2:has-text("Model files for unedited models")');
+    await page.waitForTimeout(150);
+    return ev(() => document.querySelector('#dlg').open && document.querySelector('#dlg h2').textContent);
+  };
+  st = await bakDialog();
+  check(st === 'Model files for unedited models', 'export: the .bak dialog stays open', st);
+  await page.keyboard.press('Escape');
+  await frames(page);
+  check(await files2() === 'KNIGHT.glb' && !(await ev(() => document.querySelector('#dlg').open)), 'export: Escape at the .bak dialog writes nothing', await files2());
+  await bakDialog();
+  await page.check('#dlg li input[type=checkbox]');
+  await page.click('#dlg button:has-text("Continue")');
+  await page.waitForSelector('#dlg h2:has-text("Written")');
+  check(await files2() === 'KNIGHT.glb.bak,SCOUT.glb', 'export: a ticked unedited model\'s file is moved to .bak', await files2());
+  await page.keyboard.press('Escape');
   await ev(() => { Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad(); });
 
   // --- New project: undo off -----------------------------------------------------------------------------------------

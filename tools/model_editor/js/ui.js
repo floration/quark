@@ -27,7 +27,9 @@
   let toastT = 0;
   U.toast = function (msg, ms) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms || 2600); };
   U.fail = function (what, e) { console.error(what, e); U.banner('Error (' + what + '): ' + (e && e.message || e), true); };
-  // a modal: content nodes + buttons [{label, value, primary}] -> the value of the button pressed (Escape: null)
+  // a modal: content nodes + buttons [{label, value, primary}] -> the value of the button pressed (Escape: null).
+  // Every way out resolves before the dialog closes: a 'close' event is queued (it fires after d.close() returns), so
+  // the close of one dialog would otherwise reach the next one opened from its result (and answer it with null).
   U.dialog = function (title, content, buttons) {
     const d = $('#dlg'), body = $('#dlgBody');
     body.innerHTML = '';
@@ -41,7 +43,8 @@
         } }, b.label));
       }
       body.append(acts);
-      d.onclose = () => res(null);
+      d.oncancel = e => { e.preventDefault(); d.close(); res(null); };   // (Escape)
+      d.onclose = () => { if (!d.open) res(null); };   // (any other close; a stale event finds the next dialog open)
       d.showModal();
     });
   };
@@ -539,8 +542,9 @@
           const cbs = there.map(f => h('input', { type: 'checkbox' }));
           const ok = await U.dialog('Model files for unedited models', [h('p', 'These are in ' + ov.where + ' but not edited here (the game draws them in place of the default). Move any to .bak?'),
             h('ul', there.map((f, i) => h('li', h('label.chk', cbs[i], ' ', 'models/' + f.key.split('/').slice(1).join('/') + '  (' + f.name + ')'))))],
-          [{ label: 'Continue', value: true, primary: true }]);
-          if (ok) removeKeys = there.filter((f, i) => cbs[i].checked).map(f => f.key);
+          [{ label: 'Cancel', value: false }, { label: 'Continue', value: true, primary: true }]);
+          if (!ok) { U.toast('Export cancelled: nothing written'); return; }
+          removeKeys = there.filter((f, i) => cbs[i].checked).map(f => f.key);
         }
         const r = await Q.exportToFolder(root, { keys: chosen(), removeKeys, provDir });
         U.dialog('Written', [h('p', 'Into ' + r.where + (r.guess ? ' (no overrides folder found: written into the folder you picked)' : '') + ':'),
