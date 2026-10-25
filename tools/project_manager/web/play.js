@@ -114,8 +114,13 @@
   function makeCard(b) {
     const el = document.createElement('div');
     el.className = 'build';
-    el.innerHTML = '<div class="bd"></div><input type="text" class="opt" list="opts-list" spellcheck="false" autocomplete="off" maxlength="400" placeholder="launch options">' + '<div class="act"></div>';
-    const c = { el, bd: el.firstChild, input: el.children[1], act: el.lastChild, sb: null, sa: null };
+    el.innerHTML = '<div class="bd"></div><input type="text" class="opt" list="opts-list" spellcheck="false" autocomplete="off" maxlength="400" placeholder="launch options">' +
+      '<div class="pick" hidden><select class="pk-mode" aria-label="Mode (--host)" title="--host: the mode to start a match in"></select><select class="pk-map" aria-label="Map (--map)" title="--map: maps from this build\'s maps folder"></select></div>' +
+      '<div class="act"></div>';
+    const c = { el, bd: el.firstChild, input: el.children[1], pick: el.children[2], act: el.lastChild, sb: null, sa: null, mapsSig: null, id: b.id };
+    c.mode = c.pick.firstChild; c.map = c.pick.lastChild;
+    c.mode.addEventListener('change', () => pickChanged(c, 'mode'));
+    c.map.addEventListener('change', () => pickChanged(c, 'map'));
     c.input.value = argsFor(b.id);
     c.input.dataset.build = b.id;
     c.input.setAttribute('aria-label', 'Launch options for ' + b.label);
@@ -156,9 +161,76 @@
       if (c.sa !== act) { c.sa = act; c.act.innerHTML = act; }
       c.el.className = 'build' + (b.playable ? '' : ' off') + (run.length ? ' running' : '');
       c.input.hidden = !b.playable;
+      if (c.mapsSig !== (b.playable ? b.maps : null)) {
+        c.mapsSig = b.playable ? b.maps : null;
+        c.pick.hidden = !c.mapsSig;
+        if (c.mapsSig) loadMaps(b.id, c.mapsSig).then(() => fillPick(c));
+      }
       if (host.children[i] !== c.el) host.insertBefore(c.el, host.children[i] || null);
     });
     for (const [id, c] of cards) if (!keep.has(id)) { c.el.remove(); cards.delete(id); }
+  }
+
+  // ---------------------------------------------------------------- mode and map pickers: they write --host / --map
+  // into the options box (and show what it says); the lists come from the build's own maps folder, fetched once per set
+  const mapSets = {};   // sig -> {maps, modes, titles} (or the promise while it loads)
+  function loadMaps(id, sig) {
+    if (!mapSets[sig]) {
+      mapSets[sig] = api('/api/play/maps?build=' + encodeURIComponent(id)).then(j => { mapSets[sig] = j; return j; },
+        () => { delete mapSets[sig]; return null; });
+    }
+    return Promise.resolve(mapSets[sig]);
+  }
+  const ARG_RE = (flag) => new RegExp('(^|\\s)' + flag + '\\s+("[^"]*"|\\S+)');
+  function getArg(text, flag) { const m = ARG_RE(flag).exec(text); return m ? m[2].replace(/^"|"$/g, '') : ''; }
+  function setArg(text, flag, val) {
+    const re = ARG_RE(flag);
+    if (!val) return text.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+    return re.test(text) ? text.replace(re, (m, pre) => pre + flag + ' ' + val) : (text.trim() + ' ' + flag + ' ' + val).trim();
+  }
+  function fillPick(c) {
+    const set = mapSets[c.mapsSig];
+    if (!set || typeof set.then === 'function') return;
+    const text = c.input.value, mode = getArg(text, '--host').toLowerCase(), map = getArg(text, '--map');
+    const titles = obj(set.titles), maps = arr(set.maps);
+    const opt = (v, t, sel) => '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(t) + '</option>';
+    const modes = arr(set.modes).slice();
+    if (mode && !modes.includes(mode)) modes.push(mode);  // (typed by hand: shown as it is)
+    const mh = opt('', 'mode', !mode) + modes.map(m => opt(m, m + (titles[m] && titles[m].toLowerCase() !== m ? ' \u00b7 ' + titles[m].toLowerCase() : ''), m === mode)).join('');
+    const label = (m) => m.name + (m.title && m.title.toLowerCase() !== m.name ? ' (' + m.title + ')' : '') + (m.handmade ? ' \u00b7 hand-made' : '');
+    let gh;
+    if (mode) {
+      const built = maps.filter(m => m.for === mode), offered = maps.filter(m => m.for !== mode && arr(m.modes).includes(mode));
+      const other = maps.filter(m => !arr(m.modes).includes(mode));
+      const grp = (t, l) => l.length ? '<optgroup label="' + esc(t) + '">' + l.map(m => opt(m.name, label(m), m.name === map)).join('') + '</optgroup>' : '';
+      gh = grp('Built for ' + mode, built) + grp('Also offered for ' + mode, offered) + grp('Other maps (may not work in ' + mode + ')', other);
+    } else gh = maps.map(m => opt(m.name, label(m) + (m.for ? ' \u00b7 ' + m.for : ''), m.name === map)).join('');
+    if (map && !maps.some(m => m.name === map)) gh += opt(map, map + ' (not in this build)', true);
+    const html = mh + '\u0000' + opt('', 'map', !map) + gh;
+    if (c.pickHTML === html) return;
+    c.pickHTML = html;
+    const [a, b] = html.split('\u0000');
+    c.mode.innerHTML = a; c.map.innerHTML = b;
+  }
+  function pickChanged(c, which) {
+    const set = obj(mapSets[c.mapsSig]), maps = arr(set.maps);
+    let text = c.input.value;
+    if (which === 'mode') {
+      const mode = c.mode.value;
+      text = setArg(text, '--host', mode);
+      const cur = maps.find(m => m.name === getArg(text, '--map'));
+      // a new mode: its own map, the way the game's menus pick it, unless the chosen one is offered for it too
+      if (mode && !(cur && arr(cur.modes).includes(mode))) {
+        const own = maps.find(m => m.for === mode) || maps.find(m => arr(m.modes).includes(mode));
+        if (own) text = setArg(text, '--map', own.name);
+      }
+    } else {
+      const name = c.map.value, m = maps.find(x => x.name === name);
+      text = setArg(text, '--map', name);
+      if (name && !getArg(text, '--host') && m && m.for) text = setArg(text, '--host', m.for);  // (--map alone starts nothing)
+    }
+    c.input.value = text;
+    c.input.dispatchEvent(new Event('input', { bubbles: true }));  // (remembered for this build, like typing)
   }
 
   function renderPending() {
@@ -574,7 +646,11 @@
   }
   document.addEventListener('input', (e) => {
     const t = e.target;
-    if (t instanceof HTMLInputElement && t.classList.contains('opt') && t.dataset.build) { argsBy[t.dataset.build] = t.value; saveArgs(); }
+    if (t instanceof HTMLInputElement && t.classList.contains('opt') && t.dataset.build) {
+      argsBy[t.dataset.build] = t.value; saveArgs();
+      const c = cards.get(t.dataset.build);
+      if (c && c.mapsSig) fillPick(c);
+    }
   });
   document.addEventListener('keydown', (e) => {
     const t = e.target;

@@ -227,6 +227,33 @@ class TestPure(unittest.TestCase):
             self.assertTrue(play.ed25519ph_verify(h, sig, pub))
             self.assertFalse(play.ed25519ph_verify(h, sig, play.RELEASE_PUBLIC_KEY))
 
+    def test_game_modes_match_the_game(self):
+        h = os.path.join(os.path.dirname(os.path.dirname(PM_ROOT)), "src", "game", "gamedefs.h")
+        if not os.path.isfile(h):
+            self.skipTest("no game source here")
+        with open(h, encoding="utf-8") as f:
+            src = f.read()
+        import re
+        for fn, want in (("modeName", play.GAME_MODES), ("modeTitle", play.GAME_MODE_TITLES)):
+            m = re.search(r"inline const char\* %s\(int m\) \{\s*static const char\* n\[\] = \{([^}]*)\}" % fn, src)
+            self.assertIsNotNone(m, fn)
+            self.assertEqual(tuple(re.findall(r'"([^"]*)"', m.group(1))), want, fn)
+
+    def test_read_maps(self):
+        d = tempfile.mkdtemp()
+        try:
+            write(os.path.join(d, "maps", "bastion.qmap"), "# generated\nversion 2\ntitle Bastion\nfor vs\nmodes vs ffa\nbox 0 0 0 1 1 1\n")
+            write(os.path.join(d, "maps", "mine.qmap"), "version 2\nhandmade\ntitle My <b>map</b>\nfor zz9\n")
+            write(os.path.join(d, "maps", "bad name.qmap"), "for ffa\n")
+            write(os.path.join(d, "maps", "notes.txt"), "x")
+            m = play.read_maps(d)
+            self.assertEqual([(x["name"], x["title"], x["for"], x["modes"], x["handmade"]) for x in m],
+                             [("bastion", "Bastion", "vs", ["vs", "ffa"], False), ("mine", "My <b>map</b>", "zz9", ["zz9"], True)])
+            self.assertEqual(play.map_modes(m)[-1], "zz9")  # (a mode only a map names comes after the game's)
+            self.assertEqual(play.read_maps(os.path.join(d, "nope")), [])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_versions_and_manifest(self):
         self.assertEqual(play.version_from_tag("test-1.18.6-test.231"), "1.18.6-test.231")
         for a, b in (("1.17.0", "1.17.0-test.3"), ("1.17.0-test.3", "1.17.0-test.2"), ("1.17.0-test.10", "1.17.0-test.9"),
@@ -509,6 +536,22 @@ class TestPlay(unittest.TestCase):
         p2.skip(s["id"])
         self.assertEqual(p2.pending()["pending"], [])
         self.assertTrue(p2.skip(s["id"])["noop"])  # (skipped twice: a no-op)
+
+    def test_build_maps(self):
+        p = self.new()
+        t = os.path.join(self.quark, "testing")
+        self.assertIsNone(p.find_build("testing")["maps"])  # (no maps folder: no pickers)
+        self.assertEqual(p.build_maps("testing")["maps"], [])
+        write(os.path.join(t, "maps", "summit.qmap"), "title Summit\nfor koth\nmodes koth ffa\n")
+        sig = p.find_build("testing")["maps"]
+        self.assertTrue(sig)
+        got = p.api_get("maps", {"build": ["testing"]})
+        self.assertEqual((got[0], got[1]["sig"], [x["name"] for x in got[1]["maps"]]), (200, sig, ["summit"]))
+        self.assertEqual(got[1]["titles"]["koth"], "KING OF THE HILL")
+        self.assertEqual(p.find_build("testing")["maps"], sig)  # (cached: same listing, same sig)
+        write(os.path.join(t, "maps", "harbor.qmap"), "title Harbor\nfor ffa\n")
+        self.assertNotEqual(p.find_build("testing")["maps"], sig)
+        self.assertEqual(p.api_get("maps", {"build": ["../x"]})[0], 404)
 
     def test_stop_log_open(self):
         fake_game(os.path.join(self.quark, "testing"), seconds=30, code=0)

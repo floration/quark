@@ -110,6 +110,13 @@ SESSION_RE = re.compile(r"^p\d{14}-[0-9a-f]{4}$")
 NOTE_RE = re.compile(r"^[pn]\d{14}-[0-9a-f]{4}$")   # (a note's id: its session's, or n... for a note without one)
 NOT_GAME = ("quark_launcher", "quark_server", "quark_tests", "quark_sign", "quark_maptool", "fuzz_")
 FIELDS = (("did", "Did"), ("noticed", "Noticed"), ("change", "Wants changed"), ("other", "Also"))
+# The game's modes in its own order (modeName in src/game/gamedefs.h; tests/test_play.py checks they match): the mode
+# picker's order. A mode only a build's maps name (a newer game) is listed after these.
+GAME_MODES = ("vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points")
+GAME_MODE_TITLES = ("VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1",
+                    "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT")   # (modeTitle, same order)
+MAP_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.qmap$")
+MAX_MAPS = 300                # (a maps folder with more is cut there: the picker is a list, not a file browser)
 
 # Windows process creation flags
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -217,6 +224,44 @@ def parse_args(text):
         return shlex.split(text)
     except ValueError:
         raise PlayError(400, "The launch options have an unclosed quote.")
+
+
+def read_maps(folder):
+    """A build's maps folder (<folder>/maps/*.qmap, as every package ships it) -> [{name, title, for, modes,
+    handmade}] by name, from each map's header lines (tools/make_maps.py writes `title`, `for <mode>` and
+    `modes <mode> ...` at the top; the editor writes `handmade`)."""
+    out = []
+    try:
+        names = sorted(n for n in os.listdir(os.path.join(folder, "maps")) if MAP_RE.match(n))[:MAX_MAPS]
+    except OSError:
+        return out
+    for n in names:
+        m = {"name": n[:-5], "title": None, "for": None, "modes": [], "handmade": False}
+        try:
+            with open(os.path.join(folder, "maps", n), "rb") as f:
+                head = f.read(4096).decode("utf-8", "replace").split("\n")[:40]
+        except OSError:
+            continue
+        for line in head:
+            key, _, val = line.strip().partition(" ")
+            if key == "title" and val:
+                m["title"] = one_line(val, 60)
+            elif key == "for" and re.match(r"^[a-z0-9]{1,16}$", val):
+                m["for"] = val
+            elif key == "modes":
+                m["modes"] = [x for x in val.split() if re.match(r"^[a-z0-9]{1,16}$", x)][:20]
+            elif key == "handmade":
+                m["handmade"] = True
+        if m["for"] and m["for"] not in m["modes"]:
+            m["modes"].insert(0, m["for"])
+        out.append(m)
+    return out
+
+
+def map_modes(maps):
+    """The modes for the picker: the game's own, then any other mode a map names."""
+    named = {x for m in maps for x in m["modes"]}
+    return list(GAME_MODES) + sorted(named - set(GAME_MODES))
 
 
 # ---- processes ---------------------------------------------------------------------------------------------------
@@ -904,6 +949,7 @@ class Play:
         self.sync.setdefault("written", [])
         self._doc_cache = (None, [])
         self._notes_cache = (None, {})
+        self._maps_cache = {}   # (maps folder -> (its listing's key, {sig, maps, modes}))
 
     # -- files
     def _load_json(self, name, default):
@@ -1026,6 +1072,37 @@ class Play:
             out.append(self._build(builds.read_folder(ctx, os.path.join(VERSIONS, t)), VERSIONS + "/" + t, t, "version"))
         return out
 
+    def _maps(self, folder):
+        """read_maps of a build folder, cached by the maps folder's listing (names, sizes, times: one scandir a poll,
+        which on Windows needs no stat per file) -> {sig, maps, modes}, or None when it has no maps folder."""
+        d = os.path.join(folder, "maps")
+        try:
+            with os.scandir(d) as it:
+                key = tuple(sorted((x.name, x.stat().st_size, x.stat().st_mtime_ns) for x in it if MAP_RE.match(x.name)))
+        except OSError:
+            return None
+        if not key:
+            return None
+        hit = self._maps_cache.get(d)
+        if hit and hit[0] == key:
+            return hit[1]
+        maps = read_maps(folder)
+        val = {"maps": maps, "modes": map_modes(maps),
+               "sig": hashlib.sha1(json.dumps(maps, sort_keys=True).encode("utf-8")).hexdigest()[:12]}
+        self._maps_cache[d] = (key, val)
+        return val
+
+    def build_maps(self, bid):
+        """The maps and modes of a build for the page's pickers (GET /api/play/maps?build=<id>; the poll only
+        carries their sig, so the lists are fetched once per set of maps)."""
+        b = self.find_build(str(bid or ""))
+        if not b:
+            raise PlayError(404, "That build is not on this PC.")
+        m = self._maps(b["folder"]) if b.get("present") else None
+        if not m:
+            m = {"sig": None, "maps": [], "modes": list(GAME_MODES)}
+        return dict(m, build=b["id"], titles=dict(zip(GAME_MODES, GAME_MODE_TITLES)))
+
     def _build(self, e, bid, label, kind):
         exe = find_exe(e["path"]) if e.get("present") else None
         with self.lock:
@@ -1035,6 +1112,8 @@ class Play:
              "mtime": e.get("mtime"), "lines": e.get("lines") or [], "note": e.get("note"),
              "exe": os.path.basename(exe) if exe else None, "playable": bool(exe), "running": running,
              "missing": None if exe else ("folder missing" if not e.get("present") else "no quark.exe in it")}
+        m = self._maps(e["path"]) if exe else None
+        b["maps"] = m["sig"] if m else None
         if kind == "version" and e.get("present"):
             # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded)
             try:
@@ -1991,6 +2070,8 @@ class Play:
         try:
             if what == "log":
                 return 200, self.game_log(q("session"))
+            if what == "maps":
+                return 200, self.build_maps(q("build"))
         except PlayError as e:
             return e.code, {"ok": False, "message": e.message, "reason": e.reason}
         return 404, {"ok": False, "message": "not found"}

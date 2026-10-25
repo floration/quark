@@ -17,6 +17,11 @@ main { max-width: 2600px; }
 .build .opt { margin-top: 6px; width: 100%; min-width: 0; font-family: var(--mono); font-size: 12px; padding: 3px 6px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
 .build .opt::placeholder { color: var(--ink-3); }
+.build .pick { display: flex; gap: 4px; margin-top: 4px; min-width: 0; }
+.build .pick[hidden] { display: none; }
+.build .pick select { flex: 1 1 0; min-width: 0; font-size: 12px; padding: 2px 4px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.build .pick select:focus { outline: 2px solid var(--focus); outline-offset: 0; }
 .build .act { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .btn.primary, button.primary { background: var(--link); color: var(--qt-accent-ink, #0b1a2b); border-color: var(--link); }
 .btn.primary:hover:not(:disabled) { background: var(--link); filter: brightness(1.08); }
