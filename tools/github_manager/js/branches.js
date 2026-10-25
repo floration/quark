@@ -1,7 +1,7 @@
 // Branches: one table, filter by kind / CI / text, sort by age or by how far ahead.
 import { store } from './store.js';
 import { html, relOnly, matches, ms, enc, runState, plural, aheadBehind, prChip, ghLink, docsLink, commitChip, kindLabel, unread, unknownLine } from './util.js';
-import { lastRunCell, abBar } from './parts.js';
+import { lastRunCell, abBar, checksBadge } from './parts.js';
 import { noteBadge } from './notes.js';
 import { filterState, search, select, segmented, bind } from './filters.js';
 
@@ -52,7 +52,7 @@ export const branches = {
         <td class="b-head"><span class="subj" title="${b.subject}">${b.subject}</span><span class="muted small">${commitChip(b.sha)} ${b.author}</span></td>
         <td class="b-age nowrap">${relOnly(b.date)}</td>
         <td class="b-ab"><span class="ab-text">${b.kind === 'testing' ? html`<span class="muted">the reference</span>` : b.unrelated ? html`<span class="muted" title="An orphan branch: it shares no commit with testing, so there is no ahead / behind">no shared history</span>` : aheadBehind(b.ahead, b.behind).replace(' of testing', '')}</span>${b.kind === 'testing' || b.unrelated ? '' : abBar(b.ahead, b.behind, max)}</td>
-        <td class="b-pr nowrap">${p ? html`${prChip(p.number, p.title)} <span class="muted small">${p.state === 'open' ? (p.draft ? 'draft' : 'open') : p.merged ? 'merged' : 'closed'}</span>` : prsUnread ? html`<span class="tag t-warn" title="GitHub's pull requests haven't been read since the server started: unknown, not none">?</span>` : html`<span class="muted">—</span>`}</td>
+        <td class="b-pr nowrap">${p ? html`${prChip(p.number, p.title)} <span class="muted small">${p.state === 'open' ? (p.draft ? 'draft' : 'open') : p.merged ? 'merged' : 'closed'}</span>${p.state === 'open' ? html` <span class="pr-checks">${checksBadge(p)}</span>` : ''}` : prsUnread ? html`<span class="tag t-warn" title="GitHub's pull requests haven't been read since the server started: unknown, not none">?</span>` : html`<span class="muted">—</span>`}</td>
         <td class="b-ci nowrap">${lastRunCell(b.lastRun)}</td>
         <td class="b-docs">${docsLink(b.name)}</td>
       </tr>`;

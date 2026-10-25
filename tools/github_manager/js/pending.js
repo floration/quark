@@ -99,7 +99,7 @@ function changeCard(c) {
       <span class="pd-arrow" aria-hidden="true">→</span>
       <div class="pd-a"><span class="eyebrow">After</span><p>${c.afterText}</p></div>
     </div>
-    ${isRs ? html`<details class="pd-diff" open><summary>Ruleset JSON, before → after <span class="muted small">(${(c.diff || []).filter((l) => l.startsWith('+') && !l.startsWith('+++')).length} lines added, ${(c.diff || []).filter((l) => l.startsWith('-') && !l.startsWith('---')).length} removed)</span></summary>${diffBlock(c.diff)}</details>` : ''}
+    ${isRs ? html`<details class="pd-diff"${done ? '' : ' open'}><summary>Ruleset JSON, before → after <span class="muted small">(${(c.diff || []).filter((l) => l.startsWith('+') && !l.startsWith('+++')).length} lines added, ${(c.diff || []).filter((l) => l.startsWith('-') && !l.startsWith('---')).length} removed)</span></summary>${diffBlock(c.diff)}</details>` : ''}
     <details class="pd-call"${done ? '' : ' open'}><summary>The exact call Apply makes</summary>
       <pre class="pd-cmd">${c.command}</pre>
       ${body && isRs ? html`<details class="pd-stdin"><summary class="small">with this JSON on stdin (${body.split('\n').length} lines; the diff above shows what changes)</summary><pre class="pd-body">${body}</pre></details>` : body ? html`<p class="muted small">with this JSON on stdin:</p><pre class="pd-body">${body}</pre>` : ''}
@@ -130,8 +130,8 @@ export const pendingSection = {
       ${!all.length ? html`<p class="empty">Nothing is queued. Queue a branch change in <a href="#tab=editor&sec=structure">Structure</a> or a ruleset change in <a href="#tab=editor&sec=rules">Rules &amp; limits</a>.</p>` : ''}
       ${ged.pending.loadError ? html`<p class="msg warn small">${ged.pending.loadError}</p>` : ''}
     </section>
-    ${waiting.map(changeCard)}
-    ${done.length ? html`<h3 class="pd-done-h">Applied <span class="count">${done.length}</span></h3>${done.slice().reverse().map(changeCard)}` : ''}`);
+    <div class="pd-grid">${waiting.map(changeCard)}</div>
+    ${done.length ? html`<h3 class="pd-done-h">Applied <span class="count">${done.length}</span></h3><div class="pd-grid">${done.slice().reverse().map(changeCard)}</div>` : ''}`);
   },
 };
 

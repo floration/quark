@@ -26,7 +26,8 @@ Two more tabs:
     history), edited with a form and queued; and *Followed by every Claude*, the agent rules (push / merge / version
     / CI / limit / other, scoped to all, a branch pattern or a tool), with the limits' values editable inline, saved
     locally (`editor/rules.json`) at once.
-  - **Pending changes**: each queued GitHub change with its before -> after (a sentence for a branch, the JSON diff
+  - **Pending changes** (two cards across on a wide screen; an applied ruleset's diff starts folded): each queued
+    GitHub change with its before -> after (a sentence for a branch, the JSON diff
     for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). A delete,
     or a change with warnings (among them a ruleset change that adds a required PR, required checks or linear
     history: it can stop every Claude pushing to testing), asks before it goes; Apply all's confirm lists every change with its warnings. After

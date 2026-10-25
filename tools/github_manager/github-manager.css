@@ -267,6 +267,7 @@ table.branches tbody tr:hover, table.branches tbody tr:focus-visible { backgroun
 .lr { display: inline-flex; }
 .lr:hover { text-decoration: none; filter: brightness(1.1); }
 .b-sub { display: none; }
+table.branches .b-pr .pr-checks { display: none; }   /* shown at 1800 px and wider (below) */
 /* narrower than 1500 px (a 1280 window): the head commit folds under the branch name, so the table fits without
    sideways scrolling; narrower than 1100 px the age goes too */
 @media (max-width: 1500px) {
@@ -618,4 +619,8 @@ pre.diff .d-ctx { color: var(--gm-muted); }
   /* History: a day's events flow down then into the next column, so it still reads as a timeline */
   .events.cols { columns: 3 640px; column-gap: var(--gm-s5); }
   .events.cols > .ev { break-inside: avoid; }
+  /* Pending changes: two cards across at 2560 (an applied one's diff and call start folded) */
+  .pd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 760px), 1fr)); column-gap: var(--gm-s3); align-items: start; }
+  /* Branches: the open PR's checks fill the gap in the PR column */
+  table.branches .b-pr .pr-checks { display: inline-flex; }
 }
