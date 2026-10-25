@@ -83,7 +83,8 @@ export class RangeView {
         $("pg-range").classList.toggle("three", !!o.three);
         this._syncWeapon();
     }
-    _three(on) { this.opts.three = on; this._save(); $("r2d").classList.toggle("on", !on); $("r3d").classList.toggle("on", on); $("pg-range").classList.toggle("three", on); if (on && this.m3.gl) this.m3.start(); else this.m3.stop(); }
+    // (placing works on the top-down view only: 3D ends it, Place switches back to top-down)
+    _three(on) { if (on && this.placing) this._setPlacing(false); this.opts.three = on; this._save(); $("r2d").classList.toggle("on", !on); $("r3d").classList.toggle("on", on); $("pg-range").classList.toggle("three", on); if (on && this.m3.gl) this.m3.start(); else this.m3.stop(); }
     async _loadMap(v) {
         if (!v) { this.map = this.builtin; this.mapText = null; this.mapName = null; }
         else {
@@ -135,6 +136,7 @@ export class RangeView {
     _storePlaced(P) { this.opts.placed[this._mapKey] = P; if (this.opts.preset !== "placed") { this.opts.preset = "placed"; $("rPreset").value = "placed"; } this._save(); this._stale = !!this.res; this._side(); this.mv.invalidate(); }
     _floor(x, z) { return this.map === this.builtin ? 0 : floorAt(this.map, x, z, this.mv.slice); }
     _setPlacing(on) {
+        if (on && this.opts.three) { this._three(false); this.app.toast("placing is on the top-down view", 2500); }
         this.placing = on;
         if (on) $("rangeMsg").textContent = "";
         $("rPlace").classList.toggle("on", on);
