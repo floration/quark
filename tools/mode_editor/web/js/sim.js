@@ -132,13 +132,15 @@ export function endCardFields(start, end) {
     return { teams, rounds: teams || (end && end.rounds > 0), objTime: players.some((p) => p.objTime > 0) };
 }
 
-const FORM_DEFAULT = { map: "", bots: null, skill: 2, seed: 1, secs: 1800, hz: 125, real: false, trace: true, compare: false, brainA: "default", brainB: "", n: 20 };
+// perBase: {<base mode>: {map, bots}}, the map and bot count picked for each base mode (none: the mode's own map, 2 or
+// 8 bots), so a map chosen for one mode never carries over to another
+const FORM_DEFAULT = { perBase: {}, skill: 2, seed: 1, secs: 1800, hz: 125, real: false, trace: true, compare: false, brainA: "default", brainB: "", n: 20 };
 
 export class SimView {
     constructor(root, app) {
         this.root = root; this.app = app;   // app: the ModePage
         this.status = null;                 // /api/modesim/status
-        this.form = { ...FORM_DEFAULT };    // map "" / bots null: the mode's own (its map, 2 or 8 bots)
+        this.form = { ...FORM_DEFAULT, perBase: {} };
         this.runs = [];                     // [{label, kind, lines, model, id, es, done, stopped}]
         this.batches = [];                  // [{label, kind, lines, id, es, done, stopped, request}]
         this.brains = []; this.scenarios = []; this.scenario = "";
@@ -160,18 +162,25 @@ export class SimView {
     // ---- the form, kept here (not in the DOM) and through serve.py
     _maps() { return (this.maps || []).filter((m) => m.source === "default" || m.source === "user"); }
     _twoPlayer() { const b = this.app.base; return b === "duel" || b === "1v1" || b === "tourney"; }
+    _mine() { return this.form.perBase[this.app.base] || { map: "", bots: null }; }
+    _ownMap() { const maps = this._maps(); return (maps.find((m) => m.for === this.app.base) || maps[0] || { name: "" }).name; }
     _value(k) {
-        const f = this.form;
-        if (k === "map") { const maps = this._maps(); return f.map && maps.some((m) => m.name === f.map) ? f.map : f.map && !maps.length ? f.map : (maps.find((m) => m.for === this.app.base) || maps[0] || { name: "" }).name; }
-        if (k === "bots") return f.bots ?? (this._twoPlayer() ? 2 : 8);
+        const f = this.form, mine = this._mine();
+        if (k === "map") { const maps = this._maps(); return mine.map && (maps.some((m) => m.name === mine.map) || !maps.length) ? mine.map : this._ownMap(); }
+        if (k === "bots") return mine.bots ?? (this._twoPlayer() ? 2 : 8);
         return f[k];
+    }
+    // this base mode's map and bots: kept only when they differ from the mode's own
+    _setMine(map, bots) {
+        const perBase = { ...this.form.perBase }, mine = { map: map === this._ownMap() ? "" : map, bots: bots === (this._twoPlayer() ? 2 : 8) ? null : bots };
+        if (mine.map || mine.bots !== null) perBase[this.app.base] = mine; else delete perBase[this.app.base];
+        this.form.perBase = perBase;
     }
     _readForm() {
         const R = this.root, v = (id) => R.querySelector("#" + id);
-        if (!v("smRun")) return;
-        const map = v("smMap").value, autoMap = this._value("map");
-        const bots = +v("smBots").value;
-        this.form = { map: map === autoMap && !this.form.map ? "" : map, bots: bots === (this._twoPlayer() ? 2 : 8) && this.form.bots === null ? null : bots,
+        if (!v("smRun") || this._formBase !== this.app.base) return;   // (the form on screen is another mode's: a late change event)
+        this._setMine(v("smMap").value, +v("smBots").value);
+        this.form = { perBase: this.form.perBase,
             skill: +v("smSkill").value, seed: +v("smSeed").value, secs: +v("smSecs").value, hz: +v("smHz").value, real: v("smReal").checked,
             trace: v("smTrace").checked, compare: v("smCompare").checked, brainA: v("smBrainA").value, brainB: v("smBrainB").value, n: v("smN") ? +v("smN").value : this.form.n };
         this._persistSoon();
@@ -188,7 +197,7 @@ export class SimView {
         let st = null;
         try { st = await api.state("sim"); } catch {}
         if (!st) return;
-        if (st.form) this.form = { ...FORM_DEFAULT, ...st.form };
+        if (st.form) { const { map, bots, ...rest } = st.form; this.form = { ...FORM_DEFAULT, ...rest, perBase: rest.perBase || {} }; }   // (map / bots: an older page's, for every mode)
         this.scenario = st.scenario || "";
         // the runs the page had going: serve.py keeps their lines, so they replay from the start and go on streaming
         for (const x of st.runs || []) {
@@ -253,6 +262,7 @@ export class SimView {
           </div>
           <div class="muted sim-src">quark_maptool modesim · ${esc(st.maptool)}</div>
         </div><div id="smOut"></div>`;
+        this._formBase = base;   // (set after the old form is gone: a focused field sends its change while innerHTML removes it)
         R.querySelectorAll(".sim-form input, .sim-form select:not(#smScen)").forEach((e) => (e.onchange = () => this._readForm()));
         R.querySelector("#smRun").onclick = () => this.run();
         R.querySelector("#smStop").onclick = () => this.stop();
@@ -266,7 +276,8 @@ export class SimView {
     _loadScenario(name) {
         this.scenario = name;
         const s = this.scenarios.find((x) => x.name === name);
-        if (s && s.scenario.form) this.form = { ...FORM_DEFAULT, ...s.scenario.form };
+        // (a scenario's map and bots are for this mode now)
+        if (s && s.scenario.form) { const { map, bots, perBase, ...rest } = s.scenario.form; this.form = { ...FORM_DEFAULT, ...rest, perBase: this.form.perBase }; this._setMine(map || this._ownMap(), bots ?? (this._twoPlayer() ? 2 : 8)); }
         this._persist();
         this.render();
     }
@@ -275,7 +286,8 @@ export class SimView {
         const name = await this.app.app.prompt("Save scenario", this.scenario || this.app.base + "-" + (this._value("map") || "map"),
             `This setup (map, bots, brains, seed, time, rate...) as a scenario in ${this.scenariosDir}.`, (n) => (NAME_RE.test(n) ? null : "Letters, digits, _ . - (up to 64)"));
         if (!name) return;
-        const sc = { form: this.form, base: this.app.base, saved: new Date().toISOString().slice(0, 19) };
+        const { perBase, ...rest } = this.form;
+        const sc = { form: { ...rest, map: this._value("map"), bots: this._value("bots") }, base: this.app.base, saved: new Date().toISOString().slice(0, 19) };
         try { await api.saveScenario(name, sc); } catch (e) { this.app.app.toast("Couldn't save it: " + e.message, 6000); return; }
         this.scenarios = this.scenarios.filter((s) => s.name !== name).concat([{ name, scenario: sc }]).sort((a, b) => a.name.localeCompare(b.name));
         this.scenario = name;
