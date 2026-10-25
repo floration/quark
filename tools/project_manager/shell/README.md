@@ -206,9 +206,20 @@ When the window closes, or the app relaunches, and `electron.next\` is complete,
 `electron-swap.ps1` hidden (through cmd.exe, so libuv's job does not take it down with the shell; paths and arguments
 go in `QUARK_SWAP_*` environment variables). It waits for the shell's process to end, renames `electron\` to
 `electron.old\` and `electron.next\` to `electron\` (each rename retried for 30 s while Electron's helper processes let
-go; the first is put back if the second fails), deletes `electron.old\` and, on a relaunch, starts the app with the
-same arguments. If the swap never works the old Electron stays and the next close tries again. Log:
-`logs\electron-swap.log`. `shell-status.json` shows `electron` (running) and `electronStaged`.
+go; the first is put back if the second fails) and, on a relaunch, starts the app with the same arguments. If the swap
+never works the old Electron stays and the next close tries again.
+
+Rollback (a new Electron major can change an API `main.js` uses): `electron.old\` stays while the new Electron is on
+probation. `main.js` checks that first thing, before any Electron call: once its window is up it writes
+`electron.old\window-opened` and deletes `electron.old\` a minute later. If the window has not opened within 60 s (the
+error went to `shell-errors.log` and the process lives on with no window), it starts `electron-swap.ps1` in rollback
+mode and exits: the script puts `electron.old\` back as `electron\`, deletes the new one, writes its version to
+`electron.rejected` and opens the app again. On a relaunch the script also watches the new Electron for 40 s and does
+the same when it exits before its window opened (a crash before `main.js` runs). The updater never downloads a version
+in `electron.rejected` again (the row says so); a newer release is tried. A native crash on a start q makes by hand
+(after a close, not a relaunch) is not caught: then rename `electron\` away and `electron.old\` back by hand. Log:
+`logs\electron-swap.log` (and `logs\updates.log`). `shell-status.json` shows `electron` (running), `electronStaged` and
+`electronProbation`.
 
 ## Behaviour
 

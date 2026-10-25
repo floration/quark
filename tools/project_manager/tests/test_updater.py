@@ -444,6 +444,20 @@ class TestElectronUpdate(unittest.TestCase):
         self.assertEqual(e["note"], "Electron 45.1.0 is the latest")
         self.assertFalse(os.path.exists(nxt))
 
+    def test_rolled_back_version_is_skipped(self):
+        # electron-swap.ps1 rolled 45.1.0 back (electron.rejected): it is never downloaded again; a newer one is
+        write(os.path.join(self.paths.pm_dir, "electron.rejected"), "45.1.0\n")
+        _, e = self.run_entry()
+        self.assertEqual((e["state"], self.hits), ("ok", ["/latest"]))
+        self.assertIn("45.1.0 did not run Quark Project", e["note"])
+        self.assertFalse(os.path.exists(os.path.join(self.paths.pm_dir, "electron.next")))
+        _, e = self.run_entry(now=time.time() + 60)  # (within the gap: the same note from the local files)
+        self.assertIn("rolled back", e["note"])
+        self.set_release("45.2.0")
+        _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 5)
+        self.assertEqual(e["state"], "staged")
+        self.assertIn("45.2.0 is downloaded", e["note"])
+
     def test_corrupt_prerelease_and_missing(self):
         self.set_release("45.1.0", corrupt=True)
         _, e = self.run_entry()

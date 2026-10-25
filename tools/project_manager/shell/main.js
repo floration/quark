@@ -87,6 +87,20 @@ function logShellError(kind, err) {
 }
 process.on('uncaughtException', (err) => logShellError('uncaught exception', err));
 process.on('unhandledRejection', (err) => logShellError('unhandled rejection', err));
+// A newer Electron just swapped in is on probation (shell/README.md "Electron updates"): electron-swap.ps1 keeps the
+// previous one in electron.old\ until this copy has shown its window (within PROBATION_MS) and run for a minute
+// (PROBATION_OK_MS); then electron.old\ is deleted. A window that never opens (a new Electron major changed an API this
+// file uses, and the error above kept the process alive with no window) starts the script in rollback mode instead.
+// Set this early, before any Electron API call, so a throwing call still meets the timer.
+const ELECTRON_DIR = path.join(PM_DIR, 'electron');
+const ELECTRON_NEXT = path.join(PM_DIR, 'electron.next');
+const ELECTRON_OLD = path.join(PM_DIR, 'electron.old');
+const PROBATION_MS = 60000;
+const PROBATION_OK_MS = 60000;
+const ON_PROBATION = (IS_WIN || process.env.QUARK_SHELL_SELFTEST === '1')
+  && path.relative(ELECTRON_DIR, path.dirname(process.execPath)) === ''
+  && fs.existsSync(path.join(ELECTRON_OLD, path.basename(process.execPath)));
+let probationTimer = ON_PROBATION ? setTimeout(() => electronRollback('did not open its window within ' + PROBATION_MS / 1000 + ' s'), PROBATION_MS) : null;
 // The shell's build: package.json's version plus a hash of its own files, so shell-status.json and quarkShell.version
 // tell which copy runs (the self-update replaces the files without touching package.json's version).
 const SHELL_BUILD = (() => {
@@ -846,8 +860,6 @@ async function relaunchApp(mode = 'manual') {
 // runs electron\electron.exe, which cannot be replaced while it runs, so on close (and on a relaunch) the shell starts
 // electron-swap.ps1, which waits for this process to end, swaps the folders and (on a relaunch) starts the app again.
 // Started through cmd.exe like the servers: libuv's job would kill a direct child with this process.
-const ELECTRON_DIR = path.join(PM_DIR, 'electron');
-const ELECTRON_NEXT = path.join(PM_DIR, 'electron.next');
 function stagedElectron() {
   // the version waiting in electron.next\ when this shell runs from the electron\ next to it (Windows), else null
   if (!IS_WIN || !inside(path.resolve(process.execPath), ELECTRON_DIR) || !isFile(path.join(ELECTRON_NEXT, 'electron.exe'))) return null;
@@ -857,26 +869,54 @@ function stagedElectron() {
   } catch { return null; }
 }
 let swapStarted = false;
-function swapElectron(relaunch) {
-  // -> true when electron-swap.ps1 was started (with relaunch it also opens the app again, in place of app.relaunch)
-  if (swapStarted) return true;
-  const ver = stagedElectron();
+function startSwapScript(mode, relaunch) {
+  // electron-swap.ps1 in 'swap' or 'rollback' mode, hidden; it waits for this process to end. -> true when started
   const script = path.join(SHELL_DIR, 'electron-swap.ps1');
-  if (!ver || !isFile(script)) return false;
+  if (swapStarted || !IS_WIN || !isFile(script)) return swapStarted;
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
     // (paths and the relaunch arguments go in the environment: no quoting through cmd.exe and powershell -File)
     const args = process.argv.slice(1).filter((a) => !/^--selftest/.test(a)).map((a) => '"' + a.replace(/"/g, '') + '"').join(' ');
-    const env = Object.assign({}, process.env, { QUARK_SWAP_PID: String(process.pid), QUARK_SWAP_PM: PM_DIR,
+    const env = Object.assign({}, process.env, { QUARK_SWAP_PID: String(process.pid), QUARK_SWAP_PM: PM_DIR, QUARK_SWAP_MODE: mode,
       QUARK_SWAP_LOG: path.join(LOG_DIR, 'electron-swap.log'), QUARK_SWAP_RELAUNCH: relaunch ? '1' : '', QUARK_SWAP_ARGS: args });
     const child = spawn('powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + script + '"',
       { shell: true, cwd: PM_DIR, windowsHide: true, stdio: 'ignore', env });
     child.on('error', (err) => logShellError('electron swap', err));
     child.unref();
     swapStarted = true;
-    logNote('updates', 'Electron ' + ver + ' replaces ' + process.versions.electron + ' once this window has closed' + (relaunch ? '; then the app opens again' : ''));
     return true;
   } catch (err) { logShellError('electron swap', err); return false; }
+}
+function swapElectron(relaunch) {
+  // -> true when electron-swap.ps1 was started (with relaunch it also opens the app again, in place of app.relaunch)
+  if (swapStarted) return true;
+  const ver = stagedElectron();
+  if (!ver || !startSwapScript('swap', relaunch)) return false;
+  logNote('updates', 'Electron ' + ver + ' replaces ' + process.versions.electron + ' once this window has closed' + (relaunch ? '; then the app opens again' : ''));
+  return true;
+}
+// the probation of a newly swapped-in Electron (ON_PROBATION, at the top): passed once the window is up, then
+// electron.old\ goes a minute later; failed: back to the previous Electron, and the app opens again on it
+function electronProbationPassed() {
+  if (!probationTimer) return;
+  clearTimeout(probationTimer);
+  // (tells electron-swap.ps1's watch that an exit from now on is q closing the window, not a failed start)
+  try { fs.writeFileSync(path.join(ELECTRON_OLD, 'window-opened'), new Date().toISOString() + '\n'); } catch { /* (electron.old already gone) */ }
+  probationTimer = setTimeout(() => {
+    probationTimer = null;
+    try {
+      fs.rmSync(ELECTRON_OLD, { recursive: true, force: true, maxRetries: 3 });
+      logNote('updates', 'Electron ' + process.versions.electron + ' runs Quark Project: the previous Electron (electron.old) was deleted');
+      writeShellStatus();
+    } catch (err) { logNote('updates', 'electron.old could not be deleted (' + (err.code || err.message) + '); the next start tries again'); }
+  }, PROBATION_OK_MS);
+}
+function electronRollback(why) {
+  probationTimer = null;
+  logNote('updates', 'Electron ' + process.versions.electron + ' ' + why + ': going back to the previous Electron (electron.old)');
+  if (!startSwapScript('rollback', true)) return;
+  try { closeConfirmed = true; stopStartedServers(); } catch { /* (still going) */ }
+  try { app.exit(0); } catch { process.exit(0); }
 }
 
 // ---------- placeholder page (shown in the tab's own view) ----------
@@ -1157,7 +1197,7 @@ function writeShellStatus() {
     statusWriteTimer = null;
     if (stopped) return;
     const body = JSON.stringify({
-      shellVersion: SHELL_VERSION, electron: process.versions.electron, electronStaged: stagedElectron(),
+      shellVersion: SHELL_VERSION, electron: process.versions.electron, electronStaged: stagedElectron(), electronProbation: ON_PROBATION && !!probationTimer,
       guard: !!guard, pid: process.pid, startedAt: new Date(APP_STARTED_AT).toISOString(),
       autoRelaunchedAt: state.autoRelaunchedAt ? new Date(state.autoRelaunchedAt).toISOString() : null,
       selfUpdated, active: activeId, tabsFile, tabsError: tabsError || null,
@@ -1756,6 +1796,7 @@ function createWindow() {
   tabbar.webContents.once('did-finish-load', () => {
     if (state.maximized || state.maximized === undefined) win.maximize(); // (first run: fill the screen)
     win.show();
+    electronProbationPassed();
     const want = argValue('tab');
     const first = (want && tabById(want)) ? want : (tabById(state.lastTab) ? state.lastTab : (tabs[0] && tabs[0].id));
     if (first) openTab(first);

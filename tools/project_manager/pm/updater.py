@@ -17,7 +17,8 @@ in one background thread:
   5. `"run": "builtin:electron-update"` (no sources, no stamp; at most every ELECTRON_CHECK_GAP): when the latest
      stable Electron release is newer than Quark\\project-manager\\electron\\VERSION, downloads its zip, checks it
      against that release's SHASUMS256.txt and unpacks it into electron.next\\. The running electron.exe cannot be
-     replaced, so the shell swaps the folders after it exits (shell/electron-swap.ps1, on close or restart).
+     replaced, so the shell swaps the folders after it exits (shell/electron-swap.ps1, on close or restart). A version
+     that did not run the app was rolled back by that script and named in electron.rejected: never downloaded again.
 """
 import hashlib
 import json
@@ -53,6 +54,8 @@ ELECTRON_CHECK_GAP = 12 * 3600.0
 ELECTRON_MAX_ZIP = 400 * 1024 * 1024
 ELECTRON_TIMEOUT = 60
 ELECTRON_DIR, ELECTRON_NEXT = "electron", "electron.next"
+# a version that did not run the app and was rolled back (shell/electron-swap.ps1 writes it): never downloaded again
+ELECTRON_REJECTED = "electron.rejected"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # what setup.ps1 copies (quark.ico aside); q's files next to them (tabs.json, config.json, history.jsonl, state.json,
 # oracle-last.json, installs-state.json, logs\, electron\) are never written here
@@ -396,6 +399,20 @@ def installed_electron(folder, exe):
     return v if VERSION_RE.match(v) else None
 
 
+def rejected_electron(pm_dir):
+    """The version electron-swap.ps1 rolled back (electron.rejected), else None."""
+    try:
+        with open(os.path.join(pm_dir, ELECTRON_REJECTED), encoding="utf-8", errors="replace") as f:
+            v = f.readline().strip().lstrip("v")
+    except OSError:
+        return None
+    return v if VERSION_RE.match(v) else None
+
+
+def _rejected_note(ver, have):
+    return "Electron %s did not run Quark Project and was rolled back; staying on %s until a newer release" % (ver, have)
+
+
 def electron_view(paths, latest, plat=None):
     """(state, note, installed) of the Electron row from the local folders only (cheap; the 12 h gap between checks
     uses it, so the row follows a swap or a download at once): "staged" while electron.next\ holds a newer Electron
@@ -409,6 +426,8 @@ def electron_view(paths, latest, plat=None):
         return ("staged", "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts"
                 % (staged, have), have)
     if version_tuple(latest) and version_tuple(latest) > version_tuple(have):
+        if latest == rejected_electron(paths.pm_dir):
+            return "ok", _rejected_note(latest, have), have
         return "ok", "Electron %s is out; the next check downloads it" % latest, have
     return "ok", "Electron %s is the latest" % have, have
 
@@ -470,6 +489,11 @@ def electron_update(paths, log_path, releases_url=None, plat=None):
             note = "Electron %s is the latest" % have
             if staged:
                 shutil.rmtree(os.path.join(pm, ELECTRON_NEXT), ignore_errors=True)  # (an older download: not needed)
+            raise _Done
+        if ver == rejected_electron(pm):
+            note = _rejected_note(ver, have)
+            if staged:
+                shutil.rmtree(os.path.join(pm, ELECTRON_NEXT), ignore_errors=True)
             raise _Done
         if staged == ver:
             note = "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts" % (ver, have)

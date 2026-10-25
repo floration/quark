@@ -75,8 +75,9 @@ if ($NoElectron) {
   $have = ''
   if (Test-Path (Join-Path $electronDir 'VERSION')) { $have = (Get-Content (Join-Path $electronDir 'VERSION') -TotalCount 1).Trim() }
   Write-Host "Electron $have is already installed (the app updates it by itself: a newer one is staged in electron.next and swapped in when Quark Project closes)"
-  # (leftovers of an interrupted Electron update)
-  foreach ($left in 'electron.old', 'electron.next.tmp', 'electron.download') {
+  # (leftovers of an interrupted Electron update; electron.old is kept: the previous Electron while a new one is on
+  #  probation, see shell\README.md "Electron updates")
+  foreach ($left in 'electron.bad', 'electron.next.tmp', 'electron.download') {
     $p = Join-Path $Dest $left
     if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
   }
