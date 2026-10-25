@@ -264,6 +264,16 @@ class RefreshAndGzipTests(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class TestsReasonTests(unittest.TestCase):
+    def test_whole_sentences(self):
+        why = lambda t, b: serve.waiting_on(entry("03-possible-bugs.md", t, body=b), [])[1]
+        self.assertEqual(why("CI flakes seen on testing:", "netcode input backlog."), "Tests: CI flakes seen on testing.")
+        w = why("Shortcuts run smaller sets", "than the group\n(tests.cpp ~6750); reproducing a CI failure can skip it.")
+        self.assertTrue(w.startswith("Tests: Shortcuts run smaller sets than the group (tests.cpp ~6750); reproducing"), w)
+        self.assertFalse(w.endswith(".."), w)
+        self.assertEqual(serve._prose(["Title.", "Body\nwrapped", None, "open"]), "Title.\nBody wrapped open")
+
+
 class BlocksTests(unittest.TestCase):
     def test_not_itself(self):
         h = entry("02-currently-working-on.md", "Approve it", priority="HALT", thread="q", threadRaw="q")

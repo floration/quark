@@ -309,6 +309,11 @@ button.linkish:hover { text-decoration: underline; }
 .tag.q { --c: var(--dm-q); } .tag.ci, .tag.s-failure { --c: var(--qt-bad); } .tag.pr { --c: var(--dm-pr); } .tag.tests { --c: var(--dm-tests); }
 .tag.s-open { --c: var(--dm-q); } .tag.s-merged, .tag.s-success { --c: var(--qt-ok); } .tag.s-in_progress { --c: var(--qt-accent); }
 .kempty { font-size: 11px; padding: 2px; }
+.kgrp { break-inside: avoid; padding-bottom: 8px; }
+.kcol.wide { grid-column: span 2; }
+.kcol.wide .kgrps { column-count: 2; column-gap: 8px; }
+.kgrp-h { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: var(--qt-muted); padding: 0 2px 3px; }
+button.linkish.kgrp-more { font-size: 11px; margin: 0 0 2px 3px; }
 
 /* board: timeline */
 .tl { display: flex; margin: 10px 12px 0; border: 1px solid var(--qt-line); border-radius: 6px; background: var(--qt-panel); overflow: hidden; }

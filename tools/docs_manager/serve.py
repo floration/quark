@@ -239,11 +239,23 @@ def _unquoted(text):
     return _QUOTED_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
+def _prose(parts):
+    """An entry's title, body and status as one text for the waiting-on rules: line wraps become spaces, and a part
+    that doesn't end a sentence runs on into the next (a title without a full stop and its body are one sentence),
+    else a new line starts. So _sentence never starts at a wrap ('(tests.cpp ~6750); reproducing ...')."""
+    out = ""
+    for p in parts:
+        p = re.sub(r"\s*\n\s*", " ", p or "").strip()
+        if not p: continue
+        out = p if not out else out + ("\n" if re.search(r"[.!?:]$", out) else " ") + p
+    return out
+
+
 def _sentence(text, m):
-    """The sentence around match m, trimmed, with 'the owner' said as q."""
+    """The sentence around match m, trimmed, with 'the owner' said as q (no closing ':' / ';' / ',')."""
     start = max(text.rfind(". ", 0, m.start()), text.rfind("\n", 0, m.start())) + 1
     ends = [i for i in (text.find(". ", m.end()), text.find("\n", m.end())) if i >= 0]
-    s = text[start:min(ends) if ends else len(text)].strip(" .\n")
+    s = text[start:min(ends) if ends else len(text)].strip(" .:;,\n")
     s = re.sub(r"\bthe owner'?s\b", "q's", s, flags=re.I)
     s = re.sub(r"\bthe owner\b|\bowner\b", "q", s, flags=re.I)
     s = s.replace("**", "").replace("`", "")
@@ -272,7 +284,7 @@ def waiting_on(e, links, answer=None):
     halting = docsparse.is_halting(e)
     if e.get("archived") and not halting: return ["none"], "Nothing: archived.", False
     if f == "08" and st != "in-progress" and not halting: return ["none"], "Nothing: a reference note.", False
-    text = "\n".join(x for x in (e["title"], e["body"], e["statusNote"], e.get("statusText")) if x)
+    text = _prose((e["title"], e["body"], e["statusNote"], e.get("statusText")))
     w, why = [], []
 
     def add(k, s=None):
@@ -311,7 +323,8 @@ def waiting_on(e, links, answer=None):
         add("claude", "A Claude thread is working on it" if started else "Nobody has started it yet")
     elif "ci" in w and not any(s.startswith("CI ") or "checks" in s for s in why):
         why.append("CI not green")
-    return w, "; ".join(why) + ".", (not started and w == ["claude"])
+    why_s = "; ".join(why)
+    return w, why_s + ("" if re.search(r"[.!?]$", why_s) else "."), (not started and w == ["claude"])
 
 
 def title_key(t):

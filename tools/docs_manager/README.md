@@ -107,8 +107,9 @@ minutes, or with "Send now". A rebase/merge in progress, unresolved conflicts, o
 
 ## Page
 
-Overview (Needs q first, waiting-on board, latest changes), Board (kanban, timeline per thread with a line and a
-date at every Dallas midnight, flow graph threads -> entries -> branches/PRs -> versions), Entries (filters, search;
+Overview (Needs q first, waiting-on board, latest changes), Board (kanban: a column of more than 12 cards is grouped
+by file, 5 cards per file with "+ N more", and on a wide screen takes two tracks with its groups side by side;
+timeline per thread with a line and a date at every Dallas midnight, flow graph threads -> entries -> branches/PRs -> versions), Entries (filters, search;
 as many 400 px columns as fit: six at 2560 px), Change log (by day, Dallas time), Files (rendered or raw with line
 numbers, a section outline on wide screens, Problems), Threads, Edit. Refresh asks the server to fetch the docs repo
 now, then reloads. Keys: `/` search, 1-7 tabs, Ctrl+S save, F8 next clash, `?` help. Deep links: `#tab=`,

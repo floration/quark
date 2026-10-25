@@ -118,12 +118,14 @@
   function openDialog(title, body) {
     clear($('#dlgTitle')).append(title);
     clear($('#dlgBody')).append(body);
+    DM.tipQuietFor(0);
     if (!dlg.open) { try { dlg.showModal(); } catch (_) { dlg.setAttribute('open', ''); } }
     $('#dlgBody').scrollTop = 0;
   }
   function closeDialog() { if (dlg.open) dlg.close(); }
   $('#dlgClose').addEventListener('click', closeDialog);
   dlg.addEventListener('click', ev => { if (ev.target === dlg) closeDialog(); });
+  dlg.addEventListener('close', () => DM.tipQuietFor(400));
 
   function openEntry(id) {
     const e = st.entryById[id];

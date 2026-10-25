@@ -583,9 +583,10 @@
     let secs = (st.fileByName[name] || {}).sections || [];
     try { secs = (await getDoc(name, false)).sections; } catch (_) { /* use the mirror's */ }
     if (af.file.value !== name) return;
+    secs = secs.filter(s => s.trim().toLowerCase() !== 'archive');      // (finished entries only; agents move them there)
     clear(af.section);
     for (const s of secs) af.section.appendChild(h('option', {value: s}, s || '(top of the file, no section)'));
-    af.section.value = secs.includes(keep) ? keep : (secs.find(s => s.toLowerCase() !== 'archive') || secs[0] || '');
+    af.section.value = secs.includes(keep) ? keep : (secs[0] || '');
     paintAddPreview();
   }
   function today() {
@@ -705,6 +706,7 @@
     if (questionList().includes(e)) {
       ed.sub = 'answer'; st.prefs.editSub = 'answer'; DM.app.save();
       DM.app.show('edit', {keepHash: true});
+      render();                       // (the tab may already be showing another part: show the answer list, or the box can't take focus)
       renderQuestions(true);
       const box = ui.qList.querySelector('.ans[data-entry="' + CSS.escape(id) + '"]');
       const ta = box && box.querySelector('textarea');

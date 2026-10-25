@@ -290,17 +290,21 @@ window.DM = window.DM || {};
   function savePrefs(p) { try { localStorage.setItem(LS_KEY, JSON.stringify(p)); } catch (_) { /* private window etc. */ } }
 
   // ---------- floating tooltip ----------
-  let tipEl = null;
+  let tipEl = null, tipQuiet = 0;
   function tip(content, x, y) {
     if (!tipEl) { tipEl = h('div', {class: 'tip', role: 'tooltip'}); document.body.appendChild(tipEl); }
-    if (content == null) { tipEl.hidden = true; return; }
+    if (content == null || performance.now() < tipQuiet) { tipEl.hidden = true; return; }
     clear(tipEl); append(tipEl, [content]); tipEl.hidden = false;
     const r = tipEl.getBoundingClientRect();
     const vx = Math.min(x + 14, innerWidth - r.width - 8), vy = y + 16 + r.height > innerHeight - 4 ? y - r.height - 10 : y + 16;
     tipEl.style.left = Math.max(4, vx) + 'px'; tipEl.style.top = Math.max(4, vy) + 'px';
   }
 
-  Object.assign(DM, {h, s, clear, $, $$, append, esc, safeUrl, safeHref, ext, dayKey, hhmm, dayLabel, full, dateOnly, rel, dayHeader,
+  // Hide the tooltip and ignore hovers for a moment: a closing dialog uncovers the dot under the pointer, whose
+  // pointerenter would show the card again and leave it up until the mouse moves.
+  function tipQuietFor(ms) { tipQuiet = performance.now() + ms; if (tipEl) tipEl.hidden = true; }
+
+  Object.assign(DM, {tipQuietFor, h, s, clear, $, $$, append, esc, safeUrl, safeHref, ext, dayKey, hhmm, dayLabel, full, dateOnly, rel, dayHeader,
     timeEl, tickTimes, fileTitle, fileShort, statusWord, isDone, isRef, isOpen, waitKeys, pill, pillEl, needsQ, PRI_RANK, priEl, isHalting, plain, trimTitle, sentences,
     chip, ghManagerUrl, shortBranch, loadPrefs, savePrefs, tip, toDate});
 })(window.DM);

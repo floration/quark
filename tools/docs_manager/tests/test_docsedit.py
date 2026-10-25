@@ -389,6 +389,9 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(cm.exception.error, "not-entries")
         with self.assertRaises(docsedit.EditError):
             self.w.add_entry({"file": "13-app-audit.md", "section": "", "title": "New"})       # a report by its name
+        with self.assertRaises(docsedit.EditError) as cm:
+            self.w.add_entry({"file": B, "section": "Archive", "title": "New"})
+        self.assertEqual(cm.exception.error, "archive")
         self.assertEqual(git(self.r.bare, "rev-parse", "main"), head)
         ok = self.w.save("14-pass-two.md", rep, rep + "\nOne more line.\n")                    # a report itself can still be edited
         self.assertTrue(ok["ok"] and ok["pushed"])

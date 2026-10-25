@@ -584,6 +584,8 @@ class Writer:
         if not entry_file_name(name):
             raise EditError(400, "bad-name", "Entries go in the numbered entry files (01 to 09, 12).")
         if not isinstance(section, str): raise EditError(400, "bad-request", "Pick a section.")
+        if section.strip().lower() == "archive":
+            raise EditError(400, "archive", "New entries don't go in Archive (it holds finished ones, moved there later). Pick another section.")
         if not title: raise EditError(400, "empty", "The entry needs a title.")
         if len(title) > 300 or len(body) > 20000: raise EditError(400, "too-long", "That entry is too long.")
         if prio not in [""] + docsparse.PRIORITIES: raise EditError(400, "bad-request", "Priority is HALT, P1, P2, P3 or none.")
