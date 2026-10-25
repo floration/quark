@@ -147,11 +147,17 @@ add_library(quark_core STATIC
   src/game/gamemodes.cpp
   src/game/netclient.cpp
   src/game/bots.cpp
+  src/game/botbrain.cpp
+  src/game/modelogic.cpp
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
+  src/game/weaponset.cpp
+  src/game/moveexpr.cpp
   src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
+  ${CMAKE_BINARY_DIR}/generated/default_brain.h
+  ${CMAKE_BINARY_DIR}/generated/default_modes.h
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
@@ -162,6 +168,19 @@ target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # copied) only when .gitignore un-ignores it with a "!/maps/<name>.qmap" line, i.e. it's tracked: any other *.qmap
 # in maps/ (one the generator no longer makes, a test leftover, a stray file) is neither embedded nor copied.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# The built-in bot brain (tools/bots/default.qbrain, tools/bots/GRAMMAR.md) is embedded at build time.
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_brain.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
+  COMMENT "Embedding the built-in bot brain (tools/bots/default.qbrain)" VERBATIM)
+# The built-in modes' logic (tools/modes/common.qlogic + one .qlogic per mode, tools/modes/GRAMMAR.md) likewise.
+set(QUARK_MODE_LOGIC_FILES common vs bomb race koth payload ffa npayload duel arena tourney hide tag points)
+list(TRANSFORM QUARK_MODE_LOGIC_FILES PREPEND ${CMAKE_SOURCE_DIR}/tools/modes/)
+list(TRANSFORM QUARK_MODE_LOGIC_FILES APPEND .qlogic)
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_modes.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/modes
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${QUARK_MODE_LOGIC_FILES}
+  COMMENT "Embedding the built-in modes' logic (tools/modes/*.qlogic)" VERBATIM)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list
@@ -269,6 +288,8 @@ add_library(quark_assets STATIC
   src/client/overrides.cpp
   src/client/decoders.cpp
   src/client/fontatlas.cpp
+  src/client/uifonts.cpp
+  src/client/textfit.cpp
   src/client/codec_vorbis.c
   src/client/codec_flac_mp3.c
   src/client/codec_image_font.c
@@ -291,8 +312,11 @@ add_custom_command(
 # The mixer and every sound kit / announcer voice (the game; the tests and the asset export render them too)
 add_library(quark_audio STATIC src/client/audio.cpp ${CMAKE_BINARY_DIR}/generated/voice_recorded.h)
 target_link_libraries(quark_audio PUBLIC quark_assets ${CMAKE_DL_LIBS})
+if(WIN32)
+  target_link_libraries(quark_audio PUBLIC ole32 winmm)   # WASAPI output (COM), WinMM fallback
+endif()
 if(APPLE)
-  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreFoundation")
+  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")   # (CoreAudio: Settings > DEVICES' list)
 endif()
 
 if(QUARK_BUILD_CLIENT)
@@ -307,6 +331,8 @@ if(QUARK_BUILD_CLIENT)
   add_executable(quark WIN32 MACOSX_BUNDLE
     src/client/main.cpp
     src/client/game.cpp
+    src/client/rawmouse.cpp
+    src/client/gpuprefs.cpp
     src/client/community.cpp
     src/client/editor.cpp
     src/client/openurl.cpp
@@ -347,7 +373,8 @@ if(QUARK_BUILD_CLIENT)
 endif()
 
 if(QUARK_BUILD_TESTS)
-  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp)
+  # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
+  add_executable(quark_tests tests/tests.cpp tests/mapbounds.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp tests/groupproc.cpp src/client/lightmap.cpp)
   target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
@@ -363,6 +390,20 @@ if(QUARK_BUILD_TESTS)
     add_test(NAME uitest COMMAND sh ${CMAKE_SOURCE_DIR}/tools/uitest.sh $<TARGET_FILE:quark> ${CMAKE_BINARY_DIR}/uitest-report.json
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
+  endif()
+  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics, mode and weapons editors'
+  # commands linked into it (an empty or missing tools/mode_editor/native globs to nothing)
+  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
+       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp
+       ${CMAKE_SOURCE_DIR}/tools/weapon_editor/native/*.cpp)
+  add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
+  target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
+  if(EXISTS ${CMAKE_SOURCE_DIR}/tools/mode_editor/native)
+    target_include_directories(quark_maptool PRIVATE tools/mode_editor/native)
+  endif()
+  target_link_libraries(quark_maptool quark_core)
+  if(WIN32)
+    target_link_options(quark_maptool PRIVATE -Wl,--stack,16777216)
   endif()
 endif()
 

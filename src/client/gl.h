@@ -64,6 +64,7 @@ typedef struct __GLsync* GLsync;
 #define GL_TEXTURE_WRAP_T 0x2803
 #define GL_NEAREST 0x2600
 #define GL_LINEAR 0x2601
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_CLAMP_TO_BORDER 0x812D
 #define GL_TEXTURE_BORDER_COLOR 0x1004
@@ -126,9 +127,11 @@ typedef struct __GLsync* GLsync;
     X(void, glDeleteTextures, (GLsizei, const GLuint*)) \
     X(void, glBindTexture, (GLenum, GLuint)) \
     X(void, glTexImage2D, (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*)) \
+    X(void, glTexSubImage2D, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*)) \
     X(void, glTexParameteri, (GLenum, GLenum, GLint)) \
     X(void, glTexParameterfv, (GLenum, GLenum, const GLfloat*)) \
     X(void, glActiveTexture, (GLenum)) \
+    X(void, glGenerateMipmap, (GLenum)) \
     X(void, glGenBuffers, (GLsizei, GLuint*)) \
     X(void, glDeleteBuffers, (GLsizei, const GLuint*)) \
     X(void, glBindBuffer, (GLenum, GLuint)) \

@@ -1,0 +1,166 @@
+{
+ "id": "diabotical",
+ "name": "Diabotical",
+ "year": 2020,
+ "engine": "The GD Studio's own engine",
+ "group": "arena shooters",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.031579,
+  "why": "player hitbox 57 u tall (game_player_hitbox_height 57, base.games#L75; collision 24 u below the origin, as Quake III's), scaled to 1.8 m: 0.03158 m/u"
+ },
+ "values": {
+  "gravity": {
+   "value": 25.2632,
+   "unit": "m/s2",
+   "mult": 1.1483,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L107 (phy_gravity 800)",
+   "confidence": "exact",
+   "raw": "phy_gravity 800 u/s2"
+  },
+  "speed": {
+   "value": 10.1053,
+   "unit": "m/s",
+   "mult": 1.0637,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L115 (phy_speed 320); https://github.com/marconett/diabotical-rogue-release-tracker/blob/main/ui/93.js#L1166",
+   "confidence": "exact",
+   "raw": "phy_speed 320 u/s"
+  },
+  "jump": {
+   "value": 8.6842,
+   "unit": "m/s",
+   "mult": 1.1831,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L108 (phy_jump_impulse 275); https://github.com/marconett/diabotical-rogue-release-tracker/blob/main/ui/93.js#L1160",
+   "confidence": "exact",
+   "raw": "phy_jump_impulse 275 u/s"
+  },
+  "ground_accel": {
+   "value": 10,
+   "unit": "",
+   "mult": 0.625,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L116 (phy_accel_ground 10)",
+   "confidence": "exact",
+   "raw": "phy_accel_ground 10",
+   "note": "assumed to be the Quake accelerate factor (the same 10 as Quake III / VQL)"
+  },
+  "friction": {
+   "value": 6,
+   "unit": "",
+   "mult": 0.8571,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L118 (phy_surface_friction 6)",
+   "confidence": "exact",
+   "raw": "phy_surface_friction 6",
+   "note": "assumed to be the Quake friction factor (Quake III's 6)"
+  },
+  "stop_speed": {
+   "value": 3.1579,
+   "unit": "m/s",
+   "mult": 1.579,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L117 (phy_deceleration_ground 100)",
+   "confidence": "estimated",
+   "raw": "phy_deceleration_ground 100 u/s",
+   "note": "read as Quake's stop speed (the same default 100); the engine's formula isn't public"
+  },
+  "air_accel": {
+   "value": 0.1,
+   "unit": "",
+   "mult": 0.0455,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L120-121 (phy_air_speed 320, phy_accel_air 1)",
+   "confidence": "estimated",
+   "raw": "phy_accel_air 1",
+   "outsideClamp": true,
+   "note": "if the air push is Quake III's (accel 1 toward the full wish speed 320): Quark-equivalent 1 / 10. phy_strafe_jumping 1 (#L126) adds strafe-jump air control whose numbers aren't in the script (x0.0455 is outside the editor's 0.1..5 range: applying it clamps.)"
+  },
+  "air_cap": {
+   "value": 10.1053,
+   "unit": "m/s",
+   "mult": 4.3936,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L120 (phy_air_speed 320)",
+   "confidence": "estimated",
+   "raw": "phy_air_speed 320 u/s"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L134-145",
+   "confidence": "exact",
+   "note": "no dash in standard play: the Bolt (482 u/s, 3 s cooldown) is a mode skill (Wipeout / Rogue)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L160 (phy_hook 0)",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "crouchSpeed": {
+   "value": 6.6316,
+   "unit": "m/s",
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L114 (phy_crouch_speed 210)",
+   "confidence": "exact",
+   "note": "210 u/s at the hitbox scale; Quark: 4 m/s"
+  },
+  "jumpHeight": {
+   "value": 1.4926,
+   "unit": "m",
+   "source": "275^2 / (2 x 800) = 47.3 u",
+   "confidence": "estimated",
+   "note": "v^2/2g; Quark: 1.22 m"
+  },
+  "tickrate": {
+   "value": 125,
+   "unit": "Hz",
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L106 (phy_target_tickrate 125)",
+   "confidence": "exact"
+  },
+  "boltSpeed": {
+   "value": 15.2211,
+   "unit": "m/s",
+   "source": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games#L138 (phy_bolt_base_speed 482) and #L135 (phy_bolt_cooldown 3)",
+   "confidence": "estimated",
+   "note": "the Bolt skill, at the hitbox scale; Quark's dash: 24 m/s"
+  },
+  "timeTo90": {
+   "value": 0.133,
+   "unit": "s",
+   "source": "derived from this file's speed, ground_accel, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; stop speed read from phy_deceleration_ground; Quark: 0.072 s"
+  },
+  "stopDistance": {
+   "value": 1.413,
+   "unit": "m",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; stop speed read from phy_deceleration_ground; Quark: 1.21 m"
+  },
+  "stopTime": {
+   "value": 0.36,
+   "unit": "s",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; stop speed read from phy_deceleration_ground; Quark: 0.364 s"
+  }
+ },
+ "extras": [
+  "auto-hop (phy_auto_jump 1) and strafe jumping (phy_strafe_jumping 1)",
+  "the Bolt dash and weeballs (grenades) as mode items / skills",
+  "125 Hz physics tick",
+  "Vintage physics (a later alternate preset) isn't covered: its values weren't in the script"
+ ],
+ "notes": "Diabotical's shipped scripts/base.games (as the community patch tracker kept it): gravity 800, jump 275, speed 320, ground accel 10, friction 6, ground deceleration 100, air speed 320, air accel 1, crouch speed 210, 125 Hz: VQL-like numbers. The duel / CA / TDM modes don't override them. The engine is closed, so the formulas (and the air mapping) are assumed to be Quake III's. The Rogue tracker's copy (ui/93.js#L1159-1171) has the same values; its newer rogue modes use speed 300 and air accel 1.3.",
+ "sources": [
+  {
+   "title": "Diabotical patch tracker: scripts/base.games",
+   "url": "https://github.com/ScheduleTracker/DiaboticalTracker/blob/master/scripts/base.games"
+  },
+  {
+   "title": "Diabotical Rogue release tracker: ui/93.js (the same default block)",
+   "url": "https://github.com/marconett/diabotical-rogue-release-tracker/blob/main/ui/93.js"
+  },
+  {
+   "title": "Diabotical Rogue release tracker: base.games (rogue modes)",
+   "url": "https://github.com/marconett/diabotical-rogue-release-tracker/blob/main/assets/shared/scripts/base.games"
+  }
+ ]
+}

@@ -1,26 +1,47 @@
 #include "renderer.h"
 #include "../common/u8file.h"
-#include <unordered_map>
 #include "../common/profile.h"
 #include "../common/net.h"
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include "font_ui.h"
-#include "fontatlas.h"
+#include "logo_data.h"
 #include "overrides.h"
+#include "fontatlas.h"
+#include "textfit.h"
 #include <memory>
 
 namespace {
 
-// UI font: Work Sans Bold as a signed distance field (font_ui.h, made by tools/make_font_atlas.py).
-// Font units: a line is 8 tall; advances and kerning are proportional.
+// UI font: Rubik Bold as a signed distance field (font_ui.h, made by tools/make_font_atlas.py), or the one picked in
+// Settings > FONT (Renderer::setUiFont). Font units: a line is 8 tall; advances and kerning are proportional.
 inline int glyphIndex(char ch) { unsigned char uc = (unsigned char)ch; return (uc < 32 || uc > 126) ? '?' - 32 : uc - 32; }
-// The metrics in use: font_ui.h's, or an override font's (fonts/WorkSans.*, docs/ASSETS.md), built at startup only
-// when there is one.
+// The metrics in use: font_ui.h's, or the picked font's (g_uiFont, built when it was picked)
 const float* g_uiAdv = kUiAdv;
 const signed char* g_uiKern = kUiKern;
-std::unique_ptr<FontAtlas> g_fontOverride;
+std::unique_ptr<FontAtlas> g_uiFont;
+// ...and what's measured from it (textfit.h: every glyph's ink, the scale that keeps it in the line box), once per font
+const LineBox& defaultLineBox() {   // (Rubik's own ink defines the box)
+    static const LineBox box = [] {
+        static GlyphInk ink[95];
+        measureInk(kUiAtlas, {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, ink);
+        return lineBoxOf(ink);
+    }();
+    return box;
+}
+TextMetrics& uiMetrics() {
+    static TextMetrics m = [] {
+        TextMetrics t;
+        t.adv = kUiAdv; t.kern = kUiKern;
+        measureInk(kUiAtlas, {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, t.ink);
+        LineFit lf = lineFit(t.ink, defaultLineBox());
+        t.fitScale = lf.scale; t.fitShift = lf.shift;
+        t.minScale = Renderer::kMinTextScale;
+        return t;
+    }();
+    return m;
+}
 
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -239,22 +260,38 @@ const char* kUiVS = R"(#version 330 core
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in vec4 aColor;
-layout(location=3) in vec2 aText; // text scale: x integer part, y 1/256ths (0 = plain rect)
+layout(location=3) in vec4 aText; // text scale: x integer part, y 1/256ths (0 = plain rect); z 1: the title's split Q
 uniform vec2 uScreen;
 uniform vec2 uFontSize;
-out vec2 vUV; out vec4 vColor; flat out float vScale;
+uniform vec2 uLogoSize;
+out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
 void main() {
-    vUV = (aUV / 32.0 - 1.0) / uFontSize; vColor = aColor; vScale = aText.x + aText.y / 256.0;
+    vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
+    vSplit = aText.z;
+    vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
 // Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
-in vec2 vUV; in vec4 vColor; flat in float vScale;
+in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
 uniform sampler2D uFont;
+uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
+// the title (Renderer::logo): its two team colours; the split Q's line (a window point, its normal towards the second
+// colour) and half the seam's width (px)
+uniform vec3 uLogoA, uLogoB;
+uniform vec2 uSplitP, uSplitN;
+uniform float uSplitSeam;
 out vec4 fragColor;
 void main() {
+    if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
+        vec4 t = texture(uLogo, vUV);
+        float a = max(t.a, max(t.r, t.g));
+        vec3 c = uLogoA * t.r + uLogoB * t.g;   // (over black: premultiplied)
+        fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
+        return;
+    }
     float d = texture(uFont, vUV).r;
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
@@ -263,21 +300,18 @@ void main() {
     float o = smoothstep(od - w, od + w, d);
     if (o <= 0.004) discard;
     float fill = smoothstep(0.5 - w, 0.5 + w, d);
-    fragColor = vec4(vColor.rgb * fill, vColor.a * o);
+    vec3 col = vColor.rgb;
+    if (vSplit > 0.5) {   // the title's Q in another font: the second colour past the slanted line, a black seam on it
+        float s = dot(gl_FragCoord.xy - uSplitP, uSplitN);
+        col = mix(col, uLogoB, clamp(s + 0.5, 0.0, 1.0)) * (1.0 - clamp(uSplitSeam + 0.5 - abs(s), 0.0, 1.0));
+    }
+    fragColor = vec4(col * fill, vColor.a * o);
 })";
 
-// Uniform locations cached by (program, literal pointer): no string lookups in the frame loop.
-GLint U(unsigned prog, const char* name) {
-    static std::unordered_map<uint64_t, GLint> cache(256);
-    uint64_t key = ((uint64_t)prog << 48) ^ (uint64_t)(uintptr_t)name;
-    auto it = cache.find(key);
-    if (it != cache.end()) return it->second;
-    GLint l = glGetUniformLocation(prog, name);
-    cache.emplace(key, l);
-    return l;
-}
-void setVec3(unsigned prog, const char* name, const Vec3& v) { glUniform3f(U(prog, name), v.x, v.y, v.z); }
-void setMat(unsigned prog, const char* name, const Mat4& m) { glUniformMatrix4fv(U(prog, name), 1, GL_FALSE, m.m); }
+// Uniforms by location (Renderer::init looks each one up once: no string or hash lookups in the frame loop).
+GLint U(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
+void setVec3(GLint loc, const Vec3& v) { glUniform3f(loc, v.x, v.y, v.z); }
+void setMat(GLint loc, const Mat4& m) { glUniformMatrix4fv(loc, 1, GL_FALSE, m.m); }
 
 // Upload a vector into a growable stream buffer.
 #ifdef QUARK_TRACY
@@ -384,32 +418,42 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glGenBuffers(1, &uiVbo_);
     glBindVertexArray(uiVao_);
     glBindBuffer(GL_ARRAY_BUFFER, uiVbo_);
+    // room for a text-heavy frame up front (512 KB): the first scoreboard or console mid-match doesn't grow it
+    ui_.reserve(1 << 15);
+    glBufferData(GL_ARRAY_BUFFER, uiCap_ = (size_t)(1 << 15) * sizeof(Vertex2D), nullptr, GL_STREAM_DRAW);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)0);
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)4);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex2D), (void*)8);
-    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);   // (scale, frac, split Q flag, 0)
     glBindVertexArray(0);
 
     // Font texture: the UI font's distance field (linear filtering: one atlas serves every text size)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glGenTextures(1, &fontTex_);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
-    const unsigned char* atlas = kUiAtlas;
-    if (!g_fontOverride) {   // the owner's font (docs/ASSETS.md): rasterised now, only when there is one
-        std::vector<uint8_t> file;
-        std::string matched, ferr;
-        if (overrides::find("fonts/WorkSans", {".ttf", ".otf"}, file, &matched)) {
-            auto fa = std::make_unique<FontAtlas>();
-            if (buildFontAtlas(file.data(), file.size(), {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, *fa, &ferr)) g_fontOverride = std::move(fa);
-            else fprintf(stderr, "override %s: %s\n", matched.c_str(), ferr.c_str());
-        }
-    }
-    if (g_fontOverride) { atlas = g_fontOverride->tex.data(); g_uiAdv = g_fontOverride->adv; g_uiKern = g_fontOverride->kern; }
+    // (the default; Game::init then applies the ui_font setting, which may replace it: setUiFont)
+    const unsigned char* atlas = g_uiFont ? g_uiFont->tex.data() : kUiAtlas;
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kUiTexW, kUiTexH, 0, GL_RED, GL_UNSIGNED_BYTE, atlas);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    {   // the title logo: baked at its 2160p size, mipmapped so it's crisp smaller (tools/make_logo.py)
+        int lw = 0, lh = 0;
+        std::vector<uint8_t> px;
+        if (decodeImage(kLogoPng, sizeof kLogoPng, lw, lh, px)) {
+            glGenTextures(1, &logoTex_);
+            glBindTexture(GL_TEXTURE_2D, logoTex_);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lw, lh, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        }
+    }
 
     // Shadow map (depth only)
     shadowRes_ = shadowRes < 256 ? 256 : shadowRes;
@@ -429,6 +473,55 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glReadBuffer(GL_NONE);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) shadowsOn_ = false;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Uniform locations, once; the values that never change set now (each program keeps its own)
+    const Vec3 sunColor = {0.78f, 0.75f, 0.70f};
+    const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
+    const float fog = 0.0035f;
+    glUseProgram(worldProg_);
+    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
+               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
+               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
+               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW")};
+    glUniform1i(U(worldProg_, "uLightmap"), 0);
+    glUniform1i(U(worldProg_, "uShadow"), 1);
+    glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
+    setVec3(U(worldProg_, "uSunColor"), sunColor);
+    setVec3(U(worldProg_, "uSkyColor"), skyLight);
+    glUniform1f(U(worldProg_, "uFogDensity"), fog);
+    glUseProgram(dynProg_);
+    uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
+             U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
+    glUniform1i(U(dynProg_, "uShadow"), 1);
+    glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
+    setVec3(U(dynProg_, "uSunColor"), sunColor);
+    setVec3(U(dynProg_, "uSkyColor"), skyLight);
+    glUniform1f(U(dynProg_, "uFogDensity"), fog);
+    uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
+             U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
+    uFlatViewProj_ = U(flatProg_, "uViewProj");
+    uShadowViewProj_ = U(shadowProg_, "uViewProj");
+    glUseProgram(uiProg_);
+    uUiScreen_ = U(uiProg_, "uScreen");
+    glUniform1i(U(uiProg_, "uFont"), 0);
+    glUniform2f(U(uiProg_, "uFontSize"), (float)kUiTexW, (float)kUiTexH);
+    glUniform1f(U(uiProg_, "uK"), kUiTpu / (2.0f * kUiSpread));
+    glUniform1i(U(uiProg_, "uLogo"), 1);
+    glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)kLogoH);
+    uLogoA_ = U(uiProg_, "uLogoA"); uLogoB_ = U(uiProg_, "uLogoB");
+    uSplitP_ = U(uiProg_, "uSplitP"); uSplitN_ = U(uiProg_, "uSplitN"); uSplitSeam_ = U(uiProg_, "uSplitSeam");
+    if (edgeProg_) {
+        glUseProgram(edgeProg_);
+        uEdgeRcp_ = U(edgeProg_, "uRcp");
+        glUniform1i(U(edgeProg_, "uScene"), 0);
+    }
+    glUseProgram(0);
+    uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = 0;   // (set on first use)
+
+    // the frame's vertex lists sized for a busy frame up front, so one never grows them mid-frame
+    dyn_.reserve(16384); dynShadowOnly_.reserve(16384);
+    dynNoCast_.reserve(2048); view_.reserve(2048);
+    flat_.reserve(4096); viewFlat_.reserve(4096);
     return true;
 }
 
@@ -531,18 +624,38 @@ void Renderer::warmup(const Map& map) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+void Renderer::relatch(float yaw, float pitch) {
+    const Vec3 p = camPos_;
+    const float y0 = camYaw_, p0 = camPitch_;
+    // same fov and window: the projection (and the sky's tangents) stand, only the aim's half is redone
+    if (width_ / (float)std::max(1, height_) == camAspect_) aim(yaw, pitch);
+    else setCamera(p, yaw, pitch, camFov_);
+    // the view model's vertices were placed with translate(p) * rotY(y0) * rotX(p0): undo that, redo it with the new aim
+    viewFix_ = Mat4::translate(p) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::rotX(-p0) * Mat4::rotY(-y0) * Mat4::translate(p * -1.0f);
+    viewProjFix_ = viewProj_ * viewFix_;
+}
+
 void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg) {
     camPos_ = eye;
-    camYaw_ = yaw;
-    camPitch_ = pitch;
+    camFov_ = hfovDeg;
+    viewFix_ = Mat4();
     float aspect = width_ / (float)std::max(1, height_);
+    camAspect_ = aspect;
     float vfov = 2.0f * std::atan(std::tan(deg2rad(hfovDeg) * 0.5f) / aspect);
     proj_ = Mat4::perspective(vfov, aspect, 0.05f, 400.0f);
-    view_m_ = Mat4::lookAt(eye, eye + angleForward(yaw, pitch), {0, 1, 0});
+    tanY_ = std::tan(vfov * 0.5f); tanX_ = tanY_ * aspect;
+    aim(yaw, pitch);
+    viewProjFix_ = viewProj_;   // (no relatch: no fix)
+}
+
+void Renderer::aim(float yaw, float pitch) {
+    const Vec3& eye = camPos_;
+    camYaw_ = yaw;
+    camPitch_ = pitch;
     camFwd_ = angleForward(yaw, pitch);
+    view_m_ = Mat4::lookAt(eye, eye + camFwd_, {0, 1, 0});
     camRight_ = normalize(cross(camFwd_, Vec3(0, 1, 0)));
     camUp_ = cross(camRight_, camFwd_);
-    tanY_ = std::tan(vfov * 0.5f); tanX_ = tanY_ * aspect;
     viewProj_ = proj_ * view_m_;   // (before the planes: they came from last frame's camera, so things popped in a frame late on flicks)
     {   // frustum planes (a, b, c, d, |normal|): culls dynamic objects and the world chunks
         const float* m = viewProj_.m;
@@ -568,19 +681,23 @@ bool Renderer::project(const Vec3& p, float& sx, float& sy) const {
 }
 
 void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv) {
-    const int idx[6] = {0, 1, 2, 0, 2, 3};
     float w = length(c[1] - c[0]), h = length(c[3] - c[0]);
     const float eu[4] = {0, w, w, 0}, ev[4] = {0, 0, h, h};
-    for (int i : idx) {
-        DynVertex v;
+    const size_t at = out.size();
+    out.resize(at + 6);   // (written in place: six push_backs, each checking capacity, per face of every box)
+    DynVertex* q = out.data() + at;
+    const int corner[4] = {0, 1, 2, 5};   // corners 0 1 2 land in slots 0 1 2, corner 3 in slot 5 (triangles 0 1 2, 0 2 3)
+    for (int i = 0; i < 4; i++) {
+        DynVertex& v = q[corner[i]];
         memcpy(v.pos, &c[i].x, 12);
         memcpy(v.normal, &n.x, 12);
         v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
         v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
         memcpy(v.outline, &outlineColor.x, 12);
         v.outline[3] = outlineWidth;
-        out.push_back(v);
     }
+    q[3] = q[0];
+    q[4] = q[2];
 }
 
 void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& h, const Vec3& color, float sunVis) {
@@ -592,29 +709,25 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
         const float* m = xf.m;
         return normalize(Vec3(m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z, m[2] * x + m[6] * y + m[10] * z));
     };
-    Vec3 c[4];
-    // +X
-    c[0] = tp(h.x, -h.y, h.z); c[1] = tp(h.x, -h.y, -h.z); c[2] = tp(h.x, h.y, -h.z); c[3] = tp(h.x, h.y, h.z);
-    addQuad(out, c, tn(1, 0, 0), color, sunVis);
-    // -X
-    c[0] = tp(-h.x, -h.y, -h.z); c[1] = tp(-h.x, -h.y, h.z); c[2] = tp(-h.x, h.y, h.z); c[3] = tp(-h.x, h.y, -h.z);
-    addQuad(out, c, tn(-1, 0, 0), color * 0.92f, sunVis);
-    // +Y
-    c[0] = tp(-h.x, h.y, h.z); c[1] = tp(h.x, h.y, h.z); c[2] = tp(h.x, h.y, -h.z); c[3] = tp(-h.x, h.y, -h.z);
-    addQuad(out, c, tn(0, 1, 0), color, sunVis);
-    // -Y
-    c[0] = tp(-h.x, -h.y, -h.z); c[1] = tp(h.x, -h.y, -h.z); c[2] = tp(h.x, -h.y, h.z); c[3] = tp(-h.x, -h.y, h.z);
-    addQuad(out, c, tn(0, -1, 0), color * 0.8f, sunVis);
-    // +Z
-    c[0] = tp(-h.x, -h.y, h.z); c[1] = tp(h.x, -h.y, h.z); c[2] = tp(h.x, h.y, h.z); c[3] = tp(-h.x, h.y, h.z);
-    addQuad(out, c, tn(0, 0, 1), color * 0.96f, sunVis);
-    // -Z
-    c[0] = tp(h.x, -h.y, -h.z); c[1] = tp(-h.x, -h.y, -h.z); c[2] = tp(-h.x, h.y, -h.z); c[3] = tp(h.x, h.y, -h.z);
-    addQuad(out, c, tn(0, 0, -1), color * 0.96f, sunVis);
+    // the 8 corners once (each face used to transform its own 4: 24) and 3 normals (a face's opposite is the negation)
+    const Vec3 ppp = tp(h.x, h.y, h.z), ppm = tp(h.x, h.y, -h.z), pmp = tp(h.x, -h.y, h.z), pmm = tp(h.x, -h.y, -h.z);
+    const Vec3 mpp = tp(-h.x, h.y, h.z), mpm = tp(-h.x, h.y, -h.z), mmp = tp(-h.x, -h.y, h.z), mmm = tp(-h.x, -h.y, -h.z);
+    const Vec3 nx = tn(1, 0, 0), ny = tn(0, 1, 0), nz = tn(0, 0, 1);
+    auto neg = [](const Vec3& v) { return Vec3(-v.x, -v.y, -v.z); };
+    const Vec3 xPos[4] = {pmp, pmm, ppm, ppp}, xNeg[4] = {mmm, mmp, mpp, mpm};   // (each face's corners in the old order)
+    const Vec3 yPos[4] = {mpp, ppp, ppm, mpm}, yNeg[4] = {mmm, pmm, pmp, mmp};
+    const Vec3 zPos[4] = {mmp, pmp, ppp, mpp}, zNeg[4] = {pmm, mmm, mpm, ppm};
+    addQuad(out, xPos, nx, color, sunVis);
+    addQuad(out, xNeg, neg(nx), color * 0.92f, sunVis);
+    addQuad(out, yPos, ny, color, sunVis);
+    addQuad(out, yNeg, neg(ny), color * 0.8f, sunVis);
+    addQuad(out, zPos, nz, color * 0.96f, sunVis);
+    addQuad(out, zNeg, neg(nz), color * 0.96f, sunVis);
 }
 
 // Is a sphere (center, radius) at least partly inside the view frustum?
 bool Renderer::inView(const Vec3& c, float r) const {
+    if (cullPad > 0) r += cullPad * length(c - camPos_);
     for (int i = 0; i < 6; i++) if (frustum_[i][0] * c.x + frustum_[i][1] * c.y + frustum_[i][2] * c.z + frustum_[i][3] < -r * frustum_[i][4]) return false;
     return true;
 }
@@ -640,7 +753,7 @@ void Renderer::setStaticBoxes(const std::function<void()>& emit) {
     glBindBuffer(GL_ARRAY_BUFFER, staticVbo_);
     glBufferData(GL_ARRAY_BUFFER, staticVerts_.size() * sizeof(DynVertex), staticVerts_.data(), GL_STATIC_DRAW);
     staticCount_ = (int)staticVerts_.size();
-    std::vector<DynVertex>().swap(staticVerts_);
+    staticVerts_.clear();   // (its memory kept for the next rebuild: freed, every editor edit grew 30 MB again from nothing, ~16 ms on Midtown; clearStaticBoxes frees it)
 }
 
 void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow, bool visible) {
@@ -653,7 +766,7 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
     if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
     if (visible) emitBox(dyn_, xf, half, color, sunVis);
-    else if (castShadow) emitBox(dynShadowOnly_, xf, half, color, sunVis);
+    else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
 }
 
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
@@ -667,10 +780,12 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
 }
 
 // An override model (models.h): opaque triangles into `out` like a box's faces (lit, shadowed; no outline: the
-// edge attribute sits mid-face), translucent ones into the flat layer. Colours times tint[slot].
-void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent) {
+// edge attribute sits mid-face), translucent ones into `flatOut` (a flat layer; none: left out). Colours times tint[slot].
+void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut) {
     const float* x = xf.m;
-    out.reserve(out.size() + m.opaque.size());
+    // (grow geometrically: reserving exactly what this mesh needs made every mesh past the high-water mark copy the
+    // whole list again)
+    if (out.size() + m.opaque.size() > out.capacity()) out.reserve(std::max(out.size() + m.opaque.size(), out.capacity() * 2));
     for (const ModelMesh::V& v : m.opaque) {
         DynVertex d;
         const float* p = v.pos; const float* n = v.nrm;
@@ -683,9 +798,10 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         d.color[0] = v.col[0] * t.x; d.color[1] = v.col[1] * t.y; d.color[2] = v.col[2] * t.z; d.color[3] = sunVis;
         d.edge[0] = d.edge[1] = 0.5f; d.edge[2] = d.edge[3] = 1.0f;
         memcpy(d.outline, &outlineColor.x, 12);
+        d.outline[3] = 0.0f;   // (no edge: was left unset, so the shader read whatever was on the stack as the width)
         out.push_back(d);
     }
-    if (!translucent) return;
+    if (!flatOut) return;
     for (const ModelMesh::V& v : m.translucent) {
         FlatVertex f;
         const float* p = v.pos;
@@ -694,7 +810,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         f.pos[2] = x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14];
         const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
         f.color[0] = v.col[0] * t.x; f.color[1] = v.col[1] * t.y; f.color[2] = v.col[2] * t.z; f.color[3] = v.col[3];
-        flat_.push_back(f);
+        flatOut->push_back(f);
     }
 }
 
@@ -704,15 +820,15 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
               x[2] * m.center.x + x[6] * m.center.y + x[10] * m.center.z + x[14]};
     float sc = std::max({length(Vec3(x[0], x[1], x[2])), length(Vec3(x[4], x[5], x[6])), length(Vec3(x[8], x[9], x[10]))});
     if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
-    if (visible) emitMesh(dyn_, m, xf, tint, sunVis, true);
-    else if (castShadow) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, false);
+    if (visible) emitMesh(dyn_, m, xf, tint, sunVis, &flat_);
+    else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, nullptr);
 }
 
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
     Mat4 s;
     s.m[0] = s.m[5] = s.m[10] = scale;
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
-    emitMesh(view_, m, xf, tint, 1.0f, false);
+    emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);   // (translucent parts: drawn over the view model, in its pass)
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {
@@ -754,17 +870,45 @@ void Renderer::line(const Vec3& a, const Vec3& b, float width, const Color& c) {
     }
 }
 
-void Renderer::drawScene(bool shadows) {
-    QZONE("drawScene");
+void Renderer::prepareScene(bool shadows) {
+    QZONE("prepareScene");
     QPLOT("dyn verts", dyn_.size());
 #ifdef QUARK_TRACY
     g_dynVerts += dyn_.size() + view_.size() + flat_.size();
     g_shadowVerts += dyn_.size() + dynShadowOnly_.size();
 #endif
     QPLOT("ui verts", ui_.size());
-    bool useShadows = shadows && shadowsOn_;
-    // Shadow pass: only dynamic objects (static shadows are baked).
-    Mat4 shadowMat;
+    const bool useShadows = shadows && shadowsOn_;
+    prep_ = true;
+    prepShadows_ = useShadows;
+    // The frame's dynamic geometry, one upload laid out [shadow only | lit, casting | lit, not casting | view model]:
+    // the shadow pass draws the first two, the dynamic pass the middle two, the view pass the last (it used to copy the
+    // lists together and upload the dynamic ones twice, orphaning the buffer three times a frame).
+    const size_t nShadow = useShadows ? dynShadowOnly_.size() : 0, nDyn = dyn_.size(), nNoCast = dynNoCast_.size(), nView = view_.size();
+    {
+        const size_t total = (nShadow + nDyn + nNoCast + nView) * sizeof(DynVertex);
+        glBindBuffer(GL_ARRAY_BUFFER, dynVbo_);
+#ifdef QUARK_TRACY
+        g_uploadBytes += total; g_uploads++;
+#endif
+        if (total > dynCap_) dynCap_ = total * 2;
+        glBufferData(GL_ARRAY_BUFFER, dynCap_, nullptr, GL_STREAM_DRAW);   // (orphan: no stall on last frame's draws)
+        size_t at = 0;
+        auto put = [&](const std::vector<DynVertex>& v, size_t n) {
+            if (n) glBufferSubData(GL_ARRAY_BUFFER, at, n * sizeof(DynVertex), v.data());
+            at += n * sizeof(DynVertex);
+        };
+        put(dynShadowOnly_, nShadow); put(dyn_, nDyn); put(dynNoCast_, nNoCast); put(view_, nView);
+    }
+    // Translucent geometry, one upload: the world's, then the view model's own translucent parts (an override model's
+    // glass, glow), drawn in its pass.
+    const size_t nFlat = flat_.size(), nViewFlat = viewFlat_.size();
+    if (nViewFlat) flat_.insert(flat_.end(), viewFlat_.begin(), viewFlat_.end());   // (nothing to do for a model without any)
+    if (!flat_.empty()) upload(flatVbo_, flatCap_, flat_);
+    // Shadow pass: only dynamic objects (static shadows are baked). (Its focus follows the aim, snapped to texels: the
+    // aim from before a late latch is as good.)
+    Mat4& shadowMat = shadowMat_;
+    shadowMat = Mat4();
     if (useShadows) {
         const float R = 32.0f;
         Vec3 up = std::fabs(sunDir_.y) > 0.99f ? Vec3(0, 0, 1) : Vec3(0, 1, 0);
@@ -780,38 +924,90 @@ void Renderer::drawScene(bool shadows) {
         shadowMat = Mat4::ortho(cx - R, cx + R, cy - R, cy + R, -cz - 120.0f, -cz + 120.0f) * lv;
 
         QZONE("shadow pass");
-        std::vector<DynVertex>& casters = dynShadowOnly_;
-        casters.insert(casters.end(), dyn_.begin(), dyn_.end());
-        // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other
-        // pixel of the world and of players skips the 4 shadow taps.
+        // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
+        // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
+        // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
         float x0 = 1, y0 = 1, x1 = 0, y1 = 0;
         const float* sm = shadowMat.m;
-        for (const DynVertex& v : casters) {
-            float sx = sm[0] * v.pos[0] + sm[4] * v.pos[1] + sm[8] * v.pos[2] + sm[12];
-            float sy = sm[1] * v.pos[0] + sm[5] * v.pos[1] + sm[9] * v.pos[2] + sm[13];
-            sx = sx * 0.5f + 0.5f; sy = sy * 0.5f + 0.5f;
-            x0 = std::min(x0, sx); y0 = std::min(y0, sy); x1 = std::max(x1, sx); y1 = std::max(y1, sy);
-        }
+        auto cover = [&](const std::vector<DynVertex>& vs) {
+            for (size_t i = 0; i + 2 < vs.size(); i += 3) {
+                float tx[3], ty[3];
+                for (int k = 0; k < 3; k++) {
+                    const float* p = vs[i + k].pos;
+                    tx[k] = (sm[0] * p[0] + sm[4] * p[1] + sm[8] * p[2] + sm[12]) * 0.5f + 0.5f;
+                    ty[k] = (sm[1] * p[0] + sm[5] * p[1] + sm[9] * p[2] + sm[13]) * 0.5f + 0.5f;
+                }
+                float ax = std::min({tx[0], tx[1], tx[2]}), bx = std::max({tx[0], tx[1], tx[2]});
+                float ay = std::min({ty[0], ty[1], ty[2]}), by = std::max({ty[0], ty[1], ty[2]});
+                if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
+                x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
+                y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
+            }
+        };
+        cover(dynShadowOnly_);
+        cover(dyn_);
         float margin = 2.0f / shadowRes_;
         casterRect_[0] = x0 - margin; casterRect_[1] = y0 - margin; casterRect_[2] = x1 + margin; casterRect_[3] = y1 + margin;
-        upload(dynVbo_, dynCap_, casters);
-        glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
-        glViewport(0, 0, shadowRes_, shadowRes_);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL);
-        glDisable(GL_CULL_FACE);
-        glUseProgram(shadowProg_);
-        setMat(shadowProg_, "uViewProj", shadowMat);
-        glBindVertexArray(dynVao_);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)casters.size());
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // nothing lands in the map: no pass (the empty rect means no pixel reads it, so last frame's depth can stay)
+        if (x0 <= x1 && y0 <= y1) {
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
+            glViewport(0, 0, shadowRes_, shadowRes_);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_LEQUAL);
+            glDisable(GL_CULL_FACE);
+            glUseProgram(shadowProg_);
+            setMat(uShadowViewProj_, shadowMat);
+            glBindVertexArray(dynVao_);
+            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(nShadow + nDyn));   // (shadow-only, then the lit ones: both cast)
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
+    prepN_[0] = nShadow; prepN_[1] = nDyn; prepN_[2] = nNoCast; prepN_[3] = nView; prepN_[4] = nFlat; prepN_[5] = nViewFlat;
+
+    // The per-frame uniforms that don't depend on the aim (the view's matrices and the sky's vectors: drawScene)
+    clear_[0] = std::pow(skyColor.x, 1 / 2.2f); clear_[1] = std::pow(skyColor.y, 1 / 2.2f); clear_[2] = std::pow(skyColor.z, 1 / 2.2f);
+    glUseProgram(worldProg_);
+    setMat(uWorld_.shadowMat, shadowMat);
+    glUniform1i(uWorld_.shadowOn, useShadows ? 1 : 0);
+    glUniform4fv(uWorld_.casterRect, 1, casterRect_);
+    auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
+    setVec3(uWorld_.baseL, lin(baseColor, 1.5f));
+    setVec3(uWorld_.accentL, lin(accentColor, 1.5f));
+    setVec3(uWorld_.wallbangL, lin(baseColor * 0.42f, 1.5f));
+    setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
+    setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
+    setVec3(uWorld_.metal, metalColor);
+    setVec3(uWorld_.glow, glowColor);
+    setVec3(uWorld_.fogColor, skyColor);
+    setVec3(uWorld_.camPos, camPos_);   // (a late latch turns the view, it doesn't move it)
+    glUniform1f(uWorld_.bright, brightness);
+    glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
+    setVec3(uWorld_.fullColor, fullbrightColor);
+    glUniform1f(uWorld_.outlineW, worldOutline);
+    glUseProgram(skyProg_);
+    setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
+    glUniform1f(uSky_.bright, brightness);
+    glUseProgram(dynProg_);
+    setMat(uDyn_.shadowMat, shadowMat);
+    glUniform1i(uDyn_.shadowOn, useShadows ? 1 : 0);
+    glUniform4fv(uDyn_.casterRect, 1, casterRect_);
+    setVec3(uDyn_.sunDir, sunDir_);
+    setVec3(uDyn_.fogColor, skyColor);
+    setVec3(uDyn_.camPos, camPos_);
+    glUniform1f(uDyn_.bright, brightness);
+}
+
+void Renderer::drawScene(bool shadows) {
+    QZONE("drawScene");
+    if (!prep_) prepareScene(shadows);
+    prep_ = false;
+    const size_t nShadow = prepN_[0], nDyn = prepN_[1], nNoCast = prepN_[2], nView = prepN_[3], nFlat = prepN_[4], nViewFlat = prepN_[5];
 
     ensureMsaaTarget();
     if (msaaActive_) glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
     glViewport(0, 0, width_, height_);
-    glClearColor(std::pow(skyColor.x, 1 / 2.2f), std::pow(skyColor.y, 1 / 2.2f), std::pow(skyColor.z, 1 / 2.2f), 1);
+    glClearColor(clear_[0], clear_[1], clear_[2], 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -819,77 +1015,36 @@ void Renderer::drawScene(bool shadows) {
     glCullFace(GL_BACK);
     glDisable(GL_BLEND);
 
-    const Vec3 sunColor = {0.78f, 0.75f, 0.70f};
-    const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
-    const float fog = 0.0035f;
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, shadowTex_);
     glActiveTexture(GL_TEXTURE0);
 
+    // (only the view's own uniforms here: init set the fixed ones, prepareScene the rest of the frame's)
     if (worldVerts_) {
         QZONE("world pass");
         glUseProgram(worldProg_);
-        setMat(worldProg_, "uViewProj", viewProj_);
-        setMat(worldProg_, "uShadowMat", shadowMat);
-        glUniform1i(U(worldProg_, "uLightmap"), 0);
-        glUniform1i(U(worldProg_, "uShadow"), 1);
-        glUniform1i(U(worldProg_, "uShadowOn"), useShadows ? 1 : 0);
-        glUniform4fv(U(worldProg_, "uCasterRect"), 1, casterRect_);
-        glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
-        setVec3(worldProg_, "uSunColor", sunColor);
-        setVec3(worldProg_, "uSkyColor", skyLight);
-        auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
-        setVec3(worldProg_, "uBaseL", lin(baseColor, 1.5f));
-        setVec3(worldProg_, "uAccentL", lin(accentColor, 1.5f));
-        setVec3(worldProg_, "uWallbangL", lin(baseColor * 0.42f, 1.5f));
-        setVec3(worldProg_, "uMetalL", lin(metalColor, 1.5f));
-        setVec3(worldProg_, "uFloorL", lin(metalColor, 2.0f));
-        setVec3(worldProg_, "uMetal", metalColor);
-        setVec3(worldProg_, "uGlow", glowColor);
-        setVec3(worldProg_, "uFogColor", skyColor);
-        setVec3(worldProg_, "uCamPos", camPos_);
-        glUniform1f(U(worldProg_, "uFogDensity"), fog);
-        glUniform1f(U(worldProg_, "uBright"), brightness);
-        glUniform1f(U(worldProg_, "uFull"), fullbright ? 1.0f : 0.0f);
-        setVec3(worldProg_, "uFullColor", fullbrightColor);
-        glUniform1f(U(worldProg_, "uOutlineW"), worldOutline);
+        setMat(uWorld_.viewProj, viewProj_);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();
         // sky after the world: depth LEQUAL at z = 1 only passes where nothing was drawn
         glUseProgram(skyProg_);
-        setVec3(skyProg_, "uFwd", camFwd_); setVec3(skyProg_, "uRight", camRight_); setVec3(skyProg_, "uUp", camUp_);
-        setVec3(skyProg_, "uSky", skyColor); setVec3(skyProg_, "uSunDir", sunDir_);
-        glUniform2f(U(skyProg_, "uTan"), tanX_, tanY_);
-        glUniform1f(U(skyProg_, "uBright"), brightness);
+        setVec3(uSky_.fwd, camFwd_); setVec3(uSky_.right, camRight_); setVec3(uSky_.up, camUp_);
+        glUniform2f(uSky_.tan, tanX_, tanY_);
         glDepthMask(GL_FALSE);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDepthMask(GL_TRUE);
     }
 
-    auto drawDyn = [&](const std::vector<DynVertex>& v, bool receive) {
-        if (v.empty() && !staticOn_) return;
-        if (!v.empty()) upload(dynVbo_, dynCap_, v);
+    auto drawDyn = [&](size_t first, size_t count, bool receive, const Mat4& vp) {
+        if (!count && !staticOn_) return;
         glUseProgram(dynProg_);
-        setMat(dynProg_, "uViewProj", viewProj_);
-        setMat(dynProg_, "uShadowMat", shadowMat);
-        glUniform1i(U(dynProg_, "uShadow"), 1);
-        glUniform1i(U(dynProg_, "uShadowOn"), useShadows ? 1 : 0);
-        glUniform4fv(U(dynProg_, "uCasterRect"), 1, casterRect_);
-        glUniform1i(U(dynProg_, "uReceiveShadow"), receive ? 1 : 0);
-        glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
-        setVec3(dynProg_, "uSunColor", sunColor);
-        setVec3(dynProg_, "uSkyColor", skyLight);
-        setVec3(dynProg_, "uSunDir", sunDir_);
-        setVec3(dynProg_, "uFogColor", skyColor);
-        setVec3(dynProg_, "uCamPos", camPos_);
-        glUniform1f(U(dynProg_, "uFogDensity"), fog);
-        glUniform1f(U(dynProg_, "uBright"), brightness);
+        setMat(uDyn_.viewProj, vp);
+        glUniform1i(uDyn_.receive, receive ? 1 : 0);
         glBindVertexArray(dynVao_);
-        if (!v.empty()) glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
+        if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
     };
-    dyn_.insert(dyn_.end(), dynNoCast_.begin(), dynNoCast_.end());   // (after the shadow pass: lit and shadowed, casting none)
-    { QZONE("dynamic pass"); drawDyn(dyn_, true); }
+    { QZONE("dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true, viewProj_); }   // (lit and shadowed; the no-cast ones cast none)
     if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
         QZONE("static boxes pass");
         staticOn_ = false;
@@ -906,24 +1061,27 @@ void Renderer::drawScene(bool shadows) {
         }
     }
 
-    if (!flat_.empty()) {
-        upload(flatVbo_, flatCap_, flat_);
+    // Translucent geometry (blended, no depth writes): the world's, then in the view pass the view model's own
+    // translucent parts, which share the one upload (prepareScene), after the world's.
+    auto drawFlat = [&](size_t first, size_t count, const Mat4& vp) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
         glDisable(GL_CULL_FACE);
         glUseProgram(flatProg_);
-        setMat(flatProg_, "uViewProj", viewProj_);
+        setMat(uFlatViewProj_, vp);
         glBindVertexArray(flatVao_);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)flat_.size());
+        glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
-    }
+    };
+    if (nFlat) drawFlat(0, nFlat, viewProj_);
 
-    if (!view_.empty()) {
+    if (nView || nViewFlat) {
         glClear(GL_DEPTH_BUFFER_BIT);
-        drawDyn(view_, false);
+        drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);   // (viewFix_: built for the aim before relatch)
+        if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
     }
     if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
@@ -936,8 +1094,8 @@ void Renderer::drawScene(bool shadows) {
         glUseProgram(edgeProg_);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, edgeTex_);
-        glUniform1i(U(edgeProg_, "uScene"), 0);
-        glUniform2f(U(edgeProg_, "uRcp"), 1.0f / width_, 1.0f / height_);
+        const float rx = 1.0f / width_, ry = 1.0f / height_;
+        if (rx != edgeRcp_[0] || ry != edgeRcp_[1]) { glUniform2f(uEdgeRcp_, rx, ry); edgeRcp_[0] = rx; edgeRcp_[1] = ry; }   // (only when the size changes)
         glBindVertexArray(worldVao_);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glEnable(GL_DEPTH_TEST);
@@ -947,51 +1105,119 @@ void Renderer::drawScene(bool shadows) {
     dynNoCast_.clear();
     view_.clear();
     flat_.clear();
+    viewFlat_.clear();
 }
 
-static inline uint8_t u8c(float v) { return (uint8_t)std::lround(clampf(v, 0, 1) * 255.0f); }
-static inline uint16_t u16uv(float texel) { return (uint16_t)std::lround(clampf((texel + 1) * 32.0f, 0, 65535)); }
-static inline int16_t px(float v) { return (int16_t)clampf(std::round(v), -32768, 32767); }
+// std::round (half away from zero) without the library call, bit for bit the same whole number: the 2D layer rounds
+// ~12 values a glyph, and the calls were most of its cost. (2^23 and up, inf, NaN: already whole, returned as they are.)
+static inline float uiRound(float v) {
+    if (!(std::fabs(v) < 8388608.0f)) return v;
+    int i = (int)v;
+    float f = v - (float)i;   // (exact below 2^23)
+    i += (f >= 0.5f) - (f <= -0.5f);
+    return (float)i;
+}
+static inline uint8_t u8c(float v) { float x = clampf(v, 0, 1) * 255.0f; int i = (int)x; i += (x - (float)i) >= 0.5f; return (uint8_t)i; }   // (= lround)
+static inline int16_t px(float v) { return (int16_t)clampf(uiRound(v), -32768, 32767); }
+// font atlas texel coords as the vertex stores them, (texel + 1) * 32: whole texels, so plain integers
+static inline uint16_t u16uv(int texel) { return (uint16_t)((texel + 1) * 32); }
+struct Rgba8 { uint8_t v[4]; };
+static inline Rgba8 rgba8(const Color& c) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a)}}; }   // (once per rect / text)
 
-// one quad (2 triangles) into the UI batch
-static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
-                   const Color& c, uint8_t scaleInt, uint8_t scaleFrac) {
-    Vertex2D q[4];
-    const float xs[4] = {x0, x1, x1, x0}, ys[4] = {y0, y0, y1, y1}, us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
-    for (int k = 0; k < 4; k++) {
-        q[k].pos[0] = px(xs[k]); q[k].pos[1] = px(ys[k]);
-        q[k].uv[0] = u16uv(us[k]); q[k].uv[1] = u16uv(vs[k]);
-        q[k].color[0] = u8c(c.r); q[k].color[1] = u8c(c.g); q[k].color[2] = u8c(c.b); q[k].color[3] = u8c(c.a);
-        q[k].scaleInt = scaleInt; q[k].scaleFrac = scaleFrac; q[k].pad[0] = q[k].pad[1] = 0;
-    }
-    const int idx[6] = {0, 1, 2, 0, 2, 3};
-    for (int i : idx) out.push_back(q[i]);
+// one quad (2 triangles) into the UI batch. Every glyph of every text is one: each distinct value is converted once
+// (the corners share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
+static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+                   const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
+    const int16_t X0 = px(x0), X1 = px(x1), Y0 = px(y0), Y1 = px(y1);
+    const size_t n = out.size();
+    out.resize(n + 6);
+    Vertex2D* d = out.data() + n;
+    auto put = [&](Vertex2D& v, int16_t x, int16_t y, uint16_t u, uint16_t w) {
+        v.pos[0] = x; v.pos[1] = y; v.uv[0] = u; v.uv[1] = w;
+        memcpy(v.color, c.v, 4);
+        v.scaleInt = scaleInt; v.scaleFrac = scaleFrac; v.pad[0] = v.pad[1] = 0;
+    };
+    // corners 0 (x0,y0) 1 (x1,y0) 2 (x1,y1) 3 (x0,y1), as triangles 0 1 2 and 0 2 3
+    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1);
+    d[3] = d[0]; d[4] = d[2]; put(d[5], X0, Y1, U0, V1);
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
-    const float u = kUiCell * 0.5f, v = kUiCell * 6.5f; // texel inside the solid block
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, c, 0, 0);
+    // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
+    constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c), 0, 0);
+}
+
+void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
+    constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+    const size_t n = ui_.size();
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl), 0, 0);
+    // corners 0 tl, 1 tr, 2 br, 5 bl (3 = 0, 4 = 2): their own colours
+    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a); };
+    Vertex2D* d = ui_.data() + n;
+    col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
+}
+
+// The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
+// (0.66 / 0.70), as it was designed (ui-redesign-spec, "Title logo"); its baseline 5.7 units below the line top.
+static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
+
+void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+    if (ts <= 0) return;
+    logoA_ = friendly; logoB_ = enemy;
+    if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
+        const float k = 7.5f * ts * kLogoEmK / kLogoEm;
+        // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
+        const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}), 255, 255);
+        logoDrawn_ = true;
+        return;
+    }
+    // another UI font: the word in it, as big (the same em), its own outline; the Q split at the same slant through the
+    // middle of its advance and its ink, a black seam on the line (the text shader, for that glyph's quad only)
+    const TextMetrics& m = uiMetrics();
+    const float sc = ts * kLogoEmK, sk = sc * m.fitScale;
+    const float w = textWidth("QUARK", sc), x0 = std::round(cx - w * 0.5f);
+    const float top = y + 5.7f * ts - (6.0f * m.fitScale + m.fitShift) * sc;   // (its baseline on the logo's)
+    const size_t n0 = ui_.size();
+    text(x0, top, sc, "Q", friendly);
+    for (size_t i = n0; i < ui_.size(); i++) ui_[i].pad[0] = 1;   // (the split Q)
+    text(x0 + w - textWidth("UARK", sc), top, sc, "UARK", friendly);
+    const int q = 'Q' - 32;
+    const GlyphInk& ink = m.ink[q];
+    const float qx = x0 + m.adv[q] * sk * 0.5f;
+    const float qy = std::round(top) + (ink.empty() ? 3.0f * m.fitScale : (ink.y0 + ink.y1) * 0.5f * m.fitScale) * sc + m.fitShift * sc;
+    // (the line x = qx - tilt (y - qy) in screen pixels, y down; the shader gets it in window pixels, y up)
+    const float nl = std::sqrt(1 + kLogoTilt * kLogoTilt);
+    splitP_[0] = qx; splitP_[1] = (float)height_ - qy;
+    splitN_[0] = 1 / nl; splitN_[1] = -kLogoTilt / nl;
+    splitSeam_ = 0.5f * kLogoSeam * 7.5f * ts * kLogoEmK;
+    splitDrawn_ = true;
 }
 
 static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
-void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
+void Renderer::text(float x, float y, float s, const std::string& str, const Color& c, float level) {
     if (s <= 0) return;
-    if (s < kMinTextScale) s = kMinTextScale;
-    float cx = x, cy = std::round(y);
-    float sc = clampf(s, 1.0f / 256, 255);
+    if (s < minScale_) s = minScale_;
+    // a font whose ink would leave the line box is drawn k times smaller, moved by its fit shift (k = 1: most fonts)
+    const float k = uiMetrics().fitScale, sk = s * k;
+    float cx = x, cy = uiRound(y);
+    float sc = clampf(sk, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
-    const float pad = kUiPad * s, box = 8.0f * s;
+    const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
+    const TextMetrics& m = uiMetrics();
+    const Rgba8 col = rgba8(c);
     int prev = -1;
     for (char ch : str) {
         int g = glyphIndex(ch);
-        if (prev >= 0) cx += glyphAdv(prev, g) * s;
+        if (prev >= 0) cx += (glyphAdv(prev, g) - m.closeUp(prev, g, level, o)) * sk;   // (closed up: Ui's fitting)
         prev = g;
         if (g == 0) continue;
         // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
-        float qx = std::round(cx - kUiOrigin * s) - pad, qy = cy - pad;
-        float tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, tx, ty, tx + kUiCell, ty + kUiCell, c, si, sf);
+        float qx = uiRound(cx - kUiOrigin * sk) - pad, qy = top - pad;
+        int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
+        uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
     }
 }
 
@@ -1001,30 +1227,31 @@ static constexpr float kMonoAdv = 5.3f;
 
 void Renderer::textMono(float x, float y, float s, const std::string& str, const Color& c) {
     if (s <= 0) return;
-    if (s < kMinTextScale) s = kMinTextScale;
-    float sc = clampf(s, 1.0f / 256, 255);
+    if (s < minScale_) s = minScale_;
+    const float k = uiMetrics().fitScale;   // (the line-box fit, as text())
+    float sc = clampf(s * k, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
-    const float pad = kUiPad * s, cy = std::round(y);
+    const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
+    const Rgba8 col = rgba8(c);
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         if (g == 0) continue;
-        float sx = s * std::min(1.0f, kMonoAdv / g_uiAdv[g]); // horizontal scale
+        float sx = s * k * std::min(1.0f, kMonoAdv / (g_uiAdv[g] * k)); // horizontal scale
         float cx = x + i * kMonoAdv * s + (kMonoAdv * s - g_uiAdv[g] * sx) * 0.5f;
-        float qx = std::round(cx - kUiOrigin * sx) - kUiPad * sx, qy = cy - pad;
-        float tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuad(ui_, qx, qy, qx + (8.0f + 2 * kUiPad) * sx, qy + 8.0f * s + 2 * pad, tx, ty, tx + kUiCell, ty + kUiCell, c, si, sf);
+        float qx = uiRound(cx - kUiOrigin * sx) - kUiPad * sx, qy = cy - pad;
+        int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
+        uiQuad(ui_, qx, qy, qx + (8.0f + 2 * kUiPad) * sx, qy + 8.0f * s * k + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
     }
 }
 
-float Renderer::textWidthMono(const std::string& str, float scale) const { return str.size() * kMonoAdv * std::max(scale, kMinTextScale); }
+float Renderer::textWidthMono(const std::string& str, float scale) const { return str.size() * kMonoAdv * std::max(scale, minScale_); }
 
-float Renderer::textWidth(const std::string& str, float scale) const {
-    float w = 0;
-    int prev = -1;
-    for (char ch : str) { int g = glyphIndex(ch); if (prev >= 0) w += glyphAdv(prev, g); prev = g; }
-    if (prev >= 0) w += g_uiAdv[prev];
-    return w * std::max(scale, kMinTextScale);
+float Renderer::textWidth(const std::string& str, float scale, float level) const {
+    const float sk = std::max(scale, minScale_) * uiMetrics().fitScale;
+    return textUnits(uiMetrics(), str, level, sk) * sk;
 }
+
+TextFit Renderer::fitText(const std::string& str, float scale, float maxW) const { return ::fitText(uiMetrics(), str, std::max(scale, minScale_), maxW); }
 
 std::string Renderer::textClip(const std::string& str, float scale, float maxW) const {
     if (textWidth(str, scale) <= maxW) return str;
@@ -1038,14 +1265,42 @@ size_t Renderer::textFit(const std::string& str, float scale, float maxW) const 
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         float nw = w + (prev >= 0 ? glyphAdv(prev, g) - g_uiAdv[prev] : 0) + g_uiAdv[g];
-        if (nw * std::max(scale, kMinTextScale) > maxW) return i;
+        if (nw * std::max(scale, minScale_) * uiMetrics().fitScale > maxW) return i;
         w = nw; prev = g;
     }
     return str.size();
 }
 
+FontAtlasLayout Renderer::uiFontLayout() { return {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread, kUiCapHeight}; }
+
+void Renderer::setUiFont(std::unique_ptr<FontAtlas> font) {
+    if (font && font->tex.size() != (size_t)kUiTexW * kUiTexH) font.reset();
+    if (!font && !g_uiFont) return;   // (the default already)
+    g_uiFont = std::move(font);
+    g_uiAdv = g_uiFont ? g_uiFont->adv : kUiAdv;
+    g_uiKern = g_uiFont ? g_uiFont->kern : kUiKern;
+    minScale_ = g_uiFont && g_uiFont->minScale > 0 ? g_uiFont->minScale : kMinTextScale;
+    {   // its ink, and the scale that keeps it in the line box (once per pick)
+        TextMetrics& m = uiMetrics();
+        m.adv = g_uiAdv; m.kern = g_uiKern; m.minScale = minScale_;
+        measureInk(g_uiFont ? g_uiFont->tex.data() : kUiAtlas, {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, m.ink);
+        LineFit lf = lineFit(m.ink, defaultLineBox());
+        m.fitScale = lf.scale; m.fitShift = lf.shift;
+        fontGen_++;
+    }
+    if (!fontTex_) return;   // (before init: init uploads it)
+    glBindTexture(GL_TEXTURE_2D, fontTex_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kUiTexW, kUiTexH, GL_RED, GL_UNSIGNED_BYTE, g_uiFont ? g_uiFont->tex.data() : kUiAtlas);
+}
+
+void Renderer::prepare2D() {
+    upload(uiVbo_, uiCap_, ui_);
+    uiUploaded_ = ui_.size();
+}
+
 void Renderer::flush2D() {
-    if (ui_.empty()) return;
+    if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
 #ifdef QUARK_TRACY
     static size_t uiTotal = 0; uiTotal += ui_.size();
@@ -1055,12 +1310,28 @@ void Renderer::flush2D() {
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    upload(uiVbo_, uiCap_, ui_);
+    if (uiUploaded_ != ui_.size()) upload(uiVbo_, uiCap_, ui_);   // (prepare2D did it, unless more was added since)
+    uiUploaded_ = 0;
     glUseProgram(uiProg_);
-    glUniform2f(U(uiProg_, "uScreen"), (float)width_, (float)height_);
-    glUniform1i(U(uiProg_, "uFont"), 0);
-    glUniform2f(U(uiProg_, "uFontSize"), (float)kUiTexW, (float)kUiTexH);
-    glUniform1f(U(uiProg_, "uK"), kUiTpu / (2.0f * kUiSpread));
+    if ((float)width_ != uiScreen_[0] || (float)height_ != uiScreen_[1]) {   // (the rest are fixed: init)
+        uiScreen_[0] = (float)width_; uiScreen_[1] = (float)height_;
+        glUniform2f(uUiScreen_, uiScreen_[0], uiScreen_[1]);
+    }
+    if (logoDrawn_ || splitDrawn_) {   // (only a frame with the title sets its colours)
+        glUniform3f(uLogoA_, logoA_.r, logoA_.g, logoA_.b);
+        glUniform3f(uLogoB_, logoB_.r, logoB_.g, logoB_.b);
+    }
+    if (logoDrawn_) {   // (...and binds its texture; uLogo / uLogoSize are fixed: init)
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, logoTex_);
+        logoDrawn_ = false;
+    }
+    if (splitDrawn_) {   // (the title in another font: its Q's split line)
+        glUniform2f(uSplitP_, splitP_[0], splitP_[1]);
+        glUniform2f(uSplitN_, splitN_[0], splitN_[1]);
+        glUniform1f(uSplitSeam_, splitSeam_);
+        splitDrawn_ = false;
+    }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);

@@ -1,0 +1,9 @@
+{
+  "port": 8772,
+  "dataDir": null,
+  "maptool": null,
+  "mapsDirs": [],
+  "defaultMapsDir": null,
+  "referencesDir": null,
+  "helperArgs": []
+}

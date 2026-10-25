@@ -1,0 +1,137 @@
+{
+ "id": "celeste",
+ "name": "Celeste",
+ "year": 2018,
+ "engine": "Monocle (XNA / FNA)",
+ "group": "other",
+ "scale": {
+  "unit": "px",
+  "metresPerUnit": 0.163636,
+  "why": "Madeline's hitbox is 11 px tall (Player.cs: normalHitbox 8 x 11), scaled to 1.8 m: 0.1636 m/px. A 2D platformer: compare ratios (dash / run) more than raw speeds"
+ },
+ "values": {
+  "gravity": {
+   "value": 147.2727,
+   "unit": "m/s2",
+   "mult": 6.6942,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L24 (Gravity = 900f)",
+   "confidence": "exact",
+   "raw": "Gravity 900 px/s2",
+   "outsideClamp": true,
+   "note": "halved near the apex while jump is held (HalfGravThreshold 40) (x6.6942 is outside the editor's 0.1..3 range: applying it clamps.)"
+  },
+  "speed": {
+   "value": 14.7273,
+   "unit": "m/s",
+   "mult": 1.5502,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L30 (MaxRun = 90f)",
+   "confidence": "exact",
+   "raw": "MaxRun 90 px/s"
+  },
+  "jump": {
+   "value": 17.1818,
+   "unit": "m/s",
+   "mult": 2.3408,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L49 (JumpSpeed = -105f)",
+   "confidence": "exact",
+   "raw": "JumpSpeed 105 px/s",
+   "note": "held for up to 0.2 s while jump is held (VarJumpTime), so jumps are much higher than v^2/2g"
+  },
+  "dash_speed": {
+   "value": 39.2727,
+   "unit": "m/s",
+   "mult": 1.6364,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L75 (DashSpeed = 240f)",
+   "confidence": "exact",
+   "raw": "DashSpeed 240 px/s",
+   "note": "2.67 x run speed (Quark: 24 / 9.5 = 2.53 x)"
+  },
+  "dash_time": {
+   "value": 0.15,
+   "unit": "s",
+   "mult": 1.25,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L78 (DashTime = .15f)",
+   "confidence": "exact"
+  },
+  "dash_exit_min": {
+   "value": 26.1818,
+   "unit": "m/s",
+   "mult": 2.3802,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L76 (EndDashSpeed = 160f)",
+   "confidence": "exact",
+   "raw": "EndDashSpeed 160 px/s",
+   "note": "the speed a dash ends at (Quark's exit is at least 11 m/s)"
+  },
+  "dash_cooldown": {
+   "value": 0.2,
+   "unit": "s",
+   "mult": 0.3333,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L79 (DashCooldown = .2f)",
+   "confidence": "exact"
+  },
+  "dash_charges": {
+   "value": 1,
+   "unit": "",
+   "mult": 0.5,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs",
+   "confidence": "exact",
+   "note": "one dash, refilled on landing (two with the second crystal heart power-up)"
+  },
+  "super_dash_jump": {
+   "value": 0.5,
+   "unit": "x",
+   "mult": 0.5556,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L46 (DuckSuperJumpYMult = .5f)",
+   "confidence": "exact",
+   "note": "the hyper (a super jump out of a crouched dash) jumps at half the jump speed: Quark's super dash hop was the same 0.5 until 1.18.28; since 1.18.31 this setting scales the share of the hyper's speed that goes up (at most 0.9), so the match is loose"
+  },
+  "dash": {
+   "value": true,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs",
+   "confidence": "exact",
+   "note": "the dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "superJumpSpeed": {
+   "value": 42.5455,
+   "unit": "m/s",
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L69 (SuperJumpH = 260f)",
+   "confidence": "exact",
+   "note": "the super (dash jump) horizontal speed: 2.89 x run (Quark's dash jump leaves at the 24 m/s burst, 2.53 x)"
+  },
+  "hyperSpeed": {
+   "value": 53.1818,
+   "unit": "m/s",
+   "source": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs#L45 (DuckSuperJumpXMult = 1.25f)",
+   "confidence": "exact",
+   "note": "the hyper: 325 px/s, 3.6 x run (Quark's super dash: carried speed + 5 m/s)"
+  },
+  "jumpHeight": {
+   "value": 4.5818,
+   "unit": "m",
+   "source": "derived from JumpSpeed, VarJumpTime, Gravity, HalfGravThreshold",
+   "confidence": "estimated",
+   "note": "about 28 px (21 px held + 7 px coasting) = 2.5 x her height; Quark: 1.22 m = 0.68 x"
+  }
+ },
+ "extras": [
+  "super / hyper / wavedash (dash techs Quark's dash jump and super dash are modelled on)",
+  "climbing with stamina",
+  "wall jumps",
+  "coyote time 0.1 s (JumpGraceTime)"
+ ],
+ "notes": "Celeste's Player.cs was published by its developers. A 2D game: its gravity and jumps are far beyond a shooter's; the dash numbers are the useful comparison.",
+ "sources": [
+  {
+   "title": "Celeste Player.cs (NoelFB/Celeste)",
+   "url": "https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs"
+  }
+ ]
+}

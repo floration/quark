@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Play</title>
+<link rel="stylesheet" href="static/quark-tools.css">
+<link rel="stylesheet" href="static/pm.css">
+<link rel="stylesheet" href="static/play.css">
+</head>
+<body>
+<header class="qt-nav top" id="top">
+  <a class="qt-brand" href="./">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+    Supervisor Board
+  </a>
+  <span class="qt-nav-sep"></span>
+  <a href="play" aria-current="page">Play</a>
+  <span class="grow"></span>
+  <span class="clock" id="clock" title="Dallas time (America/Chicago)">--:--</span>
+</header>
+
+<main id="main">
+  <section class="card down-banner" id="sec-down" role="alert" hidden>
+    <div><strong>The Supervisor Board server isn't answering.</strong>
+      <div class="small">Nothing on this page can start, stop or install until it is back. Open <b>Quark Project</b> again from the desktop shortcut; this page reconnects by itself.</div>
+      <div class="small muted" id="down-detail"></div></div>
+    <button type="button" class="btn" id="down-retry">Try now</button>
+  </section>
+  <section class="card play-pending" id="sec-pending" hidden></section>
+  <div class="statusline" id="statusline" role="status" aria-live="polite"><span id="status-text">Loading&hellip;</span></div>
+
+  <section class="card" id="sec-builds" aria-labelledby="h-builds">
+    <div class="card-head">
+      <h2 id="h-builds">Play a build</h2>
+      <span class="rel-tools"><span class="src">launch options are remembered per build &middot; Enter in the box starts it</span>
+        <button type="button" class="btn small" data-open="logs" title="Open project-manager\logs (every game's output)">Logs folder</button></span>
+    </div>
+    <div class="builds" id="builds"></div>
+    <datalist id="opts-list"></datalist>
+  </section>
+
+  <div class="grid two play-grid">
+    <section class="card" id="sec-notes" aria-labelledby="h-notes"></section>
+    <section class="card" id="sec-sessions" aria-labelledby="h-sessions"></section>
+  </div>
+
+  <section class="card" id="sec-releases" aria-labelledby="h-releases">
+    <div class="card-head">
+      <h2 id="h-releases">Older versions <span class="count" id="rel-count"></span></h2>
+      <span class="rel-tools">
+        <input type="search" id="rel-search" class="rel-search" placeholder="find a version" aria-label="Find a release by version or name" spellcheck="false" autocomplete="off">
+        <label class="chk small" title="Releases this PC has: in versions\, in a game folder, or being installed"><input type="checkbox" id="rel-installed"> on this PC</label>
+        <span class="seg" id="rel-seg"><button type="button" data-filter="all">All</button><button type="button" data-filter="production">Production</button><button type="button" data-filter="testing">Testing</button></span>
+        <span class="src" id="rel-src"></span>
+        <button type="button" class="btn small" id="rel-refresh">Refresh</button>
+      </span>
+    </div>
+    <div id="rel-body"></div>
+  </section>
+</main>
+
+<dialog id="note-dlg" aria-labelledby="note-h">
+  <form id="note-form" method="dialog">
+    <div class="dlg-head">
+      <h2 id="note-h">How was it?</h2>
+      <span class="small muted" id="note-count"></span>
+    </div>
+    <div class="note-meta" id="note-meta"></div>
+    <div class="note-for" id="note-for" hidden>
+      <label>Which build?<select name="build" id="note-build"></select></label>
+      <label id="note-other-label">Name<input type="text" name="label" maxlength="80" value="launcher" spellcheck="false"></label>
+      <label id="note-other-version">Version<input type="text" name="version" maxlength="60" placeholder="e.g. 1.18.31" spellcheck="false"></label>
+    </div>
+    <div class="note-draft" id="note-draft" hidden><span id="note-draft-txt"></span><button type="button" class="btn small ghost" id="note-discard" title="Throw away what you typed here and start from the saved note (or empty boxes)">Discard draft</button></div>
+    <label>What did you do?<textarea name="did" rows="3" maxlength="4000" placeholder="e.g. two FFA rounds on bastion with 6 bots, then the map editor"></textarea></label>
+    <label>What did you notice?<textarea name="noticed" rows="3" maxlength="4000" placeholder="bugs, stutters, anything that felt off or good"></textarea></label>
+    <label>What do you want changed?<textarea name="change" rows="3" maxlength="4000"></textarea></label>
+    <label>Anything else<textarea name="other" rows="2" maxlength="4000"></textarea></label>
+    <label class="chk" id="note-attach-row"><input type="checkbox" name="attachLog" id="note-attach"> Add the last lines of the game's log (helps when it crashed)</label>
+    <p class="small muted" id="note-help">Saved on this PC and added to Claude Documents (12-play-notes.md) as an open entry for the agents. Up to 4000 characters a box; line breaks show as " / " in the file. No passwords or keys.</p>
+    <p class="err small" id="note-err" hidden></p>
+    <div class="dlg-buttons">
+      <button type="button" class="btn" id="note-later" title="Close this; every waiting note stays waiting (the Play tab shows a badge)">Later</button>
+      <button type="button" class="btn" id="note-skip" title="No note for this session">Skip</button>
+      <button type="button" class="btn danger" id="note-delete" hidden>Remove note</button>
+      <span class="grow"></span>
+      <button type="submit" class="btn primary" id="note-save" title="Ctrl+Enter">Save note</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="log-dlg" aria-labelledby="log-h">
+  <div class="log-box">
+    <div class="dlg-head"><h2 id="log-h">Game log</h2><span class="small muted" id="log-sub"></span></div>
+    <pre class="log-text mono" id="log-text" tabindex="0"></pre>
+    <div class="dlg-buttons">
+      <button type="button" class="btn" id="log-open" title="Open this log in its default app">Open the file</button>
+      <button type="button" class="btn" data-open="logs">Logs folder</button>
+      <button type="button" class="btn" id="log-reload">Reload</button>
+      <span class="grow"></span>
+      <button type="button" class="btn primary" id="log-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+<script src="static/play.js"></script>
+</body>
+</html>

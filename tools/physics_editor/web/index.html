@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Physics Editor</title>
+<link rel="stylesheet" href="/web/quark-tools.css">
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="logo"><b>QUARK</b> physics editor</div>
+    <nav id="tabs">
+      <button data-page="values" class="on">Values</button>
+      <button data-page="code">Code</button>
+      <button data-page="codegraph" title="how the values flow through the movement code">Code graph</button>
+      <button data-page="blocks">Blocks</button>
+      <button data-page="graph" title="curves, 3D, A/B compare of the runs">Movement graph</button>
+      <button data-page="path">Path</button>
+      <button data-page="drive">Drive</button>
+      <button data-page="export">Export</button>
+    </nav>
+    <div id="status"><span id="helperBadge" class="badge"></span><span id="dataDir"></span><button id="themeBtn" class="icon" title="theme">◐</button></div>
+  </header>
+
+  <div id="body">
+    <aside id="side" class="panel">
+      <h3>Physics set</h3>
+      <div class="field"><span>Open</span><select id="setSel"></select></div>
+      <div class="field"><span>Name</span><input id="setName" placeholder="the custom mode's name"></div>
+      <div class="row">
+        <button id="setNew" title="a new set: the standard physics">New</button>
+        <button id="setSave" class="primary" title="write the movement lines into custom_modes/&lt;name&gt;.qmode (Ctrl+S)">Save</button>
+        <button id="setSaveAs">Save as…</button>
+        <span class="grow"></span>
+        <button id="setUndo" class="icon" title="undo (Ctrl+Z)" disabled>↶</button><button id="setRedo" class="icon" title="redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷</button>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <button id="setOpenFile" title="open a .qmode file">⇧ Open file</button>
+        <button id="setDownload" title="download the .qmode">⇩ .qmode</button>
+        <button id="setResetAll" class="danger" title="every value back to the standard physics">Reset all</button>
+      </div>
+      <div id="setInfo" class="muted small" style="margin-top:6px"></div>
+
+      <div class="sep"></div>
+      <h3>Scenario</h3>
+      <div class="field"><span>Preset</span><select id="presetSel"></select></div>
+      <div id="presetDesc" class="muted small"></div>
+      <div id="presetNote" class="small" style="display:none"></div>
+      <div class="field"><span>Map</span><select id="mapSel"></select></div>
+      <div class="field" id="spawnRow" style="display:none"><span>Start at</span><select id="spawnSel"></select></div>
+      <div class="field"><span>Saved</span><div class="row"><select id="scLoad" class="grow"><option value="">Load…</option></select><button id="scSave" title="save the scenario">Save</button></div></div>
+      <div class="row">
+        <button id="runBtn" class="primary" title="run the scenario now (Ctrl+Enter)">▶ Run</button>
+        <label class="check"><input type="checkbox" id="autoRun" checked> re-run on every change</label>
+      </div>
+      <div id="runInfo"></div>
+
+      <div class="sep"></div>
+      <h3>Compare with</h3>
+      <div class="cmpList" id="cmpList"></div>
+
+      <div class="sep"></div>
+      <h3>Results <span class="muted" id="resName" style="text-transform:none;letter-spacing:0"></span></h3>
+      <table class="mini" id="miniMetrics"></table>
+    </aside>
+
+    <main id="main">
+      <section id="pg-values" class="page on"></section>
+
+      <section id="pg-code" class="page">
+        <div id="codeTabs" class="subtabs"><button data-sub="qmode" class="on" title="the custom mode file: what a save writes">.qmode file</button><button data-sub="move" title="the game's movement code (src/game/pmove.cpp) with your values worked in">Movement code</button><span class="grow"></span><span id="codeSubInfo" class="muted small"></span></div>
+        <div id="codeWrap" class="sub on" data-sub="qmode">
+          <div class="cbar">
+            <span id="codeFile" class="muted"></span>
+            <span class="grow"></span>
+            <span class="muted">movement lines are edited here; <span class="ho">dim lines</span> are the gamemode's, kept as they are in the file</span>
+            <button id="codeFormat" title="rewrite the movement lines in the game's own form (toText)">Tidy</button>
+          </div>
+          <div id="code">
+            <div id="gutter"></div>
+            <div id="codeScroll"><pre id="codeHl"></pre><textarea id="codeTa" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea></div>
+          </div>
+          <div id="codeProblems"></div>
+          <div id="logicBox" style="display:none"><div class="lh">The gamemode editor's section (from the <code>logic</code> line on): read only here, a save never touches it.</div><pre id="logicPre"></pre></div>
+        </div>
+        <div id="mcWrap" class="sub" data-sub="move">
+          <div class="cbar" id="mcBar">
+            <span id="mcFiles"></span>
+            <label class="check"><input type="checkbox" id="mcNotes" checked> notes</label>
+            <label class="check"><input type="checkbox" id="mcOnly"> only lines that use a setting</label>
+            <input id="mcFind" placeholder="find in the code…" style="width:170px">
+            <span class="grow"></span><span id="mcInfo" class="muted"></span>
+          </div>
+          <div id="mcWarn" class="srcwarn" hidden></div>
+          <div id="mcBody">
+            <aside id="mcSide"></aside>
+            <div id="mcCode" tabindex="0"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pg-codegraph" class="page">
+        <div id="cgWrap">
+          <div class="cbar" id="cgBar">
+            <label class="check"><input type="checkbox" id="cgOnly"> only changed settings</label>
+            <label class="check"><input type="checkbox" id="cgVia" checked> through called functions</label>
+            <button id="cgFit" title="fit the graph (or double-click the background)">Fit</button>
+            <span class="grow"></span><span id="cgInfo" class="muted small">settings → the steps of one 1 ms pmove step that read them (in order) → what they change · drag: pan · wheel: zoom · click a step: its code</span>
+          </div>
+          <div id="cgWarn" class="srcwarn" hidden></div>
+          <div id="cgView"><canvas id="cgCanvas"></canvas><div id="cgTip"></div></div>
+        </div>
+      </section>
+
+      <section id="pg-blocks" class="page"></section>
+
+      <section id="pg-graph" class="page">
+        <div id="graphWrap">
+          <div class="cbar" id="graphTop">
+            <span class="seg" id="gView"><button data-v="curves" class="on" title="speed, height... against time">Curves</button><button data-v="3d" title="the trajectories in 3D, with a time scrubber">3D</button></span>
+            <span class="seg" id="gCmp"><button data-c="all" class="on" title="every run: the edited set, the standard, the sets ticked under Compare with, drives">all runs</button><button data-c="ab" title="two sets against each other, overlaid or side by side">A / B</button></span>
+            <span id="abBar" style="display:none"><label>A <select id="abA"></select></label><label>B <select id="abB"></select></label>
+              <span class="seg" id="abLay"><button data-l="overlay" class="on">overlay</button><button data-l="side">side by side</button></span><button id="abSwap" title="swap A and B">⇄</button></span>
+            <button id="gLockBtn" title="fixed axis ranges that stay put across runs and between sets">lock units ▾</button>
+            <span class="grow"></span><span id="gNote" class="small"></span>
+          </div>
+          <div id="gLock" class="lockpanel" style="display:none"></div>
+          <div class="cbar" id="graphBar"></div>
+          <div id="charts"><canvas id="chartCanvas"></canvas><div id="hover"></div>
+            <div id="g3d" style="display:none"><canvas id="g3dA"></canvas><canvas id="g3dB"></canvas><span class="lbl" id="g3dLblA"></span><span class="lbl" id="g3dLblB"></span>
+              <div id="g3dBar"><button id="g3dPlay" title="play / pause">▶</button><input type="range" id="g3dT" min="0" max="1000" value="1000"><span id="g3dTime" class="small"></span>
+                <label class="check"><input type="checkbox" id="g3dTicks" checked> 0.1 s ticks</label><label class="check"><input type="checkbox" id="g3dEvents" checked> events</label><button id="g3dFit">Fit</button></div></div>
+          </div>
+          <div id="metrics"></div>
+        </div>
+      </section>
+
+      <section id="pg-path" class="page">
+        <div id="pathWrap">
+          <div class="cbar" id="pathBar">
+            <button id="pathFit" title="fit the runs">Fit</button>
+            <button id="path3d" title="a 3D orbit view (drag: orbit, right drag: pan, wheel: zoom)">3D</button>
+            <label class="check"><input type="checkbox" id="pathEvents" checked> events</label>
+            <label class="check"><input type="checkbox" id="pathTicks" checked> 0.1 s ticks</label>
+            <span class="grow"></span><span id="pathInfo" class="muted"></span>
+          </div>
+          <div id="pathViews">
+            <div id="pTop"><canvas id="topCanvas"></canvas><span class="lbl">top (x right, z down) · drag: pan · wheel: zoom</span></div>
+            <div id="pSide"><canvas id="sideCanvas"></canvas><span class="lbl" id="sideLbl">side</span></div>
+            <div id="p3dBox"><canvas id="p3dCanvas"></canvas><span class="lbl">3D · drag: orbit · right drag: pan · wheel: zoom</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pg-drive" class="page">
+        <div id="driveWrap">
+          <div id="driveView">
+            <canvas id="driveCanvas"></canvas>
+            <div id="driveCross"></div>
+            <div id="driveHud"><div class="sp" id="hudSpeed">0.0</div><div class="sub" id="hudSub"></div><div class="charges" id="hudCharges"></div></div>
+            <div id="driveFps"></div>
+            <div id="driveHint" style="display:none">This window doesn't allow mouse lock: hold the left button and drag to look · <kbd>Esc</kbd> stops</div>
+            <div id="driveMsg"><div>Click to play · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + mouse · <kbd>Space</kbd> jump · <kbd>Shift</kbd> dash · <kbd>Q</kbd> grapple · <kbd>C</kbd> crouch<br><kbd>R</kbd> back to the start · <kbd>V</kbd> camera · <kbd>Esc</kbd> lets go of the mouse</div></div>
+          </div>
+          <aside id="driveSide" class="panel">
+            <h3>Drive</h3>
+            <div class="field"><span>Physics</span><select id="drivePhys"><option value="edit">the edited set</option><option value="std">standard</option></select></div>
+            <div class="field"><span>Camera</span><select id="driveCam"><option value="fp">first person</option><option value="chase">chase</option></select></div>
+            <div class="field"><span>Mouse</span><input id="driveSens" type="number" step="0.005" value="0.08" title="degrees per pixel"></div>
+            <div class="field"><span>FOV</span><input id="driveFov" type="number" step="1" value="100" title="horizontal degrees"></div>
+            <div class="field"><span>Start</span><select id="driveStart"></select></div>
+            <div class="row"><button id="driveReset">Reset (R)</button><button id="driveToGraph" title="add what you just drove to the Movement graph and Path tabs">→ Graph</button></div>
+            <div id="driveVia" class="muted small" style="margin-top:6px"></div>
+            <h3>Speed (last 10 s)</h3>
+            <canvas id="driveGraph"></canvas>
+            <h3>Events</h3>
+            <div id="driveEvents"></div>
+            <h3 title="each frame's time while playing (the last 600 frames): lines at 60, 30 and 15 fps; red: a spike">Frame times</h3>
+            <canvas id="driveFrames" class="ft"></canvas>
+            <div id="driveSpikes" class="muted small" title="a spike: a frame over twice the median and 8 ms more (game time, its length, x the median, the helper's round trip then)"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="pg-export" class="page">
+        <div id="exportWrap">
+          <div class="card">
+            <h3>Save as a custom mode</h3>
+            <p class="muted small">Writes the movement lines into <code id="exPath"></code>: playable in the game now (Host › Custom modes). Lines that aren't movement (the mode, weapons, health, the gamemode editor's logic) stay as they are in the file.</p>
+            <div class="row"><input id="exName" placeholder="name" style="width:220px"><button id="exSave" class="primary">Save</button><button id="exDownload">⇩ .qmode</button><button id="exCopyQ">Copy</button></div>
+            <h3>The file a save writes</h3>
+            <pre id="exQmode"></pre>
+          </div>
+          <div class="card">
+            <h3>As the game's standard (C++ constants)</h3>
+            <p class="muted small">For the owner, if a set should become the standard movement: each changed constant at standard x multiplier, from <code>physexport</code>. Nothing in the game is changed by this page.</p>
+            <div class="row"><button id="exCopyC" class="primary">Copy the list</button><span id="exVia" class="muted small"></span></div>
+            <pre id="exCpp" style="margin-top:8px"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div id="toast"></div>
+<input type="file" id="fileIn" style="display:none">
+<script type="module" src="/web/js/app.js"></script>
+</body>
+</html>

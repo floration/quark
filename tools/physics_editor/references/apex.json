@@ -1,0 +1,177 @@
+{
+ "id": "apex",
+ "name": "Apex Legends",
+ "year": 2019,
+ "engine": "Source (Respawn)",
+ "group": "movement shooters",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.025,
+  "why": "assumed like Titanfall 2: a 72 u (inch) tall hull scaled to 1.8 m, 0.025 m/u (the wiki converts at 1 u = 1 inch = 0.0254 m, 1.6% more)"
+ },
+ "values": {
+  "speed": {
+   "value": 7.475,
+   "unit": "m/s",
+   "mult": 0.7868,
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (sprinting 299 u/s, 7.59 m/s)",
+   "confidence": "measured",
+   "raw": "sprint 299 u/s",
+   "note": "sprint; walk 199.53 u/s, crouch-walk 92 u/s; -13% holding a weapon"
+  },
+  "hook_range": {
+   "value": 21,
+   "unit": "m",
+   "mult": 0.4667,
+   "source": "https://apexlegends.wiki.gg/wiki/Pathfinder (grappling hook max length 21 m)",
+   "confidence": "measured",
+   "note": "Pathfinder's Grappling Hook (tactical); the wiki lists a 20 s cooldown and 2 charges"
+  },
+  "gravity": {
+   "value": 20.4529,
+   "unit": "m/s2",
+   "mult": 0.9297,
+   "source": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article (jump height 56 u, airtime 0.74 s on flat ground)",
+   "confidence": "estimated",
+   "raw": "8 x 56 / 0.74^2 = 818.115 u/s2",
+   "note": "derived from the measured jump: g = 8 x height / airtime^2 (Titanfall 2's pilots: 750 x 0.8 = 600 u/s2)"
+  },
+  "jump": {
+   "value": 7.5676,
+   "unit": "m/s",
+   "mult": 1.031,
+   "source": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article (jump height 56 u, airtime 0.74 s)",
+   "confidence": "estimated",
+   "raw": "4 x 56 / 0.74 = 302.703 u/s",
+   "note": "derived from the measured jump: take-off speed = 4 x height / airtime"
+  },
+  "air_cap": {
+   "value": 1.5,
+   "unit": "m/s",
+   "mult": 0.6522,
+   "source": "https://apexmovement.tech/wiki/tech/General_Tech%3EFundamentals%3EAir%3EFundamental_Air_Tech_article (air speed 60)",
+   "confidence": "measured",
+   "raw": "air speed 60 u/s",
+   "note": "the movement wiki's core air value, read as Source's air wish cap (Titanfall 2's player dump has the same airSpeed 60)"
+  },
+  "air_accel": {
+   "value": 0.8333,
+   "unit": "",
+   "mult": 0.3788,
+   "source": "https://apexmovement.tech/wiki/tech/General_Tech%3EFundamentals%3EAir%3EFundamental_Air_Tech_article (air acceleration 500)",
+   "confidence": "estimated",
+   "raw": "air acceleration 500",
+   "note": "as Titanfall 2: if the 500 is an absolute u/s2 push toward the 60 u/s cap, the Quark-equivalent is 500 / 60 / 10; the engine's formula isn't public"
+  },
+  "step": {
+   "value": 0.75,
+   "unit": "m",
+   "mult": 1.3636,
+   "source": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article (overwalkable ledge about 30 hu, higher on rounded or sloped ledges)",
+   "confidence": "measured",
+   "raw": "ledge 30 u",
+   "note": "the highest ledge you walk over without jumping or mantling"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding",
+   "confidence": "exact",
+   "note": "no dash for most legends (Octane / Horizon / Pathfinder have movement abilities)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://apexlegends.wiki.gg/wiki/Pathfinder",
+   "confidence": "exact",
+   "note": "Pathfinder only"
+  }
+ },
+ "facts": {
+  "walkSpeed": {
+   "value": 4.9883,
+   "unit": "m/s",
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (walking 199.53)",
+   "confidence": "measured"
+  },
+  "crouchSpeed": {
+   "value": 2.3,
+   "unit": "m/s",
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (crouchwalking 92)",
+   "confidence": "measured"
+  },
+  "slideTime": {
+   "value": 1,
+   "unit": "s",
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (about 1 s on flat ground before it slows)",
+   "confidence": "measured"
+  },
+  "superglideBoost": {
+   "value": 10.3,
+   "unit": "m/s",
+   "source": "https://apexlegends.fandom.com/wiki/Movement",
+   "confidence": "measured"
+  },
+  "climbHeight": {
+   "value": 6,
+   "unit": "m",
+   "source": "https://apexlegends.fandom.com/wiki/Movement (wall climb about 6 m)",
+   "confidence": "measured"
+  },
+  "jumpHeight": {
+   "value": 1.4,
+   "unit": "m",
+   "source": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article (56 units)",
+   "confidence": "measured",
+   "note": "Quark: 1.22 m"
+  },
+  "airTime": {
+   "value": 0.74,
+   "unit": "s",
+   "source": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article (0.74 s on flat ground)",
+   "confidence": "measured",
+   "note": "Quark: 2 x 7.34 / 22 = 0.67 s"
+  },
+  "jumpFatigue": {
+   "value": "16.3 u for 0.15 s after landing, back to 56 u by 0.75 s",
+   "unit": "",
+   "source": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article (antiMultiJumpTimeMin 0.15, antiMultiJumpTimeMax 0.75, antiMultiJumpHeightFrac 0.3)",
+   "confidence": "measured",
+   "note": "a jump right after landing is lower"
+  }
+ },
+ "extras": [
+  "slide (about 1 s on flat ground, longer downhill)",
+  "wall climb about 6 m, mantle",
+  "superglide (10.3 m/s), tap-strafe",
+  "ziplines, jump pads",
+  "jump fatigue: a jump within 0.15 s of landing reaches only about 30% height, recovering by 0.75 s (Apex Movement Wiki)",
+  "bunny hops above sprint speed lose up to 100 u/s each; no air friction (horizontal speed is kept in the air)",
+  "legend hulls are 66, 72 or 80 u tall (16 u radius), so the 72 u scale here is the middle size"
+ ],
+ "notes": "Apex's data files aren't public; numbers are community measurements. The Fandom wiki converts the same 299 u/s at 1 u = 0.75 in (5.7 m/s); this file uses the player-height scale. Gravity and jump speed are derived from the Apex Movement Wiki's measured jump (56 u high, 0.74 s in the air), so they are estimates; the air values are the same 60 / 500 Titanfall 2 uses.",
+ "sources": [
+  {
+   "title": "Apex Legends Wiki (wiki.gg): Sliding",
+   "url": "https://apexlegends.wiki.gg/wiki/Sliding"
+  },
+  {
+   "title": "Apex Legends Wiki (wiki.gg): Pathfinder",
+   "url": "https://apexlegends.wiki.gg/wiki/Pathfinder"
+  },
+  {
+   "title": "Apex Legends Wiki (Fandom): Movement",
+   "url": "https://apexlegends.fandom.com/wiki/Movement"
+  },
+  {
+   "title": "Apex Movement Wiki: Fundamental Ground Movement",
+   "url": "https://apexmovement.tech/wiki/tech/General%20Tech%3EFundamentals%3EGround%3EFundamental%20Ground%20Movement%20article"
+  },
+  {
+   "title": "Apex Movement Wiki: Fundamental Air Tech",
+   "url": "https://apexmovement.tech/wiki/tech/General_Tech%3EFundamentals%3EAir%3EFundamental_Air_Tech_article"
+  },
+  {
+   "title": "Apex Movement Wiki: How the Apex engine handles movement",
+   "url": "https://apexmovement.tech/wiki/articles/Wiki%20help%3EHow%20the%20Apex%20engine%20handles%20Movement"
+  }
+ ]
+}

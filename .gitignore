@@ -1,9 +1,7 @@
 build*/
 *.qlm
-site/changelog.json
-site/weapons.json
-site/updates/
-site/assets/data/
+/site/
+/launcher-src/
 build-tracy/
 maps/downloads/
 *.key
@@ -24,3 +22,11 @@ race_times.log
 /maps/*.qmap.bak
 /maps/*.tmp
 __pycache__/
+# the map editor's own files when serve.py runs from the source folder (tools/map_editor/serve.py): Settings,
+# who laid each map out, the decoration panel's saved presets, the page's three.js when copied in by hand
+/tools/map_editor/config.json
+/tools/map_editor/config.json.tmp
+/tools/map_editor/provenance.json
+/tools/map_editor/provenance.json.tmp*
+/tools/map_editor/deco_presets/user/
+/tools/map_editor/vendor/

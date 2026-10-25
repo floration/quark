@@ -1,0 +1,107 @@
+/* The Play tab (play.html): the tokens, cards, pills and buttons are pm.css's; this is what is Play-only.
+   Wide screens get more build cards across, not bigger ones (q's 2560x1440 screen). */
+
+main { max-width: 2600px; }
+
+.builds { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.build { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface-2); min-width: 0;
+  display: flex; flex-direction: column; gap: 3px; }
+.build.off { opacity: .55; }
+.build.running { border-color: color-mix(in srgb, var(--good) 55%, var(--border)); }
+.build .bd { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.build .n { font-weight: 650; display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+.build .kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); font-weight: 600; }
+.build .v { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.build .v .pill { font-size: 11px; font-weight: 600; letter-spacing: 0; vertical-align: 2px; }
+.build .m { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.build .opt { margin-top: 6px; width: 100%; min-width: 0; font-family: var(--mono); font-size: 12px; padding: 3px 6px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.build .opt::placeholder { color: var(--ink-3); }
+.build .pick { display: flex; gap: 4px; margin-top: 4px; min-width: 0; }
+.build .pick[hidden] { display: none; }
+.build .pick select { flex: 1 1 0; min-width: 0; font-size: 12px; padding: 2px 4px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.build .pick select:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.build .act { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.btn.primary, button.primary { background: var(--link); color: var(--qt-accent-ink, #0b1a2b); border-color: var(--link); }
+.btn.primary:hover:not(:disabled) { background: var(--link); filter: brightness(1.08); }
+.btn.danger { color: var(--crit-ink); }
+
+.play-pending { border-left: 4px solid var(--link); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.play-pending b { font-weight: 650; }
+
+/* the server is down: a plain-words banner, and nothing on the page can be pressed (play.js makes the sections inert) */
+.down-banner { border-left: 4px solid var(--crit); display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--crit) 8%, var(--surface)); }
+.down-banner > div { flex: 1 1 320px; display: flex; flex-direction: column; gap: 3px; }
+.down-banner strong { color: var(--crit-ink); font-size: 15px; }
+body.down [inert] button, body.down [inert] .opt, body.down [inert] select, body.down [inert] a { opacity: .45; }
+
+/* notes and sessions: two columns on wide screens, the notes twice as wide */
+@media (min-width: 1800px) { .play-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
+.notes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 8px; align-items: start; }
+.note { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface-2); min-width: 0; }
+.note .t { font-weight: 650; display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+/* each box a few lines at most until "more": a long note never makes a tall card (or stretches its neighbour) */
+.note .f { font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; margin-top: 2px; white-space: pre-line;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.note.open .f { display: block; -webkit-line-clamp: unset; line-clamp: none; max-height: 45vh; overflow: auto; }
+.note .f b { color: var(--ink); font-weight: 600; }
+.note .w { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+.note .na { display: flex; gap: 4px; align-items: center; margin-top: 2px; min-height: 22px; }
+.note .tail { margin: 6px 0 0; padding: 6px 8px; background: var(--surface-sunk); border-radius: var(--radius-sm); max-height: 220px; overflow: auto; white-space: pre-wrap; }
+.note.removed-pending { opacity: .6; }
+.note.removed-pending .t > span:first-child { text-decoration: line-through; }
+.note.removed-blocked { border-color: color-mix(in srgb, var(--warn) 60%, var(--border)); }
+.blocked { font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border)); border-left-width: 4px; border-radius: var(--radius-sm);
+  padding: 6px 10px; margin-bottom: 10px; background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
+.blocked b { color: var(--warn-ink); font-weight: 650; }
+.blocked ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.blocked li { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.more-notes { margin: 8px 0 0; }
+.sync { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.sync.bad { color: var(--warn-ink); }
+
+table.t td .btn { white-space: nowrap; }
+table.t tr.off td { color: var(--ink-3); }
+.prog { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--surface-sunk); border: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
+.prog i { display: block; height: 100%; background: var(--link); }
+.rel-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rel-search { width: 150px; min-width: 0; font-size: 12px; padding: 3px 6px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.rel-search:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.rel-tools label.chk { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); }
+.rel-old { margin: 8px 0 0; }
+/* the release table takes the screen's height; at 1800 px and wider production and testing sit side by side */
+.rel-wrap { max-height: max(420px, calc(100vh - 230px)); overflow: auto; }
+.rel-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.rel-h { font-size: 13px; font-weight: 650; margin: 0 0 6px; display: flex; gap: 6px; align-items: center; }
+
+/* the note form and the log view */
+dialog#note-dlg, dialog#log-dlg { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: 0 10px 40px rgba(0, 0, 0, .45); }
+dialog#log-dlg { width: min(1200px, calc(100vw - 32px)); }
+dialog#note-dlg::backdrop, dialog#log-dlg::backdrop { background: rgba(0, 0, 0, .5); }
+#note-form, .log-box { padding: 16px 20px 16px; display: flex; flex-direction: column; gap: 10px; }
+.dlg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.dlg-head h2 { font-size: 17px; }
+.note-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--ink-2); background: var(--surface-2);
+  border-radius: var(--radius-sm); padding: 6px 10px; }
+.note-meta b { color: var(--ink); font-weight: 600; }
+.note-draft { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--warn-ink); }
+.note-draft[hidden] { display: none; }
+.note-for { display: flex; gap: 10px; flex-wrap: wrap; }
+.note-for label { flex: 1 1 160px; }
+#note-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; position: relative; }
+#note-form label.chk { flex-direction: row; font-weight: 500; font-size: 12.5px; color: var(--ink-2); }
+#note-form label[hidden], .note-for[hidden] { display: none; }
+#note-form .cnt { position: absolute; right: 0; top: 0; font-weight: 500; color: var(--ink-3); }
+#note-form .cnt.warn { color: var(--warn-ink); }
+#note-form textarea, #note-form select, #note-form input[type=text] { font: 13.5px/1.4 var(--font); color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 6px 8px; }
+#note-form textarea { resize: vertical; min-height: 44px; }
+#note-form textarea:focus, #note-form select:focus, #note-form input:focus, .build .opt:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.log-text { margin: 0; padding: 8px 10px; background: var(--surface-sunk); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; height: min(60vh, 640px); }
+.dlg-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.toast { z-index: 20; }

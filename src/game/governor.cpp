@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include "map.h"   // writeFileAtomic
+#include "../common/version.h"
 
 const char* govChannelName(int ch) { return ch == GOV_TESTING ? "testing" : "prod"; }
 int govChannelFromName(const std::string& s) {
@@ -14,6 +15,9 @@ int govChannelFromName(const std::string& s) {
     return -1;
 }
 bool isTestingVersion(const char* v) { return v && strchr(v, '-') != nullptr; }
+static int g_pinTesting = -1;
+bool testingBuild() { return g_pinTesting >= 0 ? g_pinTesting != 0 : isTestingVersion(QUARK_VERSION); }
+void pinTestingBuildForTests(int testing) { g_pinTesting = testing; }
 
 GovState governorInitial(const GovParams& p) {
     GovState s;

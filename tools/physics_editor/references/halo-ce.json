@@ -1,0 +1,63 @@
+{
+ "id": "halo-ce",
+ "name": "Halo: Combat Evolved (MCC)",
+ "year": 2001,
+ "engine": "Blam!",
+ "group": "arena shooters",
+ "scale": {
+  "unit": "WU",
+  "metresPerUnit": 2.566772,
+  "why": "Master Chief stands 70.127 HEK (3ds Max) units = 0.70127 world units (100 HEK units per WU), scaled to 1.8 m: 2.567 m/WU"
+ },
+ "values": {
+  "speed": {
+   "value": 5.7752,
+   "unit": "m/s",
+   "mult": 0.6079,
+   "source": "https://nikon.bungie.org/misc/hek_tutorial/references/general/halo_player_stats.html (forward running 2.25 WU/s)",
+   "confidence": "estimated",
+   "raw": "run 2.25 WU/s",
+   "note": "backward / strafe 2.0 WU/s; conversion assumes 100 HEK units per world unit"
+  },
+  "step": {
+   "value": 0.308,
+   "unit": "m",
+   "mult": 0.56,
+   "source": "https://nikon.bungie.org/misc/hek_tutorial/references/general/halo_player_stats.html (step 12 HEK units standing)",
+   "confidence": "estimated",
+   "raw": "step 0.12 WU"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://nikon.bungie.org/misc/hek_tutorial/references/general/halo_player_stats.html",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://nikon.bungie.org/misc/hek_tutorial/references/general/halo_player_stats.html",
+   "confidence": "exact",
+   "note": "no grapple (Halo Infinite adds the Grappleshot)"
+  }
+ },
+ "facts": {
+  "jumpReach": {
+   "value": 2.0534,
+   "unit": "m",
+   "source": "https://nikon.bungie.org/misc/hek_tutorial/references/general/halo_player_stats.html (standing jump clears 80 HEK units; crouch jump 99)",
+   "confidence": "estimated",
+   "note": "the highest ledge cleared, not the take-off speed"
+  }
+ },
+ "extras": [
+  "crouch jumping (99 units)",
+  "slow, floaty jumps relative to the body"
+ ],
+ "notes": "From the Halo Editing Kit reference. Gravity and acceleration aren't listed.",
+ "sources": [
+  {
+   "title": "HEK reference: Halo player stats",
+   "url": "https://nikon.bungie.org/misc/hek_tutorial/references/general/halo_player_stats.html"
+  }
+ ]
+}

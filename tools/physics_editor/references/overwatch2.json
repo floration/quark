@@ -1,0 +1,131 @@
+{
+ "id": "overwatch2",
+ "name": "Overwatch 2",
+ "year": 2022,
+ "engine": "Overwatch engine",
+ "group": "hero/tactical shooters",
+ "scale": {
+  "unit": "m",
+  "metresPerUnit": 1.0,
+  "why": "the game documents metres; heroes vary in size, so values are as given (not rescaled to 1.8 m)"
+ },
+ "values": {
+  "speed": {
+   "value": 5.5,
+   "unit": "m/s",
+   "mult": 0.5789,
+   "source": "https://overwatch.fandom.com/wiki/Character (base move speed 5.5 m/s)",
+   "confidence": "measured",
+   "note": "most heroes; Genji and Tracer 6 m/s; backwards -10%"
+  },
+  "gravity": {
+   "value": 17.532,
+   "unit": "m/s2",
+   "mult": 0.7969,
+   "source": "https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645 (a Workshop 'start accelerating' up at 17.532 m/s2 cancels gravity)",
+   "confidence": "measured",
+   "raw": "17.532 m/s2",
+   "note": "found by Workshop users: the upward acceleration that holds a hero still in the air"
+  },
+  "jump": {
+   "value": 5.862,
+   "unit": "m/s",
+   "mult": 0.7986,
+   "source": "https://overwatch.fandom.com/wiki/Character (jump height 0.98 m) with https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645 (gravity 17.532 m/s2)",
+   "confidence": "estimated",
+   "raw": "sqrt(2 x 17.532 x 0.98)",
+   "note": "take-off speed for the wiki's 0.98 m jump at the Workshop-measured gravity: sqrt(2 x 17.532 x 0.98)"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://overwatch.fandom.com/wiki/Character",
+   "confidence": "exact",
+   "note": "hero abilities only (Tracer, Genji...)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker",
+   "confidence": "exact",
+   "note": "hero abilities only (Widowmaker, Ashe...)"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 0.98,
+   "unit": "m",
+   "source": "https://overwatch.fandom.com/wiki/Character (jump height 0.98 m)",
+   "confidence": "measured",
+   "note": "Quark: 1.22 m"
+  },
+  "crouchSpeed": {
+   "value": 3,
+   "unit": "m/s",
+   "source": "https://overwatch.fandom.com/wiki/Character",
+   "confidence": "measured"
+  },
+  "blinkDistance": {
+   "value": 7.5,
+   "unit": "m",
+   "source": "https://overwatch.fandom.com/wiki/Tracer",
+   "confidence": "measured",
+   "note": "Tracer's Blink: an instant teleport, not a burst; Quark's dash covers 2.84 m"
+  },
+  "blinkCharges": {
+   "value": 3,
+   "unit": "",
+   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 3 charges)",
+   "confidence": "measured",
+   "note": "Quark: 2 dash charges"
+  },
+  "blinkCooldown": {
+   "value": 0.1,
+   "unit": "s",
+   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 0.1 s between uses)",
+   "confidence": "measured",
+   "note": "between blinks; each charge recharges in 3 s (Quark's dash charge: 1.2 s)"
+  },
+  "grappleRange": {
+   "value": 20,
+   "unit": "m",
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m)",
+   "confidence": "measured",
+   "note": "Widowmaker's Grappling Hook"
+  },
+  "grappleSpeed": {
+   "value": 20,
+   "unit": "m/s",
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m/s)",
+   "confidence": "measured",
+   "note": "pulls at a set speed, not an acceleration"
+  },
+  "grappleCooldown": {
+   "value": 10,
+   "unit": "s",
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 10 s)",
+   "confidence": "measured"
+  }
+ },
+ "extras": [
+  "hero-specific movement abilities (blinks, dashes, wall-ride, jet packs, double jumps)",
+  "no air strafing to speak of"
+ ],
+ "notes": "Acceleration isn't documented. Gravity is the Workshop community's counter-gravity figure (17.532 m/s2), and the jump take-off speed is derived from it and the wiki's 0.98 m jump, so both are estimates of a kind. Tracer's Blink and Widowmaker's Grappling Hook are listed as facts: single heroes' abilities, not the game's movement.",
+ "sources": [
+  {
+   "title": "Overwatch Wiki: Character",
+   "url": "https://overwatch.fandom.com/wiki/Character"
+  },
+  {
+   "title": "Overwatch Wiki: Tracer",
+   "url": "https://overwatch.fandom.com/wiki/Tracer"
+  },
+  {
+   "title": "Overwatch Wiki: Widowmaker",
+   "url": "https://overwatch.fandom.com/wiki/Widowmaker"
+  },
+  {
+   "title": "Overwatch Forums: how to counter gravity (Workshop)",
+   "url": "https://us.forums.blizzard.com/en/overwatch/t/fyi-how-to-counter-gravity/357645"
+  }
+ ]
+}

@@ -1,0 +1,79 @@
+logic 1
+base tag
+# Tag: one player is "it" and passes it on with a knife stab. Whoever is it when the 60 s run out is out for the
+# match, and everyone still in scores 1. The last one in wins. Leaving or spectating mid match is going out.
+use it
+
+param roundTime f32 = 60
+param respawnTime f32 = 2
+param tagFreeze f32 = 2 # a newly tagged player stands still this long (no instant tag-back)
+
+slot canAutoStart:
+  return teamCount(A) >= 2
+
+slot teamLocked:
+  return phase == freeze or phase == live or phase == roundEnd
+
+slot roundSetup:
+  pickRandomIt()
+
+slot roundStart:
+  for p in everyone where it[p]:
+    announce(p, " is it - run!")
+
+slot frozen:
+  if phase == live: return it[p] and now < freezeUntil[p]
+  return phase == freeze
+
+# Only it touches anyone: with the knife, once the round is live (the stab passes it on).
+slot canHit:
+  if attacker == none or attacker == victim: return yes
+  return phase == live and it[attacker] and not it[victim] and weapon == knife
+
+slot stab:
+  passIt(attacker, victim)
+  freeze(victim, tagFreeze)
+  addScore(attacker, 1)
+  announce(victim, " is it")
+  log("tag ", attacker, " -> ", victim)
+
+# The last one in wins tag.
+proc lastOne:
+  w = first(q in playing where not out[q])
+  if w == none: endMatch(none, "nobody left")
+  endMatch(w, w, " wins tag")
+
+# It is out: everyone still in scores 1 for surviving the round.
+proc eliminate(who player):
+  tagOut(who)
+  left = count(q in playing where not out[q])
+  for q in playing where not out[q]:
+    addScore(q, 1)
+  if left <= 1: lastOne()
+  endRoundText(who, " was it - out! ", left, " left")
+
+slot tick:
+  if count(p in playing where not out[p]) <= 1: lastOne()
+  it1 = first(p in playing where not out[p] and it[p])
+  if it1 == none: # it left: someone else is it (with the same short freeze as a tag)
+    pickRandomIt()
+    for p in everyone where it[p]:
+      freeze(p, tagFreeze)
+    return
+  if now < phaseEnd: return
+  eliminate(it1)
+
+# Leaving or going to spectate mid match is going out (it doing so ends the round, like the time running out).
+proc quit(who player):
+  if not (phase == freeze or phase == live or phase == roundEnd) or out[who] or not (who in playing): return
+  if it[who] and phase != roundEnd: eliminate(who)
+  else: tagOut(who)
+
+slot spectate:
+  quit(p)
+
+slot leave:
+  quit(p)
+
+slot roundOver:
+  if count(p in playing where not out[p]) <= 1: lastOne()

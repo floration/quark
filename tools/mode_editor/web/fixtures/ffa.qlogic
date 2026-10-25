@@ -1,0 +1,36 @@
+logic 1
+base ffa
+# Free for all: one long round with respawns; the top score at the end of the clock (or the first to the host's
+# score limit) wins. A tie goes to overtime: the next kill wins.
+param respawnTime f32 = 2
+param matchTime f32 = 600 # the clock, when the host sets no time limit
+param rankedTime f32 = 300 # the clock on ranked servers
+
+slot roundLength:
+  if ranked: return rankedTime
+  if cfg.timeLimit > 0: return f32(cfg.timeLimit)
+  return matchTime
+
+slot canAutoStart:
+  return teamCount(A) >= 2
+
+# The top score wins; tied, overtime: the next kill decides.
+proc decide:
+  top = best(p in playing by score[p])
+  if top == none: endMatch(none, "match over")
+  if count(p in playing where score[p] == score[top]) == 1: endMatch(top, top, " wins the match")
+  if not hud.overtime:
+    hud.overtime = yes
+    announce("tie - overtime! next kill wins")
+
+# A kill scores 1; killing yourself (or the world killing you) costs 1 while the round is on.
+slot kill:
+  if killer != none and killer != victim: addScore(killer, 1)
+  elif phase == live: addScore(victim, -1)
+  if phase == live and hud.overtime and killer != none and killer != victim: decide()
+
+slot tick:
+  if cfg.scoreLimit > 0 and any(p in everyone where score[p] >= cfg.scoreLimit):
+    decide()
+    return
+  if now >= phaseEnd: decide()

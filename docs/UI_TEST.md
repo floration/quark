@@ -1,8 +1,9 @@
 # The UI test
 
 `build/quark --uitest [report.json]` clicks every button in the game, in every situation it shows up in, and checks
-each one does what it says. It runs in CI under Xvfb on the release's own Linux build (the `linux-uitest` job, which every
-release waits for from 1.17.1 on) and fails the build when anything is wrong — including a widget nobody told it about.
+each one does what it says. It fails when anything is wrong — including a widget nobody told it about. CI doesn't run it
+(owner, 2026-10-24: CI checks builds, meta and sanitizers only): run it locally under Xvfb before a push, and on the
+commit meant for production (docs/RELEASE_CHECKLIST.md section 0).
 
 ```
 Xvfb :99 -screen 0 1920x1080x24 &
@@ -11,7 +12,11 @@ DISPLAY=:99 xvfb-run -a ctest --test-dir build -R uitest  # the same through cte
 ```
 
 Development options: `--uitest-only menus,host-ffa` runs some scenarios, `--uitest-path settings` only explores the
-screens under one path, and `QUARK_UITEST_VERBOSE=1` prints every activation as it happens.
+screens under one path (`--uitest-path host,custom`: under any of them; `ingame,-ingame/pause/settings`: under
+ingame but not under its settings; the scenario's first screen always), and
+`QUARK_UITEST_VERBOSE=1` prints every activation as it happens. `quark --menupage <path> --screenshot out.png` opens a
+menu page by its path (below) for a screenshot, e.g. `host/advanced`, `vsbots/picker:maps`, `custom/dash`,
+`info/controls+15` (scrolled down 15 lines).
 
 It runs with its own data folder (a fresh temp dir: your settings, maps and keys are never read or changed), the network
 off (`QUARK_MASTER=off`, `QUARK_PUBLIC_IP=off`: no server list, ranked, queue or Discord requests), a host port of its
@@ -19,7 +24,7 @@ own, and URLs / folders / quitting intercepted.
 
 ## How it works
 
-Every widget call (`Ui::button`, `toggle`, `cycle`, `slider`, `textField`) takes a **`UiExp`** — the expectation:
+Every widget call (`Ui::button`, `tab`, `toggle`, `cycle`, `slider`, `textField`, `colorPicker`, `dropdown`) takes a **`UiExp`** — the expectation:
 what activating it is meant to do. It's a required argument, so a widget can't be added without one. In normal play
 it's a few pointers on the stack and one null check; nothing is recorded (`Ui::probe` is null).
 
@@ -30,6 +35,13 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    controls) is explored later by replaying the clicks that led there.
 2. **Activates** each widget the way a player would: a button / toggle is clicked, a cycle's `>` is clicked (then `<`
    must go back), a slider is dragged and then a number typed into it, a text field gets typed into and Enter, a keybind slot is clicked and given a key, a hotkey is pressed, a 3D-view handle is dragged.
+   A **colour picker** (`Ui::colorPicker`, kind `color`) is clicked: its picker must open (on screen), a drag across
+   its saturation / value square and a click on its hue bar must each change the colour, a hex value typed into its
+   field (Enter) must be taken exactly, and Esc must close it; then it's **right-clicked**: it must show its default
+   (the CFG is checked as saved when the screen is left). A **dropdown** (`Ui::dropdown`, kind `dropdown`) is clicked:
+   it declares where opening it leads (e.g. `nav("~settings/hud/elements")`), and its list's entries are that screen's
+   widgets (the page under it is modal: inert and unreported). A **keybind slot** is also right-clicked after its bind:
+   it must show `-` and the cleared bind be saved at once.
 3. **Checks the expectation** (and that a toggle / cycle / slider / text field's own value changed):
 
 | UiExp | checked |
@@ -39,7 +51,7 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
 | `UiExp::state("widgets")` | the observable (`Game::uiObserve`) changed; `state("hosting", "1")`: became that value |
 | `UiExp::cmd("team spec")` | a server command starting with that was sent. In game it's recorded and kept from the server, so the game stays as it was for the next widget |
 | `UiExp::edit()` | the editor's map changed, there's an undo step, and Ctrl+Z puts the map back exactly (in an edit session: through the server) |
-| `UiExp::bind()` | a keybind slot: it captures the next key, which is saved to quark.cfg at once |
+| `UiExp::bind()` | a keybind slot: it captures the next key, which is saved to quark.cfg at once; a right-click unbinds it (saved at once) |
 | `UiExp::url()` / `quit()` | a URL / folder was opened / the game would quit (both intercepted) |
 | `UiExp::local()` | only the widget's own value changes (a field read later, a list position) |
 | `UiExp::inert()` | nothing changes (and a greyed-out widget is always checked this way) |
@@ -56,7 +68,8 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    it must show its default (`Ui::slider`'s last argument), read back the same way, and not start typing.
 4. **Esc from every screen** must go back to a screen on the way to it.
 5. **Layout**, at 1280x720 while exploring, then every screen again at 1920x1080 and 1024x768 (4:3): no widget off
-   screen, no two widgets overlapping, no label clipped (`Ui::fit` shrinking a label is fine; cutting it off isn't).
+   screen, no two widgets overlapping, no label clipped (`Ui::fit` closing a label's letters up or shrinking it is
+   fine; cutting it off with "..." isn't).
 6. **The coverage gate**: the test fails if a widget has no expectation (`UiExp::NONE`), fails its check, or was seen
    but never tested. Every failure, untested widget, layout and Esc problem is listed in the summary and the report.
 
@@ -79,11 +92,44 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 | `hide-seeker` | hosting hide and seek, seeking | the locator's slot key (0) |
 | `hide-rps` | hosting hide and seek, at the tiebreak | rock / paper / scissors (slot keys 1 / 2 / 3) |
 | `editor-builtin` | the offline editor, a built-in map with edits | the "keep your edits as a new map?" prompt from each way out (save, leave, test, host, open); only that prompt's buttons |
-| `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
+| `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page, FONT too: each font is picked and the layout checked in it), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
 
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
 editor's selection tools are tested once per selection kind (box, spawn, light, site, hill, checkpoint, path, ladder,
 group / room / stairs).
+
+The menus' pages and their paths: `main` (`main/save-copy`: the "keep your copy?" dialog after someone else's edit
+session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG, BOT BRAIN (the test's data folder has two brains, one that doesn't compile); `host/picker:maps`,
+`:modes`, `:variants`, `:ladders`), `vsbots` (+ the same pickers), `custom/general`, `custom/weapons`, `custom/maps`,
+`custom/movement`, `custom/dash` (DASH + GRAPPLE), `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
+`info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`.
+A custom mode's sliders show the value in the mode (standard x multiplier, with its unit) and store the multiplier:
+what's typed is that value, and the `.qmode` read back must show it again to the slider's decimals. A CONNECTING screen
+reached by starting a game of the scenario's own (TIME TRIAL hosts one) is on its way in game and isn't explored: the
+one JOIN > CONNECT leaves is.
+
+Settings is one shell with six tabs, the same in the menus (`settings...`) and in game (`ingame/pause/settings...`):
+`settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE
+KEYS), `settings/controls/movement` (MOVE + WEAPON KEYS), `settings/controls/files` (the import list), `settings/video`
+(VIDEO + AUDIO), `settings/video/devices` (VIDEO + AUDIO > DEVICES), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open),
+`settings/hud/widgets` (+ `/files`, `/values`). The tab row's tabs are `nav("~settings/<tab>")` buttons (the current one
+too); BACK and Esc leave settings from any tab (Esc first closes an open picker, dropdown or list). `quark
+--settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a
+page for a screenshot, e.g. `hud/elements` or `player+TEAM COLOR`.
+
+Settings > FONT (`settings/fonts`): each font entry is a `cfg("ui_font")` button (the one in use: `inert()`), with its
+name as a stable id whichever is in use; REFRESH is `state("fontscan")`, OPEN FOLDER `url()`. The test puts the
+settings back between widgets, and Game::frame applies `ui_font` when it differs, so every check after a font pick runs
+in the default font again. The entries depend on the machine (a game-styled entry is listed only when its look-alike
+is built in or the real font is found), so the number of widgets there can differ between computers.
+Settings > VIDEO + AUDIO > DEVICES (`settings/video/devices`): the same kind of rows, one list each for AUDIO OUTPUT
+(`cfg("audio_output")`), AUDIO INPUT (`cfg("audio_input")`) and MONITOR (`cfg("monitor")`), the default first; the row
+in use is `inert()`, ids `OUTPUT: <NAME>` / `INPUT: <NAME>` / `MONITOR: <NAME>`. The lists are the machine's: with no
+sound devices (a CI runner) a list is only its default row, in use, so it's tested as INERT. REFRESH RATE is
+`cfg("fullscreen_hz")` (one entry: inert); `monitor` and `fullscreen_hz` are put back at once like `display_mode`.
+REFRESH is `state("devscan")`.
+`QUARK_UITEST_FONT=<ui_font value>` (e.g. `classic`, `overwatch`) runs the whole test in that font, layout checks
+included: every built-in font was run through `--uitest-only menus` this way when they were added.
 
 ## Adding a widget
 
@@ -97,6 +143,12 @@ if (ui_.button(x, y, w, h, "KEEP AS NEW MAP", UiExp::state("usermaps"))) ...    
 if (ui_.button(x, y, w, h, "LOCATOR", UiExp::nav("ingame/pause/locator"))) ...                    // a new page
 ```
 
+- A **label** (a header, hint, caption or description) gets the width it may take: `Ui::label(..., maxW)` /
+  `Ui::hint(..., maxW)` / `labelCentered`, or a box for a whole column (`Ui::box(x0, x1)`; `Ui::panel` sets its own,
+  `Ui::begin` clears it). Then it fits itself in every font, like a widget's label: closed up (each pair only as far
+  as its ink allows), then smaller, and only then cut with "..." (src/client/textfit.h; the fit is cached, not worked
+  out every frame). Text drawn with `Renderer::text` directly doesn't: keep it to short fixed strings. So a new font
+  needs no UI checks of its own.
 - A **new screen or overlay** needs a name in `Game::uiScreenPath` (src/client/uitest.cpp), so NAV can point at it
   and Esc can be checked; its buttons then say where they lead.
 - A **new kind of effect** that none of the observables shows: add one to `Game::uiObserve` and use `UiExp::state`.

@@ -7,6 +7,16 @@
 
 constexpr int kMaxPacket = 1400; // stay under typical MTU
 
+// std::round (half away from zero), bit for bit (checked for every float, -0 and NaN included), without the libm call
+// that was most of a snapshot's encode time: below 2^23 the truncation through an int is exact, x - t (the fraction) is
+// exact, and copysign keeps round's -0 for -0.5 < x <= -0. 2^23 and up (all whole), inf and NaN go to std::round.
+inline float roundHalfAway(float x) {
+    if (!(std::fabs(x) < 8388608.0f)) return std::round(x);
+    float t = (float)(int32_t)x;
+    if (std::fabs(x - t) >= 0.5f) t += x < 0 ? -1.0f : 1.0f;
+    return std::copysign(t, x);
+}
+
 class Writer {
 public:
     Writer(uint8_t* buf, int cap) : buf_(buf), cap_(cap) {}
@@ -18,11 +28,12 @@ public:
     void f32(float f) { uint32_t v; memcpy(&v, &f, 4); u32(v); }
     void vec(const Vec3& v) { f32(v.x); f32(v.y); f32(v.z); }
     // 1/64 m precision, +-512m range.
-    void vecq(const Vec3& v) { for (int i = 0; i < 3; i++) i16((int16_t)clampf(std::round(v[i] * 64.0f), -32767, 32767)); }
+    void vecq(const Vec3& v) { for (int i = 0; i < 3; i++) i16((int16_t)clampf(roundHalfAway(v[i] * 64.0f), -32767, 32767)); }
     void str(const std::string& s) {
         size_t n = s.size() > 255 ? 255 : s.size();
         u8((uint8_t)n);
-        for (size_t i = 0; i < n; i++) u8((uint8_t)s[i]);
+        if (pos_ + (int)n <= cap_) { memcpy(buf_ + pos_, s.data(), n); pos_ += (int)n; return; }
+        for (size_t i = 0; i < n; i++) u8((uint8_t)s[i]);   // (overflowing: as many bytes as fit, as before)
     }
     void bytes(const uint8_t* p, int n) {
         if (pos_ + n > cap_) { overflow_ = true; return; }
@@ -51,10 +62,12 @@ public:
     Vec3 vecq() { Vec3 v; for (int i = 0; i < 3; i++) v[i] = i16() / 64.0f; return v; }
     std::string str() {
         int n = u8();
-        std::string s;
+        if (n <= len_ - pos_) { std::string s((const char*)buf_ + pos_, (size_t)n); pos_ += n; return s; }
+        std::string s;   // (truncated: what's there, zero padded, and bad())
         for (int i = 0; i < n; i++) s += (char)u8();
         return s;
     }
+    void skipStr() { int n = u8(); if (n <= len_ - pos_) pos_ += n; else { pos_ = len_; bad_ = true; } }   // (bad() as str() would be)
     bool bad() const { return bad_; }
     int remaining() const { return len_ - pos_; }
 private:

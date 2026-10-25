@@ -1,0 +1,18 @@
+{
+ "format": 1,
+ "tool": "bot-editor",
+ "items": {
+  "bots/brain/audit1": {
+   "origin": "ai",
+   "by": "q",
+   "date": "2026-10-25",
+   "note": "numbers tuned in the bot editor (saved as audit1.qbrain)"
+  },
+  "bots/perception": {
+   "origin": "ai",
+   "by": "q",
+   "date": "2026-10-25",
+   "note": "numbers tuned in the bot editor"
+  }
+ }
+}

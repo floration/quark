@@ -61,10 +61,10 @@ bool any() {
     return kEmbeddedOverrides[0].path || !g_user.empty();
 }
 
-bool find(const std::string& base, std::initializer_list<const char*> exts, std::vector<uint8_t>& out, std::string* matched, std::string* where) {
+bool find(const std::string& base, std::initializer_list<const char*> exts, std::vector<uint8_t>& out, std::string* matched, std::string* where, From from) {
     if (!any()) return false;
     std::string b = lower(base);
-    for (int pass = 0; pass < 2; pass++)   // yours first, then the shipped ones
+    for (int pass = from == FROM_SHIPPED ? 1 : 0; pass < (from == FROM_USER ? 1 : 2); pass++)   // yours first, then the shipped ones
         for (const char* ext : exts) {
             std::string key = b + lower(ext);
             if (pass == 0) {
@@ -83,13 +83,48 @@ bool find(const std::string& base, std::initializer_list<const char*> exts, std:
     return false;
 }
 
-bool readRelative(const std::string& path, std::vector<uint8_t>& out) {
+bool readRelative(const std::string& path, std::vector<uint8_t>& out, From from) {
     if (!any()) return false;
     std::string key = lower(path);
-    auto it = g_user.find(key);
-    if (it != g_user.end() && readFile(it->second, out)) return true;
+    if (from != FROM_SHIPPED) {
+        auto it = g_user.find(key);
+        if (it != g_user.end() && readFile(it->second, out)) return true;
+    }
+    if (from == FROM_USER) return false;
     if (const EmbeddedOverride* e = embedded(key)) { out.assign(e->data, e->data + e->size); return true; }
     return false;
+}
+
+std::string soundLevels() {
+    if (!any()) return {};
+    std::string text;
+    if (const EmbeddedOverride* e = embedded("sound-levels.txt")) text.assign((const char*)e->data, e->size);
+    auto it = g_user.find("sound-levels.txt");
+    std::vector<uint8_t> b;
+    if (it != g_user.end() && readFile(it->second, b)) { text += '\n'; text.append((const char*)b.data(), b.size()); }
+    return text;
+}
+
+std::vector<std::string> listFolder(const std::string& dir, std::initializer_list<const char*> exts) {
+    if (!any()) return {};
+    std::string pre = lower(dir);
+    while (!pre.empty() && pre.back() == '/') pre.pop_back();
+    pre += '/';
+    std::vector<std::string> out;
+    auto take = [&](const std::string& key) {
+        if (key.compare(0, pre.size(), pre) != 0) return;
+        std::string rest = key.substr(pre.size());
+        if (rest.find('/') != std::string::npos) return;
+        for (const char* ext : exts) {
+            std::string e = lower(ext);
+            if (rest.size() > e.size() && rest.compare(rest.size() - e.size(), e.size(), e) == 0) { out.push_back(rest.substr(0, rest.size() - e.size())); return; }
+        }
+    };
+    for (auto& kv : g_user) take(kv.first);
+    for (const EmbeddedOverride* e = kEmbeddedOverrides; e->path; e++) take(lower(e->path));
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
 }
 
 std::vector<std::string> list() {

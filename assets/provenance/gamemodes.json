@@ -1,0 +1,20 @@
+{
+ "format": 1,
+ "category": "gamemodes",
+ "items": {
+  "gamemodes/arena": {"origin": "ai", "source": "mode logic tools/modes/arena.qlogic, AI-written"},
+  "gamemodes/bomb": {"origin": "ai", "source": "mode logic tools/modes/bomb.qlogic, AI-written"},
+  "gamemodes/common": {"origin": "ai", "source": "mode logic tools/modes/common.qlogic, AI-written"},
+  "gamemodes/duel": {"origin": "ai", "source": "mode logic tools/modes/duel.qlogic, AI-written"},
+  "gamemodes/ffa": {"origin": "ai", "source": "mode logic tools/modes/ffa.qlogic, AI-written"},
+  "gamemodes/hide": {"origin": "ai", "source": "mode logic tools/modes/hide.qlogic, AI-written"},
+  "gamemodes/koth": {"origin": "ai", "source": "mode logic tools/modes/koth.qlogic, AI-written"},
+  "gamemodes/npayload": {"origin": "ai", "source": "mode logic tools/modes/npayload.qlogic, AI-written"},
+  "gamemodes/payload": {"origin": "ai", "source": "mode logic tools/modes/payload.qlogic, AI-written"},
+  "gamemodes/points": {"origin": "ai", "source": "mode logic tools/modes/points.qlogic, AI-written"},
+  "gamemodes/race": {"origin": "ai", "source": "mode logic tools/modes/race.qlogic, AI-written"},
+  "gamemodes/tag": {"origin": "ai", "source": "mode logic tools/modes/tag.qlogic, AI-written"},
+  "gamemodes/tourney": {"origin": "ai", "source": "mode logic tools/modes/tourney.qlogic, AI-written"},
+  "gamemodes/vs": {"origin": "ai", "source": "mode logic tools/modes/vs.qlogic, AI-written"}
+ }
+}

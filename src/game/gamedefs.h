@@ -16,13 +16,22 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 42;   // 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
+constexpr uint16_t kProtocolVersion = 44;   // 44: movement equations (a custom mode's expr.<key>= lines, moveexpr.h: every client evaluates them in its own pmove, so an older one would mispredict), own movement state: mods bit 128 = a u16 ms since the last landing / take-off after the opt parts (p.air / p.ground; sent only while an equation counts it); 43: dash charges recharge (own movement state opt bit 4: the u8 is charges | recharging << 4, then the u16 cooldown, then each recharging charge's u16 ms left; sent when charges != 2 or a timer runs; opt bit 2 adds the f32 speed the dash started from, for the super dash's +5); 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
 constexpr uint16_t kSnapSyringeSince = 35;  // the snapshot header carries syringeAway from this protocol on (older demos are read without it)
 constexpr uint16_t kSnapDashChargesSince = 41;   // own movement state opt bit 4: the dash charges (u8) from here on, the dash cooldown (f32) before
 constexpr uint16_t kSnapDashCooldownSince = 42;  // ...and from here on also the dash cooldown (u16 ms) after the charges
+constexpr uint16_t kSnapDashRechargeSince = 43;  // ...and from here on the charge byte's high 4 bits count the recharging charges, their u16 ms after the cooldown; opt bit 2 ends with the dash's start speed (f32)
+constexpr uint16_t kSnapPhaseSince = 44;          // own movement state: mods bit 128 flags the u16 phaseMs (older demos: mods as it is, no phase)
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
+// ...and its top six bits, what their movement did since the last snapshot (pmove's ME_JUMP / LAND / DASH / SUPER / HYPER,
+// << kKeyEvShift; KEY_EV_LAND_HARD: a landing over 12 m/s): the client plays their jump, land and dash sounds from them.
+// Older clients only look at the held-key bits; older servers and demos never set these.
+constexpr float kSpawnFireLock = 0.25f;   // no shots this long after spawning (the server's rule; the client mirrors it)
+constexpr int kKeyEvShift = 10;
+enum : uint16_t { KEY_HELD_MASK = 1023, KEY_EV_LAND_HARD = 32768 };
+constexpr float kHardLandSpeed = 12.0f;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -38,8 +47,9 @@ constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIG
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
 inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SCOUT", "ROBOT", "KNIGHT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
 // Seconds a player waits to respawn during play, or < 0 where nobody does: rounds with one life (VS, bomb, duel,
-// 1v1, tourney, hide and seek). The one list behind modeRespawns() and rulesRespawnDelay() (warmup / match end aside).
-inline float modeRespawnDelay(int m) {
+// 1v1, tourney, hide and seek). The one list behind modeRespawns() (the engine, keyed on the base mode) and each mode's
+// ModeParams::respawn default (modeparams.h), which rulesRespawnDelay() reads (warmup / match end aside).
+constexpr float modeRespawnDelay(int m) {
     switch (m) {
         case MODE_RACE: return 1.0f;
         case MODE_KOTH: return 4.0f;
@@ -51,10 +61,12 @@ inline float modeRespawnDelay(int m) {
         default: return -1.0f;
     }
 }
-inline bool modeRespawns(int m) { return modeRespawnDelay(m) >= 0; }
+constexpr bool modeRespawns(int m) { return modeRespawnDelay(m) >= 0; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
+constexpr float kSeekerRespawn = 2.0f;    // hide and seek: a seeker who fell (or died) is back this long after
+constexpr float kLastLegRespawn = 3.0f;   // payload, unstaged spawns: attackers past the last checkpoint (T18; else 5 s)
 constexpr float kTagRoundTime = 60.0f;   // tag: whoever is "it" when this runs out is eliminated
 constexpr float kTagFreeze = 2.0f;       // a newly tagged player stands still this long (no instant tag-back)
 // Hide and seek tiebreak (owner B8): once every round is played, players tied for first throw rock paper scissors.
@@ -98,7 +110,7 @@ enum ArenaRule : uint8_t {
     AR_VAMPIRE = 1,        // damage you deal heals you
     AR_INSTAGIB = 2,       // any hit kills
     AR_NO_SELF_DAMAGE = 4, // your own splash only pushes you
-    AR_QUICK_DASH = 8,     // a third dash charge
+    AR_QUICK_DASH = 8,     // the dash cooldown and recharge a third as long (0.2 s apart, 0.4 s to recharge; MOVE_QUICK_DASH)
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
 constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // the locator (WPN_LOCATOR, held by the seeker / tagger): fire it to see one random hider / runner this long, every kLocatorCooldown
@@ -127,7 +139,7 @@ inline const ArenaVariant& arenaVariant(int v) {
         {"hitscan", "HITSCAN", "RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE", WB(0) | WB(3) | WB(4) | WB(5) | WB(2), 0},
         {"instagib", "INSTAGIB", "SNIPERS - ANY HIT KILLS", WB(3), AR_INSTAGIB},
         {"boomers", "BOOMERS", "ROCKETS AND STICKIES - NO SELF DAMAGE", WB(1) | WB(6), AR_NO_SELF_DAMAGE},
-        {"blades", "BLADES", "KNIVES ONLY - A THIRD DASH CHARGE", WB(2), AR_QUICK_DASH},
+        {"blades", "BLADES", "KNIVES ONLY - QUICK DASH, 0.2 S APART", WB(2), AR_QUICK_DASH},
         {"moon", "MOON SHOTGUN", "SHOTGUNS IN LOW GRAVITY", WB(5), AR_LOW_GRAVITY},
     };
     return vs[v < 0 || v >= kArenaVariants ? 0 : v];
@@ -192,7 +204,49 @@ struct WeaponDef {
     float life;         // projectile lifetime (s)
     bool semiAuto = false; // one shot per click (a click up to 0.15 s early is kept until it can fire)
 };
+// The rest of a weapon's numbers (weaponset.h: a weapon set can change every one; the standard values are the
+// constants below). Read through weaponExtra(w) / weaponAlt(), the active rules' tuned copies (customrules.cpp).
+struct WeaponExtra {
+    float headDamage;     // a hit on the head (0 = no headshots); x the custom mode's damage multiplier
+    float knock;          // knockback: hitscan x1 (pellets: per pellet's worth of damage), beam m/s per s, bolt m/s, blast centre m/s
+    float falloffStart, falloffEnd, falloffMin;   // damage x1 up to start (m), then linearly to x min at end; min 1 = none
+    float directDamage;   // a projectile that hits the player itself does at least this (x the mode's damage multiplier)
+    float selfDamage;     // x your own splash damage
+    float wallbang;       // x damage through a wallbang wall (hitscan)
+    uint8_t curveKind, curveN;   // a falloff curve of the set (0 none, 1 steps, 2 points: evalWeaponCurve), replaces the fields
+    float curveBase, curveX[16], curveY[16];
+    bool falloff;         // falloffMin != 1 or a curve: weaponFalloff() has work to do
+};
+struct WeaponAlt {        // the alt-fires (one weapon each)
+    float scopedRefire;                                    // rifle: x refire while scoped
+    float lobSpeed, lobGravity;                            // rocket lob: x speed, its drop (m/s2)
+    float knifeThrowSpeed, knifeThrowGravity, knifeThrowLife, knifeAway, knifeGrow;
+    int bounces; float bounceDamage;                       // shotgun ricochets
+    float pullScale, pullDamage;                           // laser pull beam
+    int streamMin, streamMax; float streamNear, streamFar, streamRefire, streamSlow, streamFast;   // bubble stream
+    float syringeThrowSpeed, syringeThrowGravity, syringeThrowLife, syringeHeal, syringeAway;      // (heal x the mode's syringe damage)
+    int stickyMax; float stickyArmTime, stickyInherit;
+};
+const WeaponExtra& weaponExtra(int w);   // customrules.cpp: the active rules' (standard when none)
+const WeaponAlt& weaponAlt();
+float evalWeaponCurve(const WeaponExtra& e, float x);   // weaponset.cpp
+// Damage x this at `dist` metres (1 when the weapon has no falloff: the caller skips it then).
+inline float weaponFalloff(const WeaponExtra& e, float dist) {
+    if (!e.falloff) return 1.0f;
+    if (e.curveKind) return evalWeaponCurve(e, dist);
+    if (dist <= e.falloffStart) return 1.0f;
+    if (e.falloffEnd <= e.falloffStart || dist >= e.falloffEnd) return e.falloffMin;
+    return 1.0f + (e.falloffMin - 1.0f) * ((dist - e.falloffStart) / (e.falloffEnd - e.falloffStart));
+}
 constexpr float kFireBuffer = 0.15f;
+// Slow weapons keep a click up to kTapBuffer before they're ready and fire it when they are (T13: an early tap on
+// the sniper, crossbow or rocket was dropped). Primary fire only (the rocket's alt-fire is its lob).
+constexpr float kTapBuffer = 0.1f;
+inline bool tapBuffered(int w) { return w == WPN_SNIPER || w == WPN_CROSSBOW || w == WPN_ROCKET; }
+constexpr float kSelfRampLow = 0.3f, kSelfRampHigh = 1.2f;   // own splash: 10% at or below feet + low, full at feet + high (linear between)
+constexpr float kMuffledRange = 60.0f;   // X9: gunfire out of sight is heard muffled this far (bots hear 45-75 m)
+constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
+constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
 constexpr float kShotgunKnock = 0.30f;     // shotgun knockback per pellet's worth of damage (m/s; a full blast: 20 x 0.30 = 6 m/s; owner 1.17: doubled from 0.15)
@@ -249,18 +303,20 @@ inline const WeaponDef& baseWeaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
         // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added. 1.17: rifle 1 less a
-        // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50).
+        // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50; 1.18: the
+        // sniper 40 body, 50 head, kSniperHeadDamage; the owner, 2026-10: rifle 4.95 -> 5.0, so 20 body shots kill, not leave 1 hp).
         // Perfect-aim time to kill from 100 hp in the trailing comment. DPS against the laser's 40: rifle 0.82 body,
-        // 1.24 head; sniper 0.83 (the laser out-damages the rifle inside its 24 m unless you land headshots).
+        // 1.24 head; sniper 0.67 body, 0.83 head (the laser out-damages the rifle inside its 24 m unless you land
+        // headshots).
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       0.75f*2.0f/9.9f, 4.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 21 shots, 3.0 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
+        {"RIFLE",       0.75f*2.0f/9.9f, 5.0f,  300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 20 shots, 2.9 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0.0f,  false, 5}, // 3, 2.4 s (flies straight: owner, 1.17; the lob drops, kRocketLobGravity)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
-        {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2 shots, 1.5 s (owner: a flat 50, head or body)
+        {"SNIPER",      1.5f,    40,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3 shots, 3.0 s body; 2, 1.5 s head (owner 1.18: 40 body, 50 head; 1.17 a flat 50)
         {"LASER",       0.001f,  0.04f,  24.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s, 24 m
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
-        {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 75: kCrossbowHeadDamage)
+        {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 3, 4.0 s body; 2, 2.0 s with a headshot (75: kCrossbowHeadDamage)
         {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
         {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
         {"LOCATOR",     kLocatorCooldown, 0, 0, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // no damage: shows a hider / runner (hide and seek / tag only)
@@ -270,10 +326,10 @@ inline const WeaponDef& baseWeaponDef(int w) {
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 10% slower fire rate).
 constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
-constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide): sniper, crossbow bolt,
+constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide; sniper 50 of a 40 body): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 7.5f;   // (1.17: 8.5 -> 7.5 with the body 5.95 -> 4.95)
-constexpr float kPelletHeadDamage = 2.55f;
+constexpr float kPelletHeadDamage = 2.6f;   // (owner, 2026-10: 2.55 -> 2.6, so two point-blank head blasts kill: 98.6 -> 100.4)
 const WeaponDef& weaponDef(int w);   // customrules.cpp
 float tunedDamage(int w);            // the active custom mode's damage multiplier for this weapon (1 = standard)
 // Movement settings of the active custom mode (pmove reads these; all 1 / on by default)
@@ -303,16 +359,20 @@ inline const char* moveParamLabel(int i) {
         "AIR DRIFT (UNDER RUN SPEED)", "STRAFE BOOST (AT SPEED)"};
     return k[i];
 }
+namespace mexpr { struct Program; }
 struct MoveTuning {
     float gravity = 1, speed = 1, jump = 1; bool dash = true, grapple = true;
     float m[MV_COUNT];
+    // a custom mode's dynamic movement equations (moveexpr.h; null = none, the standard and most custom rules): pmove
+    // runs them at the start of every 1 ms step on its own copy of this. The values above hold the static ones resolved
+    // and each dynamic one's value at rest.
+    const mexpr::Program* expr = nullptr;
     MoveTuning() { for (float& v : m) v = 1; }
 };
 const MoveTuning& moveTuning();
-inline float headDamage(int w) {
-    return tunedDamage(w) * (w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
-         : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f);
-}
+// (standard: sniper kSniperHeadDamage, crossbow kCrossbowHeadDamage, rifle kRifleHeadDamage, each pellet kPelletHeadDamage, else 0;
+// x the custom mode's damage multiplier)
+inline float headDamage(int w) { return weaponExtra(w).headDamage; }
 constexpr float kHeadFraction = 0.2f;       // the head: the top 20% of the hitbox...
 constexpr float kHeadWidthFraction = 0.45f; // ...and 45% of its width, centred (0.36 m of 0.8): the shoulders beside it are body
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 13.5f; // rocket alt-fire: a lob at 70% speed that drops at 13.5 m/s2 (owner 1.17: the old primary's 10.8 + 25%; was 3x 10.8); the primary flies straight
@@ -331,9 +391,13 @@ constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
 // Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
 // (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
-inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity for a rocket lob (its own drop), else 1
-    if (type == WPN_ROCKET && gravMul != 1) return kRocketLobGravity;   // (the primary flies straight: no gravity to scale)
-    return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : weaponDef(type).gravity * gravMul;
+inline float projectileGravity(int type, float gravMul, const WeaponDef& wd) {   // wd: weaponDef(type) (stepProjectile has it)
+    // (gravMul != 1 marks a rocket lob: it drops at the lob's own gravity; the primary flies straight)
+    if (type == WPN_ROCKET && gravMul != 1) return weaponAlt().lobGravity;
+    return type == WPN_KNIFE ? weaponAlt().knifeThrowGravity : type == WPN_SYRINGE ? weaponAlt().syringeThrowGravity : wd.gravity * gravMul;
+}
+inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity (a marker) for a rocket lob (its own drop), else 1
+    return projectileGravity(type, gravMul, weaponDef(type));
 }
 // Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
 // pass, whatever t is), then the part of a step left over in a straight line. The client draws projectiles with it.
@@ -355,10 +419,11 @@ constexpr int kBubbleStreamMin = 5, kBubbleStreamMax = 15;
 constexpr float kBubbleStreamNear = 5.0f, kBubbleStreamFar = 30.0f;
 constexpr float kBubbleStreamRefire = 1.8f;
 constexpr float kBubbleStreamSlow = 8.4f, kBubbleStreamFast = 24.0f;
-inline int bubbleStreamCount(float nearestEnemy) {
-    float f = (nearestEnemy - kBubbleStreamNear) / (kBubbleStreamFar - kBubbleStreamNear);
+inline int bubbleStreamCount(float nearestEnemy) {   // (the numbers: weaponAlt(), standard the constants above)
+    const WeaponAlt& a = weaponAlt();
+    float f = a.streamFar > a.streamNear ? (nearestEnemy - a.streamNear) / (a.streamFar - a.streamNear) : nearestEnemy > a.streamNear ? 1.0f : 0.0f;
     f = f < 0 ? 0 : f > 1 ? 1 : f;
-    return kBubbleStreamMin + (int)(f * (kBubbleStreamMax - kBubbleStreamMin) + 0.5f);
+    return a.streamMin + (int)(f * (a.streamMax - a.streamMin) + 0.5f);
 }
 constexpr float kProjInherit = 0.9f;    // stickies keep 90% of the shooter's forward / back and vertical velocity (not sideways: owner 1.17)
 // What a sticky inherits from its shooter's velocity: kProjInherit of the part along where they aim (horizontally:
@@ -368,7 +433,7 @@ inline Vec3 stickyInherit(const Vec3& shooterVel, const Vec3& aim) {
     float fl = std::sqrt(aim.x * aim.x + aim.z * aim.z);
     Vec3 v = {0, shooterVel.y, 0};
     if (fl > 1e-4f) { float fx = aim.x / fl, fz = aim.z / fl, along = shooterVel.x * fx + shooterVel.z * fz; v.x = fx * along; v.z = fz * along; }
-    return v * kProjInherit;
+    return v * weaponAlt().stickyInherit;   // (standard kProjInherit)
 }
 constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
@@ -376,8 +441,8 @@ constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampi
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
-    if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
+    if (alt && w == WPN_RIFLE) return r * weaponAlt().scopedRefire;   // scoped rifle (standard kRifleScopedRefire)
+    if (alt && w == WPN_BUBBLE) return weaponAlt().streamRefire;      // the bubble stream (standard kBubbleStreamRefire)
     // (knife / syringe throws: the weapon's own cooldown, for every weapon: no throw + instant shot combo, GAME-8)
     return r;
 }
@@ -401,7 +466,7 @@ enum EventType : uint8_t {
     EV_PLAYERINFO,   // a = player id, text = name
     EV_SPAWN,        // a = player id, c = yaw in milliradians (sent to the spawned player)
     EV_VOTE,         // text = what's being voted on (vote started)
-    EV_SOUND,        // reserved
+    EV_SOUND,        // a sound someone made, for everyone else: a = who, c = what (a weapon id: WPN_LOCATOR, the locator's ping), text = "x y z" their feet
     EV_BRACKET,      // tourney bracket: text = rounds ("\n"), entries ("|"): player id, -1 bye, -2 not decided; last line "@round,match"
     EV_RANKINFO,     // a = player id, text = their ranked id (32 hex), empty = none
     EV_RANKED,       // ranked match over: text = "<matchId> <mode> slot:team:place,..." (each player reports it)
@@ -410,12 +475,14 @@ enum EventType : uint8_t {
     EV_HEALED,       // syringe throw: a was healed by b
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
-    EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
+    EV_QUIP,         // a says a quip (b: the pick, the same for everyone; each listener plays b modulo their voice's quip set)
     EV_LOCATE,       // the locator fired (WPN_LOCATOR), to the tagger / seeker only: a = who, text = "x y z" where they are
     EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
     EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
                      // per player (shape RPS_PICKED until the reveal), then a line with what happened
     EV_PROP,         // a thrown knife / bolt / thrown syringe stuck where it landed, or a clear (cosmetic): StuckProp, protocol.h
+    EV_GUNFIRE,      // a shot out of your sight within kMuffledRange (X9): c = weapon, text = "x y z" roughly where (a 4 m grid);
+                     // no shooter (a = 255). Older clients ignore it (an unknown type), so no protocol change.
 };
 
 #define WB(w) (1u << (w))

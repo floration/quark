@@ -1,5 +1,6 @@
 #include "lightmap.h"
 #include "../common/u8file.h"
+#include "../common/net.h"
 #include <filesystem>
 #include <unordered_map>
 #include <algorithm>
@@ -9,10 +10,13 @@
 #include <fstream>
 #include <chrono>
 #include <thread>
+#include <climits>
+#include <cstdlib>
+#include "stb/stb_image.h"   // (its zlib decoder, for shipped bakes: built in quark_assets)
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x324D4C51; // "QLM2": named by the map's sha256 (QLM1: by its name, with its CRC)
-constexpr uint32_t kBakeVersion = 11;   // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
+constexpr uint32_t kBakeVersion = 12;   // 12: no payload cart shadow (bakes took its box from the join) // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -28,12 +32,59 @@ struct Face {
 
 bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) { return m.raycastAny(o, d, maxT); }
 
-bool pointSolid(const Map& m, const Vec3& p) {
-    for (const Brush& b : m.brushes)
-        if (p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)
-            return true;
-    return false;
-}
+// "Is this point inside any brush?" (every brush: trim, far scenery, water and clip too, which the map's own collision
+// grid leaves out), asked for up to 81 points per face: tens of millions of times on a big map, and it used to test
+// every brush each time (seconds of every load, a cached one too). An XZ grid over all of them: a point strictly
+// inside a box lies in a cell of the box's span (same floor of the same expression), so the answer is the same.
+struct PointGrid {
+    float x0 = 0, z0 = 0, cs = 4;
+    int w = 1, h = 1;
+    std::vector<uint32_t> start, ids;   // cell c's brushes: ids[start[c], start[c + 1])
+    std::vector<uint32_t> big;          // brushes over a quarter of the grid: tested for every point
+    const Map* m = nullptr;
+    int cx(float x) const { return (int)std::floor((x - x0) / cs); }
+    int cz(float z) const { return (int)std::floor((z - z0) / cs); }
+    explicit PointGrid(const Map& map) : m(&map) {
+        if (map.brushes.empty()) { start.assign(2, 0); return; }
+        float ax = 1e30f, az = 1e30f, bx = -1e30f, bz = -1e30f;
+        for (const Brush& b : map.brushes) { ax = std::min(ax, b.box.mn.x); az = std::min(az, b.box.mn.z); bx = std::max(bx, b.box.mx.x); bz = std::max(bz, b.box.mx.z); }
+        x0 = ax; z0 = az;
+        cs = std::max(4.0f, std::max(bx - ax, bz - az) / 256.0f);   // (at most ~256 x 256 cells)
+        w = std::max(1, cx(bx) + 1); h = std::max(1, cz(bz) + 1);
+        auto span = [&](const Brush& b, int& a0, int& a1, int& b0, int& b1) {
+            a0 = std::max(0, cx(b.box.mn.x)); a1 = std::min(w - 1, cx(b.box.mx.x));
+            b0 = std::max(0, cz(b.box.mn.z)); b1 = std::min(h - 1, cz(b.box.mx.z));
+        };
+        const long long bigCells = (long long)w * h / 4;
+        std::vector<uint32_t> count((size_t)w * h + 1, 0);
+        for (size_t i = 0; i < map.brushes.size(); i++) {
+            int a0, a1, b0, b1; span(map.brushes[i], a0, a1, b0, b1);
+            if (a1 < a0 || b1 < b0) continue;
+            if ((long long)(a1 - a0 + 1) * (b1 - b0 + 1) > std::max(64LL, bigCells)) { big.push_back((uint32_t)i); continue; }
+            for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) count[(size_t)z * w + x]++;
+        }
+        start.assign((size_t)w * h + 1, 0);
+        for (size_t c = 0; c < (size_t)w * h; c++) start[c + 1] = start[c] + count[c];
+        ids.resize(start.back());
+        std::vector<uint32_t> fill(start.begin(), start.end() - 1);
+        for (size_t i = 0; i < map.brushes.size(); i++) {
+            int a0, a1, b0, b1; span(map.brushes[i], a0, a1, b0, b1);
+            if (a1 < a0 || b1 < b0 || (long long)(a1 - a0 + 1) * (b1 - b0 + 1) > std::max(64LL, bigCells)) continue;
+            for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) ids[fill[(size_t)z * w + x]++] = (uint32_t)i;
+        }
+    }
+    bool inside(const Brush& b, const Vec3& p) const {
+        return p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z;
+    }
+    bool solid(const Vec3& p) const {
+        for (uint32_t i : big) if (inside(m->brushes[i], p)) return true;
+        int x = cx(p.x), z = cz(p.z);
+        if (x < 0 || z < 0 || x >= w || z >= h) return false;   // (outside every brush's box)
+        const size_t c = (size_t)z * w + x;
+        for (uint32_t k = start[c]; k < start[c + 1]; k++) if (inside(m->brushes[ids[k]], p)) return true;
+        return false;
+    }
+};
 
 Vec3 facePoint(const Face& f, float u, float v) {
     Vec3 p;
@@ -61,38 +112,121 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
 
 // Light caches are keyed by the map's content (cache/<sha256>.qlm): the same map under any name shares one, an
 // edited map never picks up the bake of the version before, and there's nothing to invalidate.
-std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + m.contentId().hex() + ".qlm"; }
+std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + lightCacheName(m); }
 constexpr size_t kMaxCaches = 32;   // bakes kept (an editor's BAKE LIGHT after each change makes a new one): oldest go
 uint32_t idWord(const Map& m) { const uint8_t* b = m.contentId().b; return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24; }
+std::string g_shippedDir;   // (setShippedLightCacheDir: tests)
 
-bool loadCache(const Map& m, BakedWorld& out) {
-    std::ifstream f(utf8Path(cachePath(m)), std::ios::binary);
+bool headerOk(const uint32_t hdr[5], const Map& m, const BakedWorld& out) {
+    return hdr[0] == kCacheMagic && hdr[1] == kBakeVersion && hdr[2] == idWord(m) &&
+           (int)hdr[3] == out.atlasW && (int)hdr[4] == out.atlasH;
+}
+
+bool readCache(const std::string& path, const Map& m, BakedWorld& out) {
+    std::ifstream f(utf8Path(path), std::ios::binary);
     if (!f) return false;
     uint32_t hdr[5];
     f.read((char*)hdr, sizeof hdr);
-    if (!f || hdr[0] != kCacheMagic || hdr[1] != kBakeVersion || hdr[2] != idWord(m) ||
-        (int)hdr[3] != out.atlasW || (int)hdr[4] != out.atlasH) return false;
+    if (!f || !headerOk(hdr, m, out)) return false;
     out.texels.resize((size_t)out.atlasW * out.atlasH * 2);
     f.read((char*)out.texels.data(), out.texels.size());
     return (bool)f;
 }
 
-void saveCache(const Map& m, const BakedWorld& w) {
+// A shipped bake (.qlbz): a cache file's bytes as one zlib stream (tools/pack_lightcache.py; 84 MB of bakes ship as
+// ~12), inflated by stb_image's decoder (Midtown: 2.7 -> 16.8 MB).
+bool readShipped(const std::string& path, const Map& m, BakedWorld& out) {
+    std::ifstream f(utf8Path(path), std::ios::binary | std::ios::ate);
+    if (!f) return false;
+    const std::streamoff zn = f.tellg();
+    const size_t want = sizeof(uint32_t) * 5 + (size_t)out.atlasW * out.atlasH * 2;
+    if (zn <= 0 || zn > INT_MAX || want > INT_MAX) return false;
+    std::vector<char> z((size_t)zn);
+    f.seekg(0);
+    if (!f.read(z.data(), zn)) return false;
+    int n = 0;
+    char* raw = stbi_zlib_decode_malloc_guesssize_headerflag(z.data(), (int)zn, (int)want, &n, 1);
+    if (!raw) return false;
+    uint32_t hdr[5];
+    const bool ok = (size_t)n == want && (memcpy(hdr, raw, sizeof hdr), headerOk(hdr, m, out));
+    if (ok) out.texels.assign(raw + sizeof hdr, raw + want);
+    free(raw);   // (stb's allocator: malloc)
+    return ok;
+}
+
+bool loadCache(const Map& m, BakedWorld& out) {
+    if (readCache(cachePath(m), m, out)) {
+        // (eviction goes by write time: a hit marks the bake used, so the maps being played keep theirs)
+        std::error_code ec;
+        std::filesystem::last_write_time(utf8Path(cachePath(m)), std::filesystem::file_time_type::clock::now(), ec);
+        return true;
+    }
+    // the package's bake of an official map (read-only: the install may be, and an update replaces the folder)
+    const std::string dir = g_shippedDir.empty() ? findDataPath("maps/lightcache") : g_shippedDir;
+    return readShipped(dir + "/" + lightCacheName(m, true), m, out);
+}
+
+// written to a temporary file and renamed over the cache in one step (a crash or a full disk mid-write left a
+// truncated cache that every later load turned down and baked again)
+bool writeCache(const std::string& path, const Map& m, const BakedWorld& w) {
     std::error_code ec;
-    std::filesystem::create_directories(userDataPath("cache"), ec);
+    const std::string tmp = path + ".tmp";
     {
-        std::ofstream f(utf8Path(cachePath(m)), std::ios::binary);
-        if (!f) return;
+        std::ofstream f(utf8Path(tmp), std::ios::binary | std::ios::trunc);
+        if (!f) return false;
         uint32_t hdr[5] = {kCacheMagic, kBakeVersion, idWord(m), (uint32_t)w.atlasW, (uint32_t)w.atlasH};
         f.write((const char*)hdr, sizeof hdr);
         f.write((const char*)w.texels.data(), w.texels.size());
+        f.flush();
+        if (!f) { f.close(); std::filesystem::remove(utf8Path(tmp), ec); return false; }
     }
+    std::filesystem::rename(utf8Path(tmp), utf8Path(path), ec);
+    if (ec) { std::filesystem::remove(utf8Path(tmp), ec); return false; }
+    return true;
+}
+
+void saveCache(const Map& m, const BakedWorld& w) {
+    std::error_code ec;
+    std::filesystem::create_directories(userDataPath("cache"), ec);
+    if (!writeCache(cachePath(m), m, w)) return;
     std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> all;
     for (auto& e : std::filesystem::directory_iterator(userDataPath("cache"), ec))
         if (e.path().extension() == ".qlm") all.push_back({e.last_write_time(ec), e.path()});
     if (all.size() <= kMaxCaches) return;
     std::sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.first > b.first; });
     for (size_t i = kMaxCaches; i < all.size(); i++) std::filesystem::remove(all[i].second, ec);
+}
+
+// one core left for the game (the loading screen, a hosted server's thread, software GL's own threads); quark
+// --bake-maps has nothing else to run and takes them all
+std::atomic<bool> g_allCores{false};
+unsigned bakeThreads() {
+    unsigned hc = std::thread::hardware_concurrency();
+    return g_allCores ? std::max(1u, hc) : std::max(1u, hc > 2 ? hc - 1 : hc);
+}
+
+// fn(i) for every i in [0, n), on the bake's thread count (the caller's thread is one of them), 256 at a time from a
+// shared counter; false if stopped() turned true (checked once per chunk). Each fn(i) writes only its own slots, so
+// the result is the same as a serial loop's.
+template <class S, class F> bool parallelFor(size_t n, const S& stopped, const F& fn) {
+    constexpr size_t kChunk = 256;
+    unsigned nt = bakeThreads();
+    nt = (unsigned)std::min<size_t>(nt, (n + kChunk - 1) / kChunk);
+    std::atomic<size_t> next{0};
+    std::atomic<bool> halted{false};
+    auto run = [&] {
+        for (;;) {
+            const size_t b = next.fetch_add(kChunk, std::memory_order_relaxed);
+            if (b >= n) return;
+            if (stopped()) { halted = true; return; }
+            for (size_t i = b, e = std::min(n, b + kChunk); i < e; i++) fn(i);
+        }
+    };
+    std::vector<std::thread> threads;
+    for (unsigned t = 1; t < nt; t++) threads.emplace_back(run);
+    run();
+    for (auto& th : threads) th.join();
+    return !halted;
 }
 } // namespace
 
@@ -103,12 +237,23 @@ float sunVisibility(const Map& map, const Vec3& p) {
     return anyHit(map, p, map.sunDir, 500.0f) ? 0.0f : 1.0f;
 }
 
-void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
+// The user's cache (then a shipped bake) is read first and a bake saved to it; with `file`, only that file is read and
+// nothing is saved (quark --bake-maps: the caller writes it).
+static void bake(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel,
+                 const std::string* file) {
     out = BakedWorld();
     // 1. Collect visible faces.
     std::vector<Face> faces;
-    for (const Brush& br : map.brushes) {
-        if (br.material == 9) continue;   // clip: invisible
+    const PointGrid solidAt(map);
+    auto stopped = [&] { return cancel && cancel->load(std::memory_order_relaxed); };   // (checked through the prepass too)
+    // The prepass's three loops run on the bake's threads (110-180 ms of every load, a cached one too, on one core):
+    // each brush's faces go to its own six slots and are gathered in brush order after, so the faces (and the atlas,
+    // the mesh and the cache they key) are the same as a serial loop's.
+    std::vector<Face> slots(map.brushes.size() * 6);
+    std::vector<uint8_t> keep(slots.size(), 0);
+    bool ran = parallelFor(map.brushes.size(), stopped, [&](size_t bi) {
+        const Brush& br = map.brushes[bi];
+        if (br.material == 9) return;   // clip: invisible
         for (int axis = 0; axis < 3; axis++)
             for (int sign = -1; sign <= 1; sign += 2) {
                 Face f;
@@ -128,11 +273,13 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                 for (int k = 0; k < 81 && hidden; k++) {
                     float fu = (k % 9 + 0.5f) / 9.0f, fv = (k / 9 + 0.5f) / 9.0f;
                     Vec3 p = facePoint(f, lerpf(f.u0, f.u1, fu), lerpf(f.v0, f.v1, fv)) + n * 0.01f;
-                    hidden = pointSolid(map, p);
+                    hidden = solidAt.solid(p);
                 }
-                if (!hidden) faces.push_back(f);
+                if (!hidden) { const size_t s = bi * 6 + axis * 2 + (sign > 0); slots[s] = f; keep[s] = 1; }
             }
-    }
+    });
+    if (!ran) { out.cancelled = true; return; }
+    for (size_t s = 0; s < slots.size(); s++) if (keep[s]) faces.push_back(slots[s]);
     // 1b. Outline edges: an edge shared flush with another face of the same material in the same plane is
     // not a real edge (a wall built from several boxes reads as one wall), so its outline is turned off.
     // edgeOff[f] bit 0: u0 edge, 1: u1, 2: v0, 3: v1.
@@ -181,7 +328,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
         });
     };
-    for (size_t i = 0; i < faces.size(); i++) {
+    ran = parallelFor(faces.size(), stopped, [&](size_t i) {
         const Face& f = faces[i];
         const float e = 0.02f;
         for (int edge = 0; edge < 4; edge++) {
@@ -194,14 +341,15 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             }
             if (all) edgeOff[i] |= 1 << edge;
         }
-    }
+    });
+    if (!ran) { out.cancelled = true; return; }
     // 1c. Coplanar faces of different materials overlapping would z-fight: the higher material (wallbang >
     // accent > base) gets lifted a hair off its plane, so decorations can sit flush on gameplay geometry.
     // Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
     std::vector<uint8_t> needLift(faces.size(), 0);
-    for (size_t i = 0; i < faces.size(); i++) {
+    ran = parallelFor(faces.size(), stopped, [&](size_t i) {
         const Face& f = faces[i];
-        if (f.material == 0) continue;
+        if (f.material == 0) return;
         auto overlaps = [&](uint32_t k) {
             const Face& o = faces[k];
             if (o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) return false;
@@ -218,7 +366,8 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                 for (int cu = cu0; cu <= cu1 && !hit; cu++) hit = near(f, mat, cu, cv, overlaps);
         }
         needLift[i] = hit;
-    }
+    });
+    if (!ran) { out.cancelled = true; return; }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
     for (auto& f : faces) if (f.material < 4) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
@@ -293,7 +442,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         else { out.verts.insert(out.verts.end(), {a, c, b, a, d, c}); }
     }
 
-    if (loadCache(map, out)) { out.fromCache = true; if (progress) progress(1.0f); return; }
+    if (file ? readCache(*file, map, out) : loadCache(map, out)) { out.fromCache = true; if (progress) progress(1.0f); return; }
 
     // 5. Bake, multithreaded over faces.
     out.texels.assign((size_t)W * H * 2, 0);
@@ -301,10 +450,16 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     Vec3 st, sb;
     basis(sun, st, sb);
     std::atomic<int> next{0}, doneCount{0};
+    // biggest faces first: handed out in index order, a big floor picked up last ran on one thread while the rest
+    // waited (the result is the same: each texel's samples depend only on its face index and position)
+    std::vector<int> order(faces.size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = (int)i;
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return faces[a].wu * faces[a].wv > faces[b].wu * faces[b].wv; });
     auto worker = [&]() {
         for (;;) {
-            int fi = next++;
-            if (fi >= (int)faces.size()) break;
+            int oi = next++;
+            if (oi >= (int)faces.size()) break;
+            const int fi = order[oi];
             if (cancel && cancel->load(std::memory_order_relaxed)) { doneCount++; continue; }   // (stopped: count the rest done)
             const Face& f = faces[fi];
             Vec3 n = faceNormal(f);
@@ -372,17 +527,67 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             doneCount++;
         }
     };
-    unsigned nt = std::max(1u, std::thread::hardware_concurrency());
+    const unsigned nt = bakeThreads();
     std::vector<std::thread> threads;
     for (unsigned i = 0; i < nt; i++) threads.emplace_back(worker);
     if (progress) {
         while (doneCount < (int)faces.size()) {
             progress(faces.empty() ? 1.0f : doneCount / (float)faces.size());
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            // ~30 ms between updates, in 1 ms steps that stop once the work is done (one 30 ms sleep held a finished
+            // bake up to 30 ms; MinGW's sleep_for ignores the 1 ms timer period, sleepMs uses Sleep)
+            for (int ms = 0; ms < 30 && doneCount < (int)faces.size(); ms++) sleepMs(1);
         }
     }
     for (auto& th : threads) th.join();
     if (cancel && cancel->load()) { out.cancelled = true; return; }
-    saveCache(map, out);
+    if (!file) saveCache(map, out);
     if (progress) progress(1.0f);
+}
+
+void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
+    bake(map, out, progress, cancel, nullptr);
+}
+
+std::string lightCacheName(const Map& map, bool shipped) { return map.contentId().hex() + (shipped ? ".qlbz" : ".qlm"); }
+void setShippedLightCacheDir(const std::string& dir) { g_shippedDir = dir; }
+
+bool bakeLightCacheFile(const Map& map, const std::string& path, bool* kept) {
+    BakedWorld w;
+    bake(map, w, nullptr, nullptr, &path);
+    if (kept) *kept = w.fromCache;
+    return w.fromCache || writeCache(path, map, w);
+}
+
+int bakeOfficialMaps(const std::string& dir) {
+    namespace fs = std::filesystem;
+    if (dir.empty()) { fprintf(stderr, "quark --bake-maps <dir>\n"); return 2; }
+    g_allCores = true;
+    // the atlas is packed to fit the GPU's largest texture (PERF-13): baked for 16384, what current GPUs (and
+    // software GL) offer; a map that only fits a 4096 GPU differently is baked there, as before
+    setLightmapMaxTextureSize(16384);
+    std::error_code ec;
+    fs::create_directories(utf8Path(dir), ec);
+    std::vector<std::string> made;
+    int failed = 0;
+    const double t0 = timeNow();
+    for (auto& [name, text] : officialMapTexts()) {
+        Map m;
+        m.name = name;
+        std::string err;
+        if (!m.parse(text, &err)) { fprintf(stderr, "%s: %s\n", name.c_str(), err.c_str()); failed++; continue; }
+        m.dynSolids.clear();   // (as the client bakes a joined map: no payload cart box)
+        const std::string file = m.contentId().hex() + ".qlb", path = dir + "/" + file;   // (raw: pack_lightcache.py compresses)
+        made.push_back(file);
+        const double t = timeNow();
+        bool kept = false;
+        if (!bakeLightCacheFile(m, path, &kept)) { fprintf(stderr, "%s: can't write %s\n", name.c_str(), path.c_str()); failed++; continue; }
+        printf("%-12s %s %.2f s\n", name.c_str(), kept ? "kept " : "baked", timeNow() - t);
+        fflush(stdout);
+    }
+    // anything else there is an older bake: dropped, so the folder holds exactly this build's maps
+    for (auto& e : fs::directory_iterator(utf8Path(dir), ec))
+        if (e.path().extension() == ".qlb" && std::find(made.begin(), made.end(), e.path().filename().u8string()) == made.end())
+            fs::remove(e.path(), ec);
+    printf("%d maps, %.1f s, %u threads%s\n", (int)made.size(), timeNow() - t0, bakeThreads(), failed ? ", FAILED" : "");
+    return failed ? 1 : 0;
 }

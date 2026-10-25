@@ -1,0 +1,29 @@
+{
+ "format": 1,
+ "category": "bots",
+ "items": {
+  "bots/aim": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/body/aim-hand": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/body/airstrafe": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/body/nav": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/body/safety": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/fight-movement": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/1v1": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/bomb": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/duel": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/ffa": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/hide": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/koth": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/npayload": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/payload": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/points": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/race": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/tag": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/tourney": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/mode/vs": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/perception": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/roam": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/targeting": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"},
+  "bots/weapons": {"origin": "ai", "source": "bot logic in src/game/bots.cpp, AI-written"}
+ }
+}

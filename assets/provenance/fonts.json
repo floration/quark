@@ -1,0 +1,15 @@
+{
+ "format": 1,
+ "category": "fonts",
+ "items": {
+  "fonts/BarlowCondensed-Bold.ttf": {"origin": "third-party", "source": "BarlowCondensed-Bold by The Barlow Project Authors, SIL OFL 1.1 (assets/fonts/BarlowCondensed-OFL.txt); Settings > FONT: the closest free match of Apex Legends' font"},
+  "fonts/BebasNeue-Regular.ttf": {"origin": "third-party", "source": "BebasNeue-Regular by Dharma Type, SIL OFL 1.1 (assets/fonts/BebasNeue-OFL.txt); Settings > FONT: the closest free match of Overwatch's font"},
+  "fonts/Decalotype-Bold.ttf": {"origin": "third-party", "source": "Decalotype-Bold by Alfredo Marco Pradil, SIL OFL 1.1 (assets/fonts/Decalotype-OFL.txt); Settings > FONT: the font Cocaine Diesel uses"},
+  "fonts/DejaVuSans-Bold.ttf": {"origin": "third-party", "source": "DejaVuSans-Bold by Bitstream and the DejaVu fonts team, Bitstream Vera licence (assets/fonts/DejaVu-LICENSE.txt); Settings > FONT: the closest free match of Half-Life 2's font"},
+  "fonts/Jost.ttf": {"origin": "third-party", "source": "Jost by The Jost Project Authors, SIL OFL 1.1 (assets/fonts/Jost-OFL.txt); Settings > FONT: the closest free match of TF2 Secondary"},
+  "fonts/LibreQuake-CONCHARS.png": {"origin": "third-party", "source": "LibreQuake-CONCHARS by the LibreQuake project, BSD-3-Clause (assets/fonts/LibreQuake-COPYING.txt); Settings > FONT: the closest free match of Quake's console font (CONCHARS sheet)"},
+  "fonts/LilitaOne-Regular.ttf": {"origin": "third-party", "source": "LilitaOne-Regular by Juan Montoreano, SIL OFL 1.1 (assets/fonts/LilitaOne-OFL.txt); Settings > FONT: the closest free match of TF2 Build"},
+  "fonts/Rubik.ttf": {"origin": "third-party", "source": "Rubik by The Rubik Project Authors, SIL OFL 1.1 (assets/fonts/Rubik-OFL.txt); the game's UI font (the default), the icon's letter and the website's logo"},
+  "fonts/WorkSans.ttf": {"origin": "third-party", "source": "WorkSans by Work Sans Project Authors, SIL OFL 1.1 (assets/fonts/WorkSans-OFL.txt); Settings > FONT: WORK SANS (the UI font of 1.17 - 1.18)"}
+ }
+}

@@ -46,29 +46,43 @@ journalctl -u quark-update -u quark-testing-update -n 50
 
 ## 2. Discord bot (automatic once you re-run its installer)
 
-`tools/discordbot/install.sh` now also installs `quark-discord-update.timer`. Every 10 minutes it runs `tools/discordbot/autoupdate.sh`, which:
-1. finds the newest production tag `v<x.y.z>` and checks it is on the default branch;
-2. if the bot's folder is different at that tag, checks it out (never going backwards) and reinstalls the hash-pinned requirements if they changed;
+The bot's code lives on the **`discord-bot` branch** (its files at the top level), not in the game's branches. Its
+`install.sh` installs `quark-discord-update.timer`. Every 10 minutes it runs `autoupdate.sh`, which:
+1. finds what to follow: the head of the `discord-bot` branch (its default, `QUARK_BOT_FOLLOW=branch:discord-bot`);
+2. if the bot's files are different there, checks it out (never going backwards) and reinstalls the hash-pinned requirements if they changed;
 3. runs the bot's offline tests and a dry run, which reads live data, posts nothing and gets no secrets;
 4. restarts the bot.
 
 If step 2 or 3 fails, it goes back to the commit it was on, logs `ERROR`, and the bot keeps running the old code.
+Only push to `discord-bot` what you want running.
 
-**Once, on the bot's box**, in the checkout the bot runs from:
+**Once, on the bot's box: move the bot to the branch.** Before the first production release without
+`tools/discordbot/` (1.17.1). Until then the old checkout keeps working; after that its updater can't find the bot's
+folder at the new tag, logs `ERROR` every 10 minutes and keeps the old code running. As the user the bot runs as:
 ```
-git pull                          # gets autoupdate.sh and the new install.sh
-sudo ./tools/discordbot/install.sh   # Enter at each prompt keeps the saved token / server id / BOT_KEY
+git clone -b discord-bot https://github.com/floration/quark ~/quark-discord-bot
+cp ~/quark/tools/discordbot/state.json ~/quark-discord-bot/   # the bot's memory (and config.json, if you made one)
 ```
-The checkout must be a git clone of the GitHub repository (`git remote -v` shows it), owned by the user the bot runs as.
+Then:
+```
+cd ~/quark-discord-bot && sudo ./install.sh   # Enter at each prompt keeps the saved token / server id / BOT_KEY;
+                                              # it points both services at this folder and restarts the bot
+journalctl -u quark-discord -f                # "ready as ..."
+```
+Optional: `QUARK_REPO=/home/<user>/quark` in `/etc/quark-discord.env` lets the bot read the INFO pages (`game.cpp`)
+from a local game checkout instead of downloading them. Once it runs from the new folder:
+`rm -rf ~/quark/tools/discordbot/.venv ~/quark/tools/discordbot/state.json`.
 
 **Check it:**
 ```
 systemctl list-timers quark-discord-update.timer
-journalctl -u quark-discord-update -n 50       # "updated to vX.Y.Z and restarted", or ERROR lines
+journalctl -u quark-discord-update -n 50       # "updated to origin/discord-bot and restarted", or ERROR lines
 ```
 
-**After the bot moves to its own repository** (`tools/discordbot/MOVING.md`), that repository has no release tags. Make the updater follow its `main` branch instead:
-`sudo systemctl edit quark-discord-update.service`, add `[Service]` and `Environment=QUARK_BOT_FOLLOW=branch:main`, then save. Only push to that `main` what you want running.
+**Tests that need both:** `quark_tests`' cross-language check compares the bot's copies of the queues, protocol
+constants and mode names with the game. CI can't see the bot, so run `QUARK_BOT_DIR=<discord-bot checkout>
+build/quark_tests` before releasing a protocol, mode or queue change (and `QUARK_REPO=<game checkout> python -m
+unittest test_quarkdata` in the bot's checkout).
 
 **Pause updates:** `sudo systemctl disable --now quark-discord-update.timer`.
 
@@ -130,7 +144,7 @@ Things that stay manual: the Worker's own secrets (`ADMIN_KEY`, `BOT_KEY`, below
 | `QUARK_SIGNING_KEY` | Every release. The launcher, dedicated servers and games trust only files signed with it. **The most important one.** | GitHub environment secrets (`production`, `testing`), plus an offline backup in your password manager. Never on a server, never in a file in the repo. | docs/SIGNING.md "Making a new key": a new keypair, its public key built into the game, the secret replaced. Installed launchers trust only the old key, so every player downloads the new launcher once from the website. |
 | `CLOUDFLARE_API_TOKEN` | Deploying the Worker and changing D1 | GitHub `production` environment secret | Cloudflare → API Tokens → roll or delete it, make a new one (section 3), update the GitHub secret. |
 | `ADMIN_KEY` | The Worker's dispute endpoints | The Worker's secrets (Cloudflare dashboard) and your password manager | `openssl rand -hex 32` → the Worker → Settings → Variables and Secrets → edit. |
-| `BOT_KEY` | The Worker's bot-only endpoints (queues, link codes) | The Worker's secrets, and `/etc/quark-discord.env` on the bot's box | Make a new one, set it on the Worker, then re-run `sudo ./tools/discordbot/install.sh` on the bot's box and type the new one. |
+| `BOT_KEY` | The Worker's bot-only endpoints (queues, link codes) | The Worker's secrets, and `/etc/quark-discord.env` on the bot's box | Make a new one, set it on the Worker, then re-run `sudo ./install.sh` in the bot's checkout (the `discord-bot` branch) on the bot's box and type the new one. |
 | `DISCORD_TOKEN` | Acting as the bot in your Discord server | `/etc/quark-discord.env` on the bot's box | Discord developer portal → the app → Bot → **Reset Token** → re-run the bot's `install.sh`. |
 | `QUARK_ALERT_WEBHOOK`, any Discord webhook URL | Posting into that channel | `/etc/quark/update.env` on each dedicated server | Discord → the channel → Integrations → Webhooks → delete it and make a new one. |
 | `GITHUB_TOKEN` on servers (optional) | Nothing, if it has no permissions (section 1) | `/etc/quark/update.env` | GitHub → Settings → Developer settings → tokens → revoke, make a new one. |

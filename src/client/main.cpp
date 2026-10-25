@@ -8,6 +8,7 @@
 #include "game.h"
 #include "../game/server.h"
 #include "gl.h"
+#include "lightmap.h"
 #include "../launcher/selfupdate.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -49,6 +50,7 @@ int main(int argc, char** argv) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
         if (a == "--data-dir") setUserDataDir(next()); // settings, key, demos, your maps (default: per-user folder)
+        else if (a == "--bake-maps") return bakeOfficialMaps(next());   // the official maps' light into DIR (packages: maps/lightcache); no window
         else if (a == "--connect") opts.connect = next();
         else if (a == "--host") opts.hostMode = modeFromName(next().c_str());
         else if (a == "--vsbots") opts.vsBotsMode = modeFromName(next().c_str());
@@ -63,7 +65,7 @@ int main(int argc, char** argv) {
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
         else if (a == "--backdrop") opts.backdrop = next();
-        else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots)
+        else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots), or in a match
             opts.camSet = true;
             for (int k = 0; k < 3; k++) opts.camPos[k] = (float)atof(next().c_str());
             opts.camYaw = (float)atof(next().c_str()); opts.camPitch = (float)atof(next().c_str());
@@ -86,6 +88,10 @@ int main(int argc, char** argv) {
         else if (a == "--customshot") opts.debugCustom = atoi(next().c_str()) + 1;   // the custom mode editor on that tab (screenshots)
         else if (a == "--info") opts.debugInfo = atoi(next().c_str()) + 1;   // the info screen on that tab (screenshots)
         else if (a == "--menushot") opts.menuShot = true;
+        else if (a == "--menupage") { opts.menuShot = true; opts.menuPage = next(); }   // that menu page (screenshots): host/advanced, custom/dash, info/modes+2...
+        else if (a == "--fonts") opts.debugFonts = 1;   // Settings > FONT open from the start (screenshots: with --menushot)
+        else if (a == "--settingsmenu") opts.debugFonts = 2;   // the settings page from the main menu (screenshots)
+        else if (a == "--settingstab") opts.settingsTab = next();   // that settings page (screenshots): gameplay, controls/movement, video...
         else if (a == "--edfocus") opts.edFocus = true;
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();
@@ -150,6 +156,7 @@ int main(int argc, char** argv) {
     glfwSetCharCallback(win, [](GLFWwindow*, unsigned cp) { g_game->onChar(cp); });
     glfwSetKeyCallback(win, [](GLFWwindow*, int k, int, int a, int m) { g_game->onKey(k, a, m); });
     glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int) { g_game->onMouseButton(b, a); });
+    glfwSetWindowFocusCallback(win, [](GLFWwindow*, int f) { g_game->onFocus(f != 0); });
     glfwSetCursorPosCallback(win, [](GLFWwindow*, double x, double y) { g_game->onCursor(x, y); });
     glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int fw, int fh) { g_game->onResize(fw, fh); });
     glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy) { g_game->onScroll(dy); });
@@ -171,23 +178,32 @@ int main(int argc, char** argv) {
     double last = timeNow();
     double frameStart = timeNow();
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
+        game.pipeMark(Game::PM_FRAME);   // (F3's pipeline graph: the frame's parts)
         // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
         if (game.maxFps() > 0) {
             double period = 1.0 / game.maxFps();
             double target = frameStart + period;
-            while (timeNow() < target - 0.0015) sleepMs(1);
-            while (timeNow() < target) {}
+            waitUntil(target);
             frameStart = std::max(target, timeNow() - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
         } else {
             frameStart = timeNow();
         }
+        game.pipeMark(Game::PM_CAP);
         game.beforeInput();
+        game.pipeMark(Game::PM_FENCE);
+        game.preInput();   // (the network: before the mouse is read)
+        game.pipeMark(Game::PM_NET);
+        game.readMouse();   // (raw mouse reports in one read; GLFW's poll gets the rest)
         { QZONE("poll events"); glfwPollEvents(); }
+        game.pipeMark(Game::PM_POLL);
         double now = timeNow();
         double dt = now - last;
         last = now;
         game.frame(dt);
+        game.beforeSwap();   // (latent sync: the finished frame held until the vertical blank)
+        game.pipeMark(Game::PM_SWAP0);
         { QZONE("swap"); glfwSwapBuffers(win); }
+        game.pipeMark(Game::PM_SWAP1);
         { QZONE("after swap (low latency wait)"); game.afterSwap(); }
         QFRAME();
     }

@@ -14,6 +14,17 @@ Windows: MinGW-w64 (gcc; what releases are built with; MSVC isn't supported). ma
 The build needs `python3` (standard library only): it generates the recorded announcer lines from `assets/voice/`.
 Executables: `quark` (game), `quark_server` (dedicated server), `quark_tests` (headless tests).
 Keep the `maps/` folder next to the executables.
+On Windows, `tools\build_windows.ps1` installs the tools, builds, and keeps each build in its own folder; `tools\fetch_ci_build.ps1` downloads a CI build ([docs/LOCAL_BUILD.md](docs/LOCAL_BUILD.md)).
+
+### Branches: the launcher, the website and the Discord bot
+New work goes to `testing` (each push is a signed testing build); the default branch takes only PRs from it. Three
+parts live on branches of their own (docs/HANDOVER.md section 4):
+- `launcher`: the launcher that releases ship. Release builds compile `quark_launcher` from that branch
+  (`tools/launcher_build.sh`), so it only changes when that branch does; raise its `VERSION` with a launcher change,
+  or installed launchers won't take it. The game's own launcher-upgrade code stays in `src/launcher/`.
+- `site`: the website. To work on it, or run the site tools (`tools/site_*.py`) locally, check it out into `site/`:
+  `git fetch origin site && git worktree add site site`. Production releases publish it from that branch.
+- `discord-bot`: the bot (setup and updates: docs/OPERATIONS.md section 2).
 
 ## Multiplayer
 - **Host in the game:** Host Game -> pick map/mode/port -> Start. "Auto port forward (UPnP)" asks your router to open the UDP port.
@@ -35,7 +46,8 @@ Keep the `maps/` folder next to the executables.
   Discord webhook (`QUARK_ALERT_WEBHOOK` in `/etc/quark/update.env`; an optional `GITHUB_TOKEN` there raises GitHub's
   rate limit). Both servers run sandboxed, testing at a lower CPU priority.
   **Load governor:** the two share the box through `/var/lib/quark-governor` (`--governor-dir`; `src/game/governor.h`).
-  When it can't carry both (a server falls behind its ticks, or its players lose snapshots), the empty server is
+  When it can't carry both (a server falls behind its ticks in two rate windows in a row, or its players lose
+  snapshots), the empty server is
   throttled first, a tick-rate step at a time down to 125 Hz, then the one not playing a ranked match, then the other;
   if both are at 125 Hz and production is still overloaded for 30 s, the testing server closes (its players are told
   why; it leaves the list) until production has been calm for 5 minutes. Production never closes. Rates climb back one
@@ -62,4 +74,4 @@ WASD move · Space jump · Ctrl/C crouch · Mouse1 fire · 1/2/3 weapons · E pl
 Plain text files in `maps/` (see the header of `maps/bastion.qmap`). Lighting is baked on first load and cached as `.qlm`.
 
 ## Fonts
-The in-game UI text is **Work Sans Bold** (Copyright 2019 The Work Sans Project Authors, SIL Open Font License 1.1: `assets/fonts/WorkSans-OFL.txt`), baked into `src/client/font_ui.h` as a distance-field atlas by `python3 tools/make_font_atlas.py` (Pillow + numpy; re-run it after changing the font). The logo, launcher and website title font is **Rubik** (SIL OFL 1.1: `assets/fonts/Rubik-OFL.txt`).
+The in-game UI text is **Rubik Bold** by default (Copyright 2015 The Rubik Project Authors, SIL Open Font License 1.1: `assets/fonts/Rubik-OFL.txt`), baked into `src/client/font_ui.h` as a distance-field atlas by `python3 tools/make_font_atlas.py` (Pillow + numpy; re-run it after changing a font). Rubik is also the logo, launcher and website title font. SETTINGS > FONT offers other fonts, baked by the same tool into `src/client/font_builtin.h`: **Work Sans Bold** (Copyright 2019 The Work Sans Project Authors, SIL OFL 1.1: `assets/fonts/WorkSans-OFL.txt`), **QUARK CLASSIC** (the original 5x7 pixel font), free look-alikes of game fonts, each with its licence in `assets/fonts/` ([docs/ASSETS.md](docs/ASSETS.md)): **Bebas Neue** (Copyright 2010 Dharma Type, SIL OFL 1.1), **Decalotype Bold** (Copyright 2016 Alfredo Marco Pradil, SIL OFL 1.1), **LibreQuake's CONCHARS** (Copyright 2019-2023 Contributors to the LibreQuake project, BSD-3-Clause), **DejaVu Sans Bold** (Bitstream Vera Fonts Copyright 2003 Bitstream, Inc., and the DejaVu changes, Bitstream Vera licence), **Lilita One** (Copyright 2011 Juan Montoreano, SIL OFL 1.1), **Jost** (Copyright 2020 The Jost Project Authors, SIL OFL 1.1) and **Barlow Condensed Bold** (Copyright 2017 The Barlow Project Authors, SIL OFL 1.1), and any font you put in `mods/fonts/`. Game fonts found on your own computer (a Steam install, the system's fonts) are used in place of the look-alikes and never shipped.

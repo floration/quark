@@ -1,4 +1,5 @@
 #include "gltf.h"
+#include "overrides.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -171,12 +172,19 @@ struct Doc {
         const J& a = acc->a[ai];
         std::string type = a.str("type");
         comps = type == "SCALAR" ? 1 : type == "VEC2" ? 2 : type == "VEC3" ? 3 : type == "VEC4" ? 4 : type == "MAT4" ? 16 : 0;
-        int ct = a.inum("componentType", 0), count = a.inum("count", 0);
+        int ct = a.inum("componentType", 0);
+        double cn = a.num("count", 0);
         bool norm = a.get("normalized") && a.get("normalized")->b;
         int csize = ct == 5120 || ct == 5121 ? 1 : ct == 5122 || ct == 5123 ? 2 : ct == 5125 || ct == 5126 ? 4 : 0;
-        if (!comps || !csize || count < 0) { err = "unsupported accessor"; return false; }
-        out.assign((size_t)count * comps, 0.0f);
-        if (!a.get("bufferView")) return true;   // all zeros (sparse accessors are not supported)
+        if (!comps || !csize || !(cn >= 0 && cn < 2147483648.0)) { err = "unsupported accessor"; return false; }
+        const int count = (int)cn;
+        const size_t elem = (size_t)comps * csize;
+        // every size is checked before anything is allocated (a bogus count used to allocate first, up to 128 GB)
+        if (!a.get("bufferView")) {   // all zeros (sparse accessors are not supported)
+            if (count > (1 << 24)) { err = "accessor out of range"; return false; }   // (no buffer to bound it by)
+            out.assign((size_t)count * comps, 0.0f);
+            return true;
+        }
         const J* views = root.get("bufferViews");
         int vi = a.inum("bufferView", -1);
         if (!views || vi < 0 || vi >= (int)views->size()) { err = "bad bufferView"; return false; }
@@ -184,10 +192,14 @@ struct Doc {
         int bi = v.inum("buffer", 0);
         if (bi < 0 || bi >= (int)buffers.size()) { err = "bad buffer"; return false; }
         const std::vector<uint8_t>& buf = buffers[bi];
-        size_t off = (size_t)v.num("byteOffset", 0) + (size_t)a.num("byteOffset", 0);
-        size_t stride = (size_t)v.num("byteStride", 0);
-        if (!stride) stride = (size_t)comps * csize;
-        if (count && off + stride * (count - 1) + (size_t)comps * csize > buf.size()) { err = "accessor out of range"; return false; }
+        double vo = v.num("byteOffset", 0), ao = a.num("byteOffset", 0), vs = v.num("byteStride", 0);
+        if (!(vo >= 0 && ao >= 0 && vs >= 0 && vo + ao <= (double)buf.size() && vs <= 65536)) { err = "accessor out of range"; return false; }
+        size_t off = (size_t)vo + (size_t)ao;
+        size_t stride = (size_t)vs;
+        if (!stride) stride = elem;
+        // off + stride * (count - 1) + elem <= size, without overflowing
+        if (count && (elem > buf.size() - off || (size_t)(count - 1) > (buf.size() - off - elem) / stride)) { err = "accessor out of range"; return false; }
+        out.assign((size_t)count * comps, 0.0f);
         for (int i = 0; i < count; i++)
             for (int c = 0; c < comps; c++) {
                 const uint8_t* p = &buf[off + stride * i + (size_t)c * csize];
@@ -217,6 +229,9 @@ bool addPrimitive(Doc& d, const J& prim, const M4& xf, MeshData& out) {
     size_t nv = pos.size() / 3;
     if (attrs->get("NORMAL") && (!d.read(attrs->inum("NORMAL", -1), nrm, nc) || nc != 3)) nrm.clear();
     if (attrs->get("COLOR_0") && (!d.read(attrs->inum("COLOR_0", -1), col, cc) || (cc != 3 && cc != 4))) col.clear();
+    // (one per vertex or none: a shorter list was read past its end for the vertices it misses)
+    if (nrm.size() != nv * 3) nrm.clear();
+    if (col.size() != nv * cc) col.clear();
     std::vector<uint32_t> idx;
     if (prim.get("indices")) {
         if (!d.read(prim.inum("indices", -1), idxf, ic) || ic != 1) { if (d.err.empty()) d.err = "bad indices"; return false; }
@@ -302,10 +317,96 @@ bool addNode(Doc& d, int ni, const M4& parent, MeshData& out, int depth) {
 }
 
 std::string fmt(double v) { char b[32]; snprintf(b, sizeof b, "%.7g", std::fabs(v) < 1e-12 ? 0.0 : v); return b; }
+std::string fmt9(float v) { char b[32]; snprintf(b, sizeof b, "%.9g", (double)v); return b; }   // (a float, exactly)
+
+// extras.quark version 2: the box list (docs/ASSETS.md "Box models")
+bool boxesFrom(const J& q, ModelParts& out, std::string& err) {
+    out.clear();
+    if (q.t != J::OBJ) { err = "extras.quark is not an object"; return false; }
+    const J* list = q.get("boxes");
+    if (!list || list->t != J::ARR || list->a.empty()) { err = "no boxes"; return false; }
+    if (list->a.size() > kMaxOverrideBoxes) { err = std::to_string(list->a.size()) + " boxes (at most " + std::to_string(kMaxOverrideBoxes) + ")"; return false; }
+    auto vec = [&](const J& b, const char* k, Vec3& v, float lo, float hi, bool need) {
+        const J* a = b.get(k);
+        if (!a) return !need;
+        if (a->t != J::ARR || a->a.size() != 3) return false;
+        for (int i = 0; i < 3; i++) {
+            if (a->a[i].t != J::NUM || !std::isfinite(a->a[i].n) || a->a[i].n < lo || a->a[i].n > hi) return false;
+            v[i] = (float)a->a[i].n;
+        }
+        return true;
+    };
+    auto flag = [&](const J& b, const char* k, bool def, bool& ok) {
+        const J* v = b.get(k);
+        if (!v) return def;
+        if (v->t != J::BOOL) ok = false;
+        return v->b;
+    };
+    for (size_t i = 0; i < list->a.size(); i++) {
+        const J& b = list->a[i];
+        ModelPart p;
+        std::string where = "box " + std::to_string(i + 1) + ": ";
+        if (b.t != J::OBJ) { err = where + "not an object"; return false; }
+        if (!vec(b, "c", p.c, -64, 64, true)) { err = where + "c must be 3 numbers within 64 m"; return false; }
+        if (!vec(b, "h", p.h, 0, 32, true) || !(p.h.x > 0 && p.h.y > 0 && p.h.z > 0)) { err = where + "h must be 3 numbers, each over 0 and at most 32 m"; return false; }
+        if (!vec(b, "color", p.color, 0, 16, true)) { err = where + "color must be 3 numbers from 0 to 16"; return false; }
+        std::string slot = b.str("slot");
+        int s = -1;
+        for (int k = 0; k < TINT_COUNT; k++) if (slot == tintSlotName(k)) s = k;
+        if (!b.get("slot")) s = TINT_NONE;
+        if (s < 0) { err = where + "unknown slot \"" + slot + "\""; return false; }
+        p.slot = (uint8_t)s;
+        p.mul = {0, 0, 0};
+        if (!vec(b, "add", p.add, 0, 16, false)) { err = where + "add must be 3 numbers from 0 to 16"; return false; }
+        if (!vec(b, "teamMul", p.teamMul, 0, 16, false)) { err = where + "teamMul must be 3 numbers from 0 to 16"; return false; }
+        if (b.get("mul")) { if (!vec(b, "mul", p.mul, 0, 16, true)) { err = where + "mul must be 3 numbers from 0 to 16"; return false; } }
+        else if (s != TINT_NONE) {   // (no mul: the colour over the reference, as a mesh is tinted; filled in by the loader)
+            p.mul = {-1, -1, -1};
+        }
+        const J* al = b.get("alpha");
+        if (al && (al->t != J::NUM || !std::isfinite(al->n) || al->n <= 0 || al->n > 1)) { err = where + "alpha must be over 0 and at most 1"; return false; }
+        p.alpha = al ? (float)al->n : 1.0f;
+        bool ok = true;
+        p.shadow = flag(b, "shadow", true, ok);
+        p.visOnly = flag(b, "visOnly", false, ok);
+        p.crouch = flag(b, "crouch", false, ok);
+        if (!ok) { err = where + "shadow / visOnly / crouch must be true or false"; return false; }
+        out.push_back(p);
+    }
+    return true;
+}
 } // namespace
 
-bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, MeshData& out, std::string* err) {
+std::string boxModelJson(const ModelParts& boxes) {
+    auto v3 = [](const Vec3& v) { return "[" + fmt9(v.x) + "," + fmt9(v.y) + "," + fmt9(v.z) + "]"; };
+    std::string j = "{\"version\":2,\"boxes\":[";
+    for (size_t i = 0; i < boxes.size(); i++) {
+        const ModelPart& p = boxes[i];
+        if (i) j += ",";
+        j += "{\"c\":" + v3(p.c) + ",\"h\":" + v3(p.h) + ",\"slot\":\"" + tintSlotName(p.slot) + "\",\"color\":" + v3(p.color);
+        if (p.slot != TINT_NONE) j += ",\"mul\":" + v3(p.mul) + ",\"add\":" + v3(p.add);
+        if (p.slot != TINT_NONE && (p.teamMul.x != 0 || p.teamMul.y != 0 || p.teamMul.z != 0)) j += ",\"teamMul\":" + v3(p.teamMul);
+        if (p.alpha != 1) j += ",\"alpha\":" + fmt9(p.alpha);
+        j += std::string(",\"shadow\":") + (p.shadow ? "true" : "false") + ",\"visOnly\":" + (p.visOnly ? "true" : "false") + ",\"crouch\":" + (p.crouch ? "true" : "false") + "}";
+    }
+    return j + "]}";
+}
+
+bool parseBoxModel(const std::string& json, ModelParts& out, std::string* err) {
+    Parser ps{json.data(), json.data() + json.size()};
+    J q = ps.value();
+    std::string e;
+    if (ps.bad) e = "not valid JSON";
+    else if (q.num("version", 0) != 2) e = "not version 2";
+    else if (boxesFrom(q, out, e)) return true;
+    if (err) *err = e;
+    out.clear();
+    return false;
+}
+
+bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, MeshData& out, std::string* err, ModelParts* boxes) {
     out.prims.clear();
+    if (boxes) boxes->clear();
     Doc d;
     auto fail = [&](const std::string& m) { if (err) *err = m; return false; };
     const uint8_t* json = data; size_t jsonLen = size;
@@ -356,10 +457,19 @@ bool loadGltf(const uint8_t* data, size_t size, const GltfResolver& resolve, Mes
     }
     if (!ok) return fail(d.err);
     if (out.prims.empty()) return fail("no triangles");
+    // a box model: the first mesh's extras.quark, version 2 (other versions, e.g. the model editor's older per-
+    // primitive notes, are a plain mesh)
+    const J* meshes = d.root.get("meshes");
+    const J* ex = meshes && meshes->size() ? meshes->a[0].get("extras") : nullptr;
+    const J* q = ex ? ex->get("quark") : nullptr;
+    if (boxes && q && q->t == J::OBJ && q->num("version", 0) == 2) {
+        std::string e;
+        if (!boxesFrom(*q, *boxes, e)) { boxes->clear(); return fail("box model: " + e); }
+    }
     return true;
 }
 
-std::string writeGltf(const MeshData& mesh, const std::string& name) {
+std::string writeGltf(const MeshData& mesh, const std::string& name, const ModelParts* boxes) {
     std::vector<uint8_t> bin;
     auto put = [&](const void* p, size_t n) { size_t at = bin.size(); bin.resize(at + n); memcpy(&bin[at], p, n); while (bin.size() % 4) bin.push_back(0); return at; };
     std::string views, accs, prims, mats;
@@ -392,9 +502,36 @@ std::string writeGltf(const MeshData& mesh, const std::string& name) {
                 "],\"metallicFactor\":0,\"roughnessFactor\":1}" + (p.alpha < 1 ? ",\"alphaMode\":\"BLEND\"" : "") + "}";
     }
     std::string s = "{\"asset\":{\"version\":\"2.0\",\"generator\":\"quark exportassets\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-                    "\"nodes\":[{\"name\":\"" + name + "\",\"mesh\":0}],\"meshes\":[{\"name\":\"" + name + "\",\"primitives\":[" + prims + "]}],"
+                    "\"nodes\":[{\"name\":\"" + name + "\",\"mesh\":0}],\"meshes\":[{\"name\":\"" + name + "\",\"primitives\":[" + prims + "]" +
+                    (boxes ? ",\"extras\":{\"quark\":" + boxModelJson(*boxes) + "}" : "") + "}],"
                     "\"materials\":[" + mats + "],\"accessors\":[" + accs + "],\"bufferViews\":[" + views + "],"
                     "\"buffers\":[{\"byteLength\":" + std::to_string(bin.size()) + ",\"uri\":\"data:application/octet-stream;base64," +
                     base64Encode(bin.data(), bin.size()) + "\"}]}\n";
     return s;
+}
+
+void loadModelOverrides(ModelOverrides& out) {
+    if (!overrides::any()) return;
+    for (int kind = 0; kind < MODEL_KINDS; kind++)
+        for (int i = 0; i < modelCount(kind) && i < kMaxModelsPerKind; i++) {
+            if (!modelExists(kind, i)) continue;
+            for (overrides::From from : {overrides::FROM_SHIPPED, overrides::FROM_USER}) {
+                std::vector<uint8_t> file;
+                std::string matched, gerr;
+                if (!overrides::find(modelPath(kind, i), {".glb", ".gltf"}, file, &matched, nullptr, from)) continue;
+                const char* where = from == overrides::FROM_USER ? "yours" : "shipped";
+                std::string dir = matched.substr(0, matched.rfind('/') + 1);
+                MeshData mesh;
+                ModelParts boxes;
+                auto resolve = [&](const std::string& uri, std::vector<uint8_t>& o) { return uri.find("..") == std::string::npos && overrides::readRelative(dir + uri, o, from == overrides::FROM_USER ? overrides::FROM_ANY : from); };
+                if (!loadGltf(file.data(), file.size(), resolve, mesh, &gerr, &boxes)) { printf("override %s (%s): %s\n", matched.c_str(), where, gerr.c_str()); continue; }
+                if (mesh.triangleCount() > kMaxOverrideTriangles) { printf("override %s (%s): %zu triangles (at most %zu)\n", matched.c_str(), where, mesh.triangleCount(), kMaxOverrideTriangles); continue; }
+                auto m = std::make_unique<ModelMesh>();
+                if (!boxes.empty()) { finishBoxModel(kind, i, boxes); m->boxes = std::move(boxes); }   // (drawn as boxes)
+                else meshToModel(mesh, *m);
+                if (m->boxes.empty()) printf("override: %s (%s)\n", matched.c_str(), where);
+                else printf("override: %s (%s, a box model: %zu boxes)\n", matched.c_str(), where, m->boxes.size());
+                (from == overrides::FROM_USER ? out.user : out.shipped)[kind][i] = std::move(m);
+            }
+        }
 }

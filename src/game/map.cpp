@@ -187,6 +187,12 @@ int resetOfficialMaps(const std::string& shippedDir) {
     return n;
 }
 
+std::vector<std::pair<std::string, std::string>> officialMapTexts() {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (const OfficialMapData* m = kOfficialMapData; m->name; m++) out.emplace_back(m->name, std::string((const char*)m->data, m->size));
+    return out;
+}
+
 std::string mapsFolder() {
     std::error_code ec;
     fs::create_directories(userMapsDir(), ec);
@@ -626,9 +632,9 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             if (ok) formatVersion = v;
             if (ok && v > kMapFormatVersion)
                 warnings.push_back("map format " + std::to_string(v) + " is newer than this build's (" + std::to_string(kMapFormatVersion) + "): parts it doesn't know are skipped");
-        } else if (kw == "handmade") {   // made (or changed) by a person, not tools/make_maps.py: graded, never failed
+        } else if (kw == "handmade") {   // made (or changed) by a person, not tools/make_maps.py: checked, never failed
             handmade = true;
-        } else if (kw == "setting") {    // "setting <words>": the place the map is (the map report scores it)
+        } else if (kw == "setting") {    // "setting <words>": the place the map is (every generated map has one)
             ok = ls.rest(setting);
             while (!setting.empty() && (setting[0] == ' ' || setting[0] == '\t')) setting.erase(0, 1);
             while (!setting.empty() && LineIn::space(setting.back())) setting.pop_back();
@@ -1215,8 +1221,10 @@ bool Map::buildGrid() {
         if (total > kMaxMapGridRefs) { cells.assign(1, GridCell()); cellBrushes.clear(); gridRefs = 0; gridW = gridH = 1; return false; }
     }
     cells.assign(ncells, GridCell());
+    gridYLo = 1e30f; gridYHi = -1e30f;
     for (auto& br : brushes) {
         if (!gridSolid(br)) continue;
+        gridYLo = std::min(gridYLo, br.box.mn.y); gridYHi = std::max(gridYHi, br.box.mx.y);
         GridSpan sp = gridSpan(br.box, gridX0, gridZ0, gridW, gridH);
         for (int z = sp.z0; z <= sp.z1; z++)
             for (int x = sp.x0; x <= sp.x1; x++) cells[(size_t)z * gridW + x].end++;   // (end holds the count for now)
@@ -1324,6 +1332,7 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         if (op == 1) for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] + (d[k] >= ix));
         else for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] - (d[k] > ix));
     }
+    if (newSolid) { gridYLo = std::min(gridYLo, b.box.mn.y); gridYHi = std::max(gridYHi, b.box.mx.y); }
     if (newSolid)   // into its cells, keeping each cell in brush order
         for (int z = sn.z0; z <= sn.z1; z++)
             for (int x = sn.x0; x <= sn.x1; x++) {
@@ -1395,6 +1404,11 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
         t0 = std::max(t0, a); t1 = std::min(t1, b);
         if (t0 > t1) return;
     }
+    // ...and stop where it leaves the grid's solid Y slab for good (half a metre past it, so rounding never loses a
+    // hit on its top or bottom face): no brush can be hit beyond, and an escaping ray stops after a cell or two.
+    if (std::fabs(d.y) < 1e-9f) { if (o.y < m.gridYLo - 0.5f || o.y > m.gridYHi + 0.5f) return; }
+    else t1 = std::min(t1, ((d.y > 0 ? m.gridYHi + 0.5f : m.gridYLo - 0.5f) - o.y) / d.y);
+    if (t0 > t1) return;
     float px = o.x + d.x * t0, pz = o.z + d.z * t0;
     int cx = std::min(m.gridW - 1, std::max(0, (int)((px - m.gridX0) / Map::kCell)));
     int cz = std::min(m.gridH - 1, std::max(0, (int)((pz - m.gridZ0) / Map::kCell)));
@@ -1462,19 +1476,43 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     return best;
 }
 
-bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist, bool hitClip) const {
-    Vec3 inv = safeInv(dir);
+// raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
+// them being the same). Learn: note in *learn where the blocker was found.
+static bool skipsSight(const Brush& br, bool hitClip) { return br.material == 9 && !hitClip; }   // clip: players only (light, sight and shots pass)
+template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
-    walkCells(*this, o, dir, maxDist, [&](size_t c, float) {
-        for (uint32_t k = cells[c].start, e = cells[c].end; k < e && !hit; k++) {
-            const Brush& br = brushes[cellBrushes[k]];
-            if (br.material == 9 && !hitClip) continue;   // clip: players only (light, sight and shots pass)
+    walkCells(m, o, dir, maxDist, [&](size_t c, float) {
+        for (uint32_t k = m.cells[c].start, e = m.cells[c].end; k < e && !hit; k++) {
+            const Brush& br = m.brushes[m.cellBrushes[k]];
+            if (skipsSight(br, hitClip)) continue;
             hit = rayAABB(o, inv, br.box, maxDist) >= 0;
+            if (Learn && hit) *learn = {(uint32_t)c, k, -1};
         }
         return !hit;
     });
-    for (const AABB& b : dynSolids) hit = hit || rayAABB(o, inv, b, maxDist) >= 0;
+    for (size_t j = 0; j < m.dynSolids.size() && !hit; j++)
+        if (rayAABB(o, inv, m.dynSolids[j], maxDist) >= 0) { hit = true; if (Learn) *learn = {UINT32_MAX, 0, (int32_t)j}; }
     return hit;
+}
+
+bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist, bool hitClip) const {
+    return castAny<false>(*this, o, dir, safeInv(dir), maxDist, hitClip, nullptr);
+}
+
+bool Map::raycastAnyHinted(const Vec3& o, const Vec3& dir, float maxDist, RayHint& hint, bool hitClip) const {
+    Vec3 inv = safeInv(dir);
+    // the hint first (see map.h): each test here is one castAny makes, on the same numbers, so "blocked" here is its answer
+    if (hint.dyn >= 0) {
+        if ((size_t)hint.dyn < dynSolids.size() && rayAABB(o, inv, dynSolids[hint.dyn], maxDist) >= 0) return true;
+    } else if (hint.cell < cells.size() && hint.ref >= cells[hint.cell].start && hint.ref < cells[hint.cell].end) {
+        const Brush& br = brushes[cellBrushes[hint.ref]];
+        if (!skipsSight(br, hitClip) && rayAABB(o, inv, br.box, maxDist) >= 0) {
+            bool reached = false;
+            walkCells(*this, o, dir, maxDist, [&](size_t c, float) { reached = c == hint.cell; return !reached; });
+            if (reached) return true;
+        }
+    }
+    return castAny<true>(*this, o, dir, inv, maxDist, hitClip, &hint);   // (a clear ray keeps its hint: the next may be blocked again)
 }
 
 bool Map::supportsMode(int mode) const {

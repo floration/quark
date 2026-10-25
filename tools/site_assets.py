@@ -3,7 +3,7 @@
     python3 tools/site_assets.py                       local: export from build/quark_tests, into site/assets/data/production
     python3 tools/site_assets.py --channel testing     the same, as the TESTING channel's data
     python3 tools/site_assets.py --studio build/studio --out DIR     CI: from tools/studio/build.py's output into DIR
-The data is the Asset Studio's (docs/ASSETS.md): `build/quark_tests exportassets <dir>` writes every asset and
+The data is the asset export's (docs/ASSETS.md): `build/quark_tests exportassets <dir>` writes every asset and
 manifest.json, `tools/studio/build.py <dir>` turns that into build/studio/. This keeps the categories the two pages
 show (Models, Maps, Sounds, Voices: the site already has its pictures, and the font / icon / data aren't shown) and
 writes them with a manifest.json of the same format. CI publishes it under assets/data/production/ (pages job) and

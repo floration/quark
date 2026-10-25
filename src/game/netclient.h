@@ -6,6 +6,7 @@
 #include <thread>
 #include <array>
 #include <deque>
+#include <map>
 #include <string>
 #include <vector>
 #include "../common/asyncwriter.h"
@@ -63,13 +64,29 @@ public:
     static constexpr uint32_t kCmdRing = 1024;     // commands (and predicted states) kept for replay: over 1 s at 1000 Hz
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
+    void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
+    Vec3 visualPos_;
+    bool visualOk_ = false;
+    // What your predicted movement did (ME_*) in the ticks since the last call, and the hardest landing's speed: your
+    // jump / land / dash sounds play from it (state compares once a frame missed a bhop's land + jump in one tick)
+    uint8_t takeMoveEvents(float* landSpeed) { uint8_t e = moveEv_; *landSpeed = moveLand_; moveEv_ = 0; moveLand_ = 0; return e; }
+    // Everyone else's movement events (PlayerSnap::keys' KEY_EV_* bits), each once, in snapshot order: the next one due by
+    // server time `upTo` (render time: when that player is drawn there). False: none due.
+    struct RemoteMoveEvent { double time; uint8_t id; uint16_t ev; };
+    bool nextRemoteMoveEvent(double upTo, RemoteMoveEvent* out) {
+        if (remoteEvHead_ == remoteEvTail_ || remoteEv_[remoteEvHead_ % kRemoteEvRing].time > upTo) return false;
+        *out = remoteEv_[remoteEvHead_++ % kRemoteEvRing];
+        return true;
+    }
     bool selfAlive() const;
     int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
     int selfWeapon() const;
     // Interpolated view of every player at render time.
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
     PlayerArray interpolatedPlayers() const;
-    std::vector<ProjectileSnap> interpolatedProjectiles() const;   // the ones in sight (the server sends others as an id: NET-10)
+    void interpolatedPlayers(PlayerArray& out) const;   // (the same, into the caller's array: no 2.3 KB copy)
+    void interpolatedProjectiles(std::vector<ProjectileSnap>& out) const;   // the ones in sight (the server sends others as an id: NET-10)
+    std::vector<ProjectileSnap> interpolatedProjectiles() const { std::vector<ProjectileSnap> v; interpolatedProjectiles(v); return v; }
     // A sticky on a player (PROJ_ON_PLAYER): on that player as this client draws them (interpolated; yourself, alive
     // and not a demo: predicted, `alpha` between ticks as smoothedPos). False: they aren't drawn (out of sight).
     bool attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) const;
@@ -80,6 +97,7 @@ public:
     const std::vector<StuckProp>& stuckProps() const { return props_; }
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
+    const std::string& nameRef(int id) const;   // playerName without the copy (valid until the next poll / playback)
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
     int playerSoundPack(int id) const { return id >= 0 && id < kMaxPlayers ? packs_[id] : 0; }
     uint16_t playerNameColor(int id) const { return id >= 0 && id < kMaxPlayers ? nameColors_[id] : 0; }   // RGB565, 0 = default
@@ -87,6 +105,7 @@ public:
 
     // Reliable events received since last call.
     std::vector<GameEvent> takeEvents() { std::vector<GameEvent> e; e.swap(events_); return e; }
+    void takeEvents(std::vector<GameEvent>& out) { out.clear(); out.swap(events_); }   // (the two vectors trade their memory: no allocations)
     double renderTime() const { return renderTime_; }
     uint32_t serverTick() const { return hasSnapshot() ? latest().tick : 0; }
     int tickRate() const { return hasSnapshot() ? latest().tickRate : 1000; }
@@ -124,8 +143,10 @@ private:
     std::unique_ptr<AsyncFileWriter> rec_;   // (written on its own thread: no disk I/O in the frame loop)
     double recStart_ = 0, recLast_ = -1, recEvery_ = 0.016;
     uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;
-    Snapshot recPrev_;
+    Snapshot recPrev_, recCur_;
+    std::vector<uint8_t> recBuf_;
     bool recHavePrev_ = false;
+    uint16_t recMoveEv_[kMaxPlayers] = {};   // KEY_EV_* bits since the last recorded snapshot
     std::vector<GameEvent> recEvents_;
     struct Playback {
         bool active = false;
@@ -138,6 +159,11 @@ private:
         uint16_t proto = kProtocolVersion;   // the demo's (older snapshot headers read the way they were written)
     } play_;
     void onSnapshot(Snapshot& s);
+    void updateClock(double offset);         // the clock offset and jitter, from one snapshot's server time - now
+    void reconcile(const Snapshot& s);       // prediction against a snapshot's own state for its acked command
+    void afterSnapshots();                   // after a poll's snapshots: both, from the newest
+    double pendingOffset_ = 0;
+    bool havePendingOffset_ = false, reconcilePending_ = false;
     void sendInput();
     int inputBatch_ = 1, unsentCmds_ = 0;
     bool useMap(const std::string& name, const MapId& id); // load name (own copy, else a downloaded one) if it's that map
@@ -172,11 +198,18 @@ private:
     } dl_;
 
     std::deque<Snapshot> snaps_;
+    // snaps_.back()'s players by id (index into its players, 0xFF = none): findPlayer in O(1). Rebuilt whenever a
+    // snapshot is accepted (the only push); read only while snaps_ isn't empty, so a clear needs nothing.
+    uint8_t latestIdx_[kMaxPlayers] = {};
+    void indexLatest();
     static constexpr int kLateSamples = 512;
     float lateness_[kLateSamples] = {};
+    float latenessScratch_[kLateSamples] = {};   // (updateClock's percentile: no allocation)
     uint32_t latenessN_ = 0;
-    float jitterTarget_ = 0.009f, jitter_ = 0.009f; // start like the old fixed margin until measured
+    static constexpr float kJitterStart = 0.009f;
+    float jitterTarget_ = kJitterStart, jitter_ = kJitterStart; // start like the old fixed margin until measured
     double lastJitterUpdate_ = 0;
+    void resetJitter();   // a new server or demo: the old one's arrival pattern doesn't apply
     uint32_t baseMisses_ = 0;
     double snapRecvTime_ = 0;
     double clockOffset_ = 0;      // estimated serverTime - localTime
@@ -191,12 +224,22 @@ private:
     MoveState predicted_[kCmdRing];        // our predicted state after each command
     uint32_t predictedSeq_[kCmdRing] = {};
     uint32_t lastReplay_ = 0;
+    bool hookProbe(const UserCmd& cmd, HookProbe& probe);   // the enemies a grapple in cmd can catch (F20)
+    PlayerArray probePlayers_;
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; } hookCatch_;   // the last predicted catch, for replays
+    uint8_t moveEv_ = 0;
+    float moveLand_ = 0;
+    static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)
+    RemoteMoveEvent remoteEv_[kRemoteEvRing] = {};
+    uint32_t remoteEvHead_ = 0, remoteEvTail_ = 0;
     void resetPrediction();             // new connection or demo: none of the old commands apply
     uint32_t lossExpected_ = 0, lossReceived_ = 0;
     uint8_t lossPct_ = 0;
     int lossOverride_ = -1;
     Vec3 errorOffset_;
-    uint32_t lastEventId_ = 0;
+    uint32_t lastEventId_ = 0;         // every event up to this one handled: the ack (in a demo: the newest seen)
+    std::map<uint32_t, GameEvent> evHold_;   // (newer ones that came before a missing one: handled once it arrives, in order)
+    std::vector<GameEvent> evReady_;   // (this snapshot's events to handle, in order)
     std::vector<GameEvent> events_;
     std::vector<StuckProp> props_;
     uint32_t propPlayers_ = 0;   // players with a prop in them

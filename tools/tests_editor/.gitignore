@@ -1,0 +1,4 @@
+# state of a running tests editor (runs, logs, backups of saved files) and its own config: never commit
+cache/
+tests_editor.json
+__pycache__/

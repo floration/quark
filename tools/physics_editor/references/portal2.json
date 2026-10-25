@@ -1,0 +1,70 @@
+{
+ "id": "portal2",
+ "name": "Portal 2",
+ "year": 2011,
+ "engine": "Source",
+ "group": "Source family",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.025,
+  "why": "assumed Source's 72 u player (as Half-Life 2), scaled to 1.8 m: 0.025 m/u"
+ },
+ "values": {
+  "gravity": {
+   "value": 15.0,
+   "unit": "m/s2",
+   "mult": 0.6818,
+   "source": "https://developer.valvesoftware.com/wiki/Gravity (sv_gravity 600 in Half-Life 2, Portal and Portal 2)",
+   "confidence": "exact",
+   "raw": "sv_gravity 600 u/s2"
+  },
+  "speed": {
+   "value": 4.375,
+   "unit": "m/s",
+   "mult": 0.4605,
+   "source": "https://rules.portal2.sr/ (cl_forwardspeed / cl_sidespeed / cl_backspeed allowed 0 .. 175)",
+   "confidence": "measured",
+   "raw": "cl_forwardspeed 175 u/s",
+   "note": "the speedrun rules cap the move-speed cvars at 175, the game's default walk speed"
+  },
+  "step": {
+   "value": 0.45,
+   "unit": "m",
+   "mult": 0.8182,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L100 (Source's sv_stepsize 18)",
+   "confidence": "estimated",
+   "raw": "sv_stepsize 18 u",
+   "note": "Source's default, assumed unchanged"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://rules.portal2.sr/",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://rules.portal2.sr/",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {},
+ "extras": [
+  "portals keep your momentum (flings)",
+  "gels: repulsion (bounce) and propulsion (speed)",
+  "aerial faith plates, excursion funnels",
+  "air control is limited (a puzzle game, not a strafe game)"
+ ],
+ "notes": "Portal 2's game code isn't public; gravity from the Valve Developer wiki, walk speed from the speedrun rules' cvar limits. Acceleration, friction and jump weren't found.",
+ "sources": [
+  {
+   "title": "Valve Developer Community: Gravity",
+   "url": "https://developer.valvesoftware.com/wiki/Gravity"
+  },
+  {
+   "title": "Portal 2 speedrun rules (cvar limits)",
+   "url": "https://rules.portal2.sr/"
+  }
+ ]
+}

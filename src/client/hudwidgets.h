@@ -29,6 +29,7 @@ struct HudWidget {
 class HudWidgets {
 public:
     void poll(const std::string& path);      // (re)load when the file's mtime changes; cheap stat once a second
+    bool pollDue() const;                    // a second since the last poll: poll() would look at the file
     bool empty() const { return widgets_.empty(); }
     void draw(Renderer& r, const HudVals& vals, float W, float H, float s) const;
     const std::string& error() const { return error_; }

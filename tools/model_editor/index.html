@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Model Editor</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><b>QUARK</b> MODEL EDITOR <span id="gameVersion" class="faint"></span></div>
+  <nav id="tabs">
+    <button data-mode="orbit" title="The model alone, to edit (1)">Orbit</button>
+    <button data-mode="fp" title="First person: your viewmodel, as the game places it (2)">First person</button>
+    <button data-mode="tp" title="Third person: a player with the gun arm, holding a weapon, wearing the crown (3)">Third person</button>
+    <button data-mode="flight" title="A projectile in flight with its trail (4)">In flight</button>
+    <button data-mode="lineup" title="The game's screenshot lineup (quark --models) (5)">Lineup</button>
+    <button data-mode="track" title="A payload track: the cart, checkpoint gates, the track line (6)">Track</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="tb">
+    <button id="btnUndo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="btnRedo" title="Redo (Ctrl+Shift+Z / Ctrl+Y)">Redo</button>
+    <span class="sep"></span>
+    <button id="btnImport" title="Replace the selected model with a .glb / .gltf (or drop one on the page)">Import .glb</button>
+    <input type="file" id="fileImport" multiple accept=".glb,.gltf,.bin" hidden>
+    <div class="menu"><button>Project</button>
+      <div class="menu-list">
+        <button id="btnSaveProject">Save project file (.json)</button>
+        <button id="btnLoadProject">Open project file...</button>
+        <input type="file" id="fileProject" accept=".json,application/json" hidden>
+        <button id="btnLoadFolder">Load the models in an overrides folder...</button>
+        <button id="btnProvDownload">Download provenance.json</button>
+        <button id="btnResetProject">New project (discard all edits)</button>
+      </div>
+    </div>
+    <button id="btnTry" title="Write the edited models into the game's overrides folder (%APPDATA%\quark\overrides) and start the game on this model's view">Try in game</button>
+    <button id="btnExport" class="primary" title="Write the edited models for the game">Export to game</button>
+    <span class="sep"></span>
+    <button id="btnHelp" title="Keyboard shortcuts (?)">?</button>
+  </div>
+</header>
+
+<div id="banner" hidden></div>
+
+<main id="main">
+  <aside id="lib">
+    <div class="lib-head"><input type="search" id="libFilter" placeholder="filter: name, description, box" title="Matches the model's path, its description and its box names"><label class="chk"><input type="checkbox" id="libEdited"> edited</label></div>
+    <div class="lib-stats"><span id="libProgress" title="Models by origin, as they are now (your edits included): the goal is every model human-made"></span><span class="spacer"></span>
+      <select id="libOrigin" title="Show only the models of one origin"><option value="">every origin</option><option value="human">human</option><option value="ai">ai</option><option value="third-party">3rd party</option></select></div>
+    <div id="libList"></div>
+  </aside>
+  <div id="libResize" title="Drag to resize the library (double-click: the default width)"></div>
+
+  <section id="stage">
+    <div class="toolbar" id="viewBar">
+      <label title="The map's palette: base / metal / glow colours, sky, sun direction">Map <select id="vPalette"></select></label>
+      <label title="Team colour (config.h: friendly cyan, enemy red)">Team <select id="vTeam"><option value="enemy">enemy</option><option value="friendly">friendly</option></select></label>
+      <label title="How the model is drawn: the game's own boxes (outlines, part animations), a box model file (the same box path; projectiles drawn still) or a mesh override (no outline)">Draw as <select id="vDrawAs">
+        <option value="auto">auto (as the game will)</option><option value="builtin">the game's own boxes</option><option value="boxfile">box model file (.glb)</option><option value="mesh">mesh (no box list)</option></select></label>
+      <label class="chk"><input type="checkbox" id="vPlay"> animate</label>
+      <label class="chk"><input type="checkbox" id="vCrouch"> crouch</label>
+      <label class="chk"><input type="checkbox" id="vHitbox"> hitbox</label>
+      <label class="chk" title="Outline what the edit started from (the shipped model, else the default) over it: compare sizes while editing"><input type="checkbox" id="vGhost"> ghost</label>
+      <label class="chk"><input type="checkbox" id="vGrid"> grid</label>
+      <label class="chk" title="The shadow map (players shadow themselves and each other)"><input type="checkbox" id="vShadows"> shadows</label>
+      <label class="chk" title="In the sun (the game's sun visibility ray; off: in shade)"><input type="checkbox" id="vSun"> in sun</label>
+      <div class="menu"><button>More</button>
+        <div class="menu-list wide" id="moreMenu">
+          <div class="mrow"><span>Outline</span><select id="vOutline"><option>black</option><option>white</option><option>team</option><option>red</option><option>yellow</option><option>green</option><option>cyan</option><option>magenta</option></select>
+            <span>width</span><input type="number" id="vOutlineW" min="0" max="4" step="0.5"></div>
+          <div class="mrow"><span>Field of view</span><input type="number" id="vFov" min="60" max="140" step="1"><span>Brightness</span><input type="number" id="vBright" min="0.6" max="1.8" step="0.05"></div>
+          <div class="mrow"><span>Camera yaw</span><input type="number" id="vYaw" step="1"><span>pitch</span><input type="number" id="vPitch" step="1" min="-89" max="89"><span class="faint">(first person, lineup: = --yaw / --pitch)</span></div>
+          <div class="mrow"><span>Viewmodel x</span><input type="number" id="vVmX" step="5"><span>y</span><input type="number" id="vVmY" step="5"><span>depth</span><input type="number" id="vVmZ" step="5"><span>size</span><input type="number" id="vVmScale" step="0.05" min="0.3" max="2"></div>
+          <div class="mrow"><span>Viewmodel colour</span><input type="color" id="vVmColor"><label class="chk"><input type="checkbox" id="vVmCustom"> custom (else friendly)</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vFpLineup"> first person: the lineup ahead</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vHoldIt"> players hold the weapon ("it" in hide and seek / tag)</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vCrown"> crown on the head</label><select id="vCrownPlace"><option value="1">#1 gold</option><option value="2">2-10 silver</option></select></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vLineupTeams"> lineup: alternate teams (a team mode)</label><label class="chk"><input type="checkbox" id="vLanded"> sticky: landed</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vBombLineup"> bomb mode: players carry the bomb, a dropped bomb ahead</label><label class="chk"><input type="checkbox" id="vBombBlink"> bomb: planted, blinking red</label></div>
+          <div class="mrow"><label class="chk"><input type="checkbox" id="vCartNeutral"> cart: neutral (no team pushing)</label><label class="chk"><input type="checkbox" id="vGateReached"> gate: reached (orbit)</label></div>
+          <div class="mrow"><span>Flight speed</span><input type="number" id="vSpeed" step="0.25" min="0.25" max="4"><label class="chk"><input type="checkbox" id="vGround"> floor</label></div>
+          <div class="mrow"><button id="vReset">Reset the view settings</button><button id="vShot">Save viewport as PNG</button></div>
+        </div>
+      </div>
+      <button id="btnFrame" title="Frame the model (F)">Frame</button>
+      <span class="spacer"></span>
+      <span id="gizmoMode" class="seg"><button data-g="move" class="on" title="Drag the axis handles to move the box (W)">Move</button><button data-g="size" title="Drag the axis handles to resize the box on that side (E)">Resize</button></span>
+    </div>
+    <div id="viewport"><canvas id="gl"></canvas><div id="hud"></div><div id="fps" class="faint"></div></div>
+  </section>
+
+  <aside id="panel"><div class="empty">Pick a model on the left.</div></aside>
+</main>
+
+<div id="dropHint" hidden><div>Drop a .glb / .gltf: it replaces the selected model (a box model exported by this editor opens as boxes again).</div></div>
+<div id="toast"></div>
+<dialog id="dlg"><form method="dialog" id="dlgBody"></form></dialog>
+
+<script src="js/data.js"></script>
+<script src="js/gltf.js"></script>
+<script src="js/render.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/export.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/boot.js"></script>
+</body>
+</html>

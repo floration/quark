@@ -39,6 +39,7 @@ public:
     bool hasReplies() const { return hasReplies_.load(std::memory_order_relaxed); }
     std::vector<std::pair<std::string, std::string>> takeReplies();
     static constexpr size_t kMaxReplies = 64;   // replies kept until taken (like the 64 queued posts)
+    size_t queuedPosts() { std::lock_guard<std::mutex> l(mu_); return posts_.size(); }   // (tests: not yet sent)
 private:
     void run();
     void runLoop();

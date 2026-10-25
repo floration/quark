@@ -55,7 +55,9 @@ def build():
     m.box(11, 6.5, -17, 26, 6.9, 17, accent=True)
     for z in range(-14, 15, 7): m.glow(13, 6.38, z - 0.4, 24, 6.5, z + 0.4); m.light(18.5, 5.6, z, 9, 0.7, fixture=False)
     # the gatehouse at the attackers' entry: a roofed shelter to stack up under before the push
-    for (x, z) in ((-8, 26), (8, 26), (-8, 33.5), (8, 33.5)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 4.2, z + 0.3)
+    # (the front posts stand in the front wall's ends: a post a step behind it left a 0.7 m gap, too narrow for a
+    # player, that bots' paths took round the wall and stuck in - F10)
+    for (x, z) in ((-8, 24.7), (8, 24.7), (-8, 33.5), (8, 33.5)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 4.2, z + 0.3)
     m.box(-9, 4.2, 25, 9, 4.6, 34, accent=True); m.glow(-9, 4.05, 25, 9, 4.2, 25.15); m.light(0, 3.6, 29.5, 9, 0.7, fixture=False)
     m.box(-8.4, 0, 24.6, 8.4, 4.05, 25.0, accent=True)                          # its front wall: out round the sides (no sightline to B's spawn)
     # the yard: a corrugated perimeter fence and floodlights on the corner columns

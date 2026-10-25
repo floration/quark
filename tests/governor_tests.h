@@ -202,7 +202,7 @@ static void testGovernorPolicy() {
     }
 }
 
-// Two servers in this process sharing a governor directory, production overloaded (a client losing snapshots): the
+// Two servers in this process sharing a governor directory, production overloaded (its clients losing snapshots): the
 // empty testing server is throttled to 125 Hz first, then production; both at 125 and production still overloaded:
 // testing closes (refuses connects); calm again: testing reopens and both climb back, production first.
 static void testGovernorTwoServers(uint16_t port) {
@@ -229,24 +229,28 @@ static void testGovernorTwoServers(uint16_t port) {
     test.setLog([&](const std::string& l) { std::lock_guard<std::mutex> g(logMu); logs.push_back("testing: " + l); });
     std::string e;
     if (!prod.start(pc, &e) || !test.start(tc, &e)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e.c_str()); g_fail++; prod.stop(); test.stop(); return; }
-    NetClient a;
+    // The load signal is the players' reported loss alone: this machine's own stalls (other test groups run beside
+    // this one) would read as overload on top of it, or keep "calm" from coming.
+    prod.rateStalls_ = test.rateStalls_ = false;
+    NetClient a, a2;   // (two: one player losing snapshots is that player's connection, not the machine)
     a.connect("127.0.0.1:" + std::to_string(pc.port), "player");
-    std::vector<NetClient*> cls = {&a};
+    a2.connect("127.0.0.1:" + std::to_string(pc.port), "player2");
+    std::vector<NetClient*> cls = {&a, &a2};
     std::vector<NetClient*> none;
     auto both = [&](double secs, const std::function<bool()>& until) {   // both servers' loops (and the client)
         double end = timeNow() + secs, nextTick = timeNow();
         while (timeNow() < end && !until()) {
             prod.frame(); test.frame();
-            a.poll();
-            while (timeNow() >= nextTick) { a.tick(UserCmd()); nextTick += a.tickPeriod(); }
+            a.poll(); a2.poll();
+            while (timeNow() >= nextTick) { a.tick(UserCmd()); a2.tick(UserCmd()); nextTick += a.tickPeriod(); }
             sleepMs(1);
         }
     };
-    both(1.0, [&] { return a.state() == ConnState::Connected && a.hasSnapshot(); });
-    CHECK(a.state() == ConnState::Connected && prod.tickRate() == 1000 && test.tickRate() == 1000);
+    both(1.0, [&] { return a.state() == ConnState::Connected && a.hasSnapshot() && a2.hasSnapshot(); });
+    CHECK(a.state() == ConnState::Connected && a2.hasSnapshot() && prod.tickRate() == 1000 && test.tickRate() == 1000);
     both(1.0, [&] { return prod.gov_->active.load() && test.gov_->active.load(); });
     CHECK(prod.gov_->active.load() && test.gov_->active.load());   // each sees the other: governed
-    a.overrideReportedLoss(50);   // production's player loses snapshots: the machine is "overloaded"
+    a.overrideReportedLoss(50); a2.overrideReportedLoss(50);   // production's players lose snapshots: the machine is "overloaded"
     // testing (empty) goes to 125 Hz before production moves at all
     double prodFirstDrop = -1, testAtFloor = -1;
     double t0 = timeNow();
@@ -267,12 +271,12 @@ static void testGovernorTwoServers(uint16_t port) {
         b.connect("127.0.0.1:" + std::to_string(tc.port), "late");
         std::vector<NetClient*> bc = {&b};
         double end = timeNow() + 3;
-        while (timeNow() < end && b.state() != ConnState::Disconnected) { prod.frame(); test.frame(); b.poll(); a.poll(); b.tick(UserCmd()); sleepMs(1); }
+        while (timeNow() < end && b.state() != ConnState::Disconnected) { prod.frame(); test.frame(); b.poll(); a.poll(); a2.poll(); b.tick(UserCmd()); sleepMs(1); }
         printf("  connecting to the closed testing server: %s\n", b.error().c_str());
         CHECK(b.error().find("testing server closed") != std::string::npos);
     }
     // calm again: testing reopens (at 125 Hz), then caps rise one step per calm period, production first
-    a.overrideReportedLoss(0);
+    a.overrideReportedLoss(0); a2.overrideReportedLoss(0);
     both(20.0, [&] { return !test.closed_; });
     CHECK(!test.closed_ && test.tickRate() == 125);
     double prodTop = -1, testRise = -1;
@@ -304,6 +308,12 @@ static void testGovernorTwoServers(uint16_t port) {
 // that the server never tries.)
 static void testRankedNotRated(uint16_t port) {
     printf("ranked on a testing server: played, never rated\n");
+    {   // a testing build (a -test. version) never rates, whatever channel it's given (the tests run pinned to production)
+        pinTestingBuildForTests(1);
+        { Server t; CHECK(testingBuild() && !t.rated()); }
+        pinTestingBuildForTests(0);
+        { Server t; CHECK(!testingBuild() && t.rated()); }
+    }
     for (int ch : {GOV_PROD, GOV_TESTING}) {
         Server s;
         ServerConfig cfg;

@@ -21,7 +21,9 @@
 #include "bots.h"
 #include "master.h"
 #include "customrules.h"
+#include "modeparams.h"
 #include "ranked.h"
+#include "weaponset.h"
 
 // Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
 // them back by reconnecting (matched by their proven ranked id, else by the token from PKT_ACCEPT).
@@ -36,6 +38,12 @@ constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
+struct GameEvent;
+class Server;
+struct ModeHooks;
+struct ModeLogic;
+// Tests only: sees every event Server::broadcastEvent sends (the mode lockstep and the rules traces compare them).
+extern void (*g_eventHook)(const Server& s, const GameEvent& e);
 
 struct ServerConfig {
     std::string name = "quark server";
@@ -46,12 +54,15 @@ struct ServerConfig {
     bool upnp = false;          // try to open the port on the router automatically
     int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
     int snapRate = 500;         // snapshots per second to each client (<= tick rate): 1000 = lowest latency, lower = less CPU / bandwidth
+    int tickSpinUs = -1;        // spin this long before each tick (humans on): -1 adaptive (net.h WakeSpin), 0 never
+    int maxUploadKbps = 0;      // upload cap, kilobits/s (IP + UDP headers counted): past 90% the snapshot rate steps down, then the tick rate; 0 = none
     // Bots
     bool balanceBots = true;    // team modes: an extra bot joins the side with fewer humans (vote can turn off)
     int balanceBotSkill = BOT_INTERMEDIATE;
     bool vsBots = false;        // "play vs bots": fixed bots, humans always on team A
     bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
+    std::string botBrain;       // bots/<name>.qbrain that bots play (tools/bots/GRAMMAR.md); empty = the built-in one. Never on ranked or time trial
     bool lanOnly = false;
     // More addresses ("host:port") that reach this server, for checking ranked signatures (REVIEW 2.2): needed only
     // when players dial an address the server can't see itself (a router forwarding another port to it, a container).
@@ -87,6 +98,7 @@ struct ServerConfig {
     std::string governorDir;
     GovParams governor;              // (tests shorten its windows)
     double governorInterval = 1.0;   // seconds between status rounds
+    bool pauseWithoutHumans = false; // dedicated servers (src/server/main.cpp): no humans on, no ticks (bots wait; Server::updatePause)
     CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
@@ -123,6 +135,7 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
+    int prevWeapon = -1;         // the weapon held before this one this life (a throw switches back to it; -1: none)
     double knifeBackAt = 0;      // a thrown knife is away (disabled) until then: it can't be drawn or used before it
     double syringeBackAt = 0;    // ...and a thrown syringe
     double backAt(int w) const { return w == WPN_KNIFE ? knifeBackAt : w == WPN_SYRINGE ? syringeBackAt : 0; }
@@ -139,6 +152,7 @@ struct ServerPlayer {
     std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
+    double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
     double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
@@ -161,6 +175,7 @@ struct ServerPlayer {
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
+    uint16_t moveEv = 0;        // KEY_EV_* bits: what its movement did since the last snapshots (sendSnapshots clears it)
     float chatTokens = kChatBurst; // say: a burst, then one a second (REVIEW NET-7)
     double chatAt = 0;
     uint32_t strTick = 0;       // string commands handled this tick (a budget: the rest wait, the client resends them)
@@ -171,6 +186,9 @@ struct ServerPlayer {
     float catchUp = kCatchUpMax; // extra commands it may run to clear a backlog (refills very slowly)
     uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
+    uint8_t windowLoss = 0;     // the rate test: the most it reported this window
+    float windowPingMin = 0;    // ... its lowest ping this window (0: none yet)
+    float pingBase = 0;         // ... and its ping when the server's uplink isn't queueing (0: not known yet)
     uint64_t lastViewTick = 0;   // the server ms its last command was looking at (unwrapped, see fromWireMs)
     uint16_t interpMs = 0;        // the fixed interpolation delay the client reported ("interp"; 0 = adaptive)
     double lastRecv = 0;
@@ -192,11 +210,28 @@ struct ServerPlayer {
     double projSeen[kMaxProjectiles] = {};
     double projDue[kMaxProjectiles] = {};
     int specTarget = -1;        // dead: whose view this client watches ("spectate <id>"; the killer at first): what it's sent
+    int killCamOf = -1;         // dead: the killer, watchable until killCamUntil even in team modes (then teammates only)
+    double killCamUntil = 0;
+    // The last enemy who hit or knocked this player (rocket, bolt, grapple pull...): a fall or lava within
+    // kRingOutCredit of it, or a "kill", is their kill (ring-outs). joinId: a newcomer in their slot isn't them.
+    int lastHitBy = -1;
+    uint32_t lastHitByJoin = 0;
+    double lastHitByAt = -1e9;
+    // The command clock (seconds on the server clock): advanced by each command's msec, kept within
+    // [time() - kCmdClockLag, time()]. Refire is timed by it (the Quake 3 way) rather than by when a packet arrived,
+    // so a shot fires on the command that ends its cooldown, with that command's aim. -1: no command yet.
+    double cmdTime = -1;
+    double muffledScanAt = 0;              // X9: this player's next shot that may be heard muffled (a scan at most 20 a second)
+    double muffledAt[kMaxPlayers] = {};    // ...and when each listener may next be sent one
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
     static constexpr int kHistory = 1024; // >= 1 s at any tick rate
     Hist history[kHistory];
+    // The newest histRun entries (the records at ticks histTick, histTick - 1, ...) were written by consecutive ticks'
+    // records with rising times, histMs the newest: rewoundPos binary-searches them instead of walking (the same entry)
+    uint32_t histRun = 0, histTick = 0;
+    uint64_t histMs = 0;
 };
 
 struct Projectile {
@@ -207,7 +242,8 @@ struct Projectile {
     Vec3 pos, vel;
     double dieAt = 0;
     double armAt = 0;    // stickies can't be detonated before this
-    float gravMul = 1;  // a rocket lob (alt-fire): kRocketLobGravity (it drops; the primary flies straight)
+    float gravMul = 1;  // a rocket lob (alt-fire): kRocketLobGravity, a marker (it drops at weaponAlt().lobGravity; the primary flies straight)
+    bool alt = false;   // fired with alt-fire (lob, throw, stream): the weapon set logic's `alt`
     bool stuck = false; // stickies: attached to a surface
     bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
     Vec3 cartOffset;
@@ -276,7 +312,17 @@ public:
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
     double rateUpWait_ = 60;
     bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
+    std::string rateDownWhy_;      // ... what it saw
+    int lateWindows_ = 0;          // judged windows in a row with late ticks / stalls (kLateWindows; 0 after a rate change)
+    double lateSince_ = -1e9;      // ... when the first of them ended (a step up's undo counts from it)
     double rateRaisedAt_ = -1e9;   // the last step up: undone in any phase if it doesn't hold for 3 windows (REVIEW 6.1)
+    bool rateRaisedSnap_ = false;  // ... and it raised the snapshot rate, not the tick rate
+    int snapCap_ = 0;              // the rate test's snapshot rate cap (bandwidth short: lowered before the tick rate); 0 = none
+    double rateWindow_ = 3.0;      // seconds per rate test window (tests shorten it)
+    std::string rateWhy_;          // the last automatic rate change and why (status)
+    double stallAfter_ = 1, stallUpAfter_ = 1;   // real seconds late past which a tick is a stall, now / at the next step up
+    bool rateStalls_ = true;       // tests only: false leaves stalls out of the rate test (loss / bandwidth tests on a busy box)
+    double upKbps_ = -1, downKbps_ = 0, upPps_ = 0, downPps_ = 0, stallPct_ = 0;   // the last window's (status; -1: none yet)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime
@@ -312,12 +358,15 @@ public:
     // once the ring's vectors have grown (PERF-8).
     std::vector<PlayerSnap> snapPlayers_;
     std::vector<ProjectileSnap> snapProj_;
-    int snapEvery() const {
-        int rate = std::min(cfg_.snapRate, tickRate());
+    int snapEvery() const { return snapEveryAt(tickRate(), snapCap_); }
+    int snapRate() const { return tickRate() / snapEvery(); }   // snapshots per second each client gets
+    int snapEveryAt(int hz, int snapCap) const {   // at that tick rate, with that cap
+        int rate = std::min(cfg_.snapRate, hz);
+        if (snapCap > 0) rate = std::min(rate, snapCap);
         if (cfg_.maxPlayers > 24) rate = std::min(rate, 250);       // big servers: upload bandwidth grows with players x rate
         else if (cfg_.maxPlayers > 16) rate = std::min(rate, 333);
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
-        return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
+        return std::max(1, (int)std::ceil((float)hz / std::max(1, rate) - 0.02f));
     }
     // Hide and seek tiebreak (owner B8; gamemodes.cpp): rock paper scissors among those tied for first, in the match's
     // last round end (ModeState MS_RPS). Every change goes out as an EV_RPS (and to anyone joining: rpsEvent_).
@@ -333,18 +382,43 @@ public:
     GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
+    // not ranked: a match that had both sides and lost one (or everyone) is on hold (short_), since shortSince_ (F5)
+    bool short_ = false;
+    double shortSince_ = 0;
+    bool matchManned_ = false;   // this match has had enough players at some point (a forced short-handed start hasn't)
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping
     double payloadIdleSince_ = 0;
     float bestProgress_[2] = {0, 0};
     float completeTime_[2] = {0, 0};
+    float bestTime_[2] = {0, 0};   // payload / multi point: when (since the round went live) each attack reached its best (T17)
     float kothPoints_[2] = {0, 0};
     double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
+    // the mode's rules (gamemodes.cpp)
+    const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)
+    ModeHooks* modeHooks_ = nullptr;   // a custom mode's logic (phase 3 of the mode editor); null: every slot native
+    uint32_t phaseSerial_ = 0;   // counts phase changes: a slot that ended the round or the match changed it
+    float liveLength_ = 0;       // the round clock the round went live with (race splits)
+    int cartNear_[2] = {0, 0};   // players of each team alive at the cart at the last cart step (the logic's cart.near)
+    bool cartDelivered_ = false; // the delivered event was raised this round (once a round)
+    // ---- a custom mode's logic (tools/modes/GRAMMAR.md; design.md 4): compiled at start() from cfg.custom's logic
+    // block, or the one preset below. Never on ranked or time trial servers, and only while the server plays the
+    // logic's base mode (rulesReset sets modeHooks_ from modeLogicHooks_).
+    // Before start(): play this .qmode's logic (the whole file: key lines and logic; base: MODE_* it plays as, -1 its
+    // mode= key). False and *err (line:col message) if it doesn't compile; nothing is kept then. The mode editor's
+    // headless sim calls it (its key lines still go in ServerConfig::custom, as for any custom mode).
+    bool presetModeLogic(const std::string& qmodeText, int base, std::string* err);
+    void presetModeLogic(std::shared_ptr<const ModeLogic> logic);   // a compiled one (null: none; the lockstep tests)
+    const ModeLogic* modeLogic() const { return modeLogic_.get(); }   // the logic this server plays (null: none)
+    const std::string& modeLabel() const { return modeLabel_; }      // its name#hash8 ("": none)
+    std::shared_ptr<const ModeLogic> presetLogic_, modeLogic_;
+    std::shared_ptr<ModeHooks> modeLogicHooks_;
+    std::string modeLabel_;
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;
-    int addBot(int team, int skill, bool balance = false);
+    int addBot(int team, int skill, bool balance = false, const std::string* brain = nullptr);   // brain: a brain file's name (null: cfg botBrain)
     void removeBot(int id);
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
@@ -377,6 +451,10 @@ public:
     void killPlayer(int victim, int killer, int weapon);
     void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
+    int ringOutKiller(int victim) const;
+    void muffledGunfire(int shooter, int weapon);   // X9: EV_GUNFIRE to the players who can't see the shot but are near   // who a fall / lava / "kill" now credits (T21), or -1
+    // A weapon's hit on a player: the weapon set's hit / kill slots around damagePlayer (no set logic: damagePlayer)
+    void weaponHit(int victim, int attacker, float dmg, const Vec3& knock, int weapon, bool alt, float dist, bool direct, float splash);
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);
@@ -385,6 +463,7 @@ public:
     double hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
     bool hitHead_[kMaxPlayers][kMaxPlayers] = {};   // the batched hit is a headshot (EV_HIT text "h": a red number)
     bool hitPending_ = false;
+    uint32_t hitMask_[kMaxPlayers] = {};   // per attacker: the victims whose hitAccum_ may be waiting (a superset)
     void flushHit(int attacker, int victim);
     void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, float* dmgPer, float dmg);
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
@@ -426,6 +505,9 @@ public:
     void governorFrame(double now);
     bool applyGovernorCap(bool between);
     void setGovernorClosed(bool on);
+    // cfg_.pauseWithoutHumans: nobody to play for (bots alone, or empty): no ticks, no snapshots, the game clock stopped
+    bool paused_ = false;
+    void updatePause(double now);
     double nextFlagCheck_ = 0, restartAt_ = 0;
     void checkRestartFlag();
     std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended
@@ -504,14 +586,23 @@ public:
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
+    void runPlayerCmdForTest(int id, const UserCmd& c) { runPlayerCmd(id, c); }
+    void simulateForTest() { simulate(); }
+    Vec3 rewoundPosForTest(int i, uint64_t viewMs, bool* crouched) const { return rewoundPos(i, viewMs, crouched); }
+    uint32_t perspectivesForTest(int id) const { return perspectives(id); }
     void tickProjectilesForTest() { tickProjectiles(); }
     void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
+    // One tick on the game clock alone, no sockets or real time (frame()'s tick: the lockstep tests, headless tools)
+    void stepTick() { simulate(); tick_++; timeMs_ += 1000 / tickRate(); if (tick_ % snapEvery() == 0) sendSnapshots(); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
+    Vec3 shooterEye(int i) const { const MoveState& m = players_[i].move; return m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0); }
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;
     bool headHit_[kMaxPlayers] = {};   // this shot hit that player in the head (for the kill event)
+    float hitDist_[kMaxPlayers] = {};  // ...and how far from the shooter's eye (hitscan; the weapon set logic's `dist`)
+    WsTracker wsTrack_;                // the weapon set logic's streak / kills-this-life counts
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
     uint8_t arenaRules() const {
         uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
@@ -542,6 +633,7 @@ private:
     UdpSocket probeSock_;                     // separate ephemeral socket: no NAT mapping toward the prober for the game port
     uint32_t probeNonce_ = 0;
     double probeSentAt_ = 0, probeNextAt_ = 0;
+    double reachTickAt_ = 0;   // next tickReachability (frame runs it every 10 ms)
     int probeTries_ = 0;
     double probeStartedAt_ = 0;
     bool upnpWasDone_ = false;
@@ -582,6 +674,10 @@ private:
     void drainCmds(int id);
     void checkTickRate();
     void stepRateDown(const char* why);
+    bool stepSnapDown(const char* why);   // false: already at the floor (kSnapSteps)
+    int snapCapUp() const;                 // the cap one snapshot step up (0: none)
+    double stallAfter(int hz, int snapCap) const;   // real seconds late past which a tick is a stall
+    bool sendTo(const NetAddr& to, const uint8_t* data, size_t len);   // sock_.send, counted for the rate test
     void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
     // The grapple latched onto a player: the candidates a hook fired in this command can catch (where the shooter saw
@@ -594,6 +690,16 @@ private:
     void tickLatches();
     uint64_t rewindViewMs(int id, uint32_t viewTick) const;   // the view time lag compensation tests at (capped)
     Vec3 rewoundPos(int i, uint64_t viewMs, bool* crouched) const;   // where player i was at that view time
+    // fireWeapon's lag-compensated hit boxes, rewound once per shot (rwHave_ cleared at each shot): a shotgun blast's
+    // pellets and ricochets all test the same rewound players, and each rewind walks up to kMaxRewindMs of history
+    struct SpawnCand { const SpawnPoint* sp; float upper; int idx; bool low; float base; };
+    std::vector<SpawnCand> cands_;   // spawnPlayer's scratch
+    AABB rwBox_[kMaxPlayers];
+    uint32_t rwHave_ = 0;
+    const AABB& rewoundHitBox(int i, uint64_t viewMs) {
+        if (!(rwHave_ >> i & 1)) { bool c; Vec3 pos = rewoundPos(i, viewMs, &c); rwBox_[i] = hitBox(pos, c); rwHave_ |= 1u << i; }
+        return rwBox_[i];
+    }
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void stepProjectile(Projectile& pr);   // one fixed 1 ms step (kMoveStep): gravity, move, hit a wall / player
@@ -602,8 +708,8 @@ private:
     int projTargets_ = 0;                  // tickProjectiles: the live players' hitboxes this tick
     uint8_t projTargetId_[kMaxPlayers] = {};
     AABB projTargetBox_[kMaxPlayers];
-    void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
+    void explode(const Vec3& at, int owner, int weapon, int direct = -1, bool alt = false);   // direct: the player the projectile hit itself
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false, const WeaponExtra* ex = nullptr, float* headPerPlayer = nullptr);
     void sendSnapshots();
     void updateVisibility();
     uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
@@ -615,6 +721,10 @@ private:
     uint32_t perspectives(int id) const;   // the players whose sight a client gets (bit per player), 0 = sees everything
     void updatePlayerVisibility(uint32_t need, int viewers, int targets, int& budget, float eyeH);
     void updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH);
+    // what last blocked each viewer's sight of each player / projectile slot (Map::raycastAnyHinted: same answers,
+    // most hidden rays settled by one box test and a short cell walk)
+    Map::RayHint visHint_[kMaxPlayers * kMaxPlayers];
+    Map::RayHint projVisHint_[kMaxPlayers][kMaxProjectiles];
     uint32_t viewNeeded_ = 0;              // alive players whose lines of sight are checked (humans, and bots someone watches)
     uint16_t projVisId_[kMaxProjectiles] = {};   // the projectile each slot's ServerPlayer::projSeen times are about
     uint32_t projShown_[kMaxProjectiles] = {};   // clients (bit each) that have been sent that projectile in sight
@@ -630,6 +740,7 @@ public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }
     void explodeForTest(const Vec3& at, int owner, int weapon) { explode(at, owner, weapon); }
+    double nextTickForTest() const { return nextTick_; }   // (a manual clock steps to it: one tick per frame())
 private:
     void openGameLog();
     void logTick();
@@ -640,8 +751,22 @@ private:
     const GameEvent* eventPtrs_[16] = {}; // scratch for snapshot building: the events going out (in the player's queue)
     bool running_ = false;
     double nextTick_ = 0;
+    WakeSpin wakeSpin_;         // idle(): how long before a tick it stops sleeping and spins
+    TailHist lateHist_{25e-6};  // how late ticks start (windows of 1000): status shows the last one's 99th percentile
+    double lateP99_ = -1;       // (-1: no window yet; lateP99Past_: past the histogram's 1.6 ms)
+    bool lateP99Past_ = false;
+    // frame()'s reads and the snapshots' sends, batched where the OS can (UdpSocket::kBatch: Linux)
+    static constexpr int kRecvBatch = UdpSocket::kBatch, kSnapBufs = UdpSocket::kBatch > 1 ? kMaxPlayers : 1;
+    uint8_t recvBuf_[kRecvBatch][2048];
+    InPacket recvPk_[kRecvBatch];
+    uint8_t snapBuf_[kSnapBufs][kMaxPacket];
+    OutPacket snapOut_[kSnapBufs];
     double rateWindowStart_ = 0;
     int windowTicks_ = 0, windowLate_ = 0, windowSendFail_ = 0, windowWorstLoss_ = 0;
+    int windowStall_ = 0, windowStallUp_ = 0, windowSkipped_ = 0;   // ticks that stalled (stallAfter) now / at the next step up; skipped ahead
+    double rateHoldUntil_ = 0;   // a window that starts before this is no verdict (a map was just loaded: one long frame, clients reloading)
+    uint64_t windowUpBytes_ = 0, windowDownBytes_ = 0;   // datagrams + 28 bytes of IPv4 / UDP header each
+    uint32_t windowUpPkts_ = 0, windowDownPkts_ = 0;
     double windowBusy_ = 0;   // seconds spent in simulate + snapshots this window
     LogFn log_;
     std::unique_ptr<PortMapper> upnp_;

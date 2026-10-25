@@ -131,6 +131,7 @@ public:
     void hello(const RankKey& key);
     bool helloDone() const { return helloDone_.load(std::memory_order_relaxed); }
     static double helloRetryDelay(int tries);   // seconds before try `tries` + 1: 10 s doubling, at most 15 min
+    static inline double helloRetryScale = 1.0;   // (tests only: shortens the real wait; read once per failed hello)
 private:
     struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report";
                  std::string rawKey = {};      // rawKey: a plain request (see request())

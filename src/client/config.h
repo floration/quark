@@ -16,7 +16,15 @@ struct Settings {
     float brightness = 1.0f;    // scales the lit scene (0.6 - 1.8)
     int displayMode = 0;        // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy)
     int interpMs = 0;           // other players' interpolation delay: 0 = adaptive, else fixed ms (ranked: always 10)
-    int presentMode = 0;        // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late)
+#ifdef _WIN32
+    int presentMode = 3;        // (the default: latent sync; a typical PC runs many times the refresh rate)
+#else
+    int presentMode = 0;        // (the default: no vsync; latent sync needs Windows' scanline)
+#endif
+                                // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
+                                // 3 latent sync (Windows: a frame a refresh, flipped as the blank begins; Game::latentWait)
+    int latentOffsetUs = 0;     // latent sync: the flip this much later (+) or sooner (-), moving the tear line
+    bool gpuMaxClocks = false;  // Windows, NVIDIA: "Prefer maximum performance" in quark's driver profile (gpuprefs.h)
     int lowLatency = 1;         // 0 off, 1 on (max 1 frame queued), 2 ultra (0 queued, just-in-time input)
     int maxFps = 0;             // 0 = unlimited
     int width = 1280, height = 720;
@@ -33,7 +41,17 @@ struct Settings {
     std::string modeHud[MODE_COUNT], modeCtl[MODE_COUNT];     // draw the widgets from hud.cfg
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
+    float volumeEffects = 1.0f;    // x volume: every sound effect (the hitsound too)
+    float volumeAnnouncer = 1.0f;  // x volume: the announcer's lines
+    bool quips = true;             // players' quips (the QUIP key) heard at all: their own setting, apart from the announcer's
+    float volumeQuips = 1.0f;      // x volume: quips
     bool hitsounds = true;
+    bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
+    // Settings > VIDEO + AUDIO > DEVICES (devices.h): stable ids, "" = the default; one that's gone falls back to it
+    std::string audioOutput;       // the sound output's id (a Windows endpoint id, an ALSA name, a CoreAudio UID)
+    std::string audioInput;        // the microphone's id (nothing records yet: kept for voice chat)
+    std::string monitor;           // fullscreen / borderless on this monitor (its name, "#2" for a second of the same); "" = primary
+    int fullscreenHz = 0;          // EXCLUSIVE FULLSCREEN's refresh rate; 0 = the monitor's desktop rate
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
@@ -43,6 +61,7 @@ struct Settings {
     float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
     bool demoFullRate = false;  // demos: every snapshot (up to 1000 Hz) instead of 62.5 Hz
+    std::string uiFont = "rubik";   // Settings > FONT (uifonts.h): a built-in's id (rubik, worksans, classic, ...) or a mods/fonts file name
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
     bool crowns = true;         // gold / silver crowns on ranked leaders
     bool chatOff = false;       // other players' chat hidden (settings "DISABLE CHAT", or the TOGGLE CHAT key)
@@ -76,6 +95,7 @@ struct Settings {
     bool hostPublic = true;     // show hosted games on the internet server list
     bool hostRanked = false;    // rated matches (no bots)
     std::string hostCustom;     // custom mode to host (empty = none)
+    std::string hostBotBrain;   // bots/<name>.qbrain the hosted game's bots play (empty = the built-in brain; never ranked)
     int hostArenaVariant = 0, botArenaVariant = 0; // 1v1 ruleset
     // crosshair
     int chStyle = 0;            // 0 cross, 1 cross + dot, 2 dot, 3 circle, 4 T
@@ -100,7 +120,8 @@ struct Settings {
     // 2: the binds were written by this version, so a slot that's unbound was unbound by the player and stays that way.
     // Older files (no bind_version) get the migrations in finishLoad (knife / syringe / quip keys, chat T / Y -> Enter),
     // which used to run on every load: unbinding the knife, syringe or quip came back after a restart (UI test).
-    int bindVersion = 2;
+    // 3: F4 shows the mouse to photon number (LATENCY); VOTE START moved from F4 to F5.
+    int bindVersion = 3;
     Settings() { binds.setDefaults(); }
     void load();
     void save() const;

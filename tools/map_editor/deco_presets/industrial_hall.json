@@ -1,0 +1,26 @@
+{
+  "name": "Industrial hall",
+  "description": "The hall dress of the shipped maps (prefabs.dress / detail_pass): skirting and a cornice, a glow line over the skirting, pilaster strips every 4 m, columns in the inside corners, floor seams every 8 m, glow strips under the ceilings, railings on the catwalks and ledges, a few crate stacks by the walls, stair kick plates.",
+  "rules": [
+    { "name": "Skirting", "gen": "edgeTrim", "target": { "kind": "filter", "filter": { "role": "wall" } },
+      "params": { "edges": "bottom", "at": "cover", "height": 0.25, "depth": 0.05, "mat": 8 } },
+    { "name": "Cornice", "gen": "edgeTrim", "target": { "kind": "filter", "filter": { "role": "wall", "minHeight": 3 } },
+      "params": { "edges": "top", "at": "any", "height": 0.5, "depth": 0.1, "mat": 8 } },
+    { "name": "Glow line", "gen": "bands", "target": { "kind": "filter", "filter": { "role": "wall" } },
+      "params": { "heights": "0.3", "base": "floor", "height": 0.08, "depth": 0.03, "mat": 4 } },
+    { "name": "Pilaster strips", "gen": "wallStrips", "target": { "kind": "filter", "filter": { "role": "wall", "minHeight": 2.4, "minLength": 3 } },
+      "params": { "style": "strip", "spacing": 4, "width": 0.3, "depth": 0.04, "bottom": 0.3, "top": 0.4, "minHeight": 1.2, "mat": 8 } },
+    { "name": "Corner columns", "gen": "pillars", "target": { "kind": "filter", "filter": { "role": "wall", "minHeight": 3 } },
+      "params": { "placement": "inner", "size": 0.6, "minHeight": 3, "base": true, "mat": 1 } },
+    { "name": "Floor seams", "gen": "floorBorder", "target": { "kind": "filter", "filter": { "role": "floor", "minLength": 6 } },
+      "params": { "at": "none", "seams": 8, "seamWidth": 0.12, "sink": 0.04, "raise": 0.005, "mat": 8 } },
+    { "name": "Ceiling lights", "gen": "lightStrip", "target": { "kind": "filter", "filter": { "role": "ceiling" } },
+      "params": { "style": "strip", "along": "long", "spacing": 5, "width": 0.25, "depth": 0.05, "margin": 0.8, "minClear": 2.6, "mat": 4 } },
+    { "name": "Railings", "gen": "railings", "target": { "kind": "filter", "filter": { "role": "floor" } },
+      "params": { "minDrop": 1.5, "height": 1.0, "postSpacing": 1.5, "midRail": true, "mat": 8 } },
+    { "name": "Crate stacks by the walls", "gen": "scatter", "target": { "kind": "filter", "filter": { "role": "floor", "minLength": 8 } },
+      "params": { "step": 6, "chance": 0.35, "clear": 1.0, "wallDist": 1.6, "stack": 0.5, "edgeClear": 0.6 },
+      "constraints": { "maxCount": 24 } },
+    { "name": "Stair kick plates", "gen": "kickPlates", "target": { "kind": "all" }, "params": { "height": 0.1, "mat": 8, "nosing": true, "nosingMat": 4 } }
+  ]
+}

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include "demo.h"
+#include "gamemodes.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -31,6 +32,17 @@ void NetClient::resetPrediction() {
     pred_ = predPrev_ = MoveState();
     errorOffset_ = {};
     lastReplay_ = 0;
+    havePendingOffset_ = reconcilePending_ = false;
+    moveEv_ = 0; moveLand_ = 0;
+    hookCatch_ = HookCatch();
+    remoteEvHead_ = remoteEvTail_;   // (another server's or demo's clock)
+}
+
+void NetClient::resetJitter() {
+    for (auto& l : lateness_) l = 0;
+    latenessN_ = 0;
+    jitterTarget_ = jitter_ = kJitterStart;
+    lastJitterUpdate_ = 0;
 }
 
 bool NetClient::connect(const std::string& address, const std::string& name) {
@@ -50,10 +62,12 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     lastRecv_ = timeNow();
     snaps_.clear();
     clockInit_ = false;
+    resetJitter();
     resetPrediction();
     lossExpected_ = lossReceived_ = 0;
     lossPct_ = 0;
     lastEventId_ = 0;
+    evHold_.clear();
     events_.clear();
     props_.clear(); propPlayers_ = 0;
     stringCmds_.clear();
@@ -100,6 +114,7 @@ void NetClient::poll() {
             try { handlePacket(buf, n); }   // (ENG-2: a packet that makes anything throw is dropped)
             catch (const std::exception&) {}
         }
+    afterSnapshots();
     if (state_ == ConnState::Disconnected) return;
 
     double now = timeNow();
@@ -356,28 +371,32 @@ void NetClient::onSnapshot(Snapshot& s) {
             lossExpected_ = lossReceived_ = 0;
         }
     }
-    double serverTime = s.timeMs * 0.001;
-    double offset = serverTime - now;
-    // Arrival jitter: how much later than the best-case arrival this snapshot came. The interpolation
-    // delay is sized from the 99th percentile of that instead of a fixed worst-case margin.
-    if (clockInit_) {
-        lateness_[latenessN_++ % kLateSamples] = (float)std::max(0.0, clockOffset_ - offset);
-        if (latenessN_ % 64 == 0) {
-            int n = (int)std::min<uint32_t>(latenessN_, kLateSamples);
-            std::vector<float> v(lateness_, lateness_ + n);
-            std::nth_element(v.begin(), v.begin() + n * 99 / 100, v.end());
-            jitterTarget_ = v[n * 99 / 100];
-        }
-    }
-    if (!clockInit_ || std::fabs(offset - clockOffset_) > 0.5) { clockOffset_ = offset; clockInit_ = true; }
-    // Track the most recent arrival tightly but let jitter average out.
-    else clockOffset_ = offset > clockOffset_ ? clockOffset_ * 0.9 + offset * 0.1 : clockOffset_ * 0.99 + offset * 0.01;
+    // The clock and the jitter estimate follow the newest snapshot of each poll (updateClock): every snapshot read in
+    // one poll is stamped with the same "now", so the older ones of a batch looked up to a frame late, and the
+    // interpolation delay (sized from the 99th percentile of lateness) grew by about a frame time - remote players
+    // drawn that much further in the past (~7 ms at 144 fps, ~16 ms at 60). Real network jitter is still measured.
+    pendingOffset_ = s.timeMs * 0.001 - now;
+    havePendingOffset_ = true;
 
     // Reliable events (in order, skip already seen).
     std::vector<GameEvent> fresh;
-    for (auto& e : s.events) {
-        if (e.id <= lastEventId_) continue;
-        lastEventId_ = e.id;
+    // Reliable events, handled in id order and acked only up to the last one with none missing before it. The server
+    // resends unacked events paced, and skips one that doesn't fit, so a later event can come first: taking it and
+    // acking its id told the server the missing one had arrived, and it was gone for good (kill feed, chat, names,
+    // ranked tickets, map edits). A demo has gaps in its ids: there, every newer one as it comes.
+    evReady_.clear();
+    if (play_.active) {
+        for (auto& e : s.events) if (e.id > lastEventId_) { lastEventId_ = e.id; evReady_.push_back(std::move(e)); }
+    } else {
+        for (auto& e : s.events)
+            if (e.id > lastEventId_ && e.id - lastEventId_ <= 512) evHold_.emplace(e.id, std::move(e));   // (512: the server drops a client 256 behind)
+        while (!evHold_.empty() && evHold_.begin()->first == lastEventId_ + 1) {
+            evReady_.push_back(std::move(evHold_.begin()->second));
+            evHold_.erase(evHold_.begin());
+            lastEventId_++;
+        }
+    }
+    for (auto& e : evReady_) {
         if (rec_) fresh.push_back(e);
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
             models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; nameColors_[e.a] = (uint16_t)e.c; }
@@ -390,7 +409,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         }
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         if (e.type == EV_PROP) { applyPropEvent(e); continue; }
-        events_.push_back(e);
+        events_.push_back(std::move(e));   // (s.events is cleared next)
     }
     s.events.clear();
     if (propPlayers_) {   // (the server says when one goes; this catches a death or a leave it said before we had it)
@@ -404,9 +423,92 @@ void NetClient::onSnapshot(Snapshot& s) {
         stringAcked_++;
     }
 
-    // The payload cart is solid: mirror the server's collision box so prediction agrees.
+    reconcilePending_ = true;   // (once a poll, against its newest snapshot: reconcile)
+
+    // everyone else's movement events, played as each is drawn there (an old server or demo sends none)
+    for (const PlayerSnap& p : s.players) {
+        const uint16_t ev = p.keys & (uint16_t)~KEY_HELD_MASK;
+        if (!ev || p.hidden || (p.id == s.clientId && !play_.active) || !(p.flags & PS_ALIVE)) continue;   // (a demo: the recorded player's too)
+        if (remoteEvTail_ - remoteEvHead_ >= kRemoteEvRing) remoteEvHead_++;   // (nobody's reading: the oldest goes)
+        remoteEv_[remoteEvTail_++ % kRemoteEvRing] = {s.timeMs * 0.001, p.id, ev};
+    }
+    if (rec_) recordSnapshot(s, fresh);
+    snaps_.push_back(std::move(s));
+    indexLatest();
+    // keep enough history to decode deltas based on any snapshot we acked within the last round trip
+    while (snaps_.size() > 512) snaps_.pop_front();
+}
+
+void NetClient::updateClock(double offset) {
+    // Arrival jitter: how much later than the best-case arrival this snapshot came. The interpolation
+    // delay is sized from the 99th percentile of that instead of a fixed worst-case margin.
+    if (clockInit_) {
+        lateness_[latenessN_++ % kLateSamples] = (float)std::max(0.0, clockOffset_ - offset);
+        if (latenessN_ % 64 == 0) {
+            int n = (int)std::min<uint32_t>(latenessN_, kLateSamples);
+            float* v = latenessScratch_;
+            std::copy(lateness_, lateness_ + n, v);
+            std::nth_element(v, v + n * 99 / 100, v + n);
+            jitterTarget_ = v[n * 99 / 100];
+        }
+    }
+    if (!clockInit_ || std::fabs(offset - clockOffset_) > 0.5) { clockOffset_ = offset; clockInit_ = true; }
+    // Track the most recent arrival tightly but let jitter average out.
+    else clockOffset_ = offset > clockOffset_ ? clockOffset_ * 0.9 + offset * 0.1 : clockOffset_ * 0.99 + offset * 0.01;
+}
+
+// After a poll's snapshots: the clock from the newest, and one prediction reconcile against it (a frame that reads
+// several used to replay the unacknowledged commands for each of them: after a hitch, dozens of replays in a frame).
+void NetClient::afterSnapshots() {
+    if (havePendingOffset_) { havePendingOffset_ = false; updateClock(pendingOffset_); }
+    if (reconcilePending_) { reconcilePending_ = false; if (!snaps_.empty()) reconcile(snaps_.back()); }
+}
+
+// The dash charges, their timers and the hook cooldown agree (F19): a teammate's syringe refills them on the server
+// between commands, which moves nothing, so a position-only compare kept the empty pips and the next dash or grapple
+// came a round trip late as a correction. Each is exact on the wire and pmove's integer / float steps match.
+static bool sameCharges(const MoveState& a, const MoveState& b) {
+    if (a.dashCharges != b.dashCharges || a.dashRecharging != b.dashRecharging || a.dashCooldownMs != b.dashCooldownMs ||
+        std::fabs(a.hookCooldown - b.hookCooldown) > 1e-4f) return false;
+    for (int i = 0; i < a.dashRecharging && i < kMaxDashCharges; i++) if (a.dashRechargeMs[i] != b.dashRechargeMs[i]) return false;
+    return true;
+}
+
+// The players a grapple fired in `cmd` could catch, as Server::grappleTargets picks them, where you see them (render
+// time: the server rewinds to it). Only for a command that can fire the hook (rare), so the interpolation costs nothing
+// the rest of the time. What the client can't know (a custom rule) stays the server's word: a correction, as before.
+bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
+    probe.n = 0;
+    const MoveState& m = pred_;
+    if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
+    if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
+    const ModeState& ms = mode();
+    if (ms.mode == MODE_RACE || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
+    const PlayerSnap* me = findPlayer(clientId_);
+    if (!me) return false;
+    interpolatedPlayers(probePlayers_);
+    uint32_t held = 0;   // players someone else's grapple holds already
+    for (const InterpPlayer& ip : probePlayers_)
+        if (ip.valid && ip.snap.id != clientId_ && ip.snap.hooked >= 2 && ip.snap.hooked - 2 < kMaxPlayers) held |= 1u << (ip.snap.hooked - 2);
+    const float scale = bodyScale();
+    for (int i = 0; i < kMaxPlayers && probe.n < HookProbe::kMax; i++) {
+        const InterpPlayer& ip = probePlayers_[i];
+        const PlayerSnap& q = ip.snap;
+        if (!ip.valid || i == clientId_ || !(q.flags & PS_ALIVE) || (q.flags & PS_SPECTATOR) || (held >> i & 1)) continue;
+        if (modeIsTeamBased(ms.mode) && q.team() == me->team()) continue;
+        if (isItMode(ms.mode) && ((q.flags & PS_HASBOMB) != 0) == ((me->flags & PS_HASBOMB) != 0)) continue;
+        probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
+        probe.id[probe.n++] = (uint8_t)i;
+    }
+    return probe.n > 0;
+}
+
+void NetClient::reconcile(const Snapshot& s) {
+    // The payload cart is solid: mirror the server's collision box so prediction agrees (at the cart's place on
+    // the track, which runs from the other end when team B attacks an unstaged map: Map::cartTrack, as the server).
     map_.dynSolids.clear();
-    if (mapReady_ && isPayloadMode(s.ms.mode) && map_.payloadPath.size() >= 2) map_.dynSolids.push_back(map_.payloadCartBox(s.ms.payloadDist));
+    if (mapReady_ && isPayloadMode(s.ms.mode) && map_.payloadPath.size() >= 2)
+        map_.dynSolids.push_back(map_.payloadCartBox(map_.cartTrack(s.ms.mode, s.ms.attackers, s.ms.payloadDist)));
 
     // Prediction reconcile. If the server's state for the acknowledged command matches what we
     // predicted for it, our prediction is already right: skip the replay (the common case).
@@ -414,7 +516,8 @@ void NetClient::onSnapshot(Snapshot& s) {
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
-                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget;
+                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget &&
+                 sameCharges(mine, s.self);
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
@@ -422,6 +525,10 @@ void NetClient::onSnapshot(Snapshot& s) {
     } else if (!match) {
         Vec3 oldVisual = pred_.pos + errorOffset_;
         pred_ = s.self;
+        // what we now hold for the acked command: the next snapshot with the same ack (no new commands reached the
+        // server) matches instead of replaying everything again. Before the replay, which overwrites the slot if a
+        // newer command shares it. (Not in a demo: nothing is predicted there, pred_ follows every snapshot.)
+        if (!play_.active) { predicted_[s.ackCmdSeq % kCmdRing] = s.self; predictedSeq_[s.ackCmdSeq % kCmdRing] = s.ackCmdSeq; }
         // only commands still in the ring can be replayed (an ack far behind, from a server or a demo, would
         // otherwise loop over millions of sequence numbers)
         uint32_t first = s.ackCmdSeq + 1;
@@ -431,7 +538,11 @@ void NetClient::onSnapshot(Snapshot& s) {
             lastReplay_++;
             if (c.seq != seq) continue;
             predPrev_ = pred_;
-            pmove(pred_, c, map_);
+            if (hookCatch_.seq == seq) {   // (the command whose grapple caught a player: that player again)
+                HookProbe probe;
+                probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id;
+                pmove(pred_, c, map_, &probe);
+            } else pmove(pred_, c, map_);
             predicted_[seq % kCmdRing] = pred_;
             predictedSeq_[seq % kCmdRing] = seq;
         }
@@ -446,10 +557,13 @@ void NetClient::onSnapshot(Snapshot& s) {
         if ((s.self.flags & MF_PULLED) && (pred_.flags & MF_PULLED)) pred_.pullPoint = s.self.pullPoint;
     }
 
-    if (rec_) recordSnapshot(s, fresh);
-    snaps_.push_back(std::move(s));
-    // keep enough history to decode deltas based on any snapshot we acked within the last round trip
-    while (snaps_.size() > 512) snaps_.pop_front();
+}
+
+void NetClient::indexLatest() {
+    std::memset(latestIdx_, 0xFF, sizeof latestIdx_);
+    const std::vector<PlayerSnap>& ps = snaps_.back().players;   // (at most 255: a u8 count)
+    for (size_t k = 0; k < ps.size(); k++)
+        if (ps[k].id < kMaxPlayers && latestIdx_[ps[k].id] == 0xFF) latestIdx_[ps[k].id] = (uint8_t)k;   // (the first, as the scan found)
 }
 
 void NetClient::tick(UserCmd cmd) {
@@ -462,7 +576,15 @@ void NetClient::tick(UserCmd cmd) {
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
-    if (selfAlive()) pmove(pred_, cmd, map_);
+    if (selfAlive()) {
+        HookProbe probe;   // a grapple this command may fire: the enemies you see can catch it, as on the server (F20)
+        if (hookProbe(cmd, probe)) {
+            pmove(pred_, cmd, map_, &probe);
+            if (probe.hit >= 0) { hookCatch_.seq = cmd.seq; hookCatch_.box = probe.box[probe.hit]; hookCatch_.id = probe.id[probe.hit]; }
+        } else pmove(pred_, cmd, map_);
+        moveEv_ |= pred_.events;
+        moveLand_ = std::max(moveLand_, pred_.landSpeed);
+    }
     predicted_[cmd.seq % kCmdRing] = pred_;
     predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
     errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
@@ -501,7 +623,30 @@ void NetClient::sendCommand(const std::string& s) {
 }
 
 Vec3 NetClient::smoothedPos(float alpha) const {
+    if (visualOk_) return visualPos_;
     return vlerp(predPrev_.pos, pred_.pos, alpha) + errorOffset_;
+}
+
+// Your own position as of now, for drawing only: the last tick's prediction carried over the part of a tick since, in
+// pmove's own 1 ms steps, with the last command (its aim brought up to date). It's what the next tick will work out
+// unless the keys change, so nothing jumps. It used to be drawn between the last two ticks: as it was a whole tick
+// ago (1 ms at 1000 Hz, 8 ms at 125 Hz). The command sent and the server are unchanged.
+void NetClient::updateVisualPos(double tickAcc, float yaw, float pitch) {
+    visualOk_ = false;
+    if (play_.active || !mapReady_ || state_ != ConnState::Connected || nextSeq_ <= 1 || !selfAlive()) return;
+    UserCmd c = cmds_[(nextSeq_ - 1) % kCmdRing];
+    if (c.seq != nextSeq_ - 1) return;
+    const double ms = std::max(0.0, tickAcc * 1000.0);
+    const int whole = std::min(7, (int)ms);
+    const float part = (float)std::min(1.0, ms - whole);
+    c.yaw = yaw; c.pitch = pitch;
+    MoveState s = pred_;
+    if (whole > 0) { c.msec = (uint8_t)whole; pmove(s, c, map_); }
+    MoveState next = s;
+    c.msec = 1;
+    pmove(next, c, map_);
+    visualPos_ = vlerp(s.pos, next.pos, part) + errorOffset_;
+    visualOk_ = true;
 }
 
 bool NetClient::selfAlive() const {
@@ -512,14 +657,21 @@ bool NetClient::selfAlive() const {
 int NetClient::selfWeapon() const { return hasSnapshot() ? latest().selfWeapon : 0; }
 
 const PlayerSnap* NetClient::findPlayer(int id) const {
-    if (snaps_.empty()) return nullptr;
-    for (auto& p : snaps_.back().players) if (p.id == id) return &p;
-    return nullptr;
+    if (snaps_.empty() || id < 0 || id >= kMaxPlayers || latestIdx_[id] == 0xFF) return nullptr;   // (decoded ids are all < kMaxPlayers)
+    return &snaps_.back().players[latestIdx_[id]];
 }
 
-std::string NetClient::playerName(int id) const {
-    if (id < 0 || id >= kMaxPlayers) return "world";
-    return names_[id].empty() ? "player" + std::to_string(id) : names_[id];
+std::string NetClient::playerName(int id) const { return nameRef(id); }
+
+const std::string& NetClient::nameRef(int id) const {
+    static const std::string world = "world";
+    static const std::vector<std::string> unnamed = [] {   // (built once: "player<id>" for one who has no name yet)
+        std::vector<std::string> v;
+        for (int i = 0; i < kMaxPlayers; i++) v.push_back("player" + std::to_string(i));
+        return v;
+    }();
+    if (id < 0 || id >= kMaxPlayers) return world;
+    return names_[id].empty() ? unnamed[id] : names_[id];
 }
 
 static float lerpAngle(float a, float b, float t) {
@@ -528,48 +680,68 @@ static float lerpAngle(float a, float b, float t) {
 }
 
 // The snapshots bracketing renderTime (searching from the newest: it's a few snapshots back), and how far between.
+// At or past the newest (interpolation off, or a late snapshot) and before the oldest there's nothing to search:
+// those used to walk the whole 512 snapshot history on every call.
 static float renderBracket(const std::deque<Snapshot>& snaps, double renderTime, const Snapshot*& a, const Snapshot*& b) {
-    a = &snaps.front();
     b = &snaps.back();
-    for (size_t i = snaps.size() - 1; i > 0; i--) {
-        if (snaps[i - 1].timeMs * 0.001 <= renderTime && snaps[i].timeMs * 0.001 >= renderTime) {
-            a = &snaps[i - 1];
-            b = &snaps[i];
-            break;
+    if (renderTime >= b->timeMs * 0.001) { a = b; return 1.0f; }
+    a = &snaps.front();
+    if (renderTime >= a->timeMs * 0.001)   // (before the oldest: front to back at 0, as the full search ended)
+        for (size_t i = snaps.size() - 1; i > 0; i--) {
+            if (snaps[i - 1].timeMs * 0.001 <= renderTime && snaps[i].timeMs * 0.001 >= renderTime) {
+                a = &snaps[i - 1];
+                b = &snaps[i];
+                break;
+            }
         }
-    }
-    if (renderTime >= snaps.back().timeMs * 0.001) a = b = &snaps.back();
     double ta = a->timeMs * 0.001, tb = b->timeMs * 0.001;   // (doubles: server uptime in seconds)
     return tb > ta ? clampf((float)((renderTime - ta) / (tb - ta)), 0, 1) : 1.0f;
 }
 
-// A player (in sight in the newer snapshot `pb`) at render time: between where `a` and `pb` have them.
-static void lerpPlayer(const Snapshot* a, const PlayerSnap& pb, float t, PlayerSnap* out) {
+// A player in snapshot `a` by id, in sight there (null: not there, or out of sight).
+static const PlayerSnap* inSight(const Snapshot* a, int id) {
+    for (auto& pa : a->players) if (pa.id == id && !pa.hidden) return &pa;
+    return nullptr;
+}
+
+// A player (in sight in the newer snapshot `pb`) at render time: between where the older snapshot has them (`pa`:
+// in sight there, else null) and `pb`. pa == &pb (one snapshot: nothing to interpolate) is a copy.
+static void lerpPlayer(const PlayerSnap* pa, const PlayerSnap& pb, float t, PlayerSnap* out) {
     *out = pb;
-    for (auto& pa : a->players) {
-        if (pa.id != pb.id || pa.hidden) continue;
-        // Don't interpolate across respawns/teleports.
-        if ((pa.flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa.pos - pb.pos) < 5.0f) {
-            out->pos = vlerp(pa.pos, pb.pos, t);
-            out->yaw = lerpAngle(pa.yaw, pb.yaw, t);
-            out->pitch = lerpf(pa.pitch, pb.pitch, t);
-        }
-        break;
+    if (!pa || pa == &pb) return;
+    // Don't interpolate across respawns/teleports.
+    if ((pa->flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa->pos - pb.pos) < 5.0f) {
+        out->pos = vlerp(pa->pos, pb.pos, t);
+        out->yaw = lerpAngle(pa->yaw, pb.yaw, t);
+        out->pitch = lerpf(pa->pitch, pb.pitch, t);
     }
 }
 
 NetClient::PlayerArray NetClient::interpolatedPlayers() const {
-    PlayerArray out{};
-    if (snaps_.empty()) return out;
-    const Snapshot *a, *b;
-    float t = renderBracket(snaps_, renderTime_, a, b);
-    for (auto& pb : b->players) {
-        if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
-        InterpPlayer& ip = out[pb.id];
-        ip.valid = true;
-        lerpPlayer(a, pb, t, &ip.snap);
-    }
+    PlayerArray out;
+    interpolatedPlayers(out);
     return out;
+}
+
+void NetClient::interpolatedPlayers(PlayerArray& out) const {
+    static_assert(kMaxPlayers <= 32, "one bit per player id");
+    uint32_t set = 0;
+    if (!snaps_.empty()) {
+        const Snapshot *a, *b;
+        float t = renderBracket(snaps_, renderTime_, a, b);
+        // a's players by id (in sight there), once: not a scan of a for every player of b
+        const PlayerSnap* from[kMaxPlayers] = {};
+        if (a != b)
+            for (auto& pa : a->players) if (pa.id < kMaxPlayers && !pa.hidden && !from[pa.id]) from[pa.id] = &pa;
+        for (auto& pb : b->players) {
+            if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
+            InterpPlayer& ip = out[pb.id];
+            ip.valid = true;
+            lerpPlayer(a == b ? &pb : from[pb.id], pb, t, &ip.snap);
+            set |= 1u << pb.id;
+        }
+    }
+    for (int i = 0; i < kMaxPlayers; i++) if (!(set >> i & 1)) out[i] = InterpPlayer();   // (the rest as a fresh array has them)
 }
 
 float NetClient::bodyScale() const {
@@ -616,16 +788,16 @@ bool NetClient::attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) con
         if (pb.id != p.onPlayer) continue;
         if (pb.hidden || !(pb.flags & PS_ALIVE)) return false;
         PlayerSnap ps;
-        lerpPlayer(a, pb, t, &ps);
+        lerpPlayer(a == b ? &pb : inSight(a, pb.id), pb, t, &ps);
         *out = stickyOnPlayerPos(ps.pos, p.attachOffset, (ps.flags & PS_CROUCHED) != 0, bodyScale());
         return true;
     }
     return false;
 }
 
-std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
-    std::vector<ProjectileSnap> out;
-    if (snaps_.empty()) return out;
+void NetClient::interpolatedProjectiles(std::vector<ProjectileSnap>& out) const {
+    out.clear();
+    if (snaps_.empty()) return;
     // Extrapolate the newest snapshot to "now" (they're visual only) along the server's arc: its fixed 1 ms steps.
     const Snapshot& s = snaps_.back();
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
@@ -637,7 +809,6 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
         if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
-    return out;
 }
 
 bool NetClient::projectileHidden(uint16_t id) const {
@@ -757,7 +928,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
     if (!rec_->open(path)) { rec_.reset(); return false; }
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
     rec_->write(&magic, 4); rec_->write(&ver, 2);
-    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
+    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false; std::memset(recMoveEv_, 0, sizeof recMoveEv_);
     // who's who so far (names, models, ranked ids arrived as events before the recording started)
     recEvents_.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -777,7 +948,9 @@ void NetClient::stopRecording() {
 double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 0; }
 
 void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events) {
-    for (auto e : events) recEvents_.push_back(e);
+    for (const auto& e : events) recEvents_.push_back(e);
+    for (const PlayerSnap& p : s.players)   // (movement events of the snapshots skipped go in the next one recorded)
+        if (p.id < kMaxPlayers) recMoveEv_[p.id] |= p.keys & (uint16_t)~KEY_HELD_MASK;
     double t = timeNow() - recStart_;
     if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
@@ -790,23 +963,33 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
         std::vector<uint8_t> buf(src.size() + map_.name.size() + 64);
         Writer w(buf.data(), buf.size());
         w.str(map_.name.substr(0, 255)); w.u32((uint32_t)src.size());
-        for (char c : src) w.u8((uint8_t)c);
+        w.bytes((const uint8_t*)src.data(), (int)src.size());
         w.u8((uint8_t)clientId_);
         record(1, buf.data(), (uint32_t)w.size());
         recHavePrev_ = false;   // a full snapshot after a map change
     }
-    Snapshot c = s;
+    // (recCur_ and recBuf_ keep their memory: no allocations per recorded snapshot)
+    Snapshot& c = recCur_;
+    c = s;
+    for (PlayerSnap& p : c.players)
+        if (p.id < kMaxPlayers) p.keys = (uint16_t)((p.keys & KEY_HELD_MASK) | recMoveEv_[p.id]);
+    std::memset(recMoveEv_, 0, sizeof recMoveEv_);
     c.baseTick = recHavePrev_ ? recPrev_.tick : 0;
-    for (auto& e : recEvents_) e.id = ++recEventId_;   // numbered from 1 in the demo's own order
-    std::vector<uint8_t> buf(64 * 1024);
-    Writer w(buf.data(), buf.size());
+    // numbered from 1 in the demo's own order; at most 255 a record (the count is a u8: the rest go in the next one)
+    const size_t nEv = std::min<size_t>(recEvents_.size(), 255);
+    const GameEvent* ev[255];
+    for (size_t k = 0; k < nEv; k++) { recEvents_[k].id = recEventId_ + 1 + (uint32_t)k; ev[k] = &recEvents_[k]; }
+    if (recBuf_.size() < 64 * 1024) recBuf_.resize(64 * 1024);
+    std::vector<uint8_t>& buf = recBuf_;
+    Writer w(buf.data(), (int)buf.size());
     writeSnapshotClient(w, c);
     writeSnapshotWorld(w, c, recHavePrev_ ? &recPrev_ : nullptr);
-    writeSnapshotEvents(w, recEvents_);
-    if (w.overflowed()) return;   // (too big: skip this one, the next will be against the same base)
+    writeSnapshotEvents(w, ev, (int)nEv);
+    if (w.overflowed()) return;   // (too big: skip this one, the next will be against the same base, its events the same ids)
     record(2, buf.data(), (uint32_t)w.size());
-    recEvents_.clear();
-    recPrev_ = c;
+    recEventId_ += (uint32_t)nEv;   // (taken only once written: no gaps)
+    recEvents_.erase(recEvents_.begin(), recEvents_.begin() + (std::ptrdiff_t)nEv);
+    std::swap(recPrev_, recCur_);
     recHavePrev_ = true;
     rec_->flush();   // (to the writer thread)
 }
@@ -848,7 +1031,8 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     }
     play_.active = true;
     play_.wall = timeNow();
-    snaps_.clear(); events_.clear(); lastEventId_ = 0; clockInit_ = false; mapReady_ = false;
+    snaps_.clear(); events_.clear(); lastEventId_ = 0; evHold_.clear(); clockInit_ = false; mapReady_ = false;
+    resetJitter();
     props_.clear(); propPlayers_ = 0;
     for (auto& n : names_) n.clear();
     for (auto& c : nameColors_) c = 0;
@@ -889,6 +1073,7 @@ void NetClient::pollPlayback() {
             play_.havePrev = false;
             snaps_.clear();
             clockInit_ = false;   // (the next snapshot sets the clock: map changes can jump the server clock)
+            havePendingOffset_ = reconcilePending_ = false;   // (nor a snapshot from before it)
         } else if (type == 2) {
             Snapshot s;
             if (!readSnapshotClient(r, s, play_.proto)) continue;
@@ -900,7 +1085,10 @@ void NetClient::pollPlayback() {
             onSnapshot(s);
         }
     }
-    if (clockInit_) {
+    afterSnapshots();
+    if (clockInit_) {   // (the jitter eases as in poll(): it used to stay where it started)
+        jitter_ += (jitterTarget_ - jitter_) * (float)std::min(1.0, (now - lastJitterUpdate_) * 2.0);
+        lastJitterUpdate_ = now;
         renderTime_ = timeNow() + clockOffset_ - interpDelay();
     }
     if (play_.pos + 13 > d.size() && play_.t > play_.length + 0.5) {

@@ -1,0 +1,155 @@
+{
+ "id": "titanfall2",
+ "name": "Titanfall 2 (multiplayer pilot)",
+ "year": 2016,
+ "engine": "Source (Respawn)",
+ "group": "movement shooters",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.025,
+  "why": "pilot hull 72 u tall (pilot_base.set: stand hull_max 16 16 72), scaled to 1.8 m: 0.025 m/u (Respawn units are inches: 72 in = 1.83 m)"
+ },
+ "values": {
+  "gravity": {
+   "value": 15.0,
+   "unit": "m/s2",
+   "mult": 0.6818,
+   "source": "https://docs.northstar.tf/Wiki/using-northstar/commands/ (sv_gravity 750) x https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (gravityscale 0.80)",
+   "confidence": "exact",
+   "raw": "750 x 0.8 = 600 u/s2"
+  },
+  "speed": {
+   "value": 6.5,
+   "unit": "m/s",
+   "mult": 0.6842,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (stand sprintspeed 260)",
+   "confidence": "exact",
+   "raw": "sprintspeed 260 u/s",
+   "note": "sprint, the normal way to move; run 173.5 u/s (stand speed)"
+  },
+  "jump": {
+   "value": 6.7082,
+   "unit": "m/s",
+   "mult": 0.9139,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (jumpheight 60) with gravity 600",
+   "confidence": "estimated",
+   "raw": "sqrt(2 x 600 x 60) = 268.328 u/s",
+   "note": "take-off speed for the stated 60 u jump height"
+  },
+  "air_cap": {
+   "value": 1.5,
+   "unit": "m/s",
+   "mult": 0.6522,
+   "source": "https://github.com/taskinoz/Titanfall-2-Wiki/blob/master/player-vars.txt (airSpeed 60)",
+   "confidence": "estimated",
+   "raw": "airSpeed 60 u/s",
+   "note": "a server dump of the player entity; read as Source's air wish cap"
+  },
+  "air_accel": {
+   "value": 0.8333,
+   "unit": "",
+   "mult": 0.3788,
+   "source": "https://github.com/taskinoz/Titanfall-2-Wiki/blob/master/player-vars.txt (airAcceleration 500)",
+   "confidence": "estimated",
+   "raw": "airAcceleration 500",
+   "note": "if airAcceleration is an absolute 500 u/s2 toward the 60 u/s cap: Quark-equivalent 500 / 60 / 10; the engine's formula isn't public"
+  },
+  "step": {
+   "value": 0.45,
+   "unit": "m",
+   "mult": 0.8182,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (stepheight 18)",
+   "confidence": "exact",
+   "raw": "stepheight 18 u"
+  },
+  "hook_max": {
+   "value": 10.5,
+   "unit": "m/s",
+   "mult": 0.4375,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_base.set (grapple_airSpeedMax 420)",
+   "confidence": "estimated",
+   "raw": "grapple_airSpeedMax 420 u/s",
+   "note": "the grapple's top speed while pulled (Grapple tactical)"
+  },
+  "hook_accel": {
+   "value": 16.25,
+   "unit": "m/s2",
+   "mult": 0.4276,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_base.set (grapple_airAccel 650)",
+   "confidence": "estimated",
+   "raw": "grapple_airAccel 650 u/s2"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set",
+   "confidence": "exact",
+   "note": "no dash in the base kit (Phase Shift / Pulse Blade are other tacticals)"
+  },
+  "grapple": {
+   "value": true,
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_base.set",
+   "confidence": "exact",
+   "note": "the Grapple tactical"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.5,
+   "unit": "m",
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (jumpheight 60)",
+   "confidence": "exact",
+   "note": "Quark: 1.22 m"
+  },
+  "walkSpeed": {
+   "value": 4.3375,
+   "unit": "m/s",
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (stand speed 173.5)",
+   "confidence": "exact",
+   "note": "the stand speed without sprint (Quark's speed row is the sprint, 260 u/s)"
+  },
+  "crouchSpeed": {
+   "value": 2.0,
+   "unit": "m/s",
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (crouch speed 80)",
+   "confidence": "exact"
+  },
+  "wallrunMaxSpeed": {
+   "value": 10.5,
+   "unit": "m/s",
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (wallrunMaxSpeedHorizontal 420)",
+   "confidence": "exact"
+  },
+  "ziplineSpeed": {
+   "value": 15.0,
+   "unit": "m/s",
+   "source": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set (ziplineSpeed 600)",
+   "confidence": "exact"
+  }
+ },
+ "extras": [
+  "wallrun: up to 420 u/s horizontal, 1.75 s limit (wallrun_timeLimit), jump-off 205 out / 230 up",
+  "double jump (doubleJump 1, 60 u)",
+  "slide (slidedecel 50, slidevelocitydecay 0.7)",
+  "zipline 600 u/s",
+  "grapple detach boosts (grapple_detachVerticalBoost 200)"
+ ],
+ "notes": "From the game's player settings files (as extracted in a public repository) and a server dump; air movement semantics are not public, so the air values are estimates.",
+ "sources": [
+  {
+   "title": "Titanfall 2 pilot_mp.set",
+   "url": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_mp.set"
+  },
+  {
+   "title": "Titanfall 2 pilot_base.set",
+   "url": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/players/mp/pilot_base.set"
+  },
+  {
+   "title": "Northstar commands (sv_gravity)",
+   "url": "https://docs.northstar.tf/Wiki/using-northstar/commands/"
+  },
+  {
+   "title": "Titanfall-2-Wiki player-vars.txt",
+   "url": "https://github.com/taskinoz/Titanfall-2-Wiki/blob/master/player-vars.txt"
+  }
+ ]
+}

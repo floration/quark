@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Builds the Asset Studio page's files (build/studio/): every default asset of the game plus manifest.json.
+"""Builds the asset files for the website's /assets/ page (build/studio/, read by tools/site_assets.py): every default asset of the game plus manifest.json.
     build/quark_tests exportassets build/assets_export
     python3 tools/studio/build.py [export_dir]          (default: build/assets_export)
 export_dir is what `quark_tests exportassets` writes: manifest.json and every asset as a file - each sound of each of
 the five sound kits and of each announcer voice (WAV), every model (glTF), every map (.qmap), the UI font, the icon,
 the website's pictures - as the game has them now (its shipped overrides included). This copies them to build/studio/
-and marks the ones that are already the owner's own (assets/overrides/, assets/sfx/custom/), so the page shows them as
-"yours, in the game". Publish tools/studio/index.html with the files in build/studio/ (paths as they are) after each
-update, so the page always shows the game's current defaults (docs/ASSETS.md)."""
+and marks the ones that are already the owner's own (assets/overrides/, assets/sfx/custom/). (It once fed the Asset
+Studio page, retired 2026-10-24; docs/ASSETS.md.)"""
 import json, os, shutil, sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -32,6 +31,18 @@ def owners():
     return mine
 
 
+def origins():
+    """{lower-case asset path without extension: origin} from the provenance registry (assets/provenance/,
+    docs/PROVENANCE.md): ai, human or third-party"""
+    out = {}
+    reg = os.path.join(ROOT, "assets", "provenance")
+    for n in sorted(os.listdir(reg)) if os.path.isdir(reg) else []:
+        if n.endswith(".json"):
+            for k, e in json.load(open(os.path.join(reg, n), encoding="utf-8")).get("items", {}).items():
+                out[os.path.splitext(k)[0].lower()] = e.get("origin")
+    return out
+
+
 def main():
     export = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "assets_export")
     man = os.path.join(export, "manifest.json")
@@ -41,6 +52,7 @@ def main():
     if os.path.isdir(OUT): shutil.rmtree(OUT)
     os.makedirs(OUT)
     mine = owners()
+    origin = origins()
     items, ids, missing = [], set(), []
     for it in src["items"]:
         if it["id"] in ids: continue
@@ -51,6 +63,7 @@ def main():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(f, dst)
         if os.path.splitext(it["file"])[0].lower() in mine: it["owner"] = True
+        if origin.get(os.path.splitext(it["file"])[0].lower()): it["origin"] = origin[os.path.splitext(it["file"])[0].lower()]
         if it.get("category") not in CATEGORIES: print("note: category %r isn't one the page orders" % it.get("category"))
         ids.add(it["id"]); items.append(it)
     if missing: sys.exit("the export lists files it didn't write: " + ", ".join(missing[:10]))

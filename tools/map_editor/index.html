@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Map Editor</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><b>QUARK</b> MAP EDITOR <span id="gameVersion" class="faint"></span></div>
+  <div class="tb">
+    <button id="btnNew" title="A new map">New</button>
+    <button id="btnSave" class="primary" title="Save (Ctrl+S)">Save</button>
+    <button id="btnSaveAs" title="Save a copy under a new name">Save as</button>
+    <span class="sep"></span>
+    <button id="btnUndo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="btnRedo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">Redo</button>
+    <span class="sep"></span>
+    <button id="btnOpenGame" title="Open this map in the in-game editor (quark --editor NAME)">Open in game</button>
+    <select id="playMode" title="Mode to play-test in"></select>
+    <button id="btnPlay" title="Play-test: quark --host MODE --map NAME">Play test</button>
+    <span class="sep"></span>
+    <button id="btnSettings" title="Game exe, maps folder">Settings</button>
+    <button id="btnHelp" title="Keys (?)">?</button>
+  </div>
+  <div class="spacer"></div>
+  <div id="mapLabel" class="maplabel"></div>
+</header>
+<div id="banner" hidden></div>
+
+<main id="main">
+  <aside id="left">
+    <div class="paneltitle">Maps <span class="spacer"></span><input type="search" id="mapFilter" placeholder="filter"></div>
+    <div id="mapList" class="list"></div>
+    <div class="paneltitle">Outliner</div>
+    <div id="outliner" class="list"></div>
+    <div class="paneltitle wrap" title="Copy / paste between maps, saved groups, custom objects that repeat">Library <span class="acts">
+      <button class="mini" id="libCopy" title="Copy the selection (Ctrl+C): it pastes into any map">copy</button>
+      <button class="mini" id="libPaste" title="Paste at the cursor or the view's centre (Ctrl+V)">paste</button>
+      <button class="mini" id="libGroup" title="Save the selection in the library as a group">+ group</button>
+      <button class="mini" id="libObject" title="Make a custom object from the selected boxes and groups: it repeats instead of stretching">+ object</button></span></div>
+    <div class="libbar"><input type="search" id="libFilter" placeholder="search the library">
+      <button class="mini" id="libImport" title="Add library items from a .json file (one item, or a library exported from another PC)">import</button>
+      <button class="mini" id="libExport" title="Save your library items as one .json file (to move them to another PC or install)">export</button>
+      <input type="file" id="libFile" accept=".json,application/json" hidden multiple></div>
+    <div id="library" class="list"></div>
+  </aside>
+
+  <section id="center">
+    <div id="toolbar" class="toolbar">
+      <div class="seg" id="tools">
+        <button data-tool="select" class="on" title="Select / move / resize (Esc)">Select</button>
+        <button data-tool="box" title="Add a box (B): click a surface">Box</button>
+        <button data-tool="room" title="Add a room group">Room</button>
+        <button data-tool="stairs" title="Add a stairs group (rises away from you)">Stairs</button>
+        <button data-tool="spawn" title="Add a spawn (team below)">Spawn</button>
+        <button data-tool="light" title="Add a light">Light</button>
+        <button data-tool="ladder" title="Add a ladder: click a wall">Ladder</button>
+        <button data-tool="site" title="Add a bomb site">Site</button>
+        <button data-tool="hill" title="Set the hill">Hill</button>
+        <button data-tool="point" title="Add a capture point">Point</button>
+        <button data-tool="checkpoint" title="Add a race checkpoint">Check</button>
+        <button data-tool="path" title="Add a payload path point (after the selected one)">Path</button>
+        <button data-tool="figure" title="Drop a life-size player figure">Player</button>
+        <button data-tool="route" title="Route: click two points">Route</button>
+        <button data-tool="botstart" title="Place a bot start">Bot</button>
+      </div>
+      <label>mat <select id="toolMat"></select></label>
+      <label>team <select id="toolTeam"></select></label>
+      <label title="Grid ([ and ])">grid <select id="grid"></select></label>
+      <span class="spacer"></span>
+      <div class="seg" id="camModes">
+        <button data-cam="fly" class="on" title="Fly: right mouse + WASD">Fly</button>
+        <button data-cam="orbit" title="Orbit: drag / right-drag pans / wheel">Orbit</button>
+        <button data-cam="top" title="Top-down (T)">Top</button>
+      </div>
+      <div class="menu" id="showMenu"><button>Show</button>
+        <div class="menu-list" id="showList"></div>
+      </div>
+    </div>
+    <div id="viewport">
+      <canvas id="gl"></canvas>
+      <div id="hud">
+        <div id="hudInfo" class="hudbox"></div>
+        <div id="scalebar"><div class="bar"></div><span></span></div>
+        <div id="hudStats" class="hudbox faint"></div>
+      </div>
+      <div id="tip" hidden></div>
+    </div>
+    <div id="dockBottom" hidden></div>
+  </section>
+
+  <aside id="right">
+    <nav id="rtabs" class="tabs">
+      <button data-rtab="props" class="on">Properties</button>
+      <button data-rtab="mapset">Map</button>
+      <button data-rtab="test" title="Checks, metrics, routes, custom tests">Tests</button>
+      <button data-rtab="bots">Bots</button>
+      <button data-rtab="player">Player</button>
+      <button data-rtab="deco" hidden title="Decoration rules">Decor</button>
+    </nav>
+    <div id="rpanels">
+      <div class="rpanel on" id="rp-props"></div>
+      <div class="rpanel" id="rp-mapset"></div>
+      <div class="rpanel" id="rp-test"></div>
+      <div class="rpanel" id="rp-bots"></div>
+      <div class="rpanel" id="rp-player"></div>
+      <div class="rpanel" id="rp-deco"><div id="decoMount"></div></div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm" novalidate><div id="dlgBody"></div><div class="dlgbtns" id="dlgBtns"></div></form></dialog>
+
+<script>window.qmeBootStart = performance.now();</script>
+<script type="module" src="js/boot.js"></script>
+</body>
+</html>

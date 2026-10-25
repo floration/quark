@@ -215,7 +215,10 @@ static void testThrowCooldown(uint16_t port) {
     double t0 = pa.lastFire;
     printf("  after the knife throw: weapon %d ready in %.2f s, knife back in %.2f s\n", pa.weapon, pa.nextFire - t0, pa.knifeBackAt - t0);
     CHECK(pa.weapon != WPN_KNIFE);   // switched away
-    CHECK(std::fabs(pa.nextFire - (t0 + weaponDef(WPN_KNIFE).refire)) < 0.002);   // the knife's swing cooldown, no more
+    // the knife's swing cooldown, no more: from the throw's command, on the command clock (F22), which is the server
+    // clock or up to 0.1 s behind it (here the test's pauses between pumps leave the client's commands short)
+    auto fromCmd = [&](double next, double refire, double t) { double c = next - refire; return c <= t + 0.002 && c >= t - 0.1 - 0.002; };
+    CHECK(fromCmd(pa.nextFire, weaponDef(WPN_KNIFE).refire, t0));
     CHECK(std::fabs(pa.knifeBackAt - (t0 + 4.0)) < 0.002);                         // the knife: disabled 4 s
     int other = pa.weapon;
     ba = 0; wa = other; pump(s, cls, 0.05, in);              // let go, then fire the weapon we got: nothing until the cooldown is over
@@ -234,7 +237,7 @@ static void testThrowCooldown(uint16_t port) {
     double t1 = pa.lastFire;
     printf("  after the syringe throw: weapon %d ready in %.2f s, syringe back in %.2f s\n", pa.weapon, pa.nextFire - t1, pa.syringeBackAt - t1);
     CHECK(pa.weapon != WPN_SYRINGE && pa.weapon != WPN_KNIFE);
-    CHECK(std::fabs(pa.nextFire - (t1 + 1.0)) < 0.002);        // the syringe's normal cooldown, now 1 s
+    CHECK(fromCmd(pa.nextFire, 1.0, t1));                      // the syringe's normal cooldown, now 1 s
     CHECK(std::fabs(pa.syringeBackAt - (t1 + 4.0)) < 0.002);   // the syringe: disabled 4 s
     CHECK(pa.knifeBackAt > s.time());                          // (the knife is still away)
     ba = 0; wa = other; pump(s, cls, 0.05, in);
@@ -244,7 +247,7 @@ static void testThrowCooldown(uint16_t port) {
     ba = 0; wa = WPN_SYRINGE; pump(s, cls, 0.1, in);
     CHECK(pa.weapon != WPN_SYRINGE && c[0].latest().syringeAway > 0);
     // b throws a syringe at a (5 m in front): every cooldown resets, the thrown weapons are back
-    Vec3 base = pb.move.pos;
+    Vec3 base = openLane(s.map_, pb.move.pos);
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     pa.health = 40;
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, in); }
@@ -525,6 +528,7 @@ static void testGrappleTeammate(uint16_t port) {
 // Expert bots with a close-range weapon hook their target now and then (and nothing breaks while they're latched).
 static void testGrappleBots(uint16_t port) {
     printf("grapple latches onto players: bots\n");
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     Server s;
     ServerConfig cfg;
     cfg.map = "";   // a map without pits or lava (there the bots only hook when the pull ends on safe ground)
@@ -539,11 +543,15 @@ static void testGrappleBots(uint16_t port) {
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     int bot[2] = {s.addBot(TEAM_A, BOT_EXPERT), s.addBot(TEAM_A, BOT_EXPERT)};
     for (int k : bot) if (k >= 0) s.bots_[k].forceWeapon = WPN_SHOTGUN;
-    std::vector<NetClient*> none;
+    simNavReady(s);
     int latches = 0, bad = 0;
     bool was[2] = {};
-    for (int t = 0; t < 600; t++) {   // 30 s
-        pump(s, none, 0.05, idle);
+    // Until the first latch and 5 s on (nothing breaks while latched), at most 90 s: about one latch in 30 s, so a
+    // fixed 30 s sometimes saw none (CI, and a busy PC; the build before 1.18.0 too)
+    double firstAt = -1;
+    for (int t = 0; t < 1800 && (firstAt < 0 || t * 0.05 < firstAt + 5); t++) {
+        if (latches && firstAt < 0) firstAt = t * 0.05;
+        simRun(s, 0.05);
         for (int k = 0; k < 2; k++) {
             if (bot[k] < 0) continue;
             const ServerPlayer& p = s.players_[bot[k]];
@@ -553,7 +561,7 @@ static void testGrappleBots(uint16_t port) {
             if (l && !(p.move.flags & MF_HOOKED)) bad++;
         }
     }
-    printf("  2 expert bots with shotguns on %s, 30 s: %d latches\n", cfg.map.c_str(), latches);
+    printf("  2 expert bots with shotguns on %s: %d latch(es), the first after %.1f s\n", cfg.map.c_str(), latches, firstAt);
     CHECK(bot[0] >= 0 && bot[1] >= 0 && latches >= 1 && bad == 0);
     s.stop();
 }
@@ -613,11 +621,11 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does a
-// flat 50.
+// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does 40
+// on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
     printf("headshots: the head, not the shoulders\n");
-    CHECK(weaponDef(WPN_SNIPER).damage == 50 && headDamage(WPN_SNIPER) == 50);
+    CHECK(weaponDef(WPN_SNIPER).damage == 40 && headDamage(WPN_SNIPER) == 50);
     AABB hb = playerBox(Vec3(0, 0, 0), false);
     AABB h = headBox(hb);
     CHECK(h.mx.y == hb.mx.y && std::fabs(h.mn.y - (hb.mx.y - kPlayerHeight * kHeadFraction)) < 1e-5f);
@@ -734,7 +742,7 @@ static void testHideScoring(uint16_t port) {
 
 // B8: hide and seek ends tied for first -> rock paper scissors among the tied, synced to every client. `n` humans
 // (all tied); the server and the clients see the same throws. Returns false if the setup failed.
-static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls) {
+static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls, const std::vector<double>& hidden = {}) {
     cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
     if (!rulesStart(s, cfg, c, n, cls, false)) return false;
     s.command("forcestart");
@@ -742,8 +750,10 @@ static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vect
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // live
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // time's up: round end
     CHECK(s.ms_.phase == PHASE_ROUND_END);
-    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; }   // every round played, all on 3
+    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; p.hideSurvived = 0; }   // every round played, all on 3
+    for (size_t k = 0; k < hidden.size() && k < (size_t)n; k++) s.players_[c[k].clientId()].hideSurvived = hidden[k];   // (the time tiebreak, T23)
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    if (!hidden.empty()) return true;   // (the caller checks what the time decided)
     CHECK(s.ms_.phase == PHASE_ROUND_END && (s.ms_.flags & MS_RPS) && s.rps_.stage == RPS_PICK && s.rps_.throwNo == 1);
     for (auto* cl : cls) CHECK(cl->mode().flags & MS_RPS);
     return (s.ms_.flags & MS_RPS) != 0;
@@ -771,6 +781,25 @@ static int rpsShapeIn(const GameEvent& e, int id) {   // a player's shape in an 
     return -1;
 }
 
+// T23: hide and seek tied on score: the most time hidden wins first; only the ones level on that too play rock paper
+// scissors.
+static void testHideTimeTiebreak(uint16_t port) {
+    printf("hide and seek tiebreak: time hidden first, then rock paper scissors\n");
+    {
+        Server s; ServerConfig cfg; cfg.port = port; NetClient c[3]; std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls, {50, 10, 20})) { s.stop(); return; }
+        printf("  3 tied on score, hidden 50 / 10 / 20 s: %s\n", s.ms_.phase == PHASE_MATCH_END ? "match over, no rock paper scissors" : "still going");
+        CHECK(s.ms_.phase == PHASE_MATCH_END && !(s.ms_.flags & MS_RPS));
+        s.stop();
+    }
+    {
+        Server s; ServerConfig cfg; cfg.port = (uint16_t)(port + 1); NetClient c[3]; std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls, {40, 40, 20})) { s.stop(); return; }
+        int in = 0; for (int i = 0; i < kMaxPlayers; i++) in += s.rps_.in >> i & 1;
+        CHECK((s.ms_.flags & MS_RPS) && in == 2 && !(s.rps_.in >> c[2].clientId() & 1) && s.rps_.bestOf3);
+        s.stop();
+    }
+}
 static void testRpsTwo(uint16_t port) {
     printf("hide and seek tiebreak: two tied, best of 3, a draw is thrown again\n");
     Server s;
@@ -859,7 +888,7 @@ static void testRpsMany(uint16_t port) {
         pump(s, cls, 0.2, idle);
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
-        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; p.hideSurvived = 0; }   // (level on time too)
         s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
         CHECK((s.ms_.flags & MS_RPS) && bot >= 0 && s.rps_.pick[bot] >= RPS_ROCK && s.rps_.pick[bot] <= RPS_SCISSORS);
         s.stop();
@@ -933,7 +962,18 @@ static void testLocator(uint16_t port) {
         int n = 0, who = -1;
         for (auto& e : got) if (e.type == EV_LOCATE) { n++; who = e.a; }
         CHECK(n == 1 && who == other);
-        CHECK(locates(oc) == 0);                           // (only to "it"; the hider's locator does nothing)
+        for (auto& e : got) CHECK(e.type != EV_SOUND);     // ("it" plays its own ping)
+        int pings = 0, locs = 0;
+        for (auto& e : oc.takeEvents()) {
+            locs += e.type == EV_LOCATE;
+            if (e.type != EV_SOUND) continue;
+            pings++;
+            Vec3 at; std::istringstream ps(e.text);
+            CHECK(e.a == it && e.c == WPN_LOCATOR && (ps >> at.x >> at.y >> at.z));
+            CHECK(length(at - s.players_[it].move.pos) < 2.0f);   // from where "it" stands
+        }
+        CHECK(locs == 0);                                  // (only to "it"; the hider's locator does nothing)
+        CHECK(pings == 1);                                 // the hider hears the ping
         CHECK(s.players_[it].locateAt > s.time() + kLocatorCooldown - 1.0);
         fire = false; pump(s, cls, 0.1, hold);
         s.players_[it].locateAt = s.time();                // recharged: fires again
@@ -1056,6 +1096,84 @@ static void testTagEscape(uint16_t port) {
     s.stop();
 }
 
+// Tag knockouts last one match (Server::tagOut_ was only ever appended to: in the next tag match on the same server
+// everyone knocked out before was out again at once). A match played to the end, then a new one: all in; a knockout,
+// then a forcestart mid-match (startMatch without the warmup in between): all in again.
+static void testTagNextMatch(uint16_t port) {
+    printf("tag: knockouts don't carry into the next match\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }
+    auto outs = [&] { int n = 0; for (int i = 0; i < 3; i++) if (s.players_[c[i].clientId()].out) n++; return n; };
+    auto playing = [&] { int n = 0; for (int i = 0; i < 3; i++) { auto& p = s.players_[c[i].clientId()]; if (p.alive && !p.out && p.team != TEAM_SPECTATOR) n++; } return n; };
+    auto toLive = [&] { for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); } };
+    // play it out: time runs out on "it" twice, two out, one wins
+    for (int k = 0; k < 2 && s.ms_.phase == PHASE_LIVE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle); toLive(); }
+    printf("  first match: phase %d, %d out\n", s.ms_.phase, outs());
+    CHECK(s.ms_.phase == PHASE_MATCH_END && outs() == 2);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // match over: back to warmup
+    CHECK(s.ms_.phase == PHASE_WARMUP && s.tagOut_.empty());
+    s.command("forcestart");
+    toLive();
+    pump(s, cls, 0.2, idle);
+    printf("  second match: phase %d, %d out, %d in play\n", s.ms_.phase, outs(), playing());
+    CHECK(s.ms_.phase == PHASE_LIVE && outs() == 0 && playing() == 3);
+    // one knocked out, then a forcestart mid-match: a new match, everyone in
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(outs() == 1 && !s.tagOut_.empty());
+    s.command("forcestart");
+    toLive();
+    pump(s, cls, 0.2, idle);
+    printf("  forcestart mid-match: phase %d, %d out\n", s.ms_.phase, outs());
+    CHECK(s.ms_.phase == PHASE_LIVE && outs() == 0 && playing() == 3);
+    s.stop();
+}
+
+// The payload cart's collision box is where the visible cart is in both halves. On a map without staged spawns
+// (railyard) team B's attack runs the track from the other end (Map::cartTrack); the box used the raw distance, so
+// in even rounds it sat at the far end of the track and the cart itself had none, on the server and in the client's
+// prediction alike.
+static void testCartBoxPlace(uint16_t port) {
+    printf("payload: the cart's collision box follows the visible cart\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    bool staged = false;
+    for (auto& sp : s.map_.spawns) if (isStagedSpawn(sp.team)) staged = true;
+    CHECK(!staged);   // (the case: an unstaged map, where team B's cart runs the other way)
+    auto checkBox = [&](const char* what) {
+        s.ms_.payloadDist = s.ms_.payloadLen * 0.25f;   // (a quarter along: the two ends of the track are far apart)
+        auto away = [&](int) { s.payloadIdleSince_ = s.time(); for (int i = 0; i < 2; i++) s.players_[c[i].clientId()].move.pos = s.map_.spawns[0].pos + Vec3(0, 0.5f, 0); return UserCmd(); };
+        pump(s, cls, 0.3, away);
+        Vec3 cart = s.map_.cartPoint(s.ms_.mode, s.ms_.attackers, s.ms_.payloadDist);
+        CHECK(s.map_.dynSolids.size() == 1 && c[0].map().dynSolids.size() == 1);
+        if (s.map_.dynSolids.size() != 1 || c[0].map().dynSolids.size() != 1) return;
+        Vec3 sv = s.map_.dynSolids[0].center(), cl = c[0].map().dynSolids[0].center();
+        float off = length(Vec3(sv.x - cart.x, 0, sv.z - cart.z)), clOff = length(cl - sv);
+        printf("  %s (attackers %s): box %.2f m from the cart, the client's %.2f m from the server's\n", what, s.ms_.attackers == TEAM_A ? "A" : "B", off, clOff);
+        CHECK(off < 0.05f && clOff < 0.3f);
+        float t = s.map_.raycast(cart + Vec3(0, 6, 0), {0, -1, 0}, 12);   // shots stop on the visible cart
+        CHECK(t > 0 && t < 6);
+    };
+    CHECK(s.ms_.attackers == TEAM_A);
+    checkBox("round 1");
+    // team A delivers it; on to round 2, team B attacking
+    s.ms_.payloadDist = s.ms_.payloadLen;
+    pump(s, cls, 0.1, idle);
+    for (int i = 0; i < 100 && !(s.ms_.phase == PHASE_LIVE && s.ms_.round == 2); i++) { if (s.ms_.phase != PHASE_LIVE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.round == 2 && s.ms_.attackers == TEAM_B);
+    if (s.ms_.attackers != TEAM_B) { s.stop(); return; }
+    CHECK(length(s.map_.cartPoint(s.ms_.mode, TEAM_B, s.ms_.payloadLen * 0.25f) - s.map_.payloadPoint(s.ms_.payloadLen * 0.25f)) > 5);
+    checkBox("round 2");
+    s.stop();
+}
+
 // GAME-5: a bomb carrier killed in mid-air drops the bomb on the floor below, not in the air; a bomb nobody picks up
 // goes back to an attacker.
 static void testBombDrop(uint16_t port) {
@@ -1146,34 +1264,253 @@ static void testSpawnTypes(uint16_t port) {
     s.stop();
 }
 
-// GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break.
-static void testRateBetweenRounds(uint16_t port) {
-    printf("tick rate changes only between rounds\n");
-    setTimeScale(1.0);
+// What a shared / CPU-capped VM does to a server that is otherwise idle: every `every` seconds the OS doesn't run it
+// until the server's next tick is `ms` late (the pump's input callback spins: frame() comes that late; the ticks due
+// after it in the stall are a period less late each). Measured from the tick, not a fixed sleep: the input callback
+// only runs on the client's tick grid, so a fixed stall's lateness depended on where that grid sat against the
+// server's (constant through one pump), and a sleep overshoots by up to 1-2 ms on Windows. Busy stays near 0.
+struct Stalls {
+    Server* s;
+    double every;
+    int ms;
+    double next = 0;
+    UserCmd operator()(int) {
+        if (timeNow() >= next) {
+            next = timeNow() + every;
+            for (double t = s->nextTickForTest() + ms * 1e-3; timeNow() < t;) cpuRelax();
+        }
+        return UserCmd();
+    }
+};
+
+// The rate test's verdicts from here on, on `window`-second windows: the window holding the server's start and the
+// connect is dropped unjudged (as the server drops one holding a map load).
+static void rateFreshWindow(Server& s, std::vector<NetClient*>& cls, double window) {
+    g_serverRateCheck = false;   // (a window that ends while the check is off is reset, not judged)
+    s.rateWindow_ = 0.01;
+    pump(s, cls, 0.03, idle);
+    s.rateWindow_ = window;
     g_serverRateCheck = true;
+}
+// pump() that also keeps how late the server's next tick was when each frame() started: the worst lateness the
+// server itself could count. Where a test's premise is a host that adds no stall of its own (beyond what the test
+// injects), a run in which this machine broke it is run again (at most 3 times; the last one counts as it is): the
+// server was then right to count the stalls, and nothing the test asserts is loosened.
+template <class F>
+static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* worst) {
+    double end = timeNow() + seconds;
+    double nextTick = timeNow();
+    while (timeNow() < end) {
+        *worst = std::max(*worst, timeNow() - s.nextTickForTest());
+        s.frame();
+        for (auto* c : cls) c->poll();
+        while (timeNow() >= nextTick) {
+            for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
+            nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
+        }
+        sleepMs(1);
+    }
+}
+static constexpr int kRateTries = 3;
+// Pumps (as ratePump) until the rate test has judged `n` more windows (windowCheckedAt_ moves; at most two windows'
+// time each). `input` is called through a reference, so a Stalls keeps its own schedule across the chunks.
+template <class F>
+static void rateJudged(Server& s, std::vector<NetClient*>& cls, int n, F& input, double* worst) {
+    auto in = [&input](int i) { return input(i); };
+    for (int k = 0; k < n; k++) {
+        const double was = s.windowCheckedAt_, end = timeNow() + s.rateWindow_ * 2;
+        while (s.windowCheckedAt_ == was && timeNow() < end) ratePump(s, cls, 0.02, in, worst);
+    }
+}
+
+// GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break. Here the
+// host's ticks stall (a tick 12 ms late every 0.25 s: ~3% of 1000 Hz ticks over 4 ms late) with almost no load, as the
+// Oracle box did: that alone now steps the tick rate down, once two windows in a row have it (kLateWindows: the first
+// only arms the test, and the governor isn't told yet). (12 ms whatever the rate: over 250 Hz's 8 ms, under 125
+// Hz's 16 with 4 ms to spare either side, so 125 Hz is clean but would count a stall at 250 Hz and stays. The pump's
+// own 1 ms sleep after the stall adds up to 2 ms on Windows: under 16 still. CI once saw 1.6% over 16 ms on Windows
+// with a 14 ms sleep.)
+static void testRateBetweenRounds(uint16_t port) {
+    printf("tick rate changes only between rounds; stalled ticks with no load step it down\n");
+    setTimeScale(1.0);
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    NetClient c[1];
-    std::vector<NetClient*> cls;
-    if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
-    CHECK(s.tickRate() == 1000);
-    c[0].overrideReportedLoss(50);           // (what a struggling host looks like: clients losing snapshots)
-    pump(s, cls, 3.0 * 2.5, idle);           // two and a half rate windows, mid-match
-    printf("  mid-match, losing snapshots: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000);
-    s.phaseEnd_ = s.time();                  // time's up: the match is over
-    pump(s, cls, 0.5, idle);
-    printf("  match over: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
-    s.stop();
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
+        rateFreshWindow(s, cls, 1.5);   // (6 stalls a window)
+        CHECK(s.tickRate() == 1000);
+        Stalls st{&s, 0.25, 12};
+        double w = 0;
+        rateJudged(s, cls, 1, st, &w);   // one window, mid-match: arms the test, nothing more
+        printf("  mid-match, one window stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d), %s\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase,
+               s.rateDownPending_ ? "step down pending" : s.lateWindows_ == 1 ? "waiting for a second window" : "not armed");
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && !s.rateDownPending_ && s.lateWindows_ == 1 && !s.windowBad_);
+        CHECK(s.stallPct_ > 1 && s.statusText().find("waiting for a second") != std::string::npos);
+        rateJudged(s, cls, 1, st, &w);   // a second in a row: the step down waits for the break
+        printf("  a second window stalling (%.1f%%): %d Hz (phase %d), %s\n", s.stallPct_, s.tickRate(), s.ms_.phase, s.rateDownPending_ ? "step down pending" : "no step pending");
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_ && s.windowBad_);
+        CHECK(s.statusText().find("steps down at the next break") != std::string::npos);
+        CHECK(s.stallPct_ > 1 && s.snapRate() == 500);   // (late ticks aren't a bandwidth problem: the snapshot rate stays)
+        s.phaseEnd_ = s.time();                  // time's up: the match is over
+        pump(s, cls, 0.5, idle);
+        printf("  match over: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateWhy_.c_str());
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
+        // between rounds the stalls go on stepping it down (two windows a step) until a tick period absorbs them (at 125
+        // Hz a stall is 16 ms)
+        for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{&s, 0.25, 12});
+        printf("  still stalling, match end: %d Hz\n", s.tickRate());
+        CHECK(s.tickRate() == 125);
+        s.rateUpAt_ = 0;   // (the wait before trying the next rate up: over)
+        double worst = 0;
+        ratePump(s, cls, s.rateWindow_ * 1.5, Stalls{&s, 0.25, 12}, &worst);
+        printf("  at 125 Hz, same stalls: %.1f%% over %.1f ms, %d Hz (latest tick %.1f ms)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), worst * 1e3);
+        bool ok = s.tickRate() == 125 && s.stallPct_ < 1;
+        s.stop();
+        if (!ok && worst > 0.016 && attempt < kRateTries) { printf("  (this machine stalled a tick past 16 ms itself: again)\n"); continue; }
+        CHECK(ok);   // clean at 125, but 250 Hz would stall: it stays
+        return;
+    }
+}
+
+// kLateWindows: late ticks have to come in windows in a row. Stalling, clean, stalling (as a cloud VM's host pausing
+// us now and then does) steps nothing down; a second stalling window in a row then does. (A run in which this machine
+// stalled a tick in the clean window itself, which the server is right to count, runs again: ratePump.)
+static void testRateTwoWindows(uint16_t port) {
+    printf("tick rate: late ticks step it down only in two windows in a row\n");
+    setTimeScale(1.0);
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }   // (live: a step down waits for the break)
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        auto logged = [&](const char* what) { for (auto& l : logs) if (l.find(what) != std::string::npos) return true; return false; };
+        rateFreshWindow(s, cls, 1.5);
+        Stalls st{&s, 0.25, 12};
+        auto calm = [](int) { return UserCmd(); };
+        double w = 0, quiet = 0;
+        rateJudged(s, cls, 1, st, &w);
+        const bool armed = s.lateWindows_ == 1 && !s.rateDownPending_ && !s.windowBad_;
+        rateJudged(s, cls, 1, calm, &quiet);
+        const double pct = s.stallPct_;
+        const bool disarmed = s.lateWindows_ == 0 && !s.rateDownPending_;
+        rateJudged(s, cls, 1, st, &w);
+        const bool again = s.lateWindows_ == 1 && !s.rateDownPending_ && s.tickRate() == 1000;
+        printf("  stalling, clean (%.2f%%, latest tick %.1f ms), stalling: %d Hz, %s\n", pct, quiet * 1e3, s.tickRate(),
+               s.rateDownPending_ ? "step down pending" : s.lateWindows_ == 1 ? "waiting for a second window" : "not armed");
+        if (!(armed && disarmed && again) && quiet > s.stallAfter_ && attempt < kRateTries) { s.stop(); printf("  (this machine stalled a tick in the clean window itself: again)\n"); continue; }
+        CHECK(armed && disarmed && again);
+        CHECK(logged("late ticks in one window (") && logged("waiting for a second") && logged("the next window was clean"));
+        rateJudged(s, cls, 1, st, &w);   // the second stalling window in a row
+        printf("  and stalling again: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateDownPending_ ? "step down pending" : "no step pending");
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_ && s.windowBad_);
+        CHECK(logged("stepping down at the next break"));
+        s.stop();
+        return;
+    }
 }
 
 // REVIEW 6.1: a step up (made in a break) that doesn't hold is undone at once, even mid-round; any other step down
-// still waits for the break.
+// still waits for the break. (Late ticks alone: two windows in a row, the first within 3 windows of the raise.)
 static void testRateUndoStepUp(uint16_t port) {
     printf("tick rate: a step up that doesn't hold is undone mid-round\n");
+    setTimeScale(1.0);
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+        s.rateLevel_ = 1;   // stepped down earlier (500 Hz); the wait before trying 1000 again is over
+        s.rateUpAt_ = 0;
+        rateFreshWindow(s, cls, 1.5);
+        double worst = 0;
+        for (int k = 0; k < 60 && s.tickRate() == 500; k++) ratePump(s, cls, 0.25, idle, &worst);   // a clean warmup window: up
+        printf("  warmup: %d Hz%s%s (latest tick %.1f ms)\n", s.tickRate(), s.rateWhy_.empty() ? "" : "; ", s.rateWhy_.c_str(), worst * 1e3);
+        if (s.tickRate() != 1000 && worst > s.stallAfter_ && attempt < kRateTries) { s.stop(); printf("  (this machine stalled a tick itself: again)\n"); continue; }
+        CHECK(s.ms_.phase == PHASE_WARMUP && s.tickRate() == 1000);
+        s.command("forcestart");
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        Stalls st{&s, 0.25, 12};                  // the raise doesn't hold
+        rateJudged(s, cls, 1, st, &worst);
+        printf("  live, one window stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.lateWindows_ == 1);   // (one window: not yet)
+        rateJudged(s, cls, 1, st, &worst);
+        printf("  live, two windows stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
+        pump(s, cls, s.rateWindow_ * 2.5, st);   // still stalling, but that's no longer our own raise: waits for the break
+        printf("  still stalling: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500 && s.rateDownPending_);
+        s.phaseEnd_ = s.time();                  // time's up: the match is over
+        pump(s, cls, 0.5, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 250);   // (the pending step down, at the break)
+        s.stop();
+        return;
+    }
+}
+
+// A healthy host's jitter is no stall: Windows' 1 ms timer grid wakes a 1000 Hz tick up to a period late (p99 ~0.7-1
+// ms), and now and then later. Here the server runs its own loop (frame, idle: as quark_server does) and every wake
+// comes 0-1 ms late, one in 50 1-3 ms late: 1000 Hz and 500 snapshots/s stay. (Two 1.5 s windows; a run in which this
+// machine itself made a tick 4 ms late, a stall the server is right to count, runs again: ratePump.)
+static void testRateJitter(uint16_t port) {
+    printf("tick rate: a healthy host's timer jitter doesn't step it down\n");
+    setTimeScale(1.0);
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+        rateFreshWindow(s, cls, 1.5);
+        uint32_t r = 12345;
+        auto rnd = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0; };
+        double end = timeNow() + s.rateWindow_ * 2.3, next = timeNow(), worst = 0;
+        while (timeNow() < end) {
+            worst = std::max(worst, timeNow() - s.nextTickForTest());   // (as ratePump)
+            double wait = s.frame(), t0 = wallNow();
+            s.idle(wait);
+            hostWaited(t0, wait);
+            double late = rnd() < 0.02 ? 0.001 + 0.002 * rnd() : 0.001 * rnd();
+            t0 = wallNow();
+            for (double t = timeNow() + late; timeNow() < t;) {}   // (woken that late)
+            hostWaited(t0, late);
+            c[0].poll();
+            while (timeNow() >= next) { c[0].tick(UserCmd()); next += c[0].tickPeriod(); }
+        }
+        std::string st = s.statusText();
+        printf("  %s\n", st.substr(0, st.find("\n  #")).c_str());
+        printf("  latest tick: %.1f ms (the test's own jitter: at most 3 and a bit)\n", worst * 1e3);
+        bool ok = s.tickRate() == 1000 && s.snapRate() == 500 && s.rateWhy_.empty() && s.stallPct_ < 0.2;
+        double over = s.stallAfter_;
+        s.stop();
+        if (!ok && worst > over && attempt < kRateTries) { printf("  (this machine stalled a tick past %.0f ms itself: again)\n", over * 1e3); continue; }
+        CHECK(ok);
+        return;
+    }
+}
+
+// --max-upload-kbps: past 90% of it the snapshot rate steps down (500 333 250 125/s), at once (any phase), then the
+// tick rate; with the cap gone (and the wait over) it climbs back: the tick rate first, then the snapshot rate.
+static void testUploadCap(uint16_t port) {
+    printf("upload cap: snapshot rate first, then tick rate; back up when it fits\n");
     setTimeScale(1.0);
     g_serverRateCheck = true;
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
@@ -1183,24 +1520,96 @@ static void testRateUndoStepUp(uint16_t port) {
     NetClient c[1];
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
-    s.rateLevel_ = 1;   // stepped down earlier (500 Hz); the wait before trying 1000 again is over
+    s.rateStalls_ = false;   // (bandwidth only: this machine's own stalls aren't the test's; see testTickRateFallback)
+    s.rateWindow_ = 1.0;
+    pump(s, cls, s.rateWindow_ * 2.2, idle);
+    double full = s.upKbps_;   // one player at 500/s
+    printf("  one player: upload %.0f kbps at %d/s\n", full, s.snapRate());
+    CHECK(full > 50 && s.snapRate() == 500 && s.tickRate() == 1000);
+    // a cap the 333/s rate fits under (with room): one step, the tick rate untouched
+    s.cfg_.maxUploadKbps = (int)(full * 0.85);
+    pump(s, cls, s.rateWindow_ * 4.2, idle);
+    printf("  cap %d kbps: %d/s at %d Hz, upload %.0f kbps; %s\n", s.cfg_.maxUploadKbps, s.snapRate(), s.tickRate(), s.upKbps_, s.rateWhy_.c_str());
+    CHECK(s.snapRate() == 333 && s.tickRate() == 1000);
+    CHECK(s.rateWhy_.find("upload") != std::string::npos);
+    // a cap nothing fits under: every snapshot step, then every tick step
+    s.cfg_.maxUploadKbps = 1;
+    std::vector<std::pair<int, int>> steps;
+    std::pair<int, int> was{s.tickRate(), s.snapRate()};
+    for (int k = 0; k < 120 && s.tickRate() > 125; k++) {
+        pump(s, cls, 0.1, idle);
+        std::pair<int, int> is{s.tickRate(), s.snapRate()};
+        if (is != was) steps.push_back(was = is);
+    }
+    for (auto& st : steps) printf("  -> %d Hz, %d/s\n", st.first, st.second);
+    std::vector<std::pair<int, int>> want = {{1000, 250}, {1000, 125}, {500, 125}, {250, 125}, {125, 125}};
+    CHECK(steps == want);
+    CHECK(c[0].snapRate() == 125);
+    // cap gone, the backoff wait over: one step up per clean window, the tick rate first
+    s.cfg_.maxUploadKbps = 0;
     s.rateUpAt_ = 0;
-    for (int k = 0; k < 60 && s.tickRate() != 1000; k++) pump(s, cls, 0.25, idle);   // a clean warmup window: up
-    printf("  warmup: %d Hz\n", s.tickRate());
-    CHECK(s.ms_.phase == PHASE_WARMUP && s.tickRate() == 1000);
-    s.command("forcestart");
-    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    c[0].overrideReportedLoss(50);           // the raise doesn't hold
-    for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, idle);
-    printf("  live, losing snapshots after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
-    pump(s, cls, 3.0 * 2.5, idle);           // still losing, but that's no longer our own raise: waits for the break
-    printf("  still losing: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500 && s.rateDownPending_);
-    s.phaseEnd_ = s.time();                  // time's up: the match is over
-    pump(s, cls, 0.5, idle);
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 250);   // (the pending step down, at the break)
+    steps.clear();
+    for (int k = 0; k < 150 && !(s.tickRate() == 1000 && s.snapRate() == 500); k++) {
+        pump(s, cls, 0.1, idle);
+        std::pair<int, int> is{s.tickRate(), s.snapRate()};
+        if (is != was) steps.push_back(was = is);
+    }
+    for (auto& st : steps) printf("  <- %d Hz, %d/s\n", st.first, st.second);
+    want = {{250, 125}, {500, 125}, {1000, 125}, {1000, 250}, {1000, 333}, {1000, 500}};
+    CHECK(steps == want);
+    CHECK(s.snapCap_ == 0);
+    pump(s, cls, 0.3, idle);
+    CHECK(c[0].snapRate() == 500 && c[0].tickRate() == 1000);
+    s.stop();
+}
+
+// No cap: congestion on the server's uplink shows in most players at once (losing snapshots, or their ping rising
+// together: the queue delays everyone). One player's bad connection never moves the server; two of three do.
+static void testSharedCongestion(uint16_t port) {
+    printf("congestion: most players at once lower the snapshot rate, one player never\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }   // (live: snapshot steps don't wait for a break)
+    s.rateStalls_ = false;   // (loss and ping only: this machine's own stalls aren't the test's; see testTickRateFallback)
+    s.rateWindow_ = 1.0;
+    const double w = s.rateWindow_;
+    // slow: these clients read their socket only every 150 ms (their acks age: each ping, measured by the server, up)
+    auto run = [&](double secs, int slow) {
+        double end = timeNow() + secs, next = timeNow(), read[3] = {};
+        while (timeNow() < end) {
+            s.frame();
+            for (int i = 0; i < 3; i++) if (i >= slow || timeNow() - read[i] >= 0.15) { c[i].poll(); read[i] = timeNow(); }
+            while (timeNow() >= next) { for (auto* cl : cls) cl->tick(UserCmd()); next += c[2].tickPeriod(); }
+            hostSleepMs(1);
+        }
+    };
+    run(w * 2.2, 0);   // (each player's uncongested ping)
+    c[0].overrideReportedLoss(50);
+    run(w * 3.2, 0);
+    printf("  one player losing snapshots: %d Hz, %d/s\n", s.tickRate(), s.snapRate());
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && !s.rateDownPending_);
+    c[0].overrideReportedLoss(0);
+    run(w * 3.2, 1);
+    printf("  one player's ping up (%.0f ms, was %.0f): %d Hz, %d/s\n", s.players_[c[0].clientId()].ping, s.players_[c[0].clientId()].pingBase, s.tickRate(), s.snapRate());
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && !s.rateDownPending_);
+    c[0].overrideReportedLoss(50); c[1].overrideReportedLoss(50);
+    for (int k = 0; k < 30 && s.snapRate() == 500; k++) run(0.1, 0);
+    printf("  two of three losing snapshots: %d Hz, %d/s (phase %d); %s\n", s.tickRate(), s.snapRate(), s.ms_.phase, s.rateWhy_.c_str());
+    CHECK(s.snapRate() == 333 && s.tickRate() == 1000 && s.ms_.phase == PHASE_LIVE);
+    CHECK(s.rateWhy_.find("2 of 3 players losing") != std::string::npos);
+    c[0].overrideReportedLoss(0); c[1].overrideReportedLoss(0);
+    run(w * 2.2, 0);   // (the window that still had their loss reports)
+    int was = s.snapRate();
+    for (int k = 0; k < 40 && s.snapRate() == was; k++) run(0.1, 2);
+    printf("  two of three with their ping up: %d Hz, %d/s; %s\n", s.tickRate(), s.snapRate(), s.rateWhy_.c_str());
+    CHECK(s.snapRate() < was && s.tickRate() == 1000);
+    CHECK(s.rateWhy_.find("ping up on 2 of 3") != std::string::npos);
     s.stop();
 }
 
@@ -1269,29 +1678,779 @@ static void testScoreboardValue() {
     CHECK(!scoreboardGibs(ms) && scoreboardValue(fragger, ms) == 5);
 }
 
-// "quark_tests rules [name]": all of them, or the one named.
-static void testGameRules(const std::string& only) {
-    struct R { const char* name; std::function<void()> run; };
-    std::vector<R> all = {
-        {"overtime", [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
-        {"syringe", [] { testSyringeModes(); }},
-        {"throws", [] { testThrowCooldown(TP(29240)); }},
-        {"hull", [] { testSizeHull(TP(29242)); }},
-        {"grapple", [] { testGrappleNoBrake(); testGrapplePmove(); }},
-        {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
-        {"head", [] { testHeadBox(TP(29246)); }},
-        {"hide", [] { testHideScoring(TP(29247)); }},
-        {"tag", [] { testTagEscape(TP(29248)); }},
-        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
-        {"locator", [] { testLocator(TP(29260)); }},
-        {"aware", [] { testItAwareness(TP(29263)); }},
-        {"bomb", [] { testBombDrop(TP(29249)); }},
-        {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", [] { testSpawnTypes(TP(29251)); }},
-        {"seeds", [] { testRandomSeeds(); }},
-        {"heal", [] { testLifeHealCap(TP(29253)); }},
-        {"scoreboard", [] { testScoreboardValue(); }},
+// The HUD's live line (src/client/hudclock.h): every mode with a running round clock shows it on the default HUD
+// (1.17.0-1.18.2 showed it only in overtime, KOTH, the drain modes and the time trial: FFA, tag, hide, bomb,
+// payload, both-ways payload, points and race had no clock). Checked on what a client receives from a real server
+// in each mode, plus the special cases by hand.
+static void testHudClock(uint16_t port) {
+    printf("hud clock: every timed mode shows its clock while live\n");
+    char line[32];
+    auto fmt = [](float sec) { int t = (int)std::ceil(std::max(0.0f, sec)); char b[16]; snprintf(b, sizeof b, "%d:%02d", t / 60, t % 60); return std::string(b); };
+    struct Case { int mode; const char* map; int players; };
+    for (Case cs : {Case{MODE_FFA, "harbor", 2}, Case{MODE_TAG, "foundry", 3}, Case{MODE_HIDE, "hamlet", 3}, Case{MODE_BOMB, "depot", 2},
+                    Case{MODE_PAYLOAD, "railyard", 2}, Case{MODE_NPAYLOAD, "canal", 2}, Case{MODE_POINTS, "midtown", 2}, Case{MODE_RACE, "viaduct", 2},
+                    Case{MODE_KOTH, "summit", 2}, Case{MODE_VS, "bastion", 2}, Case{MODE_DUEL, "clockwork", 2}, Case{MODE_ARENA, "temple", 2}}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = cs.map; cfg.mode = cs.mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[3];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, cs.players, cls)) { s.stop(); continue; }
+        pump(s, cls, 0.3, idle);
+        const ModeState& ms = c[0].mode();   // (what the HUD draws from)
+        hudLiveLine(ms, line, sizeof line);
+        const bool drainMode = cs.mode == MODE_VS || cs.mode == MODE_DUEL || cs.mode == MODE_ARENA;
+        printf("  %s: phase %d, time left %.1f -> \"%s\"\n", modeName(cs.mode), ms.phase, ms.timeLeft, line);
+        CHECK(ms.phase == PHASE_LIVE);
+        if (cs.mode == MODE_KOTH) CHECK(ms.timeLeft == 0 && std::string(line) == "FIRST TO " + std::to_string(ms.target));   // (untimed)
+        else if (drainMode) CHECK(ms.timeLeft > 0 && std::string(line) == "DRAIN IN " + fmt(ms.timeLeft));
+        else CHECK(ms.timeLeft > 10 && std::string(line) == fmt(ms.timeLeft));   // the round clock itself
+        s.stop();
+    }
+    // the special cases
+    ModeState m;
+    m.phase = PHASE_LIVE;
+    m.mode = MODE_BOMB; m.timeLeft = 61.2f;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "1:02");
+    m.bombState = BOMB_PLANTED; m.bombTimer = 34.5f; m.timeLeft = 34.5f;   // planted: the fuse is the clock
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "BOMB 0:35");
+    m = ModeState(); m.phase = PHASE_LIVE; m.mode = MODE_PAYLOAD; m.flags = MS_OVERTIME; m.timeLeft = 3.2f;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME 0:04");
+    m.mode = MODE_FFA; m.timeLeft = 0;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME - NEXT KILL WINS");
+    m.flags = MS_TIMETRIAL; m.mode = MODE_RACE; m.timeLeft = 300.0f - 72.345f;   // the run time, counting up
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "1:12.34");
+    m.flags = 0; m.mode = MODE_TAG; m.timeLeft = 0;   // no clock running: nothing (never a frozen 0:00)
+    hudLiveLine(m, line, sizeof line); CHECK(line[0] == 0);
+    m.mode = MODE_VS; m.flags = MS_DRAIN;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "STALEMATE - HEALTH DRAINING");
+}
+
+// The predicted weapon (src/client/weaponpredict.h, what the client draws and fires locally): after every command,
+// the weapon the server holds is the one that command predicted, and the fire lock matches the server's
+// (runPlayerCmd: switching with fire held locks fire until it's let go). Before 1.18.7 the client showed the old
+// weapon until a snapshot confirmed the switch, and the confirmation itself (the command going back to "no change")
+// locked local fire while the server kept firing. A refusal the client didn't see coming falls back to the server's
+// weapon once the server has run the asking command; dead, nothing switches.
+static void testWeaponPredict(uint16_t port) {
+    printf("weapon prediction: each command's predicted weapon and fire lock are the server's\n");
+    {   // A knife throw predicted while the snapshots still say the knife (a round trip): the commands after it keep
+        // the weapon held before the knife, as the server does. It showed the first slot, the rocket, until the
+        // snapshot caught up (seen at Windows' 1x test pace, where a tick falls in that window).
+        WeaponPredictor p;
+        WeaponView v; v.alive = true; v.serverWeapon = WPN_SHOTGUN;
+        UserCmd c;
+        p.want(WPN_KNIFE); p.fill(c, 0, 1);
+        CHECK(p.run(c, v) == WPN_KNIFE);
+        v.serverWeapon = WPN_KNIFE; v.ackSeq = 1;
+        UserCmd c2; p.fill(c2, 1, 2);
+        CHECK(p.run(c2, v) == WPN_KNIFE);
+        v.away = 1u << WPN_KNIFE;   // (the throw, predicted: the snapshot still says the knife, not yet away)
+        CHECK(p.thrown(v) == WPN_SHOTGUN);
+        UserCmd c3; p.fill(c3, 1, 3);
+        CHECK(p.run(c3, v) == WPN_SHOTGUN && p.current(v) == WPN_SHOTGUN);
+        v.serverWeapon = WPN_SHOTGUN;   // (the snapshot catches up)
+        UserCmd c4; p.fill(c4, 3, 4);
+        CHECK(p.run(c4, v) == WPN_SHOTGUN);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;   // (warmup: no restarts)
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 1.0, idle);
+    NetClient& a = c[0];
+    ServerPlayer& sp = s.players_[a.clientId()];
+    CHECK(sp.alive && a.hasSnapshot());
+    WeaponPredictor wp;
+    struct Pred { uint32_t seq = 0; int weapon = -1; bool locked = false, alive = false; };   // (alive: as the client saw it)
+    std::vector<Pred> ring(NetClient::kCmdRing);
+    bool locked = false, verify = true;
+    uint16_t buttons = 0, localAway = 0, maskOverride = 0;
+    int checked = 0, wrong = 0, lockWrong = 0, lastPred = -1, switches = 0;
+    uint8_t lastCmdWeapon = kNoWeaponChange;
+    auto view = [&] {
+        WeaponView v;
+        const Snapshot& sn = a.latest();
+        v.serverWeapon = sn.selfWeapon; v.ackSeq = sn.ackCmdSeq; v.alive = a.selfAlive();
+        v.mask = maskOverride ? maskOverride : sn.ms.weaponMask;
+        v.away = (uint16_t)(localAway | (sn.knifeAway ? 1u << WPN_KNIFE : 0u) | (sn.syringeAway ? 1u << WPN_SYRINGE : 0u));
+        return v;
     };
-    for (auto& r : all) if (only.empty() || only == r.name) r.run();
-    if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")
+    auto throwNext = false;
+    auto input = [&](int i) {
+        UserCmd u;
+        if (i != 0) return u;
+        u.pitch = 1.3f;   // (at the sky: nobody hit)
+        // the server has run sp.lastCmdSeq: what it holds now is what that command predicted
+        const Pred& p = ring[sp.lastCmdSeq % ring.size()];
+        if (verify && sp.alive && p.alive && sp.lastCmdSeq && p.seq == sp.lastCmdSeq) {   // (a respawn sets the weapon outside any command)
+            checked++;
+            if (p.weapon != sp.weapon && wrong++ < 3) printf("  seq %u: predicted %d, server holds %d\n", p.seq, p.weapon, sp.weapon);
+            if (p.locked != sp.fireLocked && lockWrong++ < 3) printf("  seq %u: predicted lock %d, server %d\n", p.seq, p.locked, sp.fireLocked);
+        }
+        if (localAway && a.latest().knifeAway) localAway = 0;   // (the server's word has it now)
+        u.buttons = buttons;
+        wp.fill(u, a.latest().ackCmdSeq, a.nextSeq());
+        bool sl = false;
+        int w = wp.run(u, view(), &sl);   // (as Game's tick loop does)
+        if (sl) locked = true;
+        if (throwNext && (u.buttons & BTN_ALTFIRE)) { localAway = 1u << WPN_KNIFE; locked = true; w = wp.thrown(view()); throwNext = false; }
+        if (locked && !(u.buttons & (BTN_FIRE | BTN_ALTFIRE))) locked = false;
+        if (lastPred >= 0 && w != lastPred) switches++;
+        lastPred = w; lastCmdWeapon = u.weapon;
+        ring[a.nextSeq() % ring.size()] = {a.nextSeq(), w, locked, a.selfAlive()};
+        return u;
+    };
+    // One command, before the server runs anything: what the key shows at once. (A 2 ms pump ran two commands at 1x
+    // time, Windows' pace, with the server's refusal in between, so it checked the second.)
+    auto oneCmd = [&] { for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i)); };
+    // 1. a plain switch: predicted from the first command on
+    wp.want(WPN_RIFLE);
+    pump(s, cls, 0.4, input);
+    CHECK(sp.weapon == WPN_RIFLE && lastPred == WPN_RIFLE && wp.desired < 0 && lastCmdWeapon == kNoWeaponChange);
+    // 2. fire pressed right after the key, held through the confirmation: never locked (the 1.18.2 bug), firing all along
+    wp.want(WPN_SHOTGUN);
+    oneCmd();
+    CHECK(lastPred == WPN_SHOTGUN);
+    buttons = BTN_FIRE;
+    double lf = sp.lastFire;
+    pump(s, cls, 0.4, input);
+    CHECK(sp.weapon == WPN_SHOTGUN && !sp.fireLocked && !locked && sp.lastFire != lf && wp.desired < 0);
+    // 3. switching with fire held: locked on both sides until it's let go
+    wp.want(WPN_SNIPER);
+    pump(s, cls, 0.3, input);
+    CHECK(sp.weapon == WPN_SNIPER && sp.fireLocked && locked);
+    buttons = 0;
+    pump(s, cls, 0.1, input);
+    CHECK(!sp.fireLocked && !locked);
+    // 4. a refusal the client didn't see coming (it thinks the pool has the locator): the server's weapon comes back
+    //    once it has run the asking command, and the command stops asking
+    maskOverride = 0xFFFF; verify = false;
+    int before = switches;
+    wp.want(WPN_LOCATOR);
+    oneCmd();
+    CHECK(lastPred == WPN_LOCATOR);
+    pump(s, cls, 0.3, input);
+    CHECK(sp.weapon == WPN_SNIPER && lastPred == WPN_SNIPER && wp.desired < 0 && lastCmdWeapon == kNoWeaponChange && switches - before == 2);
+    maskOverride = 0; verify = true;
+    // ...and one the client does see coming (outside the pool): no switch at all
+    before = switches;
+    wp.want(WPN_LOCATOR);
+    pump(s, cls, 0.2, input);
+    CHECK(sp.weapon == WPN_SNIPER && switches == before);
+    // 5. the knife thrown: the weapon held before it, in the same command; asking for the knife while it's away: refused
+    wp.want(WPN_KNIFE);
+    pump(s, cls, 1.2, input);   // (out, and past the switch's refire)
+    CHECK(sp.weapon == WPN_KNIFE);
+    throwNext = true;
+    buttons = BTN_ALTFIRE;
+    pump(s, cls, 0.2, input);
+    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    CHECK(sp.weapon == WPN_SNIPER);   // back to the weapon held before the knife (T14; it was the first slot, the rocket)
+    buttons = 0;
+    wp.want(WPN_KNIFE);
+    pump(s, cls, 0.3, input);
+    CHECK(sp.weapon != WPN_KNIFE && lastPred == sp.weapon && wp.desired < 0);
+    // 6. dead: nothing switches (the server keeps the choice for the respawn)
+    s.killPlayer(a.clientId(), -1, 252);
+    pump(s, cls, 0.1, input);
+    wp.want(WPN_LASER);
+    pump(s, cls, 0.3, input);
+    CHECK(!sp.alive && lastPred == a.selfWeapon() && wp.desired < 0);
+    for (int k = 0; k < 100 && !sp.alive; k++) pump(s, cls, 0.05, input);
+    pump(s, cls, 0.2, input);
+    CHECK(sp.alive && sp.weapon == WPN_LASER && lastPred == WPN_LASER);
+    // 7. a round trip like online play (the server and the client's network only every 40 ms): the switch shows from
+    //    the key on while the snapshots still say the old weapon, and fire pressed in that window isn't locked when
+    //    the confirmation comes
+    auto lagPump = [&](double seconds) {
+        double end = timeNow() + seconds, nextTick = timeNow(), nextNet = timeNow();
+        while (timeNow() < end) {
+            if (timeNow() >= nextNet) { s.frame(); for (auto* cl : cls) cl->poll(); nextNet += 0.04; }
+            while (timeNow() >= nextTick) { for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i)); nextTick += a.tickPeriod(); }
+            sleepMs(1);
+        }
+    };
+    lagPump(0.3);
+    int was = sp.weapon;
+    CHECK(was == WPN_LASER);
+    wp.want(WPN_RIFLE);
+    lagPump(0.01);
+    CHECK(lastPred == WPN_RIFLE && a.selfWeapon() == was);   // (shown now; the server's word still the old one)
+    buttons = BTN_FIRE;
+    lf = sp.lastFire;
+    lagPump(0.8);   // (a few round trips: a loaded machine (the full run) sometimes missed it in 0.4 s)
+    CHECK(sp.weapon == WPN_RIFLE && a.selfWeapon() == WPN_RIFLE && !locked && !sp.fireLocked && sp.lastFire != lf && wp.desired < 0);
+    wp.want(WPN_SHOTGUN);   // (fire still held: locked)
+    lagPump(0.3);
+    CHECK(sp.weapon == WPN_SHOTGUN && locked && sp.fireLocked);
+    buttons = 0;
+    lagPump(0.2);
+    CHECK(!locked && !sp.fireLocked);
+    printf("  %d commands checked, %d weapons and %d fire locks predicted wrong\n", checked, wrong, lockWrong);
+    CHECK(checked > 500 && wrong == 0 && lockWrong == 0);
+    s.stop();
+}
+
+// F6: a hide and seek seeker who falls is back 2 s later (it stayed dead and the round idled out its 300 s).
+static void testSeekerRespawn(uint16_t port) {
+    printf("hide and seek: a fallen seeker respawns\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) it = i;
+    CHECK(it >= 0);
+    if (it < 0) { s.stop(); return; }
+    s.players_[it].move.pos.y = s.map_.killY() - 5;   // a fall
+    pump(s, cls, 0.1, idle);
+    CHECK(!s.players_[it].alive);
+    pumpServerTime(s, cls, 1.5, idle);
+    CHECK(!s.players_[it].alive);
+    pumpServerTime(s, cls, 0.7, idle);
+    printf("  seeker alive after 2.2 s: %d, still it: %d, phase %d\n", s.players_[it].alive, s.players_[it].it, s.ms_.phase);
+    CHECK(s.players_[it].alive && s.players_[it].it && s.ms_.phase == PHASE_LIVE);
+    s.stop();
+}
+
+// F5: not ranked, a match that loses a side holds still (no rounds handed to the side that's left), then after 10 s
+// it's a forfeit win; an emptied server goes back to warmup. A forced short-handed start plays on.
+static void testShortHanded(uint16_t port) {
+    printf("short-handed matches: forfeit or warmup after 10 s\n");
+    std::vector<std::string> logs;
+    for (int mode : {MODE_ARENA, MODE_VS, MODE_KOTH}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_KOTH ? "summit" : mode == MODE_ARENA ? "temple" : "bastion"; cfg.mode = mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        logs.clear();
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int stay = c[0].clientId();
+        s.command("kick " + s.players_[c[1].clientId()].name);
+        std::vector<NetClient*> one = {&c[0]};
+        pumpServerTime(s, one, 2.0, idle);
+        int scored = s.ms_.scoreA + s.ms_.scoreB;
+        CHECK(s.short_ && s.ms_.phase != PHASE_MATCH_END && (mode == MODE_KOTH || scored == 0));
+        s.shortSince_ = s.time() - 9.95;   // (most of the 10 s gone)
+        pumpServerTime(s, one, 0.2, idle);
+        bool named = false;
+        for (auto& l : logs) named |= l.find(s.players_[stay].name + " wins") != std::string::npos || l.find("TEAM A wins") != std::string::npos || l.find("TEAM B wins") != std::string::npos;
+        printf("  %s: one side left -> phase %d, %d rounds awarded on hold, forfeit called %d\n", modeName(mode), s.ms_.phase, scored, named);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && named);
+        if (mode == MODE_ARENA) {   // 1v1: the call names the player, not TEAM A
+            bool byName = false;
+            for (auto& l : logs) byName |= l.find(s.players_[stay].name + " wins") != std::string::npos;
+            CHECK(byName);
+        }
+        // everyone gone: back to warmup
+        pumpServerTime(s, one, 0.1, idle);
+        s.command("forcestart");
+        pump(s, one, 0.1, idle);
+        s.command("kick " + s.players_[stay].name);
+        std::vector<NetClient*> none;
+        pump(s, none, 0.3, idle);
+        if (s.short_) s.shortSince_ = s.time() - 9.95;
+        pumpServerTime(s, none, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_WARMUP);
+        s.stop();
+    }
+    {   // forcestart with one player (a host trying a map alone): it plays on
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "summit"; cfg.mode = MODE_KOTH; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (rulesStart(s, cfg, c, 1, cls)) {
+            pumpServerTime(s, cls, 0.5, idle);
+            CHECK(!s.short_ && s.ms_.phase != PHASE_WARMUP && s.ms_.phase != PHASE_MATCH_END);
+        }
+        s.stop();
+    }
+}
+
+// F7: play vs bots in 1V1 is one enemy and no allies whatever the team sliders say; duel its team size a side.
+static void testVsBotsDuo(uint16_t port) {
+    printf("play vs bots: 1v1 and duel sizes\n");
+    for (int mode : {MODE_ARENA, MODE_DUEL}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_ARENA ? "temple" : "clockwork"; cfg.mode = mode; cfg.port = port++;
+        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.duelTeamSize = 2;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { CHECK(false); continue; }
+        int a = 0, b = 0;
+        for (auto& p : s.players_) if (p.connected && p.isBot) (p.team == TEAM_A ? a : b)++;
+        printf("  %s: %d allies, %d enemies\n", modeName(mode), a, b);
+        CHECK(mode == MODE_ARENA ? (a == 0 && b == 1) : (a == 1 && b == 2));
+        s.stop();
+    }
+}
+
+// F9 + T15: payload / multi point stopwatch. The first round's call is the mark to beat (no ROUND WON for either
+// side); the second ends as soon as the attackers pass it, with a call that agrees with the match result.
+static void testStopwatch(uint16_t port) {
+    printf("payload / multi point: stopwatch calls and early end\n");
+    for (int mode : {MODE_PAYLOAD, MODE_POINTS}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = mode == MODE_PAYLOAD ? "railyard" : "midtown"; cfg.mode = mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        // round 1: some progress, then time out
+        if (mode == MODE_PAYLOAD) s.ms_.payloadDist = 20.0f; else s.ms_.capture = 0.5f;
+        pump(s, cls, 0.1, idle);
+        float mark = s.bestProgress_[first];
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        bool beat = false;
+        for (auto& l : logs) beat |= l.find("must beat it") != std::string::npos;
+        printf("  %s round 1: \"%s\"\n", modeName(mode), logs.empty() ? "" : logs.back().c_str());
+        CHECK(beat && mark > 0);
+        // round 2: the other side passes the mark early: it ends right there, theirs
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        for (int k = 0; k < 40 && s.ms_.phase != PHASE_LIVE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.attackers != first && s.ms_.phase == PHASE_LIVE);
+        pump(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_LIVE);   // (not yet past it)
+        logs.clear();
+        if (mode == MODE_PAYLOAD) s.ms_.payloadDist = mark + 1.0f; else s.ms_.capture = std::min(0.99f, mark + 0.2f);
+        pump(s, cls, 0.1, idle);
+        printf("  %s round 2: phase %d \"%s\"\n", modeName(mode), s.ms_.phase, logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("beats") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(first == TEAM_A ? "TEAM B" : "TEAM A") + " wins the match") != std::string::npos;
+        CHECK(won);
+        s.stop();
+    }
+    {   // against a finished attack: once the clock is past its time the round ends, the first side's
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int first = s.ms_.attackers;
+        s.ms_.payloadDist = s.ms_.payloadLen;
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END && s.completeTime_[first] > 0);
+        s.completeTime_[first] = 100;   // (a 1:40 delivery: the instant one here would lock round 2 before it's checked)
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.roundStart_ = s.time() - s.completeTime_[first] - 0.5;   // (their clock is past the first delivery)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.scoreA + s.ms_.scoreB == 1);
+        s.stop();
+    }
+}
+
+// T17: a level attack is decided by who got there sooner, not by tiebreaker rounds. Multi point, one point each:
+// the second side there sooner wins at once (locked); there later, the first side wins at time out, in two rounds.
+static void testStopwatchLevel(uint16_t port) {
+    printf("payload / multi point: level attacks go to the sooner\n");
+    for (bool sooner : {true, false}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "midtown"; cfg.mode = MODE_POINTS; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        s.ms_.capture = 1.05f;   // point A taken (past 1: nobody on it, it drains a hair first)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.point == 1 && s.bestProgress_[first] == 1.0f);
+        s.bestTime_[first] = sooner ? 100.0f : 0.01f;   // (when they got there)
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.ms_.capture = 1.05f;   // point A for the other side too: level
+        pump(s, cls, 0.1, idle);
+        if (!sooner) { CHECK(s.ms_.phase == PHASE_LIVE); s.phaseEnd_ = s.time() - 10; pumpServerTime(s, cls, 0.2, idle); }
+        printf("  there %s: \"%s\"\n", sooner ? "sooner" : "later", logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("level with") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        int w = sooner ? (first == TEAM_A ? TEAM_B : TEAM_A) : first;
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(w == TEAM_A ? "TEAM A" : "TEAM B") + " wins the match") != std::string::npos;
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2 && won);
+        s.stop();
+    }
+}
+
+// T18: on a payload map whose spawns don't move up (Railyard), attackers past the last checkpoint respawn in 3 s,
+// everyone else in the usual 5 s.
+// Natively and through payload.qlogic's respawnDelay slot (forced through the interpreter): the same numbers.
+static void testLastLegRespawn(uint16_t port) {
+  for (int interp = 0; interp < 2; interp++) {
+    printf("payload: a quicker attacker respawn on the last leg (%s)\n", interp ? "the built-in logic, interpreted" : "native");
+    Server s;
+    if (interp) s.presetModeLogic(compileModeLogic(defaultModeText(MODE_PAYLOAD), MODE_PAYLOAD, nullptr, true));
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = (uint16_t)(port + interp); cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    int att = rulesTeamPlayer(s, s.ms_.attackers), def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? TEAM_B : TEAM_A);
+    if (att < 0 || def < 0) { CHECK(false); s.stop(); return; }
+    auto wait = [&](int id) { s.killPlayer(id, -1, 252); double w = s.players_[id].respawnAt - s.time(); s.spawnPlayer(id); return w; };
+    double early = wait(att);
+    s.ms_.point = (uint8_t)s.map_.cartChecks.size();   // past the last checkpoint
+    double last = wait(att), defLast = wait(def);
+    printf("  attacker %.1f s, on the last leg %.1f s; defender there %.1f s\n", early, last, defLast);
+    CHECK(std::fabs(early - 5.0) < 0.01 && std::fabs(last - kLastLegRespawn) < 0.01 && std::fabs(defLast - 5.0) < 0.01);
+    CHECK(interp == 0 || (s.modeHooks_ && s.modeHooks_->has(MSLOT_RESPAWN_DELAY)));
+    s.stop();
+  }
+}
+
+// F23: multi point on a map without points can't start (it never ended).
+static void testPointsNoPoints(uint16_t port) {
+    printf("multi point on a map without points\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "harbor"; cfg.mode = MODE_POINTS; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    pump(s, cls, 0.2, idle);
+    CHECK(s.map_.points.empty() && s.ms_.phase == PHASE_WARMUP);
+    s.stop();
+}
+
+// Phase 1a of the mode editor: a .qmode keeps what this build doesn't read. A save from Host > Custom modes
+// (load, edit the known keys, toText) must keep another editor's unknown keys and the logic block verbatim, and the
+// network text (EV_RULES) carries neither.
+static void testCustomRulesKeep() {
+    printf("custom rules: unknown keys and the logic block survive a save\n");
+    const std::string file =
+        "custommode=rush\nmode=bomb\nfuture_key=7\ngravity=0.8\nmove_newthing=2\r\nlabel=rush#1a2b3c4d\nmaps=depot\n"
+        "logic 1\n# Rush: a point for every plant\nparam bombFuse f32 = 25\ngravity=3\r\n\nslot plant:\n  x = 1";   // (no last \n)
+    CustomRules r;
+    CHECK(r.fromText(file));
+    CHECK(r.name == "rush" && r.baseMode == MODE_BOMB && std::fabs(r.gravity - 0.8f) < 1e-6f && r.maps == std::vector<std::string>({"depot"}));
+    CHECK(r.extraKeys == std::vector<std::string>({"future_key=7", "move_newthing=2"}));   // (label isn't an extra key)
+    CHECK(r.label == "rush#1a2b3c4d");   // (read for display only: never saved, the server works it out)
+    CHECK(r.logic == file.substr(file.find("logic 1")));   // verbatim, \r and all; its `gravity=3` isn't a key
+    // the host screen's edit and save
+    r.gravity = 1.5f;
+    r.health = 120;
+    std::string saved = r.toText();
+    CHECK(saved.find("future_key=7\nmove_newthing=2\nlogic 1\n") != std::string::npos);
+    CHECK(saved.size() >= r.logic.size() && saved.compare(saved.size() - r.logic.size(), std::string::npos, r.logic) == 0);
+    CustomRules back;
+    CHECK(back.fromText(saved) && back.toText() == saved && back.extraKeys == r.extraKeys && back.logic == r.logic);
+    CHECK(std::fabs(back.gravity - 1.5f) < 1e-6f && back.health == 120);
+    // the network text: the known keys only
+    CHECK(saved.find("label=") == std::string::npos);
+    std::string net = r.toNetText();
+    CHECK(net.find("future_key") == std::string::npos && net.find("logic") == std::string::npos && net.find("label=rush#1a2b3c4d\n") != std::string::npos);
+    CustomRules got;
+    CHECK(got.fromText(net) && got.extraKeys.empty() && got.logic.empty() && got.toNetText() == net && got.label == r.label);
+    // no extras, no logic: the same text as before phase 1a
+    CustomRules plain;
+    CHECK(plain.fromText("custommode=x\ngravity=2\n") && plain.toText() == plain.toNetText());
+    CHECK(plain.fromText("custommode=x\nzz=1\r\r\n") && plain.extraKeys == std::vector<std::string>({"zz=1"}));   // (every trailing CR stripped: it reads back the same)
+    // the logic starts at the FIRST `logic` line, whatever its version; `logical=1` is a key, not logic
+    CustomRules odd;
+    CHECK(odd.fromText("custommode=x\nlogical=1\nlogic\nlogic 2\nhealth=5\n") && odd.extraKeys == std::vector<std::string>({"logical=1"}));
+    CHECK(odd.logic == "logic\nlogic 2\nhealth=5\n" && odd.health == 100);
+    CHECK(!odd.fromText("logic 1\ncustommode=x\n"));   // a name only inside the logic: no mode
+    CHECK(isModeLogicLine("logic 1") && isModeLogicLine("logic\r") && !isModeLogicLine("logics 1") && !isModeLogicLine(" logic 1"));
+    // a file the game saves and loads from disk
+    CustomRules disk;
+    disk.name = "zz_keep_test"; disk.logic = "logic 1\nslot tick:\n  pass\n"; disk.extraKeys = {"physics_x=2"};
+    CHECK(saveCustomMode(disk));
+    CustomRules loaded;
+    CHECK(loadCustomMode("zz_keep_test", loaded) && loaded.logic == disk.logic && loaded.extraKeys == disk.extraKeys);
+    deleteCustomMode("zz_keep_test");
+}
+
+// Mode editor phase 1b / 3: the rules' slots and the hook a custom mode's logic plugs into. Built-in modes have no
+// hook (each slot is one null test from its native code) and read their numbers from the built-in ModeParams; a
+// hook with only numbers runs the native slots with them; a hooked slot is called with its arguments in place of
+// the native one, and the rest stay native.
+struct FakeModeHooks : ModeHooks {
+    int calls[MSLOT_COUNT] = {};
+    int lastA[MSLOT_COUNT], lastB[MSLOT_COUNT], lastC[MSLOT_COUNT];
+    FakeModeHooks() { for (int k = 0; k < MSLOT_COUNT; k++) lastA[k] = lastB[k] = lastC[k] = -9; }
+    void note(ModeSlot k, int a, int b, int c) { calls[k]++; lastA[k] = a; lastB[k] = b; lastC[k] = c; }
+    int lifetimes = 0;
+    bool refuse = false;   // (as at the nesting limit: the caller runs the native version)
+    bool event(Server&, ModeSlot k, int a, int b, int c) override { note(k, a, b, c); return !refuse; }
+    bool query(const Server&, ModeSlot k, int a, int b, int c, double& out) override {
+        note(k, a, b, c);
+        switch (k) {
+            case MSLOT_ROUNDS_TO_WIN: out = 4; break;
+            case MSLOT_RESPAWN_DELAY: out = 9; break;
+            case MSLOT_FROZEN: out = a == 0; break;   // only player 0
+            default: out = 0; break;
+        }
+        return !refuse;
+    }
+    void nativeLifetime(ModeSlot) override { lifetimes++; }
+};
+
+static void testModeHooks(uint16_t port) {
+    printf("mode rules: slots, ModeParams and the custom-mode hook\n");
+    CHECK(std::string(modeSlotName(MSLOT_MATCH_START)) == "matchStart" && std::string(modeSlotName(MSLOT_CART_CHECKPOINT)) == "cartCheckpoint");
+    CHECK(std::string(modeSlotName(MSLOT_CAN_AUTO_START)) == "canAutoStart" && std::string(modeSlotName(MSLOT_COUNT)) == "?");
+    // the built-in numbers are the ones the modes always had
+    CHECK(builtinModeParams(MODE_BOMB).rounds == 7 && builtinModeParams(MODE_BOMB).roundTime == 105.0f && builtinModeParams(MODE_BOMB).plantTime == 3.0f);
+    CHECK(builtinModeParams(MODE_KOTH).respawnTime == 4.0f && builtinModeParams(MODE_KOTH).target == 100 && builtinModeParams(MODE_VS).respawnTime < 0);
+    CHECK(builtinModeParams(MODE_HIDE).roundTime == kHideRoundTime && builtinModeParams(MODE_DUEL).rounds == 11 && builtinModeParams(MODE_FFA).matchTime == 600.0f);
+    for (int m = 0; m < MODE_COUNT; m++) CHECK(builtinModeParams(m).respawnTime == modeRespawnDelay(m));
+    // ...and the ones the built-in logic texts (tools/modes/*.qlogic) declare: every param both know, in every mode
+    for (int m = 0; m < MODE_COUNT; m++) {
+        auto L = defaultModeLogic(m);
+        CHECK(L != nullptr);
+        if (!L) continue;
+        const ModeParams& b = builtinModeParams(m);
+        int seen = 0;
+#define QUARK_MP_CHECK(nm, ctype, ltype, unit, lo, hi, def, doc) \
+        for (auto& pv : L->params) if (pv.name == #nm) { seen++; if ((ctype)pv.value != b.nm) { printf("  %s: param %s is %g in the logic, %g natively\n", modeName(m), #nm, pv.value, (double)b.nm); CHECK(false); } }
+        QUARK_MODE_PARAMS(QUARK_MP_CHECK)
+#undef QUARK_MP_CHECK
+        CHECK(seen >= 9);   // (common's nine at least)
+        // every param the game's catalog knows is a ModeParams field of the same name (an edit reaches the native code)
+        for (auto& pv : L->params) {
+            bool known = false;
+#define QUARK_MP_NAME(nm, ctype, ltype, unit, lo, hi, def, doc) known |= pv.name == #nm;
+            QUARK_MODE_PARAMS(QUARK_MP_NAME)
+#undef QUARK_MP_NAME
+            if (pv.catalog && !known) { printf("  param %s: in the logic's catalog, not in ModeParams\n", pv.name.c_str()); CHECK(false); }
+        }
+    }
+    {   // and a custom mode's param edit reaches the native slots' numbers (the slots stay native)
+        auto L = compileModeLogic("custommode=p\nmode=bomb\nlogic 1\nparam bombFuse f32 = 25\nparam respawnTime f32 = 3\nparam freezeTime f32 = 1.5\n", MODE_BOMB);
+        CHECK(L && !L->anyInterp);
+        auto H = makeModeLogicHooks(L);
+        CHECK(H && H->interp == 0 && H->params && H->params->bombFuse == 25.0f && H->params->respawnTime == 3.0f && H->params->freezeTime == 1.5f &&
+              H->params->plantTime == 3.0f && H->params->rounds == 7);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "summit"; cfg.mode = MODE_KOTH; cfg.port = port;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    CHECK(s.modeHooks_ == nullptr && s.mp_ == &builtinModeParams(MODE_KOTH));
+    // numbers only: the native slots run with the hook's ModeParams
+    FakeModeHooks h;
+    ModeParams mp = builtinModeParams(MODE_KOTH);
+    mp.target = 7;
+    mp.warmupRespawn = 2.5f;
+    h.params = &mp;
+    s.modeHooks_ = &h;
+    s.command("forcestart");   // (a match end / reset picks the numbers up: rulesReset)
+    rulesEndMatch(s, "test", -1);
+    s.phaseEnd_ = s.time();
+    pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_WARMUP && s.mp_ == &mp && rulesRespawnDelay(s, 0) == 2.5f);
+    s.command("forcestart");
+    pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.target == 7);
+    for (int k = 0; k < MSLOT_COUNT; k++) CHECK(h.calls[k] == 0);   // (nothing hooked: nothing called)
+    // hooked slots replace the native ones; the rest stay native
+    h.interp = (1ull << MSLOT_ROUNDS_TO_WIN) | (1ull << MSLOT_TICK) | (1ull << MSLOT_FROZEN) | (1ull << MSLOT_RESPAWN_DELAY) | (1ull << MSLOT_KILL) | (1ull << MSLOT_LIVE);
+    rulesForceStart(s);
+    CHECK(s.ms_.roundsToWin == 4 && h.calls[MSLOT_ROUNDS_TO_WIN] > 0);
+    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    pump(s, cls, 0.2, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && h.calls[MSLOT_LIVE] == 1 && h.calls[MSLOT_TICK] > 0);
+    CHECK(rulesFrozen(s, 0) && !rulesFrozen(s, 1) && rulesRespawnDelay(s, 1) == 9.0f && h.lastA[MSLOT_RESPAWN_DELAY] == 1);
+    int score0 = s.players_[0].score;
+    s.killPlayer(1, 0, WPN_RIFLE);
+    CHECK(h.calls[MSLOT_KILL] == 1 && h.lastA[MSLOT_KILL] == 1 && h.lastB[MSLOT_KILL] == 0 && h.lastC[MSLOT_KILL] == WPN_RIFLE);
+    CHECK(s.players_[0].score == score0 && s.players_[0].kills == 1);   // (the engine's stats; no native score)
+    CHECK(s.ms_.scoreA == 0 && s.ms_.scoreB == 0);   // (the native KOTH tick never ran)
+    CHECK(h.lifetimes > 0);   // (matchStart and roundSetup ran natively: the logic's state of their lifetime reset)
+    // a hook that can't run (slots nested too deep) falls back to the native slot
+    h.refuse = true;
+    CHECK(rulesRespawnDelay(s, 1) == builtinModeParams(MODE_KOTH).respawnTime && !rulesFrozen(s, 0));
+    int kills0 = h.calls[MSLOT_KILL];
+    s.spawnPlayer(1);
+    s.killPlayer(1, 0, WPN_RIFLE);
+    CHECK(h.calls[MSLOT_KILL] == kills0 + 1 && s.players_[0].score == score0 + 1);   // (asked, refused: the native kill scored)
+    s.modeHooks_ = nullptr;
+    s.stop();
+}
+
+// T27: free for all picks at random among the unseen spawns near the best distance (it always took the farthest one:
+// predictable), never one the other player can see.
+static void testFfaSpawnChoice() {
+    printf("ffa spawns: random among the unseen near the farthest\n");
+    for (const char* name : {"harbor", "gantry"}) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        if (!s.map_.load(name)) { CHECK(false); continue; }
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        for (int i = 0; i < 2; i++) { auto& p = s.players_[i]; p.connected = true; p.isBot = true; p.team = TEAM_A; }
+        auto& w = s.players_[1];
+        w.alive = true;
+        w.move.pos = s.map_.spawns[0].pos;   // (someone standing on a spawn)
+        Vec3 eye = w.move.pos + Vec3(0, kEyeHeight, 0);
+        float best = 0;
+        for (auto& sp : s.map_.spawns) best = std::max(best, length(sp.pos - w.move.pos));
+        std::vector<char> used(s.map_.spawns.size(), 0);
+        int seen = 0, close = 0;
+        for (int k = 0; k < 60; k++) {
+            auto& p = s.players_[0];
+            p.alive = false;
+            s.spawnPlayer(0);
+            Vec3 to = p.move.pos + Vec3(0, 1.2f, 0) - eye;
+            float d = length(to);
+            seen += !s.map_.raycastAny(eye, to / d, d);
+            close += length(p.move.pos - w.move.pos) < 0.5f * best;
+            for (size_t i = 0; i < s.map_.spawns.size(); i++) if (length(s.map_.spawns[i].pos - p.move.pos) < 0.3f) used[i] = 1;
+        }
+        int kinds = 0; for (char u : used) kinds += u;
+        printf("  %s: %d different spawns in 60, %d in sight, %d under half the farthest distance\n", name, kinds, seen, close);
+        CHECK(kinds >= 2 && seen == 0 && close == 0);
+        for (auto& p : s.players_) p.connected = false;
+    }
+}
+
+// X10: the client's own mode calls (src/client/modecalls.h). Bomb: your side's job as a round's freeze begins, the
+// halftime swap, the bomb dropped / picked up; payload checkpoints as the point lines; free for all: only your own
+// lead changes, and your place. Then a real bomb match (2 rounds to win: the sides switch for round 2), followed
+// through a client's own mode states.
+static void testModeCalls(uint16_t port) {
+    printf("mode calls: bomb objective / halftime / dropped, payload checkpoints, ffa lead and place\n");
+    auto st = [](int mode, int phase, int round, int att, int bomb = BOMB_NONE, int point = 0) {
+        ModeState m; m.mode = (uint8_t)mode; m.phase = (uint8_t)phase; m.round = (uint8_t)round; m.attackers = (uint8_t)att;
+        m.bombState = (uint8_t)bomb; m.point = (uint8_t)point; return m;
+    };
+    auto has = [](const ModeCall* c, int n, const char* text) { for (int i = 0; i < n; i++) if (strstr(c[i].text, text)) return true; return false; };
+    ModeCall c[4];
+    int n = modeCalls(st(MODE_BOMB, PHASE_WARMUP, 0, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 1, TEAM_A), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "ATTACK:"));
+    n = modeCalls(st(MODE_BOMB, PHASE_WARMUP, 0, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 1, TEAM_A), TEAM_B, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "DEFEND:"));
+    n = modeCalls(st(MODE_BOMB, PHASE_ROUND_END, 6, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 7, TEAM_B), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 2 && has(c, n, "SIDES SWITCHED: YOU DEFEND NOW") && has(c, n, "DEFEND:"));
+    n = modeCalls(st(MODE_BOMB, PHASE_ROUND_END, 2, TEAM_A), st(MODE_BOMB, PHASE_FREEZE, 3, TEAM_A), -1, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "TEAM A ATTACKS"));
+    n = modeCalls(st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_CARRIED), st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_DROPPED), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 1 && has(c, n, "PICK IT UP"));
+    n = modeCalls(st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_CARRIED), st(MODE_BOMB, PHASE_LIVE, 3, TEAM_A, BOMB_PLANTED), TEAM_B, 7, 8, c, 4);
+    CHECK(n == 0);   // (planted: the announcer's own line)
+    n = modeCalls(st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 0), st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 1), TEAM_A, 7, 8, c, 4);
+    CHECK(n == 1 && c[0].voice == 8 && !c[0].text[0]);
+    n = modeCalls(st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 0), st(MODE_PAYLOAD, PHASE_LIVE, 1, TEAM_B, 0, 1), TEAM_B, 7, 8, c, 4);
+    CHECK(n == 1 && c[0].voice == 7);
+    // free for all: place and lead
+    std::vector<PlayerSnap> ps(4);
+    int sc[4] = {5, 9, 5, 2};
+    for (int i = 0; i < 4; i++) { ps[i].id = (uint8_t)i; ps[i].score = (int16_t)sc[i]; }
+    int of = 0; bool tied = false;
+    CHECK(ffaPlace(ps, 0, &of, &tied) == 2 && of == 4 && tied);
+    CHECK(ffaPlace(ps, 1, &of, &tied) == 1 && !tied);
+    CHECK(ffaPlace(ps, 3, &of, &tied) == 4 && !tied);
+    ps[3].flags = PS_SPECTATOR;
+    CHECK(ffaPlace(ps, 3, &of, &tied) == 0 && of == 3);
+    CHECK(ffaLeadCall(false, true) == 1 && ffaLeadCall(true, false) == 0 && ffaLeadCall(true, true) == -1 && ffaLeadCall(false, false) == -1);
+    CHECK(std::string(ordinalSuffix(1)) == "ST" && std::string(ordinalSuffix(2)) == "ND" && std::string(ordinalSuffix(3)) == "RD" &&
+          std::string(ordinalSuffix(11)) == "TH" && std::string(ordinalSuffix(12)) == "TH" && std::string(ordinalSuffix(22)) == "ND");
+    // a real bomb match: the objective at each freeze, the halftime swap at round 2
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false; cfg.roundsToWin = 2;
+    NetClient cl[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, cl, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    ModeState pv = cl[0].mode();
+    std::vector<std::string> heard;
+    auto follow = [&](double secs) {
+        for (double t = 0; t < secs; t += 0.02) {
+            pump(s, cls, 0.02, idle);
+            const ModeState& ms = cl[0].mode();
+            const PlayerSnap* me = cl[0].findPlayer(cl[0].clientId());
+            int team = me && me->team() != TEAM_SPECTATOR ? me->team() : -1;
+            for (int k = 0, m = modeCalls(pv, ms, team, 7, 8, c, 4); k < m; k++) heard.push_back(c[k].text);
+            pv = ms;
+        }
+    };
+    follow(0.5);
+    for (int k = 0; k < 40 && s.ms_.phase == PHASE_FREEZE; k++) { s.phaseEnd_ = s.time(); follow(0.05); }
+    int def = rulesTeamPlayer(s, s.ms_.attackers == TEAM_A ? TEAM_B : TEAM_A);
+    if (def >= 0) s.killPlayer(def, -1, 252);   // round 1 to the attack
+    follow(0.3);
+    for (int k = 0; k < 40 && s.ms_.round < 2; k++) { s.phaseEnd_ = s.time(); follow(0.05); }
+    follow(0.3);
+    std::string all;
+    for (auto& h : heard) all += "[" + h + "] ";
+    printf("  heard: %s\n", all.c_str());
+    int objective = 0, halftime = 0;
+    for (auto& h : heard) { objective += h.find("ATTACK:") == 0 || h.find("DEFEND:") == 0; halftime += h.find("HALFTIME") == 0; }
+    CHECK(s.ms_.round == 2 && objective == 2 && halftime == 1);
+    s.stop();
+}
+
+// "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
+// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
+// on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
+// suite runs it in a group of its own, alone. The halves run at once, sharing one port block: tests whose ports overlap
+// stay in one half (hudclock takes 29280-29291, which hide, shorthanded and rps reach too).
+static void testGameRules(const std::string& only, int half = 0) {
+    struct R { const char* name; int half; std::function<void()> run; };
+    std::vector<R> all = {
+        {"overtime", 1, [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
+        {"syringe", 2, [] { testSyringeModes(); }},
+        {"throws", 1, [] { testThrowCooldown(TP(29240)); }},
+        {"hull", 1, [] { testSizeHull(TP(29242)); }},
+        {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
+        {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
+        {"head", 1, [] { testHeadBox(TP(29246)); }},
+        {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
+        {"shorthanded", 2, [] { testShortHanded(TP(29288)); }},
+        {"vsbots", 1, [] { testVsBotsDuo(TP(29294)); }},
+        {"stopwatch", 1, [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
+        {"tag", 1, [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
+        {"rps", 2, [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
+        {"locator", 1, [] { testLocator(TP(29260)); }},
+        {"aware", 2, [] { testItAwareness(TP(29263)); }},
+        {"bomb", 2, [] { testBombDrop(TP(29249)); }},
+        {"cartbox", 2, [] { testCartBoxPlace(TP(29275)); }},
+        {"botdefer", 1, [] { testBalanceBotDefer(TP(29250)); }},
+        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
+        {"seeds", 2, [] { testRandomSeeds(); }},
+        {"heal", 2, [] { testLifeHealCap(TP(29253)); }},
+        {"scoreboard", 2, [] { testScoreboardValue(); }},
+        {"hudclock", 2, [] { testHudClock(TP(29280)); }},
+        {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
+        {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
+        {"customkeep", 2, [] { testCustomRulesKeep(); }},
+        {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
+    };
+    for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
+    if (only == "rate") {
+        timingTest("rate between rounds", [] { testRateBetweenRounds(TP(29252)); });
+        timingTest("rate two windows", [] { testRateTwoWindows(TP(29261)); });
+        timingTest("rate undo step up", [] { testRateUndoStepUp(TP(29254)); });
+        timingTest("rate jitter", [] { testRateJitter(TP(29257)); });
+        timingTest("upload cap", [] { testUploadCap(TP(29258)); });
+        timingTest("shared congestion", [] { testSharedCongestion(TP(29259)); });
+    }   // (timing-sensitive: the suite runs it alone, with "tickrate")
 }

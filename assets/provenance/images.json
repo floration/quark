@@ -1,0 +1,31 @@
+{
+ "format": 1,
+ "category": "images",
+ "items": {
+  "images/icon.png": {"origin": "human", "source": "drawn by tools/make_icon.py: a Rubik ExtraBold Q in the team colours", "by": "q", "date": "2026-10-24", "tool": "dashboard", "note": "designed by the owner (explicit spec), so counted as human (owner, 2026-10-24)"},
+  "website/anvil.jpg": {"origin": "ai", "source": "picture on the website (site/img/anvil.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/bastion.jpg": {"origin": "ai", "source": "picture on the website (site/img/bastion.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/canal.jpg": {"origin": "ai", "source": "picture on the website (site/img/canal.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/clockwork.jpg": {"origin": "ai", "source": "picture on the website (site/img/clockwork.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/colosseum.jpg": {"origin": "ai", "source": "picture on the website (site/img/colosseum.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/depot.jpg": {"origin": "ai", "source": "picture on the website (site/img/depot.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/dojo.jpg": {"origin": "ai", "source": "picture on the website (site/img/dojo.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/downtown.jpg": {"origin": "ai", "source": "picture on the website (site/img/downtown.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/foundry.jpg": {"origin": "ai", "source": "picture on the website (site/img/foundry.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/furnace.jpg": {"origin": "ai", "source": "picture on the website (site/img/furnace.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/gantry.jpg": {"origin": "ai", "source": "picture on the website (site/img/gantry.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/hamlet.jpg": {"origin": "ai", "source": "picture on the website (site/img/hamlet.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/harbor.jpg": {"origin": "ai", "source": "picture on the website (site/img/harbor.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/hero.jpg": {"origin": "ai", "source": "picture on the website (site/img/hero.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/hightown.jpg": {"origin": "ai", "source": "picture on the website (site/img/hightown.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/hud.jpg": {"origin": "ai", "source": "picture on the website (site/img/hud.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/lodestone.jpg": {"origin": "ai", "source": "picture on the website (site/img/lodestone.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/midtown.jpg": {"origin": "ai", "source": "picture on the website (site/img/midtown.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/models.jpg": {"origin": "ai", "source": "picture on the website (site/img/models.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/orbital.jpg": {"origin": "ai", "source": "picture on the website (site/img/orbital.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/railyard.jpg": {"origin": "ai", "source": "picture on the website (site/img/railyard.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/summit.jpg": {"origin": "ai", "source": "picture on the website (site/img/summit.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/temple.jpg": {"origin": "ai", "source": "picture on the website (site/img/temple.jpg, the site branch): an in-game shot of the AI-made maps / models"},
+  "website/viaduct.jpg": {"origin": "ai", "source": "picture on the website (site/img/viaduct.jpg, the site branch): an in-game shot of the AI-made maps / models"}
+ }
+}

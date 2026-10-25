@@ -1,0 +1,133 @@
+{
+ "id": "minecraft",
+ "name": "Minecraft (Java Edition)",
+ "year": 2011,
+ "engine": "Minecraft",
+ "group": "other",
+ "scale": {
+  "unit": "block",
+  "metresPerUnit": 1.0,
+  "why": "1 block = 1 m and the player is 1.8 blocks tall, so the scale is already Quark's (1 m/block)"
+ },
+ "values": {
+  "speed": {
+   "value": 5.612,
+   "unit": "m/s",
+   "mult": 0.5907,
+   "source": "https://minecraft.fandom.com/wiki/Sprinting (5.612 m/s)",
+   "confidence": "measured",
+   "note": "sprinting; walking 4.317 m/s"
+  },
+  "gravity": {
+   "value": 32.0,
+   "unit": "m/s2",
+   "mult": 1.4545,
+   "source": "https://github.com/ddevault/TrueCraft/wiki/Entity-Movement-And-Physics (0.08 blocks/tick^2 at 20 ticks/s)",
+   "confidence": "estimated",
+   "raw": "0.08 blocks/tick^2",
+   "note": "0.08 b/tick each tick with 0.98 vertical drag per tick (terminal 78.4 m/s): about 32 m/s2 before drag"
+  },
+  "jump": {
+   "value": 8.4,
+   "unit": "m/s",
+   "mult": 1.1444,
+   "source": "https://github.com/ddevault/TrueCraft/wiki/Entity-Movement-And-Physics (jump adds 0.42 blocks/tick)",
+   "confidence": "exact",
+   "raw": "0.42 blocks/tick",
+   "note": "0.42 b/tick x 20"
+  },
+  "friction": {
+   "value": 12.1027,
+   "unit": "",
+   "mult": 1.729,
+   "source": "https://minecraft.fandom.com/wiki/Player (ground friction 0.546 per tick)",
+   "confidence": "estimated",
+   "raw": "x0.546 per tick",
+   "note": "Minecraft multiplies ground speed by 0.546 each tick (slipperiness 0.6 x 0.91): an exponential decay of 12.1/s, which is what Quark's friction is above stop_speed"
+  },
+  "ladder_speed": {
+   "value": 2.35,
+   "unit": "m/s",
+   "mult": 0.3481,
+   "source": "https://minecraft.fandom.com/wiki/Ladder (about 2.35 m/s up)",
+   "confidence": "measured",
+   "note": "down 3 m/s"
+  },
+  "step": {
+   "value": 0.6,
+   "unit": "m",
+   "mult": 1.0909,
+   "source": "https://docs.neoforged.net/docs/entities/attributes (step_height default 0.6 blocks)",
+   "confidence": "exact",
+   "raw": "step_height 0.6",
+   "note": "the vanilla attribute default (also lists jump_strength 0.42 and gravity 0.08, as above)"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://minecraft.fandom.com/wiki/Player",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://minecraft.fandom.com/wiki/Player",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.2522,
+   "unit": "m",
+   "source": "https://minecraft.fandom.com/wiki/Player (about 1.2522 blocks)",
+   "confidence": "measured",
+   "note": "Quark: 1.22 m"
+  },
+  "walkSpeed": {
+   "value": 4.317,
+   "unit": "m/s",
+   "source": "https://minecraft.fandom.com/wiki/Walking",
+   "confidence": "measured"
+  },
+  "sprintJumpSpeed": {
+   "value": 7.127,
+   "unit": "m/s",
+   "source": "https://minecraft.fandom.com/wiki/Sprinting (sprint-jumping average 7.127 m/s)",
+   "confidence": "measured"
+  },
+  "terminalVelocity": {
+   "value": 78.4,
+   "unit": "m/s",
+   "source": "https://minecraft.fandom.com/wiki/Player",
+   "confidence": "measured"
+  }
+ },
+ "extras": [
+  "air drag x0.91 per tick horizontally and x0.98 vertically (Quark has no drag)",
+  "sprint jumping",
+  "sneaking at 1.295 m/s, elytra, swimming"
+ ],
+ "notes": "Minecraft's player happens to be 1.8 m, Quark's height. Its 20 Hz tick model (per-tick velocity multipliers) differs from Quake's, so friction and gravity are equivalents. Step-up height is the vanilla step_height attribute (0.6 blocks).",
+ "sources": [
+  {
+   "title": "NeoForged docs: attributes (vanilla defaults)",
+   "url": "https://docs.neoforged.net/docs/entities/attributes"
+  },
+  {
+   "title": "Minecraft Wiki: Player",
+   "url": "https://minecraft.fandom.com/wiki/Player"
+  },
+  {
+   "title": "Minecraft Wiki: Sprinting",
+   "url": "https://minecraft.fandom.com/wiki/Sprinting"
+  },
+  {
+   "title": "Minecraft Wiki: Ladder",
+   "url": "https://minecraft.fandom.com/wiki/Ladder"
+  },
+  {
+   "title": "TrueCraft wiki: Entity Movement And Physics",
+   "url": "https://github.com/ddevault/TrueCraft/wiki/Entity-Movement-And-Physics"
+  }
+ ]
+}

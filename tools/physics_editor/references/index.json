@@ -1,0 +1,403 @@
+{
+ "version": 1,
+ "quark": "1.18.31",
+ "units": "metres, seconds (Quark's); mult = value / Quark's base",
+ "confidence": {
+  "exact": "read from source code, a shipped config or a cvar default (converted by the stated scale)",
+  "measured": "a community wiki / measurement, not the code",
+  "estimated": "derived here (an equivalence between different formulas, a v^2/2g, a simulation, an assumed scale)"
+ },
+ "groups": [
+  {
+   "name": "Quake family",
+   "desc": "Quake-engine and id-derived games: Quake-style acceleration and friction, the model Quark's pmove uses",
+   "games": [
+    {
+     "id": "quake",
+     "name": "Quake / QuakeWorld",
+     "year": 1996,
+     "engine": "Quake engine (NetQuake, QuakeWorld)",
+     "file": "quake.json",
+     "values": 10,
+     "distance": 0.49,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quake2",
+     "name": "Quake II",
+     "year": 1997,
+     "engine": "id Tech 2",
+     "file": "quake2.json",
+     "values": 12,
+     "distance": 0.668,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quake3",
+     "name": "Quake III Arena (VQ3)",
+     "year": 1999,
+     "engine": "id Tech 3",
+     "file": "quake3.json",
+     "values": 11,
+     "distance": 0.682,
+     "distanceKeys": 9
+    },
+    {
+     "id": "cpma",
+     "name": "Challenge ProMode Arena (CPM physics)",
+     "year": 2000,
+     "engine": "id Tech 3 (Quake III mod)",
+     "file": "cpma.json",
+     "values": 9,
+     "distance": 0.353,
+     "distanceKeys": 9
+    },
+    {
+     "id": "warfork",
+     "name": "Warsow / Warfork",
+     "year": 2005,
+     "engine": "Qfusion (id Tech 2 derived)",
+     "file": "warfork.json",
+     "values": 13,
+     "distance": 0.523,
+     "distanceKeys": 9
+    },
+    {
+     "id": "xonotic",
+     "name": "Xonotic",
+     "year": 2011,
+     "engine": "DarkPlaces (Quake engine derived)",
+     "file": "xonotic.json",
+     "values": 13,
+     "distance": 0.149,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quakelive",
+     "name": "Quake Live (VQL)",
+     "year": 2010,
+     "engine": "id Tech 3",
+     "file": "quakelive.json",
+     "values": 11,
+     "distance": 0.707,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quakelive-pql",
+     "name": "Quake Live (PQL / Turbo)",
+     "year": 2014,
+     "engine": "id Tech 3",
+     "file": "quakelive-pql.json",
+     "values": 10,
+     "distance": 0.36,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quake-champions",
+     "name": "Quake Champions (Ranger, a medium)",
+     "year": 2017,
+     "engine": "Saber / id Software (id Tech derived)",
+     "file": "quake-champions.json",
+     "values": 3
+    }
+   ]
+  },
+  {
+   "name": "Source family",
+   "desc": "GoldSrc and Source: Quake-style movement with a 30 u air cap and full-wish-speed air acceleration",
+   "games": [
+    {
+     "id": "hl1",
+     "name": "Half-Life",
+     "year": 1998,
+     "engine": "GoldSrc",
+     "file": "hl1.json",
+     "values": 11,
+     "distance": 0.501,
+     "distanceKeys": 9
+    },
+    {
+     "id": "cs16",
+     "name": "Counter-Strike 1.6",
+     "year": 2003,
+     "engine": "GoldSrc",
+     "file": "cs16.json",
+     "values": 11,
+     "distance": 0.501,
+     "distanceKeys": 9
+    },
+    {
+     "id": "csgo",
+     "name": "Counter-Strike: Global Offensive",
+     "year": 2012,
+     "engine": "Source",
+     "file": "csgo.json",
+     "values": 10,
+     "distance": 0.527,
+     "distanceKeys": 9
+    },
+    {
+     "id": "cs2",
+     "name": "Counter-Strike 2",
+     "year": 2023,
+     "engine": "Source 2",
+     "file": "cs2.json",
+     "values": 10,
+     "distance": 0.527,
+     "distanceKeys": 9
+    },
+    {
+     "id": "source",
+     "name": "Source engine defaults (SDK 2013)",
+     "year": 2004,
+     "engine": "Source",
+     "file": "source.json",
+     "values": 11,
+     "distance": 0.501,
+     "distanceKeys": 9
+    },
+    {
+     "id": "hl2",
+     "name": "Half-Life 2",
+     "year": 2004,
+     "engine": "Source",
+     "file": "hl2.json",
+     "values": 11,
+     "distance": 0.591,
+     "distanceKeys": 9
+    },
+    {
+     "id": "tf2",
+     "name": "Team Fortress 2 (Soldier)",
+     "year": 2007,
+     "engine": "Source",
+     "file": "tf2.json",
+     "values": 11,
+     "distance": 0.551,
+     "distanceKeys": 9
+    },
+    {
+     "id": "tf2-scout",
+     "name": "Team Fortress 2 (Scout)",
+     "year": 2007,
+     "engine": "Source",
+     "file": "tf2-scout.json",
+     "values": 11,
+     "distance": 0.551,
+     "distanceKeys": 9
+    },
+    {
+     "id": "portal2",
+     "name": "Portal 2",
+     "year": 2011,
+     "engine": "Source",
+     "file": "portal2.json",
+     "values": 3
+    },
+    {
+     "id": "cs16-comp",
+     "name": "Counter-Strike 1.6 (server / competitive config)",
+     "year": 2003,
+     "engine": "GoldSrc",
+     "file": "cs16-comp.json",
+     "values": 11,
+     "distance": 0.56,
+     "distanceKeys": 9
+    }
+   ]
+  },
+  {
+   "name": "arena shooters",
+   "desc": "other arena shooters (Unreal, Halo, Reflex, Diabotical): different movement models, from scripts, config dumps or community measurements",
+   "games": [
+    {
+     "id": "ut99",
+     "name": "Unreal Tournament (1999)",
+     "year": 1999,
+     "engine": "Unreal Engine 1",
+     "file": "ut99.json",
+     "values": 8,
+     "distance": 0.734,
+     "distanceKeys": 7
+    },
+    {
+     "id": "halo-ce",
+     "name": "Halo: Combat Evolved (MCC)",
+     "year": 2001,
+     "engine": "Blam!",
+     "file": "halo-ce.json",
+     "values": 2
+    },
+    {
+     "id": "reflex",
+     "name": "Reflex Arena",
+     "year": 2017,
+     "engine": "Reflex (Turbo Pixel Studios)",
+     "file": "reflex.json",
+     "values": 7,
+     "distance": 0.365,
+     "distanceKeys": 7
+    },
+    {
+     "id": "diabotical",
+     "name": "Diabotical",
+     "year": 2020,
+     "engine": "The GD Studio's own engine",
+     "file": "diabotical.json",
+     "values": 8,
+     "distance": 0.752,
+     "distanceKeys": 8
+    },
+    {
+     "id": "ut2004",
+     "name": "Unreal Tournament 2004",
+     "year": 2004,
+     "engine": "Unreal Engine 2",
+     "file": "ut2004.json",
+     "values": 9,
+     "distance": 0.814,
+     "distanceKeys": 7
+    },
+    {
+     "id": "ut3",
+     "name": "Unreal Tournament 3",
+     "year": 2007,
+     "engine": "Unreal Engine 3",
+     "file": "ut3.json",
+     "values": 9,
+     "distance": 0.875,
+     "distanceKeys": 7
+    },
+    {
+     "id": "ut4",
+     "name": "Unreal Tournament (2014 pre-alpha, UT4)",
+     "year": 2014,
+     "engine": "Unreal Engine 4",
+     "file": "ut4.json",
+     "values": 9,
+     "distance": 0.833,
+     "distanceKeys": 7
+    },
+    {
+     "id": "halo3",
+     "name": "Halo 3 (MCC)",
+     "year": 2007,
+     "engine": "Blam!",
+     "file": "halo3.json",
+     "values": 3
+    },
+    {
+     "id": "halo-reach",
+     "name": "Halo: Reach (MCC)",
+     "year": 2010,
+     "engine": "Blam!",
+     "file": "halo-reach.json",
+     "values": 3
+    }
+   ]
+  },
+  {
+   "name": "hero/tactical shooters",
+   "desc": "hero and tactical shooters with documented metric speeds",
+   "games": [
+    {
+     "id": "overwatch2",
+     "name": "Overwatch 2",
+     "year": 2022,
+     "engine": "Overwatch engine",
+     "file": "overwatch2.json",
+     "values": 3
+    },
+    {
+     "id": "valorant",
+     "name": "Valorant",
+     "year": 2020,
+     "engine": "Unreal Engine 4",
+     "file": "valorant.json",
+     "values": 1
+    }
+   ]
+  },
+  {
+   "name": "movement shooters",
+   "desc": "wallrun / slide / dash / grapple shooters (Respawn, DOOM Eternal)",
+   "games": [
+    {
+     "id": "titanfall2",
+     "name": "Titanfall 2 (multiplayer pilot)",
+     "year": 2016,
+     "engine": "Source (Respawn)",
+     "file": "titanfall2.json",
+     "values": 8,
+     "distance": 0.409,
+     "distanceKeys": 6
+    },
+    {
+     "id": "apex",
+     "name": "Apex Legends",
+     "year": 2019,
+     "engine": "Source (Respawn)",
+     "file": "apex.json",
+     "values": 7,
+     "distance": 0.342,
+     "distanceKeys": 6
+    },
+    {
+     "id": "doom-eternal",
+     "name": "DOOM Eternal",
+     "year": 2020,
+     "engine": "id Tech 7",
+     "file": "doom-eternal.json",
+     "values": 5
+    }
+   ]
+  },
+  {
+   "name": "mainstream shooters",
+   "desc": "Call of Duty and Fortnite: config values and community measurements",
+   "games": [
+    {
+     "id": "cod4",
+     "name": "Call of Duty 4: Modern Warfare",
+     "year": 2007,
+     "engine": "IW 3.0 (id Tech 3 derived)",
+     "file": "cod4.json",
+     "values": 4
+    },
+    {
+     "id": "fortnite",
+     "name": "Fortnite (Battle Royale)",
+     "year": 2017,
+     "engine": "Unreal Engine 4/5",
+     "file": "fortnite.json",
+     "values": 1
+    }
+   ]
+  },
+  {
+   "name": "other",
+   "desc": "not shooters, for scale: Minecraft (a 1.8 m player) and Celeste (Quark's dash techs come from it)",
+   "games": [
+    {
+     "id": "minecraft",
+     "name": "Minecraft (Java Edition)",
+     "year": 2011,
+     "engine": "Minecraft",
+     "file": "minecraft.json",
+     "values": 6,
+     "distance": 0.334,
+     "distanceKeys": 5
+    },
+    {
+     "id": "celeste",
+     "name": "Celeste",
+     "year": 2018,
+     "engine": "Monocle (XNA / FNA)",
+     "file": "celeste.json",
+     "values": 9
+    }
+   ]
+  }
+ ],
+ "distance": "mean |ln(mult)| over the core keys the game maps (gravity, speed, jump, ground_accel, friction, stop_speed, air_accel, air_cap, step), given when it maps 5 or more: 0 = Quark's standard; lower is closer"
+}

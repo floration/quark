@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Manager</title>
+<link rel="stylesheet" href="quark-tools.css">
+<link rel="stylesheet" href="manager.css">
+</head>
+<body>
+<nav class="qt-nav" aria-label="Quark tools"><a class="qt-brand" href="http://127.0.0.1:8768/">Quark</a><a href="http://127.0.0.1:8768/" data-tool="supervisor" target="quark-supervisor">Supervisor Board</a><a href="http://127.0.0.1:8767/" data-tool="github" target="quark-github">GitHub Manager</a><a href="http://127.0.0.1:8766/" data-tool="docs" target="quark-docs" aria-current="page">Claude Manager</a><a href="http://127.0.0.1:8765/" data-tool="dashboard" target="quark-dashboard">Editor Manager</a><span class="qt-nav-sep"></span><span class="qt-nav-note"></span></nav>
+<header id="top">
+  <nav id="tabs" role="tablist" aria-label="Views">
+    <button role="tab" data-tab="overview" title="Overview (1)">Overview</button>
+    <button role="tab" data-tab="board" title="Board: kanban, timeline, flow graph (2)">Board</button>
+    <button role="tab" data-tab="entries" title="Every entry (3)">Entries</button>
+    <button role="tab" data-tab="changes" title="Change log (4)">Change log</button>
+    <button role="tab" data-tab="files" title="The files as documents (5)">Files</button>
+    <button role="tab" data-tab="threads" title="Threads (6)">Threads</button>
+    <button role="tab" data-tab="edit" title="Edit files, answer questions, add entries (7)" hidden>Edit</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="tb">
+    <span id="status" class="status" aria-live="polite"></span>
+    <button id="btnRefresh" class="mini" title="Check for changes now">Refresh</button>
+    <button id="btnHelp" class="mini" title="Keyboard shortcuts and what this page is (?)">?</button>
+  </div>
+</header>
+
+<div id="banners"></div>
+
+<main id="main">
+  <section id="view-overview" class="view" data-view="overview">
+    <div class="scroll" id="ovScroll"><div id="ovBody" class="overview"></div></div>
+  </section>
+
+  <section id="view-board" class="view" data-view="board">
+    <div class="toolbar">
+      <div class="seg" id="boardSeg">
+        <button data-sub="kanban">Kanban</button><button data-sub="timeline">Timeline</button><button data-sub="flow">Flow graph</button>
+      </div>
+      <span class="sep"></span>
+      <span id="boardTools" class="tb"></span>
+    </div>
+    <div class="scroll" id="boardScroll"><div id="boardBody"></div></div>
+  </section>
+
+  <section id="view-entries" class="view" data-view="entries">
+    <div class="toolbar">
+      <input type="search" id="eQ" placeholder="Search entries ( / )" aria-label="Search entries">
+      <label>File <select id="eFile"></select></label>
+      <label>Status <select id="eStatus"></select></label>
+      <label>Waiting on <select id="eWait"></select></label>
+      <label>Thread <select id="eThread"></select></label>
+      <label>Sort <select id="eSort">
+        <option value="changed">Last changed</option><option value="priority">Priority</option>
+        <option value="date">Date written</option><option value="file">File</option></select></label>
+      <button id="eReset" class="mini" title="Clear every filter">Clear</button>
+      <span class="spacer"></span>
+      <span id="eCount" class="faint"></span>
+    </div>
+    <div class="scroll" id="eScroll"><div id="eBody" class="cards"></div></div>
+  </section>
+
+  <section id="view-changes" class="view" data-view="changes">
+    <div class="toolbar">
+      <input type="search" id="cQ" placeholder="Search changes ( / )" aria-label="Search changes">
+      <label>Thread <select id="cThread"></select></label>
+      <label>File <select id="cFile"></select></label>
+      <label>Kind <select id="cKind">
+        <option value="">Any change</option><option value="status">Status changes</option><option value="added">New entries</option>
+        <option value="edited">Edits</option><option value="moved">Moves</option><option value="removed">Removals</option></select></label>
+      <span class="spacer"></span>
+      <span id="cCount" class="faint"></span>
+    </div>
+    <div class="scroll" id="cScroll"><div id="cBody" class="changelog"></div></div>
+  </section>
+
+  <section id="view-files" class="view" data-view="files">
+    <div class="split">
+      <aside id="fList" class="list"></aside>
+      <div class="split-main">
+        <div class="toolbar" id="fBar"></div>
+        <div class="scroll" id="fScroll"><div class="f-wrap"><article id="fBody" class="doc md"></article><aside id="fToc" class="f-toc" aria-label="Sections" hidden></aside></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-threads" class="view" data-view="threads">
+    <div class="toolbar">
+      <input type="search" id="tQ" placeholder="Search threads ( / )" aria-label="Search threads">
+      <label class="chk"><input type="checkbox" id="tOpenOnly"> only threads with unfinished entries</label>
+      <span class="spacer"></span>
+      <span id="tCount" class="faint"></span>
+    </div>
+    <div class="scroll" id="tScroll"><div id="tBody" class="threads"></div></div>
+  </section>
+
+  <section id="view-edit" class="view" data-view="edit"></section>
+
+  <div id="loading" class="loading">Loading the Claude Manager…</div>
+</main>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlg">
+    <div class="dlg-h"><span id="dlgTitle"></span><span class="spacer"></span><button id="dlgClose" class="mini" title="Close (Esc)">Close</button></div>
+    <div class="dlg-b" id="dlgBody"></div>
+  </div>
+</dialog>
+
+<script src="js/util.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/data.js"></script>
+<script src="js/entries.js"></script>
+<script src="js/overview.js"></script>
+<script src="js/board.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/flow.js"></script>
+<script src="js/changes.js"></script>
+<script src="js/files.js"></script>
+<script src="js/threads.js"></script>
+<script src="js/edit.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

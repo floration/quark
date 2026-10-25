@@ -4,7 +4,14 @@
 #include <cstring>
 #include "protocol.h"
 
-static int16_t angQ(float a) { return (int16_t)std::lround(std::remainder(a, 2 * PI) * (32767.0f / PI)); }
+// (= lround(remainder(a, 2 pi) * 32767 / pi), checked for every float: remainder is a itself for |a| <= pi (2 * PI is
+// exactly PI + PI, and at |a| = pi the tie goes to the even quotient 0), its result is within +-pi, so the product is
+// within +-32767 and lround is roundHalfAway as a long; NaN (from a NaN or inf) keeps lround)
+static int16_t angQ(float a) {
+    const float x = (std::fabs(a) <= PI ? a : std::remainder(a, 2 * PI)) * (32767.0f / PI);
+    if (x != x) return (int16_t)std::lround(x);
+    return (int16_t)(long)roundHalfAway(x);
+}
 static float angD(int16_t q) { return q * (PI / 32767.0f); }
 
 void writeSnapshotClient(Writer& w, const Snapshot& s) {
@@ -17,18 +24,24 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u8(s.clientId);
     // own movement state, exact (prediction replays from it); the grapple / dash parts only while active
     const MoveState& m = s.self;
-    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
+    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 || m.dashRecharging > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
                   ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
                   (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
-    w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
+    // (44: mods bit 128 = the u16 phaseMs follows the opt parts; only while a movement equation counts it, else 0)
+    w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8((uint8_t)(m.mods | (m.phaseMs ? 128 : 0))); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
-    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
-    if (opt & 4) { w.u8(m.dashCharges); w.u16(m.dashCooldownMs); }   // (42: charges + the cooldown in ms, when not 2 / running; 41: the charges alone; before: the cooldown f32)
+    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); w.f32(m.dashFromSpeed); }   // (43: + the speed the dash started from)
+    if (opt & 4) {   // (43: charges | recharging << 4, the cooldown in ms, each recharge's ms; 42: charges + the cooldown; 41: the charges alone; before: the cooldown f32)
+        const int n = std::min<int>(m.dashRecharging, kMaxDashCharges);
+        w.u8((uint8_t)(std::min<int>(m.dashCharges, 15) | n << 4)); w.u16(m.dashCooldownMs);
+        for (int i = 0; i < n; i++) w.u16(m.dashRechargeMs[i]);
+    }
     if (opt & 8) w.f32(m.hookCooldown);
     if (opt & 16) w.u8(m.hookTarget);    // (38: the grapple latched onto a player, and the one it holds)
     if (opt & 32) w.vec(m.pullPoint);
     if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
     if (opt & 128) w.u8(m.dashBounces);
+    if (m.phaseMs) w.u16(m.phaseMs);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
     w.u32(s.baseTick);
 }
@@ -44,11 +57,23 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     MoveState& m = s.self;
     m = MoveState();
     m.pos = r.vec(); m.vel = r.vec(); m.flags = r.u8(); m.mods = r.u8();
+    const bool phase = proto >= kSnapPhaseSince && (m.mods & 128);
+    if (proto >= kSnapPhaseSince) m.mods &= 127;
     uint8_t opt = r.u8();
     if (opt & 1) m.hookPoint = r.vec();
-    if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
+    if (opt & 2) {
+        m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32();
+        if (proto >= kSnapDashRechargeSince) m.dashFromSpeed = r.f32();
+        else m.dashFromSpeed = std::max(0.0f, m.dashExitSpeed - 1.0f);   // (older demos: about the speed it started from, from the exit's + 1)
+    }
     if (opt & 4) {
-        if (proto >= kSnapDashChargesSince) { m.dashCharges = r.u8(); if (proto >= kSnapDashCooldownSince) m.dashCooldownMs = r.u16(); }
+        if (proto >= kSnapDashRechargeSince) {
+            const uint8_t b = r.u8();
+            m.dashCharges = b & 15; m.dashCooldownMs = r.u16();
+            const int n = b >> 4;
+            for (int i = 0; i < n; i++) { const uint16_t v = r.u16(); if (i < kMaxDashCharges) m.dashRechargeMs[i] = v; }
+            m.dashRecharging = (uint8_t)std::min(n, kMaxDashCharges);   // (more than there's room for: a hostile packet; the rest dropped)
+        } else if (proto >= kSnapDashChargesSince) { m.dashCharges = r.u8(); if (proto >= kSnapDashCooldownSince) m.dashCooldownMs = r.u16(); }
         else m.dashCooldownMs = (uint16_t)std::min(60000.0f, std::max(0.0f, std::ceil(r.f32() * 1000.0f)));   // (older: the cooldown alone, as an f32 in s)
     }
     if (opt & 8) m.hookCooldown = r.f32();
@@ -57,23 +82,25 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
     if (opt & 128) m.dashBounces = r.u8();
+    if (phase) m.phaseMs = r.u16();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
+    if (s.tickRate == 0 || s.tickRate > kTickRates[0]) return false;   // (the client divides by it: 0 = an infinite tick period, over 1000 a 0 ms command)
     return !r.bad();
 }
 
 static void writeMode(Writer& w, const ModeState& m) {
     // timers in tenths of a second (the HUD shows whole seconds): the mode state then changes at most
     // 10 times a second instead of every tick, so most snapshots send it as "unchanged" (1 byte)
-    auto ds = [&](float t) { w.u16((uint16_t)clampf(std::round(t * 10.0f), 0, 65535)); };
+    auto ds = [&](float t) { w.u16((uint16_t)clampf(roundHalfAway(t * 10.0f), 0, 65535)); };
     w.u8(m.mode); w.u8(m.phase); ds(m.timeLeft); w.u8(m.round); w.u8(m.roundsToWin);
     w.i16(m.scoreA); w.i16(m.scoreB); w.u8(m.attackers); w.u8(m.flags);
     w.u8(m.bombState); w.u8(m.bombCarrier); w.vecq(m.bombPos); ds(m.bombTimer);
-    w.u8((uint8_t)clampf(std::round(m.actionProgress * 255.0f), 0, 255)); w.u8(m.actionPlayer);
+    w.u8((uint8_t)clampf(roundHalfAway(m.actionProgress * 255.0f), 0, 255)); w.u8(m.actionPlayer);
     w.u8(m.hillOwner); w.i16(m.target);
     w.f32(m.payloadDist); w.f32(m.payloadLen); // exact: the cart is solid and prediction must match
-    w.u8(m.point); w.u8(m.pointCount); w.u8((uint8_t)clampf(std::round(m.capture * 100.0f), 0, 100));
+    w.u8(m.point); w.u8(m.pointCount); w.u8((uint8_t)clampf(roundHalfAway(m.capture * 100.0f), 0, 100));
     w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); ds(m.voteTimeLeft); w.u8(m.duelMod); w.u8(m.arenaVariant); w.u16(m.weaponMask);
 }
 static bool readMode(Reader& r, ModeState& m) {
@@ -126,8 +153,13 @@ struct BaseIndex {
 };
 }
 
-static int16_t q16(float v) { return (int16_t)clampf(std::round(v * 64.0f), -32767, 32767); }
-static bool samePos(const Vec3& a, const Vec3& b) { return q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z); }
+static int16_t q16(float v) { return (int16_t)clampf(roundHalfAway(v * 64.0f), -32767, 32767); }
+// (equal floats quantize equal: most players and props haven't moved since the base, and each q16 / angQ is a few ns
+// per player per client per snapshot)
+static bool samePos(const Vec3& a, const Vec3& b) {
+    return (a.x == b.x && a.y == b.y && a.z == b.z) || (q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z));
+}
+static bool sameAng(float a, float b) { return a == b || angQ(a) == angQ(b); }
 
 void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
     // mode state: 0 = same as base, 1 = full copy follows
@@ -148,8 +180,8 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         else {
             if (b->flags != p.flags) m |= P_FLAGS;
             if (!p.hidden && !samePos(b->pos, p.pos)) m |= P_POS;
-            if (!p.hidden && angQ(b->yaw) != angQ(p.yaw)) m |= P_YAW;
-            if (!p.hidden && angQ(b->pitch) != angQ(p.pitch)) m |= P_PITCH;
+            if (!p.hidden && !sameAng(b->yaw, p.yaw)) m |= P_YAW;
+            if (!p.hidden && !sameAng(b->pitch, p.pitch)) m |= P_PITCH;
             if (b->health != p.health) m |= P_HEALTH;
             if (b->weapon != p.weapon) m |= P_WEAPON;
             if (b->kills != p.kills) m |= P_KILLS;
@@ -195,9 +227,9 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         w.vecq(p.pos);
         if (on) {   // (quantizeAttachOffset's grid: exact)
             w.u8(p.onPlayer);
-            w.i8((int8_t)std::lround(clampf(p.attachOffset.x / kPlayerHalfWidth, -1, 1) * 127));
-            w.u8((uint8_t)std::lround(clampf(p.attachOffset.y / kPlayerHeight, 0, 1) * 255));
-            w.i8((int8_t)std::lround(clampf(p.attachOffset.z / kPlayerHalfWidth, -1, 1) * 127));
+            w.i8((int8_t)(long)roundHalfAway(clampf(p.attachOffset.x / kPlayerHalfWidth, -1, 1) * 127));
+            w.u8((uint8_t)(long)roundHalfAway(clampf(p.attachOffset.y / kPlayerHeight, 0, 1) * 255));
+            w.i8((int8_t)(long)roundHalfAway(clampf(p.attachOffset.z / kPlayerHalfWidth, -1, 1) * 127));
         }
         if (vel) w.vecq(p.vel);
         else p.vel = b->vel;

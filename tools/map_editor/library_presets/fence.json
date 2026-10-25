@@ -1,0 +1,82 @@
+{
+ "kind": "object",
+ "name": "fence",
+ "note": "a post and two boards every 2 m, and a closing post at the end",
+ "def": {
+  "unit": [
+   2,
+   1.2,
+   0.12
+  ],
+  "axes": [
+   true,
+   false,
+   false
+  ],
+  "spacing": [
+   2,
+   1.2,
+   0.12
+  ],
+  "boxes": [
+   {
+    "mat": 1,
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     0.15,
+     1.2,
+     0.12
+    ]
+   },
+   {
+    "mat": 0,
+    "min": [
+     0.15,
+     0.3,
+     0.03
+    ],
+    "max": [
+     2,
+     0.45,
+     0.09
+    ]
+   },
+   {
+    "mat": 0,
+    "min": [
+     0.15,
+     0.8,
+     0.03
+    ],
+    "max": [
+     2,
+     0.95,
+     0.09
+    ]
+   }
+  ],
+  "name": "fence",
+  "end": {
+   "len": 0.15,
+   "boxes": [
+    {
+     "mat": 1,
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      0.15,
+      1.2,
+      0.12
+     ]
+    }
+   ]
+  }
+ }
+}

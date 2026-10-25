@@ -142,7 +142,9 @@ def build():
     for r in minus((-LHX, -8, LHX, -6), [(-80, -8, -70, -6), (-30, -8, -20, -6), (20, -8, 30, -6), (70, -8, 80, -6)]): m.box(r[0], 0, r[1], r[2], 14, r[3])
     for (x0, x1) in ((-80, -70), (-30, -20), (20, 30), (70, 80)):
         m.box(x0, 6, -8, x1, 14, -6)                                         # portal lintels (the portals are 6 m high)
-        m.box(x0 - 0.3, 0, -8.3, x0, 6, -5.7, mat="metal"); m.box(x1, 0, -8.3, x1 + 0.3, 6, -5.7, mat="metal")
+        # (jambs inside the opening, flush with the wall's faces: posts standing proud of it stopped bots sliding
+        # along the wall to the portal - F10)
+        m.box(x0, 0, -8, x0 + 0.3, 6, -6, mat="metal"); m.box(x1 - 0.3, 0, -8, x1, 6, -6, mat="metal")
         m.box(x0 - 0.3, 6, -8.3, x1 + 0.3, 6.6, -5.7, accent=True); m.light((x0 + x1) / 2, 5, -7, 9, 0.7, fixture=False)
     m.box(-LHX, 14, -8, LHX, LH, -6)
     for y in (1.2, 2.6, 8.0): m.box(-LHX, y, -8.06, LHX, y + 0.15, -8, mat="trim"); m.box(-LHX, y, -6, LHX, y + 0.15, -5.94, mat="trim")
@@ -156,8 +158,8 @@ def build():
     A_ZONE = (-7, -71, 7, -57)
     C_ZONE = (-7, -35, 7, -21)
     # spawn pads per stage: (y, [(x, z)], yaw). Each stage's two sides walk the same distance to its point, within a
-    # second at a run (owner decision B2: the attackers' arrival minus the defenders' is -1..+1 s at every point,
-    # measured by the map report on the bots' nav graph)
+    # second at a run (owner decision B2: the attackers' arrival minus the defenders' within -1..+1 s at every point,
+    # walked on the bots' nav graph)
     SP = {
         "att0": (14, [(50, -110), (55, -110), (60, -110), (50, -105), (55, -105), (60, -105)], 90),     # (the surface, east of the pithead)
         "def0": (14, [(-45, -110), (-40, -110), (-35, -110), (-45, -105), (-40, -105), (-35, -105)], -90),   # (the surface, west of it)
@@ -343,8 +345,10 @@ def build():
     for k, (y, pts, yaw) in SP.items():                       # spawns (stage by stage): before the scatter, which avoids them
         for (x, z) in pts: m.spawn(k, x, y, z, yaw)
     # ---- rock ribs across the caverns: they split each cavern into bays (fights at rifle range, not across 100 m)
-    RIBS = [(30, 36, 46, 38), (66, 36, 96, 38), (44, 80, 84, 82), (40, -6, 42, 12), (78, 50, 80, 72),
-            (-92, 20, -70, 22), (-30, 58, -28, 96), (-40, 50, -10, 52), (-88, 100 - 2, -50, 100), (-24, -6, -22, 14)]
+    # (the two by the cavern wall stop 2.5 m short of it: built against it, each made a dead-end corner that bots
+    # walking along the rib to the portals stuck in, every defender in bomb - F10)
+    RIBS = [(30, 36, 46, 38), (66, 36, 96, 38), (44, 80, 84, 82), (40, -3.5, 42, 12), (78, 50, 80, 72),
+            (-92, 20, -70, 22), (-30, 58, -28, 96), (-40, 50, -10, 52), (-88, 100 - 2, -50, 100), (-24, -3.5, -22, 14)]
     for (x0, z0, x1, z1) in RIBS:
         m.box(x0, 0, z0, x1, 7, z1)
         m.box(x0 - 0.1, 7, z0 - 0.1, x1 + 0.1, 7.4, z1 + 0.1, accent=True)

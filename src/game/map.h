@@ -77,8 +77,8 @@ struct Map {
     int formatVersion = kMapFormatVersion;   // the file's "version" (1 when it has none)
     std::vector<std::string> warnings;        // what the parse skipped (unknown keywords, modes, ladders): logged
     // "handmade": made or changed by a person (the editor writes it on every save), not by tools/make_maps.py.
-    // quark_tests grades a hand-made map like any other and reports its numbers, but doesn't fail on them (the owner's
-    // rule, docs/JUDGMENT_CALLS.md). humanMade(): that, or a file the generator didn't write (no header of its).
+    // quark_tests runs every map check on a hand-made map and reports what it misses, but doesn't fail on it (the
+    // owner's rule, docs/JUDGMENT_CALLS.md). humanMade(): that, or a file the generator didn't write (no header of its).
     bool handmade = false;
     bool humanMade() const;
     std::string setting;       // "setting <words>": the place the map is (a city block, a space station...)
@@ -174,6 +174,17 @@ struct Map {
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
     // hitClip (movement probes: clip blocks players).
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;
+    // What blocked the last ray that used this hint: a grid slot (cell, and the slot in its brush list) or a moving solid.
+    struct RayHint { uint32_t cell = UINT32_MAX, ref = 0; int32_t dyn = -1; };
+    // raycastAny's answer, exactly, for every ray (PERF: lines of sight, where most rays are blocked, and by the same
+    // brush as the ray before). It first tries what the hint names: a moving solid the ray hits (raycastAny tests them
+    // all), or the brush in a grid slot that is still in that cell's list, isn't skipped (clip), is hit by the same
+    // rayAABB test, and whose cell the same cell walk reaches (a brush can be hit in a cell the walk never visits: the
+    // walk stops at the grid's solid Y slab, and at a corner it steps to one of the two neighbours only, while the box
+    // test alone counts a graze). raycastAny reaching that cell tests that slot unless it hit something first, so it
+    // answers blocked as well. Otherwise the full cast, learning its blocker into the hint. Nothing to invalidate: an
+    // edited brush, a rebuilt grid or a moved cart is only ever checked as it is now.
+    bool raycastAnyHinted(const Vec3& origin, const Vec3& dir, float maxDist, RayHint& hint, bool hitClip = false) const;
     // Hitscan bullets: like raycast, but passes through wallbang brushes; *through is set if it went
     // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
@@ -192,6 +203,9 @@ struct Map {
     std::vector<GridCell> cells;       // gridW*gridH
     std::vector<uint16_t> cellBrushes;
     size_t gridRefs = 0;               // brush references in use (spare room not counted)
+    // Lowest bottom / highest top of the brushes in the grid (empty: lo > hi). Rays stop walking cells once they have
+    // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
+    float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
     static bool gridSolid(const Brush& b) { return b.material < 5 || b.material == 9; } // in the grid: far scenery, water, lava aren't
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
@@ -248,6 +262,8 @@ bool plainFileName(const std::string& name);
 // Writes every shipped map back to its original text (and drops their light caches and your edited copies) and removes
 // retired ones; returns how many. shippedDir: the install's maps folder (findDataPath("maps")) unless given (tests).
 int resetOfficialMaps(const std::string& shippedDir = std::string());
+// Every map embedded in the game (tools/embed_maps.py): name and original text, by name (quark --bake-maps).
+std::vector<std::pair<std::string, std::string>> officialMapTexts();
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
 std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: validMapName's characters (space -> _), at most 40
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
