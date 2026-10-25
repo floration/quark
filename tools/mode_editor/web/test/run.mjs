@@ -452,6 +452,33 @@ try {
         ok(!fs.existsSync(path.join(dir, "lowgrav2.qmode")) && fs.existsSync(path.join(dir, "lowgrav2.qmode.bak")), "deleted, kept as .bak");
         same((await request(port, "POST", "/api/mode/delete?name=lowgrav2", { body: {} })).status, 403, "needs the header");
     });
+    await t("backups: saves rotate .bak .. .bak5; a deleted mode is listed, restored with its provenance; restore never overwrites unasked", async () => {
+        const name = "rot", f = path.join(dir, name + ".qmode");
+        let sha = null;
+        for (let i = 1; i <= 7; i++) {   // (7 saves: the file before each of saves 2..7 is a backup, the 5 newest kept)
+            const text = newQmodeText(name, "ffa").replace("mode=ffa", "mode=ffa\ntimelimit=" + i);
+            const r = await request(port, "POST", "/api/mode?name=" + name, { body: { text, baseSha256: sha, provenance: { human: true } }, headers: W });
+            same(r.status, 200, r.text); sha = r.json.sha256;
+        }
+        const bl = (await request(port, "GET", "/api/backups")).json.backups.filter((b) => b.name === name);
+        eq(bl.map((b) => b.n), [1, 2, 3, 4, 5]);
+        ok(fs.readFileSync(f + ".bak", "utf8").includes("timelimit=6") && fs.readFileSync(f + ".bak5", "utf8").includes("timelimit=2"), "newest .bak, oldest .bak5");
+        same((await request(port, "POST", "/api/mode/delete?name=" + name, { body: { baseSha256: sha }, headers: W })).status, 200);
+        ok(fs.readFileSync(f + ".bak", "utf8").includes("timelimit=7") && fs.readFileSync(f + ".bak5", "utf8").includes("timelimit=3"), "the delete rotated too");
+        let prov = JSON.parse(fs.readFileSync(path.join(tmp, "provenance.json"), "utf8"));
+        same(prov.items["gamemodes/" + name], undefined, "a deleted mode leaves items"); same(prov.deleted["gamemodes/" + name].origin, "human");
+        const b1 = (await request(port, "GET", "/api/backups")).json.backups.find((b) => b.name === name && b.n === 1);
+        same(b1.exists, false);
+        same((await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 9 }, headers: W })).status, 400);
+        same((await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 1, to: "FFA" }, headers: W })).status, 400, "a built-in name");
+        const r = await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 1 }, headers: W });
+        same(r.status, 200, r.text); ok(fs.readFileSync(f, "utf8").includes("timelimit=7"), "restored");
+        prov = JSON.parse(fs.readFileSync(path.join(tmp, "provenance.json"), "utf8"));
+        same(prov.items["gamemodes/" + name].origin, "human", "provenance back"); same((prov.deleted || {})["gamemodes/" + name], undefined);
+        same((await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 2 }, headers: W })).status, 409, "the mode exists");
+        const r2 = await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 5, to: "rot2" }, headers: W });
+        same(r2.status, 200, r2.text); ok(r2.json.text.startsWith("custommode=rot2\n") && r2.json.text.includes("timelimit=3"), r2.json.text);
+    });
     await t("Sim scenarios are saved, listed and deleted; brains are listed from <data>/bots; an unknown run is 404", async () => {
         same((await request(port, "POST", "/api/scenario?name=s1", { body: { form: { seed: 7 } }, headers: W })).status, 200);
         eq((await request(port, "GET", "/api/scenarios")).json.scenarios, [{ name: "s1", scenario: { form: { seed: 7 } } }]);

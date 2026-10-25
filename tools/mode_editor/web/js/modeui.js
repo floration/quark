@@ -524,7 +524,7 @@ export class ModePage {
         const from = this.name, dirty = this.savedSig !== this._sig();
         let to = null;
         if (op === "delete") {
-            if (!confirm(`Delete ${from}.qmode?${dirty ? "\n\nIts unsaved changes are lost too." : ""}\n\nThe file is kept as ${from}.qmode.bak in ${this.app.modesDir} (the game doesn't load it).`)) return;
+            if (!confirm(`Delete ${from}.qmode?${dirty ? "\n\nIts unsaved changes are lost too." : ""}\n\nThe file is kept as ${from}.qmode.bak in ${this.app.modesDir} (the game doesn't load it; Backups… restores it).`)) return;
         } else {
             const what = op === "rename" ? "Rename" : "Duplicate";
             to = await this.app.prompt(`${what} ${from}`, op === "rename" ? from : from + "2",
@@ -556,6 +556,40 @@ export class ModePage {
             this._fillSel();
             this.app.toast(`Copied to ${to}.qmode (open it from the list)`, 5000);
         }
+    }
+    // The backups serve.py keeps (<name>.qmode.bak, the newest, to .bak5): a list with a Restore for each. A backup goes
+    // back under its own name when that's free, else under a name asked for (never over a mode without asking).
+    async backups() {
+        let r;
+        try { r = await api.backups(); } catch (e) { this.app.toast("Can't list the backups: " + e.message, 6000); return; }
+        const m = document.createElement("div");
+        m.className = "modal";
+        const when = (t) => new Date(t * 1000).toLocaleString();
+        const rows = r.backups.map((b, i) => `<tr><td><b>${esc(b.name)}</b></td><td class="muted">${b.n === 1 ? "newest" : "older " + (b.n - 1)}</td><td>${esc(when(b.mtime))}</td><td class="muted">${esc(b.size)} B</td>
+            <td>${b.exists ? '<span class="muted">the mode exists</span>' : '<span class="warn">deleted or renamed</span>'}</td><td><button data-i="${i}">Restore…</button></td></tr>`).join("");
+        m.innerHTML = `<div style="max-width:880px"><h3>Backups</h3><p class="muted" style="font-size:12px">A save keeps the file it replaces, and a rename or delete keeps the file it removes, as <code>&lt;name&gt;.qmode.bak</code> in ${esc(r.dir)} (the ${esc(r.keep)} newest of each name: .bak, .bak2 ... the game loads only *.qmode).</p>
+            ${rows ? `<div style="max-height:60vh;overflow:auto"><table class="sim-tab bak-tab">${rows}</table></div>` : '<p class="muted">No backups yet.</p>'}
+            <div class="row" style="justify-content:flex-end;margin-top:10px"><button data-x="close">Close</button></div></div>`;
+        m.querySelector("[data-x=close]").onclick = () => m.remove();
+        m.querySelectorAll("button[data-i]").forEach((bt) => (bt.onclick = async () => {
+            const b = r.backups[+bt.dataset.i];
+            const free = (n) => !this.app.userModes.some((u) => u.name.toLowerCase() === n.toLowerCase());
+            let to = b.name;
+            if (!free(to)) {
+                let alt = b.name + "-restored";
+                for (let k = 2; !free(alt); k++) alt = `${b.name}-restored${k}`;
+                to = await this.app.prompt(`Restore ${b.file}`, alt, `${b.name}.qmode exists, so the backup goes back under another name (its custommode= line takes it).`,
+                    (n) => this.app.modeNameProblem(n) || (free(n) ? null : `${n}.qmode already exists.`));
+                if (!to) return;
+            }
+            let res;
+            try { res = await api.restore(b.name, b.n, to, false); } catch (e) { this.app.toast("Restore failed: " + e.message, 8000); return; }
+            m.remove();
+            await this.app.refreshModes();
+            if (this.savedSig === this._sig() || confirm(`Restored ${to}.qmode. Open it? This mode's unsaved changes are lost.`)) await this.open(to, false);
+            this.app.toast(`Restored ${b.file} as ${to}.qmode`, 6000);
+        }));
+        document.body.append(m);
     }
     _fillSel() {
         const s = $("modeSel");
@@ -674,6 +708,7 @@ export class ModePage {
         $("modeRename").onclick = () => this.fileOp("rename");
         $("modeDuplicate").onclick = () => this.fileOp("duplicate");
         $("modeDelete").onclick = () => this.fileOp("delete");
+        $("modeBackups").onclick = () => this.backups();
         $("modeDownload").onclick = () => {
             const text = this.saveText();
             if (text == null) { this.app.toast("The code has an error"); return; }

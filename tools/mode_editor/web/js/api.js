@@ -28,6 +28,9 @@ export const api = {
     provenanceOf: (name) => req("GET", `/api/provenance?name=${q(name)}`),   // {item: {origin, by, date, tool, note} | null}
     // rename / duplicate / delete one of the user's modes: {ok, text?, sha256?, mtime?, backup?}; 409 when it changed on disk
     modeOp: (op, name, to, baseSha256) => req("POST", `/api/mode/${op}?name=${q(name)}${to ? "&to=" + q(to) : ""}`, { baseSha256 }, "json"),
+    backups: () => req("GET", "/api/backups"),            // {backups: [{name, n, file, mtime, size, exists}], dir, keep}
+    // a backup (n: 1 = <name>.qmode.bak) back as <to>.qmode: {ok, name, text, sha256, mtime}; 409 when <to> exists
+    restore: (name, n, to, overwrite) => req("POST", `/api/mode/restore?name=${q(name)}`, { n, to, overwrite: !!overwrite }, "json"),
     brains: () => req("GET", "/api/brains"),              // {brains: [name], dir}
     scenarios: () => req("GET", "/api/scenarios"),        // {scenarios: [{name, scenario}], dir}
     saveScenario: (name, sc) => req("POST", `/api/scenario?name=${q(name)}`, sc, "json"),
