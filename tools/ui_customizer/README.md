@@ -44,8 +44,11 @@ registry change (its `installs.json`), so the banner follows the game.
 - **View** previews the page at another resolution / aspect ratio (1080p, 1440p, 4K, 16:10, 21:9, 32:9, 5:4), laid out
   as the game scales: 720p units times ui.s() = height / 720, text at max(1, round(2s)). The dump has positions, not the
   code's anchors, so widgets (or the panel around them) that hug a side edge stay on it, full-width bars stretch, and
-  everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. Read only:
-  the canvas, palette, + Page, keys (paste, delete, arrows) and the inspector are off until View is back on 1280x720.
+  everything else keeps its offset from the centre; widgets that end up off the screen are outlined in red. A widget's
+  **anchor** (inspector: auto = that guess, left, center, right, stretch; a panel's anchor moves what is inside it)
+  replaces the guess, and the spec states it with the expression to use. Read only but for that: a click selects (to set
+  the anchor), and dragging, the palette, + Page, keys (paste, delete, arrows) and the rest of the inspector are off
+  until View is back on 1280x720.
 - **Check** (K) runs a layout check while you edit, the in-page version of `audit/audit.py`'s editing rules: widgets
   overlapping, labels running into widgets, anything off the screen, text the game would cut ("...") or shrink, widgets
   sticking out of their panel, tiny text. Red = bad, amber = check it; the page inspector lists them (click one to select

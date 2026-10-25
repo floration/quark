@@ -169,6 +169,13 @@ assert.strictEqual(M.diff(base, v2).counts.reordered, 1);
 const round = M.sanitizeWorking(JSON.parse(JSON.stringify(doc)));
 assert.strictEqual(M.diff(base, round).counts.moved, D.counts.moved);
 assert.throws(() => M.sanitizeWorking({}));
+// an anchor set in the inspector is a change, and the spec gives the expression
+{
+  const d3 = M.makeWorking(base), b3 = d3.pages.find((p) => p.id === 'main').elements.find((e) => e.kind === 'button');
+  b3.anchor = 'right';
+  const md3 = M.specMarkdown(base, d3).markdown;
+  assert.ok(md3.includes('anchor: right edge (x = screenW - (1280 - x720) * s)'), 'the spec states a set anchor');
+}
 assert.throws(() => M.sanitizeWorking({ pages: [] }), /no pages/, 'an empty layout is refused (an import would wipe every page)');
 assert.throws(() => M.sanitizeWorking({ pages: [null, 3] }), /no pages/, 'a layout of non-pages is refused');
 

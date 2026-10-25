@@ -17,7 +17,7 @@
   const UNDO_MAX = 200;
   const INTERACTIVE = new Set(['button', 'toggle', 'cycle', 'slider', 'text', 'key', 'custom', 'colorpicker', 'dropdown', 'handle', 'view']);
   const KNOWN = new Set(['kind', 'x', 'y', 'w', 'h', 'label', 'value', 'options', 'min', 'max', 'def', 'fmt', 'maxLen', 'enabled', 'color',
-    'textScale', 'align', 'style', 'action', 'id', 'where', 'scope', 'dynamic', 'uid', 'origId', 'notes', 'copyOf']);
+    'textScale', 'align', 'style', 'action', 'id', 'where', 'scope', 'dynamic', 'uid', 'origId', 'notes', 'copyOf', 'anchor']);
   const PALETTE = [['button', 'Button'], ['toggle', 'Toggle'], ['cycle', 'Cycle'], ['slider', 'Slider'], ['text', 'Text field'],
     ['key', 'Keybind'], ['label', 'Label'], ['panel', 'Panel'], ['colorpicker', 'Color picker'], ['dropdown', 'Dropdown'],
     ['rect', 'Rectangle'], ['view', '3D view']];
@@ -375,7 +375,9 @@
   // the text rounds: 1080p and 1440p are exact), 16:10 is narrower (1152), 21:9 wider (1680). The dump has the widgets'
   // positions, not the code's anchors, so this guesses them as the menus are written: a widget (or the panel around it)
   // that hugs the left / right edge stays on that edge, a full-width bar stretches, everything else keeps its offset
-  // from the centre (cx + (x - 640) * s). Widgets that end up off the screen are outlined in red.
+  // from the centre (cx + (x - 640) * s). Widgets that end up off the screen are outlined in red. A widget's own
+  // anchor field (set in the inspector, also while previewing; QModel.ANCHORS) replaces the guess, for it and for the
+  // widgets inside it when it is a panel, and goes into the spec.
   const VIEWS = [['', 'View: 1280x720 (edit)'], ['1920x1080', '1920x1080 16:9'], ['2560x1440', '2560x1440 16:9'], ['3840x2160', '3840x2160 16:9'],
     ['1920x1200', '1920x1200 16:10'], ['2560x1600', '2560x1600 16:10'], ['2560x1080', '2560x1080 21:9'], ['3440x1440', '3440x1440 21:9'],
     ['5120x1440', '5120x1440 32:9'], ['1280x1024', '1280x1024 5:4']];
@@ -386,6 +388,8 @@
     return { w, h, s, fw: Math.round(w / s), ts: Math.max(1, Math.round(2 * s)), k: Math.max(1, Math.round(2 * s)) / (2 * s) };
   }
   const frameW = () => { const v = viewOf(); return v ? v.fw : W; };
+  // the guess for a box (anchorOf), or the element's own anchor
+  const anchorFor = (e, b) => (QModel.ANCHORS.includes(e.anchor) ? e.anchor : anchorOf(b));
   function anchorOf(b) {
     if (b.x <= 1 && b.x + b.w >= W - 1) return 'stretch';
     if (b.x < EDGE && b.x + b.w <= W / 2) return 'left';
@@ -396,7 +400,7 @@
   function previewPage(p, v) {
     const boxes = p.elements.map((e) => boxOf(e));
     const conts = p.elements.map((e, i) => ({ e, b: boxes[i] }))
-      .filter((c) => c.b && (c.e.kind === 'panel' || c.e.kind === 'rect') && !isBackdrop(c.e) && anchorOf(c.b) !== 'stretch');
+      .filter((c) => c.b && (c.e.kind === 'panel' || c.e.kind === 'rect') && !isBackdrop(c.e) && anchorFor(c.e, c.b) !== 'stretch');
     const inside = (a, c) => a !== c && a.x >= c.x - 0.5 && a.y >= c.y - 0.5 && a.x + a.w <= c.x + c.w + 0.5 && a.y + a.h <= c.y + c.h + 0.5;
     const clipped = [];
     let pinned = 0;
@@ -404,23 +408,26 @@
       const b = boxes[i];
       if (!b) return e;
       let outer = null;   // (the biggest panel around it decides: a panel's labels move with the panel)
-      for (const c of conts) if (inside(b, c.b) && (!outer || c.b.w * c.b.h > outer.w * outer.h)) outer = c.b;
-      const a = anchorOf(outer || b);
-      let dx = a === 'left' ? 0 : a === 'right' ? v.fw - W : (v.fw - W) / 2;
+      for (const c of conts) if (inside(b, c.b) && (!outer || c.b.w * c.b.h > outer.b.w * outer.b.h)) outer = c;
+      const a = QModel.ANCHORS.includes(e.anchor) ? e.anchor : outer ? anchorFor(outer.e, outer.b) : anchorOf(b);
+      let dx = a === 'left' || a === 'stretch' ? 0 : a === 'right' ? v.fw - W : (v.fw - W) / 2;
       const m = Object.assign({}, e);
-      if (a === 'stretch') { m.x = 0; m.w = v.fw; dx = 0; } else m.x = e.x + dx;
+      m.x = e.x + dx;
+      if (a === 'stretch') m.w = e.w + (v.fw - W);   // (keeps both margins: a full-width bar fills the screen)
       if (a === 'left' || a === 'right') pinned++;
-      const nb = { x: b.x + dx, y: b.y, w: a === 'stretch' ? v.fw : b.w, h: b.h };
+      const nb = { x: b.x + dx, y: b.y, w: a === 'stretch' ? b.w + (v.fw - W) : b.w, h: b.h };
       if (nb.x < -0.5 || nb.x + nb.w > v.fw + 0.5) clipped.push(nb);
       return m;
     });
     return { page: Object.assign({}, p, { elements }), clipped, pinned };
   }
+  let lastPv = null;
   // draws page p (a preview's mapped page when one is on) with the preview's text rounding
   function drawFrame(c, p, hover) {
     const v = viewOf();
     if (!v) { QRender.drawPage(c, p, W, H, hover); return null; }
     const pv = previewPage(p, v);
+    if (c === ctx) lastPv = pv;   // (what a click in the preview picks from)
     QRender.setTextOpts({ mult: S.font.mult * v.k, minTs: S.font.minTs });
     try { QRender.drawPage(c, pv.page, v.fw, H, null); } finally { QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs }); }
     return pv;
@@ -511,7 +518,7 @@
 
   function setView(id) {
     S.view = VIEWS.some(([v]) => v === id) ? id : '';
-    if (S.view) { S.sel = new Set(); S.hover = null; ov.style.cursor = ''; }
+    if (S.view) { S.hover = null; ov.style.cursor = ''; }   // (the selection stays: its anchor can be set while previewing)
     $('sView').value = S.view;
     $('stage').classList.toggle('preview', !!S.view);
     // (read only: the palette and + Page are off, the inspector is drawn disabled; commit() refuses the rest)
@@ -580,8 +587,11 @@
     o.lineWidth = 2 * px;
     for (const b of pv.clipped) o.strokeRect(Math.max(0, b.x), b.y, Math.min(v.fw, b.x + b.w) - Math.max(0, b.x), b.h);
     drawCheckMarks(o, px);
+    o.strokeStyle = '#ff4fd8';
+    o.lineWidth = 1.5 * px;
+    for (const e of pv.page.elements) if (S.sel.has(e.uid)) { const b = boxOf(e); if (b) o.strokeRect(b.x - px, b.y - px, b.w + 2 * px, b.h + 2 * px); }
     $('cap1').textContent = `${v.w}x${v.h}: UI scale ${v.s.toFixed(2)}, text scale ${v.ts}${v.k !== 1 ? ` (text ${Math.round(v.k * 100)}% of the 720p size)` : ''}` +
-      `  -  ${pv.pinned} pinned to an edge${pv.clipped.length ? `, ${pv.clipped.length} off the screen (red)` : ''}  -  read only: View: 1280x720 to edit`;
+      `  -  ${pv.pinned} pinned to an edge${pv.clipped.length ? `, ${pv.clipped.length} off the screen (red)` : ''}  -  click a widget to set its anchor; View: 1280x720 to edit`;
   }
 
   function drawOverlay(p, k) {
@@ -730,7 +740,7 @@
     if (S.tour) toggleTour();
     if (ev.button !== 0) return;
     ev.preventDefault();
-    if (readOnly()) return;
+    if (viewOf()) { previewPick(toGame(ev), ev.shiftKey); return; }
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     endGesture();
     const rect = ov.getBoundingClientRect();
@@ -763,6 +773,18 @@
     renderAfterSelect();
   });
 
+  // a click in the resolution preview selects (nothing moves: the preview is read only; the anchor can be set)
+  function previewPick(pt, add) {
+    const els = lastPv ? lastPv.page.elements : [];
+    let hit = null;
+    for (let i = els.length - 1; i >= 0 && !hit; i--) {
+      const b = pickable(els[i]);
+      if (b && pt.x >= b.x && pt.x < b.x + b.w && pt.y >= b.y && pt.y < b.y + b.h) hit = els[i];
+    }
+    if (!add) S.sel = new Set();
+    if (hit) { if (add && S.sel.has(hit.uid)) S.sel.delete(hit.uid); else S.sel.add(hit.uid); }
+    renderAfterSelect();
+  }
   window.addEventListener('mousemove', (ev) => {
     const d = S.drag;
     const pt = toGame(ev, d ? d.rect : undefined);
@@ -1213,9 +1235,27 @@
     box.textContent = '';
     const sel = selected();
     const parts = sel.length === 1 ? elementInspector(sel[0]) : sel.length > 1 ? multiInspector(sel) : pageInspector(curPage());
-    const chk = sel.length ? null : checkSection();
-    if (!viewOf()) box.append(...parts, chk || '');
-    else box.append(el('div', { class: 'sub ro-note', text: 'Preview at ' + S.view + ': read only (View: 1280x720 to edit)' }), chk || '', el('fieldset', { class: 'ro', disabled: true }, ...parts));
+    const chk = sel.length ? null : checkSection(), anc = sel.length ? anchorSection(sel) : null;
+    if (!viewOf()) box.append(...parts.slice(0, sel.length === 1 ? 4 : 2), anc || '', ...parts.slice(sel.length === 1 ? 4 : 2), chk || '');
+    else box.append(el('div', { class: 'sub ro-note', text: 'Preview at ' + S.view + ': read only but for the anchor (View: 1280x720 to edit)' }),
+      anc || '', chk || '', el('fieldset', { class: 'ro', disabled: true }, ...parts));
+  }
+
+  // How the selection follows a wider / narrower screen (the resolution preview uses it; the spec states it). Auto =
+  // the preview's guess (edge-hugging: that edge; full width: stretch; else the centre), shown in brackets.
+  function anchorSection(sel) {
+    const ok = sel.filter((e) => boxOf(e));
+    if (!ok.length) return null;
+    const own = new Set(ok.map((e) => (QModel.ANCHORS.includes(e.anchor) ? e.anchor : '')));
+    const guess = new Set(ok.map((e) => anchorOf(boxOf(e))));
+    const s = el('select', { title: 'Left / right: stays on that edge; centre: keeps its offset from the screen centre; stretch: keeps both margins (grows with the screen). A panel\'s anchor moves the widgets inside it.' },
+      el('option', { value: '', text: 'auto' + (guess.size === 1 ? ' (' + [...guess][0] + ')' : '') }),
+      QModel.ANCHORS.map((a) => el('option', { value: a, text: a })));
+    s.value = own.size === 1 ? [...own][0] : '';
+    s.addEventListener('change', () => commit(() => { for (const e of ok) { if (s.value) e.anchor = s.value; else delete e.anchor; } }, { anyView: true }));
+    const lab = el('label', { text: 'anchor' });
+    if (ok.length === 1) mark(lab, ok[0], 'anchor');
+    return sec('', el('div', { class: 'row' }, lab, s));
   }
 
   function elementInspector(e) {
@@ -1356,7 +1396,7 @@
     for (const e of off) {
       box.append(el('span', { class: 'chip' + (S.sel.has(e.uid) ? ' sel' : ''), title: (e.action || '') + (e.origId ? '  ' + e.origId : ''),
         text: (isBackdrop(e) ? 'backdrop ' : '') + e.kind + ' ' + (e.label || (e.kind === 'key' ? '?' : '')) + (e.action ? ' -> ' + e.action : ''),
-        onclick: (ev) => { if (readOnly()) return; if (ev.shiftKey) { if (S.sel.has(e.uid)) S.sel.delete(e.uid); else S.sel.add(e.uid); } else S.sel = new Set([e.uid]); renderAfterSelect(); } }));
+        onclick: (ev) => { if (ev.shiftKey) { if (S.sel.has(e.uid)) S.sel.delete(e.uid); else S.sel.add(e.uid); } else S.sel = new Set([e.uid]); renderAfterSelect(); } }));
     }
   }
   function renderSelStatus() {

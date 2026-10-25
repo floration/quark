@@ -260,10 +260,20 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
     assert.strictEqual(pv.x, quit.x + (fw - 1280) / 2, v + ': a centred button keeps its offset from the centre');
   }
   assert.ok(Math.abs((await ev(() => QApp.preview().view.k)) - 1) < 1e-9, '1440p text is exact (scale 4)');
-  const ovBox = await page.locator('#ov').boundingBox();
-  await page.mouse.click(ovBox.x + ovBox.width / 2, ovBox.y + ovBox.height / 2);
-  assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'the preview is read only');
-  // ... every other edit path too: the palette, + Page, Ctrl+V, an off-canvas chip, the page inspector
+  // a click in the preview selects (nothing moves), and the inspector sets the widget's anchor there
+  const [qx, qy] = await at(quit.x + (1720 - 1280) / 2 + quit.w / 2, quit.y + quit.h / 2);
+  const quitBefore = await ev(() => { const q = QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => /QUIT/.test(e.label || '')); return [q.x, q.y]; });
+  await page.mouse.move(qx, qy);
+  await page.mouse.down();
+  await page.mouse.move(qx + 80, qy + 40, { steps: 4 });
+  await page.mouse.up();
+  assert.strictEqual(await ev(() => QApp.S.sel.size), 1, 'a click in the preview selects');
+  assert.deepStrictEqual(await ev(() => { const q = QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => /QUIT/.test(e.label || '')); return [q.x, q.y]; }), quitBefore, 'a drag in the preview moves nothing');
+  await page.locator('#inspector select:not(fieldset select)').first().selectOption('right');
+  assert.strictEqual(await ev(() => QApp.preview().page.elements.find((e) => /QUIT/.test(e.label || '')).x), quit.x + (1720 - 1280), 'anchor right: the preview keeps its offset from the right edge');
+  assert.ok((await ev(() => QApp.spec('none'))).includes('anchor: right edge'), 'the spec states the anchor');
+  await ev(() => QApp.undo());
+  // ... every other edit path is refused: the palette, + Page, Ctrl+V, Delete and arrows on a chip, the page inspector
   {
     const before = await ev(() => [QApp.S.undo.length, JSON.stringify(QApp.S.doc.pages.map((p) => [p.id, p.elements.length]))]);
     assert.ok(await page.locator('#palette button').first().isDisabled() && await page.locator('#bAddPage').isDisabled(), 'palette and + Page are off in a preview');
@@ -271,7 +281,9 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
     await page.keyboard.press('Control+v');
     const chip = page.locator('#offCanvas .chip').first();
     if (await chip.count()) await chip.click();
-    assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'an off-canvas chip is not selected in a preview');
+    await page.keyboard.press('Delete');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Escape');
     assert.ok(await page.locator('#inspector fieldset.ro').evaluate((f) => f.disabled), 'the inspector is disabled in a preview');
     const after = await ev(() => [QApp.S.undo.length, JSON.stringify(QApp.S.doc.pages.map((p) => [p.id, p.elements.length]))]);
     assert.deepStrictEqual(after, before, 'nothing in the layout changed while previewing');
