@@ -111,7 +111,10 @@ kept (also across a reload) and the other views show the last version that parse
 
 Open, New, Open file and Reset all ask first (save / discard / cancel) when the brain has unsaved changes; ↻ next
 to Open re-reads the list of saved brains (e.g. ones written outside the page). New and Save as check the name
-as you type it, and replacing another saved brain asks first.
+as you type it, and replacing another saved brain asks first (also a Save of a brain never saved, when a file of
+its name has appeared meanwhile). A file opened with **Open file** whose name is already a saved brain opens as
+`<name>-2` (`-3`, ...), so a Save can't replace that brain unasked. Every confirm starts on its safe button
+(Cancel, or the primary one), and the Enter that closed a name prompt can't press a button in the dialog after it.
 
 The list on the left jumps to a slot, param or curve. **Save** writes `<data>/bots/<name>.qbrain` (only what
 differs from the default, unless "save the whole brain" is ticked); **Save as**, **⇩ .qbrain** (download), **Open

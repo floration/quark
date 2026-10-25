@@ -12,6 +12,7 @@ import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
 import { pctKind } from "../js/values.js";
 import { wilson, rateDiff, rateText, summarize } from "../js/batch.js";
+import { freeName } from "../js/brainui.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -333,6 +334,13 @@ t("win rates: Wilson interval, the difference of two runs, per brain counted per
     const S = summarize(ms), A = S.brains.find((b) => b.name === "A"), B = S.brains.find((b) => b.name === "B");
     same(A.n, 3, "two bots of one brain are one match"); same(A.w, 2); same(A.botMatches, 6); same(A.kills, 9); same(B.w, 0);
     same(S.maps[0].a, 2); same(S.maps[0].timeouts, 1); same(S.maps[0].errors, 1); same(S.bots.length, 4);
+});
+
+console.log("files");
+t("an opened file named like a saved brain gets a free name", () => {
+    same(freeName("mine", ["default", "other"]), "mine");
+    same(freeName("audit1", ["default", "audit1", "audit1-2"]), "audit1-3");
+    same(freeName("default", ["default"]), "default-2");
 });
 
 console.log("catalog (quark_tests exportbrain)");

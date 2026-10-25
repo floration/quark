@@ -13,6 +13,12 @@ const $ = (id) => document.getElementById(id);
 const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LINE_H = 19;
 const OWN_HEADER = /^# .*: a bot brain made in the Quark bot editor/;
+// base, else base-2, base-3, ...: the first not in taken
+export function freeName(base, taken) {
+    const t = new Set(taken);
+    if (!t.has(base)) return base;
+    for (let i = 2; ; i++) if (!t.has(`${base}-${i}`)) return `${base}-${i}`;
+}
 
 export class BrainPage {
     constructor(app) {
@@ -410,9 +416,10 @@ export class BrainPage {
         let name = asName || this.name;
         if (name === "default") {
             name = await this.app.promptName("Save as", "mybrain", "The built-in default can't be overwritten: save your brain under a name (letters, digits, _ . -). It goes to " + this.app.brainsDir);
-            if (!name || !(await this._overwriteOk(name))) return false;
+            if (!name) return false;
         }
         if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name) || name === "default") { this.app.toast("Bad name: letters, digits, _ . - (not 'default')"); return false; }
+        if (!(await this._overwriteOk(name))) return false;
         // the game's compiler on the Code view's text (so its line numbers are the Code view's), under the saved name:
         // the hash in its label is of what the brain does, the same for this text as for the file
         const g = await this.gameCheck(this.codeText.replace(/^brain "[^"\n]*"$/m, `brain "${name}"`));
@@ -442,8 +449,10 @@ export class BrainPage {
             return true;
         } catch (e) { this.app.toast("Save failed: " + e.message, 6000); return false; }
     }
+    // Writing <name>.qbrain replaces a saved brain: ask, unless it's the file this brain was opened from or last saved
+    // as (a brain never saved, from New or Open file, asks too: the file on disk is someone else's).
     async _overwriteOk(name) {
-        if (name === this.name || !this.app.brainList.some((b) => b.source === "user" && b.name === name)) return true;
+        if ((name === this.name && this.saved != null) || !this.app.brainList.some((b) => b.source === "user" && b.name === name)) return true;
         return (await this.app.choose(`${name}.qbrain exists`, `Replace it with this brain? (Its current version is kept as ${name}.qbrain.bak.)`,
             [{ k: "no", label: "Cancel" }, { k: "yes", label: "Replace", danger: true }])) === "yes";
     }
@@ -514,7 +523,7 @@ export class BrainPage {
         $("brainSave").onclick = () => this.save();
         $("brainSaveAs").onclick = async () => {
             const n = await this.app.promptName("Save as", this.name === "default" ? "mybrain" : this.name + "2", "Letters, digits, _ . -");
-            if (n && (await this._overwriteOk(n))) this.save(n);
+            if (n) this.save(n);
         };
         $("brainDownload").onclick = () => {
             if (this.codeError) { this.app.toast("The code has an error"); return; }
@@ -528,7 +537,11 @@ export class BrainPage {
             if (!f) return;
             try {
                 const ast = numberIds(JSON.parse(JSON.stringify(parse(f.text))));
-                this.name = f.name.replace(/\.qbrain$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[^A-Za-z0-9]+/, "") || "uploaded";
+                // a file named like a saved brain (or the default) opens under a free name: a Save then can't replace
+                // that brain unasked, and the Open list doesn't show two of one name
+                const base = (f.name.replace(/\.qbrain$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[^A-Za-z0-9]+/, "") || "uploaded").slice(0, 60);
+                this.name = freeName(base, this.app.brainList.map((b) => b.name));
+                if (this.name !== base) this.app.toast(`${base}.qbrain is ${base === "default" ? "the built-in brain's name" : "already saved"}: the file opened as “${this.name}” (Save as to pick another name)`, 6000);
                 ast.name = this.name;   // (the game's label names the file, not what its header said)
                 this.saved = null; this.hist = []; this.histIx = -1;
                 this._set(this.mergeOverDefault(ast), null); this._fillSel();
