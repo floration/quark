@@ -12,7 +12,7 @@
   const FAST_MS = 2500, SLOW_MS = 10000, HIDDEN_MS = 15000;
   const FIELDS = ['did', 'noticed', 'change', 'other'];
   const FIELD_LABELS = [['did', 'Did'], ['noticed', 'Noticed'], ['change', 'Wants changed'], ['other', 'Also']];
-  const ACTIVE = ['downloading', 'verifying', 'extracting'];
+  const ACTIVE = ['downloading', 'verifying', 'extracting', 'copying'];
   const MAX_FIELD = 4000;
   const RECENT_MAX = 10;
   // a few starting points for the options box (src/client/main.cpp flags); the boxes' own history comes first
@@ -68,12 +68,13 @@
     sha256: ['idle', 'unsigned', 'From before signing (1.16.x or older): matched its SHA256SUMS; there is no signature to check'],
     none: ['warn', 'not checked', 'From before signing (1.16.x or older): no signature and no SHA256SUMS to check it against'],
   };
-  function checkPill(c, note) { const p = CHECK_PILL[c]; return p ? pill(p[0], p[1], note || p[2]) : ''; }
+  // an installed version without play-install.json (installed before the Play tab recorded it): said so, card and row alike
+  function checkPill(c, note) { const p = CHECK_PILL[c]; return p ? pill(p[0], p[1], note || p[2]) : pill('idle', 'check not recorded', 'Installed before the Play tab recorded how it checked a download'); }
   function toast(msg, bad) {
     const t = $('toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false;
     clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3500);
   }
-  function setHTML(id, html) { if (state.sigs[id] === html) return; state.sigs[id] = html; $(id).innerHTML = html; }
+  function setHTML(id, html) { if (state.sigs[id] === html) return false; state.sigs[id] = html; $(id).innerHTML = html; return true; }
   async function api(path, body) {
     const opts = body === undefined ? { cache: 'no-store' } : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
     let r;
@@ -114,8 +115,13 @@
   function makeCard(b) {
     const el = document.createElement('div');
     el.className = 'build';
-    el.innerHTML = '<div class="bd"></div><input type="text" class="opt" list="opts-list" spellcheck="false" autocomplete="off" maxlength="400" placeholder="launch options">' + '<div class="act"></div>';
-    const c = { el, bd: el.firstChild, input: el.children[1], act: el.lastChild, sb: null, sa: null };
+    el.innerHTML = '<div class="bd"></div><input type="text" class="opt" list="opts-list" spellcheck="false" autocomplete="off" maxlength="400" placeholder="launch options">' +
+      '<div class="pick" hidden><select class="pk-mode" aria-label="Mode (--host)" title="--host: the mode to start a match in"></select><select class="pk-map" aria-label="Map (--map)" title="--map: maps from this build\'s maps folder"></select></div>' +
+      '<div class="act"></div>';
+    const c = { el, bd: el.firstChild, input: el.children[1], pick: el.children[2], act: el.lastChild, sb: null, sa: null, mapsSig: null, id: b.id };
+    c.mode = c.pick.firstChild; c.map = c.pick.lastChild;
+    c.mode.addEventListener('change', () => pickChanged(c, 'mode'));
+    c.map.addEventListener('change', () => pickChanged(c, 'map'));
     c.input.value = argsFor(b.id);
     c.input.dataset.build = b.id;
     c.input.setAttribute('aria-label', 'Launch options for ' + b.label);
@@ -136,14 +142,16 @@
       const meta = [];
       if (has(b.tag) && b.tag !== b.label) meta.push('<span class="mono">' + esc(b.tag) + '</span>');
       if (has(b.commit)) meta.push('<span class="mono">' + esc(String(b.commit).slice(0, 7)) + '</span>' + (b.dirty ? ' <span class="warn">dirty</span>' : ''));
-      if (has(b.mtime)) meta.push('built ' + esc(when(b.mtime)));
+      // (a release put in a folder was installed then, not built: BUILD.txt's time is the install's)
+      if (has(b.installedAt) || has(b.mtime)) meta.push((b.kind === 'version' || b.fromRelease ? 'installed ' : 'built ') + esc(when(b.installedAt || b.mtime)));
       const last = sess.find(s => s.build === b.id && s.state !== 'running');
       const lines = arr(b.lines);
       const bd = '<div class="n"><span>' + esc(b.label) + '</span><span class="kind">' + (b.kind === 'version' ? 'older version' : 'game folder') + '</span></div>' +
-        '<div class="v">' + (has(b.version) ? esc(b.version) : '<span class="muted">unknown version</span>') + (b.kind === 'version' ? ' ' + (checkPill(b.check, b.checkNote) || pill('idle', 'check not recorded', 'Installed before the Play tab recorded how it checked a download')) : '') + '</div>' +
+        '<div class="v">' + (has(b.version) ? esc(b.version) : '<span class="muted">' + (b.kind === 'version' ? 'no version in its tag' : 'unknown version') + '</span>') + (b.kind === 'version' ? ' ' + checkPill(b.check, b.checkNote) : b.check ? ' ' + checkPill(b.check, b.checkNote) : '') + '</div>' +
         (meta.length ? '<div class="m">' + meta.join(' &middot; ') + '</div>' : '') +
         (b.playable ? '' : '<div class="m">' + esc(b.missing || 'not playable') + '</div>') +
         (last ? '<div class="m">last played ' + esc(when(last.startedAt)) + ' for ' + esc(dur(last.durationSec)) + ' ' + exitPill(last.exit) + '</div>' : '') +
+        (b.crashes ? '<div class="m"><span class="err">' + esc(b.crashes) + ' of ' + esc(b.plays) + ' games crashed</span></div>' : '') +
         (lines.length ? '<details><summary class="small muted">BUILD.txt</summary><pre class="small mono">' + lines.map(esc).join('\n') + '</pre></details>' : '');
       const r0 = run[0];
       const act = (b.playable ? '<button type="button" class="btn primary" data-play="' + esc(b.id) + '">Play</button>' : '') +
@@ -156,9 +164,76 @@
       if (c.sa !== act) { c.sa = act; c.act.innerHTML = act; }
       c.el.className = 'build' + (b.playable ? '' : ' off') + (run.length ? ' running' : '');
       c.input.hidden = !b.playable;
+      if (c.mapsSig !== (b.playable ? b.maps : null)) {
+        c.mapsSig = b.playable ? b.maps : null;
+        c.pick.hidden = !c.mapsSig;
+        if (c.mapsSig) loadMaps(b.id, c.mapsSig).then(() => fillPick(c));
+      }
       if (host.children[i] !== c.el) host.insertBefore(c.el, host.children[i] || null);
     });
     for (const [id, c] of cards) if (!keep.has(id)) { c.el.remove(); cards.delete(id); }
+  }
+
+  // ---------------------------------------------------------------- mode and map pickers: they write --host / --map
+  // into the options box (and show what it says); the lists come from the build's own maps folder, fetched once per set
+  const mapSets = {};   // sig -> {maps, modes, titles} (or the promise while it loads)
+  function loadMaps(id, sig) {
+    if (!mapSets[sig]) {
+      mapSets[sig] = api('/api/play/maps?build=' + encodeURIComponent(id)).then(j => { mapSets[sig] = j; return j; },
+        () => { delete mapSets[sig]; return null; });
+    }
+    return Promise.resolve(mapSets[sig]);
+  }
+  const ARG_RE = (flag) => new RegExp('(^|\\s)' + flag + '\\s+("[^"]*"|\\S+)');
+  function getArg(text, flag) { const m = ARG_RE(flag).exec(text); return m ? m[2].replace(/^"|"$/g, '') : ''; }
+  function setArg(text, flag, val) {
+    const re = ARG_RE(flag);
+    if (!val) return text.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+    return re.test(text) ? text.replace(re, (m, pre) => pre + flag + ' ' + val) : (text.trim() + ' ' + flag + ' ' + val).trim();
+  }
+  function fillPick(c) {
+    const set = mapSets[c.mapsSig];
+    if (!set || typeof set.then === 'function') return;
+    const text = c.input.value, mode = getArg(text, '--host').toLowerCase(), map = getArg(text, '--map');
+    const titles = obj(set.titles), maps = arr(set.maps);
+    const opt = (v, t, sel) => '<option value="' + esc(v) + '"' + (sel ? ' selected' : '') + '>' + esc(t) + '</option>';
+    const modes = arr(set.modes).slice();
+    if (mode && !modes.includes(mode)) modes.push(mode);  // (typed by hand: shown as it is)
+    const mh = opt('', 'mode', !mode) + modes.map(m => opt(m, m + (titles[m] && titles[m].toLowerCase() !== m ? ' \u00b7 ' + titles[m].toLowerCase() : ''), m === mode)).join('');
+    const label = (m) => m.name + (m.title && m.title.toLowerCase() !== m.name ? ' (' + m.title + ')' : '') + (m.handmade ? ' \u00b7 hand-made' : '');
+    let gh;
+    if (mode) {
+      const built = maps.filter(m => m.for === mode), offered = maps.filter(m => m.for !== mode && arr(m.modes).includes(mode));
+      const other = maps.filter(m => !arr(m.modes).includes(mode));
+      const grp = (t, l) => l.length ? '<optgroup label="' + esc(t) + '">' + l.map(m => opt(m.name, label(m), m.name === map)).join('') + '</optgroup>' : '';
+      gh = grp('Built for ' + mode, built) + grp('Also offered for ' + mode, offered) + grp('Other maps (may not work in ' + mode + ')', other);
+    } else gh = maps.map(m => opt(m.name, label(m) + (m.for ? ' \u00b7 ' + m.for : ''), m.name === map)).join('');
+    if (map && !maps.some(m => m.name === map)) gh += opt(map, map + ' (not in this build)', true);
+    const html = mh + '\u0000' + opt('', 'map', !map) + gh;
+    if (c.pickHTML === html) return;
+    c.pickHTML = html;
+    const [a, b] = html.split('\u0000');
+    c.mode.innerHTML = a; c.map.innerHTML = b;
+  }
+  function pickChanged(c, which) {
+    const set = obj(mapSets[c.mapsSig]), maps = arr(set.maps);
+    let text = c.input.value;
+    if (which === 'mode') {
+      const mode = c.mode.value;
+      text = setArg(text, '--host', mode);
+      const cur = maps.find(m => m.name === getArg(text, '--map'));
+      // a new mode: its own map, the way the game's menus pick it, unless the chosen one is offered for it too
+      if (mode && !(cur && arr(cur.modes).includes(mode))) {
+        const own = maps.find(m => m.for === mode) || maps.find(m => arr(m.modes).includes(mode));
+        if (own) text = setArg(text, '--map', own.name);
+      }
+    } else {
+      const name = c.map.value, m = maps.find(x => x.name === name);
+      text = setArg(text, '--map', name);
+      if (name && !getArg(text, '--host') && m && m.for) text = setArg(text, '--host', m.for);  // (--map alone starts nothing)
+    }
+    c.input.value = text;
+    c.input.dispatchEvent(new Event('input', { bubbles: true }));  // (remembered for this build, like typing)
   }
 
   function renderPending() {
@@ -185,31 +260,80 @@
       : has(sy.error) ? sy.error : sy.at ? 'Up to date with GitHub (' + when(sy.pushedAt || sy.at) + ').' : 'Nothing sent yet.';
     html += '<div class="sync' + (bad || !d.present ? ' bad' : '') + '"><span>' + esc(syncTxt) + '</span>' +
       (bad ? '<button type="button" class="btn small" id="sync-now">Try again</button>' : '') + '</div>';
+    // edits and removals that never reached the file (an agent took the entry first): every one, until dismissed
+    const blocked = arr(v.blocked);
+    if (blocked.length) {
+      html += '<div class="blocked"><b>' + (blocked.length === 1 ? 'A change of yours didn\'t reach ' : blocked.length + ' changes of yours didn\'t reach ') + esc(file) + '</b>' +
+        '<span class="small muted"> An agent took the entry before it went in; it is tried again if the entry is set back to open.</span><ul>' +
+        blocked.map(x => '<li><span><span class="mono small">' + esc(x.stamp || '') + '</span> ' + esc(String(x.title || '').replace(/^Play note: /, '')) + ': your ' + esc(x.change) + ' wasn\'t applied (' + esc(x.why) + ')</span>' +
+          '<span class="grow"></span>' + blockedButtons(x.id)).join('') + '</ul></div>';
+    }
     const notes = arr(v.notes);
     if (!notes.length) return setHTML('sec-notes', html + '<p class="empty">No notes yet. Play a build above; when the game closes this page asks what you did.</p>');
     html += '<ul class="notes">' + notes.map(n => {
       const f = obj(n.fields);
       const st = has(n.status) ? pill(STATUS_PILL[n.status] || 'idle', n.status, 'status in 12-play-notes.md (agents change it)') : pill('idle', d.present ? 'not in the file yet' : 'on this PC');
       const parts = FIELD_LABELS.filter(([k]) => has(f[k])).map(([k, l]) => '<div class="f"><b>' + l + ':</b> ' + esc(f[k]) + '</div>');
-      const long = FIELD_LABELS.some(([k]) => has(f[k]) && (String(f[k]).length > 220 || String(f[k]).split('\n').length > 4)) || has(n.logTail);
       const open = state.openNotes.has(n.id);
-      const acts = n.locked ? '<span class="small muted" title="Edits and removals stop once an agent has the entry">' + esc(n.locked) + '</span>'
+      const acts = n.removed === 'pending' ? '<span class="small muted">removing&hellip;</span>'
+        : n.blocked ? blockedButtons(n.id)
+        : n.locked ? '<span class="small muted" title="Edits and removals stop once an agent has the entry">' + esc(n.locked) + '</span>'
         : '<button type="button" class="btn small ghost" data-edit="' + esc(n.id) + '">Edit</button><button type="button" class="btn small ghost danger" data-del="' + esc(n.id) + '">Remove</button>';
-      return '<li class="note' + (open ? ' open' : '') + '"><div class="t"><span>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</span>' + st + '</div>' + parts.join('') +
+      return '<li class="note' + (open ? ' open' : '') + (n.removed ? ' removed-' + esc(n.removed) : '') + '" data-id="' + esc(n.id) + '"' + (has(n.logTail) ? ' data-tail="1"' : '') + '><div class="t"><span>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</span>' + st + '</div>' + parts.join('') +
         (has(n.logTail) && open ? '<pre class="tail small mono">' + esc(n.logTail) + '</pre>' : '') +
         '<div class="w">' + esc(n.stamp || '') + (n.freeform ? ' &middot; played outside the board' : ' &middot; played ' + esc(dur(n.durationSec))) + ' ' + exitPill(n.exit) +
         (has(n.args) ? ' &middot; <span class="mono">' + esc(n.args) + '</span>' : '') + (n.editedAt ? ' &middot; edited' : '') + ' &middot; ' + esc(n.where || '') + '</div>' +
-        '<div class="na">' + (long ? '<button type="button" class="btn small ghost" data-more="' + esc(n.id) + '">' + (open ? 'less' : 'more' + (has(n.logTail) ? ' (and the log lines)' : '')) + '</button>' : '') + '<span class="grow"></span>' + acts + '</div></li>';
+        '<div class="na"><button type="button" class="btn small ghost" data-more="' + esc(n.id) + '"' + (open || has(n.logTail) ? '' : ' hidden') + '>' + (open ? 'less' : 'more' + (has(n.logTail) ? ' (and the log lines)' : '')) + '</button><span class="grow"></span>' + acts + '</div></li>';
     }).join('') + '</ul>';
     if ((v.notesTotal || 0) > notes.length) html += '<p class="small muted more-notes">The newest ' + notes.length + ' of ' + esc(v.notesTotal) + '; every note is in ' + esc(file) + ' (Claude Manager) and project-manager\\play-notes.jsonl.</p>';
-    setHTML('sec-notes', html);
+    if (setHTML('sec-notes', html)) {
+      measureNotes();
+      for (const n of notes) if (n.locked || n.removed) store('play-draft-edit-' + n.id, null);  // (no edit to finish)
+    }
+  }
+  function blockedButtons(id) {
+    return '<button type="button" class="btn small" data-follow="' + esc(id) + '" title="Add a new note that refers to this one">Write a follow-up</button>' +
+      '<button type="button" class="btn small ghost" data-dismiss="' + esc(id) + '" title="Seen: take it off this list (it is not tried again)">Dismiss</button>';
+  }
+  // "more" only where a box really is cut: measured after rendering (a 200-character box with one long line wraps past
+  // the 4-line clamp, a 300-character one on a wide card may not), and again when the cards change width
+  function measureNotes() {
+    for (const li of document.querySelectorAll('#sec-notes li.note:not(.open)')) {
+      const b = li.querySelector('[data-more]');
+      if (b) b.hidden = !li.dataset.tail && !Array.from(li.querySelectorAll('.f')).some(f => f.scrollHeight > f.clientHeight + 1);
+    }
+  }
+  if (window.ResizeObserver) {
+    let w = 0, raf = 0;
+    new ResizeObserver((es) => {
+      const nw = Math.round(es[0].contentRect.width);
+      if (nw === w) return;
+      w = nw; cancelAnimationFrame(raf); raf = requestAnimationFrame(measureNotes);
+    }).observe($('sec-notes'));
   }
 
   const SESSION_STATE = { running: ['good', 'running'], needsNote: ['warn', 'note waiting'], noted: ['good', 'noted'], skipped: ['idle', 'skipped'] };
+  // Recent games: the newest 15 of the 30 a poll sends; "Show all" fetches every kept one (200) once and keeps the
+  // poll's newest on top of it; "Crashed" keeps the crashes and error exits
+  const SESSIONS_SHOWN = 15;
+  const badEnd = (s) => ['crash', 'error'].includes(obj(s.exit).kind);
   function renderSessions() {
-    const list = arr(state.v.sessions).slice(0, 15);
-    let html = '<div class="card-head"><h2 id="h-sessions">Recent games</h2><span class="src">project-manager\\play-sessions.json</span></div>';
-    if (!list.length) return setHTML('sec-sessions', html + '<p class="empty">Nothing played from here yet.</p>');
+    const v = state.v, recent = arr(v.sessions), total = Number(v.sessionsTotal) || recent.length;
+    let list = recent;
+    if (state.sessAll && state.sessFull) {
+      const seen = new Set(recent.map(s => s.id));
+      list = recent.concat(state.sessFull.filter(s => !seen.has(s.id)));
+    }
+    if (state.sessCrashed) list = list.filter(badEnd);
+    const more = !state.sessAll && list.length > SESSIONS_SHOWN;
+    if (!state.sessAll) list = list.slice(0, SESSIONS_SHOWN);
+    const seg = [['all', 'All'], ['crashed', 'Crashed']].map(([k, t]) => '<button type="button" data-sessf="' + k + '"' + ((k === 'crashed') === !!state.sessCrashed ? ' class="on"' : '') +
+      (k === 'crashed' ? ' title="Crashes and error exits"' : '') + '>' + t + '</button>').join('');
+    let html = '<div class="card-head"><h2 id="h-sessions">Recent games' + (total ? ' <span class="count">' + esc(total) + '</span>' : '') + '</h2>' +
+      '<span class="rel-tools">' + (total ? '<span class="seg">' + seg + '</span>' : '') + '<span class="src">project-manager\\play-sessions.json</span></span></div>';
+    const tail = total > SESSIONS_SHOWN || state.sessAll ? '<p class="small muted more-notes">' + (state.sessAll ? 'All ' + esc(total) + ' kept games. ' : more || total > recent.length ? 'The newest ' + SESSIONS_SHOWN + ' of ' + esc(total) + '. ' : '') +
+      '<button type="button" class="btn small ghost" data-sessall="1">' + (state.sessAll ? 'Show the newest ' + SESSIONS_SHOWN : 'Show all ' + esc(total)) + '</button></p>' : '';
+    if (!list.length) return setHTML('sec-sessions', html + '<p class="empty">' + (state.sessCrashed && total ? 'No crashes or error exits' + (state.sessAll ? '.' : ' among these; Show all looks at every kept game.') : 'Nothing played from here yet.') + '</p>' + tail);
     html += '<table class="t"><thead><tr><th>Build</th><th>Started</th><th class="num">Played</th><th>State</th><th></th></tr></thead><tbody>' + list.map(s => {
       const st = SESSION_STATE[s.state] || ['idle', s.state || '?'];
       const played = s.state === 'running' ? dur((Date.now() - (ms(s.startedAt) || Date.now())) / 1000) : dur(s.durationSec);
@@ -220,25 +344,31 @@
       return '<tr><td>' + esc(s.label) + ' <span class="muted small">' + esc(s.version || '') + '</span>' + (has(s.args) ? '<div class="small mono muted">' + esc(s.args) + '</div>' : '') + '</td>' +
         '<td class="nowrap">' + esc(when(s.startedAt)) + '</td><td class="num">' + esc(played) + (s.endApprox ? '?' : '') + '</td><td>' + pill(st[0], st[1]) + ' ' + exitPill(s.exit) + '</td>' +
         '<td class="nowrap">' + btns.join(' ') + '</td></tr>';
-    }).join('') + '</tbody></table>';
+    }).join('') + '</tbody></table>' + tail;
     setHTML('sec-sessions', html);
   }
 
   function releaseRow(r, inst, showChannel) {
     const i = obj(inst[r.tag]);
+    const offered = r.zip && !(r.needsSig && !(r.sig && r.manifest && r.manifestSig));
+    // newer than the production / testing folder: one click puts it there (like tools/fetch_release.ps1)
+    const upd = offered && r.newer ? ' <button type="button" class="btn small" data-install="' + esc(r.tag) + '" data-into="' + esc(r.newer) + '" title="Check it like Install, then copy it over Quark\\' + esc(r.newer) + ' (files replaced or added, none deleted; BUILD.txt rewritten), like tools/fetch_release.ps1">Update ' + esc(r.newer) + '</button>' : '';
     let act;
     if (ACTIVE.includes(i.state)) {
       const f = i.total ? Math.min(1, (i.got || 0) / i.total) : 0;
-      act = '<span class="prog"><i style="width:' + (f * 100).toFixed(1) + '%"></i></span> <span class="small muted">' + esc(i.state === 'downloading' ? Math.round(f * 100) + '% of ' + size(i.total) : i.state + '…') + '</span>' +
-        (i.cancel ? ' <span class="small muted">cancelling&hellip;</span>' : ' <button type="button" class="btn small ghost" data-cancel="' + esc(r.tag) + '">Cancel</button>');
-    } else if (r.installed) {
-      act = '<button type="button" class="btn small primary" data-play="versions/' + esc(r.tag) + '">Play</button> <button type="button" class="btn small ghost danger" data-remove="' + esc(r.tag) + '">Remove</button> ' + checkPill(r.check);
-    } else if (!r.zip) act = '<span class="muted small">no Windows zip</span>';
-    else if (r.needsSig && !(r.sig && r.manifest && r.manifestSig)) act = '<span class="muted small" title="It claims 1.17.0 or later but has no signature: the launcher doesn\'t offer it either">unsigned: not offered</span>';
-    else act = '<button type="button" class="btn small" data-install="' + esc(r.tag) + '" title="' + (r.needsSig ? 'Checked like the launcher: signature and signed release manifest' : 'From before signing: checked against SHA256SUMS when it has one') + '">Install</button>' +
-      (i.state === 'failed' ? ' <span class="err small">' + esc(i.error) + '</span>' : i.state === 'cancelled' ? ' <span class="small muted">cancelled</span>' : '');
+      act = '<span class="prog"><i style="width:' + (f * 100).toFixed(1) + '%"></i></span> <span class="small muted">' + (i.into ? 'into ' + esc(i.into) + ': ' : '') + esc(i.state === 'downloading' ? Math.round(f * 100) + '% of ' + size(i.total) : i.state + '…') + '</span>' +
+        (i.state === 'copying' ? '' : i.cancel ? ' <span class="small muted">cancelling&hellip;</span>' : ' <button type="button" class="btn small ghost" data-cancel="' + esc(r.tag) + '">Cancel</button>');
+    } else {
+      if (r.installed) {
+        act = '<button type="button" class="btn small primary" data-play="versions/' + esc(r.tag) + '">Play</button> <button type="button" class="btn small ghost danger" data-remove="' + esc(r.tag) + '">Remove</button> ' + checkPill(r.check, r.checkNote);
+      } else if (!r.zip) act = '<span class="muted small">no Windows zip</span>';
+      else if (!offered) act = '<span class="muted small" title="It claims 1.17.0 or later but has no signature: the launcher doesn\'t offer it either">unsigned: not offered</span>';
+      else act = '<button type="button" class="btn small" data-install="' + esc(r.tag) + '" title="Into Quark\\versions\\' + esc(r.tag) + '. ' + (r.needsSig ? 'Checked like the launcher: signature and signed release manifest' : 'From before signing: checked against SHA256SUMS when it has one') + '">Install</button>';
+      act += upd + (i.state === 'failed' ? ' <span class="err small">' + esc(i.error) + '</span>' : i.state === 'cancelled' ? ' <span class="small muted">cancelled</span>' :
+        i.state === 'done' && i.into ? ' <span class="small muted">' + esc(i.into) + ' updated</span>' : '');
+    }
     const ch = r.channel === 'production' ? pill('good', 'production') : r.channel === 'testing' ? pill('run', 'testing') : pill('idle', r.channel);
-    const marks = arr(r.folders).map(f => pill('run', 'in ' + f, 'The ' + f + ' folder holds this release')).join(' ') +
+    const marks = (!showChannel && r.channel !== 'production' && r.channel !== 'testing' ? pill('idle', r.channel, 'Neither a production (v...) nor a testing (test-...) release') + ' ' : '') + arr(r.folders).map(f => pill('run', 'in ' + f, 'The ' + f + ' folder holds this release')).join(' ') +
       (r.newer ? ' ' + pill('warn', 'newer than ' + r.newer, 'Newer than what the ' + r.newer + ' folder holds') : '');
     return '<tr' + (r.zip ? '' : ' class="off"') + '><td><span class="mono">' + esc(r.tag) + '</span>' + (r.nameSaysMore ? ' <span class="muted small">' + esc(r.name) + '</span>' : '') + (marks ? ' ' + marks : '') + '</td>' +
       (showChannel ? '<td>' + ch + '</td>' : '') + '<td class="nowrap">' + esc(when(r.publishedAt)) + '</td><td class="num">' + (r.zip ? esc(size(r.zip.size)) : '') + '</td><td class="nowrap">' + act + '</td></tr>';
@@ -248,26 +378,38 @@
       '<div class="rel-wrap"><table class="t"><thead><tr><th>Release</th>' + (showChannel ? '<th>Channel</th>' : '') + '<th>Published</th><th class="num">Size</th><th>On this PC</th></tr></thead><tbody>' +
       (list.length ? list.map(r => releaseRow(r, inst, showChannel)).join('') : '<tr><td class="muted" colspan="5">None.</td></tr>') + '</tbody></table></div></div>';
   }
+  // the head (filters, search, Refresh) is static so typing in the search box is never interrupted; only #rel-body is
+  // rebuilt. Releases before 1.0 are folded away unless asked for (or searched).
+  const isOld = (r) => /^0\./.test(String(r.version || ''));
   function renderReleases() {
     const v = state.v, rel = obj(v.releases), inst = obj(v.installs), all = state.relList;
-    const seg = ['all', 'production', 'testing'].map(f => '<button type="button" data-filter="' + f + '"' + (state.relFilter === f ? ' class="on"' : '') + '>' + f[0].toUpperCase() + f.slice(1) + '</button>').join('');
-    const list = all.filter(r => state.relFilter === 'all' || r.channel === state.relFilter);
-    const count = state.relFilter === 'all' ? String(all.length) : list.length + ' of ' + all.length;
-    let html = '<div class="card-head"><h2 id="h-releases">Older versions <span class="count" title="' + esc(state.relFilter === 'all' ? 'every release on GitHub' : state.relFilter + ' releases shown of all') + '">' + esc(count) + '</span></h2>' +
-      '<span class="rel-tools"><span class="seg">' + seg + '</span><span class="src">GitHub releases &middot; ' + (rel.busy ? 'fetching&hellip;' : rel.fetchedAt ? 'checked ' + esc(when(rel.fetchedAt)) : 'not fetched yet') + '</span>' +
-      '<button type="button" class="btn small" id="rel-refresh">Refresh</button></span></div>';
+    const q = $('rel-search').value.trim().toLowerCase(), mine = $('rel-installed').checked;
+    for (const b of $('rel-seg').children) b.classList.toggle('on', b.dataset.filter === state.relFilter);
+    let list = all.filter(r => state.relFilter === 'all' || r.channel === state.relFilter);
+    if (mine) list = list.filter(r => r.installed || arr(r.folders).length || ACTIVE.includes(obj(inst[r.tag]).state));
+    if (q) list = list.filter(r => [r.tag, r.name, r.version].some(x => String(x || '').toLowerCase().includes(q)));
+    const old = q ? [] : list.filter(isOld);
+    if (!state.relOld && old.length) list = list.filter(r => !isOld(r));
+    const filtered = state.relFilter !== 'all' || mine || q || (!state.relOld && old.length);
+    $('rel-count').textContent = filtered ? list.length + ' of ' + all.length : String(all.length);
+    $('rel-count').title = filtered ? 'shown of every release on GitHub' : 'every release on GitHub';
+    $('rel-src').innerHTML = 'GitHub releases &middot; ' + (rel.busy ? 'fetching&hellip;' : rel.fetchedAt ? 'checked ' + esc(when(rel.fetchedAt)) : 'not fetched yet');
+    let html = '';
     if (rel.ok === false) html += '<div class="down"><div><strong>Could not get the release list</strong><div class="err">' + esc(rel.error) + '</div></div></div>';
     else if (has(rel.error)) html += '<p class="small warn">' + esc(rel.error) + '</p>';
+    const fold = old.length ? '<p class="small muted rel-old"><button type="button" class="btn small ghost" data-oldrel="1">' + (state.relOld ? 'Hide' : 'Show') + ' the ' + old.length + ' release' + (old.length === 1 ? '' : 's') + ' before 1.0</button></p>' : '';
     if (!list.length) {
-      setHTML('sec-releases', html + (rel.ok === false ? '' : '<p class="empty">' + (rel.busy || rel.ok == null ? 'Loading the list from GitHub&hellip;' : 'No releases.') + '</p>'));
+      const why = !all.length ? (rel.ok === false ? '' : rel.busy || rel.ok == null ? 'Loading the list from GitHub&hellip;' : 'No releases.') : 'No release matches' + (q ? ' &ldquo;' + esc(q) + '&rdquo;' : '') + '.';
+      setHTML('rel-body', html + (why ? '<p class="empty">' + why + '</p>' : '') + fold);
       return tickRefresh();
     }
     // wide screens: production and testing side by side instead of one long table with empty space beside it
     if (state.relFilter === 'all' && WIDE.matches) {
+      const rest = list.filter(r => r.channel !== 'production');
       html += '<div class="rel-cols">' + releaseTable(list.filter(r => r.channel === 'production'), inst, false, 'Production') +
-        releaseTable(list.filter(r => r.channel !== 'production'), inst, false, 'Testing') + '</div>';
+        releaseTable(rest, inst, false, rest.some(r => r.channel !== 'testing') ? 'Testing and other' : 'Testing') + '</div>';
     } else html += releaseTable(list, inst, true, '');
-    setHTML('sec-releases', html);
+    setHTML('rel-body', html + fold);
     tickRefresh();
   }
   // the Refresh button: disabled while fetching and for the 30 s the server ignores another press, with a countdown
@@ -293,7 +435,16 @@
     line.classList.toggle('bad', bad);
     $('sec-down').hidden = !state.error;
     $('down-detail').textContent = state.error ? 'Last try: ' + when(Date.now()) + ' (' + state.error + ')' : '';
-    document.body.classList.toggle('down', !!state.error);
+    // Down: nothing that needs the server can be pressed, by mouse or keyboard (inert takes the sections out of the tab
+    // order too); in the dialogs only what works without it stays (Later, Cancel, Close, Discard draft)
+    const down = !!state.error;
+    document.body.classList.toggle('down', down);
+    for (const el of document.querySelectorAll('#sec-pending, #sec-builds, .play-grid, #sec-releases')) el.inert = down;
+    for (const b of document.querySelectorAll('#note-save, #note-skip, #note-delete, #log-open, #log-reload, #log-dlg [data-open]')) {
+      if (b.dataset.t === undefined) b.dataset.t = b.title || '';  // (its own title, for when the server is back)
+      b.disabled = down || (b.id === 'note-save' && state.busy);
+      b.title = down ? 'The Supervisor Board server isn\'t answering' : b.dataset.t;
+    }
     tickRefresh();
   }
 
@@ -315,8 +466,18 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
   function saveLater() { session('play-later', JSON.stringify(Array.from(state.later))); }
+  // The form opens by itself only once the page has been left alone for IDLE_MS: a game that closes while q is
+  // clicking or typing here (Stop on one of two games, an options box) shows the banner first instead of a modal that
+  // takes the next click. "Write the note" opens it at once.
+  const IDLE_MS = 4000;
+  let lastUse = 0, openTimer = 0;
+  for (const ev of ['pointerdown', 'keydown', 'input', 'wheel']) {
+    document.addEventListener(ev, (e) => { if (!(e.target instanceof Node && (dlg.contains(e.target) || $('log-dlg').contains(e.target)))) lastUse = Date.now(); }, { capture: true, passive: true });
+  }
   function maybeOpenNote() {
     if (dlg.open || $('log-dlg').open || !state.v) return;
+    const wait = lastUse + IDLE_MS - Date.now();
+    if (wait > 0) { clearTimeout(openTimer); openTimer = setTimeout(maybeOpenNote, wait + 50); return; }
     const pend = arr(state.v.pending);
     const want = wantedNote();
     const s = want ? sessionById(want) : null;
@@ -350,9 +511,45 @@
     for (const k of FIELDS) form.elements[k].value = typeof values[k] === 'string' ? values[k] : '';
     updateCounts();
   }
+  // Drafts (localStorage, per form): {did, noticed, change, other, at, base}. A draft is kept only while it differs
+  // from what the form started from (the saved note for an edit, empty boxes otherwise), is dropped after DRAFT_DAYS,
+  // and an edit's draft only counts for the saved text it was made from (`base`): changed or locked since, it's gone.
+  const DRAFT_DAYS = 14;
+  const fieldsSig = (f) => JSON.stringify(FIELDS.map(k => typeof obj(f)[k] === 'string' ? f[k] : ''));
+  function readDraft(key, base) {
+    const d = storeJSON(key, null);
+    if (!d || typeof d !== 'object') return null;
+    const stale = !d.at || Date.now() - d.at > DRAFT_DAYS * 864e5;
+    if ((stale && (key.startsWith('play-draft-edit-') || d.at)) || (base !== undefined && d.base !== base)) { store(key, null); return null; }
+    return d;
+  }
+  function formFields() { const d = {}; for (const k of FIELDS) d[k] = form.elements[k].value; return d; }
+  // the row over the boxes: shown while the form differs from where it started, with Discard draft
+  function updateDraftRow() {
+    const n = state.note;
+    const differs = !!n && fieldsSig(formFields()) !== fieldsSig(n.start);
+    $('note-draft').hidden = !differs;
+    if (!differs) return;
+    $('note-draft-txt').textContent = (n.kind === 'edit' ? 'Changed from the saved note' : 'Not saved yet') +
+      (n.restoredAt ? ' (your unsaved draft from ' + when(n.restoredAt) + ')' : '; kept as a draft if you close this');
+  }
+  function discardDraft() {
+    const n = state.note;
+    if (!n) return;
+    store(draftKey(), null);
+    n.restoredAt = null;
+    fillFields(n.start);
+    updateDraftRow();
+    form.elements.did.focus();
+  }
+  // at start: drafts too old, edit drafts from before `base` was recorded (they came back over the saved note)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('play-draft-')) readDraft(k); }
+  } catch (e) { /* storage blocked */ }
   function showDialog(title) {
     $('note-h').textContent = title;
     $('note-err').hidden = true;
+    updateDraftRow();
     try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
     setTimeout(() => form.elements.did.focus(), 30);
   }
@@ -378,17 +575,31 @@
       (has(s.args) ? '<span class="mono">' + esc(s.args) + '</span>' : '') +
       (x.kind && x.kind !== 'ok' ? '<span class="' + (x.kind === 'crash' ? 'err' : x.kind === 'error' ? 'warn' : 'muted') + '">' + esc(x.text) + '</span>' : '') +
       (s.hasLog ? '<button type="button" class="btn small ghost" data-log="' + esc(s.id) + '">Log</button>' : '');
-    fillFields(storeJSON(draftKey(), {}));
+    const draft = readDraft(draftKey());
+    state.note.start = {};
+    state.note.restoredAt = draft && draft.at;
+    fillFields(draft || {});
     $('note-attach').checked = x.kind === 'crash' || x.kind === 'error';
     setButtons('session', s);
     showDialog('How was it?');
   }
-  function openFreeNote() {
+  // about: a change that didn't reach the file ({title, stamp, change, why, build, label, version}): the follow-up's
+  // build, and a first line in "Anything else" that names the earlier note
+  function openFreeNote(about) {
     state.note = { kind: 'free' };
     $('note-count').textContent = '';
     $('note-meta').hidden = true;
     const bl = arr(state.v && state.v.builds).filter(b => b.present);
-    const draft = storeJSON(draftKey(), {});
+    const saved = readDraft(draftKey());
+    const draft = obj(saved);
+    state.note.start = {};
+    state.note.restoredAt = saved && saved.at;
+    if (about) {
+      const line = 'Follow-up to my note "' + String(about.title || '').replace(/^Play note: /, '') + '" (' + (about.stamp || '') + '): my ' + about.change + ' didn\'t go in, ' + about.why + '. ';
+      draft.build = bl.some(b => b.id === about.build) ? about.build : '';
+      if (!draft.build) { draft.label = about.label || 'launcher'; draft.version = about.version || ''; }
+      draft.other = line + (typeof draft.other === 'string' && draft.other ? '\n' + draft.other : '');
+    }
     $('note-build').innerHTML = bl.map(b => '<option value="' + esc(b.id) + '">' + esc(b.label) + (has(b.version) && b.version !== b.label ? ' ' + esc(b.version) : '') + '</option>').join('') + '<option value="">The launcher / another version</option>';
     $('note-build').value = typeof draft.build === 'string' && (draft.build === '' || bl.some(b => b.id === draft.build)) ? draft.build : (bl[0] ? bl[0].id : '');
     form.elements.label.value = typeof draft.label === 'string' ? draft.label : 'launcher';
@@ -401,11 +612,12 @@
   function openEdit(id) {
     const n = noteById(id);
     if (!n) return;
-    state.note = { kind: 'edit', id };
+    state.note = { kind: 'edit', id, start: obj(n.fields), base: fieldsSig(n.fields) };
     $('note-count').textContent = '';
     $('note-meta').hidden = false;
     $('note-meta').innerHTML = '<span><b>' + esc(String(n.title || '').replace(/^Play note: /, '')) + '</b></span><span>' + esc(n.stamp || '') + '</span><span class="muted">' + esc(n.where || '') + '</span>';
-    const draft = storeJSON(draftKey(), null);
+    const draft = readDraft(draftKey(), state.note.base);
+    state.note.restoredAt = draft && draft.at;
     fillFields(draft || obj(n.fields));
     setButtons('edit');
     showDialog('Edit play note');
@@ -436,12 +648,16 @@
   form.addEventListener('input', () => {
     updateCounts();
     if (!state.note) return;
-    const d = {};
-    for (const k of FIELDS) d[k] = form.elements[k].value;
+    const d = formFields();
+    if (fieldsSig(d) === fieldsSig(state.note.start)) { store(draftKey(), null); state.note.restoredAt = null; updateDraftRow(); return; }
     if (state.note.kind === 'free') { d.build = $('note-build').value; d.label = form.elements.label.value; d.version = form.elements.version.value; }
+    d.at = Date.now();
+    if (state.note.base) d.base = state.note.base;
     store(draftKey(), JSON.stringify(d));
+    updateDraftRow();
   });
   $('note-build').addEventListener('change', otherToggle);
+  $('note-discard').addEventListener('click', discardDraft);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const n = state.note;
@@ -520,6 +736,9 @@
   }
 
   // ---------------------------------------------------------------- actions
+  // A pressed button is disabled until the request and the poll after it are done, then enabled again: the cards and
+  // tables keep their HTML when it doesn't change, so a game that crashed before that poll (the card is "not running"
+  // again, the same HTML) would otherwise keep a disabled Play button until a reload.
   async function launch(id, btn) {
     const c = cards.get(id);
     const text = c ? c.input.value : argsFor(id);
@@ -529,12 +748,16 @@
       remember(text);
       toast('Started ' + (j.session.label || '') + (j.session.args ? ' with ' + j.session.args : '') + '.');
       shellPoke();
-      poll();
-    } catch (err) { toast(err.message, true); if (btn) btn.disabled = false; }
+      await poll();
+    } catch (err) { toast(err.message, true); } finally { if (btn) btn.disabled = false; }
   }
   document.addEventListener('input', (e) => {
     const t = e.target;
-    if (t instanceof HTMLInputElement && t.classList.contains('opt') && t.dataset.build) { argsBy[t.dataset.build] = t.value; saveArgs(); }
+    if (t instanceof HTMLInputElement && t.classList.contains('opt') && t.dataset.build) {
+      argsBy[t.dataset.build] = t.value; saveArgs();
+      const c = cards.get(t.dataset.build);
+      if (c && c.mapsSig) fillPick(c);
+    }
   });
   document.addEventListener('keydown', (e) => {
     const t = e.target;
@@ -558,24 +781,29 @@
     if (!b) return;
     const d = b.dataset;
     try {
-      if (d.play) return launch(d.play, b);
+      if (d.play) { await launch(d.play, b); return; }
       if (d.stop) {
         b.disabled = true;
         const j = await api('/api/play/stop', { session: d.stop });
         toast(j.session && j.session.noop ? 'It is already being stopped.' : 'Asking ' + ((j.session && j.session.label) || 'the game') + ' to close…');
-        poll();
+        await poll();
       } else if (d.open) {
         openPath({ what: d.open, build: d.build });
       } else if (d.log) {
         openLog(d.log);
+      } else if (d.install && d.into) {
+        if (!confirm('Update the ' + d.into + ' folder to ' + d.install + '?\n\nIt is checked like Install, then copied over Quark\\' + d.into + ' (files replaced or added, none deleted), like tools/fetch_release.ps1.')) return;
+        b.disabled = true;
+        await api('/api/play/install-into', { tag: d.install, into: d.into });
+        await poll();
       } else if (d.install) {
         b.disabled = true;
         await api('/api/play/install', { tag: d.install });
-        poll();
+        await poll();
       } else if (d.cancel) {
         b.disabled = true;
         await api('/api/play/install-cancel', { tag: d.cancel });
-        poll();
+        await poll();
       } else if (d.remove) {
         if (!confirm('Remove ' + d.remove + '?\n\nThis deletes the folder Quark\\versions\\' + d.remove + ' (you can install it again).')) return;
         await api('/api/play/remove', { tag: d.remove });
@@ -591,21 +819,38 @@
       } else if (d.more) {
         if (state.openNotes.has(d.more)) state.openNotes.delete(d.more); else state.openNotes.add(d.more);
         renderNotes();
+      } else if (d.sessf) {
+        state.sessCrashed = d.sessf === 'crashed'; renderSessions();
+      } else if (d.sessall) {
+        state.sessAll = !state.sessAll;
+        if (state.sessAll) { b.disabled = true; state.sessFull = arr((await api('/api/play/sessions')).sessions); }
+        renderSessions();
+      } else if (d.oldrel) {
+        state.relOld = !state.relOld; renderReleases();
       } else if (d.filter) {
         state.relFilter = d.filter; store('play-filter', state.relFilter); renderReleases();
+      } else if (d.follow) {
+        const x = arr(state.v.blocked).find(y => y.id === d.follow);
+        if (x) openFreeNote(x);
+      } else if (d.dismiss) {
+        b.disabled = true;
+        await api('/api/play/note-dismiss', { id: d.dismiss });
+        await poll();
       } else if (b.id === 'note-add') {
         openFreeNote();
       } else if (b.id === 'rel-refresh') {
         b.disabled = true; apply(await api('/api/play?refresh=1' + (state.relSig ? '&rel=' + encodeURIComponent(state.relSig) : ''))); setTimeout(poll, 1500);
       } else if (b.id === 'sync-now') {
-        b.disabled = true; await api('/api/play/sync', {}); setTimeout(poll, 2500);
+        b.disabled = true; await api('/api/play/sync', {}); await new Promise(r => setTimeout(r, 2500)); await poll();
       } else if (b.id === 'down-retry') {
         poll();
       }
     } catch (err) {
       if (err.down) { state.error = err.detail || err.message; renderStatus(); }
       toast(err.message, true);
-      b.disabled = false;
+    } finally {
+      b.disabled = false;  // (see launch; a button the poll replaced is gone anyway)
+      if (b.id === 'rel-refresh') tickRefresh();
     }
   });
 
@@ -640,6 +885,9 @@
   }, 1000);
 
   state.relFilter = ['all', 'production', 'testing'].includes(store('play-filter')) ? store('play-filter') : 'all';
+  $('rel-installed').checked = store('play-rel-mine') === '1';
+  $('rel-search').addEventListener('input', () => { if (state.v) renderReleases(); });
+  $('rel-installed').addEventListener('change', () => { store('play-rel-mine', $('rel-installed').checked ? '1' : null); if (state.v) renderReleases(); });
   try { state.later = new Set(arr(JSON.parse(session('play-later') || '[]'))); } catch (e) { state.later = new Set(); }
   if (EMBED) document.body.classList.add('embed');
   renderOptsList();

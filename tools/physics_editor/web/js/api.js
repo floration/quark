@@ -14,6 +14,10 @@ async function req(method, url, body, type, keepalive) {
     return data;
 }
 const q = encodeURIComponent;
+// File names as Windows sees them (q's PC): device names (con, nul, aux, com1...) can't be files there, with any
+// extension, and names differ only in case are the same file. serve.py checks the same (WIN_RESERVED).
+export const isReservedName = (n) => /^(con|prn|aux|nul|com[0-9]|lpt[0-9])\s*(\..*)?$/i.test(String(n));
+export const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 export const api = {
     get: (url) => req("GET", url),
     post: (url, body, type) => req("POST", url, body, type),

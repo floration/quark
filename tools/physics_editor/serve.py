@@ -59,12 +59,17 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=ut
 PROGRAM_FILES = ["serve.py", "run.cmd", "run.sh", "README.md", "physics_editor.example.json", "INTERFACE.md"]
 
 
+# Windows device names (con, nul, aux, com1...) can't be files there, with any extension: refused on every system,
+# so a set or scenario saved on Linux still opens on q's Windows PC (the page checks the same: api.js isReservedName)
+WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])\s*(\..*)?$", re.I)
+
+
 def valid_name(n):
-    return isinstance(n, str) and bool(NAME_RE.match(n)) and ".." not in n
+    return isinstance(n, str) and bool(NAME_RE.match(n)) and ".." not in n and not WIN_RESERVED.match(n)
 
 
 def valid_mode(n):
-    return isinstance(n, str) and bool(MODE_RE.match(n)) and not n.endswith(" ")
+    return isinstance(n, str) and bool(MODE_RE.match(n)) and not n.endswith(" ") and not WIN_RESERVED.match(n)
 
 
 def default_data_dir():

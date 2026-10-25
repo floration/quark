@@ -30,6 +30,7 @@ class App {
         this.text = ""; this.ast = null; this.parseOk = false; this.problems = []; this.gameProblems = null;
         this.sel = "rifle"; this.health = 100; this.dist = 0;
         this.cmp = { name: "", text: "", ast: null, values: null };
+        this.hist = { undo: [], redo: [], key: null, at: 0, since: 0 };
     }
     on(ev, f) { (this.handlers[ev] || (this.handlers[ev] = [])).push(f); }
     emit(ev, ...a) { for (const f of this.handlers[ev] || []) f(...a); }
@@ -79,6 +80,12 @@ class App {
         document.addEventListener("keydown", (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.save(); }
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && this.page === "range") { e.preventDefault(); this.rangeView.run(); }
+            // undo / redo: the set's own history everywhere, the Code text included; other boxes keep the browser's
+            const k = e.key.toLowerCase(), t = e.target;
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "z" || k === "y") && !(t && /^(INPUT|SELECT)$/.test(t.tagName)) && !(t && t.tagName === "TEXTAREA" && t.id !== "codeTa")) {
+                e.preventDefault();
+                if (k === "y" || e.shiftKey) this.redo(); else this.undo();
+            }
         });
         window.addEventListener("beforeunload", () => this._saveDraftNow());
         this.ready = true;
@@ -100,8 +107,37 @@ class App {
     // ---------------------------------------------------------------- the set
     get dirty() { if (!this.ready && !this.text) return false; return this.set.baseText === null ? this.text !== this._newText(this.set.name) : this.text !== this.set.baseText; }
     _newText(name) { return `version 1\nweapons "${name}"\n`; }
+    // ---- undo / redo: one history of the set's text, whatever changed it (Weapon fields, Copy values, Reset, Blocks,
+    // Graph, Code). Edits of one kind in a row (`key`: a slider's drag, a burst of typing) are one step while they come
+    // less than a second apart (and for 4 s at most); opening or starting a set starts a new history.
+    _record(prev, next, key) {
+        const H = this.hist, now = performance.now();
+        if (prev === next) return;
+        if (!(key && key === H.key && now - H.at < 1000 && now - H.since < 4000)) {
+            H.undo.push(prev); if (H.undo.length > 300) H.undo.shift();
+            H.since = now;
+        }
+        H.key = key; H.at = now; H.redo.length = 0;
+        this._histButtons();
+    }
+    _resetHistory() { this.hist = { undo: [], redo: [], key: null, at: 0, since: 0 }; this._histButtons(); }
+    _histButtons() { const u = $("undoBtn"), r = $("redoBtn"); if (u) u.disabled = !this.hist.undo.length; if (r) r.disabled = !this.hist.redo.length; }
+    undo() { this._step(this.hist.undo, this.hist.redo, "undo"); }
+    redo() { this._step(this.hist.redo, this.hist.undo, "redo"); }
+    _step(from, to, what) {
+        if (!from.length) { this.toast(`nothing to ${what}`, 1500); return; }
+        const prev = this.text, text = from.pop();
+        to.push(prev);
+        this.hist.key = null;
+        this.setText(text, "undo");
+        this._histButtons();
+        if (this.page === "code") this.codeView.caretAtChange(prev, text);
+    }
+
     // a new text (from the code view, a file, a load): parse, keep ids where the tree didn't change, derive, tell
     setText(text, from = null, quiet = false) {
+        if (from === null) this._resetHistory();
+        else if (from !== "undo") this._record(this.text, text, from);
         this.text = text;
         const c = this.helper.checkLocal(text);
         if (c.set) { this.ast = carryIds(this.ast, c.set); this.parseOk = true; }
@@ -115,9 +151,10 @@ class App {
         if (!quiet) this._saveDraft();
     }
     // a new tree (blocks / graph / a field): its text, re-read so problems have their lines
-    brainEdited(ast, from) {
+    brainEdited(ast, from, key = from) {
         numberIds(ast);
         const text = print(ast);
+        this._record(this.text, text, key);
         this.text = text;
         let parsed = null;
         try { parsed = parse(text); } catch { parsed = null; }
@@ -133,17 +170,17 @@ class App {
     }
     setField(key, v, from = "weapon") {
         if (!this.parseOk) { this.toast("the code has an error: fix it on the Code tab first (a field edit rewrites the text)", 4000); return false; }
-        this.brainEdited(withField(this.ast, key, v), from);
+        this.brainEdited(withField(this.ast, key, v), from, from + ":" + key);
         return true;
     }
     setLabel(weapon, text) {
         if (!this.parseOk) { this.toast("fix the code's error first", 3000); return; }
-        this.brainEdited(withLabel(this.ast, weapon, text), "weapon");
+        this.brainEdited(withLabel(this.ast, weapon, text), "weapon", "label:" + weapon);
     }
     resetWeapon(w) {
         if (!this.parseOk) return;
         const keys = new Set(this.cat.fieldsOf(w).map((f) => f.key));
-        this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && keys.has(d.name)) && !(d.kind === "label" && d.weapon === w)) }, "reset");
+        this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && keys.has(d.name)) && !(d.kind === "label" && d.weapon === w)) }, "reset", null);
     }
     // a variant: weapon `from`'s values (this set's, the comparison set's or the standard ones) onto weapon `to`, for
     // every field both have that a set can write (the alt fire's own fields and the kind stay `to`'s). The game has 11
@@ -161,7 +198,7 @@ class App {
             ast = withField(ast, g.key, v); n++;
         }
         if (!n) { this.toast("nothing to copy: the values are the same", 2500); return; }
-        this.brainEdited(ast, "copy");
+        this.brainEdited(ast, "copy", null);
         const fromT = (src === "set" && this.titles.get(from)) || this.cat.byId.get(from).title;
         this.toast(`${n} value${n > 1 ? "s" : ""} of ${fromT}${src === "cmp" ? ` ("${this.cmp.name}")` : src === "std" ? " (standard)" : ""} copied to ${this.cat.byId.get(to).title}; it stays a ${this.cat.byId.get(to).kind} weapon with its own alt fire`, 5000);
     }
@@ -181,10 +218,12 @@ class App {
         this._checkInfo();
         this.emit("set", from);
     }
+    // the game's problems (authoritative), then the page's that the game didn't report: one at the same line and
+    // column (or line, when either has no column) with the same severity is the same mistake in other words
     allProblems() {
         const g = this.gameProblems ? this.gameProblems.problems : [];
-        const seen = new Set(g.map((p) => p.line + ":" + p.msg));
-        return [...g, ...this.problems.filter((p) => !seen.has(p.line + ":" + p.msg))];
+        const same = (p, q) => p.severity === q.severity && p.line === q.line && (p.col === q.col || !p.col || !q.col);
+        return [...g, ...this.problems.filter((p) => !g.some((q) => q.msg === p.msg && q.line === p.line || same(p, q)))];
     }
     _checkInfo() {
         const p = this.allProblems(), e = p.filter((x) => x.severity === "error").length, w = p.length - e;
@@ -264,21 +303,30 @@ class App {
         $("setSel").value = "";
     }
     // one save at a time: a double click (or Ctrl+S held) waits for the save in flight instead of asking twice
-    save(asName) {
+    // (overwrite: the caller already asked about replacing another set of that name)
+    save(asName, overwrite = false) {
         if (this._saving) return this._saving;
-        this._saving = this._save(asName).finally(() => { this._saving = null; });
+        this._saving = this._save(asName, overwrite).finally(() => { this._saving = null; });
         return this._saving;
     }
-    async _save(asName) {
+    async _save(asName, overwrite) {
         let name = asName || $("setName").value.trim() || this.set.name;
         if (!SET_RE.test(name)) { this.toast("a set's name: letters, digits, space, _ and -, 36 at most, starting with a letter or digit", 4500); return false; }
+        // another name (Save as, a renamed set) must not replace a set that's already there without asking; the server
+        // checks it too (expect null: "must not exist"), for a file made since the list was read
+        const mine = this.set.saved === name;
+        const askOverwrite = () => overwrite || confirm(`custom_weapons/${name}.qweapons already exists (another set).\n\nOK: overwrite it with this one (the old file is kept as .bak).\nCancel: don't save.`);
+        if (!mine && (this.sets || []).some((s) => s.name === name)) { if (!askOverwrite()) return false; overwrite = true; }
         // the header carries the set's name
         if (this.parseOk && this.ast.name !== name) { this.brainEdited({ ...this.ast, name }, "save"); }
-        const expect = this.set.saved === name ? this.set.baseText : undefined;
+        const expect = mine ? this.set.baseText : overwrite ? undefined : null;
         try {
             await api.saveSet(name, this.text, expect);
         } catch (e) {
-            if (e.status === 409) {
+            if (e.status === 409 && e.data && e.data.exists) {
+                if (!askOverwrite()) return false;
+                await api.saveSet(name, this.text, undefined, true);
+            } else if (e.status === 409) {
                 if (!confirm(`custom_weapons/${name}.qweapons changed on disk since it was opened (another editor, or by hand).\n\nOK: overwrite it with this set (the disk version is kept as .bak).\nCancel: don't save (then choose whether to open the disk version).`)) {
                     const disk = e.data && typeof e.data.text === "string" ? e.data.text : null;
                     if (disk !== null && confirm(`Open the version on disk instead? Your unsaved changes here are lost (Download keeps a copy).`)) {
@@ -320,6 +368,8 @@ class App {
         $("setSel").onchange = () => { const v = $("setSel").value; if (v) this.openSet(v); };
         $("setName").onchange = () => { const v = $("setName").value.trim(); if (SET_RE.test(v)) { this.set.name = v; this._sideRefresh(); } else this.toast("letters, digits, space, _ -; 36 at most", 3000); };
         $("setNew").onclick = () => this.newSet();
+        $("undoBtn").onclick = () => this.undo();
+        $("redoBtn").onclick = () => this.redo();
         $("setSave").onclick = () => this.save();
         $("setSaveAs").onclick = () => { const n = prompt("Save the set as (custom_weapons/<name>.qweapons):", this.set.name + " copy"); if (n) { $("setName").value = n.trim(); this.save(n.trim()); } };
         $("setOpenFile").onclick = () => $("fileIn").click();
@@ -349,7 +399,7 @@ class App {
             if (!this.parseOk) return;
             if (!confirm("Every weapon back to the standard values and names? (params of the set's own, curves and slots stay)")) return;
             const fields = this.cat.byKey;
-            this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && fields.has(d.name)) && d.kind !== "label") }, "reset");
+            this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && fields.has(d.name)) && d.kind !== "label") }, "reset", null);
         };
         const bm = $("baseMode");
         bm.innerHTML = BASE_MODES.map((m) => `<option>${m}</option>`).join("");
@@ -357,7 +407,8 @@ class App {
         bm.onchange = () => { this.ui.base = bm.value; this.saveUi(); };
         $("playBtn").onclick = () => this.playInGame();
         $("cmpSel").onchange = () => this.setCompare($("cmpSel").value);
-        $("healthIn").onchange = () => { const h = Math.max(1, Math.min(1000, +$("healthIn").value || 100)); this.health = h; $("healthIn").value = h; this._derive(); this._changed("health"); this.saveUi(); };
+        // (empty or unreadable: the health stays; 0 or less is the minimum 1, not 100)
+        $("healthIn").onchange = () => { const x = $("healthIn").value.trim() === "" ? NaN : Math.round(+$("healthIn").value); const h = Number.isFinite(x) ? Math.max(1, Math.min(1000, x)) : this.health; this.health = h; $("healthIn").value = h; this._derive(); this._changed("health"); this.saveUi(); };
         $("distSel").onchange = () => { this.dist = +$("distSel").value || 0; this._derive(); this._changed("health"); };
     }
     async playInGame() {
@@ -366,7 +417,7 @@ class App {
             // the game reads the set from its file: say so before writing it (an existing one is kept as .bak)
             const exists = (this.sets || []).some((s) => s.name === this.set.name);
             if (!confirm(`Play in game saves the set first: ${exists ? "overwrite" : "write"} custom_weapons/${this.set.name}.qweapons${exists ? " (the old file is kept as .bak)" : ""}, then write the custom mode. Go on?`)) return;
-            if (!(await this.save())) return;
+            if (!(await this.save(this.set.name, exists))) return;
         }
         try {
             const r = await api.playMode(this.set.saved, $("baseMode").value);
@@ -409,7 +460,7 @@ class App {
         let h = `<tr><th></th><th>STK b/h</th><th>TTK b/h</th><th>DPS b</th></tr>`;
         for (const r of rows) {
             const c = cmp.get(r.id) || {};
-            h += `<tr><td title="${r.label}">${r.label.split(" · ").slice(1).join(" · ") || "primary"}</td><td class="n">${fin(r.stkBody)}/${fin(r.stkHead)}${d(r.stkBody, c.stkBody, true)}</td><td class="n">${fmtT(r.ttkBody)}/${fmtT(r.ttkHead)}${d(r.ttkBody, c.ttkBody, true)}</td><td class="n">${fmtNum(r.dpsBody)}${d(r.dpsBody, c.dpsBody)}</td></tr>`;
+            h += `<tr><td title="${r.label}${r.logic ? "\nthe set's slot " + r.logic + " is counted" : ""}">${r.label.split(" · ").slice(1).join(" · ") || "primary"}${r.logic ? ' <span class="logic">ƒ</span>' : ""}</td><td class="n">${fin(r.stkBody)}/${fin(r.stkHead)}${d(r.stkBody, c.stkBody, true)}</td><td class="n">${fmtT(r.ttkBody)}/${fmtT(r.ttkHead)}${d(r.ttkBody, c.ttkBody, true)}</td><td class="n">${fmtNum(r.dpsBody)}${d(r.dpsBody, c.dpsBody)}</td></tr>`;
         }
         if (!rows.length) h += `<tr><td colspan="4" class="muted">a support item: no damage</td></tr>`;
         t.innerHTML = h;

@@ -34,6 +34,7 @@
         <button id="btnResetProject">New project (discard all edits)</button>
       </div>
     </div>
+    <button id="btnTry" title="Write the edited models into the game's overrides folder (%APPDATA%\quark\overrides) and start the game on this model's view">Try in game</button>
     <button id="btnExport" class="primary" title="Write the edited models for the game">Export to game</button>
     <span class="sep"></span>
     <button id="btnHelp" title="Keyboard shortcuts (?)">?</button>
@@ -44,7 +45,9 @@
 
 <main id="main">
   <aside id="lib">
-    <div class="lib-head"><input type="search" id="libFilter" placeholder="filter models"><label class="chk"><input type="checkbox" id="libEdited"> edited</label></div>
+    <div class="lib-head"><input type="search" id="libFilter" placeholder="filter: name, description, box" title="Matches the model's path, its description and its box names"><label class="chk"><input type="checkbox" id="libEdited"> edited</label></div>
+    <div class="lib-stats"><span id="libProgress" title="Models by origin, as they are now (your edits included): the goal is every model human-made"></span><span class="spacer"></span>
+      <select id="libOrigin" title="Show only the models of one origin"><option value="">every origin</option><option value="human">human</option><option value="ai">ai</option><option value="third-party">3rd party</option></select></div>
     <div id="libList"></div>
   </aside>
   <div id="libResize" title="Drag to resize the library (double-click: the default width)"></div>
@@ -58,6 +61,7 @@
       <label class="chk"><input type="checkbox" id="vPlay"> animate</label>
       <label class="chk"><input type="checkbox" id="vCrouch"> crouch</label>
       <label class="chk"><input type="checkbox" id="vHitbox"> hitbox</label>
+      <label class="chk" title="Outline what the edit started from (the shipped model, else the default) over it: compare sizes while editing"><input type="checkbox" id="vGhost"> ghost</label>
       <label class="chk"><input type="checkbox" id="vGrid"> grid</label>
       <label class="chk" title="The shadow map (players shadow themselves and each other)"><input type="checkbox" id="vShadows"> shadows</label>
       <label class="chk" title="In the sun (the game's sun visibility ray; off: in shade)"><input type="checkbox" id="vSun"> in sun</label>

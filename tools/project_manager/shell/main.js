@@ -87,6 +87,20 @@ function logShellError(kind, err) {
 }
 process.on('uncaughtException', (err) => logShellError('uncaught exception', err));
 process.on('unhandledRejection', (err) => logShellError('unhandled rejection', err));
+// A newer Electron just swapped in is on probation (shell/README.md "Electron updates"): electron-swap.ps1 keeps the
+// previous one in electron.old\ until this copy has shown its window (within PROBATION_MS) and run for a minute
+// (PROBATION_OK_MS); then electron.old\ is deleted. A window that never opens (a new Electron major changed an API this
+// file uses, and the error above kept the process alive with no window) starts the script in rollback mode instead.
+// Set this early, before any Electron API call, so a throwing call still meets the timer.
+const ELECTRON_DIR = path.join(PM_DIR, 'electron');
+const ELECTRON_NEXT = path.join(PM_DIR, 'electron.next');
+const ELECTRON_OLD = path.join(PM_DIR, 'electron.old');
+const PROBATION_MS = 60000;
+const PROBATION_OK_MS = 60000;
+const ON_PROBATION = (IS_WIN || process.env.QUARK_SHELL_SELFTEST === '1')
+  && path.relative(ELECTRON_DIR, path.dirname(process.execPath)) === ''
+  && fs.existsSync(path.join(ELECTRON_OLD, path.basename(process.execPath)));
+let probationTimer = ON_PROBATION ? setTimeout(() => electronRollback('did not open its window within ' + PROBATION_MS / 1000 + ' s'), PROBATION_MS) : null;
 // The shell's build: package.json's version plus a hash of its own files, so shell-status.json and quarkShell.version
 // tell which copy runs (the self-update replaces the files without touching package.json's version).
 const SHELL_BUILD = (() => {
@@ -165,7 +179,7 @@ function resolveTab(t, i) {
   const tab = { id, name, folder, installed: true, kind: 'file', url: null, port: null, start: null, missing: '',
     parent: t.parent ? String(t.parent).replace(/[^A-Za-z0-9_-]/g, '-') : null,
     childLabel: t.childLabel ? String(t.childLabel) : '', depth: 0,
-    keepAlive: t.keepAlive === true, lowPriority: t.lowPriority === true };
+    keepAlive: t.keepAlive === true, lowPriority: t.lowPriority === true, hidden: t.hidden === true };
   if (t.url) {
     const url = expandVars(t.url);
     const p = parseURL(url);
@@ -239,7 +253,13 @@ function loadTabs() {
     seen.add(r.id);
     tabs.push(r);
   });
-  return { tabs: treeOrder(tabs), file, error, bad };
+  // ("hidden": true, the tab menu's "Hide this tab": left out with its child tabs, servers included; the Q menu lists them)
+  const gone = new Set();
+  const shown = treeOrder(tabs).filter((t) => {
+    if (t.hidden || (t.parent && gone.has(t.parent))) { gone.add(t.id); return false; }
+    return true;
+  });
+  return { tabs: shown, hidden: tabs.filter((t) => t.hidden).map((t) => ({ id: t.id, name: t.name })), file, error, bad };
 }
 
 // ---------- state.json ----------
@@ -612,6 +632,7 @@ async function startKeepAlive() {
 // acknowledged so a relaunch never repeats them) and show "updated, reopen" when the app's own files changed.
 const updateRestarting = new Set(); // tab ids being restarted for an update (the watchdog keeps out of the way)
 const handledRestarts = new Set();  // restart request ids already done this session
+let shownRestarts = [];             // the restart request ids of the last /api/updates answer
 let selfUpdated = false;
 let updatesTimer = null;
 let askedUpdate = false;
@@ -662,29 +683,26 @@ function commandLine(pid) {
 }
 // the folder name a tool's server command line contains (Quark\project-manager for the Supervisor Board's tabs)
 const toolFolderName = (tab) => (tab.folder ? path.basename(tab.folder) : tab.port === pmPort() ? path.basename(PM_DIR) : '');
-async function stopForeignListener(port, folderName, logId) {
+async function stopForeignListener(port, folderName, logId, why = 'update') {
   // a server this shell did not start: stop whatever listens on <port> only if its command line names the tool's
   // folder (never some other program that happens to use the port). -> true when it was stopped.
   const pid = await listeningPidAsync(port);
-  if (!pid || pid === process.pid) { logNote(logId, 'update: no process found listening on port ' + port + ' (left alone)'); return false; }
+  if (!pid || pid === process.pid) { logNote(logId, why + ': no process found listening on port ' + port + ' (left alone)'); return false; }
   const cl = await commandLine(pid);
   if (!folderName || !cl.toLowerCase().includes(String(folderName).toLowerCase())) {
-    logNote(logId, 'update: pid ' + pid + ' on port ' + port + ' does not look like ' + (folderName || 'the tool') + ' ('
+    logNote(logId, why + ': pid ' + pid + ' on port ' + port + ' does not look like ' + (folderName || 'the tool') + ' ('
       + (cl ? 'command line: ' + cl.slice(0, 240) : 'command line unknown') + '); left alone, restart it by hand');
     return false;
   }
-  logNote(logId, 'update: stopping pid ' + pid + ' (' + cl.slice(0, 240) + ')');
+  logNote(logId, why + ': stopping pid ' + pid + ' (' + cl.slice(0, 240) + ')');
   killTree(pid);
   return true;
 }
-async function restartForUpdate(r) {
-  const port = Number(r.port);
-  const tab = tabs.find((t) => t.kind === 'server' && t.probeHost && t.port === port && t.installed);
-  // (no tab on that port; the Supervisor Board itself, and the Play tab on its port, restart with the app)
-  if (!tab || tab.id === 'project' || port === pmPort()) return;
+async function restartServer(tab, o) {
+  // stop tab's server and start it again (an update's restart request, or "Restart its server" in the tab menu).
+  // o: { why (log prefix), event (what happened, for the log), folderName, startIfDown }
   const id = tab.id;
-  const what = String(r.name || r.entry || 'its tool');
-  const folderName = toolFolderName(tab) || String(r.folder || '');
+  const port = tab.port;
   let start = false;
   updateRestarting.add(id);
   try {
@@ -692,17 +710,16 @@ async function restartForUpdate(r) {
     const rec = started.get(id);
     const up = await probe(tab, WATCH_PROBE_TIMEOUT_MS);
     if (rec && !rec.exited) {
-      logNote(id, 'update: ' + what + ' was reinstalled; restarting pid ' + rec.pid);
+      logNote(id, o.why + ': ' + o.event + '; restarting pid ' + rec.pid);
       killTree(rec.pid);
       for (let i = 0; i < 40 && !rec.exited; i++) await sleep(150);
       if (!rec.exited) { rec.exited = true; rec.code = -1; }
       start = true;
     } else if (up) {
-      start = await stopForeignListener(port, folderName, id); // (Windows only: elsewhere it is left alone)
+      start = await stopForeignListener(port, o.folderName, id, o.why); // (Windows only: elsewhere it is left alone)
     } else {
-      // down: a keepAlive server starts now with the new code; any other starts when its tab is opened
-      start = supervised(tab);
-      logNote(id, 'update: ' + what + ' was reinstalled; it is not running' + (start ? ', starting it' : ' (it starts with the new code when opened)'));
+      start = o.startIfDown;
+      logNote(id, o.why + ': ' + o.event + '; it is not running' + (start ? ', starting it' : ' (it starts with the new code when opened)'));
     }
     if (start) for (let i = 0; i < 40 && await probe(tab, 300); i++) await sleep(250); // (until the port is free)
   } finally { updateRestarting.delete(id); }
@@ -710,26 +727,74 @@ async function restartForUpdate(r) {
   const s = sup.get(id);
   if (s && s.timer) { clearTimeout(s.timer); s.timer = null; s.nextAt = 0; }
   status.set(id, 'down');
-  const res = await ensureStarted(tab, 'update: ' + what + ' reinstalled');
+  const res = await ensureStarted(tab, o.why + ': ' + o.event);
   // a loaded page gets the new page files (a page with unsaved changes asks first)
   const e = views.get(id);
   if (res.up && e && e.mode === 'page' && !e.view.webContents.isDestroyed()) e.view.webContents.reload();
+}
+async function restartForUpdate(r) {
+  const port = Number(r.port);
+  const tab = tabs.find((t) => t.kind === 'server' && t.probeHost && t.port === port && t.installed);
+  // (no tab on that port; the Supervisor Board itself, and the Play tab on its port, restart with the app)
+  if (!tab || tab.id === 'project' || port === pmPort()) return;
+  // (down: a keepAlive server starts now with the new code; any other starts when its tab is opened)
+  await restartServer(tab, { why: 'update', event: String(r.name || r.entry || 'its tool') + ' was reinstalled',
+    folderName: toolFolderName(tab) || String(r.folder || ''), startIfDown: supervised(tab) });
+}
+const canRestart = (tab) => !!(tab && tab.kind === 'server' && tab.installed && tab.probeHost && tab.start && !stopped
+  && !waiting.has(tab.id) && !updateRestarting.has(tab.id));
+function restartFromMenu(tab) {
+  // "Restart its server" (a hung or stale server without waiting for the watchdog); the tab shows "starting"
+  if (!canRestart(tab)) return;
+  const twin = tabs.find((t) => t.id !== tab.id && t.probeHost && t.port === tab.port && started.get(t.id) && !started.get(t.id).exited);
+  const target = twin || tab; // (the Play tab's server is the Supervisor Board's, started under the project tab)
+  restartServer(target, { why: 'restart', event: 'Restart its server pressed', folderName: toolFolderName(target), startIfDown: true })
+    .catch((err) => logNote(target.id, 'restart failed: ' + (err && err.message)))
+    .finally(() => { const e = views.get(tab.id); if (tab !== target && e && e.mode === 'page') e.view.webContents.reload(); updateTabbar(); });
+  updateTabbar();
+}
+async function reloadForUpdate(r) {
+  // a page tool (no server: Sound, UI, Model editors) was reinstalled: its open tab loads the new files now; one with
+  // unsaved changes keeps its page and is marked "updated" on the tab bar until q reloads it (a tab not open yet
+  // simply loads the new files when opened)
+  const folder = String(r.folder || '').toLowerCase();
+  const what = String(r.name || r.entry || 'its tool');
+  const list = tabs.filter((t) => t.kind === 'file' && t.folder && path.basename(t.folder).toLowerCase() === folder);
+  for (const tab of list) {
+    const e = views.get(tab.id);
+    if (!e || e.mode !== 'page' || e.view.webContents.isDestroyed()) continue;
+    if (await pageDirty(e)) {
+      e.updated = true;
+      logNote('updates', what + ' was reinstalled; ' + tab.name + ' has unsaved changes, so it keeps the old page (marked "updated": reload it after saving)');
+    } else {
+      logNote('updates', what + ' was reinstalled; reloading ' + tab.name);
+      e.view.webContents.reload();
+    }
+  }
+  updateTabbar();
 }
 // A tool installed (or the tab list changed) while the app is open: its tab was resolved as "not installed" when the
 // app started, so its server would wait for the next open. Each update poll re-reads the tab list while some tab is
 // missing or tabs.json changed, and reloads it when anything differs (startKeepAlive then starts the new server).
 let tabsMtime = 0;
 function fileMtime(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
+// (q's tabs.json is watched even while the tabs came from tabs.default.json: it was missing or unreadable at start)
+const tabsStamp = () => fileMtime(path.join(PM_DIR, 'tabs.json')) || (tabsFile ? fileMtime(tabsFile) : 0);
 function refreshTabsIfChanged() {
   if (tabsRetry) return reloadTabList(); // (a changed tab kept for its unsaved changes: try again)
-  const m = tabsFile ? fileMtime(tabsFile) : 0;
+  const m = tabsStamp();
   const changedFile = tabsMtime && m && m !== tabsMtime;
   if (!tabsMtime) tabsMtime = m;
   if (!changedFile && !tabs.some((t) => !t.installed)) return;
   const r = loadTabs();
   const key = (l) => JSON.stringify(l.map((t) => [t.id, t.url, t.installed, t.start, t.keepAlive]));
   tabsMtime = m;
-  if (key(r.tabs) === key(tabs)) return;
+  if (r.bad) return reloadTabList(); // (keeps the loaded tabs and shows why, even when they equal the defaults)
+  if (key(r.tabs) === key(tabs)) {
+    // the same tabs (e.g. a typo undone): only the warning about the file goes
+    if (tabsError !== r.error) { tabsError = r.error; updateTabbar(); }
+    return;
+  }
   const was = new Set(tabs.filter((t) => t.installed).map((t) => t.id));
   const now = r.tabs.filter((t) => t.installed && !was.has(t.id)).map((t) => t.name);
   logNote('updates', 'tab list changed' + (now.length ? ' (now installed: ' + now.join(', ') + ')' : '') + '; reloading it');
@@ -750,12 +815,13 @@ async function pollUpdates() {
         autoRelaunchArmed = now - APP_STARTED_AT < AUTO_RELAUNCH_WINDOW_MS && !(now - (state.autoRelaunchedAt || 0) < AUTO_RELAUNCH_GAP_MS);
         updateTabbar();
       }
+      shownRestarts = (Array.isArray(u.restart) ? u.restart : []).filter((r) => r && typeof r.id === 'string').map((r) => r.id);
       if (selfUpdated && !relaunching) await maybeRelaunch();
       for (const r of Array.isArray(u.restart) ? u.restart : []) {
         if (!r || typeof r.id !== 'string' || handledRestarts.has(r.id)) continue;
         handledRestarts.add(r.id);
-        restartForUpdate(r)
-          .catch((err) => logNote('updates', 'restart for port ' + r.port + ' failed: ' + (err && err.message)))
+        (r.reload === true ? reloadForUpdate(r) : restartForUpdate(r))
+          .catch((err) => logNote('updates', (r.reload === true ? 'reload of ' + r.folder : 'restart for port ' + r.port) + ' failed: ' + (err && err.message)))
           .finally(() => pmRequest('POST', '/api/updates/ack?id=' + encodeURIComponent(r.id)));
       }
     }
@@ -824,6 +890,9 @@ async function relaunchApp(mode = 'manual') {
     if (pm && pm.probeHost && !(own && !own.exited) && IS_WIN && await probe(pm)) {
       await stopForeignListener(pm.port, path.basename(PM_DIR), pm.id);
     }
+    // (the new shell starts every server with the new code: restart requests still waiting are done by that, so they
+    //  are acknowledged now; else the new shell would restart a server it has just started)
+    await Promise.all(shownRestarts.map((id) => pmRequest('POST', '/api/updates/ack?id=' + encodeURIComponent(id), 1500)));
     exiting = true;
     closeConfirmed = true;
     stopStartedServers();
@@ -839,8 +908,6 @@ async function relaunchApp(mode = 'manual') {
 // runs electron\electron.exe, which cannot be replaced while it runs, so on close (and on a relaunch) the shell starts
 // electron-swap.ps1, which waits for this process to end, swaps the folders and (on a relaunch) starts the app again.
 // Started through cmd.exe like the servers: libuv's job would kill a direct child with this process.
-const ELECTRON_DIR = path.join(PM_DIR, 'electron');
-const ELECTRON_NEXT = path.join(PM_DIR, 'electron.next');
 function stagedElectron() {
   // the version waiting in electron.next\ when this shell runs from the electron\ next to it (Windows), else null
   if (!IS_WIN || !inside(path.resolve(process.execPath), ELECTRON_DIR) || !isFile(path.join(ELECTRON_NEXT, 'electron.exe'))) return null;
@@ -850,26 +917,54 @@ function stagedElectron() {
   } catch { return null; }
 }
 let swapStarted = false;
-function swapElectron(relaunch) {
-  // -> true when electron-swap.ps1 was started (with relaunch it also opens the app again, in place of app.relaunch)
-  if (swapStarted) return true;
-  const ver = stagedElectron();
+function startSwapScript(mode, relaunch) {
+  // electron-swap.ps1 in 'swap' or 'rollback' mode, hidden; it waits for this process to end. -> true when started
   const script = path.join(SHELL_DIR, 'electron-swap.ps1');
-  if (!ver || !isFile(script)) return false;
+  if (swapStarted || !IS_WIN || !isFile(script)) return swapStarted;
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
     // (paths and the relaunch arguments go in the environment: no quoting through cmd.exe and powershell -File)
     const args = process.argv.slice(1).filter((a) => !/^--selftest/.test(a)).map((a) => '"' + a.replace(/"/g, '') + '"').join(' ');
-    const env = Object.assign({}, process.env, { QUARK_SWAP_PID: String(process.pid), QUARK_SWAP_PM: PM_DIR,
+    const env = Object.assign({}, process.env, { QUARK_SWAP_PID: String(process.pid), QUARK_SWAP_PM: PM_DIR, QUARK_SWAP_MODE: mode,
       QUARK_SWAP_LOG: path.join(LOG_DIR, 'electron-swap.log'), QUARK_SWAP_RELAUNCH: relaunch ? '1' : '', QUARK_SWAP_ARGS: args });
     const child = spawn('powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + script + '"',
       { shell: true, cwd: PM_DIR, windowsHide: true, stdio: 'ignore', env });
     child.on('error', (err) => logShellError('electron swap', err));
     child.unref();
     swapStarted = true;
-    logNote('updates', 'Electron ' + ver + ' replaces ' + process.versions.electron + ' once this window has closed' + (relaunch ? '; then the app opens again' : ''));
     return true;
   } catch (err) { logShellError('electron swap', err); return false; }
+}
+function swapElectron(relaunch) {
+  // -> true when electron-swap.ps1 was started (with relaunch it also opens the app again, in place of app.relaunch)
+  if (swapStarted) return true;
+  const ver = stagedElectron();
+  if (!ver || !startSwapScript('swap', relaunch)) return false;
+  logNote('updates', 'Electron ' + ver + ' replaces ' + process.versions.electron + ' once this window has closed' + (relaunch ? '; then the app opens again' : ''));
+  return true;
+}
+// the probation of a newly swapped-in Electron (ON_PROBATION, at the top): passed once the window is up, then
+// electron.old\ goes a minute later; failed: back to the previous Electron, and the app opens again on it
+function electronProbationPassed() {
+  if (!probationTimer) return;
+  clearTimeout(probationTimer);
+  // (tells electron-swap.ps1's watch that an exit from now on is q closing the window, not a failed start)
+  try { fs.writeFileSync(path.join(ELECTRON_OLD, 'window-opened'), new Date().toISOString() + '\n'); } catch { /* (electron.old already gone) */ }
+  probationTimer = setTimeout(() => {
+    probationTimer = null;
+    try {
+      fs.rmSync(ELECTRON_OLD, { recursive: true, force: true, maxRetries: 3 });
+      logNote('updates', 'Electron ' + process.versions.electron + ' runs Quark Project: the previous Electron (electron.old) was deleted');
+      writeShellStatus();
+    } catch (err) { logNote('updates', 'electron.old could not be deleted (' + (err.code || err.message) + '); the next start tries again'); }
+  }, PROBATION_OK_MS);
+}
+function electronRollback(why) {
+  probationTimer = null;
+  logNote('updates', 'Electron ' + process.versions.electron + ' ' + why + ': going back to the previous Electron (electron.old)');
+  if (!startSwapScript('rollback', true)) return;
+  try { closeConfirmed = true; stopStartedServers(); } catch { /* (still going) */ }
+  try { app.exit(0); } catch { process.exit(0); }
 }
 
 // ---------- placeholder page (shown in the tab's own view) ----------
@@ -923,6 +1018,7 @@ let tabbar = null;
 let tabs = [];
 let tabsFile = '';
 let tabsError = '';
+let hiddenTabs = []; // [{id, name}] of the tabs tabs.json hides
 let activeId = null;
 const views = new Map(); // tab id -> { view, tab, mode: 'page'|'starting'|'down'|'missing'|'crashed', loadedURL, pendingHash }
 const status = new Map(); // tab id -> 'up'|'down'|'starting'|'missing'
@@ -992,6 +1088,7 @@ const tabbarTabs = () => tabs.map((t) => ({
   id: t.id, name: t.name, kind: t.kind, status: tabStatus(t), missing: t.missing, parent: t.parent, depth: t.depth, childLabel: t.childLabel,
   badge: t.id === 'project' ? haltCount : t.id === 'play' ? playPending : 0,
   badgeKind: t.id === 'play' ? 'note' : 'halt',
+  updated: !!(views.get(t.id) && views.get(t.id).updated), // (reinstalled while its page had unsaved changes)
 }));
 
 // ---------- halting badge ----------
@@ -1150,7 +1247,7 @@ function writeShellStatus() {
     statusWriteTimer = null;
     if (stopped) return;
     const body = JSON.stringify({
-      shellVersion: SHELL_VERSION, electron: process.versions.electron, electronStaged: stagedElectron(),
+      shellVersion: SHELL_VERSION, electron: process.versions.electron, electronStaged: stagedElectron(), electronProbation: ON_PROBATION && !!probationTimer,
       guard: !!guard, pid: process.pid, startedAt: new Date(APP_STARTED_AT).toISOString(),
       autoRelaunchedAt: state.autoRelaunchedAt ? new Date(state.autoRelaunchedAt).toISOString() : null,
       selfUpdated, active: activeId, tabsFile, tabsError: tabsError || null,
@@ -1301,7 +1398,8 @@ function findQuery(text, forward = true, again = false) {
 
 // ---------- context menus ----------
 // Right-click in a page: edit commands (by what the page allows there), link commands, Find, Reload, Inspect.
-// Right-click on a tab: open, reload, move left / right (saved to tabs.json), its log, devtools.
+// Right-click on a tab: open, reload, restart its server, move left / right, hide (saved to tabs.json), its folder, its
+// log, devtools. The Q logo: reset the tab order, show a hidden tab, re-read tabs.json.
 const menuItems = (items) => Menu.buildFromTemplate(items.map((i) => (i.type === 'separator' ? i : Object.assign({ registerAccelerator: false }, i))));
 function pageMenu(entry, p) {
   const wc = entry.view.webContents;
@@ -1343,13 +1441,18 @@ function tabMenu(id) {
   const i = sib.indexOf(tab);
   const log = path.join(LOG_DIR, id + '.log');
   const e = views.get(id);
+  const folder = tab.folder || tab.fileDir || (tab.kind === 'server' && tab.port === pmPort() ? PM_DIR : null);
+  const kids = tabs.filter((t) => t.parent === id).length;
   menuItems([
     { label: 'Open', enabled: activeId !== id, click: () => openTab(id) },
     { label: 'Reload', accelerator: 'CmdOrCtrl+R', enabled: !!e, click: () => { openTab(id); reloadActive(false); } },
+    ...(tab.kind === 'server' && tab.probeHost ? [{ label: 'Restart its server', enabled: canRestart(tab), click: () => restartFromMenu(tab) }] : []),
     { type: 'separator' },
     { label: 'Move left', accelerator: 'CmdOrCtrl+Shift+PageUp', enabled: i > 0, click: () => moveTab(id, -1) },
     { label: 'Move right', accelerator: 'CmdOrCtrl+Shift+PageDown', enabled: i >= 0 && i < sib.length - 1, click: () => moveTab(id, 1) },
+    { label: kids ? 'Hide this tab (and its ' + kids + ' tabs)' : 'Hide this tab', enabled: id !== 'project', click: () => setTabHidden(id, true) },
     { type: 'separator' },
+    { label: 'Open its folder', enabled: !!folder && isDir(folder), click: () => { shell.openPath(folder).catch(() => {}); } },
     { label: 'Open its log', enabled: isFile(log), click: () => { shell.openPath(log).catch(() => {}); } },
     { label: 'Developer tools', accelerator: 'F12', enabled: !!e, click: () => e && !e.view.webContents.isDestroyed() && e.view.webContents.toggleDevTools() },
   ]).popup({ window: win });
@@ -1363,7 +1466,8 @@ function moreMenu(ids) {
 
 // ---------- tab order (drag in the tab bar, Move left / right, Ctrl+Shift+PageUp / PageDown) ----------
 // Tabs move among their siblings (same parent); the new order is written into Quark\project-manager\tabs.json (made
-// from tabs.default.json when q has none yet), keeping every other field, and the tab list is reloaded.
+// from tabs.default.json when q has none yet, with its defaults* keys: pm/tabs.py upgrade() then never "restores" an
+// older default order over q's), keeping every other field, and the tab list is reloaded.
 const siblings = (tab) => tabs.filter((t) => t.parent === tab.parent);
 function moveTab(id, dir) {
   const t = tabById(id);
@@ -1374,44 +1478,92 @@ function moveTab(id, dir) {
   if (i < 0 || j < 0 || j >= sib.length) return false;
   return reorderTab(id, dir < 0 ? sib[j].id : (sib[j + 1] ? sib[j + 1].id : null));
 }
-function reorderTab(id, beforeId) {
-  // put tab <id> right before its sibling <beforeId> (null: after the last sibling). -> true when tabs.json changed
-  const t = tabById(id);
-  const before = beforeId ? tabById(beforeId) : null;
-  if (!t || (beforeId && (!before || before.parent !== t.parent || before.id === id))) return false;
+function editTabsJson(what, edit) {
+  // change Quark\project-manager\tabs.json (made from tabs.default.json, with its defaults* keys, when q has none):
+  // edit(list, ids) changes the raw tab list in place and returns true when it did; then the file is written
+  // atomically and the tab list reloaded. -> true when tabs.json changed
   const file = path.join(PM_DIR, 'tabs.json');
   const data = readJSON(isFile(file) ? file : path.join(SHELL_DIR, 'tabs.default.json'), null);
   const list = Array.isArray(data) ? data : (data && Array.isArray(data.tabs) ? data.tabs : null);
   if (!list) {
-    tabsError = 'tabs.json could not be read (bad JSON?): the new tab order was not saved';
+    tabsError = 'tabs.json could not be read (bad JSON?): ' + what + ' was not saved';
     updateTabbar();
     return false;
   }
   const ids = list.map((x, i) => String((x && x.id) || 'tab' + i).replace(/[^A-Za-z0-9_-]/g, '-'));
-  const from = ids.indexOf(id);
-  if (from < 0) return false;
-  const [entry] = list.splice(from, 1);
-  ids.splice(from, 1);
-  let to = -1;
-  if (before) to = ids.indexOf(before.id);
-  else {
-    const rest = siblings(t).filter((x) => x.id !== id);
-    if (rest.length) to = ids.indexOf(rest[rest.length - 1].id) + 1;
-  }
-  if (to < 0) to = from;
-  if (to === from) return false; // (already there)
-  list.splice(to, 0, entry);
+  if (!edit(list, ids)) return false;
   try {
     const tmp = file + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(data, null, 1) + '\n');
     fs.renameSync(tmp, file);
   } catch (err) {
-    tabsError = 'tabs.json could not be written (' + err.code + '): the new tab order was not saved';
+    tabsError = 'tabs.json could not be written (' + err.code + '): ' + what + ' was not saved';
     updateTabbar();
     return false;
   }
   reloadTabList();
   return true;
+}
+function reorderTab(id, beforeId) {
+  // put tab <id> right before its sibling <beforeId> (null: after the last sibling). -> true when tabs.json changed
+  const t = tabById(id);
+  const before = beforeId ? tabById(beforeId) : null;
+  if (!t || (beforeId && (!before || before.parent !== t.parent || before.id === id))) return false;
+  return editTabsJson('the new tab order', (list, ids) => {
+    const from = ids.indexOf(id);
+    if (from < 0) return false;
+    const [entry] = list.splice(from, 1);
+    ids.splice(from, 1);
+    let to = -1;
+    if (before) to = ids.indexOf(before.id);
+    else {
+      const rest = siblings(t).filter((x) => x.id !== id);
+      if (rest.length) to = ids.indexOf(rest[rest.length - 1].id) + 1;
+    }
+    if (to < 0) to = from;
+    if (to === from) return false; // (already there)
+    list.splice(to, 0, entry);
+    return true;
+  });
+}
+function resetTabOrder() {
+  // the Q menu's "Reset tab order": the default tabs go back to tabs.default.json's order; a tab q added himself stays
+  // right after the tab it followed. Fields (names, parents, hidden) are left as they are.
+  const def = (readJSON(path.join(SHELL_DIR, 'tabs.default.json'), { tabs: [] }).tabs || []).map((x) => x && x.id);
+  return editTabsJson('the default tab order', (list, ids) => {
+    const order = list.map((x, i) => ({ x, id: ids[i] }));
+    const out = order.filter((o) => def.includes(o.id)).sort((a, b) => def.indexOf(a.id) - def.indexOf(b.id));
+    order.forEach((o, i) => {
+      if (def.includes(o.id)) return;
+      let at = 0; // (after the nearest tab before it that is placed already, else first)
+      for (let j = i - 1; j >= 0; j--) { const k = out.indexOf(order[j]); if (k >= 0) { at = k + 1; break; } }
+      out.splice(at, 0, o);
+    });
+    if (out.every((o, i) => o === order[i])) return false;
+    list.splice(0, list.length, ...out.map((o) => o.x));
+    return true;
+  });
+}
+function setTabHidden(id, hidden) {
+  // the tab menu's "Hide this tab" / the Q menu's "Show <tab>": `"hidden": true` in tabs.json (with its child tabs)
+  if (!hidden && !hiddenTabs.some((t) => t.id === id)) return false;
+  if (hidden && (!tabById(id) || id === 'project')) return false;
+  return editTabsJson(hidden ? 'hiding the tab' : 'showing the tab', (list, ids) => {
+    const x = list[ids.indexOf(id)];
+    if (!x || typeof x !== 'object' || (x.hidden === true) === hidden) return false;
+    if (hidden) x.hidden = true; else delete x.hidden;
+    return true;
+  });
+}
+function logoMenu() {
+  if (!win) return;
+  menuItems([
+    { label: 'Reset tab order', click: () => resetTabOrder() },
+    { label: 'Show hidden tab', enabled: hiddenTabs.length > 0,
+      submenu: hiddenTabs.length ? hiddenTabs.map((t) => ({ label: t.name, click: () => setTabHidden(t.id, false) })) : [{ label: '(none)', enabled: false }] },
+    { type: 'separator' },
+    { label: 'Re-read tabs.json', accelerator: 'CmdOrCtrl+Shift+R', click: () => reloadTabList() },
+  ]).popup({ window: win });
 }
 
 function createView(tab) {
@@ -1456,6 +1608,7 @@ function createView(tab) {
   });
   wc.on('did-finish-load', () => {
     wc.setZoomFactor(zoom());
+    if (entry.updated) { entry.updated = false; updateTabbar(); } // (the new files are loaded)
     if (entry.mode === 'page' && entry.pendingHash) { const h = entry.pendingHash; entry.pendingHash = ''; setHash(entry, h); }
   });
   wc.on('render-process-gone', (e, d) => {
@@ -1503,7 +1656,7 @@ async function bringUp(entry, hash, forceStart) {
   if (await probe(tab)) { status.set(tab.id, 'up'); updateTabbar(); return loadPage(entry, entry.pendingHash); }
   if (waiting.has(tab.id)) { showStarting(entry); return; }
   status.set(tab.id, 'down');
-  if (!tab.start) { updateTabbar(); return showDown(entry, 'No start command was found for it.'); }
+  if (!tab.start) { updateTabbar(); return showDown(entry, ''); } // (the page's "No start command: ..." line says why)
   const prev = started.get(tab.id);
   if (prev && prev.exited && !forceStart && prev.code !== 0) { updateTabbar(); return showDown(entry, 'Its start command exited (code ' + prev.code + ').'); }
   showStarting(entry);
@@ -1591,8 +1744,8 @@ async function reloadTabList() {
     if (kept.length && !tabsRetry) logNote('updates', 'tab list changed; ' + kept.join(', ') + ' kept as it was until its unsaved changes are saved');
     tabsRetry = kept.length > 0;
     const keepActive = activeId || state.lastTab;
-    tabs = kept.length ? treeOrder(list) : list; tabsFile = r.file; tabsError = r.error;
-    tabsMtime = fileMtime(tabsFile);
+    tabs = kept.length ? treeOrder(list) : list; tabsFile = r.file; tabsError = r.error; hiddenTabs = r.hidden;
+    tabsMtime = tabsStamp();
     const next = tabById(keepActive) ? keepActive : (tabs[0] && tabs[0].id);
     if (next) openTab(next); else updateTabbar();
     pollStatus();
@@ -1600,6 +1753,13 @@ async function reloadTabList() {
   } finally { reloadingTabs = false; }
 }
 
+// the tabs the bar shows (tabbar.js render): the top level and its children always, deeper tabs while their parent
+// or a sibling is active (the Ctrl+N numbers count only these, so each hint matches its key)
+function shownTabs() {
+  const chain = new Set();
+  for (let t = tabById(activeId), n = 0; t && n < 50; t = tabById(t.parent), n++) chain.add(t.id);
+  return tabs.filter((t) => t.depth <= 1 || chain.has(t.parent));
+}
 function cycle(dir) {
   if (!tabs.length) return;
   const i = Math.max(0, tabs.findIndex((t) => t.id === activeId));
@@ -1608,6 +1768,7 @@ function cycle(dir) {
 
 // Ctrl held anywhere (a page has the focus nearly always) shows the tab bar's Ctrl+N numbers
 let ctrlHeld = false;
+let barDragging = false; // (a tab is being dragged in the tab bar: Esc in a page cancels the drag)
 function setCtrlHeld(down) {
   if (down === ctrlHeld) return;
   ctrlHeld = down;
@@ -1621,8 +1782,9 @@ function onKey(event, input) {
   const fromBar = !!tabbar && event.sender === tabbar.webContents;
   let handled = true;
   if (ctrl && !input.alt && !input.shift && /^[1-9]$/.test(key)) {
-    // Ctrl+1..8 = that tab in tree order, Ctrl+9 = the last tab (browser convention)
-    const t = key === '9' ? tabs[tabs.length - 1] : tabs[Number(key) - 1];
+    // Ctrl+1..8 = that tab among the ones the bar shows (tree order), Ctrl+9 = the last one (browser convention)
+    const shown = shownTabs();
+    const t = key === '9' ? shown[shown.length - 1] : shown[Number(key) - 1];
     if (t) openTab(t.id);
   }
   else if (ctrl && key === 'Tab') cycle(input.shift ? -1 : 1);
@@ -1639,6 +1801,7 @@ function onKey(event, input) {
   else if (ctrl && key === 'PageDown') cycle(1);
   else if (ctrl && key === 'PageUp') cycle(-1);
   else if (key === 'F3' && findOpen) findQuery(findText, !input.shift, true);
+  else if (key === 'Escape' && barDragging && !fromBar) sendTabbar('shell:escape');
   else if (ctrl && !input.alt && !input.shift && (key === 'f' || key === 'F') && fromBar) openFind();
   else handled = false;
   if (handled) event.preventDefault();
@@ -1676,7 +1839,7 @@ async function pollStatus() {
 
 function createWindow() {
   const r = loadTabs();
-  tabs = r.tabs; tabsFile = r.file; tabsError = r.error;
+  tabs = r.tabs; tabsFile = r.file; tabsError = r.error; hiddenTabs = r.hidden;
   const icon = path.join(PM_DIR, 'quark.ico');
   const dark = nativeTheme.shouldUseDarkColors;
   win = new BaseWindow(Object.assign(initialBounds(), {
@@ -1748,6 +1911,7 @@ function createWindow() {
   tabbar.webContents.once('did-finish-load', () => {
     if (state.maximized || state.maximized === undefined) win.maximize(); // (first run: fill the screen)
     win.show();
+    electronProbationPassed();
     const want = argValue('tab');
     const first = (want && tabById(want)) ? want : (tabById(state.lastTab) ? state.lastTab : (tabs[0] && tabs[0].id));
     if (first) openTab(first);
@@ -1797,7 +1961,9 @@ ipcMain.on('shell:tabbar', (e, cmd, arg, arg2) => {
   else if (cmd === 'zoom-reset') stepZoom(0);
   else if (cmd === 'tab-menu' && typeof arg === 'string') tabMenu(arg);
   else if (cmd === 'more-menu') moreMenu(arg);
+  else if (cmd === 'logo-menu') logoMenu();
   else if (cmd === 'reorder' && typeof arg === 'string') reorderTab(arg, typeof arg2 === 'string' ? arg2 : null);
+  else if (cmd === 'dragging') barDragging = arg === true;
   else if (cmd === 'find' && arg && typeof arg === 'object') {
     if (arg.close) closeFind(true);
     else findQuery(arg.text, arg.forward !== false, arg.again === true);
@@ -1838,7 +2004,7 @@ function runSelftest(file) {
       sup, waiting, ensureStarted, watchdog, splitCommand, pollUpdates, restartForUpdate, handledRestarts, selfUpdated: () => selfUpdated,
       updateRestarting, commandLine, pollPlay, playAlerted, playPending: () => playPending, dirtyEntries, confirmLeave,
       reorderTab, moveTab, openFind, closeFind, findQuery, stepZoom, guard: () => guard, maybeRelaunch, relaunchApp,
-      tabMenu, moreMenu, tabsRetry: () => tabsRetry, tabsError: () => tabsError });
+      tabMenu, moreMenu, logoMenu, resetTabOrder, setTabHidden, restartFromMenu, hiddenTabs: () => hiddenTabs, tabsRetry: () => tabsRetry, tabsError: () => tabsError });
   } catch (err) { console.error('selftest failed: ' + err.stack); app.exit(1); }
 }
 

@@ -7,6 +7,7 @@ test_editor.sh, uitest.sh), the git hooks and ctest. Each one as code, a graph a
 see the diff, revert, and run locally: the whole suite, a chosen set of groups (QUARK_TEST_ONLY), the failed groups
 again, one group, or a command with its arguments (rules NAME, serverbench secs run...). Each group's last local
 result shows in the tree; FAIL lines in the run output are marked, with a jump to the next one and a link to the CHECK.
+Search (`/`) matches names, called functions, job steps, and a function's doc comment and CHECK expressions.
 Side panels: drag their edge to resize, `[` / `]` (or the header buttons) to hide them. In the code editor Tab indents;
 Esc then Tab leaves it. Rule checks (lint) flag CI running gameplay tests, a stray
 `[final]`, functions nothing runs, calls to missing functions, two parallel groups on one port, bad `needs`, unpinned
@@ -54,9 +55,17 @@ the file had them. It never commits, pushes or changes git state.
 
 Runs (one at a time, low priority, no window): `build/quark_tests` (the whole suite, or `QUARK_TEST_ONLY=a,b`),
 `build/quark_tests group NAME`, `build/quark_tests NAME [args]`, `tools/release_check.sh` (needs bash: Git for
-Windows). Commands that write files into the working copy (exportassets, export*) are not run from the page. The binary is `build/quark_tests[.exe]`,
+Windows), the UI test (`tools/uitest.sh build/quark <report>`, about 10-15 minutes) and `tools/test_editor.sh`
+(`QUARK=build/quark`). The last two need a display: on Linux the server starts a private Xvfb (:100 and up) for the
+run and stops it with the run (else it uses the desktop's DISPLAY); on Windows the game opens a normal window. A
+script's exit 77 (no display) shows as skipped. The UI test's report is kept beside the run's log and shown under
+the script. Each map release_check.sh hosts keeps its last result, screenshot and log (`cache/maps/`), shown as
+"Maps hosted" under release_check.sh. Commands that write files into the working copy (exportassets, export*) are not run from the page; their read-only
+aliases (checkbrain FILE, printweapons FILE, modeast FILE...) have entries of their own and are. An argument is a word
+or a repo-relative path (no `..`). The binary is `build/quark_tests[.exe]`,
 else the newest `build-*/quark_tests[.exe]`, else `quark_tests` from the config. Output: `cache/runs/<id>.log`,
-history `cache/runs.json` (last 500), each group's newest time and result `cache/groups.json`; each run gets its own temp folder (`cache/tmp/<id>`, last 5 kept). Stop ends
+history `cache/runs.json` (last 500), each group's newest time and result, its last 12 times (a ▲ in the tree and
+a note under Timing when the newest is over 50% above their median) and each map's result `cache/groups.json`; each run gets its own temp folder (`cache/tmp/<id>`, last 5 kept). Stop ends
 the run and everything it started (by its process id).
 
 ## tests_editor.json (beside serve.py; see tests_editor.example.json)

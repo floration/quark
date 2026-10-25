@@ -60,7 +60,7 @@
       fs.time ? h('span', null, 'First written ', DM.timeEl(fs.time)) : null,
       lc.time && lc.time !== fs.time ? [h('span', {class: 'dotsep'}), h('span', null, 'last changed ', DM.timeEl(lc.time), lc.what ? ' (' + humanWhat(lc.what) + ')' : '')] : null,
       e.status === 'unknown' ? [h('span', {class: 'dotsep'}), h('span', {title: 'The entry has no "_date, thread, status_" line at its end'}, 'no status line')] : null,
-      DM.edit ? DM.edit.editButton(e) : null));
+      DM.edit ? DM.edit.editButton(e) : null, DM.edit ? DM.edit.markButton(e) : null));
     if (DM.edit && DM.edit.canAnswer(e)) el.appendChild(DM.edit.answerBox(e));
     return el;
   }

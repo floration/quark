@@ -26,6 +26,7 @@
     <input type="number" id="nGrid" min="2" max="100" value="10" title="Grid size (px)">
     <label title="Only interactive widgets can be picked: the game's label / rect / panel draws are left alone (W)"><input type="checkbox" id="cWidgets"> Widgets only</label>
     <label title="Dashed boxes where changed widgets were by default (O)"><input type="checkbox" id="cGhost" checked> Defaults</label>
+    <label title="Layout check (K): overlaps, text cut or shrunk, off the screen (at the View's resolution too), out of the panel, tiny text: marked on the page, listed in the page inspector"><input type="checkbox" id="cCheck"> Check</label>
   </div>
   <div class="group" id="shotGroup">
     <label title="Overlay the game's screenshot of this page (R)"><input type="checkbox" id="cShot"> Screenshot</label>
@@ -61,14 +62,15 @@
 </header>
 <div id="staleBar" class="stale-bar" hidden>
   <b>UI dump out of date:</b> <span id="staleWhy"></span>. Pages may not match the game, and a spec made now describes the old layout.
-  Refresh it in the checkout (Quark\repository; about 8 minutes, a hidden game window), then reload: <code id="staleCmd"></code>
+  The Quark Project app regenerates it by itself when it next updates the UI Editor (hidden, low priority, about 8 minutes; needs the game's build tools); then reload.
+  Or run it in the checkout (Quark\repository): <code id="staleCmd"></code>
   <button id="bStaleCopy">Copy command</button><button id="bStaleHide" title="Hide until the page is reloaded">Hide</button>
 </div>
 
 <main>
   <aside id="sidebar">
     <div class="side-head">
-      <input type="search" id="qSearch" placeholder="Search pages and widgets">
+      <input type="search" id="qSearch" placeholder="Search pages and widgets" title="Lists the pages whose name or widgets match (label, action, id). Click a page, or press Enter for the next one: its matching widgets are selected.">
       <button id="bAddPage" title="Add a new page">+ Page</button>
     </div>
     <div id="pageList"></div>
@@ -119,7 +121,7 @@
 </div>
 
 <div id="help" class="popover" hidden>
-  <h3>Keyboard and mouse</h3>
+  <h3>Keyboard and mouse <span class="spacer"></span><button id="helpClose">Close</button></h3>
   <table>
     <tr><td>Click / Shift+click</td><td>select / add to selection</td></tr>
     <tr><td>Alt+click</td><td>select the widget underneath</td></tr>
@@ -132,7 +134,10 @@
     <tr><td>Ctrl+A / Esc</td><td>select all / nothing</td></tr>
     <tr><td>Ctrl+Z / Ctrl+Y</td><td>undo / redo (also Ctrl+Shift+Z)</td></tr>
     <tr><td>PageUp / PageDown</td><td>previous / next page</td></tr>
-    <tr><td>G / O / R / W</td><td>grid snap / default-position ghosts / screenshot / widgets only</td></tr>
+    <tr><td>Ctrl+wheel</td><td>zoom at the mouse (Zoom menu: Fit up to 400%; scroll bars pan)</td></tr>
+    <tr><td>View menu</td><td>the page at another resolution (1080p ... 32:9): read only, click a widget to set its anchor</td></tr>
+    <tr><td>Ctrl+S</td><td>save now (it saves by itself too)</td></tr>
+    <tr><td>G / O / R / W / K</td><td>grid snap / default-position ghosts / screenshot / widgets only / layout check</td></tr>
     <tr><td>F</td><td>flip between the font and the compare font (Fonts...)</td></tr>
     <tr><td>T</td><td>tour: flip through every page by itself (any key stops)</td></tr>
     <tr><td>?</td><td>this help</td></tr>

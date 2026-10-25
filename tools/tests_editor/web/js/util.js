@@ -21,6 +21,7 @@ export function dallas(iso, withSec = false) {
 }
 export function secs(s) {
     if (s === null || s === undefined || !isFinite(s)) return "";
+    if (s < 0.5) return "<1 s";   // (never "0 s": a group that ran took some time)
     if (s < 60) return Math.round(s) + " s";
     const m = Math.floor(s / 60), r = Math.round(s % 60);
     return m + " min" + (r ? " " + r + " s" : "");

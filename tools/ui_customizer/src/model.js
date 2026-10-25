@@ -8,13 +8,16 @@ const QModel = (() => {
   const GAME_KINDS = ['button', 'tab', 'toggle', 'cycle', 'slider', 'text', 'colorpicker', 'dropdown', 'key', 'handle', 'view', 'custom',
     'label', 'panel', 'rect', 'popup'];
   const NEW_KINDS = [];
+  // How a widget follows a screen wider / narrower than 16:9 (element field "anchor"; absent = the preview's guess):
+  // left / right edge, the centre, or stretch (both margins kept)
+  const ANCHORS = ['left', 'center', 'right', 'stretch'];
   const KINDS = GAME_KINDS.concat(NEW_KINDS);
 
   // Fields an element may carry (others from the dump are kept as they are and compared too).
   const GEOM = ['x', 'y', 'w', 'h'];
   // Compared for "edited" (label has its own "renamed" status, geometry its own "moved"/"resized").
   const PROP_FIELDS = ['kind', 'value', 'options', 'min', 'max', 'def', 'fmt', 'maxLen', 'enabled', 'color', 'textScale',
-    'align', 'style', 'action', 'id', 'where', 'scope', 'dynamic', 'current', 'sub', 'hint', 'maxW', 'enemy', 'open', 'pick'];
+    'align', 'style', 'action', 'id', 'where', 'scope', 'dynamic', 'current', 'sub', 'hint', 'maxW', 'enemy', 'open', 'pick', 'anchor'];
   // Bookkeeping fields of the working layout that are never part of the widget itself.
   const META = new Set(['uid', 'origId', 'notes', 'copyOf']);
   const PAGE_FIELDS = ['id', 'title', 'background', 'scenarios', 'inGame', 'screenshot'];
@@ -100,6 +103,9 @@ const QModel = (() => {
   // Repairs a layout read from storage or a file: every page and element gets a uid, the expected arrays exist.
   function sanitizeWorking(doc) {
     if (!doc || !Array.isArray(doc.pages)) throw new Error('not a layout (no "pages" array)');
+    // (an empty layout is refused too: imported or autosaved, it would replace every page with nothing)
+    doc.pages = doc.pages.filter((p) => p && typeof p === 'object');
+    if (!doc.pages.length) throw new Error('a layout with no pages (its "pages" array is empty)');
     const uids = new Set();
     const fresh = (u, p) => { if (!u || uids.has(u)) u = uid(p); uids.add(u); return u; };
     if (doc.font !== undefined) { const f = layoutFont(doc); if (f) doc.font = f; else delete doc.font; }
@@ -350,6 +356,12 @@ const QModel = (() => {
     if (e.copyOf) bits.push('copy of ' + code(e.copyOf));
     return e.kind + ' ' + JSON.stringify(e.label || '') + (bits.length ? ' (' + bits.join(', ') + ')' : '');
   }
+  const ANCHOR_TEXT = {
+    left: 'left edge (x = x720 * s on any screen width)',
+    right: 'right edge (x = screenW - (1280 - x720) * s)',
+    center: 'centre (x = screenW / 2 + (x720 - 640) * s)',
+    stretch: 'stretch, both margins kept (x = x720 * s, w = w720 * s + screenW - 1280 * s)',
+  };
   function changeText(c) {
     if (c.field === 'position') {
       const dx = c.new[0] - c.old[0], dy = c.new[1] - c.old[1], sg = (n) => (n >= 0 ? '+' : '') + fmtNum(n);
@@ -359,6 +371,7 @@ const QModel = (() => {
     if (c.field === 'label') return `label: ${fmtValue(c.old)} -> ${fmtValue(c.new)}`;
     if (c.field === 'draw order') return 'draw order of its widgets changed (see the full layout table, rows are in draw order)';
     if (c.field === 'notes') return 'note: ' + oneLine(c.new);
+    if (c.field === 'anchor') return 'anchor: ' + (ANCHORS.includes(c.new) ? ANCHOR_TEXT[c.new] : 'as the code has it (none set)');
     return `${c.field}: ${fmtValue(c.old)} -> ${fmtValue(c.new)}`;
   }
   // Every property an added widget has (so it can be built from the line alone).
@@ -720,7 +733,7 @@ const QModel = (() => {
     return { data: { format: 1, tool: 'ui-customizer', items: sorted }, added, updated, kept, other: Object.keys(old).filter((k) => !(k in items)).length };
   }
 
-  return { KINDS, GAME_KINDS, NEW_KINDS, normalizeDump, makeWorking, sanitizeWorking, expandBaseRefs, baseRefJson, signature, newElement, copyElement, newPage,
+  return { KINDS, GAME_KINDS, NEW_KINDS, ANCHORS, normalizeDump, makeWorking, sanitizeWorking, expandBaseRefs, baseRefJson, signature, newElement, copyElement, newPage,
     diff, elementChanges, specMarkdown, SPEC_LAYOUTS, fontHeadline, isDefaultFont, stamp, clone, uid, layoutFont, setLayoutFont, layoutFontDesc,
     ymd, provKey, registryKey, mapProvenanceItems, sanitizeProv, markHuman, markAi, provenanceItems, parseProvenance, mergeProvenance };
 })();

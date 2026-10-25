@@ -127,3 +127,8 @@ export function modeFromName(v, modes) {
     const s = String(v || "").trim().toLowerCase();
     return modes.find((m) => m === s) || null;
 }
+// the maps key's names that are neither shipped nor the user's ([] when the list of maps isn't known)
+export function unknownMaps(value, known) {
+    if (!known || !value) return [];
+    return String(value).split(",").map((x) => x.trim()).filter((x) => x && !known.has(x));
+}

@@ -17,11 +17,16 @@ const MODES = [["ffa", "free for all"], ["vs", "team vs"], ["duel", "duel (1v1 r
     ["bomb", "bomb"], ["payload", "payload"], ["npayload", "payload (both ways)"], ["points", "points"], ["tag", "tag"], ["hide", "hide and seek"]];
 const TEAM_MODES = new Set(["vs", "koth", "bomb", "payload", "npayload", "points"]);
 const SKILLS = ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"];
+// a batch's game seconds per match: by default each match runs to its own end (the game's clock: an FFA match is
+// 600 s, a koth match on summit took 590-660 s, duel 320-450 s), capped at WHOLE_MATCH; a shorter cap ends matches
+// early and their winner is whoever was ahead (the leader)
+const WHOLE_MATCH = 1800;
+const BATCH_SECS = [[0, "whole match"], [60, "60 s"], [120, "120 s"], [300, "300 s"], [600, "600 s"], [900, "900 s"]];
 
 export class FightsView {
     constructor(app) {
         this.app = app;
-        this.opts = Object.assign({ map: "default/harbor", mode: "ffa", bots: 6, skill: "ADVANCED", secs: 120, matches: 20, pool: [], three: false }, (app.ui && app.ui.fights) || {});
+        this.opts = Object.assign({ map: "default/harbor", mode: "ffa", bots: 6, skill: "ADVANCED", secs: 120, batchSecs: 0, matches: 20, pool: [], three: false }, (app.ui && app.ui.fights) || {});
         this.maps = [];
         this.mv = new MapView($("fightCanvas"), { handlers: { click: (w) => { if (this.live.rec) { this.live.sel = this.live.pick ? this.live.pick(w) : -1; this.mv.invalidate(); } } } });
         this.live = new LiveView(app, this.mv);
@@ -68,13 +73,15 @@ export class FightsView {
             <label class="small">seconds <input id="fSecs" type="number" min="10" max="900" step="10" style="width:60px"></label>
             <span class="small muted">weapons</span><span class="pool" id="fPool"></span>
             <button id="fLive" class="primary" title="one match with the edited set, live">▶ Watch live</button>
-            <label class="small">batch <input id="fMatches" type="number" min="2" max="500" style="width:56px"> matches</label>
+            <label class="small" title="each match runs to its own end (the game's clock), or is cut at these seconds: then whoever was ahead wins it">batch <input id="fMatches" type="number" min="2" max="500" style="width:56px"> matches of <select id="fBSecs">${BATCH_SECS.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></label>
             <button id="fBatch" title="the same matches with the comparison set and the edited one, as fast as the computer goes">Run batch: ${esc(this.app.cmpLabel)} vs edited</button>
             <button id="fStop" class="danger">Stop</button>
             <span class="small warn" id="fFit"></span>
             <span class="grow"></span><button id="f2d">Top-down</button><button id="f3d">3D</button>`;
-        const bind = (id, k, num) => { const e = $(id); e.value = o[k]; e.onchange = () => { o[k] = num ? +e.value : e.value; this._save(); if (k === "map") this._loadMap(e.value); else if (k === "mode") this._fit(); }; };
-        bind("fMap", "map"); bind("fMode", "mode"); bind("fBots", "bots", true); bind("fSkill", "skill"); bind("fSecs", "secs", true); bind("fMatches", "matches", true);
+        // (a number box keeps to its min / max and shows what runs; empty or unreadable keeps the value)
+        const numOf = (e, cur) => { const x = e.value.trim() === "" ? NaN : Math.round(+e.value); return Number.isFinite(x) ? Math.max(e.min === "" ? -Infinity : +e.min, Math.min(e.max === "" ? Infinity : +e.max, x)) : cur; };
+        const bind = (id, k, num) => { const e = $(id); e.value = o[k]; e.onchange = () => { o[k] = num ? (e.tagName === "SELECT" ? +e.value : numOf(e, o[k])) : e.value; if (num) e.value = o[k]; this._save(); if (k === "map") this._loadMap(e.value); else if (k === "mode") this._fit(); }; };
+        bind("fMap", "map"); bind("fMode", "mode"); bind("fBots", "bots", true); bind("fSkill", "skill"); bind("fSecs", "secs", true); bind("fMatches", "matches", true); bind("fBSecs", "batchSecs", true);
         const pool = $("fPool");
         for (const w of WEAPONS.filter((x) => x !== "syringe" && x !== "locator")) {
             const l = document.createElement("label");
@@ -99,8 +106,12 @@ export class FightsView {
     _three(on) { this.opts.three = on; this._save(); $("f2d").classList.toggle("on", !on); $("f3d").classList.toggle("on", on); $("pg-fights").classList.toggle("three", on); if (on && this.m3.gl) this.m3.start(); else this.m3.stop(); }
     async _loadMap(v) {
         if (!v) return;
-        const [src, ...rest] = v.split("/"); const name = rest.join("/");
-        if (!this.maps.some((m) => m.name === name)) { const m0 = this.maps.find((m) => m.for === "ffa") || this.maps[0]; if (!m0) return; return this._loadMap(m0.source + "/" + m0.name); }
+        const [want, ...rest] = v.split("/"); const name = rest.join("/");
+        // the listed map: this source's, else one of that name from another source (a saved "default/harbor" when the
+        // maps come from --maps-dir), else a free for all map; the select and opts.map then name the one drawn
+        const hit = this.maps.find((m) => m.name === name && m.source === want) || this.maps.find((m) => m.name === name);
+        if (!hit) { const m0 = this.maps.find((m) => m.for === "ffa") || this.maps[0]; if (!m0) return; return this._loadMap(m0.source + "/" + m0.name); }
+        const src = hit.source;
         try {
             const text = await api.map(name, src);
             this.map = parseQmap(text, name); this.map.text = text; this.map.source = src;
@@ -114,13 +125,13 @@ export class FightsView {
     _fit() {
         const e = $("fFit"); if (!e) return;
         const ok = !this.map || mapSupports(this.map, this.opts.mode);
-        const info = this.maps.find((m) => this.map && m.name === this.map.name);
+        const info = this.maps.find((m) => this.map && m.name === this.map.name && m.source === this.map.source);
         e.textContent = ok ? "" : `${this.map.name} isn't built for ${this.opts.mode}${info && info.for ? ` (it's a ${info.for} map)` : ""}: the match may not work`;
     }
-    _request(text) {
+    _request(text, secs = this.opts.secs) {
         const o = this.opts, n = Math.max(2, Math.min(16, o.bots | 0));
         const team = (i) => (TEAM_MODES.has(o.mode) ? (i % 2 ? "b" : "a") : "any");
-        return toFightRequest({ map: { name: this.map.name, source: this.map.source, text: this.map.text }, mode: o.mode, seed: 1, secs: o.secs, speed: $("fSpeed").value === "max" ? "max" : +$("fSpeed").value || 1,
+        return toFightRequest({ map: { name: this.map.name, source: this.map.source, text: this.map.text }, mode: o.mode, seed: 1, secs, speed: $("fSpeed").value === "max" ? "max" : +$("fSpeed").value || 1,
             skill: o.skill, bots: Array.from({ length: n }, (_, i) => ({ name: "bot" + (i + 1), team: team(i), skill: o.skill })), weapons: text, weaponsAllowed: this.pool });
     }
     watch() {
@@ -140,13 +151,14 @@ export class FightsView {
         if (!this.app.helper.sim) return this._banner();
         if (!this.map) return;
         const n = Math.max(2, Math.min(500, this.opts.matches | 0));
-        this.batch = { running: true, std: null, ed: null, progress: 0, n, mode: this.opts.mode, map: this.map.name, cmpLabel: this.app.cmpLabel };
+        const secs = this.opts.batchSecs > 0 ? this.opts.batchSecs : WHOLE_MATCH;
+        this.batch = { running: true, std: null, ed: null, progress: 0, n, mode: this.opts.mode, map: this.map.name, cmpLabel: this.app.cmpLabel, secs: this.opts.batchSecs > 0 ? secs : 0, teams: TEAM_MODES.has(this.opts.mode) || this.opts.mode === "duel" };
         this._side();
         // (the start line goes to the banner's helper check only: the live view keeps the recording it shows)
-        const onLine = (base) => (o) => { if (o.type === "progress") { this.batch.progress = base + (o.done ?? 0) / n / 2; this._side(); } if (o.type === "start") { this.helperStart = o; this._banner(); } };
+        const onLine = (base) => (o) => { if (o.type === "progress") { this.batch.progress = base + (o.done ?? 0) / n / 2; this._side(); } if (o.type === "start") { this.helperStart = o; if (typeof o.teams === "boolean") this.batch.teams = o.teams; this._banner(); } };
         try {
-            this.batch.std = await runBatch(this._request(this.app.cmp.text), n, onLine(0));
-            this.batch.ed = await runBatch(this._request(this.app.text), n, onLine(0.5));
+            this.batch.std = await runBatch(this._request(this.app.cmp.text, secs), n, onLine(0));
+            this.batch.ed = await runBatch(this._request(this.app.text, secs), n, onLine(0.5));
         } catch (e) { this.app.toast("batch: " + e.message, 5000); }
         this.batch.running = false;
         this._side();
@@ -176,19 +188,28 @@ export class FightsView {
         if (!end || !Array.isArray(end.weapons)) return null;
         return new Map(end.weapons.map((w) => [String(w.weapon).toLowerCase(), w]));
     }
-    // the matches' results: team modes {a, b, draws}, free for all the best bot's share; timeouts have no winner
-    _results(e) {
+    // the matches' results, team modes: each team's share, a match cut at the batch's seconds going to the team that
+    // was ahead (simbatch's `leader`; level: a draw). Free for all: every bot plays the same set, so which bot won says
+    // nothing about it: the per weapon table compares the sets there.
+    _results(e, teams) {
         if (!e) return "–";
-        // (shares of the matches that ended: one that ran out of seconds has no winner)
-        const n = (e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : 0)) - (e.timeouts || 0);
-        if (n <= 0) return e.timeouts ? "no winner: every match ran out of seconds" : "no match finished";
-        const pct = (x) => Math.round(100 * x / n) + "%";
-        if (e.teamWins) return `A ${pct(e.teamWins.a || 0)} · B ${pct(e.teamWins.b || 0)}${e.teamWins.draws ? " · draw " + pct(e.teamWins.draws) : ""}`;
-        if (Array.isArray(e.bots) && e.bots.length) {   // (free for all: each bot's own wins, SIM.md's totals)
-            const best = e.bots.reduce((a, b) => ((b.wins || 0) > (a.wins || 0) ? b : a));
-            return `most wins: ${esc(best.name)} ${pct(best.wins || 0)}${e.draws ? " · draw " + pct(e.draws) : ""}`;
+        const M = Array.isArray(e.matches) ? e.matches : [];
+        if (!teams) return M.length ? `same set for every bot: see Per weapon` : "no match finished";
+        if (!M.length) return "no match finished";
+        const c = { a: 0, b: 0, draw: 0 }; let cut = 0;
+        for (const m of M) {
+            const out = m.reason === "matchEnd" ? m.winner : m.leader;
+            if (m.reason !== "matchEnd") cut++;
+            const t = out && (out.team === "a" || out.team === "b") ? out.team : "draw";
+            c[t]++;
         }
-        return "–";
+        const pct = (x) => Math.round(100 * x / M.length) + "%";
+        return `A ${pct(c.a)} · B ${pct(c.b)}${c.draw ? " · draw " + pct(c.draw) : ""}${cut ? ` <span class="muted" title="matches cut at the batch's seconds go to the team that was ahead">(${cut} by the lead)</span>` : ""}`;
+    }
+    // the mean game time of the matches that ended by themselves (stronger weapons: shorter rounds)
+    _length(e) {
+        const M = Array.isArray(e && e.matches) ? e.matches.filter((m) => m.reason === "matchEnd" && Number.isFinite(m.t)) : [];
+        return M.length ? M.reduce((a, m) => a + m.t, 0) / M.length : null;
     }
     _side() {
         const box = $("fightSide");
@@ -196,7 +217,7 @@ export class FightsView {
         let h = "";
         const B = this.batch;
         if (B) {
-            h += `<h3>Batch <span class="muted small">${esc(B.map)} · ${esc(B.mode)} · ${B.n} matches each</span> ${B.running ? `<span class="muted">running ${Math.round(B.progress * 100)}%</span>` : ""}</h3>`;
+            h += `<h3>Batch <span class="muted small">${esc(B.map)} · ${esc(B.mode)} · ${B.n} matches each${B.secs ? ` of ${B.secs} s` : ""}</span> ${B.running ? `<span class="muted">running ${Math.round(B.progress * 100)}%</span>` : ""}</h3>`;
             const S = B.std, E = B.ed;
             if (S || E) {
                 h += `<table class="score"><tr><th></th><th>${esc(B.cmpLabel)}</th><th>edited</th></tr>`;
@@ -205,9 +226,11 @@ export class FightsView {
                     const a = tot(S, k), b = tot(E, k);
                     h += `<tr><td>${lab}</td><td>${a == null ? "–" : fmtNum(a)}</td><td>${b == null ? "–" : fmtNum(b)}${a != null && b != null ? diffSpan(b, a) : ""}</td></tr>`;
                 }
-                const played = (e) => (e ? `${e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : B.n)}${e.timeouts ? ` (${e.timeouts} timed out)` : ""}` : "–");
+                const played = (e) => (e ? `${e.matchesPlayed ?? (Array.isArray(e.matches) ? e.matches.length : B.n)}${e.timeouts ? ` (${e.timeouts} cut at ${B.secs || WHOLE_MATCH} s)` : ""}` : "–");
                 h += `<tr><td>matches</td><td>${played(S)}</td><td>${played(E)}</td></tr>`;
-                h += `<tr><td>results</td><td>${this._results(S)}</td><td>${this._results(E)}</td></tr></table>`;
+                const la = this._length(S), lb = this._length(E);
+                h += `<tr><td title="mean game time of the matches that ended by themselves">match length s</td><td>${la == null ? "–" : fmtNum(Math.round(la))}</td><td>${lb == null ? "–" : fmtNum(Math.round(lb))}${la != null && lb != null ? diffSpan(Math.round(lb), Math.round(la)) : ""}</td></tr>`;
+                h += `<tr><td>results</td><td>${this._results(S, B.teams)}</td><td>${this._results(E, B.teams)}</td></tr></table>`;
                 const ws = this._weaponRows(S), we = this._weaponRows(E);
                 if (ws || we) {
                     // fights won = kills / (kills + deaths while holding it): how often a fight with that weapon in hand ended

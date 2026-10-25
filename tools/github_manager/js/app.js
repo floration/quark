@@ -1,6 +1,6 @@
 // Entry point: routing (#tab=… and item deep links), polling, the top bar, live timers and the detail drawer.
 import { store, loadState, refreshNow, loadHistory } from './store.js';
-import { html, rel, fmtTime, zoneName, clock, ms, setRepo, gh } from './util.js';
+import { html, rel, fmtTime, zoneName, clock, ms, setRepo, gh, unread, plural } from './util.js';
 import { overview } from './overview.js';
 import { branches } from './branches.js';
 import { local } from './local.js';
@@ -10,7 +10,7 @@ import { history } from './history.js';
 import { editor } from './editor.js';
 import { tests } from './tests.js';
 import { loadNotes, initNotes, openCount, captureFocus, restoreFocus } from './notes.js';
-import { loadEditorData, initGhEdit, waitingChanges } from './ghedit.js';
+import { loadEditorData, initGhEdit, waitingChanges, ged } from './ghedit.js';
 import { renderDetail, ITEM_KEYS } from './detail.js';
 import { openLog, closeLog, isLogOpen } from './logview.js';
 import './tip.js';
@@ -42,8 +42,14 @@ function route() {
   if (tab !== activeTab || filters) mountTab(tab);
   activeItem = item;
   renderDrawer(true);
-  if (item && item.kind === 'run' && item.log) openLog(item.id, item.log, logCloser(item.id));
+  if (wantsLog(item)) openLog(item.id, item.log, logCloser(item.id));
   else if (isLogOpen()) closeLog(true);
+}
+// a #run=&log= link opens the log only for a run the page knows (an older one is fetched first, then re-routed) and
+// a job of it; for one that doesn't exist the drawer says so and no log panel opens on a 404
+function wantsLog(item) {
+  const r = item && item.kind === 'run' && item.log && store.idx && store.idx.runs.get(String(item.id));
+  return !!r && (!(r.jobs || []).length || r.jobs.some((j) => String(j.id) === String(item.log)));
 }
 export function hashFor(extra) {
   return `#tab=${activeTab}${extra ? '&' + extra : ''}`;
@@ -120,8 +126,25 @@ function renderBanner() {
   if (s && s.poll && s.poll.lastError) {
     msgs.push(html`<div class="msg warn"><b>The last GitHub poll failed:</b> ${s.poll.lastError}. ${s.poll.lastOk ? html`Data is from the last good poll, ${rel(s.poll.lastOk)}.` : ''}</div>`);
   }
+  if (s) msgs.push(...background(s));
   el.banner.innerHTML = msgs.map(String).join('');
   el.banner.hidden = !msgs.length;
+}
+// Background work, on every tab: the poll's warnings (log downloads refused, ...), the Claude Documents copy (its
+// status from /api/rules, fresher than the poll's line about it, which it replaces) and the first start's backfill.
+function background(s) {
+  const p = s.poll || {}, ds = ged.rules && ged.rules.docsSync, out = [];
+  for (const w of p.warnings || []) if (!(ds && /^Claude Documents/.test(w))) out.push(html`<div class="msg warn small">${w}</div>`);
+  if (ds && ds.state === 'failed') {
+    out.push(html`<div class="msg warn small"><b>The Claude Documents copy is failing</b>${ds.failingSince ? html` since ${fmtTime(ds.failingSince)} (${rel(ds.failingSince)})` : ''}: <code>${ds.lastError}</code>. The rules and notes are safe on this PC; the copy is tried again on every poll. <a href="#tab=editor&sec=rules">Rules &amp; limits</a></div>`);
+  }
+  if (ds && ds.notesHeld) out.push(html`<div class="msg warn small">${ds.notesHeld}.</div>`);
+  const b = p.backlog || {};
+  if (b.jobs || b.logs) {
+    const what = [b.jobs ? `${plural(b.jobs, "run's job list", "runs' job lists")}` : '', b.logs ? plural(b.logs, 'failed-job log') : ''].filter(Boolean).join(' and ');
+    out.push(html`<div class="msg info small"><span class="spin s-run" aria-hidden="true"></span> Backfilling the history from GitHub: ${what} still to download (a poll every 20 s until done; the page fills in as it goes).</div>`);
+  }
+  return out;
 }
 function renderTabCounts() {
   const s = store.state, idx = store.idx;
@@ -133,10 +156,10 @@ function renderTabCounts() {
   set('branches', String((s.branches || []).length));
   const dirty = (s.local || []).filter((l) => l.dirty).length;
   set('local', String((s.local || []).length), dirty ? 'warn' : '');
-  const pullsUnread = (s.notRead || []).includes('pulls');  // GitHub not read yet: unknown, not 0
-  set('pulls', pullsUnread ? '?' : String((s.pulls || []).filter((p) => p.state === 'open').length), pullsUnread ? 'warn' : '');
+  // GitHub not read yet: unknown, not 0 / "2 running" from the cache
+  set('pulls', unread('pulls') ? '?' : String((s.pulls || []).filter((p) => p.state === 'open').length), unread('pulls') ? 'warn' : '');
   const running = idx.running.length;
-  set('runs', running ? `${running} running` : '', running ? 'run' : '');
+  set('runs', unread('runs') ? '?' : running ? `${running} running` : '', unread('runs') ? 'warn' : running ? 'run' : '');
   const open = openCount(), waiting = waitingChanges().length;
   // queued GitHub changes outrank the note count: they wait for q's Apply
   set('editor', waiting ? `${waiting} to apply` : open ? String(open) : '', waiting ? 'warn' : '');
@@ -174,7 +197,7 @@ function onState() {
     mountTab(r.tab);
     activeItem = r.item;
     renderDrawer(true);
-    if (r.item && r.item.kind === 'run' && r.item.log) openLog(r.item.id, r.item.log, logCloser(r.item.id));
+    if (wantsLog(r.item)) openLog(r.item.id, r.item.log, logCloser(r.item.id));
   } else if (changed) {
     redraw();
     if (store.historyLoaded) ensureHistory(true);

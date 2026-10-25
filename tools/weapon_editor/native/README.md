@@ -135,8 +135,9 @@ distance), for reference. A set with errors: exit 1, `"weapons line L:C: msg"`.
 - **Numbers.** Per target `damage` and `kills` / `firstKill` (s from the start) come from the targets' health (exact).
   Shots and hits are counted in one unit, so `accuracy` means the same for every weapon: a shot is what the game
   counts in `ServerPlayer::shotsFired` (a hitscan or projectile shot, one 1 ms tick of the laser's beam), except the
-  knife's swing, which the game counts once per tick of its cut window (~120 a swing) and the range counts once.
-  `hits` per target = shots (swings) that took health off it; `shots` per target = shots fired while it was the
+  knife's swing, which the game counts once per tick of its cut window (~120 a swing) and the range counts once, and
+  the knife's throw and the bubble stream, which the game doesn't count at all: there a shot is a projectile launched
+  (one knife, one bubble of the stream) and a hit a target that took damage that tick. `hits` per target = shots (swings) that took health off it; `shots` per target = shots fired while it was the
   target; `totals.shotsHit` = shots that hit anyone, `accuracy` = shotsHit / shots. `headHits` and `shots[]` (the
   per hit feed) come from EV_HIT, which batches the laser's ticks every 50 ms (a feed, not a count); misses are in
   `shots[]` for hitscan weapons only (a shot that damaged nobody that tick). Frames every

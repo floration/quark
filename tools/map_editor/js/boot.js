@@ -11,7 +11,7 @@ import { Player } from "./player.js";
 import { Testing } from "./testing.js";
 import { Bots } from "./bots.js";
 import { Library } from "./groups.js";
-import { el, fill, $, $$, Emitter, banner, dialog, prompt, check, validMapName, fmt } from "./util.js";
+import { el, fill, $, $$, Emitter, banner, dialog, prompt, check, validMapName, fmt, plural } from "./util.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 window.THREE = THREE;
@@ -130,6 +130,14 @@ class App extends Emitter {
     if (ref.k === "spawn") return "spawn #" + ref.i + " team " + m.spawns[ref.i].team;
     if (ref.k === "object") { const o = this.doc.sidecar.objects[ref.i]; return "custom object #" + ref.i + " " + (o ? o.name + " (" + repeatCounts(turnDef(o.def, o.rot || 0), o).join(" x ") + ")" : ""); }
     return objectiveName(m, ref.k, ref.i);
+  }
+  // P: the selection's point-symmetric copy through the map's centre (edit.js mirrorCopy), and what it left out
+  mirrorCopy() {
+    if (!this.doc.sel.length) { banner("Select the half to mirror first", true, 2500); return; }
+    if (this.doc.readOnly) this.readOnlyNote();
+    const r = this.editor.mirrorCopy();
+    const left = [r.same ? plural(r.same, "object") + " already centred (each its own twin)" : "", r.hill ? "the hill (a map has one)" : ""].filter(Boolean);
+    banner((r.added ? "Mirrored " + plural(r.added, "object") + " through the map's centre (0, 0): team A and B swapped" : "Nothing to mirror") + (left.length ? "; left out: " + left.join(", ") : ""), !r.added, 4000);
   }
   readOnlyNote() { if (!this.roNoted) { this.roNoted = true; banner("This is a default map: your changes are kept when you Save as a map of your own.", false, 6000); } }
 
@@ -344,8 +352,8 @@ class App extends Emitter {
   help() {
     const K = [["Right mouse + WASD", "fly (Space / C up / down, Shift fast, wheel forward, Ctrl+wheel speed)"], ["Alt + drag", "orbit"], ["T", "top-down view"], ["F / Home", "frame the selection / the map"],
       ["Click", "select (Shift adds, again: what is behind, Ctrl: a group's part)"], ["Drag", "a rectangle selects; on a selected object: slide it"], ["Arrows / PgUp PgDn", "move by the grid (Shift / Ctrl: grow / shrink that face)"],
-      ["[ ]", "grid 1/8 m .. 4 m"], ["M", "material (spawn: team)"], ["R", "rotate 90 degrees"], ["Q / E", "turn a spawn 45 degrees"], ["Ctrl+D", "duplicate"], ["Del", "delete"],
-      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+C / Ctrl+V", "copy the selection / paste it at the cursor (any map)"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
+      ["[ ]", "grid 1/8 m .. 4 m"], ["M", "material (spawn: team)"], ["R", "rotate 90 degrees"], ["X / Z", "flip the selection left / right (across x) or front / back (across z)"], ["P", "mirror copy: the selection's point-symmetric twin through the map's centre (ranked maps)"], ["Q / E", "turn a spawn 45 degrees"], ["Ctrl+D", "duplicate"], ["Del", "delete"],
+      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+C / Ctrl+V", "copy the selection / paste it (any map): a preview follows the cursor, click places it"], ["Ctrl+Shift+V", "paste in place (the coordinates it was copied from)"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
     dialog([el("h2", {}, "Keys"), el("div", { class: "keys" }, K.flatMap(([k, t]) => [el("kbd", {}, k), el("span", {}, t)]))]);
   }
 
@@ -358,7 +366,7 @@ class App extends Emitter {
     if (bb.max[1] - bb.min[1] > 64) { banner("A group is at most 64 m tall", true); return; }
     const sz = [0, 1, 2].map(k => Math.max(1e-6, bb.max[k] - bb.min[k]));
     let gi = -1;
-    d.edit("group " + idx.length + " boxes", ["brushes", "groups"], () => {
+    d.edit("group " + plural(idx.length, "box"), ["brushes", "groups"], () => {
       const parts = idx.map(i => { const b = m.brushes[i]; return { mat: b.mat, min: [0, 1, 2].map(k => (b.min[k] - bb.min[k]) / sz[k]), max: [0, 1, 2].map(k => (b.max[k] - bb.min[k]) / sz[k]) }; });
       for (const i of idx.slice().reverse()) m.brushes.splice(i, 1);
       m.groups.push({ type: "custom", mat: 0, dir: 0, min: bb.min, max: bb.max, parts }); gi = m.groups.length - 1;

@@ -63,12 +63,18 @@
       full && c.sha ? DM.ext(DM.safeUrl(c.url) || DOCS_REPO + c.sha, String(c.sha).slice(0, 7), 'sha', 'This change on GitHub (Claude Documents repo)') : null);
     const rest = [head];
     if (shown.length) rest.push(h('ul', {class: 'cm-items'}, shown.map(it => h('li', {class: 'k-' + (it.halting === true ? 'halt' : it.kind || 'edited')}, h('i', {class: 'kd'}), sentence(it)))));
-    if (items.length > shown.length) rest.push(h('div', {class: 'faint more-items'}, '+ ' + (items.length - shown.length) + ' more in this change'));
+    if (items.length > shown.length) {
+      // compact (Overview): opens the change's dialog with every item; full (Change log): shows the rest in place
+      const more = h('button', {class: 'linkish more-items', title: full ? 'Show every item of this change' : 'Open this change with every item',
+        onclick: () => { if (full) block.replaceWith(commitBlock(c, true)); else DM.app.openChange(c.sha); }},
+        '+ ' + (items.length - shown.length) + ' more in this change');
+      rest.push(more);
+    }
     const cl = full && Array.isArray(c.links) ? c.links.filter(l => l && l.kind !== 'thread') : [];
     if (cl.length) rest.push(h('div', {class: 'chips'}, cl.map(DM.chip)));
     if (full && !c.items.length && c.files.length) rest.push(h('div', {class: 'faint'}, 'Files: ', c.files.map(DM.fileTitle).join(', ')));
-    if (!full) return h('div', {class: 'commit'}, rest);
-    return h('div', {class: 'commit full'}, DM.timeEl(c.time, 'clock'), h('div', {class: 'cm-r'}, rest));
+    const block = !full ? h('div', {class: 'commit'}, rest) : h('div', {class: 'commit full'}, DM.timeEl(c.time, 'clock'), h('div', {class: 'cm-r'}, rest));
+    return block;
   }
 
   function matches(c, f) {
@@ -83,6 +89,7 @@
   }
 
   let limit = 120;
+  const FULL_ITEMS = 25;   // items per change before "+ N more" (PR #70's commit had 440: the tab took 0.5 s to show)
   function fill(sel, opts, v) { clear(sel); for (const [k, l] of opts) sel.appendChild(h('option', {value: k}, l)); sel.value = opts.some(o => o[0] === v) ? v : ''; }
   function render() {
     const f = st.prefs.changes, d = st.data;
@@ -97,16 +104,18 @@
     if (!list.length) { body.appendChild(h('div', {class: 'empty'}, 'No changes match.')); return; }
     let day = null, box = null;
     const frag = document.createDocumentFragment();
+    const perDay = {};
+    for (const c of list) { const k = DM.dayKey(c.time); perDay[k] = (perDay[k] || 0) + 1; }
     for (const c of list.slice(0, limit)) {
       const k = DM.dayKey(c.time);
       if (k !== day) {
         day = k;
-        const n = list.filter(x => DM.dayKey(x.time) === k).length;
+        const n = perDay[k];
         frag.appendChild(h('h3', {class: 'day'}, DM.dayHeader(k), h('span', {class: 'faint'}, ' · ' + n + (n === 1 ? ' change' : ' changes'))));
         box = h('div', {class: 'day-box'});
         frag.appendChild(box);
       }
-      box.appendChild(commitBlock(c, true));
+      box.appendChild(commitBlock(c, true, FULL_ITEMS));
     }
     body.appendChild(frag);
     if (list.length > limit) body.appendChild(h('button', {class: 'more-btn', onclick: () => { limit += 200; render(); }}, 'Show older changes (' + (list.length - limit) + ' more)'));

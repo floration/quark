@@ -234,6 +234,8 @@ An unknown control gets a `warning` line.
 | `seeds` | | A list of seeds instead. |
 | `threads` | the cores, up to 16 | Matches run at once. |
 | `progressEvery` | 0.5 | Seconds of wall time between progress lines (0: none). |
+| `variants` | | A list of setups (1..1000) played in one batch: each is an object of request keys laid over the request (its `map`, `mode`, `bots`, `brains`, `seed` / `matches` / `seeds` ... replace the request's). |
+| `maps` | | With `variants`: `{key: map}`. A variant whose `map` is one of these keys plays that map, so many variants on one map send its text once. |
 
 Matches run unthrottled, and `until` is `matchEnd` unless the request says otherwise. With `"seconds"`, a match's
 numbers are the last match's: the game resets them when a new match starts.
@@ -261,6 +263,24 @@ numbers are the last match's: the game resets them when a new match starts.
   `teamWins` / `playerWins`; their `leader` says who was ahead.
 - The only control is `stop`: no new matches start, and the running ones end within a game second
   (`reason: "stopped"`).
+
+### Variants (several setups in one batch)
+
+With `variants`, every setup's matches go to one pool of threads, setup after setup, so a thread that is done with
+one setup starts the next one's matches while the last ones of the first are still running (one `simbatch` per map
+leaves threads idle at each map's tail, and starts a process per map). The bot editor sends one batch for all its
+maps, sides and sweep values this way. Each variant plays exactly the matches it would play as its own request
+(same seeds, same matches: the maps are written once to the batch's folder as `zz_simbatch_<k>`).
+
+- A variant that fails to parse fails the request: `{"error": "variant 2: ..."}`.
+- The start line is the first variant's, with `matches` = all of them and `variants: [{variant, map, mode, matches,
+  seeds, teams, bots, ...}]`.
+- Match lines carry `variant` (its index) and `index` (the match's place in its variant's seeds).
+- The end line keeps `reason`, `matchesPlayed`, `errors`, `timeouts`, `weapons` (every match) and `perf` for the whole
+  batch, and puts the rest per setup in `variants: [{variant, map, mode, matchesPlayed, errors, timeouts, bots,
+  brains, weapons, teamWins | playerWins + draws, matches}]`.
+- An older `quark_maptool` ignores `variants` and plays the request alone (its start line has no `variants`): the
+  page then runs the other setups one batch each.
 
 ## Weapon sets (`weapons`, `qmode`, `weaponsAllowed`)
 

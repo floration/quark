@@ -19,14 +19,35 @@ SOURCE_LABELS = {"github": "GitHub Manager", "docs": "Claude Manager", "editors"
 SOURCE_FIX = {"github": "start the GitHub Manager", "docs": "start the Claude Manager",
               "editors": "start the Editor Manager", "servers": "check the internet connection",
               "oracle": "check config.json's oracle key path and that ssh.exe works"}
+SOURCE_TAB = {"github": "github", "docs": "docs", "editors": "dashboard"}  # (the shell's tab ids: its log file names)
+
+
+def source_fix(key, err):
+    """What to do about a source that is down: a sibling that answers with an error is running but failing (restart
+    it, read its log); one that does not answer is not running (start it)."""
+    if key in SOURCE_TAB and "is running but" in str(err or ""):
+        return "restart the %s (it answers, but its /api/summary fails) and check its log, " \
+               "%%LOCALAPPDATA%%\\QuarkProject\\logs\\%s.log" % (SOURCE_LABELS[key], SOURCE_TAB[key])
+    return SOURCE_FIX.get(key)
 DAY = 86400.0
 BODY_MAX = 1500           # (a halting entry's body, kept for its `code` spans)
 DISAGREE_GRACE = 600.0    # sources may differ for this long (a push reaches them at different times) before it is shown
 
 
 def ok_data(results, key):
+    """A source's data from its latest fetch only (the event log and the disagreement check use only these)."""
     r = results.get(key) or {}
     return r.get("data") if r.get("ok") and isinstance(r.get("data"), dict) else None
+
+
+def shown_data(results, key):
+    """What the board shows: the latest data, else the last good data a failing source kept (`kept`, scheduler)."""
+    r = results.get(key) or {}
+    return r.get("data") if (r.get("ok") or r.get("kept")) and isinstance(r.get("data"), dict) else None
+
+
+def kept_sources(results):
+    return {k for k, r in results.items() if isinstance(r, dict) and not r.get("ok") and r.get("kept")}
 
 
 # ---- GitHub Manager (8767) ----------------------------------------------------------------------------------------
@@ -161,8 +182,10 @@ def norm_local(x, source):
 
 
 def local_copies(results):
-    gh = ok_data(results, "github") or {}
-    repo = ok_data(results, "repo") or {}
+    gh = shown_data(results, "github") or {}
+    repo = shown_data(results, "repo") or {}
+    g = results.get("github") or {}
+    gh_up = bool(g.get("ok") and not g.get("stale"))  # (its cache or kept data: the GitHub Manager is not running)
     out, seen = [], {}
     for x in as_list(get(gh, "locals", "localCopies", "local", "copies", "clones")):
         if isinstance(x, dict):
@@ -179,6 +202,9 @@ def local_copies(results):
                     seen[n["name"]][k] = v
         else:
             out.append(n)
+    if not gh_up:  # (no link into a tab that is not running: the page points at its own Local copies card)
+        for n in out:
+            n["link"] = None
     return out
 
 
@@ -206,6 +232,15 @@ def bucket(waiting):
 
 def entry_link(eid):
     return DOCS + "#entry=" + urllib.parse.quote(str(eid), safe=":/-_.~") if eid is not None else DOCS + "#tab=board"
+
+
+def answer_link(eid):
+    """The Claude Manager's answer box for an entry (#answer=<id>: its Edit tab's answer list, else the entry's own)."""
+    return DOCS + "#answer=" + urllib.parse.quote(str(eid), safe=":/-_.~") if eid is not None else None
+
+
+def _is_question(file):
+    return isinstance(file, str) and file.startswith("07")
 
 
 def _waiting_text(w):
@@ -284,7 +319,7 @@ def docs_halting(d, ip):
                     "link": lk if isinstance(lk, str) and lk else (entry_link(hid) if hid is not None else thread_url),
                     # (the entry text: the page offers its `code` spans, e.g. a command to run, as Copy buttons)
                     "body": body[:BODY_MAX] if isinstance(body, str) else None, "file": get(h, "file"),
-                    "source": "docs"})
+                    "answerLink": answer_link(hid) if _is_question(get(h, "file")) else None, "source": "docs"})
         if hid is not None:
             seen.add(str(hid))
     for e in ip:
@@ -332,15 +367,26 @@ def updates_halting(u):
                     "what": "Fix Quark\\repository\\ so it can fast-forward to testing: %s" % str(repo["error"])[:200],
                     "blocks": "installing Claude's merged tool changes on this PC",
                     "thread": None, "threadUrl": None, "since": u.get("lastRunAt"), "link": None, "source": "updates"})
-    for e in as_list(u.get("entries")):
-        if isinstance(e, dict) and e.get("state") == "failed":
-            name = e.get("name") or e.get("id") or "a tool"
-            code = e.get("exitCode")
-            out.append({"id": None, "title": "%s install failed" % name,
-                        "what": "Fix the %s install (%slog under Tools & updates), then Update now" %
-                                (name, "exit %s; " % code if code is not None else ""),
-                        "blocks": "the new %s from testing" % name, "thread": None, "threadUrl": None,
-                        "since": e.get("lastRunAt"), "link": None, "source": "updates"})
+    failed = [e for e in as_list(u.get("entries")) if isinstance(e, dict) and e.get("state") == "failed"]
+    names = [str(e.get("name") or e.get("id") or "a tool") for e in failed]
+    codes = {e.get("exitCode") for e in failed}
+    notes = {str(e.get("note") or "").strip() for e in failed}
+    since = max((e.get("lastRunAt") for e in failed if isinstance(e.get("lastRunAt"), str)), default=None)
+    if len(failed) == 1:
+        code = failed[0].get("exitCode")
+        out.append({"id": None, "title": "%s install failed" % names[0],
+                    "what": "Fix the %s install (%slog under Tools & updates), then Update now" %
+                            (names[0], "exit %s; " % code if code is not None else ""),
+                    "blocks": "the new %s from testing" % names[0], "thread": None, "threadUrl": None,
+                    "since": since, "link": None, "source": "updates"})
+    elif failed:  # (one item: failed installs mostly share one cause, e.g. Python or git missing)
+        code = next(iter(codes)) if len(codes) == 1 else None
+        out.append({"id": None, "title": "%d installs failed" % len(failed),
+                    "what": "Fix the %d failed installs (%slogs under Tools & updates), then Update now" %
+                            (len(failed), "all exit %s; " % code if code is not None else ""),
+                    "blocks": "the new %s from testing" % ", ".join(names),
+                    "detail": ("all: " + next(iter(notes)))[:200] if len(notes) == 1 and "" not in notes else None,
+                    "thread": None, "threadUrl": None, "since": since, "link": None, "source": "updates"})
     return out
 
 
@@ -384,7 +430,7 @@ def questions(d):
         out.append({"id": qid, "text": get(q, "text", "title", "question", default=""), "body": get(q, "body"),
                     "thread": get(q, "thread"), "threadUrl": get(q, "threadUrl"),
                     "recommendation": get(q, "recommendation"),
-                    "askedAt": get(q, "askedAt", "date", "time", "createdAt"),
+                    "askedAt": get(q, "askedAt", "date", "time", "createdAt"), "answerLink": answer_link(qid),
                     "link": entry_link(qid) if qid is not None else (get(q, "url", "link", "threadUrl") or DOCS)})
     return out
 
@@ -440,20 +486,21 @@ def programs(d):
 
 # ---- the derived block ----------------------------------------------------------------------------------------
 
-def _build(results, name):
-    for f in (ok_data(results, "builds") or {}).get("folders", []):
+def _build(results, name, data=shown_data):
+    for f in (data(results, "builds") or {}).get("folders", []):
         if f.get("name") == name:
             return f
     return None
 
 
-def versions(results):
-    gh = ok_data(results, "github")
-    repo = ok_data(results, "repo") or {}
-    ed = ok_data(results, "editors") or {}
+def versions(results, data=shown_data):
+    """`data`: shown_data (the board: last known versions while a source is down), ok_data (the event log)."""
+    gh = data(results, "github")
+    repo = data(results, "repo") or {}
+    ed = data(results, "editors") or {}
     t = gh_testing(gh) if gh else {}
     p = gh_production(gh) if gh else {}
-    b_prod, b_test, b_work = _build(results, "production"), _build(results, "testing"), _build(results, "working")
+    b_prod, b_test, b_work = (_build(results, n, data) for n in ("production", "testing", "working"))
     production = p.get("version") or \
         util.parse_version(get(ed, "production.version", "production.tag", "versions.production", "productionVersion")) or \
         util.base_version((b_prod or {}).get("version"))
@@ -483,7 +530,8 @@ def versions(results):
         next_free = "%s.%s.%d" % (a, b, int(c) + 1)
     return {"production": production, "productionTag": prod_tag, "testing": testing, "testingPrerelease": pre,
             "working": util.base_version((b_work or {}).get("version")) if b_work else None,
-            "nextFree": next_free, "testingServer": testing_server}
+            "nextFree": next_free, "testingServer": testing_server,
+            "testingPrereleaseUrl": (t.get("prerelease") or {}).get("url") if (t.get("prerelease") or {}).get("tag") == pre else None}
 
 
 def _same_sha(a, b):
@@ -543,9 +591,10 @@ def derive(results, now=None, memo=None):
     """`memo`: a dict the caller keeps between calls (the store does), for what must last a while before it is
     shown (sources that disagree); without one it is shown at once."""
     now = now or time.time()
-    gh, docs, ed = ok_data(results, "github"), ok_data(results, "docs"), ok_data(results, "editors")
-    repo, srv, orc = ok_data(results, "repo") or {}, ok_data(results, "servers"), ok_data(results, "oracle")
-    chk = ok_data(results, "checklist")
+    # (a source that is down shows its last good data; every item made from it is marked `stale` at the end)
+    gh, docs, ed = shown_data(results, "github"), shown_data(results, "docs"), shown_data(results, "editors")
+    repo, srv, orc = shown_data(results, "repo") or {}, shown_data(results, "servers"), shown_data(results, "oracle")
+    chk = shown_data(results, "checklist")
     v = versions(results)
     t = gh_testing(gh) if gh else {}
     p = gh_production(gh) if gh else {}
@@ -624,7 +673,7 @@ def derive(results, now=None, memo=None):
     # next steps -------------------------------------------------------------------------------------------------
     steps = []
     for q in qs:
-        steps.append({"text": "Answer: " + q["text"], "owner": "q", "link": q["link"], "source": "docs",
+        steps.append({"text": "Answer: " + q["text"], "owner": "q", "link": q["link"], "answerLink": q["answerLink"], "source": "docs",
                       "why": "open question in the Claude Documents" + (" (%s)" % q["thread"] if q.get("thread") else "")})
     for e in ip:
         if e["bucket"] == "owner":
@@ -641,7 +690,8 @@ def derive(results, now=None, memo=None):
     for x in locs:
         if (x.get("ahead") or 0) > 0:
             steps.append({"text": "%s has %d commit%s not on testing" % (x["name"], x["ahead"], "" if x["ahead"] == 1 else "s"),
-                          "owner": "q", "link": x["link"], "source": x["source"], "why": "local copy ahead of testing"})
+                          "owner": "q", "link": x["link"], "source": x["source"], "why": "local copy ahead of testing",
+                          "goto": "local"})
     for e in ip:
         if e["bucket"] in ("pr", "ci", "tests", "claude"):
             steps.append({"text": e["title"] + (": " + e["waitingWhy"] if e.get("waitingWhy") else ""), "owner": "claude",
@@ -667,10 +717,10 @@ def derive(results, now=None, memo=None):
         if r.get("pending"):
             continue
         if not r.get("ok"):
-            fix = SOURCE_FIX.get(key)
             err = r.get("error") or "not available"
+            fix = source_fix(key, err)
             att.append({"level": "amber", "text": err if err.lower().startswith(label.lower()[:12]) else "%s: %s" % (label, err),
-                        "fix": fix, "link": None, "source": key})
+                        "fix": fix, "link": None, "source": key, "kind": "down"})
         elif r.get("stale"):
             att.append({"level": "amber", "text": "%s: %s" % (label, r.get("note") or "showing cached data"),
                         "fix": SOURCE_FIX.get(key), "link": None, "source": key})
@@ -686,7 +736,7 @@ def derive(results, now=None, memo=None):
             n = x.get("dirtyFiles")
             att.append({"level": "amber", "text": "%s has uncommitted changes older than a day%s" %
                         (x["name"], " (%d file%s)" % (n, "" if n == 1 else "s") if n else ""),
-                        "link": x["link"], "source": x["source"]})
+                        "link": x["link"], "source": x["source"], "goto": "local"})
     dis = disagreements(results, log0.get("sha"))
     if memo is not None:  # (shown only once it has lasted DISAGREE_GRACE: a push reaches the sources at different times)
         since = memo.setdefault("disagreeSince", {})
@@ -708,6 +758,12 @@ def derive(results, now=None, memo=None):
     att = [a for a in att if not (a.get("source") in halt_sources and a.get("link") is None and
                                   a["text"].startswith(SOURCE_LABELS.get(a["source"], "?")))]
 
+    kept = kept_sources(results)
+    if kept:
+        for x in halting + steps + att + ip:
+            if x.get("source") in kept and x.get("kind") != "down":  # (not the "X is down" item itself)
+                x["stale"] = True
+
     return {"versions": v, "pipeline": pipeline, "arrows": arrows, "inProgress": ip, "nextSteps": steps,
             "attention": att, "halting": halting, "haltingCount": len(halting), "humanPct": human_pct(ed) if ed else None,
             # normalized copies of what the page needs most (the raw data stays in `sources`)
@@ -715,4 +771,5 @@ def derive(results, now=None, memo=None):
                                                   "lastTesting": ci or runs["lastTesting"]},
             "github": {"repo": get(gh, "repo"), "poll": get(gh, "poll"), "via": (results.get("github") or {}).get("via")}
             if gh else None,
-            "localCopies": locs, "programs": programs(ed) if ed else [], "assets": assets(ed) if ed else None}
+            "localCopies": locs, "programs": programs(ed) if ed else [], "assets": assets(ed) if ed else None,
+            "kept": sorted(kept)}

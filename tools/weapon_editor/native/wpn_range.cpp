@@ -216,7 +216,8 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     if (!sim.start(cfg, &err)) { out.error = err; return; }
     Server& s = sim.server();
     applyToServer(s, R);
-    if (!s.weaponAllowed(S.weapon)) { out.error = std::string("the rules don't allow the ") + weaponKey(S.weapon) + " (weaponsAllowed / the mode)"; return; }
+    const bool support = S.weapon == WPN_SYRINGE || S.weapon == WPN_LOCATOR;   // (no damage: never fired, below)
+    if (!support && !s.weaponAllowed(S.weapon)) { out.error = std::string("the rules don't allow the ") + weaponKey(S.weapon) + " (weaponsAllowed / the mode)"; return; }
     // the pool narrowed to the weapon under test (a bot shooter picks what the pool allows: it fires only that one)
     if (!s.cfg_.custom.active()) s.cfg_.custom.name = "wpn-range";
     s.cfg_.custom.weapons = (uint16_t)(1u << S.weapon);
@@ -284,7 +285,6 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     if (S.alt && S.weapon == WPN_BUBBLE) pSpeed = 0.5f * (wa.streamSlow + wa.streamFast) * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
     if (S.weapon == WPN_ROCKET && !S.alt) pGrav = 0;   // (the primary flies straight: Projectile::gravMul)
     Json notes = Json::array();
-    const bool support = S.weapon == WPN_SYRINGE || S.weapon == WPN_LOCATOR;
     if (support) notes.push(std::string("the ") + weaponKey(S.weapon) + " does no damage: nothing to hit on the range");
     if (S.weapon == WPN_STICKY) notes.push("stickies are set off as soon as they arm (alt held with fire: the fastest a player could)");
     if (S.alt && S.weapon == WPN_BUBBLE) notes.push("the stream's bubbles fly at different speeds: one aim (led and raised for the middle speed) lands only some of them far out");
@@ -310,7 +310,12 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     // knife's swing, which the game counts once per tick of its cut window (about 120 a swing): one swing here. A hit is
     // a shot (a swing) that took health off that target; shotsHit = shots that hit anyone. (The per hit list below is
     // the game's hit feedback, EV_HIT, which batches the laser's ticks every 50 ms: a feed, not a count.)
+    // The knife's throw and the bubble stream aren't in shotsFired at all (and a bubble isn't in shotsHit): there a
+    // shot is a projectile the tick launched (the server's projectile ids; only the shooter fires) and a hit is a
+    // target that took damage that tick (one knife, one bubble).
     const bool swingUnit = S.weapon == WPN_KNIFE && !S.alt;
+    const bool projUnit = S.alt && (S.weapon == WPN_KNIFE || S.weapon == WPN_BUBBLE);
+    uint16_t prevProjId = s.nextProjId_;
     int shotsT = 0, shotsHitT = 0;
     bool firingPrev = false, shotLanded = false;
     std::vector<char> hitThisShot(N, 0);
@@ -447,8 +452,9 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
         ticksRun += sim.step(1, false);
         const double tNow = runT + dtTick;   // (what happened, happened during this tick)
         const int hitTarget = readEvents(runT);
-        const int fired = P.shotsFired - prevShots, landed = P.shotsHit - prevHits;
-        prevShots = P.shotsFired; prevHits = P.shotsHit;
+        const int fired = projUnit ? (uint16_t)(s.nextProjId_ - prevProjId) : P.shotsFired - prevShots;
+        const int landed = P.shotsHit - prevHits;
+        prevShots = P.shotsFired; prevHits = P.shotsHit; prevProjId = s.nextProjId_;
         const bool newSwing = swingUnit && fired > 0 && !firingPrev;
         firingPrev = fired > 0;
         const int newShots = swingUnit ? (newSwing ? 1 : 0) : fired;
@@ -457,7 +463,7 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
             if (fk >= 0) tr[fk].shots += newShots;
             if (swingUnit) { shotLanded = false; std::fill(hitThisShot.begin(), hitThisShot.end(), 0); }
         }
-        if (!swingUnit) shotsHitT += landed;
+        if (!swingUnit && !projUnit) shotsHitT += landed;
         if (fired > 0 && hitscanLike) {
             for (int m = landed; m < fired; m++) pushShot(runT, false, false, 0, -1, 0);
             if (S.frames && frameShots.size() < 24) {   // (the traces: the aim ray, to the target hit or the first wall)
@@ -478,7 +484,7 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
                 if (!q.alive) took = std::max(0.0f, ts[k].health);
                 if (took > 0) {
                     tr[k].damage += took;
-                    if (!swingUnit) tr[k].hits++;   // (a tick's damage to a target: one shot's, or one beam tick's)
+                    if (!swingUnit) { tr[k].hits++; if (projUnit) shotsHitT++; }   // (a tick's damage to a target: one shot's, or one beam tick's)
                     else if (!hitThisShot[k]) { hitThisShot[k] = 1; tr[k].hits++; if (!shotLanded) { shotLanded = true; shotsHitT++; } }
                 }
                 if (!q.alive) {
@@ -532,6 +538,7 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     Json tot = Json::object();
     tot.set("shots", shotsT); tot.set("hits", hitSum); tot.set("headHits", headSum); tot.set("damage", r2(dmgSum)); tot.set("kills", killSum);
     tot.set("dps", S.seconds > 0 ? r2(dmgSum / S.seconds) : 0.0);
+    if (projUnit) shotsHitT = std::min(shotsHitT, shotsT);   // (a bubble's splash can reach two targets: still one shot that hit)
     tot.set("shotsHit", shotsHitT); tot.set("accuracy", shotsT ? Json((double)shotsHitT / shotsT) : Json());
     a.set("totals", std::move(tot));
     a.set("notes", std::move(notes));

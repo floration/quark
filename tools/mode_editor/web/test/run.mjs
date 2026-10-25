@@ -15,10 +15,10 @@ import { parse, print, printExpr, ModeError } from "../js/qmode.js";
 import { CATALOG, walkStmts, validate, deepEqual, firstDiff, stripIds, numberIds, clone, slotKey, declKey, mergeLogic, diffLogic, interpretedSlots, costs } from "../js/lang.js";
 import { logicToBlocks, blocksToLogic } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
-import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
+import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash, unknownMaps } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor, lineDiff, codeLineFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel, batchModel, sharedAxes, endCardFields } from "../js/sim.js";
+import { timelineModel, newTimeline, feedTimeline, seriesPoints, frameAt, fieldProblem, batchModel, batchDelta, histogram, matchSpread, csvName, sharedAxes, endCardFields } from "../js/sim.js";
 import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -259,6 +259,10 @@ await t("phases: built-in slots native, a changed slot interpreted, object event
     ok(m.columns.find((c) => c.id === "live").objects.some((o) => o.name === "bomb" && o.on), "bomb object on the round");
     same(all.find((s) => s.name === "timeUp").status === "unwritten" || all.find((s) => s.name === "timeUp").status === "native", true);
 });
+await t("maps key: names that aren't shipped or the user's are flagged (nothing when the map list is unknown)", () => {
+    eq(unknownMaps("depot, bogusmap,harbor", new Set(["depot", "harbor"])), ["bogusmap"]);
+    eq(unknownMaps("bogusmap", null), []); eq(unknownMaps("", new Set()), []);
+});
 await t("sim timeline model reads modesim NDJSON without inventing values", () => {
     const lines = [{ type: "start", label: "x", base: "koth", interpreted: ["tick"] },
         { type: "frame", t: 0, phase: "freeze", scoreA: 0, scoreB: 0, players: [] },
@@ -287,6 +291,40 @@ await t("sim timeline model reads the real modesim shapes (MODESIM.md): names, r
     const b = batchModel([{ type: "start", matches: 2 }, { type: "match", done: 1, total: 2, seed: 1 }, { type: "progress", done: 1, total: 2 },
         { type: "end", matchesPlayed: 2, teams: { a: { wins: 0, winRate: 0 }, b: { wins: 2, winRate: 1 }, draws: 0 }, csv: "index\n" }]);
     same(b.matches.length, 1); same(b.progress.done, 1); same(b.end.teams.b.wins, 2);
+});
+await t("sim timeline grows line by line: fed in chunks equals read at once; scores kept as their changes", () => {
+    const lines = [{ type: "start", teams: false, bots: [{ id: 0, name: "A" }, { id: 1, name: "B" }] }];
+    for (let i = 0; i <= 400; i++) lines.push({ type: "frame", t: i / 4, phase: i < 40 ? "warmup" : "live", players: [{ id: 0, pos: [i, 0, -i], score: Math.floor(i / 100) }, { id: 1, pos: [0, 0, i % 7], score: 0 }],
+        events: i % 50 === 0 ? [{ type: "kill", killer: 0, victim: 1, t: i / 4 }] : [] });
+    const whole = timelineModel(lines), m = newTimeline();
+    for (let i = 0; i < lines.length; i += 37) feedTimeline(m, lines.slice(0, i));
+    feedTimeline(m, lines);
+    for (const k of ["frames", "bands", "markers", "trail", "bounds", "t0", "t1", "maxScore"]) eq(plain(m[k]), plain(whole[k]), k);
+    same(m.fed, lines.length);
+    eq(seriesPoints(m.players.get(0).score), [[0, 0], [24.75, 0], [25, 1], [49.75, 1], [50, 2], [74.75, 2], [75, 3], [99.75, 3], [100, 4]]);
+    eq(seriesPoints(m.players.get(1).score), [[0, 0], [100, 0]]);
+    same(m.trail.length, 401 * 2 * 2); eq(m.bounds, [0, -400, 400, 6]);
+    same(frameAt(m, 10.1).t, 10); same(frameAt(m, -1).t, 0); same(frameAt(m, 1e9).t, 100);
+});
+await t("sim batch compare: the difference from the built-in, histograms, a match's score spread", () => {
+    const end = (aw, bw, len, spread, ln) => ({ matchesPlayed: 10, timeouts: 1, teams: { a: { winRate: aw }, b: { winRate: bw }, draws: 1 }, length: { avg: len, p50: len }, rounds: 0, scoreSpread: spread, perf: { logicNs: ln ? { avg: ln } : null } });
+    const rows = batchDelta(end(0.6, 0.3, 300, 5, 900), end(0.5, 0.4, 400, 5, 0));
+    const by = Object.fromEntries(rows.map((r) => [r.label, r]));
+    ok(Math.abs(by["team A wins"].d - 0.1) < 1e-9 && by["team A wins"].fmt === "pct", JSON.stringify(by["team A wins"]));
+    same(by["length avg"].d, -100); same(by["score spread"].d, 0); same(by["logic per tick"].d, 900); same(by.rounds, undefined, "no rounds row when neither has rounds");
+    const ffa = batchDelta({ matchesPlayed: 4, draws: 0, timeouts: 0, length: { avg: 1, p50: 1 }, scoreSpread: 2, perf: {} }, { matchesPlayed: 4, draws: 2, timeouts: 0, length: { avg: 1, p50: 1 }, scoreSpread: 1, perf: {} });
+    same(ffa.find((r) => r.label === "draws").d, -0.5); same(ffa.some((r) => /team/.test(r.label)), false);
+    eq(histogram([0, 1, 2, 9.9, 10, 5], 5, 0, 10), [2, 1, 1, 0, 2]);
+    same(csvName("rush", { start: { map: "/x/maps/depot.qmap", seeds: [5, 6, 7] } }, false), "rush-depot-seeds5-7.csv");
+    same(csvName("rush", { start: { map: "depot", seeds: [5] } }, true), "rush-depot-seeds5-builtin.csv");
+    same(matchSpread({ scoreA: 3, scoreB: 7 }, true), 4);
+    same(matchSpread({ players: [{ score: 4 }, { score: 9 }, { score: 6 }] }, false), 3);
+    same(matchSpread({ players: [] }, false), null);
+});
+await t("sim form: numbers out of range are refused with the reason", () => {
+    same(fieldProblem("smSeed", ""), "Seed: a number"); same(fieldProblem("smSeed", "0"), null);
+    same(fieldProblem("smSecs", "0"), "Max s: 5 to 7200"); same(fieldProblem("smSecs", "12.5"), null);
+    same(fieldProblem("smBots", "100"), "Bots: 1 to 32"); same(fieldProblem("smBots", "2.5"), "Bots: a whole number"); same(fieldProblem("smN", "1000"), null);
 });
 await t("sim: trace frames, a shared time axis for compared runs, the end card's fields per mode", () => {
     const m = timelineModel([{ type: "start", teams: false }, { type: "frame", t: 0, phase: "live", players: [] },
@@ -396,6 +434,7 @@ try {
         const r = await request(port, "POST", "/api/mode?name=lowgrav", { body: { text: newQmodeText("lowgrav", "ffa") }, headers: W });
         same(r.status, 409); ok(r.json.exists, r.text);
         same((await request(port, "POST", "/api/mode?name=koth", { body: { text: newQmodeText("koth", "koth") }, headers: W })).status, 400);
+        same((await request(port, "POST", "/api/mode?name=FFA", { body: { text: newQmodeText("FFA", "ffa") }, headers: W })).status, 400, "a built-in name in another case");
         same((await request(port, "POST", "/api/mode?name=..%2Fx", { body: { text: "mode=ffa\n" }, headers: W })).status, 400);
         same((await request(port, "GET", "/api/mode?name=nope")).status, 404);
         const n = await request(port, "POST", "/api/mode?name=fresh", { body: { text: newQmodeText("fresh", "ffa"), provenance: { human: true } }, headers: W });
@@ -424,6 +463,33 @@ try {
         same((await request(port, "POST", "/api/mode/delete?name=lowgrav2", { body: {}, headers: W })).status, 200);
         ok(!fs.existsSync(path.join(dir, "lowgrav2.qmode")) && fs.existsSync(path.join(dir, "lowgrav2.qmode.bak")), "deleted, kept as .bak");
         same((await request(port, "POST", "/api/mode/delete?name=lowgrav2", { body: {} })).status, 403, "needs the header");
+    });
+    await t("backups: saves rotate .bak .. .bak5; a deleted mode is listed, restored with its provenance; restore never overwrites unasked", async () => {
+        const name = "rot", f = path.join(dir, name + ".qmode");
+        let sha = null;
+        for (let i = 1; i <= 7; i++) {   // (7 saves: the file before each of saves 2..7 is a backup, the 5 newest kept)
+            const text = newQmodeText(name, "ffa").replace("mode=ffa", "mode=ffa\ntimelimit=" + i);
+            const r = await request(port, "POST", "/api/mode?name=" + name, { body: { text, baseSha256: sha, provenance: { human: true } }, headers: W });
+            same(r.status, 200, r.text); sha = r.json.sha256;
+        }
+        const bl = (await request(port, "GET", "/api/backups")).json.backups.filter((b) => b.name === name);
+        eq(bl.map((b) => b.n), [1, 2, 3, 4, 5]);
+        ok(fs.readFileSync(f + ".bak", "utf8").includes("timelimit=6") && fs.readFileSync(f + ".bak5", "utf8").includes("timelimit=2"), "newest .bak, oldest .bak5");
+        same((await request(port, "POST", "/api/mode/delete?name=" + name, { body: { baseSha256: sha }, headers: W })).status, 200);
+        ok(fs.readFileSync(f + ".bak", "utf8").includes("timelimit=7") && fs.readFileSync(f + ".bak5", "utf8").includes("timelimit=3"), "the delete rotated too");
+        let prov = JSON.parse(fs.readFileSync(path.join(tmp, "provenance.json"), "utf8"));
+        same(prov.items["gamemodes/" + name], undefined, "a deleted mode leaves items"); same(prov.deleted["gamemodes/" + name].origin, "human");
+        const b1 = (await request(port, "GET", "/api/backups")).json.backups.find((b) => b.name === name && b.n === 1);
+        same(b1.exists, false);
+        same((await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 9 }, headers: W })).status, 400);
+        same((await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 1, to: "FFA" }, headers: W })).status, 400, "a built-in name");
+        const r = await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 1 }, headers: W });
+        same(r.status, 200, r.text); ok(fs.readFileSync(f, "utf8").includes("timelimit=7"), "restored");
+        prov = JSON.parse(fs.readFileSync(path.join(tmp, "provenance.json"), "utf8"));
+        same(prov.items["gamemodes/" + name].origin, "human", "provenance back"); same((prov.deleted || {})["gamemodes/" + name], undefined);
+        same((await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 2 }, headers: W })).status, 409, "the mode exists");
+        const r2 = await request(port, "POST", "/api/mode/restore?name=" + name, { body: { n: 5, to: "rot2" }, headers: W });
+        same(r2.status, 200, r2.text); ok(r2.json.text.startsWith("custommode=rot2\n") && r2.json.text.includes("timelimit=3"), r2.json.text);
     });
     await t("Sim scenarios are saved, listed and deleted; brains are listed from <data>/bots; an unknown run is 404", async () => {
         same((await request(port, "POST", "/api/scenario?name=s1", { body: { form: { seed: 7 } }, headers: W })).status, 200);

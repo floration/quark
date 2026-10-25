@@ -1,5 +1,6 @@
 """Keeps every source fresh in the background (one thread each, its own interval) and holds the results in memory,
-so a request never waits for a source. One failing source never touches the others."""
+so a request never waits for a source. One failing source never touches the others. A source that fails keeps its
+last good data (`kept: true`, as of `lastOkAt`): a sibling's auto-update restart never blanks the board."""
 import threading
 import time
 import traceback
@@ -78,6 +79,10 @@ class Runner:
             env["error"] = "internal error (%s)" % type(e).__name__
             util.log("source %s: %s" % (self.key, traceback.format_exc(limit=4)))
             nxt = start + self.interval
+        if not env["ok"]:  # (the last good data stays, marked: derive and the page show it as "last known")
+            prev = self.store.result(self.key)
+            if prev.get("data") is not None:
+                env.update(data=prev["data"], kept=True)
         env["durationMs"] = int((time.time() - start) * 1000)
         env["lastOkAt"] = util.iso(self.last_ok)
         env["nextAt"] = util.iso(nxt)
@@ -150,6 +155,10 @@ class Store:
     def results(self):
         with self.lock:
             return dict(self._results)
+
+    def result(self, key):
+        with self.lock:
+            return self._results.get(key) or {}
 
     def put(self, key, env, at):
         with self.lock:

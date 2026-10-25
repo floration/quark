@@ -14,12 +14,15 @@ WEB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = ["tests/tests.cpp"] + sorted(os.path.relpath(p, os.path.join(WEB, "..", "..", "..")).replace("\\", "/")
                                     for p in glob.glob(os.path.join(WEB, "..", "..", "..", "tests", "*.[ch]*")) if not p.endswith("tests.cpp")) + [
          ".github/workflows/release.yml", ".github/workflows/main-guard.yml",
-         ".github/workflows/macos-retry.yml", "tools/release_check.sh", "tools/githooks/pre-commit", "CMakeLists.txt"]
+         ".github/workflows/macos-retry.yml", "tools/release_check.sh", "tools/uitest.sh", "tools/githooks/pre-commit", "CMakeLists.txt"]
 ALLOWED = re.compile(r"^(tests/[^\0]+|\.github/workflows/[^/]+|tools/[^/]+\.sh|tools/githooks/[^/]+|CMakeLists\.txt)$")
 NOW = "2026-10-24T15:00:00Z"
 TIMING = {"bots": 160, "botaim": 120, "botfalls": 95, "tourney": 88, "duel": 60, "weapons": 31, "maps": 140, "movement": 45, "sessions": 70,
           "sessions2": 66, "modes": 80, "hidden": 25, "race": 50, "votes": 55, "edit": 48, "ranked": 75, "ranked2": 52, "rules": 64,
           "assets": 12, "server": 58, "netcode": 40, "tickrate": 62, "governor": 35, "resetmaps": 4, "userdata": 6}
+
+# a group whose newest time spiked (serve.py: cache/groups.json hist; model: timing.history / slower)
+TREND = {"weapons": {"history": [{"sec": s, "at": NOW, "run": "r0"} for s in (20, 21, 19, 20, 31)], "slower": {"sec": 31, "median": 20, "pct": 55}}}
 
 # the last local results (serve.py: cache/groups.json): duel failed with one FAIL line, weapons passed
 LAST = {"duel": {"status": "failed", "at": NOW, "run": "r0", "fails": 1, "source": "local run " + NOW,
@@ -117,7 +120,7 @@ def parse_quark_tests(repo, fns):
                 name = m.group(1)
                 groups.append({"id": "group:" + name, "kind": "group", "name": name, "list": lst, "order": order, "file": f, "line": j + 1, "endLine": end + 1,
                                "calls": cs, "run": {"cmd": "build/quark_tests group " + name, "parallel": lst == "par"},
-                               "timing": {"sec": TIMING.get(name, 30), "source": "release-tests/timing/step1.txt"} if name in TIMING else None,
+                               "timing": dict({"sec": TIMING.get(name, 30), "source": "release-tests/timing/step1.txt"}, **TREND.get(name, {})) if name in TIMING else None,
                                "flaky": "timing-sensitive: re-run alone on an idle machine before calling it a failure" if name in ("tickrate", "netcode") else None,
                                "lastRun": LAST.get(name)})
                 order += 1; j = end + 1
@@ -251,10 +254,15 @@ def build_model(repo):
     for f in FILES:
         if f.startswith(".github/workflows/"): suites.append(parse_workflow(repo, f))
     suites.append(parse_script(repo, "tools/release_check.sh", "script:release_check.sh", "script", "release-check", "before a push, by hand: tools/release_check.sh"))
+    ui = parse_script(repo, "tools/uitest.sh", "script:uitest.sh", "script", "ctest", "by ctest (its uitest entry); skipped without a display")
+    ui["about"] = "ctest's \"uitest\" entry (docs/UI_TEST.md): quark --uitest <report> when there's a display, else skipped (77)."
+    suites.append(ui)
     suites.append(parse_script(repo, "tools/githooks/pre-commit", "hook:pre-commit", "hook", "pre-commit", "every git commit (once core.hooksPath is tools/githooks)"))
     cm = repo.read("CMakeLists.txt").split("\n")
     ct = [{"id": "ctest:" + m.group(1), "kind": "step", "name": m.group(1), "file": "CMakeLists.txt", "line": i + 1, "endLine": i + 1, "text": l.strip()}
           for i, l in enumerate(cm) for m in [re.search(r"add_test\(NAME (\w+)", l)] if m]
+    for t in ct:
+        if t["name"] == "uitest": t["script"] = "script:uitest.sh"
     suites.append({"id": "ctest", "kind": "ctest", "title": "ctest", "file": "CMakeLists.txt", "line": ct[0]["line"] if ct else 1,
                    "when": [{"trigger": "ctest", "text": "ctest in the build folder (runs quark_tests and the UI test)", "file": "CMakeLists.txt", "line": 1,
                              "branches": [], "tags": [], "paths": [], "inputs": [], "cron": None}], "items": ct})
@@ -297,10 +305,22 @@ def fake_run(r):
     bad = r["cmd"] == "suite"   # (the whole suite: duel fails, as the real output prints it)
     if bad: lines = ["only=" + ",".join(r.get("only") or []), "weapons out", "  (group weapons: 3 s)", "  FAIL /src/quark/tests/tests.cpp:120: a == b",
                      "  (group duel: 2 s)", "  (group duel: 1 failure(s))", "1 FAILURE(S)"]
+    if r["cmd"] == "script:uitest.sh": lines = ["(tests editor: display: a private Xvfb :100)", "==== UI TEST: FAIL ====", "report: uitest-report.json"]
     for l in lines:
         if r["status"] != "running": return
         time.sleep(0.25); r["output"] += l + "\n"
-    r["status"], r["exit"], r["endedAt"], r["sec"] = ("failed", 1, NOW, 2.0) if bad else ("passed", 0, NOW, 2.5)
+    r["status"], r["exit"], r["endedAt"], r["sec"] = ("failed", 1, NOW, 2.0) if bad or r["cmd"] == "script:uitest.sh" else ("passed", 0, NOW, 2.5)
+    if bad: r["groupResults"] = {"weapons": {"status": "passed", "fails": 0}, "duel": {"status": "failed", "fails": 1}}
+    if r["cmd"] == "script:uitest.sh": r["hasReport"], r["display"] = True, "a private Xvfb :100"
+
+REPORT = {"result": "fail", "seconds": 640, "frames": 9000, "widgets": 812, "screens": 64, "passed": 810, "failed": 1, "untested": 1,
+          "failures": [{"scenario": "menus", "screen": "settings/video", "widget": "VSYNC", "kind": "toggle", "expects": "cfg(vsync)", "why": "the config key didn't change"}],
+          "untested_widgets": [{"scenario": "menus", "screen": "info", "widget": "CREDITS", "expects": "nav(info/credits)"}], "layout": [], "esc": [], "setup": [], "notes": []}
+# release_check.sh's last map check (serve.py: cache/groups.json maps + cache/maps/<map>.png / .log)
+MAPS = {"maps": {"temple": {"status": "passed", "rc": 0, "at": NOW, "run": "r0", "source": "local run " + NOW, "shot": True, "log": True},
+                 "furnace": {"status": "failed", "rc": 124, "at": NOW, "run": "r0", "source": "local run " + NOW, "shot": False, "log": True}},
+        "known": ["anvil", "furnace", "temple"]}
+PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5f6e5d60000000049454e44ae426082")
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -326,7 +346,17 @@ class H(BaseHTTPRequestHandler):
             if not r: return self.send(404, {"error": "no run"})
             f = int(q.get("from", 0)); out = r["output"].encode()
             return self.send(200, dict({k: v for k, v in r.items() if k != "output"}, output=out[f:].decode(), size=len(out)))
-        if u.path == "/api/runs": return self.send(200, [{k: r[k] for k in ("id", "cmd", "status", "exit", "startedAt", "sec", "args", "only")} for r in reversed(REPO.runs)])
+        if u.path == "/api/runs": return self.send(200, [{k: r.get(k) for k in ("id", "cmd", "status", "exit", "startedAt", "sec", "args", "only", "groupResults", "hasReport", "display")} for r in reversed(REPO.runs)])
+        if u.path == "/api/env": return self.send(200, {"win": False, "xvfb": True, "display": False, "bash": True, "quark": "build/quark",
+                                                        "scripts": {"script:uitest.sh": {"display": True, "report": True}, "script:test_editor.sh": {"display": True, "report": False}}})
+        if u.path == "/api/maps": return self.send(200, MAPS)
+        if u.path == "/api/map-file":
+            x = MAPS["maps"].get(q.get("name", ""))
+            if not x or not x.get(q.get("kind")): return self.send(404, {"error": "no such file"})
+            return self.send(200, PNG, "image/png") if q["kind"] == "shot" else self.send(200, ("hosting %s\n" % q["name"]).encode(), "text/plain")
+        if u.path == "/api/run/report":
+            r = next((x for x in REPO.runs if x["id"] == q.get("id") and x.get("hasReport")), None)
+            return self.send(200, REPORT) if r else self.send(404, {"error": "no report"})
         if u.path == "/api/ci":
             if not REPO.ci_available: return self.send(200, {"available": False, "jobs": {}})
             jobs = {}

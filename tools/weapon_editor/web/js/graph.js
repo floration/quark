@@ -178,7 +178,8 @@ export function overviewGraph(brain) {
     const users = (g) => edges.filter((e) => e.from === g.gid).map((e) => id.get(e.to));
     const mids = nodes.filter((n) => n.kind === "curve");
     const bary = (g) => { const u = users(g).filter((x) => x.kind === "slot"); return u.length ? u.reduce((a, x) => a + x.y, 0) / u.length : 1e6; };
-    const stackCol = (col) => { col.sort((a, b) => a._b - b._b); let yy = -1e9; for (const n of col) { n.y = Math.max(yy + 26, n._b === 1e6 ? yy + 26 : n._b); yy = n.y; } };
+    // (a column from y 0 down: used nodes beside their slots, unused ones (_b 1e6) after them, or from 0 when none is used)
+    const stackCol = (col) => { col.sort((a, b) => a._b - b._b); let yy = -26; for (const n of col) { n.y = Math.max(yy + 26, n._b === 1e6 ? yy + 26 : n._b); yy = n.y; } };
     for (const m of mids) m._b = bary(m);
     stackCol(mids);
     const params = nodes.filter((n) => n.kind === "param");

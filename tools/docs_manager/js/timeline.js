@@ -30,10 +30,13 @@
     return [...map.values()];
   }
 
-  // Dallas UTC offset (ms) at time t, for aligning ticks to local hours/days.
+  // Dallas UTC offset (ms) at time t, for aligning ticks to local hours/days (formatters made once: a paint asks for
+  // an offset per hour line).
+  const F_MIN = new Intl.DateTimeFormat('en-US', {timeZone: 'America/Chicago', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23'});
+  const F_DAY = new Intl.DateTimeFormat('en-US', {timeZone: 'America/Chicago', year: 'numeric', month: 'numeric', day: 'numeric'});
   function tzOff(t) {
     const p = {};
-    for (const x of new Intl.DateTimeFormat('en-US', {timeZone: 'America/Chicago', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23'}).formatToParts(new Date(t))) p[x.type] = +x.value || 0;
+    for (const x of F_MIN.formatToParts(new Date(t))) p[x.type] = +x.value || 0;
     return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute) - Math.floor(t / 60000) * 60000;
   }
 
@@ -41,7 +44,7 @@
   function midnights(t0, t1) {
     const out = [];
     const p = {};
-    for (const x of new Intl.DateTimeFormat('en-US', {timeZone: 'America/Chicago', year: 'numeric', month: 'numeric', day: 'numeric'}).formatToParts(new Date(t0))) p[x.type] = +x.value || 0;
+    for (const x of F_DAY.formatToParts(new Date(t0))) p[x.type] = +x.value || 0;
     for (let k = 0; k < 400; k++) {
       const u = Date.UTC(p.year, p.month - 1, p.day + k);
       let t = u - tzOff(u);

@@ -128,11 +128,21 @@
   <section id="batch" class="page">
     <aside class="panel">
       <h3>Batch</h3>
-      <p class="muted" style="font-size:12px">Runs the current scenario's bots (Simulator tab) N times per map, each match with the next seed, as fast as the helper goes. Results per brain (win rate with its 95% interval), per bot, per map; pin a run to compare later ones with it.</p>
+      <p class="muted" style="font-size:12px">Runs the current scenario's bots (Simulator tab), or brain A against brain B, N times per map, each match with the next seed, as fast as the helper goes; optionally with the sides swapped and a param swept. Results per brain (win rate with its 95% interval), per bot, per map; pin a run to compare later ones with it.</p>
       <div class="field"><span>Matches</span><input id="bN" type="number" value="10" min="1" max="1000"></div>
       <div class="field" title="each match runs until it ends (a free for all is 600 s), or until this much game time: then it counts as a timeout, with no winner"><span>Time cap (s)</span><input id="bSecs" type="number" value="900" min="5" max="7200"></div>
       <div class="field"><span>First seed</span><input id="bSeed" type="number" value="1"></div>
       <div class="field" title="the Simulator's mode unless another is picked here"><span>Mode</span><select id="bMode"></select></div>
+      <div class="field" title="who plays: the Simulator's bots as placed, or a quick line-up of one brain against another"><span>Line-up</span><select id="bLineup"><option value="sim">the Simulator's bots</option><option value="ab">brain A vs brain B</option></select></div>
+      <div id="bAB" hidden>
+        <div class="field"><span>A (team a)</span><select id="bBrainA"></select></div>
+        <div class="field"><span>B (team b)</span><select id="bBrainB"></select></div>
+        <div class="field"><span>Bots a side</span><div class="row" style="flex-wrap:nowrap"><select id="bPer" style="width:56px;flex:none"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select><select id="bSkill" style="flex:1;min-width:0"></select></div></div>
+      </div>
+      <label class="check" title="each map is also played with every bot on the other team (the same seeds): a brain's result doesn't hang on which side of the map it got. Everyone starts at spawn points."><input type="checkbox" id="bSwap"><span>also with the sides swapped</span></label>
+      <div class="field" title="play one brain of the line-up with a param at several values: each value is its own brain in the results (brain@param=value)"><span>Sweep</span><div class="row" style="flex-wrap:nowrap"><select id="bSwBrain" style="min-width:0;flex:1"></select><select id="bSwParam" style="min-width:0;flex:1.4"></select></div></div>
+      <div class="field" id="bSwValsRow" hidden title="2, 3, 4: every level at that value · ×0.8, ×1.2: each level scaled · 1/2/3/4: one per level"><span>values</span><input id="bSwVals" placeholder="2, 3, 4 · ×0.8, ×1.2 · 1/2/3/4"></div>
+      <div id="bDesign" class="muted" style="font-size:12px"></div>
       <div class="field"><span>Maps</span><span id="bPickInfo" class="muted" style="font-size:12px"></span></div>
       <div id="bPicks" class="row" style="gap:3px">
         <button data-pick="this" title="the Simulator's map">this map</button><button data-pick="mode" title="every map the game offers for this mode">for this mode</button>

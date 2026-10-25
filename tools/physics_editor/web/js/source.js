@@ -127,29 +127,59 @@ export function stripComment(l) {
 }
 
 // ---------------------------------------------------------------- functions (top level, brace matched)
-export function findFunctions(text) {
-    const lines = text.split("\n"), out = [];
-    const head = /^(?:static\s+|inline\s+|\[\[[^\]]*\]\]\s*)*(?:const\s+)?[A-Za-z_][A-Za-z0-9_:<>*&\s]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)?/;
-    let depth = 0;
-    for (let i = 0; i < lines.length; i++) {
-        const code = stripComment(lines[i]);
-        if (depth === 0) {
-            const m = head.exec(code);
-            if (m && !/^(if|for|while|switch|return|namespace|struct|enum|class)$/.test(m[1]) && !/;\s*$/.test(code) && !/^\s*(namespace|struct|enum|class)\b/.test(code)) {
-                // the body: from the first '{' at or after this line to its match
-                let d = 0, j = i, started = false, end = -1;
-                for (; j < lines.length && j < i + 400; j++) {
-                    const cl = stripComment(lines[j]);
-                    for (const ch of cl) { if (ch === "{") { d++; started = true; } else if (ch === "}") { d--; if (started && d === 0) { end = j; break; } } }
-                    if (end >= 0) break;
-                    if (!started && /;\s*$/.test(cl)) break;
-                }
-                if (end >= 0) { out.push({ name: m[1], start: i + 1, end: end + 1, params: (m[2] || "") }); i = end; continue; }
-            }
+// Each line's code for brace matching: comments (// and /* */, across lines) gone and string / char literals blanked,
+// so a '{' in a string or a commented-out block can't throw the matching off.
+export function codeLines(text) {
+    const out = [];
+    let inBlock = false;
+    for (const l of text.split("\n")) {
+        let o = "", inS = null;
+        for (let i = 0; i < l.length; i++) {
+            const c = l[i];
+            if (inBlock) { if (c === "*" && l[i + 1] === "/") { inBlock = false; i++; } continue; }
+            if (inS) { if (c === "\\") i++; else if (c === inS) { inS = null; o += c; } continue; }
+            if (c === '"' || c === "'") { inS = c; o += c; continue; }
+            if (c === "/" && l[i + 1] === "/") break;
+            if (c === "/" && l[i + 1] === "*") { inBlock = true; i++; continue; }
+            o += c;
         }
-        for (const ch of code) { if (ch === "{") depth++; else if (ch === "}") depth = Math.max(0, depth - 1); }
+        out.push(o);
     }
     return out;
+}
+// [{name, start, end, params}]: every top-level function with a body. A body ends where its braces match, however
+// long it is (pmoveStep keeps growing); only the head, before the first '{', may not run on past HEAD_LINES lines.
+const HEAD_LINES = 12;
+export function findFunctions(text) {
+    const code = codeLines(text), out = [];
+    const head = /^(?:static\s+|inline\s+|\[\[[^\]]*\]\]\s*)*(?:const\s+)?[A-Za-z_][A-Za-z0-9_:<>*&\s]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)?/;
+    let depth = 0;
+    for (let i = 0; i < code.length; i++) {
+        const c = code[i];
+        if (depth === 0) {
+            const m = head.exec(c);
+            if (m && !/^(if|for|while|switch|return|namespace|struct|enum|class)$/.test(m[1]) && !/;\s*$/.test(c) && !/^\s*(namespace|struct|enum|class)\b/.test(c)) {
+                // the body: from the first '{' at or after this line to its match
+                let d = 0, j = i, started = false, end = -1;
+                for (; j < code.length && (started || j < i + HEAD_LINES); j++) {
+                    for (const ch of code[j]) { if (ch === "{") { d++; started = true; } else if (ch === "}") { d--; if (started && d === 0) { end = j; break; } } }
+                    if (end >= 0) break;
+                    if (!started && /;\s*$/.test(code[j])) break;
+                }
+                if (end >= 0) { out.push({ name: m[1], start: i + 1, end: end + 1, params: (m[2] || "").trim() }); i = end; continue; }
+            }
+        }
+        for (const ch of c) { if (ch === "{") depth++; else if (ch === "}") depth = Math.max(0, depth - 1); }
+    }
+    // overloads (dashMaxCharges(mods) / dashMaxCharges(s, map)) are told apart by their parameter names
+    const count = new Map();
+    for (const f of out) count.set(f.name, (count.get(f.name) || 0) + 1);
+    for (const f of out) f.title = f.name + (count.get(f.name) > 1 ? `(${paramNames(f.params)})` : "()");
+    return out;
+}
+// "const MoveState& s, const Map* map" -> "s, map"
+export function paramNames(params) {
+    return params.split(",").map((p) => { const m = /([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*(?:=.*)?$/.exec(p.trim()); return m ? m[1] : p.trim(); }).filter(Boolean).join(", ");
 }
 
 // ---------------------------------------------------------------- the notes: functions and the steps of pmoveStep
@@ -176,7 +206,7 @@ export const FUNCTION_NOTES = {
 };
 export const STEPS = [
     { id: "wish", label: "wish direction", anchor: /Vec3 wish = fwd/, note: "The keys (forward / side, −127..127) become a direction and a wish speed: run speed (9.5 m/s × MOVE SPEED) times how far the keys are pressed." },
-    { id: "jump", label: "jump / bunny hop", anchor: /if \(onGround && jumpHeld && !frozen && !dashActive\)/, note: "On the floor with jump held: up at JUMP (7.34 m/s × JUMP). Holding jump jumps again on the first grounded ms, before friction can slow you: bunny hopping keeps your speed. A fresh press is also buffered (DASH JUMP WINDOW, 0.1 s) for the dash techs." },
+    { id: "jump", label: "jump / bunny hop", anchor: /if \(onGround && \(?jumpHeld\b.*!dashActive\)/, note: "On the floor with jump held: up at JUMP (7.34 m/s × JUMP). Holding jump jumps again on the first grounded ms, before friction can slow you: bunny hopping keeps your speed. A fresh press is buffered (DASH JUMP WINDOW, 0.1 s): a tap let go up to 0.1 s before landing jumps on landing too, and the dash techs use it." },
     { id: "dashTimers", label: "dash timers", anchor: /s\.hookCooldown = std::max\(0\.0f, s\.hookCooldown - dt\)/, note: "Cooldowns count down 1 ms: the grapple's, the dash cooldown (only while no dash runs) and each spent charge's recharge. The charge count is held to the maximum (DASH CHARGES)." },
     { id: "dashStart", label: "dash start", anchor: /if \(dashStart\) \{/, note: "A dash press with a charge left and the cooldown over starts a dash: along the keys (or forward), DASH LENGTH (0.12 s) long, tilted up/down by the look pitch (DASH VERTICAL). It leaves with your speed + DASH SPEED KEPT (1 m/s), at least DASH EXIT SPEED (MIN) 11 and at most (MAX) 32 m/s. It spends a charge, which starts recharging when the dash ends." },
     { id: "dashTech", label: "dash jump / super dash", anchor: /if \(dashing && !frozen\) \{/, note: "Jump during a dash on the floor: the dash ends at once and you leave at its full burst speed plus a normal jump (all charges back). Aimed down into the floor it is a super dash: the speed you carried in + SUPER DASH BOOST (5 m/s), at most SUPER DASH SPEED (MAX) 36, and a hop from half a jump (just past 14.5° down) to a full one (straight down) × SUPER DASH JUMP; it leaves one charge." },
@@ -209,6 +239,17 @@ export function findSteps(text, fns) {
     return found;
 }
 
+// What this parser couldn't find in the code as it is: [] when every function note and every step of pmoveStep was
+// found. A game-code change that moves an anchor shows here (the Code tab and the Code graph say so) and fails
+// web/test/source_check.mjs, instead of a step silently dropping out of the graph.
+export function sourceProblems(fns, steps) {
+    const out = [];
+    if (!fns.some((f) => f.name === "pmoveStep")) out.push("couldn't find pmoveStep() in pmove.cpp, so none of its steps: the parser (tools/physics_editor/web/js/source.js findFunctions) needs updating");
+    else for (const st of STEPS) if (!steps.some((x) => x.id === st.id)) out.push(`couldn't find the step "${st.label}" in pmoveStep (its anchor ${st.anchor} matches no line): update STEPS in source.js`);
+    for (const name of Object.keys(FUNCTION_NOTES)) if (!fns.some((f) => f.name === name)) out.push(`couldn't find ${name}() in pmove.cpp (it has a note in source.js FUNCTION_NOTES)`);
+    return out;
+}
+
 // ---------------------------------------------------------------- what a range of code changes
 export const OUTPUTS = [
     { id: "hvel", label: "horizontal velocity", re: [/\bs\.vel\s*(=|\+=|-=|\*=)/, /\bs\.vel\.[xz]\s*(=|\+=|-=|\*=)/, /\b(airAccelerate|accelerate)\s*\([^)]*\bs\.vel\b/, /\bvel\s*\+=/, /\bvel\.[xz]\s*[+\-*]?=/] },
@@ -233,15 +274,15 @@ export function outputsOf(lines, a, b) {
     return hit;
 }
 export function callsIn(lines, a, b, fns) {
-    const names = new Set();
+    const names = new Set(), res = fns.map((f) => new RegExp(`\\b${f.name}\\s*\\(`));   // (one RegExp per function, not per line)
     for (let i = a; i <= b && i <= lines.length; i++) {
         const c = stripComment(lines[i - 1]);
-        for (const f of fns) if (new RegExp(`\\b${f.name}\\s*\\(`).test(c) && !(f.start <= i && i <= f.end)) names.add(f.name);
+        fns.forEach((f, k) => { if (!names.has(f.name) && !(f.start <= i && i <= f.end) && res[k].test(c)) names.add(f.name); });
     }
     return [...names];
 }
 
-// everything at once: {files: {name: {text, lines, html}}, constants: Map, uses (pmove.cpp), fns, steps, mvKey}
+// everything at once: {files: {name: {text, lines, html}}, constants: Map, uses (pmove.cpp), fns, steps, mvKey, problems}
 export async function analyzeSource() {
     const [cpp, h, defs] = await Promise.all(FILES.map((f) => loadSource(f).catch(() => null)));
     if (!cpp) throw new Error("the movement code isn't available (serve.py /api/source)");
@@ -256,13 +297,12 @@ export async function analyzeSource() {
         st.uses = uses.filter((u) => u.line >= st.start && u.line <= st.end);
         st.calls = callsIn(lines, st.start, st.end, fns.filter((f) => f.name !== "pmoveStep" && f.name !== "pmove"));
         st.outputs = outputsOf(lines, st.start, st.end);
-        for (const c of st.calls) {
-            const f = fns.find((x) => x.name === c);
+        for (const c of st.calls) for (const f of fns.filter((x) => x.name === c)) {   // (every overload of it)
             st.viaUses = (st.viaUses || []).concat(uses.filter((u) => u.line >= f.start && u.line <= f.end).map((u) => ({ ...u, via: c })));
             for (const o of outputsOf(lines, f.start, f.end)) if (o !== "pos" || c === "slideMove") st.outputs.add(o);
         }
     }
     const files = {};
     for (const f of [cpp, h, defs]) if (f) files[f.name] = { text: f.text, path: f.path, lines: f.text.split("\n"), html: null };
-    return { files, constants, uses, fns, steps, mvKey };
+    return { files, constants, uses, fns, steps, mvKey, problems: sourceProblems(fns, steps) };
 }

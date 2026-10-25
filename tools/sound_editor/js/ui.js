@@ -106,6 +106,7 @@
     clearTimeout(saveT);
     saveT = setTimeout(() => Q.autosave(), 1200);
   };
+  Q.autosaveSoon = () => { clearTimeout(saveT); saveT = setTimeout(() => Q.autosave(), 1200); };
   Q.onMixChanged = function () { U.refreshView(); U.scenes && U.scenes.applyMix(); saveMixSoon(); };
   function saveMixSoon() { clearTimeout(saveT); saveT = setTimeout(() => Q.autosave(), 1200); }
   U.updateUndo = function () {
@@ -153,7 +154,7 @@
   U.showHelp = () => U.dialog('Keyboard shortcuts', h('div.keys', U.keys.map(([k, d]) => [h('kbd', k), h('span', d)])));
   function onKey(e) {
     const t = e.target, typing = t && (t.tagName === 'INPUT' && !['checkbox', 'range', 'button'].includes(t.type) || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
-    if (U.$('#dlg').open) return;
+    if (U.$('#dlg').open || U.$('#dlg2').open) return;
     const k = e.key, ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && (k === 'z' || k === 'Z')) { if (typing) return; e.preventDefault(); e.shiftKey ? U.doRedo() : U.doUndo(); return; }
     if (ctrl && (k === 'y' || k === 'Y')) { if (typing) return; e.preventDefault(); U.doRedo(); return; }

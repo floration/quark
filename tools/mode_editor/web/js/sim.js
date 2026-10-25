@@ -26,17 +26,44 @@ const NOT_MARKERS = new Set(["phase", "score", "bombCarried", "bombReset"]);
 const TEAM_COLOR = { a: "#f05252", b: "#3f83f8" };   // (style.css --team-a / --team-b)
 const SLOT_COLORS = ["#a78bfa", "#22d3ee", "#fbbf24", "#34d399", "#f472b6", "#fb923c", "#60a5fa", "#e879f9", "#a3e635", "#f87171"];
 const teamOf = (t) => (t === 1 || t === "b" || t === "B" ? "b" : t === 0 || t === "a" || t === "A" ? "a" : null);
+const BATCH_COLORS = ["#a78bfa", "#94a3b8"];   // the distributions: this file, the built-in
+// the one tooltip the plot and the timeline share (ev null: hide it)
+function tip(ev, html) {
+    let t = document.getElementById("simTip");
+    if (!t) { t = document.createElement("div"); t.id = "simTip"; t.className = "sim-tip"; document.body.append(t); }
+    if (!ev) { t.style.display = "none"; return; }
+    t.innerHTML = html; t.style.display = "block";
+    const w = t.offsetWidth, h = t.offsetHeight;
+    t.style.left = Math.min(innerWidth - w - 6, ev.clientX + 14) + "px"; t.style.top = Math.min(innerHeight - h - 6, ev.clientY + 14) + "px";
+}
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const DRAW_MS = 250;      // the most often a streaming run redraws
+const LOG_LINES = 400;    // the event log keeps the last this many
 const us = (ns) => (ns >= 10000 ? (ns / 1000).toFixed(0) + " µs" : ns >= 1000 ? (ns / 1000).toFixed(1) + " µs" : Math.round(ns) + " ns");
 
 // NDJSON lines (objects) -> the timeline. Lenient about field names the helper may add; never invents values.
-export function timelineModel(lines) {
-    const m = { start: null, end: null, frames: [], bands: [], markers: [], rounds: [], slots: [], slotFrames: [], slotNames: [], players: new Map(), names: new Map(),
-        errors: [], warnings: [], t0: 0, t1: 0, maxScore: 1, maxSlotNs: 0 };
-    let band = null;
+// A run's model grows as its lines come in: feedTimeline() reads only the lines after the ones it has read (m.fed), so
+// a long run costs each line once, not once per redraw.
+export function newTimeline() {
+    return { start: null, end: null, frames: [], bands: [], markers: [], rounds: [], slots: [], slotFrames: [], slotNames: [], players: new Map(), names: new Map(),
+        errors: [], warnings: [], t0: 0, t1: 0, maxScore: 1, maxSlotNs: 0, fed: 0,
+        teamA: newSeries(), teamB: newSeries(),   // the team scores as steps (see addPoint)
+        trail: [], bounds: null };                // where anyone went: x, z, x, z... and their [x0, z0, x1, z1]
+}
+// a score over time kept as its changes only (the point before a change and the change), plus where it is now: the
+// same line as one point per frame, in a few points
+function newSeries() { return { pts: [], t: null, v: null }; }
+function addPoint(s, t, v) {
+    if (s.v === null) s.pts.push([t, v]);
+    else if (v !== s.v) { if (s.pts[s.pts.length - 1][0] !== s.t) s.pts.push([s.t, s.v]); s.pts.push([t, v]); }
+    s.t = t; s.v = v;
+}
+export function seriesPoints(s) { return s.v === null ? [] : s.pts[s.pts.length - 1][0] === s.t ? s.pts : s.pts.concat([[s.t, s.v]]); }
+export function feedTimeline(m, lines) {
     const nm = (id) => (id === undefined || id === null || id < 0 ? "world" : m.names.get(id) || "#" + id);
     const slotName = (n) => { if (!m.slotNames.includes(n)) m.slotNames.push(n); };
-    for (const L of lines) {
+    for (let i = m.fed; i < lines.length; i++) {
+        const L = lines[i];
         if (!L || typeof L !== "object") continue;
         const type = L.type || L.kind || (L.t !== undefined && L.phase !== undefined ? "frame" : "");
         if (type === "start") {
@@ -51,16 +78,23 @@ export function timelineModel(lines) {
             const f = { t, phase: L.phase || "?", round: L.round ?? null, clock: L.clock ?? null, scoreA: L.scoreA ?? null, scoreB: L.scoreB ?? null,
                 obj: L.obj || null, flags: L.flags || [], players: L.players || L.bots || [] };
             m.frames.push(f);
-            if (!band || band.phase !== f.phase) { if (band) band.t1 = t; band = { phase: f.phase, t0: t, t1: t }; m.bands.push(band); }
-            band.t1 = t;
+            const band = m.bands[m.bands.length - 1];
+            if (!band || band.phase !== f.phase) { if (band) band.t1 = t; m.bands.push({ phase: f.phase, t0: t, t1: t }); }
+            else band.t1 = t;
             for (const p of f.players) {
+                if (Array.isArray(p.pos)) {
+                    const x = p.pos[0], z = p.pos.length > 2 ? p.pos[2] : p.pos[1], b = m.bounds;
+                    m.trail.push(x, z);
+                    if (!b) m.bounds = [x, z, x, z];
+                    else { if (x < b[0]) b[0] = x; if (z < b[1]) b[1] = z; if (x > b[2]) b[2] = x; if (z > b[3]) b[3] = z; }
+                }
                 if (p.id === undefined) continue;
                 let P = m.players.get(p.id);
-                if (!P) { P = { id: p.id, name: p.name || nm(p.id), team: teamOf(p.team), scores: [] }; m.players.set(p.id, P); }
-                if (p.score !== undefined) { P.scores.push([t, p.score]); m.maxScore = Math.max(m.maxScore, p.score); }
+                if (!P) { P = { id: p.id, name: p.name || nm(p.id), team: teamOf(p.team), score: newSeries() }; m.players.set(p.id, P); }
+                if (p.score !== undefined) { addPoint(P.score, t, p.score); if (p.score > m.maxScore) m.maxScore = p.score; }
             }
-            if (f.scoreA !== null) m.maxScore = Math.max(m.maxScore, f.scoreA);
-            if (f.scoreB !== null) m.maxScore = Math.max(m.maxScore, f.scoreB);
+            if (f.scoreA !== null) { addPoint(m.teamA, t, f.scoreA); m.maxScore = Math.max(m.maxScore, f.scoreA); }
+            if (f.scoreB !== null) { addPoint(m.teamB, t, f.scoreB); m.maxScore = Math.max(m.maxScore, f.scoreB); }
             // trace: the interpreted slots' calls since the last frame [{slot, calls, ns, avg, max}]
             if (Array.isArray(L.slots) && L.slots.length) {
                 let ns = 0;
@@ -76,8 +110,18 @@ export function timelineModel(lines) {
             }
         }
     }
+    m.fed = lines.length;
     if (m.frames.length) { m.t0 = m.frames[0].t; m.t1 = m.frames[m.frames.length - 1].t; }
     return m;
+}
+export function timelineModel(lines) { return feedTimeline(newTimeline(), lines); }
+// the frame at time t (the last one at or before it), by bisection
+export function frameAt(m, t) {
+    const F = m.frames;
+    if (!F.length) return null;
+    let lo = 0, hi = F.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (F[mid].t <= t) lo = mid; else hi = mid - 1; }
+    return F[lo];
 }
 function describeEvent(e, nm) {
     const k = e.type || e.kind;
@@ -117,6 +161,45 @@ export function batchModel(lines) {
     return b;
 }
 
+// a batch's CSV file name: the mode, the map and the seeds (and -builtin for a compare's built-in half)
+export function csvName(mode, B, builtin) {
+    const s = B.start || {}, seeds = Array.isArray(s.seeds) ? s.seeds : [];
+    const part = (x) => String(x || "").replace(/^.*[\\/]/, "").replace(/\.qmap$/, "").replace(/[^A-Za-z0-9_.-]+/g, "_");
+    const sd = seeds.length ? `seeds${seeds[0]}${seeds.length > 1 ? "-" + seeds[seeds.length - 1] : ""}` : "";
+    return [part(mode), part(s.map), sd].filter(Boolean).join("-") + (builtin ? "-builtin" : "") + ".csv";
+}
+// one match's score spread (as modebatch's scoreSpread: |A - B| in team modes, else the winner's score minus the
+// runner-up's)
+export function matchSpread(m, teams) {
+    if (teams) return m.scoreA != null && m.scoreB != null ? Math.abs(m.scoreA - m.scoreB) : null;
+    const s = (m.players || []).map((p) => p.score).filter((x) => typeof x === "number").sort((a, b) => b - a);
+    return s.length ? s[0] - (s[1] ?? 0) : null;
+}
+// values -> `bins` counts over [lo, hi] (hi itself in the last bin)
+export function histogram(values, bins, lo, hi) {
+    const out = new Array(bins).fill(0), w = (hi - lo) / bins || 1;
+    for (const v of values) if (typeof v === "number" && isFinite(v)) out[Math.max(0, Math.min(bins - 1, Math.floor((v - lo) / w)))]++;
+    return out;
+}
+// two modebatch end lines (this file, the built-in) -> the rows of the difference: [{label, a, b, d, fmt}], d = a - b
+export function batchDelta(a, b) {
+    const rows = [], row = (label, x, y, fmt) => { if (typeof x === "number" && typeof y === "number") rows.push({ label, a: x, b: y, d: x - y, fmt }); };
+    const pa = (e) => e.matchesPlayed || 0;
+    if (a.teams && b.teams) {
+        row("team A wins", a.teams.a.winRate, b.teams.a.winRate, "pct");
+        row("team B wins", a.teams.b.winRate, b.teams.b.winRate, "pct");
+        row("draws", pa(a) ? a.teams.draws / pa(a) : null, pa(b) ? b.teams.draws / pa(b) : null, "pct");
+    } else row("draws", pa(a) ? a.draws / pa(a) : null, pa(b) ? b.draws / pa(b) : null, "pct");
+    row("timeouts", pa(a) ? a.timeouts / pa(a) : null, pa(b) ? b.timeouts / pa(b) : null, "pct");
+    row("length avg", a.length && a.length.avg, b.length && b.length.avg, "s");
+    row("length median", a.length && a.length.p50, b.length && b.length.p50, "s");
+    if (a.rounds > 0 || b.rounds > 0) row("rounds", a.rounds, b.rounds, "n");
+    row("score spread", a.scoreSpread, b.scoreSpread, "n");
+    const ln = (e) => e.perf && e.perf.logicNs ? e.perf.logicNs.avg : 0;   // (no logic: 0 ns of it)
+    if (ln(a) || ln(b)) row("logic per tick", ln(a), ln(b), "ns");
+    return rows;
+}
+
 // The time and score axes runs share: compared runs are drawn on the same scale, so their curves read against each other
 export function sharedAxes(models) {
     const ms = models.filter((m) => m && m.frames.length);
@@ -132,13 +215,25 @@ export function endCardFields(start, end) {
     return { teams, rounds: teams || (end && end.rounds > 0), objTime: players.some((p) => p.objTime > 0) };
 }
 
-const FORM_DEFAULT = { map: "", bots: null, skill: 2, seed: 1, secs: 1800, hz: 125, real: false, trace: true, compare: false, brainA: "default", brainB: "", n: 20 };
+// the number fields' limits (the helper refuses or misreads anything else): id -> [min, max, whole numbers only, name]
+const LIMITS = { smBots: [1, 32, true, "Bots"], smSeed: [0, 2147483647, true, "Seed"], smSecs: [5, 7200, false, "Max s"], smN: [2, 1000, true, "Batch seeds"] };
+// a field's text -> null when it will do, else why not
+export function fieldProblem(id, text) {
+    const [lo, hi, whole, name] = LIMITS[id], v = Number(text);
+    if (String(text).trim() === "" || !Number.isFinite(v)) return `${name}: a number`;
+    if (whole && !Number.isInteger(v)) return `${name}: a whole number`;
+    if (v < lo || v > hi) return `${name}: ${lo} to ${hi}`;
+    return null;
+}
+// perBase: {<base mode>: {map, bots}}, the map and bot count picked for each base mode (none: the mode's own map, 2 or
+// 8 bots), so a map chosen for one mode never carries over to another
+const FORM_DEFAULT = { perBase: {}, skill: 2, seed: 1, secs: 1800, hz: 125, real: false, trace: true, compare: false, brainA: "default", brainB: "", n: 20 };
 
 export class SimView {
     constructor(root, app) {
         this.root = root; this.app = app;   // app: the ModePage
         this.status = null;                 // /api/modesim/status
-        this.form = { ...FORM_DEFAULT };    // map "" / bots null: the mode's own (its map, 2 or 8 bots)
+        this.form = { ...FORM_DEFAULT, perBase: {} };
         this.runs = [];                     // [{label, kind, lines, model, id, es, done, stopped}]
         this.batches = [];                  // [{label, kind, lines, id, es, done, stopped, request}]
         this.brains = []; this.scenarios = []; this.scenario = "";
@@ -160,43 +255,79 @@ export class SimView {
     // ---- the form, kept here (not in the DOM) and through serve.py
     _maps() { return (this.maps || []).filter((m) => m.source === "default" || m.source === "user"); }
     _twoPlayer() { const b = this.app.base; return b === "duel" || b === "1v1" || b === "tourney"; }
+    _mine() { return this.form.perBase[this.app.base] || { map: "", bots: null }; }
+    _ownMap() { const maps = this._maps(); return (maps.find((m) => m.for === this.app.base) || maps[0] || { name: "" }).name; }
     _value(k) {
-        const f = this.form;
-        if (k === "map") { const maps = this._maps(); return f.map && maps.some((m) => m.name === f.map) ? f.map : f.map && !maps.length ? f.map : (maps.find((m) => m.for === this.app.base) || maps[0] || { name: "" }).name; }
-        if (k === "bots") return f.bots ?? (this._twoPlayer() ? 2 : 8);
+        const f = this.form, mine = this._mine();
+        if (k === "map") { const maps = this._maps(); return mine.map && (maps.some((m) => m.name === mine.map) || !maps.length) ? mine.map : this._ownMap(); }
+        if (k === "bots") return mine.bots ?? (this._twoPlayer() ? 2 : 8);
         return f[k];
     }
+    // this base mode's map and bots: kept only when they differ from the mode's own
+    _setMine(map, bots) {
+        const perBase = { ...this.form.perBase }, mine = { map: map === this._ownMap() ? "" : map, bots: bots === (this._twoPlayer() ? 2 : 8) ? null : bots };
+        if (mine.map || mine.bots !== null) perBase[this.app.base] = mine; else delete perBase[this.app.base];
+        this.form.perBase = perBase;
+    }
+    // the form into this.form; a number out of its range is marked (red, the reason beside the buttons) and not taken.
+    // -> the first problem, or null
     _readForm() {
         const R = this.root, v = (id) => R.querySelector("#" + id);
-        if (!v("smRun")) return;
-        const map = v("smMap").value, autoMap = this._value("map");
-        const bots = +v("smBots").value;
-        this.form = { map: map === autoMap && !this.form.map ? "" : map, bots: bots === (this._twoPlayer() ? 2 : 8) && this.form.bots === null ? null : bots,
-            skill: +v("smSkill").value, seed: +v("smSeed").value, secs: +v("smSecs").value, hz: +v("smHz").value, real: v("smReal").checked,
-            trace: v("smTrace").checked, compare: v("smCompare").checked, brainA: v("smBrainA").value, brainB: v("smBrainB").value, n: v("smN") ? +v("smN").value : this.form.n };
+        if (!v("smRun") || this._formBase !== this.app.base) return null;   // (the form on screen is another mode's: a late change event)
+        const bad = [], num = (id, old) => {
+            const el = v(id);
+            if (!el) return old;
+            const p = fieldProblem(id, el.value);
+            el.classList.toggle("invalid", !!p); el.title = p || "";
+            if (p) { bad.push(p); return old; }
+            return +el.value;
+        };
+        const f = this.form;
+        this._setMine(v("smMap").value, num("smBots", this._value("bots")));
+        this.form = { perBase: this.form.perBase,
+            skill: +v("smSkill").value, seed: num("smSeed", f.seed), secs: num("smSecs", f.secs), hz: +v("smHz").value, real: v("smReal").checked,
+            trace: v("smTrace").checked, compare: v("smCompare").checked, brainA: v("smBrainA").value, brainB: v("smBrainB").value, n: num("smN", f.n) };
+        const e = v("smErr");
+        if (e) e.textContent = bad.join(" · ");
         this._persistSoon();
+        return bad[0] || null;
     }
     _persistSoon() { clearTimeout(this._pt); this._pt = setTimeout(() => this._persist(), 400); }
+    // the runs started (by id) and the batches still waiting their turn (by request: a compare batch's built-in half
+    // starts after the first, so a reload in between must still start it)
     _persist() {
-        const ids = [...this.runs, ...this.batches].filter((r) => r.id).map((r) => ({ id: r.id, label: r.label, kind: r.kind }));
+        const ids = [...this.runs, ...this.batches].filter((r) => r.id || (r.kind === "batch" && !r.done))
+            .map((r) => (r.id ? { id: r.id, label: r.label, kind: r.kind } : { label: r.label, kind: r.kind, request: r.request }));
         api.saveState("sim", { form: this.form, scenario: this.scenario, runs: ids }).catch(() => {});
     }
     async _restore() {
         let st = null;
         try { st = await api.state("sim"); } catch {}
         if (!st) return;
-        if (st.form) this.form = { ...FORM_DEFAULT, ...st.form };
+        if (st.form) { const { map, bots, ...rest } = st.form; this.form = { ...FORM_DEFAULT, ...rest, perBase: rest.perBase || {} }; }   // (map / bots: an older page's, for every mode)
         this.scenario = st.scenario || "";
         // the runs the page had going: serve.py keeps their lines, so they replay from the start and go on streaming
         for (const x of st.runs || []) {
+            if (!x.id) {   // (a batch that hadn't started: it runs after the ones before it)
+                if (x.kind === "batch" && x.request) this.batches.push(this._entry({ label: x.label, kind: "batch", request: x.request }));
+                continue;
+            }
             let info;
             try { info = await api.run(x.id); } catch { continue; }
-            const r = { label: x.label, kind: x.kind, lines: [], model: null, id: x.id, done: false };
+            const r = this._entry({ label: x.label, kind: x.kind, id: x.id });
             (x.kind === "batch" ? this.batches : this.runs).push(r);
             this._attach(r, x.kind === "batch" ? () => this._soonBatch() : () => this._soon(), info.args && info.args[0]);
         }
         this.busy = [...this.runs, ...this.batches].some((r) => !r.done);
+        if (this.batches.some((b) => !b.done)) this._runBatches();
     }
+    // a run or batch: its lines, and `finished`, which resolves once it is done (ended, failed or stopped)
+    _entry(o) {
+        const r = { lines: [], model: null, done: false, ...o };
+        r.finished = new Promise((res) => (r._fin = res));
+        return r;
+    }
+    _finish(r) { r.done = true; r._fin(); }
 
     render() {
         const R = this.root, st = this.status;
@@ -212,8 +343,10 @@ export class SimView {
         }
         const maps = this._maps(), base = this.app.base, f = this.form, map = this._value("map");
         const opt = (v, label, sel) => `<option value="${esc(v)}" ${sel ? "selected" : ""}>${esc(label)}</option>`;
-        const brainOpts = (sel, extra) => (extra ? opt("", extra, !sel) : "") + opt("default", "built-in", sel === "default") + this.brains.map((b) => opt(b, b, sel === b)).join("")
-            + (sel && sel !== "default" && !this.brains.includes(sel) ? opt(sel, sel + " (missing)", true) : "");
+        // (a user brain named default goes as "@default": "default" is the helper's built-in one, and serve.py sends the file)
+        const bv = (b) => (b === "default" ? "@default" : b), mine = this.brains.map(bv);
+        const brainOpts = (sel, extra) => (extra ? opt("", extra, !sel) : "") + opt("default", "built-in", sel === "default") + this.brains.map((b) => opt(bv(b), b === "default" ? "default (yours)" : b, sel === bv(b))).join("")
+            + (sel && sel !== "default" && !mine.includes(sel) ? opt(sel, (sel === "@default" ? "default (yours)" : sel) + " (missing)", true) : "");
         const brainTitle = this.brains.length ? `the bot editor's brains in ${this.brainsDir}` : `no brains yet in ${this.brainsDir || "<data>/bots"} (the bot editor saves them there)`;
         R.innerHTML = `<div class="sim-form">
           <div class="row">
@@ -229,15 +362,18 @@ export class SimView {
           <div class="row">
             <label title="paced at real time (else as fast as the CPU goes)"><input id="smReal" type="checkbox" ${f.real ? "checked" : ""}> real time</label>
             <label title="the interpreted slots' calls and cost per frame (the strip under the timeline) and per slot (the end card)"><input id="smTrace" type="checkbox" ${f.trace ? "checked" : ""}> trace slots</label>
-            <label title="also run the built-in ${esc(base)} with the same seed, on the same time axis"><input id="smCompare" type="checkbox" ${f.compare ? "checked" : ""}> compare with built-in</label>
+            ${this.app.differsFromBuiltin() ? `<label title="also run the built-in ${esc(base)} with the same seed, on the same time axis"><input id="smCompare" type="checkbox" ${f.compare ? "checked" : ""}> compare with built-in</label>`
+                : `<label class="muted" title="this mode's logic is the built-in ${esc(base)}'s and the keys go to both: the built-in run would be the same match"><input id="smCompare" type="checkbox" disabled ${f.compare ? "checked" : ""}> compare with built-in (nothing differs)</label>`}
             <button id="smRun" class="primary" ${this.busy ? "disabled" : ""}>▶ Run</button><button id="smStop" ${this.busy ? "" : "disabled"}>■ Stop</button>
             ${st.batch ? `<label>Batch seeds <input id="smN" type="number" value="${esc(f.n)}" min="2" max="1000" style="width:60px"></label><button id="smBatch" ${this.busy ? "disabled" : ""}>Run batch</button>` : '<span class="muted" title="quark_maptool has no modebatch">(no modebatch)</span>'}
+            <span id="smErr" class="bad"></span>
             <span class="sp"></span>
             <label title="saved setups (${esc(this.scenariosDir || "<data>/mode_editor/scenarios")})">Scenario <select id="smScen">${opt("", "—", !this.scenario)}${this.scenarios.map((s) => opt(s.name, s.name, s.name === this.scenario)).join("")}</select></label>
             <button id="smScenSave" title="save this setup as a scenario">Save…</button><button id="smScenDel" title="delete the scenario" ${this.scenario ? "" : "disabled"}>✕</button>
           </div>
           <div class="muted sim-src">quark_maptool modesim · ${esc(st.maptool)}</div>
         </div><div id="smOut"></div>`;
+        this._formBase = base;   // (set after the old form is gone: a focused field sends its change while innerHTML removes it)
         R.querySelectorAll(".sim-form input, .sim-form select:not(#smScen)").forEach((e) => (e.onchange = () => this._readForm()));
         R.querySelector("#smRun").onclick = () => this.run();
         R.querySelector("#smStop").onclick = () => this.stop();
@@ -251,7 +387,8 @@ export class SimView {
     _loadScenario(name) {
         this.scenario = name;
         const s = this.scenarios.find((x) => x.name === name);
-        if (s && s.scenario.form) this.form = { ...FORM_DEFAULT, ...s.scenario.form };
+        // (a scenario's map and bots are for this mode now)
+        if (s && s.scenario.form) { const { map, bots, perBase, ...rest } = s.scenario.form; this.form = { ...FORM_DEFAULT, ...rest, perBase: this.form.perBase }; this._setMine(map || this._ownMap(), bots ?? (this._twoPlayer() ? 2 : 8)); }
         this._persist();
         this.render();
     }
@@ -260,7 +397,8 @@ export class SimView {
         const name = await this.app.app.prompt("Save scenario", this.scenario || this.app.base + "-" + (this._value("map") || "map"),
             `This setup (map, bots, brains, seed, time, rate...) as a scenario in ${this.scenariosDir}.`, (n) => (NAME_RE.test(n) ? null : "Letters, digits, _ . - (up to 64)"));
         if (!name) return;
-        const sc = { form: this.form, base: this.app.base, saved: new Date().toISOString().slice(0, 19) };
+        const { perBase, ...rest } = this.form;
+        const sc = { form: { ...rest, map: this._value("map"), bots: this._value("bots") }, base: this.app.base, saved: new Date().toISOString().slice(0, 19) };
         try { await api.saveScenario(name, sc); } catch (e) { this.app.app.toast("Couldn't save it: " + e.message, 6000); return; }
         this.scenarios = this.scenarios.filter((s) => s.name !== name).concat([{ name, scenario: sc }]).sort((a, b) => a.name.localeCompare(b.name));
         this.scenario = name;
@@ -305,13 +443,14 @@ export class SimView {
     // the compare run: the built-in base mode with this file's keys (none for a base the game won't take as custom)
     _builtinRules() { return this.app.baseTakesCustom() ? this.app.builtinText() : null; }
     async run() {
-        this._readForm();
+        const bad = this._readForm();
+        if (bad) { this.app.app.toast("Not run: " + bad, 5000); return; }
         const rules = this._rules();
         if (rules === undefined) return;
         this.stop(true);
         this.batches = [];
-        this.runs = [{ label: "this file", kind: "run", lines: [], model: null }];
-        if (this.form.compare) this.runs.push({ label: "built-in " + this.app.base, kind: "run", lines: [], model: null });
+        this.runs = [this._entry({ label: "this file", kind: "run" })];
+        if (this.form.compare && this.app.differsFromBuiltin()) this.runs.push(this._entry({ label: "built-in " + this.app.base, kind: "run" }));
         this._setBusy(true);
         this._drawRuns();
         await Promise.all(this.runs.map((r, i) => this._start(r, ["modesim", "--stream"], this._req(i === 0 ? rules : this._builtinRules()), () => this._soon())));
@@ -323,7 +462,7 @@ export class SimView {
             const { id } = await api.post("/api/run", { args, request }, "json");
             r.id = id;
             this._attach(r, onLine, args[0]);
-        } catch (e) { r.lines.push({ type: "error", error: e.message }); r.done = true; onLine(); this._allDone(); }
+        } catch (e) { r.lines.push({ type: "error", error: e.message }); this._finish(r); onLine(); this._allDone(); }
     }
     _attach(r, onLine, cmd) {
         const es = new EventSource(`/api/run/${r.id}/events`);
@@ -333,62 +472,104 @@ export class SimView {
             onLine();
         };
         es.addEventListener("exit", (ev) => {
-            es.close(); r.done = true;
+            es.close(); this._finish(r);
             try { const x = JSON.parse(ev.data); r.code = x.code; if (x.code && !r.lines.some((l) => l.type === "error" || l.error)) r.lines.push({ type: "error", error: `${cmd || "the helper"} exited with ${x.code}: ${x.stderr || ""}` }); } catch {}
             onLine();
             this._allDone();
         });
-        es.onerror = () => { if (!r.done) { es.close(); r.done = true; onLine(); this._allDone(); } };
+        es.onerror = () => { if (!r.done) { es.close(); this._finish(r); onLine(); this._allDone(); } };
     }
     stop(quiet) {
         let any = false;
         for (const r of [...this.runs, ...this.batches]) {
             if (r.es) r.es.close();
             if (r.id && !r.done) { api.post(`/api/run/${r.id}/stop`, {}).catch(() => {}); r.stopped = true; any = true; }
-            r.done = true;
+            if (!r.done) this._finish(r);
         }
         this._setBusy(false);
         if (quiet) return;
         this._persist();
-        if (any) { for (const r of this.runs) r.model = timelineModel(r.lines); this._drawRuns(); }
+        if (any) this._drawRuns();
     }
-    _soon() { if (this._raf) return; this._raf = requestAnimationFrame(() => { this._raf = 0; for (const r of this.runs) r.model = timelineModel(r.lines); this._drawRuns(); }); }
+    // Redraws while lines stream in: at most every DRAW_MS (a 16-bot two-hour run sends ~20000 lines; drawing on every
+    // animation frame froze the page), right away once every run is done.
+    _soon() { this._throttle("_drawT", () => this._updateRuns(), this.runs); }
+    _throttle(slot, draw, list) {
+        if (this[slot]) return;
+        const now = performance.now(), wait = list.every((r) => r.done) ? 0 : Math.max(0, (this[slot + "At"] || 0) + DRAW_MS - now);
+        this[slot] = setTimeout(() => requestAnimationFrame(() => { this[slot] = 0; this[slot + "At"] = performance.now(); draw(); }), wait);
+    }
 
+    // The run cards are built once per set of runs (and page render); a redraw only feeds the new lines into each model
+    // and updates the parts that changed: the timeline, the plot (its map and trail layers are kept and only the new
+    // trail points drawn), the end card when it changes, the log by appending.
     _drawRuns() {
         const O = this.root.querySelector("#smOut");
         if (!O) return;
         if (this.batches.length) return this._drawBatches();
         if (!this.runs.length) { O.innerHTML = `<div class="muted" style="margin-top:8px">No run yet. A run uses the current text (saved or not) as the request's rules.</div>`; return; }
-        for (const r of this.runs) if (!r.model) r.model = timelineModel(r.lines);
-        const axes = sharedAxes(this.runs.map((r) => r.model));
-        O.innerHTML = `<div class="sim-runs${this.runs.length > 1 ? " two" : ""}">${this.runs.map((r, i) => `<div class="sim-run" data-i="${i}"><h4>${esc(r.label)}${r.stopped ? ' <span class="muted">(stopped)</span>' : r.done ? "" : ' <span class="muted">running…</span>'}</h4><div class="sim-start"></div><canvas class="tl"></canvas><div class="sim-body"><canvas class="plot"></canvas><div class="sim-end"></div></div><div class="sim-log"></div></div>`).join("")}</div>`;
-        O.querySelectorAll(".sim-run").forEach((el) => this._drawRun(el, this.runs[+el.dataset.i], axes));
+        if (!this._built || this._built.O !== O || this._built.runs !== this.runs) {
+            O.innerHTML = `<div class="sim-runs${this.runs.length > 1 ? " two" : ""}">${this.runs.map((r, i) => `<div class="sim-run" data-i="${i}"><h4>${esc(r.label)} <span class="muted st"></span></h4><div class="sim-start"></div><div class="tl-wrap"><canvas class="tl"></canvas><div class="tl-cur"></div><div class="tl-scrub"></div></div><div class="sim-body"><div class="plot-col"><div class="plot-wrap"><canvas class="plot"></canvas></div><div class="scrub-row"><input type="range" class="scrub" min="0" max="1" step="0.25" value="1" title="replay: the plot shows everyone where they were at this time"><span class="scrub-t muted"></span><button class="scrub-now" title="follow the run (its last frame)">now</button></div></div><div class="sim-end"></div></div><div class="sim-log"></div></div>`).join("")}</div>`;
+            O.querySelectorAll(".sim-run").forEach((el) => {
+                const r = this.runs[+el.dataset.i];
+                const q = (s) => el.querySelector(s);
+                r.view = { el, st: q(".st"), start: q(".sim-start"), tl: q("canvas.tl"), plot: q("canvas.plot"), body: q(".sim-body"), end: q(".sim-end"), log: q(".sim-log"), startKey: null, endKey: null, logN: 0,
+                    cur: q(".tl-cur"), mark: q(".tl-scrub"), scrub: q("input.scrub"), scrubT: q(".scrub-t"), now: q(".scrub-now"), dots: [], tx: null };
+                this._wireRun(r);
+            });
+            this._built = { O, runs: this.runs };
+        }
+        this._updateRuns();
     }
-    _drawRun(el, r, axes) {
-        const M = r.model || timelineModel(r.lines);
-        const s = M.start;
-        if (s) {
-            const lg = s.logic || {};
-            const logicChip = !lg.present ? `<span class="chip">no logic: ${s.custom ? "key rules only" : "the built-in mode"}</span>`
-                : s.logicApplied ? `<span class="badge real">LOGIC RUN BY THE SERVER</span>`
-                : `<span class="badge mock" title="${esc(lg.why || "")}">LOGIC NOT RUN: base ${esc(s.base)} with the key rules</span>`;
-            const would = (lg.interpreted || []).length ? `<span class="chip" title="slots that differ from the built-in ${esc(s.base)}">${s.logicApplied ? "interpreted" : "would interpret"}: ${esc(lg.interpreted.join(", "))}</span>` : "";
-            const brains = s.brains ? Object.entries(s.brains).map(([n, l]) => `<span class="chip" title="${esc(l)}">brain ${esc(n)}</span>`).join(" ") : "";
-            el.querySelector(".sim-start").innerHTML = `<span class="chip">${esc(s.label || "")}</span> <span class="chip">base ${esc(s.base || "")}</span> <span class="chip">${esc(s.map || "")}</span> ${logicChip} ${would} ${brains}
-                ${(s.warnings || []).concat(M.warnings).map((w) => `<div class="warn" style="font-size:11px">⚠ ${esc(typeof w === "string" ? w : w.msg)}</div>`).join("")}
-                ${!s.logicApplied && lg.present && lg.why ? `<div class="muted" style="font-size:11px">${esc(lg.why)}</div>` : ""}`;
-        } else el.querySelector(".sim-start").innerHTML = "";
+    _updateRuns() {
+        if (!this._built || !this._built.O.isConnected || this._built.runs !== this.runs) return this._drawRuns();
+        for (const r of this.runs) r.model = feedTimeline(r.model || newTimeline(), r.lines);
+        const axes = sharedAxes(this.runs.map((r) => r.model));
+        for (const r of this.runs) this._drawRun(r, axes);
+    }
+    _drawRun(r, axes) {
+        const V = r.view, M = r.model, s = M.start;
+        V.st.textContent = r.stopped ? "(stopped)" : r.done ? "" : "running…";
+        const startKey = `${!!s}|${M.warnings.length}`;
+        if (startKey !== V.startKey) {
+            V.startKey = startKey;
+            if (s) {
+                const lg = s.logic || {};
+                const logicChip = !lg.present ? `<span class="chip">no logic: ${s.custom ? "key rules only" : "the built-in mode"}</span>`
+                    : s.logicApplied ? `<span class="badge real">LOGIC RUN BY THE SERVER</span>`
+                    : `<span class="badge mock" title="${esc(lg.why || "")}">LOGIC NOT RUN: base ${esc(s.base)} with the key rules</span>`;
+                const would = (lg.interpreted || []).length ? `<span class="chip" title="slots that differ from the built-in ${esc(s.base)}">${s.logicApplied ? "interpreted" : "would interpret"}: ${esc(lg.interpreted.join(", "))}</span>` : "";
+                const brains = s.brains ? Object.entries(s.brains).map(([n, l]) => `<span class="chip" title="${esc(l)}">brain ${esc(n)}</span>`).join(" ") : "";
+                V.start.innerHTML = `<span class="chip">${esc(s.label || "")}</span> <span class="chip">base ${esc(s.base || "")}</span> <span class="chip">${esc(s.map || "")}</span> ${logicChip} ${would} ${brains}
+                    ${(s.warnings || []).concat(M.warnings).map((w) => `<div class="warn" style="font-size:11px">⚠ ${esc(typeof w === "string" ? w : w.msg)}</div>`).join("")}
+                    ${!s.logicApplied && lg.present && lg.why ? `<div class="muted" style="font-size:11px">${esc(lg.why)}</div>` : ""}`;
+            } else V.start.innerHTML = "";
+        }
         const fields = endCardFields(s, M.end);
         const teams = fields.teams;
-        const lineColor = new Map();   // (free for all and the like: one line per player, its colour in the table too)
-        { let i = 0; for (const P of M.players.values()) lineColor.set(P.id, `hsl(${(i++ * 67) % 360} 70% 60%)`); }
-        this._timeline(el.querySelector("canvas.tl"), M, axes, teams, lineColor, el.clientWidth - 18);
+        if (!r.colors || r.colors.size !== M.players.size) {   // (free for all and the like: one line per player, its colour in the table too)
+            r.colors = new Map(); let i = 0;
+            for (const P of M.players.values()) r.colors.set(P.id, `hsl(${(i++ * 67) % 360} 70% 60%)`);
+        }
+        const W = V.el.clientWidth - 18;
+        this._timeline(V.tl, M, axes, teams, r.colors, W);
         // the body: the map plot beside the end card (stacked when the card is narrow)
-        const W = el.clientWidth - 18, side = W >= 720;
-        el.querySelector(".sim-body").classList.toggle("stack", !side);
-        this._plot(el.querySelector("canvas.plot"), r, M, teams, side ? Math.max(260, Math.min(640, Math.round(W * 0.42))) : Math.min(560, W));
-        // end card
-        const e = M.end;
+        const side = W >= 720;
+        V.body.classList.toggle("stack", !side);
+        this._plot(V.plot, r, M, teams, side ? Math.max(260, Math.min(640, Math.round(W * 0.42))) : Math.min(560, W));
+        this._scrubUi(r);
+        const endKey = `${!!M.end}|${r.done}|${r.stopped}|${M.errors.length}|${r.colors.size}`;
+        if (endKey !== V.endKey) { V.endKey = endKey; V.end.innerHTML = this._endCard(r, M, s, fields); }
+        // the log: the new markers appended, the last LOG_LINES kept
+        if (M.markers.length > V.logN) {
+            const add = M.markers.slice(Math.max(V.logN, M.markers.length - LOG_LINES));
+            V.log.insertAdjacentHTML("beforeend", add.map((x) => `<div><span class="muted">${x.t.toFixed(1)}</span> <b style="color:${MARK[x.kind] || "#cbd5e1"}">${esc(x.kind)}</b> ${esc(x.text)}</div>`).join(""));
+            for (let n = V.log.childElementCount - LOG_LINES; n > 0; n--) V.log.firstElementChild.remove();
+            V.logN = M.markers.length;
+        }
+    }
+    _endCard(r, M, s, fields) {
+        const teams = fields.teams, e = M.end;
         const nm = (id) => M.names.get(id) || "#" + id;
         let card = "";
         if (e) {
@@ -396,75 +577,155 @@ export class SimView {
             const wText = !w ? (e.leader ? `no winner yet: ${e.leader.team ? "TEAM " + e.leader.team.toUpperCase() : nm(e.leader.player)} ahead` : "no winner") : typeof w === "string" ? w : w.text || w.name || "winner";
             const pf = e.perf || {};
             const tn = pf.tickNs || {};
+            const maxAt = (x) => (x.maxAt != null && x.max > 0 ? ` <span class="muted" title="tick ${esc(x.maxTick)} of the match">at ${esc(x.maxAt.toFixed(1))} s</span>` : "");
             const lns = pf.logicNs;
             const lg = (s && s.logic) || {};
-            const logicLine = lns ? `<b>logic per tick</b> avg ${esc(us(lns.avg))} · p99 ${esc(us(lns.p99))} · max ${esc(us(lns.max))} <span class="muted">(${tn.avg ? esc((100 * lns.avg / tn.avg).toFixed(1)) + "% of the server tick" : ""})</span>`
+            const logicLine = lns ? `<b>logic per tick</b> avg ${esc(us(lns.avg))} · p99 ${esc(us(lns.p99))}${lns.p999 != null ? ` · p99.9 ${esc(us(lns.p999))}` : ""} · max ${esc(us(lns.max))}${maxAt(lns)} <span class="muted">(${tn.avg ? esc((100 * lns.avg / tn.avg).toFixed(1)) + "% of the server tick" : ""})</span>`
                 : !lg.present ? "no logic: every slot ran native" : s && s.logicApplied ? "logic per tick: not measured" : "logic per tick: the server didn't run the logic";
+            // a slot that runs on events (kill...) is idle most ticks, so per tick it reads as free: per call says what it costs
+            const cn = pf.callNs;
+            const callLine = cn && cn.calls ? `<div><b>per call</b> <span class="muted">(${esc(cn.calls)} interpreted slot call${cn.calls === 1 ? "" : "s"})</span> avg ${esc(us(cn.avg))} · p99 ${esc(us(cn.p99))} · max ${esc(us(cn.max))}${cn.sampled ? ` <span class="muted">(the first ${esc(cn.sampled)} calls)</span>` : ""}</div>` : "";
             const rows = ((e.result && e.result.players) || []).slice().sort((a, b) => (b.score - a.score) || (b.kills - a.kills));
             const len = e.t ?? M.t1;
             const slots = pf.slots || [];
             card = `<div class="sim-card"><b>${esc(wText)}</b> <span class="muted">(${esc(e.reason || "")})</span>
                 <div>${fields.rounds ? `rounds ${esc(e.rounds ?? "-")} · ` : ""}${teams && e.result ? `score ${esc(e.result.scoreA + " - " + e.result.scoreB)} · ` : ""}length ${esc(typeof len === "number" ? len.toFixed(1) : len)} s</div>
-                ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))} / max ${esc(us(tn.max))}</div>` : ""}
-                <div>${logicLine}</div>
-                ${rows.length ? `<table class="sim-tab"><tr><th></th><th>score</th><th>K</th><th>D</th>${fields.objTime ? "<th>obj s</th>" : ""}</tr>${rows.map((p) => `<tr><td style="color:${teams ? TEAM_COLOR[teamOf(p.team)] || "inherit" : lineColor.get(p.id) || "inherit"}">${p.won ? "★ " : ""}${esc(p.name)}</td><td>${esc(p.score)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td>${fields.objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>` : ""}
+                ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))}${tn.p999 != null ? ` / p99.9 ${esc(us(tn.p999))}` : ""} / max ${esc(us(tn.max))}${maxAt(tn)}${tn.maxAt != null && tn.maxAt < 1 && tn.maxAfterStart != null ? ` (in the match's first second: the round's setup; after it max ${esc(us(tn.maxAfterStart))})` : ""}</div>` : ""}
+                <div>${logicLine}</div>${callLine}
+                ${rows.length ? `<table class="sim-tab"><tr><th></th><th>score</th><th>K</th><th>D</th>${fields.objTime ? "<th>obj s</th>" : ""}</tr>${rows.map((p) => `<tr><td style="color:${teams ? TEAM_COLOR[teamOf(p.team)] || "inherit" : r.colors.get(p.id) || "inherit"}">${p.won ? "★ " : ""}${esc(p.name)}</td><td>${esc(p.score)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td>${fields.objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>` : ""}
                 ${slots.length ? `<table class="sim-tab"><tr><th>slot</th><th>calls</th><th>total</th><th>avg</th><th>max</th></tr>${slots.map((x) => `<tr><td style="color:${this._slotColor(M, x.slot)}">${esc(x.slot)}</td><td>${esc(x.calls)}</td><td>${esc(us(x.ns))}</td><td>${esc(us(x.avg))}</td><td>${esc(us(x.max))}</td></tr>`).join("")}</table>` : ""}</div>`;
         }
-        el.querySelector(".sim-end").innerHTML = (M.errors.length ? M.errors.map((x) => `<div class="bad">${esc(x)}</div>`).join("") : "")
+        return (M.errors.length ? M.errors.map((x) => `<div class="bad">${esc(x)}</div>`).join("") : "")
             + (e ? card : `<div class="muted">${r.stopped ? "Stopped before the end." : r.done ? "The run ended without an end line." : "…"}</div>`);
-        el.querySelector(".sim-log").innerHTML = M.markers.slice(-400).map((x) => `<div><span class="muted">${x.t.toFixed(1)}</span> <b style="color:${MARK[x.kind] || "#cbd5e1"}">${esc(x.kind)}</b> ${esc(x.text)}</div>`).join("");
+    }
+    // Replay and hover: the scrubber under the plot (or a click on the timeline) picks a time and the plot shows that
+    // frame; hovering the timeline shows the time and scores there, hovering a dot on the plot who it is.
+    _wireRun(r) {
+        const V = r.view;
+        V.scrub.oninput = () => this._scrubTo(+V.scrub.value >= r.model.t1 ? null : +V.scrub.value);
+        V.now.onclick = () => this._scrubTo(null);
+        const tAt = (ev) => { const tx = V.tl._tx, rc = V.tl.getBoundingClientRect(); if (!tx) return null; const x = (ev.clientX - rc.left) * V.tl.width / rc.width; return Math.max(tx.t0, Math.min(tx.t0 + tx.span, tx.t0 + (x - 30) * tx.span / (tx.W - 40))); };
+        V.tl.onmousemove = (ev) => {
+            const t = tAt(ev), M = r.model;
+            if (t === null || !M) return;
+            this._cursor(V.cur, V.tl, t);
+            const f = frameAt(M, t), nm = (id) => M.names.get(id) || "#" + id;
+            let h = `<b>${t.toFixed(1)} s</b>${f ? ` · ${esc(f.phase)}${f.round ? " · round " + esc(f.round) : ""}` : ""}`;
+            if (f && f.scoreA !== null && f.scoreB !== null && (!M.start || M.start.teams !== false)) h += `<br><span style="color:${TEAM_COLOR.a}">A ${esc(f.scoreA)}</span> · <span style="color:${TEAM_COLOR.b}">B ${esc(f.scoreB)}</span>`;
+            else if (f) h += "<br>" + f.players.filter((p) => p.score !== undefined).sort((a, b) => b.score - a.score).slice(0, 6).map((p) => `<span style="color:${(r.colors && r.colors.get(p.id)) || "inherit"}">${esc(nm(p.id))} ${esc(p.score)}</span>`).join("<br>");
+            const near = M.markers.filter((mk) => Math.abs(mk.t - t) <= Math.max(0.5, (V.tl._tx.span / V.tl._tx.W) * 3)).slice(0, 4);
+            if (near.length) h += "<br>" + near.map((mk) => `<span style="color:${MARK[mk.kind] || "#cbd5e1"}">${esc(mk.kind)}</span> ${esc(mk.text)}`).join("<br>");
+            tip(ev, h);
+        };
+        V.tl.onmouseleave = () => { V.cur.style.display = "none"; tip(null); };
+        V.tl.onclick = (ev) => { const t = tAt(ev); if (t !== null) this._scrubTo(t >= r.model.t1 ? null : t); };
+        V.plot.onmousemove = (ev) => {
+            const rc = V.plot.getBoundingClientRect(), x = (ev.clientX - rc.left) * V.plot.width / rc.width, y = (ev.clientY - rc.top) * V.plot.height / rc.height;
+            let best = null, bd = 100;   // (within 10 px)
+            for (const d of V.dots) { const dd = (d.x - x) ** 2 + (d.y - y) ** 2; if (dd < bd) { bd = dd; best = d; } }
+            if (!best) { tip(null); V.plot.style.cursor = ""; return; }
+            const M = r.model, p = best.p, tm = teamOf(p.team);
+            V.plot.style.cursor = "pointer";
+            tip(ev, `<b>${esc(M.names.get(p.id) || p.name || "#" + p.id)}</b>${tm ? ` · team ${tm.toUpperCase()}` : ""}${p.score !== undefined ? ` · score ${esc(p.score)}` : ""}${p.alive === false ? " · dead" : ""}${p.it ? " · it" : ""}${p.found ? " · found" : ""}`);
+        };
+        V.plot.onmouseleave = () => tip(null);
+    }
+    // every run to the same time (compared runs share the time axis); null: each follows its last frame
+    _scrubTo(t) { for (const r of this.runs) if (r.view && r.model) { r.scrub = t !== null && t < r.model.t1 ? t : null; this._redrawPlot(r); } }
+    _redrawPlot(r) {
+        const V = r.view, M = r.model;
+        if (!M) return;
+        const teams = endCardFields(M.start, M.end).teams;
+        this._plot(V.plot, r, M, teams, V.plot.width);
+        this._scrubUi(r);
+    }
+    _scrubUi(r) {
+        const V = r.view, M = r.model;
+        V.scrub.min = M.t0; V.scrub.max = Math.max(M.t0 + 0.25, M.t1);
+        V.scrub.value = r.scrub ?? M.t1;
+        V.scrub.disabled = M.frames.length < 2;
+        V.scrubT.textContent = r.scrub != null ? `${r.scrub.toFixed(1)} s (replay)` : `${M.t1.toFixed(1)} s`;
+        V.now.disabled = r.scrub == null;
+        if (r.scrub != null) this._cursor(V.mark, V.tl, r.scrub); else V.mark.style.display = "none";
+    }
+    _cursor(el, cv, t) {
+        const tx = cv._tx;
+        if (!tx) return;
+        const x = 30 + (tx.W - 40) * (t - tx.t0) / tx.span;
+        el.style.display = "block"; el.style.left = (x * cv.clientWidth / cv.width) + "px";
     }
     _slotColor(M, name) { const i = M.slotNames.indexOf(name); return SLOT_COLORS[(i < 0 ? 0 : i) % SLOT_COLORS.length]; }
 
     // the timeline: phase bands, scores (team lines or one per player), round results on top, markers, and under it the
-    // interpreted slots' cost per frame (trace), on the axes the compared runs share
+    // interpreted slots' cost per frame (trace), on the axes the compared runs share. Whatever is drawn per frame or per
+    // event is drawn at most once per pixel column, so a redraw costs the canvas's width, not the run's length.
     _timeline(cv, M, axes, teams, lineColor, width) {
         const strip = M.slotFrames.length || M.slots.length ? 34 : 0;
-        const W = cv.width = Math.max(300, width), H = cv.height = 190 + strip;
+        const W = Math.max(300, width), H = 190 + strip;
+        if (cv.width !== W) cv.width = W;
+        if (cv.height !== H) cv.height = H;
         const g = cv.getContext("2d");
         g.fillStyle = "#0b1020"; g.fillRect(0, 0, W, H);
         const top = 18, bottom = 190 - 40;   // (the score area; the time labels under it, then the slot strip)
         const span = Math.max(1, axes.t1 - axes.t0), X = (t) => 30 + (W - 40) * (t - axes.t0) / span, Y = (v) => bottom - (bottom - top - 6) * v / axes.maxScore;
+        cv._tx = { t0: axes.t0, span, W };   // (the hover cursor and the scrub mark use the same mapping)
         for (const b of M.bands) { g.fillStyle = PHASE_COLORS[b.phase] || "#222"; g.globalAlpha = 0.55; g.fillRect(X(b.t0), top, Math.max(1, X(b.t1) - X(b.t0)), bottom - top); g.globalAlpha = 1; }
         g.strokeStyle = "#334155"; g.beginPath(); g.moveTo(30, bottom); g.lineTo(W - 10, bottom); g.stroke();
         g.fillStyle = "#94a3b8"; g.font = "10px monospace"; g.fillText(String(axes.maxScore), 2, 26); g.fillText("0", 2, bottom);
-        for (let k = 0; k <= 4; k++) { const t = axes.t0 + span * k / 4; g.fillText(t.toFixed(0) + "s", X(t) - 8, bottom + 12); }
+        for (let k = 0; k <= 4; k++) {   // (the last label ends at the axis' end: it would run off the canvas)
+            const t = axes.t0 + span * k / 4, l = t.toFixed(0) + "s";
+            g.fillText(l, k === 4 ? W - 10 - g.measureText(l).width : X(t) - 8, bottom + 12);
+        }
         const line = (pts, color) => { if (pts.length < 1) return; g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); pts.forEach(([t, v], i) => (i ? g.lineTo(X(t), Y(v)) : g.moveTo(X(t), Y(v)))); g.stroke(); g.lineWidth = 1; };
-        const fa = M.frames.filter((f) => f.scoreA !== null), fb = M.frames.filter((f) => f.scoreB !== null);
-        if (teams && (fa.length || fb.length)) { line(fa.map((f) => [f.t, f.scoreA]), TEAM_COLOR.a); line(fb.map((f) => [f.t, f.scoreB]), TEAM_COLOR.b); }
-        else for (const P of M.players.values()) line(P.scores, lineColor.get(P.id));
+        const fa = seriesPoints(M.teamA), fb = seriesPoints(M.teamB);
+        if (teams && (fa.length || fb.length)) { line(fa, TEAM_COLOR.a); line(fb, TEAM_COLOR.b); }
+        else for (const P of M.players.values()) line(seriesPoints(P.score), lineColor.get(P.id));
         // round results: a coloured tick on the top strip for the round's winner
         for (const rd of M.rounds) { g.fillStyle = TEAM_COLOR[rd.winner] || "#9ca3af"; g.fillRect(X(rd.t) - 2, 2, 4, 12); }
-        for (const mk of M.markers) { if (mk.kind === "roundEnd") continue; g.fillStyle = MARK[mk.kind] || "#cbd5e1"; g.fillRect(X(mk.t) - 1, top, 2, 7); }
+        { let lastX = -1, lastKind = ""; for (const mk of M.markers) {
+            if (mk.kind === "roundEnd") continue;
+            const x = Math.round(X(mk.t));
+            if (x === lastX && mk.kind === lastKind) continue;
+            lastX = x; lastKind = mk.kind;
+            g.fillStyle = MARK[mk.kind] || "#cbd5e1"; g.fillRect(x - 1, top, 2, 7);
+        } }
         if (M.rounds.length) { g.fillStyle = "#94a3b8"; g.fillText("rounds", W - 50, 12); }
         if (!strip) return;
-        // the slot strip: each frame's interpreted calls stacked by slot (height: ns, against the costliest frame)
+        // the slot strip: each frame's interpreted calls stacked by slot (height: ns, against the costliest frame); per
+        // pixel column the costliest frame in it
         const y0 = H - 4, hMax = strip - 10;
         g.fillStyle = "#94a3b8"; g.fillText("slots", 2, H - 12);
-        const maxNs = Math.max(1, M.maxSlotNs, ...M.slots.map((x) => x.ns || 0));
+        let maxNs = Math.max(1, M.maxSlotNs);
+        for (const x of M.slots) if ((x.ns || 0) > maxNs) maxNs = x.ns;
+        const stack = (fr) => { let y = y0; const x = X(fr.t); for (const sl of fr.slots) { const h = Math.max(1, hMax * (sl.ns || 0) / maxNs); g.fillStyle = this._slotColor(M, sl.slot); g.fillRect(x - 1, y - h, 2, h); y -= h; } };
+        let col = -1, best = null;
         for (const fr of M.slotFrames) {
-            let y = y0;
-            for (const sl of fr.slots) { const h = Math.max(1, hMax * (sl.ns || 0) / maxNs); g.fillStyle = this._slotColor(M, sl.slot); g.fillRect(X(fr.t) - 1, y - h, 2, h); y -= h; }
+            const c = Math.round(X(fr.t));
+            if (c !== col) { if (best) stack(best); col = c; best = fr; }
+            else if (fr.ns > best.ns) best = fr;
         }
+        if (best) stack(best);
         for (const sl of M.slots) { const h = 2 + hMax * (sl.ns || 0) / maxNs; g.fillStyle = this._slotColor(M, sl.slot); g.fillRect(X(sl.t), y0 - h, 1, h); }
         g.fillStyle = "#64748b"; g.fillText(`max ${us(maxNs)} a frame`, W - 120, H - strip + 8);
     }
 
     // the top-down plot: the map (start.mapView: boxes shaded by height, objectives, spawns), the trails of where anyone
-    // went, and everyone where they are now. The map layer is drawn once per run and size.
+    // went, and everyone where they are now. The map layer is drawn once per run and size; the trail layer keeps what
+    // it has drawn and adds only the positions that came in since (both are redrawn when the size or scale changes).
     _plot(pc, r, M, teams, width) {
         const mv = M.start && M.start.mapView;
-        const pos = M.frames.flatMap((f) => f.players.map((p) => p.pos)).filter(Array.isArray);
         let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
         if (mv && mv.bounds) [x0, z0, x1, z1] = mv.bounds;
-        for (const p of pos) { const z = p.length > 2 ? p[2] : p[1]; x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+        if (M.bounds) { x0 = Math.min(x0, M.bounds[0]); z0 = Math.min(z0, M.bounds[1]); x1 = Math.max(x1, M.bounds[2]); z1 = Math.max(z1, M.bounds[3]); }
         const dx = Math.max(1, x1 - x0), dz = Math.max(1, z1 - z0);
-        const W = pc.width = Math.max(200, width), H = pc.height = Math.max(180, Math.min(640, Math.round((W - 20) * dz / dx) + 30));
+        const W = Math.max(200, width), H = Math.max(180, Math.min(640, Math.round((W - 20) * dz / dx) + 30));
+        if (pc.width !== W) pc.width = W;
+        if (pc.height !== H) pc.height = H;
         const pg = pc.getContext("2d");
         if (!isFinite(x0)) { pg.fillStyle = "#0b1020"; pg.fillRect(0, 0, W, H); pg.fillStyle = "#64748b"; pg.font = "11px sans-serif"; pg.fillText("no positions in the frames", 10, 20); return; }
         const sc = Math.min((W - 20) / dx, (H - 30) / dz);
         const P = (x, z) => [10 + (x - x0) * sc, 10 + (z - z0) * sc];
-        const key = `${W}x${H}:${x0},${z0},${sc}`;
+        const key = `${W}x${H}:${x0},${z0},${sc}:${!!mv}`;
         if (!r._layer || r._layer.key !== key) {   // (the map: hundreds of boxes, drawn once)
             const c = document.createElement("canvas"); c.width = W; c.height = H;
             const g = c.getContext("2d");
@@ -488,9 +749,17 @@ export class SimView {
             }
             r._layer = { key, canvas: c };
         }
+        if (!r._trail || r._trail.key !== key) { const c = document.createElement("canvas"); c.width = W; c.height = H; r._trail = { key, canvas: c, n: 0 }; }
+        if (r._trail.n < M.trail.length) {   // (where anyone went: only the positions since the last draw)
+            const g = r._trail.canvas.getContext("2d"), T = M.trail;
+            g.fillStyle = "rgba(148,163,184,.35)";
+            for (let i = r._trail.n; i + 1 < T.length; i += 2) g.fillRect(10 + (T[i] - x0) * sc, 10 + (T[i + 1] - z0) * sc, 1, 1);
+            r._trail.n = T.length;
+        }
         pg.drawImage(r._layer.canvas, 0, 0);
-        pg.fillStyle = "rgba(148,163,184,.35)"; for (const p of pos) { const [x, y] = P(p[0], p.length > 2 ? p[2] : p[1]); pg.fillRect(x, y, 1, 1); }   // (where anyone went)
-        const last = M.frames[M.frames.length - 1];
+        pg.drawImage(r._trail.canvas, 0, 0);
+        const last = r.scrub != null ? frameAt(M, r.scrub) : M.frames[M.frames.length - 1];   // (scrubbed: that time's frame)
+        r.view.dots = [];
         if (!last) return;
         const ob = last.obj && last.obj.bomb;
         if (ob && Array.isArray(ob.pos)) { const [x, y] = P(ob.pos[0], ob.pos[2]); pg.strokeStyle = MARK.plant; pg.lineWidth = 2; pg.strokeRect(x - 4, y - 4, 8, 8); pg.lineWidth = 1; }
@@ -499,34 +768,95 @@ export class SimView {
             const tm = teams ? teamOf(p.team) : null;
             pg.fillStyle = p.alive === false ? "#475569" : tm ? TEAM_COLOR[tm] : "#e5e7eb";
             pg.beginPath(); pg.arc(x, y, p.it ? 6 : 4, 0, 7); pg.fill();
+            r.view.dots.push({ x, y, p });
         }
         pg.fillStyle = "#94a3b8"; pg.font = "10px monospace";
         pg.fillText(`t=${last.t.toFixed(1)} ${last.phase}${last.round ? " r" + last.round : ""}${last.clock !== null ? " clock " + Math.round(last.clock) : ""}`, 4, H - 4);
     }
 
     async batch() {
-        this._readForm();
+        const bad = this._readForm();
+        if (bad) { this.app.app.toast("Not run: " + bad, 5000); return; }
         const rules = this._rules();
         if (rules === undefined) return;
         this.stop(true);
         this.runs = [];
         const req = (r) => ({ ...this._req(r), realtime: false, trace: false, seeds: this.form.n, firstSeed: this.form.seed });
-        this.batches = [{ label: "this file", kind: "batch", lines: [], request: req(rules) }];
-        if (this.form.compare) this.batches.push({ label: "built-in " + this.app.base, kind: "batch", lines: [], request: req(this._builtinRules()) });
+        this.batches = [this._entry({ label: "this file", kind: "batch", request: req(rules) })];
+        if (this.form.compare && this.app.differsFromBuiltin()) this.batches.push(this._entry({ label: "built-in " + this.app.base, kind: "batch", request: req(this._builtinRules()) }));
         this._setBusy(true);
         this._drawBatches();
-        // one after the other (each already uses every core but one)
+        this._persist();
+        await this._runBatches();
+    }
+    // the batches one after the other (each already uses every core but one): a running one (reattached after a
+    // reload) is waited for, a waiting one is started. Stop marks them all done, which ends this loop.
+    async _runBatches() {
         for (const b of this.batches) {
-            if (b.done) continue;
-            await new Promise((res) => { this._start(b, ["modebatch", "--stream"], b.request, () => { this._soonBatch(); if (b.done) res(); }); this._persist(); });
+            if (!b.done && !b.id) { await this._start(b, ["modebatch", "--stream"], b.request, () => this._soonBatch()); this._persist(); }
+            await b.finished;
         }
     }
-    _soonBatch() { if (this._rafB) return; this._rafB = requestAnimationFrame(() => { this._rafB = 0; this._drawBatches(); }); }
+    _soonBatch() { this._throttle("_drawB", () => this._drawBatches(), this.batches); }
     _drawBatches() {
         const O = this.root.querySelector("#smOut");
         if (!O) return;
-        O.innerHTML = `<div class="sim-runs${this.batches.length > 1 ? " two" : ""}">${this.batches.map((b, i) => this._batchHtml(b, i)).join("")}</div>`;
-        O.querySelectorAll("[data-csv]").forEach((btn) => (btn.onclick = () => { const B = batchModel(this.batches[+btn.dataset.csv].lines); this.app.app.download("modebatch.csv", B.end.csv, "text/csv"); }));
+        const models = this.batches.map((b) => batchModel(b.lines));
+        O.innerHTML = `<div class="sim-runs${this.batches.length > 1 ? " two" : ""}">${this.batches.map((b, i) => this._batchHtml(b, i)).join("")}</div>${this._batchCompareHtml(models)}`;
+        this._batchHistograms(O, models);
+        O.querySelectorAll("[data-csv]").forEach((btn) => (btn.onclick = () => { const i = +btn.dataset.csv, B = models[i]; this.app.app.download(csvName(this.app.name, B, i > 0), B.end.csv, "text/csv"); }));
+    }
+    // under the cards: the difference from the built-in (when both halves of a compare are done) and the distributions
+    // of match length and score spread, every batch on the same axes
+    _batchCompareHtml(models) {
+        let h = "";
+        const [a, b] = models;
+        if (models.length > 1 && a.end && b.end) {
+            const f = (x, fmt) => fmt === "pct" ? (100 * x).toFixed(0) + "%" : fmt === "s" ? x.toFixed(1) + " s" : fmt === "ns" ? us(x) : String(+x.toFixed(2));
+            const d = (r) => {
+                if (!r.d) return `<span class="muted">same</span>`;
+                const sg = r.d > 0 ? "+" : "−", v = Math.abs(r.d);
+                const txt = r.fmt === "pct" ? `${sg}${(100 * v).toFixed(0)} pp` : r.fmt === "s" ? `${sg}${v.toFixed(1)} s` : r.fmt === "ns" ? sg + us(v) : sg + (+v.toFixed(2));
+                const rel = r.fmt !== "pct" && r.b ? ` <span class="muted">(${sg}${Math.round(100 * v / Math.abs(r.b))}%)</span>` : "";
+                return `<b>${txt}</b>${rel}`;
+            };
+            h += `<div class="sim-run sim-delta"><h4>This file vs the built-in ${esc(this.app.base)} <span class="muted">(${esc(a.end.matchesPlayed)} and ${esc(b.end.matchesPlayed)} matches, the same seeds)</span></h4>
+                <table class="sim-tab"><tr><th></th><th>this file</th><th>built-in</th><th>difference</th></tr>${batchDelta(a.end, b.end).map((r) => `<tr><td>${esc(r.label)}</td><td>${esc(f(r.a, r.fmt))}</td><td>${esc(f(r.b, r.fmt))}</td><td>${d(r)}</td></tr>`).join("")}</table></div>`;
+        }
+        if (models.some((m) => m.matches.length)) h += `<div class="sim-run sim-dist"><h4>Distributions <span class="muted">(matches per bin${models.length > 1 ? ` · <span style="color:${BATCH_COLORS[0]}">■ this file</span> <span style="color:${BATCH_COLORS[1]}">■ built-in</span>` : ""})</span></h4><div class="sim-hists"><canvas data-h="len"></canvas><canvas data-h="spread"></canvas></div></div>`;
+        return h;
+    }
+    _batchHistograms(O, models) {
+        const teams = models.some((m) => m.start ? m.start.teams !== false : m.end && !!m.end.teams);
+        for (const cv of O.querySelectorAll(".sim-hists canvas")) {
+            const kind = cv.dataset.h;
+            const vals = models.map((m) => m.matches.map((x) => (kind === "len" ? x.t : matchSpread(x, teams))).filter((v) => typeof v === "number"));
+            const all = vals.flat();
+            if (!all.length) continue;
+            let lo = Math.min(...all), hi = Math.max(...all);
+            if (kind === "spread") { lo = 0; hi = Math.max(1, Math.ceil(hi)); }
+            const bins = kind === "spread" ? Math.min(20, hi + 1) : 20;
+            if (hi <= lo) hi = lo + 1;
+            if (kind === "spread") hi += 1;   // (integers: one bin each up to 20)
+            const counts = vals.map((v) => histogram(v, bins, lo, hi));
+            const W = cv.width = Math.max(280, cv.clientWidth || 400), H = cv.height = 150;
+            const g = cv.getContext("2d");
+            g.fillStyle = "#0b1020"; g.fillRect(0, 0, W, H);
+            const top = 18, bottom = H - 22, left = 28, bw = (W - left - 8) / bins, max = Math.max(1, ...counts.flat());
+            g.fillStyle = "#94a3b8"; g.font = "10px monospace";
+            g.fillText(kind === "len" ? "match length (s)" : teams ? "score spread |A - B|" : "score spread (winner - runner-up)", left, 12);
+            g.fillText(String(max), 2, top + 8); g.fillText("0", 2, bottom);
+            counts.forEach((c, k) => {
+                g.fillStyle = BATCH_COLORS[k]; g.globalAlpha = models.length > 1 ? 0.75 : 1;
+                const w = models.length > 1 ? bw / 2 - 1 : bw - 2;
+                c.forEach((n, i) => { if (n) { const h = (bottom - top) * n / max; g.fillRect(left + i * bw + 1 + k * (bw / 2), bottom - h, Math.max(1, w), h); } });
+            });
+            g.globalAlpha = 1; g.fillStyle = "#94a3b8";
+            const lab = (v) => (kind === "len" ? v.toFixed(0) : String(Math.round(v)));
+            g.fillText(lab(lo), left, H - 8);
+            const hiLab = lab(kind === "spread" ? hi - 1 : hi);
+            g.fillText(hiLab, W - 8 - g.measureText(hiLab).width, H - 8);
+        }
     }
     _batchHtml(b, i) {
         const B = batchModel(b.lines);
@@ -546,7 +876,7 @@ export class SimView {
         const L = e.length || {}, ln = e.perf.logicNs;
         const objTime = (e.players || []).some((p) => p.objTime > 0);
         h += `<div class="sim-card" style="margin-top:6px">${e.matchesPlayed} played · ${e.timeouts} timeouts (hit the max s) · ${e.errors} errors<br>length avg ${esc(L.avg)} s (min ${esc(L.min)}, median ${esc(L.p50)}, max ${esc(L.max)})${e.teams || e.rounds > 0 ? ` · rounds ${esc(e.rounds)}` : ""} · score spread ${esc(e.scoreSpread)}
-              ${ln ? `<div><b>logic per tick</b> avg ${esc(us(ln.avg))} · worst p99 ${esc(us(ln.p99))} · worst max ${esc(us(ln.max))} <span class="muted">(${esc(ln.matches)} matches)</span></div>` : ""}
+              ${ln ? `<div><b>logic per tick</b> avg ${esc(us(ln.avg))} · worst p99 ${esc(us(ln.p99))}${ln.p999 != null ? ` · worst p99.9 ${esc(us(ln.p999))}` : ""} · worst max ${esc(us(ln.max))} <span class="muted">(${esc(ln.matches)} matches)</span></div>` : ""}
               <div class="muted">${esc((e.perf.matchesPerSecond || 0).toFixed(2))} matches/s · ${esc(Math.round(e.perf.speedupPerMatch || 0))}x real time per match · ${esc(e.perf.threads)} threads · ${esc((e.perf.wallSeconds || 0).toFixed(1))} s</div></div>`;
         h += `<table class="sim-tab"><tr><th>bot</th>${e.teams ? "<th>team</th>" : ""}<th>wins</th><th>K/match</th><th>D/match</th><th>score</th>${objTime ? "<th>obj s</th>" : ""}</tr>${(e.players || []).map((p) => `<tr><td>${esc(p.name)}</td>${e.teams ? `<td style="color:${TEAM_COLOR[p.team] || "inherit"}">${esc(p.team.toUpperCase())}</td>` : ""}<td>${pct(p.winRate)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td><td>${esc(p.score)}</td>${objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>`;
         h += `<button data-csv="${i}" style="margin-top:6px">⇩ CSV (one row per match)</button></div>`;

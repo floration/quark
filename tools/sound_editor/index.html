@@ -32,6 +32,7 @@
         <button id="btnLoadProject">Open project file...</button>
         <input type="file" id="fileProject" accept=".json,application/json" hidden>
         <button id="btnResetProject">New project (discard all edits)</button>
+        <button id="btnRemoveOverrides" title="Take exported sounds back out of an overrides folder (the game plays the shipped ones again)">Remove sounds from the game...</button>
       </div>
     </div>
     <button id="btnExport" class="primary" title="Write the edited sounds for the game">Export to game</button>
@@ -58,7 +59,7 @@
       <label title="Who made what the game plays (provenance): the goal is every sound human-made">Origin <select id="sOrigin"><option value="">any</option><option value="ai">still AI-made</option><option value="third-party">third-party</option><option value="human">human-made</option><option value="unset">not set yet</option></select></label>
       <span id="sCounts" class="ocounts"></span>
       <span class="spacer"></span>
-      <span class="faint">click a cell to play + edit, drop a file on a cell to replace it</span>
+      <span class="faint hint">click a cell to play + edit, drop a file on a cell to replace it</span>
     </div>
     <div class="matrix-wrap"><table id="soundMatrix" class="matrix"></table></div>
   </section>
@@ -122,7 +123,7 @@
     <div class="toolbar">
       <span>Events with no sound yet (the sound audit, js/audit.js). Design one here: it exports as <code>sounds/&lt;kit&gt;/&lt;NAME&gt;.wav</code> (voices: <code>voices/&lt;voice&gt;/&lt;NAME&gt;.wav</code>). Each <b>needs a game hook</b> before it plays.</span>
       <span class="spacer"></span>
-      <input id="msName" placeholder="YOUR_NEW_SOUND" size="16"><select id="msKind"><option value="sound">sound</option><option value="voice">voice line</option></select>
+      <input id="msName" placeholder="YOUR_NEW_SOUND" size="16"><select id="msKind"><option value="sound">sound</option><option value="voice">voice line</option><option value="quip">quip (every voice)</option></select>
       <button id="msAdd">+ Add your own</button>
     </div>
     <div class="matrix-wrap"><table id="missingTable" class="matrix missing"></table></div>

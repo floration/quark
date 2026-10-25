@@ -4,7 +4,7 @@
   const {h, clear, $} = DM;
   const POLL_MS = 30000;
   const st = DM.state = DM.state || {};
-  let etag = null, lastText = null, timer = null, busy = false;
+  let etag = null, lastText = null, timer = null, busy = false, again = false;
 
   // ?data=<path> loads a fixture from the same origin instead of /api/data (for testing with python -m http.server).
   function source() {
@@ -20,8 +20,8 @@
   }
   st.source = source();
 
-  async function load() {
-    if (busy) return;
+  async function load(force) {
+    if (busy) { if (force) again = true; return; }
     busy = true;
     st.lastTry = new Date();
     try {
@@ -44,6 +44,7 @@
     } finally {
       busy = false;
       schedule();
+      if (again) { again = false; load(); }
     }
   }
   function ok() { st.offline = null; st.lastOk = new Date(); banners(); DM.app && DM.app.status(); }
@@ -178,7 +179,24 @@
     return ['They go up when ', h('code', null, 'sync.cmd'), ' runs', DM.edit && DM.edit.canEdit() ? ', or when you save the file from the Edit tab' : '', '.'];
   }
 
+  // Ask the server to fetch the docs now, wait for its rebuild (POST /api/refresh?wait=1), then load once.
+  let refreshing = null;
+  function refreshAndLoad() {
+    if (st.source !== '/api/data') return load();
+    if (refreshing) return refreshing;
+    refreshing = (async () => {
+      let done = false;
+      try {
+        const r = await fetch('/api/refresh?wait=1', {method: 'POST', cache: 'no-store'});
+        done = r.status === 200 && (await r.json()).done === true;
+      } catch (_) { /* offline: load() says so */ }
+      await load(true);
+      if (!done) for (const ms of [2000, 6000]) setTimeout(() => load(), ms);
+    })().finally(() => { refreshing = null; });
+    return refreshing;
+  }
+
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (!st.lastTry || Date.now() - st.lastTry > 5000)) load(); });
 
-  DM.data = {load, threadUrl, threadLink, banners, setData, haltingList};
+  DM.data = {load, refreshAndLoad, threadUrl, threadLink, banners, setData, haltingList};
 })(window.DM);

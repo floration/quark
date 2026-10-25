@@ -7,6 +7,7 @@ import { OUTPUTS } from "./source.js";
 import { resolve } from "./expr.js";
 import { getVal, hasExpr } from "./params.js";
 import { fmtV } from "./exprui.js";
+import { showSourceProblems } from "./movecode.js";
 
 const $ = (id) => document.getElementById(id);
 const css = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
@@ -57,6 +58,7 @@ export class CodeGraphView {
             const s = await this.app.moveCode.load();
             if (!s) { $("cgInfo").textContent = "the movement code isn't available (serve.py /api/source)"; return; }
             this.src = s;
+            showSourceProblems($("cgWarn"), s.problems);
         }
         this.build();
         if (!this.fitted) this.fit();
@@ -132,7 +134,7 @@ export class CodeGraphView {
         this.nodes = [...sets, ...steps, ...outs]; this.edges = edges; this.steps = steps;
         this.bounds = { x0: -20, y0: Math.min(-20, ...this.nodes.map((n) => n.y - 30)), x1: SW + GX + STW + GX + OW + 20, y1: Math.max(total, ...this.nodes.map((n) => n.y + n.h)) + 20 };
         const nch = sets.filter((s) => s.changed).length;
-        $("cgInfo").textContent = `${sets.length} settings → ${steps.length} steps of pmoveStep (src/game/pmove.cpp) → ${outs.length} kinds of state · ${nch ? nch + " changed setting" + (nch > 1 ? "s" : "") + " highlighted" : "nothing changed: change a value to see where it goes"} · drag: pan · wheel: zoom · click: the code`;
+        $("cgInfo").textContent = !steps.length ? "couldn't read pmoveStep's steps in src/game/pmove.cpp: the page's parser needs updating (above)" : `${sets.length} settings → ${steps.length} steps of pmoveStep (src/game/pmove.cpp) → ${outs.length} kinds of state · ${nch ? nch + " changed setting" + (nch > 1 ? "s" : "") + " highlighted" : "nothing changed: change a value to see where it goes"} · drag: pan · wheel: zoom · click: the code`;
         this.request();
     }
     fit() {

@@ -52,6 +52,7 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
 
   const nPages = await ev(() => QApp.S.doc.pages.length);
   assert.ok(nPages > 0, 'pages loaded');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).id), 'main', 'a first start opens on the main menu (the list\'s first page)');
   const listed = await page.locator('#pageList .pg').count();
   assert.strictEqual(listed, nPages, 'every page listed');
 
@@ -178,6 +179,19 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const kept = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
   assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded (got ' + (kept ? kept.label : 'no widget') + ')');
   assert.strictEqual((await provOf(target.page)).origin, 'human', 'mark autosaved');
+  // undo survives a reload too, even of a Reset (the steps are written next to the autosave, at the latest on unload)
+  assert.ok(await ev(() => QApp.S.undo.length) > 0, 'undo steps kept across the reload');
+  await page.locator('#bReset').click();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction((u) => !QApp.S.doc.pages.flatMap((p) => p.elements).some((e) => e.label === 'RENAMED BY TEST'), target.uid);
+  await page.reload();
+  await page.waitForFunction(() => window.QApp && QApp.S && QApp.S.doc);
+  await page.waitForTimeout(300);
+  const hist = await ev(() => (localStorage.getItem('quark-ui-customizer/undo/v1') || '').length);
+  assert.ok(hist > 0 && hist < 400000, `the undo history is small (${hist} chars: unchanged pages are dump references)`);
+  await page.keyboard.press('Control+z');
+  const back = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
+  assert.ok(back && back.label === 'RENAMED BY TEST', 'Undo after a reload brings back the layout from before the Reset');
 
   // ---- in-page dialogs (the Quark Project app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
   page.on('dialog', (d) => { errors.push('native dialog: ' + d.type() + ' ' + d.message()); d.dismiss(); });
@@ -235,6 +249,24 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const mainId = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid);
   await ev((u) => QApp.selectPage(u), mainId);
   const quit = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')));
+  // layout check (K): a button moved onto another and a label too long for its button are found, and marked
+  {
+    await page.keyboard.press('k');
+    assert.strictEqual(await ev(() => QApp.check().filter((f) => f.sev === 'bad').length), 0, 'the main menu has nothing bad');
+    await ev(() => QApp.commit(() => {
+      const els = QApp.S.doc.pages.find((p) => p.id === 'main').elements.filter((e) => e.kind === 'button');
+      els[1].x = els[0].x + 10; els[1].y = els[0].y + 5;
+      els[2].label = 'A LABEL MUCH TOO LONG FOR THIS BUTTON TO HOLD, EVEN SHRUNK '.repeat(3);
+    }));
+    const rules = await ev(() => QApp.check().map((f) => f.rule));
+    assert.ok(rules.includes('overlap') && rules.includes('text-cut'), 'the check finds the overlap and the cut text: ' + rules.join());
+    assert.ok((await page.locator('#inspector .chk.bad').count()) >= 2, 'the page inspector lists them');
+    await page.locator('#inspector .chk.bad').first().click();
+    assert.strictEqual(await ev(() => QApp.S.sel.size), 2, 'clicking a finding selects its widgets');
+    await ev(() => QApp.undo());
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('k');
+  }
   for (const [v, fw] of [['2560x1440', 1280], ['1920x1200', 1152], ['3440x1440', 1720]]) {
     await page.locator('#sView').selectOption(v);
     const pv = await ev(() => { const r = QApp.preview(); const q = r.page.elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')); return { fw: r.view.fw, x: q.x, k: r.view.k }; });
@@ -242,9 +274,34 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
     assert.strictEqual(pv.x, quit.x + (fw - 1280) / 2, v + ': a centred button keeps its offset from the centre');
   }
   assert.ok(Math.abs((await ev(() => QApp.preview().view.k)) - 1) < 1e-9, '1440p text is exact (scale 4)');
-  const ovBox = await page.locator('#ov').boundingBox();
-  await page.mouse.click(ovBox.x + ovBox.width / 2, ovBox.y + ovBox.height / 2);
-  assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'the preview is read only');
+  // a click in the preview selects (nothing moves), and the inspector sets the widget's anchor there
+  const [qx, qy] = await at(quit.x + (1720 - 1280) / 2 + quit.w / 2, quit.y + quit.h / 2);
+  const quitBefore = await ev(() => { const q = QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => /QUIT/.test(e.label || '')); return [q.x, q.y]; });
+  await page.mouse.move(qx, qy);
+  await page.mouse.down();
+  await page.mouse.move(qx + 80, qy + 40, { steps: 4 });
+  await page.mouse.up();
+  assert.strictEqual(await ev(() => QApp.S.sel.size), 1, 'a click in the preview selects');
+  assert.deepStrictEqual(await ev(() => { const q = QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => /QUIT/.test(e.label || '')); return [q.x, q.y]; }), quitBefore, 'a drag in the preview moves nothing');
+  await page.locator('#inspector select:not(fieldset select)').first().selectOption('right');
+  assert.strictEqual(await ev(() => QApp.preview().page.elements.find((e) => /QUIT/.test(e.label || '')).x), quit.x + (1720 - 1280), 'anchor right: the preview keeps its offset from the right edge');
+  assert.ok((await ev(() => QApp.spec('none'))).includes('anchor: right edge'), 'the spec states the anchor');
+  await ev(() => QApp.undo());
+  // ... every other edit path is refused: the palette, + Page, Ctrl+V, Delete and arrows on a chip, the page inspector
+  {
+    const before = await ev(() => [QApp.S.undo.length, JSON.stringify(QApp.S.doc.pages.map((p) => [p.id, p.elements.length]))]);
+    assert.ok(await page.locator('#palette button').first().isDisabled() && await page.locator('#bAddPage').isDisabled(), 'palette and + Page are off in a preview');
+    await ev(() => QApp.addWidget('button'));
+    await page.keyboard.press('Control+v');
+    const chip = page.locator('#offCanvas .chip').first();
+    if (await chip.count()) await chip.click();
+    await page.keyboard.press('Delete');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Escape');
+    assert.ok(await page.locator('#inspector fieldset.ro').evaluate((f) => f.disabled), 'the inspector is disabled in a preview');
+    const after = await ev(() => [QApp.S.undo.length, JSON.stringify(QApp.S.doc.pages.map((p) => [p.id, p.elements.length]))]);
+    assert.deepStrictEqual(after, before, 'nothing in the layout changed while previewing');
+  }
   if (shots) await page.screenshot({ path: path.join(shots, 'e2e-preview-3440.png') });
   await page.locator('#sView').selectOption('');
   assert.strictEqual(await ev(() => QApp.preview()), null, 'back to editing');
@@ -257,6 +314,39 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await page.keyboard.press('?');
   assert.ok(await page.locator('#help').isVisible(), 'help opens with ?');
   await page.keyboard.press('Escape');
+  // at 1280x720 the toolbar wraps: Help and Fonts... open below it (its buttons stay clickable), Help closes by its
+  // Close button, by ? again, and by a click elsewhere
+  await page.setViewportSize({ width: 1280, height: 720 });
+  for (const [btn, pop] of [['#bHelp', '#help'], ['#bFonts', '#fontPanel']]) {
+    await page.locator(btn).click();
+    const tb = await page.locator('#toolbar').boundingBox(), pb = await page.locator(pop).boundingBox();
+    assert.ok(pb.y >= tb.y + tb.height, `${pop} opens below the toolbar (${pb.y} >= ${tb.y + tb.height})`);
+    await page.locator(btn).click();
+    assert.ok(!(await page.locator(pop).isVisible()), `${btn} closes ${pop} again`);
+  }
+  await page.locator('#bHelp').click();
+  await page.locator('#helpClose').click();
+  assert.ok(!(await page.locator('#help').isVisible()), 'Help has a Close button');
+  await page.locator('#bHelp').click();
+  await page.mouse.click(640, 600);
+  assert.ok(!(await page.locator('#help').isVisible()), 'a click outside closes Help');
+  await page.keyboard.press('Escape');
+  if (shots) await page.screenshot({ path: path.join(shots, 'e2e-1280.png') });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  // + Page: a double click leaves the dialog open (the second click lands on its backdrop)
+  await page.locator('#bAddPage').dblclick();
+  assert.ok(await page.locator('#dlg').isVisible(), 'a double click on + Page keeps the dialog');
+  await page.keyboard.press('Escape');
+  // a page id differing only in case or spaces is refused
+  await ev((u) => QApp.selectPage(u), await ev(() => QApp.S.doc.pages.find((p) => p.id === 'join').uid));
+  const idIn = page.locator('#inspector input[type=text]').first();
+  for (const v of ['Main', 'main ', ' join']) {
+    await idIn.fill(v);
+    assert.ok(await idIn.evaluate((i) => i.classList.contains('bad')), `page id "${v}" is refused`);
+  }
+  await idIn.fill('join');
+  await idIn.press('Tab');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.filter((p) => p.id === 'join').length), 1, 'the id is back to join');
   if (shots) {
     await ev((u) => QApp.selectPage(u), target.page);
     await page.waitForTimeout(100);
@@ -391,6 +481,41 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   assert.notStrictEqual(await ev(() => QApp.S.pageUid), tp, 'tour moved on');
   await page.keyboard.press('t');
   assert.strictEqual(await ev(() => QApp.S.tour), 0, 'tour stopped');
+
+  // ---- search: Enter opens the next page with a matching widget and selects it ----
+  await page.locator('#qSearch').fill('LEADERBOARD');
+  await page.locator('#qSearch').press('Enter');
+  assert.ok(await ev(() => QApp.S.sel.size >= 1 && QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).elements.filter((e) => QApp.S.sel.has(e.uid)).every((e) => /LEADERBOARD/i.test((e.label || '') + (e.action || '') + (e.id || '')))),
+    'Enter in the search selects the matching widgets');
+  await page.locator('#qSearch').fill('');
+  await page.keyboard.press('Escape');
+
+  // ---- a sideways drag with a pixel of vertical jitter keeps y exactly (the spec reports no y move) ----
+  {
+    await ev((u) => QApp.selectPage(u), await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid));
+    const q = await ev(() => { const e = QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((x) => /QUIT/.test(x.label || '')); return { uid: e.uid, x: e.x, y: e.y, w: e.w, h: e.h }; });
+    const [qx, qy] = await at(q.x + q.w / 2, q.y + q.h / 2);
+    await page.mouse.move(qx, qy);
+    await page.mouse.down();
+    await page.mouse.move(qx + 20, qy + 1, { steps: 3 });
+    await page.mouse.move(qx + 40, qy + 2, { steps: 3 });
+    await page.mouse.up();
+    const q2 = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), q.uid);
+    assert.ok(q2.x > q.x + 10 && q2.y === q.y, `sideways drag: x ${q.x} -> ${q2.x}, y stays ${q.y} (got ${q2.y})`);
+    await ev(() => QApp.undo());
+  }
+
+  // ---- a layout with no pages is refused, not imported (it would wipe every page and be autosaved) ----
+  {
+    const efile = path.join(os.tmpdir(), 'quark-e2e-empty-layout.json');
+    fs.writeFileSync(efile, JSON.stringify({ doc: { pages: [] } }));
+    const n0 = await ev(() => [QApp.S.doc.pages.length, QApp.S.undo.length]);
+    await page.locator('#fImport').setInputFiles(efile);
+    await page.waitForSelector('#dlg:not([hidden])');
+    assert.ok((await page.locator('#dlgText').textContent()).includes('no pages'), 'the empty layout is refused with a reason');
+    await page.keyboard.press('Enter');
+    assert.deepStrictEqual(await ev(() => [QApp.S.doc.pages.length, QApp.S.undo.length]), n0, 'an empty layout changes nothing');
+  }
 
   // ---- title logo (test/apply-logo.js): import a layout carrying style "logo" and the Rubik font ----
   const QModel = require(path.join(__dirname, '..', 'src', 'model.js'));

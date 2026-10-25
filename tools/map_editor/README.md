@@ -42,9 +42,10 @@ foundry, gantry, summit) stay `-0` through the page, serve.py and the helper (`a
 **Save checks**: before writing, the page checks the map (`js/validate.js`: the game's limits from `src/game/map.h`,
 every coordinate within 4096 m, min <= max, at least one box and one spawn) and asks the helper to serialize it; a map
 the game would refuse (`valid: false`, a parse error, or a failed check) is not saved, and the dialog names the
-objects (click one to select and frame it). Warnings (a spawn inside a solid box, a mode's objectives missing) are
+objects (click one to select and frame it). Warnings (a spawn inside a solid box, a box of no size, a mode's objectives missing) are
 shown and the save goes ahead. `serve.py` also refuses (422) a map text `quark_maptool parse` can't load. Number
-fields clamp to the map's range and keep min <= max.
+fields clamp to the map's range and keep a box at least one grid step thick (or its own size, when thinner), as a
+resize drag does: a min typed past its max stops short of it.
 
 **Your maps**: the map list shows each map's file name; your own maps have **rename** and **x** (delete). A deleted
 map, with its sidecar, is moved to `<maps folder>/deleted/<name>-<time>.*`, not erased.
@@ -62,7 +63,11 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
   selection (F). A 1 m grid on the floor and a scale bar.
 - **Edit**: click selects (Shift adds, Ctrl+click a group's part), drag the arrows to move, the face handles to
   resize, all snapped to the grid (`[` `]`: 1/8 m .. 4 m like the in-game editor). Ins / B add a box, Ctrl+D
-  duplicates, Del deletes, M cycles the material, Ctrl+Z / Ctrl+Y undo / redo. The properties panel edits numbers.
+  duplicates, Del deletes, M cycles the material, Ctrl+Z / Ctrl+Y undo / redo. R turns the selection a quarter, X / Z flip
+  it (mirror left / right across x, front / back across z, about its centre: stairs turn round, spawns' yaw mirrors,
+  a custom object's unit is mirrored), and P (**Mirror copy**) adds its point-symmetric twin through the map's centre
+  (0, 0) with team A and B swapped and yaws turned 180 degrees: build one half of a ranked map, select it, P, and
+  the `ranked_mirror` check passes. Objects already centred and the hill are left out (`js/xform.js`). The properties panel edits numbers.
   Each undo step holds only the objects it changed (a few KB on Midtown, not a copy of the map); an edit that changes
   nothing (a click on a handle, a value typed again) makes no step.
 - **Objects**: spawns (team colour, yaw arrow), bomb sites, hill, capture points, race checkpoints, payload path and
@@ -70,26 +75,46 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
 - **Player**: drops life-size figures (the game's player models, or the 0.8 x 0.8 x 1.8 m hull with its eye height and
   crouched hull); a toggle shows one at every spawn; the hitbox / head box wireframe toggle.
 - **Testing**: Checks (click a result to fly to its `where` points), Metrics (time to every objective per team, the
-  routes drawn in 3D coloured by time), Route (click two points), Custom tests (a form, kept in the sidecar), Bots
+  routes drawn in 3D coloured by time), Route (click two points), Custom tests (a form, kept in the sidecar; a test whose from / to place isn't set is marked and not run), Bots
   (place bot starts, choose mode / count / seconds, run: watch it live as the helper streams it, then scrub the
   timeline with speed, trails, per-bot toggles and event markers). The tabs are Properties, Map, Tests, Bots, Player
   and Decor.
 - **Library** (left, under the outliner):
-  - **copy / paste** (Ctrl+C / Ctrl+V): copies the selection (boxes, groups, ladders, lights, spawns, bot starts,
-    custom objects) to a clipboard that survives opening another map (kept by the server in `clipboard.json`, and put
+  - **copy / paste** (Ctrl+C / Ctrl+V): copies the selection (every kind: boxes, groups, ladders, lights, spawns,
+    objective zones, the hill, path points, stairs records, custom objects, bot starts, player figures; a pasted hill
+    replaces the map's) to a clipboard that survives opening another map (kept by the server in `clipboard.json`, and put
     on the system clipboard as JSON `{"format":"quark-map-group",...}`, so it pastes into another editor window too).
-    Paste puts it at the cursor (or the view's centre), snapped to the grid, as one undo step, and selects it.
+    Paste (Ctrl+V, or **paste**) shows it as a preview under the cursor; a click puts it there, snapped to the grid,
+    as one undo step, and selects it (Shift + click pastes again; Esc cancels). **Ctrl+Shift+V** pastes in place, at
+    the coordinates it was copied from (moving a building between two versions of a map). Library items preview
+    the same way before each click.
   - **+ group**: saves the selection in the library under a name; click a saved group to paste it.
-  - **+ object**: makes a **custom object** from the selected boxes: a unit that repeats along the axes you tick, with
+  - **+ object**: makes a **custom object** from the selected boxes and groups (they are replaced by it, when ticked): a unit that repeats along the axes you tick, with
     a spacing per axis (unit start to next unit start). Click it in the library, then click in the view to place it
     (Esc stops). Resizing it changes the number of units, never their size: drag a face handle (only the repeating
     axes have handles) or Shift / Ctrl + arrow keys; R turns it a quarter. Its properties panel sets units, spacing and
-    position, saves it back to the library, or makes it plain boxes. Objects live in the sidecar (`objects`), so they
+    position, saves it back to the library, or makes it plain boxes. An object that repeats along one axis can have a
+    **start piece** and an **end piece**, each placed once, before the first unit and after the last (the shipped
+    railing and fence end with a closing post). **edit unit / start piece / end piece** puts that part out as plain
+    boxes (selected; for a piece the object stays, without it, so you see where it joins): move, resize, add or
+    delete boxes, then **Done** takes the selected boxes back in as that part (none selected removes a piece), or
+    **Cancel**. Each is one undo step.
+  - **Linked objects**: an object placed from the library (or made / saved there) remembers that item (`lib` in the
+    sidecar). When the library's item changes, its Properties say "differs from the library" and the library row
+    shows **update N**: every placed copy in the open map takes the library's definition, keeping its place, turn
+    and number of units (one undo step). **save to library** on a linked object saves it under its item's name and
+    offers to update the other copies in the map too. Copies in other maps update when you open them and click it. Objects live in the sidecar (`objects`), so they
     stay editable; a save writes their boxes into the .qmap as plain boxes the game loads, and opening the map takes
     them out again (an object whose boxes were changed outside the editor turns into plain boxes). At most 20 000
     boxes per object.
   - The library is `library/<name>.json` next to `serve.py` (yours) plus `library_presets/` (shipped examples:
-    railing, fence, pillar row, floor tiles, crate stack; AI-made editor examples, read-only).
+    railing, fence, pillar row, floor tiles, crate stack; AI-made editor examples, read-only). Each row shows a
+    thumbnail (its boxes drawn isometric), its size and box count; the search box filters by name, note and
+    category. On hover: **edit** (rename, category, note; your items; objects in the open map linked to it follow
+    the new name), **export** (a .json file) and **x** (delete). **export** in the bar saves all your items as one
+    `quark-library.json` ({"format":"quark-map-library","items":[...]}), **import** adds items from such a file, a
+    single item's file or a copied clipboard group (asking before replacing a name). Saving under a shipped item's
+    name asks first: yours hides it until you delete yours.
 
 ## Decoration hook
 
@@ -134,5 +159,5 @@ material, markers, cameras), `pick.js` (a uniform grid for picking), `edit.js` (
 `panels.js` (map list, properties, outliner), `player.js` (figures, glTF reader), `testing.js` (checks, metrics,
 routes, custom tests), `bots.js` (bot runs, live stream and playback), `markers.js` (spawns, lights, objectives as
 instanced meshes and merged lines, restyled in place on selection), `validate.js` (save checks), `groups.js`
-(clipboard, library), `repeat.js` (custom objects), `lines.js` (line helpers). Tests: `node test/doc_test.mjs` (undo,
-save checks, clipboard, custom objects), `node test/deco_test.js` (decoration).
+(clipboard, library), `repeat.js` (custom objects), `xform.js` (flips, mirror copy), `lines.js` (line helpers). Tests: `node test/doc_test.mjs` (undo,
+save checks, clipboard, custom objects, flips), `node test/deco_test.js` (decoration).

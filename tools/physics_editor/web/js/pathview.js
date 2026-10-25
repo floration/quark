@@ -93,7 +93,13 @@ export class PathView {
         this.side.fit(ss0, y0 - 1, ss1, Math.max(y1 + 1, y0 + 6));
         if (this.orbit) { this.orbit.x = (x0 + x1) / 2; this.orbit.z = (z0 + z1) / 2; this.orbit.y = y0; this.orbit.dist = Math.max(20, Math.hypot(x1 - x0, z1 - z0) * 1.1); this.dirty3 = true; }
     }
-    redraw() { if (this.app.page !== "path") return; this.top.request(); this.side.request(); const r = this.runs()[0]; $("pathInfo").textContent = r ? `${this.runs().length} runs · ${this.app.mapChoice.name}` : ""; }
+    redraw() {
+        if (this.app.page !== "path") return;
+        this.top.request(); this.side.request();
+        const r = this.runs()[0], stale = this.app.staleNote();
+        $("pathInfo").innerHTML = (stale ? `<span class="warn">⚠ ${stale}</span>${r ? " · " : ""}` : "") + (r ? `${this.runs().length} runs · ${this.app.mapChoice.name}` : "");
+        $("pathViews").classList.toggle("stale", !!stale);
+    }
 
     _bg(g, W, H) { const css = getComputedStyle(document.body); g.fillStyle = css.getPropertyValue("--bg"); g.fillRect(0, 0, W, H); return css; }
     _grid(g, W, H, v, css) {

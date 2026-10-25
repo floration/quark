@@ -98,7 +98,7 @@ export function suiteLanes(ix, selName, y0 = 0) {
     nodes.push(parBox);
     par.forEach((g, i) => {
         const sec = (g.timing && g.timing.sec) || 0;
-        bars.push({ x: px + 10, y: y0 + HEAD + 4 + i * rowH, w: Math.max(4, sec * scale), label: g.name, sec, sel: g.name === selName, warn: shared.has(g.name) || (ix.itemLint.get(itemKey(g)) || []).length > 0, nav: { kind: "item", item: g }, title: (g.timing ? secs(sec) + " (" + g.timing.source + ")" : "no timing yet") + (shared.has(g.name) ? "\nshares a TP() port with " + shared.get(g.name).map((s) => s.with.join(", ") + " (" + s.port + ")").join("; ") : "") });
+        bars.push({ x: px + 10, y: y0 + HEAD + 4 + i * rowH, w: Math.max(4, sec * scale), label: g.name, sec: g.timing ? sec : null, sel: g.name === selName, warn: shared.has(g.name) || (ix.itemLint.get(itemKey(g)) || []).length > 0, nav: { kind: "item", item: g }, title: (g.timing ? secs(sec) + " (" + g.timing.source + ")" : "no timing yet") + (shared.has(g.name) ? "\nshares a TP() port with " + shared.get(g.name).map((s) => s.with.join(", ") + " (" + s.port + ")").join("; ") : "") });
     });
     edges.push({ from: "run", to: "par" });
     // the alone lane: a chain, one under the other (one at a time, top to bottom)
@@ -111,9 +111,16 @@ export function suiteLanes(ix, selName, y0 = 0) {
         edges.push({ from: prev, to: n.id, label: prev === "par" ? "when every par group is done" : null });
         prev = n.id; ay += n.h + 30;
     });
-    const parWall = Math.max(0, ...par.map((g) => (g.timing && g.timing.sec) || 0));
-    const aloneSum = alone.reduce((s, g) => s + ((g.timing && g.timing.sec) || 0), 0);
-    return { nodes, edges, bars, layout: "fixed", note: `about ${secs(parWall)} for par (its longest group, with enough cores) + ${secs(aloneSum)} for alone`, bottom: Math.max(y0 + parBox.h, ay) };
+    // (a group with no time makes its lane's time unknown, or "at least" what the timed ones add up to; never "0 s")
+    const timed = (g) => !!(g.timing && g.timing.sec != null);
+    const lane = (gs, v, what) => {
+        const n = gs.filter((g) => !timed(g)).length;
+        if (!n) return `about ${secs(v)} for ${what}`;
+        return (v >= 1 ? `at least ${secs(v)}` : "unknown") + ` for ${what} (${n} not timed)`;
+    };
+    const parWall = Math.max(0, ...par.filter(timed).map((g) => g.timing.sec));
+    const aloneSum = alone.filter(timed).reduce((s, g) => s + g.timing.sec, 0);
+    return { nodes, edges, bars, layout: "fixed", note: lane(par, parWall, "par (its longest group, with enough cores)") + " + " + lane(alone, aloneSum, "alone"), bottom: Math.max(y0 + parBox.h, ay) };
 }
 
 // a group / command -> its calls -> (expanded) what each calls
@@ -296,7 +303,7 @@ export class GraphView {
         const t = S("text", { x: 6, y: 13, class: "gr-barlabel" }, g);
         t.textContent = (b.warn ? "⚠ " : "") + b.label;
         const s = S("text", { x: 354, y: 13, class: "gr-barsec", "text-anchor": "end" }, g);
-        s.textContent = b.sec ? secs(b.sec) : "–";
+        s.textContent = b.sec != null ? secs(b.sec) : "–";
         const tip = S("title", {}, g); tip.textContent = b.label + ": " + b.title;
     }
     _edge(a, b, e, parent, labels, layout) {

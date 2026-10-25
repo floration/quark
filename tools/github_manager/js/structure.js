@@ -115,6 +115,17 @@ function branchRow(b, s) {
   </li>`;
 }
 
+// the stale branches a "delete all" would queue: not protected, no delete queued for them yet
+const staleToDelete = (list, s) => list.filter((b) => !isProtected(b, s) && !queuedFor((c) => c.type === 'branch.delete' && c.params.name === b.name).length);
+function staleAll(list, s) {
+  const todo = staleToDelete(list, s);
+  if (todo.length < 2 || !gui.confirm.has('st-stale-all')) return '';
+  return html`<div class="msg warn small st-stale-confirm" role="alert"><p><b>Queue deleting these ${todo.length} stale branches?</b> Each is previewed from GitHub (commits not in testing, open PRs) in Pending changes; nothing is deleted until you apply them there.</p>
+    <p class="st-stale-names">${todo.map((b, i) => html`${i ? ', ' : ''}<code>${b.name}</code>`)}</p>
+    <p><button type="button" class="danger" data-gact="st-stale-all-yes"${gui.busy.has('st-stale-all') ? ' disabled' : ''}>${gui.busy.has('st-stale-all') ? 'Reading GitHub…' : `Queue ${todo.length} deletes`}</button><button type="button" data-gact="st-stale-all-no">Keep them</button></p>
+    ${gui.errors.has('st-stale-all') ? html`<p class="err">${gui.errors.get('st-stale-all')}</p>` : ''}</div>`;
+}
+
 function createForm(s) {
   const fk = 'st-create:new';
   const d = draft(fk, { name: 'claude/', from: 'testing', sha: '' });
@@ -162,8 +173,9 @@ export const structureSection = {
       const list = groups.get(key);
       if (!list.length && (key === 'stale' || key === 'other')) return '';
       return html`<section class="card st-group g-${key}">
-        <h2><span class="lane-tag ${KIND_CLASS[key]}">${key}</span> ${label} <span class="count">${list.length}</span></h2>
+        <h2><span class="lane-tag ${KIND_CLASS[key]}">${key}</span> ${label} <span class="count">${list.length}</span>${key === 'stale' && staleToDelete(list, s).length > 1 && !gui.confirm.has('st-stale-all') ? html`<span class="grow"></span><button type="button" class="danger" data-gact="st-stale-all">Queue delete for all ${staleToDelete(list, s).length}…</button>` : ''}</h2>
         <p class="hint small">${groupHint(key, s)}</p>
+        ${key === 'stale' ? staleAll(list, s) : ''}
         ${list.length ? html`<ul class="st-list">${list.map((b) => branchRow(b, s))}</ul>` : html`<p class="empty small">None.</p>`}
       </section>`;
     })}`);
@@ -172,6 +184,23 @@ export const structureSection = {
 
 onAction('st-open', (b) => { gui.open.add(b.dataset.fk); redraw(); requestAnimationFrame(() => { const f = document.querySelector(`[data-gform="${CSS.escape(b.dataset.fk)}"] [data-gf]`); if (f) f.focus(); }); });
 onAction('st-cancel', (b) => { closeForm(b.dataset.fk); redraw(); });
+onAction('st-stale-all', () => { gui.confirm.add('st-stale-all'); redraw(); });
+onAction('st-stale-all-no', () => { gui.confirm.delete('st-stale-all'); gui.errors.delete('st-stale-all'); redraw(); });
+// one delete after another (each reads GitHub for its preview); a refused one is reported and the rest still go
+onAction('st-stale-all-yes', async () => {
+  const s = ged.structure;
+  const todo = staleToDelete((store.state.branches || []).filter((b) => b.stale), { ...s, defaultBranch: s.defaultBranch || store.state.defaultBranch });
+  const refused = [];
+  let queued = 0;
+  await act('st-stale-all', async () => {
+    for (const b of todo) {
+      try { await queueChange('branch.delete', { name: b.name }); queued++; } catch (e) { refused.push(`${b.name}: ${e.message || e}`); }
+    }
+    if (refused.length) throw new Error(`Queued ${queued}; not queued: ${refused.join('; ')}`);
+  }, () => `Queued ${plural(queued, 'delete')}: review and apply them in Pending changes`);
+  if (!refused.length) gui.confirm.delete('st-stale-all');
+  redraw();
+});
 onInput('st-create', (fk, d, n) => { if (n.dataset.gf === 'from') redraw(); else if (n.dataset.gf === 'name') refreshNameHint(n, null); });
 onInput('st-rename', (fk, d, n) => { if (n.dataset.gf === 'newName') refreshNameHint(n, fk.slice('st-rename:'.length)); });
 

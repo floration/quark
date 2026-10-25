@@ -44,7 +44,8 @@ Same rules as SPEC.md, plus two optional fields:
 
 - `parent`: the id of the tab this one sits under. The default tree is Supervisor Board → Play, Claude Manager,
   GitHub Manager (→ Tests), Editor Manager → the editors. Tabs are ordered depth first (siblings keep their file order); Ctrl+1..8 and
-  Ctrl+Tab follow that order, Ctrl+9 is the last tab. The top level and its children are always shown; deeper tabs (the editors) are shown as
+  Ctrl+Tab follow that order (Ctrl+1..8 counting only the tabs the bar shows, so each hint held under Ctrl matches its
+  key), Ctrl+9 is the last shown tab. The top level and its children are always shown; deeper tabs (the editors) are shown as
   a labelled group after their parent while the parent or one of them is active, otherwise the parent shows a caret
   with the number of hidden tabs. An unknown parent or a cycle makes the tab top level.
 - `childLabel`: the small label in front of a parent's group of child tabs (default: the parent's name).
@@ -135,6 +136,10 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    is left alone and the tab's log says so; a keepAlive server that is down is started; any other down server starts
    with the new code when its tab is opened. A loaded page is then reloaded (a page with unsaved changes asks). Each
    request is acknowledged (`POST /api/updates/ack?id=`) so it never repeats; unacknowledged ones expire after 10 min.
+   An entry without `restartsPort` (a page tool: Sound, UI, Model editors) queues a reload request instead
+   (`{id, port: null, reload: true, folder, name}`, the folder being the first part of `check`): the shell reloads each
+   open file tab in that folder; one with unsaved changes keeps its old page and shows a blue ↻ on its tab ("Updated:
+   save, then reload") until its next load.
 4. The `project-manager` entry (`"run": "builtin:self-update"`) copies `server.py`, `project-manager.cmd`,
    `project-manager-hidden.vbs`, `installs.json`, `pm\`, `web\` and `shell\` from `repository\tools\project_manager`
    into `Quark\project-manager\` (file by file, only what changed, files deleted from the repo go; `tabs.json`,
@@ -174,8 +179,8 @@ The Supervisor Board's "Tools & updates" card shows the repository state, each e
 | `name` | shown on the card |
 | `sources` | repo paths (folders or files); the first one is the tool's own folder (none for `builtin:electron-update`) |
 | `run` | the install command, run in `repository\`; `%QUARK%`, `%PM%`, `%REPO%` are expanded; `py -3` becomes `python` when the py launcher is missing; `builtin:self-update` is the app itself, `builtin:electron-update` its Electron. Pass the Quark folder to installers that take an output folder (`install.cmd "%QUARK%\model-editor"`): their own default is `%USERPROFILE%\Desktop\Quark`, which is not always it |
-| `check` | optional: a file relative to `Quark\` that must exist (installs again when it is missing) |
-| `restartsPort` | optional: a port or a list of ports whose server is restarted after an install |
+| `check` | optional: a file relative to `Quark\` that must exist (installs again when it is missing); its first folder names the tool's folder for restart / reload requests. Not used by `builtin:electron-update`, which reads `electron\VERSION` itself |
+| `restartsPort` | optional: a port or a list of ports whose server is restarted after an install (without it, the open tabs of the folder in `check` reload) |
 | `timeoutSec` | optional, default 600 |
 | `lowPriority` | optional: run at below-normal CPU priority (builds), inherited by everything it starts |
 | `enabled` | optional: `false` skips the entry |
@@ -196,16 +201,30 @@ pass, at most every 12 hours (a failed check is tried again on the next pass), t
 is newer than `electron\VERSION`, it downloads `electron-v<ver>-win32-x64.zip` and that release's `SHASUMS256.txt`,
 checks the zip's sha256 (streamed, capped at 400 MB), unpacks it into `electron.next.tmp\`, writes its `VERSION` and
 renames it to `electron.next\`. `electron\` itself is never touched while the app runs (Windows cannot replace a
-running exe). With no `electron\` (setup `-NoElectron`) nothing is downloaded. The card shows the note ("Electron
-45.1.0 is downloaded; it replaces 44.9.2 when Quark Project next closes or restarts").
+running exe). With no `electron\` (setup `-NoElectron`) nothing is downloaded. The Tools & updates row shows the
+installed version (-> the latest stable one when newer), a "downloaded: restart to finish" pill while `electron.next\`
+waits, and the note ("Electron 45.1.0 is downloaded; it replaces 44.9.2 when Quark Project next closes or restarts").
+Between two checks the row is rebuilt from `electron\VERSION` and `electron.next\` (local files only), so it follows
+the swap at once instead of repeating the last check's note for up to 12 hours.
 
 When the window closes, or the app relaunches, and `electron.next\` is complete, the shell starts
 `electron-swap.ps1` hidden (through cmd.exe, so libuv's job does not take it down with the shell; paths and arguments
 go in `QUARK_SWAP_*` environment variables). It waits for the shell's process to end, renames `electron\` to
 `electron.old\` and `electron.next\` to `electron\` (each rename retried for 30 s while Electron's helper processes let
-go; the first is put back if the second fails), deletes `electron.old\` and, on a relaunch, starts the app with the
-same arguments. If the swap never works the old Electron stays and the next close tries again. Log:
-`logs\electron-swap.log`. `shell-status.json` shows `electron` (running) and `electronStaged`.
+go; the first is put back if the second fails) and, on a relaunch, starts the app with the same arguments. If the swap
+never works the old Electron stays and the next close tries again.
+
+Rollback (a new Electron major can change an API `main.js` uses): `electron.old\` stays while the new Electron is on
+probation. `main.js` checks that first thing, before any Electron call: once its window is up it writes
+`electron.old\window-opened` and deletes `electron.old\` a minute later. If the window has not opened within 60 s (the
+error went to `shell-errors.log` and the process lives on with no window), it starts `electron-swap.ps1` in rollback
+mode and exits: the script puts `electron.old\` back as `electron\`, deletes the new one, writes its version to
+`electron.rejected` and opens the app again. On a relaunch the script also watches the new Electron for 40 s and does
+the same when it exits before its window opened (a crash before `main.js` runs). The updater never downloads a version
+in `electron.rejected` again (the row says so); a newer release is tried. A native crash on a start q makes by hand
+(after a close, not a relaunch) is not caught: then rename `electron\` away and `electron.old\` back by hand. Log:
+`logs\electron-swap.log` (and `logs\updates.log`). `shell-status.json` shows `electron` (running), `electronStaged` and
+`electronProbation`.
 
 ## Behaviour
 
@@ -228,13 +247,20 @@ same arguments. If the swap never works the old Electron stays and the next clos
   save it once more); a page that does not answer within 1.5 s counts as clean, so a hung page never blocks closing.
 - Right-click in a page: Undo, Redo, Cut, Copy, Paste, Paste as plain text, Select all (enabled by what the page
   allows there), Open / Copy link for links, Find (the selection), Reload, Inspect element. Right-click on a tab: Open,
-  Reload, Move left / right, Open its log, Developer tools.
-- Tab order: drag a tab among its siblings (an accent line shows where it lands), Ctrl+Shift+PageUp / PageDown, or
-  Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none),
-  keeping every other field; a parent's children move with it.
+  Reload, Restart its server (server tabs: stops it, the same folder check as an update restart for one the shell did
+  not start, and starts it again), Move left / right, Hide this tab (`"hidden": true` in tabs.json; its child tabs and
+  servers go too), Open its folder, Open its log, Developer tools. The Q logo (click or right-click): Reset tab order
+  (the default tabs back in tabs.default.json's order; q's own tabs stay after the tab they followed), Show hidden tab,
+  Re-read tabs.json.
+- Tab order: drag a tab among its siblings (an accent line shows where it lands; the press opens the tab at once, as in
+  a browser, and Esc, in the bar or the page, cancels the drag and gives the previous tab back), Ctrl+Shift+PageUp / PageDown, or
+  Move left / right in its menu. The order is written into `tabs.json` (made from `tabs.default.json` when q has none,
+  with its `defaults*` keys, so a later `server.py --init` never takes the dragged order for an older default order and
+  "upgrades" it back), keeping every other field; a parent's children move with it.
 - Narrow windows: first the Editor Manager's facts shrink (below), then the tabs shorten (inactive tabs drop
-  "Editor" / "Manager", then end in an ellipsis; the active tab keeps its whole name; the full name is the tooltip),
-  then the tabs that still do not fit go behind a "+N" button (a list of them; the strip also fades out and scrolls
+  "Editor" / "Manager", "Editor Manager" becomes "Editor Mgr", then they end in an ellipsis; the active tab keeps its
+  whole name; the full name is the tooltip) and the facts come back at the fullest level that fits beside the short
+  names, then the tabs that still do not fit go behind a "+N" button (a list of them; the strip also fades out and scrolls
   with the mouse wheel).
 - Zoom: Ctrl+= / Ctrl+- / Ctrl+mouse wheel (at most one 10 % step per 40 ms) for every tab, Ctrl+0 back to 100 %.
   While the zoom is not 100 % a pill in the bar shows it; a click resets it.
@@ -243,7 +269,7 @@ same arguments. If the swap never works the old Electron stays and the next clos
   keeps it: preload.js asks the shell only when the page did not call `preventDefault()`.
 - Hold Ctrl in any tab to see the Ctrl+N numbers on the tabs.
 - The taskbar button flashes when the Supervisor Board's halting count rises while the window is not focused.
-- Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+Shift+PageUp /
+- Keys: Ctrl+1..8 tab (of the ones shown), Ctrl+9 last shown tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+Shift+PageUp /
   PageDown move the active tab, Ctrl+R / F5 reload (Ctrl+F5 without cache), Ctrl+Shift+R re-read tabs.json, Ctrl+F find,
   F11 full screen, Ctrl+= / Ctrl+- / Ctrl+wheel zoom every tab (Ctrl+0: back to 100%), F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).

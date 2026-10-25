@@ -5,12 +5,12 @@
 //   games           the picked reference games (Values › Compare with games) or their data changed
 //   exprcheck       the helper's own evaluator (physexpr) answered for the edited set's equations
 //   theme           light / dark changed (canvases redraw with the new colours)
-import { api } from "./api.js";
+import { api, isReservedName, sameName } from "./api.js";
 import { createHelper } from "./helper.js";
 import { parseQmap, openRun, nearBoxes } from "./qmap.js";
 import { standardPhysics, clonePhysics, changedKeys } from "./params.js";
 import { parseQmode, mergeQmode } from "./qmode.js";
-import { computeMetrics, mergeMetrics, metricRows } from "./sim.js";
+import { computeMetrics, mergeMetrics, metricRows, missingMetric } from "./sim.js";
 import { ValuesView } from "./values.js";
 import { CodeView } from "./code.js";
 import { BlocksView } from "./blocks.js";
@@ -273,8 +273,12 @@ class App {
         if (!name) name = await this.prompt("Save as a custom mode", "my physics", "custom_modes/<name>.qmode in the game's data folder: letters, digits, space, _ and -; 40 at most");
         if (!name) return;
         if (!NAME_RE.test(name) || name.endsWith(" ")) { this.toast("Bad name: letters, digits, space, _ and - (40 at most)", 4000); return; }
-        const exists = (this.modes || []).some((m) => m.name === name);
-        if (exists && name !== this.set.saved && !(await this.confirm(`Write into ${name}.qmode?`, `${name}.qmode exists: write this set's movement lines into it? Its other lines (the mode, weapons, the gamemode editor's logic) are kept.`, "Write"))) return;
+        if (isReservedName(name)) { this.toast(`Bad name: ${name} is a device name on Windows (con, nul, aux, com1...), not a file`, 5000); return; }
+        // a file whose name differs only in case is the same file on Windows: written into (asked first), under its own name
+        const same = (this.modes || []).find((m) => sameName(m.name, name));
+        if (same) name = same.name;
+        const exists = !!same;
+        if (exists && !(this.set.saved && sameName(name, this.set.saved)) && !(await this.confirm(`Write into ${name}.qmode?`, `${name}.qmode exists: write this set's movement lines into it? Its other lines (the mode, weapons, the gamemode editor's logic) are kept.`, "Write"))) return;
         const body = { physics: this.physics };
         if (!exists) {
             if (this.set.saved && this.set.saved !== name) body.from = this.set.saved;
@@ -291,6 +295,15 @@ class App {
             this.emit("physics", "saved"); this._setInfo(); this.autosave();
             this.toast(`Saved ${r.path}${r.created ? " (new)" : ""}: playable now (Host › Custom modes)`, 4000);
         } catch (e) { this.toast("Save failed: " + e.message, 6000); }
+    }
+    // the Code text's custommode= line says the name a save will write (Save renames it the same way: serve.py)
+    _nameLine() {
+        const n = this.set.name || this.set.saved || "my physics";
+        const own = n === this.set.saved && /^custommode=([^\r\n]*)/m.exec(this.set.baseText || "");   // (saving into its own file keeps its line)
+        const t = this.set.text.replace(/^custommode=[^\r\n]*/m, "custommode=" + (own ? own[1] : n));
+        if (t === this.set.text) return;
+        this.set.text = t; this.codeParse = parseQmode(t, this.cat);
+        this.code.load();
     }
     _setInfo() {
         const n = changedKeys(this.physics, this.cat).length;
@@ -351,8 +364,18 @@ class App {
         for (const m of this.maps) sel.append(new Option(`${m.name}${m.source !== "default" ? " (" + m.source + ")" : ""}`, m.source + ":" + m.name));
     }
     async chooseMap(v) {
-        if (v === "room") { this.mapChoice = this.room; $("spawnRow").style.display = "none"; this.applyPreset(this.presetId, true); }
-        else {
+        if (v === "room") {
+            this.mapChoice = this.room; $("spawnRow").style.display = "none";
+            if (this.presets.some((x) => x.id === this.presetId)) this.applyPreset(this.presetId, true);
+            else {   // a custom scenario keeps its steps; its start goes back to where it was in the room (else the room's origin,
+                     // a preset's start)
+                const st = this._roomStart || (this.presets.find((x) => x.id === "standing_jump") || this.presets[0]).scenario.start;
+                this.scenario.start = { ...this.scenario.start, pos: [...st.pos], yaw: st.yaw };
+                if (st.onGround != null) this.scenario.start.onGround = st.onGround; else delete this.scenario.start.onGround;
+                this.setScenario(this.scenario, "spawn");
+            }
+        } else {
+            if (this.mapChoice.room && this.scenario) { const st = this.scenario.start; this._roomStart = { pos: [...st.pos], yaw: st.yaw, onGround: st.onGround }; }
             const [source, ...rest] = v.split(":"); const name = rest.join(":");
             try {
                 const text = await api.map(name, source);
@@ -434,6 +457,7 @@ class App {
         if (want !== "room" && !this.maps.some((m) => m.source + ":" + m.name === want)) { this.toast(`${n}: the map ${sc.map.name} isn't there any more: running it in the test room`, 5000); want = "room"; }
         if (want !== $("mapSel").value) await this.chooseMap(want);
         delete sc.map;
+        if (want !== "room") this._roomStart = null;   // (its own start was on the map: back in the room it starts at the origin)
         this.presetId = "custom"; $("presetSel").value = "custom"; $("presetDesc").textContent = "saved scenario " + n;
         this.setScenario(sc, "load");
         this._presetMapNote();
@@ -490,14 +514,23 @@ class App {
             const labels = [this.set.name || this.set.saved || "edited", ...cmp.map((c) => c.name)];
             const runs = r.runs.map((run, i) => ({ ...run, label: labels[i] || "run " + i, color: cssVar(RUN_COLORS[i % RUN_COLORS.length]),
                 metrics: mergeMetrics(run.metrics, computeMetrics(run, scenario)) }));
-            this.results = { runs, scenario, ms: r.ms, via: r.via, at: Date.now() };
+            this.results = { runs, scenario, map: this.mapChoice, ms: r.ms, via: r.via, at: Date.now() };
+            this.runFailed = null;
             info.textContent = `${r.via}: ${runs.length} run${runs.length > 1 ? "s" : ""} in ${(+r.ms || 0).toFixed(1)} ms${r.wallMs ? ` (${r.wallMs} ms ${r.worker ? "through the helper kept running" : "with the process"})` : ""}`;
             const dyn = this.helper.kind === "real" && !this.helper.hasExpr && [this.physics, ...cmp.map((c) => c.physics)].some((p) => p.expr && resolve(p, this.cat).dynamicKeys.length);
             if (dyn) info.insertAdjacentHTML("beforeend", `<div class="warn">this quark_maptool doesn't run equations yet: dynamic ones run at their value standing still</div>`);
             this._mini();
             this.emit("results");
         } catch (e) {
-            info.innerHTML = `<span class="err">${e.message}</span>`;
+            // the results on screen aren't this set's any more: kept, greyed, as the last good run when it was the same
+            // scenario on the same map; dropped when it wasn't (an old run drawn over another map reads as current)
+            if (this.results && (this.results.map !== this.mapChoice || this.results.scenario !== scenario)) this.results = null;
+            const line = this._errLine(e.message);
+            this.runFailed = { msg: e.message, line };
+            info.innerHTML = `<span class="err">${esc(e.message)}</span>${line ? ` <a href="#" id="runErrLine">line ${line} of the .qmode</a>` : ""}`;
+            if (line) $("runErrLine").onclick = (ev) => { ev.preventDefault(); this.showPage("code"); this.moveCode.showSub("qmode"); this.code.goto(line); };
+            this._mini();
+            this.emit("results");
         } finally {
             info.classList.remove("busy");
             this._running = false;
@@ -510,12 +543,28 @@ class App {
         return p && p.metrics && $("presetSel").value === this.presetId ? p.metrics : [];
     }
     allRuns() { return [...((this.results && this.results.runs) || []), ...this.extraRuns]; }
+    // the line of the set's text a helper error names (physics.move.<key> / expr.<key> / <key>): the one the game reads
+    _errLine(msg) {
+        const lines = (this.set.text || "").split("\n");
+        for (const m of String(msg).matchAll(/\b(physics\.)?(move\.|expr\.|move_)?([a-z][a-z_]*)\b/g)) {
+            const [, ph, pre, k] = m;
+            const want = pre === "move." ? ["move_" + k] : pre ? [pre + k] : ph ? [k] : [];   // (a bare word is no key)
+            if (!want.length) continue;
+            for (let i = lines.length - 1; i >= 0; i--) if (want.includes(lines[i].split("=")[0])) return i + 1;
+        }
+        return 0;
+    }
+    // a "last good run" state is shown everywhere results are (Results here, the Movement graph, Path): greyed + said
+    staleNote() { return this.runFailed ? (this.results ? "last good run: the current one failed" : "the run failed: no results") : ""; }
     _mini() {
+        $("miniMetrics").classList.toggle("stale", !!this.runFailed);
+        if (!this.results) { $("resName").textContent = ""; $("miniMetrics").innerHTML = `<tr><td class="err">the run failed (above): no results</td></tr>`; return; }
         const runs = this.results.runs, a = runs[0].metrics, b = runs[1] ? runs[1].metrics : {};
-        $("resName").textContent = "(" + (this.scenario.name || "scenario") + ")";
+        $("resName").textContent = "(" + (this.results.scenario.name || "scenario") + ")" + (this.runFailed ? " · last good run" : "");
         const rows = metricRows([a], this.presetMetrics()).filter((m) => typeof a[m.key] !== "object").slice(0, 9);
         $("miniMetrics").innerHTML = rows.map((m) => {
             const va = a[m.key], vb = b[m.key];
+            if (va == null) return `<tr class="nomet"><td>${m.label}</td><td class="muted" colspan="2">${missingMetric(m.key, a, this.results.scenario)}</td></tr>`;
             const d = typeof va === "number" && typeof vb === "number" ? va - vb : null;
             const cls = d == null || Math.abs(d) < 1e-3 ? "same" : d > 0 ? "up" : "down";
             return `<tr><td>${m.label}</td><td class="n">${fmtMetric(va, m.unit)} ${m.unit}</td><td class="n ${cls}">${d == null || Math.abs(d) < 1e-3 ? "=" : (d > 0 ? "+" : "") + fmtMetric(d, m.unit)}</td></tr>`;
@@ -534,7 +583,7 @@ class App {
         $("setRedo").onclick = () => this.redo();
         $("setSave").onclick = () => this.saveSet();
         $("setSaveAs").onclick = async () => { const n = await this.prompt("Save as", this.set.name || "my physics", "a new custom mode: letters, digits, space, _ and -"); if (n) this.saveSet(n); };
-        $("setName").oninput = (e) => { this.set.name = e.target.value.trim(); this.autosave(); };
+        $("setName").oninput = (e) => { this.set.name = e.target.value.trim(); this._nameLine(); this.autosave(); };
         $("setOpenFile").onclick = async () => {
             if (!(await this.discardOk("opening a file"))) return;
             const f = await this.pickFile(".qmode,.txt");
@@ -564,8 +613,8 @@ class App {
         $("scSave").onclick = async () => {
             const n = await this.prompt("Save the scenario", (this.scenario.name || "scenario").replace(/[^A-Za-z0-9_.-]+/g, "_"), "physics_editor/scenarios/<name>.json in the data folder");
             if (!n) return;
-            if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n)) return this.toast("Bad name: letters, digits, _ . -", 4000);
-            if (this.savedScenarios.some((s) => s.name === n) && !(await this.confirm("Replace the saved scenario?", `${n}.json is saved already: write this scenario over it?`, "Replace"))) return;
+            if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(n) || isReservedName(n)) return this.toast("Bad name: letters, digits, _ . - (and not a Windows device name: con, nul...)", 4000);
+            if (this.savedScenarios.some((s) => sameName(s.name, n)) && !(await this.confirm("Replace the saved scenario?", `${n}.json is saved already: write this scenario over it?`, "Replace"))) return;
             try {
                 await api.saveScenario(n, { ...this.scenario, name: this.scenario.name || n, map: this.mapChoice.room ? "room" : { name: this.mapChoice.name, source: this.mapChoice.source } });
                 await this.refreshScenarios(); this.toast("Saved scenario " + n);

@@ -11,6 +11,12 @@ import { fmtV } from "./exprui.js";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+// what the parser couldn't find in the movement code (a game-code change it doesn't know yet), in a bar above the view
+export function showSourceProblems(el, problems) {
+    el.hidden = !problems || !problems.length;
+    if (!el.hidden) el.innerHTML = problems.map((p) => `<div><b class="warn">The page couldn't read part of the movement code:</b> ${esc(p)}</div>`).join("");
+}
+
 export class MoveCodeView {
     constructor(app) {
         this.app = app; this.file = "pmove.cpp"; this.sub = "qmode";
@@ -38,6 +44,7 @@ export class MoveCodeView {
             this.src = s;
             for (const f of Object.values(s.files)) f.html = highlightCpp(f.text);
             this.renderFiles(); this.renderCode(); this.renderSide();
+            showSourceProblems($("mcWarn"), s.problems);
             return s;
         }).catch((e) => { $("mcCode").innerHTML = `<div class="err" style="padding:10px">${esc(e.message)}</div>`; this._lp = null; });
         return this._lp;
@@ -61,7 +68,7 @@ export class MoveCodeView {
         for (const [name, c] of s.constants) if (c.file === this.file && scaled.has(name)) defs.set(c.line, { ...c, keys: [...scaled.get(name)] });
         const notes = new Map();
         if (this.file === "pmove.cpp") {
-            for (const fn of s.fns) if (FUNCTION_NOTES[fn.name]) notes.set(fn.start, { title: fn.name + "()", text: FUNCTION_NOTES[fn.name], kind: "fn" });
+            for (const fn of s.fns) if (FUNCTION_NOTES[fn.name]) notes.set(fn.start, { title: fn.title, text: FUNCTION_NOTES[fn.name], kind: "fn" });
             for (const st of s.steps) notes.set(st.start, { title: "step: " + st.label, text: st.note, kind: "step" });
         }
         return { f, byLine, defs, notes };
@@ -139,7 +146,7 @@ export class MoveCodeView {
         }
         h += `</div><h3>Functions and steps</h3><div class="mfn">`;
         for (const f of this.src.fns) {
-            h += `<div class="mfi" data-l="${f.start}" title="${esc(FUNCTION_NOTES[f.name] || "")}">${esc(f.name)}() <span class="muted">${f.start}</span></div>`;
+            h += `<div class="mfi" data-l="${f.start}" title="${esc(FUNCTION_NOTES[f.name] || "")}">${esc(f.title)} <span class="muted">${f.start}</span></div>`;
             if (f.name === "pmoveStep") for (const st of this.src.steps) h += `<div class="mfi st" data-l="${st.start}" title="${esc(st.note)}">· ${esc(st.label)} <span class="muted">${st.start}</span></div>`;
         }
         $("mcSide").innerHTML = h + "</div>";

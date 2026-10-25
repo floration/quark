@@ -194,6 +194,22 @@ def main():
           "simbatch: the seed-1 match is sim's seed-1 match")
     perf.append(("simbatch harbor ffa x4", e["perf"]))
 
+    # 4b. simbatch variants: several setups in one pool; each variant's matches are its own simbatch's
+    vreq = {"map": "temple", "mode": "1v1", "matches": 3, "seconds": 300, "progressEvery": 0, "bots": [{"team": "a"}, {"team": "b"}],
+            "maps": {"T": "temple"}, "variants": [{"map": "T"}, {"map": "dojo"}, {"map": "T", "bots": [{"team": "b"}, {"team": "a", "skill": "expert"}]}]}
+    rc, VB = run("simbatch", vreq, stream=True)
+    check(rc == 0 and VB and VB[0]["type"] == "start" and len(VB[0].get("variants", [])) == 3 and VB[0]["matches"] == 9, "simbatch variants: start lists 3 setups, 9 matches")
+    vm = [l for l in VB if l["type"] == "match"]
+    check(len(vm) == 9 and sorted(m["variant"] for m in vm) == [0, 0, 0, 1, 1, 1, 2, 2, 2], "simbatch variants: 3 match lines per variant")
+    ve = VB[-1]
+    check(ve["type"] == "end" and ve["matchesPlayed"] == 9 and [v["map"] for v in ve.get("variants", [])] == ["temple", "dojo", "temple"], "simbatch variants: per variant reports")
+    check(ve["variants"][2]["bots"][1]["skill"] == "EXPERT", "simbatch variants: a variant's own bots")
+    rc, D = run("simbatch", {k: v for k, v in vreq.items() if k not in ("variants", "maps")} | {"map": "dojo"}, stream=True)
+    key = lambda m: (m["seed"], round(m["t"], 6), [b["kills"] for b in m["bots"]])
+    check(sorted(key(m) for m in vm if m["variant"] == 1) == sorted(key(m) for m in D if m["type"] == "match"), "simbatch variants: dojo's matches equal its own simbatch's")
+    rc, L = run("simbatch", vreq | {"variants": [{"map": "temple"}, {"bots": [{"objective": {"type": "goto"}}]}]})
+    check(rc == 1 and "variant 1" in L[-1].get("error", ""), "simbatch variants: a bad variant is named")
+
     # 5. errors and simcheck
     rc, L = run("sim", {"map": "temple", "bots": [{"objective": {"type": "goto"}}]})
     check(rc == 1 and L and "error" in L[-1], "sim: a goto without pos is an error")

@@ -43,7 +43,7 @@
 
   // without model data (or WebGL) nothing on the toolbars can work: they are disabled under the banner
   function disableTools() {
-    document.querySelectorAll('#top button, #top select, #top input, #viewBar button, #viewBar select, #viewBar input, #lib input').forEach(el => { el.disabled = true; });
+    document.querySelectorAll('#top button, #top select, #top input, #viewBar button, #viewBar select, #viewBar input, #lib input, #lib select').forEach(el => { el.disabled = true; });
     document.querySelectorAll('#top .menu, #viewBar .menu').forEach(m => m.classList.add('off'));
   }
 

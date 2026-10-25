@@ -1,7 +1,7 @@
 {
  "kind": "object",
  "name": "railing",
- "note": "a waist-high metal rail: a post every 1.5 m with the rail between",
+ "note": "a waist-high metal rail: a post every 1.5 m with the rail between, and a closing post at the end",
  "def": {
   "unit": [
    1.5,
@@ -59,6 +59,24 @@
     ]
    }
   ],
-  "name": "railing"
+  "name": "railing",
+  "end": {
+   "len": 0.1,
+   "boxes": [
+    {
+     "mat": 3,
+     "min": [
+      0,
+      0,
+      0
+     ],
+     "max": [
+      0.1,
+      1.1,
+      0.1
+     ]
+    }
+   ]
+  }
  }
 }

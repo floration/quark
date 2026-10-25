@@ -1,6 +1,6 @@
 // Pull requests: open first, then the recent closed / merged ones.
 import { store } from './store.js';
-import { html, matches, ms, gh } from './util.js';
+import { html, matches, ms, gh, unread, unknownLine } from './util.js';
 import { prRow } from './parts.js';
 import { filterState, search, segmented, bind } from './filters.js';
 
@@ -24,8 +24,12 @@ export const pulls = {
     const list = all.filter(ok);
     const open = list.filter((p) => p.state === 'open').sort((a, b) => ms(b.updatedAt) - ms(a.updatedAt));
     const closed = list.filter((p) => p.state !== 'open').sort((a, b) => ms(b.mergedAt || b.updatedAt) - ms(a.mergedAt || a.updatedAt));
+    // not read since the server started: what's open (and what closed) is unknown, so no "Open 0 / none" under it
+    if (unread('pulls')) {
+      document.getElementById('pr-list').innerHTML = String(html`<section class="card"><h2>Open <span class="count warn">?</span></h2>${unknownLine('pulls')}<p class="small muted">What's open and what closed show here once the server reads GitHub (sign in with <code>gh auth login</code>, then Refresh).</p></section>`);
+      return;
+    }
     document.getElementById('pr-list').innerHTML = String(html`
-      ${(store.state.notRead || []).includes('pulls') ? html`<section class="card"><p class="msg warn">GitHub's pull requests haven't been read since the server started (see the warning above): what's open is unknown, not none.</p></section>` : ''}
       ${st.state === 'all' || st.state === 'open' ? html`<section class="card"><h2>Open <span class="count">${open.length}</span></h2>
         ${open.length ? html`<ul class="rows cols">${open.map(prRow)}</ul>` : html`<p class="empty">No open pull requests${st.q ? ' match' : ''}.</p>`}</section>` : ''}
       ${st.state !== 'open' ? html`<section class="card"><h2>Recently closed <span class="count">${closed.length}</span></h2>

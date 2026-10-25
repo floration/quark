@@ -65,8 +65,10 @@ through its `bots` command (no brains, no overrides).
   sees; untick "chase" and it also forgets enemies it lost sight of). **Place bot** puts a bot on the map: click
   for the position, drag for the facing. Placed bots and objective points can be dragged. A spot with no floor
   under it (outside the map) is refused.
-- **Scenario**: name, seed and length. **Save** writes it to the data folder; **Load** reads it back; ⇩ / ⇧ export
-  and import the JSON.
+- **Scenario**: name, seed and length. **Save** writes it to the data folder (replacing another saved scenario of
+  that name asks first); **Load** reads it back; ⇩ / ⇧ export and import the JSON (a file that isn't a scenario
+  says so). Load and import ask first (save / replace / cancel) when the line-up has changed since it was saved or
+  loaded, since the autosave would write over it.
 - **Run**: ▶ starts the match. Pause, Step (one frame), speed (¼x to 8x real time, or max: as fast as it goes),
   Stop. A run stops when the match ends or at the scenario's seconds, and also when its page goes away (reload,
   tab closed): the page asks the server to stop it, and the server stops any run or batch 5 s after its last
@@ -111,7 +113,10 @@ kept (also across a reload) and the other views show the last version that parse
 
 Open, New, Open file and Reset all ask first (save / discard / cancel) when the brain has unsaved changes; ↻ next
 to Open re-reads the list of saved brains (e.g. ones written outside the page). New and Save as check the name
-as you type it, and replacing another saved brain asks first.
+as you type it, and replacing another saved brain asks first (also a Save of a brain never saved, when a file of
+its name has appeared meanwhile). A file opened with **Open file** whose name is already a saved brain opens as
+`<name>-2` (`-3`, ...), so a Save can't replace that brain unasked. Every confirm starts on its safe button
+(Cancel, or the primary one), and the Enter that closed a name prompt can't press a button in the dialog after it.
 
 The list on the left jumps to a slot, param or curve. **Save** writes `<data>/bots/<name>.qbrain` (only what
 differs from the default, unless "save the whole brain" is ticked); **Save as**, **⇩ .qbrain** (download), **Open
@@ -127,6 +132,23 @@ The Simulator's line-up, N matches on each chosen map (seed, seed + 1, ...), as 
 is the scenario's unless another is picked; maps are ticked in a grid with quick picks (**this map**, **for this
 mode**, **ranked**, **all**, **none**). Settings are kept in the state folder.
 
+For tuning, the line-up needn't be edited by hand:
+
+- **Line-up: brain A vs brain B**: brain A's bots on team a, brain B's on team b (1 to 5 a side, one skill); in a
+  free for all, A and B in turn.
+- **also with the sides swapped** (team modes): each map is played twice on the same seeds, the second time with
+  every bot on the other team, so a result doesn't hang on which side of the map a brain got. Everyone starts at
+  spawn points then.
+- **Sweep**: one brain of the line-up with one param at several values: `2, 3, 4` (every level), `×0.8, ×1.2` (each
+  level scaled) or `1/2/3/4` (per level). Each value plays as its own brain, `<brain>@<param>=<value>` (the whole
+  brain as a bot plays it, with that param changed), so the results and **Compare runs** show each value's win rate.
+  Add `×1` to see the brain as it is.
+
+Every setup (maps × sides × sweep values) goes to ONE `simbatch` (its `variants`, `native/SIM.md`): one pool of
+threads for the whole run, so no core idles at a map's tail and one process starts instead of one per map. An
+older `quark_maptool` that doesn't know `variants` is detected from its start line and gets one batch per setup.
+**Wins per map** shows each map's wall time per match and the run's matches per second.
+
 Results are cards side by side (more across on a wide screen): per brain, with each brain's win rate and its 95%
 interval (Wilson; n = matches the brain played, a match where several bots share one brain counts once) drawn as
 a small chart; per bot (wins, kills, deaths, K/D, damage, accuracy, objective time, time alive), wins per map (team or
@@ -136,7 +158,15 @@ player wins, draws, matches that ran out of time, as a stacked bar) and per matc
 **Pin the latest run** keeps its results (the last 30, in the state folder) to compare later ones with, after a
 brain edit, say. **Compare runs** puts any two (pinned runs or the latest run) side by side, per brain (matched by
 name): win rates with intervals, B − A with its 95% interval, and "better", "worse" or "no clear difference" (when
-that interval spans zero). It warns when the two runs differ in mode, maps or line-up.
+that interval spans zero). It warns when the two runs differ in mode, maps or line-up, and says when they used the
+same seeds. Runs on the same seeds and maps played the same matches (a seed fixes spawns and dice), so a brain is
+then compared **paired**, match by match: McNemar's exact test on the matches only one of the two runs won (p < 0.05
+for "better" / "worse"), with the difference's interval (Agresti-Min) and the counts ("A only 2, B only 9"). It
+tells a real difference with far fewer matches than two independent win rates. (Pins keep each match's outcome per
+brain for this; pins made before it are compared unpaired.)
+
+The latest run is kept too (`batchlast.json` in the state folder): a reload or a restart shows it again, pinned or
+not. A run too big to keep whole (over 6 MB of match lines) keeps its summary and outcomes, like a pin.
 
 ## Files
 
@@ -146,7 +176,7 @@ All work is saved as files through the server, never only in the browser:
 |---|---|
 | brains | `<data>/bots/<name>.qbrain` (the previous version kept as `.bak`) |
 | scenarios | `<data>/bot_editor/scenarios/<name>.json` |
-| the open scenario and brain, settings, batch settings and pinned runs | `<data>/bot_editor/state/*.json` (autosaved; pins in `batchpins.json`) |
+| the open scenario and brain, settings, batch settings, the latest batch run and pinned runs | `<data>/bot_editor/state/*.json` (autosaved; the latest run in `batchlast.json`, pins in `batchpins.json`) |
 | who made what | `tools/bot_editor/provenance.json` |
 
 The browser keeps only conveniences (which tab was open, the theme).

@@ -6,7 +6,7 @@
 //   all runs / A / B: every run, or two sets against each other (edited, standard, any saved .qmode, any picked game),
 //           overlaid or side by side, the table showing A, B and B − A.
 //   lock units: per axis, a fixed range that stays put across runs and between A and B (unlocked = automatic).
-import { metricRows, computeMetrics, mergeMetrics } from "./sim.js";
+import { metricRows, computeMetrics, mergeMetrics, missingMetric } from "./sim.js";
 import { Graph3D } from "./graph3d.js";
 
 const $ = (id) => document.getElementById(id);
@@ -123,7 +123,9 @@ export class GraphView {
     panels() { const r = this.runs(); return this.cmp === "ab" && this.ab.layout === "side" && r.length === 2 ? [[r[0]], [r[1]]] : [r]; }
     refresh() {
         this.stale = false;
-        if (this.cmp !== "ab") $("gNote").textContent = "";
+        const stale = this.cmp !== "ab" && this.app.staleNote();
+        if (this.cmp !== "ab") $("gNote").innerHTML = stale ? `<span class="warn">⚠ ${stale}</span>` : "";
+        $("charts").classList.toggle("stale", !!stale); $("metrics").classList.toggle("stale", !!stale);
         if (this.view === "3d") this.g3.enter(); else { this.g3.leave(); this.draw(); }
         this.table();
         if ($("gLock").style.display !== "none") this._lockPanel();
@@ -303,10 +305,13 @@ export class GraphView {
         const [ra, rb] = ab ? [runs[1], runs[0]] : [runs[0], runs[1] && !runs[1].drive ? runs[1] : null];
         const dl = ab ? "B − A" : "edited − standard";
         let h = `<table class="met"><tr><th>metric</th>${runs.map((r) => `<th><span class="swatch" style="background:${r.color}"></span>${esc(r.label)}</th>`).join("")}${rb ? `<th>${dl}</th><th>%</th>` : ""}</tr>`;
-        for (const m of metricRows(runs.map((r) => r.metrics || {}), this.app.presetMetrics())) {
+        const first = this.app.presetMetrics();
+        for (const m of metricRows(runs.map((r) => r.metrics || {}), first)) {
             const a = ra.metrics[m.key], b = rb ? rb.metrics[m.key] : null;
             h += `<tr><td>${m.label}${m.unit ? ` <span class="muted">${m.unit}</span>` : ""}</td>`;
-            h += runs.map((r) => `<td class="n${Array.isArray(r.metrics[m.key]) ? " hops" : ""}">${fmtMetric(r.metrics[m.key], m.unit)}</td>`).join("");
+            // a preset's own metric a run hasn't got: why (didn't land within 2 s...), not an empty cell
+            h += runs.map((r) => (r.metrics[m.key] == null && first.includes(m.key) && !r.drive ? `<td class="n muted small">${missingMetric(m.key, r.metrics, this.app.scenario)}</td>`
+                : `<td class="n${Array.isArray(r.metrics[m.key]) ? " hops" : ""}">${fmtMetric(r.metrics[m.key], m.unit)}</td>`)).join("");
             if (rb) {
                 if (typeof a === "number" && typeof b === "number") {
                     const d = a - b, pct = b ? d / Math.abs(b) * 100 : null, cls = Math.abs(d) < 1e-3 ? "same" : d > 0 ? "up" : "down";

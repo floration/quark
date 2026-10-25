@@ -227,6 +227,48 @@ class TestPure(unittest.TestCase):
             self.assertTrue(play.ed25519ph_verify(h, sig, pub))
             self.assertFalse(play.ed25519ph_verify(h, sig, play.RELEASE_PUBLIC_KEY))
 
+    def test_game_modes_match_the_game(self):
+        h = os.path.join(os.path.dirname(os.path.dirname(PM_ROOT)), "src", "game", "gamedefs.h")
+        if not os.path.isfile(h):
+            self.skipTest("no game source here")
+        with open(h, encoding="utf-8") as f:
+            src = f.read()
+        import re
+        for fn, want in (("modeName", play.GAME_MODES), ("modeTitle", play.GAME_MODE_TITLES)):
+            m = re.search(r"inline const char\* %s\(int m\) \{\s*static const char\* n\[\] = \{([^}]*)\}" % fn, src)
+            self.assertIsNotNone(m, fn)
+            self.assertEqual(tuple(re.findall(r'"([^"]*)"', m.group(1))), want, fn)
+
+    def test_read_maps(self):
+        d = tempfile.mkdtemp()
+        try:
+            write(os.path.join(d, "maps", "bastion.qmap"), "# generated\nversion 2\ntitle Bastion\nfor vs\nmodes vs ffa\nbox 0 0 0 1 1 1\n")
+            write(os.path.join(d, "maps", "mine.qmap"), "version 2\nhandmade\ntitle My <b>map</b>\nfor zz9\n")
+            write(os.path.join(d, "maps", "bad name.qmap"), "for ffa\n")
+            write(os.path.join(d, "maps", "notes.txt"), "x")
+            m = play.read_maps(d)
+            self.assertEqual([(x["name"], x["title"], x["for"], x["modes"], x["handmade"]) for x in m],
+                             [("bastion", "Bastion", "vs", ["vs", "ffa"], False), ("mine", "My <b>map</b>", "zz9", ["zz9"], True)])
+            self.assertEqual(play.map_modes(m)[-1], "zz9")  # (a mode only a map names comes after the game's)
+            self.assertEqual(play.read_maps(os.path.join(d, "nope")), [])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    @unittest.skipIf(util.IS_WINDOWS, "Windows opens with os.startfile")
+    def test_open_names_a_missing_opener(self):
+        empty = tempfile.mkdtemp()
+        old = os.environ.get("PATH")
+        os.environ["PATH"] = empty
+        try:
+            with self.assertRaises(play.PlayError) as cm:
+                play.open_with_system(HERE)
+        finally:
+            os.environ["PATH"] = old
+            shutil.rmtree(empty, ignore_errors=True)
+        self.assertIn("is not installed on this PC", cm.exception.message)
+        self.assertIn("open", cm.exception.message.split(":")[1])
+        self.assertNotIn("No such file", cm.exception.message)
+
     def test_versions_and_manifest(self):
         self.assertEqual(play.version_from_tag("test-1.18.6-test.231"), "1.18.6-test.231")
         for a, b in (("1.17.0", "1.17.0-test.3"), ("1.17.0-test.3", "1.17.0-test.2"), ("1.17.0-test.10", "1.17.0-test.9"),
@@ -501,14 +543,45 @@ class TestPlay(unittest.TestCase):
         self.assertGreaterEqual(got["durationSec"], 0.2)
         with open(got["log"], encoding="utf-8") as f:
             self.assertIn("started --host ffa --map bastion", f.read())  # (args reached the game; cwd = its folder)
-        saved = util.read_json_file(self.paths.pm("play-sessions.json"))["sessions"]
-        self.assertEqual(saved[0]["state"], "needsNote")
+        # (saved just after the state changes in memory: wait for the file)
+        self.assertTrue(wait_for(lambda: util.read_json_file(self.paths.pm("play-sessions.json"))["sessions"][0]["state"] == "needsNote"))
         # a restarted server still has it pending
         p2 = self.new()
         self.assertEqual([x["id"] for x in p2.pending()["pending"]], [s["id"]])
         p2.skip(s["id"])
         self.assertEqual(p2.pending()["pending"], [])
         self.assertTrue(p2.skip(s["id"])["noop"])  # (skipped twice: a no-op)
+
+    def test_build_maps(self):
+        p = self.new()
+        t = os.path.join(self.quark, "testing")
+        self.assertIsNone(p.find_build("testing")["maps"])  # (no maps folder: no pickers)
+        self.assertEqual(p.build_maps("testing")["maps"], [])
+        write(os.path.join(t, "maps", "summit.qmap"), "title Summit\nfor koth\nmodes koth ffa\n")
+        sig = p.find_build("testing")["maps"]
+        self.assertTrue(sig)
+        got = p.api_get("maps", {"build": ["testing"]})
+        self.assertEqual((got[0], got[1]["sig"], [x["name"] for x in got[1]["maps"]]), (200, sig, ["summit"]))
+        self.assertEqual(got[1]["titles"]["koth"], "KING OF THE HILL")
+        self.assertEqual(p.find_build("testing")["maps"], sig)  # (cached: same listing, same sig)
+        write(os.path.join(t, "maps", "harbor.qmap"), "title Harbor\nfor ffa\n")
+        self.assertNotEqual(p.find_build("testing")["maps"], sig)
+        self.assertEqual(p.api_get("maps", {"build": ["../x"]})[0], 404)
+
+    def test_install_labels(self):
+        p = self.new()
+        c, note = p._verify({"needsSig": False, "tag": "build-1", "sums": None}, "0" * 64, b"")
+        self.assertEqual((c, note.split(":")[0]), ("none", "unsigned, and its tag names no version"))
+        c, note = p._verify({"needsSig": False, "tag": "v1.16.0", "sums": None}, "0" * 64, b"")
+        self.assertTrue(note.startswith("from before signing (1.16.x or older)"))
+        v = os.path.join(self.quark, "versions", "v1.16.0")
+        write(os.path.join(v, "BUILD.txt"), "v1.16.0 (GitHub release, published 2026-01-02T00:00:00Z)\n")
+        fake_game(v)
+        b = p.find_build("versions/v1.16.0")
+        self.assertEqual((b.get("check"), b.get("installedAt"), b["fromRelease"]), (None, None, True))  # (no record)
+        util.write_json_atomic(os.path.join(v, play.INSTALL_INFO), {"check": "none", "note": "n", "installedAt": "2026-10-24T19:00:00Z"})
+        b = p.find_build("versions/v1.16.0")
+        self.assertEqual((b["check"], b["installedAt"]), ("none", "2026-10-24T19:00:00Z"))
 
     def test_stop_log_open(self):
         fake_game(os.path.join(self.quark, "testing"), seconds=30, code=0)
@@ -579,6 +652,21 @@ class TestPlay(unittest.TestCase):
         self.assertEqual(v["notesTotal"], 2)
         self.assertTrue(v["notes"][0]["freeform"])
         self.assertEqual(v["notes"][0]["where"], "kept on this PC only (no Claude Documents folder)")
+
+    def test_session_history_and_crash_counts(self):
+        p = self.new()
+        for i in range(40):
+            p.sessions.append({"id": "p202610241900%02d-aaaa" % i, "build": "testing", "label": "testing", "state": "noted",
+                               "exitCode": -11 if i % 4 == 0 else 0, "startedAt": "2026-10-24T19:00:00Z"})
+        v = p.view()
+        self.assertEqual((len(v["sessions"]), v["sessionsTotal"]), (30, 40))
+        self.assertEqual(v["sessions"][0]["id"], "p20261024190039-aaaa")  # (newest first)
+        code, all_ = p.api_get("sessions", {})
+        self.assertEqual((code, len(all_["sessions"]), all_["total"]), (200, 40, 40))
+        self.assertEqual(all_["sessions"][-1]["exit"]["kind"], "crash")
+        self.assertNotIn("pidCreated", all_["sessions"][0])
+        b = p.find_build("testing")
+        self.assertEqual((b["plays"], b["crashes"]), (40, 10))
 
     def test_injected_spawner_and_adoption(self):
         # any command can stand in for the game (cross-platform): it runs, exits, the session wants a note
@@ -680,6 +768,53 @@ class TestPlay(unittest.TestCase):
                 with self.assertRaises(play.PlayError):
                     p.remove(bad)
             self.assertTrue(os.path.isdir(os.path.join(self.quark, "testing")))
+        finally:
+            fake.close()
+
+    def test_update_channel_folder(self):
+        # like fetch_release.ps1: a newer testing release copied over Quark\testing (merged, never emptied first)
+        zipped = make_zip({"quark.exe": "#!/bin/sh\nexit 0\n", "maps/a.qmap": "title A\nfor ffa\n"})
+        routes = {"/releases": (200, None), "/dl/test.zip": (200, zipped)}
+        routes.update(signed_release(zipped))
+        fake = FakeHTTP(routes)
+        fake.routes["/releases"] = (200, releases_fixture(fake.url))
+        t = os.path.join(self.quark, "testing")
+        write(os.path.join(t, "BUILD.txt"), "test-1.18.13-test.239 (GitHub release, published x)\n")
+        write(os.path.join(t, "mine.cfg"), "kept")
+        try:
+            p = self.new(releases_url=fake.url + "/releases", public_key=TEST_PUB)
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] is True))
+            row = p.view()["releases"]["list"][0]
+            self.assertEqual((row["tag"], row.get("newer")), ("test-1.18.14-test.240", "testing"))
+            for into, reason in (("production", 409), ("working", 400), ("../x", 400)):
+                with self.assertRaises(play.PlayError) as cm:
+                    p.install("test-1.18.14-test.240", into)
+                self.assertEqual(cm.exception.code, reason, into)
+            self.assertEqual(p.api_post("install-into", {"tag": "test-1.18.14-test.240", "into": "testing"})["install"]["into"],
+                             "testing")
+            st = self.wait_install(p, "test-1.18.14-test.240")
+            self.assertEqual((st["state"], st["check"]), ("done", "signed"), st)
+            with open(os.path.join(t, "BUILD.txt"), encoding="utf-8") as f:
+                self.assertTrue(f.read().startswith("test-1.18.14-test.240 (GitHub release, published 2026-10-24T05:00:00Z)"))
+            with open(os.path.join(t, "quark.exe"), encoding="utf-8") as f:
+                self.assertEqual(f.read(), "#!/bin/sh\nexit 0\n")
+            self.assertTrue(os.path.isfile(os.path.join(t, "mine.cfg")))  # (nothing deleted)
+            self.assertFalse(os.path.exists(os.path.join(self.quark, "versions", "test-1.18.14-test.240")))
+            b = p.find_build("testing")
+            self.assertEqual((b["version"], b["check"]), ("1.18.14-test.240", "signed"))
+            row = p.view()["releases"]["list"][0]
+            self.assertEqual((row.get("newer"), row["folders"]), (None, ["testing"]))
+            # play-install.json about another release than BUILD.txt names (fetch_release.ps1 ran since): ignored
+            write(os.path.join(t, "BUILD.txt"), "test-1.18.15-test.241 (GitHub release, published x)\n")
+            self.assertNotIn("check", p.find_build("testing"))
+            # once copying, too late to cancel
+            p.installs["x"] = {"state": "copying", "into": "testing"}
+            with self.assertRaises(play.PlayError) as cm:
+                p.cancel_install("x")
+            self.assertEqual(cm.exception.reason, "copying")
+            with self.assertRaises(play.PlayError):
+                p.launch("testing")  # (being updated)
         finally:
             fake.close()
 
@@ -801,6 +936,46 @@ class TestPlay(unittest.TestCase):
             self.assertEqual((len(p.releases()["list"]), p.releases()["ok"]), (149, True))
         finally:
             fake.close()
+
+    def test_release_list_survives_a_restart(self):
+        etags = []
+        data = releases_fixture("https://example.invalid")
+
+        def page(self_, n, etag=None):
+            etags.append(etag)
+            if etag == '"e1"':
+                return None, None  # (304)
+            return (data if n == 1 else []), '"e1"'
+        now = [1000000.0]
+        orig = play.Play._get_page
+        play.Play._get_page = page
+        try:
+            p = self.new(clock=lambda: now[0])
+            p.releases()
+            self.assertTrue(wait_for(lambda: p.releases()["ok"] and not p.releases()["busy"]))
+            n = len(p.releases()["list"])
+            saved = util.read_json_file(self.paths.pm(play.RELEASES_FILE))
+            self.assertEqual((len(saved["list"]), saved["etag"], saved["complete"]), (n, '"e1"', True))
+            # a restart within 10 min: the list is there at once and GitHub isn't asked
+            p = self.new(clock=lambda: now[0] + 60)
+            r = p.releases()
+            self.assertEqual((len(r["list"]), r["ok"], r["busy"]), (n, True, False))
+            self.assertEqual(etags, [None])
+            # later: asked with the ETag (304: the same list, a new time saved)
+            now[0] += 3600
+            p = self.new(clock=lambda: now[0])
+            self.assertEqual(len(p.releases()["list"]), n)
+            self.assertTrue(wait_for(lambda: not p.releases()["busy"]))
+            self.assertEqual(etags, [None, '"e1"'])
+            self.assertEqual(util.read_json_file(self.paths.pm(play.RELEASES_FILE))["fetchedTs"], now[0])
+            # a tampered file: bad rows are dropped
+            saved = util.read_json_file(self.paths.pm(play.RELEASES_FILE))
+            saved["list"][0]["zip"]["url"] = "ftp://evil.example/x.zip"
+            saved["list"][1]["tag"] = "../x"
+            util.write_json_atomic(self.paths.pm(play.RELEASES_FILE), saved)
+            self.assertEqual(len(self.new(clock=lambda: now[0]).releases()["list"]), n - 2)
+        finally:
+            play.Play._get_page = orig
 
     def test_releases_offline_and_rate_limit(self):
         p = self.new(releases_url="http://127.0.0.1:9/releases")
@@ -990,6 +1165,81 @@ class TestNotesToDocs(unittest.TestCase):
         self.assertEqual(cm.exception.reason, "locked")
         self.assertIn("in-progress", cm.exception.message)
         self.assertEqual(p.view()["notes"][0]["locked"], "an agent set it to in-progress")
+
+    def agent_sets(self, old, new):
+        """An agent's clone changes the status of the entries (a text replace) and pushes."""
+        git(self.seed, "pull", "-q", "origin", "main")
+        path = os.path.join(self.seed, play.DOCS_FILE)
+        with open(path, encoding="utf-8") as f:
+            write(path, f.read().replace(old, new))
+        git(self.seed, "commit", "-q", "-am", "agent")
+        git(self.seed, "push", "-q", "origin", "HEAD:main")
+
+    def test_removal_an_agent_blocked_is_shown(self):
+        # the audit's case: an agent takes the entry on GitHub, q removes the note before this PC pulls
+        p = self.play
+        self.session("p20261024190000-aaaa")
+        n = p.save_note("p20261024190000-aaaa", {"did": "FFA"})
+        self.assertTrue(p.sync_docs()["pushed"])
+        self.agent_sets(", q, open_", ", agent-thread, in-progress_")
+        p.delete_note(n["id"])  # (the local copy still says open: accepted)
+        v = p.view()
+        self.assertEqual((v["notes"][0]["removed"], v["notes"][0]["where"]),
+                         ("pending", "your removal is waiting to go into Claude Documents"))
+        self.assertEqual(v["notesTotal"], 0)
+        p.sync_docs()
+        self.assertIn("Play note: testing", self.remote_file())  # (the agent has it: it stays in the file)
+        v = p.view()
+        self.assertEqual(len(v["notes"]), 1)  # (still on the page, saying so)
+        self.assertEqual(v["notes"][0]["removed"], "blocked")
+        self.assertEqual(v["notes"][0]["where"], "not removed: an agent set it to in-progress first")
+        self.assertEqual([(b["id"], b["change"], b["why"]) for b in v["blocked"]],
+                         [(n["id"], "removal", "an agent set it to in-progress")])
+        # the agent sets it back to open: the removal goes in on the next sync
+        self.agent_sets(", agent-thread, in-progress_", ", agent-thread, open_")
+        p.sync_docs()
+        self.assertNotIn("Play note: testing", self.remote_file())
+        v = p.view()
+        self.assertEqual((v["notes"], v["blocked"]), ([], []))
+
+    def test_dismiss_blocked_edit(self):
+        p = self.play
+        self.session("p20261024190000-aaaa")
+        n = p.save_note("p20261024190000-aaaa", {"did": "FFA"})
+        p.sync_docs()
+        self.agent_sets(", q, open_", ", q, done_")
+        p.edit_note(n["id"], {"did": "FFA on bastion"})
+        p.sync_docs()
+        v = p.view()
+        self.assertEqual(v["notes"][0]["where"], "your edit is not in the file: an agent set it to done first")
+        self.assertEqual([b["change"] for b in v["blocked"]], ["edit"])
+        with self.assertRaises(play.PlayError):
+            p.dismiss_blocked("n20261024190000-zzzz")
+        p.dismiss_blocked(n["id"])
+        self.assertEqual(p.view()["blocked"], [])
+        self.assertEqual(p.view()["notes"][0]["where"], "in Claude Documents")
+        # dismissed: not tried again, even when the entry is open again
+        self.agent_sets(", q, done_", ", q, open_")
+        p.sync_docs()
+        self.assertNotIn("FFA on bastion", self.remote_file())
+        self.assertEqual(util.read_json_file(self.paths.pm(play.SYNC_FILE))["dismissed"], {n["id"]: 1})
+
+    def test_no_upstream_is_not_up_to_date(self):
+        p = self.play
+        git(self.docs, "branch", "--unset-upstream")
+        self.session("p20261024190000-aaaa")
+        p.save_note("p20261024190000-aaaa", {"did": "FFA"})
+        st = p.sync_docs()
+        self.assertEqual((st["ok"], st["pushed"], st["unpushed"], st["noUpstream"]), (False, False, 1, True), st)
+        self.assertIn("no upstream branch", st["error"])
+        self.assertIsNone(self.remote_file())
+        self.assertTrue(p.needs_sync())  # (tried again: fine once q sets the upstream)
+        self.assertEqual(p.view()["notes"][0]["where"], "saved on this PC, not going to GitHub (no upstream branch)")
+        git(self.docs, "branch", "-u", "origin/main")
+        st = p.sync_docs()
+        self.assertEqual((st["ok"], st["pushed"], st["noUpstream"]), (True, True, False), st)
+        self.assertIn("Play note: testing", self.remote_file())
+        self.assertFalse(p.needs_sync())
 
     def test_no_docs_folder(self):
         shutil.rmtree(self.docs)

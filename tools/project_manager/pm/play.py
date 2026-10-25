@@ -6,7 +6,8 @@ tools/fetch_release.ps1, and play-install.json: how the download was checked). T
 GitHub API without signing in (60 requests an hour), every page of it (100 a page, until a short page, like the
 launcher: production releases stay listed behind any number of test builds), cached 10 min with page 1's ETag (a 304
 does not count against the limit and means nothing new was published) and refreshed in the background, so a page
-request never waits on GitHub.
+request never waits on GitHub. The list, its ETag and its time are saved (project-manager\\play-releases.json) and read
+back at start: shown at once after a restart, offline too, and GitHub is not asked again within the 10 min.
 
 Install checks a release the way the launcher does (docs/SIGNING.md): from 1.17.0 on (and any release that has a
 signature) the zip's Ed25519ph signature (quark-windows.zip.sig) must verify against the release key
@@ -14,6 +15,11 @@ signature) the zip's Ed25519ph signature (quark-windows.zip.sig) must verify aga
 (quark-release.txt + .sig) must verify and name this tag, version, channel and the zip's sha256, or nothing is
 installed. A release from before signing (<= 1.16.x) has neither: it installs without a prompt (owner decision B6),
 checked against its SHA256SUMS when it has one, and is marked "unsigned" on its card. A download can be cancelled.
+A release newer than the production / testing folder can also update that folder: checked the same way, then copied
+over it like tools/fetch_release.ps1 (files replaced or added, none deleted, BUILD.txt rewritten).
+
+Mode and map pickers: each build's maps/*.qmap headers (title, for, modes) and the game's modes (GAME_MODES, as
+gamedefs.h) fill two dropdowns that write --host / --map into its options box; a poll carries only their sig.
 
 Launching: the game's exe (quark.exe; it is a GUI-subsystem program, CMakeLists `add_executable(quark WIN32 ...)`)
 starts with its folder as working folder, normal priority, never elevated, stdout/stderr into
@@ -41,7 +47,10 @@ tools/docs_manager/docsedit.py does (fetch + rebase --autostash first; git never
 Offline, it stays committed on this PC and goes up on the next save or the retry every 5 min. A note can also be
 written without a session (a game played through the launcher). q can edit or remove a note while its entry is still
 `open` (no agent has taken it): the entry is changed in place, or removed. A note written once is never written
-again, even when an agent moves or removes it.
+again, even when an agent moves or removes it. When an agent took the entry before q's edit or removal reached the
+file (this PC had not pulled yet), the change stays out ("blocked"), the page lists it (a removed note stays shown,
+"not removed") with Write a follow-up / Dismiss, and it is tried again on each sync until it goes in or is dismissed.
+A Claude Documents copy without an upstream branch is reported as not going to GitHub (never "up to date").
 Python 3 standard library only.
 """
 import datetime
@@ -83,6 +92,7 @@ VERSIONS = "versions"
 SESSIONS_FILE = "play-sessions.json"
 NOTES_FILE = "play-notes.jsonl"
 SYNC_FILE = "play-notes-sync.json"
+RELEASES_FILE = "play-releases.json"   # (the release list, page 1's ETag and when it was read: shown at once after a restart)
 DOCS_FOLDER = "Claude Documents"
 DOCS_FILE = "12-play-notes.md"
 DOCS_SECTION = "Notes"
@@ -110,6 +120,13 @@ SESSION_RE = re.compile(r"^p\d{14}-[0-9a-f]{4}$")
 NOTE_RE = re.compile(r"^[pn]\d{14}-[0-9a-f]{4}$")   # (a note's id: its session's, or n... for a note without one)
 NOT_GAME = ("quark_launcher", "quark_server", "quark_tests", "quark_sign", "quark_maptool", "fuzz_")
 FIELDS = (("did", "Did"), ("noticed", "Noticed"), ("change", "Wants changed"), ("other", "Also"))
+# The game's modes in its own order (modeName in src/game/gamedefs.h; tests/test_play.py checks they match): the mode
+# picker's order. A mode only a build's maps name (a newer game) is listed after these.
+GAME_MODES = ("vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points")
+GAME_MODE_TITLES = ("VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1",
+                    "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT")   # (modeTitle, same order)
+MAP_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.qmap$")
+MAX_MAPS = 300                # (a maps folder with more is cut there: the picker is a list, not a file browser)
 
 # Windows process creation flags
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -217,6 +234,44 @@ def parse_args(text):
         return shlex.split(text)
     except ValueError:
         raise PlayError(400, "The launch options have an unclosed quote.")
+
+
+def read_maps(folder):
+    """A build's maps folder (<folder>/maps/*.qmap, as every package ships it) -> [{name, title, for, modes,
+    handmade}] by name, from each map's header lines (tools/make_maps.py writes `title`, `for <mode>` and
+    `modes <mode> ...` at the top; the editor writes `handmade`)."""
+    out = []
+    try:
+        names = sorted(n for n in os.listdir(os.path.join(folder, "maps")) if MAP_RE.match(n))[:MAX_MAPS]
+    except OSError:
+        return out
+    for n in names:
+        m = {"name": n[:-5], "title": None, "for": None, "modes": [], "handmade": False}
+        try:
+            with open(os.path.join(folder, "maps", n), "rb") as f:
+                head = f.read(4096).decode("utf-8", "replace").split("\n")[:40]
+        except OSError:
+            continue
+        for line in head:
+            key, _, val = line.strip().partition(" ")
+            if key == "title" and val:
+                m["title"] = one_line(val, 60)
+            elif key == "for" and re.match(r"^[a-z0-9]{1,16}$", val):
+                m["for"] = val
+            elif key == "modes":
+                m["modes"] = [x for x in val.split() if re.match(r"^[a-z0-9]{1,16}$", x)][:20]
+            elif key == "handmade":
+                m["handmade"] = True
+        if m["for"] and m["for"] not in m["modes"]:
+            m["modes"].insert(0, m["for"])
+        out.append(m)
+    return out
+
+
+def map_modes(maps):
+    """The modes for the picker: the game's own, then any other mode a map names."""
+    named = {x for m in maps for x in m["modes"]}
+    return list(GAME_MODES) + sorted(named - set(GAME_MODES))
 
 
 # ---- processes ---------------------------------------------------------------------------------------------------
@@ -366,15 +421,22 @@ def terminate(proc, force):
 
 def open_with_system(path):
     """Open a folder in Explorer (Finder, the file manager) or a file in its default app. Raises PlayError."""
-    try:
-        if util.IS_WINDOWS:
+    if util.IS_WINDOWS:
+        try:
             os.startfile(path)  # (Explorer / the default app; no console)
-            return
-        cmd = ["open" if sys.platform == "darwin" else "xdg-open", path]
-        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        except OSError as e:
+            raise PlayError(500, "Couldn't open %s (%s)." % (path, e.strerror or type(e).__name__))
+        return
+    # (elsewhere a helper program opens it: when that is what's missing, say so, not that the file is)
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    exe = shutil.which(opener)
+    if not exe:
+        raise PlayError(500, "Couldn't open %s: %s is not installed on this PC." % (path, opener), "no-opener")
+    try:
+        subprocess.Popen([exe, path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True, close_fds=True)
     except OSError as e:
-        raise PlayError(500, "Couldn't open %s (%s)." % (path, e.strerror or type(e).__name__))
+        raise PlayError(500, "Couldn't start %s to open %s (%s)." % (opener, path, e.strerror or type(e).__name__))
 
 
 def _python_for_handoff():
@@ -480,6 +542,22 @@ def parse_releases(data):
         out.append(rel)
     out.sort(key=lambda x: (util.parse_time(x["publishedAt"]) or 0, util.version_key(x["tag"])), reverse=True)
     return out
+
+
+def valid_release(x):
+    """A release row read back from play-releases.json is one parse_releases could have made (only https / local
+    links, a tag that is a plain name): anything else is dropped, never shown or installed."""
+    if not isinstance(x, dict) or not isinstance(x.get("tag"), str) or not TAG_RE.match(x["tag"]):
+        return False
+    if x.get("channel") not in ("production", "testing", "other") or not isinstance(x.get("name"), str):
+        return False
+    for k in ("url", "sums", "sig", "manifest", "manifestSig"):
+        if x.get(k) is not None and not _url_ok(x[k]):
+            return False
+    z = x.get("zip")
+    if z is not None and not (isinstance(z, dict) and _url_ok(z.get("url")) and isinstance(z.get("size"), int)):
+        return False
+    return all(x.get(k) is None or isinstance(x[k], str) for k in ("publishedAt", "version"))
 
 
 def page_url(base, n):
@@ -835,6 +913,13 @@ def change_entry(text, key, line):
     return text, "gone"
 
 
+def blocked_why(status):
+    """Why q's edit or removal stayed out of 12-play-notes.md, from what sync_docs recorded."""
+    if status == "archived":
+        return "an agent moved or archived it"
+    return "an agent set it to %s" % status
+
+
 def add_note_lines(text, lines):
     """12-play-notes.md's text (None / empty: create it) with `lines` (newest first) at the top of ## Notes."""
     if text is None or not text.strip():
@@ -866,7 +951,8 @@ class _Ctx:
         self.paths = paths
 
 
-ACTIVE = ("downloading", "verifying", "extracting")
+ACTIVE = ("downloading", "verifying", "extracting", "copying")   # (copying: into a game folder, past cancelling)
+CHANNEL_FOLDERS = ("production", "testing")   # (the local folders a release of that channel can update)
 
 
 class Play:
@@ -890,6 +976,7 @@ class Play:
         self.sessions = self._load_sessions()
         self.rel = {"ok": None, "fetchedAt": None, "error": None, "list": [], "etag": None, "busy": False,
                     "forcedAt": -1e9, "fetchedTs": 0.0, "complete": None}
+        self._load_releases()
         self.installs = {}
         self.sync = self._load_json(SYNC_FILE, {})
         if not isinstance(self.sync, dict):
@@ -897,6 +984,7 @@ class Play:
         self.sync.setdefault("written", [])
         self._doc_cache = (None, [])
         self._notes_cache = (None, {})
+        self._maps_cache = {}   # (maps folder -> (its listing's key, {sig, maps, modes}))
 
     # -- files
     def _load_json(self, name, default):
@@ -919,6 +1007,30 @@ class Play:
             util.write_json_atomic(self.paths.pm(SESSIONS_FILE), data)
         except OSError as e:
             util.log("play: sessions not saved (%s)" % type(e).__name__)
+
+    def _load_releases(self):
+        """The last release list (play-releases.json): the page has it at once after a restart (offline too), and the
+        next fetch asks GitHub with its ETag (a 304 costs nothing against the 60 an hour)."""
+        d = self._load_json(RELEASES_FILE, None)
+        if not isinstance(d, dict) or not isinstance(d.get("list"), list):
+            return
+        lst = [dict(x, needsSig=needs_signature(x)) for x in d["list"] if valid_release(x)]
+        ts = util.to_float(d.get("fetchedTs")) or 0.0
+        if not lst or ts > self.clock() + 60:
+            return  # (nothing usable, or a time from the future: fetched again)
+        etag = d.get("etag") if isinstance(d.get("etag"), str) and len(d["etag"]) < 200 else None
+        self.rel.update(list=lst, ok=True, fetchedTs=ts, fetchedAt=util.iso(ts), complete=d.get("complete") is True,
+                        etag=etag)
+
+    def _save_releases(self):
+        with self.lock:
+            r = self.rel
+            data = {"list": r["list"], "etag": r["etag"], "fetchedTs": r["fetchedTs"], "complete": r["complete"]}
+        try:
+            self.paths.ensure_pm_dir()
+            util.write_json_atomic(self.paths.pm(RELEASES_FILE), data)
+        except OSError as e:
+            util.log("play: release list not saved (%s)" % type(e).__name__)
 
     def _save_sync(self):
         try:
@@ -1007,8 +1119,15 @@ class Play:
     def builds(self):
         out = []
         ctx = _Ctx(self.paths)
+        counts = {}   # (games played and crashed per build, over the kept sessions: shown on its card)
+        with self.lock:
+            for s in self.sessions:
+                if s.get("state") != "running":
+                    c = counts.setdefault(s.get("build"), [0, 0])
+                    c[0] += 1
+                    c[1] += exit_info(s.get("exitCode"), s.get("stopped"))["kind"] == "crash"
         for name in LOCAL_FOLDERS:
-            out.append(self._build(builds.read_folder(ctx, name), name, name, "local"))
+            out.append(self._build(builds.read_folder(ctx, name), name, name, "local", counts))
         vdir = self.paths.q(VERSIONS)
         try:
             tags = [t for t in os.listdir(vdir) if TAG_RE.match(t) and os.path.isdir(os.path.join(vdir, t))]
@@ -1016,26 +1135,67 @@ class Play:
             tags = []
         tags.sort(key=lambda t: (util.version_key(t), t), reverse=True)
         for t in tags:
-            out.append(self._build(builds.read_folder(ctx, os.path.join(VERSIONS, t)), VERSIONS + "/" + t, t, "version"))
+            out.append(self._build(builds.read_folder(ctx, os.path.join(VERSIONS, t)), VERSIONS + "/" + t, t, "version",
+                                   counts))
         return out
 
-    def _build(self, e, bid, label, kind):
+    def _maps(self, folder):
+        """read_maps of a build folder, cached by the maps folder's listing (names, sizes, times: one scandir a poll,
+        which on Windows needs no stat per file) -> {sig, maps, modes}, or None when it has no maps folder."""
+        d = os.path.join(folder, "maps")
+        try:
+            with os.scandir(d) as it:
+                key = tuple(sorted((x.name, x.stat().st_size, x.stat().st_mtime_ns) for x in it if MAP_RE.match(x.name)))
+        except OSError:
+            return None
+        if not key:
+            return None
+        hit = self._maps_cache.get(d)
+        if hit and hit[0] == key:
+            return hit[1]
+        maps = read_maps(folder)
+        val = {"maps": maps, "modes": map_modes(maps),
+               "sig": hashlib.sha1(json.dumps(maps, sort_keys=True).encode("utf-8")).hexdigest()[:12]}
+        self._maps_cache[d] = (key, val)
+        return val
+
+    def build_maps(self, bid):
+        """The maps and modes of a build for the page's pickers (GET /api/play/maps?build=<id>; the poll only
+        carries their sig, so the lists are fetched once per set of maps)."""
+        b = self.find_build(str(bid or ""))
+        if not b:
+            raise PlayError(404, "That build is not on this PC.")
+        m = self._maps(b["folder"]) if b.get("present") else None
+        if not m:
+            m = {"sig": None, "maps": [], "modes": list(GAME_MODES)}
+        return dict(m, build=b["id"], titles=dict(zip(GAME_MODES, GAME_MODE_TITLES)))
+
+    def _build(self, e, bid, label, kind, counts):
         exe = find_exe(e["path"]) if e.get("present") else None
         with self.lock:
             running = [s["id"] for s in self.sessions if s.get("state") == "running" and s.get("build") == bid]
         b = {"id": bid, "label": label, "kind": kind, "folder": e["path"], "present": e.get("present"),
              "version": e.get("version"), "tag": e.get("tag"), "commit": e.get("commit"), "dirty": e.get("dirty"),
              "mtime": e.get("mtime"), "lines": e.get("lines") or [], "note": e.get("note"),
+             "fromRelease": e.get("kind") == "release",   # (BUILD.txt written when a release was put there)
              "exe": os.path.basename(exe) if exe else None, "playable": bool(exe), "running": running,
              "missing": None if exe else ("folder missing" if not e.get("present") else "no quark.exe in it")}
-        if kind == "version" and e.get("present"):
-            # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded)
+        m = self._maps(e["path"]) if exe else None
+        b["maps"] = m["sig"] if m else None
+        b["plays"], b["crashes"] = counts.get(bid, (0, 0))
+        if e.get("present") and (kind == "version" or b["fromRelease"]):
+            # (how Install checked it: written next to BUILD.txt; none for a folder from before this was recorded. In
+            # a game folder only when it is about the release BUILD.txt names: fetch_release.ps1 leaves an old one)
             try:
                 info = util.read_json_file(os.path.join(e["path"], INSTALL_INFO))
             except (OSError, ValueError):
                 info = None
+            if kind == "local" and not (isinstance(info, dict) and e.get("tag") and info.get("tag") == e.get("tag")):
+                info = None
             if isinstance(info, dict) and info.get("check") in ("signed", "sha256", "none"):
                 b["check"], b["checkNote"] = info["check"], one_line(info.get("note") or "", 300)
+            if isinstance(info, dict) and isinstance(info.get("installedAt"), str):
+                b["installedAt"] = info["installedAt"]
         return b
 
     def find_build(self, bid):
@@ -1051,6 +1211,9 @@ class Play:
             raise PlayError(404, "That build is not on this PC.")
         if not b["playable"]:
             raise PlayError(409, "%s has no game in it (%s)." % (b["label"], b["missing"]))
+        with self.lock:
+            if any(i.get("into") == b["id"] and i.get("state") in ACTIVE for i in self.installs.values()):
+                raise PlayError(409, "The %s folder is being updated; play it when that is done." % b["id"])
         if not isinstance(args_text, str):
             raise PlayError(400, "The launch options must be text.")
         args = parse_args(args_text)
@@ -1349,12 +1512,25 @@ class Play:
         return dict(n, fields=clean, line=line)
 
     def delete_note(self, nid):
-        """Remove a saved note; its entry leaves 12-play-notes.md while it is still `open`."""
+        """Remove a saved note; its entry leaves 12-play-notes.md while it is still `open`. The page keeps showing it
+        ("removing") until the file has it out, or says it was not removed when an agent took the entry first."""
         with self.lock:
             n = self._editable_note(nid)
             self._append_note({"id": n["id"], "op": "delete", "at": util.iso(self.clock())})
         self.wake.set()
         return {"removed": n["id"], "title": n.get("title")}
+
+    def dismiss_blocked(self, nid):
+        """q has seen that an edit or removal of this note didn't reach 12-play-notes.md (an agent took the entry
+        first): it leaves the page's list and is not tried again."""
+        n = self._note_records().get(str(nid or ""))
+        with self.lock:
+            if not n or n["id"] not in (self.sync.get("blocked") or {}):
+                raise PlayError(404, "That change is not waiting any more.", "not-blocked")
+            self.sync.setdefault("dismissed", {})[n["id"]] = n.get("rev", 0)
+            self.sync["blocked"] = {k: v for k, v in self.sync["blocked"].items() if k != n["id"]}
+            self._save_sync()
+        return {"dismissed": n["id"]}
 
     # -- Claude Documents (git)
     def _git(self, *args, timeout=60):
@@ -1435,6 +1611,7 @@ class Play:
         push. Returns the sync state."""
         with self.docs_lock:
             st = self._sync_once()
+            st.setdefault("noUpstream", False)
             st["at"] = util.now_iso()
             self.sync.update(st)
             self._save_sync()
@@ -1479,18 +1656,31 @@ class Play:
             if n["id"] not in written and ((n.get("title"), n.get("stamp")) in present or n.get("deleted")):
                 written.add(n["id"])
         # q's edits and removals of notes already in the file: only while the entry is still `open`
+        # (a change an agent blocked is tried again on every sync: it goes in if the entry is set back to `open`,
+        # until q dismisses it on the page)
+        dismissed = self.sync.get("dismissed") or {}
         changes, done = [], {}
         for n in records:
             rev = n.get("rev", 0)
-            if not rev or n["id"] not in written or rev <= applied.get(n["id"], 0) or text is None:
+            if (not rev or n["id"] not in written or text is None or dismissed.get(n["id"]) == rev
+                    or (rev <= applied.get(n["id"], 0) and n["id"] not in blocked)):
                 continue
             text, what = change_entry(text, (n.get("title"), n.get("stamp")), None if n.get("deleted") else n["line"])
-            if what in ("changed", "removed"):
-                changes.append("%s (%s)" % (n["title"], "edited" if what == "changed" else "removed"))
+            if what in ("changed", "removed", "same"):
+                if what != "same":
+                    changes.append("%s (%s)" % (n["title"], "edited" if what == "changed" else "removed"))
                 blocked.pop(n["id"], None)
-            elif what not in ("same", "gone"):
+            elif what == "gone" and n.get("deleted"):
+                blocked.pop(n["id"], None)  # (an agent moved or archived it: out of the file, as q wanted)
+            elif what == "gone":
+                blocked[n["id"]] = "archived"
+            else:
                 blocked[n["id"]] = what
             done[n["id"]] = rev
+        with self.lock:  # (dismissed on the page while this sync ran: stays dismissed)
+            dismissed = self.sync.get("dismissed") or {}
+            blocked = {k: v for k, v in blocked.items() if dismissed.get(k) != next(
+                (n.get("rev", 0) for n in records if n["id"] == k), None)}
         if todo or changes:
             new = add_note_lines(text, [n["line"] for n in reversed(todo)]) if todo else text  # (newest first)
             data = (new.replace("\n", "\r\n") if crlf else new).encode("utf-8")
@@ -1513,7 +1703,16 @@ class Play:
         applied.update(done)
         applied.update({n["id"]: n.get("rev", 0) for n in todo if n.get("rev")})
         self.sync.update(written=sorted(written), applied=applied, blocked=blocked)
-        unpushed = util.to_int(self._git("rev-list", "--count", "@{u}..HEAD")[1], 0) or 0
+        code, out, _ = self._git("rev-list", "--count", "@{u}..HEAD")
+        if code != 0:
+            # no upstream branch (unset, or its remote branch is gone): nothing goes to GitHub, whatever is committed
+            # here; count what no remote has, never read the failed count as "0 to push"
+            unpushed = util.to_int(self._git("rev-list", "--count", "HEAD", "--not", "--remotes")[1], 0) or 0
+            result.update(ok=False, pushed=False, unpushed=unpushed, noUpstream=True,
+                          error="Saved on this PC, not going to GitHub: the Claude Documents folder has no upstream "
+                                "branch (in that folder: git branch -u origin/main).")
+            return result
+        unpushed = util.to_int(out, 0) or 0
         if unpushed and online:
             for attempt in (0, 1):
                 code, _, err = self._git("push", "-q", timeout=120)
@@ -1540,7 +1739,7 @@ class Play:
         yet pushed."""
         written = set(self.sync.get("written") or [])
         applied = self.sync.get("applied") or {}
-        return bool(self.sync.get("unpushed")) or any(
+        return bool(self.sync.get("unpushed") or self.sync.get("noUpstream")) or any(
             n["id"] not in written or n.get("rev", 0) > applied.get(n["id"], 0) for n in self.notes(deleted=True))
 
     def _sync_loop(self):
@@ -1670,14 +1869,30 @@ class Play:
                 r["busy"] = False
                 r["fetchedTs"] = self.clock()
                 r["fetchedAt"] = util.iso(r["fetchedTs"])
+                keep = bool(r["ok"] and r["list"])
+            if keep:
+                self._save_releases()  # (a 304 too: its new time keeps a restart within 10 min from asking again)
 
     # -- installing older versions
-    def install(self, tag):
+    def install(self, tag, into=None):
+        """Install a release into versions\\<tag>, or (into: production / testing) copy it over that local game folder
+        the way tools/fetch_release.ps1 does (merged in, never emptied first; BUILD.txt rewritten), only with a
+        release of that folder's channel. Checked the same way either way."""
         tag = str(tag or "")
+        into = str(into) if into else None
         with self.lock:
             rel = next((x for x in self.rel["list"] if x["tag"] == tag), None)
             if not rel:
                 raise PlayError(404, "That release is not in the list (refresh it).")
+            if into is not None:
+                if into not in CHANNEL_FOLDERS:
+                    raise PlayError(400, "Only the production or testing folder can be updated from a release.")
+                if rel["channel"] != into:
+                    raise PlayError(409, "%s is not a %s release, so it doesn't go into the %s folder." % (tag, into, into))
+                if not os.path.isdir(self.paths.q(into)):
+                    raise PlayError(404, "There is no Quark\\%s folder on this PC." % into)
+                if self._build_running(into):
+                    raise PlayError(409, "A game is running from the %s folder; close it first." % into)
             if not rel["zip"]:
                 raise PlayError(409, "%s has no %s." % (tag, ZIP_NAME))
             if rel["needsSig"] and not (rel.get("sig") and rel.get("manifest") and rel.get("manifestSig")):
@@ -1688,8 +1903,8 @@ class Play:
             if self._in_use(tag):
                 raise PlayError(409, "%s is running; close the game first." % tag)
             self.installs[tag] = {"state": "downloading", "got": 0, "total": rel["zip"]["size"] or 0,
-                                  "startedAt": util.now_iso(), "error": None}
-        threading.Thread(target=self._install, args=(rel,), name="pm-play-install", daemon=True).start()
+                                  "startedAt": util.now_iso(), "error": None, "into": into}
+        threading.Thread(target=self._install, args=(rel, into), name="pm-play-install", daemon=True).start()
         return dict(self.installs[tag])
 
     def cancel_install(self, tag):
@@ -1698,11 +1913,16 @@ class Play:
             i = self.installs.get(tag)
             if not i or i.get("state") not in ACTIVE:
                 raise PlayError(409, "%s is not being installed." % (tag or "That version"), "not-installing")
+            if i.get("state") == "copying":
+                raise PlayError(409, "Too late to cancel: its files are being copied into the %s folder." % i.get("into"),
+                                "copying")
             i["cancel"] = True
         return {"cancelling": tag}
 
     def _in_use(self, tag):
-        bid = VERSIONS + "/" + tag
+        return self._build_running(VERSIONS + "/" + tag)
+
+    def _build_running(self, bid):
         return any(s.get("state") == "running" and s.get("build") == bid for s in self.sessions)
 
     def _set_install(self, tag, **kw):
@@ -1743,11 +1963,13 @@ class Play:
         want = parse_sums(self._fetch_small(rel["sums"])) if rel.get("sums") else None
         if want and sha256_hex != want:
             raise PlayError(500, "The download does not match the release's SHA256SUMS; not installed.")
+        # (a tag like build-1 names no version: unsigned, but not known to be from before signing)
+        why = "from before signing (1.16.x or older)" if util.parse_version(rel["tag"]) else "unsigned, and its tag names no version"
         if want:
-            return "sha256", "from before signing (1.16.x or older): matches its SHA256SUMS, no signature to check"
-        return "none", "from before signing (1.16.x or older): no signature and no SHA256SUMS to check it against"
+            return "sha256", why + ": matches its SHA256SUMS, no signature to check"
+        return "none", why + ": no signature and no SHA256SUMS to check it against"
 
-    def _install(self, rel):
+    def _install(self, rel, into=None):
         tag = rel["tag"]
         vdir = self.paths.q(VERSIONS)
         tmp = os.path.join(vdir, ".download-%s.zip" % tag)
@@ -1786,12 +2008,15 @@ class Play:
             util.write_json_atomic(os.path.join(partial, INSTALL_INFO), {
                 "tag": tag, "publishedAt": rel.get("publishedAt"), "installedAt": util.now_iso(), "check": check,
                 "note": note, "sha256": h.hexdigest()})
-            dest = os.path.join(vdir, tag)
-            if self._in_use(tag):
-                raise PlayError(409, "%s started while installing; close it and install again." % tag)
-            self._check_cancel(tag)
-            _rmtree(dest)
-            os.replace(partial, dest)
+            if into:
+                self._copy_into(tag, partial, into)
+            else:
+                dest = os.path.join(vdir, tag)
+                if self._in_use(tag):
+                    raise PlayError(409, "%s started while installing; close it and install again." % tag)
+                self._check_cancel(tag)
+                _rmtree(dest)
+                os.replace(partial, dest)
             self._set_install(tag, state="done", verified=check != "none", check=check, doneAt=util.now_iso(),
                               note=note)
         except PlayError as e:
@@ -1805,6 +2030,20 @@ class Play:
             except OSError:
                 pass
             _rmtree(partial)
+
+    def _copy_into(self, tag, partial, into):
+        """The checked, unpacked release over Quark\\<into> (fetch_release.ps1's robocopy /E: files replaced or added,
+        none deleted; settings and q's own maps live in %APPDATA%\\quark anyway)."""
+        self._check_cancel(tag)
+        if self._build_running(into):
+            raise PlayError(409, "A game started from the %s folder while installing; close it and update again." % into)
+        self._set_install(tag, state="copying")
+        dest = self.paths.q(into)
+        try:
+            shutil.copytree(partial, dest, dirs_exist_ok=True)
+        except (OSError, shutil.Error) as e:
+            raise PlayError(500, "Quark\\%s was only partly updated (%s); update it again." % (
+                into, str(getattr(e, "strerror", None) or e)[:160]))
 
     def remove(self, tag):
         tag = str(tag or "")
@@ -1847,7 +2086,7 @@ class Play:
             b = inst.get(x["tag"])
             row = dict(x, installed=b is not None)
             if b is not None and b.get("check"):
-                row["check"] = b["check"]
+                row["check"], row["checkNote"] = b["check"], b.get("checkNote")
             row["folders"] = [f for f, lb in local.items() if (lb.get("tag") and lb["tag"] == x["tag"]) or
                               (x["version"] and lb.get("version") == x["version"])]
             mine = local.get(x["channel"])  # (production / testing: the folder that follows that channel)
@@ -1868,22 +2107,39 @@ class Play:
         written = set(self.sync.get("written") or [])
         applied, blocked = self.sync.get("applied") or {}, self.sync.get("blocked") or {}
         unpushed = bool(self.sync.get("unpushed"))
+        no_upstream = bool(self.sync.get("noUpstream"))
         present = os.path.isdir(self.docs_dir)
-        all_notes = self.notes()
+        records = self.notes(deleted=True)
+        all_notes = [n for n in records if not n.get("deleted")]
+
+        def removal(n):
+            """A removed note the page still shows: "pending" (its entry is not out of the file yet) or "blocked" (an
+            agent took the entry first, so it stays in the file); None: gone from the page."""
+            if not n.get("deleted") or not present or n["id"] not in written:
+                return None
+            if n["id"] in blocked:
+                return "blocked"
+            return "pending" if n.get("rev", 0) > applied.get(n["id"], 0) else None
         notes = []
-        for n in reversed(all_notes[-20:]):
+        for n in reversed([n for n in records if not n.get("deleted") or removal(n)][-20:]):
             key = (n.get("title"), n.get("stamp"))
             st = status.get(key)
             mine = n["id"] in written
             pending_edit = n.get("rev", 0) > applied.get(n["id"], 0)
+            removed = removal(n)
             if not present:
                 where = "kept on this PC only (no Claude Documents folder)"
             elif not mine:
                 where = "waiting to go into Claude Documents"
+            elif removed == "pending":
+                where = "your removal is waiting to go into Claude Documents"
             elif pending_edit:
                 where = "your edit is waiting to go into Claude Documents"
             elif n["id"] in blocked:
-                where = "your edit is not in the file: an agent set it to %s first" % blocked[n["id"]]
+                where = "%s: %s first" % ("not removed" if removed else "your edit is not in the file",
+                                          blocked_why(blocked[n["id"]]))
+            elif no_upstream:
+                where = "saved on this PC, not going to GitHub (no upstream branch)"
             elif unpushed:
                 where = "saved on this PC, will go up later"
             else:
@@ -1895,26 +2151,44 @@ class Play:
                           "fields": n.get("fields"), "label": n.get("label"), "version": n.get("version"),
                           "build": n.get("build"), "durationSec": n.get("durationSec"), "args": n.get("args"),
                           "status": st, "where": where, "editedAt": n.get("editedAt"), "freeform": bool(n.get("freeform")),
-                          "logTail": n.get("logTail"), "locked": locked,
+                          "logTail": n.get("logTail"), "locked": locked, "removed": removed,
+                          "blocked": n["id"] in blocked,
                           "exit": exit_info(n.get("exitCode"), n.get("stopped")) if n.get("session") else None})
+        # every change that didn't reach the file (not only the newest 20 notes'): the page lists them with a way to
+        # write a follow-up note
+        byid = {n["id"]: n for n in records}
+        blocked_list = [{"id": k, "title": byid[k].get("title"), "stamp": byid[k].get("stamp"),
+                         "change": "removal" if byid[k].get("deleted") else "edit", "why": blocked_why(v),
+                         "build": byid[k].get("build"), "label": byid[k].get("label"), "version": byid[k].get("version")}
+                        for k, v in blocked.items() if k in byid and present]
         with self.lock:
-            sessions = [dict(s) for s in reversed(self.sessions[-30:])]
+            sessions = [self._session_view(s) for s in reversed(self.sessions[-30:])]
             installs = {k: dict(v) for k, v in self.installs.items()}
-        for s in sessions:
-            s.pop("pidCreated", None)
-            if s.get("state") != "running":
-                s["exit"] = exit_info(s.get("exitCode"), s.get("stopped"))
-            path = self._log_path(s)
-            s["hasLog"] = bool(path and os.path.isfile(path))
+            total = len(self.sessions)
         p = self.pending()
         return {"now": util.now_iso(), "builds": blist, "releases": releases, "installs": installs,
-                "sessions": sessions, "running": p["running"], "pending": p["pending"], "openNotes": p["openNotes"],
-                "notes": notes, "notesTotal": len(all_notes),
+                "sessions": sessions, "sessionsTotal": total, "running": p["running"], "pending": p["pending"], "openNotes": p["openNotes"],
+                "notes": notes, "notesTotal": len(all_notes), "blocked": blocked_list,
                 "docs": {"folder": self.docs_dir, "present": present, "file": DOCS_FILE,
                          "filePresent": os.path.isfile(os.path.join(self.docs_dir, DOCS_FILE)),
-                         "sync": {k: v for k, v in self.sync.items() if k not in ("written", "applied", "blocked")}},
+                         "sync": {k: v for k, v in self.sync.items() if k not in ("written", "applied", "blocked", "dismissed")}},
                 "limits": {"field": MAX_FIELD, "args": MAX_ARGS},
                 "platform": "windows" if util.IS_WINDOWS else sys.platform}
+
+    def _session_view(self, s):
+        """A session as the page shows it: how it ended, whether its log is still there."""
+        s = dict(s)
+        s.pop("pidCreated", None)
+        if s.get("state") != "running":
+            s["exit"] = exit_info(s.get("exitCode"), s.get("stopped"))
+        path = self._log_path(s)
+        s["hasLog"] = bool(path and os.path.isfile(path))
+        return s
+
+    def all_sessions(self):
+        """Every kept session (KEEP_SESSIONS), newest first: the page's "Show all" (a poll sends the newest 30)."""
+        with self.lock:
+            return {"sessions": [self._session_view(s) for s in reversed(self.sessions)], "total": len(self.sessions)}
 
     # -- the routes server.py hands over (GET /api/play/<what>, POST /api/play/<what>)
     def api_get(self, what, query):
@@ -1923,6 +2197,10 @@ class Play:
         try:
             if what == "log":
                 return 200, self.game_log(q("session"))
+            if what == "maps":
+                return 200, self.build_maps(q("build"))
+            if what == "sessions":
+                return 200, self.all_sessions()
         except PlayError as e:
             return e.code, {"ok": False, "message": e.message, "reason": e.reason}
         return 404, {"ok": False, "message": "not found"}
@@ -1939,6 +2217,10 @@ class Play:
                     "message": "Saved. The entry in %s changes in a moment." % DOCS_FILE}
         if what == "note-delete":
             return dict(self.delete_note(req.get("id")), message="Removed. Its entry leaves %s in a moment." % DOCS_FILE)
+        if what == "note-dismiss":
+            return self.dismiss_blocked(req.get("id"))
         if what == "install-cancel":
             return self.cancel_install(req.get("tag"))
+        if what == "install-into":
+            return {"install": self.install(req.get("tag"), req.get("into") or "-")}
         return None

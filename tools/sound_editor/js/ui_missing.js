@@ -47,7 +47,8 @@
   M.render = function () {
     M.ensureAssets();
     const t = U.$('#missingTable'); t.innerHTML = '';
-    t.append(h('thead', h('tr', h('th', 'Name'), h('th', 'Pri'), h('th', 'Plays'), h('th', 'When it would play / design note'), h('th', 'Your sound (drop a file on a slot, or click it and use Design...)'))));
+    // (the 2-character columns narrow, the slots wide enough for seven voices in a row: table-layout is fixed)
+    t.append(h('thead', h('tr', h('th.m-name', 'Name'), h('th.m-pri', 'Pri'), h('th.m-d', 'Plays'), h('th', 'When it would play / design note'), h('th.m-slots', 'Your sound (drop a file on a slot, or click it and use Design...)'))));
     const body = h('tbody');
     const areas = [...new Set(Q.MISSING.map(m => m.area))];
     const own = Q.state.customs.map(c => ({ area: 'Yours', name: c.name, kind: c.kind, pri: '', d: '', when: c.when || 'your own sound', note: '', own: true }));
@@ -67,13 +68,31 @@
   };
   U.views.missing = { render: M.render };
 
+  /* A name typed in "Add your own": upper case, runs of other characters become one _, no _ at either end, starting
+     with a letter. "quips/LAUGH" (or the quip kind) is a new quip for every voice, never a line named QUIPS_LAUGH.
+     Returns {name, kind, quip} or {error}. */
+  M.parseName = function (text, kindSel) {
+    let t = String(text || '').trim(), quip = kindSel === 'quip';
+    const qm = t.match(/^quips?[\/\\_ ](.+)$/i);
+    if (qm && kindSel !== 'sound') { quip = true; t = qm[1]; }
+    const base = t.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!base) return { error: 'Type a name first (letters, digits, _)' };
+    if (!/^[A-Z]/.test(base)) return { error: base + ': a name starts with a letter' };
+    if (base.length > 48) return { error: 'Keep the name under 48 characters' };
+    const kind = quip ? 'voice' : kindSel, name = quip ? 'quips/' + base : base;
+    const taken = quip ? Q.allQuips().includes(name) : (kind === 'voice' ? Q.LINES : Q.SOUNDS).includes(name);
+    if (taken || Q.state.customs.some(c => c.name === name && c.kind === kind) || Q.MISSING.some(m => m.name === name && (m.kind || 'sound') === kind)) return { error: name + ' already exists' };
+    return { name, kind, quip };
+  };
+
   M.init = function () {
     U.$('#msAdd').onclick = () => {
-      const name = U.$('#msName').value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_'), kind = U.$('#msKind').value;
-      if (!name) { U.toast('Type a name first (letters, digits, _)'); return; }
-      if ((kind === 'voice' ? Q.LINES : Q.SOUNDS).includes(name) || Q.state.customs.some(c => c.name === name && c.kind === kind) || Q.MISSING.some(m => m.name === name && (m.kind || 'sound') === kind)) { U.toast(name + ' already exists'); return; }
-      Q.commit('add ' + name, () => Q.state.customs.push({ name, kind, when: 'your own ' + (kind === 'voice' ? 'line' : 'sound') }));
+      const r = M.parseName(U.$('#msName').value, U.$('#msKind').value);
+      if (r.error) { U.toast(r.error, true); return; }
+      const { name, kind, quip } = r;
+      Q.commit('add ' + name, () => Q.state.customs.push({ name, kind, when: 'your own ' + (quip ? 'quip' : kind === 'voice' ? 'line' : 'sound') }));
       U.$('#msName').value = '';
+      U.toast('Added ' + name + ': a slot per ' + (kind === 'voice' ? 'voice' : 'kit') + ' under Yours' + (quip ? ' (and a row in Voices > QUIPS); exports as voices/<voice>/' + name + '.wav, the game plays it as soon as it is there' : '; it needs a game hook before it plays'));
     };
   };
 })();

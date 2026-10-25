@@ -1,8 +1,10 @@
 # Quark project manager: spec (director's contract for the workers)
 
-Names (q, 2026-10-24): the PM page is the **Supervisor Board** (top level). Under it (in this order since 2026-10-24): **Claude
-Manager** (8766, the Claude Documents manager), **GitHub Manager** (8767), **Editor Manager** (8765, the editor dashboard, editors only),
-and under that the Sound, UI, Map, Bot and Model editors. Map editor = server on 8770, bot editor = server on 8769.
+Names (q, 2026-10-24): the PM page is the **Supervisor Board** (top level). Under it (in this order since 2026-10-24): **Play**
+(a page of the Supervisor Board server, 8768), **Claude Manager** (8766, the Claude Documents manager), **GitHub Manager** (8767;
+under it **Tests**, 8775), **Editor Manager** (8765, the editor dashboard, editors only), and under that the Sound, UI, Map,
+Bot, Model, Gamemode, Physics and Weapons editors. Map editor = server on 8770, bot editor = 8769, gamemode = 8771,
+physics = 8772, weapons = 8773; Sound, UI and Model are pages (no server).
 The tab tree uses a `parent` field in tabs.json (see `shell/tabs.default.json`, the source of truth for defaults).
 Where this file and the code differ, the code and `shell/README.md` win; this was the starting contract.
 
@@ -52,7 +54,10 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
 
 ### tabs.json (`Quark\project-manager\tabs.json`; the default is written by setup, q may edit)
 
-The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). An excerpt:
+The defaults are `shell/tabs.default.json` (kept identical to `pm/tabs.py` DEFAULT_TABS by a test). It also carries the
+bookkeeping keys a fresh tabs.json starts with (`defaultsSeen`, `defaultsPlaced`, `defaultsMoved`, `defaultsUpgraded`:
+every current default and one-time fix counts as done), because setup.ps1 and the shell's tab drag copy it as it is.
+An excerpt:
 
 ```json
 {"tabs": [
@@ -79,14 +84,21 @@ is added by appending one entry. The same resolution is implemented in Python (`
 Bind 127.0.0.1 only. Started with `py -3 server.py [--quark C:\Users\user\Desktop\Quark] [--port 8768]`; default
 Quark folder = the parent of the folder holding server.py when installed (`Quark\project-manager\` →
 `Quark\`). A background thread refreshes each source on its own interval; requests are served from memory (never
-block on a source). Each source's result carries `{ok, fetchedAt, error?, data}`; one failing source never breaks the
-others. `?refresh=1` on `/api/pm` asks for an immediate refresh (rate-limited to once per 10 s).
+block on a source). Each source's result carries `{ok, fetchedAt, error?, data, lastOkAt}`; one failing source never
+breaks the others. A source that fails keeps its last good data: `{ok: false, kept: true, data: <as of lastOkAt>}`, so
+a sibling's auto-update restart never blanks the board (HALT items, in progress, CI & PRs, Assets stay, marked stale);
+the event log and the disagreement check use only data from a fetch that worked. `?refresh=1` on `/api/pm` asks for
+an immediate refresh (rate-limited to once per 10 s).
 
 Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET /api/pm` (below), `GET /api/tabs`
 (resolved tabs.json with `installed`, `up`), `GET /api/history?limit=` (the PM's own event log),
-`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run` / `/api/updates/ack?id=` (section 5),
+`GET /api/health` → `ok`, `GET /api/updates` + `POST /api/updates/run[?id=<tool>]` / `/api/updates/ack?id=` (section 5;
+`?id=` runs one tool's install when the updater supports it, `updates.canRetryOne`, else 501),
+`GET /api/updates/log?id=<tool>` (the end of `Quark\project-manager\logs\install-<tool>.log`, at most 256 KB),
+`GET /api/checklist` (`{version, mtime, url, sections: [{heading, items: [{text, group}]}], ticks}`),
 `POST /api/checklist` (JSON `{version, section, done, build?}`: q's hand-test ticks, kept per testing VERSION in
-`Quark\project-manager\checklist-ticks.json`, newest 20 versions; a section is keyed by its heading without the number). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
+`Quark\project-manager\checklist-ticks.json`, newest 20 versions; a section is keyed by its heading without the number;
+`section` must be a heading of RELEASE_CHECKLIST.md, `done` true or false and `version` not newer than testing, else 400). CORS: echo `Origin` for `http://127.0.0.1|localhost:8765-8768`.
 
 ### Sources (interval)
 
@@ -99,7 +111,7 @@ Endpoints: `GET /` the PM page (`web/index.html`), `/static/...` its files, `GET
 | `repo` (60 s) | `Quark\repository\` (mirror of testing): `VERSION`, newest 8 `changelogs/<v>.md` (version, first 12 lines, mtime, `committedAt` = the commit that added it: one `git log --diff-filter=A`, cached per HEAD), whether `changelogs/full/<VERSION>.md` exists; `git log -12 --format=%H%x1f%h%x1f%cI%x1f%s` | local files + `git` (read-only commands only) |
 | `servers` (120 s) | public server list from the ranking Worker: `GET https://quark-master.jamesrandallmcamis.workers.dev/list?v=<version>` for the production and the testing version (one address per line; count them, keep the addresses), and `/queue` raw text (players queued) | HTTPS, 5 s timeout, User-Agent `quark-project-manager` |
 | `oracle` (600 s, and on demand at most once per 120 s) | the Oracle box: production game server + Discord bot health | SSH, below |
-| `checklist` (300 s) | the section headings of `Quark\repository\docs\RELEASE_CHECKLIST.md` (for the "before production" step list) | local file |
+| `checklist` (300 s) | the section headings of `Quark\repository\docs\RELEASE_CHECKLIST.md` (for the "before production" step list) and each section's check items (table rows with ☐, bullets; `group` = the ### heading above) | local file |
 
 ### The Oracle box check (live players: keep it tiny)
 
@@ -140,7 +152,12 @@ active state, an in-progress entry added / finished, % human changed. `{time, ki
    "checklist": {"version": "1.18.6", "done": {"Settings": {"at", "build"}}, "count": 1},
    "humanPct": 16.9}}
 ```
-`serverNow` (ms) is the page's clock; `generatedAt` is the last derive (up to a source interval old).
+`serverNow` (ms) is the page's clock; `generatedAt` is the last derive (up to a source interval old). The page's copy is
+slim: the raw `data` of `docs`, `github` and `editors` is left out (`{}` with `omitted: true`; `derived` holds what is
+shown) and the checklist sends headings and `itemCounts` only (about 20 KB instead of 120 KB); `?raw=1` keeps
+everything. Each answer has an `ETag` over everything but `serverNow` (also sent as `X-Server-Now`): the page polls with
+`If-None-Match` and a 304 has no body. Items made from a source's kept data carry `stale: true`; `derived.kept` lists
+those sources.
 
 Derived rules (keep them simple and explainable; each item says where it came from):
 - `nextFree` = testing VERSION with the patch +1 (informational; the coordinator assigns versions).
@@ -157,8 +174,13 @@ Derived rules (keep them simple and explainable; each item says where it came fr
 - `halting` (top priority: something only q can do is blocking a Claude agent; tests waiting do not count): the Claude
   Manager's `halting` list plus in-progress entries whose status / priority / waitingOn says halting (or `(HALT)`),
   newest first; then the board's own (`source` oracle: the SSH check fails in a way only q can fix, e.g. "SSH key not
-  found" or a timeout; `source` updates, added per request from the updater: repository\ not fast-forwardable, an
-  install that failed). An item shown here is left out of `nextSteps` / `attention`.
+  found" or a timeout; `source` updates, added per request from the updater: repository\ not fast-forwardable, the
+  installs that failed: one item for one, one grouped item "N installs failed" for several, with the shared exit code /
+  note). An item shown here is left out of `nextSteps` / `attention`. An item from a 07 (questions) entry, and every
+  open question, has `answerLink` (the Claude Manager's `#answer=<id>`, its answer box).
+- A source that is down is "not running" when it does not answer (fix: start it) and "running but failing" when it
+  answers with an error (fix: restart it and read `%LOCALAPPDATA%\QuarkProject\logs\<tab>.log`). Local copies have no
+  link into the GitHub Manager's tab while it is not running (`goto: local`: the page's own Local copies card).
 
 ## 3. The PM page (`tools/project_manager/web/`: `index.html`, `pm.css`, `pm.js`)
 
@@ -168,10 +190,12 @@ and dark (`prefers-color-scheme`), CSS custom properties on `:root`. `?embed=1` 
 draws tabs). Polls `/api/pm` every 15 s (and pauses when the page is hidden); after Refresh, Check now and Update now it
 polls every 1.5-3 s until the new data is in (Check now shows "Checking…"). Each card is drawn to a string and compared
 with what it shows; live ages are attributes the 1 s ticker fills, so only a card whose data changed is replaced (text
-selection, hover and open details survive a poll). Cards flow as masonry (4 px grid rows, each card spans its height):
-two columns from 1060 px, three from 1800 px, four from 2200 px. Every time shown in Dallas time.
-Each card says which source it came from and how old it is; a down source shows a grey "not running" card with the
-fix ("start the GitHub manager" / "SSH key not found").
+selection, hover, keyboard focus and open details survive a poll; a checklist tick changes the boxes, bar and counts in
+place). Cards flow as masonry (4 px grid rows, each card spans its height): two columns from 1060 px, three from 1800 px,
+four from 2200 px, five from 2400 px. Every time shown in Dallas time; on a new Dallas day the cards and the timeline
+are redrawn ("today" / "yesterday"). Each card says which source it came from and how old it is; a down source shows a
+grey card ("not running" / "running but failing", with the fix and the age of its last good data) and, when the server
+kept its last good data, that data greyed below it.
 
 Layout (top to bottom):
 0. **HALTING — Claude is blocked on you** (only when there is something): a solid red full-width card, each item
@@ -180,13 +204,19 @@ Layout (top to bottom):
    shell (`quarkShell.setBadge(n)`: a red count on the Supervisor Board tab, a red dot over the taskbar icon). Each item
    has a Copy button for what to do, and each `code` span of the entry text (a command) gets its own. A HALT that was
    not there at the last poll brings up a red toast at the top and a short chime (Mute on the toast, kept in
-   localStorage). Answering inline is not possible: the Claude Manager accepts edits only from its own page.
+   localStorage). Only a HALT that was not there at the last poll counts, and only from a source whose list was already
+   in (the Claude Manager starting after the board, or coming back after an outage, is not news); items from a down
+   source's kept list stay, marked "last known". The what-to-do text renders its `code` and **bold**; Copy copies it
+   without the markup. Several HALTs sit two or three across on a wide screen. A question's HALT has "Answer →" (the
+   Claude Manager's `#answer=<id>`: its answer box); answering inline is not possible (the Claude Manager accepts edits
+   only from its own page).
 1. **Release pipeline**: three big stages left to right, working → testing → production, each with version, short
    sha, age, and the arrow between them labelled with what is pending (e.g. "3 commits", "hand-test checklist",
    "PR #9 open"; a PR whose base is testing, or with no base and a head other than testing, is "PR #N into testing" on the
    first arrow). Plus the testing prerelease tag, the production tag and `nextFree`. "Before production" is the
-   checklist with a tick box per section (saved per testing version on the PM server) and a progress bar; the arrow and
-   the Needs-you hand-test step show "N/M".
+   checklist with a tick box per section (saved per testing version on the PM server) and a progress bar; each section
+   opens to its check items (loaded from `GET /api/checklist` the first time); the arrow and the Needs-you hand-test step
+   show "N/M".
 2. **Needs you** (attention + nextSteps owned by q), each with a link (thread / PR / run / doc entry).
 3. **In progress**: one row per entry, grouped by what it waits on (owner, push, PR, CI, tests, Claude), a coloured
    pill for the bucket, the thread link; a small bar chart of counts per bucket.
@@ -197,7 +227,10 @@ Layout (top to bottom):
    load, memory bar, each unit as a pill, last update lines), with its age and a "check now" button (POST
    `/api/refresh?source=oracle`, honours the 120 s minimum).
 7. **Local copies & builds**: each local game folder and repo copy with version / sha / ahead / behind / dirty.
-8. **Updates**: the newest changelogs (version + first lines, dated by the commit that added them), and the PM's own
+   **Tools & updates**: repository\ and each tool in installs.json with its state; "Log" opens the tool's whole install
+   log in a dialog (`GET /api/updates/log`), "Retry" (a failed tool, when `updates.canRetryOne`) runs just its install.
+8. **Updates**: the newest 3 changelogs (version + first lines, dated by the commit that added them; "Show N older" for
+   the rest of the 8), and the PM's own
    event log (latest 30) as a timeline; "Full history…" opens a dialog with every event (`/api/history?limit=10000`),
    searchable and filtered by kind.
 9. **Tabs**: when not inside the shell (no `embed`), a row of links to every tab from `/api/tabs`.

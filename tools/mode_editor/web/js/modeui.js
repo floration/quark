@@ -10,7 +10,7 @@
 
 import { parse, print, printDecl, highlightLine, ModeError } from "./qmode.js";
 import { validate, clone, numberIds, carryIds, declKey, slotKey, diffLogic, interpretedSlots, highlightSets, CATALOG, symbols, deepEqual, stripIds, mergeLogic } from "./lang.js";
-import { splitQmode, patchQmode, modeKeys, newQmodeText, MODE_KEYS, OWNER_TEXT, PHYSICS_EDITOR_URL } from "./qfile.js";
+import { splitQmode, patchQmode, modeKeys, newQmodeText, unknownMaps, MODE_KEYS, OWNER_TEXT, PHYSICS_EDITOR_URL } from "./qfile.js";
 import { MODES, MODE_TITLES, logicBase } from "./catalog.js";
 import { BlocksView } from "./blocks.js";
 import { GraphView, overviewGraph } from "./graph.js";
@@ -111,6 +111,7 @@ export class ModePage {
         this._wire();
         app.on("modes", () => this._fillSel());
         app.on("catalog", () => this._afterChange(null));
+        app.on("maps", () => this._afterChange(null));
     }
 
     async start() {
@@ -149,11 +150,15 @@ export class ModePage {
             const r = await api.mode(name);
             text = r.text; meta = { mtime: r.mtime, sha256: r.sha256 };
         }
+        this._adoptText(name, builtin, text, meta, quiet);
+    }
+    // a mode's text into the page; logic that doesn't parse is kept as text: the key lines are known, the logic goes to
+    // the Code view as a draft (its error at line:col)
+    _adoptText(name, builtin, text, meta, quiet) {
         let m;
         try { m = loadModeText(text, (b) => this.app.defaultFor(b), builtin ? name : null); }
         catch (e) {
             if (!(e instanceof ModeError)) throw e;
-            // keep it as text: the key lines are known, the logic goes to the Code view as a draft
             this._adopt(name, builtin, text, meta, loadModeText(patchQmode(text, {}, ""), (b) => this.app.defaultFor(b)));
             this.codeText = splitQmode(text).logicText; $("codeTa").value = this.codeText; this._codeEdited(false);
             if (!quiet) this.app.toast(`${name}.qmode's logic doesn't parse (${e.message}): it's in the Code view`, 8000);
@@ -231,13 +236,15 @@ export class ModePage {
         this._afterChange(null);
     }
 
-    _afterChange(from) {
+    // located: the tree the Code view's text parsed to (its nodes carry line:col; this.ast is a clone, which drops them)
+    _afterChange(from, located) {
         if (!this.ast) return;
         // checks run on the canonical text so problems carry line:col of the Code view
-        let located = this.ast;
-        if (from !== "code") { try { located = parse(this.codeText); } catch { located = this.ast; } }
+        if (!located) { try { located = parse(this.codeText); } catch { located = this.ast; } }
         this.check = validate(located, { base: this.base, def: this.def });
         if (this.ast.base && this.ast.base !== logicBase(this.base)) this.check.problems.unshift({ severity: "error", msg: `base ${this.ast.base} doesn't match the file's mode=${this.base}`, where: "base", line: 2, col: 1 });
+        const unknown = unknownMaps(this.currentKeys().maps, this.app.mapNames);
+        if (unknown.length) this.check.problems.push({ severity: "warning", where: "maps", msg: `maps=${unknown.join(", ")}: not a shipped map or one of yours (the game can't load ${unknown.length > 1 ? "them" : "it"} in the rotation)` });
         this.check.errors = this.check.problems.filter((p) => p.severity === "error");
         this.interp = this.def ? interpretedSlots(this.ast, this.def) : new Set();
         for (const v of VIEWS) if (v !== from) this.dirtyViews.add(v);
@@ -255,10 +262,10 @@ export class ModePage {
             fresh, keyBase: fresh ? this.keyBase : null,
             draft: this.codeError ? this.codeText : null, savedSig: this.savedSig || null }).catch(() => {});
     }
-    // the text a save would write (null while the code has an error)
-    saveText() {
+    // the text a save would write (null while the code has an error); keySet: the keys to write (default: the page's)
+    saveText(keySet = this.keySet) {
         if (this.codeError) return null;
-        return fileTextFor(this.keyBase, this.keySet, this.ast, this.def, $("modeWhole").checked);
+        return fileTextFor(this.keyBase, keySet, this.ast, this.def, $("modeWhole").checked);
     }
     // the built-in base mode with the same keys (Sim's compare): the key lines without a logic block
     builtinText() { return patchQmode(this.keyBase, this.keySet, ""); }
@@ -266,6 +273,13 @@ export class ModePage {
     isPristineBuiltin() { return this.builtin && this.savedSig === this._sig(); }
     // whether the game takes this base as a custom mode's (customrules.cpp ignores mode=tourney)
     baseTakesCustom() { return !(CATALOG.modeInfo[this.base] && CATALOG.modeInfo[this.base].noCustom); }
+    // whether a run of this text differs from the built-in base mode with the same keys (Sim's compare): its logic
+    // differs, or the game would play it as another base (a mode=tourney custom file loads as a free for all)
+    differsFromBuiltin() {
+        if (this.isPristineBuiltin()) return false;
+        if (!this.baseTakesCustom()) return true;
+        try { return !this.def || logicTextFor(this.ast, this.def, false) !== ""; } catch { return true; }
+    }
 
     // ---------------------------------------------------------------- views
     _showView(v) {
@@ -297,12 +311,13 @@ export class ModePage {
         else if (this.view === "values") this.values.scrollTo(key);
         this._items(); this._info();
     }
-    // Phases: a slot nobody writes -> add an empty one (the native default runs until it does something)
+    // Phases: a slot nobody writes -> add an empty one. The game interprets every slot the file writes, an empty one too
+    // (quark_tests checkmode: `slot reset:` / `pass` is interpreted, 1 instruction), so the dialog says so.
     async addSlot(name) {
         const cat = CATALOG.slots[name];
         if (!cat) return;
         if (cat.timer) { this.app.toast("a timer slot is `slot timer <name>:` after a `timer <name>` declaration (write it in Code)"); return; }
-        if (!confirm(`Add an empty slot ${name}? (${cat.when})\n\nIt runs interpreted once it does anything; an empty ${cat.kind === "query" ? "query falls back to the native answer" : "event does nothing"}.`)) return;
+        if (!confirm(`Add an empty slot ${name}? (${cat.when})\n\nIt runs interpreted from now on (the game interprets every slot the file writes, an empty one too: about one instruction a call). Empty, ${cat.kind === "query" ? "the query falls back to the native answer" : "the event does nothing"}.`)) return;
         const ast = clone(this.ast);
         ast.decls.push({ kind: "slot", name, body: [{ op: "pass" }], comments: [], trail: null });
         this.brainEdited(ast, null);
@@ -347,11 +362,11 @@ export class ModePage {
         this.codeText = text;
         const hadError = !!this.codeError;
         try {
-            const ast = carryIds(this.ast, clone(parse(text)));
+            const parsed = parse(text), ast = carryIds(this.ast, clone(parsed));
             this.codeError = null;
             const same = this.ast && deepEqual(stripIds(ast), stripIds(this.ast));
             this.ast = ast;
-            if (!same) { this._push(); this._afterChange("code"); }
+            if (!same) { this._push(); this._afterChange("code", parsed); }
             if (final) { const canon = print(ast); if (canon !== text) { this.codeText = canon; this._codeFromText(canon); this._afterChange(null); } }
         } catch (e) {
             if (!(e instanceof ModeError)) throw e;
@@ -524,7 +539,7 @@ export class ModePage {
         const from = this.name, dirty = this.savedSig !== this._sig();
         let to = null;
         if (op === "delete") {
-            if (!confirm(`Delete ${from}.qmode?${dirty ? "\n\nIts unsaved changes are lost too." : ""}\n\nThe file is kept as ${from}.qmode.bak in ${this.app.modesDir} (the game doesn't load it).`)) return;
+            if (!confirm(`Delete ${from}.qmode?${dirty ? "\n\nIts unsaved changes are lost too." : ""}\n\nThe file is kept as ${from}.qmode.bak in ${this.app.modesDir} (the game doesn't load it; Backups… restores it).`)) return;
         } else {
             const what = op === "rename" ? "Rename" : "Duplicate";
             to = await this.app.prompt(`${what} ${from}`, op === "rename" ? from : from + "2",
@@ -556,6 +571,40 @@ export class ModePage {
             this._fillSel();
             this.app.toast(`Copied to ${to}.qmode (open it from the list)`, 5000);
         }
+    }
+    // The backups serve.py keeps (<name>.qmode.bak, the newest, to .bak5): a list with a Restore for each. A backup goes
+    // back under its own name when that's free, else under a name asked for (never over a mode without asking).
+    async backups() {
+        let r;
+        try { r = await api.backups(); } catch (e) { this.app.toast("Can't list the backups: " + e.message, 6000); return; }
+        const m = document.createElement("div");
+        m.className = "modal";
+        const when = (t) => new Date(t * 1000).toLocaleString();
+        const rows = r.backups.map((b, i) => `<tr><td><b>${esc(b.name)}</b></td><td class="muted">${b.n === 1 ? "newest" : "older " + (b.n - 1)}</td><td>${esc(when(b.mtime))}</td><td class="muted">${esc(b.size)} B</td>
+            <td>${b.exists ? '<span class="muted">the mode exists</span>' : '<span class="warn">deleted or renamed</span>'}</td><td><button data-i="${i}">Restore…</button></td></tr>`).join("");
+        m.innerHTML = `<div style="max-width:880px"><h3>Backups</h3><p class="muted" style="font-size:12px">A save keeps the file it replaces, and a rename or delete keeps the file it removes, as <code>&lt;name&gt;.qmode.bak</code> in ${esc(r.dir)} (the ${esc(r.keep)} newest of each name: .bak, .bak2 ... the game loads only *.qmode).</p>
+            ${rows ? `<div style="max-height:60vh;overflow:auto"><table class="sim-tab bak-tab">${rows}</table></div>` : '<p class="muted">No backups yet.</p>'}
+            <div class="row" style="justify-content:flex-end;margin-top:10px"><button data-x="close">Close</button></div></div>`;
+        m.querySelector("[data-x=close]").onclick = () => m.remove();
+        m.querySelectorAll("button[data-i]").forEach((bt) => (bt.onclick = async () => {
+            const b = r.backups[+bt.dataset.i];
+            const free = (n) => !this.app.userModes.some((u) => u.name.toLowerCase() === n.toLowerCase());
+            let to = b.name;
+            if (!free(to)) {
+                let alt = b.name + "-restored";
+                for (let k = 2; !free(alt); k++) alt = `${b.name}-restored${k}`;
+                to = await this.app.prompt(`Restore ${b.file}`, alt, `${b.name}.qmode exists, so the backup goes back under another name (its custommode= line takes it).`,
+                    (n) => this.app.modeNameProblem(n) || (free(n) ? null : `${n}.qmode already exists.`));
+                if (!to) return;
+            }
+            let res;
+            try { res = await api.restore(b.name, b.n, to, false); } catch (e) { this.app.toast("Restore failed: " + e.message, 8000); return; }
+            m.remove();
+            await this.app.refreshModes();
+            if (this.savedSig === this._sig() || confirm(`Restored ${to}.qmode. Open it? This mode's unsaved changes are lost.`)) await this.open(to, false);
+            this.app.toast(`Restored ${b.file} as ${to}.qmode`, 6000);
+        }));
+        document.body.append(m);
     }
     _fillSel() {
         const s = $("modeSel");
@@ -592,9 +641,11 @@ export class ModePage {
         }
         if (!NAME_RE.test(name)) { this.app.toast("Bad name: letters, digits, _ . - (up to 64)"); return; }
         const renamed = name !== this.name || this.builtin;
-        if (renamed) this.keySet = { ...this.keySet, custommode: name };
+        // the new name goes only into the text sent: a declined replace or a failed save leaves the page's keys as they
+        // were (else the next Save would write custommode=<other name> into this file)
+        const keySet = renamed ? { ...this.keySet, custommode: name } : this.keySet;
         let text;
-        try { text = this.saveText(); } catch (e) { this.app.toast("Can't write it: " + e.message, 8000); return; }
+        try { text = this.saveText(keySet); } catch (e) { this.app.toast("Can't write it: " + e.message, 8000); return; }
         const sameFile = !renamed && this.fileText !== null && this.fileMeta;
         const body = { text, baseSha256: sameFile ? this.fileMeta.sha256 : null, baseMtime: sameFile ? this.fileMeta.mtime : null, provenance: this._provenance(name), overwrite: false };
         let r;
@@ -672,6 +723,7 @@ export class ModePage {
         $("modeRename").onclick = () => this.fileOp("rename");
         $("modeDuplicate").onclick = () => this.fileOp("duplicate");
         $("modeDelete").onclick = () => this.fileOp("delete");
+        $("modeBackups").onclick = () => this.backups();
         $("modeDownload").onclick = () => {
             const text = this.saveText();
             if (text == null) { this.app.toast("The code has an error"); return; }
@@ -682,11 +734,19 @@ export class ModePage {
         $("modeUpload").onclick = async () => {
             const f = await this.app.pickFile(".qmode,.txt");
             if (!f) return;
+            // its name: the file's, unless that's a built-in mode's or one of yours (then asked for, as Save as would)
+            let name = f.name.replace(/\.qmode$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[_.-]+/, "").slice(0, 64) || "uploaded";
+            const problem = (n) => this.app.modeNameProblem(n) || (this.app.userModes.some((u) => u.name.toLowerCase() === n.toLowerCase()) ? `${n}.qmode is one of your modes already: open it from the list, or pick another name.` : null);
+            if (problem(name)) {
+                let alt = "my" + name;
+                for (let k = 2; problem(alt) && k < 100; k++) alt = `my${name}${k}`;
+                name = await this.app.prompt(`Open ${f.name}`, alt, `${problem(name)} The file opens under this name (nothing is written until you save).`, problem);
+                if (!name) return;
+            }
             try {
-                const m = loadModeText(f.text, (b) => this.app.defaultFor(b));
-                const name = f.name.replace(/\.qmode$|\.txt$/i, "").replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^[_.-]+/, "") || "uploaded";
-                this._adopt(name, false, f.text, null, m);
-                this.fileText = null; this.savedSig = null; this._fillSel(); this._modeInfo();
+                this._adoptText(name, false, f.text, null, false);   // (logic that doesn't parse: a Code view draft, as open() keeps it)
+                if (this.currentKeys().custommode !== name) this.keySet = { ...this.keySet, custommode: name };   // (the in-game name follows the file's)
+                this.fileText = null; this.savedSig = null; this._fillSel(); this._modeInfo(); this._persist();
             } catch (e) { this.app.toast("Can't read it: " + e.message, 6000); }
         };
         $("modeResetAll").onclick = () => this.resetAll();

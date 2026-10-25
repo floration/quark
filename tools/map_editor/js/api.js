@@ -44,6 +44,7 @@ export const api = {
   library: () => req("GET", "/api/library"),
   putLibrary: (name, item) => req("PUT", `/api/library/${encodeURIComponent(name)}`, item),
   deleteLibrary: (name) => req("DELETE", `/api/library/${encodeURIComponent(name)}`),
+  renameLibrary: (from, to) => req("POST", "/api/library-rename", { from, to }),
   config: () => req("GET", "/api/config"),
   setConfig: (cfg) => req("PUT", "/api/config", cfg),
   launch: (what, name, mode) => req("POST", "/api/launch", { what, name, mode }),

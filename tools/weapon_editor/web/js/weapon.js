@@ -97,8 +97,10 @@ export class WeaponView {
             // an empty or unreadable box puts the value back (Number("") is 0: it would write the field's minimum);
             // an out-of-range one shows the clamped value at once, focused or not
             inp.onchange = () => {
-                const raw = inp.value.trim(), x = raw === "" ? NaN : Number(raw);
-                if (!Number.isFinite(x)) { inp.value = fmtValue(this.app.values.get(f.key), f.type); return; }
+                const raw = inp.value.trim(), typed = raw === "" ? NaN : Number(raw);
+                if (!Number.isFinite(typed)) { inp.value = fmtValue(this.app.values.get(f.key), f.type); return; }
+                const x = f.type === "int" ? Math.round(typed) : typed;   // (a whole number: 7.6 pellets is 8, not 7)
+                if (x !== typed) inp.value = fmtValue(x, f.type);
                 const v = clampField(f, x);
                 if (v !== x) { this.app.toast(`${f.key}: kept within ${f.min}..${f.max} (the game clamps it)`, 2500); inp.value = fmtValue(v, f.type); }
                 this.app.setField(f.key, v);

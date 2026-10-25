@@ -410,7 +410,8 @@ export class BlocksView {
             if (ed) this._grip(b);
             return b;
         };
-        const par = this._hat("c-lane", [el("span", "bk-kw", "par"), "in parallel (one process each, as many as cores)"]);
+        const jobs = ((suite.lists || []).find((l) => l.name === "par") || {}).jobs;   // (from main(): "3 per core; Windows: 1 per core")
+        const par = this._hat("c-lane", [el("span", "bk-kw", "par"), `in parallel (one process each, ${jobs || "several at once"})`]);
         par.append(this._stack("par", d.par, "group", (n, i) => groupBlock(n, i, "par"), "no par groups"));
         const alone = this._hat("c-lane", [el("span", "bk-kw", "then alone"), "one at a time, on an idle machine"]);
         alone.append(this._stack("alone", d.alone, "group", (n, i) => groupBlock(n, i, "alone"), "no alone groups"));

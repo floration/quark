@@ -355,8 +355,44 @@ def main_layout(src, main_fn, known):
         names_ = [n for n in (src.string_at(x.end() - 1) for x in _ARGV1.finditer(blank, lp, rp)) if n]
         shortcuts.append({"name": name, "aliases": names_[1:], "line": src.line(m.start() + a), "endLine": src.line(be),
                           "calls": calls, "ports": _ports(src, body[0], body[1], calls),
-                          "locals": _locals(src, body[0], body[1]), "argsSpec": _args_spec(src, lp, rp, body)})
+                          "locals": _locals(src, body[0], body[1]), "argsSpec": _args_spec(src, lp, rp, body), "_body": body})
     return lists, shortcuts
+
+
+def _split_top(text, angles=False):
+    """Split on the commas outside parens / brackets / braces (strings already blanked); angles: <> too (a signature's
+    template types; never call arguments, where > is a comparison)."""
+    out, depth, cur = [], 0, ""
+    op, cl = ("([{<", ")]}>") if angles else ("([{", ")]}")
+    for c in text:
+        if c in op: depth += 1
+        elif c in cl: depth -= 1
+        if c == "," and depth == 0: out.append(cur); cur = ""
+        else: cur += c
+    return out + [cur] if cur.strip() or out else out
+
+
+def name_params(src, body, spec, index):
+    """argsSpec params with no name of their own take the name of the parameter argv[K] is handed to:
+    `runBot(argv[2], atof(argv[3]), ...)` -> runBot's (addr, seconds, ...). Only functions defined in tests/ count."""
+    if not spec or not spec.get("params") or all(p["name"] for p in spec["params"]): return spec
+    a, b = body
+    names = {}
+    for m in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", src.blank[a:b]):
+        f = index.get(m.group(1))
+        if not f: continue                                              # (std::string, atof...: not a test function)
+        lp = a + m.end() - 1
+        args, params = _split_top(src.blank[lp + 1:src.match_paren(lp)]), _split_top(f["args"], angles=True)
+        if any(re.fullmatch(r"\s*argv\s*", x) for x in args) and f.get("_src"):   # (argv handed on whole: the
+            fb = f["_src"].text[f["_open"]:f["_close"]]                              #  callee's own `x = argc > K ? ...`)
+            for k in range(2, 2 + len(spec["params"])):
+                nm = re.search(r"(\w+)\s*=\s*argc\s*>\s*%d\s*\?" % k, fb)
+                if nm: names.setdefault(k, nm.group(1))
+        for i, arg in enumerate(args[:len(params)]):
+            pm = re.search(r"([A-Za-z_]\w*)\s*(?:\[\s*\])?\s*(?:=[^,]*)?$", params[i].strip())
+            for k in re.findall(r"\bargv\s*\[\s*(\d+)\s*\]", arg):
+                if pm and int(k) >= 2: names.setdefault(int(k), pm.group(1))   # (the outermost call wins: it comes first)
+    return dict(spec, params=[dict(p, name=p["name"] or names.get(k + 2)) for k, p in enumerate(spec["params"])])
 
 
 def _args_spec(src, lp, rp, body):

@@ -44,6 +44,9 @@
     if (!ae || ae === document.body || U.$('#editor').contains(ae)) { clearTimeout(refreshT); refreshT = setTimeout(() => { if (E.key && Q.assets[E.key]) build(); }, 0); return; }
     build();
   };
+  let tabAt = -1e9;
+  U.$('#editor').addEventListener('keydown', ev => { if (ev.key === 'Tab') tabAt = performance.now(); });
+  U.$('#editor').addEventListener('focusout', ev => { if (!ev.relatedTarget && performance.now() - tabAt < 100 && ev.target.matches(FIELDS)) lastOut = { el: ev.target, t: performance.now() }; });
   function idle() {
     U.$('#dock').classList.add('idle');
     const root = U.$('#editor'); root.innerHTML = ''; root.append(h('div.empty', 'Select a sound (click a cell) to edit it here.'));
@@ -51,10 +54,15 @@
 
   // what a rebuild must not lose: the focused field (by its place among the dock's fields) and the columns' scroll
   const FIELDS = 'input, select, textarea, button';
+  // (a field left with Tab towards nothing focusable, the dock's last chain field, keeps the focus: lastOut)
+  let lastOut = null;
   function uiState(root) {
     const f = [...root.querySelectorAll(FIELDS)], el = document.activeElement;
     const sc = sel => { const x = root.querySelector(sel); return x ? x.scrollTop : 0; };
-    return { focus: root.contains(el) ? f.indexOf(el) : -1, side: sc('.ed-side'), chain: sc('.ed-chain') };
+    let focus = root.contains(el) ? f.indexOf(el) : -1;
+    if (focus < 0 && (!el || el === document.body) && lastOut && performance.now() - lastOut.t < 1000) focus = f.indexOf(lastOut.el);
+    lastOut = null;
+    return { focus, side: sc('.ed-side'), chain: sc('.ed-chain') };
   }
   function restoreUI(root, st) {
     const set = (sel, v) => { const x = root.querySelector(sel); if (x) x.scrollTop = v; };
@@ -74,9 +82,10 @@
     // header
     const head = h('div.ed-head',
       h('span.ed-title', a.name, h('small', pack + (a.custom ? ' (new: needs a game hook)' : ''))),
-      e ? h('span.chip.ed', 'EDITED') : null,
+      e ? (Q.isNoop(E.key) ? h('span.chip', { title: 'Your edit plays exactly the shipped sound (no step on, no trim past the silence the game cuts): it is left out of the export' }, 'NO CHANGE: NOT EXPORTED') : h('span.chip.ed', 'EDITED')) : null,
       e && e.levelSet ? h('span.chip.lvl', { title: 'In sound-levels.txt: the game keeps this level' }, 'LEVEL YOURS') : null,
       inh ? h('span.chip.warn', { title: 'No edit of its own: in the game it uses your DEFAULT edit' + (inh.retro ? ', chiptuned' : '') }, inh.retro ? 'PLAYS DEFAULT EDIT, CHIPTUNED' : 'PLAYS DEFAULT EDIT') : null,
+      originChip(a, e),
       h('span.ed-when', { title: a.desc || a.when || '' }, a.when || ''),
       h('span.spacer'),
       h('span.ab', h('button' + (E.which === 'orig' ? '.on' : ''), { type: 'button', title: 'A: the shipped original (key A)', onclick: () => E.setAB('orig', true) }, 'A original'),
@@ -95,8 +104,8 @@
     els.srcCv = h('canvas'); els.outCv = h('canvas'); els.specCv = h('canvas');
     els.hStart = h('div.handle', { title: 'Trim start' }); els.hEnd = h('div.handle', { title: 'Trim end' });
     els.hFi = h('div.handle.fade', { title: 'Fade in' }); els.hFo = h('div.handle.fade', { title: 'Fade out' });
-    els.srcLane = h('div.lane.src', h('span.lane-label', 'SOURCE  ' + srcName), els.srcCv, els.hStart, els.hEnd, els.hFi, els.hFo);
-    els.outLane = h('div.lane', h('span.lane-label', 'OUTPUT (file)  markers: game start, guide, cap'), els.outCv);
+    els.srcLane = h('div.lane.src', h('span.lane-label', { title: 'Source: ' + srcName }, 'SOURCE ', h('span.lane-src', srcName)), els.srcCv, els.hStart, els.hEnd, els.hFi, els.hFo);
+    els.outLane = h('div.lane', h('span.lane-label', { title: 'The exported file, from the trim start. Markers: where the game starts it (its leading-silence cut), the length guide, the game\'s cap' }, 'OUTPUT'), els.outCv);
     els.specLane = h('div.lane', { style: { display: E.spec ? '' : 'none' } }, els.specCv);
     els.scroll = h('input', { type: 'range', min: 0, max: 1000, value: 0, oninput: ev => { const v = E.view, span = v[1] - v[0], tot = totalDur(); const t0 = (+ev.target.value / 1000) * Math.max(0, tot - span); E.view = [t0, t0 + span]; E.redraw(); } });
     els.readout = h('span.num');
@@ -107,6 +116,7 @@
       h('button.mini', { type: 'button', title: 'Fit (0)', onclick: () => E.zoomFit() }, 'fit'),
       els.scroll,
       h('label', h('input', { type: 'checkbox', checked: E.spec, onchange: ev => { E.spec = ev.target.checked; els.specLane.style.display = E.spec ? '' : 'none'; E.redraw(); } }), 'spectrogram'),
+      h('span.faint.legend-m', { title: 'Markers on the output: where the game starts it, the length guide, the game\'s cap' }, 'markers: game start · guide · cap'),
       els.readout);
     const wave = h('div.ed-wave', els.srcLane, els.outLane, els.specLane, bar, els.metrics);
     // side: trim / level / notes / uses
@@ -148,14 +158,24 @@
     fillMetrics();
   }
 
+  // the origin in the header, in view at any dock size (the side column scrolls at 1280): a click shows the Origin block
+  function originChip(a, e) {
+    const P = Q.prov, o = e ? P.originOf(a.key) : null, d = e ? null : P.defaultOrigin(a.key), og = o ? (o.origin || 'unset') : d ? d.origin : null;
+    if (!og) return null;
+    return h('span.chip.origin.' + og, { title: (o ? o.why : 'Shipped: ' + d.source) + '\n(click: the Origin panel)', style: { cursor: 'pointer' }, onclick: () => {
+      const blk = U.$('#editor .ed-origin'); if (!blk) return;
+      blk.scrollIntoView({ block: 'nearest' }); const f = blk.querySelector('select'); if (f) f.focus({ preventScroll: true });
+    } }, og === 'unset' ? 'ORIGIN NOT SET' : P.LABEL[og]);
+  }
   // who made this sound (provenance.json on export): a choice for a dropped file, fixed for an edit of a shipped sound
   function originBlock(a, e) {
     const P = Q.prov;
-    if (!e) { const d = P.defaultOrigin(a.key); return [h('div.side-h', 'Origin'), h('div.faint', d ? 'Shipped: ' + P.LABEL[d.origin] + ' (' + d.source + ').' : 'Empty: drop a file or Design...')]; }
+    const head = h('div.side-h.ed-origin', 'Origin');
+    if (!e) { const d = P.defaultOrigin(a.key); return [head, h('div.faint', d ? 'Shipped: ' + P.LABEL[d.origin] + ' (' + d.source + ').' : 'Empty: drop a file or Design...')]; }
     const o = P.originOf(a.key);
     const chip = h('span.chip.origin.' + (o.origin || 'unset'), o.origin ? P.LABEL[o.origin] : 'ORIGIN NOT SET');
-    if (!o.choose) return [h('div.side-h', 'Origin'), h('div', chip, ' ', h('span.faint', o.note)), h('div.faint', { style: { marginTop: '3px' } }, o.why)];
-    return [h('div.side-h', 'Origin'), h('div', chip), U.originPicker(a.key, { compact: false }), h('div.faint', { style: { marginTop: '3px' } }, o.why)];
+    if (!o.choose) return [head, h('div', chip, ' ', h('span.faint', o.note)), h('div.faint', { style: { marginTop: '3px' } }, o.why)];
+    return [head, h('div', chip), U.originPicker(a.key, { compact: false }), h('div.faint', { style: { marginTop: '3px' } }, o.why)];
   }
 
   function usesBlock(a) {
@@ -186,8 +206,10 @@
         const set = v => E.live(def.label + ' ' + p, ed => { ed.chain[i].p[p] = v; });
         rng.oninput = () => { const v = +(+fromR(+rng.value)).toFixed(step < 1 ? 3 : 0); numEl.value = v; set(v); };
         rng.onchange = () => E.liveEnd();
-        numEl.oninput = () => { const v = parseFloat(numEl.value); if (isFinite(v)) { rng.value = toR(v); set(v); } };
-        numEl.onchange = () => E.liveEnd();
+        // typed values are held to the step's range (a 500 dB gain would make a hard-clipped square); the field snaps on commit
+        const clamp = v => Math.max(min, Math.min(max, v));
+        numEl.oninput = () => { const v = parseFloat(numEl.value); if (isFinite(v)) { rng.value = toR(clamp(v)); set(clamp(v)); } };
+        numEl.onchange = () => { const v = parseFloat(numEl.value), c = isFinite(v) ? clamp(v) : st.p[p]; if (+numEl.value !== c || !isFinite(v)) { numEl.value = c; set(c); } E.liveEnd(); };
         grid.append(h('span', unit), rng, numEl);
       }
       box.append(grid);
@@ -339,7 +361,7 @@
   // copy this sound's chain (and optionally trim / fades / level flag) to others
   E.copyChain = async function () {
     const a = Q.assets[E.key], e = edit(); if (!e) return;
-    const kind = a.kind, packs = kind === 'voice' ? Q.VOICES : Q.KITS, names = kind === 'voice' ? Q.LINES.concat(Q.QUIPS) : Q.SOUNDS;
+    const kind = a.kind, packs = kind === 'voice' ? Q.VOICES : Q.KITS, names = kind === 'voice' ? Q.LINES.concat(Q.allQuips()) : Q.SOUNDS;
     const boxes = [];
     const optChain = h('input', { type: 'checkbox', checked: true }), optTrim = h('input', { type: 'checkbox' }), optLevel = h('input', { type: 'checkbox' }), optReplace = h('input', { type: 'checkbox', checked: true });
     const grid = h('table', h('tr', h('th', ''), packs.map(p => h('th', p.name))));

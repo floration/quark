@@ -14,38 +14,48 @@ Two more tabs:
   - **Notes** (below).
   - **Structure**: the branches grouped by role (production, testing, infra, work `claude/*`, other, stale: no
     commit in N days, the `limit-stale-days` rule, inside that rule's branch scope (`claude/*` by default), and merged
-    into or behind testing). Per branch q sets a role and a
+    into or behind testing; "Queue delete for all N" queues a delete for each, after a confirm listing them, still
+    reviewed and applied in Pending changes). Per branch q sets a role and a
     description (local, `editor/structure.json`); they set the Branches tab's kind and show in the branch's details.
     Create a branch (from testing, another branch or a sha), rename or delete one (not the default branch, testing,
-    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs; an applied
-    rename takes the branch's role, description and notes along): these are GitHub changes, queued in Pending
-    changes.
+    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs, and a delete
+    or rename about a local copy or worktree on this PC that has the branch checked out; an applied rename takes the
+    branch's role, description and notes along): these are GitHub changes, queued in Pending changes.
   - **Rules & limits**, two kinds, labelled: *Enforced by GitHub*, the repository's branch rulesets (block force
     push, block deletion, require a PR, required status checks picked from the recent runs' job names, linear
     history), edited with a form and queued; and *Followed by every Claude*, the agent rules (push / merge / version
     / CI / limit / other, scoped to all, a branch pattern or a tool), with the limits' values editable inline, saved
     locally (`editor/rules.json`) at once.
-  - **Pending changes**: each queued GitHub change with its before -> after (a sentence for a branch, the JSON diff
+  - **Pending changes** (two cards across on a wide screen; an applied ruleset's diff starts folded): each queued
+    GitHub change with its before -> after (a sentence for a branch, the JSON diff
     for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). A delete,
-    or a change with warnings, asks before it goes; Apply all's confirm lists every change with its warnings. After
+    or a change with warnings (among them a ruleset change that adds a required PR, required checks or linear
+    history: it can stop every Claude pushing to testing), asks before it goes; Apply all's confirm lists every change with its warnings. After
     an Apply the page follows the server's own poll and redraws as soon as GitHub's new state is in. Nothing
     is sent to GitHub before Apply. Right before the call the server reads GitHub again, re-checks the production
     lock and refuses a change whose preview is out of date ("changed on GitHub since preview, review again"). The
-    result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events).
+    result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events). An applied
+    branch change has **Undo**: it queues the reverse as a new pending change (a delete: re-create the branch at the
+    sha it had; a rename: rename it back; a create: delete it), reviewed and applied like any other.
 
   **The production lock**: only q pushes to production, and the editor can't change that. It refuses any change to
-  a ruleset that targets the default branch (read from GitHub each time) or v* tags (every non-branch ruleset), the
+  a ruleset that targets the default branch (read from GitHub each time; a pattern such as `claude/*` that covers it
+  passes only when an *Except* entry surely leaves it out again, e.g. the default branch's own name or
+  `~DEFAULT_BRANCH`; `~ALL` is always refused) or v* tags (every non-branch ruleset), the
   rulesets "production rule" and "tagging rule" (shown locked, with why), deleting or renaming the default branch,
   testing, launcher, site, discord-bot and gh-pages, and any tag change; the agent rule "Only q pushes to
   production" can't be edited or removed. Checked in the page, when queueing, and again on the server right before
   each call.
 
   The agent rules and the notes are also written to the Claude Documents (the private repo
-  floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json` and `11-github-notes.md`, 10 s after the
-  last change, by the server's own clone (`claude-docs/`) with q's gh login; a failure shows in the page and in the
-  poll warnings and is retried on every poll until it works. On a first start the built-in rules give way to the
-  `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data folder was
-  lost), so the seed is never pushed over them.
+  floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json`, `11-github-notes.md` and
+  `github-notes.json`, 10 s after the last change, by the server's own clone (`claude-docs/`) with q's gh login; a
+  failure shows on every tab (with when it started failing) and in the poll warnings and is retried on every poll until it works. On a first start the built-in rules give
+  way to the `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data
+  folder was lost), so the seed is never pushed over them, and the notes there are merged back into this PC's
+  (`github-notes.json`, or `11-github-notes.md` read back from an older copy), so a new install never pushes empty
+  notes over q's. Notes there that can't be read back (a hand-written file) are left as they are, with a warning,
+  until a note is written here.
 
   Notes: a note is
   plain text with a little markdown (paragraphs, lists, `` `code` ``, **bold**, links; everything else is shown as
@@ -55,8 +65,11 @@ Two more tabs:
   count on branch / PR / run rows and local-copy cards, all of them with "add note" in that item's details, and the
   pinned ones in a Notes card on the Overview. Every change is a `note.*` event in the History tab. Notes stay on this
   PC (and in the Claude Documents copy); nothing is sent to GitHub.
-- **Tests**: the separate tests editor (http://127.0.0.1:8775/) embedded, or a line saying it isn't running. A run's
-  jobs link to it (`#ci/<workflow file>/<job>?run=<id>`).
+- **Tests**: the separate tests editor (http://127.0.0.1:8775/) embedded, or a line saying it isn't running with
+  **Start it**: the server starts the tests editor's `serve.py` (`--no-browser`, detached, no window, low priority;
+  `testsEditor` in the settings, else `<quarkDir>\tests-editor`, else a watched local copy's or `<quarkDir>\repository`'s
+  `tools/tests_editor`) and the tab embeds it once it answers. A run's jobs link to it
+  (`#ci/<workflow file>/<job>?run=<id>`).
 
 ## Run it
 
@@ -114,6 +127,7 @@ Written with the defaults on the first start:
   10 minutes and on Refresh.
 - `originUrl` (optional): where the mirror fetches from (default `https://github.com/<repo>.git`; the repo is public, so
   no sign-in is needed for git).
+- `testsEditor` (optional): the tests editor's `serve.py` (or its folder) for the Tests tab's Start it.
 - `claudeDocs` (optional, default true): `false` turns the Claude Documents copy off (also `GHM_DOCS_SYNC=off` in the
   environment). `claudeDocsRepo` / `claudeDocsBranch` (default `floration/quark-claude-docs` / `main`): where it goes;
   with a `repo` other than floration/quark the copy is off unless `claudeDocsRepo` is set.
@@ -129,7 +143,8 @@ first start's backfill is still downloading). Refresh on the page polls at once 
   in-progress / waiting runs, and the jobs of runs that are still running. The rate limit is read from every answer
   and from `gh api rate_limit` every 30 min; when it is used up the GitHub part waits until it resets.
 - A completed run and its jobs are fetched once and kept in `cache/runs/<id>.json` for good (a re-run, which is a
-  new attempt, is fetched again). The first start backfills every run GitHub still lists (30 runs' jobs per poll).
+  new attempt, is fetched again). The first start backfills every run GitHub still lists (30 runs' jobs per poll;
+  every tab shows what is left, and any poll warning, under the top bar).
 - A failed job's log is downloaded once into `logs/<run>/<job>.txt` and kept forever (10 per poll; a failed
   download is retried after 30 min, a log GitHub no longer has is marked gone). Other logs are downloaded when you
   open them on the page, then kept.
@@ -171,7 +186,7 @@ Delete `state-prev.json` and `history.jsonl` to start the history again; delete 
 `/api/notes`, `/api/structure`, `/api/rules`, `/api/pending`, `/api/github/rulesets[?fresh=1]`, `POST /api/refresh`,
 the note writes `POST /api/notes`, `PUT` / `DELETE /api/notes/<id>`, and the editor writes `PUT /api/structure`,
 `PUT /api/rules`, `POST /api/pending`, `DELETE /api/pending/<id>`, `POST /api/pending/<id>/preview`,
-`POST /api/pending/<id>/apply`, `POST /api/pending/apply-all`; see
+`POST /api/pending/<id>/apply`, `POST /api/pending/apply-all`, `POST /api/tools/tests-editor`; see
 `API.md` (the contract with the page). The JSON answers carry ETags (304 when nothing changed) and are gzipped when
 the browser asks, each version built once. `/api/*` sends CORS headers for the other local tools on 127.0.0.1 /
 localhost ports 8765-8768 and the tests editor's 8775. Writes (notes and the editor) are accepted only from this
@@ -185,6 +200,8 @@ production lock (every refused case), previews and diffs, apply / stale / refuse
 (`test/fake_github.py`), the stale check, rules -> markdown, the Claude Documents copy against a local bare repo with
 a fake gh, the editor endpoints' protections, and an offline end-to-end poll against a local repository with canned
 gh answers; `GHM_LIVE=1 ... LiveRulesets` reads the real repo's rulesets, read-only), `test/fixture_server.py` (the
-page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply; `--no-editor`,
-`--docs-error`, `--signed-out`: gh signed out since the start, so the GitHub parts show as unknown),
+page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply (an applied rename
+takes the description and notes along, as on the server); `--no-editor`,
+`--docs-error`, `--signed-out`: gh signed out since the start, so the GitHub parts show as unknown, `--notes-held`,
+`--backlog`),
 `install.py` / `install.cmd`, `github-manager.cmd`; the page: `index.html`, the CSS and `js/`.

@@ -73,7 +73,7 @@ export class Markers {
       const mesh = add(new THREE.Mesh(UNIT, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.13, depthWrite: false })));
       mesh.position.fromArray(ctr); mesh.scale.fromArray(sz); mesh.renderOrder = 6;
       const edges = new THREE.LineSegments(UNIT_EDGES, new THREE.LineBasicMaterial({ color })); mesh.add(edges);
-      if (text && sh.labels) { const s = add(label(text, "#" + new THREE.Color(color).getHexString(), 0.9)); s.position.set(ctr[0], b.max[1] + 0.7, ctr[2]); }
+      if (text && sh.labels) { const s = add(label(text, "#" + new THREE.Color(color).getHexString(), 0.9)); s.position.set(ctr[0], b.max[1] + 0.7, ctr[2]); s.userData.prio = 2; }
       this.zones.push({ k, i, mesh, edges, color });
     };
     if (sh.zones) {

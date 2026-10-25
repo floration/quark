@@ -2,7 +2,7 @@
 import { store, findCommit } from './store.js';
 import {
   html, when, relOnly, dur, plural, enc, gh, ghLink, docsLink, dashLink, branchChip, commitChip, prChip,
-  localChip, runBadge, badge, RUNNING, ms, elapsed, short, kindLabel, branchVsTesting,
+  localChip, runBadge, badge, RUNNING, isLive, ms, elapsed, short, kindLabel, branchVsTesting, unread, unknownLine,
 } from './util.js';
 import { runRow, prState, checksBadge, eventRow, eventsFor, runOutcome, jobsOf, testsLink } from './parts.js';
 import { notesBlock, md } from './notes.js';
@@ -24,7 +24,7 @@ function runDetail(id) {
   const sorted = [...jobs].sort((a, b) => order(a) - order(b));
   const job = (j) => {
     const st = j.status === 'completed' ? (j.conclusion || 'unknown') : j.status === 'in_progress' ? 'running' : 'queued';
-    const t = j.status === 'in_progress' && j.startedAt ? elapsed(j.startedAt)
+    const t = j.status === 'in_progress' && j.startedAt ? (isLive(r) ? elapsed(j.startedAt) : html`started ${relOnly(j.startedAt)}`)
       : j.startedAt && j.completedAt ? dur((ms(j.completedAt) - ms(j.startedAt)) / 1000) : '';
     const failed = j.conclusion === 'failure';
     return html`<li class="job${failed ? ' is-failed' : ''}">
@@ -41,11 +41,12 @@ function runDetail(id) {
   const pr = store.idx.pullByHead.get(r.branch);
   return html`${head(`CI run ${r.id} · ${r.workflow}`, r.title || r.workflow, html`${ext(r.url, 'Open on GitHub')}${r.attempt > 1 ? html` <span class="muted">attempt ${r.attempt}</span>` : ''}`)}
     <div class="d-status">${runBadge(r)} <span>${runOutcome(r)}</span></div>
+    ${unread('runs') ? unknownLine('runs', true) : ''}
     <dl class="kv">
       <dt>Branch</dt><dd>${branchChip(r.branch)} ${pr ? prChip(pr.number, pr.title) : ''}</dd>
       <dt>Commit</dt><dd>${commitChip(r.sha)} <span class="muted">${r.event}</span></dd>
       <dt>Started</dt><dd>${when(r.createdAt, { secs: true })}</dd>
-      <dt>${RUNNING.has(r.status) ? 'Running for' : 'Took'}</dt><dd>${RUNNING.has(r.status) ? elapsed(r.createdAt) : dur(r.durationSec)}</dd>
+      ${isLive(r) ? html`<dt>Running for</dt><dd>${elapsed(r.createdAt)}</dd>` : RUNNING.has(r.status) ? '' : html`<dt>Took</dt><dd>${dur(r.durationSec)}</dd>`}
     </dl>
     ${notesBlock('run', r.id)}
     <h3>Jobs ${jobs.length ? html`<span class="muted small">${Object.entries(counts).map(([k, n]) => `${n} ${k === 'success' ? 'passed' : k === 'failure' ? 'failed' : k}`).join(' · ')}</span>` : ''}</h3>
@@ -55,7 +56,7 @@ function runDetail(id) {
 
 function prDetail(n) {
   const p = store.idx.pulls.get(String(n));
-  if (!p) return html`${notFound('Pull request', `#${n}`)}${notesBlock('pr', n)}`;
+  if (!p) return html`${notFound('Pull request', `#${n}`)}${unread('pulls') ? unknownLine('pulls') : ''}${notesBlock('pr', n)}`;
   const b = store.idx.branches.get(p.head);
   const checkIds = new Set(((p.checks && p.checks.runs) || []).map((r) => String(r.id)));
   const runs = runsOf((r) => r.branch === p.head && !checkIds.has(String(r.id))).slice(0, 10);
@@ -93,6 +94,7 @@ function branchDetail(name) {
       <dt>Role</dt><dd>${b.role || b.kind}${b.roleSet ? ' (set by you)' : ''}${b.stale ? html` <span class="tag t-warn">stale</span>` : ''} · <a href="#tab=editor&sec=structure">Structure</a></dd>
       ${b.description ? html`<dt>About</dt><dd class="md">${md(b.description)}</dd>` : ''}
     </dl>` : ''}
+    ${unread('pulls') ? unknownLine('pulls') : ''}${unread('runs') ? unknownLine('runs', true) : ''}
     ${notesBlock('branch', name)}
     ${pulls.length ? html`<h3>Pull requests</h3><ul class="rows compact">${pulls.map((p) => html`<li class="row" data-action="row" data-href="#pr=${p.number}" tabindex="0"><div class="r-main">${prState(p)} ${prChip(p.number, p.title)} <a class="r-title" href="#pr=${p.number}">${p.title}</a></div><div class="r-meta">${p.state === 'open' ? checksBadge(p) : ''} <span class="muted">into ${p.base} · ${relOnly(p.updatedAt)}</span></div></li>`)}</ul>` : ''}
     <h3>CI runs ${runs.length ? html`<span class="count">${runs.length}</span>` : ''}</h3>
@@ -137,8 +139,14 @@ function versionDetail(v) {
   for (const l of locals) rows.push(html`<li>local copy ${localChip(l.name)} on ${branchChip(l.branch)}</li>`);
   const evs = eventsFor((e) => e.ref && e.ref.tag && (e.ref.tag === `v${v}` || e.ref.tag.startsWith(`test-${v}-`)), 20);
   const isProdOrOlder = p.version && cmp(v, p.version) <= 0;
+  // a version newer than testing has no changelog (nor release) yet: no links to files that don't exist
+  const future = t.version && cmp(v, t.version) > 0;
+  if (future) {
+    return html`${head('Version', v)}${notesBlock('version', v)}<p class="muted">${v} is newer than testing (${t.version}): it has no changelog or release yet.</p>`;
+  }
   return html`${head('Version', v, html`${ext(gh(`/blob/testing/changelogs/${v}.md`), 'Short changelog')} · ${ext(gh(`/blob/testing/changelogs/full/${v}.md`), 'Full changelog')}${isProdOrOlder ? html` · ${ext(gh(`/releases/tag/v${v}`), `Release v${v}`)} · ${ext(`https://floration.github.io/quark/updates/${enc(v)}/`, 'Website page')}` : t.version === v && t.prerelease ? html` · ${ext(t.prerelease.url, t.prerelease.tag)}` : ''}`)}
     ${notesBlock('version', v)}
+    ${unread('releases') ? unknownLine('releases') : ''}
     ${rows.length ? html`<h3>Where it is</h3><ul class="where">${rows}</ul>` : html`<p class="muted">Neither production, testing nor a local copy is on ${v} right now.</p>`}
     <h3>Releases and tags</h3>
     ${!store.historyLoaded ? html`<p class="muted small">Loading…</p>` : evs.length ? html`<ul class="events">${evs.map((e) => eventRow(e, { showDay: true }))}</ul>` : html`<p class="muted small">No tag or release for ${v} in the local log.</p>`}`;

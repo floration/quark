@@ -17,6 +17,11 @@ main { max-width: 2600px; }
 .build .opt { margin-top: 6px; width: 100%; min-width: 0; font-family: var(--mono); font-size: 12px; padding: 3px 6px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
 .build .opt::placeholder { color: var(--ink-3); }
+.build .pick { display: flex; gap: 4px; margin-top: 4px; min-width: 0; }
+.build .pick[hidden] { display: none; }
+.build .pick select { flex: 1 1 0; min-width: 0; font-size: 12px; padding: 2px 4px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.build .pick select:focus { outline: 2px solid var(--focus); outline-offset: 0; }
 .build .act { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .btn.primary, button.primary { background: var(--link); color: var(--qt-accent-ink, #0b1a2b); border-color: var(--link); }
 .btn.primary:hover:not(:disabled) { background: var(--link); filter: brightness(1.08); }
@@ -25,12 +30,12 @@ main { max-width: 2600px; }
 .play-pending { border-left: 4px solid var(--link); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .play-pending b { font-weight: 650; }
 
-/* the server is down: a plain-words banner, and nothing on the page can be pressed */
+/* the server is down: a plain-words banner, and nothing on the page can be pressed (play.js makes the sections inert) */
 .down-banner { border-left: 4px solid var(--crit); display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
   background: color-mix(in srgb, var(--crit) 8%, var(--surface)); }
 .down-banner > div { flex: 1 1 320px; display: flex; flex-direction: column; gap: 3px; }
 .down-banner strong { color: var(--crit-ink); font-size: 15px; }
-body.down #main > section:not(#sec-down) button, body.down #main > div button, body.down .build .opt { pointer-events: none; opacity: .45; }
+body.down [inert] button, body.down [inert] .opt, body.down [inert] select, body.down [inert] a { opacity: .45; }
 
 /* notes and sessions: two columns on wide screens, the notes twice as wide */
 @media (min-width: 1800px) { .play-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
@@ -45,6 +50,14 @@ body.down #main > section:not(#sec-down) button, body.down #main > div button, b
 .note .w { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
 .note .na { display: flex; gap: 4px; align-items: center; margin-top: 2px; min-height: 22px; }
 .note .tail { margin: 6px 0 0; padding: 6px 8px; background: var(--surface-sunk); border-radius: var(--radius-sm); max-height: 220px; overflow: auto; white-space: pre-wrap; }
+.note.removed-pending { opacity: .6; }
+.note.removed-pending .t > span:first-child { text-decoration: line-through; }
+.note.removed-blocked { border-color: color-mix(in srgb, var(--warn) 60%, var(--border)); }
+.blocked { font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border)); border-left-width: 4px; border-radius: var(--radius-sm);
+  padding: 6px 10px; margin-bottom: 10px; background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
+.blocked b { color: var(--warn-ink); font-weight: 650; }
+.blocked ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.blocked li { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .more-notes { margin: 8px 0 0; }
 .sync { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .sync.bad { color: var(--warn-ink); }
@@ -54,6 +67,11 @@ table.t tr.off td { color: var(--ink-3); }
 .prog { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--surface-sunk); border: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
 .prog i { display: block; height: 100%; background: var(--link); }
 .rel-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rel-search { width: 150px; min-width: 0; font-size: 12px; padding: 3px 6px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.rel-search:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.rel-tools label.chk { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); }
+.rel-old { margin: 8px 0 0; }
 /* the release table takes the screen's height; at 1800 px and wider production and testing sit side by side */
 .rel-wrap { max-height: max(420px, calc(100vh - 230px)); overflow: auto; }
 .rel-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
@@ -70,6 +88,8 @@ dialog#note-dlg::backdrop, dialog#log-dlg::backdrop { background: rgba(0, 0, 0, 
 .note-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--ink-2); background: var(--surface-2);
   border-radius: var(--radius-sm); padding: 6px 10px; }
 .note-meta b { color: var(--ink); font-weight: 600; }
+.note-draft { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--warn-ink); }
+.note-draft[hidden] { display: none; }
 .note-for { display: flex; gap: 10px; flex-wrap: wrap; }
 .note-for label { flex: 1 1 160px; }
 #note-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; position: relative; }

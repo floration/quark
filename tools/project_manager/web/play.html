@@ -46,7 +46,19 @@
     <section class="card" id="sec-sessions" aria-labelledby="h-sessions"></section>
   </div>
 
-  <section class="card" id="sec-releases" aria-labelledby="h-releases"></section>
+  <section class="card" id="sec-releases" aria-labelledby="h-releases">
+    <div class="card-head">
+      <h2 id="h-releases">Older versions <span class="count" id="rel-count"></span></h2>
+      <span class="rel-tools">
+        <input type="search" id="rel-search" class="rel-search" placeholder="find a version" aria-label="Find a release by version or name" spellcheck="false" autocomplete="off">
+        <label class="chk small" title="Releases this PC has: in versions\, in a game folder, or being installed"><input type="checkbox" id="rel-installed"> on this PC</label>
+        <span class="seg" id="rel-seg"><button type="button" data-filter="all">All</button><button type="button" data-filter="production">Production</button><button type="button" data-filter="testing">Testing</button></span>
+        <span class="src" id="rel-src"></span>
+        <button type="button" class="btn small" id="rel-refresh">Refresh</button>
+      </span>
+    </div>
+    <div id="rel-body"></div>
+  </section>
 </main>
 
 <dialog id="note-dlg" aria-labelledby="note-h">
@@ -61,6 +73,7 @@
       <label id="note-other-label">Name<input type="text" name="label" maxlength="80" value="launcher" spellcheck="false"></label>
       <label id="note-other-version">Version<input type="text" name="version" maxlength="60" placeholder="e.g. 1.18.31" spellcheck="false"></label>
     </div>
+    <div class="note-draft" id="note-draft" hidden><span id="note-draft-txt"></span><button type="button" class="btn small ghost" id="note-discard" title="Throw away what you typed here and start from the saved note (or empty boxes)">Discard draft</button></div>
     <label>What did you do?<textarea name="did" rows="3" maxlength="4000" placeholder="e.g. two FFA rounds on bastion with 6 bots, then the map editor"></textarea></label>
     <label>What did you notice?<textarea name="noticed" rows="3" maxlength="4000" placeholder="bugs, stutters, anything that felt off or good"></textarea></label>
     <label>What do you want changed?<textarea name="change" rows="3" maxlength="4000"></textarea></label>

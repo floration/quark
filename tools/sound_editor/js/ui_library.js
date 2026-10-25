@@ -30,7 +30,7 @@
   // --- one matrix ---------------------------------------------------------------------------------------------------
   function packsOf(kind) { return kind === 'voice' ? Q.VOICES : Q.KITS; }
   function rowGroups(kind) {
-    if (kind === 'voice') return [['Announcer lines', Q.LINES], ['QUIPS', Q.QUIPS]];
+    if (kind === 'voice') return [['Announcer lines', Q.LINES], ['QUIPS', Q.allQuips()]];
     const seen = new Set(Q.SOUND_GROUPS.flatMap(g => g[1]));
     const extra = Q.SOUNDS.filter(s => !seen.has(s));
     return extra.length ? Q.SOUND_GROUPS.concat([['Other', extra]]) : Q.SOUND_GROUPS;
@@ -51,23 +51,42 @@
     return Math.max(0.1, n / 48000 * 1.04);
   }
 
+  /* Mini waveforms are drawn in one batch per frame: every queued canvas's size is read first (one layout), then each is
+     sized and drawn (reading clientWidth between draws forced a layout of the whole table per cell). */
+  const miniQ = new Map(); let miniRaf = 0;
+  function queueMini(cv, draw) {
+    miniQ.set(cv, draw);
+    if (!miniRaf) miniRaf = requestAnimationFrame(() => {
+      miniRaf = 0;
+      const jobs = [...miniQ].filter(([c]) => c.isConnected); miniQ.clear();
+      const sizes = jobs.map(([c]) => ({ w: c.clientWidth, h: c.clientHeight }));
+      jobs.forEach(([c, d], i) => d(c, sizes[i]));
+    });
+  }
+  // the value line of a cell (the metric shown first): a metric change rewrites only this
+  function valsFor(m, metric) {
+    const isDur = metric === 'dur';
+    return h('div.vals', h('span.main', lib.fmtMetric(m, metric)), h('span', isDur ? '' : unit[metric]), h('span', isDur ? fmt(m.lufs, 1) + ' LUFS' : fmt(m.dur, 2) + 's'), h('span', 'pk ' + fmt(m.peak, 1)));
+  }
+  const curMetric = { sound: 'lufs', voice: 'lufs' };
+
   function fillCell(td, key, o) {
-    const a = Q.assets[key], loadedId = (a.kind === 'voice' ? 'voice:' : 'kit:') + a.pack;
-    td.innerHTML = '';
+    const a = Q.assets[key], loadedId = (a.kind === 'voice' ? 'voice:' : 'kit:') + a.pack, tok = td._fill = {};
+    td.innerHTML = ''; td._draw = null; td._m = null;
     if (!Q.loaded[loadedId]) { td.append(h('div.loadcol', 'loading...')); return; }
     const x = o.which === 'orig' ? a.orig : o.which === 'out' ? Q.outSync(key) : (Q.gameSync(key) || {}).v;
     const m = Q.metricsSync(key, o.which);
     if (!x || !m) {
       td.append(h('div.loadcol', 'measuring...'));
-      Q.getMetrics(key, o.which).then(() => { if (td.isConnected) fillCell(td, key, o); }).catch(e => U.fail('measure ' + key, e));
+      Q.getMetrics(key, o.which).then(() => { if (td.isConnected && td._fill === tok) fillCell(td, key, o); }).catch(e => U.fail('measure ' + key, e));
       return;
     }
     const cv = h('canvas'), pack = (a.kind === 'voice' ? Q.voiceByDir(a.pack) : Q.kitByDir(a.pack));
     td.append(cv);
-    const main = lib.fmtMetric(m, o.metric), isDur = o.metric === 'dur';
-    td.append(h('div.vals', h('span.main', main), h('span', isDur ? '' : unit[o.metric]), h('span', isDur ? fmt(m.lufs, 1) + ' LUFS' : fmt(m.dur, 2) + 's'), h('span', 'pk ' + fmt(m.peak, 1))));
+    td._m = m;
+    td.append(valsFor(m, curMetric[a.kind]));
     const badges = h('div.badges'), e = Q.state.edits[key], inh = Q.inheritsFrom(key);
-    if (e) badges.append(h('span.badge.ed', { title: 'Edited: exported with your changes' }, 'ED'));
+    if (e) badges.append(Q.isNoop(key) ? h('span.badge.noop', { title: 'Edited, but it plays the same as the shipped sound: not exported' }, 'ED=') : h('span.badge.ed', { title: 'Edited: exported with your changes' }, 'ED'));
     if (e && e.levelSet) badges.append(h('span.badge.lvl', { title: 'Level set by you: listed in sound-levels.txt, the game keeps it' }, 'LVL'));
     if (inh) badges.append(h('span.badge.inh', { title: inh.retro ? 'RETRO is DEFAULT chiptuned: your DEFAULT edit plays here (chiptuned) in the game' : 'This kit uses DEFAULT\'s sound: your DEFAULT edit plays here in the game' }, inh.retro ? '=D~' : '=D'));
     else if (!e && a.sameAsDefault) badges.append(h('span.badge', { title: 'Same as DEFAULT (a DEFAULT override also replaces it)' }, '=D'));
@@ -82,7 +101,8 @@
     td.append(badges);
     td.classList.toggle('silent', !x.length || m.peak < -90);
     td.title = a.name + ' / ' + Q.packName(a.kind, a.pack) + '\n' + (a.when || '') + '\nLUFS ' + fmt(m.lufs) + '  max momentary ' + fmt(m.mmax) + '  true peak ' + fmt(m.tp) + ' dBTP  heard ' + fmt(m.heard) + ' dB  ' + fmt(m.dur, 3) + ' s';
-    requestAnimationFrame(() => Q.drawMini(cv, x, rowSpan(a.kind, a.name, o.which), pack ? pack.color : '#6fb1ff'));
+    td._draw = (c, size) => Q.drawMini(c, x, rowSpan(a.kind, a.name, o.which), pack ? pack.color : '#6fb1ff', size);
+    queueMini(cv, td._draw);
   }
   lib.fillCell = fillCell;
 
@@ -121,10 +141,13 @@
   }
   const countSpans = c => ORDER.filter(o => c[o]).map(o => h('span.oc.o-' + o, { title: c[o] + ' ' + (o === 'unset' ? 'with no origin set yet' : Q.prov.LABEL[o]) }, Q.prov.SHORT[o] + ' ' + c[o]));
 
+  /* The table is reconciled, not rebuilt: rows whose signature didn't change stay where they are (moving or re-adding
+     165 / 245 rows restyled and laid out the whole table), a changed row is swapped in place, and a metric change only
+     rewrites each cell's value line. */
+  const grpRows = { sound: new Map(), voice: new Map() };
   lib.renderMatrix = function (kind) {
     const table = U.$(kind === 'voice' ? '#voiceMatrix' : '#soundMatrix'), o = opts(kind), packs = packsOf(kind);
-    const scrollTop = table.parentNode.scrollTop;
-    table.innerHTML = '';
+    curMetric[kind] = o.metric;
     table.style.minWidth = (300 + 150 * packs.length) + 'px';
     const counts = originCounts(kind), tot = Object.values(counts.all).reduce((s, n) => s + n, 0);
     const cs = U.$(kind === 'voice' ? '#vCounts' : '#sCounts'); cs.innerHTML = '';
@@ -139,41 +162,64 @@
           onclick: () => lib.playSequence(visibleNames(kind).map(n => Q.key(kind, p.dir, n)).filter(k => Q.assets[k]), p.name) }, '▶')),
         h('div.pack-counts', countSpans(counts.per[p.dir] || {}))));
     }
-    table.append(h('thead', head));
-    const body = h('tbody'), fresh = new Map();
+    const thead = h('thead', head), oldHead = table.querySelector('thead');
+    if (oldHead) oldHead.replaceWith(thead); else table.prepend(thead);
+    let body = table.querySelector('tbody');
+    if (!body) { body = h('tbody'); table.append(body); }
+    const want = [], fresh = new Map();
     for (const [gname, names] of rowGroups(kind)) {
       const rows = names.filter(n => rowVisible(kind, n, o));
       if (!rows.length) continue;
-      body.append(h('tr.grp', h('td', { colSpan: packs.length + 1 }, gname)));
-      for (const name of rows) body.append(cachedRow(kind, name, packs, o, fresh));
+      let g = grpRows[kind].get(gname);
+      if (!g) grpRows[kind].set(gname, g = h('tr.grp', h('td', { colSpan: packs.length + 1 }, gname)));
+      want.push(g);
+      for (const name of rows) want.push(cachedRow(kind, name, packs, o, fresh));
     }
     rowCache[kind] = fresh;
-    if (!body.children.length) body.append(h('tr.none', h('td', { colSpan: packs.length + 1 }, 'No ' + (kind === 'voice' ? 'lines' : 'sounds') + ' match these filters. ',
+    if (!want.length) want.push(h('tr.none', h('td', { colSpan: packs.length + 1 }, 'No ' + (kind === 'voice' ? 'lines' : 'sounds') + ' match these filters. ',
       h('button.mini', { type: 'button', onclick: () => lib.clearFilters(kind) }, 'clear the filters'))));
-    table.append(body);
-    table.parentNode.scrollTop = scrollTop;
+    want.forEach((tr, i) => { if (body.children[i] !== tr) body.insertBefore(tr, body.children[i] || null); });
+    while (body.children.length > want.length) body.lastChild.remove();
   };
   function visibleNames(kind) { const o = opts(kind); return rowGroups(kind).flatMap(g => g[1]).filter(n => rowVisible(kind, n, o)); }
   lib.visibleNames = visibleNames;
 
   /* A commit re-renders the matrix; a row whose inputs didn't change is reused as it is (its canvases drawn, its
      metrics filled), so a commit redraws only the rows it touched instead of all 165 / 245 cells (about 300 ms -> a few
-     ms at 2560). The signature is everything rowFor reads: the options, the row's note / favourite / solo / mute, and
-     per cell its pack being loaded, its edit, what the game plays (inherited DEFAULT edits too) and its origin. */
+     ms at 2560). The signature is everything rowFor reads except the metric (only the value line shows it): the options,
+     the row's note / favourite / solo / mute, and per cell its pack being loaded, its edit, what the game plays
+     (inherited DEFAULT edits too) and its origin. */
   const rowCache = { sound: new Map(), voice: new Map() };
   function rowSig(kind, name, packs, o) {
-    const parts = [o.metric, o.which, o.origin, JSON.stringify(Q.state.meta[kind + ':' + name] || {}), Q.mix.soloSound.has(Q.soundId(kind, name)), Q.mix.muteSound.has(Q.soundId(kind, name))];
-    for (const p of packs) {
+    const row = [o.origin, JSON.stringify(Q.state.meta[kind + ':' + name] || {}), Q.mix.soloSound.has(Q.soundId(kind, name)), Q.mix.muteSound.has(Q.soundId(kind, name))].join('\u0001');
+    const cells = packs.map(p => {
       const k = Q.key(kind, p.dir, name);
-      if (!Q.assets[k]) { parts.push('-'); continue; }
-      parts.push(!!Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir], Q.audible(kind, p.dir, name), Q.gameSig(k), Q.editSig(k), Q.prov.currentOrigin(k).origin);
-    }
-    return parts.join('\u0001');
+      if (!Q.assets[k]) return '-';
+      // (the clip the cell shows, not the "show" option: an unedited sound is the same clip as shipped, file and in game,
+      // so switching the option redraws only the rows it changes)
+      const g = Q.gameSig(k), e = Q.editSig(k), shown = o.which === 'orig' || (o.which === 'out' ? e : g) === 'orig' ? 'orig' : o.which + ':' + (o.which === 'out' ? e : g);
+      return [!!Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir], Q.audible(kind, p.dir, name), g, e, shown, Q.prov.currentOrigin(k).origin].join('\u0001');
+    });
+    return { row, cells };
   }
+  /* A row whose own parts (note, favourite, solo / mute, origin filter) are unchanged is kept; only its cells whose clip,
+     edit, origin or pack load changed are filled again (a voice landing fills its column, not all 245 cells), and the
+     other cells' mini waveforms are redrawn on the row's time scale. */
   function cachedRow(kind, name, packs, o, fresh) {
     const sig = rowSig(kind, name, packs, o), c = rowCache[kind].get(name);
-    const tr = c && c.sig === sig ? c.tr : rowFor(kind, name, packs, o);
-    fresh.set(name, { sig, tr });
+    let tr;
+    if (c && c.sig.row === sig.row && c.sig.cells.length === sig.cells.length) {
+      tr = c.tr;
+      const tds = tr.querySelectorAll('td.cell'), changed = sig.cells.map((cs, i) => cs !== c.sig.cells[i]);
+      if (changed.some(Boolean)) packs.forEach((p, i) => {
+        const td = tds[i], k = Q.key(kind, p.dir, name);
+        if (!td || !Q.assets[k]) return;
+        if (changed[i]) { td.classList.toggle('muted', !Q.audible(kind, p.dir, name)); fillCell(td, k, o); }
+        else if (td._draw) queueMini(td.querySelector('canvas'), td._draw);
+      });
+      if (c.metric !== o.metric) for (const td of tds) { const v = td._m && td.querySelector('.vals'); if (v) v.replaceWith(valsFor(td._m, o.metric)); }
+    } else tr = rowFor(kind, name, packs, o);
+    fresh.set(name, { sig, tr, metric: o.metric });
     return tr;
   }
 
@@ -278,17 +324,16 @@
     for (const p of packs) { const sv = s('svg', { width: 14, height: 14 }); sv.append(shape(p.shape, 7, 7, p.color)); legend.append(h('span', sv, p.name)); }
     if (kind === 'voice') lib.loadVoices();
     const names = rowGroups(kind).flatMap(g => g[1]);
-    const rows = [];
-    for (const n of names) {
-      const pts = [];
-      for (const p of packs) {
+    // (every clip asked for at once: the measuring queue works through them in slices, js/engine.js)
+    const rows = await Promise.all(names.map(async n => {
+      const got = await Promise.all(packs.map(async p => {
         const k = Q.key(kind, p.dir, n);
-        if (!Q.assets[k] || !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]) continue;
+        if (!Q.assets[k] || !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]) return null;
         const m = await Q.getMetrics(k, which), v = m ? m[metric] : null;
-        if (v != null && isFinite(v)) pts.push({ p, k, v, m });
-      }
-      rows.push({ n, pts });
-    }
+        return v != null && isFinite(v) ? { p, k, v, m } : null;
+      }));
+      return { n, pts: got.filter(Boolean) };
+    }));
     if (tok !== ovTok) return;   // (a newer render started while this one measured)
     const all = rows.flatMap(r => r.pts.map(p => p.v));
     const waiting = packs.filter(p => !Q.loaded[(kind === 'voice' ? 'voice:' : 'kit:') + p.dir]).length;

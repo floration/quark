@@ -9,6 +9,9 @@ import { WEAPONS } from "./catalog.js";
 import { $, esc, el, fmtNum } from "./util.js";
 
 const LH = 19;
+// a decimal literal without its f (an f64 to the game, which never narrows one to an f32 by itself)
+const BARE_DEC = /(?<![\w.])(\d+\.\d*|\.\d+)(?![\w.])/g;
+const asF32 = (m) => (m.startsWith(".") ? "0" : "") + m + (m.endsWith(".") ? "0" : "") + "f";
 
 export class CodeView {
     constructor(app) {
@@ -61,8 +64,31 @@ export class CodeView {
             const d = el("div", x.severity === "error" ? "error" : "warning");
             d.textContent = (x.line ? `line ${x.line}${x.col ? ":" + x.col : ""}: ` : "") + x.msg;
             if (x.line) d.onclick = () => this.goto(x.line);
+            // "damage = damage * 1.1": the game reads 1.1 as an f64; one click writes 1.1f (an f32) on that line
+            const decs = x.line && /\bf64\b/.test(x.msg) ? (lines[x.line - 1] || "").split("#")[0].match(BARE_DEC) : null;
+            if (decs) {
+                const fix = el("button", "fixbtn", "make it an f32: " + esc(decs.map((m) => m + " → " + asF32(m)).join(", ")));
+                fix.title = "a decimal number is an f64 to the game; with an f after it it's an f32";
+                fix.onclick = (ev) => { ev.stopPropagation(); this.fixDecimals(x.line); };
+                d.append(" ", fix);
+            }
             pb.append(d);
         }
+    }
+    // after an undo / redo: the caret where the text changed (the first and last characters that differ)
+    caretAtChange(before, after) {
+        let a = 0; const n = Math.min(before.length, after.length);
+        while (a < n && before[a] === after[a]) a++;
+        let b = 0; while (b < n - a && before[before.length - 1 - b] === after[after.length - 1 - b]) b++;
+        this.ta.focus(); this.ta.setSelectionRange(a, Math.max(a, after.length - b));
+        const line = after.slice(0, a).split("\n").length;
+        if (line * LH < this.scroll.scrollTop || line * LH > this.scroll.scrollTop + this.scroll.clientHeight) this.scroll.scrollTop = Math.max(0, (line - 4) * LH);
+    }
+    fixDecimals(line) {
+        const L = this.app.text.split("\n"), ln = L[line - 1] || "", hash = ln.indexOf("#");
+        const code = hash >= 0 ? ln.slice(0, hash) : ln, rest = hash >= 0 ? ln.slice(hash) : "";
+        L[line - 1] = code.replace(BARE_DEC, asF32) + rest;
+        this.app.setText(L.join("\n"), "fix");
     }
     goto(line) {
         const lines = this.ta.value.split("\n");
@@ -129,7 +155,7 @@ export class CodeView {
         const t = this.trial, s = t.s, rows = this.app.stats.rows.filter((r) => r.weapon === t.weapon && r.variant !== "splash");
         const row = rows.find((r) => r.mode === (s.alt ? "alt" : "primary")) || rows[0];
         if (!row || row.support) return 10;
-        return +row.per(Number.isFinite(s.dist) ? s.dist : 10, !!s.head).toFixed(3);
+        return +(row.base || row.per)(Number.isFinite(s.dist) ? s.dist : 10, !!s.head).toFixed(3);   // (before the slot: its input)
     }
     _run() {
         const app = this.app, t = this.trial;

@@ -1,7 +1,7 @@
 // The two overview pictures, drawn as plain HTML/CSS (so they reflow with the page and need no measuring):
 //  - laneChart: every branch and local copy against testing, behind to the left and ahead to the right
 //  - ciTimeline: the last 24 h of CI runs, one lane per branch, bars coloured by result
-import { html, shortBranch, ms, plural, runState, stateClass, stateLabel, fmtHour, fmtTime, dur, aheadBehind, RUNNING, enc } from './util.js';
+import { html, shortBranch, ms, plural, runState, stateClass, stateLabel, fmtHour, fmtTime, dur, aheadBehind, isLive, enc } from './util.js';
 
 const sq = (n, max) => (n ? Math.max(1.5, (Math.sqrt(n) / Math.sqrt(Math.max(1, max))) * 100) : 0);
 
@@ -25,7 +25,7 @@ export function laneChart(rows, { reference = 'testing', refLabel = '' } = {}) {
 export function ciTimeline(runs, { hours = 24, now = Date.now() } = {}) {
   const from = now - hours * 3600e3, span = now - from;
   const inWin = runs.filter((r) => {
-    const end = RUNNING.has(r.status) ? now : ms(r.updatedAt);
+    const end = isLive(r) ? now : ms(r.updatedAt);
     return end >= from && ms(r.createdAt) <= now;
   });
   if (!inWin.length) return html`<p class="muted">No CI runs in the last ${hours} hours.</p>`;
@@ -46,9 +46,9 @@ export function ciTimeline(runs, { hours = 24, now = Date.now() } = {}) {
   const pct = (t) => ((Math.min(Math.max(t, from), now) - from) / span) * 100;
   const bar = (r) => {
     const st = runState(r);
-    const s = ms(r.createdAt), e = RUNNING.has(r.status) ? now : ms(r.updatedAt);
+    const s = ms(r.createdAt), e = isLive(r) ? now : ms(r.updatedAt);
     const left = pct(s), w = Math.max(0.5, pct(e) - left);
-    const tip = `${r.workflow} on ${r.branch}: ${stateLabel(st)} · started ${fmtTime(r.createdAt)}${RUNNING.has(r.status) ? ' · still running' : ` · ${dur(r.durationSec ?? (e - s) / 1000)}`} · ${r.title || ''}`;
+    const tip = `${r.workflow} on ${r.branch}: ${stateLabel(st)} · started ${fmtTime(r.createdAt)}${isLive(r) ? ' · still running' : st === 'unread' ? ' · last seen running (GitHub not read since the start)' : ` · ${dur(r.durationSec ?? (e - s) / 1000)}`} · ${r.title || ''}`;
     return html`<a class="tl-bar s-${stateClass(st)}" href="#run=${r.id}" style="left:${left.toFixed(2)}%;width:${w.toFixed(2)}%" data-tip="${tip}" aria-label="${tip}"></a>`;
   };
   const counts = {};
@@ -63,6 +63,7 @@ export function ciTimeline(runs, { hours = 24, now = Date.now() } = {}) {
     <span><i class="sw s-run"></i>running${counts.run ? ` (${counts.run})` : ''}</span>
     <span><i class="sw s-wait"></i>queued${counts.wait ? ` (${counts.wait})` : ''}</span>
     <span><i class="sw s-off"></i>cancelled / skipped${counts.off ? ` (${counts.off})` : ''}</span>
+    ${counts.warn ? html`<span><i class="sw s-warn"></i>last seen running (${counts.warn})</span>` : ''}
     <span class="muted">${plural(inWin.length, 'run')} in the last ${hours} h; hover a bar for details, click to open</span>
   </div>`;
 }
