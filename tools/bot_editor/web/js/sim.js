@@ -1,7 +1,7 @@
 // Simulator page: pick a map and mode, place bots (team, skill, brain, start + facing), give them objectives, save
 // scenarios, run a match live (pause / resume / speed / step / stop, scrub what was recorded), inspect bots.
 
-import { MapView, TEAM_COLORS } from "./mapview.js";
+import { MapView, botColor } from "./mapview.js";
 import { Map3D } from "./map3d.js";
 import { MODES, MODE_TITLES, TEAM_MODES, mapSupports, mapObjectives, floorOrNull, mapTitle } from "./qmap.js";
 import { LiveView, Recording } from "./live.js";
@@ -270,7 +270,7 @@ export class SimPage {
         this.sc.bots.forEach((b, i) => {
             const r = document.createElement("div");
             r.className = "botrow" + (i === this.sel ? " sel" : "");
-            const c = TEAM_COLORS[b.team] || TEAM_COLORS.any;
+            const c = botColor(b.team, i, TEAM_MODES.has(this.sc.mode));
             r.innerHTML = `<span class="dot" style="background:${c}"></span><div><b>${esc(b.name)}</b> <span class="sub">${b.skill.toLowerCase()} · ${esc(b.brain)}</span><div class="sub">${esc(objText(b.objective))}${b.pos ? "" : " · spawns at a spawn point"}</div></div><button title="remove">×</button>`;
             r.onclick = (e) => { if (e.target.tagName === "BUTTON") { this.sc.bots.splice(i, 1); if (this.sel >= this.sc.bots.length) this.sel = -1; this.renderBots(); this._save(); return; } this.sel = i; this.renderBots(); };
             L.append(r);
@@ -422,7 +422,7 @@ export class SimPage {
             const o = b.objective || {};
             const sel = i === this.sel;
             if (!b.pos) return;
-            const c = TEAM_COLORS[b.team] || TEAM_COLORS.any;
+            const c = botColor(b.team, i, TEAM_MODES.has(this.sc.mode));
             ctx.globalAlpha = sel ? 1 : 0.55;
             if (o.kind === "goto" && o.pos) { line(ctx, b.pos.x, b.pos.z, o.pos[0], o.pos[2], "#fde047", px, true); cross(ctx, o.pos[0], o.pos[2], 7 * px, "#fde047", px); }
             if (o.kind === "hold" && o.pos) { ctx.strokeStyle = "#fde047"; ctx.lineWidth = 2 * px; ctx.setLineDash([5 * px, 4 * px]); ctx.beginPath(); ctx.arc(o.pos[0], o.pos[2], o.radius || 4, 0, 7); ctx.stroke(); ctx.setLineDash([]); line(ctx, b.pos.x, b.pos.z, o.pos[0], o.pos[2], "#fde047", px, true); dot(ctx, o.pos[0], o.pos[2], 4 * px, "#fde047"); }
