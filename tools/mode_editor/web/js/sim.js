@@ -27,16 +27,33 @@ const TEAM_COLOR = { a: "#f05252", b: "#3f83f8" };   // (style.css --team-a / --
 const SLOT_COLORS = ["#a78bfa", "#22d3ee", "#fbbf24", "#34d399", "#f472b6", "#fb923c", "#60a5fa", "#e879f9", "#a3e635", "#f87171"];
 const teamOf = (t) => (t === 1 || t === "b" || t === "B" ? "b" : t === 0 || t === "a" || t === "A" ? "a" : null);
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const DRAW_MS = 250;      // the most often a streaming run redraws
+const LOG_LINES = 400;    // the event log keeps the last this many
 const us = (ns) => (ns >= 10000 ? (ns / 1000).toFixed(0) + " µs" : ns >= 1000 ? (ns / 1000).toFixed(1) + " µs" : Math.round(ns) + " ns");
 
 // NDJSON lines (objects) -> the timeline. Lenient about field names the helper may add; never invents values.
-export function timelineModel(lines) {
-    const m = { start: null, end: null, frames: [], bands: [], markers: [], rounds: [], slots: [], slotFrames: [], slotNames: [], players: new Map(), names: new Map(),
-        errors: [], warnings: [], t0: 0, t1: 0, maxScore: 1, maxSlotNs: 0 };
-    let band = null;
+// A run's model grows as its lines come in: feedTimeline() reads only the lines after the ones it has read (m.fed), so
+// a long run costs each line once, not once per redraw.
+export function newTimeline() {
+    return { start: null, end: null, frames: [], bands: [], markers: [], rounds: [], slots: [], slotFrames: [], slotNames: [], players: new Map(), names: new Map(),
+        errors: [], warnings: [], t0: 0, t1: 0, maxScore: 1, maxSlotNs: 0, fed: 0,
+        teamA: newSeries(), teamB: newSeries(),   // the team scores as steps (see addPoint)
+        trail: [], bounds: null };                // where anyone went: x, z, x, z... and their [x0, z0, x1, z1]
+}
+// a score over time kept as its changes only (the point before a change and the change), plus where it is now: the
+// same line as one point per frame, in a few points
+function newSeries() { return { pts: [], t: null, v: null }; }
+function addPoint(s, t, v) {
+    if (s.v === null) s.pts.push([t, v]);
+    else if (v !== s.v) { if (s.pts[s.pts.length - 1][0] !== s.t) s.pts.push([s.t, s.v]); s.pts.push([t, v]); }
+    s.t = t; s.v = v;
+}
+export function seriesPoints(s) { return s.v === null ? [] : s.pts[s.pts.length - 1][0] === s.t ? s.pts : s.pts.concat([[s.t, s.v]]); }
+export function feedTimeline(m, lines) {
     const nm = (id) => (id === undefined || id === null || id < 0 ? "world" : m.names.get(id) || "#" + id);
     const slotName = (n) => { if (!m.slotNames.includes(n)) m.slotNames.push(n); };
-    for (const L of lines) {
+    for (let i = m.fed; i < lines.length; i++) {
+        const L = lines[i];
         if (!L || typeof L !== "object") continue;
         const type = L.type || L.kind || (L.t !== undefined && L.phase !== undefined ? "frame" : "");
         if (type === "start") {
@@ -51,16 +68,23 @@ export function timelineModel(lines) {
             const f = { t, phase: L.phase || "?", round: L.round ?? null, clock: L.clock ?? null, scoreA: L.scoreA ?? null, scoreB: L.scoreB ?? null,
                 obj: L.obj || null, flags: L.flags || [], players: L.players || L.bots || [] };
             m.frames.push(f);
-            if (!band || band.phase !== f.phase) { if (band) band.t1 = t; band = { phase: f.phase, t0: t, t1: t }; m.bands.push(band); }
-            band.t1 = t;
+            const band = m.bands[m.bands.length - 1];
+            if (!band || band.phase !== f.phase) { if (band) band.t1 = t; m.bands.push({ phase: f.phase, t0: t, t1: t }); }
+            else band.t1 = t;
             for (const p of f.players) {
+                if (Array.isArray(p.pos)) {
+                    const x = p.pos[0], z = p.pos.length > 2 ? p.pos[2] : p.pos[1], b = m.bounds;
+                    m.trail.push(x, z);
+                    if (!b) m.bounds = [x, z, x, z];
+                    else { if (x < b[0]) b[0] = x; if (z < b[1]) b[1] = z; if (x > b[2]) b[2] = x; if (z > b[3]) b[3] = z; }
+                }
                 if (p.id === undefined) continue;
                 let P = m.players.get(p.id);
-                if (!P) { P = { id: p.id, name: p.name || nm(p.id), team: teamOf(p.team), scores: [] }; m.players.set(p.id, P); }
-                if (p.score !== undefined) { P.scores.push([t, p.score]); m.maxScore = Math.max(m.maxScore, p.score); }
+                if (!P) { P = { id: p.id, name: p.name || nm(p.id), team: teamOf(p.team), score: newSeries() }; m.players.set(p.id, P); }
+                if (p.score !== undefined) { addPoint(P.score, t, p.score); if (p.score > m.maxScore) m.maxScore = p.score; }
             }
-            if (f.scoreA !== null) m.maxScore = Math.max(m.maxScore, f.scoreA);
-            if (f.scoreB !== null) m.maxScore = Math.max(m.maxScore, f.scoreB);
+            if (f.scoreA !== null) { addPoint(m.teamA, t, f.scoreA); m.maxScore = Math.max(m.maxScore, f.scoreA); }
+            if (f.scoreB !== null) { addPoint(m.teamB, t, f.scoreB); m.maxScore = Math.max(m.maxScore, f.scoreB); }
             // trace: the interpreted slots' calls since the last frame [{slot, calls, ns, avg, max}]
             if (Array.isArray(L.slots) && L.slots.length) {
                 let ns = 0;
@@ -76,8 +100,18 @@ export function timelineModel(lines) {
             }
         }
     }
+    m.fed = lines.length;
     if (m.frames.length) { m.t0 = m.frames[0].t; m.t1 = m.frames[m.frames.length - 1].t; }
     return m;
+}
+export function timelineModel(lines) { return feedTimeline(newTimeline(), lines); }
+// the frame at time t (the last one at or before it), by bisection
+export function frameAt(m, t) {
+    const F = m.frames;
+    if (!F.length) return null;
+    let lo = 0, hi = F.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (F[mid].t <= t) lo = mid; else hi = mid - 1; }
+    return F[lo];
 }
 function describeEvent(e, nm) {
     const k = e.type || e.kind;
@@ -377,45 +411,84 @@ export class SimView {
         this._setBusy(false);
         if (quiet) return;
         this._persist();
-        if (any) { for (const r of this.runs) r.model = timelineModel(r.lines); this._drawRuns(); }
+        if (any) this._drawRuns();
     }
-    _soon() { if (this._raf) return; this._raf = requestAnimationFrame(() => { this._raf = 0; for (const r of this.runs) r.model = timelineModel(r.lines); this._drawRuns(); }); }
+    // Redraws while lines stream in: at most every DRAW_MS (a 16-bot two-hour run sends ~20000 lines; drawing on every
+    // animation frame froze the page), right away once every run is done.
+    _soon() { this._throttle("_drawT", () => this._updateRuns(), this.runs); }
+    _throttle(slot, draw, list) {
+        if (this[slot]) return;
+        const now = performance.now(), wait = list.every((r) => r.done) ? 0 : Math.max(0, (this[slot + "At"] || 0) + DRAW_MS - now);
+        this[slot] = setTimeout(() => requestAnimationFrame(() => { this[slot] = 0; this[slot + "At"] = performance.now(); draw(); }), wait);
+    }
 
+    // The run cards are built once per set of runs (and page render); a redraw only feeds the new lines into each model
+    // and updates the parts that changed: the timeline, the plot (its map and trail layers are kept and only the new
+    // trail points drawn), the end card when it changes, the log by appending.
     _drawRuns() {
         const O = this.root.querySelector("#smOut");
         if (!O) return;
         if (this.batches.length) return this._drawBatches();
         if (!this.runs.length) { O.innerHTML = `<div class="muted" style="margin-top:8px">No run yet. A run uses the current text (saved or not) as the request's rules.</div>`; return; }
-        for (const r of this.runs) if (!r.model) r.model = timelineModel(r.lines);
-        const axes = sharedAxes(this.runs.map((r) => r.model));
-        O.innerHTML = `<div class="sim-runs${this.runs.length > 1 ? " two" : ""}">${this.runs.map((r, i) => `<div class="sim-run" data-i="${i}"><h4>${esc(r.label)}${r.stopped ? ' <span class="muted">(stopped)</span>' : r.done ? "" : ' <span class="muted">running…</span>'}</h4><div class="sim-start"></div><canvas class="tl"></canvas><div class="sim-body"><canvas class="plot"></canvas><div class="sim-end"></div></div><div class="sim-log"></div></div>`).join("")}</div>`;
-        O.querySelectorAll(".sim-run").forEach((el) => this._drawRun(el, this.runs[+el.dataset.i], axes));
+        if (!this._built || this._built.O !== O || this._built.runs !== this.runs) {
+            O.innerHTML = `<div class="sim-runs${this.runs.length > 1 ? " two" : ""}">${this.runs.map((r, i) => `<div class="sim-run" data-i="${i}"><h4>${esc(r.label)} <span class="muted st"></span></h4><div class="sim-start"></div><canvas class="tl"></canvas><div class="sim-body"><canvas class="plot"></canvas><div class="sim-end"></div></div><div class="sim-log"></div></div>`).join("")}</div>`;
+            O.querySelectorAll(".sim-run").forEach((el) => {
+                const r = this.runs[+el.dataset.i];
+                const q = (s) => el.querySelector(s);
+                r.view = { el, st: q(".st"), start: q(".sim-start"), tl: q("canvas.tl"), plot: q("canvas.plot"), body: q(".sim-body"), end: q(".sim-end"), log: q(".sim-log"), startKey: null, endKey: null, logN: 0 };
+            });
+            this._built = { O, runs: this.runs };
+        }
+        this._updateRuns();
     }
-    _drawRun(el, r, axes) {
-        const M = r.model || timelineModel(r.lines);
-        const s = M.start;
-        if (s) {
-            const lg = s.logic || {};
-            const logicChip = !lg.present ? `<span class="chip">no logic: ${s.custom ? "key rules only" : "the built-in mode"}</span>`
-                : s.logicApplied ? `<span class="badge real">LOGIC RUN BY THE SERVER</span>`
-                : `<span class="badge mock" title="${esc(lg.why || "")}">LOGIC NOT RUN: base ${esc(s.base)} with the key rules</span>`;
-            const would = (lg.interpreted || []).length ? `<span class="chip" title="slots that differ from the built-in ${esc(s.base)}">${s.logicApplied ? "interpreted" : "would interpret"}: ${esc(lg.interpreted.join(", "))}</span>` : "";
-            const brains = s.brains ? Object.entries(s.brains).map(([n, l]) => `<span class="chip" title="${esc(l)}">brain ${esc(n)}</span>`).join(" ") : "";
-            el.querySelector(".sim-start").innerHTML = `<span class="chip">${esc(s.label || "")}</span> <span class="chip">base ${esc(s.base || "")}</span> <span class="chip">${esc(s.map || "")}</span> ${logicChip} ${would} ${brains}
-                ${(s.warnings || []).concat(M.warnings).map((w) => `<div class="warn" style="font-size:11px">⚠ ${esc(typeof w === "string" ? w : w.msg)}</div>`).join("")}
-                ${!s.logicApplied && lg.present && lg.why ? `<div class="muted" style="font-size:11px">${esc(lg.why)}</div>` : ""}`;
-        } else el.querySelector(".sim-start").innerHTML = "";
+    _updateRuns() {
+        if (!this._built || !this._built.O.isConnected || this._built.runs !== this.runs) return this._drawRuns();
+        for (const r of this.runs) r.model = feedTimeline(r.model || newTimeline(), r.lines);
+        const axes = sharedAxes(this.runs.map((r) => r.model));
+        for (const r of this.runs) this._drawRun(r, axes);
+    }
+    _drawRun(r, axes) {
+        const V = r.view, M = r.model, s = M.start;
+        V.st.textContent = r.stopped ? "(stopped)" : r.done ? "" : "running…";
+        const startKey = `${!!s}|${M.warnings.length}`;
+        if (startKey !== V.startKey) {
+            V.startKey = startKey;
+            if (s) {
+                const lg = s.logic || {};
+                const logicChip = !lg.present ? `<span class="chip">no logic: ${s.custom ? "key rules only" : "the built-in mode"}</span>`
+                    : s.logicApplied ? `<span class="badge real">LOGIC RUN BY THE SERVER</span>`
+                    : `<span class="badge mock" title="${esc(lg.why || "")}">LOGIC NOT RUN: base ${esc(s.base)} with the key rules</span>`;
+                const would = (lg.interpreted || []).length ? `<span class="chip" title="slots that differ from the built-in ${esc(s.base)}">${s.logicApplied ? "interpreted" : "would interpret"}: ${esc(lg.interpreted.join(", "))}</span>` : "";
+                const brains = s.brains ? Object.entries(s.brains).map(([n, l]) => `<span class="chip" title="${esc(l)}">brain ${esc(n)}</span>`).join(" ") : "";
+                V.start.innerHTML = `<span class="chip">${esc(s.label || "")}</span> <span class="chip">base ${esc(s.base || "")}</span> <span class="chip">${esc(s.map || "")}</span> ${logicChip} ${would} ${brains}
+                    ${(s.warnings || []).concat(M.warnings).map((w) => `<div class="warn" style="font-size:11px">⚠ ${esc(typeof w === "string" ? w : w.msg)}</div>`).join("")}
+                    ${!s.logicApplied && lg.present && lg.why ? `<div class="muted" style="font-size:11px">${esc(lg.why)}</div>` : ""}`;
+            } else V.start.innerHTML = "";
+        }
         const fields = endCardFields(s, M.end);
         const teams = fields.teams;
-        const lineColor = new Map();   // (free for all and the like: one line per player, its colour in the table too)
-        { let i = 0; for (const P of M.players.values()) lineColor.set(P.id, `hsl(${(i++ * 67) % 360} 70% 60%)`); }
-        this._timeline(el.querySelector("canvas.tl"), M, axes, teams, lineColor, el.clientWidth - 18);
+        if (!r.colors || r.colors.size !== M.players.size) {   // (free for all and the like: one line per player, its colour in the table too)
+            r.colors = new Map(); let i = 0;
+            for (const P of M.players.values()) r.colors.set(P.id, `hsl(${(i++ * 67) % 360} 70% 60%)`);
+        }
+        const W = V.el.clientWidth - 18;
+        this._timeline(V.tl, M, axes, teams, r.colors, W);
         // the body: the map plot beside the end card (stacked when the card is narrow)
-        const W = el.clientWidth - 18, side = W >= 720;
-        el.querySelector(".sim-body").classList.toggle("stack", !side);
-        this._plot(el.querySelector("canvas.plot"), r, M, teams, side ? Math.max(260, Math.min(640, Math.round(W * 0.42))) : Math.min(560, W));
-        // end card
-        const e = M.end;
+        const side = W >= 720;
+        V.body.classList.toggle("stack", !side);
+        this._plot(V.plot, r, M, teams, side ? Math.max(260, Math.min(640, Math.round(W * 0.42))) : Math.min(560, W));
+        const endKey = `${!!M.end}|${r.done}|${r.stopped}|${M.errors.length}|${r.colors.size}`;
+        if (endKey !== V.endKey) { V.endKey = endKey; V.end.innerHTML = this._endCard(r, M, s, fields); }
+        // the log: the new markers appended, the last LOG_LINES kept
+        if (M.markers.length > V.logN) {
+            const add = M.markers.slice(Math.max(V.logN, M.markers.length - LOG_LINES));
+            V.log.insertAdjacentHTML("beforeend", add.map((x) => `<div><span class="muted">${x.t.toFixed(1)}</span> <b style="color:${MARK[x.kind] || "#cbd5e1"}">${esc(x.kind)}</b> ${esc(x.text)}</div>`).join(""));
+            for (let n = V.log.childElementCount - LOG_LINES; n > 0; n--) V.log.firstElementChild.remove();
+            V.logN = M.markers.length;
+        }
+    }
+    _endCard(r, M, s, fields) {
+        const teams = fields.teams, e = M.end;
         const nm = (id) => M.names.get(id) || "#" + id;
         let card = "";
         if (e) {
@@ -434,20 +507,22 @@ export class SimView {
                 <div>${fields.rounds ? `rounds ${esc(e.rounds ?? "-")} · ` : ""}${teams && e.result ? `score ${esc(e.result.scoreA + " - " + e.result.scoreB)} · ` : ""}length ${esc(typeof len === "number" ? len.toFixed(1) : len)} s</div>
                 ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))} / max ${esc(us(tn.max))}</div>` : ""}
                 <div>${logicLine}</div>
-                ${rows.length ? `<table class="sim-tab"><tr><th></th><th>score</th><th>K</th><th>D</th>${fields.objTime ? "<th>obj s</th>" : ""}</tr>${rows.map((p) => `<tr><td style="color:${teams ? TEAM_COLOR[teamOf(p.team)] || "inherit" : lineColor.get(p.id) || "inherit"}">${p.won ? "★ " : ""}${esc(p.name)}</td><td>${esc(p.score)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td>${fields.objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>` : ""}
+                ${rows.length ? `<table class="sim-tab"><tr><th></th><th>score</th><th>K</th><th>D</th>${fields.objTime ? "<th>obj s</th>" : ""}</tr>${rows.map((p) => `<tr><td style="color:${teams ? TEAM_COLOR[teamOf(p.team)] || "inherit" : r.colors.get(p.id) || "inherit"}">${p.won ? "★ " : ""}${esc(p.name)}</td><td>${esc(p.score)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td>${fields.objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>` : ""}
                 ${slots.length ? `<table class="sim-tab"><tr><th>slot</th><th>calls</th><th>total</th><th>avg</th><th>max</th></tr>${slots.map((x) => `<tr><td style="color:${this._slotColor(M, x.slot)}">${esc(x.slot)}</td><td>${esc(x.calls)}</td><td>${esc(us(x.ns))}</td><td>${esc(us(x.avg))}</td><td>${esc(us(x.max))}</td></tr>`).join("")}</table>` : ""}</div>`;
         }
-        el.querySelector(".sim-end").innerHTML = (M.errors.length ? M.errors.map((x) => `<div class="bad">${esc(x)}</div>`).join("") : "")
+        return (M.errors.length ? M.errors.map((x) => `<div class="bad">${esc(x)}</div>`).join("") : "")
             + (e ? card : `<div class="muted">${r.stopped ? "Stopped before the end." : r.done ? "The run ended without an end line." : "…"}</div>`);
-        el.querySelector(".sim-log").innerHTML = M.markers.slice(-400).map((x) => `<div><span class="muted">${x.t.toFixed(1)}</span> <b style="color:${MARK[x.kind] || "#cbd5e1"}">${esc(x.kind)}</b> ${esc(x.text)}</div>`).join("");
     }
     _slotColor(M, name) { const i = M.slotNames.indexOf(name); return SLOT_COLORS[(i < 0 ? 0 : i) % SLOT_COLORS.length]; }
 
     // the timeline: phase bands, scores (team lines or one per player), round results on top, markers, and under it the
-    // interpreted slots' cost per frame (trace), on the axes the compared runs share
+    // interpreted slots' cost per frame (trace), on the axes the compared runs share. Whatever is drawn per frame or per
+    // event is drawn at most once per pixel column, so a redraw costs the canvas's width, not the run's length.
     _timeline(cv, M, axes, teams, lineColor, width) {
         const strip = M.slotFrames.length || M.slots.length ? 34 : 0;
-        const W = cv.width = Math.max(300, width), H = cv.height = 190 + strip;
+        const W = Math.max(300, width), H = 190 + strip;
+        if (cv.width !== W) cv.width = W;
+        if (cv.height !== H) cv.height = H;
         const g = cv.getContext("2d");
         g.fillStyle = "#0b1020"; g.fillRect(0, 0, W, H);
         const top = 18, bottom = 190 - 40;   // (the score area; the time labels under it, then the slot strip)
@@ -457,41 +532,55 @@ export class SimView {
         g.fillStyle = "#94a3b8"; g.font = "10px monospace"; g.fillText(String(axes.maxScore), 2, 26); g.fillText("0", 2, bottom);
         for (let k = 0; k <= 4; k++) { const t = axes.t0 + span * k / 4; g.fillText(t.toFixed(0) + "s", X(t) - 8, bottom + 12); }
         const line = (pts, color) => { if (pts.length < 1) return; g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); pts.forEach(([t, v], i) => (i ? g.lineTo(X(t), Y(v)) : g.moveTo(X(t), Y(v)))); g.stroke(); g.lineWidth = 1; };
-        const fa = M.frames.filter((f) => f.scoreA !== null), fb = M.frames.filter((f) => f.scoreB !== null);
-        if (teams && (fa.length || fb.length)) { line(fa.map((f) => [f.t, f.scoreA]), TEAM_COLOR.a); line(fb.map((f) => [f.t, f.scoreB]), TEAM_COLOR.b); }
-        else for (const P of M.players.values()) line(P.scores, lineColor.get(P.id));
+        const fa = seriesPoints(M.teamA), fb = seriesPoints(M.teamB);
+        if (teams && (fa.length || fb.length)) { line(fa, TEAM_COLOR.a); line(fb, TEAM_COLOR.b); }
+        else for (const P of M.players.values()) line(seriesPoints(P.score), lineColor.get(P.id));
         // round results: a coloured tick on the top strip for the round's winner
         for (const rd of M.rounds) { g.fillStyle = TEAM_COLOR[rd.winner] || "#9ca3af"; g.fillRect(X(rd.t) - 2, 2, 4, 12); }
-        for (const mk of M.markers) { if (mk.kind === "roundEnd") continue; g.fillStyle = MARK[mk.kind] || "#cbd5e1"; g.fillRect(X(mk.t) - 1, top, 2, 7); }
+        { let lastX = -1, lastKind = ""; for (const mk of M.markers) {
+            if (mk.kind === "roundEnd") continue;
+            const x = Math.round(X(mk.t));
+            if (x === lastX && mk.kind === lastKind) continue;
+            lastX = x; lastKind = mk.kind;
+            g.fillStyle = MARK[mk.kind] || "#cbd5e1"; g.fillRect(x - 1, top, 2, 7);
+        } }
         if (M.rounds.length) { g.fillStyle = "#94a3b8"; g.fillText("rounds", W - 50, 12); }
         if (!strip) return;
-        // the slot strip: each frame's interpreted calls stacked by slot (height: ns, against the costliest frame)
+        // the slot strip: each frame's interpreted calls stacked by slot (height: ns, against the costliest frame); per
+        // pixel column the costliest frame in it
         const y0 = H - 4, hMax = strip - 10;
         g.fillStyle = "#94a3b8"; g.fillText("slots", 2, H - 12);
-        const maxNs = Math.max(1, M.maxSlotNs, ...M.slots.map((x) => x.ns || 0));
+        let maxNs = Math.max(1, M.maxSlotNs);
+        for (const x of M.slots) if ((x.ns || 0) > maxNs) maxNs = x.ns;
+        const stack = (fr) => { let y = y0; const x = X(fr.t); for (const sl of fr.slots) { const h = Math.max(1, hMax * (sl.ns || 0) / maxNs); g.fillStyle = this._slotColor(M, sl.slot); g.fillRect(x - 1, y - h, 2, h); y -= h; } };
+        let col = -1, best = null;
         for (const fr of M.slotFrames) {
-            let y = y0;
-            for (const sl of fr.slots) { const h = Math.max(1, hMax * (sl.ns || 0) / maxNs); g.fillStyle = this._slotColor(M, sl.slot); g.fillRect(X(fr.t) - 1, y - h, 2, h); y -= h; }
+            const c = Math.round(X(fr.t));
+            if (c !== col) { if (best) stack(best); col = c; best = fr; }
+            else if (fr.ns > best.ns) best = fr;
         }
+        if (best) stack(best);
         for (const sl of M.slots) { const h = 2 + hMax * (sl.ns || 0) / maxNs; g.fillStyle = this._slotColor(M, sl.slot); g.fillRect(X(sl.t), y0 - h, 1, h); }
         g.fillStyle = "#64748b"; g.fillText(`max ${us(maxNs)} a frame`, W - 120, H - strip + 8);
     }
 
     // the top-down plot: the map (start.mapView: boxes shaded by height, objectives, spawns), the trails of where anyone
-    // went, and everyone where they are now. The map layer is drawn once per run and size.
+    // went, and everyone where they are now. The map layer is drawn once per run and size; the trail layer keeps what
+    // it has drawn and adds only the positions that came in since (both are redrawn when the size or scale changes).
     _plot(pc, r, M, teams, width) {
         const mv = M.start && M.start.mapView;
-        const pos = M.frames.flatMap((f) => f.players.map((p) => p.pos)).filter(Array.isArray);
         let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
         if (mv && mv.bounds) [x0, z0, x1, z1] = mv.bounds;
-        for (const p of pos) { const z = p.length > 2 ? p[2] : p[1]; x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+        if (M.bounds) { x0 = Math.min(x0, M.bounds[0]); z0 = Math.min(z0, M.bounds[1]); x1 = Math.max(x1, M.bounds[2]); z1 = Math.max(z1, M.bounds[3]); }
         const dx = Math.max(1, x1 - x0), dz = Math.max(1, z1 - z0);
-        const W = pc.width = Math.max(200, width), H = pc.height = Math.max(180, Math.min(640, Math.round((W - 20) * dz / dx) + 30));
+        const W = Math.max(200, width), H = Math.max(180, Math.min(640, Math.round((W - 20) * dz / dx) + 30));
+        if (pc.width !== W) pc.width = W;
+        if (pc.height !== H) pc.height = H;
         const pg = pc.getContext("2d");
         if (!isFinite(x0)) { pg.fillStyle = "#0b1020"; pg.fillRect(0, 0, W, H); pg.fillStyle = "#64748b"; pg.font = "11px sans-serif"; pg.fillText("no positions in the frames", 10, 20); return; }
         const sc = Math.min((W - 20) / dx, (H - 30) / dz);
         const P = (x, z) => [10 + (x - x0) * sc, 10 + (z - z0) * sc];
-        const key = `${W}x${H}:${x0},${z0},${sc}`;
+        const key = `${W}x${H}:${x0},${z0},${sc}:${!!mv}`;
         if (!r._layer || r._layer.key !== key) {   // (the map: hundreds of boxes, drawn once)
             const c = document.createElement("canvas"); c.width = W; c.height = H;
             const g = c.getContext("2d");
@@ -515,8 +604,15 @@ export class SimView {
             }
             r._layer = { key, canvas: c };
         }
+        if (!r._trail || r._trail.key !== key) { const c = document.createElement("canvas"); c.width = W; c.height = H; r._trail = { key, canvas: c, n: 0 }; }
+        if (r._trail.n < M.trail.length) {   // (where anyone went: only the positions since the last draw)
+            const g = r._trail.canvas.getContext("2d"), T = M.trail;
+            g.fillStyle = "rgba(148,163,184,.35)";
+            for (let i = r._trail.n; i + 1 < T.length; i += 2) g.fillRect(10 + (T[i] - x0) * sc, 10 + (T[i + 1] - z0) * sc, 1, 1);
+            r._trail.n = T.length;
+        }
         pg.drawImage(r._layer.canvas, 0, 0);
-        pg.fillStyle = "rgba(148,163,184,.35)"; for (const p of pos) { const [x, y] = P(p[0], p.length > 2 ? p[2] : p[1]); pg.fillRect(x, y, 1, 1); }   // (where anyone went)
+        pg.drawImage(r._trail.canvas, 0, 0);
         const last = M.frames[M.frames.length - 1];
         if (!last) return;
         const ob = last.obj && last.obj.bomb;
@@ -553,7 +649,7 @@ export class SimView {
             await b.finished;
         }
     }
-    _soonBatch() { if (this._rafB) return; this._rafB = requestAnimationFrame(() => { this._rafB = 0; this._drawBatches(); }); }
+    _soonBatch() { this._throttle("_drawB", () => this._drawBatches(), this.batches); }
     _drawBatches() {
         const O = this.root.querySelector("#smOut");
         if (!O) return;
