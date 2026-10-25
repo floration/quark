@@ -25,8 +25,7 @@ const ICON_ROWS = [
   ["..###..", ".#..#..", "#...#.#", "#.###.#", "#.....#", ".#...#.", "..###.."],
   [".......", "..###..", ".#...#.", "#..#..#", ".#...#.", "..###..", "......."],
 ];
-// Settings::HUD_* (config.h). 7 = the grapple launcher's own element (hud_7, from the grapple arm follow-up): until a
-// quark.cfg has a hud_7 line the launcher follows the weapon model, as the game did before.
+// Settings::HUD_* (config.h). 7 = the grapple launcher's own element (hud_7, PR #81), independent of the weapon model.
 const ELEMENTS = [
   {i: 5, name: "Weapon model", kind: "view", hint: "First-person weapon. x / y move it, depth pushes it away, colour tints its accent parts."},
   {i: 7, name: "Grapple launcher", kind: "view", hint: "The launcher on your left arm (first person). Its own position, size and hide; tilt in degrees."},
@@ -48,8 +47,7 @@ function parseElem(text) {
     hidden: num(p[7]) !== 0, z: num(p[8]), pitch: num(p[9]), yaw: num(p[10]), roll: num(p[11]), rest: p.slice(12), had: !!text};
 }
 function elemText(e) {
-  const a = [e.x, e.y, e.scale, e.custom ? 1 : 0, e.r, e.g, e.b, e.hidden ? 1 : 0, e.z];
-  if (e.pitch || e.yaw || e.roll || e.rest.length || e.tilt) a.push(e.pitch, e.yaw, e.roll);
+  const a = [e.x, e.y, e.scale, e.custom ? 1 : 0, e.r, e.g, e.b, e.hidden ? 1 : 0, e.z, e.pitch, e.yaw, e.roll];   // (as Settings::save)
   return a.map(fmt).concat(e.rest).join(",");
 }
 function parseRgba(s, def) {
@@ -125,16 +123,15 @@ function textW(t, ts) { g.font = font(ts); return g.measureText(t).width; }
 const textH = (ts) => 8 * ts;
 const focal = () => (W / 2) / Math.tan((clamp(S.fov, 60, 140) * Math.PI / 180) / 2);
 function project(p) { const d = Math.max(0.05, -p[2]); return [W / 2 + p[0] / d * focal(), H / 2 - p[1] / d * focal()]; }
-function grappleElem() { const e = S.elems[7]; return e && e.had ? e : null; }
 // a model: an outline of its box (camera space), turned by yaw / pitch (degrees) about its base
 function modelBox(i) {
   const vm = elem(5);
-  let e, base, near, len, wid, hgt, side;
-  if (i === 5) { e = vm; side = 1; base = [0.2 + e.x * 0.0005, -0.17 - e.y * 0.0005, -0.55 - e.z * 0.001]; near = 0.08; len = 0.4; wid = 0.05; hgt = 0.07; }
-  else { e = grappleElem() || vm; side = -1;   // (PROP_HOOK_ARM: housing to barrel ~0.42 at size 1)
-    base = [-0.2 - e.x * 0.0005, -0.19 - e.y * 0.0005, -0.58 - e.z * 0.001]; near = 0.06; len = 0.36; wid = 0.07; hgt = 0.08; }
-  const sc = e.scale * (i === 7 && !grappleElem() ? 0.7 : 1);
-  const yaw = (e.yaw || 0) * Math.PI / 180 + (i === 7 ? -0.06 : 0), pit = (e.pitch || 0) * Math.PI / 180;
+  // (kWeaponBase / kHookBase + viewAnchor in game.cpp; + x = right for both; the launcher at kHookViewScale 0.7)
+  const e = elem(i), b0 = i === 5 ? [0.33, -0.28, -0.66] : [-0.33, -0.295, -0.68];
+  const base = [b0[0] + e.x * 0.0005, b0[1] - e.y * 0.0005, b0[2] - e.z * 0.001];
+  const near = i === 5 ? 0.08 : 0.06, len = i === 5 ? 0.4 : 0.36, wid = i === 5 ? 0.05 : 0.07, hgt = i === 5 ? 0.07 : 0.08;
+  const sc = e.scale * (i === 7 ? 0.7 : 1);
+  const yaw = -(e.yaw || 0) * Math.PI / 180 + (i === 7 ? -0.06 : 0), pit = (e.pitch || 0) * Math.PI / 180;   // (+ yaw = right)
   const pts = [];
   for (const zz of [near, -len]) for (const xx of [-wid / 2, wid / 2]) for (const yy of [-hgt / 2, hgt / 2]) {
     let x = xx * sc, y = yy * sc, z = zz * sc;
@@ -142,7 +139,7 @@ function modelBox(i) {
     const x2 = x * Math.cos(yaw) + z1 * Math.sin(yaw), z2 = -x * Math.sin(yaw) + z1 * Math.cos(yaw);
     pts.push(project([base[0] + x2, base[1] + y1, base[2] + z2]));
   }
-  return {pts, e, side, depth: -base[2]};
+  return {pts, e, depth: -base[2]};
 }
 function hullBox(pts) { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); const x = Math.min(...xs), y = Math.min(...ys); return [x, y, Math.max(...xs) - x, Math.max(...ys) - y]; }
 function elemBox(i) {
@@ -201,7 +198,7 @@ function drawModel(i, sel) {
   for (const f of faces) { g.beginPath(); f.forEach((k, j) => j ? g.lineTo(p[k][0], p[k][1]) : g.moveTo(p[k][0], p[k][1])); g.closePath();
     g.fillStyle = rgba(col, 0.16); g.fill(); g.strokeStyle = rgba(col, 0.8); g.stroke(); }
   const [bx, by, bw] = hullBox(p);
-  txt(bx + 4, by - 14, 1, i === 5 ? "WEAPON" : "GRAPPLE" + (grappleElem() ? "" : " (FOLLOWS WEAPON)"), sel ? "#5aa9ff" : "rgba(255,255,255,.6)");
+  txt(bx + 4, by - 14, 1, i === 5 ? "WEAPON" : "GRAPPLE", sel ? "#5aa9ff" : "rgba(255,255,255,.6)");
 }
 function drawElem(i) {
   const e = elem(i), k = e.scale;
@@ -252,7 +249,6 @@ function draw() {
   const showHidden = $("showHidden").checked;
   for (const el of ELEMENTS) {
     const e = elem(el.i);
-    if (el.i === 7 && !grappleElem() && elem(5).hidden) continue;   // (follows the weapon's hide)
     if (el.i === 6 && S.keys.hud_verbose !== "1" && !(S.sel && S.sel.e === 6)) continue;
     if (e.hidden) { if (showHidden) outline(elemBox(el.i), "rgba(255,255,255,.35)", true); continue; }
     drawElem(el.i);
@@ -271,7 +267,6 @@ function hit(p) {
   const order = ELEMENTS.slice().reverse();
   for (const el of order) {
     const e = elem(el.i); if (e.hidden && !$("showHidden").checked) continue;
-    if (el.i === 7 && !grappleElem()) continue;          // (no own element yet: drag the weapon)
     if (el.i === 6 && S.keys.hud_verbose !== "1") continue;
     if (inBox(p, elemBox(el.i))) return {e: el.i};
   }
@@ -291,8 +286,8 @@ window.addEventListener("mousemove", (ev) => {
     if (drag.h.w != null) { const w = S.widgets[drag.h.w]; Object.assign(w, JSON.parse(JSON.stringify(drag.orig)));
       setWidgetFromScreen(w, drag.box[0] + dx, drag.box[1] + dy, drag.box[2], drag.box[3]); }
     else { const e = elem(drag.h.e), o = drag.orig;
-      if (drag.h.e === 5 || drag.h.e === 7) { const k = 0.0005 * focal() / modelBox(drag.h.e).depth, sx = drag.h.e === 7 ? -1 : 1;
-        e.x = Math.round(clamp(o.x + sx * dx / k, -1280, 1280)); e.y = Math.round(clamp(o.y + dy / k, -720, 720)); }
+      if (drag.h.e === 5 || drag.h.e === 7) { const k = 0.0005 * focal() / modelBox(drag.h.e).depth;
+        e.x = Math.round(clamp(o.x + dx / k, -1280, 1280)); e.y = Math.round(clamp(o.y + dy / k, -720, 720)); }
       else { e.x = Math.round(clamp(o.x + dx, -1280, 1280)); e.y = Math.round(clamp(o.y + dy, -720, 720)); }
       e.had = true; }
   }, true);
@@ -314,7 +309,7 @@ window.addEventListener("keydown", (ev) => {
   const arrows = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]};
   if (S.sel && arrows[ev.key]) { ev.preventDefault(); const st = ev.shiftKey ? 10 : 1, [ax, ay] = arrows[ev.key];
     change(() => { if (S.sel.w != null) { const w = S.widgets[S.sel.w], b = widgetBox(w); setWidgetFromScreen(w, b[0] + ax * st, b[1] + ay * st, b[2], b[3]); }
-      else { const e = elem(S.sel.e), sx = S.sel.e === 7 ? -1 : 1; e.x += sx * ax * st; e.y += ay * st; e.had = true; } });
+      else { const e = elem(S.sel.e); e.x += ax * st; e.y += ay * st; e.had = true; } });
   }
   if (S.sel && S.sel.w != null && (ev.key === "Delete" || ev.key === "Backspace")) { ev.preventDefault(); delWidget(); }
 });
@@ -352,29 +347,24 @@ function selectField(label, opts, get, set) {
 function renderElements() {
   const list = $("elList"); list.replaceChildren();
   for (const el of ELEMENTS) {
-    const e = elem(el.i), own = el.i !== 7 || grappleElem();
+    const e = elem(el.i);
     list.append(h("div", {class: "it" + (S.sel && S.sel.e === el.i ? " sel" : ""), onclick: () => { S.sel = {e: el.i}; renderAll(); }},
-      h("span", {class: e.hidden ? "off" : ""}, el.name), h("span", {class: "grow"}), h("span", {class: "small muted"}, own ? (e.hidden ? "hidden" : "") : "follows weapon")));
+      h("span", {class: e.hidden ? "off" : ""}, el.name), h("span", {class: "grow"}), h("span", {class: "small muted"}, e.hidden ? "hidden" : "")));
   }
   const ins = $("elInspector"); ins.replaceChildren();
   if (!S.sel || S.sel.e == null) { ins.append(h("p", {class: "hint small muted"}, "Pick an element in the list or on the preview.")); return; }
   const el = ELEMENTS.find((x) => x.i === S.sel.e), e = elem(el.i), mark = () => { e.had = true; };
   ins.append(h("h4", {}, el.name + "  (hud_" + el.i + ")"), h("p", {class: "hint small muted"}, el.hint));
-  if (el.i === 7 && !grappleElem()) {
-    ins.append(h("p", {class: "hint small warn"}, "This quark.cfg has no hud_7 line yet, so the launcher follows the weapon model (mirrored, at 70% size). Give it its own settings to place it apart; a game build older than the grapple follow-up ignores them."),
-      h("div", {class: "hint"}, h("button", {onclick: () => change(() => { const vm = elem(5); S.elems[7] = Object.assign(parseElem(""), {scale: vm.scale, hidden: vm.hidden, had: true}); })}, "Give it its own settings")));
-    return;
-  }
   ins.append(...checkField("Hidden", () => e.hidden, (v) => { e.hidden = v; mark(); }));
   ins.append(...numField("X", () => e.x, (v) => { e.x = v; mark(); }, -1280, 1280, 1, true));
   ins.append(...numField("Y", () => e.y, (v) => { e.y = v; mark(); }, -720, 720, 1, true));
   ins.append(...numField(el.kind === "view" ? "Size" : "Scale", () => e.scale, (v) => { e.scale = v; mark(); }, 0.5, 3, 0.05, true));
   if (el.kind === "view") {
     ins.append(...numField("Depth (z)", () => e.z, (v) => { e.z = v; mark(); }, -300, 300, 1, true));
-    ins.append(h("h4", {}, "Tilt (degrees; needs the grapple follow-up build)"));
+    ins.append(h("h4", {}, "Tilt (degrees: + pitch up, + yaw right, + roll clockwise)"));
     ins.append(...numField("Pitch", () => e.pitch, (v) => { e.pitch = v; e.tilt = true; mark(); }, -90, 90, 1, true));
     ins.append(...numField("Yaw", () => e.yaw, (v) => { e.yaw = v; e.tilt = true; mark(); }, -90, 90, 1, true));
-    ins.append(...numField("Roll", () => e.roll, (v) => { e.roll = v; e.tilt = true; mark(); }, -180, 180, 1, true));
+    ins.append(...numField("Roll", () => e.roll, (v) => { e.roll = v; e.tilt = true; mark(); }, -90, 90, 1, true));
   }
   if (el.i !== 7) {
     ins.append(...checkField("Own colour", () => e.custom, (v) => { e.custom = v; mark(); }));

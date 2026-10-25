@@ -5,8 +5,8 @@ in-game HUD (the game's 720p units, so it holds at every resolution) where you d
 
 - **Built-in HUD** (quark.cfg `hud_<N>=x,y,scale,custom,r,g,b,hidden,z[,pitch,yaw,roll]`, `Settings::HUD_*` in
   `src/client/config.h`): health, weapon name, cooldown bars, speed meter, weapon slots, key overlay, the first-person
-  weapon model (x / y / depth / size / tint) and the grapple launcher (`hud_7`; until a quark.cfg has one it follows the
-  weapon model, mirrored at 70%, as the game did before its own element). The game reads quark.cfg at start and writes
+  weapon model and the grapple launcher (`hud_7`), each with its own x / y / depth / size / hide and pitch / yaw / roll
+  (degrees, -90 to 90: + up, + right, + clockwise). The game reads quark.cfg at start and writes
   it back when its settings change, so save these with the game closed (the page warns when quark.exe is running).
   Only the `hud_*`, `hud_widgets` and `hud_verbose` lines are rewritten; the rest of quark.cfg stays as it was.
 - **Widgets** (hud.cfg, `src/client/hudwidgets.*`): any game value as a number, bar, graded bar, icon or icon + bar,
