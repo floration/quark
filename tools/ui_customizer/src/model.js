@@ -100,6 +100,9 @@ const QModel = (() => {
   // Repairs a layout read from storage or a file: every page and element gets a uid, the expected arrays exist.
   function sanitizeWorking(doc) {
     if (!doc || !Array.isArray(doc.pages)) throw new Error('not a layout (no "pages" array)');
+    // (an empty layout is refused too: imported or autosaved, it would replace every page with nothing)
+    doc.pages = doc.pages.filter((p) => p && typeof p === 'object');
+    if (!doc.pages.length) throw new Error('a layout with no pages (its "pages" array is empty)');
     const uids = new Set();
     const fresh = (u, p) => { if (!u || uids.has(u)) u = uid(p); uids.add(u); return u; };
     if (doc.font !== undefined) { const f = layoutFont(doc); if (f) doc.font = f; else delete doc.font; }

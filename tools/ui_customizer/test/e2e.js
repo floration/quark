@@ -405,6 +405,18 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await page.keyboard.press('t');
   assert.strictEqual(await ev(() => QApp.S.tour), 0, 'tour stopped');
 
+  // ---- a layout with no pages is refused, not imported (it would wipe every page and be autosaved) ----
+  {
+    const efile = path.join(os.tmpdir(), 'quark-e2e-empty-layout.json');
+    fs.writeFileSync(efile, JSON.stringify({ doc: { pages: [] } }));
+    const n0 = await ev(() => [QApp.S.doc.pages.length, QApp.S.undo.length]);
+    await page.locator('#fImport').setInputFiles(efile);
+    await page.waitForSelector('#dlg:not([hidden])');
+    assert.ok((await page.locator('#dlgText').textContent()).includes('no pages'), 'the empty layout is refused with a reason');
+    await page.keyboard.press('Enter');
+    assert.deepStrictEqual(await ev(() => [QApp.S.doc.pages.length, QApp.S.undo.length]), n0, 'an empty layout changes nothing');
+  }
+
   // ---- title logo (test/apply-logo.js): import a layout carrying style "logo" and the Rubik font ----
   const QModel = require(path.join(__dirname, '..', 'src', 'model.js'));
   const applyLogo = require('./apply-logo.js');

@@ -169,6 +169,8 @@ assert.strictEqual(M.diff(base, v2).counts.reordered, 1);
 const round = M.sanitizeWorking(JSON.parse(JSON.stringify(doc)));
 assert.strictEqual(M.diff(base, round).counts.moved, D.counts.moved);
 assert.throws(() => M.sanitizeWorking({}));
+assert.throws(() => M.sanitizeWorking({ pages: [] }), /no pages/, 'an empty layout is refused (an import would wipe every page)');
+assert.throws(() => M.sanitizeWorking({ pages: [null, 3] }), /no pages/, 'a layout of non-pages is refused');
 
 // the font trial: a headline at the top, a section with how to apply it
 const fspec = M.specMarkdown(base, doc, { font: { name: 'Bahnschrift Condensed', family: 'Bahnschrift', fileName: 'bahnschrift.ttf', path: 'C:/Windows/Fonts/bahnschrift.ttf',
@@ -187,7 +189,7 @@ ld.pages[0].elements.push(Object.assign(M.newElement('label', 640, 100), { label
 applyLogo(M, ld);
 assert.ok(applyLogo.lastCount >= 1);
 assert.deepStrictEqual(M.layoutFont(M.sanitizeWorking(JSON.parse(JSON.stringify(ld)))), { id: 'rubik', weight: 700 }, 'layout font survives saving');
-assert.strictEqual(M.sanitizeWorking({ font: 'x', pages: [] }).font, undefined, 'a broken layout font is dropped');
+assert.strictEqual(M.sanitizeWorking({ font: 'x', pages: [{ id: 'p' }] }).font, undefined, 'a broken layout font is dropped');
 const lspec = M.specMarkdown(base, ld).markdown;
 assert.ok(lspec.includes('**Font: Rubik, weight 700') && lspec.includes('## Font'), 'the layout font is in the spec');
 assert.ok(M.specMarkdown(base, ld, { font: { builtin: true, weight: 700, mult: 1 } }).markdown.includes('**Font: Rubik'), 'the layout font wins over the default');
