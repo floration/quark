@@ -25,7 +25,9 @@ Binds 127.0.0.1 only (nothing on the network can reach it). Python 3 standard li
                                     survives switching maps and restarts)
     GET  /api/library               {"items": [...]}: saved groups and custom objects, yours (library/<name>.json next
                                     to this file) and the shipped ones (library_presets/, read-only: "builtin": true)
-    PUT  /api/library/<name>        DELETE /api/library/<name>   one of yours ({"kind": "group"|"object", ...})
+    PUT  /api/library/<name>        DELETE /api/library/<name>   one of yours ({"kind": "group"|"object", "name",
+                                    "note", "category", ...})
+    POST /api/library-rename        {"from", "to"}: renames one of yours (409 when "to" is taken)
     POST /api/tool/<command>        quark_maptool <command> with the body JSON on stdin: its JSON answer
     POST /api/stream/bots           quark_maptool bots --stream: NDJSON lines as they come (chunked); the first line
                                     is {"type":"run","run":"<id>"}
@@ -456,9 +458,28 @@ class Handler(BaseHTTPRequestHandler):
                 write_atomic(PROVENANCE, (json.dumps(p, indent=1, sort_keys=True) + "\n").encode("utf-8"))
         self.send(200, {"ok": True, "name": b})
 
+    def rename_library(self, data):
+        """one of your library items to a new name (its "name" field too); shipped items can't be renamed"""
+        try: req = json.loads(data or b"{}")
+        except ValueError: return self.err(400, "bad JSON")
+        a, b = str(req.get("from", "")), str(req.get("to", ""))
+        if not valid_name(a) or not valid_name(b): return self.err(400, "a name is 1-40 letters, digits, - and _")
+        d = os.path.join(HERE, "library")
+        src, dst = os.path.join(d, a + ".json"), os.path.join(d, b + ".json")
+        if not os.path.isfile(src): return self.err(404, "not in your library (shipped items can't be renamed)")
+        if a.lower() != b.lower() and os.path.exists(dst): return self.err(409, b + " is in your library")
+        try:
+            with open(src, encoding="utf-8") as fh: obj = json.load(fh)
+        except (OSError, ValueError): return self.err(500, "can't read " + a)
+        if isinstance(obj, dict): obj["name"] = b
+        write_atomic(src, json.dumps(obj, indent=1).encode("utf-8"))
+        if a != b: os.replace(src, dst)   # (a case-only rename on Windows too: same file, new spelling)
+        self.send(200, {"ok": True, "file": b})
+
     def api_post(self, p, data):
         st = self.server.st
         if p == "rename": return self.rename(data)
+        if p == "library-rename": return self.rename_library(data)
         m = re.match(r"^tool/([a-z]+)$", p)
         if m:
             cmd = m.group(1)

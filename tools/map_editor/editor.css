@@ -69,6 +69,12 @@ html.embed #top .brand { display: none; }   /* ?embed=1: the shell's tab has the
 .list .row .fname { color: var(--text-faint); font-family: var(--mono); font-size: 10px; margin-left: 6px; }
 .list .row .acts { display: none; gap: 2px; }
 .list .row:hover .acts, .list .row.on .acts { display: flex; }
+.libbar { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; align-items: center; }
+.libbar input[type=search] { flex: 1; min-width: 0; }
+.list .row .thumb { flex: none; width: 36px; height: 26px; border-radius: 3px; background: var(--panel2); }
+.list .row .ltxt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.list .row .ltxt .sub { margin-left: 0; overflow: hidden; text-overflow: ellipsis; }
+.list .cat { padding: 3px 8px 1px 14px; font-size: 10px; color: var(--text-faint); font-style: italic; }
 .list .row .tag { font-size: 9px; padding: 0 4px; border-radius: 3px; background: var(--panel2); color: var(--text-dim); }
 
 .toolbar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }

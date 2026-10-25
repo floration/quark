@@ -251,6 +251,17 @@ section("the paste preview's boxes");
   ok(sb.length === 2 && eq(sb[0].min, [1.4, 0, 0.4]) && sb[1].max[1] === 1.8, "a box and a spawn's hull, relative to the paste corner");
 }
 
+section("library: thumbnails, stats, import formats");
+{
+  const item = { kind: "object", def: { name: "p", unit: [1, 2, 1], axes: [true, false, false], spacing: [1, 2, 1], boxes: [{ mat: 0, min: [0, 0, 0], max: [1, 2, 1] }] } };
+  ok(eq(G.itemStats(item), { size: [1, 2, 1], boxes: 1 }), "an object's size and box count");
+  const svg = G.thumbSvg(G.stampBoxes(item), ["#808080"]);
+  ok(svg.startsWith("<svg") && (svg.match(/<polygon/g) || []).length === 3, "a thumbnail: one box is three faces");
+  const d = open(bigMap(2)); d.select([{ k: "brush", i: 0 }]);
+  const c = G.copySelection(d);
+  ok(G.importItems({ format: G.LIB_FORMAT, items: [item, { kind: "nope" }] }).length === 1 && G.importItems(item).length === 1 && G.importItems(c, "x")[0].kind === "group" && G.importItems({}).length === 0, "import: a library file, one item, a clipboard group; junk skipped");
+}
+
 section("flips and the point-symmetric twin (xform.js)");
 {
   const X = await import(pathToFileURL(path.join(tmp, "xform.js")));

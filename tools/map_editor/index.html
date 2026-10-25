@@ -40,6 +40,10 @@
       <button class="mini" id="libPaste" title="Paste at the cursor or the view's centre (Ctrl+V)">paste</button>
       <button class="mini" id="libGroup" title="Save the selection in the library as a group">+ group</button>
       <button class="mini" id="libObject" title="Make a custom object from the selected boxes and groups: it repeats instead of stretching">+ object</button></span></div>
+    <div class="libbar"><input type="search" id="libFilter" placeholder="search the library">
+      <button class="mini" id="libImport" title="Add library items from a .json file (one item, or a library exported from another PC)">import</button>
+      <button class="mini" id="libExport" title="Save your library items as one .json file (to move them to another PC or install)">export</button>
+      <input type="file" id="libFile" accept=".json,application/json" hidden multiple></div>
     <div id="library" class="list"></div>
   </aside>
 

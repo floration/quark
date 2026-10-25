@@ -107,7 +107,13 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
     them out again (an object whose boxes were changed outside the editor turns into plain boxes). At most 20 000
     boxes per object.
   - The library is `library/<name>.json` next to `serve.py` (yours) plus `library_presets/` (shipped examples:
-    railing, fence, pillar row, floor tiles, crate stack; AI-made editor examples, read-only).
+    railing, fence, pillar row, floor tiles, crate stack; AI-made editor examples, read-only). Each row shows a
+    thumbnail (its boxes drawn isometric), its size and box count; the search box filters by name, note and
+    category. On hover: **edit** (rename, category, note; your items; objects in the open map linked to it follow
+    the new name), **export** (a .json file) and **x** (delete). **export** in the bar saves all your items as one
+    `quark-library.json` ({"format":"quark-map-library","items":[...]}), **import** adds items from such a file, a
+    single item's file or a copied clipboard group (asking before replacing a name). Saving under a shipped item's
+    name asks first: yours hides it until you delete yours.
 
 ## Decoration hook
 

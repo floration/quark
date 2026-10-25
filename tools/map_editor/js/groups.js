@@ -100,6 +100,52 @@ export function stampBoxes(item) {
   return out;
 }
 
+// a library item's thumbnail: its boxes drawn isometric (seen from +x +y +z, the 400 biggest), as SVG markup.
+// colors: material index -> "#rrggbb"
+export function thumbSvg(boxes, colors = [], w = 36, h = 26) {
+  if (!boxes.length) return "";
+  const vol = (b) => (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) * (b.max[2] - b.min[2]);
+  const list = boxes.length > 400 ? boxes.slice().sort((a, b) => vol(b) - vol(a)).slice(0, 400) : boxes.slice();
+  list.sort((a, b) => (a.min[0] + a.min[1] + a.min[2]) - (b.min[0] + b.min[1] + b.min[2]));
+  const P = (x, y, z) => [(x - z) * 0.866, (x + z) * 0.5 - y];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const polys = [];
+  const shade = (hex, k) => "#" + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, "0")).join("");
+  for (const b of list) {
+    const [a, c] = [b.min, b.max], col = colors[b.mat] || "#9aa0a8";
+    const faces = [[[a[0], c[1], a[2]], [c[0], c[1], a[2]], [c[0], c[1], c[2]], [a[0], c[1], c[2]], 1],
+      [[c[0], a[1], a[2]], [c[0], c[1], a[2]], [c[0], c[1], c[2]], [c[0], a[1], c[2]], 0.75],
+      [[a[0], a[1], c[2]], [c[0], a[1], c[2]], [c[0], c[1], c[2]], [a[0], c[1], c[2]], 0.55]];
+    for (const f of faces) {
+      const pts = f.slice(0, 4).map(q => P(...q));
+      for (const [px, py] of pts) { x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
+      polys.push([pts, shade(col, f[4])]);
+    }
+  }
+  const sw = Math.max(x1 - x0, 1e-3), sh = Math.max(y1 - y0, 1e-3), k = Math.min((w - 4) / sw, (h - 4) / sh);
+  const ox = (w - sw * k) / 2 - x0 * k, oy = (h - sh * k) / 2 - y0 * k;
+  const r = (v) => Math.round(v * 10) / 10;
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + " " + h + '">' +
+    polys.map(([pts, col]) => '<polygon points="' + pts.map(([px, py]) => r(px * k + ox) + "," + r(py * k + oy)).join(" ") + '" fill="' + col + '" stroke="#0006" stroke-width="0.3"/>').join("") + "</svg>";
+}
+// an item's size and box count, for its library row
+export function itemStats(item) {
+  const bx = stampBoxes(item);
+  if (!bx.length) return { size: [0, 0, 0], boxes: 0 };
+  const size = [0, 1, 2].map(k => tidy(Math.max(...bx.map(b => b.max[k])) - Math.min(...bx.map(b => b.min[k]))));
+  return { size, boxes: bx.length };
+}
+export const LIB_FORMAT = "quark-map-library";
+// the library items in an imported .json: an exported library {format, items}, one item {kind, ...}, or a copied
+// clipboard group (made a group named `fallback`)
+export function importItems(obj, fallback = "imported") {
+  if (obj && obj.format === LIB_FORMAT && Array.isArray(obj.items)) return obj.items.filter(x => x && (x.kind === "group" || x.kind === "object"));
+  if (obj && (obj.kind === "group" || obj.kind === "object")) return [obj];
+  if (isClip(obj)) return [{ kind: "group", name: fallback, note: plural(clipCount(obj), "object") + (obj.from ? " from " + obj.from : ""), clip: obj }];
+  return [];
+}
+const bareItem = (x) => { const { file, builtin, ...rest } = x; return rest; };
+
 export class Library {
   constructor(app) {
     this.app = app; this.doc = app.doc; this.api = app.api;
@@ -128,11 +174,16 @@ export class Library {
       this.paste(c, here);
     });
     this.doc.on("open", () => { this.editing = null; this.render(); });
+    $("#libFilter").addEventListener("input", () => this.render());
+    $("#libExport").addEventListener("click", () => this.exportAll());
+    $("#libImport").addEventListener("click", () => $("#libFile").click());
+    $("#libFile").addEventListener("change", (e) => { const f = [...e.target.files]; e.target.value = ""; if (f.length) this.importFiles(f); });
     this.doc.on("map", (keys, live) => { if (!live && keys && keys.includes("sc.objects")) this.render(); });   // (the "update N" buttons)
     this.load();
   }
   async load() {
     try { this.items = (await this.api.library()).items || []; } catch { this.items = []; }
+    this.thumbs = null;   // (made again on the next render)
     try { const c = await this.api.clipboard(); this.clip = isClip(c) ? c : null; } catch { this.clip = null; }
     this.render();
   }
@@ -317,21 +368,94 @@ export class Library {
     banner(ok ? "The " + e.part + " of " + e.name + " is now " + plural(boxes.length, "box") + (this.items.some(x => x.file === made.lib) ? " (the library's " + made.lib + " is unchanged: save to library to keep it there)" : "") : "Editing cancelled: " + e.name + " is as it was", false, 4000);
   }
 
+  // ---- library management: edit (name, category, note), export, import
+  async editItem(x) {
+    const name = el("input", { type: "text", value: x.file, style: { width: "100%" } });
+    const cat = el("input", { type: "text", value: x.category || "", placeholder: "e.g. railings, cover, props", style: { width: "100%" }, list: "libCats" });
+    const note = el("input", { type: "text", value: x.note || "", style: { width: "100%" } });
+    const cats = el("datalist", { id: "libCats" }, [...new Set(this.items.map(i => i.category).filter(Boolean))].sort().map(c => el("option", { value: c })));
+    const r = await dialog([el("h2", {}, "Library item " + x.file), el("div", { class: "form" }, el("label", {}, "name"), name, el("label", {}, "category"), cat, el("label", {}, "note"), note), cats],
+      [{ label: "Cancel", value: "cancel" }, { label: "Save", value: "ok", primary: true }]);
+    if (r !== "ok") return;
+    const n = name.value.trim();
+    if (!validMapName(n)) { banner("A name is 1-40 letters, digits, - and _", true); return; }
+    if (n !== x.file && n.toLowerCase() !== x.file.toLowerCase() && this.items.some(i => i.file === n)) { banner(n + " is in the library already", true); return; }
+    try {
+      if (n !== x.file) await this.api.renameLibrary(x.file, n);
+      const item = { ...bareItem(x), name: n, category: cat.value.trim() || undefined, note: note.value.trim() || undefined };
+      if (item.def) item.def = { ...item.def, name: n };
+      await this.api.putLibrary(n, item);
+      // the open map's objects linked to the old name follow it (copies in other maps keep the old link)
+      const d = this.doc, linked = (d.sidecar.objects || []).some(o => o.lib === x.file);
+      if (n !== x.file && linked) d.edit("rename library link " + x.file + " -> " + n, ["sc.objects"], (m, sc) => { sc.objects = sc.objects.map(o => o.lib === x.file ? { ...o, lib: n } : o); }, { touch: [] });
+      await this.load();
+      banner("Saved " + n, false, 2000);
+    } catch (e) { banner(e.message, true); }
+  }
+  download(fname, obj) {
+    const a = el("a", { href: URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" })), download: fname });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  exportAll() {
+    const mine = this.items.filter(x => !x.builtin);
+    if (!mine.length) { banner("Your library is empty (the shipped items come with every editor)", true, 3000); return; }
+    this.download("quark-library.json", { format: LIB_FORMAT, version: 1, items: mine.map(x => ({ ...bareItem(x), file: x.file })) });
+    banner("Exported " + plural(mine.length, "library item") + " to quark-library.json", false, 3000);
+  }
+  async importFiles(files) {
+    let added = 0;
+    for (const f of files) {
+      let obj;
+      try { obj = JSON.parse(await f.text()); } catch { banner(f.name + " isn't JSON", true); continue; }
+      const items = importItems(obj, f.name.replace(/\.json$/i, "").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 40) || "imported");
+      if (!items.length) { banner(f.name + " has no library items", true); continue; }
+      for (const it of items) {
+        let n = String(it.file || it.name || "imported").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 40);
+        if (!validMapName(n)) n = "imported";
+        if (!this.nameFree(n)) continue;
+        try { await this.api.putLibrary(n, { ...bareItem(it), name: n }); added++; } catch (e) { banner(e.message, true); }
+      }
+    }
+    await this.load();
+    if (added) banner("Imported " + plural(added, "library item"), false, 3000);
+  }
+
   render() {
-    const rows = [];
+    const rows = [], q = (($("#libFilter") || {}).value || "").trim().toLowerCase();
     const c = this.clip;
     rows.push(el("div", { class: "row faint", title: "Ctrl+C copies the selection, Ctrl+V pastes it (here or in another map)" },
       el("span", {}, c ? "clipboard: " + plural(clipCount(c), "object") + (c.from ? " from " + c.from : "") : "clipboard: empty")));
-    const groups = this.items.filter(x => x.kind === "group"), objs = this.items.filter(x => x.kind === "object");
-    const row = (x, sub) => rows.push(el("div", { class: "row", title: (x.note || "") + (x.builtin ? "\n(shipped with the editor)" : "\nlibrary/" + x.file + ".json"), onclick: () => this.arm(x) },
-      el("span", { class: "mname" }, x.name || x.file), el("span", { class: "sub" }, sub),
-      x.kind === "object" && this.stale(x.file).length ? el("button", { class: "mini warn", title: "update the " + plural(this.stale(x.file).length, "placed copy") + " in this map that differ from the library", onclick: (e) => { e.stopPropagation(); this.updateFromLibrary(x.file); } }, "update " + this.stale(x.file).length) : null,
-      x.builtin ? el("span", { class: "tag" }, "shipped") : el("span", { class: "acts" }, el("button", { class: "mini danger", title: "delete from the library", onclick: (e) => { e.stopPropagation(); this.remove(x); } }, "x"))));
-    rows.push(el("div", { class: "grp" }, "Custom objects (" + objs.length + ")"));
-    for (const x of objs) row(x, ["x", "y", "z"].filter((_, k) => x.def && x.def.axes[k]).join("") + " every " + (x.def ? x.def.spacing.filter((_, k) => x.def.axes[k]).join("/") : "?") + " m");
-    rows.push(el("div", { class: "grp" }, "Groups (" + groups.length + ")"));
-    for (const x of groups) row(x, plural(clipCount(x.clip), "object"));
-    if (!groups.length) rows.push(el("div", { class: "row faint" }, "none yet: select, then + group"));
+    const shown = (x) => !q || [x.file, x.name, x.note, x.category].some(v => v && String(v).toLowerCase().includes(q));
+    const colors = (this.app.view && this.app.view.matColors && this.app.view.matColors.hex) || [];
+    const thumbs = this.thumbs || (this.thumbs = new Map());
+    const row = (x) => {
+      const key = x.file + "|" + (x.builtin ? 1 : 0);
+      let t = thumbs.get(key);
+      if (!t) { const st = itemStats(x); t = { st, svg: thumbSvg(stampBoxes(x), colors) }; thumbs.set(key, t); }
+      const rep = x.kind === "object" && x.def ? ["x", "y", "z"].filter((_, k) => x.def.axes[k]).join("") + " every " + x.def.spacing.filter((_, k) => x.def.axes[k]).join("/") + " m" + (x.def.start || x.def.end ? ", with " + [x.def.start ? "start" : "", x.def.end ? "end" : ""].filter(Boolean).join(" + ") + " piece" : "") : plural(clipCount(x.clip), "object");
+      const stale = x.kind === "object" ? this.stale(x.file).length : 0, copies = x.kind === "object" ? this.copiesOf(x.file) : 0;
+      const thumb = el("span", { class: "thumb", html: t.svg });
+      rows.push(el("div", { class: "row", title: (x.note || "") + (x.category ? "\ncategory: " + x.category : "") + (copies ? "\n" + plural(copies, "placed copy") + " in this map" : "") + (x.builtin ? "\n(shipped with the editor)" : "\nlibrary/" + x.file + ".json"), onclick: () => this.arm(x) },
+        thumb,
+        el("span", { class: "ltxt" }, el("span", { class: "mname" }, x.name || x.file), el("span", { class: "sub" }, t.st.size.join(" x ") + " m, " + plural(t.st.boxes, "box") + " | " + rep)),
+        stale ? el("button", { class: "mini warn", title: "update the " + plural(stale, "placed copy") + " in this map that differ from the library", onclick: (e) => { e.stopPropagation(); this.updateFromLibrary(x.file); } }, "update " + stale) : null,
+        x.builtin ? el("span", { class: "tag" }, "shipped") : null,
+        el("span", { class: "acts" },
+          x.builtin ? null : el("button", { class: "mini", title: "name, category, note", onclick: (e) => { e.stopPropagation(); this.editItem(x); } }, "edit"),
+          el("button", { class: "mini", title: "save it as a .json file", onclick: (e) => { e.stopPropagation(); this.download(x.file + ".json", { format: LIB_FORMAT, version: 1, items: [{ ...bareItem(x), file: x.file }] }); } }, "export"),
+          x.builtin ? null : el("button", { class: "mini danger", title: "delete from the library", onclick: (e) => { e.stopPropagation(); this.remove(x); } }, "x"))));
+    };
+    const section = (title, list, empty) => {
+      const vis = list.filter(shown).sort((a, b) => (a.category || "").localeCompare(b.category || "") || (a.name || a.file).localeCompare(b.name || b.file));
+      rows.push(el("div", { class: "grp" }, title + " (" + (q && list.length ? vis.length + " of " + list.length : list.length) + ")"));
+      let cat = null;
+      for (const x of vis) { if ((x.category || "") !== cat) { cat = x.category || ""; if (cat || vis.some(v => v.category)) rows.push(el("div", { class: "cat" }, cat || "(no category)")); } row(x); }
+      if (!list.length) rows.push(el("div", { class: "row faint" }, empty));
+      else if (!vis.length) rows.push(el("div", { class: "row faint" }, "nothing matches " + q));
+    };
+    section("Custom objects", this.items.filter(x => x.kind === "object"), "none yet: select boxes, then + object");
+    section("Groups", this.items.filter(x => x.kind === "group"), "none yet: select, then + group");
     fill(this.listEl, ...rows);
   }
 }
