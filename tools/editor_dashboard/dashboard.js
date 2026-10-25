@@ -34,6 +34,8 @@ const INSTALL_LABEL = {
   unknown: ["?", "st-none", "no git clone to compare with"],
 };
 const ROW_H = 30;
+// a sidecar entry's place in the rule that decides the item (dashboard.py decide())
+const PEND_ST = { win: "wins", same: "agrees", over: "overruled by your mark", conflict: "CONFLICT: disagrees and isn't decided (mark the item, or remove your mark)" };
 const MARK_CONFIRM = 20;                                                // (marking more items at once asks first)
 
 const S = {
@@ -73,7 +75,7 @@ function pct(h, n) {
   return v.toFixed(1);
 }
 const aiPct = (ai, n) => !n ? "-" : ai === 0 ? "0" : (100 - +pct(n - ai, n)).toFixed(1);
-const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+const plural = (n, w, many) => n + " " + (n === 1 ? w : many || w + "s");
 function st(s) { const [l, t] = STATUS_LABEL[s] || [s, ""]; return `<span class="st st-${esc(s)}" title="${esc(t)}">${esc(l)}</span>`; }
 function og(o) { return o ? `<span class="og og-${esc(o)}">${esc(ORIGIN_LABEL[o] || o)}</span>` : `<span class="og og-pending">new</span>`; }
 function bar(h, t, a) {
@@ -172,7 +174,7 @@ function edUp(e) {
   if (!e || !e.installed) return `<span class="updot off"></span><span class="muted">not installed</span>`;
   if (!e.kind) return `<span class="updot off"></span><span class="muted" title="${esc(e.note || "")}">no link</span>`;
   if (e.kind === "page") return `<span class="updot ${e.up ? "on" : "off"}"></span>${e.up ? "page" : `<span class="warn">page missing</span>`}`;
-  return `<span class="updot ${e.up ? "on" : "off"}"></span>${e.up ? `running <span class="muted mono small">:${e.port}</span>` : `<span class="muted" title="${esc(downText(e))}">not running</span>`}`;
+  return `<span class="updot ${e.up ? "on" : "off"}"></span>${e.up ? `running <span class="muted mono small">:${e.port}</span>` : `<span class="muted" title="${esc(downText(e))}">not running</span>${SHELL && e.tab ? "" : ` <button class="mini" data-start="${esc(e.folder)}" ${starting.has(e.folder) ? "disabled" : ""} title="start ${esc(e.program)} hidden, on port ${e.port}">${starting.has(e.folder) ? "starting..." : "Start"}</button>`}`}`;
 }
 function instChip(inst) {
   if (!inst) return `<span class="muted small">-</span>`;
@@ -201,19 +203,41 @@ async function checkLinks() {
     if (S.tab === "changes" && $("#pane")) { const sc = $("#pane").scrollTop; renderChanges(); $("#pane").scrollTop = sc; }
   } catch { /* the server is gone: loadAll says so */ }
 }
-const downText = (x) => "not running" + (x.start ? ": start " + x.start + (x.folder ? " in " + x.folder : "") : "") + (x.folder ? " (the Quark Project app starts it)" : "");
+// (no console command: the Quark Project app starts its servers, and a server editor has a Start button here)
+const downText = (x) => x.folder ? "not running: Start starts it here (hidden), or open its tab in the Quark Project app"
+  : "not running: the Quark Project app starts it";
 function openEditor(ev, a) {
   const e = edOf(a.dataset.ed);
   if (!e) return;
   if (SHELL && e.tab) { ev.preventDefault(); try { SHELL.open(e.tab, ""); } catch { /* (the shell logs it) */ } return; }
   if (e.kind === "server" && !e.up) {                                   // (down when last checked: look again first)
     ev.preventDefault();
+    // (a window opened now, before the await, so a pop-up blocker allows it; it goes to the editor once it answers)
+    const win = window.open("about:blank", a.target || "_blank");
+    try { win.document.title = e.program; win.document.body.textContent = `Starting ${e.program}...`; } catch { /* (blocked) */ }
     api("/api/links").then((L) => {
       renderNav(L);
       const now = edOf(e.folder);
-      now && now.up ? window.open(now.url, a.target || "_blank") : toast(`${e.program}: ${downText(e)}`, true);
-    });
+      if (now && now.up) { if (win) win.location = now.url; else window.open(now.url, a.target || "_blank"); return; }
+      startEditor(e.folder, win);
+    }).catch(() => { if (win) win.close(); });
   }
+}
+// Start: dashboard.py starts a stopped server editor hidden, the way the Quark Project app does (POST /api/start)
+const starting = new Set();
+async function startEditor(folder, win) {
+  const e = edOf(folder);
+  if (!e || starting.has(folder)) return;
+  starting.add(folder); toast(`Starting ${e.program}...`);
+  if ($("#pane")) renderChanges();
+  let r;
+  try { r = await api("/api/start", { folder }); } catch (x) { r = x.body || { ok: false, message: x.message }; }
+  starting.delete(folder);
+  if (r.links) renderNav(r.links);
+  const now = edOf(folder);
+  if (r.ok && now && now.up) { if (win) win.location = now.url; toast(r.message); }
+  else { if (win) win.close(); toast(r.message || r.error || "Start failed", true); }
+  if (S.tab === "changes" && $("#pane")) { const sc = $("#pane").scrollTop; renderChanges(); $("#pane").scrollTop = sc; }
 }
 
 // ---- deep links: #view=changes&program=<id> (an editor's folder name), #view=assets&category=<cat>&origin=<o>&editor=<id>
@@ -301,11 +325,15 @@ function render() {
 
 // ---- per editor: counts, human-made % --------------------------------------------------------------------------------
 const counted = (p) => p.clones.filter((c) => !c.stale);               // (a stale clone's counts can't be trusted)
+const PC_OVERRIDES = "this PC: overrides";                            // (dashboard.py's name for the game's overrides folder)
 function progCounts(p) {
   const local = p.files.filter(([, sts]) => Object.values(sts).includes("local")).length;
+  // (a commit whose change testing already has, cherry-picked or reverted, isn't local work: net false)
   const commits = new Set();
-  for (const x of counted(p)) for (const cm of x.commits) commits.add(cm.sha);
-  return { local, commits: commits.size, unc: counted(p).reduce((n, x) => n + x.uncommitted.length, 0), testing: p.testing.length, exports: p.exports.length };
+  for (const x of counted(p)) for (const cm of x.commits) if (cm.net !== false) commits.add(cm.sha);
+  const pc = p.exports.filter((e) => e.source === PC_OVERRIDES).length;
+  return { local, commits: commits.size, unc: counted(p).reduce((n, x) => n + x.uncommitted.length, 0), testing: p.testing.length,
+           exports: p.exports.length, pcExports: pc };
 }
 // the registry items in the categories this editor makes (CATEGORY_EDITOR in dashboard.py)
 function edHuman(id) {
@@ -349,19 +377,39 @@ function renderChanges() {
 // one card per editor (they fit eight across at 2560 px): its link and up / down, the version installed, its counts
 function editorCard(p) {
   const c = progCounts(p), e = edOf(p.id) || { folder: p.id, installed: false }, inst = (S.changes.editors.find((x) => x.folder === p.id) || {}).install;
-  const num = (n, label, cls, tip) => `<span class="${n ? cls : "muted"}" title="${esc(tip)}"><b>${n || 0}</b> ${label}</span>`;
+  // (label: [singular, plural])
+  const num = (n, [one, many], cls, tip, extra = "") => `<span class="${n ? cls : "muted"}" title="${esc(tip)}"><b>${n || 0}</b> ${n === 1 ? one : many}${extra}</span>`;
   const newest = p.exports.length ? p.exports[0].mtime : 0;
   return `<div class="card ed">
     <div class="hd"><a href="#view=changes&amp;program=${esc(p.id)}" data-prog="${esc(p.id)}"><b>${esc(p.name)}</b></a><span class="grow"></span>${e.kind && e.installed ? edLink(e, "Open", "btn") : ""}</div>
     <div class="line small">${edUp(e)}<span class="grow"></span>${instChip(inst)}</div>
-    <div class="nums small">${num(c.local, "only local", "warn", "editor files whose change is only local (every working clone)")}${num(c.commits, "local commits", "", "commits not in testing that touch its files")}${num(c.unc, "uncommitted", "warn", "uncommitted files")}${num(c.testing, "testing, not prod.", "", "commits in testing, not in production")}${num(c.exports, "exports", "", "exported files (editor folder, this PC's overrides)")}</div>
+    <div class="nums small">${num(c.local, ["only local", "only local"], "warn", "editor files whose change is only local (every working clone)")}${num(c.commits, ["local commit", "local commits"], "", "commits not in testing that touch its files and bring a change testing doesn't have")}${num(c.unc, ["uncommitted", "uncommitted"], "warn", "uncommitted files")}${num(c.testing, ["testing, not prod.", "testing, not prod."], "", "commits in testing, not in production")}${num(c.exports, ["export", "exports"], "", `exported files: ${c.exports - c.pcExports} in its folder, ${c.pcExports} in this PC's overrides folder`, c.pcExports ? ` <span class="muted">(${c.pcExports} this PC)</span>` : "")}</div>
     <div class="line">${humanLine(p.id)}</div>
     ${newest ? `<div class="small muted">newest export ${when(newest)}</div>` : ""}</div>`;
 }
 
+// what needs q's decision or action, in one place (shown red, only when something does): sidecar conflicts, sidecar ids
+// Merge can't take, exports not in testing whose asset is still AI, failed installs, clones that need a fetch, a merged
+// registry not committed yet
+function attention() {
+  const ch = S.changes, A = S.assets, out = [];
+  const conf = A.rows.filter((r) => r.c), bad = A.rows.filter((r) => r.bad);
+  if (conf.length) out.push(`<a href="#view=assets&amp;origin=conflict">${plural(conf.length, "asset")}</a> where an editor's mark disagrees with yours or another editor's: mark ${conf.length === 1 ? "it" : "them"} (or remove your mark) to decide <span class="muted small">${esc(conf.slice(0, 3).map((r) => r.id).join(", "))}${conf.length > 3 ? " ..." : ""}</span>`);
+  if (bad.length) out.push(`<a href="#view=assets&amp;origin=pending">${plural(bad.length, "sidecar entry", "sidecar entries")}</a> Merge can't take (no registry category): <span class="mono small">${esc(bad.slice(0, 3).map((r) => r.id).join(", "))}${bad.length > 3 ? " ..." : ""}</span>`);
+  for (const p of ch.programs) {
+    const ai = p.exports.filter((e) => (e.repo === "missing" || e.repo === "differs") && e.asset && (() => { const r = assetIdx.get(assetKey(e.asset)); return r && !isHuman(effOrigin(r)); })());
+    if (ai.length) out.push(`<a href="#view=changes&amp;program=${esc(p.id)}" data-prog="${esc(p.id)}">${esc(p.name)}</a>: ${plural(ai.length, "export")} not in testing whose asset is still AI <span class="muted small">(mark ${ai.length === 1 ? "it" : "them"} human if a person made ${ai.length === 1 ? "it" : "them"})</span>`);
+  }
+  for (const e of ch.editors) if (e.install && e.install.state === "failed") out.push(`${esc(e.program)}: the app's last update failed <span class="muted small">(its log is in the Supervisor Board)</span>`);
+  const stale = ch.clones.filter((c) => c.stale);
+  if (stale.length) out.push(`${esc(stale.map((c) => c.name).join(", "))}: not counted until a Refresh with fetch`);
+  if (A.regDirty && A.regDirty.length) out.push(`<a href="#view=assets">${esc((A.mergeTarget || {}).name || "the registry clone")}: assets/provenance/ has ${plural(A.regDirty.length, "changed file")}</a> (a merge): commit ${A.regDirty.length === 1 ? "it" : "them"} from the Assets view`);
+  return out.length ? `<div class="card attn"><b>Needs attention</b><ul>${out.map((x) => `<li>${x}</li>`).join("")}</ul></div>` : "";
+}
+
 function overviewPane() {
   const ch = S.changes, s = S.summary;
-  let h = `<h2>Overview</h2>`;
+  let h = `<h2>Overview</h2>${attention()}`;
   h += `<h3>Editors <span class="muted">compared with ${esc(s.testing.ref || "testing")} ${esc(s.testing.sha)} and ${esc(s.production.tag || "production")}</span></h3>`;
   h += `<div class="edgrid">${ch.programs.map(editorCard).join("")}</div>`;
   h += `<div class="ovgrid"><div>`;
@@ -375,12 +423,12 @@ function overviewPane() {
     if (c.stale) notes.push(`<span class="warn" title="its origin/testing is ${esc(c.testingSha)} and testing's tip (${esc(s.testing.sha)}) isn't in this clone, so its counts would include testing's own commits: Refresh with fetch">not counted: origin/testing here is ${esc(c.testingSha)} (needs fetch)</span>`);
     else if (c.base === "reference") notes.push(`<span class="muted" title="its own origin/testing is older; testing's commits aren't counted as its work">compared with testing's tip (its origin/testing is ${esc(c.testingSha)})</span>`);
     for (const e of c.errors) notes.push(`<span class="err">${esc(e)}</span>`);
-    h += `<tr class="${c.stale ? "stale" : ""}"><td class="nowrap"><b>${esc(c.name)}</b></td><td class="num" title="commits not in testing that touch an editor's files">${c.commits || ""}</td>
+    h += `<tr class="${c.stale ? "stale" : ""}"><td class="nowrap"><b>${esc(c.name)}</b></td><td class="num" title="commits not in testing that touch an editor's files and bring a change testing doesn't have${c.allCommits > c.commits ? ` (${c.allCommits - c.commits} more are in testing already: cherry-picked, or undone by a revert)` : ""}">${c.commits || ""}${c.allCommits > c.commits ? ` <span class="muted small">+${c.allCommits - c.commits}</span>` : ""}</td>
       <td class="num">${c.uncommitted ? `<span class="st st-unc">${c.uncommitted}</span>` : ""}</td><td class="num">${c.local || ""}</td><td>${notes.join(" · ")}</td></tr>`;
   }
   if (!ch.clones.length) h += `<tr><td colspan="5" class="empty">no clones found</td></tr>`;
   h += `</table></div></div><div>`;
-  h += `<h3>Editor folders <span class="muted">${S.links && S.links.tabsFrom ? `links from <span class="mono" title="${esc(S.links.tabsFrom)}">${esc(S.links.tabsFrom.split(/[\\/]/).slice(-2).join("/"))}</span>` : "no tabs.json found: page editors only"}</span></h3><div class="card"><table class="t"><tr><th>Folder</th><th>Editor</th><th>Page</th><th>Installed</th><th class="num">Exported files</th></tr>`;
+  h += `<h3>Editor folders <span class="muted">${S.links && S.links.tabsFrom ? `links from <span class="mono" title="${esc(S.links.tabsFrom)}">${esc(S.links.tabsFrom.split(/[\\/]/).slice(-2).join("/"))}</span>` : "no tabs.json found: page editors only"}</span></h3><div class="card"><table class="t"><tr><th>Folder</th><th>Editor</th><th>Page</th><th>Installed</th><th class="num" title="files in the editor's own folder; its card also counts this PC's overrides folder (the last rows)">Exports in its folder</th></tr>`;
   for (const e of ch.editors) {
     const ex = ch.exports.find((x) => x.name === e.folder), L = edOf(e.folder);
     let page = `<span class="muted">-</span>`;
@@ -413,7 +461,12 @@ function commitRow(cm, fileFn) {
 // an exported override's asset row (the registry id is the override path; the extension may differ)
 let assetIdx = new Map();
 const assetKey = (id) => String(id).toLowerCase().replace(/\.[^./]*$/, "");
-function indexAssets() { assetIdx = new Map(S.assets.rows.map((r) => [assetKey(r.id), r])); }
+function indexAssets() {
+  // (and each row's editor name once: the list sorts and draws by it, a find per row each time was slow)
+  const names = new Map(S.changes ? S.changes.programs.map((p) => [p.id, p.name]) : []), ce = S.assets.catEditor || {};
+  for (const r of S.assets.rows) r.ed = names.get(ce[r.cat]) || "";
+  assetIdx = new Map(S.assets.rows.map((r) => [assetKey(r.id), r]));
+}
 const effOrigin = (r) => (r.p && r.p[0].origin) || r.o;
 const isHuman = (o) => o === "human" || o === "third-party";
 
@@ -424,7 +477,8 @@ function programPane(p) {
   h += `<h3>Local work <span class="muted">commits ahead of testing and uncommitted files, in every working clone</span></h3>`;
   if (!p.clones.length) h += `<div class="empty">nothing local</div>`;
   for (const c of p.clones) {
-    h += `<div class="card ${c.stale ? "stale" : ""}"><div class="hd"><b>${esc(c.clone)}</b><span class="muted">${plural(c.commits.length, "commit")} not in testing · ${c.uncommitted.length} uncommitted</span>
+    const inT = c.commits.filter((cm) => cm.net === false).length;
+    h += `<div class="card ${c.stale ? "stale" : ""}"><div class="hd"><b>${esc(c.clone)}</b><span class="muted">${plural(c.commits.length, "commit")} not in testing${inT ? ` (${inT} of them already in testing by content: cherry-picked or reverted)` : ""} · ${c.uncommitted.length} uncommitted</span>
       ${c.stale ? `<span class="warn">not counted: this clone's origin/testing is old and testing's tip isn't in it (Refresh with fetch)</span>` : ""}</div>`;
     if (c.commits.length) h += showMore("c:" + p.name + c.clone, c.commits, (cm) => commitRow(cm, ([l, f, x]) => `<span><span class="letter">${esc(l)}</span>${esc(f)} ${st(x)}</span>`));
     if (c.uncommitted.length) {
@@ -450,7 +504,9 @@ function programPane(p) {
     h += `</div></details></div>`;
   }
   // exports, each override linked to its asset row (and marked human from here)
-  h += `<h3>Exported files <span class="muted">editor folders and this PC's overrides folder (not in git), compared with testing's assets/overrides</span></h3>`;
+  // (every exported override whose asset isn't human-made yet: one "mark them all human" button)
+  const toMark = [...new Set(p.exports.map((e) => e.asset && assetIdx.get(assetKey(e.asset))).filter((r) => r && !isHuman(effOrigin(r))).map((r) => r.id))];
+  h += `<h3>Exported files <span class="muted">editor folders and this PC's overrides folder (not in git), compared with testing's assets/overrides</span>${toMark.length ? `<span class="grow"></span><button class="mini" data-markall="${esc(p.id)}" title="mark every exported asset of ${esc(p.name)} that isn't human-made yet as human (your marks; only when a person made them)">Mark all ${toMark.length} human</button>` : ""}</h3>`;
   if (!p.exports.length) h += `<div class="empty">no exports</div>`;
   else {
     const repo = (S.assets.mergeTarget || {}).name || "the registry clone";
@@ -471,10 +527,9 @@ function programPane(p) {
 }
 
 // ---- views 2 + 3: assets (all, or the remaining AI-made ones) --------------------------------------------------------------
-const edName = (r) => { const id = (S.assets.catEditor || {})[r.cat]; const p = id && S.changes.programs.find((x) => x.id === id); return p ? p.name : ""; };
 const SORTS = {
-  id: (r) => r.id.toLowerCase(), cat: (r) => r.cat, ed: (r) => edName(r) || "~", o: (r) => r.o ? ORIGINS.indexOf(r.o) : 9,
-  p: (r) => r.p ? ORIGINS.indexOf(r.p[0].origin) : 9, date: (r) => (r.p && r.p[0].date) || r.date || "", src: (r) => (r.source || r.note || "").toLowerCase(),
+  id: (r) => r.id.toLowerCase(), cat: (r) => r.cat, ed: (r) => r.ed || "~", o: (r) => r.o ? ORIGINS.indexOf(r.o) : 9,
+  p: (r) => r.p ? (r.c ? -1 : ORIGINS.indexOf(r.p[0].origin)) : 9, date: (r) => (r.p && r.p[0].date) || r.date || "", src: (r) => (r.source || r.note || "").toLowerCase(),
 };
 function filteredRows(mode) {
   const f = S.filt[mode], q = f.q.trim().toLowerCase(), ce = S.assets.catEditor || {};
@@ -484,6 +539,7 @@ function filteredRows(mode) {
     if (f.pending && !r.p) return false;
     if (f.origin) {
       if (f.origin === "pending") { if (!r.p) return false; }
+      else if (f.origin === "conflict") { if (!r.c) return false; }
       else if (r.o !== f.origin) return false;
     }
     if (q && !(r.id.toLowerCase().includes(q) || (r.source || "").toLowerCase().includes(q) || (r.note || "").toLowerCase().includes(q) || (r.by || "").toLowerCase().includes(q))) return false;
@@ -497,6 +553,37 @@ function filteredRows(mode) {
   }
   return rows;
 }
+
+// The card that takes the marks into the registry. One rule decides each item, here and in Merge (dashboard.py decide()):
+// your mark wins over the editors' entries, else the newest editor entry; pending = Merge would change the registry; a
+// conflict = an editor disagrees with your mark (or with another editor) and you haven't decided it. Merge writes the
+// merge file (exactly those choices) and runs tools/provenance.py merge on it; then "Review and commit" makes a local
+// commit of assets/provenance/ (never a push).
+function mergeCard() {
+  const A = S.assets, tgt = A.mergeTarget || {}, edsPend = A.sidecars.filter((x) => !x.own).reduce((a, x) => a + x.pending, 0);
+  const nConf = A.rows.filter((r) => r.c).length, bad = A.rows.filter((r) => r.bad);
+  const sc = (x) => [`${x.pending} to merge`, x.over ? `${x.over} overruled by you` : "", x.conflicts ? `<span class="err">${plural(x.conflicts, "conflict")}</span>` : ""].filter(Boolean).join(" · ");
+  let h = `<div class="card"><div><b>${A.ownPending}</b> ${A.ownPending === 1 ? "mark" : "marks"} of yours to merge${edsPend ? `, <b>${edsPend}</b> from editors` : ""}${nConf ? ` · <a class="err" href="#view=assets&amp;origin=conflict" title="an editor disagrees with your mark (or with another editor): mark the item, or remove your mark, to decide">${plural(nConf, "conflict")}</a>` : ""}</div>
+    <div class="sidecars">${A.sidecars.map((x) => `<div title="${esc(x.path)}\n${x.items} entries"><span class="og ${x.pending ? "og-pending" : "og-human"}">${esc(x.tool)}</span><span>${sc(x)}</span><span class="muted">${when(x.mtime)}</span><span class="muted mono small ell">${esc(x.short)}</span></div>`).join("") || `<span class="muted">no sidecars yet</span>`}</div>`;
+  if (A.toMerge) h += `<div class="cmd"><button class="primary" id="mergeGo" ${tgt.ok ? "" : "disabled"} title="${esc(tgt.ok ? `writes each pending item's winning entry to the merge file and runs tools/provenance.py merge on it in ${tgt.path} (hidden)` : tgt.why || "")}">Merge ${A.toMerge} into ${esc(tgt.name || "the registry clone")}</button>
+      <details class="grow"><summary class="small">or run it yourself in <span class="mono">${esc(A.mergeCwd.split(/[\\/]/).pop())}</span></summary><div class="cmd"><code id="mergecmd">${esc(A.mergeCmd)}</code><button data-plan="mergecmd" title="writes the merge file, then copies the command">Copy</button></div></details></div>
+      ${tgt.ok ? "" : `<div class="small warn" style="margin-top:4px">${esc(tgt.why || "")}</div>`}`;
+  else h += `<div class="small muted" style="margin-top:6px">nothing to merge</div>`;
+  if (bad.length) h += `<div class="small warn" style="margin-top:4px" title="${esc(bad.map((r) => r.id + ": " + r.bad).join("\n"))}">${plural(bad.length, "entry", "entries")} Merge skips (no registry category): <span class="mono">${esc(bad.slice(0, 3).map((r) => r.id).join(", "))}${bad.length > 3 ? " ..." : ""}</span></div>`;
+  if (S.mergeOut) h += `<details class="small" style="margin-top:4px" ${S.mergeOut.ok ? "" : "open"}><summary class="${S.mergeOut.ok ? "" : "err"}">last ${esc(S.mergeOut.what || "merge")}: ${esc(S.mergeOut.line)}</summary><pre class="out">${esc(S.mergeOut.lines.join("\n"))}</pre></details>`;
+  // the merged registry, not committed yet: review the diff, commit it locally
+  const dirty = A.regDirty || [];
+  if (dirty.length) {
+    const d = S.regDiff;
+    h += `<div class="cmd"><span class="warn grow">${esc(tgt.name)}: assets/provenance/ has ${plural(dirty.length, "uncommitted file")}</span><button id="commitOpen">${d ? "Hide" : "Review and commit"}</button></div>`;
+    if (d) h += `<div class="commitbox">${d.loading ? `<span class="muted small">reading the diff...</span>` : `<div class="small muted">${esc(d.stat || "")}${d.lines > d.diff.split("\n").length ? ` · the first ${d.diff.split("\n").length} of ${d.lines} lines` : ""}</div><pre class="out diff">${diffHtml(d.diff)}</pre>
+      <div class="cmd"><input type="text" id="commitMsg" class="grow" value="${esc(S.commitMsg || "Provenance: merge the editors' and the owner's marks")}"><button class="primary" id="commitGo" title="git add + commit of assets/provenance/ only, in ${esc(tgt.path || "")} (a local commit: never pushed)">Commit locally</button></div>`}</div>`;
+  }
+  if (A.errors.length) h += `<div class="err small" style="margin-top:6px">${A.errors.map(esc).join("<br>")}</div>`;
+  if (!A.sidecars.some((x) => x.own)) h += `<div class="muted small" style="margin-top:4px">your marks go to <span class="mono">${esc(A.ownSidecar)}</span></div>`;
+  return h + `</div>`;
+}
+const diffHtml = (d) => d.split("\n").map((l) => `<span class="${/^\+(?!\+\+)/.test(l) ? "add" : /^-(?!--)/.test(l) ? "del" : /^(@@|diff |new file)/.test(l) ? "hunk" : ""}">${esc(l)}</span>`).join("\n");
 
 function renderAssets(mode) {
   const A = S.assets, f = S.filt[mode], stats = A.stats, cats = Object.keys(stats).sort();
@@ -517,32 +604,24 @@ function renderAssets(mode) {
       <span><i class="dot" style="background:var(--qt-human)"></i>human ${tot.human}</span><span><i class="dot" style="background:var(--qt-third)"></i>third-party ${tot["third-party"]}</span><span><i class="dot" style="background:var(--qt-ai)"></i>AI ${tot.ai}</span></div>
       ${tot.pending ? `<div class="small" style="margin-top:4px" title="${effH} of ${effN} items, counting the pending marks and the new items they add">with the pending marks: <b>${pct(effH, effN)} %</b> (${plural(tot.pending, "pending item")})</div>` : ""}</div>`;
   }
-  // per category
+  // per category: a tile each (as many across as fit: one row at 2560 px)
   h += `<div class="card"><div class="cats">`;
   for (const c of cats) {
     const s = stats[c], cn = s.human + s["third-party"] + s.ai;
-    const right = mode === "remaining" ? `${s.ai} left of ${cn}` : `${s.human} h · ${s["third-party"]} 3p · ${s.ai} AI${s.pending ? ` · <span class="warn">${s.pending} pending</span>` : ""}`;
-    h += `<span class="c ${f.cat === c ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</span>${bar(s.human, s["third-party"], s.ai)}<span class="pct">${mode === "remaining" ? aiPct(s.ai, cn) : pct(s.human + s["third-party"], cn)}%</span><span class="n">${right}</span>`;
+    const right = mode === "remaining" ? `${s.ai} left of ${cn}` : `${s.human} h · ${s["third-party"]} 3p · ${s.ai} AI${s.pending ? ` · <span class="warn">${s.pending} pending</span>` : ""}${s.conflicts ? ` · <span class="err">${s.conflicts} conflict${s.conflicts === 1 ? "" : "s"}</span>` : ""}`;
+    h += `<div class="cat ${f.cat === c ? "on" : ""}" data-cat="${esc(c)}" title="${esc(f.cat === c ? "show every category" : "show only " + c)}"><span class="c">${esc(c)}</span>${bar(s.human, s["third-party"], s.ai)}<span class="pct">${mode === "remaining" ? aiPct(s.ai, cn) : pct(s.human + s["third-party"], cn)}%</span><span class="n">${right}</span></div>`;
   }
-  if (!cats.length) h += `<span class="empty" style="grid-column:1/5">no registry items</span>`;
+  if (!cats.length) h += `<span class="empty">no registry items</span>`;
   h += `</div></div>`;
-  // pending marks + merge
-  const own = A.sidecars.find((x) => x.own), others = A.sidecars.filter((x) => !x.own && x.pending), tgt = A.mergeTarget || {};
-  h += `<div class="card"><div><b>${A.ownPending}</b> ${A.ownPending === 1 ? "mark" : "marks"} not in the repo yet${others.length ? `, <b>${others.reduce((a, x) => a + x.pending, 0)}</b> pending from editors` : ""}</div>
-    <div class="sidecars">${A.sidecars.map((x) => `<div title="${esc(x.path)}"><span class="og ${x.pending ? "og-pending" : "og-human"}">${esc(x.tool)}</span><span>${x.pending} pending / ${x.items}</span><span class="muted">${when(x.mtime)}</span><span class="muted mono small ell">${esc(x.short)}</span></div>`).join("") || `<span class="muted">no sidecars yet</span>`}</div>
-    ${A.mergeCmd ? `<div class="cmd"><button class="primary" id="mergeGo" ${tgt.ok ? "" : "disabled"} title="${esc(tgt.ok ? `runs tools/provenance.py merge in ${tgt.path} (hidden), then you commit assets/provenance/ there` : tgt.why || "")}">Merge into ${esc(tgt.name || "the registry clone")}</button>
-      <details class="grow"><summary class="small">or run it yourself in <span class="mono">${esc(A.mergeCwd.split(/[\\/]/).pop())}</span></summary><div class="cmd"><code id="mergecmd">${esc(A.mergeCmd)}</code><button data-copy="mergecmd">Copy</button></div></details></div>
-      ${tgt.ok ? "" : `<div class="small warn" style="margin-top:4px">${esc(tgt.why || "")}</div>`}` : `<div class="small muted" style="margin-top:6px">nothing to merge</div>`}
-    ${S.mergeOut ? `<details class="small" style="margin-top:4px" ${S.mergeOut.ok ? "" : "open"}><summary class="${S.mergeOut.ok ? "" : "err"}">last merge: ${esc(S.mergeOut.line)}</summary><pre class="out">${esc(S.mergeOut.lines.join("\n"))}</pre></details>` : ""}
-    ${A.errors.length ? `<div class="err small" style="margin-top:6px">${A.errors.map(esc).join("<br>")}</div>` : ""}
-    ${own ? "" : `<div class="muted small" style="margin-top:4px">your marks go to <span class="mono">${esc(A.ownSidecar)}</span></div>`}</div>`;
+  // pending marks, conflicts, merge, commit
+  h += mergeCard();
   h += `</div>`;
   // toolbar
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
   const eds = S.changes.programs.filter((p) => Object.values(A.catEditor || {}).includes(p.id));
   h += `<div class="toolbar">
     <input type="search" id="q" placeholder="search id, source, note, by" value="${esc(f.q)}">
-    ${mode === "remaining" ? "" : `<select id="origin">${opt("", "every origin", f.origin)}${opt("human", "human", f.origin)}${opt("third-party", "third-party", f.origin)}${opt("ai", "AI", f.origin)}${opt("pending", "pending", f.origin)}</select>`}
+    ${mode === "remaining" ? "" : `<select id="origin">${opt("", "every origin", f.origin)}${opt("human", "human", f.origin)}${opt("third-party", "third-party", f.origin)}${opt("ai", "AI", f.origin)}${opt("pending", "pending", f.origin)}${opt("conflict", "conflict", f.origin)}</select>`}
     <select id="cat">${opt("", "every category", f.cat)}${cats.map((c) => opt(c, c, f.cat)).join("")}</select>
     <select id="ed">${opt("", "every editor", f.ed)}${eds.map((p) => opt(p.id, p.name, f.ed)).join("")}</select>
     <label class="chk"><input type="checkbox" id="pendingOnly" ${f.pending ? "checked" : ""}> pending only</label>
@@ -560,12 +639,15 @@ function renderAssets(mode) {
   h += `<div class="vt"><div class="vrow vhead"><span><input type="checkbox" id="selHead" title="select every shown item"></span><span></span>${hd("id", "Asset")}${hd("cat", "Category")}${hd("ed", "Editor")}${hd("o", "Origin")}${hd("p", "Pending")}${hd("date", "By / date")}${hd("src", "Source / note")}</div>
     <div class="vbody" id="vbody"><div id="vspace"></div></div><div class="vfoot" id="vfoot"></div></div>`;
   $("#view").innerHTML = `<section class="assets">${h}</section>`;
+  S.base = mode === "remaining" ? A.rows.filter((r) => r.o === "ai").length : A.rows.length;   // (the count's "of N")
+  S.missing = S.focusAsset && !A.rows.some((r) => r.id === S.focusAsset) ? S.focusAsset : null;
   S.rows = filteredRows(mode); S.lastIdx = -1;
   updateList(true);
   if (S.focusAsset) {                                                   // (#asset=<id>: select it and bring it into view)
     const i = S.rows.findIndex((r) => r.id === S.focusAsset);
-    S.focusAsset = null;
     if (i >= 0) { S.sel.add(S.rows[i].id); S.lastIdx = i; $("#vbody").scrollTop = Math.max(0, (i - 3) * ROW_H); drawRows(); updateSel(); }
+    else toast(S.missing ? `No asset ${S.focusAsset} in the registry or a sidecar` : `${S.focusAsset} is hidden by the filters`, true);
+    S.focusAsset = null;
   }
   writeHash();
 }
@@ -577,7 +659,7 @@ function updateList(resetScroll) {
   if (resetScroll) body.scrollTop = 0;
   if (S.sel.size) { const shown = new Set(S.rows.map((r) => r.id)); for (const id of [...S.sel]) if (!shown.has(id)) S.sel.delete(id); }
   $("#vspace").style.height = S.rows.length * ROW_H + "px";
-  $("#count").textContent = `${S.rows.length} of ${S.assets.rows.length} shown`;
+  $("#count").textContent = `${S.rows.length} of ${S.base ?? S.assets.rows.length}${S.tab === "remaining" ? " AI-made" : ""} shown`;
   drawRows();
   updateSel();
 }
@@ -591,14 +673,20 @@ function drawRows() {
   let h = "";
   for (let i = first; i < last; i++) {
     const r = S.rows[i], p = r.p && r.p[0];
-    const pend = p ? `<span class="og og-pending" title="${esc(r.p.map((x) => `${x.tool}: ${x.origin}${x.by ? " by " + x.by : ""}${x.date ? " " + x.date : ""}${x.note ? " (" + x.note + ")" : ""}`).join("\n"))}">${esc(ORIGIN_LABEL[p.origin] || p.origin || "?")}</span> <span class="muted small">${esc(p.tool)}${r.p.length > 1 ? " +" + (r.p.length - 1) : ""}</span>` : "";
+    let pend = "";
+    if (p) {
+      const tip = r.p.map((x) => `${x.tool}: ${ORIGIN_LABEL[x.origin] || x.origin}${x.by ? " by " + x.by : ""}${x.date ? " " + x.date : ""}${x.note ? " (" + x.note + ")" : ""}: ${PEND_ST[x.st] || x.st}`).join("\n")
+        + "\n" + (r.bad || (r.pm ? "Merge writes the first one" : "the registry already has the first one"));
+      pend = `${r.c ? `<span class="og og-conflict">conflict</span> ` : ""}<span class="og ${r.pm || r.bad ? "og-pending" : "og-" + esc(p.origin)}" title="${esc(tip)}">${esc(ORIGIN_LABEL[p.origin] || p.origin || "?")}</span> <span class="muted small" title="${esc(tip)}">${esc(p.tool)}${r.p.length > 1 ? " +" + (r.p.length - 1) : ""}</span>${r.bad ? ` <span class="warn small" title="${esc(r.bad)}">can't merge</span>` : ""}`;
+    }
     const src = [r.source, r.note && "note: " + r.note, r.wip && "wip: " + r.wip].filter(Boolean).join(" · ");
     const pv = r.pv === "a" ? `<button class="pv ${S.playing === r.id ? "on" : ""}" data-pv="a" title="${S.playing === r.id ? "stop" : "play it"}">${S.playing === r.id ? ICON_STOP : ICON_PLAY}</button>`
       : r.pv === "i" ? `<button class="pv" data-pv="i" title="view it">${ICON_IMG}</button>` : "";
     h += `<div class="vrow ${S.sel.has(r.id) ? "sel" : ""}" data-i="${i}" style="top:${i * ROW_H}px"><span><input type="checkbox" ${S.sel.has(r.id) ? "checked" : ""}></span><span>${pv}</span>
-      <span class="id" title="${esc(r.id)}">${esc(r.id)}</span><span class="muted">${esc(r.cat)}</span><span class="small">${esc(edName(r))}</span><span>${og(r.o)}</span><span>${pend}</span>
+      <span class="id" title="${esc(r.id)}">${esc(r.id)}</span><span class="muted">${esc(r.cat)}</span><span class="small">${esc(r.ed)}</span><span>${og(r.o)}</span><span>${pend}</span>
       <span class="small">${esc(r.by || "")}${r.date ? ` <span class="muted">${esc(r.date)}</span>` : ""}</span><span class="muted small" title="${esc(src)}">${esc(src)}</span></div>`;
   }
+  if (!S.rows.length) h = `<div class="vempty">${S.missing ? `No asset <span class="mono">${esc(S.missing)}</span> in the registry or in a sidecar.` : "No item matches the filters."}</div>`;
   // keep the spacer, replace the rows
   const space = $("#vspace");
   body.innerHTML = ""; body.appendChild(space); body.insertAdjacentHTML("beforeend", h);
@@ -658,31 +746,83 @@ async function mark(clear) {
     const keep = $("#vbody").scrollTop;
     renderAssets(S.tab); $("#vbody").scrollTop = keep; drawRows();
     if (clear) toast(res.removed ? `Removed your mark from ${plural(res.removed, "item")}` : `None of ${ids.length === 1 ? "it" : "these"} had your mark`);
-    else toast((res.marked ? `Marked ${plural(res.marked, "item")} ${ORIGIN_LABEL[S.markOrigin]}` : "Nothing to mark") + (res.same ? `; ${res.same} already ${res.same === 1 ? "is" : "are"} ${ORIGIN_LABEL[S.markOrigin]} in the registry` : ""));
+    else toast(markText(res, ORIGIN_LABEL[S.markOrigin]));
   } catch (e) { toast("Mark failed: " + e.message, true); }
 }
-async function markHuman(id) {
+// the toast after a mark: what was written, what overruled an editor, what the registry already says
+function markText(res, label) {
+  return [res.marked ? `Marked ${plural(res.marked, "item")} ${label}` : "Nothing to mark",
+          res.overruled ? `overruling ${plural(res.overruled, "editor entry", "editor entries")}` : "",
+          res.same ? `${res.same} already ${res.same === 1 ? "is" : "are"} ${label} in the registry` : "",
+          res.bad ? `${res.bad} skipped (no registry category)` : ""].filter(Boolean).join("; ");
+}
+async function markHuman(ids) {
   try {
-    const res = await postMark([id], "human", false, "");
+    const res = await postMark(ids, "human", false, "");
     const sc = $("#pane") ? $("#pane").scrollTop : 0;
     render(); if ($("#pane")) $("#pane").scrollTop = sc;
-    toast(res.marked ? `Marked ${id} human (pending until merged)` : `${id} is already human in the registry`);
+    toast(markText(res, "human") + (res.marked ? " (pending until merged)" : ""));
   } catch (e) { toast("Mark failed: " + e.message, true); }
+}
+// "Mark all N human" on an editor's exports: every exported override whose asset isn't human-made yet
+function markAllHuman(pid) {
+  const p = S.changes.programs.find((x) => x.id === pid);
+  if (!p) return;
+  const ids = [...new Set(p.exports.map((e) => e.asset && assetIdx.get(assetKey(e.asset))).filter((r) => r && !isHuman(effOrigin(r))).map((r) => r.id))];
+  if (!ids.length) return;
+  if (!confirm(`Mark ${plural(ids.length, "exported asset")} of ${p.name} as human?\n\nOnly when a person made ${ids.length === 1 ? "it" : "them"} (a trim of an AI sound stays AI).\n\n${ids.slice(0, 12).join("\n")}${ids.length > 12 ? "\n..." : ""}`)) return;
+  markHuman(ids);
 }
 async function merge() {
   const A = S.assets, tgt = A.mergeTarget || {}, pend = A.sidecars.filter((x) => x.pending);
-  const n = pend.reduce((a, x) => a + x.pending, 0);
-  if (!confirm(`Fold ${n} pending ${n === 1 ? "entry" : "entries"} from ${pend.map((x) => x.tool).join(", ")} into ${tgt.name}'s assets/provenance/?\n\nRuns tools/provenance.py merge in ${tgt.path}. Commit assets/provenance/ there afterwards.`)) return;
+  const n = A.toMerge, nConf = A.rows.filter((r) => r.c).length;
+  if (!confirm(`Merge ${n} pending ${n === 1 ? "item" : "items"} (from ${pend.map((x) => x.tool).join(", ")}) into ${tgt.name}'s assets/provenance/?\n\nEach takes the origin the page shows: your mark, else the newest editor entry.${nConf ? `\n${plural(nConf, "conflict")} keep${nConf === 1 ? "s" : ""} your mark until you decide.` : ""}\nRuns tools/provenance.py merge in ${tgt.path}; then commit assets/provenance/ (Review and commit).`)) return;
   const b = $("#mergeGo"); b.disabled = true; b.textContent = "Merging..."; busy = true;
   let r;
   try { r = await api("/api/merge", { confirm: true }); }
   catch (e) { r = e.body || { ok: false, output: [e.message] }; }
   busy = false;
   const lines = r.output || [];
-  S.mergeOut = { ok: !!r.ok, lines, line: lines.filter((l) => l.trim()).pop() || (r.ok ? "done" : "failed") };
+  S.mergeOut = { what: "merge", ok: !!r.ok, lines, line: lines.filter((l) => l.trim()).pop() || (r.ok ? "done" : "failed") };
   if (r.assets) { S.assets = r.assets; S.summary = r.status; indexAssets(); renderHeader(); shellStats(); }
+  S.regDiff = null;
   renderAssets(S.tab);
-  toast(r.ok ? `Merged into ${tgt.name}: ${S.mergeOut.line}. Commit assets/provenance/ there.` : "Merge failed: " + S.mergeOut.line, !r.ok);
+  toast(r.ok ? `Merged into ${tgt.name}: ${S.mergeOut.line}. Review and commit assets/provenance/ next.` : "Merge failed: " + S.mergeOut.line, !r.ok);
+}
+// Review and commit: the diff of assets/provenance/ in the registry clone, then a local commit of that folder only
+async function toggleCommit() {
+  if (S.regDiff) { S.regDiff = null; return rerenderAssets(); }
+  S.regDiff = { loading: true }; rerenderAssets();
+  try { S.regDiff = await api("/api/regdiff"); } catch (e) { S.regDiff = null; toast("Can't read the diff: " + e.message, true); }
+  if (S.regDiff && !S.regDiff.files) { toast(S.regDiff.why || "no registry clone to commit in", true); S.regDiff = null; }
+  rerenderAssets();
+}
+async function commitRegistry() {
+  const msg = $("#commitMsg").value.trim(), tgt = S.assets.mergeTarget || {};
+  S.commitMsg = msg;
+  const b = $("#commitGo"); b.disabled = true; b.textContent = "Committing..."; busy = true;
+  let r;
+  try { r = await api("/api/commit", { confirm: true, message: msg }); } catch (e) { r = e.body || { ok: false, output: [e.message] }; }
+  busy = false;
+  const lines = r.output || [];
+  S.mergeOut = { what: "commit", ok: !!r.ok, lines, line: lines[0] || (r.ok ? "done" : "failed") };
+  if (r.assets) { S.assets = r.assets; S.summary = r.status; indexAssets(); renderHeader(); shellStats(); }
+  if (r.ok) { S.regDiff = null; S.commitMsg = ""; }
+  rerenderAssets();
+  toast(r.ok ? `Committed in ${tgt.name}: ${S.mergeOut.line} (local only: push it when you push)` : "Commit failed: " + (lines.slice(-1)[0] || "?"), !r.ok);
+}
+function rerenderAssets() { const keep = $("#vbody") ? $("#vbody").scrollTop : 0; renderAssets(S.tab); $("#vbody").scrollTop = keep; drawRows(); }
+// "run it yourself": write the merge file first, then copy the command
+async function copyPlan(id) {
+  try { const r = await api("/api/plan", {}); toast(`Wrote ${r.path} (${plural(r.items, "item")})`); }
+  catch (e) { return toast("Can't write the merge file: " + e.message, true); }
+  copyText(id);
+}
+function copyText(id) {
+  const txt = $("#" + id).textContent;
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Copied"), () => {
+    const r = document.createRange(); r.selectNodeContents($("#" + id)); getSelection().removeAllRanges(); getSelection().addRange(r); toast("Selected: press Ctrl+C");
+  });
 }
 
 // ---- events (delegated: the views re-render often) --------------------------------------------------------------------
@@ -693,20 +833,22 @@ document.addEventListener("click", (ev) => {
   if (tab) return setTab(tab.dataset.tab);
   const ed = t.closest("a[data-ed]");
   if (ed) return openEditor(ev, ed);
+  const stb = t.closest("[data-start]");
+  if (stb) return startEditor(stb.dataset.start);
   const prog = t.closest("[data-prog]");
   if (prog) { ev.preventDefault(); S.program = prog.dataset.prog; store.set("program", S.program); renderChanges(); $("#pane").scrollTop = 0; return; }
   const more = t.closest("[data-more]");
   if (more) { const k = more.dataset.more; S.expanded.has(k) ? S.expanded.delete(k) : S.expanded.add(k); const sc = $("#pane").scrollTop; renderChanges(); $("#pane").scrollTop = sc; return; }
   const mh = t.closest("[data-markhuman]");
-  if (mh) return markHuman(mh.dataset.markhuman);
+  if (mh) return markHuman([mh.dataset.markhuman]);
+  const ma = t.closest("[data-markall]");
+  if (ma) return markAllHuman(ma.dataset.markall);
   const cp = t.closest("[data-copy]");
-  if (cp) {
-    const txt = $("#" + cp.dataset.copy).textContent;
-    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Copied"), () => {
-      const r = document.createRange(); r.selectNodeContents($("#" + cp.dataset.copy)); getSelection().removeAllRanges(); getSelection().addRange(r); toast("Selected: press Ctrl+C");
-    });
-    return;
-  }
+  if (cp) return copyText(cp.dataset.copy);
+  const pl = t.closest("[data-plan]");
+  if (pl) return copyPlan(pl.dataset.plan);
+  if (t.id === "commitOpen") return toggleCommit();
+  if (t.id === "commitGo") return commitRegistry();
   const cat = t.closest(".cats [data-cat]");
   if (cat) { const f = S.filt[S.tab]; f.cat = f.cat === cat.dataset.cat ? "" : cat.dataset.cat; renderAssets(S.tab); return; }
   const so = t.closest(".vhead [data-sort]");
