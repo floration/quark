@@ -194,7 +194,8 @@ window.DM = window.DM || {};
   function isDone(e) { return DONE.has(e.status); }
   // HALT priority, not finished: a Claude agent is stopped until q acts (the server sets e.halting).
   function isHalting(e) { return !!e && (e.halting === true || (e.halting == null && e.priority === 'HALT' && !DONE.has(e.status) && !e.archived)); }
-  // Not finished, but not work either: an 08 reference note or an archived entry (the server says it waits on nothing).
+  // Not finished, but not work either: an 08 reference note, an archived entry, or a 09 answer whose item is counted
+  // instead (answerOf; the server says it waits on nothing).
   function isRef(e) {
     if (isDone(e) || isHalting(e)) return false;
     return !!e.archived || (Array.isArray(e.waitingOn) && e.waitingOn.length === 1 && e.waitingOn[0] === 'none');
@@ -216,7 +217,8 @@ window.DM = window.DM || {};
       const label = e.status === 'told' ? 'Told q' : e.status === 'wontfix' ? "Won't fix" : statusWord(e.status);
       return {cls: e.status === 'wontfix' ? 'wontfix' : 'done', label, key: 'done'};
     }
-    if (isRef(e)) return {cls: 'ref', label: e.archived ? 'Archived' : 'Reference', key: 'ref'};
+    if (isRef(e)) return e.answerOf ? {cls: 'answered', label: 'Answer (counted with its item)', key: 'ref'} :
+      {cls: 'ref', label: e.archived ? 'Archived' : 'Reference', key: 'ref'};
     const k = waitKeys(e)[0];
     if (e.status === 'unknown' && k === 'nobody') return {cls: 'unknown', label: 'No status', key: 'nobody'};
     const w = WAIT_BY[k];

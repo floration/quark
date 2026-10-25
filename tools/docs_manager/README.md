@@ -63,7 +63,8 @@ the owner" = q; an open linked PR = PR (and CI if its checks fail or run); a lin
 or is running = CI; failing tests / repro / "needs measuring" = tests; in-progress otherwise = Claude; open in
 01/03/04/05 = nobody yet ("needs q's PC" and a quoted label such as 'Needs q' don't count as waiting on q); unread 06 items = for q to read (`read`, its own column and the Overview's "Not told yet");
 open 09 answers, and any item waiting on q whose title has an open answer in 09, = q answered, Claude to act
-(`answered`).
+(`answered`). Such a pair counts once: the item waits on `answered` and its 09 answer waits on nothing, with
+`answerOf` = the item's id (pill "Answer (counted with its item)").
 
 **Problems** (Files › Problems, a count on the Files tab): `docsparse.lint` flags, with the file's own line numbers,
 errors that break an entry (a `##` line split out of an entry, a `**title` never closed), warnings that make one read
@@ -115,7 +116,8 @@ order swaps only the changed cards, and cards not built yet are built in ~8 ms s
   waitingWhy / answerId / firstSeen / lastChanged / tail, problems `[{file, line, severity, code, message, entryId,
   title}]`, changes, threads, github, quarkDir, fetchOk, ghOk).
 - `GET /api/summary`: `{generatedAt, mirrorHead, fetchOk, ghOk, inProgress[{id,title,thread,threadUrl,status,where,
-  waitingOn,waitingWhy,date,lastChanged}], waiting{owner,push,read,answered,pr,ci,tests,claude: [ids]},
+  waitingOn,waitingWhy,date,lastChanged}], waiting{owner,push,read,answered,pr,ci,tests,claude,nobody: [ids]} (claude = a Claude is working on it,
+  nobody = open and not started),
   questions[{id,title,body,thread,threadUrl,date,recommendation}], recentChanges[first 30 changes], halting[...],
   haltingCount}`.
 - `GET /api/halting`: `{generatedAt, count, items}`, for the Supervisor Board's red "stopped until q acts" piece (same

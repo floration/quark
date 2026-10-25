@@ -472,6 +472,18 @@ class Manager:
                 e["pcUnsynced"] = f["pcUnsynced"]
                 entries.append(e)
 
+        # One item answered in 09 counts once: the original waits on a Claude to act ("answered"); its open 09 answer
+        # then waits on nothing and points at it (answerOf), so tiles and columns don't list the pair twice.
+        by_id = {e["id"]: e for e in entries}
+        for e in entries:
+            e.setdefault("answerOf", None)
+        for e in entries:
+            a = by_id.get(e["answerId"]) if e["answerId"] else None
+            if a and e["waitingOn"][:1] == ["answered"] and a["waitingOn"] == ["answered"]:
+                a["waitingOn"], a["answerOf"], a["notStarted"] = ["none"], e["id"], False
+                a["waitingWhy"] = "Nothing here: q's answer to \"%s\" (%s), which waits on a Claude to act on it." % (
+                    docsparse._short(e["title"]).replace("**", ""), e["file"])
+
         entry_thread = {e["id"]: e["thread"] for e in entries}
         known = self.thread_lookup(entry_thread)
         changes = []
@@ -626,9 +638,10 @@ def make_summary(data, port=8766):
     es = [e for e in data["entries"] if not e.get("archived")]
     inprog = [e for e in es if e["file"].startswith("02") and e["section"].lower().startswith("in progress")
               and e["status"] in ("in-progress", "open", "unknown")]
-    waiting = {k: [] for k in ("owner", "push", "read", "answered", "pr", "ci", "tests", "claude")}
+    waiting = {k: [] for k in ("owner", "push", "read", "answered", "pr", "ci", "tests", "claude", "nobody")}
     for e in es:
         for k in e["waitingOn"]:
+            if k == "claude" and e.get("notStarted"): k = "nobody"          # (open, nobody has started it: not "Claude working")
             if k in waiting: waiting[k].append(e["id"])
     qs = [e for e in es if e["file"].startswith("07") and e["status"] in ("open", "unknown")]
     links_of = lambda e: [l for l in e["links"] if l["kind"] == "branch"]

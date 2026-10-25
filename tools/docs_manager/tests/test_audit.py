@@ -1,11 +1,29 @@
 """Tests for the app-audit fixes: trailers followed by text, generated / report files as documents, the lint
 (Problems list), what reference / archived / 06 / answered items wait on, HALT 'blocks' and commit threads.
 python3 -m unittest discover tools/docs_manager/tests"""
-import os, sys, unittest
+import os, shutil, subprocess, sys, tempfile, unittest
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(TESTS))
-import docsparse, serve  # noqa: E402
+import docsparse, ghlinks, serve  # noqa: E402
+
+HAVE_GIT = shutil.which("git") is not None
+
+
+def build_from(files, tmp):
+    """A one-commit docs repo with these files, built by a Manager (no GitHub): (manager, data)."""
+    repo = os.path.join(tmp, "repo")
+    os.makedirs(repo)
+    for n, t in files.items():
+        with open(os.path.join(repo, n), "w", newline="") as f: f.write(t)
+    for a in (["init", "-q", "-b", "main"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "seed"]):
+        subprocess.run(["git", "-C", repo] + a, check=True, stdout=subprocess.DEVNULL)
+    args = serve.argparse.Namespace(**{k: None for k in ("docs", "state_dir", "threads", "quark_dir", "gh_shared", "gh_fixture")})
+    args.__dict__.update(repo=repo, state_dir=os.path.join(tmp, "state"), branch="main", no_gh=True, gh_repo=ghlinks.REPO,
+                         quark_dir=tmp, port=8766)
+    mgr = serve.Manager(args)
+    assert mgr.mirror.fetch()
+    return mgr, mgr.build()
 
 
 def entry(file, title, status="open", body="Body.", section="S", **kw):
@@ -176,6 +194,31 @@ class OwnerTextTests(unittest.TestCase):
         self.assertEqual(w("The tile says \"needs q\" twice."), ["claude"])
         self.assertEqual(w("This needs q to pick a colour."), ["owner"])
         self.assertEqual(w("Waiting on the owner's push."), ["owner", "push"])
+
+
+@unittest.skipUnless(HAVE_GIT, "needs git")
+class AnsweredOnceTests(unittest.TestCase):
+    """An 06 item q answered in 09 is one item waiting on a Claude, not two; /api/summary keeps 'nobody' apart."""
+    def test_counted_once(self):
+        tmp = tempfile.mkdtemp(prefix="docsmgr-ans-")
+        try:
+            mgr, d = build_from({
+                "06-things-to-tell-the-user.md": "# Tell\n\n## News\n\n- **Bots-only servers pause.** They pause. _2026-10-24, Bot editor, open_\n",
+                "09-answers-from-q.md": "# Answers\n\n## Answers\n\n- **Bots-only servers pause.** Fine. Question in 06. _2026-10-24 10:00 CT, q, open_\n",
+                "03-possible-bugs.md": "# Bugs\n\n## Game\n\n- **Rocket jump.** Seen once. _2026-10-24, Bot editor, open_\n",
+                "02-currently-working-on.md": "# Working\n\n## In progress\n\n- **Bot sim.** On it. _2026-10-24, Bot editor, in-progress_\n"}, tmp)
+            mgr.mirror.close()
+            by = {e["id"]: e for e in d["entries"]}
+            orig, ans = by["06-things-to-tell-the-user.md:bots-only-servers-pause"], by["09-answers-from-q.md:bots-only-servers-pause"]
+            self.assertEqual((orig["waitingOn"], orig["answerId"]), (["answered"], ans["id"]))
+            self.assertEqual((ans["waitingOn"], ans["answerOf"]), (["none"], orig["id"]))
+            self.assertIn("Bots-only servers pause", ans["waitingWhy"])
+            w = serve.make_summary(d)["waiting"]
+            self.assertEqual(w["answered"], [orig["id"]])
+            self.assertEqual(w["claude"], ["02-currently-working-on.md:bot-sim"])
+            self.assertEqual(w["nobody"], ["03-possible-bugs.md:rocket-jump"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class BlocksTests(unittest.TestCase):
