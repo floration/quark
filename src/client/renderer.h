@@ -60,10 +60,12 @@ public:
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
     void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow = true);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)
+    void viewBoxXf(const Mat4& local, const Vec3& half, const Vec3& color);  // camera-relative, turned (local: camera space)
     // an override model (models.h, docs/ASSETS.md) in place of a model's boxes: model space through xf, each vertex's
     // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
     void mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
     void viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint);
+    void viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint);   // (local: model -> camera space)
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);

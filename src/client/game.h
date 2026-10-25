@@ -46,6 +46,7 @@ struct LaunchOptions {
     float spawnPitch = 0;       // --pitch deg
     int debugWeapon = -1;       // --weapon N (1-5), for screenshots
     bool debugScope = false, debugFire = false; // --scope, --fire
+    bool debugHook = false;     // --hook: the grapple held (screenshots; with --models: the lineup hangs on ropes instead)
     bool debugPulse = false;    // --pulse: --fire / --scope let go every other 0.3 s (a switch or a throw needs a release), and
                                 // a step right before the --screenshot (what was fired is seen from the side)
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
@@ -238,8 +239,10 @@ private:
     // a prop (models.h) at `origin`: its override turned by yaw, or its boxes at origin + right * x + y + back * z
     // (model space), each box turned by boxYaw
     void drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float yaw, const Vec3& right, const Vec3& back, float boxYaw, float sv);
-    // an arm prop (GUN_ARM / ARM) from the shoulder, along the aim, at body scale bs
-    void drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv);
+    // an arm prop (GUN_ARM / ARM / HOOK_ARM) from the shoulder, along the aim, at body scale bs (pal: its slots' colours)
+    void drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv, const ModelPalette& pal);
+    // the grapple's claw (PROP_HOOK) at pivot + (yaw, pitch turned) offset, prongs along the turned -Z, at scale bs
+    void drawHookClaw(const Vec3& pivot, const Vec3& offset, float yaw, float pitch, float bs, float sv);
     void loadAssetOverrides();
     Ui ui_;
     UiInput uiIn_;
@@ -461,6 +464,12 @@ private:
     std::string centerText_;
     double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    // the first-person grapple arm: how far it has turned toward the hook (camera space yaw / pitch, radians) and raised
+    // (0..1), eased each frame; and each player's launcher muzzle as drawn this frame (their rope starts there)
+    float hookAimYaw_ = -0.06f, hookAimPitch_ = 0, hookRaise_ = 0;
+    Vec3 hookMuzzle_[kMaxPlayers];
+    uint32_t hookMuzzleFrame_[kMaxPlayers] = {};
+    uint32_t drawFrame_ = 0;
     HurtSoundGate hurtGate_;   // your own hurt sound: one per 0.15 s, louder for more damage (clientfeel.h)
     HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then

@@ -70,7 +70,7 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   const ev = (fn, arg) => page.evaluate(fn, arg);
 
   // --- the library, default names, thumbnails --------------------------------------------------------------------------
-  check(await ev(() => document.querySelectorAll('.card').length) === 30, 'library: 30 models');
+  check(await ev(() => document.querySelectorAll('.card').length) === 32, 'library: 32 models');
   const cols = vw => ev(() => { const c = [...document.querySelectorAll('.cards')[0].children]; return c.filter(x => x.offsetTop === c[0].offsetTop).length; });
   check(await cols() >= 5, 'library: five or more cards across at 2560 px', await cols());
   await page.waitForFunction(() => [...document.querySelectorAll('.card img')].every(i => i.src.startsWith('data:image/png')), null, { timeout: 90000 });
@@ -393,7 +393,7 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     st = await p.evaluate(() => { const s = document.querySelector('#libOrigin'); s.value = 'human'; s.dispatchEvent(new Event('change'));
       const r = { progress: document.querySelector('#libProgress').textContent, cards: [...document.querySelectorAll('.card')].map(c => c.dataset.key) };
       s.value = ''; s.dispatchEvent(new Event('change')); return r; });
-    check(/^human 1\/30 \(3%\)/.test(st.progress) && st.cards.join() === 'models/player/KNIGHT', 'library: human-made progress and the origin filter', st);
+    check(/^human 1\/32 \(3%\)/.test(st.progress) && st.cards.join() === 'models/player/KNIGHT', 'library: human-made progress and the origin filter', st);
     await p.click('.card[data-key="models/player/KNIGHT"]');
     await p.click('.parts tr:nth-child(1)');
     await p.keyboard.press('ArrowRight');

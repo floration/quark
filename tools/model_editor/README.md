@@ -1,8 +1,8 @@
 # Quark Model Editor
 
 A local page for looking at and replacing Quark's models: every model in the game's asset export (5 players,
-11 first-person weapons, 7 projectiles, the crown, 6 props: the arms, the bomb carried and on the ground, the payload
-cart and its checkpoint gates, and any kind a later game adds), shown the way the game draws them, editable box by box,
+11 first-person weapons, 7 projectiles, the crown, 8 props: the arms, the bomb carried and on the ground, the payload
+cart and its checkpoint gates, the grapple launcher arm and its claw, and any kind a later game adds), shown the way the game draws them, editable box by box,
 with an export the game reads. It runs from disk (`file://`) in Chrome or Edge with no server and no network. WebGL2, the
 glTF reader / writer and the zip are written here (no libraries).
 
