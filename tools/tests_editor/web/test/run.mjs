@@ -3,6 +3,7 @@
 //   node tools/tests_editor/web/test/run.mjs --url http://127.0.0.1:8775 --repo <the server's repo copy>
 //        against a running serve.py: --repo is where the 409 test edits the file "behind the page's back" (never the
 //        real working repo: saves write it). Screenshots: --shots DIR (default /mnt/project-files/tests-editor/shots).
+//        --port N: the fixture server's port (default: any free one)
 import { spawn, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, appendFileSync } from "node:fs";
@@ -21,7 +22,7 @@ const FIXTURE = !BASE;
 let fixture = null;
 if (FIXTURE) {
     const net = await import("node:net");
-    const port = await new Promise((res) => { const sv = net.createServer().listen(0, "127.0.0.1", () => { const p = sv.address().port; sv.close(() => res(p)); }); });
+    const port = +arg("--port", 0) || await new Promise((res) => { const sv = net.createServer().listen(0, "127.0.0.1", () => { const p = sv.address().port; sv.close(() => res(p)); }); });
     BASE = `http://127.0.0.1:${port}`;
     fixture = spawn("python3", [path.join(here, "fixture_server.py"), "--port", String(port)], { stdio: ["ignore", "pipe", "inherit"] });
     await new Promise((res) => fixture.stdout.once("data", res));
@@ -67,6 +68,12 @@ try {
     ok(await page.isVisible(".when"), "when view shows");
     ok(await page.locator("#lane-commit .gbar.par").count() === parCount, "before-commit lane: one bar per par group", await page.locator("#lane-commit .gbar.par").count());
     ok(await page.locator("#lane-commit .gbar.alone").count() === qt.items.filter((i) => i.kind === "group" && i.list !== "par").length, "before-commit lane: the alone groups in a row");
+    {   // (groups without a time: the estimate is a floor or unknown, never a guess printed as a time, never "0 s")
+        const untimed = qt.items.filter((i) => i.kind === "group" && !i.timing).length;
+        const head = await page.textContent("#lane-commit .wcard-h");
+        ok(untimed ? /at least \d|time unknown/.test(head) && new RegExp(untimed + " groups? not timed").test(head) && !/about \d/.test(head) : /about \d/.test(head), "chart estimate with untimed groups", head);
+        ok(!/(^|[^\d<])0 s/.test(await page.textContent("#lane-commit .gaxis") + head), "chart never prints 0 s");
+    }
     ok(/sanitizers/.test(await page.textContent("#lane-final")), "final lane has the sanitizers");
     ok(/release-testing/.test(await page.textContent("#lane-testing")) && !/sanitizers/.test(await page.textContent("#lane-testing")), "testing lane: release-testing, not the sanitizers");
     const tagJobs = await page.$$eval("#lane-tag .wjob b", (b) => b.map((x) => x.textContent));
@@ -255,6 +262,9 @@ try {
         ok(/Without NAME, quark_tests rules runs the group rules/.test(await page.textContent("#details")) && await page.locator("#runArgs").count() === 1, "rules NAME: asked for, with the group warning");
         await page.click("#runBtn");
         ok(/takes 1 argument/.test(await page.textContent("#toast")), "rules NAME: refused without it");
+        await page.fill("#runArgs", "nosuchrule");
+        await page.click("#runBtn");
+        ok(/no such name “nosuchrule”/.test(await page.textContent("#toast")) && !(await page.locator("#dock.open").count() && /nosuchrule/.test(await page.textContent("#runTitle"))), "rules NAME: an unknown name refused");
         await page.fill("#runArgs", "overtime");
         await page.click("#runBtn");
         await page.waitForFunction(() => /passed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });

@@ -610,6 +610,7 @@ class App {
             const n = args.length;
             if (n < sp.min || (sp.max !== null && n > sp.max)) { toast(`quark_tests ${it.name} takes ${sp.min === sp.max ? sp.min : sp.min + " to " + (sp.max === null ? "any" : sp.max)} argument(s)`, true); if (input) input.focus(); return; }
             if (args.some((a) => !/^[\w.:,+-]{1,64}$/.test(a))) { toast("arguments: letters, digits and . _ - : , + only", true); return; }
+            if (sp.choices && n && !sp.choices.includes(args[0])) { toast(`no such name “${args[0]}”: one of ${sp.choices.join(", ")}`, true, 6000); if (input) input.focus(); return; }   // (quark_tests would print nothing and pass)
             try { const m = JSON.parse(localStorage.getItem("te.args") || "{}"); m[it.name] = args.join(" "); localStorage.setItem("te.args", JSON.stringify(m)); } catch { }
             this.startRun("cmd:" + it.name, args.length ? { args } : null);
         };

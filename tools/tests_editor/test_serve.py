@@ -546,6 +546,8 @@ class Server(unittest.TestCase):
         self.assertEqual(self.j("/api/run", {"cmd": "cmd:rules"})[0], 400)                   # (NAME is required)
         for bad in (["a b"], ["$(x)"], "overtime", [1]):
             self.assertEqual(self.j("/api/run", {"cmd": "cmd:rules", "args": bad})[0], 400, bad)
+        code, r = self.j("/api/run", {"cmd": "cmd:rules", "args": ["nosuchrule"]})   # (not one of its names: refused)
+        self.assertEqual(code, 400); self.assertIn("no such name nosuchrule", r["error"])
         code, r = self.j("/api/run", {"cmd": "cmd:rules", "args": ["overtime"]})
         self.assertIn("'rules', 'overtime'", wait(r["id"])["output"])
         self.assertEqual(self.j("/api/run", {"cmd": "cmd:exportassets"})[0], 403)

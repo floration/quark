@@ -624,6 +624,8 @@ class App:
                 if len(args) < spec["min"] or (spec["max"] is not None and len(args) > spec["max"]):
                     want = "%d" % spec["min"] if spec["min"] == spec["max"] else "%d to %s" % (spec["min"], "any" if spec["max"] is None else spec["max"])
                     return 400, {"error": "quark_tests %s takes %s argument(s)" % (it["name"], want)}
+                if spec.get("choices") and args and args[0] not in spec["choices"]:   # (quark_tests itself says nothing)
+                    return 400, {"error": "quark_tests %s: no such name %s (one of %s)" % (it["name"], args[0], ", ".join(spec["choices"]))}
                 argv = [b, it["name"]] + args
                 if args: extra["args"] = args
             else:
