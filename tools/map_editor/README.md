@@ -85,7 +85,7 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
     on the system clipboard as JSON `{"format":"quark-map-group",...}`, so it pastes into another editor window too).
     Paste puts it at the cursor (or the view's centre), snapped to the grid, as one undo step, and selects it.
   - **+ group**: saves the selection in the library under a name; click a saved group to paste it.
-  - **+ object**: makes a **custom object** from the selected boxes: a unit that repeats along the axes you tick, with
+  - **+ object**: makes a **custom object** from the selected boxes and groups (they are replaced by it, when ticked): a unit that repeats along the axes you tick, with
     a spacing per axis (unit start to next unit start). Click it in the library, then click in the view to place it
     (Esc stops). Resizing it changes the number of units, never their size: drag a face handle (only the repeating
     axes have handles) or Shift / Ctrl + arrow keys; R turns it a quarter. Its properties panel sets units, spacing and

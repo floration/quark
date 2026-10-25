@@ -64,6 +64,22 @@ export function pasteGroup(d, clip, base) {
   return added;
 }
 
+// the selected boxes and groups replaced by a custom object of definition `def` made from them (`boxes`: their boxes),
+// one unit big, so it is exactly those boxes: one undo step, the object selected
+export function replaceWithObject(d, name, def, boxes) {
+  const mn = [0, 1, 2].map(k => Math.min(...boxes.map(b => b.min[k]))), goneB = new Set(d.selOf("brush")), goneG = new Set(d.selOf("group"));
+  let at = -1;
+  d.edit("make custom object " + name, ["brushes", "groups", "sc.objects"], (map, sc) => {
+    if (goneB.size) map.brushes = map.brushes.filter((_, i) => !goneB.has(i));
+    if (goneG.size) map.groups = map.groups.filter((_, i) => !goneG.has(i));
+    sc.objects.push({ name, def, rot: 0, min: mn, max: mn.map((v, k) => tidy(v + def.unit[k])) }); at = sc.objects.length - 1;
+  }, { touch: [] });
+  d.select([{ k: "object", i: at }]);
+  return at;
+}
+// the boxes of the selection a custom object is made from: selected boxes and the parts of selected groups
+export const selectedBoxes = (d) => [...d.selOf("brush").map(i => d.map.brushes[i]), ...d.map.generated.filter(b => b.group !== undefined && d.isSel("group", b.group))];
+
 export class Library {
   constructor(app) {
     this.app = app; this.doc = app.doc; this.api = app.api;
@@ -135,8 +151,8 @@ export class Library {
   }
   // a custom object from the selected boxes (and the parts of selected groups): its unit, the axes it repeats along
   async makeObject() {
-    const d = this.doc, m = d.map;
-    const boxes = [...d.selOf("brush").map(i => m.brushes[i]), ...m.generated.filter(b => b.group !== undefined && d.isSel("group", b.group))];
+    const d = this.doc;
+    const boxes = selectedBoxes(d);
     if (!boxes.length) { banner("Select the boxes of one unit (a post and its rail, a pillar...) first", true, 4000); return; }
     const def = defFromBoxes("object", boxes);
     const name = el("input", { type: "text", value: "object", style: { width: "100%" } });
@@ -148,22 +164,14 @@ export class Library {
         el("label", {}, "name"), name,
         el("label", {}, "repeats along"), el("div", { class: "chips" }, ["x", "y (up)", "z"].map((a, k) => check(a, axes[k], v => { axes[k] = v; }))),
         el("label", { title: "from one unit's start to the next (the unit's size: units touch)" }, "spacing (m)"), el("div", { class: "v3" }, [0, 1, 2].map(k => numInput(sp[k], v => { sp[k] = Math.max(0.05, Math.min(64, v)); }, { step: 0.25, min: 0.05 }))),
-        el("label", {}, ""), check("replace the selected boxes with the object", replace, v => { replace = v; }))],
+        el("label", {}, ""), check("replace the selected boxes and groups with the object", replace, v => { replace = v; }))],
       [{ label: "Cancel", value: "cancel" }, { label: "Make it", value: "ok", primary: true }]);
     if (r !== "ok") return;
     const n = name.value.trim() || "object";
     if (!validMapName(n)) { banner("A name is 1-40 letters, digits, - and _", true); return; }
     if (!axes.some(Boolean)) { banner("Tick at least one axis to repeat along", true); return; }
     const made = defFromBoxes(n, boxes, axes, sp);
-    if (replace && d.selOf("brush").length) {
-      const mn = [0, 1, 2].map(k => Math.min(...boxes.map(b => b.min[k]))), gone = new Set(d.selOf("brush"));
-      let at = -1;
-      d.edit("make custom object " + n, ["brushes", "sc.objects"], (map, sc) => {
-        map.brushes = map.brushes.filter((_, i) => !gone.has(i));
-        sc.objects.push({ name: n, def: made, rot: 0, min: mn, max: mn.map((v, k) => tidy(v + made.unit[k])) }); at = sc.objects.length - 1;
-      }, { touch: [] });
-      d.select([{ k: "object", i: at }]);
-    }
+    if (replace) replaceWithObject(d, n, made, boxes);
     await this.put(n, { kind: "object", name: n, def: made });
   }
   saveDef(def) { this.askName("Save this object in the library", def.name || "object").then(n => n && this.put(n, { kind: "object", name: n, def: { ...def, name: n } })); }

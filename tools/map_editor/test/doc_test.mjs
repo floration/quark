@@ -176,6 +176,22 @@ if (G) {
   ok(R.stripObjects(edited, side2).length === 1 && edited.brushes.length === 3 && side2.objects.length === 0, "posts no longer all there: the object goes, its boxes stay");
 }
 
+section("+ object from a box and a group: both are replaced, nothing doubled");
+{
+  const R = await import(pathToFileURL(path.join(tmp, "repeat.js")));
+  for (const withBox of [false, true]) {
+    const d = open(bigMap(3));
+    d.edit("group", ["groups"], (m) => { m.groups.push({ type: "custom", mat: 0, dir: 0, min: [10, 0, 0], max: [12, 2, 2], parts: [{ mat: 1, min: [0, 0, 0], max: [1, 1, 1] }] }); }, { touch: [] });
+    d.select([{ k: "group", i: 0 }, ...(withBox ? [{ k: "brush", i: 1 }] : [])]);
+    const boxes = G.selectedBoxes(d), all0 = d.map.brushes.length + d.map.generated.length;
+    G.replaceWithObject(d, "o", R.defFromBoxes("o", boxes), boxes);
+    ok(d.map.groups.length === 0 && d.map.brushes.length === (withBox ? 2 : 3) && d.sidecar.objects.length === 1, (withBox ? "box + group" : "group only") + ": the group (and box) replaced by the object");
+    ok(d.map.brushes.length + d.map.generated.length === all0, "the same number of boxes as before (no doubled geometry)");
+    d.undo();
+    ok(d.map.groups.length === 1 && d.sidecar.objects.length === 0 && d.map.brushes.length === 3, "one undo puts them back");
+  }
+}
+
 section("flips and the point-symmetric twin (xform.js)");
 {
   const X = await import(pathToFileURL(path.join(tmp, "xform.js")));
