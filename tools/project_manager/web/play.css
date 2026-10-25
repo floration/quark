@@ -30,12 +30,12 @@ main { max-width: 2600px; }
 .play-pending { border-left: 4px solid var(--link); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .play-pending b { font-weight: 650; }
 
-/* the server is down: a plain-words banner, and nothing on the page can be pressed */
+/* the server is down: a plain-words banner, and nothing on the page can be pressed (play.js makes the sections inert) */
 .down-banner { border-left: 4px solid var(--crit); display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
   background: color-mix(in srgb, var(--crit) 8%, var(--surface)); }
 .down-banner > div { flex: 1 1 320px; display: flex; flex-direction: column; gap: 3px; }
 .down-banner strong { color: var(--crit-ink); font-size: 15px; }
-body.down #main > section:not(#sec-down) button, body.down #main > div button, body.down .build .opt { pointer-events: none; opacity: .45; }
+body.down [inert] button, body.down [inert] .opt, body.down [inert] select, body.down [inert] a { opacity: .45; }
 
 /* notes and sessions: two columns on wide screens, the notes twice as wide */
 @media (min-width: 1800px) { .play-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }

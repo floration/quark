@@ -400,7 +400,16 @@
     line.classList.toggle('bad', bad);
     $('sec-down').hidden = !state.error;
     $('down-detail').textContent = state.error ? 'Last try: ' + when(Date.now()) + ' (' + state.error + ')' : '';
-    document.body.classList.toggle('down', !!state.error);
+    // Down: nothing that needs the server can be pressed, by mouse or keyboard (inert takes the sections out of the tab
+    // order too); in the dialogs only what works without it stays (Later, Cancel, Close, Discard draft)
+    const down = !!state.error;
+    document.body.classList.toggle('down', down);
+    for (const el of document.querySelectorAll('#sec-pending, #sec-builds, .play-grid, #sec-releases')) el.inert = down;
+    for (const b of document.querySelectorAll('#note-save, #note-skip, #note-delete, #log-open, #log-reload, #log-dlg [data-open]')) {
+      if (b.dataset.t === undefined) b.dataset.t = b.title || '';  // (its own title, for when the server is back)
+      b.disabled = down || (b.id === 'note-save' && state.busy);
+      b.title = down ? 'The Supervisor Board server isn\'t answering' : b.dataset.t;
+    }
     tickRefresh();
   }
 
