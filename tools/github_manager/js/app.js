@@ -1,6 +1,6 @@
 // Entry point: routing (#tab=… and item deep links), polling, the top bar, live timers and the detail drawer.
 import { store, loadState, refreshNow, loadHistory } from './store.js';
-import { html, rel, fmtTime, zoneName, clock, ms, setRepo, gh } from './util.js';
+import { html, rel, fmtTime, zoneName, clock, ms, setRepo, gh, unread } from './util.js';
 import { overview } from './overview.js';
 import { branches } from './branches.js';
 import { local } from './local.js';
@@ -133,10 +133,10 @@ function renderTabCounts() {
   set('branches', String((s.branches || []).length));
   const dirty = (s.local || []).filter((l) => l.dirty).length;
   set('local', String((s.local || []).length), dirty ? 'warn' : '');
-  const pullsUnread = (s.notRead || []).includes('pulls');  // GitHub not read yet: unknown, not 0
-  set('pulls', pullsUnread ? '?' : String((s.pulls || []).filter((p) => p.state === 'open').length), pullsUnread ? 'warn' : '');
+  // GitHub not read yet: unknown, not 0 / "2 running" from the cache
+  set('pulls', unread('pulls') ? '?' : String((s.pulls || []).filter((p) => p.state === 'open').length), unread('pulls') ? 'warn' : '');
   const running = idx.running.length;
-  set('runs', running ? `${running} running` : '', running ? 'run' : '');
+  set('runs', unread('runs') ? '?' : running ? `${running} running` : '', unread('runs') ? 'warn' : running ? 'run' : '');
   const open = openCount(), waiting = waitingChanges().length;
   // queued GitHub changes outrank the note count: they wait for q's Apply
   set('editor', waiting ? `${waiting} to apply` : open ? String(open) : '', waiting ? 'warn' : '');

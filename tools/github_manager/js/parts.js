@@ -1,6 +1,6 @@
 // Pieces several views share: run rows, failure sentences, PR rows, commit lists, history event rows.
 import {
-  html, relOnly, when, dur, elapsed, ms, plural, badge, runBadge, runState, RUNNING, stateLabel,
+  html, relOnly, when, dur, elapsed, ms, plural, badge, runBadge, runState, RUNNING, isLive, stateLabel,
   prChip, branchChip, commitChip, runChip, ghLink, docsLink, enc, aheadBehind, localChip, versionChip,
 } from './util.js';
 import { store } from './store.js';
@@ -41,6 +41,8 @@ export function runningSentence(r) {
   const now = jobs.filter((j) => j.status === 'in_progress').map((j) => j.name);
   const fail = failedJobs(r);
   const st = runState(r);
+  // cached as running, but GitHub's runs haven't been read since the start: no live clock, it may be long over
+  if (st === 'unread') return html`last seen ${r.status === 'queued' ? 'queued' : 'running'}, started ${relOnly(r.createdAt)}; GitHub's runs haven't been read since the server started, so it may have finished`;
   const waiting = st === 'running' && r.status !== 'in_progress';
   return html`${st === 'queued' ? html`queued for ${elapsed(r.createdAt)}` : html`running for ${elapsed(r.createdAt)}${waiting ? ' (waiting for a runner)' : ''}`}${jobs.length ? html` · ${done} of ${jobs.length} jobs done` : ''}${now.length ? html` · now: ${now.slice(0, 3).join(', ')}${now.length > 3 ? ` +${now.length - 3}` : ''}` : ''}${fail.length ? html` · <span class="t-bad">${plural(fail.length, 'job')} failed already</span>` : ''}`;
 }
@@ -52,7 +54,7 @@ export function runTiming(r) {
 
 export function runOutcome(r) {
   const st = runState(r);
-  if (st === 'running' || st === 'queued') return runningSentence(r);
+  if (st === 'running' || st === 'queued' || st === 'unread') return runningSentence(r);
   if (st === 'failure' || st === 'timed_out' || st === 'startup_failure') return failureSentence(r);
   if (st === 'success') return html`passed ${relOnly(r.updatedAt)} in ${dur(r.durationSec)}`;
   return html`${stateLabel(st)} ${relOnly(r.updatedAt)}`;
@@ -177,7 +179,7 @@ export function eventsFor(pred, limit = 15) {
 
 export function lastRunCell(r) {
   if (!r) return html`<span class="muted">no runs</span>`;
-  return html`<a class="lr" href="#run=${r.id}" title="${r.workflow}: ${r.title}">${runBadge(r)}</a> ${RUNNING.has(r.status) ? elapsed(r.createdAt) : relOnly(r.updatedAt)}`;
+  return html`<a class="lr" href="#run=${r.id}" title="${r.workflow}: ${r.title}">${runBadge(r)}</a> ${isLive(r) ? elapsed(r.createdAt) : RUNNING.has(r.status) ? relOnly(r.createdAt) : relOnly(r.updatedAt)}`;
 }
 
 // a tiny inline diverging bar: behind (left, grey) | ahead (right, accent)
