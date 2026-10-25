@@ -45,7 +45,8 @@ export function validateMap(m) {
   for (const k of ["void", "indoor"]) if (m[k] !== null && m[k] !== undefined && !num(m[k])) E("the map's " + k + " height is out of range");
   if (m.title && (m.title.length > LIMITS.title || /[#\x00-\x1f\x7f-￿]/.test(m.title))) E("the title is at most 40 plain characters, no #");
 
-  // warnings: spawns in a wall, objectives the map's mode needs
+  // warnings: boxes with no size, spawns in a wall, objectives the map's mode needs
+  (m.brushes || []).forEach((b, i) => { if (box(b) && b.min.some((v, n) => v === b.max[n])) W("box #" + i + " has no size along " + "xyz"[b.min.findIndex((v, n) => v === b.max[n])] + " (it draws and blocks nothing)", { k: "brush", i }); });
   const solids = [...(m.brushes || []), ...(m.generated || [])].filter(b => solid(b.mat) && box(b));
   (m.spawns || []).forEach((s, i) => {
     if (!vec(s.pos)) return;

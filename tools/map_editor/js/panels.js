@@ -137,9 +137,11 @@ export class Panels {
     const f = el("div", { class: "form" });
     const add = (...x) => f.append(...x.flat());
     const boxFields = () => {
-      // (a min never goes above its max, nor a max under its min: the value stops at the other side)
-      add(this.field("min", this.v3(o.min, (k, v) => this.set("edit", s, (x) => { x.min[k] = Math.min(tidy(v), x.max[k]); }))));
-      add(this.field("max", this.v3(o.max, (k, v) => this.set("edit", s, (x) => { x.max[k] = Math.max(tidy(v), x.min[k]); }))));
+      // (a min never goes past its max, nor a max past its min: the value stops one grid step from the other side, or
+      // at the box's size when it is thinner, as a resize drag does; it never makes a box of no size)
+      const keep = (x, k) => Math.min(this.app.editor.grid, x.max[k] - x.min[k]);
+      add(this.field("min", this.v3(o.min, (k, v) => this.set("edit", s, (x) => { x.min[k] = tidy(Math.min(v, x.max[k] - keep(x, k))); }))));
+      add(this.field("max", this.v3(o.max, (k, v) => this.set("edit", s, (x) => { x.max[k] = tidy(Math.max(v, x.min[k] + keep(x, k))); }))));
       add(this.field("size", el("span", { class: "num dim" }, [0, 1, 2].map(k => fmt(o.max[k] - o.min[k])).join(" x ") + " m")));
     };
     const posFields = (p, yaw) => {

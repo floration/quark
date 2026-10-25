@@ -42,9 +42,10 @@ foundry, gantry, summit) stay `-0` through the page, serve.py and the helper (`a
 **Save checks**: before writing, the page checks the map (`js/validate.js`: the game's limits from `src/game/map.h`,
 every coordinate within 4096 m, min <= max, at least one box and one spawn) and asks the helper to serialize it; a map
 the game would refuse (`valid: false`, a parse error, or a failed check) is not saved, and the dialog names the
-objects (click one to select and frame it). Warnings (a spawn inside a solid box, a mode's objectives missing) are
+objects (click one to select and frame it). Warnings (a spawn inside a solid box, a box of no size, a mode's objectives missing) are
 shown and the save goes ahead. `serve.py` also refuses (422) a map text `quark_maptool parse` can't load. Number
-fields clamp to the map's range and keep min <= max.
+fields clamp to the map's range and keep a box at least one grid step thick (or its own size, when thinner), as a
+resize drag does: a min typed past its max stops short of it.
 
 **Your maps**: the map list shows each map's file name; your own maps have **rename** and **x** (delete). A deleted
 map, with its sidecar, is moved to `<maps folder>/deleted/<name>-<time>.*`, not erased.

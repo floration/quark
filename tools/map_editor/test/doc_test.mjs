@@ -112,6 +112,8 @@ section("validateMap: what the game refuses, and spawns in walls");
   ok(validateMap(flip).errors.some(e => /min above its max/.test(e.msg)), "min above max is an error");
   const wall = structuredClone(m); wall.spawns[0].pos = [0.5, 0, 0.5];
   ok(validateMap(wall).warnings.some(w => w.ref && w.ref.k === "spawn" && w.ref.i === 0), "a spawn inside a box is a warning");
+  const flat = structuredClone(m); flat.brushes[2].min[0] = flat.brushes[2].max[0];
+  ok(validateMap(flat).warnings.some(w => w.ref && w.ref.k === "brush" && w.ref.i === 2 && /no size along x/.test(w.msg)), "a box of no size is a warning");
   const none = structuredClone(m); none.spawns = [];
   ok(validateMap(none).errors.some(e => /no spawn/.test(e.msg)), "no spawn is an error");
 }
