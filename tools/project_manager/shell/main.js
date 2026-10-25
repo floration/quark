@@ -720,16 +720,23 @@ async function restartForUpdate(r) {
 // missing or tabs.json changed, and reloads it when anything differs (startKeepAlive then starts the new server).
 let tabsMtime = 0;
 function fileMtime(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
+// (q's tabs.json is watched even while the tabs came from tabs.default.json: it was missing or unreadable at start)
+const tabsStamp = () => fileMtime(path.join(PM_DIR, 'tabs.json')) || (tabsFile ? fileMtime(tabsFile) : 0);
 function refreshTabsIfChanged() {
   if (tabsRetry) return reloadTabList(); // (a changed tab kept for its unsaved changes: try again)
-  const m = tabsFile ? fileMtime(tabsFile) : 0;
+  const m = tabsStamp();
   const changedFile = tabsMtime && m && m !== tabsMtime;
   if (!tabsMtime) tabsMtime = m;
   if (!changedFile && !tabs.some((t) => !t.installed)) return;
   const r = loadTabs();
   const key = (l) => JSON.stringify(l.map((t) => [t.id, t.url, t.installed, t.start, t.keepAlive]));
   tabsMtime = m;
-  if (key(r.tabs) === key(tabs)) return;
+  if (r.bad) return reloadTabList(); // (keeps the loaded tabs and shows why, even when they equal the defaults)
+  if (key(r.tabs) === key(tabs)) {
+    // the same tabs (e.g. a typo undone): only the warning about the file goes
+    if (tabsError !== r.error) { tabsError = r.error; updateTabbar(); }
+    return;
+  }
   const was = new Set(tabs.filter((t) => t.installed).map((t) => t.id));
   const now = r.tabs.filter((t) => t.installed && !was.has(t.id)).map((t) => t.name);
   logNote('updates', 'tab list changed' + (now.length ? ' (now installed: ' + now.join(', ') + ')' : '') + '; reloading it');
@@ -1592,7 +1599,7 @@ async function reloadTabList() {
     tabsRetry = kept.length > 0;
     const keepActive = activeId || state.lastTab;
     tabs = kept.length ? treeOrder(list) : list; tabsFile = r.file; tabsError = r.error;
-    tabsMtime = fileMtime(tabsFile);
+    tabsMtime = tabsStamp();
     const next = tabById(keepActive) ? keepActive : (tabs[0] && tabs[0].id);
     if (next) openTab(next); else updateTabbar();
     pollStatus();
