@@ -11,7 +11,7 @@ import { parseQmap, mapObjectives, mapSupports, applyHelperParse, mapLabel, mapT
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
 import { pctKind } from "../js/values.js";
-import { wilson, rateDiff, rateText, summarize } from "../js/batch.js";
+import { wilson, rateDiff, rateText, summarize, outcomes, mcnemarP, pairedDiff } from "../js/batch.js";
 import { freeName } from "../js/brainui.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -343,6 +343,24 @@ t("batch: a map of yours named like a shipped one is its own row", () => {
     same(mapLabel({ name: "mybox", source: "user", title: "Harbor" }), "Harbor · mybox.qmap (yours)");
     same(mapLabel({ name: "temple", source: "default", title: "Temple" }), "Temple");
     same(mapTitle({ name: "temple", source: "user", title: "Temple" }), "Temple");
+});
+
+t("paired comparison: same matches set against each other (McNemar)", () => {
+    same(mcnemarP(0, 0), 1); same(mcnemarP(3, 3), 1);
+    if (Math.abs(mcnemarP(0, 6) - 2 / 64) > 1e-12) throw new Error("p(0, 6) = 2/64");
+    if (Math.abs(mcnemarP(9, 1) - 22 / 1024) > 1e-12) throw new Error("p(9, 1) = 22/1024");
+    if (!(mcnemarP(500, 600) > 0 && mcnemarP(500, 600) < 0.01)) throw new Error("large n stays finite");
+    // 30 seeds; A wins 12 of them in run A; in run B it wins those 12 plus 6 more: independent rates can't tell, paired can
+    const run = (wins) => Array.from({ length: 30 }, (_, i) => ({ map: "t", mapKey: "default/t", seed: i + 1, bots: [{ brain: "A", won: wins(i) }, { brain: "B", won: !wins(i) }] }));
+    const oa = outcomes(run((i) => i < 12)), ob = outcomes(run((i) => i < 18));
+    same(oa.brains.A, "1".repeat(12) + "0".repeat(18));
+    const pd = pairedDiff(oa, ob, "A");
+    same(pd.pairs, 30); same(pd.b, 0); same(pd.c, 6); same(pd.sure, true, "6 of 6 discordant matches went to B");
+    same(rateDiff(12, 30, 18, 30).sure, false, "the independent test doesn't see it at n = 30");
+    same(pairedDiff(oa, outcomes(run((i) => i < 12)), "A").sure, false);
+    // a mirror match (one brain only) is left out; another map / seed doesn't pair
+    same(outcomes([{ map: "t", seed: 1, bots: [{ brain: "A", won: true }, { brain: "A", won: false }] }]).brains.A, undefined);
+    same(pairedDiff(oa, outcomes(run((i) => i < 12).map((m) => ({ ...m, seed: m.seed + 100 }))), "A"), null);
 });
 
 console.log("files");

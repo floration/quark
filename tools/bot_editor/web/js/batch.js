@@ -35,6 +35,51 @@ export function rateText(w, n, mirror = 0) {
     return { text: n ? `${pct(c.p)} ±${Math.round((c.hi - c.lo) * 50)}` : "-", title: n ? `${w} of ${n} matches; 95% interval ${pct(c.lo)}–${pct(c.hi)} (Wilson)` : "" };
 }
 
+// Paired comparison. Two runs on the same seeds and maps play the same matches (a seed fixes the spawns and the bots'
+// dice: only what a brain edit changes differs), so each match of run A can be set against the same match in run B.
+// McNemar's exact test then looks only at the matches one run won and the other lost: far fewer matches tell a real
+// difference than two independent win rates would.
+// outcomes(matches): {keys: ["<map key>|<seed>[|<side>]", ...], brains: {name: "1" won / "0" lost / "-" absent or
+// alone in it (a mirror says nothing), one char per key}}: compact, so a pin can keep it.
+export const matchKey = (m) => `${m.mapKey || m.map}|${m.seed}${m.side ? "|" + m.side : ""}`;
+export function outcomes(matches) {
+    const ms = matches.filter((m) => !m.error), keys = ms.map(matchKey), brains = {};
+    ms.forEach((m, i) => {
+        const won = new Map();
+        for (const b of m.bots || []) { const n = b.brain || "default"; won.set(n, won.get(n) || !!b.won); }
+        if (won.size < 2) return;
+        for (const [n, w] of won) (brains[n] || (brains[n] = Array(ms.length).fill("-")))[i] = w ? "1" : "0";
+    });
+    for (const n in brains) brains[n] = brains[n].join("");
+    return { keys, brains };
+}
+// two-sided exact McNemar p: the smaller of b and c (matches won only in A / only in B) under Binomial(b + c, 1/2)
+export function mcnemarP(b, c) {
+    const n = b + c;
+    if (!n) return 1;
+    let lp = n * Math.log(0.5), sum = 0;
+    for (let k = 0; k <= Math.min(b, c); k++) { if (k) lp += Math.log(n - k + 1) - Math.log(k); sum += Math.exp(lp); }
+    return Math.min(1, 2 * sum);
+}
+// brain `name` in A and B over the matches both played: pairs, b (won only in A), c (only in B), the difference of the
+// win rates (c - b) / pairs with its 95% interval (Agresti-Min: half a match added to each cell), McNemar's p; null
+// when no match pairs up
+export function pairedDiff(oa, ob, name) {
+    const sa = oa && oa.brains && oa.brains[name], sb = ob && ob.brains && ob.brains[name];
+    if (!sa || !sb) return null;
+    const at = new Map(ob.keys.map((k, i) => [k, i]));
+    let pairs = 0, b = 0, c = 0;
+    oa.keys.forEach((k, i) => {
+        const j = at.get(k), x = sa[i], y = j == null ? "-" : sb[j];
+        if (x === "-" || y === "-") return;
+        pairs++; if (x === "1" && y === "0") b++; else if (x === "0" && y === "1") c++;
+    });
+    if (!pairs) return null;
+    const N = pairs + 2, p12 = (b + 0.5) / N, p21 = (c + 0.5) / N, dd = p21 - p12, h = 1.96 * Math.sqrt(Math.max(0, (p12 + p21 - dd * dd) / N));
+    const p = mcnemarP(b, c);
+    return { pairs, b, c, d: (c - b) / pairs, lo: Math.max(-1, dd - h), hi: Math.min(1, dd + h), p, sure: p < 0.05 };
+}
+
 // Per brain, per bot and per map, from match lines {map, seed, t, reason, winner: {team, player, text} | null,
 // bots: [{id, name, team, skill, brain, brainLabel, kills, deaths, damage, shots, hits, objTime, aliveTime, won}]}.
 // A brain's n is the matches it played in, w the ones its bot (or its team) won: several bots with one brain are one
@@ -88,15 +133,20 @@ export class BatchPage {
         document.querySelectorAll("#bPicks [data-pick]").forEach((b) => (b.onclick = () => this._pick(b.dataset.pick)));
     }
     async start() {
-        let st = null, pins = null;
-        try { [st, pins] = await Promise.all([api.state("batch"), api.state("batchpins")]); } catch {}
+        let st = null, pins = null, last = null;
+        try { [st, pins, last] = await Promise.all([api.state("batch"), api.state("batchpins"), api.state("batchlast")]); } catch {}
+        // the latest run, kept across a reload or a restart like the brain and the scenario
+        if (last && last.settings && (Array.isArray(last.matches) || last.summary)) {
+            this.run0 = last; $("bCsv").disabled = !(last.matches && last.matches.length);
+            $("bStatus").textContent = `the latest run (${new Date(last.settings.at).toLocaleString()}), kept from before${last.trimmed ? ": its summary only (too many matches to keep every line)" : ""}`;
+        }
         if (st && typeof st === "object") {
             if (Array.isArray(st.maps)) this.picked = new Set(st.maps);
             for (const [id, k] of [["bN", "n"], ["bSecs", "secs"], ["bSeed", "seed"]]) if (Number.isFinite(st[k])) $(id).value = st[k];
             this._wantMode = st.mode || "";
         }
         if (Array.isArray(pins)) this.pins = pins.filter((p) => p && p.summary).slice(-MAX_PINS);
-        if (this.pins.length) this.cmp.a = this.pins[this.pins.length - 1].id;
+        if (this.pins.length) this.cmp.a = (this.run0 && this.run0.pinned && this.pins.length > 1 ? this.pins[this.pins.length - 2] : this.pins[this.pins.length - 1]).id;
         this._fill();
         this._render();
     }
@@ -212,35 +262,47 @@ export class BatchPage {
         const n = R.matches.filter((m) => !m.error).length;
         $("bStatus").textContent = `${this.stopping ? "stopped" : "done"}: ${n} matches of ${MODE_TITLES[mode] || mode} on ${ran.join(", ") || "no map"} in ${((performance.now() - t0) / 1000).toFixed(1)} s (${this.app.helper.batch ? "quark_maptool simbatch" : this.app.helper.kind === "mock" ? "MOCK simulation" : "quark_maptool"}${this.app.helper.batch && !this.app.helper.brainSupport ? "; every bot played the built-in brain: this build has no brain code" : ""})`;
         $("bRun").disabled = false; $("bStop").disabled = true; $("bCsv").disabled = !n;
+        this._saveLast();
         this._render();
     }
 
     // ---- pins
     _pin() {
         const R = this.run0;
-        if (!R || !R.matches.length) return;
+        if (!this._has(R)) return;
         const s = R.settings, id = Date.now().toString(36);
         const brainsTxt = [...new Set(s.lineup.map((b) => b.brain))].join(" vs ");
         const title = `${brainsTxt} · ${MODE_TITLES[s.mode] || s.mode} · ${s.maps.length > 3 ? s.maps.length + " maps" : s.maps.join(", ")}`;
-        const summary = summarize(R.matches);
+        const summary = this._summary(R);
         for (const b of summary.bots) delete b.objective;
-        this.pins.push({ id, title, at: s.at, settings: s, summary });
+        this.pins.push({ id, title, at: s.at, settings: s, summary, outcomes: R.outcomes || outcomes(R.matches) });
         if (this.pins.length > MAX_PINS) this.pins.shift();
         this.cmp = { a: id, b: "current" };
         R.pinned = id;
-        this._savePins();
+        this._savePins(); this._saveLast();
         this._render();
     }
     _savePins() { api.saveState("batchpins", this.pins).catch((e) => this.app.toast("Couldn't keep the pins: " + e.message)); }
+    // the latest run's results as the state file batchlast.json (every match line; a huge run keeps only its summary
+    // and its paired outcomes, as a pin does: serve.py takes 8 MB at most)
+    _saveLast() {
+        const R = this.run0;
+        if (!R || !this._has(R)) return;
+        let body = JSON.stringify(R);
+        if (body.length > 6e6) body = JSON.stringify({ ...R, matches: null, summary: this._summary(R), outcomes: R.outcomes || outcomes(R.matches), trimmed: true });
+        api.post("/api/state?key=batchlast", body, "raw").catch((e) => this.app.toast("Couldn't keep the latest run: " + e.message));
+    }
+    _has(R) { return !!R && (R.matches ? R.matches.some((m) => !m.error) : !!R.summary); }
+    _summary(R) { return R.matches ? summarize(R.matches) : R.summary; }
     _runOf(id) {
-        if (id === "current") return this.run0 && this.run0.matches.length ? { id: "current", title: "latest run", at: this.run0.settings.at, settings: this.run0.settings, summary: summarize(this.run0.matches) } : null;
+        if (id === "current") return this._has(this.run0) ? { id: "current", title: "latest run", at: this.run0.settings.at, settings: this.run0.settings, summary: this._summary(this.run0), outcomes: this.run0.outcomes || outcomes(this.run0.matches) } : null;
         return this.pins.find((p) => p.id === id) || null;
     }
 
     // ---- results
     _render() {
-        const R = this.run0, S = R && R.matches.length ? summarize(R.matches) : null;
-        const cards = [this._pinsCard(), S ? this._brainsCard(S) : "", this._compareCard(), S ? this._mapsCard(S, R) : "", S ? this._botsCard(S) : "", S ? this._matchesCard(R) : ""].filter(Boolean);
+        const R = this.run0, S = this._has(R) || (R && R.matches && R.matches.length) ? this._summary(R) : null;
+        const cards = [this._pinsCard(), S ? this._brainsCard(S) : "", this._compareCard(), S ? this._mapsCard(S, R) : "", S ? this._botsCard(S) : "", S && R.matches ? this._matchesCard(R) : ""].filter(Boolean);
         $("batchMain").innerHTML = cards.length ? `<div class="bgrid">${cards.join("")}</div>` : `<div class="muted">No batch yet.</div>`;
         const M = $("batchMain");
         const pinBtn = M.querySelector("[data-act=pin]");
@@ -249,7 +311,7 @@ export class BatchPage {
         M.querySelectorAll("[data-unpin]").forEach((e) => (e.onclick = () => {
             this.pins = this.pins.filter((p) => p.id !== e.dataset.unpin);
             for (const k of ["a", "b"]) if (this.cmp[k] === e.dataset.unpin) this.cmp[k] = k === "b" ? "current" : (this.pins[this.pins.length - 1] || {}).id || null;
-            if (this.run0 && this.run0.pinned === e.dataset.unpin) this.run0.pinned = null;
+            if (this.run0 && this.run0.pinned === e.dataset.unpin) { this.run0.pinned = null; this._saveLast(); }
             this._savePins(); this._render();
         }));
         M.querySelectorAll("[data-rename]").forEach((e) => (e.onclick = async () => {
@@ -259,7 +321,7 @@ export class BatchPage {
         }));
     }
     _pinsCard() {
-        const R = this.run0, canPin = R && R.matches.some((m) => !m.error) && !R.pinned && $("bRun") && !$("bRun").disabled;
+        const R = this.run0, canPin = this._has(R) && !R.pinned && $("bRun") && !$("bRun").disabled;
         if (!this.pins.length && !canPin) return "";
         const rows = this.pins.slice().reverse().map((p) => {
             const s = p.settings, top = p.summary.brains.slice().sort((a, b) => b.w / Math.max(1, b.n) - a.w / Math.max(1, a.n)).map((b) => `${esc(b.name)} ${rateText(b.w, b.n, b.mirror).text}`).join(" · ");
@@ -269,7 +331,7 @@ export class BatchPage {
             ${rows ? `<table class="score"><tr><th>run</th><th>win rate (95%)</th><th></th></tr>${rows}</table>` : `<div class="muted">Pin a run to compare the next ones with it (after a brain edit, say).</div>`}</section>`;
     }
     _compareCard() {
-        const opts = [...(this.run0 && this.run0.matches.length ? [["current", "latest run" + (this.run0.pinned ? " (pinned)" : "")]] : []), ...this.pins.slice().reverse().map((p) => [p.id, p.title + " · " + new Date(p.at).toLocaleTimeString()])];
+        const opts = [...(this._has(this.run0) ? [["current", "latest run" + (this.run0.pinned ? " (pinned)" : "")]] : []), ...this.pins.slice().reverse().map((p) => [p.id, p.title + " · " + new Date(p.at).toLocaleTimeString()])];
         if (opts.length < 2) return "";
         if (!opts.some((o) => o[0] === this.cmp.a)) this.cmp.a = (opts.find((o) => o[0] !== this.cmp.b) || opts[0])[0];
         if (!opts.some((o) => o[0] === this.cmp.b)) this.cmp.b = opts[0][0];
@@ -280,16 +342,30 @@ export class BatchPage {
             // brains matched by name (an edited brain keeps its name, its label's hash changes)
             const names = [...new Set([...A.summary.brains, ...B.summary.brains].map((b) => b.name))];
             const sum = (S, n) => S.brains.filter((b) => b.name === n).reduce((a, b) => ({ n: a.n + b.n, w: a.w + b.w, mirror: a.mirror + (b.mirror || 0), kills: a.kills + b.kills, deaths: a.deaths + b.deaths, labels: [...a.labels, b.label] }), { n: 0, w: 0, mirror: 0, kills: 0, deaths: 0, labels: [] });
+            // same seeds and maps: each match paired with the same match in the other run (pairedDiff), when both
+            // runs kept their outcomes (pins from before this have none)
+            const sameSeeds = A.settings.seed0 === B.settings.seed0 && A.settings.N === B.settings.N && JSON.stringify(A.settings.mapKeys || A.settings.maps) === JSON.stringify(B.settings.mapKeys || B.settings.maps);
+            let anyPaired = false;
             const rows = names.map((n) => {
                 const a = sum(A.summary, n), b = sum(B.summary, n), d = rateDiff(a.w, a.n, b.w, b.n), ta = rateText(a.w, a.n, a.mirror), tb = rateText(b.w, b.n, b.mirror);
-                const verdict = (a.n && a.mirror >= a.n) || (b.n && b.mirror >= b.n) ? `<span class="muted">-</span>` : !a.n || !b.n ? `<span class="muted">only in ${a.n ? "A" : "B"}</span>` : d.sure ? `<b class="${d.d > 0 ? "ok" : "err"}">${d.d > 0 ? "better" : "worse"}</b>` : `<span class="muted">no clear difference</span>`;
+                const pd = pairedDiff(A.outcomes, B.outcomes, n);
+                if (pd) anyPaired = true;
+                const mirror = (a.n && a.mirror >= a.n) || (b.n && b.mirror >= b.n);
+                const sure = pd ? pd.sure : d.sure, dd = pd ? pd.d : d.d;
+                const verdict = mirror ? `<span class="muted">-</span>` : !a.n || !b.n ? `<span class="muted">only in ${a.n ? "A" : "B"}</span>` : sure ? `<b class="${dd > 0 ? "ok" : "err"}">${dd > 0 ? "better" : "worse"}</b>` : `<span class="muted">no clear difference</span>`;
                 const kd = (x) => (x.n ? (x.kills / Math.max(1, x.deaths)).toFixed(2) : "-");
+                const pts = (x) => `${x >= 0 ? "+" : ""}${Math.round(x * 100)}`;
+                const diffCell = pd && !mirror
+                    ? `<td title="paired on ${pd.pairs} matches both runs played (same map and seed): won only in A ${pd.b}, only in B ${pd.c}; McNemar's exact p = ${pd.p.toPrecision(2)}; 95% interval of the difference ${Math.round(pd.lo * 100)} to ${Math.round(pd.hi * 100)} points">${pts(pd.d)} pts <span class="muted">(${Math.round(pd.lo * 100)}…${Math.round(pd.hi * 100)})</span><div class="muted">paired ${pd.pairs}: A only ${pd.b}, B only ${pd.c}, p ${pd.p < 0.001 ? "<0.001" : pd.p.toFixed(3)}</div></td>`
+                    : `<td title="95% interval of the difference: ${a.n && b.n ? `${Math.round(d.lo * 100)} to ${Math.round(d.hi * 100)} points (independent runs, Newcombe)` : "-"}">${a.n && b.n ? `${pts(d.d)} pts <span class="muted">(${Math.round(d.lo * 100)}…${Math.round(d.hi * 100)})</span>` : "-"}</td>`;
                 return `<tr><td><b>${esc(n)}</b><div class="muted" title="labels: name#hash of what the brain does">${esc([...new Set(a.labels)].join(", ") || "-")} → ${esc([...new Set(b.labels)].join(", ") || "-")}</div></td><td title="${ta.title}">${ta.text}</td><td title="${tb.title}">${tb.text}</td>
-                    <td title="95% interval of the difference: ${a.n && b.n ? `${Math.round(d.lo * 100)} to ${Math.round(d.hi * 100)} points` : "-"}">${a.n && b.n ? `${d.d >= 0 ? "+" : ""}${Math.round(d.d * 100)} pts <span class="muted">(${Math.round(d.lo * 100)}…${Math.round(d.hi * 100)})</span>` : "-"}</td><td>${verdict}</td><td>${kd(a)} → ${kd(b)}</td></tr>`;
+                    ${diffCell}<td>${verdict}</td><td>${kd(a)} → ${kd(b)}</td></tr>`;
             }).join("");
             const same = JSON.stringify([A.settings.mode, A.settings.mapKeys || A.settings.maps, A.settings.lineup.map((b) => [b.team, b.skill])]) === JSON.stringify([B.settings.mode, B.settings.mapKeys || B.settings.maps, B.settings.lineup.map((b) => [b.team, b.skill])]);
             body = `<table class="score"><tr><th>brain</th><th>A win rate</th><th>B win rate</th><th>B − A</th><th>at 95%</th><th>K/D</th></tr>${rows}</table>
-                <p class="muted" style="font-size:11px">${same ? "Same mode, maps and line-up (teams, skills)." : '<span class="warn">The two runs differ in mode, maps or line-up: compare with care.</span>'} “Better / worse”: the 95% interval of the difference leaves out 0. More matches narrow it.</p>`;
+                <p class="muted" style="font-size:11px">${same ? "Same mode, maps and line-up (teams, skills)." : '<span class="warn">The two runs differ in mode, maps or line-up: compare with care.</span>'}
+                ${sameSeeds ? ` <b>Same seeds</b> (${A.settings.seed0}–${A.settings.seed0 + A.settings.N - 1} on each map): the two runs played the same matches.` : ""}
+                ${anyPaired ? " Paired rows set each match against the same match (map and seed) in the other run; “better / worse” is McNemar's exact test on the matches only one run won (p &lt; 0.05), which needs far fewer matches than two independent win rates." : " “Better / worse”: the 95% interval of the difference leaves out 0 (two independent samples). Runs on the same seeds are compared match by match instead."} More matches narrow it.</p>`;
         } else body = `<div class="muted">Pick two different runs.</div>`;
         return `<section class="bcard"><h3>Compare runs</h3><div class="row" style="margin-bottom:6px"><span class="muted">A</span>${sel("a")}<span class="muted">B</span>${sel("b")}</div>${body}</section>`;
     }
@@ -312,7 +388,7 @@ export class BatchPage {
             const res = M.a + M.b ? `team A ${M.a} · team B ${M.b} · draws ${M.draws}` : M.players.length ? M.players.map((p) => `${esc(p.name)} ${p.wins}`).join(" · ") + ` · draws ${M.draws}` : M.matches ? "no match ended (see timeouts)" : "";
             return `<tr><td>${esc(M.map)}</td><td>${M.matches}${M.errors ? ` <span class="err">${M.errors} failed</span>` : ""}</td><td>${res}</td><td>${M.timeouts || "-"}</td><td>${M.matches ? (M.t / M.matches).toFixed(0) + " s" : "-"}</td><td class="muted">${perf ? perf.matchesPerSecond.toFixed(1) + "/s on " + perf.threads : ""}</td></tr>`;
         }).join("");
-        const errs = R.matches.filter((m) => m.error);
+        const errs = (R.matches || []).filter((m) => m.error);
         return `<section class="bcard"><h3>Wins per map</h3>${mapChart(S.maps)}<table class="score"><tr><th>map</th><th>matches</th><th>wins</th><th>timeouts</th><th>avg length</th><th>speed</th></tr>${rows}</table>${errs.length ? `<div class="err">${esc(errs[0].error)}</div>` : ""}</section>`;
     }
     _matchesCard(R) {
@@ -322,7 +398,7 @@ export class BatchPage {
     }
     _csv() {
         const R = this.run0;
-        if (!R) return;
+        if (!R || !R.matches) return;
         const lines = ["map,source,seed,bot,brain,skill,team,kills,deaths,damage,score,shots,hits,objTime,aliveTime,won,reason,length"];
         const ms = R.matches.filter((m) => !m.error).slice().sort(byMap);
         for (const m of ms) for (const b of m.bots || []) lines.push([m.map, (m.mapKey || "default/").split("/")[0], m.seed, b.name, b.brainLabel || b.brain, b.skill, b.team, b.kills, b.deaths, b.damage, b.score, b.shots, b.hits, b.objTime, b.aliveTime, b.won ? 1 : 0, m.reason, m.t].map((x) => (x == null ? "" : String(x).includes(",") ? `"${x}"` : x)).join(","));

@@ -139,7 +139,15 @@ player wins, draws, matches that ran out of time, as a stacked bar) and per matc
 **Pin the latest run** keeps its results (the last 30, in the state folder) to compare later ones with, after a
 brain edit, say. **Compare runs** puts any two (pinned runs or the latest run) side by side, per brain (matched by
 name): win rates with intervals, B − A with its 95% interval, and "better", "worse" or "no clear difference" (when
-that interval spans zero). It warns when the two runs differ in mode, maps or line-up.
+that interval spans zero). It warns when the two runs differ in mode, maps or line-up, and says when they used the
+same seeds. Runs on the same seeds and maps played the same matches (a seed fixes spawns and dice), so a brain is
+then compared **paired**, match by match: McNemar's exact test on the matches only one of the two runs won (p < 0.05
+for "better" / "worse"), with the difference's interval (Agresti-Min) and the counts ("A only 2, B only 9"). It
+tells a real difference with far fewer matches than two independent win rates. (Pins keep each match's outcome per
+brain for this; pins made before it are compared unpaired.)
+
+The latest run is kept too (`batchlast.json` in the state folder): a reload or a restart shows it again, pinned or
+not. A run too big to keep whole (over 6 MB of match lines) keeps its summary and outcomes, like a pin.
 
 ## Files
 
@@ -149,7 +157,7 @@ All work is saved as files through the server, never only in the browser:
 |---|---|
 | brains | `<data>/bots/<name>.qbrain` (the previous version kept as `.bak`) |
 | scenarios | `<data>/bot_editor/scenarios/<name>.json` |
-| the open scenario and brain, settings, batch settings and pinned runs | `<data>/bot_editor/state/*.json` (autosaved; pins in `batchpins.json`) |
+| the open scenario and brain, settings, batch settings, the latest batch run and pinned runs | `<data>/bot_editor/state/*.json` (autosaved; the latest run in `batchlast.json`, pins in `batchpins.json`) |
 | who made what | `tools/bot_editor/provenance.json` |
 
 The browser keeps only conveniences (which tab was open, the theme).
