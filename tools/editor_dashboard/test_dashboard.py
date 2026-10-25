@@ -150,6 +150,86 @@ class Fixture(unittest.TestCase):
         self.assertEqual(D.write_marks(self.cfg, ["sounds/default/HIT.wav", "x/y"], None, "", "", True, reg)["removed"], 1)
         self.assertEqual(D.write_marks(self.cfg, ["x/y"], None, "", "", True, reg)["removed"], 0)
 
+    def test_decide(self):
+        own = lambda o, **k: dict(k, origin=o, own=True, src="dashboard", fp="o", order=9)
+        ed = lambda o, src, date, fp, order: {"origin": o, "own": False, "src": src, "date": date, "fp": fp, "order": order}
+        # without the owner's mark the newest editor entry wins (and two editors that disagree are a conflict)
+        a, b = ed("human", "sound-editor", "2026-10-20", "a", 0), ed("ai", "ui-customizer", "2026-10-22", "b", 1)
+        win, pend, conf = D.decide([a, b], {"origin": "ai"})
+        self.assertEqual((win is b, pend, conf), (True, False, True))
+        # the owner's mark wins over a newer editor entry; it is settled when the mark saw that entry
+        e = ed("human", "sound-editor", "2026-10-26", "e1", 0)
+        m = own("ai", seen={"sound-editor": "e1"})
+        self.assertEqual(D.decide([e, m], {"origin": "ai"})[1:], (False, False))
+        self.assertEqual(e["st"], "over")
+        e2 = dict(e, fp="e2")                                           # (a new export: a conflict again)
+        self.assertEqual(D.decide([e2, own("ai", seen={"sound-editor": "e1"})], {"origin": "ai"})[1:], (False, True))
+
+    def test_merge_settles_marks(self):
+        """the round trip with the real tools/provenance.py: q overrules an editor, Merge writes q's choice once, and a
+        second Merge has nothing to do (it used to flip the item back to the editor's origin)"""
+        wr = self.cfg.repo
+        real = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "provenance.py")
+        shutil.copyfile(real, os.path.join(wr, "tools", "provenance.py"))
+        side = os.path.join(self.quark, "sound-editor", "provenance.json")
+        hit, jump = "sounds/default/HIT.wav", "sounds/default/JUMP.wav"
+        write(side, json.dumps({"format": 1, "tool": "sound-editor", "items": {
+            hit: {"origin": "human", "by": "q", "date": "2026-10-20"}, jump: {"origin": "ai", "date": "2026-10-20"},
+            "textures/wall.png": {"origin": "human"}}}))
+        reg = lambda: {r["id"]: r for r in D.assets_payload(self.cfg)["rows"]}
+        others = lambda k: [(e["src"], e["origin"], e["fp"]) for e in D.sidecar_entries(self.cfg)[0][k] if not e["own"]]
+        try:
+            rows = reg()
+            self.assertEqual((rows[hit]["p"][0]["origin"], rows[hit].get("pm")), ("human", 1))
+            self.assertIn("textures/", rows["textures/wall.png"]["bad"])
+            # q marks HIT third-party, and JUMP human (the registry's origin, but the editor says AI: written)
+            self.assertEqual(D.write_marks(self.cfg, [hit], "third-party", "q", "", False, {hit: "ai"}, {hit: others(hit)})["marked"], 1)
+            self.assertEqual(D.write_marks(self.cfg, [jump], "human", "q", "", False, {jump: "human"}, {jump: others(jump)})["marked"], 1)
+            rows = reg()
+            self.assertEqual((rows[hit]["p"][0]["origin"], rows[hit]["p"][1]["st"], rows[hit].get("c")), ("third-party", "over", None))
+            self.assertNotIn("p", rows[jump])                           # (q keeps the registry's human: nothing pending)
+            ok, out = D.run_merge(self.cfg)
+            self.assertTrue(ok, out)
+            self.assertTrue(any("skipped textures/wall.png" in l for l in out), out)
+            rows = reg()
+            self.assertEqual((rows[hit]["o"], rows[hit]["tool"]), ("third-party", "dashboard"))
+            self.assertNotIn("p", rows[hit])
+            self.assertEqual(D.run_merge(self.cfg)[1][-1], "nothing to merge")   # (no flip back to the editor's human)
+            self.assertEqual(reg()[hit]["o"], "third-party")
+            # the editor exports HIT again: a conflict (needs a decision), still not merged over q's mark
+            doc = D.read_json(side)[0]; doc["items"][hit]["date"] = "2026-10-27"; write(side, json.dumps(doc))
+            rows = reg()
+            self.assertEqual((rows[hit].get("c"), rows[hit].get("pm")), (1, None))
+            # the commit of the merged registry: a local commit of assets/provenance/ only
+            self.assertTrue(D.registry_diff(self.cfg)["files"])
+            head = git(wr, "rev-parse", "HEAD")
+            ok, out = D.commit_registry(self.cfg, "provenance: test")
+            self.assertTrue(ok, out)
+            self.assertEqual(git(wr, "rev-parse", "HEAD~1"), head)
+            self.assertEqual(git(wr, "status", "--porcelain", "--", "assets/provenance/"), "")
+            self.assertIn("tools/provenance.py", git(wr, "status", "--porcelain"))   # (other changes left alone)
+        finally:
+            os.remove(side)
+            if os.path.exists(self.cfg.sidecar): os.remove(self.cfg.sidecar)
+            git(wr, "reset", "-q", "--hard", "HEAD~1") if git(wr, "log", "-1", "--format=%s") == "provenance: test" else None
+            git(wr, "checkout", "-q", "--", "tools/provenance.py", "assets/provenance/")
+            git(wr, "clean", "-qfd", "--", "assets/provenance/")
+            if os.path.exists(D.plan_path(self.cfg)): os.remove(D.plan_path(self.cfg))
+
+    def test_start_command(self):
+        e = {"start": "py -3 serve.py --port 8769 --no-open", "port": 9373}
+        self.assertEqual(D.start_command(e)[1:], ["serve.py", "--port", "9373", "--no-open"])
+        self.assertEqual(D.start_command(dict(e, start="py -3 -B server.py"))[1:], ["-B", "server.py", "--port", "9373"])
+        self.assertIsNone(D.start_command(dict(e, start="run.cmd")))
+        self.assertIsNone(D.start_command(dict(e, start="py -3 serve.py & calc")))
+
+    def test_program_files_are_not_exports(self):
+        d = os.path.join(self.tmp, "physics-editor")
+        for n in ("serve.py", "physics_editor.example.json", "physics_editor.json", "provenance.json", "scene.qmap", "README.md"):
+            write(os.path.join(d, n), "x")
+        files, _, _ = D.scan_exports(d, "Physics editor", ({}, {}), skip={"serve.py", "readme.md"})
+        self.assertEqual([e["path"] for e in files], ["scene.qmap"])
+
     def test_merge_target_and_snapshot(self):
         self.assertTrue(D.merge_target(self.cfg)["ok"])                 # (working-repo has the registry)
         mirror = D.Config(types.SimpleNamespace(quark=self.quark, repo="repository", data_dir=self.data, sidecar=self.cfg.sidecar))
@@ -164,7 +244,15 @@ class Fixture(unittest.TestCase):
         exp = next(p for p in st.changes["programs"] if p["id"] == "sound-editor")["exports"]
         self.assertEqual({e["path"]: e.get("repo") for e in exp}["exports/overrides/sounds/default/HIT.wav"], "local")
         # the cheap check: nothing changed -> nothing to do; a sidecar written -> the assets reload without git
-        self.assertEqual(D.stat_sig(st.git_watch), st.git_sig)
+        self.assertFalse(st.git_changed())
+        # an uncommitted edit of an editor's file (no git command ran) is a change too; a file of no editor isn't
+        wr = os.path.join(self.quark, "working-repo")
+        write(os.path.join(wr, "NOTES.txt"), "not an editor's\n")
+        self.assertFalse(st.git_changed())
+        readme = os.path.join(wr, "tools", "sound_editor", "README.md")
+        write(readme, "sound 3\n")
+        try: self.assertTrue(st.git_changed())
+        finally: git(wr, "checkout", "-q", "--", readme); os.remove(os.path.join(wr, "NOTES.txt")); st.refresh()
         D.write_marks(self.cfg, ["sounds/default/JUMP.wav"], "ai", "", "", False, {})
         st.watched_at = 0
         st.watch()

@@ -23,16 +23,19 @@ What it reads (README.md has the views):
   - the Quark Project app's tab list (tabs.json / tabs.default.json: each editor's tab and port, checked for up / down)
     and its installs-state.json (the version of each editor installed, compared with testing's).
 
-What it writes: its own sidecar, <install dir>\\provenance.json (tool "dashboard"), when the owner marks items; and,
-only when the owner clicks "Merge into <clone>" and confirms, `tools/provenance.py merge` run hidden in the registry
-clone (never in repository\\, the mirror the app keeps fast-forwarded). Otherwise it never writes into a git clone: git
-runs with --no-optional-locks (status doesn't even refresh the index), there is no checkout / commit / push anywhere,
-and `git fetch` only runs when Refresh is clicked with "fetch" ticked.
+What it writes: its own sidecar, <install dir>\\provenance.json (tool "dashboard"), when the owner marks items; its
+merge file (merge-plan.json next to it) and, only when the owner clicks "Merge into <clone>" and confirms,
+`tools/provenance.py merge` of that file run hidden in the registry clone (never in repository\\, the mirror the app
+keeps fast-forwarded); a local commit of assets/provenance/ only, when the owner clicks "Commit locally" (never a push);
+a stopped server editor started hidden on "Start" (its log in logs\\). Otherwise it never writes into a git clone: git
+runs with --no-optional-locks (status doesn't even refresh the index), there is no checkout or push anywhere, and
+`git fetch` only runs when Refresh is clicked with "fetch" ticked.
 Git calls are batched per clone and run in parallel; the snapshot is cached, served while a refresh runs, and rebuilt
-by itself (without fetch) when a cheap mtime check sees a sidecar, the registry or a clone's HEAD / refs change.
+by itself (without fetch) when a cheap mtime check sees a sidecar, the registry, a clone's HEAD / refs or an editor's
+file in a working tree change.
 Python 3 standard library only; runs on Windows and Linux.
 """
-import argparse, concurrent.futures, datetime, fnmatch, functools, gzip, hashlib, json, math, mimetypes, os, re, shutil
+import argparse, ast, concurrent.futures, datetime, fnmatch, functools, gzip, hashlib, json, math, mimetypes, os, re, shutil
 import subprocess, sys, threading, time, urllib.error, urllib.parse, urllib.request, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -533,11 +536,24 @@ def compare_to_repo(f, rel, size, ov):
     return "differs" if hit or (t_idx is None and w) else "missing"
 
 
-def scan_exports(folder, program, ov, overrides_root=False):
-    """files an editor wrote: its provenance.json, anything under an export / overrides folder, output-looking files at
-    its top level. overrides_root: the folder itself is an overrides folder (the game's per-user one); its files go to
-    the editor their assets/overrides/ path belongs to, and those of no editor are listed apart (unowned).
-    -> (files, how many more weren't listed, unowned paths)"""
+# an editor folder's own files at its top level that are no export: its sidecar (the Assets view shows it), the
+# installers' stamps, and (scan_exports' skip) the program files its installer copies, i.e. the names in its source
+# folder (serve.py, bot_editor.example.json...); <name>.json next to a <name>.example.json is its settings
+NOT_EXPORTS = {"provenance.json", "installed.txt", "installed.json", "installed_from.json", "readme.md", "readme.txt"}
+
+
+def program_files(repo, folder):
+    """the lower-case names at the top of an editor's source folder in the registry clone (TOOL_SOURCE)"""
+    src = TOOL_SOURCE.get(folder)
+    try: return {n.lower() for n in os.listdir(os.path.join(repo, *src.split("/")))} if src else set()
+    except OSError: return set()
+
+
+def scan_exports(folder, program, ov, overrides_root=False, skip=()):
+    """files an editor wrote: anything under an export / overrides folder, output-looking files at its top level (not
+    its program files: NOT_EXPORTS, skip, *.example.json and the settings next to one). overrides_root: the folder
+    itself is an overrides folder (the game's per-user one); its files go to the editor their assets/overrides/ path
+    belongs to, and those of no editor are listed apart (unowned). -> (files, how many more weren't listed, unowned paths)"""
     files, more, unowned = [], 0, []
     for d, dirs, names in os.walk(folder):
         rel_d = os.path.relpath(d, folder)
@@ -545,10 +561,12 @@ def scan_exports(folder, program, ov, overrides_root=False):
         parts = [] if rel_d == "." else rel_d.split(os.sep)
         in_export = overrides_root or any(EXPORT_DIRS.match(x) for x in parts)
         dirs[:] = [x for x in dirs if (in_export or x.lower() not in SKIP_DIRS) and not x.startswith(".") and depth < 6]
+        low = {n.lower() for n in names} if depth == 0 and not in_export else ()
         for n in names:
-            ext = os.path.splitext(n)[1].lower()
-            if n.lower() in ("readme.md", "readme.txt"): continue
-            if not (in_export or (depth == 0 and (ext in EXPORT_EXT or n.lower() == "provenance.json"))): continue
+            ext, ln = os.path.splitext(n)[1].lower(), n.lower()
+            if not in_export:
+                if depth or ext not in EXPORT_EXT or ln in NOT_EXPORTS or ln in skip or ln.endswith(".example.json") \
+                        or (ext == ".json" and ln[:-5] + ".example.json" in low | set(skip)): continue
             f = os.path.join(d, n)
             rel = os.path.relpath(f, folder).replace(os.sep, "/")
             # the part after the last overrides/ folder is the asset's override path
@@ -631,7 +649,7 @@ def category_of(asset_id, registry):
 
 
 def differs(entry, reg):
-    """a sidecar entry is pending when the registry doesn't have the item or gives it another origin (an entry that
+    """an entry changes the registry when the registry doesn't have the item or gives it another origin (an entry that
     only repeats the registry's origin, with another by / date / note, changes nothing the human-made % counts)"""
     return reg is None or reg.get("origin", "ai") != entry.get("origin")
 
@@ -641,6 +659,80 @@ def sidecar_paths(cfg):
     if all(os.path.normcase(cfg.sidecar) != os.path.normcase(p) for p, _, _ in out):
         out.append((cfg.sidecar, "dashboard", "Dashboard"))
     return out
+
+
+# The one rule that decides an item, used by the page (its "pending" origin, the % with the pending marks) and by Merge
+# (which folds exactly those choices in, docs/PROVENANCE.md):
+#   - the owner's mark (the dashboard's sidecar) wins over every editor's entry;
+#   - without one, the editors' newest entry by date wins (same date: the later editor in EDITORS);
+#   - the item is pending while the winner's origin isn't the registry's. So once a merge wrote it, nothing an editor
+#     still says flips it back: the owner's mark keeps winning, and an editor's entry that lost stays settled;
+#   - an editor entry that disagrees with the owner's mark is a conflict (it needs a decision) unless the owner marked the
+#     item while seeing that very entry (the mark's "seen": {tool: fingerprint}); two editors that disagree, without a
+#     mark, are a conflict too. A new export of the item (another date, note or origin) is a new fingerprint: a conflict
+#     again. Marking the item (or removing your mark) decides it.
+
+def entry_fp(e):
+    """a sidecar entry's fingerprint (its fields as the editor wrote them): a new export of the item changes it"""
+    return hashlib.sha1(json.dumps({k: v for k, v in e.items() if k != "seen"}, sort_keys=True,
+                                   ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+
+
+def sidecar_entries(cfg, errors=None):
+    """every sidecar's entries -> ({id: [entry + tool, sidecar, own, fp, order]}, [{path, tool, items, mtime, own}])"""
+    by_id, sidecars = {}, []
+    for order, (path, tool, _) in enumerate(sidecar_paths(cfg)):
+        doc, err = read_json(path)
+        if err and errors is not None: errors.append(rel_or_abs(path, cfg.quark) + ": skipped" + err[len(path):])
+        if not isinstance(doc, dict): continue
+        tool = doc.get("tool") or tool
+        own = os.path.normcase(path) == os.path.normcase(cfg.sidecar)
+        n = 0
+        for k, v in (doc.get("items") or {}).items():
+            if not isinstance(v, dict): continue
+            n += 1
+            by_id.setdefault(k, []).append(dict(v, tool=v.get("tool") or tool, src=tool, sidecar=path, own=own,
+                                                fp=entry_fp(v), order=order, raw=v))
+        try: mtime = int(os.path.getmtime(path))
+        except OSError: mtime = 0
+        sidecars.append({"path": path, "tool": tool, "items": n, "mtime": mtime, "own": own})
+    return by_id, sidecars
+
+
+def decide(ents, reg):
+    """the rule above for one item -> (winner, pending, conflict); each entry gets "st": win / same (agrees with the
+    winner) / over (the owner's mark overrules it, seen) / conflict"""
+    own = next((e for e in ents if e["own"]), None)
+    win = own or max(ents, key=lambda e: (str(e.get("date") or ""), e["order"]))
+    seen = (own.get("seen") if own and isinstance(own.get("seen"), dict) else None) or {}
+    for e in ents:
+        if e is win: e["st"] = "win"
+        elif e.get("origin") == win.get("origin"): e["st"] = "same"
+        elif own and seen.get(e["src"]) == e["fp"]: e["st"] = "over"
+        else: e["st"] = "conflict"
+    return win, differs(win, reg), any(e["st"] == "conflict" for e in ents)
+
+
+# an id's first part -> the registry category tools/provenance.py merges it into (its PREFIX, read from the registry
+# clone's copy when it can be; this is the fallback). An id of no category can't be merged: it is skipped and flagged.
+MERGE_PREFIX = {"sounds": "sounds", "voices": "voices", "models": "models", "maps": "maps", "fonts": "fonts",
+                "images": "images", "website": "images", "ui": "ui", "bots": "bots", "gamemodes": "gamemodes"}
+
+
+@functools.lru_cache(maxsize=4)
+def _merge_prefix(path, mtime):
+    try:
+        with open(path, encoding="utf-8") as f: m = re.search(r"^PREFIX\s*=\s*(\{[^}]*\})", f.read(), re.M)
+        v = ast.literal_eval(m.group(1)) if m else None
+        return v if isinstance(v, dict) and v else MERGE_PREFIX
+    except (OSError, ValueError, SyntaxError):
+        return MERGE_PREFIX
+
+
+def merge_prefix(cfg):
+    p = os.path.join(cfg.repo, "tools", "provenance.py")
+    try: return _merge_prefix(p, os.path.getmtime(p))
+    except OSError: return MERGE_PREFIX
 
 
 def rel_or_abs(path, base):
@@ -662,52 +754,75 @@ def merge_target(cfg):
     return {"name": name, "path": cfg.repo, "ok": why is None, "why": why}
 
 
+def plan_path(cfg):
+    """the merge file the dashboard writes next to its sidecar: exactly the page's choice per pending item"""
+    return os.path.join(os.path.dirname(cfg.sidecar), "merge-plan.json")
+
+
+def decisions(cfg, registry, errors=None):
+    """every item some sidecar names -> {id: (winner, pending, conflict, entries)}, the sidecars, the merge prefixes"""
+    by_id, sidecars = sidecar_entries(cfg, errors)
+    return {k: (*decide(ents, registry.get(k)), ents) for k, ents in by_id.items()}, sidecars, merge_prefix(cfg)
+
+
+def unmergeable(k, prefix):
+    """why tools/provenance.py can't merge an id (None when it can)"""
+    top = k.split("/", 1)[0]
+    return None if top in prefix else "%s/ is no registry category (%s): Merge skips it" % (top, ", ".join(sorted(set(prefix.values()))))
+
+
 def assets_payload(cfg, previews=None):
     registry, files, errors = load_registry(cfg.repo)
-    pending, sidecars = {}, []
-    for path, tool, _ in sidecar_paths(cfg):
-        doc, err = read_json(path)
-        if err: errors.append(rel_or_abs(path, cfg.quark) + ": skipped" + err[len(path):])
-        if not isinstance(doc, dict): continue
-        tool = doc.get("tool") or tool
-        n_items, n_pending = 0, 0
-        for k, v in (doc.get("items") or {}).items():
-            if not isinstance(v, dict): continue
-            n_items += 1
-            if differs(v, registry.get(k)):
-                n_pending += 1
-                pending.setdefault(k, []).append(dict(v, tool=v.get("tool") or tool, sidecar=path))
-        try: mtime = int(os.path.getmtime(path))
-        except OSError: mtime = 0
-        sidecars.append({"path": path, "tool": tool, "items": n_items, "pending": n_pending, "mtime": mtime,
-                         "own": os.path.normcase(path) == os.path.normcase(cfg.sidecar)})
-    for v in pending.values(): v.sort(key=lambda e: e.get("date") or "", reverse=True)    # (the latest first)
-    rows = []
-    for k in sorted(set(registry) | set(pending)):
+    dec, sidecars, prefix = decisions(cfg, registry, errors)
+    side_of = {s["path"]: s for s in sidecars}
+    for s in sidecars: s.update(pending=0, conflicts=0, over=0, short=rel_or_abs(s["path"], cfg.quark))
+    rows, to_merge, own_pending = [], 0, 0
+    for k in sorted(set(registry) | set(dec)):
         r = registry.get(k)
         row = {"id": k, "cat": category_of(k, registry), "o": r.get("origin", "ai") if r else None}
         for f in ("by", "date", "tool", "source", "note", "wip", "version"):
             if r and r.get(f): row[f] = r[f]
-        if k in pending: row["p"] = [{f: e[f] for f in ("origin", "by", "date", "note", "tool", "sidecar") if e.get(f)} for e in pending[k]]
+        if k in dec:
+            win, pend, conf, ents = dec[k]
+            for e in ents:
+                if e["st"] in ("over", "conflict"): side_of[e["sidecar"]]["over" if e["st"] == "over" else "conflicts"] += 1
+            if pend or conf:
+                # p: the sidecar entries, the winner first (its origin is the page's and Merge's); pm: Merge changes it
+                row["p"] = [{f: e[f] for f in ("origin", "by", "date", "note", "tool", "sidecar", "st") if e.get(f)}
+                            for e in [win] + [e for e in ents if e is not win]]
+                if conf: row["c"] = 1
+                bad = pend and unmergeable(k, prefix)
+                if bad: row["bad"] = bad
+                elif pend:
+                    row["pm"] = 1; to_merge += 1; side_of[win["sidecar"]]["pending"] += 1; own_pending += win["own"]
         f = (previews or {}).get(os.path.splitext(k)[0].lower())
         if f: row["pv"] = "a" if os.path.splitext(f)[1].lower() in AUDIO_EXT else "i"
         rows.append(row)
     stats = {}
     for row in rows:
-        s = stats.setdefault(row["cat"], {"human": 0, "third-party": 0, "ai": 0, "pending": 0, "eff": {"human": 0, "third-party": 0, "ai": 0}})
+        s = stats.setdefault(row["cat"], {"human": 0, "third-party": 0, "ai": 0, "pending": 0, "conflicts": 0,
+                                          "eff": {"human": 0, "third-party": 0, "ai": 0}})
         if row["o"] in ORIGINS: s[row["o"]] += 1
         eff = row["p"][0].get("origin") if row.get("p") else row["o"]
         if eff in ORIGINS: s["eff"][eff] += 1
-        if row.get("p"): s["pending"] += 1
-    # the merge command, run in the registry clone: sidecar paths relative to it when they can be (..\\sound-editor\\...)
-    merge_from = [rel_or_abs(s["path"], cfg.repo) for s in sidecars if s["pending"]]
+        if row.get("pm") or row.get("bad"): s["pending"] += 1
+        if row.get("c"): s["conflicts"] += 1
+    # the command for running the merge yourself in the registry clone: the merge file's path relative to it when it
+    # can be (..\editor-dashboard\merge-plan.json); the page writes that file first (POST /api/plan)
     py = "py -3" if os.name == "nt" else "python3"
-    cmd = (py + " tools/provenance.py merge " + " ".join('"%s"' % p if " " in p else p for p in merge_from)) if merge_from else ""
-    for s in sidecars: s["short"] = rel_or_abs(s["path"], cfg.quark)
+    plan = rel_or_abs(plan_path(cfg), cfg.repo)
+    cmd = (py + " tools/provenance.py merge " + ('"%s"' % plan if " " in plan else plan)) if to_merge else ""
     return {"repo": cfg.repo, "registryFiles": files, "errors": errors, "rows": rows, "stats": stats, "sidecars": sidecars,
-            "ownSidecar": cfg.sidecar, "mergeCmd": cmd, "mergeCwd": cfg.repo, "mergeFrom": [s["path"] for s in sidecars if s["pending"]],
-            "mergeTarget": merge_target(cfg), "catEditor": CATEGORY_EDITOR,
-            "ownPending": sum(s["pending"] for s in sidecars if s["own"])}
+            "ownSidecar": cfg.sidecar, "mergeCmd": cmd, "mergeCwd": cfg.repo, "toMerge": to_merge,
+            "mergeFrom": [s["path"] for s in sidecars if s["pending"]], "mergeTarget": merge_target(cfg),
+            "catEditor": CATEGORY_EDITOR, "ownPending": own_pending, "regDirty": registry_dirty(cfg)}
+
+
+def registry_dirty(cfg):
+    """the registry clone's changed files under assets/provenance/ (a merge not committed yet): [[xy, path]], or None
+    when the merge target isn't usable (one git status, limited to that folder)"""
+    if not merge_target(cfg)["ok"]: return None
+    return parse_status_z(GIT(cfg.repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "assets/provenance/"))
 
 
 def pct_human(h, n):
@@ -727,10 +842,13 @@ def summary_pct(stats):
 SIDECAR_LOCK = threading.Lock()
 
 
-def write_marks(cfg, ids, origin, by, note, clear, registry=None):
+def write_marks(cfg, ids, origin, by, note, clear, registry=None, others=None):
     """the dashboard's own sidecar: add / replace (or, clear=True, remove) the entries for ids; unknown fields kept.
-    A mark that only repeats the registry's origin (registry: {id: origin}) isn't written, and removes an older mark of
-    yours for that item instead. -> {marked, removed, same} counts (removed: your entries actually taken out)"""
+    registry: {id: origin}; others: {id: [(tool, origin, fingerprint)]}, the editors' entries. A mark records the editor
+    entries it overrules ("seen", so they aren't conflicts: decide()). A mark that only repeats the registry's origin,
+    with no editor saying otherwise, isn't written, and removes an older mark of yours for that item instead; with an
+    editor saying otherwise it is written (it overrules that editor). -> {marked, removed, same} counts (removed: your
+    entries actually taken out)"""
     res = {"marked": 0, "removed": 0, "same": 0}
     with SIDECAR_LOCK:
         doc, err = read_json(cfg.sidecar)
@@ -742,7 +860,8 @@ def write_marks(cfg, ids, origin, by, note, clear, registry=None):
         today = datetime.date.today().isoformat()
         changed = False
         for k in ids:
-            if clear or (registry or {}).get(k) == origin:
+            against = {t: fp for t, o, fp in (others or {}).get(k, []) if o != origin}
+            if clear or ((registry or {}).get(k) == origin and not against):
                 had = items.pop(k, None) is not None
                 changed |= had
                 if clear: res["removed"] += had
@@ -751,39 +870,110 @@ def write_marks(cfg, ids, origin, by, note, clear, registry=None):
             e = {"origin": origin, "date": today}
             if by: e["by"] = by
             if note: e["note"] = note
+            if against: e["seen"] = against
             items[k] = e
             res["marked"] += 1
             changed = True
         if not changed: return res                                       # (nothing to write)
         doc["items"] = {k: items[k] for k in sorted(items)}
-        os.makedirs(os.path.dirname(cfg.sidecar), exist_ok=True)
-        tmp = cfg.sidecar + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(doc, f, indent=2, ensure_ascii=False); f.write("\n")
-        os.replace(tmp, cfg.sidecar)
+        write_json(cfg.sidecar, doc)
     return res
+
+
+def write_json(path, doc):
+    """atomically, in the sidecars' layout"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(doc, f, indent=2, ensure_ascii=False); f.write("\n")
+    os.replace(tmp, path)
+
+
+def write_plan(cfg):
+    """the merge file (plan_path): for every pending item that can be merged, its winning entry (decide()) with the
+    tool it came from, in a sidecar of its own (tool "dashboard") -> (path, items written, [skipped id: why])"""
+    registry, _, _ = load_registry(cfg.repo)
+    dec, _, prefix = decisions(cfg, {k: v for k, v in registry.items()})
+    items, skipped = {}, []
+    for k, (win, pend, _, _) in sorted(dec.items()):
+        if not pend: continue
+        why = unmergeable(k, prefix)
+        if why: skipped.append("%s: %s" % (k, why)); continue
+        e = {f: v for f, v in win["raw"].items() if f != "seen"}
+        e["tool"] = win["raw"].get("tool") or win["src"]
+        items[k] = e
+    path = plan_path(cfg)
+    write_json(path, {"format": 1, "tool": "dashboard", "note": "written by the Editor Manager: each pending item's winning "
+                      "sidecar entry (its tool says which); tools/provenance.py merge this file", "items": items})
+    return path, len(items), skipped
 
 
 MERGE_LOCK = threading.Lock()
 
 
-def run_merge(cfg, sidecars):
-    """`tools/provenance.py merge <sidecars>` in the registry clone, hidden (no console window), with this Python.
-    -> (ok, output lines). The one write into a git clone this program makes: only on the owner's click + confirm."""
+def run_merge(cfg):
+    """write_plan, then `tools/provenance.py merge <the merge file>` in the registry clone, hidden (no console window),
+    with this Python. -> (ok, output lines). Only on the owner's click + confirm; an id of no category is skipped (and
+    said), so it never blocks the rest."""
     tgt = merge_target(cfg)
     if not tgt["ok"]: return False, [tgt["why"]]
-    if not sidecars: return False, ["nothing to merge"]
     if not MERGE_LOCK.acquire(blocking=False): return False, ["a merge is already running"]
     try:
-        r = subprocess.run([sys.executable or "python", os.path.join("tools", "provenance.py"), "merge"] + list(sidecars),
+        path, n, skipped = write_plan(cfg)
+        notes = ["  skipped " + x for x in skipped]
+        if not n: return False, notes + ["nothing to merge"]
+        r = subprocess.run([sys.executable or "python", os.path.join("tools", "provenance.py"), "merge", path],
                            cwd=cfg.repo, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            env=dict(os.environ, PYTHONIOENCODING="utf-8"), timeout=120, creationflags=GIT.flags)
         lines = r.stdout.decode("utf-8", "replace").splitlines()
-        return r.returncode == 0, lines[-40:]
-    except (OSError, subprocess.TimeoutExpired) as e:
+        return r.returncode == 0, (notes + lines)[-40:]
+    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
         return False, [str(e)]
     finally:
         MERGE_LOCK.release()
+
+
+def git_write(cwd, *args, timeout=60):
+    """a git call that writes (commit): -> (ok, its output with stderr), hidden, never prompting"""
+    try:
+        r = subprocess.run(["git", "-c", "core.quotepath=off", "-C", cwd] + list(args), stdin=subprocess.DEVNULL,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=dict(GIT.env, GIT_EDITOR="true"),
+                           timeout=timeout, creationflags=GIT.flags)
+        return r.returncode == 0, r.stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+
+
+REG_DIFF_MAX = 400                                                         # (lines of the diff the page shows)
+
+
+def registry_diff(cfg):
+    """what a commit of assets/provenance/ would hold: {files: [[xy, path]], stat, diff (cut at REG_DIFF_MAX lines)}"""
+    files = registry_dirty(cfg)
+    if files is None: return {"files": None, "why": merge_target(cfg)["why"]}
+    new = [f for xy, f in files if xy == "??"]
+    diff = GIT(cfg.repo, "diff", "HEAD", "--no-color", "--", "assets/provenance/") or ""
+    for f in new:                                                        # (untracked: a category file that's new)
+        try:
+            with open(os.path.join(cfg.repo, *f.split("/")), encoding="utf-8", errors="replace") as fh: text = fh.read(1 << 20)
+        except OSError: continue
+        diff += "new file %s\n" % f + "".join("+" + ln + "\n" for ln in text.splitlines())
+    lines = diff.splitlines()
+    stat = (GIT(cfg.repo, "diff", "HEAD", "--shortstat", "--", "assets/provenance/") or "").strip()
+    return {"files": files, "stat": stat + (" (+%d new)" % len(new) if new else ""), "lines": len(lines),
+            "diff": "\n".join(lines[:REG_DIFF_MAX])}
+
+
+def commit_registry(cfg, message):
+    """a local commit of assets/provenance/ only, in the registry clone (never repository\\, never a push); other
+    staged or changed files stay as they are -> (ok, output lines)"""
+    tgt = merge_target(cfg)
+    if not tgt["ok"]: return False, [tgt["why"]]
+    if not registry_dirty(cfg): return False, ["nothing to commit in assets/provenance/"]
+    ok, out = git_write(cfg.repo, "add", "--", "assets/provenance/")
+    if ok: ok, out = git_write(cfg.repo, "commit", "-q", "-m", message, "--", "assets/provenance/", timeout=180)
+    if ok: out = (GIT(cfg.repo, "log", "-1", "--format=%h %s") or "").strip() + "\n" + out
+    return ok, [l for l in out.splitlines() if l.strip()][-40:]
 
 
 # --- the whole picture --------------------------------------------------------------------------------------------------
@@ -802,6 +992,9 @@ def by_program(clones, repos, ref_key, exports):
         for xy, f in w["uncommitted"]:
             per.setdefault(program_of(f), {"commits": {}, "uncommitted": []})["uncommitted"].append([xy, f, w["status"].get(f, "local")])
         for prog, g in per.items():
+            # net: the commit still brings a change testing lacks (a file of it is "local"); a commit cherry-picked
+            # into testing, or one its revert undid, isn't counted as local work
+            for cm in g["commits"].values(): cm["net"] = any(x[2] == "local" for x in cm["files"])
             progs[prog]["clones"].append({"clone": w["name"], "commits": list(g["commits"].values()),
                                           "uncommitted": g["uncommitted"], "stale": w["stale"]})
             if w["stale"]: continue
@@ -906,6 +1099,65 @@ def links(cfg):
     return {"siblings": sibs, "editors": eds, "tabsFrom": src}
 
 
+def start_command(e):
+    """a server editor's tab "start" command (py -3 serve.py --port N --no-open) as the argv this Python runs, always on
+    the tab's port; None when it isn't a plain Python command (cmd.exe syntax, a .cmd...)"""
+    cmd = e.get("start") or ""
+    if not cmd or re.search(r"[&|<>^%]", cmd) or cmd.count('"') % 2: return None
+    argv = [x.replace('"', "") for x in re.findall(r'(?:"[^"]*"|[^\s"])+', cmd)]
+    if argv and re.fullmatch(r"(?i)py(\.exe)?", argv[0]):
+        argv = argv[1:]
+        if argv and re.fullmatch(r"-[23](\.\d+)?", argv[0]): argv = argv[1:]
+    elif argv and re.fullmatch(r"(?i)python3?w?(\.exe)?", argv[0]): argv = argv[1:]
+    else: return None
+    script = next((a for a in argv if not a.startswith("-")), "")
+    if not script.lower().endswith(".py") or os.path.isabs(script) or ".." in script: return None
+    argv = [a for a in argv if not a.startswith("--port=")]
+    if "--port" in argv:
+        i = argv.index("--port"); argv[i + 1:i + 2] = [str(e["port"])]
+    else: argv += ["--port", str(e["port"])]
+    return [sys.executable or "python"] + argv
+
+
+STARTED, START_LOCK, START_WAIT = {}, threading.Lock(), 12.0
+
+
+def start_editor(cfg, folder):
+    """POST /api/start: start a stopped server editor the way the Quark Project app does, hidden (no console window),
+    in its folder, on its tab's port; its output goes to <the dashboard's folder>/logs/<folder>.log. Waits up to
+    START_WAIT s for it to answer -> (ok, message)"""
+    e = next((x for x in editor_links(cfg)[0] if x["folder"] == folder), None)
+    if not e or e["kind"] != "server": return False, "%s isn't a server editor here" % (e["program"] if e else folder or "?")
+    url = "http://127.0.0.1:%d/" % e["port"]
+    if answers(url): return True, "%s is already running" % e["program"]
+    argv = start_command(e)
+    if not argv: return False, "%s: its start command in tabs.json isn't a plain Python command; the Quark Project app starts it" % e["program"]
+    log = os.path.join(os.path.dirname(cfg.sidecar), "logs", folder + ".log")
+    with START_LOCK:                                                     # (one start at a time per editor)
+        p = STARTED.get(folder)
+        if not p or p.poll() is not None:
+            try:
+                os.makedirs(os.path.dirname(log), exist_ok=True)
+                with open(log, "ab") as fh:
+                    fh.write(("[%s] start: %s\n" % (datetime.datetime.now().isoformat(timespec="seconds"), " ".join(argv))).encode("utf-8"))
+                    fh.flush()
+                    # (Windows: hidden, its own process group, never DETACHED_PROCESS: a detached python would open a
+                    # console for its children; elsewhere its own session)
+                    kw = {"creationflags": GIT.flags | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" \
+                        else {"start_new_session": True}
+                    p = STARTED[folder] = subprocess.Popen(argv, cwd=os.path.join(cfg.quark, folder), stdin=subprocess.DEVNULL,
+                                                           stdout=fh, stderr=subprocess.STDOUT,
+                                                           env=dict(os.environ, QUARK_SHELL="1", PYTHONUNBUFFERED="1"), **kw)
+            except OSError as x:
+                return False, "%s didn't start: %s" % (e["program"], x)
+    end = time.monotonic() + START_WAIT
+    while time.monotonic() < end:
+        if answers(url): return True, "%s is running on port %d" % (e["program"], e["port"])
+        if p.poll() is not None: return False, "%s stopped (exit code %s): see %s" % (e["program"], p.returncode, log)
+        time.sleep(0.25)
+    return False, "%s is still starting (no answer on port %d after %d s): see %s" % (e["program"], e["port"], START_WAIT, log)
+
+
 def installs_registry(cfg):
     """installs.json (what the app installs from: repository\\'s copy, else the installed one) -> [entries]"""
     for path in (os.path.join(cfg.quark, "repository", "tools", "project_manager", "installs.json"),
@@ -984,6 +1236,52 @@ def git_watch_paths(cfg, clones, export_dirs):
     return paths
 
 
+def _tree_roots():
+    """PATH_RULES as what to scan for uncommitted edits: the folders (recursively) and, per folder, the globs matched
+    against its own files (a glob with no folder: the clone's top)"""
+    rec, flat = [], {}
+    for _, pats in PATH_RULES:
+        for pat in pats:
+            if pat.endswith("/"): rec.append(pat.rstrip("/")); continue
+            head = pat.split("*", 1)[0]
+            flat.setdefault(head.rsplit("/", 1)[0] if "/" in head else "", []).append(pat)
+    return sorted(set(rec)), flat
+
+
+TREE_REC, TREE_FLAT = _tree_roots()
+TREE_SKIP = {"node_modules", "__pycache__", "old"}                         # (and .* / build*: git ignores those)
+
+
+def tree_sig(root):
+    """the editors' files in a working tree, by scandir (on Windows its entries carry their stat: no call per file):
+    (count, sum of mtime + size). An uncommitted edit, a new file or a deleted one changes it; a few ms per clone."""
+    n = tot = 0
+
+    def add(e):
+        nonlocal n, tot
+        st = e.stat(follow_symlinks=False); n += 1; tot += st.st_mtime_ns + st.st_size
+    stack = [os.path.join(root, *d.split("/")) for d in TREE_REC]
+    while stack:
+        try: it = os.scandir(stack.pop())
+        except OSError: continue
+        with it:
+            for e in it:
+                try:
+                    if not e.is_dir(follow_symlinks=False): add(e)
+                    elif not (e.name.startswith(".") or e.name.lower().startswith("build") or e.name in TREE_SKIP): stack.append(e.path)
+                except OSError: pass
+    for d, pats in TREE_FLAT.items():
+        try: it = os.scandir(os.path.join(root, *d.split("/")) if d else root)
+        except OSError: continue
+        with it:
+            for e in it:
+                rel = (d + "/" if d else "") + e.name.lower()
+                try:
+                    if any(fnmatch.fnmatchcase(rel, p) for p in pats) and not e.is_dir(follow_symlinks=False): add(e)
+                except OSError: pass
+    return n, tot
+
+
 def assets_sig(cfg):
     """the sidecars and every registry file: (mtime, size) each"""
     sig = list(stat_sig([p for p, _, _ in sidecar_paths(cfg)]))
@@ -1000,12 +1298,13 @@ class State:
     the last complete snapshot at once, also while a refresh runs (git fetch can take minutes); only the very first
     snapshot is waited for."""
     WATCH_GAP = 2.0                                                      # (s between two change checks)
+    TREE_GAP = 6.0                                                       # (s between two scans of the working trees)
 
     def __init__(self, cfg):
         self.cfg, self.lock, self.ready = cfg, threading.Lock(), threading.Event()
         self.status = self.changes = self.assets = None
-        self.previews, self.git_watch, self.git_sig, self.assets_sig = {}, [], None, None
-        self.watch_lock, self.watched_at, self.last_fetch = threading.Lock(), 0.0, 0
+        self.previews, self.git_watch, self.tree_roots, self.git_sig, self.assets_sig = {}, [], [], None, None
+        self.watch_lock, self.watched_at, self.trees_at, self.last_fetch = threading.Lock(), 0.0, 0.0, 0
 
     def refresh(self, fetch=False):
         with self.lock:
@@ -1020,15 +1319,28 @@ class State:
     def watch(self):
         """the cheap check (on GET /api/summary and /api/stamp): a few dozen stat calls, at most every WATCH_GAP s. A
         changed sidecar or registry file reloads the assets at once (no git, a few ms); a changed HEAD, index, branch or
-        testing ref starts a refresh in the background (no fetch) while the last snapshot keeps being served."""
+        testing ref, or (scanned every TREE_GAP s) an uncommitted edit of an editor's file, starts a refresh in the
+        background (no fetch) while the last snapshot keeps being served."""
         now = time.monotonic()
         with self.watch_lock:
             if not self.ready.is_set() or self.status is None or self.lock.locked() or now - self.watched_at < self.WATCH_GAP: return
             self.watched_at = now
-            if stat_sig(self.git_watch) != self.git_sig:
+            trees = now - self.trees_at >= self.TREE_GAP
+            if trees: self.trees_at = now
+            if self.git_changed(trees):
                 threading.Thread(target=self._auto, daemon=True).start()
             elif assets_sig(self.cfg) != self.assets_sig:
                 self.reload_assets()
+
+    def git_sig_now(self, watch=None, trees=None):
+        """the clones' HEAD / index / refs (stat) and the editors' files in each working tree (tree_sig)"""
+        return stat_sig(self.git_watch if watch is None else watch), \
+            tuple(tree_sig(r) for r in (self.tree_roots if trees is None else trees))
+
+    def git_changed(self, trees_too=True):
+        """the cheap check's git part; the working trees (tree_sig, a few ms per clone) only when trees_too"""
+        if stat_sig(self.git_watch) != self.git_sig[0]: return True
+        return trees_too and tuple(tree_sig(r) for r in self.tree_roots) != self.git_sig[1]
 
     def _refresh(self, fetch, auto=False):
         cfg, t0 = self.cfg, time.perf_counter()
@@ -1050,9 +1362,11 @@ class State:
             if os.path.isdir(d): export_srcs.append((folder, d, prog, False))
         if os.path.isdir(os.path.join(cfg.data_dir, "overrides")):
             export_srcs.append(("this PC: overrides", os.path.join(cfg.data_dir, "overrides"), None, True))
+        links_job = TASKS.submit(links, cfg)                             # (the port probes run beside the git calls)
         # (read before git runs: a change made while this refresh reads is seen by the next check)
         git_watch = git_watch_paths(cfg, clones, [d for _, d, _, _ in export_srcs])
-        git_sig = stat_sig(git_watch)
+        tree_roots = [c["path"] for c in clones if c["role"] == "work"]    # (the mirror is only ever pulled)
+        git_sig = self.git_sig_now(git_watch, tree_roots)
         mirror = next((c for c in clones if c["role"] == "mirror"), None)
         ref_clone = mirror or next((c for c in clones if os.path.normcase(c["path"]) == os.path.normcase(cfg.repo)), None) \
             or (clones[0] if clones else None)
@@ -1075,7 +1389,8 @@ class State:
         ov_idx = repo_overrides_index(cfg.repo)
         ref = {"sha": rr["testing_sha"], "tp_files": (repos.get(ref_key) or {}).get("tp_files", {})}
         jobs = [(collect_worktree, (c, refs[c["common"]], repos[c["common"]]["tp_files"], ref)) for c in clones]
-        jobs += [(scan_exports, (d, prog, (t_idx, ov_idx), root)) for _, d, prog, root in export_srcs]
+        jobs += [(scan_exports, (d, prog, (t_idx, ov_idx), root, () if root else program_files(cfg.repo, n)))
+                 for n, d, prog, root in export_srcs]
         vers = (repos.get(ref_key) or {}).get("versions", {})
         jobs.append((installs_view, (cfg, ref_cwd, rr["testing_ref"], vers)))
         res = run_parallel(jobs, TASKS)
@@ -1091,12 +1406,14 @@ class State:
                    for f, p, _ in EDITORS]
         changes = {"programs": by_program(worktrees, repos, ref_key, exports),
                    "clones": [{k: w[k] for k in w if k not in ("commits", "uncommitted", "status")} |
-                              {"commits": len(w["commits"]), "uncommitted": len(w["uncommitted"]),
+                              {"commits": sum(1 for cm in w["commits"] if any(w["status"].get(f) == "local" for _, f in cm["files"])),
+                               "allCommits": len(w["commits"]), "uncommitted": len(w["uncommitted"]),
                                "local": sum(1 for x in w["status"].values() if x == "local")} for w in worktrees],
                    "exports": [{"name": e["name"], "path": e["path"], "files": len(e["files"]), "more": e["more"],
                                 "unowned": e["unowned"]} for e in exports],
                    "editors": editors, "rules": PATH_RULES}
         tv = vers.get(rr["testing_ref"])
+        nav = links_job.result()
         ms = (time.perf_counter() - t0) * 1000
         status = {
             "app": APP_ID, "quark": cfg.quark, "repo": cfg.repo, "refClone": ref_clone["name"] if ref_clone else None,
@@ -1106,10 +1423,10 @@ class State:
             "human": summary_pct(assets["stats"]), "refreshed": int(time.time()), "assetsAt": int(time.time()),
             "ms": round(ms), "gitCalls": GIT.calls - calls0, "gitMs": round(GIT.ms - ms0), "fetched": fetch, "auto": auto,
             "lastFetch": self.last_fetch, "fetchErrors": fetch_errors, "noClones": not clones, "ownSidecar": cfg.sidecar}
-        status["links"] = links(cfg)
+        status["links"] = nav
         # (one switch: a reader never sees half of the new snapshot for long)
         self.changes, self.assets, self.previews, self.status = changes, assets, previews, status
-        self.git_watch, self.git_sig, self.assets_sig = git_watch, git_sig, a_sig
+        self.git_watch, self.tree_roots, self.git_sig, self.assets_sig = git_watch, tree_roots, git_sig, a_sig
 
     def reload_assets(self):
         """after a mark or a merge, or when a sidecar / registry file changed on disk: only those are read again (no git)"""
@@ -1136,7 +1453,7 @@ class State:
         progs = []
         for p in self.changes["programs"]:
             counted = [c for c in p["clones"] if not c.get("stale")]
-            local = {cm["sha"] for c in counted for cm in c["commits"]}
+            local = {cm["sha"] for c in counted for cm in c["commits"] if cm.get("net", True)}
             mine = [v for c, v in cats.items() if CATEGORY_EDITOR.get(c) == p["id"]]
             an, ah = sum(v["total"] for v in mine), sum(v["human"] + v["third_party"] for v in mine)
             progs.append({"id": p["id"], "name": p["name"], "ahead_testing": len(local),
@@ -1151,7 +1468,8 @@ class State:
                 "fetched": bool(st["fetched"]),             # (the Quark Project tab bar shows these: "with fetch" / "no fetch")
                 "provenance": dict(total=n, pct_human=pct_human(tot["human"] + tot["third_party"], n),
                                    by_category=cats, **tot),
-                "pending_marks": sum(1 for r in a["rows"] if r.get("p")), "programs": progs, "remaining": tot["ai"],
+                "pending_marks": sum(1 for r in a["rows"] if r.get("pm") or r.get("bad")),
+                "conflicts": sum(1 for r in a["rows"] if r.get("c")), "programs": progs, "remaining": tot["ai"],
                 "stale_clones": [c["name"] for c in self.changes["clones"] if c.get("stale")],
                 "refreshing": self.lock.locked(),
                 "generated_at": datetime.datetime.fromtimestamp(st["refreshed"], datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
@@ -1223,6 +1541,7 @@ class Handler(BaseHTTPRequestHandler):
             st.watch()
             return self.send(200, st.summary())
         if path == "/api/preview": return self.send_preview()
+        if path == "/api/regdiff": return self.send(200, registry_diff(st.cfg))
         self.send(404, {"error": "not found"})
 
     def send_preview(self):
@@ -1272,18 +1591,45 @@ class Handler(BaseHTTPRequestHandler):
             by, note = str(req.get("by") or "").strip()[:80], str(req.get("note") or "").strip()[:500]
             st.ready.wait()
             registry = {r["id"]: r["o"] for r in st.assets["rows"] if r["o"]}
-            try: counts = write_marks(st.cfg, ids, origin, by, note, clear, registry)
+            # (an id the registry doesn't have and no category takes can't be merged: never write a mark for it)
+            prefix, bad = merge_prefix(st.cfg), []
+            if not clear:
+                bad = [i for i in ids if i not in registry and unmergeable(i, prefix)]
+                ids = [i for i in ids if i not in bad]
+                if not ids: return self.send(400, {"error": unmergeable(bad[0], prefix).split(":")[0] + ": can't mark " + bad[0]})
+            by_id, _ = sidecar_entries(st.cfg)
+            others = {k: [(e["src"], e.get("origin"), e["fp"]) for e in by_id.get(k, []) if not e["own"]] for k in ids}
+            try: counts = write_marks(st.cfg, ids, origin, by, note, clear, registry, others)
             except (OSError, ValueError) as e: return self.send(500, {"error": str(e)})
+            counts["bad"] = len(bad)
+            counts["overruled"] = sum(1 for k in ids for _, o, _ in others[k] if not clear and o != origin)
             st.reload_assets()
             return self.send(200, {"assets": st.assets, "status": st.status, "result": counts})
         if path == "/api/merge":
-            # (only with the page's confirmation, only the sidecars that have pending entries now)
+            # (only with the page's confirmation: the merge file holds the page's choice for each pending item now)
             if req.get("confirm") is not True: return self.send(400, {"error": "needs confirm: true"})
             st.ready.wait()
-            ok, lines = run_merge(st.cfg, st.assets["mergeFrom"])
+            ok, lines = run_merge(st.cfg)
             st.reload_assets()
             return self.send(200 if ok else 500, {"ok": ok, "output": lines, "assets": st.assets, "status": st.status,
                                                   **({} if ok else {"error": (lines or ["merge failed"])[-1]})})
+        if path == "/api/plan":
+            # (the merge file for running the merge yourself: written, then the page copies the command)
+            st.ready.wait()
+            try: f, n, skipped = write_plan(st.cfg)
+            except (OSError, ValueError) as e: return self.send(500, {"error": str(e)})
+            return self.send(200, {"path": f, "items": n, "skipped": skipped, "cmd": st.assets["mergeCmd"]})
+        if path == "/api/commit":
+            if req.get("confirm") is not True: return self.send(400, {"error": "needs confirm: true"})
+            msg = str(req.get("message") or "").strip()[:500] or "Provenance: merge the editors' and the owner's marks"
+            st.ready.wait()
+            ok, lines = commit_registry(st.cfg, msg)
+            st.reload_assets()
+            return self.send(200 if ok else 500, {"ok": ok, "output": lines, "assets": st.assets, "status": st.status,
+                                                  **({} if ok else {"error": (lines or ["commit failed"])[-1]})})
+        if path == "/api/start":
+            ok, msg = start_editor(st.cfg, str(req.get("folder") or ""))
+            return self.send(200 if ok else 500, {"ok": ok, "message": msg, "links": links(st.cfg), **({} if ok else {"error": msg})})
         self.send(404, {"error": "not found"})
 
 
