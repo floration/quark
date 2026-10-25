@@ -61,7 +61,8 @@
 </header>
 <div id="staleBar" class="stale-bar" hidden>
   <b>UI dump out of date:</b> <span id="staleWhy"></span>. Pages may not match the game, and a spec made now describes the old layout.
-  Refresh it in the checkout (Quark\repository; about 8 minutes, a hidden game window), then reload: <code id="staleCmd"></code>
+  The Quark Project app regenerates it by itself when it next updates the UI Editor (hidden, low priority, about 8 minutes; needs the game's build tools); then reload.
+  Or run it in the checkout (Quark\repository): <code id="staleCmd"></code>
   <button id="bStaleCopy">Copy command</button><button id="bStaleHide" title="Hide until the page is reloaded">Hide</button>
 </div>
 

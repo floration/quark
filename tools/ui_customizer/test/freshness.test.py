@@ -35,4 +35,27 @@ f = run(0)   # same version, no commits: fresh, nothing to say
 assert not f['stale'] and not f['note'], f
 f = run(1)
 assert f['stale'] and '(the dump is' not in f['why'], f
-print('freshness tests passed')
+
+# install.py --extract-if-stale: extracts only for a stale dump, rebuilds after it, and a failed extract keeps the
+# install successful (the app must not retry an 8-minute job on every start)
+import io, contextlib, types
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'extract'))
+import install
+calls = []
+stale = {'v': True}
+build.main = lambda argv: calls.append('build') or {'freshness': {'stale': stale['v'], 'why': 'x', 'refresh': 'r'}}
+fake = types.ModuleType('extract')
+sys.modules['extract'] = fake
+for ok, want in ((True, ['build', 'extract', 'build']), (False, ['build', 'extract'])):
+    calls.clear()
+    fake.main = (lambda argv: calls.append('extract')) if ok else (lambda argv: (calls.append('extract'), sys.exit('extract: cmake not found')))
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        rc = install.main(['--dest', os.path.join(tmp, 'dest'), '--extract-if-stale'])
+    assert rc == 0 and calls == want, (ok, calls, out.getvalue())
+    assert ok or 'could not regenerate the dump' in out.getvalue()
+stale['v'] = False
+calls.clear()
+with contextlib.redirect_stdout(io.StringIO()):
+    install.main(['--dest', os.path.join(tmp, 'dest'), '--extract-if-stale'])
+assert calls == ['build'], calls
+print('freshness tests passed (and install.py --extract-if-stale)')
