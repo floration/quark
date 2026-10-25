@@ -27,6 +27,15 @@ const TEAM_COLOR = { a: "#f05252", b: "#3f83f8" };   // (style.css --team-a / --
 const SLOT_COLORS = ["#a78bfa", "#22d3ee", "#fbbf24", "#34d399", "#f472b6", "#fb923c", "#60a5fa", "#e879f9", "#a3e635", "#f87171"];
 const teamOf = (t) => (t === 1 || t === "b" || t === "B" ? "b" : t === 0 || t === "a" || t === "A" ? "a" : null);
 const BATCH_COLORS = ["#a78bfa", "#94a3b8"];   // the distributions: this file, the built-in
+// the one tooltip the plot and the timeline share (ev null: hide it)
+function tip(ev, html) {
+    let t = document.getElementById("simTip");
+    if (!t) { t = document.createElement("div"); t.id = "simTip"; t.className = "sim-tip"; document.body.append(t); }
+    if (!ev) { t.style.display = "none"; return; }
+    t.innerHTML = html; t.style.display = "block";
+    const w = t.offsetWidth, h = t.offsetHeight;
+    t.style.left = Math.min(innerWidth - w - 6, ev.clientX + 14) + "px"; t.style.top = Math.min(innerHeight - h - 6, ev.clientY + 14) + "px";
+}
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const DRAW_MS = 250;      // the most often a streaming run redraws
 const LOG_LINES = 400;    // the event log keeps the last this many
@@ -500,11 +509,13 @@ export class SimView {
         if (this.batches.length) return this._drawBatches();
         if (!this.runs.length) { O.innerHTML = `<div class="muted" style="margin-top:8px">No run yet. A run uses the current text (saved or not) as the request's rules.</div>`; return; }
         if (!this._built || this._built.O !== O || this._built.runs !== this.runs) {
-            O.innerHTML = `<div class="sim-runs${this.runs.length > 1 ? " two" : ""}">${this.runs.map((r, i) => `<div class="sim-run" data-i="${i}"><h4>${esc(r.label)} <span class="muted st"></span></h4><div class="sim-start"></div><canvas class="tl"></canvas><div class="sim-body"><canvas class="plot"></canvas><div class="sim-end"></div></div><div class="sim-log"></div></div>`).join("")}</div>`;
+            O.innerHTML = `<div class="sim-runs${this.runs.length > 1 ? " two" : ""}">${this.runs.map((r, i) => `<div class="sim-run" data-i="${i}"><h4>${esc(r.label)} <span class="muted st"></span></h4><div class="sim-start"></div><div class="tl-wrap"><canvas class="tl"></canvas><div class="tl-cur"></div><div class="tl-scrub"></div></div><div class="sim-body"><div class="plot-col"><div class="plot-wrap"><canvas class="plot"></canvas></div><div class="scrub-row"><input type="range" class="scrub" min="0" max="1" step="0.25" value="1" title="replay: the plot shows everyone where they were at this time"><span class="scrub-t muted"></span><button class="scrub-now" title="follow the run (its last frame)">now</button></div></div><div class="sim-end"></div></div><div class="sim-log"></div></div>`).join("")}</div>`;
             O.querySelectorAll(".sim-run").forEach((el) => {
                 const r = this.runs[+el.dataset.i];
                 const q = (s) => el.querySelector(s);
-                r.view = { el, st: q(".st"), start: q(".sim-start"), tl: q("canvas.tl"), plot: q("canvas.plot"), body: q(".sim-body"), end: q(".sim-end"), log: q(".sim-log"), startKey: null, endKey: null, logN: 0 };
+                r.view = { el, st: q(".st"), start: q(".sim-start"), tl: q("canvas.tl"), plot: q("canvas.plot"), body: q(".sim-body"), end: q(".sim-end"), log: q(".sim-log"), startKey: null, endKey: null, logN: 0,
+                    cur: q(".tl-cur"), mark: q(".tl-scrub"), scrub: q("input.scrub"), scrubT: q(".scrub-t"), now: q(".scrub-now"), dots: [], tx: null };
+                this._wireRun(r);
             });
             this._built = { O, runs: this.runs };
         }
@@ -546,6 +557,7 @@ export class SimView {
         const side = W >= 720;
         V.body.classList.toggle("stack", !side);
         this._plot(V.plot, r, M, teams, side ? Math.max(260, Math.min(640, Math.round(W * 0.42))) : Math.min(560, W));
+        this._scrubUi(r);
         const endKey = `${!!M.end}|${r.done}|${r.stopped}|${M.errors.length}|${r.colors.size}`;
         if (endKey !== V.endKey) { V.endKey = endKey; V.end.innerHTML = this._endCard(r, M, s, fields); }
         // the log: the new markers appended, the last LOG_LINES kept
@@ -578,13 +590,69 @@ export class SimView {
             const slots = pf.slots || [];
             card = `<div class="sim-card"><b>${esc(wText)}</b> <span class="muted">(${esc(e.reason || "")})</span>
                 <div>${fields.rounds ? `rounds ${esc(e.rounds ?? "-")} · ` : ""}${teams && e.result ? `score ${esc(e.result.scoreA + " - " + e.result.scoreB)} · ` : ""}length ${esc(typeof len === "number" ? len.toFixed(1) : len)} s</div>
-                ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))}${tn.p999 != null ? ` / p99.9 ${esc(us(tn.p999))}` : ""} / max ${esc(us(tn.max))}${maxAt(tn)}${tn.maxTick === 0 && tn.maxAfterFirst != null ? ` (the match's first tick: the round's setup; after it max ${esc(us(tn.maxAfterFirst))})` : ""}</div>` : ""}
+                ${pf.speedup ? `<div class="muted">${esc(Math.round(pf.speedup))}x real time · ${esc(pf.ticks)} ticks · server tick avg ${esc(us(tn.avg))} / p99 ${esc(us(tn.p99))}${tn.p999 != null ? ` / p99.9 ${esc(us(tn.p999))}` : ""} / max ${esc(us(tn.max))}${maxAt(tn)}${tn.maxAt != null && tn.maxAt < 1 && tn.maxAfterStart != null ? ` (in the match's first second: the round's setup; after it max ${esc(us(tn.maxAfterStart))})` : ""}</div>` : ""}
                 <div>${logicLine}</div>${callLine}
                 ${rows.length ? `<table class="sim-tab"><tr><th></th><th>score</th><th>K</th><th>D</th>${fields.objTime ? "<th>obj s</th>" : ""}</tr>${rows.map((p) => `<tr><td style="color:${teams ? TEAM_COLOR[teamOf(p.team)] || "inherit" : r.colors.get(p.id) || "inherit"}">${p.won ? "★ " : ""}${esc(p.name)}</td><td>${esc(p.score)}</td><td>${esc(p.kills)}</td><td>${esc(p.deaths)}</td>${fields.objTime ? `<td>${esc(p.objTime)}</td>` : ""}</tr>`).join("")}</table>` : ""}
                 ${slots.length ? `<table class="sim-tab"><tr><th>slot</th><th>calls</th><th>total</th><th>avg</th><th>max</th></tr>${slots.map((x) => `<tr><td style="color:${this._slotColor(M, x.slot)}">${esc(x.slot)}</td><td>${esc(x.calls)}</td><td>${esc(us(x.ns))}</td><td>${esc(us(x.avg))}</td><td>${esc(us(x.max))}</td></tr>`).join("")}</table>` : ""}</div>`;
         }
         return (M.errors.length ? M.errors.map((x) => `<div class="bad">${esc(x)}</div>`).join("") : "")
             + (e ? card : `<div class="muted">${r.stopped ? "Stopped before the end." : r.done ? "The run ended without an end line." : "…"}</div>`);
+    }
+    // Replay and hover: the scrubber under the plot (or a click on the timeline) picks a time and the plot shows that
+    // frame; hovering the timeline shows the time and scores there, hovering a dot on the plot who it is.
+    _wireRun(r) {
+        const V = r.view;
+        V.scrub.oninput = () => this._scrubTo(+V.scrub.value >= r.model.t1 ? null : +V.scrub.value);
+        V.now.onclick = () => this._scrubTo(null);
+        const tAt = (ev) => { const tx = V.tl._tx, rc = V.tl.getBoundingClientRect(); if (!tx) return null; const x = (ev.clientX - rc.left) * V.tl.width / rc.width; return Math.max(tx.t0, Math.min(tx.t0 + tx.span, tx.t0 + (x - 30) * tx.span / (tx.W - 40))); };
+        V.tl.onmousemove = (ev) => {
+            const t = tAt(ev), M = r.model;
+            if (t === null || !M) return;
+            this._cursor(V.cur, V.tl, t);
+            const f = frameAt(M, t), nm = (id) => M.names.get(id) || "#" + id;
+            let h = `<b>${t.toFixed(1)} s</b>${f ? ` · ${esc(f.phase)}${f.round ? " · round " + esc(f.round) : ""}` : ""}`;
+            if (f && f.scoreA !== null && f.scoreB !== null && (!M.start || M.start.teams !== false)) h += `<br><span style="color:${TEAM_COLOR.a}">A ${esc(f.scoreA)}</span> · <span style="color:${TEAM_COLOR.b}">B ${esc(f.scoreB)}</span>`;
+            else if (f) h += "<br>" + f.players.filter((p) => p.score !== undefined).sort((a, b) => b.score - a.score).slice(0, 6).map((p) => `<span style="color:${(r.colors && r.colors.get(p.id)) || "inherit"}">${esc(nm(p.id))} ${esc(p.score)}</span>`).join("<br>");
+            const near = M.markers.filter((mk) => Math.abs(mk.t - t) <= Math.max(0.5, (V.tl._tx.span / V.tl._tx.W) * 3)).slice(0, 4);
+            if (near.length) h += "<br>" + near.map((mk) => `<span style="color:${MARK[mk.kind] || "#cbd5e1"}">${esc(mk.kind)}</span> ${esc(mk.text)}`).join("<br>");
+            tip(ev, h);
+        };
+        V.tl.onmouseleave = () => { V.cur.style.display = "none"; tip(null); };
+        V.tl.onclick = (ev) => { const t = tAt(ev); if (t !== null) this._scrubTo(t >= r.model.t1 ? null : t); };
+        V.plot.onmousemove = (ev) => {
+            const rc = V.plot.getBoundingClientRect(), x = (ev.clientX - rc.left) * V.plot.width / rc.width, y = (ev.clientY - rc.top) * V.plot.height / rc.height;
+            let best = null, bd = 100;   // (within 10 px)
+            for (const d of V.dots) { const dd = (d.x - x) ** 2 + (d.y - y) ** 2; if (dd < bd) { bd = dd; best = d; } }
+            if (!best) { tip(null); V.plot.style.cursor = ""; return; }
+            const M = r.model, p = best.p, tm = teamOf(p.team);
+            V.plot.style.cursor = "pointer";
+            tip(ev, `<b>${esc(M.names.get(p.id) || p.name || "#" + p.id)}</b>${tm ? ` · team ${tm.toUpperCase()}` : ""}${p.score !== undefined ? ` · score ${esc(p.score)}` : ""}${p.alive === false ? " · dead" : ""}${p.it ? " · it" : ""}${p.found ? " · found" : ""}`);
+        };
+        V.plot.onmouseleave = () => tip(null);
+    }
+    // every run to the same time (compared runs share the time axis); null: each follows its last frame
+    _scrubTo(t) { for (const r of this.runs) if (r.view && r.model) { r.scrub = t !== null && t < r.model.t1 ? t : null; this._redrawPlot(r); } }
+    _redrawPlot(r) {
+        const V = r.view, M = r.model;
+        if (!M) return;
+        const teams = endCardFields(M.start, M.end).teams;
+        this._plot(V.plot, r, M, teams, V.plot.width);
+        this._scrubUi(r);
+    }
+    _scrubUi(r) {
+        const V = r.view, M = r.model;
+        V.scrub.min = M.t0; V.scrub.max = Math.max(M.t0 + 0.25, M.t1);
+        V.scrub.value = r.scrub ?? M.t1;
+        V.scrub.disabled = M.frames.length < 2;
+        V.scrubT.textContent = r.scrub != null ? `${r.scrub.toFixed(1)} s (replay)` : `${M.t1.toFixed(1)} s`;
+        V.now.disabled = r.scrub == null;
+        if (r.scrub != null) this._cursor(V.mark, V.tl, r.scrub); else V.mark.style.display = "none";
+    }
+    _cursor(el, cv, t) {
+        const tx = cv._tx;
+        if (!tx) return;
+        const x = 30 + (tx.W - 40) * (t - tx.t0) / tx.span;
+        el.style.display = "block"; el.style.left = (x * cv.clientWidth / cv.width) + "px";
     }
     _slotColor(M, name) { const i = M.slotNames.indexOf(name); return SLOT_COLORS[(i < 0 ? 0 : i) % SLOT_COLORS.length]; }
 
@@ -600,6 +668,7 @@ export class SimView {
         g.fillStyle = "#0b1020"; g.fillRect(0, 0, W, H);
         const top = 18, bottom = 190 - 40;   // (the score area; the time labels under it, then the slot strip)
         const span = Math.max(1, axes.t1 - axes.t0), X = (t) => 30 + (W - 40) * (t - axes.t0) / span, Y = (v) => bottom - (bottom - top - 6) * v / axes.maxScore;
+        cv._tx = { t0: axes.t0, span, W };   // (the hover cursor and the scrub mark use the same mapping)
         for (const b of M.bands) { g.fillStyle = PHASE_COLORS[b.phase] || "#222"; g.globalAlpha = 0.55; g.fillRect(X(b.t0), top, Math.max(1, X(b.t1) - X(b.t0)), bottom - top); g.globalAlpha = 1; }
         g.strokeStyle = "#334155"; g.beginPath(); g.moveTo(30, bottom); g.lineTo(W - 10, bottom); g.stroke();
         g.fillStyle = "#94a3b8"; g.font = "10px monospace"; g.fillText(String(axes.maxScore), 2, 26); g.fillText("0", 2, bottom);
@@ -689,7 +758,8 @@ export class SimView {
         }
         pg.drawImage(r._layer.canvas, 0, 0);
         pg.drawImage(r._trail.canvas, 0, 0);
-        const last = M.frames[M.frames.length - 1];
+        const last = r.scrub != null ? frameAt(M, r.scrub) : M.frames[M.frames.length - 1];   // (scrubbed: that time's frame)
+        r.view.dots = [];
         if (!last) return;
         const ob = last.obj && last.obj.bomb;
         if (ob && Array.isArray(ob.pos)) { const [x, y] = P(ob.pos[0], ob.pos[2]); pg.strokeStyle = MARK.plant; pg.lineWidth = 2; pg.strokeRect(x - 4, y - 4, 8, 8); pg.lineWidth = 1; }
@@ -698,6 +768,7 @@ export class SimView {
             const tm = teams ? teamOf(p.team) : null;
             pg.fillStyle = p.alive === false ? "#475569" : tm ? TEAM_COLOR[tm] : "#e5e7eb";
             pg.beginPath(); pg.arc(x, y, p.it ? 6 : 4, 0, 7); pg.fill();
+            r.view.dots.push({ x, y, p });
         }
         pg.fillStyle = "#94a3b8"; pg.font = "10px monospace";
         pg.fillText(`t=${last.t.toFixed(1)} ${last.phase}${last.round ? " r" + last.round : ""}${last.clock !== null ? " clock " + Math.round(last.clock) : ""}`, 4, H - 4);

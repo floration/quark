@@ -327,6 +327,14 @@ table.keys td { font-size: 12px; }
 .sim-run h4 { margin: 0 0 6px; }
 .sim-run canvas.tl { width: 100%; display: block; border-radius: 4px; }
 .sim-run canvas.plot { border-radius: 4px; }
+.tl-wrap, .plot-wrap { position: relative; }
+.tl-cur, .tl-scrub { position: absolute; top: 0; bottom: 0; width: 1px; display: none; pointer-events: none; }
+.tl-cur { background: rgba(229,231,235,.55); }
+.tl-scrub { background: var(--acc); width: 2px; }
+.sim-run canvas.tl { cursor: crosshair; }
+.scrub-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; }
+.scrub-row input.scrub { flex: 1; min-width: 80px; }
+.sim-tip { position: fixed; z-index: 3000; display: none; pointer-events: none; background: var(--bg2); border: 1px solid var(--line2); border-radius: 6px; padding: 4px 7px; font-size: 11px; max-width: 360px; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
 .sim-delta, .sim-dist { margin-top: 10px; }
 .sim-delta .sim-tab td:not(:first-child) { font-family: var(--mono); }
 .sim-hists { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 10px; }
