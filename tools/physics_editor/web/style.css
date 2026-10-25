@@ -168,9 +168,9 @@ td.gv:hover .guse { opacity: 1; }
 #pg-code .sub.on { display: grid; }
 
 /* code › movement code */
-#mcWrap { grid-template-rows: auto 1fr; }
+#mcWrap { grid-template-rows: auto auto 1fr; }
 #mcFiles button { font: 12px var(--mono); padding: 1px 8px; }
-#mcBody { display: grid; grid-template-columns: 250px 1fr; min-height: 0; }
+#mcBody { display: grid; grid-template-columns: 250px 1fr; min-height: 0; grid-row: 3; }
 #mcSide { overflow: auto; border-right: 1px solid var(--line); background: var(--bg1); padding: 4px 8px 20px; font-size: 12px; }
 #mcSide h3 { margin: 8px 0 4px; }
 .mset .msi { display: grid; grid-template-columns: 1fr 22px 62px; gap: 4px; padding: 1px 4px; border-radius: 4px; cursor: pointer; font-family: var(--mono); font-size: 11.5px; }
@@ -206,8 +206,12 @@ td.gv:hover .guse { opacity: 1; }
 :root[data-theme="light"] .cK { color: #b4500f; } :root[data-theme="light"] .cM, :root[data-theme="light"] .cfn { color: #1f5fbf; } :root[data-theme="light"] .cn { color: #a25b00; } :root[data-theme="light"] .ck, :root[data-theme="light"] .cpp { color: #7a3fc4; } :root[data-theme="light"] .cs { color: #3c7a1e; } :root[data-theme="light"] .ct { color: #1b6f9a; } :root[data-theme="light"] .cF { color: #157a6e; }
 
 /* code graph */
-#cgWrap { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-#cgView { position: relative; min-height: 0; }
+#cgWrap { display: grid; grid-template-rows: auto auto 1fr; height: 100%; }
+/* the parser couldn't find part of the movement code (source.js sourceProblems): said, not a silently empty graph */
+.srcwarn { margin: 4px 0; padding: 5px 8px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 0 4px 4px 0; font-size: 12px; }
+.srcwarn[hidden] { display: none; }
+.srcwarn div + div { margin-top: 2px; }
+#cgView { position: relative; min-height: 0; grid-row: 3; }
 #cgCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #cgTip { position: absolute; display: none; max-width: 420px; pointer-events: none; background: color-mix(in srgb, var(--bg1) 95%, transparent); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: var(--qt-shadow); z-index: 3; }
 #cgTip code { font-size: 11px; }

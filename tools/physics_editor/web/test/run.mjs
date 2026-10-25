@@ -129,6 +129,7 @@ async function main() {
 
     await v2NodeChecks(cat, ph);
     await fixNodeChecks(cat, ph);
+    await fix2NodeChecks(cat, ph);
 
     // ------------------------------------------------------------ blocks
     console.log("blocks round trip");
@@ -613,6 +614,9 @@ async function v2BrowserChecks(page, mode, shots) {
     const chip = await page.locator('#mcCode .mchip[data-k="friction"]').first().innerText();
     ok(/ƒ/.test(chip) && /=/.test(chip), "  the friction chip shows its equation and base × multiplier = value", chip);
     ok((await page.locator("#mcCode .mnote").count()) > 5, "  the plain-language notes");
+    const side = await page.$$eval("#mcSide .mfi", (d) => d.map((x) => x.firstChild.textContent.trim()));
+    ok(side.filter((x) => x.startsWith("· ")).length >= 15 && side.includes("pmoveStep()"), "  the side lists pmoveStep and its steps", `${side.filter((x) => x.startsWith("· ")).length} steps`);
+    ok(new Set(side).size === side.length, "  no duplicate entries (overloads show their parameters)", side.filter((x, i) => side.indexOf(x) !== i).join(", "));
     if (shots) await shot(page, "code-movement");
     await page.click("#mcFiles button:has-text('gamedefs.h')").catch(() => {});
     await page.waitForTimeout(100);
@@ -628,8 +632,11 @@ async function v2BrowserChecks(page, mode, shots) {
     const cg = await page.evaluate(() => { const v = window.qpe.codeGraph; const n = (v.nodes || []).find((x) => x.type === "step"); const r = v.c.getBoundingClientRect();
         return { n: (v.nodes || []).length, steps: (v.nodes || []).filter((x) => x.type === "step").length, hot: (v.edges || []).filter((e) => e.hot || e.changed).length,
             x: n && r.left + (n.x + n.w / 2 - v.cam.x) * v.cam.s, y: n && r.top + (n.y + n.h / 2 - v.cam.y) * v.cam.s, line: n && n.st.start }; });
-    ok(cg.n > 40 && cg.steps >= 10, "Code graph: settings -> steps -> state", `${cg.n} nodes, ${cg.steps} steps`);
+    const { STEPS } = await import(JS + "source.js");
+    ok(cg.n > 40 && cg.steps === STEPS.length, "Code graph: settings -> steps -> state (every step of pmoveStep)", `${cg.n} nodes, ${cg.steps} of ${STEPS.length} steps`);
+    ok(await page.locator("#cgWarn").isHidden(), "  no 'couldn't read the movement code' bar", await page.locator("#cgWarn").innerText().catch(() => ""));
     if (shots) await shot(page, "codegraph");
+    if (cg.x == null) throw new Error("the Code graph has no step to click (see the check above)");
     await page.mouse.click(cg.x, cg.y);
     await page.waitForTimeout(400);
     const at = await page.evaluate(() => ({ page: window.qpe.page, sub: window.qpe.moveCode.sub, flash: [...document.querySelectorAll("#mcCode .ml.flash, #mcCode .ml.mark")].map((e) => +e.dataset.l) }));
@@ -727,6 +734,15 @@ async function fixNodeChecks(cat, ph) {
             ok(bad.code === 1 && /no preset/.test(bad.answer.error || ""), "  a bad request answers its error and the helper carries on", JSON.stringify(bad.answer));
         }
     }
+}
+
+// ---------------------------------------------------------------- the second audit's fixes (1.18.32)
+async function fix2NodeChecks(cat, ph) {
+    console.log("second audit fixes (node)");
+    const { parserCases, checkSource } = await import(pathToFileURL(path.join(HERE, "source_check.mjs")).href);
+    for (const [what, pass, detail] of parserCases()) ok(pass, "source parser: " + what, detail);
+    const r = checkSource(fs.readFileSync(path.join(REPO, "src/game/pmove.cpp"), "utf8"));
+    ok(!r.problems.length, "the movement code is read: pmoveStep and every step and noted function found", r.problems.join(" | ") || `${r.steps.length} steps`);
 }
 
 async function fixBrowserChecks(page, mode, shots) {

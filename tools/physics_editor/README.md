@@ -152,7 +152,10 @@ Two views (the choice is remembered):
   its text and "at rest"); constants a setting scales get a dashed chip where they are defined. Click a chip to go to
   that setting in Values. **notes** puts a short plain-language note above each function and each step of
   `pmoveStep`; **only lines that use a setting** folds the rest; the find box searches. The side lists every setting
-  with how often the code reads it (click: the next place) and every function and step (click: go there).
+  with how often the code reads it (click: the next place) and every function and step (click: go there; overloads
+  show their parameter names). Functions are found by brace matching however long they grow; if a game-code change
+  leaves the page unable to find `pmoveStep`, one of its steps or a function with a note, a bar above the code (and
+  above the Code graph) says what it couldn't find, instead of a quietly empty graph.
 
 ### Code graph
 
@@ -263,7 +266,7 @@ renames its `custommode=` line.
 | `references/` | other games' movement values (`references/README.md`; `check.py` checks them) |
 | `web/js/gl.js`, `qmap.js` | WebGL drawing of a map; .qmap parsing |
 | `web/js/mockpm.js`, `sim.js`, `room.js` | the MOCK: pmove in JS, the scenario runner and metrics, the stand-in room |
-| `web/test/run.mjs` | the checks |
+| `web/test/run.mjs`, `source_check.mjs` | the checks; the movement-code reading check |
 
 `serve.py` also serves `/references/<file>` (the references folder, nothing outside it) and
 `/api/source?file=pmove.cpp|pmove.h|gamedefs.h|customrules.cpp` (the checkout's file, else the installed `source/`
@@ -301,6 +304,11 @@ temporary data folder and checks:
   a 1280 window.
 
 `python3 tools/physics_editor/native/test_phys.py [quark_maptool]` checks the helper's commands, physserve included.
+
+`node tools/physics_editor/web/test/source_check.mjs [pmove.cpp]` (Node only, about 0.1 s) checks that the page still
+reads the game's movement code: `pmoveStep`, every one of its steps and every function with a note found (exit 1 and a
+line per miss otherwise), plus the parser's own cases (a 5000-line function, braces in strings and comments,
+overloads). Run it after changing `src/game/pmove.cpp`; `run.mjs` runs it too.
 
 Without `references/index.json` it writes a stub and passes it with `--references`. It saves a screenshot of each
 tab and view (default `/mnt/project-files/physics-editor/shots-v2/`).
