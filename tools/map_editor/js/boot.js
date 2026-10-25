@@ -366,7 +366,7 @@ class App extends Emitter {
     if (bb.max[1] - bb.min[1] > 64) { banner("A group is at most 64 m tall", true); return; }
     const sz = [0, 1, 2].map(k => Math.max(1e-6, bb.max[k] - bb.min[k]));
     let gi = -1;
-    d.edit("group " + idx.length + " boxes", ["brushes", "groups"], () => {
+    d.edit("group " + plural(idx.length, "box"), ["brushes", "groups"], () => {
       const parts = idx.map(i => { const b = m.brushes[i]; return { mat: b.mat, min: [0, 1, 2].map(k => (b.min[k] - bb.min[k]) / sz[k]), max: [0, 1, 2].map(k => (b.max[k] - bb.min[k]) / sz[k]) }; });
       for (const i of idx.slice().reverse()) m.brushes.splice(i, 1);
       m.groups.push({ type: "custom", mat: 0, dir: 0, min: bb.min, max: bb.max, parts }); gi = m.groups.length - 1;

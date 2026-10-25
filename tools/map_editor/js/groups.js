@@ -248,7 +248,7 @@ export class Library {
     const axes = [true, false, false], sp = def.spacing.slice();
     let replace = true;
     const r = await dialog([el("h2", {}, "Make a custom object"),
-      el("p", { class: "dim" }, "The " + boxes.length + " boxes are one unit (" + def.unit.join(" x ") + " m). Placed in a map, the object grows by whole units along the axes it repeats on: a longer object has more units, never stretched ones."),
+      el("p", { class: "dim" }, "The " + plural(boxes.length, "box") + (boxes.length === 1 ? " is" : " are") + " one unit (" + def.unit.join(" x ") + " m). Placed in a map, the object grows by whole units along the axes it repeats on: a longer object has more units, never stretched ones."),
       el("div", { class: "form" },
         el("label", {}, "name"), name,
         el("label", {}, "repeats along"), el("div", { class: "chips" }, ["x", "y (up)", "z"].map((a, k) => check(a, axes[k], v => { axes[k] = v; }))),

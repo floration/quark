@@ -50,11 +50,12 @@ export class Panels {
           el("button", { class: "mini danger", title: "delete " + m.name + ".qmap (moved to deleted/ in your maps folder)", onclick: (e) => { e.stopPropagation(); this.app.deleteMine(m.name); } }, "x")) : null));
     };
     const mine = L.mine.filter(shown), defs = L.defaults.filter(shown);
-    rows.push(el("div", { class: "grp" }, "Your maps (" + (f ? mine.length + " of " + L.mine.length : L.mine.length) + ")"));
+    rows.push(el("div", { class: "grp" }, "Your maps (" + (f && L.mine.length ? mine.length + " of " + L.mine.length : L.mine.length) + ")"));
     mine.forEach(m => row(m, "mine"));
     if (!L.mine.length) rows.push(el("div", { class: "row faint" }, "none yet: New, or Save as"));
     rows.push(el("div", { class: "grp" }, "Default maps (read-only)" + (f ? " (" + defs.length + " of " + L.defaults.length + ")" : "")));
     defs.forEach(m => row(m, "default"));
+    if (f && !mine.length && !defs.length) rows.push(el("div", { class: "row faint" }, "no map matches \u201c" + f + "\u201d"));
     fill(this.mapsEl, ...rows);
   }
 
@@ -86,7 +87,7 @@ export class Panels {
     if (m.groups.length) {
       rows.push(el("div", { class: "grp" }, "Groups"));
       m.groups.forEach((g, i) => rows.push(el("div", { class: "row" + (d.isSel("group", i) ? " on" : ""), onclick: (e) => { d.select([{ k: "group", i }], e.shiftKey); this.app.frameSel(); } },
-        el("span", {}, "#" + i + " " + g.type), el("span", { class: "sub" }, g.type === "custom" ? g.parts.length + " parts" : MATERIALS[g.mat]))));
+        el("span", {}, "#" + i + " " + g.type), el("span", { class: "sub" }, g.type === "custom" ? plural(g.parts.length, "part") : MATERIALS[g.mat]))));
     }
     if (objs.length) {
       rows.push(el("div", { class: "grp" }, "Custom objects"));
@@ -112,14 +113,15 @@ export class Panels {
     if (!sel.length) {
       out.push(el("h3", {}, "Nothing selected"));
       out.push(el("p", {}, "Click to select (Shift adds, drag a rectangle, click again for what is behind). Pick a tool above to add things. ? lists the keys."));
-      out.push(el("p", { class: "faint" }, [plural(m.brushes.length, "box"), plural(m.generated.length - m.generated.reduce((n, b) => n + (b.object !== undefined), 0), "box") + " made from groups and ladders", plural((d.sidecar.objects || []).length, "custom object"), plural(m.spawns.length, "spawn"), plural(m.lights.length, "light")].join(", ") + "."));
+      out.push(el("p", { class: "faint" }, (() => { const gen = m.generated.length - m.generated.reduce((n, b) => n + (b.object !== undefined), 0), no = (d.sidecar.objects || []).length;
+        return [plural(m.brushes.length, "box"), gen ? plural(gen, "box") + " made from groups and ladders" : "", no ? plural(no, "custom object") : "", plural(m.spawns.length, "spawn"), plural(m.lights.length, "light")].filter(Boolean).join(", ") + "."; })()));
       fill(P, ...out); return;
     }
     if (sel.length > 1) {
       const counts = {};
       for (const s of sel) counts[s.k] = (counts[s.k] || 0) + 1;
       out.push(el("h3", {}, sel.length + " selected"));
-      out.push(el("p", {}, Object.entries(counts).map(([k, n]) => n + " " + KINDS[k].label + (n > 1 ? "s" : "")).join(", ")));
+      out.push(el("p", {}, Object.entries(counts).map(([k, n]) => plural(n, KINDS[k].label)).join(", ")));
       const bb = d.selBounds();
       out.push(el("p", { class: "faint num" }, "bounds " + bb.min.map(v => fmt(v)).join(" ") + "  ..  " + bb.max.map(v => fmt(v)).join(" ")));
       if (counts.brush) {

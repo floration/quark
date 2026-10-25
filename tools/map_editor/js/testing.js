@@ -7,6 +7,13 @@ import { MODES } from "./fallback_parse.js";
 import { TEAMS } from "./panels.js";
 import { objectiveName } from "./doc.js";
 
+// the metrics' top-level numbers as the table shows them: key -> [name, value as text]
+const NUMBERS = {
+  fairness: ["fairness (1 = even)", (v) => v < 0 ? "not measured" : fmt(v, 2)],
+  worstFair: ["least fair", null],
+  setting: ["setting", null],
+};
+
 export class Testing {
   constructor(app) {
     this.app = app; this.doc = app.doc; this.view = app.view; this.api = app.api;
@@ -85,6 +92,7 @@ export class Testing {
         if (!o.pos || (this.onlyObjective && o.name !== this.onlyObjective)) continue;
         // over the zone's own label (POINT A ...) when it has one: same spot, drawn one label higher on screen
         const s = label(o.name + "  A " + fmtS(o.attackers) + " / D " + fmtS(o.defenders), "#ffffff", 0.7), z = this.zoneOf(o.name);
+        s.userData.prio = 1;
         if (z) { s.position.set((z.min[0] + z.max[0]) / 2, z.max[1] + 0.7, (z.min[2] + z.max[2]) / 2); s.center.set(0.5, -0.9); }
         else s.position.set(o.pos[0], o.pos[1] + 5, o.pos[2]);
         L.add(s);
@@ -249,11 +257,15 @@ export class Testing {
       out.push(tbl);
       out.push(el("p", { class: "faint" }, "diff = attackers - defenders arrival (the map report's bar: within -1 .. +1 s). Routes: green fast .. red slow."));
       const N = this.metrics.numbers || {};
-      if (Object.keys(N).length) out.push(el("table", { class: "t" }, Object.entries(N).filter(([k, v]) => v === null || typeof v !== "object").map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", { class: "n" }, typeof v === "number" ? fmt(v, 2) : typeof v === "string" ? v : JSON.stringify(v))))));
+      const rows = Object.entries(N).filter(([k, v]) => v !== null && v !== "" && typeof v !== "object").map(([k, v]) => {
+        const [name, show] = NUMBERS[k] || [k.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(), null];
+        return el("tr", {}, el("td", {}, name), el("td", { class: "n" }, show ? show(v) : typeof v === "number" ? fmt(v, 2) : String(v)));
+      });
+      if (rows.length) out.push(el("table", { class: "t" }, rows));
     }
     // route
     out.push(el("h3", {}, "Route", el("span", { class: "spacer" }), el("button", { disabled: !tool, onclick: () => { this.app.setTool("route"); this.routeA = null; } }, "Pick two points")));
-    if (this.route) out.push(el("p", {}, this.route.reachable === false ? el("span", { class: "bad" }, "not reachable") : "walk " + fmtS(this.route.seconds) + ", " + (this.route.path || []).length + " points",
+    if (this.route) out.push(el("p", {}, this.route.reachable === false ? el("span", { class: "bad" }, "not reachable") : "walk " + fmtS(this.route.seconds) + (typeof this.route.metres === "number" ? ", " + fmt(this.route.metres, 1) + " m" : "") + ", " + (this.route.path || []).length + " points",
       el("button", { class: "mini", onclick: () => { this.route = null; this.routeMarks = null; this.drawRoutes(); this.render(); } }, "clear")));
     // custom
     out.push(el("h3", {}, "Custom tests", el("span", { class: "faint" }, "(saved with the map)"), el("span", { class: "spacer" }),
