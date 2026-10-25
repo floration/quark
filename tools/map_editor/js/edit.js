@@ -144,53 +144,56 @@ export class Editor {
     return null;
   }
 
-  // ---- the gizmo
-  updateGizmo() {
-    const g = this.gizmo;
-    for (const c of g.children.slice()) { g.remove(c); c.geometry && c.geometry.dispose(); }
-    const d = this.doc;
-    if (!d.map || this.tool !== "select" || !d.sel.length || this.app.bots?.playing) return;
-    const bb = (this.drag && this.drag.bb) || d.selBounds(); if (!bb) return;
-    const ctr = [0, 1, 2].map(k => (bb.min[k] + bb.max[k]) / 2);
-    const ppm = this.view.pxPerMetre(ctr), L = 70 / ppm, R = 3 / ppm;
-    const mat = (c, a) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a ?? 0.95, depthTest: false });
-    const top = this.view.camMode === "top";
+  // ---- the gizmo: built once (shared geometry and materials), then only shown, moved and scaled each frame, so a
+  // drawn frame makes no meshes, materials or garbage. Arrows (move) sit at the selection's centre, one face handle
+  // (resize) per side; all keep their screen size (scale 1 / pixels per metre).
+  buildGizmo() {
+    const g = this.gizmo, L = 70, R = 3, s = 6;   // (sizes in pixels: the scale makes them metres)
+    const mat = (c, a) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a, depthTest: false });
+    const shaftG = new THREE.CylinderGeometry(R, R, L, 6).translate(0, L / 2, 0), headG = new THREE.ConeGeometry(R * 3, R * 8, 10).translate(0, L + R * 4, 0);
+    const cube = new THREE.BoxGeometry(s, s, s), ringG = new THREE.BoxGeometry(s * 1.5, s * 1.5, s * 1.5), white = mat(0xffffff, 0.9);
+    this.gz = { arrows: [], faces: [] };
+    for (let a = 0; a < 3; a++) for (const sgn of [1, -1]) {
+      const m = mat(AX_COL[a], sgn > 0 ? 0.95 : 0.4), q = new THREE.Quaternion().setFromUnitVectors(AX[1], AX[a].clone().multiplyScalar(sgn));
+      for (const geo of [shaftG, headG]) { const o = new THREE.Mesh(geo, m); o.quaternion.copy(q); o.userData = { handle: "move", axis: a }; g.add(o); this.gz.arrows.push(o); }
+    }
     for (let a = 0; a < 3; a++) {
-      if (top && a === 1) continue;
-      for (const sgn of [1, -1]) {
-        const dir = AX[a].clone().multiplyScalar(sgn);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(R, R, L, 6).translate(0, L / 2, 0), mat(AX_COL[a], sgn > 0 ? 0.95 : 0.4));
-        shaft.quaternion.setFromUnitVectors(AX[1], dir); shaft.position.fromArray(ctr);
-        const head = new THREE.Mesh(new THREE.ConeGeometry(R * 3, R * 8, 10).translate(0, L + R * 4, 0), mat(AX_COL[a], sgn > 0 ? 0.95 : 0.4));
-        head.quaternion.copy(shaft.quaternion); head.position.fromArray(ctr);
-        shaft.userData = head.userData = { handle: "move", axis: a };
-        g.add(shaft, head);
+      const rm = mat(AX_COL[a], 0.5);
+      for (const side of [0, 1]) {
+        const ud = { handle: "size", axis: a, side }, ring = new THREE.Mesh(ringG, rm), h = new THREE.Mesh(cube, white);
+        ring.userData = h.userData = ud; g.add(ring, h); this.gz.faces.push({ a, side, meshes: [ring, h] });
       }
     }
-    // face handles: one object with a box (resize)
-    if (d.sel.length === 1 && ["box", "stairs"].includes(KINDS[d.sel[0].k].shape)) {
-      const rep = d.sel[0].k === "object" ? this.objDef(d.obj(d.sel[0])) : null;
-      for (let a = 0; a < 3; a++) for (const side of [0, 1]) {
-        if (top && a === 1) continue;
-        if (rep && !rep.axes[a]) continue;   // (a custom object only grows where it repeats)
-        const p = ctr.slice(); p[a] = side ? bb.max[a] : bb.min[a];
-        const s = 6 / ppm;
-        const h = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat(0xffffff, 0.9));
-        h.position.fromArray(p); h.userData = { handle: "size", axis: a, side };
-        const ring = new THREE.Mesh(new THREE.BoxGeometry(s * 1.5, s * 1.5, s * 1.5), mat(AX_COL[a], 0.5));
-        ring.position.fromArray(p); ring.userData = h.userData;
-        g.add(ring, h);
+  }
+  updateGizmo() {
+    if (!this.gz) this.buildGizmo();
+    const g = this.gizmo, d = this.doc;
+    const hide = () => { g.visible = false; };
+    if (!d.map || this.tool !== "select" || !d.sel.length || this.app.bots?.playing) return hide();
+    const bb = (this.drag && this.drag.bb) || d.selBounds(); if (!bb) return hide();
+    g.visible = true;
+    const ctr = [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2];
+    const k = 1 / this.view.pxPerMetre(ctr), top = this.view.camMode === "top";
+    for (const o of this.gz.arrows) { o.visible = !(top && o.userData.axis === 1); o.position.set(ctr[0], ctr[1], ctr[2]); o.scale.setScalar(k); }
+    // face handles: one object with a box (resize); a custom object only grows where it repeats
+    const one = d.sel.length === 1 && (KINDS[d.sel[0].k].shape === "box" || KINDS[d.sel[0].k].shape === "stairs");
+    const rep = one && d.sel[0].k === "object" ? this.objDef(d.obj(d.sel[0])) : null;
+    for (const f of this.gz.faces) {
+      const vis = one && !(top && f.a === 1) && !(rep && !rep.axes[f.a]);
+      for (const o of f.meshes) {
+        o.visible = vis; if (!vis) continue;
+        o.position.set(ctr[0], ctr[1], ctr[2]); o.position.setComponent(f.a, f.side ? bb.max[f.a] : bb.min[f.a]); o.scale.setScalar(k);
       }
     }
   }
   gizmoHit(e) {
     this.view.applyCamera(); this.view.camera.updateMatrixWorld();
     this.updateGizmo(); this.gizmo.updateMatrixWorld(true);   // (as it is now, even before the next frame draws it)
-    if (!this.gizmo.children.length) return null;
+    if (!this.gizmo.visible) return null;
     const r = this.canvas().getBoundingClientRect();
-    const rc = new THREE.Raycaster();
+    const rc = this.rc || (this.rc = new THREE.Raycaster());
     rc.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.view.camera);
-    const hit = rc.intersectObjects(this.gizmo.children, false)[0];
+    const hit = rc.intersectObjects(this.gizmo.children, false).find(h => h.object.visible);
     return hit ? hit.object.userData : null;
   }
   canvas() { return this.view.canvas; }

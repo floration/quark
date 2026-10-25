@@ -347,7 +347,7 @@ export class View {
       r.info.reset();
       r.clear();
       r.render(this.scene, this.camera);
-      if (this.overlay.children.length) { r.clearDepth(); r.render(this.overlay, this.camera); }
+      if (this.overlay.children.some(c => c.visible)) { r.clearDepth(); r.render(this.overlay, this.camera); }
       this.frameTimes.push({ t, ms: performance.now() - t0 });
       this.onAfterRender && this.onAfterRender();
     }
