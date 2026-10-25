@@ -220,7 +220,7 @@
         cur.type === 'boxes' ? 'Default: ' + cur.parts.length + ' boxes' : 'Default mesh';
     if (m.err) status = 'The export file could not be read: ' + m.err;
     panel.append(h('div.row', h('b', status)));
-    if (m.shipped && m.shipped.err) panel.append(h('div.probs', h('div.prob.error', 'The shipped override (assets/overrides/' + key.slice(7) + ', ' + m.shipped.name + ') is refused by the game: ' + m.shipped.err + '. The game logs it and draws the default (shown here).')));
+    if (m.shipped && m.shipped.err) panel.append(h('div.probs', h('div.prob.error', 'The shipped override (assets/overrides/' + key.replace(/[^/]*$/, m.shipped.name) + ') is refused by the game: ' + m.shipped.err + '. The game logs it and draws the default (shown here).')));
     if (!edited) panel.append(h('div.row', h('span.badge.o-' + pv.origin, pv.origin), h('span.dim', [pv.by ? 'by ' + pv.by : '', pv.source, pv.note].filter(Boolean).join(' / ') || 'no details'),
       h('span.faint', '(assets/provenance, ' + (cur.shipped ? 'the shipped model' : 'the default') + ')')));
     const known = Q.knownProv(key);

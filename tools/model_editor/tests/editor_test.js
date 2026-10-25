@@ -239,6 +239,9 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
       banner: document.querySelector('#banner').innerText }));
     check(/shipped/i.test(st.badges) && /human/i.test(st.badges), 'shipped KNIGHT shows shipped + human', st.badges);
     check(/refused/i.test(st.heavy) && /refuses the shipped override/.test(st.banner), 'a broken shipped override is flagged (badge, banner)', st);
+    await p.click('.card[data-key="models/player/HEAVY"]');
+    st = await p.evaluate(() => document.querySelector('#panel .prob.error').textContent);
+    check(st.includes('(assets/overrides/models/player/HEAVY.glb)'), 'the panel names the refused file\'s path', st);
     await p.click('.card[data-key="models/player/KNIGHT"]');
     await p.click('.parts tr:nth-child(1)');
     await p.keyboard.press('ArrowRight');
