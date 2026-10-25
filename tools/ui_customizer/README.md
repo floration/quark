@@ -54,6 +54,8 @@ registry change (its `installs.json`), so the banner follows the game.
   overlapping, labels running into widgets, anything off the screen, text the game would cut ("...") or shrink, widgets
   sticking out of their panel, tiny text. Red = bad, amber = check it; the page inspector lists them (click one to select
   its widgets). With a View on, it checks the page at that resolution and text rounding (21:9, 32:9 ...).
+- Light or dark as the system / the Quark Project app is (`?theme=light` or `dark` pins one); the game's pages keep
+  the game's dark look.
 - Everything autosaves in the browser. A page still as the game has it is saved as a reference to the dump (a few KB
   per save, not 1.7 MB), so after a dump refresh the pages you never touched show the new game; Export layout writes
   every page.

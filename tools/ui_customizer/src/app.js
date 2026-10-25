@@ -9,6 +9,8 @@
     try { return JSON.parse(t); } catch (err) { console.warn('bad embedded JSON in #' + id, err); return null; }
   };
   const build = readJson('buildInfo') || {};
+  // ?theme=light|dark pins the page's theme; otherwise it follows the system / the app (prefers-color-scheme, app.css)
+  try { const th = new URLSearchParams(location.search).get('theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) { /* none */ }
   // storage namespace: a proposal build (build.py --layout) has its own, so it never reads or overwrites the plain tool's
   const NS = build.storeNs || 'quark-ui-customizer';
   const STORE_KEY = NS + '/layout/v1';
