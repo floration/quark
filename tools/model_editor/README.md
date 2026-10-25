@@ -167,7 +167,9 @@ The editor never writes `assets/provenance/*.json` in the repository.
   duplicate, mirror and delete take them all, and colour, tint slot, alpha and flags typed for the box shown go to all
   of them (a colour as the colour shown, each keeping its slot); Ctrl+C / Ctrl+V (or Copy / Paste) copy boxes within a
   model or to another one (a visor from one player to another: same place, size, slot, flags and colour shown;
-  remembered in this browser); a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
+  remembered in this browser); **symmetric** (the Boxes header) links each selected box to its mirror image across
+  x = 0 (a box at -x with the same y, z and size, outlined in pink): every edit is copied to it mirrored and Delete
+  takes both (Mirror makes such a pair); a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
   across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default (**Reset to shipped model** where a shipped override is what it started from); start from scratch (asks first when the model is edited).
 - **Import** a .glb / .gltf (drop it or Import; a .gltf with its .bin picked together): read exactly as the game's
   loader reads it (node transforms, strips / fans, normalised colours times baseColorFactor, BLEND = translucent,

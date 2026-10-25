@@ -288,6 +288,19 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await page.keyboard.press('Delete'); await frames(page);
   check(await ev(() => Q.current('models/player/ROBOT').parts.length) === rn, 'multi-select: Delete removes every selected box');
   await page.click('.card[data-key="models/player/STANDARD"]');
+  // symmetric: Mirror makes a pair; a nudge, a size and a colour reach the mirror image; Delete takes both
+  await ev(() => { Q.ui.selectPart(1); Q.scene.view.sym = false; });
+  await page.click('#panel button:has-text("Mirror")');
+  await ev(() => { Q.ui.selectPart(1); });
+  await page.check('#panel h3 input[type=checkbox]');
+  const sn = await ev(() => Q.current('models/player/STANDARD').parts.length);
+  await ev(() => { Q.ui.change('models/player/STANDARD', null, parts => { parts[1].c[0] += 0.05; parts[1].h[1] += 0.02; Q.recolor(parts[1], [0.1, 0.2, 0.3], Q.refOf('models/player/STANDARD')); }); });
+  st = await ev(() => { const P = Q.current('models/player/STANDARD').parts; return { a: P[1], b: P[2] }; });
+  check(Math.abs(st.b.c[0] + st.a.c[0]) < 1e-9 && st.b.h[1] === st.a.h[1] && st.b.color.join() === st.a.color.join(), 'symmetric: an edit reaches the mirror image', st);
+  await ev(() => document.activeElement.blur());
+  await page.keyboard.press('Delete'); await frames(page);
+  check(await ev(() => Q.current('models/player/STANDARD').parts.length) === sn - 2, 'symmetric: Delete takes the box and its mirror image');
+  await ev(() => { Q.scene.view.sym = false; Q.scene.saveView(); });
 
   // --- view options -----------------------------------------------------------------------------------------------------
   await page.click('#viewBar .menu > button');

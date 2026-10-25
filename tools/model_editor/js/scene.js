@@ -19,7 +19,7 @@
   const DEFAULT_VIEW = { mode: 'orbit', palette: '', team: 'enemy', crouch: false, play: true, speed: 1, drawAs: 'auto', hitbox: false, grid: true,
     ground: true, shadows: true, sunVis: 1, outline: 'black', outlineW: 1, fov: 100, vmX: 0, vmY: 0, vmZ: 0, vmScale: 1, vmColor: '',
     yaw: 0, pitch: 0, fpWeapon: 'models/weapon/ROCKET', tpPlayer: 'models/player/STANDARD', holdIt: false, crown: false, crownPlace: 1,
-    landed: false, ghost: false, lineupTeams: false, bright: 1, fpLineup: true, noViewmodel: false, bombLineup: false, bombBlink: false, gateReached: false, cartNeutral: false };
+    landed: false, ghost: false, sym: false, lineupTeams: false, bright: 1, fpLineup: true, noViewmodel: false, bombLineup: false, bombBlink: false, gateReached: false, cartNeutral: false };
   S.view = Object.assign({}, DEFAULT_VIEW);
   try { Object.assign(S.view, JSON.parse(localStorage.getItem('qme.view') || '{}')); } catch (e) { }
   S.saveView = () => { try { localStorage.setItem('qme.view', JSON.stringify(S.view)); } catch (e) { } };
@@ -471,6 +471,7 @@
     if (f && S.part >= 0 && S.editable()) {
       const parts = Q.current(f.key).parts, p0 = parts && parts[S.part], p = p0 && S.geom(p0, f);
       for (const j of S.extra) { const q = parts[j] && S.geom(parts[j], f); if (q) boxLines(O, f.model, q.c, q.h.map(x => x + 0.0005), [0.3, 0.75, 1, 0.55]); }
+      if (v.sym) for (const [, j] of S.mirrorPairs(parts, S.selected())) { const q = S.geom(parts[j], f); boxLines(O, f.model, q.c, q.h.map(x => x + 0.0005), [0.95, 0.45, 1, 0.6]); }   // (the linked mirror images)
       if (p) {
         boxLines(O, f.model, p.c, p.h.map(x => x + 0.0005), [0.3, 0.75, 1, 1]);
         const c = S.xf(f.model, p.c), len = Math.max(0.04, Math.max(p.h[0], p.h[1], p.h[2]) * 1.6 + 0.03);
@@ -494,6 +495,18 @@
     const base = v.ghost && f && Q.isEdited(f.key) ? Q.baseOf(f.key).parts : null;
     if (base) for (const p0 of base) { const p = S.geom(p0, f); boxLines(O, f.model, p.c, p.h, [0.85, 0.9, 1, 0.38]); }
     S.dirty = true;
+  };
+  // symmetric editing: each of the boxes `sel` with its mirror image across x = 0 (same y, z and size, -x; not itself
+  // on the centre line, not selected too) -> [[i, j]]; an edit of i is copied mirrored into j (ui.js U.change)
+  S.mirrorPairs = function (parts, sel) {
+    const out = [], E = 1e-5, near = (a, b) => Math.abs(a - b) < E;
+    for (const i of sel) {
+      const p = parts[i];
+      if (!p || Math.abs(p.c[0]) < E) continue;
+      const j = parts.findIndex((q, k) => k !== i && sel.indexOf(k) < 0 && near(q.c[0], -p.c[0]) && near(q.c[1], p.c[1]) && near(q.c[2], p.c[2]) && q.h.every((v, a) => near(v, p.h[a])));
+      if (j >= 0) out.push([i, j]);
+    }
+    return out;
   };
   S.ghostable = key => !!key && Q.isEdited(key) && !!Q.baseOf(key).parts;
   // a box where the item draws it (a crouch moves its centre, squashes its height where it says so); yk: what a

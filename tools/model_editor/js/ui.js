@@ -334,17 +334,27 @@
       h('button.mini', { type: 'button', disabled: S.part < 0, title: 'A copy mirrored across X = 0 (left / right)', onclick: () => dupPart(key, true) }, 'Mirror'),
       h('button.mini', { type: 'button', disabled: S.part < 0, title: 'Copy the selected boxes (Ctrl+C), to paste into this or another model', onclick: () => U.copyParts() }, 'Copy'),
       h('button.mini', { type: 'button', disabled: !U.clip, title: U.clip ? 'Paste ' + U.clip.parts.length + ' box(es) from ' + U.clip.from + ' (Ctrl+V)' : 'Copy boxes first', onclick: () => U.pasteParts() }, 'Paste'),
-      h('button.mini.danger', { type: 'button', disabled: S.part < 0, onclick: () => delPart(key) }, 'Delete')),
+      h('button.mini.danger', { type: 'button', disabled: S.part < 0, onclick: () => delPart(key) }, 'Delete'),
+      h('label.chk', { title: 'Symmetric: an edit of a box also changes its mirror image across x = 0 (same y, z and size; outlined in pink), and Delete takes both. Mirror makes a pair.' },
+        h('input', { type: 'checkbox', checked: !!S.view.sym, onchange: e => { S.view.sym = e.target.checked; S.saveView(); S.updateOverlay(); } }), ' symmetric')),
     h('div.partlist', h('table.parts', tbody)));
     setTimeout(() => { const r = sec.querySelector('tr.sel'); if (r) r.scrollIntoView({ block: 'nearest' }); }, 0);
     return sec;
   }
-  // a change to the boxes of the model being edited (one undo step; `group` merges a drag / typing)
+  // a change to the boxes of the model being edited (one undo step; `group` merges a drag / typing). Symmetric: the
+  // selected boxes' mirror images (found before the change) take it over mirrored, when the box count stays
+  const mirrorInto = (d, p) => {
+    d.c = [-p.c[0], p.c[1], p.c[2]]; d.h = p.h.slice(); d.color = p.color.slice(); d.slot = p.slot | 0;
+    for (const k of ['mul', 'add', 'teamMul']) d[k] = p[k] ? p[k].slice() : null;
+    d.alpha = p.alpha; d.shadow = p.shadow; d.visOnly = p.visOnly; d.crouch = p.crouch;
+  };
   U.change = function (key, group, fn, why) {
     Q.beginChange(key, group);
     const e = Q.ensureBoxEdit(key);
     if (!e) return;
+    const n = e.parts.length, pairs = S.view.sym && key === S.sel ? S.mirrorPairs(e.parts, S.selected()) : null;
     fn(e.parts);
+    if (pairs && e.parts.length === n) for (const [i, j] of pairs) mirrorInto(e.parts[j], e.parts[i]);
     Q.endChange(key, why || 'edit');
   };
   function addPart(key) {
@@ -373,8 +383,9 @@
     }, 'dup');
   }
   function delPart(key) {
-    const sel = S.selected();
+    let sel = S.selected();
     if (!sel.length) return;
+    if (S.view.sym) sel = sel.concat(S.mirrorPairs(Q.current(key).parts, sel).map(x => x[1])).sort((a, b) => a - b);   // (and their mirror images)
     U.change(key, null, parts => { for (let k = sel.length - 1; k >= 0; k--) parts.splice(sel[k], 1); S.extra.clear(); S.part = Math.min(sel[0], parts.length - 1); }, 'delete');
   }
   // copy / paste boxes, within a model or to another (a visor from one player to another): pasted boxes keep their
