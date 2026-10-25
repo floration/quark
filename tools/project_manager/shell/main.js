@@ -626,6 +626,7 @@ async function startKeepAlive() {
 // acknowledged so a relaunch never repeats them) and show "updated, reopen" when the app's own files changed.
 const updateRestarting = new Set(); // tab ids being restarted for an update (the watchdog keeps out of the way)
 const handledRestarts = new Set();  // restart request ids already done this session
+let shownRestarts = [];             // the restart request ids of the last /api/updates answer
 let selfUpdated = false;
 let updatesTimer = null;
 let askedUpdate = false;
@@ -791,6 +792,7 @@ async function pollUpdates() {
         autoRelaunchArmed = now - APP_STARTED_AT < AUTO_RELAUNCH_WINDOW_MS && !(now - (state.autoRelaunchedAt || 0) < AUTO_RELAUNCH_GAP_MS);
         updateTabbar();
       }
+      shownRestarts = (Array.isArray(u.restart) ? u.restart : []).filter((r) => r && typeof r.id === 'string').map((r) => r.id);
       if (selfUpdated && !relaunching) await maybeRelaunch();
       for (const r of Array.isArray(u.restart) ? u.restart : []) {
         if (!r || typeof r.id !== 'string' || handledRestarts.has(r.id)) continue;
@@ -865,6 +867,9 @@ async function relaunchApp(mode = 'manual') {
     if (pm && pm.probeHost && !(own && !own.exited) && IS_WIN && await probe(pm)) {
       await stopForeignListener(pm.port, path.basename(PM_DIR), pm.id);
     }
+    // (the new shell starts every server with the new code: restart requests still waiting are done by that, so they
+    //  are acknowledged now; else the new shell would restart a server it has just started)
+    await Promise.all(shownRestarts.map((id) => pmRequest('POST', '/api/updates/ack?id=' + encodeURIComponent(id), 1500)));
     exiting = true;
     closeConfirmed = true;
     stopStartedServers();
