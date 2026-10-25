@@ -222,12 +222,19 @@ class History:
 _OWNER_RE = re.compile(r"waiting on (?:the )?owner|waiting on q\b|waits? (?:on|for) (?:the )?owner|until (?:the owner|q)\b|"
                        r"\bowner (?:still )?to \w+|owner'?s (?:push|pick|picks|decision|decisions|choice|answer|ok|go)|"
                        r"question (?:to|for) the owner|ask(?:s|ing)? the owner|waits? for (?:a )?push|q says push|"
-                       r"needs? (?:q|the owner)\b|for q to\b", re.I)
+                       r"needs? (?:q|the owner)\b(?!'s|’s)|for q to\b", re.I)          # (not "needs q's PC")
 _PUSH_RE = re.compile(r"owner'?s push|waits? for (?:a )?push|q says push|until the owner says push|then \W?push\b|"
                       r"waiting on (?:the owner'?s |q'?s )?push|owner to push|q to push", re.I)
 _TESTS_RE = re.compile(r"tests? (?:are |is )?(?:still )?fail|failing tests?|test failures?|tickrate failure|"
                        r"needs? measuring|measure (?:it )?first|\brepro\b|reproduc|\bflak(?:e|y)|fails? on testing", re.I)
+_QUOTED_RE = re.compile(r"`[^`\n]*`|“[^”\n]{0,80}”|\"[^\"\n]{0,80}\"|(?<![\w'])'[^'\n]{1,80}'(?![\w'])")
 _RECO_RE = re.compile(r"\brecommend(?:ation|ed)?\b\s*[:,]?\s*([^.;)]+)", re.I)
+
+
+def _unquoted(text):
+    """text with quoted labels and code blanked out (same length, so match positions still fit the text): a quoted
+    'stay in Needs q' or `needs q` names a UI label, it doesn't ask q for anything."""
+    return _QUOTED_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
 def _sentence(text, m):
@@ -275,9 +282,10 @@ def waiting_on(e, links, answer=None):
     if f == "07" and st in ("open", "unknown") and not halting: add("owner", "Waiting on q's decision")
     if f == "06" and st in ("open", "unknown") and not halting: add("read", "Not told yet: for q to read")
     if f == "09" and st in ("open", "unknown"): add("answered", "q answered; no Claude has acted on it yet")
-    m = _OWNER_RE.search(text)
-    if m and (not w or _PUSH_RE.search(text)):
-        pm = _PUSH_RE.search(text)
+    bare = _unquoted(text)
+    m = _OWNER_RE.search(bare)
+    if m and (not w or _PUSH_RE.search(bare)):
+        pm = _PUSH_RE.search(bare)
         if pm:
             needs = " (needs VERSION + changelogs)" if re.search(r"VERSION|changelog", text) else ""
             add("owner", "Waiting on q to push" + needs); add("push")
