@@ -45,6 +45,8 @@
 <main id="main">
   <aside id="lib">
     <div class="lib-head"><input type="search" id="libFilter" placeholder="filter models"><label class="chk"><input type="checkbox" id="libEdited"> edited</label></div>
+    <div class="lib-stats"><span id="libProgress" title="Models by origin, as they are now (your edits included): the goal is every model human-made"></span><span class="spacer"></span>
+      <select id="libOrigin" title="Show only the models of one origin"><option value="">every origin</option><option value="human">human</option><option value="ai">ai</option><option value="third-party">3rd party</option></select></div>
     <div id="libList"></div>
   </aside>
   <div id="libResize" title="Drag to resize the library (double-click: the default width)"></div>

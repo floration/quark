@@ -80,16 +80,25 @@
     S.dirty = true;
   }
   U.renderLibrary = function () {
-    const list = $('#libList'), f = $('#libFilter').value.trim().toLowerCase(), onlyEdited = $('#libEdited').checked;
+    const list = $('#libList'), f = $('#libFilter').value.trim().toLowerCase(), onlyEdited = $('#libEdited').checked, origin = $('#libOrigin').value;
     list.innerHTML = '';
+    U.renderProgress();
     for (const kind of Q.kinds) {
-      const keys = Q.order.filter(k => Q.models[k].kind === kind && (!f || k.toLowerCase().includes(f)) && (!onlyEdited || Q.isEdited(k)));
+      const keys = Q.order.filter(k => Q.models[k].kind === kind && (!f || k.toLowerCase().includes(f)) && (!onlyEdited || Q.isEdited(k)) && (!origin || Q.originOf(k) === origin));
       if (!keys.length) continue;
       list.append(h('div.kind', Q.kindTitle(kind) + ' (' + keys.length + ')'));
       const cards = h('div.cards');
       for (const key of keys) cards.append(card(key));
       list.append(cards);
     }
+  };
+  // the human-made goal: how many models are human-made as they are now (edits included), the rest by origin
+  U.renderProgress = function () {
+    const n = { human: 0, ai: 0, 'third-party': 0 };
+    for (const k of Q.order) n[Q.originOf(k)]++;
+    const all = Q.order.length, el = $('#libProgress');
+    el.innerHTML = '';
+    el.append(h('b', 'human ' + n.human + '/' + all + ' (' + Math.round(all ? n.human * 100 / all : 0) + '%)'), ' ai ' + n.ai + (n['third-party'] ? ', 3rd party ' + n['third-party'] : ''));
   };
   function card(key) {
     const m = Q.models[key], t = thumbs[key];
@@ -110,6 +119,7 @@
   U.refreshCard = function (key) {
     const old = document.querySelector('.card[data-key="' + CSS.escape(key) + '"]');
     if (old) old.replaceWith(card(key));
+    U.renderProgress();
   };
 
   // --- selection ------------------------------------------------------------------------------------------------------
@@ -659,7 +669,7 @@
     $('#vReset').addEventListener('click', () => { S.resetView(); U.syncViewBar(); viewChanged(true); });
     $('#vShot').addEventListener('click', () => { S.dirty = true; U.drawNow(); $('#gl').toBlob(b => Q.download(b, 'quark-model-' + (S.sel || 'view').replace(/\//g, '_') + '.png')); });
     $('#btnFrame').addEventListener('click', () => { S.frame(S.sel); S.build(); S.updateOverlay(); });
-    $('#libFilter').addEventListener('input', U.renderLibrary); $('#libEdited').addEventListener('change', U.renderLibrary);
+    $('#libFilter').addEventListener('input', U.renderLibrary); $('#libEdited').addEventListener('change', U.renderLibrary); $('#libOrigin').addEventListener('change', U.renderLibrary);
     $('#btnUndo').addEventListener('click', () => { const r = Q.undo(); if (r && r !== S.sel) U.select(r, true); });
     $('#btnRedo').addEventListener('click', () => { const r = Q.redo(); if (r && r !== S.sel) U.select(r, true); });
     $('#btnImport').addEventListener('click', () => $('#fileImport').click());

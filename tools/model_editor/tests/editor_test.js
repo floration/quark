@@ -291,6 +291,10 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     await p.click('.card[data-key="models/player/HEAVY"]');
     st = await p.evaluate(() => document.querySelector('#panel .prob.error').textContent);
     check(st.includes('(assets/overrides/models/player/HEAVY.glb)'), 'the panel names the refused file\'s path', st);
+    st = await p.evaluate(() => { const s = document.querySelector('#libOrigin'); s.value = 'human'; s.dispatchEvent(new Event('change'));
+      const r = { progress: document.querySelector('#libProgress').textContent, cards: [...document.querySelectorAll('.card')].map(c => c.dataset.key) };
+      s.value = ''; s.dispatchEvent(new Event('change')); return r; });
+    check(/^human 1\/30 \(3%\)/.test(st.progress) && st.cards.join() === 'models/player/KNIGHT', 'library: human-made progress and the origin filter', st);
     await p.click('.card[data-key="models/player/KNIGHT"]');
     await p.click('.parts tr:nth-child(1)');
     await p.keyboard.press('ArrowRight');

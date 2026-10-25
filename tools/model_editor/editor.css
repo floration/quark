@@ -58,6 +58,9 @@ code { font: 11px var(--mono); background: var(--panel2); padding: 0 3px; border
 #libResize:hover, #libResize.on { background: var(--accent-dim); }
 .lib-head { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid var(--line); align-items: center; }
 .lib-head input[type=search] { flex: 1; min-width: 0; }
+.lib-stats { display: flex; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--line); align-items: center; color: var(--text-dim); flex-wrap: wrap; }
+.lib-stats b { color: #6fdc84; font-weight: 600; }
+.lib-empty { color: var(--text-faint); padding: 14px 4px; }
 #libList { flex: 1; overflow: auto; padding: 4px 6px 12px; }
 .kind { color: var(--text-faint); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding: 10px 2px 4px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 5px; }   /* (more cards across a wider library, not bigger ones) */
