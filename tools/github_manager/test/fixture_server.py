@@ -3,6 +3,7 @@
 
     python3 tools/github_manager/test/fixture_server.py [--port 8767] [--no-shift] [--poll-error TEXT] [--no-notes]
                                                          [--no-editor] [--docs-error TEXT] [--signed-out]
+                                                         [--notes-held] [--backlog]
 
 Every timestamp in the fixtures is shifted so the fixture's generatedAt is "now" (so elapsed timers and
 "5 min ago" look live); --no-shift serves them as written. /api/log returns a made-up GitHub Actions log for a
@@ -14,6 +15,8 @@ GitHub (test/fake_github.py) made from the fixture's branches and PRs: Apply rea
 It starts with sample changes: a ruleset diff and a branch delete waiting, one apply that failed, one that is out of
 date, one applied (--no-editor: an empty queue). --docs-error TEXT shows the Claude Documents copy as failed.
 --signed-out: gh signed out since the start (notRead: pulls, releases, runs; no PRs or releases, runs from "cache").
+--notes-held: a new install whose Claude Documents notes couldn't be read back (held, not overwritten).
+--backlog: the first start's backfill still going (poll.backlog), with a refused log download in poll.warnings.
 """
 import argparse, json, os, re, sys
 from datetime import datetime, timedelta, timezone
@@ -39,8 +42,13 @@ def parse(s):
 
 
 class Fixtures:
-    def __init__(self, shift, poll_error, sample_notes=True, sample_editor=True, docs_error=None, signed_out=False):
+    def __init__(self, shift, poll_error, sample_notes=True, sample_editor=True, docs_error=None, signed_out=False,
+                 notes_held=False, backlog=False):
+        self.backlog = backlog
         self.shift, self.poll_error, self.docs_error, self.signed_out = shift, poll_error, docs_error, signed_out
+        self.notes_held = ("Claude Documents: 11-github-notes.md there holds 3 notes this PC could not read back, so "
+                           "it is left as it is (not replaced by this PC's empty notes) until a note is written "
+                           "here") if notes_held else None
         self.note_events = []
         self.notes = S.Notes(None, self.note_events.extend, "floration/quark")
         if sample_notes:
@@ -54,10 +62,16 @@ class Fixtures:
             gh.branches[b["name"]] = b["sha"]
             gh.ahead[b["sha"]] = b.get("ahead") or 0
         gh.pulls = [{"number": p["number"], "head": p["head"]} for p in st["pulls"] if p["state"] == "open"]
-        self.pending = S.Pending(None, gh, "floration/quark", self.note_events.extend)
+        self.pending = S.Pending(None, gh, "floration/quark", self.note_events.extend, on_applied=self.after_apply,
+                                 checked_out=lambda b: S.checked_out_in(st["local"], b))
         self.docs_at = S.iso(datetime.now(timezone.utc) - timedelta(minutes=3))
         if sample_editor:
             self.seed_editor(st)
+
+    def after_apply(self, change):
+        """As the server's Manager._after_apply: an applied rename takes the description and notes along."""
+        if change.get("type") == "branch.rename" and change.get("status") == "applied":
+            S.follow_rename(self.structure, self.notes, change["params"]["name"], change["params"]["newName"])
 
     def seed_editor(self, st):
         add = self.structure.update
@@ -91,9 +105,10 @@ class Fixtures:
     def docs_status(self):
         st = {"enabled": True, "state": "ok", "offReason": None, "repo": S.DOCS_REPO, "branch": S.DOCS_BRANCH,
               "files": list(S.DOCS_FILES), "dueAt": None, "lastOk": self.docs_at, "lastCommit": "4f1c2ab9" + "0" * 32,
-              "lastAttempt": self.docs_at, "lastError": None}
+              "lastAttempt": self.docs_at, "lastError": None, "notesHeld": self.notes_held}
         if self.docs_error:
-            st.update(state="failed", lastError=self.docs_error)
+            st.update(state="failed", lastError=self.docs_error, failingSince=S.iso(
+                datetime.now(timezone.utc) - timedelta(minutes=42)))
         return st
 
     def structure_view(self):
@@ -172,6 +187,14 @@ class Fixtures:
             r.setdefault("workflowFile", WORKFLOW_FILES.get(r["workflow"]))
         if self.poll_error:
             s["poll"]["lastError"] = self.poll_error
+        # what the server's poll adds: its warnings and the backfill still to do
+        s["poll"]["warnings"] = ([self.notes_held] if self.notes_held else []) + (
+            ["Claude Documents sync failed (it retries on every poll): %s" % self.docs_error] if self.docs_error else [])
+        s["poll"]["backlog"] = {"jobs": 0, "logs": 0}
+        if self.backlog:
+            s["poll"]["backlog"] = {"jobs": 230, "logs": 40}
+            s["poll"]["warnings"].append("2 failed-job logs could not be downloaded (retrying in 30 min, or on "
+                                         "restart): HTTP 403 from the log storage")
         s["notRead"] = []
         if self.signed_out:
             s["notRead"] = list(S.NOT_READ_SECTIONS)
@@ -305,6 +328,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(fx.rules_view())
             if path == "/api/pending" and cmd == "POST":
                 return self.json({"change": fx.pending.queue(body)}, 201)
+            if path == "/api/tools/tests-editor" and cmd == "POST":
+                # the Tests tab's Start: nothing is started here (8775 isn't the fixture's to take)
+                return self.json({"started": True, "script": "(fixture: nothing started)", "port": 8775})
             if path == "/api/pending/apply-all" and cmd == "POST":
                 return self.json(fx.pending.apply_all(body))
             m = re.match(r"^/api/pending/(c[0-9a-f]{12})(/apply|/preview)?$", path)
@@ -369,8 +395,11 @@ def main():
     ap.add_argument("--no-editor", action="store_true", help="start with no sample structure / pending changes")
     ap.add_argument("--docs-error", default=None, help="show the Claude Documents copy as failed with this error")
     ap.add_argument("--signed-out", action="store_true", help="gh signed out since the start: GitHub parts unknown")
+    ap.add_argument("--notes-held", action="store_true", help="the Claude Documents' notes held on a new install")
+    ap.add_argument("--backlog", action="store_true", help="the first start's backfill still going, a log refused")
     a = ap.parse_args()
-    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes, not a.no_editor, a.docs_error, a.signed_out)
+    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes, not a.no_editor, a.docs_error, a.signed_out,
+                          a.notes_held, a.backlog)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"fixture server on http://127.0.0.1:{a.port}/", flush=True)
     srv.serve_forever()

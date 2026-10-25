@@ -1,5 +1,5 @@
 // Talks to the local server (/api/*) and keeps the latest state plus lookup indexes.
-import { ms, RUNNING } from './util.js';
+import { ms, RUNNING, setUnread } from './util.js';
 
 // When the page is opened from disk (file://) the API still lives on the server.
 export const BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8767' : '';
@@ -68,6 +68,7 @@ export function findCommit(sha) {
 }
 
 function accept(s) {
+  setUnread(s.notRead);
   store.state = s;
   store.idx = index(s);
   store.reachable = true;

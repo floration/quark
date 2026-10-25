@@ -14,18 +14,21 @@ const KIND_LABEL = { push: 'push', merge: 'merge', version: 'version', ci: 'CI',
 let fs;
 
 // ---- the production lock, as the page can tell before asking the server (the server decides) ----
+// wide: matches at least what GitHub matches (for Branches); narrow: at most (for Except, so it counts only when it
+// surely leaves the default branch out). The same two the server uses.
 const globRe = (p) => new RegExp(`^${p.replace(/\[[^\]]*\]/g, '\u0001').replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*+/g, '.*').replace(/\?/g, '.').replace(/\u0001/g, '.')}$`);
-function lockProblems(include, defaultBranch) {
+const narrowRe = (p) => (p.includes('[') ? null : new RegExp(`^${p.split(/(\*\*|\*|\?)/).map((x) => ({ '**': '.*', '*': '[^/]*', '?': '[^/]' }[x] || x.replace(/[.+^${}()|\\]/g, '\\$&'))).join('')}$`));
+const full = (p) => (p.startsWith('refs/') ? p : `refs/heads/${p}`);
+function lockProblems(include, exclude, defaultBranch) {
   const out = [];
+  // claude/* may cover the default branch (it sits under claude/) when Except surely takes it out again
+  const spared = defaultBranch && exclude.some((x) => x === '~DEFAULT_BRANCH' || narrowRe(full(x))?.test(`refs/heads/${defaultBranch}`));
   for (const raw0 of include) {
     const p = raw0.trim();
     if (!p) continue;
     if (p === '~DEFAULT_BRANCH') out.push('~DEFAULT_BRANCH is the default branch');
     else if (p === '~ALL') out.push('~ALL includes the default branch');
-    else if (defaultBranch) {
-      const full = p.startsWith('refs/heads/') ? p : `refs/heads/${p}`;
-      if (globRe(full).test(`refs/heads/${defaultBranch}`)) out.push(`${p} matches the default branch ${defaultBranch}`);
-    }
+    else if (defaultBranch && !spared && globRe(full(p)).test(`refs/heads/${defaultBranch}`)) out.push(`${p} matches the default branch ${defaultBranch} (add it under Except to leave it out)`);
   }
   return out;
 }
@@ -42,7 +45,7 @@ function rulesetForm(fk, rs) {
   const base = rs ? rs.form : { name: '', enforcement: 'active', include: ['testing'], exclude: [], blockForcePush: true, blockDeletion: true, linearHistory: false, requirePr: false, approvals: 0, requiredChecks: [], strictChecks: false, adminBypass: false };
   const d = draft(fk, () => ({ ...base, include: base.include.join('\n'), exclude: base.exclude.join('\n'), requiredChecks: [...base.requiredChecks], chkq: '' }));
   const err = gui.errors.get(fk), busy = gui.busy.has(fk);
-  const problems = lockProblems(lines(d.include), v.defaultBranch);
+  const problems = lockProblems(lines(d.include), lines(d.exclude), v.defaultBranch);
   const checks = [...new Set([...(v.checks || []), ...d.requiredChecks])].sort((a, b) => a.localeCompare(b));
   const shown = checks.filter((c) => d.requiredChecks.includes(c) || matches(c, d.chkq));
   const ck = (f, label, hint) => html`<label class="chk rs-opt"><input type="checkbox" data-gf="${f}"${d[f] ? ' checked' : ''}> <span><b>${label}</b>${hint ? html` <span class="muted small">${hint}</span>` : ''}</span></label>`;
@@ -55,7 +58,7 @@ function rulesetForm(fk, rs) {
       <label class="f f-col"><span class="f-l">Branches (one per line; <code>*</code> and <code>**</code> patterns work)</span><textarea data-gf="include" rows="3" spellcheck="false" placeholder="testing">${d.include}</textarea></label>
       <label class="f f-col"><span class="f-l">Except (optional)</span><textarea data-gf="exclude" rows="3" spellcheck="false">${d.exclude}</textarea></label>
     </div>
-    ${problems.length ? html`<p class="msg bad small" role="alert">${raw(LOCK)} The production lock will refuse this: ${problems.join('; ')}. Name the branches instead (production is q's; only q changes its rules, on GitHub).</p>` : ''}
+    ${problems.length ? html`<p class="msg bad small" role="alert">${raw(LOCK)} The production lock will refuse this: ${problems.join('; ')}. Name the branches instead, or leave the default branch out under Except (production is q's; only q changes its rules, on GitHub).</p>` : ''}
     <fieldset class="rs-rules"><legend>Rules</legend>
       ${ck('blockForcePush', 'Block force pushes', '(non_fast_forward)')}
       ${ck('blockDeletion', 'Block deletion', '(deletion)')}
@@ -191,11 +194,13 @@ function limitRow(r) {
 
 function docsLine(ds) {
   if (!ds) return '';
-  const files = html`<code>10-github-rules.md</code>, <code>github-rules.json</code>, <code>11-github-notes.md</code>`;
+  const files = (ds.files || []).map((f, i) => html`${i ? ', ' : ''}<code>${f}</code>`);
+  // the notes there couldn't be read back on this new install: they are left as they are, not replaced by an empty file
+  const held = ds.notesHeld ? html`<p class="msg warn small docs-line" role="alert">${ds.notesHeld}.</p>` : '';
   if (ds.state === 'off') return html`<p class="muted small docs-line">Claude Documents copy: ${ds.offReason || 'off'}.</p>`;
-  if (ds.state === 'failed') return html`<p class="msg bad small docs-line" role="alert"><b>The Claude Documents copy failed</b> (${relOnly(ds.lastAttempt)}): <code>${ds.lastError}</code>. The rules are saved on this PC; the copy is tried again on the next change.</p>`;
-  if (ds.state === 'waiting' || ds.state === 'syncing') return html`<p class="small docs-line"><span class="spin s-run" aria-hidden="true"></span> ${ds.state === 'syncing' ? 'Writing' : 'About to write'} ${files} to the Claude Documents (<code>${ds.repo}</code>): one commit for a burst of edits.</p>`;
-  return html`<p class="muted small docs-line">✓ Also in the Claude Documents (<code>${ds.repo}</code>): ${files}${ds.lastOk ? html`, pushed ${relOnly(ds.lastOk)}` : ''}${ds.lastCommit ? html` · commit <code>${short(ds.lastCommit)}</code>` : ''}.</p>`;
+  if (ds.state === 'failed') return html`<p class="msg bad small docs-line" role="alert"><b>The Claude Documents copy failed</b> (${relOnly(ds.lastAttempt)}): <code>${ds.lastError}</code>. The rules and notes are saved on this PC; the copy is tried again on every poll until it works.</p>${held}`;
+  if (ds.state === 'waiting' || ds.state === 'syncing') return html`<p class="small docs-line"><span class="spin s-run" aria-hidden="true"></span> ${ds.state === 'syncing' ? 'Writing' : 'About to write'} ${files} to the Claude Documents (<code>${ds.repo}</code>): one commit for a burst of edits.</p>${held}`;
+  return html`<p class="muted small docs-line">✓ Also in the Claude Documents (<code>${ds.repo}</code>): ${files}${ds.lastOk ? html`, pushed ${relOnly(ds.lastOk)}` : ''}${ds.lastCommit ? html` · commit <code>${short(ds.lastCommit)}</code>` : ''}.</p>${held}`;
 }
 
 function wantRule(r, st) {
@@ -258,8 +263,8 @@ onAction('rl-del', async (b) => {
   if (ok) { gui.confirm.delete(b.dataset.ck); redraw(); }
 });
 // redraw when a field that changes the form's shape changes
-onInput('rs-edit', (fk, d, n) => { if (['requirePr', 'include', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
-onInput('rs-new', (fk, d, n) => { if (['requirePr', 'include', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
+onInput('rs-edit', (fk, d, n) => { if (['requirePr', 'include', 'exclude', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
+onInput('rs-new', (fk, d, n) => { if (['requirePr', 'include', 'exclude', 'chkq', 'requiredChecks'].includes(n.dataset.gf)) redraw(); });
 onInput('ar-edit', (fk, d, n) => { if (['kind', 'scopeType'].includes(n.dataset.gf)) redraw(); });
 onInput('ar-new', (fk, d, n) => { if (['kind', 'scopeType'].includes(n.dataset.gf)) redraw(); });
 onInput('lim', () => redraw());
@@ -292,6 +297,10 @@ async function saveRules(fk, list, okText) {
   }
   return ok;
 }
+// a limit's value, checked here first (the server checks again): -> an error sentence or ''
+const LIMIT_MAX = 1e9;
+const limitError = (v) => (v === '' || v == null || !isFinite(Number(v)) ? 'Give the limit a value (a number).'
+  : Number(v) < 0 ? 'The limit must be 0 or more.' : Number(v) > LIMIT_MAX ? `The limit must be at most ${LIMIT_MAX}.` : '');
 function ruleFromDraft(d, id) {
   const r = { id: id || '', title: (d.title || '').trim(), text: d.text || '', kind: d.kind, scope: { type: d.scopeType, match: d.scopeType === 'all' ? '' : (d.scopeMatch || '').trim() }, locked: !!d.locked };
   if (d.kind === 'limit') { r.value = d.value === '' ? null : Number(d.value); r.unit = (d.unit || '').trim(); }
@@ -299,16 +308,19 @@ function ruleFromDraft(d, id) {
 }
 onSubmit('ar-edit', async (fk, d) => {
   const id = fk.slice('ar-edit:'.length);
+  if (d.kind === 'limit' && limitError(d.value)) { gui.errors.set(fk, limitError(d.value)); redraw(); return; }
   const list = ged.rules.rules.map((r) => (r.id === id ? ruleFromDraft(d, id) : r));
   if (await saveRules(fk, list, 'Rule saved')) { closeForm(fk); gui.drafts.delete(`lim:${id}`); redraw(); }
 });
 onSubmit('ar-new', async (fk, d) => {
   if (!(d.title || '').trim() || !(d.text || '').trim()) { gui.errors.set(fk, 'A rule needs a title and its text.'); redraw(); return; }
+  if (d.kind === 'limit' && limitError(d.value)) { gui.errors.set(fk, limitError(d.value)); redraw(); return; }
   const list = [...ged.rules.rules, ruleFromDraft(d)];
   if (await saveRules(fk, list, 'Rule added')) { closeForm(fk); redraw(); }
 });
 onSubmit('lim', async (fk, d) => {
   const id = fk.slice('lim:'.length);
+  if (limitError(d.value)) { gui.errors.set(fk, limitError(d.value)); redraw(); return; }
   const list = ged.rules.rules.map((r) => (r.id === id ? { ...r, value: d.value === '' ? null : Number(d.value) } : r));
   if (await saveRules(fk, list, 'Limit saved')) { gui.drafts.delete(fk); redraw(); }
 });

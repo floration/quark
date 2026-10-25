@@ -107,10 +107,23 @@ export const shortBranch = (n) => String(n || '').replace(/^claude\/(project-)?/
 export const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 export const short = (sha) => (sha || '').slice(0, 7);
 
+// ---- parts of the state GitHub hasn't answered since the server started (gh signed out, offline) ----
+// state.notRead: "runs", "pulls", "releases". Shown as unknown everywhere, never as "none", "0" or a live "running".
+let unreadParts = new Set();
+export const setUnread = (parts) => { unreadParts = new Set(parts || []); };
+export const unread = (part) => unreadParts.has(part);
+const UNREAD_WHAT = { runs: 'CI runs', pulls: 'pull requests', releases: 'releases' };
+// the shared "unknown" line: cached = what shows is the local cache (may be out of date)
+export const unknownLine = (part, cached) => html`<p class="empty unknown"><span class="tag t-warn">unknown</span> GitHub's ${UNREAD_WHAT[part]} haven't been read since the server started (see the warning above)${cached ? '; what shows is the local cache and may be out of date' : ''}.</p>`;
+
 // ---- run status ----
 export const RUNNING = new Set(['queued', 'in_progress', 'waiting', 'pending', 'requested']);
+// a run that ticks: running or queued as of a GitHub answer this server got (not a cached one that may be long over)
+export const isLive = (r) => !!r && RUNNING.has(r.status) && !unreadParts.has('runs');
 export function runState(r) {
   if (!r) return 'none';
+  // the cache says running, but GitHub's runs haven't been read since the start: it may have finished long ago
+  if (RUNNING.has(r.status) && unreadParts.has('runs')) return 'unread';
   // a run GitHub calls queued / waiting while some of its jobs already ran (e.g. waiting for a macOS runner) is running
   if (RUNNING.has(r.status)) return r.status === 'in_progress' || (r.jobs || []).some((j) => j.status !== 'queued' && j.status !== 'waiting') ? 'running' : 'queued';
   return r.conclusion || 'unknown';
@@ -119,11 +132,12 @@ const STATE_LABEL = {
   running: 'running', queued: 'queued', success: 'passed', failure: 'failed', cancelled: 'cancelled',
   skipped: 'skipped', timed_out: 'timed out', action_required: 'needs action', neutral: 'neutral',
   stale: 'stale', startup_failure: 'failed to start', pending: 'pending', none: 'no checks', unknown: 'unknown',
+  unread: 'running?',
 };
 const STATE_CLASS = {
   success: 'good', failure: 'bad', timed_out: 'bad', startup_failure: 'bad', action_required: 'warn',
   running: 'run', queued: 'wait', pending: 'run', cancelled: 'off', skipped: 'off', neutral: 'off', stale: 'off',
-  none: 'off', unknown: 'off',
+  none: 'off', unknown: 'off', unread: 'warn',
 };
 const STATE_ICON = { good: '✓', bad: '✕', warn: '!', off: '–', wait: '…' };
 export const stateLabel = (s) => STATE_LABEL[s] || s;

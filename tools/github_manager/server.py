@@ -1207,6 +1207,7 @@ class Notes:
         self.notes = collections.OrderedDict()
         self.load_error = None
         self._built = None      # (etag, body) of GET /api/notes
+        self.fresh = True       # nothing written on this PC yet (no notes.json, or none readable): see merge()
         if folder:
             self._load()
 
@@ -1232,6 +1233,7 @@ class Notes:
             LOG.warning("editor: %s", self.load_error)
             if not ok(d):
                 return
+        self.fresh = False
         for raw in d["notes"]:
             n = self._clean(raw)
             if n:
@@ -1279,6 +1281,7 @@ class Notes:
     def _save(self):
         """Caller holds the lock. Raises OSError when notes.json can't be written (the change is then undone)."""
         self._built = None
+        self.fresh = False
         if not self.folder:
             return
         os.makedirs(self.folder, exist_ok=True)
@@ -1400,6 +1403,48 @@ class Notes:
         self._emit([e])
         return nid
 
+    def merge(self, raws, source):
+        """Notes from the Claude Documents merged into this store: on the first sync from a data folder (a new PC, a
+        lost data folder, notes written here before that first sync) and while this PC has written none, so q's notes
+        come back instead of an empty file being pushed over them. A note both have keeps the newer copy (this PC's on
+        a tie). -> how many notes were added or updated (one note.restored event for them)."""
+        got = [n for n in (self._clean(r) for r in raws) if n]
+        with self.lock:
+            added, newer = [], []
+            for n in got:
+                old = self.notes.get(n["id"])
+                if old is None and len(self.notes) + len(added) < NOTE_MAX:
+                    added.append(n)
+                elif old is not None and (n["updatedAt"] or "") > (old["updatedAt"] or ""):
+                    newer.append(n)
+            if not added and not newer:
+                return 0
+            prev = collections.OrderedDict(self.notes)
+            fresh = self.fresh
+            for n in added + newer:
+                self.notes[n["id"]] = n
+            try:
+                self._save()
+            except OSError as e:
+                self.notes, self.fresh, self._built = prev, fresh, None
+                LOG.warning("editor: could not save the notes restored from the Claude Documents: %s", e)
+                return 0
+            at = self.now()
+            data = {"source": source, "added": [n["id"] for n in added], "updated": [n["id"] for n in newer]}
+            e = ev("note.restored:%s" % _digest(data)[:12], at, "note.restored", {},
+                   "Notes: %s restored from the Claude Documents (%s)%s" % (
+                       plural(len(added), "note"), source, ", %d updated to a newer copy" % len(newer) if newer else ""),
+                   data)
+        self._emit([e])
+        return len(added) + len(newer)
+
+    def export(self, repo):
+        """github-notes.json in the Claude Documents: every note as stored, so a new install can merge them back. No
+        volatile fields, so the same notes always give the same file."""
+        with self.lock:
+            return {"generatedBy": "GitHub Manager", "note": DOCS_GENERATED, "repo": repo, "version": 1,
+                    "notes": [dict(self.notes[k]) for k in sorted(self.notes)]}
+
     def markdown(self, for_docs=False):
         """notes.md: every note grouped by target (general first), pinned and open first, newest first. for_docs: the
         Claude Documents copy (11-github-notes.md): the "generated" header and no volatile time, so the same notes
@@ -1449,6 +1494,60 @@ class Notes:
         return "\n".join(out)
 
 
+NOTE_MD_HEAD_RE = re.compile(r"^### (open|done)(, pinned)? · by (.*) · written (\S+?)(?:, changed (\S+))? · `(n[0-9a-f]{12})`$")
+NOTE_MD_TARGET_RES = [(k, re.compile("^## " + re.escape(v).replace(re.escape("%s"), "(.+)") + "$"))
+                      for k, v in NOTE_HEADING.items()]
+NOTE_MD_COUNT_RE = re.compile(r"^(\d+) notes?: ", re.M)
+
+
+def notes_from_markdown(text):
+    """11-github-notes.md (Notes.markdown's format) -> the notes in it as raw records, for a Claude Documents copy
+    written before github-notes.json existed. Trailing spaces on a line are lost (the file strips them)."""
+    out, target, cur = [], None, None
+    for line in text.split("\n") + ["## end"]:
+        if cur is not None:
+            if line == ">" or line.startswith("> "):
+                cur["lines"].append(line[2:])
+                continue
+            if not line and not cur["lines"]:   # the blank line under the heading
+                continue
+            if cur["lines"]:
+                n = cur.pop("lines")
+                cur["text"] = "\n".join(n)
+                out.append(cur)
+            cur = None
+        if line.startswith("## "):
+            target = next(({"kind": k, "key": m.group(1) if m.groups() else ""} for k, rx in NOTE_MD_TARGET_RES
+                           for m in [rx.match(line)] if m), None)
+            continue
+        m = NOTE_MD_HEAD_RE.match(line)
+        if m and target is not None:
+            cur = {"id": m.group(6), "target": dict(target), "status": m.group(1), "pinned": bool(m.group(2)),
+                   "author": m.group(3), "createdAt": m.group(4), "updatedAt": m.group(5) or m.group(4),
+                   "lines": []}
+    return out
+
+
+def docs_notes(folder):
+    """The notes in a Claude Documents clone -> (raw records, the file they came from, how many notes the files say
+    they hold). github-notes.json first; 11-github-notes.md (parsed back) when there is no json; a hand-written
+    11-github-notes.md counts as holding notes, so it is never overwritten with an empty file."""
+    doc = read_json(os.path.join(folder, "github-notes.json"))
+    if isinstance(doc, dict) and isinstance(doc.get("notes"), list):
+        return doc["notes"], "github-notes.json", len(doc["notes"])
+    try:
+        with open(os.path.join(folder, "11-github-notes.md"), encoding="utf-8") as f:
+            text = f.read()
+    except (OSError, ValueError):
+        return [], None, 0
+    raws = notes_from_markdown(text)
+    m = NOTE_MD_COUNT_RE.search(text)
+    count = int(m.group(1)) if m else 0
+    if DOCS_GENERATED not in text[:2000] and text.strip():
+        count = max(count, 1)
+    return raws, "11-github-notes.md", max(count, len(raws))
+
+
 # ----------------------------------------------------------------------------------------------------------------
 # the editor, part 2: the structure (branch roles and descriptions, local), the agent rules (followed by every
 # Claude, local + Claude Documents), pending GitHub changes (branches and branch rulesets: previewed here, sent to
@@ -1469,6 +1568,7 @@ RULE_FIELDS = frozenset(("id", "title", "text", "scope", "kind", "value", "unit"
 RULE_TITLE_MAX = 200
 RULE_TEXT_MAX = 4000
 RULE_UNIT_MAX = 24
+LIMIT_MAX = 1000000000          # a limit's value: 0 to this
 RULES_MAX = 200
 RULE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 HARD_RULE_ID = "only-q-production"
@@ -1500,7 +1600,7 @@ DOCS_DEBOUNCE_SEC = 10          # a burst of edits is one commit
 DOCS_START_DELAY = 30           # after a start, sync once if the files differ from what was last pushed
 DOCS_COMMIT_MSG = "GitHub Manager: rules/notes updated"
 DOCS_GENERATED = "Generated by the GitHub Manager; edit there, not here."
-DOCS_FILES = ("10-github-rules.md", "github-rules.json", "11-github-notes.md")
+DOCS_FILES = ("10-github-rules.md", "github-rules.json", "11-github-notes.md", "github-notes.json")
 # Names used before 2026-10-24 (09 is now the owner's answers file); removed from the clone when they still carry
 # DOCS_GENERATED, i.e. were written by this tool.
 DOCS_LEGACY_FILES = ("09-github-rules.md", "10-github-notes.md")
@@ -1607,11 +1707,30 @@ def ref_glob_re(pattern):
     return re.compile("".join(out) + r"\Z")
 
 
+def ref_glob_re_narrow(pattern):
+    """A ref pattern as a regex that matches AT MOST what GitHub matches (* stays inside one '/' part, ** crosses
+    them, ? is one character but not '/'); None for a [class], which it won't guess at. For an 'Except' entry: an
+    exclusion only counts for the lock when it surely covers the branch."""
+    if "[" in pattern:
+        return None
+    out = []
+    for part in re.split(r"(\*\*|\*|\?)", pattern):
+        out.append({"**": ".*", "*": "[^/]*", "?": "[^/]"}.get(part) or re.escape(part))
+    return re.compile("".join(out) + r"\Z")
+
+
 def pattern_hits_branch(pattern, branch):
     if pattern in ("~ALL",):
         return True
     rx = ref_glob_re(pattern)
     return bool(rx.match("refs/heads/" + branch) or rx.match(branch))
+
+
+def pattern_surely_hits_branch(pattern, branch):
+    """For 'Except': True only when the pattern certainly matches the branch on GitHub (~DEFAULT_BRANCH is resolved by
+    the caller)."""
+    rx = ref_glob_re_narrow(pattern)
+    return bool(rx and (rx.match("refs/heads/" + branch) or (not pattern.startswith("refs/") and rx.match(branch))))
 
 
 def ruleset_lock_reasons(rs, default_branch):
@@ -1623,7 +1742,9 @@ def ruleset_lock_reasons(rs, default_branch):
     if name.strip().lower() in LOCKED_RULESET_NAMES:
         out.append("the %r ruleset guards production and is locked" % name)
     target = rs.get("target") or "branch"
-    include = (((rs.get("conditions") or {}).get("ref_name") or {}).get("include") or [])
+    ref_name = (rs.get("conditions") or {}).get("ref_name") or {}
+    include = ref_name.get("include") or []
+    exclude = ref_name.get("exclude") or []
     if target != "branch":
         tags = [p for p in include if p == "~ALL" or ref_glob_re(p).match("refs/tags/v1.0.0") or
                 ref_glob_re(p).match("v1.0.0")]
@@ -1635,13 +1756,17 @@ def ruleset_lock_reasons(rs, default_branch):
     if not default_branch:
         out.append("the default branch could not be read from GitHub, so the production lock can't be checked")
         return out
+    # a pattern such as claude/* may cover the default branch (claude/compassionate-ritchie-07ah6i) when 'Except'
+    # surely takes it out again; ~ALL and ~DEFAULT_BRANCH stay refused whatever the excludes say
+    spared = any(x == "~DEFAULT_BRANCH" or pattern_surely_hits_branch(x, default_branch) for x in exclude)
     for p in include:
         if p == "~DEFAULT_BRANCH":
             out.append("it targets the default branch (~DEFAULT_BRANCH = %s)" % default_branch)
         elif p == "~ALL":
             out.append("it targets every branch, the default branch %s too" % default_branch)
-        elif pattern_hits_branch(p, default_branch):
-            out.append("its pattern %s matches the default branch %s" % (p, default_branch))
+        elif pattern_hits_branch(p, default_branch) and not spared:
+            out.append("its pattern %s matches the default branch %s (add it under Except to leave it out)" % (
+                p, default_branch))
     return out
 
 
@@ -1825,6 +1950,45 @@ def ruleset_applies(n):
     if rn["exclude"]:
         s += " except " + ", ".join(word.get(p, strip(p)) for p in rn["exclude"])
     return s
+
+
+def ruleset_new_blocks(before, after):
+    """What a ruleset change adds that can refuse pushes (a required PR or more approvals, required checks, linear
+    history), on the branches it covers, as sentences; [] when it adds nothing of that kind (or isn't active)."""
+    if not after or after.get("enforcement") != "active":
+        return []
+
+    def blocking(n):
+        out = {}
+        if n and n.get("enforcement") == "active":
+            for r in n["rules"]:
+                p = r.get("parameters") or {}
+                if r["type"] == "pull_request":
+                    out["pr"] = int(p.get("required_approving_review_count") or 0)
+                elif r["type"] == "required_status_checks":
+                    out["checks"] = set(c.get("context") for c in p.get("required_status_checks") or [])
+                elif r["type"] == "required_linear_history":
+                    out["linear"] = True
+        return out
+    b, a = blocking(before), blocking(after)
+    added = []
+    if "pr" in a and "pr" not in b:
+        added.append("a pull request for every change (%s)" % plural(a["pr"], "approval"))
+    elif a.get("pr", 0) > b.get("pr", 0):
+        added.append("%s per pull request (was %d)" % (plural(a["pr"], "approval"), b["pr"]))
+    new_checks = sorted(a.get("checks", set()) - b.get("checks", set()))
+    if new_checks:
+        added.append("passing check%s %s" % ("s" if len(new_checks) > 1 else "", ", ".join(new_checks)))
+    if a.get("linear") and not b.get("linear"):
+        added.append("linear history (no merge commits)")
+    if not added:
+        return []
+    rn = after["conditions"]["ref_name"]
+    on_testing = any(pattern_hits_branch(p, "testing") for p in rn["include"]) and not any(
+        pattern_surely_hits_branch(x, "testing") for x in rn["exclude"])
+    where = "testing, where every Claude's work lands" if on_testing else ruleset_applies(after)
+    return ["it adds required %s on %s: a push that doesn't meet %s is refused, for every Claude too" % (
+        "; ".join(added), where, "them" if len(added) > 1 else "it")]
 
 
 def pretty_json(obj):
@@ -2168,8 +2332,11 @@ def rule_fields(raw):
     match = "" if st == "all" else edit_str(sc.get("match", ""), "scope.match", 1, 200)
     value, unit = raw.get("value"), raw.get("unit") or ""
     if kind == "limit":
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value != value or not 0 <= value <= 1e9:
-            raise EditError(400, "a limit needs a value (a number from 0 to 1000000000)")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value != value:
+            raise EditError(400, "the limit %r needs a value (a number from 0 to 1000000000)" % title)
+        if not 0 <= value <= LIMIT_MAX:
+            raise EditError(400, "the limit %r must be %s" % (title, "0 or more" if value < 0 else
+                                                               "at most %d" % LIMIT_MAX))
         if isinstance(value, float) and value.is_integer():
             value = int(value)
         unit = edit_str(unit, "unit", 0, RULE_UNIT_MAX)
@@ -2397,6 +2564,24 @@ class Rules(_Store):
 
 # ---- pending GitHub changes ------------------------------------------------------------------------------------
 
+def checked_out_in(local, branch):
+    """The local copies (state.local) that have branch checked out, as the warnings name them."""
+    return ["%s%s" % (l.get("name"), " (worktree of %s)" % l["worktreeOf"] if l.get("worktreeOf") else "")
+            for l in local if l.get("branch") == branch]
+
+
+def follow_rename(structure, notes, old, new):
+    """An applied rename takes the branch's structure entry and its notes along (each note's move is a note.edited
+    event with the old target in "from"). The server and the fixture server both use it."""
+    structure.rename(old, new)
+    for n in notes.all():
+        if n["target"] == {"kind": "branch", "key": old}:
+            try:
+                notes.update(n["id"], {"target": {"kind": "branch", "key": new}, "rev": n["rev"]})
+            except NoteError as e:
+                LOG.warning("editor: could not move note %s to %s: %s", n["id"], new, e)
+
+
 class Pending(_Store):
     """Changes to GitHub that q queued in the page: each is previewed (before -> after, the exact `gh api` call) and
     sent only when q presses Apply. Right before the call the server reads the default branch and the affected
@@ -2404,12 +2589,13 @@ class Pending(_Store):
     was based on the change is refused (STALE_MSG). The call itself is rebuilt from the change's parameters, never
     taken from the file. editor/pending.json; results and history events (github.*) are recorded."""
 
-    def __init__(self, folder, gh, repo, on_events=None, now=None, on_applied=None):
+    def __init__(self, folder, gh, repo, on_events=None, now=None, on_applied=None, checked_out=None):
         _Store.__init__(self, folder, "pending.json",
                         lambda d: isinstance(d, dict) and isinstance(d.get("changes"), list), on_events, now)
         self.gh = gh
         self.repo = repo
         self.on_applied = on_applied
+        self.checked_out = checked_out  # branch -> ["thread-6l62d6 (worktree of working-repo)", ...] on this PC
         self.apply_lock = threading.Lock()
         self.changes = collections.OrderedDict()
         d = self.file.load()
@@ -2500,6 +2686,11 @@ class Pending(_Store):
                     state.append("open PR %s" % ", ".join("#%s" % n for n in prs))
                 before_text = "Branch %s at %s%s." % (name, short_sha(sha), " (%s)" % "; ".join(state) if state else "")
                 basis = {"defaultBranch": default, "sha": sha, "openPrs": prs}
+                # a local copy on this PC has it checked out (a warning only: it never makes the preview stale)
+                for where in (self.checked_out(name) if self.checked_out else []):
+                    pv["warnings"].append("%s is checked out in %s on this PC: %s" % (name, where, (
+                        "the copy keeps it, but its upstream on GitHub is gone" if typ == "branch.delete" else
+                        "the copy keeps the old name and its upstream is gone until it is renamed or switched there")))
                 if typ == "branch.delete":
                     if ahead:
                         pv["warnings"].append("%s on %s %s not in testing: after the delete they are reachable only "
@@ -2559,6 +2750,7 @@ class Pending(_Store):
                         summary = "Delete ruleset %r (%s)" % ((cur or {}).get("name") or rid,
                                                              ruleset_applies(cur) if cur else "not found")
                     pv["ref"] = {"ruleset": rid}
+                pv["warnings"] += ruleset_new_blocks(cur, after)
                 pv.update(summary=summary, before=cur, after=after, basis=basis, call=call,
                           diff=json_diff(cur, after),
                           beforeText=("Rules: %s; on %s; %s." % (", ".join(ruleset_summary(cur)), ruleset_applies(cur),
@@ -2860,7 +3052,8 @@ class DocsSync:
     def __init__(self, folder, state_path, proc, render, repo=DOCS_REPO, branch=DOCS_BRANCH, enabled=True,
                  off_reason=None, debounce=DOCS_DEBOUNCE_SEC, adopt=None):
         self.folder, self.state_path, self.proc, self.render = folder, state_path, proc, render
-        self.adopt = adopt      # adopt(clone folder): called on origin's files right before the files are rendered
+        self.adopt = adopt      # adopt(clone folder, first): called on origin's files right before the files are
+        #                         rendered; first: no sync from this data folder has worked yet
         self.repo, self.branch, self.enabled, self.off_reason, self.debounce = repo, branch, enabled, off_reason, debounce
         self.lock = threading.Lock()
         self.sync_lock = threading.Lock()
@@ -2873,6 +3066,7 @@ class DocsSync:
         self.state = "idle"
         self.last_error = None
         self.last_attempt = None
+        self.failing_since = None   # the first failure of the current run of failures
 
     def status(self):
         with self.lock:
@@ -2880,7 +3074,7 @@ class DocsSync:
                     "offReason": self.off_reason, "repo": self.repo, "branch": self.branch, "files": list(DOCS_FILES),
                     "dueAt": iso(datetime.datetime.fromtimestamp(self.due, UTC)) if self.due else None,
                     "lastOk": self.saved.get("lastOk"), "lastCommit": self.saved.get("lastCommit"),
-                    "lastAttempt": self.last_attempt, "lastError": self.last_error}
+                    "lastAttempt": self.last_attempt, "lastError": self.last_error, "failingSince": self.failing_since}
 
     def warnings(self):
         with self.lock:
@@ -3017,7 +3211,9 @@ class DocsSync:
                 self._git_ok("fetch", "--quiet", "origin", self.branch, timeout=180)
                 self._git_ok("checkout", "-q", "-f", "-B", self.branch, "origin/" + self.branch)
                 if self.adopt:
-                    self.adopt(self.folder)
+                    with self.lock:
+                        first = not self.saved.get("lastOk")
+                    self.adopt(self.folder, first)
                 files = self.render()
                 digest = _digest(files)
                 committed = self._commit(files)
@@ -3038,7 +3234,7 @@ class DocsSync:
                 with self.lock:
                     self.saved = {"digest": digest, "lastOk": at, "lastCommit": head if committed else
                                   self.saved.get("lastCommit") or head}
-                    self.state, self.last_error = "ok", None
+                    self.state, self.last_error, self.failing_since = "ok", None, None
                 if self.state_path:
                     try:
                         write_atomic(self.state_path, dumps(self.saved, pretty=True) + "\n")
@@ -3048,6 +3244,7 @@ class DocsSync:
             except (RuntimeError, OSError, ValueError) as e:
                 with self.lock:
                     self.state, self.last_error = "failed", str(e)
+                    self.failing_since = self.failing_since or self.last_attempt
                 LOG.warning("docs sync failed: %s", e)
         return self.status()
 
@@ -3071,6 +3268,33 @@ def ruleset_item(d, default_branch, repo):
 
 # ----------------------------------------------------------------------------------------------------------------
 # the manager: one poll at a time, state published as ready-made JSON bytes
+
+TESTS_EDITOR_PORT = 8775
+TESTS_START_GAP = 10            # POST /api/tools/tests-editor starts it at most once per this many seconds
+
+
+def windowless_python():
+    """pythonw.exe next to this Python on Windows (no console window), else this Python."""
+    exe = sys.executable or "python"
+    if WIN:
+        w = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        if os.path.isfile(w):
+            return w
+    return exe
+
+
+def start_detached(args, cwd):
+    """Starts a helper the way install.py starts this server: detached, no window, low priority. -> Popen."""
+    kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "cwd": cwd,
+          "close_fds": True}
+    if WIN:
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | IDLE_PRIORITY_CLASS (= start /low)
+        kw["creationflags"] = 0x00000008 | 0x00000200 | 0x08000000 | 0x00000040
+    else:
+        kw["start_new_session"] = True
+        kw["preexec_fn"] = lambda: os.nice(10)
+    return subprocess.Popen(args, **kw)
+
 
 def default_data_dir():
     return os.path.join(os.path.expanduser("~"), "Desktop", "Quark", "github-manager")
@@ -3110,12 +3334,14 @@ class Manager:
         self.notes = Notes(editor, self._editor_events, self.repo)
         self.structure = Structure(editor, self._editor_events)
         self.rules = Rules(editor, self._editor_events)
-        self.pending = Pending(editor, self.gh, self.repo, self._editor_events, on_applied=self._after_apply)
+        self.pending = Pending(editor, self.gh, self.repo, self._editor_events, on_applied=self._after_apply,
+                               checked_out=self.checked_out)
         docs_on, docs_off = docs_sync_wanted(cfg)
         self.docs = DocsSync(os.path.join(data_dir, "claude-docs"), os.path.join(editor, "docs-sync.json"), self.proc,
                              self.docs_files, repo=cfg.get("claudeDocsRepo") or DOCS_REPO,
                              branch=cfg.get("claudeDocsBranch") or DOCS_BRANCH, enabled=docs_on, off_reason=docs_off,
-                             adopt=self.adopt_docs_rules)
+                             adopt=self.adopt_docs)
+        self.notes_held = None  # why the Claude Documents' notes are kept as they are (see adopt_docs)
         self.rs_lock = threading.Lock()
         self.rs_view = None     # the last GET /api/github/rulesets answer
         self.rs_at = 0.0
@@ -3148,6 +3374,7 @@ class Manager:
         self.saved_logs = set()
         self.log_retry = {}     # (run, job) -> no retry before this time; memory only, so a restart retries at once
         self.last_log_error = None
+        self.tests_started_at, self.tests_script = 0.0, None  # the tests editor, last started from the Tests tab
         self._load_runs()
         self._scan_logs()
         self.prev = read_json(self._p("state-prev.json"))
@@ -3191,20 +3418,38 @@ class Manager:
                 self.bodies.clear()
 
     def docs_files(self):
-        """The three files the Claude Documents get: {name: text}."""
+        """The files the Claude Documents get: {name: text}. While the notes there are held (adopt_docs), only the
+        rules: the notes files there are left as they are."""
         db = self.default_branch
-        with self.notes.lock:
-            notes_md = self.notes.markdown(for_docs=True)
-        return {"10-github-rules.md": self.rules.markdown(self.repo, db),
-                "github-rules.json": dumps(self.rules.export(self.repo, db), pretty=True) + "\n",
-                "11-github-notes.md": notes_md}
+        files = {"10-github-rules.md": self.rules.markdown(self.repo, db),
+                 "github-rules.json": dumps(self.rules.export(self.repo, db), pretty=True) + "\n"}
+        if not self.notes_held:
+            with self.notes.lock:
+                files["11-github-notes.md"] = self.notes.markdown(for_docs=True)
+            files["github-notes.json"] = dumps(self.notes.export(self.repo), pretty=True) + "\n"
+        return files
 
-    def adopt_docs_rules(self, folder):
-        """Before the first push of a seeded rule set: take the Claude Documents' github-rules.json instead."""
+    def adopt_docs(self, folder, first=False):
+        """Right before a push, on origin's files: a still-seeded rule set takes the Claude Documents' github-rules.json
+        instead, and on the first sync from this data folder (or while this PC has written no note) the notes there
+        are merged in, so a new PC or a lost data folder gets q's rules and notes back instead of pushing empty ones
+        over them. Notes there that can't be read back are never replaced by this PC's empty store: they are held
+        (left as they are, with a warning) until a note is written here."""
         if self.rules.seeded:
             doc = read_json(os.path.join(folder, "github-rules.json"))
             if doc is not None and self.rules.adopt(doc):
                 LOG.info("editor: agent rules taken from the Claude Documents' github-rules.json")
+        held = None
+        if first or self.notes.fresh:
+            raws, source, count = docs_notes(folder)
+            if raws and self.notes.merge(raws, source):
+                LOG.info("editor: notes merged from the Claude Documents' %s", source)
+            if count and self.notes.fresh and not self.notes.all():
+                held = ("Claude Documents: %s there holds %s this PC could not read back, so it is left as it is "
+                        "(not replaced by this PC's empty notes) until a note is written here" % (
+                            source, plural(count, "note")))
+                LOG.warning("editor: %s", held)
+        self.notes_held = held
 
     def _after_apply(self, change):
         with self.rs_lock:
@@ -3214,15 +3459,52 @@ class Manager:
         self.wake.set()         # and the next poll runs now, so the branches show the change
 
     def follow_rename(self, old, new):
-        """An applied rename takes the branch's structure entry and its notes along (each note's move is a
-        note.edited event with the old target in "from")."""
-        self.structure.rename(old, new)
-        for n in self.notes.all():
-            if n["target"] == {"kind": "branch", "key": old}:
-                try:
-                    self.notes.update(n["id"], {"target": {"kind": "branch", "key": new}, "rev": n["rev"]})
-                except NoteError as e:
-                    LOG.warning("editor: could not move note %s to %s: %s", n["id"], new, e)
+        follow_rename(self.structure, self.notes, old, new)
+
+    def checked_out(self, branch):
+        with self.lock:
+            local = list(self.state.get("local") or [])
+        return checked_out_in(local, branch)
+
+    # -- the tests editor (the Tests tab embeds it): started from here when it isn't running ----------------------
+
+    def tests_editor_script(self):
+        """-> (serve.py of the tests editor or None, the places looked in). `testsEditor` in github-manager.json (the
+        file or its folder) first, then the Quark Project app's install (<quarkDir>/tests-editor), then each watched
+        local copy's tools/tests_editor, then <quarkDir>/repository's."""
+        q = self.cfg.get("quarkDir") or ""
+        places = []
+        if self.cfg.get("testsEditor"):
+            places.append(str(self.cfg["testsEditor"]))
+        places.append(os.path.join(q, "tests-editor"))
+        places += [os.path.join(e["path"], "tools", "tests_editor") for e in self.locals_cfg if e.get("path")]
+        places.append(os.path.join(q, "repository", "tools", "tests_editor"))
+        for p in places:
+            f = p if p.endswith(".py") else os.path.join(p, "serve.py")
+            if os.path.isfile(f):
+                return f, places
+        return None, places
+
+    def start_tests_editor(self):
+        """POST /api/tools/tests-editor: starts its serve.py hidden, at low priority, without a browser (the Tests tab
+        then embeds it). A second press within TESTS_START_GAP s does nothing (it is still starting)."""
+        with self.lock:
+            if time.time() - self.tests_started_at < TESTS_START_GAP:
+                return {"started": False, "script": self.tests_script,
+                        "port": TESTS_EDITOR_PORT, "note": "started a moment ago; give it a few seconds"}
+        script, places = self.tests_editor_script()
+        if not script:
+            raise EditError(404, "no tests editor found (looked for serve.py in %s); install it with "
+                                 "tools/tests_editor/install.py" % "; ".join(places))
+        try:
+            start_detached([windowless_python(), "-B", script, "--port", str(TESTS_EDITOR_PORT), "--no-browser",
+                            "--quiet"], os.path.dirname(script))
+        except OSError as e:
+            raise EditError(500, "could not start %s: %s" % (script, e))
+        with self.lock:
+            self.tests_started_at, self.tests_script = time.time(), script
+        self.say("started the tests editor: %s" % script)
+        return {"started": True, "script": script, "port": TESTS_EDITOR_PORT}
 
     def structure_view(self):
         o = self.structure.obj()
@@ -3234,8 +3516,10 @@ class Manager:
 
     def rules_view(self):
         o = self.rules.obj()
+        docs = self.docs.status()
+        docs["notesHeld"] = self.notes_held
         o.update({"kinds": list(RULE_KINDS), "scopes": list(RULE_SCOPES), "hardRule": HARD_RULE_ID,
-                  "defaultBranch": self.default_branch, "docsSync": self.docs.status(),
+                  "defaultBranch": self.default_branch, "docsSync": docs,
                   "limits": {"rules": RULES_MAX, "titleBytes": RULE_TITLE_MAX, "textBytes": RULE_TEXT_MAX}})
         return o
 
@@ -3702,7 +3986,7 @@ class Manager:
             if not errors:
                 self.last_ok = at
             self.last_error = "; ".join(errors) if errors else None
-            warnings += self.docs.warnings()
+            warnings += self.docs.warnings() + ([self.notes_held] if self.notes_held else [])
             self.docs.retry_if_failed()
             state["poll"] = {"lastOk": self.last_ok, "lastError": self.last_error,
                              "nextAt": iso(datetime.datetime.fromtimestamp(self.next_at, UTC)),
@@ -4170,7 +4454,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    WRITE_PATHS = ("/api/notes", "/api/structure", "/api/rules", "/api/pending")
+    WRITE_PATHS = ("/api/notes", "/api/structure", "/api/rules", "/api/pending", "/api/tools")
 
     @classmethod
     def is_write_path(cls, path):
@@ -4229,6 +4513,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if cmd != "POST":
                     return self._json(405, {"error": "POST a change here; DELETE / apply go to /api/pending/<id>"})
                 return self._json(201, {"change": m.pending.queue(body)})
+            if path == "/api/tools/tests-editor":
+                if cmd != "POST":
+                    return self._json(405, {"error": "POST to start the tests editor"})
+                edit_fields(body if body is not None else {}, ())
+                return self._json(200, m.start_tests_editor())
+            if path.startswith("/api/tools/"):
+                return self._json(404, {"error": "no such tool"})
             if path == "/api/pending/apply-all":
                 if cmd != "POST":
                     return self._json(405, {"error": "POST to apply every pending change"})
@@ -4290,7 +4581,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(403, "forbidden", "text/plain")
         upath = urllib.parse.urlsplit(self.path).path
         if upath == "/api/notes" or upath.startswith("/api/notes/") or upath == "/api/pending" or \
-                upath.startswith("/api/pending/"):
+                upath.startswith("/api/pending/") or upath.startswith("/api/tools/"):
             return self._write()
         n = int(self.headers.get("Content-Length") or 0)
         if n:

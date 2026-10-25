@@ -55,8 +55,8 @@ runSummary = {"id": 123, "workflow": "build-and-release", "branch": "...", "sha"
 
 Extra keys the server also sends (the page may use or ignore them): `poll.lastAt` (start of the last poll),
 `poll.durationSec`, `poll.ghCalls`, `poll.ghChanged` (calls that were not a 304), `poll.backlog` ({jobs, logs} still to
-download from the first start's backfill), `poll.warnings` (e.g. a log download that will be retried; not a failed
-poll); runSummary `startedAt`, `runNumber`, `prs` (PR numbers), `workflowFile` (the workflow's file name from the runs
+download from the first start's backfill; the page shows it on every tab), `poll.warnings` (e.g. a log download that
+will be retried, the Claude Documents copy failing; not a failed poll; the page shows them on every tab); runSummary `startedAt`, `runNumber`, `prs` (PR numbers), `workflowFile` (the workflow's file name from the runs
 API's `path`, e.g. `release.yml`; `null` for a run cached before the server sent it, until GitHub lists it again); pulls `headSha`, `closedAt`; jobs `logGone: true`
 (GitHub no longer has the log and it was never saved); `testing.prerelease.sha`. `durationSec` of a running run is
 the time so far. Values the server can't know yet are `null` (e.g. ahead / behind before the mirror has the commit).
@@ -71,7 +71,7 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
  "type": "run.started" | "run.completed" | "run.failed" | "pr.opened" | "pr.merged" | "pr.closed" | "pr.updated"
          | "branch.created" | "branch.moved" | "branch.deleted" | "tag.created" | "release.published"
          | "local.commit" | "local.moved" | "local.dirty" | "poll.error" | "baseline"
-         | "note.added" | "note.edited" | "note.done" | "note.deleted"
+         | "note.added" | "note.edited" | "note.done" | "note.deleted" | "note.restored"
          | "structure.changed" | "rules.changed"
          | "github.branch.created" | "github.branch.deleted" | "github.branch.renamed"
          | "github.ruleset.created" | "github.ruleset.updated" | "github.ruleset.deleted"
@@ -103,7 +103,9 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
   events show in that PR / branch / run's history. data: target, author, status, pinned, plus `text` (added, or when
   the text changed), `changed` and `rev` (edited / done), `from` (the old target, when moved). `note.done`: the status
   went to done (reopening is a `note.edited`). `note.deleted` is the tombstone: data.note is the whole note. Ids:
-  `note.added:<id>`, `note.edited:<id>:<rev>`, `note.done:<id>:<rev>`, `note.deleted:<id>`.
+  `note.added:<id>`, `note.edited:<id>:<rev>`, `note.done:<id>:<rev>`, `note.deleted:<id>`. `note.restored` (ref
+  `{}`, id `note.restored:<digest>`): notes merged back from the Claude Documents (below); data: source (the file),
+  `added` and `updated` note ids.
 - `structure.changed` / `rules.changed` (the GitHub editor, below): a local change of the branch roles / descriptions
   or the agent rules. ref `{"branch": name}` when one branch changed, else `{}`. data: `rev` and what changed (the
   changed branch entries, `null` = removed; for rules `added`, `edited`, `removed` ids, the new `rules` and the
@@ -147,8 +149,8 @@ Requests whose Host header is not 127.0.0.1 / localhost get 403 (DNS rebinding).
 
 ## Notes (the Editor tab)
 
-q's notes, kept by the server in `editor/notes.json` (and copied to the Claude Documents as `11-github-notes.md`,
-see the GitHub editor below). Nothing goes to GitHub or a working copy.
+q's notes, kept by the server in `editor/notes.json` (and copied to the Claude Documents as `11-github-notes.md` and
+`github-notes.json`, and merged back from there on a new install; see the GitHub editor below). Nothing goes to GitHub or a working copy.
 ```
 note = {"id": "n0123456789ab", "target": {"kind": "general" | "branch" | "pr" | "run" | "commit" | "version" | "local",
                                            "key": "" | "testing" | "8" | "123" | "<sha>" | "1.18.6" | "working-repo"},
@@ -191,7 +193,9 @@ the API). The server refuses, with 422 and `"locked": true`, when queueing, prev
 before the call to GitHub:
 - any ruleset create / update / delete when the ruleset (before or after the change) targets the default branch
   (read from `repos/<repo>` every time, never cached), `~DEFAULT_BRANCH`, `~ALL`, or a pattern that could match it
-  (matched conservatively: `*`, `**`, `?` and `[...]` all widen the match; exclude patterns are ignored); any
+  (matched conservatively: `*`, `**`, `?` and `[...]` all widen the match) unless an exclude pattern surely matches
+  it (matched narrowly: `*` and `?` stay inside one `/` part, `**` crosses them, a `[...]` never counts; or
+  `~DEFAULT_BRANCH`), so `claude/*` minus the default branch passes; `~ALL` is refused whatever it excludes; any
   ruleset whose target is not `branch` (tag and push rulesets: `v*` tags); and the rulesets named `production rule`
   and `tagging rule`;
 - deleting or renaming the default branch, `testing`, `launcher`, `site`, `discord-bot` or `gh-pages` (and renaming
@@ -224,7 +228,9 @@ branch can't be set. With `rev`, a structure changed since answers 409. -> 200 w
  "hardRule": "only-q-production", "defaultBranch": "...", "limits": {"rules": 200, "titleBytes": 200, "textBytes": 4000},
  "docsSync": {"enabled": true, "state": "idle" | "waiting" | "syncing" | "ok" | "failed" | "off", "offReason": null,
               "repo": "floration/quark-claude-docs", "branch": "main", "files": [...], "dueAt": null,
-              "lastOk": "...", "lastCommit": "<sha>", "lastAttempt": "...", "lastError": null}}
+              "lastOk": "...", "lastCommit": "<sha>", "lastAttempt": "...", "lastError": null,
+              "failingSince": null | "...", "notesHeld": null | "text"}}
+              // failingSince: the first failure of the current run of failures; notesHeld: see below
 rule = {"id": "limit-open-prs-per-thread", "title": "...", "text": "markdown",
         "scope": {"type": "all" | "branch" | "tool", "match": "" | "<branch pattern>" | "<tool>"},
         "kind": "push" | "merge" | "version" | "ci" | "limit" | "other",
@@ -236,7 +242,7 @@ A seeded set is marked `"seeded": true` in rules.json until q edits it; before i
 the server reads the `github-rules.json` already there and, when there is one, takes those rules instead (a
 `rules.changed` event "loaded from the Claude Documents"), so a new install never pushes the seed over rules edited
 elsewhere.
-A limit has a numeric `value` (0-100000); other kinds have `value: null`. `locked` on other rules is q's mark
+A limit has a numeric `value` (0-1000000000; a missing value and one out of range get their own message); other kinds have `value: null`. `locked` on other rules is q's mark
 ("agents never change it or work around it"); the page asks before changing one.
 
 `PUT /api/rules` `{"rules": [rule...], "rev"?}` replaces the whole list (`updatedAt` is ignored and set by the
@@ -312,17 +318,34 @@ written answers 500 and changes nothing.
 
 ### The Claude Documents copy
 
-When the agent rules or the notes change, the server writes three files into its own clone of the private repo
+When the agent rules or the notes change, the server writes four files into its own clone of the private repo
 floration/quark-claude-docs (branch main, folder `claude-docs/`, cloned with `gh repo clone` and pushed with gh's
 credential helper): `10-github-rules.md` (the rules as markdown, with the header "Generated by the GitHub Manager;
-edit there, not here"), `github-rules.json` (`{"generatedBy", "note", "repo", "defaultBranch", "rev", "updatedAt", "rules": [...]}`) and
-`11-github-notes.md`. 10 s after the last change (a burst is one commit), and 30 s after a start when the files
+edit there, not here"), `github-rules.json` (`{"generatedBy", "note", "repo", "defaultBranch", "rev", "updatedAt", "rules": [...]}`),
+`11-github-notes.md` (the notes as markdown) and `github-notes.json` (`{"generatedBy", "note", "repo", "version": 1,
+"notes": [note...]}`, sorted by id).
+
+Notes round-trip like the rules: on the first sync from a data folder (a new PC, a lost data folder, notes written
+before that first sync worked) and while this PC has written no note (no `editor/notes.json`), the notes already in
+the Claude Documents are merged into the local store before anything is written (`github-notes.json`, else
+`11-github-notes.md` parsed back; a note both have keeps the newer copy; one `note.restored` event). If the notes
+there still can't be read back (a hand-written file), this PC's empty notes are never written over them: the two
+notes files are left as they are (`docsSync.notesHeld`, a `poll.warnings` line) until a note is written here. 10 s after the last change (a burst is one commit), and 30 s after a start when the files
 differ from what was last pushed: fetch, reset the clone to origin/main, write, commit "GitHub Manager:
 rules/notes updated", push; a rejected push is retried once after `git pull --rebase`. Nothing else in that repo is
 touched. A failure shows in `docsSync` (above), in the page and in `poll.warnings`, and is retried on every poll
 (and on the next change) until it works; it never stops the server. Off with `GHM_DOCS_SYNC=off`, `"claudeDocs": false`, or a repo other than
 floration/quark without `claudeDocsRepo`.
 
+
+## POST /api/tools/tests-editor
+
+The Tests tab's **Start it**: starts the tests editor's `serve.py --port 8775 --no-browser --quiet` detached, with no
+window, at low priority. It is looked for in `testsEditor` (github-manager.json: the file or its folder), then
+`<quarkDir>/tests-editor`, then each watched local copy's `tools/tests_editor`, then `<quarkDir>/repository`'s.
+A write (own origin, JSON, body `{}` or none). -> 200 `{"started": true, "script": "<path>", "port": 8775}`;
+`{"started": false, "note"}` when it was started less than 10 s ago; 404 `{"error"}` naming the places looked in
+when there is none; 500 when it can't be started. The page then looks for it every second for up to 20 s.
 
 ## GET /api/log?run=<id>&job=<id>
 

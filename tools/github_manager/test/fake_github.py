@@ -127,8 +127,10 @@ class MemoryGitHub:
             return 201, {"ref": body["ref"], "object": {"sha": body["sha"]}}
         if method == "DELETE" and path.startswith(R + "/git/refs/heads/"):
             name = path[len(R + "/git/refs/heads/"):]
-            if self.branches.pop(name, None) is None:
+            sha = self.branches.pop(name, None)
+            if sha is None:
                 raise S.GhError(422, S.gh_write_error(422, '{"message": "Reference does not exist"}', ""))
+            self.commits.add(sha)   # as on GitHub: the commit stays reachable by sha (an undo re-creates it there)
             return 204, None
         m = re.match(r"^%s/branches/(.+)/rename$" % re.escape(R), path)
         if method == "POST" and m:

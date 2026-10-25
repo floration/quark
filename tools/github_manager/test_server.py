@@ -1305,6 +1305,25 @@ class HardLock(unittest.TestCase):
         # excluding the default branch does not make a wide pattern acceptable
         self.refused("ruleset.create", {"form": guard_form(name="n", include=["~ALL"], exclude=["~DEFAULT_BRANCH"])},
                      "every branch")
+        # an Except that only might cover it (wider on GitHub's side than on ours, or a [class]) doesn't count
+        for exc in (["claude/compassionate"], ["claude/*/x"], ["claude/[c]ompassionate-ritchie-07ah6i"], ["testing"],
+                    ["refs/heads/claude/compassionate-ritchie-07ah6"]):
+            self.refused("ruleset.create", {"form": guard_form(name="n", include=["claude/*"], exclude=exc)},
+                         "add it under Except")
+
+    def test_except_that_surely_covers_the_default_branch_passes(self):
+        # the real default branch sits under claude/: guarding work branches as a group needs claude/* minus it
+        for exc in ([DEFAULT], ["refs/heads/" + DEFAULT], ["~DEFAULT_BRANCH"], ["claude/compassionate-*"],
+                    ["claude/*-07ah6i"], ["claude/**"], ["claude/compassionate-ritchie-07ah6?"]):
+            for inc in (["claude/*"], ["claude/**"], ["testing", "claude/*"]):
+                ch = self.p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="work %s" % exc,
+                                                                                             include=inc, exclude=exc)}})
+                self.assertEqual(ch["status"], "pending", (inc, exc))
+                self.p.discard(ch["id"])
+        self.assertEqual(self.gh.writes, [])
+        self.assertTrue(S.pattern_surely_hits_branch("claude/*", "claude/x"))
+        self.assertFalse(S.pattern_surely_hits_branch("claude/*", "claude/x/y"))   # narrower than GitHub: on purpose
+        self.assertFalse(S.pattern_surely_hits_branch("refs/heads/claude/[x]", "claude/x"))
         # the locked rulesets themselves: production (default branch), tagging (v* tags), by name too
         self.refused("ruleset.update", {"id": 25727099, "form": guard_form()}, "the ruleset as it is on GitHub")
         self.refused("ruleset.delete", {"id": 25727099}, "targets the default branch")
@@ -1433,6 +1452,24 @@ class Previews(unittest.TestCase):
         self.assertTrue(all(l.startswith(("-", "@@")) for l in ch["diff"]))
         self.assertEqual(ch["summary"], "Delete ruleset 'testing guard' (testing)")
 
+    def test_new_push_requirements_warn(self):
+        p = S.Pending(None, self.gh, REPO)
+        ch = p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form(
+            requirePr=True, requiredChecks=["meta", "linux"], linearHistory=True)}})
+        w = " ".join(ch["warnings"])
+        self.assertIn("required a pull request for every change (0 approvals); passing checks linux, meta; linear "
+                      "history (no merge commits) on testing, where every Claude's work lands", w)
+        p.discard(ch["id"])
+        # nothing new that blocks (only force-push / deletion), a disabled ruleset, or work branches: worded to fit
+        self.assertEqual(p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form(
+            blockDeletion=False)}})["warnings"], [])
+        self.assertEqual(p.queue({"type": "ruleset.create", "params": {"form": guard_form(
+            name="off", enforcement="disabled", requirePr=True)}})["warnings"], [])
+        ch = p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="work", include=["claude/project-*"],
+                                                                             requiredChecks=["meta"])}})
+        self.assertIn("passing check meta on claude/project-*", " ".join(ch["warnings"]))
+        self.assertEqual(S.ruleset_new_blocks(ch["after"], ch["after"]), [])
+
     def test_form_keeps_what_it_does_not_show(self):
         rs = testing_guard()
         rs["rules"].append({"type": "required_signatures"})
@@ -1468,6 +1505,32 @@ class ApplyAndStale(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_checked_out_here_is_a_warning(self):
+        local = [{"name": "thread-x", "branch": "claude/a", "worktreeOf": "working-repo"},
+                 {"name": "working-repo", "branch": "testing"}]
+        p = S.Pending(None, self.gh, REPO, checked_out=lambda b: S.checked_out_in(local, b))
+        ch = p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.assertIn("claude/a is checked out in thread-x (worktree of working-repo) on this PC", " ".join(ch["warnings"]))
+        local[0]["branch"] = "claude/other"   # switched there: no new warning, and the preview is not stale for it
+        self.assertEqual(p.apply(ch["id"], {"previewHash": ch["previewHash"]})["status"], "applied")
+        ch = p.queue({"type": "branch.rename", "params": {"name": "claude/b", "newName": "claude/b2"}})
+        self.assertFalse(any("checked out" in w for w in ch["warnings"]))
+
+    def test_undo_queues_the_reverse(self):
+        # what the page's Undo queues: an applied delete's before.sha re-creates the branch there; a rename goes back
+        ch = self.p.apply(self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})["id"])
+        self.assertEqual(ch["status"], "applied")
+        back = self.p.queue({"type": "branch.create", "params": {"name": "claude/a", "from": ch["before"]["sha"]}})
+        self.assertEqual(self.p.apply(back["id"])["status"], "applied")
+        self.assertEqual(self.gh.branches["claude/a"], sha_of("claude/a"))
+        ch = self.p.apply(self.p.queue({"type": "branch.rename", "params": {"name": "claude/a", "newName": "claude/z"}})
+                          ["id"])
+        back = self.p.queue({"type": "branch.rename", "params": {"name": ch["params"]["newName"],
+                                                                 "newName": ch["params"]["name"]}})
+        self.assertEqual(self.p.apply(back["id"])["status"], "applied")
+        self.assertIn("claude/a", self.gh.branches)
+        self.assertNotIn("claude/z", self.gh.branches)
 
     def test_apply_ok_events_and_file(self):
         ch = self.p.queue({"type": "branch.create", "params": {"name": "claude/new", "from": "claude/a"}})
@@ -1719,7 +1782,9 @@ class RulesStore(unittest.TestCase):
                           ({"title": "t", "text": "x", "x": 1}, "unknown field"),
                           ({"title": "t", "text": "x" * (S.RULE_TEXT_MAX + 1)}, "text is over"),
                           ({"title": "t\x07", "text": "x"}, "control character"),
-                          ({"title": "t", "text": "x", "kind": "limit", "value": True}, "needs a value")):
+                          ({"title": "t", "text": "x", "kind": "limit", "value": True}, "needs a value"),
+                          ({"title": "t", "text": "x", "kind": "limit", "value": -5}, "'t' must be 0 or more"),
+                          ({"title": "t", "text": "x", "kind": "limit", "value": 2e9}, "must be at most 1000000000")):
             with self.assertRaises(S.EditError) as cm:
                 self.r.replace({"rules": base + [bad]})
             self.assertEqual(cm.exception.code, 400, bad)
@@ -1978,9 +2043,13 @@ class DocsSyncTest(unittest.TestCase):
         self.assertEqual(st["state"], "failed")
         self.assertIn("gh repo clone", st["lastError"])
         self.assertTrue(self.d.warnings()[0].startswith("Claude Documents sync failed"))
+        since = st["failingSince"]
+        self.assertEqual(since, st["lastAttempt"])
         os.makedirs(self.d.folder)
         write(os.path.join(self.d.folder, "x.txt"), "not a clone")
-        self.assertIn("is not a git clone", self.d.sync_now()["lastError"])
+        st = self.d.sync_now()
+        self.assertIn("is not a git clone", st["lastError"])
+        self.assertEqual(st["failingSince"], since)   # still the first failure of this run of failures
         off = S.DocsSync(self.d.folder, None, self.proc, dict, enabled=False, off_reason="off (test)")
         off.schedule()
         self.assertEqual((off.status()["state"], off.sync_now()["state"], off.warnings()), ("off", "off", []))
@@ -1996,7 +2065,7 @@ class DocsSyncTest(unittest.TestCase):
         mine = S.Rules(os.path.join(self.root, "data", "editor"))
         self.assertTrue(mine.seeded)
         render = lambda: {"github-rules.json": S.dumps(mine.export(REPO, DEFAULT), pretty=True) + "\n"}
-        adopt = lambda folder: mine.adopt(S.read_json(os.path.join(folder, "github-rules.json")))
+        adopt = lambda folder, first: mine.adopt(S.read_json(os.path.join(folder, "github-rules.json")))
         # first try fails (offline): retried by the next poll, and then it works
         moved = self.bare + ".away"
         os.rename(self.bare, moved)
@@ -2008,6 +2077,7 @@ class DocsSyncTest(unittest.TestCase):
         self.assertTrue(d.retry_if_failed())
         self.assertFalse(d.retry_if_failed())   # already on its way
         self.assertTrue(self.wait(lambda: d.status()["state"] == "ok"), d.status())
+        self.assertIsNone(d.status()["failingSince"])
         self.assertFalse(d.retry_if_failed())
         self.assertNotIn("ci-scope", [x["id"] for x in mine.obj()["rules"]])
         self.assertFalse(mine.seeded)
@@ -2024,6 +2094,94 @@ class DocsSyncTest(unittest.TestCase):
         finally:
             os.environ["GHM_DOCS_SYNC"] = env
         self.assertFalse(S.docs_sync_wanted({"repo": REPO})[0])
+
+    def manager(self, name):
+        """A Manager whose Claude Documents copy goes to the local bare repo."""
+        data = os.path.join(self.root, name)
+        m = S.Manager({"repo": REPO, "port": 0, "quarkDir": data}, data, os.path.dirname(os.path.abspath(S.__file__)),
+                      quiet=True)
+        m.default_branch = DEFAULT
+        m.docs = S.DocsSync(os.path.join(data, "claude-docs"), os.path.join(data, "editor", "docs-sync.json"),
+                            self.proc, m.docs_files, repo=S.DOCS_REPO, debounce=30, adopt=m.adopt_docs)
+        return m
+
+    def push_seed(self, name, text, msg):
+        write(os.path.join(self.seed, name), text)
+        git("add", name, cwd=self.seed)
+        git("commit", "-qm", msg, cwd=self.seed)
+        git("push", "-q", "origin", "HEAD:main", cwd=self.seed)
+
+    def test_a_new_install_gets_the_notes_back(self):
+        # q's notes as an older version pushed them: 11-github-notes.md only (no github-notes.json yet)
+        old = self.manager("old")
+        old.notes.create({"target": {"kind": "general"}, "text": "General one\n\n- a list\n- `code` and **bold**",
+                          "pinned": True})
+        old.notes.create({"target": {"kind": "branch", "key": "claude/x-y"}, "text": "branch note", "author": "a · b"})
+        n3 = old.notes.create({"target": {"kind": "pr", "key": "12"}, "text": "pr note"})
+        old.notes.update(n3["id"], {"status": "done", "text": "pr note, edited"})
+        old.notes.create({"target": {"kind": "version", "key": "1.18.32"}, "text": "  indented\n\n\nthree lines"})
+        md = old.notes.markdown(for_docs=True)
+        self.push_seed("11-github-notes.md", md, "old notes")
+        keep = lambda m: sorted((n["id"], n["target"]["kind"], n["target"]["key"], n["text"], n["status"], n["pinned"],
+                                 n["author"], n["createdAt"], n["updatedAt"]) for n in m.notes.all())
+        # a new PC (an empty data folder): its first sync merges them back instead of pushing an empty file
+        new = self.manager("new")
+        self.assertTrue(new.notes.fresh)
+        self.assertTrue(new.docs.schedule_if_changed(30))   # no digest yet: it syncs, and the sync adopts first
+        st = new.docs.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(keep(new), keep(old))
+        self.assertFalse(new.notes.fresh)
+        self.assertEqual(self.show("11-github-notes.md"), md.rstrip("\n"))   # the same notes give the same file
+        self.assertEqual(len(json.loads(self.show("github-notes.json"))["notes"]), 4)
+        restored = [e for e in new.history.query() if e["type"] == "note.restored"]
+        self.assertEqual(len(restored), 1)
+        self.assertIn("4 notes restored from the Claude Documents (11-github-notes.md)", restored[0]["text"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, "new", "editor", "notes.json")))
+        # another new PC that wrote a note before its first sync (gh was signed out): both sets end up everywhere,
+        # read from github-notes.json this time
+        third = self.manager("third")
+        mine = third.notes.create({"target": {"kind": "run", "key": "77"}, "text": "written offline"})
+        self.assertFalse(third.notes.fresh)
+        st = third.docs.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(len(third.notes.all()), 5)
+        self.assertIn("(github-notes.json)", next(e["text"] for e in third.history.query() if e["type"] == "note.restored"))
+        self.assertIn("written offline", self.show("11-github-notes.md"))
+        self.assertIn(mine["id"], self.show("github-notes.json"))
+        # once synced, deleting every note here is q's choice: the empty file goes out
+        for n in third.notes.all():
+            third.notes.delete(n["id"])
+        third.docs.sync_now()
+        self.assertIn("No notes yet.", self.show("11-github-notes.md"))
+        self.assertEqual(json.loads(self.show("github-notes.json"))["notes"], [])
+
+    def test_unreadable_notes_are_held_not_overwritten(self):
+        self.push_seed("11-github-notes.md", "# q's own notes\n\nwritten by hand\n", "hand notes")
+        m = self.manager("m")
+        st = m.docs.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(self.show("11-github-notes.md"), "# q's own notes\n\nwritten by hand")
+        self.assertIn("github-rules.json", git("--git-dir", self.bare, "ls-tree", "--name-only", "main"))
+        self.assertIn("left as it is", m.notes_held)
+        self.assertEqual(m.rules_view()["docsSync"]["notesHeld"], m.notes_held)
+        m.docs.sync_now()   # a restart or the next change: still held
+        self.assertEqual(self.show("11-github-notes.md"), "# q's own notes\n\nwritten by hand")
+        # q writes a note here: that is the go-ahead
+        m.notes.create({"target": {"kind": "general"}, "text": "the first note here"})
+        m.docs.sync_now()
+        self.assertIsNone(m.notes_held)
+        self.assertIn("the first note here", self.show("11-github-notes.md"))
+
+    def test_notes_markdown_round_trip(self):
+        n = S.Notes(None)
+        n.create({"target": {"kind": "commit", "key": "ABCDEF12"}, "text": "> quoted\n>\nend  "})
+        n.create({"target": {"kind": "local", "key": "thread-6l62d6"}, "text": "local"})
+        got = S.notes_from_markdown(n.markdown(for_docs=True))
+        self.assertEqual(sorted((g["id"], g["target"]["kind"], g["target"]["key"], g["text"]) for g in got),
+                         sorted((x["id"], x["target"]["kind"], x["target"]["key"], x["text"].rstrip())
+                                for x in n.all()))
+        self.assertEqual(S.notes_from_markdown(S.Notes(None).markdown(for_docs=True)), [])
 
     def test_manager_files(self):
         data = os.path.join(self.root, "m")
@@ -2143,6 +2301,43 @@ class EditorHttp(NotesHttp):
         os.makedirs(os.path.join(self.dir, "claude-docs"), exist_ok=True)
         write(os.path.join(self.dir, "claude-docs", "x.html"), "secret")
         self.assertEqual(self.call("GET", "/claude-docs/x.html")[0], 404)
+
+
+class TestsEditorStart(NotesHttp):
+    """The Tests tab's start button: finds the tests editor's serve.py and starts it detached, without a browser."""
+
+    def test_crud_etag_history_and_safety(self):
+        pass  # the notes' own test runs in NotesHttp
+
+    def test_find_start_and_protect(self):
+        code, _, body = self.call("POST", "/api/tools/tests-editor", {})
+        self.assertEqual(code, 404)
+        self.assertIn("no tests editor found", json.loads(body)["error"])
+        folder = os.path.join(self.dir, "tests-editor")
+        marker = os.path.join(self.dir, "started.json")
+        os.makedirs(folder)
+        write(os.path.join(folder, "serve.py"), "import json, sys\njson.dump(sys.argv[1:], open(%r, 'w'))\n" % marker)
+        # only from the page's own origin, as JSON, with no fields
+        self.assertEqual(self.call("POST", "/api/tools/tests-editor", {}, headers={"Origin": "http://evil"})[0], 403)
+        self.assertEqual(self.call("POST", "/api/tools/tests-editor", {"x": 1})[0], 400)
+        self.assertEqual(self.call("POST", "/api/tools/nope", {})[0], 404)
+        code, _, body = self.call("POST", "/api/tools/tests-editor", {})
+        self.assertEqual(code, 200, body)
+        got = json.loads(body)
+        self.assertEqual((got["started"], got["script"], got["port"]), (True, os.path.join(folder, "serve.py"), 8775))
+        t = time.time() + 20
+        while not os.path.exists(marker) and time.time() < t:
+            time.sleep(0.05)
+        time.sleep(0.2)
+        self.assertEqual(json.load(open(marker)), ["--port", "8775", "--no-browser", "--quiet"])
+        # a second press right away doesn't start another one
+        self.assertFalse(json.loads(self.call("POST", "/api/tools/tests-editor", {})[2])["started"])
+        # testsEditor in the settings wins
+        other = os.path.join(self.dir, "elsewhere", "serve.py")
+        os.makedirs(os.path.dirname(other))
+        write(other, "")
+        self.m.cfg["testsEditor"] = os.path.dirname(other)
+        self.assertEqual(self.m.tests_editor_script()[0], other)
 
 
 @unittest.skipUnless(os.environ.get("GHM_LIVE") == "1", "set GHM_LIVE=1 for the read-only check against GitHub")
