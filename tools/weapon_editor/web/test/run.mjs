@@ -225,6 +225,8 @@ async function serverChecks({ STD, DEMO }) {
     ok(c.status === 409 && c.json.text === DEMO, "a changed-on-disk save is refused with the disk text (409)");
     ok((await post("/api/set?name=demo", { text: DEMO + "\n", expect: "something else", force: true })).status === 200, "force overwrites");
     ok(fs.existsSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak")), "the old file is kept as .bak");
+    const ex = await post("/api/set?name=demo", { text: STD, expect: null });
+    ok(ex.status === 409 && ex.json.exists === true && fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons"), "utf8") === DEMO + "\n", "Save as onto an existing name (expect null) is refused, not overwritten (409 exists)");
     const pm = await post("/api/playmode", { set: "demo", base: "koth" });
     ok(pm.status === 200 && pm.json.text === "custommode=wpn-demo\nmode=koth\nweaponset=demo\n", "Play in game writes a new wpn-demo.qmode", JSON.stringify(pm.json && pm.json.text));
     const pk = await post("/api/playmode", { set: "keep", base: "ffa" });

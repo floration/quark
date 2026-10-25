@@ -68,7 +68,7 @@ Build them: `cmake --build build --target quark_maptool quark_tests`.
 ## The page
 
 The left panel is always there: open / save / rename / delete a set (`custom_weapons/*.qweapons`, the old file kept
-as `.bak`), open or download a `.qweapons` file, the weapon list (how many values each weapon changes, and an
+as `.bak`; Save as or a new name asks before replacing another set), open or download a `.qweapons` file, the weapon list (how many values each weapon changes, and an
 ƒ mark for weapons with their own logic), **Play in game** (base mode, writes `wpn-<set>.qmode`), what to
 compare with (the standard weapons or another set), the target's health, the distance for the numbers, and the
 selected weapon's quick numbers. An unsaved set is kept as a draft and comes back next time.

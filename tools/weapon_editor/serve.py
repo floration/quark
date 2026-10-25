@@ -583,7 +583,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if p == "/api/set":
                 # {text, expect?}: write custom_weapons/<name>.qweapons (the old one kept as .bak). `expect` (the text
-                # the page loaded) refuses the write when the file changed on disk since, unless `force`.
+                # the page loaded) refuses the write when the file changed on disk since, unless `force`; `expect: null`
+                # (a new name: Save as, a renamed set) refuses it when the file is already there.
                 n = q.get("name", "")
                 if not valid_set(n): return self._err(400, "bad name (letters, digits, space, _ -; 36 at most)")
                 body = self._json_body()
@@ -591,6 +592,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(text, str) or not text.strip(): return self._err(400, "no text")
                 path = set_path(n)
                 cur = read_text(path)
+                if cur is not None and "expect" in body and body["expect"] is None and not body.get("force"):
+                    return self._send(409, {"error": "a set with this name already exists", "exists": True, "text": cur})
                 if cur is not None and isinstance(body.get("expect"), str) and cur != body["expect"] and not body.get("force"):
                     return self._send(409, {"error": "changed on disk since it was opened", "text": cur})
                 atomic_write(path, text.encode("utf-8"))

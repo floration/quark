@@ -264,21 +264,30 @@ class App {
         $("setSel").value = "";
     }
     // one save at a time: a double click (or Ctrl+S held) waits for the save in flight instead of asking twice
-    save(asName) {
+    // (overwrite: the caller already asked about replacing another set of that name)
+    save(asName, overwrite = false) {
         if (this._saving) return this._saving;
-        this._saving = this._save(asName).finally(() => { this._saving = null; });
+        this._saving = this._save(asName, overwrite).finally(() => { this._saving = null; });
         return this._saving;
     }
-    async _save(asName) {
+    async _save(asName, overwrite) {
         let name = asName || $("setName").value.trim() || this.set.name;
         if (!SET_RE.test(name)) { this.toast("a set's name: letters, digits, space, _ and -, 36 at most, starting with a letter or digit", 4500); return false; }
+        // another name (Save as, a renamed set) must not replace a set that's already there without asking; the server
+        // checks it too (expect null: "must not exist"), for a file made since the list was read
+        const mine = this.set.saved === name;
+        const askOverwrite = () => overwrite || confirm(`custom_weapons/${name}.qweapons already exists (another set).\n\nOK: overwrite it with this one (the old file is kept as .bak).\nCancel: don't save.`);
+        if (!mine && (this.sets || []).some((s) => s.name === name)) { if (!askOverwrite()) return false; overwrite = true; }
         // the header carries the set's name
         if (this.parseOk && this.ast.name !== name) { this.brainEdited({ ...this.ast, name }, "save"); }
-        const expect = this.set.saved === name ? this.set.baseText : undefined;
+        const expect = mine ? this.set.baseText : overwrite ? undefined : null;
         try {
             await api.saveSet(name, this.text, expect);
         } catch (e) {
-            if (e.status === 409) {
+            if (e.status === 409 && e.data && e.data.exists) {
+                if (!askOverwrite()) return false;
+                await api.saveSet(name, this.text, undefined, true);
+            } else if (e.status === 409) {
                 if (!confirm(`custom_weapons/${name}.qweapons changed on disk since it was opened (another editor, or by hand).\n\nOK: overwrite it with this set (the disk version is kept as .bak).\nCancel: don't save (then choose whether to open the disk version).`)) {
                     const disk = e.data && typeof e.data.text === "string" ? e.data.text : null;
                     if (disk !== null && confirm(`Open the version on disk instead? Your unsaved changes here are lost (Download keeps a copy).`)) {
@@ -366,7 +375,7 @@ class App {
             // the game reads the set from its file: say so before writing it (an existing one is kept as .bak)
             const exists = (this.sets || []).some((s) => s.name === this.set.name);
             if (!confirm(`Play in game saves the set first: ${exists ? "overwrite" : "write"} custom_weapons/${this.set.name}.qweapons${exists ? " (the old file is kept as .bak)" : ""}, then write the custom mode. Go on?`)) return;
-            if (!(await this.save())) return;
+            if (!(await this.save(this.set.name, exists))) return;
         }
         try {
             const r = await api.playMode(this.set.saved, $("baseMode").value);
