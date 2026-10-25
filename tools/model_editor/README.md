@@ -65,8 +65,17 @@ website show) with the box list in the mesh's extras (what the game draws).
 - **Choose folder and write** (Chrome / Edge): pick `%APPDATA%\quark\overrides` to try models in the game without
   rebuilding (restart the game), or the repository's `assets\overrides` to ship them. Picking `%APPDATA%\quark` or the
   repository folder works too (the overrides folder inside is used). A same-named `.gltf` there is moved to `.bak` (the
-  game takes the `.glb` first); model files there for models you did not edit can be moved to `.bak` too.
-- **Download .zip**: the same layout plus `provenance.json`, to unzip into the overrides folder.
+  game takes the `.glb` first); model files there for models you did not edit can be moved to `.bak` too (a second
+  dialog lists them; Cancel or Escape there writes nothing).
+- **Download .zip**: the same layout plus `provenance.json`, to unzip into the overrides folder (with a model-editor
+  folder chosen, its `provenance.json` is updated too).
+- **Try in game** (the top bar, Chrome / Edge): writes every edited model that can be exported into the game's own
+  overrides folder (`%APPDATA%\quark\overrides`, or `%APPDATA%\quark`; remembered, a dialog asks the first time or when
+  a folder needs choosing or allowing, with the model-editor folder for provenance.json), then the game command for
+  this view (`U.gameArgs`: the lineup `--models --yaw --pitch`, a viewmodel `--weapon N`, "it" `--host hide`, bomb mode,
+  a projectile `--weapon N --fire`, the cart's `--cam`, on the chosen map or the mode's map). It is copied, and in the
+  Quark Project app the Play tab opens with `#args=<the options>`; otherwise the page shows it (a page on disk cannot
+  start a program).
 - **Download .glb** (the model panel): one model.
 - **Project > Load the models in an overrides folder**: reads every `models/<kind>/<NAME>.glb|.gltf` in a folder back
   as edits (to carry on, or to see what the game will draw).
@@ -88,10 +97,13 @@ What the game does with an override (src/client/gltf.cpp, models.cpp, game.cpp):
 
 Every export writes or updates a provenance sidecar, `{"format":1,"tool":"model-editor","items":{"models/<kind>/<NAME>.gltf":
 {"origin","by","date","source","note"(,"licence")}}}`, one entry per model id (the export / override path with .gltf),
-the latest export winning, other entries kept. The zip carries it; a folder export merges it into
-`<Quark\model-editor folder>\provenance.json` once that folder is chosen in the export dialog (remembered); otherwise
-**Download provenance.json** (the models an export would write: not those its errors block). A model moved to `.bak` by a
-folder export loses its entry. Origins: `human` (made by a person: **Start from scratch**, a tweak of a human-made shipped
+the latest export winning, other entries kept. It belongs in `<Quark\model-editor folder>\provenance.json`, the only
+place the Editor Manager's dashboard and `tools/provenance.py merge` read it, so the export dialog asks for that folder
+(remembered; a red row until it is chosen, and **Allow access** when a new session has no access to it yet) and
+neither export button goes on without it unless **go on without it** is ticked. Folder exports and zips both merge it
+there; the zip carries a copy as well. A browser that cannot write to folders says to copy the zip's copy there;
+**Download provenance.json** gives the models an export would write (not those its errors block). A model moved to
+`.bak` by a folder export loses its entry. Origins: `human` (made by a person: **Start from scratch**, a tweak of a human-made shipped
 model, or chosen in the panel), `ai` (a tweak of an AI-made model; the note says what changed against what the edit
 started from, rewritten as you edit until you write your own), `third-party` (an imported file from a pack: the import asks
 for its source and licence).
@@ -99,7 +111,7 @@ for its source and licence).
 - An edit starts from the shipped override when there is one (what the game draws now), else the default, and keeps its
   origin: the repository's entry for that id (`assets/provenance/*.json`; a default without one is `ai`). Editing a
   shipped human-made model stays `human`, and its note is diffed against the shipped model, not the AI default.
-- The origin is part of the edit: undo / redo carry it, **Reset to default** drops it (a later tweak is labelled from
+- The origin is part of the edit: undo / redo carry it, **Reset to default** (or **to shipped model**) drops it (a later tweak is labelled from
   scratch again). An origin left without an edit by an older version is dropped when a session or project loads.
 - Every exported `.glb` carries its entry in `asset.extras.provenance` (the game ignores it). Loading a file back keeps
   its origin: **Project > Load the models in an overrides folder** takes the file's own entry, else the folder's
@@ -113,8 +125,12 @@ The editor never writes `assets/provenance/*.json` in the repository.
 ## What it does
 
 - **Library**: every model by kind with a thumbnail (in the chosen map's colours), badges for edited, shipped, origin and
-  problems; filter, edited only. As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
-  resize it (remembered; double-click: the default). Thumbnails are read back from the GPU asynchronously (a pixel-pack
+  problems; filter (the path, the description, box names: "visor", "scope"; a line says when nothing matches), edited
+  only, one origin only. Its header counts the human-made goal as the models are now, your
+  edits included (`human 1/30 (3%) ai 29`), and how many edits are **not exported** yet: a card says `exported` while
+  its edit is the one the last folder export or zip wrote (this browser remembers a checksum of each), `not exported`
+  once it changes (what the game will not have after a restart; the panel says where and when it was exported). As many cards across as fit (five at 2560 px, two at 1280); drag its right edge to
+  resize it (remembered; double-click: the default; the viewport keeps at least 480 px, also after the window shrinks). Thumbnails are read back from the GPU asynchronously (a pixel-pack
   buffer behind a fence), so drawing them never stalls the page.
 - **Viewer** (the game's renderer ported to WebGL2: the dynamic-object shader with sky light, sun, sun visibility,
   fog, the 2048 shadow map with its 4 taps, the 1 px screen-space box outlines, translucent parts unlit and blended, the
@@ -136,7 +152,8 @@ The editor never writes `assets/provenance/*.json` in the repository.
     alternate teams, crouch (per box, as the game; a mesh squashed whole), animations, shadows, in sun / in shade,
     outline colour and width, brightness, viewmodel position / size / colour, bomb mode, a planted bomb's red blink, a
     neutral cart, a reached gate, hitbox (0.8 x 1.8 x 0.8 m, head = the top 20 % at 45 % of the width; in orbit too),
-    grid, floor. Numbers are kept within their fields' ranges (field of view 60 to 140, as the game); an option that
+    ghost (an edited model: what it started from, the shipped model or the default, outlined faintly over it to compare
+    sizes), grid, floor. Numbers are kept within their fields' ranges (field of view 60 to 140, as the game); an option that
     does nothing in the current view is greyed out and says why.
   - **Draw as**: auto (as the game will: its own boxes for an unedited default, the box model file for anything edited
     or shipped as boxes, a mesh for an imported mesh), the game's own boxes, box model file, mesh (as a file without
@@ -146,8 +163,14 @@ The editor never writes `assets/provenance/*.json` in the repository.
   moves through them and arrow keys step the focused one; a half size stops at 0.5 mm); the default boxes are named
   (legs, body, head, barrel...: `Q.DEFAULT_BOX_NAMES` in `js/data.js`, from the comments of the game's model builders in
   src/client/models.cpp, given only while a default's box count matches; the game ignores names); click a
-  box in the viewport; a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
-  across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default; start from scratch.
+  box in the viewport; Shift-click (list or viewport) selects several and Ctrl+A every box: the arrow keys, the move gizmo,
+  duplicate, mirror and delete take them all, and colour, tint slot, alpha and flags typed for the box shown go to all
+  of them (a colour as the colour shown, each keeping its slot); Ctrl+C / Ctrl+V (or Copy / Paste) copy boxes within a
+  model or to another one (a visor from one player to another: same place, size, slot, flags and colour shown;
+  remembered in this browser); **symmetric** (the Boxes header) links each selected box to its mirror image across
+  x = 0 (a box at -x with the same y, z and size, outlined in pink): every edit is copied to it mirrored and Delete
+  takes both (Mirror makes such a pair); a gizmo (W move / E resize, Alt both sides, Shift 1 cm steps; else 1 mm); add, duplicate, mirror
+  across x = 0, delete; arrows / PgUp / PgDn nudge; undo / redo for everything; reset to default (**Reset to shipped model** where a shipped override is what it started from); start from scratch (asks first when the model is edited).
 - **Import** a .glb / .gltf (drop it or Import; a .gltf with its .bin picked together): read exactly as the game's
   loader reads it (node transforms, strips / fans, normalised colours times baseColorFactor, BLEND = translucent,
   material name = slot, textures ignored, the box list when it has one). A box model (or a mesh made of boxes the way
@@ -157,7 +180,8 @@ The editor never writes `assets/provenance/*.json` in the repository.
   opaque), the projectile animations a box model loses.
 
 Keyboard: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, 1-6 views, F frame, W / E gizmo, arrows / PgUp / PgDn nudge (Shift: 1 cm),
-Ctrl+D duplicate, M mirror, Delete, Space animations, Esc closes an open menu (else deselects), ? the list. Without model
+Ctrl+D duplicate, M mirror, Delete, Space animations, Esc closes an open menu (else deselects), ? the list. A focused
+checkbox or button keeps Space and Enter, and an input in the panel or a dialog keeps every key. Without model
 data (or WebGL2) the toolbars are disabled under the banner that says how to build it.
 
 ## Accuracy (checked against the game)

@@ -39,6 +39,18 @@ const FS_MOCK = `
   };
   window.readText = async (dir, parts) => { let d = dir; for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p); return (await (await d.getFileHandle(parts[parts.length - 1])).getFile()).text(); };`;
 
+// a tetrahedron as a .glb (a mesh that is not made of boxes), base64
+function tetraGlb() {
+  const pos = new Float32Array([0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0, 0, 0, 0, 0, 0.3, 0.3, 0, 0, 0, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0.3, 0, 0, 0, 0, 0.3, 0, 0.3, 0]);
+  const json = JSON.stringify({ asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }], materials: [{ name: 'body' }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }], buffers: [{ byteLength: pos.byteLength }], bufferViews: [{ buffer: 0, byteLength: pos.byteLength }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 12, type: 'VEC3', min: [0, 0, 0], max: [0.3, 0.3, 0.3] }] });
+  const jb = Buffer.from(json.padEnd(Math.ceil(json.length / 4) * 4, ' ')), bb = Buffer.from(pos.buffer);
+  const head = Buffer.alloc(12), jh = Buffer.alloc(8), bh = Buffer.alloc(8);
+  head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + jb.length + 8 + bb.length, 8);
+  jh.writeUInt32LE(jb.length, 0); jh.writeUInt32LE(0x4e4f534a, 4); bh.writeUInt32LE(bb.length, 0); bh.writeUInt32LE(0x004e4942, 4);
+  return Buffer.concat([head, jh, jb, bh, bb]).toString('base64');
+}
 async function open(browser, url, viewport) {
   const ctx = await browser.newContext({ viewport: viewport || { width: 2560, height: 1440 } });
   const page = await ctx.newPage(), log = [];
@@ -67,6 +79,10 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   const names = await ev(() => [...document.querySelectorAll('.parts td.nm')].map(td => td.textContent));
   check(names.join('|') === 'legs|body|head|visor', 'default box names (SCOUT)', names);
   check(await ev(() => Q.order.every(k => (Q.models[k].defParts || []).every(p => p.name))), 'every default box is named');
+  const filt = async q => { await page.fill('#libFilter', q); return ev(() => ({ cards: [...document.querySelectorAll('.card')].map(c => c.dataset.key.split('/').pop()), empty: (document.querySelector('.lib-empty') || {}).textContent || '' })); };
+  const fl = { scope: await filt('scope'), none: await filt('zzz') };
+  await filt('');
+  check(fl.scope.cards.join() === 'SNIPER' && fl.none.cards.length === 0 && /No model matches "zzz"/.test(fl.none.empty), 'library filter: box names, and a line when nothing matches', fl);
 
   // --- provenance: undo / reset ----------------------------------------------------------------------------------------
   await page.click('#panel button:has-text("Start from scratch")');
@@ -150,7 +166,68 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     return { list: Q.exportableList(), text: JSON.parse(Q.mergeProvenance('', Q.exportableList())).items };
   });
   check(st.list.join() === 'models/weapon/KNIFE' && !st.text['models/weapon/RIFLE.gltf'], 'provenance.json leaves out a model with export errors', st.list);
-  await ev(() => { Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad(); });
+  // Export to game, clicked through: the .bak dialog for unedited models' files stays up (a dialog's close event used
+  // to answer the next dialog), Escape there cancels, Continue moves what is ticked
+  await ev(async () => {
+    Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad();
+    Q.ensureBoxEdit('models/player/SCOUT').parts[0].c[0] += 0.01; Q.bump('models/player/SCOUT');
+    window.ov2 = mkDir('overrides');
+    const kd = await (await ov2.getDirectoryHandle('models', { create: true })).getDirectoryHandle('player', { create: true });
+    const f = await kd.getFileHandle('KNIGHT.glb', { create: true }), w = await f.createWritable(); await w.write(Q.gltf.exportBytes('models/player/KNIGHT')); await w.close();
+    window.showDirectoryPicker = async o => (o && o.id === 'quark-model-editor' ? pd : ov2);
+  });
+  const files2 = () => ev(async () => [...(await (await ov2.getDirectoryHandle('models')).getDirectoryHandle('player')).children.keys()].sort().join());
+  await page.click('#btnExport');
+  await page.click('#dlg button:has-text("Choose folder and write")');
+  await page.waitForTimeout(100);
+  st = await ev(() => ({ h: document.querySelector('#dlg').open && document.querySelector('#dlg h2').textContent, row: document.querySelector('.prov-row').className }));
+  check(st.h === 'Export to game' && /bad/.test(st.row) && /flash/.test(st.row), 'export: no model-editor folder chosen, the write waits for it (in red)', st);
+  await page.keyboard.press('Escape');
+  const bakDialog = async () => {
+    await page.click('#btnExport');
+    await page.click('#dlg .prov-row button:has-text("Choose the Quark")');
+    await page.waitForFunction(() => !document.querySelector('.prov-row').classList.contains('bad'));
+    await page.click('#dlg button:has-text("Choose folder and write")');
+    await page.waitForSelector('#dlg h2:has-text("Model files for unedited models")');
+    await page.waitForTimeout(150);
+    return ev(() => document.querySelector('#dlg').open && document.querySelector('#dlg h2').textContent);
+  };
+  st = await bakDialog();
+  check(st === 'Model files for unedited models', 'export: the .bak dialog stays open', st);
+  await page.keyboard.press('Escape');
+  await frames(page);
+  check(await files2() === 'KNIGHT.glb' && !(await ev(() => document.querySelector('#dlg').open)), 'export: Escape at the .bak dialog writes nothing', await files2());
+  await bakDialog();
+  await page.check('#dlg li input[type=checkbox]');
+  await page.click('#dlg button:has-text("Continue")');
+  await page.waitForSelector('#dlg h2:has-text("Written")');
+  check(await files2() === 'KNIGHT.glb.bak,SCOUT.glb', 'export: a ticked unedited model\'s file is moved to .bak', await files2());
+  st = await ev(() => { const b = () => document.querySelector('.card[data-key="models/player/SCOUT"] .badges').innerText.toLowerCase();
+    const r = { after: b(), lib: document.querySelector('#libProgress').textContent };
+    Q.ui.change('models/player/SCOUT', null, parts => { parts[0].c[1] += 0.01; });
+    Q.ui.refreshCard('models/player/SCOUT');
+    return Object.assign(r, { edited: b(), lib2: document.querySelector('#libProgress').textContent }); });
+  check(/exported/.test(st.after) && !/not exported/.test(st.after + st.lib) && /not exported/.test(st.edited) && /1 not exported/.test(st.lib2), 'library: an edit since the export shows "not exported"', st);
+  st = await ev(async () => ({ side: JSON.parse(await readText(pd, ['provenance.json'])).items, text: document.querySelector('#dlg').innerText }));
+  check(st.side['models/player/SCOUT.gltf'] && !st.side['models/player/KNIGHT.gltf'] && /provenance.json updated: model-editor\/provenance.json/.test(st.text), 'export: provenance.json written into the chosen model-editor folder', st);
+  await page.keyboard.press('Escape');
+  // Try in game: asks for the overrides folder and the model-editor folder, writes, hands the view's command to the Play tab
+  await ev(async () => {
+    Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad();
+    Q.ensureBoxEdit('models/weapon/RIFLE').parts[0].c[0] += 0.01; Q.bump('models/weapon/RIFLE');
+    Q.ui.select('models/weapon/RIFLE'); Q.ui.setMode('fp');
+    window.ov3 = mkDir('quark'); await ov3.getDirectoryHandle('overrides', { create: true });
+    window.showDirectoryPicker = async o => (o && o.id === 'quark-model-editor' ? pd : ov3);
+    window.quarkShell = { open: (id, hash) => { window.opened = [id, decodeURIComponent(hash)]; } };
+  });
+  await page.click('#btnTry');
+  await page.click('#dlg .prov-row button:has-text("Choose %APPDATA%")');
+  await page.click('#dlg .prov-row button:has-text("Choose the Quark")');
+  await page.click('#dlg button:has-text("Write and try")');
+  await page.waitForFunction(() => window.opened, null, { timeout: 10000 });
+  st = await ev(async () => ({ opened: window.opened, files: [...(await (await (await ov3.getDirectoryHandle('overrides')).getDirectoryHandle('models')).getDirectoryHandle('weapon')).children.keys()].join() }));
+  check(st.opened[0] === 'play' && /^#args=--host ffa --map \w+ --weapon 1 --yaw/.test(st.opened[1]) && st.files === 'RIFLE.glb', 'try in game: writes into quark/overrides, the Play tab gets the view\'s command', st);
+  await ev(() => { delete window.quarkShell; Q.ui.setMode('orbit'); Q.state = { edits: {}, prov: {} }; Q.clearHistory(); Q.ui.afterLoad(); });
 
   // --- New project: undo off -----------------------------------------------------------------------------------------
   await page.click('.card[data-key="models/player/STANDARD"]');
@@ -179,6 +256,51 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await page.fill('#panel input[data-fid="h0"]', '-1'); await page.press('#panel input[data-fid="h0"]', 'Enter');
   check(await ev(() => Q.current('models/player/STANDARD').parts[1].h[0]) === 0.0005, 'a negative half size stops at 0.5 mm');
   await page.keyboard.press('Escape');
+  // a box's checkboxes keep their keys: Delete does not delete the box, Space toggles the checkbox (not the animation)
+  await ev(() => Q.ui.selectPart(1));
+  st = await ev(() => ({ n: Q.current('models/player/STANDARD').parts.length, play: Q.scene.view.play }));
+  await page.click('#panel input[data-fid="shadow"]');
+  await page.keyboard.press('Delete'); await page.keyboard.press('Backspace'); await frames(page);
+  await page.focus('#panel input[data-fid="visOnly"]');
+  await page.keyboard.press(' '); await frames(page);
+  const st2 = await ev(() => ({ n: Q.current('models/player/STANDARD').parts.length, play: Q.scene.view.play, visOnly: Q.current('models/player/STANDARD').parts[1].visOnly, sel: Q.scene.part }));
+  check(st2.n === st.n && st2.play === st.play && st2.visOnly === true && st2.sel === 1, 'Delete / Space on a box\'s checkbox: the box stays, Space ticks it', { st, st2 });
+  await page.keyboard.press('Escape');
+
+  // several boxes: Shift-click, nudge together, recolour together, copy into another model, delete together
+  await ev(() => Q.ui.selectPart(-1));
+  await page.click('.parts tr:nth-child(1)');
+  await page.click('.parts tr:nth-child(3)', { modifiers: ['Shift'] });
+  const ms0 = await ev(() => Q.current('models/player/STANDARD').parts.map(p => p.c[0]));
+  await page.keyboard.press('ArrowRight'); await frames(page);
+  st = await ev(() => ({ sel: Q.scene.selected(), c: Q.current('models/player/STANDARD').parts.map(p => p.c[0]), rows: document.querySelectorAll('.parts tr.sel, .parts tr.sel2').length }));
+  check(st.sel.join() === '0,2' && st.rows === 2 && Math.abs(st.c[0] - ms0[0] - 0.001) < 1e-9 && Math.abs(st.c[2] - ms0[2] - 0.001) < 1e-9 && st.c[1] === ms0[1], 'multi-select: Shift-click, the arrow keys move both', { ms0, st });
+  await page.fill('#panel input[data-fid="col0"]', '0.9'); await page.press('#panel input[data-fid="col0"]', 'Enter'); await frames(page);
+  st = await ev(() => { const P = Q.current('models/player/STANDARD').parts, ref = Q.refOf('models/player/STANDARD'); return [0, 2].map(i => Q.colorAtRef(P[i], ref).map(v => +v.toFixed(4))); });
+  check(st[0].join() === st[1].join() && st[0][0] === 0.9, 'multi-select: a colour goes to every selected box', st);
+  await ev(() => document.activeElement.blur());   // (in a field, Ctrl+C copies its text)
+  await page.keyboard.press('Control+c');
+  await page.click('.card[data-key="models/player/ROBOT"]');
+  const rn = await ev(() => Q.current('models/player/ROBOT').parts.length);
+  await page.keyboard.press('Control+v'); await frames(page);
+  st = await ev(() => ({ n: Q.current('models/player/ROBOT').parts.length, sel: Q.scene.selected(), col: Q.colorAtRef(Q.current('models/player/ROBOT').parts.slice(-1)[0], Q.refOf('models/player/ROBOT')).map(v => +v.toFixed(4)) }));
+  check(st.n === rn + 2 && st.sel.join() === rn + ',' + (rn + 1) && st.col[0] === 0.9, 'copy / paste: two boxes into another model, selected, same colour', st);
+  await page.keyboard.press('Delete'); await frames(page);
+  check(await ev(() => Q.current('models/player/ROBOT').parts.length) === rn, 'multi-select: Delete removes every selected box');
+  await page.click('.card[data-key="models/player/STANDARD"]');
+  // symmetric: Mirror makes a pair; a nudge, a size and a colour reach the mirror image; Delete takes both
+  await ev(() => { Q.ui.selectPart(1); Q.scene.view.sym = false; });
+  await page.click('#panel button:has-text("Mirror")');
+  await ev(() => { Q.ui.selectPart(1); });
+  await page.check('#panel h3 input[type=checkbox]');
+  const sn = await ev(() => Q.current('models/player/STANDARD').parts.length);
+  await ev(() => { Q.ui.change('models/player/STANDARD', null, parts => { parts[1].c[0] += 0.05; parts[1].h[1] += 0.02; Q.recolor(parts[1], [0.1, 0.2, 0.3], Q.refOf('models/player/STANDARD')); }); });
+  st = await ev(() => { const P = Q.current('models/player/STANDARD').parts; return { a: P[1], b: P[2] }; });
+  check(Math.abs(st.b.c[0] + st.a.c[0]) < 1e-9 && st.b.h[1] === st.a.h[1] && st.b.color.join() === st.a.color.join(), 'symmetric: an edit reaches the mirror image', st);
+  await ev(() => document.activeElement.blur());
+  await page.keyboard.press('Delete'); await frames(page);
+  check(await ev(() => Q.current('models/player/STANDARD').parts.length) === sn - 2, 'symmetric: Delete takes the box and its mirror image');
+  await ev(() => { Q.scene.view.sym = false; Q.scene.saveView(); });
 
   // --- view options -----------------------------------------------------------------------------------------------------
   await page.click('#viewBar .menu > button');
@@ -194,6 +316,22 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
   await ev(() => { Q.scene.resetView(); Q.ui.syncViewBar(); });
   st = await ev(() => { Q.scene.view.hitbox = true; Q.scene.build(); Q.scene.updateOverlay(); const n = Q.scene.current.overlay.count; Q.scene.view.hitbox = false; Q.scene.updateOverlay(); return n; });
   check(st > 0, 'hitbox shows in orbit', st);
+  st = await ev(() => {
+    Q.ui.select('models/player/SCOUT'); const off = document.querySelector('#vGhost').disabled;
+    Q.ui.change('models/player/SCOUT', null, parts => { parts[2].h[1] += 0.05; });
+    const on = !document.querySelector('#vGhost').disabled, n0 = Q.scene.current.overlay.count;
+    Q.scene.view.ghost = true; Q.scene.updateOverlay(); const n1 = Q.scene.current.overlay.count;
+    Q.scene.view.ghost = false; Q.scene.updateOverlay(); Q.undo();
+    return { off, on, added: n1 - n0 };
+  });
+  check(st.off && st.on && st.added === 4 * 24, 'ghost: the default\'s 4 boxes outlined over an edit (off when not edited)', st);
+  st = await ev(b64 => {
+    Q.ui.select('models/player/SCOUT');
+    Q.importInto('models/player/SCOUT', Q.b64ToBytes(b64), 'tetra.glb', {}, { prov: { origin: 'third-party', source: 'a test' } });
+    const r = { mesh: Q.current('models/player/SCOUT').type, drawAs: document.querySelector('#vDrawAs').disabled };
+    Q.undo(); return Object.assign(r, { after: document.querySelector('#vDrawAs').disabled });
+  }, tetraGlb());
+  check(st.mesh === 'mesh' && st.drawAs && !st.after, 'Draw as is off for an imported mesh (it does nothing there)', st);
   await page.click('.card[data-key="models/projectile/ROCKET"]');
   await page.click('#tabs button[data-mode="flight"]');
   const zs = [];
@@ -213,6 +351,16 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     const c = await o.page.evaluate(() => { const c = [...document.querySelectorAll('.cards')[0].children]; return c.filter(x => x.offsetTop === c[0].offsetTop).length; });
     const sw = await o.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
     check(c >= 2 && sw, '1280 px: two cards across, no horizontal scroll', c);
+    // the library dragged as wide as it goes keeps the viewport 480 px wide, also after the window shrinks to 900
+    const g = await o.page.evaluate(() => { const r = document.querySelector('#libResize').getBoundingClientRect(); return [r.x + r.width / 2, r.y + 200]; });
+    await o.page.mouse.move(g[0], g[1]); await o.page.mouse.down(); await o.page.mouse.move(1270, g[1], { steps: 4 }); await o.page.mouse.up();
+    const vw = () => o.page.evaluate(() => ({ vp: document.querySelector('#viewport').clientWidth, sw: document.documentElement.scrollWidth <= innerWidth }));
+    const wide = await vw();
+    await o.page.setViewportSize({ width: 900, height: 720 });
+    const small = await vw();
+    check(wide.vp >= 478 && wide.sw && small.vp > 300 && small.sw, 'library resize: the viewport keeps its room, no sideways scroll at 900 px', { wide, small });
+    await o.page.setViewportSize({ width: 1280, height: 720 });
+    await o.page.dblclick('#libResize');
     check(o.log.length === 0, '1280 px: no console errors', o.log);
     await o.ctx.close();
   }
@@ -239,11 +387,43 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
       banner: document.querySelector('#banner').innerText }));
     check(/shipped/i.test(st.badges) && /human/i.test(st.badges), 'shipped KNIGHT shows shipped + human', st.badges);
     check(/refused/i.test(st.heavy) && /refuses the shipped override/.test(st.banner), 'a broken shipped override is flagged (badge, banner)', st);
+    await p.click('.card[data-key="models/player/HEAVY"]');
+    st = await p.evaluate(() => document.querySelector('#panel .prob.error').textContent);
+    check(st.includes('(assets/overrides/models/player/HEAVY.glb)'), 'the panel names the refused file\'s path', st);
+    st = await p.evaluate(() => { const s = document.querySelector('#libOrigin'); s.value = 'human'; s.dispatchEvent(new Event('change'));
+      const r = { progress: document.querySelector('#libProgress').textContent, cards: [...document.querySelectorAll('.card')].map(c => c.dataset.key) };
+      s.value = ''; s.dispatchEvent(new Event('change')); return r; });
+    check(/^human 1\/30 \(3%\)/.test(st.progress) && st.cards.join() === 'models/player/KNIGHT', 'library: human-made progress and the origin filter', st);
     await p.click('.card[data-key="models/player/KNIGHT"]');
     await p.click('.parts tr:nth-child(1)');
     await p.keyboard.press('ArrowRight');
     st = await p.evaluate(() => Q.provFor('models/player/KNIGHT'));
     check(st.origin === 'human' && /^tweak of the shipped model \(assets\/overrides, human, by alex\) in the model editor: 1 box moved/.test(st.note), 'editing a shipped human model stays human, diffed against it', st);
+    await p.waitForTimeout(100);
+    st = await p.evaluate(() => [...document.querySelectorAll('#panel button.danger')].map(b => b.textContent).join());
+    check(st.includes('Reset to shipped model'), 'an edited shipped model resets to the shipped model (its button says so)', st);
+    await p.click('#panel button:has-text("Start from scratch")');
+    await p.waitForSelector('#dlg h2:has-text("from scratch?")');
+    await p.click('#dlg button:has-text("Cancel")');
+    const n1 = await p.evaluate(() => Q.current('models/player/KNIGHT').parts.length);
+    await p.click('#panel button:has-text("Start from scratch")');
+    await p.click('#dlg button.primary');
+    st = { cancelled: n1, after: await p.evaluate(() => Q.current('models/player/KNIGHT').parts.length) };
+    check(st.cancelled > 1 && st.after === 1, 'start from scratch on an edited model asks first', st);
+    // Import: picking another target in the dialog moves the origin default to that target's (a box model of the
+    // human-made shipped KNIGHT stays human)
+    st = await p.evaluate(async () => {
+      const key = 'models/player/SCOUT', mesh = Q.boxes.toMesh(Q.models[key].defParts.map(Q.clonePart), Q.refOf(key));
+      Q.ui.select(key);
+      const pr = Q.ui.importFiles([new File([Q.gltf.writeGlb(mesh, 'X', mesh.extras, null)], 'X.glb')]);
+      await new Promise(r => setTimeout(r, 200));
+      const sels = [...document.querySelectorAll('#dlg select')], before = sels[1].value;
+      sels[0].value = 'models/player/KNIGHT'; sels[0].dispatchEvent(new Event('change'));
+      const after = sels[1].value;
+      [...document.querySelectorAll('#dlg button')].find(b => b.textContent === 'Cancel').click(); await pr;
+      return { before, after };
+    });
+    check(st.before === 'ai' && st.after === 'human', 'import: the origin default follows the chosen target', st);
     check(o.log.length === 0, 'shipped build: no console errors', o.log);
     await o.ctx.close();
   }
