@@ -131,6 +131,10 @@ const QFonts = (() => {
   const onChange = (fn) => listeners.push(fn);
   const emit = () => { for (const fn of listeners) try { fn(); } catch (e) { console.warn(e); } };
 
+  // (the browser decodes a data: URL off the main thread: a 1 MB font no longer blocks a frame; atob is the fallback)
+  async function b64ToBufAsync(s) {
+    try { return await (await fetch('data:application/octet-stream;base64,' + s)).arrayBuffer(); } catch (e) { return b64ToBuf(s); }
+  }
   const b64ToBuf = (s) => { const bin = atob(s); const b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b.buffer; };
   function bufToB64(buf) { const b = u8(buf); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); }
 
@@ -186,7 +190,7 @@ const QFonts = (() => {
         const info = fileInfo[key] || {};
         const src = fileData[key];
         if (src == null) throw new Error('no data for font ' + key);
-        const buf = typeof src === 'string' ? b64ToBuf(src) : src;
+        const buf = typeof src === 'string' ? await b64ToBufAsync(src) : src;
         const wght = (info.axes || []).find((a) => a.tag === 'wght'), wdth = (info.axes || []).find((a) => a.tag === 'wdth');
         const desc = { weight: wght ? `${wght.min} ${wght.max}` : keys.length > 1 && info.weightClass ? String(info.weightClass) : '1 1000', style: 'normal' };
         if (wdth) desc.stretch = pct != null ? `${Math.max(wdth.min, Math.min(wdth.max, pct))}%` : `${wdth.min}% ${wdth.max}%`;
@@ -211,6 +215,7 @@ const QFonts = (() => {
     }
     return e;
   }
+  const ready = (id) => { const e = get(id); return !!(e && e.family && e.sizeK); };
   const ensureAll = () => Promise.all(list().map((e) => ensure(e.id).catch((x) => { console.warn('font', e.id, x); return null; })));
 
   // ---- uploads (IndexedDB, else localStorage) ---------------------------------------------------------------------
@@ -315,7 +320,7 @@ const QFonts = (() => {
     return true;
   }
 
-  return { REF_CAP, get DEFAULT_ID() { return defaultId; }, kindOf, parse, parseSync, licenceOf, init, get, list, ensure, ensureAll, addFile, loadUploads, remove, onChange,
+  return { REF_CAP, get DEFAULT_ID() { return defaultId; }, kindOf, parse, parseSync, licenceOf, init, get, list, ensure, ensureAll, ready, addFile, loadUploads, remove, onChange,
     measureCap, canvasStretch, refCap: () => refCap };
 })();
 

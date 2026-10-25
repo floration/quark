@@ -36,6 +36,7 @@ input.bad, input.bad:focus { border-color: var(--bad); background: #2a1515; }
 input[type=checkbox] { accent-color: var(--accent); vertical-align: -2px; margin: 0 3px 0 0; }
 input[type=range] { accent-color: var(--accent); }
 .spacer { flex: 1; }
+body.busy, body.busy #ov, body.busy #sheet { cursor: progress !important; }
 .hint { color: var(--muted); font-size: 11px; font-weight: normal; }
 
 /* toolbar */
@@ -111,7 +112,7 @@ main { flex: 1; display: flex; min-height: 0; }
 #inspector { width: 290px; background: var(--bg2); border-left: 1px solid var(--line); overflow-y: auto; padding: 8px; }
 #inspector h2 { font-size: 13px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
 #inspector h2 .kind { color: var(--accent); text-transform: uppercase; font-size: 11px; }
-#inspector .sub { color: var(--muted); font-size: 11px; margin-bottom: 8px; word-break: break-all; }
+#inspector .sub { color: var(--muted); font-size: 11px; margin-bottom: 8px; overflow-wrap: anywhere; }
 #inspector .sec { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
 #inspector .sec-t { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: 1px; margin-bottom: 4px; }
 .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
@@ -127,7 +128,7 @@ textarea { resize: vertical; min-height: 44px; }
 #inspector .sec > textarea { width: 100%; }
 .btns { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .btns button { font-size: 11px; }
-.readonly { color: var(--muted); font-size: 11px; word-break: break-all; }
+.readonly { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }   /* (long ids break; words don't) */
 /* a resolution preview is on: the inspector is shown, disabled */
 #inspector fieldset.ro { border: 0; margin: 0; padding: 0; min-width: 0; opacity: 0.55; }
 #inspector .ro-note { color: var(--warn); }
@@ -182,8 +183,9 @@ button.danger.primary { background: #6b2323; border-color: var(--bad); }
 .tpg { padding: 3px 8px 3px 14px; cursor: pointer; border-left: 2px solid transparent; color: var(--accent); }
 .tpg:hover { background: var(--bg3); }
 .tpg.cur { background: #1a2a33; border-left-color: var(--accent); }
-#fontPanel { width: 400px; max-height: calc(100vh - 60px); overflow-y: auto; }
-#fontPanel h3 { display: flex; align-items: center; }
+#fontPanel { width: 400px; }
+.popover { overflow-y: auto; }   /* (top and max-height: placePopovers, under the toolbar as it wraps) */
+#fontPanel h3, #help h3 { display: flex; align-items: center; }
 #fontPanel .row > label { width: 70px; }
 #fontPanel .row > label.wide { width: auto; color: var(--text); cursor: pointer; }
 #fontPanel .row > input[type=number] { flex: none; width: 80px; }

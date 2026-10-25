@@ -52,6 +52,7 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
 
   const nPages = await ev(() => QApp.S.doc.pages.length);
   assert.ok(nPages > 0, 'pages loaded');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).id), 'main', 'a first start opens on the main menu (the list\'s first page)');
   const listed = await page.locator('#pageList .pg').count();
   assert.strictEqual(listed, nPages, 'every page listed');
 
@@ -300,6 +301,39 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await page.keyboard.press('?');
   assert.ok(await page.locator('#help').isVisible(), 'help opens with ?');
   await page.keyboard.press('Escape');
+  // at 1280x720 the toolbar wraps: Help and Fonts... open below it (its buttons stay clickable), Help closes by its
+  // Close button, by ? again, and by a click elsewhere
+  await page.setViewportSize({ width: 1280, height: 720 });
+  for (const [btn, pop] of [['#bHelp', '#help'], ['#bFonts', '#fontPanel']]) {
+    await page.locator(btn).click();
+    const tb = await page.locator('#toolbar').boundingBox(), pb = await page.locator(pop).boundingBox();
+    assert.ok(pb.y >= tb.y + tb.height, `${pop} opens below the toolbar (${pb.y} >= ${tb.y + tb.height})`);
+    await page.locator(btn).click();
+    assert.ok(!(await page.locator(pop).isVisible()), `${btn} closes ${pop} again`);
+  }
+  await page.locator('#bHelp').click();
+  await page.locator('#helpClose').click();
+  assert.ok(!(await page.locator('#help').isVisible()), 'Help has a Close button');
+  await page.locator('#bHelp').click();
+  await page.mouse.click(640, 600);
+  assert.ok(!(await page.locator('#help').isVisible()), 'a click outside closes Help');
+  await page.keyboard.press('Escape');
+  if (shots) await page.screenshot({ path: path.join(shots, 'e2e-1280.png') });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  // + Page: a double click leaves the dialog open (the second click lands on its backdrop)
+  await page.locator('#bAddPage').dblclick();
+  assert.ok(await page.locator('#dlg').isVisible(), 'a double click on + Page keeps the dialog');
+  await page.keyboard.press('Escape');
+  // a page id differing only in case or spaces is refused
+  await ev((u) => QApp.selectPage(u), await ev(() => QApp.S.doc.pages.find((p) => p.id === 'join').uid));
+  const idIn = page.locator('#inspector input[type=text]').first();
+  for (const v of ['Main', 'main ', ' join']) {
+    await idIn.fill(v);
+    assert.ok(await idIn.evaluate((i) => i.classList.contains('bad')), `page id "${v}" is refused`);
+  }
+  await idIn.fill('join');
+  await idIn.press('Tab');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.filter((p) => p.id === 'join').length), 1, 'the id is back to join');
   if (shots) {
     await ev((u) => QApp.selectPage(u), target.page);
     await page.waitForTimeout(100);
@@ -434,6 +468,21 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   assert.notStrictEqual(await ev(() => QApp.S.pageUid), tp, 'tour moved on');
   await page.keyboard.press('t');
   assert.strictEqual(await ev(() => QApp.S.tour), 0, 'tour stopped');
+
+  // ---- a sideways drag with a pixel of vertical jitter keeps y exactly (the spec reports no y move) ----
+  {
+    await ev((u) => QApp.selectPage(u), await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid));
+    const q = await ev(() => { const e = QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((x) => /QUIT/.test(x.label || '')); return { uid: e.uid, x: e.x, y: e.y, w: e.w, h: e.h }; });
+    const [qx, qy] = await at(q.x + q.w / 2, q.y + q.h / 2);
+    await page.mouse.move(qx, qy);
+    await page.mouse.down();
+    await page.mouse.move(qx + 20, qy + 1, { steps: 3 });
+    await page.mouse.move(qx + 40, qy + 2, { steps: 3 });
+    await page.mouse.up();
+    const q2 = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), q.uid);
+    assert.ok(q2.x > q.x + 10 && q2.y === q.y, `sideways drag: x ${q.x} -> ${q2.x}, y stays ${q.y} (got ${q2.y})`);
+    await ev(() => QApp.undo());
+  }
 
   // ---- a layout with no pages is refused, not imported (it would wipe every page and be autosaved) ----
   {

@@ -42,7 +42,7 @@
   QFonts.init(readJson('fontCatalog'), readJson('fontFiles'), { ns: NS });
   const S = {
     doc: null, pageUid: null, sel: new Set(), undo: [], redo: [], clip: null, hover: null, drag: null, gesture: null,
-    diff: null, search: '', guides: [], lastNudge: null, saveState: '', provState: '', pasteN: 0,
+    diff: null, search: '', guides: [], lastNudge: null, saveState: '', provState: '', fontState: '', pasteN: 0,
     prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false, specLayout: 'changed', check: false },
     // font trial (saved with the layout): null = the font's own default
     font: { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null, mult: 1, minTs: 0, cmp: '', side: false },
@@ -78,13 +78,15 @@
     }
     S.doc = doc || QModel.makeWorking(baseline);
     if (!S.doc.pages.length) S.doc.pages.push(QModel.newPage('new-page', 'New page'));
-    if (!page()) S.pageUid = S.doc.pages[0].uid;
+    if (!page()) S.pageUid = firstPageUid();
     markProposal();
     syncSeen();
   }
 
   const page = () => S.doc.pages.find((p) => p.uid === S.pageUid) || null;
   const curPage = () => page() || S.doc.pages[0];
+  // the page a fresh start / reset / import opens on: the first in the page list (the main menu), not the dump's first
+  const firstPageUid = () => (visiblePageOrder()[0] || S.doc.pages[0]).uid;
   const selected = () => { const p = curPage(); return p ? p.elements.filter((e) => S.sel.has(e.uid)) : []; };
   const getDiff = () => S.diff || (S.diff = QModel.diff(baseline, S.doc));
   const diffEntry = (p) => getDiff().pages.find((e) => e.page === p);
@@ -263,7 +265,7 @@
   // In-page dialogs instead of prompt() / confirm() / alert(): the Quark Project app's Electron window has no
   // window.prompt() (it throws), and native boxes block the page. Resolves with the typed text (input), true (OK) or
   // null (Cancel, Esc, a click outside). check(text) returns why the text can't be used ('' = fine).
-  let dlgDone = null;
+  let dlgDone = null, dlgAt = 0;   // (dlgAt: when it opened; the second click of a double click must not cancel it)
   function ask({ title, text = '', input = null, ok = 'OK', cancel = 'Cancel', danger = false, check = null }) {
     if (dlgDone) dlgDone(null);
     const inp = $('dlgInput'), err = $('dlgErr');
@@ -277,6 +279,7 @@
     $('dlgCancel').hidden = !cancel;
     $('dlgCancel').textContent = cancel || '';
     $('dlg').hidden = false;
+    dlgAt = performance.now();
     const back = document.activeElement;
     if (input !== null) { inp.focus(); inp.select(); } else $('dlgOk').focus();
     return new Promise((resolve) => {
@@ -348,9 +351,11 @@
     const s = String(p).replace(/\\/g, '/');
     return /^(extract\/|[a-z]+:|\/|\.\.?\/)/i.test(s) ? s : 'extract/' + s;
   };
+  // the page (other than `self`) whose id is this one, compared trimmed and case-insensitively ('Main', 'main ' = 'main')
+  const idTaken = (id, self) => { const k = String(id).trim().toLowerCase(); return S.doc.pages.find((p) => p !== self && String(p.id).trim().toLowerCase() === k) || null; };
   function uniquePageId(id) {
     let out = id, k = 2;
-    while (S.doc.pages.some((p) => p.id === out)) out = id + '-' + k++;
+    while (idTaken(out)) out = id + '-' + k++;
     return out;
   }
   // Panels and plain rectangles go under the widgets (drawn first); everything else on top.
@@ -539,15 +544,21 @@
     const st = $('stage');
     st.style.width = FW * zoom + 'px';
     st.style.height = H * zoom + 'px';
-    for (const c of [cv, ov]) { c.width = Math.round(FW * zoom * dpr); c.height = Math.round(H * zoom * dpr); }
+    for (const c of [cv, ov]) sizeCanvas(c, FW * zoom * dpr, H * zoom * dpr);
     if (side) {
       const s2 = $('stage2'), c2 = $('cv2');
       s2.style.width = FW * zoom + 'px';
       s2.style.height = H * zoom + 'px';
-      c2.width = Math.round(FW * zoom * dpr); c2.height = Math.round(H * zoom * dpr);
+      sizeCanvas(c2, FW * zoom * dpr, H * zoom * dpr);
     }
     renderCaptions();
     requestRender();
+  }
+  // (setting a canvas's width / height, even to the same value, reallocates and clears it: only when it changes)
+  function sizeCanvas(c, w, h) {
+    w = Math.round(w); h = Math.round(h);
+    if (c.width !== w) c.width = w;
+    if (c.height !== h) c.height = h;
   }
   function requestRender() { if (!raf) raf = requestAnimationFrame(draw); }
   const boxOf = (e) => QRender.box(ctx, e);
@@ -683,11 +694,15 @@
   }
 
   let shotErrFor = null;
+  // why the Screenshot overlay is off for page p
+  const shotWhyNot = (p) => (viewOf() ? 'The screenshots are 1280x720: pick View: 1280x720' :
+    build.shotsWanted && !build.shots ? 'The dump\'s screenshots are not on this PC: the Quark Project app takes them at its next UI Editor update (install.py --extract-if-stale), or run install.py --extract' :
+    'This page has no screenshot in the dump' + (p && !p.origId ? ' (a page made here)' : ''));
   function updateShot(p) {
     const has = !!(p && p.screenshot) && !viewOf();
     $('cShot').disabled = !has;
     $('rShot').disabled = !has;
-    $('shotGroup').title = has ? 'Reference screenshot: ' + p.screenshot : 'This page has no screenshot in the dump';
+    $('shotGroup').title = has ? 'Reference screenshot: ' + p.screenshot : shotWhyNot(p);
     if (has && S.prefs.shot) {
       const url = shotUrl(p.screenshot);
       if (shot.getAttribute('src') !== url) shot.setAttribute('src', url);
@@ -833,9 +848,10 @@
   function moveDrag(d, dx, dy, noSnap) {
     S.guides = [];
     const p0 = d.items.find((i) => i.el === d.primary) || d.items[0];
-    let nx = p0.x + dx, ny = p0.y + dy;
-    // only an axis the pointer moved along snaps: a sideways drag never nudges y onto the grid or the centre line
+    // an axis the pointer moved less than 3 screen px along stays put (and never snaps): a sideways drag with a pixel of
+    // mouse jitter keeps y exactly, so the spec reports no y move (arrow keys do 1 px steps)
     const ax = Math.abs(dx) * zoom >= 3, ay = Math.abs(dy) * zoom >= 3;
+    let nx = ax ? p0.x + dx : p0.x, ny = ay ? p0.y + dy : p0.y;
     if (!noSnap) {
       if (S.prefs.grid) { if (ax) nx = snapGrid(nx); if (ay) ny = snapGrid(ny); }
       const b = boxOf(d.primary) || { w: d.primary.w, h: d.primary.h };
@@ -1014,7 +1030,13 @@
     S.pageUid = uid;
     S.sel = new Set();
     S.hover = null;
-    renderAll();
+    // (the page list is not rebuilt: 121 rows of DOM and their layout were most of a switch's cost; two rows change class)
+    markCurrentPage();
+    renderInspector();
+    renderOffCanvas();
+    renderStatus();
+    updateButtons();
+    requestRender();
     store.set(PAGE_KEY, uid);
   }
   function stepPage(d) {
@@ -1066,8 +1088,15 @@
   // ---- page list -------------------------------------------------------------------------------------------------
   const visiblePageOrder = () => [...pageGroups(S.doc.pages).values()].flat();
   const ORIGIN_TAG = { human: 'HU', ai: 'AI', unknown: '?' };
+  let pageRows = new Map();   // page uid -> its row in the list (renderPages)
+  function markCurrentPage() {
+    for (const r of $('pageList').querySelectorAll('.pg.cur')) r.classList.remove('cur');
+    const row = !S.sheet && pageRows.get(S.pageUid);
+    if (row) { row.classList.add('cur'); row.scrollIntoView({ block: 'nearest' }); }
+  }
   function renderPages() {
     const list = $('pageList');
+    pageRows = new Map();
     const q = S.search.trim().toLowerCase();
     const D = getDiff();
     const entries = new Map(D.pages.map((e) => [e.page, e]));
@@ -1101,14 +1130,16 @@
       for (const p of items) {
         const { entry, o, matches } = info.get(p);
         const st = entry ? entry.status : 'unchanged';
-        list.append(el('div', {
+        const row = el('div', {
           class: 'pg' + (p.uid === S.pageUid && !S.sheet ? ' cur' : '') + (p.hidden ? ' hidden' : ''), title: p.id + (p.title !== p.id ? ' - ' + p.title : '') + '\nmade by: ' + o.origin + ' (' + o.why + ')',
           onclick: () => selectPage(p.uid),
         }, el('span', { class: 'org o-' + o.origin, text: ORIGIN_TAG[o.origin] }),
         el('span', { class: 't', text: p.title || p.id }),
         matches ? el('span', { class: 'badge match', text: matches }) : null,
         st !== 'unchanged' ? el('span', { class: 'badge ' + st, text: st === 'added' ? 'new' : st }) : null,
-        el('span', { class: 'n', text: p.elements.length })));
+        el('span', { class: 'n', text: p.elements.length }));
+        pageRows.set(p.uid, row);
+        list.append(row);
       }
     }
     if (!groups.size) list.append(el('div', { class: 'pg-group', text: 'no match' }));
@@ -1359,7 +1390,11 @@
       bind(inp, () => { p[f] = inp.value; });
       return el('div', { class: 'row' }, lab, inp);
     };
-    const idCheck = (v) => (!v.trim() ? 'A page needs an id' : S.doc.pages.some((x) => x !== p && x.id === v) ? `Another page is "${v}" already: ids must be unique (the spec and provenance go by id)` : '');
+    const idCheck = (v) => {
+      const o = !v.trim() ? null : idTaken(v, p);
+      return !v.trim() ? 'A page needs an id' : /^\s|\s$/.test(v) ? 'No spaces at the start or end of an id' :
+        o ? `Another page is "${o.id}" already: ids must be unique, whatever the case (the spec and provenance go by id)` : '';
+    };
     out.push(sec('', pageField('id', 'id', { placeholder: 'screen path, e.g. settings/video', check: idCheck }), pageField('title', 'title'), pageField('background', 'backdrop')));
     const ig = el('input', { type: 'checkbox' });
     ig.checked = !!p.inGame;
@@ -1413,7 +1448,7 @@
     const sample = build.sample ? '  [SAMPLE DATA]' : '';
     const fe = QFonts.get(activeId());
     const fl = fe ? `  -  font ${fe.name}${S.flip ? ' (compare, F)' : ''} [${LIC_WORD[licOf(fe)]}]` : '';
-    $('stInfo').textContent = $('stInfo').title = `${from}${sample}${fl}  -  undo ${S.undo.length}  -  ${S.saveState}` + (S.provState ? '  -  ' + S.provState : '');
+    $('stInfo').textContent = $('stInfo').title = (S.fontState ? S.fontState + '  -  ' : '') + `${from}${sample}${fl}  -  undo ${S.undo.length}  -  ${S.saveState}` + (S.provState ? '  -  ' + S.provState : '');
   }
   function updateButtons() {
     $('bUndo').disabled = !S.undo.length;
@@ -1545,7 +1580,7 @@
       try {
         const data = JSON.parse(fr.result);
         const doc = QModel.sanitizeWorking(data.doc || data);
-        commit(() => { S.doc = doc; S.pageUid = doc.pages[0] && doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
+        commit(() => { S.doc = doc; S.pageUid = firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
         markProposal();
         if (data.font) { S.font = sanitizeFont(data.font); applyFont(); }
         else if (fontOfDoc(doc)) { S.font = fontOfDoc(doc); applyFont(); scheduleSave(); }
@@ -1558,7 +1593,7 @@
   async function resetAll() {
     if (startLayout) return resetToProposal();
     if (!(await confirmed('Reset', 'Reset the whole layout to the game\'s default? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
-    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
+    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
     toast('Back to the default layout');
   }
   // proposal builds only: the font a start layout asks for (its saved font, else its doc.font), else the current one
@@ -1570,7 +1605,7 @@
     if (!(await confirmed('Reset', 'Reset the whole layout to the proposal this file was built with? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
     const doc = JSON.parse(startLayout.json);
     const pu = startLayout.data.pageUid;
-    commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
+    commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
     markProposal();
     S.font = startFont(doc);
     applyFont();
@@ -1579,7 +1614,7 @@
   }
   async function resetToGameDefault() {
     if (!(await confirmed('Reset to game default', 'Reset the whole layout to the game\'s default layout and font, dropping the proposal? (Undo can bring the layout back while this tab is open; Reset goes back to the proposal.)', 'Reset'))) return;
-    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true, anyView: true });
+    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
     S.font = sanitizeFont(Object.assign({}, S.font, { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null }));
     applyFont();
     scheduleSave();
@@ -1650,7 +1685,29 @@
       QFonts.ensure('rubik').then((e) => { logoReady = true; QRender.setLogoFont(e.family); requestRender(); }, (err) => console.warn('logo font', err));
     }
     const ids = [S.font.id, S.font.cmp].filter((id) => id && QFonts.get(id));
-    Promise.all(ids.map((id) => QFonts.ensure(id))).then(set, (err) => { console.warn('font', err); toast('Could not load that font: ' + err.message, 4000); });
+    if (ids.every(QFonts.ready)) return;   // (loaded already: one redraw, not two)
+    fontBusy(true);
+    Promise.all(ids.map((id) => QFonts.ensure(id))).then(() => { fontBusy(false); set(); },
+      (err) => { fontBusy(false); console.warn('font', err); toast('Could not load that font: ' + err.message, 4000); });
+  }
+  // a font still loading: the busy cursor and a word in the status bar (the page draws in the fallback meanwhile)
+  let busyN = 0;
+  function fontBusy(on) {
+    busyN = Math.max(0, busyN + (on ? 1 : -1));
+    document.body.classList.toggle('busy', busyN > 0);
+    S.fontState = busyN ? 'loading font...' : '';
+    renderStatus();
+  }
+  // The trial fonts load in idle time after the start, one at a time, so a later switch (and the Font sheet) is
+  // immediate instead of a 60-230 ms decode at the click.
+  function preloadFonts() {
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
+    const next = () => {
+      const e = QFonts.list().find((x) => !QFonts.ready(x.id) && !x.failed);
+      if (!e) return;
+      idle(() => QFonts.ensure(e.id).then(next, () => { e.failed = true; next(); }), { timeout: 3000 });
+    };
+    setTimeout(next, 1500);
   }
   function setFont(id) {
     if (!QFonts.get(id)) return false;
@@ -1834,7 +1891,12 @@
     $('offCanvas').hidden = S.sheet;
     $('sheetWrap').hidden = !S.sheet;
     renderPages();
-    if (on) { renderInspector(); QFonts.ensureAll().then(() => { renderFontMenus(); requestRender(); }); }
+    if (on) {
+      renderInspector();
+      const all = QFonts.list().every((e) => QFonts.ready(e.id));
+      if (!all) fontBusy(true);   // (the sheet draws now and again once every font is in)
+      QFonts.ensureAll().then(() => { if (!all) fontBusy(false); renderFontMenus(); requestRender(); });
+    }
     layoutStage();
   }
   let sheetSamples = null;
@@ -1948,7 +2010,7 @@
     $('nSizeK').onchange = () => setFontOpt('sizeK', $('nSizeK').value === '' ? null : Number($('nSizeK').value));
     $('bSizeAuto').onclick = () => setFontOpt('sizeK', null);
     $('cUpper').onchange = () => setFontOpt('upper', $('cUpper').checked);
-    $('bFonts').onclick = () => { $('fontPanel').hidden = !$('fontPanel').hidden; $('help').hidden = true; };
+    $('bFonts').onclick = () => togglePopover('fontPanel');
     $('fpClose').onclick = () => { $('fontPanel').hidden = true; };
     $('bTour').onclick = toggleTour;
     $('bUpload').onclick = () => $('fFont').click();
@@ -2006,14 +2068,25 @@
     else if (lk === 'w') { toggle('widgetsOnly'); renderOffCanvas(); }
     else if (lk === 'o') toggle('ghost');
     else if (lk === 'k') { toggle('check'); renderInspector(); }
-    else if (lk === 'r') toggle('shot');
+    else if (lk === 'r') { if ($('cShot').disabled) toast(shotWhyNot(curPage()), 5000); else toggle('shot'); }
     else if (lk === 'f') flipFont();
     else if (lk === 't') toggleTour();
-    else if (k === '?' || k === 'F1') $('help').hidden = !$('help').hidden;
+    else if (k === '?' || k === 'F1') togglePopover('help');
     else handled = false;
     if (handled) ev.preventDefault();
   });
 
+  // Help and Fonts... open under the toolbar as it is now (it wraps to two rows at 1280 wide), never over its buttons.
+  function togglePopover(id) {
+    const pop = $(id), other = $(id === 'help' ? 'fontPanel' : 'help');
+    other.hidden = true;
+    pop.hidden = !pop.hidden;
+    placePopovers();
+  }
+  function placePopovers() {
+    const top = Math.round($('toolbar').getBoundingClientRect().bottom + 4);
+    for (const pop of [$('help'), $('fontPanel')]) if (!pop.hidden) { pop.style.top = top + 'px'; pop.style.maxHeight = (window.innerHeight - top - 10) + 'px'; }
+  }
   function toggle(pref) {
     S.prefs[pref] = !S.prefs[pref];
     savePrefs();
@@ -2075,7 +2148,10 @@
       $('bReset').title = 'Back to the proposal this file was built with (' + (build.layout || 'embedded layout') + ')';
       document.title = 'Quark UI Customizer - PROPOSAL';
     }
-    $('bHelp').onclick = () => { $('help').hidden = !$('help').hidden; };
+    $('bHelp').onclick = () => togglePopover('help');
+    $('helpClose').onclick = () => { $('help').hidden = true; };
+    // help closes on a click anywhere else (Fonts... stays open while the toolbar's font menus are used)
+    window.addEventListener('mousedown', (ev) => { if (!$('help').hidden && !$('help').contains(ev.target) && ev.target !== $('bHelp')) $('help').hidden = true; });
     $('bAddPage').onclick = addPage;
     $('qSearch').oninput = () => { S.search = $('qSearch').value; renderPages(); };
     $('mClose').onclick = () => { $('modal').hidden = true; };
@@ -2083,7 +2159,7 @@
     $('mDownload').onclick = () => { if (lastSpec) download(lastSpec.fileName, lastSpec.markdown, 'text/markdown'); };
     $('sSpecLayout').onchange = () => { S.prefs.specLayout = $('sSpecLayout').value; savePrefs(); showSpec(makeSpec(), false); };
     $('modal').addEventListener('mousedown', (ev) => { if (ev.target === $('modal')) $('modal').hidden = true; });
-    $('dlg').addEventListener('mousedown', (ev) => { if (ev.target === $('dlg') && dlgDone) dlgDone(null); });
+    $('dlg').addEventListener('mousedown', (ev) => { if (ev.target === $('dlg') && dlgDone && performance.now() - dlgAt > 400) dlgDone(null); });
     const pal = $('palette');
     for (const [kind, name] of PALETTE) {
       const proposed = QModel.NEW_KINDS.includes(kind);
@@ -2094,7 +2170,7 @@
       }));
     }
     wireFonts();
-    window.addEventListener('resize', () => { layoutStage(); if (S.sheet) requestRender(); });
+    window.addEventListener('resize', () => { layoutStage(); placePopovers(); if (S.sheet) requestRender(); });
     window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
     if (document.fonts) {
       document.fonts.load('700 15px QuarkUI').then(() => { S.diff = null; requestRender(); }, () => {});
@@ -2129,6 +2205,7 @@
   }, (e) => console.warn('uploaded fonts', e));
   layoutStage();
   renderAll();
+  preloadFonts();
   S.saveState = store.get(STORE_KEY) ? 'saved in this browser' : startLayout ? 'proposal layout' : 'default layout';
   renderStatus();
   if (!dump) toast('No layout data embedded: run tools/ui_customizer/install.py to build ui-customizer.html', 8000);
