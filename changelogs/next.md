@@ -13,3 +13,4 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - **Impact sparks everywhere**: hitscan shots (rifle, sniper, shotgun, laser) now spark where they hit a wall, not only on enemies, and other players' shots spark too. Settings > GAMEPLAY > SHOTS > IMPACT SPARKS turns them off.
 - **Muzzle flash** on your gun and everyone else's when they fire. Settings > GAMEPLAY > SHOTS > MUZZLE FLASH turns it off.
 - **Your explosions show at once**: your rockets and bolts blow up on your screen the moment they hit a wall or an enemy, and your stickies the moment you detonate, instead of a round trip later. Damage and deaths still come from the server, so nobody looks dead who isn't.
+- **Weapon model opacity**: Settings > GAMEPLAY > VIEW > WEAPON MODEL OPACITY makes your first-person gun and grapple launcher see-through (1 = solid, 0 = gone).

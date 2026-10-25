@@ -116,6 +116,7 @@ typedef struct __GLsync* GLsync;
     X(void, glScissor, (GLint, GLint, GLsizei, GLsizei)) \
     X(void, glDepthFunc, (GLenum)) \
     X(void, glDepthMask, (GLboolean)) \
+    X(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean)) \
     X(void, glCullFace, (GLenum)) \
     X(void, glBlendFunc, (GLenum, GLenum)) \
     X(void, glPolygonOffset, (GLfloat, GLfloat)) \

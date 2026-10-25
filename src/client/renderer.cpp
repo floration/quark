@@ -226,6 +226,7 @@ uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
 uniform float uBright;
+uniform float uFade;   // the view model's see-through amount (1 - WEAPON MODEL OPACITY); 0 (unset) everywhere else
 out vec4 fragColor;
 void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
@@ -234,7 +235,7 @@ void main() {
     vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
-    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0 - uFade);
 })";
 
 const char* kFlatVS = R"(#version 330 core
@@ -245,8 +246,9 @@ out vec4 vColor;
 void main() { vColor = aColor; gl_Position = uViewProj * vec4(aPos, 1.0); })";
 const char* kFlatFS = R"(#version 330 core
 in vec4 vColor;
+uniform float uFade;   // (as the dynamic shader's: the view model's translucent parts)
 out vec4 fragColor;
-void main() { fragColor = vec4(pow(vColor.rgb, vec3(1.0 / 2.2)), vColor.a); })";
+void main() { fragColor = vec4(pow(vColor.rgb, vec3(1.0 / 2.2)), vColor.a * (1.0 - uFade)); })";
 
 const char* kShadowVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -500,6 +502,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
     uFlatViewProj_ = U(flatProg_, "uViewProj");
+    uDynFade_ = U(dynProg_, "uFade"); uFlatFade_ = U(flatProg_, "uFade");
     uShadowViewProj_ = U(shadowProg_, "uViewProj");
     glUseProgram(uiProg_);
     uUiScreen_ = U(uiProg_, "uScreen");
@@ -1086,10 +1089,34 @@ void Renderer::drawScene(bool shadows) {
     };
     if (nFlat) drawFlat(0, nFlat, viewProj_);
 
-    if (nView || nViewFlat) {
+    if ((nView || nViewFlat) && viewOpacity > 0.005f) {   // (WEAPON MODEL OPACITY 0: not drawn at all)
         glClear(GL_DEPTH_BUFFER_BIT);
-        drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);   // (viewFix_: built for the aim before relatch)
-        if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
+        if (viewOpacity < 0.995f) {
+            // see-through: its depth first (no colour), then its colour blended over only its nearest faces, so it
+            // fades as one solid thing (the parts behind its front faces don't show through). Twice the view's few
+            // hundred triangles; nothing extra at full opacity.
+            const float fade = 1.0f - viewOpacity;
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            glUniform1f(uDynFade_, fade);   // (drawDyn's program, still bound)
+            drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);
+            glUniform1f(uDynFade_, 0);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+            if (nViewFlat) {
+                glUseProgram(flatProg_);
+                glUniform1f(uFlatFade_, fade);
+                drawFlat(nFlat, nViewFlat, viewProjFix_);
+                glUniform1f(uFlatFade_, 0);
+            }
+        } else {
+            drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);   // (viewFix_: built for the aim before relatch)
+            if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
+        }
     }
     if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
@@ -1114,6 +1141,7 @@ void Renderer::drawScene(bool shadows) {
     view_.clear();
     flat_.clear();
     viewFlat_.clear();
+    viewOpacity = 1.0f;   // (this frame's: the game sets it again with its view model; the editor's handles stay solid)
 }
 
 // std::round (half away from zero) without the library call, bit for bit the same whole number: the 2D layer rounds
