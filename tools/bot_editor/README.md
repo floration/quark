@@ -65,8 +65,10 @@ through its `bots` command (no brains, no overrides).
   sees; untick "chase" and it also forgets enemies it lost sight of). **Place bot** puts a bot on the map: click
   for the position, drag for the facing. Placed bots and objective points can be dragged. A spot with no floor
   under it (outside the map) is refused.
-- **Scenario**: name, seed and length. **Save** writes it to the data folder; **Load** reads it back; ⇩ / ⇧ export
-  and import the JSON.
+- **Scenario**: name, seed and length. **Save** writes it to the data folder (replacing another saved scenario of
+  that name asks first); **Load** reads it back; ⇩ / ⇧ export and import the JSON (a file that isn't a scenario
+  says so). Load and import ask first (save / replace / cancel) when the line-up has changed since it was saved or
+  loaded, since the autosave would write over it.
 - **Run**: ▶ starts the match. Pause, Step (one frame), speed (¼x to 8x real time, or max: as fast as it goes),
   Stop. A run stops when the match ends or at the scenario's seconds, and also when its page goes away (reload,
   tab closed): the page asks the server to stop it, and the server stops any run or batch 5 s after its last
