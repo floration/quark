@@ -56,6 +56,8 @@ struct Settings {
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
+    bool impactSparks = true;   // a spark where a hitscan shot meets a wall or a player (yours and everyone's)
+    bool muzzleFlash = true;    // a flash at the gun's muzzle on each shot (yours and everyone's)
     bool healthBars = true;     // health bars over other players (not in ranked; on by default, owner 1.17)
     bool healthBarsBottom = false;  // ... at their feet instead of over the head
     float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)

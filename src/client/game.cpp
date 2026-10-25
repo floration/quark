@@ -1548,9 +1548,10 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
                 if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
-                    (w != WPN_LASER || time_ >= nextLocalSpark_))
+                    (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
@@ -1572,6 +1573,7 @@ void Game::frame(double dt) {
                                 Vec3 to = o + d * (t < 0 ? range : t);
                                 tracers_.push_back({b ? o : from, to, time_ + 0.3});
                                 if (t < 0) break;
+                                if (cfg_.impactSparks) explosions_.push_back({to - d * 0.03f, time_, 0.06f, false, false, false, true, 0.2f});
                                 o = to + n * 0.01f; d = d - n * (2.0f * dot(d, n)); range -= t;
                             }
                             continue;
@@ -1608,6 +1610,16 @@ void Game::frame(double dt) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
             if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
+            if (!still && old.owner == net_.clientId()) {   // yours: already shown at once (localBoom), if it blew up near there
+                bool shown = false;
+                for (size_t k = 0; k < localBooms_.size() && !shown; k++) {
+                    const LocalBoom& b = localBooms_[k];
+                    if ((b.id == old.id || (b.id == 0xFFFF && b.type == old.type)) && length(b.at - old.pos) < 4.0f) {
+                        shown = true; localBooms_.erase(localBooms_.begin() + k);
+                    }
+                }
+                if (shown) continue;
+            }
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
@@ -1621,6 +1633,20 @@ void Game::frame(double dt) {
             if (!was) audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
         }
         lastProjectiles_.swap(projScratch_);
+        for (size_t k = 0; k < localBooms_.size();)   // (one the server never blew up near there: forgotten after 2 s)
+            if (time_ - localBooms_[k].t > 2.0) localBooms_.erase(localBooms_.begin() + k); else k++;
+        // your sticky detonate, at once: alt-fire with the launcher out sets off your armed stickies (the server's rule,
+        // server.cpp; armed: seen for the arm time, so never one the server would still hold back)
+        if (heldWeapon_ == WPN_STICKY && isDown(A_ALTFIRE) && !localFireLocked_ && net_.selfAlive() && !paused_ && !chatting_)
+            for (auto& st : projStarts_) {
+                if (st.boomed || time_ - st.seen < weaponAlt().stickyArmTime) continue;
+                for (auto& p : lastProjectiles_)
+                    if (p.id == st.id && p.type == WPN_STICKY) {
+                        Vec3 at = p.pos;
+                        if ((p.flags & PROJ_ON_PLAYER) && p.onPlayer == net_.clientId()) net_.attachedPos(p, 1.0f, &at);
+                        localBoom(p.id, WPN_STICKY, at); st.boomed = true;
+                    }
+            }
 
         int hp = net_.selfHealth();
         {   // the hurt sound: one per 0.15 s at most, louder for more damage (clientfeel.h; it played on every drop)
@@ -1889,6 +1915,9 @@ void Game::drawWorld(float alpha) {
         } else if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
             drawArm(PROP_GUN_ARM, shoulder, yaw, pitch, bs, sv, kNoSlots);
+            if (cfg_.muzzleFlash && time_ < remoteMuzzleUntil_[i])   // (the gun arm is 0.7 long, along the aim)
+                drawMuzzleFlash(shoulder + angleForward(yaw, pitch) * (0.74f * bs), p.weapon, teamColor(i),
+                                (float)std::min(1.0, (remoteMuzzleUntil_[i] - time_) / 0.05), bs);
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode)) {   // the bomb on its carrier's back (player space)
                 if (const ModelMesh* bov = modelOverride(MODEL_PROP, PROP_BOMB_PACK)) {
                     Vec3 tint[TINT_COUNT];
@@ -2100,7 +2129,10 @@ void Game::drawWorld(float alpha) {
             const PlayerSnap& p = players[i].snap;
             int w = p.weapon;
             if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
-            if (w == WPN_SHOTGUN && !remoteFiring_[i] && cfg_.enemyShots) { // pellet tracers in the server's fixed pattern
+            // muzzle flash: each shot's firing edge (the laser's for as long as it fires)
+            if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && (!remoteFiring_[i] || w == WPN_LASER))
+                remoteMuzzleUntil_[i] = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
+            if (w == WPN_SHOTGUN && !remoteFiring_[i] && (cfg_.enemyShots || cfg_.impactSparks)) { // pellet tracers in the server's fixed pattern
                 const PlayerSnap& q = players[i].snap;
                 Vec3 eyeP = q.pos + Vec3(0, ((q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);   // (giant / double size: their eye, not a body below it)
                 Vec3 aim = angleForward(q.yaw, q.pitch);
@@ -2108,11 +2140,12 @@ void Game::drawWorld(float alpha) {
                 for (int k = 0; k < wd.pellets; k++) {
                     Vec3 d = spreadAim(aim, wd.spread, k, wd.pellets, 0);
                     float bangT, t = map.raycastBullet(eyeP, d, wd.range, &bangT);
-                    tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
+                    if (cfg_.enemyShots) tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
+                    if (cfg_.impactSparks) shotSpark(eyeP, d, t, wd.range, i);
                 }
             }
             // (the rifle too, X3: each of its shots is its own firing edge, 0.15 s apart against the flag's 0.1 s)
-            if (cfg_.enemyShots && (w == WPN_LASER || ((w == WPN_SNIPER || w == WPN_RIFLE) && !remoteFiring_[i]))) {
+            if ((cfg_.enemyShots || cfg_.impactSparks) && (w == WPN_LASER || ((w == WPN_SNIPER || w == WPN_RIFLE) && !remoteFiring_[i]))) {
                 Vec3 eyeP = p.pos + Vec3(0, ((p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
@@ -2122,12 +2155,19 @@ void Game::drawWorld(float alpha) {
                 // (watching through their eyes: a line from the eye along the view is edge on, invisible; from the
                 // gun's place, low and to the right, like your own)
                 if (i == viewing && !alive) start += Vec3(std::cos(p.yaw), 0, -std::sin(p.yaw)) * 0.2f + Vec3(0, -0.17f, 0);
-                if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
+                if (!cfg_.enemyShots) {}
+                else if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
                 else tracers_.push_back({start, end, time_ + (w == WPN_SNIPER ? 0.9 : 0.2)});
+                if (cfg_.impactSparks && (w != WPN_LASER || time_ >= remoteSparkAt_[i]) && shotSpark(eyeP, d, t, range, i) && w == WPN_LASER)
+                    remoteSparkAt_[i] = time_ + 0.05;   // (the laser fires every 10 ms: a spark at 20 Hz, like yours)
             }
         }
         remoteFiring_[i] = firing;
     }
+    // your muzzle flash, at the weapon model's muzzle (none with the model hidden, or scoped: the scope covers it)
+    if (alive && cfg_.muzzleFlash && time_ < muzzleUntil_ && !scoped_ && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden)
+        drawMuzzleFlash(muzzlePoint(heldWeapon_, eye), heldWeapon_, cfg_.colorFriendly, (float)std::min(1.0, (muzzleUntil_ - time_) / 0.05),
+                        cfg_.hud[Settings::HUD_VIEWMODEL].scale * 0.5f);
     // own laser beam follows the crosshair while held; alt-fire (pull) adds pulses running back toward you
     if (alive && time_ < laserUntil_ && heldWeapon_ == WPN_LASER) {
         Vec3 d = angleForward(yaw_, pitch_);
@@ -2168,7 +2208,13 @@ void Game::drawWorld(float alpha) {
         projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
         const Vec3 d = p - q.pos;
         const float len = length(d);
-        if (len > 1e-4f && map.raycast(q.pos, d / len, len) >= 0) { q.atWall = true; continue; }   // (hidden; the server's copy still takes over from it)
+        float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len) : -1.0f, et;
+        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
+        if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
+            q.atWall = true;
+            if (q.type != WPN_KNIFE) { localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true; }
+            continue;
+        }
         q.pos = p;
         if (!q.started) { q.started = true; q.offset = muzzlePoint(q.type, eye) - q.pos0; }
     }
@@ -2190,6 +2236,10 @@ void Game::drawWorld(float alpha) {
                 projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
                 if (length(st.offset) > 3.0f) st.offset = {};
+                if (copy->boomed) {   // it blew up on your screen before the server's copy came: that one is it
+                    st.boomed = true;
+                    for (auto& b : localBooms_) if (b.id == 0xFFFF && b.type == pr.type) { b.id = pr.id; break; }
+                }
                 copy->live = false;
             } else if (!found && alive) {
                 // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
@@ -2245,17 +2295,22 @@ void Game::drawWorld(float alpha) {
         else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
         };
     for (auto pr : lastProjectiles_) {
+        bool boomed = false;
         for (auto& st : projStarts_)
-            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) {   // (X5: as far along as its copy was, short of the wall)
+            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)) && !st.boomed) {   // (X5: as far along as its copy was, short of the wall)
                 Vec3 p = pr.pos, v = pr.vel;
                 projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 const Vec3 d = p - pr.pos;
                 const float len = length(d);
-                const float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f;
+                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f, et;
+                const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
+                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
+                if (blows && hit >= 0) { localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true; }   // where it lands, as you see it
                 pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
                 pr.vel = v;
             }
-        drawProj(pr, false);
+        for (auto& st : projStarts_) boomed |= st.id == pr.id && st.boomed;
+        if (!boomed) drawProj(pr, false);
     }
     for (auto& q : predProj_) {
         if (!q.live || q.atWall) continue;
@@ -2272,11 +2327,11 @@ void Game::drawWorld(float alpha) {
     drawStuckProps(eye, alpha);
     // explosions
     for (size_t i = 0; i < explosions_.size();) {
-        float t = (float)(time_ - explosions_[i].start) / 0.35f;
+        float t = (float)(time_ - explosions_[i].start) / explosions_[i].life;
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
+        Color ec = explosions_[i].wall ? Color{1.0f, 0.82f, 0.45f, 0.85f * (1 - t)} : explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
                  : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)} : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
@@ -4688,6 +4743,12 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     f.hint("TRACERS + LASER START WHERE THE GUN IS");
     ui_.toggle(f.x(), f.top(), w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots, UiExp::cfg("enemy_shots"));
     f.next();
+    {   // hit sparks (on walls and players) and muzzle flashes, yours and everyone's: cosmetic, visibility
+        const float hw = L.L(kHalfW);
+        ui_.toggle(f.x(), f.top(), hw, h, "IMPACT SPARKS", cfg_.impactSparks, UiExp::cfg("impact_sparks"));
+        ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
+        f.next();
+    }
     f.section("NETWORK");
     {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
         static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
@@ -7082,9 +7143,77 @@ void Game::localImpactSparks(int w, const UserCmd& c) {
             const float tk = rayAABB(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
             if (tk >= 0 && tk < best) best = tk;
         }
-        if (best < t) { explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true}); any = true; }
+        if (best < t) explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true});
+        else if (t < wd.range) explosions_.push_back({eye + d * (t - 0.03f), time_, 0.06f, false, false, false, true, 0.2f});   // a wall
+        else continue;
+        if (bangT >= 0 && bangT < best) explosions_.push_back({eye + d * bangT, time_, 0.05f, false, false, false, true, 0.2f});   // (through a wallbang)
+        any = true;
     }
     if (any) nextLocalSpark_ = time_ + 0.05;
+}
+
+// Someone else's hitscan shot as you see it: a spark on the first player in its way (not the shooter, their teammates
+// or you), else on the wall it ends at. Cosmetic only (the server decides hits). wallT < 0: it hit nothing within range.
+bool Game::shotSpark(const Vec3& from, const Vec3& d, float wallT, float range, int shooter) {
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    const PlayerSnap* sh = net_.findPlayer(shooter);
+    const bool teams = sh && modeIsTeamBased(net_.mode().mode);
+    const Vec3 inv = safeInv(d);
+    float best = wallT < 0 ? range : wallT;
+    bool player = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == me || i == shooter || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
+        if (teams && ps[i].snap.team() == sh->team()) continue;
+        const float tk = rayAABB(from, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+        if (tk >= 0 && tk < best) { best = tk; player = true; }
+    }
+    if (player) explosions_.push_back({from + d * best, time_, 0.1f, false, false, true});
+    else if (wallT >= 0) explosions_.push_back({from + d * (wallT - 0.03f), time_, 0.06f, false, false, false, true, 0.2f});
+    else return false;
+    return true;
+}
+
+// One of your projectiles hits on your screen now, not a round trip later: its explosion / pop / bolt hit, as the
+// server's would look (that one is then left out: see the vanish check in frame()).
+void Game::localBoom(uint16_t id, int type, const Vec3& at) {
+    const int pack = net_.playerSoundPack(net_.clientId());
+    if (type == WPN_BUBBLE) { explosions_.push_back({at, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, at, 0.7f, 1.7f, pack); }
+    else if (weaponDef(type).splashRadius > 0) { explosions_.push_back({at, time_}); audio_.play3D(SND_EXPLOSION, at, 1.25f, 1.0f, pack); }
+    else if (type == WPN_CROSSBOW) {
+        audio_.play3D(SND_BOLT_HIT, at, 0.8f, 1.0f, pack);
+        if (cfg_.impactSparks) explosions_.push_back({at, time_, 0.08f, false, false, false, true, 0.2f});
+    } else return;
+    localBooms_.push_back({id, (uint8_t)type, at, time_});
+}
+
+// The nearest enemy (alive, as drawn) whose box the segment a -> b passes through: *t its fraction along it.
+bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
+    const Vec3 d = b - a;
+    const float len = length(d);
+    if (len < 1e-4f) return false;
+    const Vec3 dir = d / len, inv = safeInv(dir);
+    const auto& ps = framePlayers();
+    float best = len;
+    bool any = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == net_.clientId() || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
+        const float tk = rayAABB(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+        if (tk >= 0 && tk < best) { best = tk; any = true; }
+    }
+    if (any) *t = best / len;
+    return any;
+}
+
+// A muzzle flash: a hot core in a bigger, fainter glow (two see-through boxes), fading over its life (a 0..1).
+// The laser's is small and in its beam's colour.
+void Game::drawMuzzleFlash(const Vec3& at, int w, const Vec3& beam, float a, float scale) {
+    const bool laser = w == WPN_LASER;
+    const float c = (laser ? 0.03f : 0.045f) * scale, g = (laser ? 0.05f : 0.1f) * scale;
+    const Color core = laser ? rgba(beam, 0.9f * a) : Color{1.0f, 0.95f, 0.75f, 0.9f * a};
+    const Color glow = laser ? rgba(beam, 0.35f * a) : Color{1.0f, 0.6f, 0.2f, 0.4f * a};
+    r_.translucentBox({at - Vec3(g, g, g), at + Vec3(g, g, g)}, glow);
+    r_.translucentBox({at - Vec3(c, c, c), at + Vec3(c, c, c)}, core);
 }
 
 // Where the hits you took came from (X3): a red arc round the crosshair toward each attacker (as they stood when it

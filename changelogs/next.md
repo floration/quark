@@ -8,3 +8,8 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 
 ## Grapple
 - **Everyone now wears a grapple launcher on their left arm**, in first person (low on the left, like the gun on the right) and on other players. The rope comes out of its barrel, and the hook's claw flies out to where it latched; while you're hooked your arm lifts toward it. It follows the viewmodel's HIDE setting and size, and isn't shown in modes without the grapple.
+
+## Shots and explosions
+- **Impact sparks everywhere**: hitscan shots (rifle, sniper, shotgun, laser) now spark where they hit a wall, not only on enemies, and other players' shots spark too. Settings > GAMEPLAY > SHOTS > IMPACT SPARKS turns them off.
+- **Muzzle flash** on your gun and everyone else's when they fire. Settings > GAMEPLAY > SHOTS > MUZZLE FLASH turns it off.
+- **Your explosions show at once**: your rockets and bolts blow up on your screen the moment they hit a wall or an enemy, and your stickies the moment you detonate, instead of a round trip later. Damage and deaths still come from the server, so nobody looks dead who isn't.
