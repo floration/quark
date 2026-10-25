@@ -19,6 +19,7 @@ export class DriveView {
         this.keys = new Set(); this.yaw = -90; this.pitch = 0; this.mdx = 0; this.mdy = 0;
         this.st = null; this.trail = []; this.evlog = []; this.hist = new Float32Array(600); this.histN = 0; this.histT = 0;
         this.frames = new Float32Array(2000); this.fsort = new Float32Array(2000); this.fi = 0;   // (frame times: 2000 for a 0.1% low)
+        this.spikes = []; this.spikeN = 0; this.medFt = 0;   // (frames well over the median, with when and what the helper was doing)
         this.dirty = true;
         this.scene = new GLScene(this.c);
         if (!this.scene.gl) $("driveMsg").innerHTML = "<div>WebGL isn't available in this browser: the Drive tab needs it.</div>";
@@ -116,6 +117,7 @@ export class DriveView {
             onError: (e) => this.app.toast("drive: " + e, 4000),
         });
         this.d = d;
+        this.spikes = []; this.spikeN = 0; this._spDirty = true;
         this.trail = []; this.evlog = []; this.histN = 0; this.st = { t: 0, pos: [...st.pos], vel: [0, 0, 0], speed: 0, hspeed: 0, dashCharges: 2, flags: 1, onGround: true };
         this.dirty = true;
     }
@@ -143,7 +145,7 @@ export class DriveView {
         this.raf = requestAnimationFrame(this._loop);
         const dtF = now - (this.prevFrame || now); this.prevFrame = now;
         const locked = document.pointerLockElement === this.c || !!this.forceLocked;
-        if (locked) this.frames[this.fi++ % this.frames.length] = dtF;   // (frame times while playing: the idle page draws nothing)
+        if (locked) this._frame(dtF);   // (frame times while playing: the idle page draws nothing)
         // mouse: turn the view now
         const sens = Math.max(0.005, Math.min(2, +$("driveSens").value || 0.08));
         const y0 = this.yaw, p0 = this.pitch;
@@ -173,6 +175,16 @@ export class DriveView {
         }
         if (locked || this.dirty || this._trailN !== this.trail.length) { this.dirty = false; this._render(now); }
         if (now - (this.hudAt || 0) > 50 && (locked || !idle || this._hudDirty !== false)) { this.hudAt = now; this._hudDirty = !idle; this._hud(); }
+    }
+    // one played frame's time; a spike (twice the median frame and 8 ms over it: a 60 Hz screen's dropped frame is 33 ms
+    // against 16.7) goes in the log with the game time and what the helper was doing
+    _frame(dtF) {
+        this.frames[this.fi++ % this.frames.length] = dtF;
+        if (this.medFt && dtF > 2 * this.medFt && dtF > this.medFt + 8) {
+            this.spikeN++; this._spDirty = true;
+            this.spikes.push({ t: this.st ? this.st.t : 0, ms: dtF, x: dtF / this.medFt, rt: this.d && this.d.lat ? this.d.lat : 0, inflight: this.d && this.d.inflight ? this.d.inflight() : 0 });
+            if (this.spikes.length > 50) this.spikes.shift();
+        }
     }
     _maxCharges() { return Math.max(1, Math.round(2 * ((this.app.physics.move && this.app.physics.move.dash_charges) || 1))); }
     _render(now) {
@@ -215,6 +227,7 @@ export class DriveView {
                 const a = this.fsort.subarray(0, n); a.set(this.frames.subarray(0, n)); a.sort();
                 let sum = 0; for (let i = 0; i < n; i++) sum += a[i];
                 const avg = sum / n, low1 = a[n - 1 - Math.floor(n * 0.01)], low01 = a[n - 1 - Math.floor(n * 0.001)];
+                if (n >= 30) this.medFt = a[n >> 1];
                 $("driveFps").textContent = `${(1000 / avg).toFixed(0)} fps · 1% low ${(1000 / low1).toFixed(0)} · 0.1% low ${(1000 / low01).toFixed(0)}${this.d && this.d.lat ? ` · helper round trip ${this.d.lat.toFixed(1)} ms` : ""}`;
             } else $("driveFps").textContent = this.d && this.d.lat ? `helper round trip ${this.d.lat.toFixed(1)} ms` : "";
         }
@@ -232,10 +245,41 @@ export class DriveView {
             x.stroke();
             x.fillStyle = cssVar("--fg3"); x.font = "10px system-ui"; x.fillText(`top ${top.toFixed(1)} m/s (lines every 5)`, 4, 11);
         }
+        this._frameStrip();
         if (this._evDirty) {
             this._evDirty = false;
             $("driveEvents").textContent = this.evlog.slice(-14).reverse().map((e) => `${(+e.t).toFixed(2)}s ${e.kind}${e.tech ? " (" + e.tech + ")" : ""}${e.hspeed != null ? " " + (+e.hspeed).toFixed(1) + " m/s" : e.speed != null ? " " + (+e.speed).toFixed(1) + " m/s" : ""}${e.impact != null ? " impact " + (+e.impact).toFixed(1) : ""}`).join("\n");
             $("driveEvents").style.whiteSpace = "pre";
+        }
+    }
+    // the frame-time strip (the last 600 frames played, newest on the right) and the spike log
+    _frameStrip() {
+        const n = Math.min(this.fi, this.frames.length, 600);
+        if (!n || this._ftAt === this.fi) return;
+        this._ftAt = this.fi;
+        const g = $("driveFrames"), dpr = window.devicePixelRatio || 1, W = g.clientWidth, H = g.clientHeight;
+        if (!W) return;
+        if (g.width !== Math.round(W * dpr) || g.height !== Math.round(H * dpr)) { g.width = Math.round(W * dpr); g.height = Math.round(H * dpr); }
+        const x = g.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
+        const L = this.frames.length, fr = this.frames;
+        let top = 34; for (let i = 0; i < n; i++) top = Math.max(top, fr[(this.fi - 1 - i + L) % L]);
+        top = Math.min(top, 250);
+        const Y = (ms) => H - 1 - (H - 4) * Math.min(ms, top) / top;
+        x.strokeStyle = cssVar("--line"); x.beginPath();
+        for (const ms of [1000 / 60, 1000 / 30, 1000 / 15]) if (ms < top) { x.moveTo(0, Y(ms)); x.lineTo(W, Y(ms)); }
+        x.stroke();
+        const bw = W / 600, bad = cssVar("--bad"), ok = cssVar("--run0"), lim = Math.max(2 * this.medFt, this.medFt + 8);
+        for (let i = 0; i < n; i++) {
+            const ms = fr[(this.fi - n + i + L) % L];
+            x.fillStyle = this.medFt && ms > lim ? bad : ok;
+            const y = Y(ms); x.fillRect(W - (n - i) * bw, y, Math.max(1, bw - 0.2), H - 1 - y);
+        }
+        x.fillStyle = cssVar("--fg3"); x.font = "10px system-ui";
+        x.fillText(`top ${top.toFixed(0)} ms · median ${this.medFt ? this.medFt.toFixed(1) : "–"} ms`, 4, 11);
+        if (this._spDirty) {
+            this._spDirty = false;
+            $("driveSpikes").textContent = `${this.spikeN} spike${this.spikeN === 1 ? "" : "s"}` + (this.spikes.length ? "\n" : "")
+                + this.spikes.slice(-8).reverse().map((sp) => `${sp.t.toFixed(2)}s  ${sp.ms.toFixed(1)} ms  x${sp.x.toFixed(1)}${sp.rt ? `  helper ${sp.rt.toFixed(1)} ms` : ""}${sp.inflight ? `  ${sp.inflight} in flight` : ""}`).join("\n");
         }
     }
     toGraph() {

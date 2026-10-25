@@ -177,6 +177,9 @@
             <canvas id="driveGraph"></canvas>
             <h3>Events</h3>
             <div id="driveEvents"></div>
+            <h3 title="each frame's time while playing (the last 600 frames): lines at 60, 30 and 15 fps; red: a spike">Frame times</h3>
+            <canvas id="driveFrames" class="ft"></canvas>
+            <div id="driveSpikes" class="muted small" title="a spike: a frame over twice the median and 8 ms more (game time, its length, x the median, the helper's round trip then)"></div>
           </aside>
         </div>
       </section>
