@@ -624,3 +624,12 @@ pre.diff .d-ctx { color: var(--gm-muted); }
   /* Branches: the open PR's checks fill the gap in the PR column */
   table.branches .b-pr .pr-checks { display: inline-flex; }
 }
+
+/* ---- the Release testing tab: docs/RELEASE_CHECKLIST.md as checkboxes ---- */
+.rc-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.rc-sec h2 { margin: 0 0 6px; }
+.rc-sec h3 { margin: 10px 0 4px; font-size: 1em; }
+.rc-item { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; cursor: pointer; }
+.rc-item input { margin-top: 3px; flex: none; }
+.rc-item.done span { color: var(--gm-muted); text-decoration: line-through; }
+.rc-item code { overflow-wrap: anywhere; }

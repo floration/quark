@@ -371,6 +371,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(self.fx.rules_view())
         if u.path == "/api/pending":
             return self.json(self.fx.pending_view())
+        if u.path == "/api/checklist":
+            f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "docs", "RELEASE_CHECKLIST.md")
+            with open(f, encoding="utf-8") as fh:
+                return self.json({"path": os.path.normpath(f), "text": fh.read()})
         if u.path == "/api/github/rulesets":
             return self.json(self.fx.rulesets_view())
         if u.path == "/api/log":

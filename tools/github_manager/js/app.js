@@ -9,13 +9,14 @@ import { runs } from './runs.js';
 import { history } from './history.js';
 import { editor } from './editor.js';
 import { tests } from './tests.js';
+import { release } from './release.js';
 import { loadNotes, initNotes, openCount, captureFocus, restoreFocus } from './notes.js';
 import { loadEditorData, initGhEdit, waitingChanges, ged } from './ghedit.js';
 import { renderDetail, ITEM_KEYS } from './detail.js';
 import { openLog, closeLog, isLogOpen } from './logview.js';
 import './tip.js';
 
-const VIEWS = { overview, branches, local, pulls, runs, history, editor, tests };
+const VIEWS = { overview, branches, local, pulls, runs, history, editor, tests, release };
 const TAB_FOR = { pr: 'pulls', branch: 'branches', run: 'runs', local: 'local', commit: 'overview', version: 'overview' };
 const VISIBLE_MS = 15000, HIDDEN_MS = 60000, RETRY_MS = 5000;
 
