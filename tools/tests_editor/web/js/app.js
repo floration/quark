@@ -128,7 +128,9 @@ class App {
         }
         const fns = Object.values(ix.m.functions || {}).sort((a, b) => a.name.localeCompare(b.name));
         out.push({ head: true, sec: "fns", label: "test functions", kind: "fn", meta: String(fns.length) });
-        for (const f of fns) out.push({ sec: "fns", key: "fn:" + f.name, label: f.name, meta: (f.checks || []).length + "", sel: { kind: "fn", fn: f }, lint: (ix.fnLint.get(f.name) || []).length, fn: f });
+        // (search also finds a function by its doc comment and its CHECK expressions: one lowercase haystack, made once)
+        for (const f of fns) out.push({ sec: "fns", key: "fn:" + f.name, label: f.name, meta: (f.checks || []).length + "", sel: { kind: "fn", fn: f }, lint: (ix.fnLint.get(f.name) || []).length, fn: f,
+                                        hay: [f.doc || "", ...(f.checks || []).map((c) => c.expr || "")].join("\n").toLowerCase() });
         return out;
     }
     _rowMeta(it) {
@@ -241,7 +243,7 @@ class App {
         const seen = new Set(), subSeen = new Set();
         for (const e of tree.querySelectorAll(".trow")) {
             const r = e._row;
-            const hit = !q || r.label.toLowerCase().includes(q) || (r.item && r.item.calls && r.item.calls.some((c) => c.fn.toLowerCase().includes(q))) || (r.item && r.item.kind === "job" && (r.item.steps || []).some((s) => (s.name || "").toLowerCase().includes(q)));
+            const hit = !q || r.label.toLowerCase().includes(q) || (r.item && r.item.calls && r.item.calls.some((c) => c.fn.toLowerCase().includes(q))) || (r.item && r.item.kind === "job" && (r.item.steps || []).some((s) => (s.name || "").toLowerCase().includes(q))) || (r.hay && r.hay.includes(q));
             e.hidden = !hit;
             if (hit) { seen.add(e.dataset.sec); if (e.dataset.sub) subSeen.add(e.dataset.sub); }
         }

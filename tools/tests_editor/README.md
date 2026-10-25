@@ -7,6 +7,7 @@ test_editor.sh, uitest.sh), the git hooks and ctest. Each one as code, a graph a
 see the diff, revert, and run locally: the whole suite, a chosen set of groups (QUARK_TEST_ONLY), the failed groups
 again, one group, or a command with its arguments (rules NAME, serverbench secs run...). Each group's last local
 result shows in the tree; FAIL lines in the run output are marked, with a jump to the next one and a link to the CHECK.
+Search (`/`) matches names, called functions, job steps, and a function's doc comment and CHECK expressions.
 Side panels: drag their edge to resize, `[` / `]` (or the header buttons) to hide them. In the code editor Tab indents;
 Esc then Tab leaves it. Rule checks (lint) flag CI running gameplay tests, a stray
 `[final]`, functions nothing runs, calls to missing functions, two parallel groups on one port, bad `needs`, unpinned
