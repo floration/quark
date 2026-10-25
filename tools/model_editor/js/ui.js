@@ -179,6 +179,7 @@
     avail('#vBombLineup', !S.holdIt(), 'Off while players hold the weapon: "it" (hide and seek / tag) carries no bomb');
     avail('#vTeam', !(m && m.kind === 'weapon' && (mode === 'orbit' || (mode === 'fp' && !S.view.fpLineup))),
       'A weapon in your hands is drawn in the viewmodel colour (More > Viewmodel colour), not a team colour');
+    avail('#vDrawAs', !(m && Q.current(S.sel).type !== 'boxes'), 'This model is a mesh (no box list): the game draws it as a mesh whatever is chosen here');
     avail('#vGhost', S.ghostable(S.sel), 'Nothing to compare: this model is not edited (or what it replaces is not made of boxes)');
   };
   function viewChanged(rebuildThumbs) {

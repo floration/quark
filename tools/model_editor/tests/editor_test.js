@@ -39,6 +39,18 @@ const FS_MOCK = `
   };
   window.readText = async (dir, parts) => { let d = dir; for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p); return (await (await d.getFileHandle(parts[parts.length - 1])).getFile()).text(); };`;
 
+// a tetrahedron as a .glb (a mesh that is not made of boxes), base64
+function tetraGlb() {
+  const pos = new Float32Array([0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0, 0, 0, 0, 0, 0.3, 0.3, 0, 0, 0, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0.3, 0, 0, 0, 0, 0.3, 0, 0.3, 0]);
+  const json = JSON.stringify({ asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }], materials: [{ name: 'body' }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }], buffers: [{ byteLength: pos.byteLength }], bufferViews: [{ buffer: 0, byteLength: pos.byteLength }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 12, type: 'VEC3', min: [0, 0, 0], max: [0.3, 0.3, 0.3] }] });
+  const jb = Buffer.from(json.padEnd(Math.ceil(json.length / 4) * 4, ' ')), bb = Buffer.from(pos.buffer);
+  const head = Buffer.alloc(12), jh = Buffer.alloc(8), bh = Buffer.alloc(8);
+  head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + jb.length + 8 + bb.length, 8);
+  jh.writeUInt32LE(jb.length, 0); jh.writeUInt32LE(0x4e4f534a, 4); bh.writeUInt32LE(bb.length, 0); bh.writeUInt32LE(0x004e4942, 4);
+  return Buffer.concat([head, jh, jb, bh, bb]).toString('base64');
+}
 async function open(browser, url, viewport) {
   const ctx = await browser.newContext({ viewport: viewport || { width: 2560, height: 1440 } });
   const page = await ctx.newPage(), log = [];
@@ -274,6 +286,13 @@ const frames = (page, n) => page.evaluate(n => new Promise(r => { let k = 0; con
     return { off, on, added: n1 - n0 };
   });
   check(st.off && st.on && st.added === 4 * 24, 'ghost: the default\'s 4 boxes outlined over an edit (off when not edited)', st);
+  st = await ev(b64 => {
+    Q.ui.select('models/player/SCOUT');
+    Q.importInto('models/player/SCOUT', Q.b64ToBytes(b64), 'tetra.glb', {}, { prov: { origin: 'third-party', source: 'a test' } });
+    const r = { mesh: Q.current('models/player/SCOUT').type, drawAs: document.querySelector('#vDrawAs').disabled };
+    Q.undo(); return Object.assign(r, { after: document.querySelector('#vDrawAs').disabled });
+  }, tetraGlb());
+  check(st.mesh === 'mesh' && st.drawAs && !st.after, 'Draw as is off for an imported mesh (it does nothing there)', st);
   await page.click('.card[data-key="models/projectile/ROCKET"]');
   await page.click('#tabs button[data-mode="flight"]');
   const zs = [];
