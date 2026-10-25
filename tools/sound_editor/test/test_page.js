@@ -42,6 +42,8 @@ async function open(b, vp, url) {
     ok(h2 >= 240 && h2 <= 300, 'selected: the dock opens at about a third of the window', h2);
     const hscroll = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     ok(!hscroll, 'no page-wide horizontal scroll at 1280');
+    const d1280 = await p.evaluate(() => { const c = document.querySelector('#editor .ed-head .chip.origin'), r = c && c.getBoundingClientRect(); return { chip: !!c && r.bottom <= innerHeight, top: document.querySelector('#top').offsetHeight }; });
+    ok(d1280.chip && d1280.top < 40, 'at 1280 the origin shows in the dock header and the top bar is one row', d1280);
     ok(!logs.length, 'no console errors at 1280x720', logs);
     await ctx.close();
   }
@@ -247,6 +249,8 @@ async function open(b, vp, url) {
   await p.click('button[data-tab="scenes"]');
   await p.fill('#scMaster', '5'); await p.dispatchEvent('#scMaster', 'change');
   ok(await p.$eval('#scMaster', e => e.value) === '1', 'Scenes volume shows the clamped value');
+  const lane = await p.evaluate(() => document.querySelector('#tlLabels .ln:not(.head)').offsetHeight);
+  ok(lane > 30, 'at 2560 x 1440 the scene lanes share the timeline\'s height', lane);
   await p.fill('#scMaster', ''); await p.dispatchEvent('#scMaster', 'change');
   ok(await p.$eval('#scMaster', e => e.value) === '0.6' && await p.evaluate(() => Q.ui.scenes.opt().master) === 0.6, 'an empty Scenes volume shows and plays the default 0.6');
   ok(await p.$eval('#dirUpload', e => e.webkitdirectory), 'an Upload folder input (webkitdirectory)');

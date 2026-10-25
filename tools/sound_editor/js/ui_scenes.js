@@ -5,7 +5,11 @@
   'use strict';
   const Q = window.Q, U = Q.ui, h = U.h, fmt = U.fmt, R = 48000;
   const S = U.scenes = { scene: Q.SCENES[0], playing: null };
-  const LANE = 20, HEAD = 22;
+  const HEAD = 22;
+  // lanes share the timeline's height (20 px at least, 72 at most): at 2560 x 1440 a scene's 9 lanes fill the view
+  // instead of its top fifth
+  let LANE = 20;
+  function fitLanes() { const wrap = U.$('#tlLabels').parentNode, avail = wrap.clientHeight - HEAD - 4; LANE = Math.max(20, Math.min(72, Math.floor(avail / Math.max(1, S.lanes.length)))); }
   const WHO = { me: { label: 'you', color: '#4f9cf5' }, enemy: { label: 'enemy', color: '#ec835a' }, ann: { label: 'announcer', color: '#b48cf0' } };
 
   // the game's VOLUME: a typed value is held to 0..1, an empty or unreadable field plays (and shows) the default 0.6
@@ -33,6 +37,7 @@
     S.ev = Q.sceneEvents(S.scene);
     S.lanes = lanesOf(S.ev);
     renderMixer();
+    fitLanes();
     renderLanes();
     drawTimeline();
     U.$('#scPlay').textContent = S.playing ? '■ Stop' : '▶ Play';
@@ -55,7 +60,7 @@
       const ev = S.ev.find(e => e.lane === S.lanes.indexOf(l)), key = Q.eventKey(ev, o), a = Q.assets[key];
       const designed = !l.missing || Q.state.edits[key];
       box.append(h('div.ln', { title: (a ? a.key : key) + (l.missing ? (designed ? ' (designed by you: needs a game hook)' : ' (missing: design it in the Missing tab)') : '') + ', click to edit',
-        style: { opacity: designed ? '' : 0.45 }, onclick: () => a && U.select(key) },
+        style: { height: LANE + 'px', opacity: designed ? '' : 0.45 }, onclick: () => a && U.select(key) },
         h('span.who', { style: { background: WHO[l.who].color } }),
         h('span.n', l.snd + (typeof l.pitch === 'number' && l.pitch !== 1 ? ' x' + l.pitch : '') + (l.missing ? ' *' : '')),
         h('span.faint', l.d3 ? '3D' : '2D'),

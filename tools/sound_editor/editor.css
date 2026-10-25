@@ -140,7 +140,8 @@ body:has(#dock.idle) #toast { bottom: 50px; }
 .lane { position: relative; flex: 1; min-height: 34px; }
 .lane.src { flex: 2.2; }
 .lane canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 3px; }
-.lane .lane-label { position: absolute; right: 8px; top: 15px; background: #0e1014cc; padding: 0 4px; border-radius: 3px; font: 600 9px var(--mono); color: var(--text-faint); letter-spacing: .1em; pointer-events: none; z-index: 2; }
+.lane .lane-label { position: absolute; right: 8px; top: 2px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #0e1014cc; padding: 0 4px; border-radius: 3px; font: 600 9px var(--mono); color: var(--text-faint); letter-spacing: .1em; z-index: 2; }
+.lane .lane-src { letter-spacing: 0; font-weight: 400; }
 .handle { position: absolute; top: 0; bottom: 0; width: 10px; margin-left: -5px; cursor: ew-resize; z-index: 3; }
 .handle::after { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; background: var(--accent); }
 .handle::before { content: ""; position: absolute; left: 0; top: 0; width: 10px; height: 10px; background: var(--accent); border-radius: 2px; }
@@ -223,6 +224,8 @@ table.plan { border-collapse: collapse; margin-top: 8px; min-width: 720px; }
 
 /* missing */
 table.missing td { padding: 3px 6px; }
+table.missing th.m-name { width: 210px; } table.missing th.m-pri { width: 46px; } table.missing th.m-d { width: 120px; }
+table.missing th.m-slots { width: 44%; }
 table.missing td.cell { min-width: 110px; }
 .pri { font: 600 10px var(--mono); padding: 0 5px; border-radius: 3px; }
 .pri.P1 { background: #4a1f1f; color: #ff9b9b; } .pri.P2 { background: #4a3a1a; color: var(--warn); } .pri.P3 { background: #24303d; color: #9cc3ef; }
@@ -283,3 +286,15 @@ td .slot, .slot { display: inline-flex; align-items: center; gap: 4px; min-width
 .prov-bulk { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0; padding: 6px; border: 1px solid var(--line2); border-radius: 6px; }
 .prov-gate { color: #ff9b9b; margin: 4px 0; }
 .dlg-f button:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 1500px) {   /* (1280: room for the matrix and the dock's columns) */
+  #gameVersion, .toolbar .hint, .legend-m { display: none; }
+  #top { gap: 6px; padding: 5px 8px; }
+  #tabs button { padding: 4px 7px; }
+  .tb { gap: 4px; }
+  .mon input { width: 48px; }
+  #meter { width: 40px; }
+  .ed-side { width: 240px; }
+  .ed-chain { width: 290px; }
+  .ed-when { max-width: 220px; }
+}

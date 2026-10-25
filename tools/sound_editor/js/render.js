@@ -66,7 +66,8 @@
       g.strokeStyle = m.color; g.lineWidth = m.width || 1; g.setLineDash(m.dash || []);
       g.beginPath(); g.moveTo(px, 0); g.lineTo(px, h); g.stroke(); g.setLineDash([]);
       if (m.label) { g.font = '10px ui-monospace, Consolas, monospace'; g.fillStyle = m.color; g.textBaseline = 'bottom';
-        const tw = g.measureText(m.label).width; g.fillText(m.label, m.right ? px - tw - 3 : px + 3, h - 2 - (m.row || 0) * 11); }
+        // (a label that would run off the right edge goes on the marker's left)
+        const tw = g.measureText(m.label).width, left = m.right || px + 3 + tw > w; g.fillText(m.label, left ? px - tw - 3 : px + 3, h - 2 - (m.row || 0) * 11); }
     }
     if (o.cursor != null) { g.fillStyle = css('--cursor'); g.fillRect(Math.round(X(o.cursor)), 0, 1, h); }
     if (o.playhead != null) { g.fillStyle = css('--playhead'); g.fillRect(Math.round(X(o.playhead)) - 0.5, 0, 2, h); }

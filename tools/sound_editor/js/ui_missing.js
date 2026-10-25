@@ -47,7 +47,8 @@
   M.render = function () {
     M.ensureAssets();
     const t = U.$('#missingTable'); t.innerHTML = '';
-    t.append(h('thead', h('tr', h('th', 'Name'), h('th', 'Pri'), h('th', 'Plays'), h('th', 'When it would play / design note'), h('th', 'Your sound (drop a file on a slot, or click it and use Design...)'))));
+    // (the 2-character columns narrow, the slots wide enough for seven voices in a row: table-layout is fixed)
+    t.append(h('thead', h('tr', h('th.m-name', 'Name'), h('th.m-pri', 'Pri'), h('th.m-d', 'Plays'), h('th', 'When it would play / design note'), h('th.m-slots', 'Your sound (drop a file on a slot, or click it and use Design...)'))));
     const body = h('tbody');
     const areas = [...new Set(Q.MISSING.map(m => m.area))];
     const own = Q.state.customs.map(c => ({ area: 'Yours', name: c.name, kind: c.kind, pri: '', d: '', when: c.when || 'your own sound', note: '', own: true }));
