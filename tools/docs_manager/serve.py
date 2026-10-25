@@ -14,11 +14,13 @@ refreshed every 5 min into <state dir>/cache/github.json; the per-commit entry d
 <state dir>/cache/changes.json. Python 3 standard library only.
 
 API: GET /api/data (everything, ETag / If-None-Match), GET /api/summary (small: halting, in progress, waiting,
-questions, recent changes), GET /api/halting (just the HALT items stopping a Claude agent), GET /api/health, POST /api/refresh (fetch now); CORS for the sibling tools on 8765-8770 (reads
+questions, recent changes), GET /api/halting (just the HALT items stopping a Claude agent), GET /api/health, POST /api/refresh (fetch now;
+?wait=1 answers once the new data is built); CORS for the sibling tools on 8765-8770 (reads
 only). Edits (same origin + X-Claude-Manager: 1 only): GET /api/doc?file=, GET /api/edit/status,
-POST /api/doc/save, POST /api/answer, POST /api/entry/add, POST /api/edit/push (send offline saves now).
+POST /api/doc/save, POST /api/answer, POST /api/entry/add, POST /api/entry/status (mark told / done), POST /api/fix (a
+Problems fix), POST /api/edit/push (send offline saves now).
 """
-import argparse, datetime, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.parse, urllib.request, webbrowser
+import argparse, datetime, gzip, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.parse, urllib.request, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,7 +35,7 @@ MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", 
         ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json"}
 CORS_PORTS = range(8765, 8771)
 VOLATILE = ("generatedAt", "mirrorFetchedAt", "ghFetchedAt")
-WRITE_PATHS = {"/api/doc/save", "/api/answer", "/api/entry/add", "/api/edit/push"}             # same origin + X-Claude-Manager: 1 only
+WRITE_PATHS = {"/api/doc/save", "/api/answer", "/api/entry/add", "/api/entry/status", "/api/fix", "/api/edit/push"}             # same origin + X-Claude-Manager: 1 only
 MAX_BODY = 4 * 1024 * 1024
 
 
@@ -222,19 +224,38 @@ class History:
 _OWNER_RE = re.compile(r"waiting on (?:the )?owner|waiting on q\b|waits? (?:on|for) (?:the )?owner|until (?:the owner|q)\b|"
                        r"\bowner (?:still )?to \w+|owner'?s (?:push|pick|picks|decision|decisions|choice|answer|ok|go)|"
                        r"question (?:to|for) the owner|ask(?:s|ing)? the owner|waits? for (?:a )?push|q says push|"
-                       r"needs? (?:q|the owner)\b|for q to\b", re.I)
+                       r"needs? (?:q|the owner)\b(?!'s|’s)|for q to\b", re.I)          # (not "needs q's PC")
 _PUSH_RE = re.compile(r"owner'?s push|waits? for (?:a )?push|q says push|until the owner says push|then \W?push\b|"
                       r"waiting on (?:the owner'?s |q'?s )?push|owner to push|q to push", re.I)
 _TESTS_RE = re.compile(r"tests? (?:are |is )?(?:still )?fail|failing tests?|test failures?|tickrate failure|"
                        r"needs? measuring|measure (?:it )?first|\brepro\b|reproduc|\bflak(?:e|y)|fails? on testing", re.I)
+_QUOTED_RE = re.compile(r"`[^`\n]*`|“[^”\n]{0,80}”|\"[^\"\n]{0,80}\"|(?<![\w'])'[^'\n]{1,80}'(?![\w'])")
 _RECO_RE = re.compile(r"\brecommend(?:ation|ed)?\b\s*[:,]?\s*([^.;)]+)", re.I)
 
 
+def _unquoted(text):
+    """text with quoted labels and code blanked out (same length, so match positions still fit the text): a quoted
+    'stay in Needs q' or `needs q` names a UI label, it doesn't ask q for anything."""
+    return _QUOTED_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+def _prose(parts):
+    """An entry's title, body and status as one text for the waiting-on rules: line wraps become spaces, and a part
+    that doesn't end a sentence runs on into the next (a title without a full stop and its body are one sentence),
+    else a new line starts. So _sentence never starts at a wrap ('(tests.cpp ~6750); reproducing ...')."""
+    out = ""
+    for p in parts:
+        p = re.sub(r"\s*\n\s*", " ", p or "").strip()
+        if not p: continue
+        out = p if not out else out + ("\n" if re.search(r"[.!?:]$", out) else " ") + p
+    return out
+
+
 def _sentence(text, m):
-    """The sentence around match m, trimmed, with 'the owner' said as q."""
+    """The sentence around match m, trimmed, with 'the owner' said as q (no closing ':' / ';' / ',')."""
     start = max(text.rfind(". ", 0, m.start()), text.rfind("\n", 0, m.start())) + 1
     ends = [i for i in (text.find(". ", m.end()), text.find("\n", m.end())) if i >= 0]
-    s = text[start:min(ends) if ends else len(text)].strip(" .\n")
+    s = text[start:min(ends) if ends else len(text)].strip(" .:;,\n")
     s = re.sub(r"\bthe owner'?s\b", "q's", s, flags=re.I)
     s = re.sub(r"\bthe owner\b|\bowner\b", "q", s, flags=re.I)
     s = s.replace("**", "").replace("`", "")
@@ -263,7 +284,7 @@ def waiting_on(e, links, answer=None):
     halting = docsparse.is_halting(e)
     if e.get("archived") and not halting: return ["none"], "Nothing: archived.", False
     if f == "08" and st != "in-progress" and not halting: return ["none"], "Nothing: a reference note.", False
-    text = "\n".join(x for x in (e["title"], e["body"], e["statusNote"], e.get("statusText")) if x)
+    text = _prose((e["title"], e["body"], e["statusNote"], e.get("statusText")))
     w, why = [], []
 
     def add(k, s=None):
@@ -275,9 +296,10 @@ def waiting_on(e, links, answer=None):
     if f == "07" and st in ("open", "unknown") and not halting: add("owner", "Waiting on q's decision")
     if f == "06" and st in ("open", "unknown") and not halting: add("read", "Not told yet: for q to read")
     if f == "09" and st in ("open", "unknown"): add("answered", "q answered; no Claude has acted on it yet")
-    m = _OWNER_RE.search(text)
-    if m and (not w or _PUSH_RE.search(text)):
-        pm = _PUSH_RE.search(text)
+    bare = _unquoted(text)
+    m = _OWNER_RE.search(bare)
+    if m and (not w or _PUSH_RE.search(bare)):
+        pm = _PUSH_RE.search(bare)
         if pm:
             needs = " (needs VERSION + changelogs)" if re.search(r"VERSION|changelog", text) else ""
             add("owner", "Waiting on q to push" + needs); add("push")
@@ -301,7 +323,8 @@ def waiting_on(e, links, answer=None):
         add("claude", "A Claude thread is working on it" if started else "Nobody has started it yet")
     elif "ci" in w and not any(s.startswith("CI ") or "checks" in s for s in why):
         why.append("CI not green")
-    return w, "; ".join(why) + ".", (not started and w == ["claude"])
+    why_s = "; ".join(why)
+    return w, why_s + ("" if re.search(r"[.!?]$", why_s) else "."), (not started and w == ["claude"])
 
 
 def title_key(t):
@@ -352,6 +375,7 @@ class Manager:
         self.writer = docsedit.Writer(self.docs, read_only=getattr(args, "read_only", False), thread_names=self.thread_names, log=log)
         self.lock = threading.Lock()
         self.body, self.etag, self.summary, self.summary_etag, self.data = None, None, None, None, None
+        self.body_gz = None                                                 # /api/data gzipped once per change (2 MB -> ~0.3 MB)
         self.halting, self.halting_etag = None, None
         self.started = time.time()
         self.last_error = None
@@ -464,6 +488,18 @@ class Manager:
                 e["pcUnsynced"] = f["pcUnsynced"]
                 entries.append(e)
 
+        # One item answered in 09 counts once: the original waits on a Claude to act ("answered"); its open 09 answer
+        # then waits on nothing and points at it (answerOf), so tiles and columns don't list the pair twice.
+        by_id = {e["id"]: e for e in entries}
+        for e in entries:
+            e.setdefault("answerOf", None)
+        for e in entries:
+            a = by_id.get(e["answerId"]) if e["answerId"] else None
+            if a and e["waitingOn"][:1] == ["answered"] and a["waitingOn"] == ["answered"]:
+                a["waitingOn"], a["answerOf"], a["notStarted"] = ["none"], e["id"], False
+                a["waitingWhy"] = "Nothing here: q's answer to \"%s\" (%s), which waits on a Claude to act on it." % (
+                    docsparse._short(e["title"]).replace("**", ""), e["file"])
+
         entry_thread = {e["id"]: e["thread"] for e in entries}
         known = self.thread_lookup(entry_thread)
         changes = []
@@ -520,7 +556,7 @@ class Manager:
         entry_thread = entry_thread or {}
         known = known if known is not None else self.thread_lookup(entry_thread)
         subj = subject.strip()
-        if re.match(r"^(?:q:|[\d/]+:\s*q (?:answered|added|edited)\b)", subj, re.I) or subj.endswith("(Claude Manager)"):
+        if re.match(r"^(?:q:|[\d/]+:\s*q (?:answered|added|edited|set|moved|joined|wrote)\b)", subj, re.I) or subj.endswith("(Claude Manager)"):
             return "q", None
         for g in reversed(re.findall(r"\(([^()]+)\)", subj)):
             hit = known.get(g.strip().lower()) or (linker.thread(g) if linker.thread(g)[0] else None)
@@ -551,8 +587,12 @@ class Manager:
         summary, halting = make_summary(data, port), make_halting(data, port)
         s_etag, h_etag = small_etag(summary), small_etag(halting)
         with self.lock:
-            if etag != self.etag or self.body is None:
-                self.body, self.etag = json.dumps(data, separators=(",", ":")).encode("utf-8"), etag
+            new_body = etag != self.etag or self.body is None
+        if new_body:                                                        # (compressed outside the lock: readers keep going)
+            body = json.dumps(data, separators=(",", ":")).encode("utf-8")
+            body_gz = gzip.compress(body, 6, mtime=0)
+        with self.lock:
+            if new_body: self.body, self.body_gz, self.etag = body, body_gz, etag
             if s_etag != self.summary_etag or self.summary is None:
                 self.summary, self.summary_etag = json.dumps(summary, separators=(",", ":")).encode("utf-8"), s_etag
             if h_etag != self.halting_etag or self.halting is None:
@@ -618,9 +658,10 @@ def make_summary(data, port=8766):
     es = [e for e in data["entries"] if not e.get("archived")]
     inprog = [e for e in es if e["file"].startswith("02") and e["section"].lower().startswith("in progress")
               and e["status"] in ("in-progress", "open", "unknown")]
-    waiting = {k: [] for k in ("owner", "push", "read", "answered", "pr", "ci", "tests", "claude")}
+    waiting = {k: [] for k in ("owner", "push", "read", "answered", "pr", "ci", "tests", "claude", "nobody")}
     for e in es:
         for k in e["waitingOn"]:
+            if k == "claude" and e.get("notStarted"): k = "nobody"          # (open, nobody has started it: not "Claude working")
             if k in waiting: waiting[k].append(e["id"])
     qs = [e for e in es if e["file"].startswith("07") and e["status"] in ("open", "unknown")]
     links_of = lambda e: [l for l in e["links"] if l["kind"] == "branch"]
@@ -644,14 +685,25 @@ class Refresher(threading.Thread):
         self.mgr, self.interval, self.gh_interval = mgr, interval, gh_interval
         self.wake, self.next_fetch, self.next_gh = threading.Event(), 0.0, 0.0
         self.ready = threading.Event()
+        self.cond, self.started, self.finished = threading.Condition(), 0, 0     # loop passes begun / done
 
     def poke(self):
+        """Fetch and rebuild now. Returns the pass that will see it (for wait())."""
+        with self.cond:
+            target = self.started + 1                                     # (a pass already running may have fetched before)
         self.next_fetch = self.next_gh = 0.0
         self.wake.set()
+        return target
+
+    def wait(self, target, timeout):
+        """True once loop pass `target` is done (fetched, rebuilt if anything changed), False after timeout s."""
+        with self.cond:
+            return self.cond.wait_for(lambda: self.finished >= target, timeout)
 
     def run(self):
         m, sig, last = self.mgr, None, None
         while True:
+            with self.cond: self.started += 1
             try:
                 changed = m.body is None
                 if time.time() >= self.next_fetch:
@@ -665,6 +717,8 @@ class Refresher(threading.Thread):
                 changed |= s != sig; sig = s
                 if changed: m.build()                                    # (docs first: GitHub can take a while)
                 self.ready.set()
+                with self.cond:                                          # (the docs are in: a waiting refresh can answer)
+                    self.finished = self.started; self.cond.notify_all()
                 if time.time() >= self.next_gh:
                     self.next_gh = time.time() + self.gh_interval
                     if m.refresh_gh(m.entry_texts()): m.build()
@@ -674,6 +728,7 @@ class Refresher(threading.Thread):
                 m.last_error = "%s: %s" % (type(e).__name__, e)
                 log("refresh failed: %s" % traceback.format_exc().strip().splitlines()[-1])
             self.ready.set()
+            with self.cond: self.finished = self.started; self.cond.notify_all()
             self.wake.wait(5.0); self.wake.clear()
 
 
@@ -739,11 +794,15 @@ def make_handler(mgr, refresher, port, quiet):
                 with mgr.lock:
                     body, etag = {"/api/data": (mgr.body, mgr.etag), "/api/summary": (mgr.summary, mgr.summary_etag),
                                   "/api/halting": (mgr.halting, mgr.halting_etag)}[path]
+                    gz = mgr.body_gz if path == "/api/data" else None
                 if body is None: return self._json(503, {"error": "starting", "detail": mgr.mirror.error or "loading"})
                 h = {"ETag": etag, "Cache-Control": "no-cache", "X-Mirror-Fetched-At": mgr.mirror.fetched_at or "",
                      "X-Gh-Fetched-At": str(mgr.gh.state.get("fetchedAt") or ""), "X-Fetch-Ok": "1" if mgr.mirror.fetch_ok else "0"}
+                if gz is not None: h["Vary"] = "Accept-Encoding"
                 inm = self.headers.get("If-None-Match", "")
                 if etag and etag in [t.strip() for t in inm.split(",")]: return self._send(304, headers=h)
+                if gz is not None and re.search(r"\bgzip\b", self.headers.get("Accept-Encoding", "")):
+                    h["Content-Encoding"] = "gzip"; body = gz
                 return self._send(200, body, headers=h)
             if path == "/api/health": return self._json(200, mgr.health())
             if path == "/api/edit/status": return self._json(200, writer.status())
@@ -794,6 +853,8 @@ def make_handler(mgr, refresher, port, quiet):
             try:
                 if path == "/api/doc/save": res = writer.save(req.get("file"), req.get("base"), req.get("text"))
                 elif path == "/api/answer": res = writer.answer(req.get("answers"))
+                elif path == "/api/entry/status": res = writer.set_status(req.get("changes"))
+                elif path == "/api/fix": res = writer.fix(req)
                 elif path == "/api/edit/push":
                     if not writer.editable()[0]: raise docsedit.EditError(423, "not-editable", writer.editable()[1])
                     pushed = writer.retry_push()
@@ -817,9 +878,13 @@ def make_handler(mgr, refresher, port, quiet):
             path = self.path.split("?", 1)[0]
             if path in WRITE_PATHS: return self._post_write(path, n)
             if n: self.rfile.read(min(n, 65536))
-            if path == "/api/refresh":
-                refresher.poke()
-                return self._json(202, {"ok": True, "detail": "refreshing"})
+            if path == "/api/refresh":                                      # ?wait=1: answer once the new data is built
+                target = refresher.poke()
+                if "wait=1" not in (self.path.split("?", 1) + [""])[1].split("&"):
+                    return self._json(202, {"ok": True, "detail": "refreshing"})
+                done = refresher.wait(target, 25)
+                return self._json(200, {"ok": True, "done": done, "etag": mgr.etag, "mirrorHead": mgr.mirror.head(),
+                                        "fetchOk": mgr.mirror.fetch_ok})
             return self._json(404, {"error": "no such endpoint"})
 
     return H

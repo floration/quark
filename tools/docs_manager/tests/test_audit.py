@@ -1,11 +1,29 @@
 """Tests for the app-audit fixes: trailers followed by text, generated / report files as documents, the lint
 (Problems list), what reference / archived / 06 / answered items wait on, HALT 'blocks' and commit threads.
 python3 -m unittest discover tools/docs_manager/tests"""
-import os, sys, unittest
+import gzip, http.client, json, os, shutil, socket, subprocess, sys, tempfile, threading, unittest
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(TESTS))
-import docsparse, serve  # noqa: E402
+import docsparse, ghlinks, serve  # noqa: E402
+
+HAVE_GIT = shutil.which("git") is not None
+
+
+def build_from(files, tmp):
+    """A one-commit docs repo with these files, built by a Manager (no GitHub): (manager, data)."""
+    repo = os.path.join(tmp, "repo")
+    os.makedirs(repo)
+    for n, t in files.items():
+        with open(os.path.join(repo, n), "w", newline="") as f: f.write(t)
+    for a in (["init", "-q", "-b", "main"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "seed"]):
+        subprocess.run(["git", "-C", repo] + a, check=True, stdout=subprocess.DEVNULL)
+    args = serve.argparse.Namespace(**{k: None for k in ("docs", "state_dir", "threads", "quark_dir", "gh_shared", "gh_fixture")})
+    args.__dict__.update(repo=repo, state_dir=os.path.join(tmp, "state"), branch="main", no_gh=True, gh_repo=ghlinks.REPO,
+                         quark_dir=tmp, port=8766)
+    mgr = serve.Manager(args)
+    assert mgr.mirror.fetch()
+    return mgr, mgr.build()
 
 
 def entry(file, title, status="open", body="Body.", section="S", **kw):
@@ -50,6 +68,43 @@ class FileKindTests(unittest.TestCase):
         self.assertEqual(docsparse.file_kind("12-play-notes.md", "# Play notes\n\n## Notes\n\n## Archive\n"), "entries")
         self.assertEqual(docsparse.file_kind("01-known-bugs.md"), "entries")
 
+    # PR #70 put a status trailer on most of 13's bullets, so the 1-in-5 share read the report as 397 entries again.
+    TRAILED = ("# 13: audit\n\nScores per tab.\n\n## 1. Tab: 7/10\n\n### Wrong\n\n" +
+               "".join("- **[low] Item %d** detail. (`a.js:1`) _2026-10-24 13:15 CT, Fix the audit findings, fixed in PR #70: "
+                       "done (abc1234)._\n" % i for i in range(12)) +
+               "\n### Missing\n\n" + "".join("- **Feature %d** wanted. _2026-10-24 13:15 CT, Fix the audit findings, added in "
+                                               "PR #70: Open, Reload and Copy._\n" % i for i in range(4)) +
+               "\n### Not tested\n\n- Windows-only paths: needs q's PC.\n")
+
+    def test_report_with_trailers(self):
+        self.assertEqual(docsparse.kind_reason("13-app-audit.md", self.TRAILED), ("document", "report-name"))
+        self.assertEqual(docsparse.parse_file("13-app-audit.md", self.TRAILED)["entries"], [])
+        self.assertEqual(docsparse.file_kind("13-app-audit.md"), "document")             # (name only: docsedit's checks)
+        for name in ("14-security-audit.md", "15-report.md", "16-perf-reports-oct.md"):
+            self.assertEqual(docsparse.file_kind(name), "document", name)
+        for name in ("12-play-notes.md", "14-auditions.md", "15-reporting-bugs.md"):
+            self.assertEqual(docsparse.file_kind(name), "entries", name)
+        # any other name: the file says what it is
+        self.assertEqual(docsparse.file_kind("14-pass-two.md", self.TRAILED), "entries")
+        marked = self.TRAILED.replace("Scores per tab.", "> Kind: report\n\nScores per tab.")
+        self.assertEqual(docsparse.kind_reason("14-pass-two.md", marked), ("document", "declared"))
+        self.assertEqual(docsparse.lint("14-pass-two.md", marked), [])
+        self.assertEqual(docsparse.file_kind("14-pass-two.md", marked.replace("Kind: report", "kind: Document")), "document")
+        forced = self.TRAILED.replace("Scores per tab.", "> Kind: entries")
+        self.assertEqual(docsparse.kind_reason("13-app-audit.md", forced), ("entries", "declared"))
+        self.assertEqual(len(docsparse.parse_file("13-app-audit.md", forced)["entries"]), 17)
+        late = self.TRAILED + "\n" * 3 + "x" * 1600 + "\n> Kind: report\n"                  # (only near the top counts)
+        self.assertEqual(docsparse.file_kind("14-pass-two.md", late), "entries")
+
+    @unittest.skipUnless(os.environ.get("QUARK_DOCS_REPO"), "set QUARK_DOCS_REPO to a Claude Documents clone")
+    def test_real_trailer_heavy_13(self):
+        import subprocess
+        r = subprocess.run(["git", "-C", os.environ["QUARK_DOCS_REPO"], "show", "1ea948c:13-app-audit.md"], capture_output=True)
+        if r.returncode: self.skipTest("this clone has no commit 1ea948c")
+        text = r.stdout.decode("utf-8")
+        self.assertEqual(docsparse.file_kind("13-app-audit.md", text), "document")
+        self.assertEqual(docsparse.parse_file("13-app-audit.md", text)["entries"], [])
+
 
 class LintTests(unittest.TestCase):
     TEXT = ("# Possible bugs\n\n## Game\n\n"
@@ -80,7 +135,8 @@ class LintTests(unittest.TestCase):
     def test_notes_and_documents(self):
         self.assertEqual(docsparse.lint("08-other.md", "# Other\n\n- **Note.** No status here.\n"), [])
         report = "# 13\n\n" + "".join("- **[low] Item %d** detail\n" % i for i in range(6))
-        self.assertEqual([p["code"] for p in docsparse.lint("13-app-audit.md", report)], ["read-as-document"])
+        self.assertEqual([p["code"] for p in docsparse.lint("14-pass-two.md", report)], ["read-as-document"])
+        self.assertEqual(docsparse.lint("13-app-audit.md", report), [])                   # (a report by its name: nothing to say)
         gen = "# GitHub notes\n\n> Generated by the GitHub Manager.\n\nNo notes yet.\n"
         self.assertEqual(docsparse.lint("11-github-notes.md", gen), [])
         self.assertEqual(docsparse.lint("00-agent-rules.md", "# Rules\n\n- a rule\n"), [])
@@ -112,6 +168,110 @@ class WaitingTests(unittest.TestCase):
         s = serve.make_summary(d)
         self.assertEqual(s["waiting"]["read"], ["06-things-to-tell-the-user.md:n"])
         self.assertIn("answered", s["waiting"])
+
+
+class StatusNoteTests(unittest.TestCase):
+    def test_words_after_colon_are_the_note(self):
+        st = lambda t: docsparse.normalize_status(t)[0]
+        self.assertEqual(st("added in PR #70: Added a right-click menu (Open, Reload, Copy)"), "done")
+        self.assertEqual(st("implemented: x"), "done")
+        self.assertEqual(st("skipped in PR #70: needs Windows, still open"), "wontfix")
+        self.assertEqual(st("fixed in PR #70: was open"), "fixed")
+        self.assertEqual(st("q said: open it again"), "unknown")                   # (a status word only after the ':')
+        self.assertEqual(st("partly answered: rest open"), "answered")
+        self.assertEqual(st("not a bug: open question"), "wontfix")
+        t = "# Bugs\n\n## A\n\n- **One.** Body. _2026-10-24, T, added in PR #70: Open, Reload._\n"
+        e = docsparse.parse_file("01-known-bugs.md", t)["entries"][0]
+        self.assertEqual(e["status"], "done")
+        self.assertEqual([p["code"] for p in docsparse.lint("01-known-bugs.md", t)], ["odd-status"])   # read as done, said once
+
+
+class OwnerTextTests(unittest.TestCase):
+    def test_quoted_labels_and_pc(self):
+        w = lambda body: serve.waiting_on(entry("03-possible-bugs.md", "T", body=body), [])[0]
+        self.assertEqual(w("Windows-specific behaviour (needs q's PC)."), ["claude"])
+        self.assertEqual(w("The item should 'stay in Needs q' until it is done."), ["claude"])
+        self.assertEqual(w("The tile says \"needs q\" twice."), ["claude"])
+        self.assertEqual(w("This needs q to pick a colour."), ["owner"])
+        self.assertEqual(w("Waiting on the owner's push."), ["owner", "push"])
+
+
+@unittest.skipUnless(HAVE_GIT, "needs git")
+class AnsweredOnceTests(unittest.TestCase):
+    """An 06 item q answered in 09 is one item waiting on a Claude, not two; /api/summary keeps 'nobody' apart."""
+    def test_counted_once(self):
+        tmp = tempfile.mkdtemp(prefix="docsmgr-ans-")
+        try:
+            mgr, d = build_from({
+                "06-things-to-tell-the-user.md": "# Tell\n\n## News\n\n- **Bots-only servers pause.** They pause. _2026-10-24, Bot editor, open_\n",
+                "09-answers-from-q.md": "# Answers\n\n## Answers\n\n- **Bots-only servers pause.** Fine. Question in 06. _2026-10-24 10:00 CT, q, open_\n",
+                "03-possible-bugs.md": "# Bugs\n\n## Game\n\n- **Rocket jump.** Seen once. _2026-10-24, Bot editor, open_\n",
+                "02-currently-working-on.md": "# Working\n\n## In progress\n\n- **Bot sim.** On it. _2026-10-24, Bot editor, in-progress_\n"}, tmp)
+            mgr.mirror.close()
+            by = {e["id"]: e for e in d["entries"]}
+            orig, ans = by["06-things-to-tell-the-user.md:bots-only-servers-pause"], by["09-answers-from-q.md:bots-only-servers-pause"]
+            self.assertEqual((orig["waitingOn"], orig["answerId"]), (["answered"], ans["id"]))
+            self.assertEqual((ans["waitingOn"], ans["answerOf"]), (["none"], orig["id"]))
+            self.assertIn("Bots-only servers pause", ans["waitingWhy"])
+            w = serve.make_summary(d)["waiting"]
+            self.assertEqual(w["answered"], [orig["id"]])
+            self.assertEqual(w["claude"], ["02-currently-working-on.md:bot-sim"])
+            self.assertEqual(w["nobody"], ["03-possible-bugs.md:rocket-jump"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+@unittest.skipUnless(HAVE_GIT, "needs git")
+class RefreshAndGzipTests(unittest.TestCase):
+    """POST /api/refresh?wait=1 answers once the new commit is built (the page reloads once, not at 0 / 2 / 6 s);
+    /api/data is sent gzipped to a client that takes it."""
+    def test_refresh_waits_and_gzip(self):
+        tmp = tempfile.mkdtemp(prefix="docsmgr-ref-")
+        srv = mgr = None
+        try:
+            mgr, _ = build_from({"03-possible-bugs.md": "# Bugs\n\n## Game\n\n- **One.** Body. _2026-10-24, T, open_\n"}, tmp)
+            ref = serve.Refresher(mgr, 1e9, 1e9)
+            ref.start(); ref.ready.wait(20)
+            with socket.socket() as so:
+                so.bind(("127.0.0.1", 0)); port = so.getsockname()[1]
+            srv = serve.http.server.ThreadingHTTPServer(("127.0.0.1", port), serve.make_handler(mgr, ref, port, True))
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+            def req(method, path, headers=None):
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=40)
+                c.request(method, path, headers=headers or {})
+                r = c.getresponse(); body = r.read(); c.close()
+                return r.status, dict(r.getheaders()), body
+            repo = os.path.join(tmp, "repo")
+            with open(os.path.join(repo, "03-possible-bugs.md"), "a") as f: f.write("- **Two.** Body. _2026-10-24, T, open_\n")
+            subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qam", "two"], check=True)
+            head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+            st, _, body = req("POST", "/api/refresh?wait=1")
+            r = json.loads(body)
+            self.assertEqual((st, r["done"], r["mirrorHead"]), (200, True, head))
+            st, hd, body = req("GET", "/api/data", {"Accept-Encoding": "gzip, deflate"})
+            self.assertEqual((st, hd.get("Content-Encoding"), hd.get("ETag")), (200, "gzip", r["etag"]))
+            d = json.loads(gzip.decompress(body))
+            self.assertEqual(sorted(e["title"] for e in d["entries"]), ["One.", "Two."])
+            st, hd, plain = req("GET", "/api/data")
+            self.assertIsNone(hd.get("Content-Encoding"))
+            self.assertEqual(json.loads(plain)["mirrorHead"], head)
+            self.assertLess(len(body), len(plain))
+            self.assertEqual(req("POST", "/api/refresh")[0], 202)                         # (no wait: as before)
+        finally:
+            if srv: srv.shutdown(); srv.server_close()
+            if mgr: mgr.mirror.close()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestsReasonTests(unittest.TestCase):
+    def test_whole_sentences(self):
+        why = lambda t, b: serve.waiting_on(entry("03-possible-bugs.md", t, body=b), [])[1]
+        self.assertEqual(why("CI flakes seen on testing:", "netcode input backlog."), "Tests: CI flakes seen on testing.")
+        w = why("Shortcuts run smaller sets", "than the group\n(tests.cpp ~6750); reproducing a CI failure can skip it.")
+        self.assertTrue(w.startswith("Tests: Shortcuts run smaller sets than the group (tests.cpp ~6750); reproducing"), w)
+        self.assertFalse(w.endswith(".."), w)
+        self.assertEqual(serve._prose(["Title.", "Body\nwrapped", None, "open"]), "Title.\nBody wrapped open")
 
 
 class BlocksTests(unittest.TestCase):

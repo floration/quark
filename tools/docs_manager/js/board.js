@@ -51,13 +51,38 @@
         Date.parse((e.lastChanged || {}).time || '') > since).sort(sortE)});
     }
     if (empty.length) tools.append(h('span', {class: 'faint', title: 'Columns with nothing in them right now'}, 'Empty: ' + empty.map(c => c.w.label).join(', ')));
-    const grid = h('div', {class: 'kanban', style: {gridTemplateColumns: 'repeat(' + cols.length + ', minmax(0, 1fr))'}});
-    for (const {w, list} of cols) {
-      grid.appendChild(h('div', {class: 'kcol ' + w.cls + (list.length ? '' : ' empty'), title: w.key === 'halt' ? 'HALT items: a Claude agent can’t continue until you act' : null},
+    // On a wide screen with few columns, a grouped (long) column takes two tracks and lays its groups out side by side,
+    // so the board uses the width instead of one long column.
+    const wideCol = c => c.list.length > GROUP_AT && cols.length <= 5 && ($('#boardScroll').clientWidth || innerWidth) >= 1800;
+    const tracks = cols.reduce((n, c) => n + (wideCol(c) ? 2 : 1), 0);
+    const grid = h('div', {class: 'kanban', style: {gridTemplateColumns: 'repeat(' + tracks + ', minmax(0, 1fr))'}});
+    for (const c of cols) {
+      const {w, list} = c;
+      grid.appendChild(h('div', {class: 'kcol ' + w.cls + (list.length ? '' : ' empty') + (wideCol(c) ? ' wide' : ''), title: w.key === 'halt' ? 'HALT items: a Claude agent can’t continue until you act' : null},
         h('div', {class: 'kcol-h'}, h('span', null, w.label), h('b', null, String(list.length))),
-        list.length ? list.map(miniCard) : h('div', {class: 'faint kempty'}, w.key === 'halt' ? 'no Claude is stopped' : 'nothing')));
+        list.length ? (list.length > GROUP_AT ? h('div', {class: 'kgrps'}, colBody(w.key, list)) : colBody(w.key, list)) : h('div', {class: 'faint kempty'}, w.key === 'halt' ? 'no Claude is stopped' : 'nothing')));
     }
     body.appendChild(grid);
+  }
+  // A long column (Nobody yet held 300 cards beside nearly empty ones) is grouped by file, GROUP_CAP cards each (by
+  // priority, then newest) with "+ N more" to open that group; short columns list every card.
+  const GROUP_AT = 12, GROUP_CAP = 5;
+  const openGroups = new Set();   // 'column|file' shown in full (kept while the page is open)
+  function colBody(key, list) {
+    if (list.length <= GROUP_AT) return list.map(miniCard);
+    const byFile = new Map();
+    for (const e of list) { if (!byFile.has(e.file)) byFile.set(e.file, []); byFile.get(e.file).push(e); }
+    const files = [...byFile.keys()].sort((a, b) => byFile.get(b).length - byFile.get(a).length || a.localeCompare(b));
+    return files.map(f => {
+      const fl = byFile.get(f), gk = key + '|' + f, all = openGroups.has(gk) || fl.length <= GROUP_CAP + 1;
+      const box = h('div', {class: 'kgrp'});
+      DM.append(box, [h('div', {class: 'kgrp-h'}, h('span', null, DM.fileTitle(f)), h('span', {class: 'faint'}, String(fl.length))),
+        (all ? fl : fl.slice(0, GROUP_CAP)).map(miniCard),
+        all ? (fl.length > GROUP_CAP + 1 ? h('button', {class: 'linkish kgrp-more', onclick: () => { openGroups.delete(gk); draw(); }}, 'Show fewer') : null) :
+          h('button', {class: 'linkish kgrp-more', title: 'Show every card of this file in this column', onclick: () => { openGroups.add(gk); draw(); }},
+            '+ ' + (fl.length - GROUP_CAP) + ' more')]);
+      return box;
+    });
   }
 
   const SUBS = {kanban: {render: kanban}};
