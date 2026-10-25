@@ -75,8 +75,9 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
   timeline with speed, trails, per-bot toggles and event markers). The tabs are Properties, Map, Tests, Bots, Player
   and Decor.
 - **Library** (left, under the outliner):
-  - **copy / paste** (Ctrl+C / Ctrl+V): copies the selection (boxes, groups, ladders, lights, spawns, bot starts,
-    custom objects) to a clipboard that survives opening another map (kept by the server in `clipboard.json`, and put
+  - **copy / paste** (Ctrl+C / Ctrl+V): copies the selection (every kind: boxes, groups, ladders, lights, spawns,
+    objective zones, the hill, path points, stairs records, custom objects, bot starts, player figures; a pasted hill
+    replaces the map's) to a clipboard that survives opening another map (kept by the server in `clipboard.json`, and put
     on the system clipboard as JSON `{"format":"quark-map-group",...}`, so it pastes into another editor window too).
     Paste puts it at the cursor (or the view's centre), snapped to the grid, as one undo step, and selects it.
   - **+ group**: saves the selection in the library under a name; click a saved group to paste it.

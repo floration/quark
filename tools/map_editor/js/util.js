@@ -27,6 +27,8 @@ export class Emitter {
 }
 
 export const fmt = (v, d = 3) => (Math.round(v * 10 ** d) / 10 ** d).toString();
+// "1 box", "2 boxes", "3 objects" (words ending in s / x / ch / sh take -es)
+export const plural = (n, word) => n + " " + word + (n === 1 ? "" : /(s|x|ch|sh)$/.test(word) ? "es" : "s");
 export const fmtS = (v) => v === null || v === undefined || !isFinite(v) ? "-" : v.toFixed(1) + " s";
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const snap = (v, g) => Math.round(v / g) * g;

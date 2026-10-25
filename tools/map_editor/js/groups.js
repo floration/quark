@@ -1,51 +1,63 @@
-// Groups you copy between maps, and the library. Copy (Ctrl+C) takes the selection (boxes, groups, spawns, lights,
-// ladders, objective zones, stairs records, custom objects) with positions relative to its bounds; Paste (Ctrl+V)
-// puts it at the cursor, or the view's centre, as one undo step. The clipboard is kept by the server
-// (clipboard.json: it survives opening another map and restarts) and is also put on the system clipboard as JSON,
-// so it pastes into another editor window too. The library (left panel) keeps named groups and custom objects
-// (repeat.js) on disk: library/<name>.json next to serve.py, plus the shipped library_presets/.
+// Groups you copy between maps, and the library. Copy (Ctrl+C) takes the selection (every kind of object: boxes,
+// groups, spawns, lights, ladders, objective zones, the hill, payload path points, stairs records, custom objects, bot
+// starts, player figures) with positions relative to its bounds; Paste (Ctrl+V) puts it at the cursor, or the view's
+// centre, as one undo step. The clipboard is kept by the server (clipboard.json: it survives opening another map and
+// restarts) and is also put on the system clipboard as JSON, so it pastes into another editor window too. The library
+// (left panel) keeps named groups and custom objects (repeat.js) on disk: library/<name>.json next to serve.py, plus
+// the shipped library_presets/.
 import { KINDS } from "./doc.js";
-import { el, fill, $, banner, dialog, prompt, check, numInput, validMapName, snap, tidy } from "./util.js";
+import { el, fill, $, banner, dialog, prompt, check, numInput, validMapName, snap, tidy, plural } from "./util.js";
 import { defFromBoxes, expandRepeat, repeatCounts, turnDef } from "./repeat.js";
 export { expandRepeat } from "./repeat.js";
 
 export const CLIP_FORMAT = "quark-map-group";
-const LISTS = { brush: "brushes", group: "groups", spawn: "spawns", light: "lights", ladder: "ladders", site: "sites", point: "points", checkpoint: "checkpoints", stairs: "stairs", object: "objects" };
+// selection kind -> the clipboard's field for it (every kind the editor selects). The hill is one value, not a list:
+// a pasted hill replaces the map's (a map has one)
+const LISTS = { brush: "brushes", group: "groups", spawn: "spawns", light: "lights", ladder: "ladders", site: "sites", point: "points", checkpoint: "checkpoints",
+  stairs: "stairs", object: "objects", path: "path", hill: "hill", botstart: "botStarts", figure: "figures" };
 const KIND_OF = Object.fromEntries(Object.entries(LISTS).map(([k, l]) => [l, k]));
 const keyOf = (list) => KINDS[KIND_OF[list]].key;
+const itemsOf = (c, l) => !c || !c[l] ? [] : KINDS[KIND_OF[l]].single ? [c[l]] : Array.isArray(c[l]) ? c[l] : [];
 
 // moves one object (a copy) by d, whatever its shape
-function shift(shape, o, d) {
+export function shift(shape, o, d) {
   if (shape === "box") { o.min = o.min.map((v, k) => tidy(v + d[k])); o.max = o.max.map((v, k) => tidy(v + d[k])); }
   else if (shape === "stairs") { o.x0 = tidy(o.x0 + d[0]); o.x1 = tidy(o.x1 + d[0]); o.z0 = tidy(o.z0 + d[2]); o.z1 = tidy(o.z1 + d[2]); o.base = tidy(o.base + d[1]); o.top = tidy(o.top + d[1]); }
   else if (shape === "arr") for (let k = 0; k < 3; k++) o[k] = tidy(o[k] + d[k]);
   else o.pos = o.pos.map((v, k) => tidy(v + d[k]));
 }
-// the selection as a clipboard group: {format, version, from, size, <list>: [objects relative to the bounds' min]}
+// the selection as a clipboard group: {format, version, from, size, origin, <list>: [objects relative to the bounds'
+// min]} (origin: where that min was, for Paste in place)
 export function copySelection(d) {
   const sel = d.sel.filter(s => LISTS[s.k]);
   if (!sel.length) return null;
   const bb = d.selBounds(sel), neg = bb.min.map(v => -v);
-  const out = { format: CLIP_FORMAT, version: 1, from: d.name || "", size: bb.max.map((v, k) => tidy(v - bb.min[k])) };
+  const out = { format: CLIP_FORMAT, version: 1, from: d.name || "", size: bb.max.map((v, k) => tidy(v - bb.min[k])), origin: bb.min.map(tidy) };
   for (const s of sel) {
-    const o = structuredClone(d.obj(s));
+    const o = structuredClone(d.obj(s)), l = LISTS[s.k];
     shift(KINDS[s.k].shape, o, neg);
-    (out[LISTS[s.k]] = out[LISTS[s.k]] || []).push(o);
+    if (KINDS[s.k].single) out[l] = o; else (out[l] = out[l] || []).push(o);
   }
   return out;
 }
-export const clipCount = (c) => Object.keys(LISTS).reduce((n, k) => n + ((c && c[LISTS[k]]) || []).length, 0);
+export const clipCount = (c) => Object.values(LISTS).reduce((n, l) => n + itemsOf(c, l).length, 0);
 export const isClip = (c) => !!c && c.format === CLIP_FORMAT && Array.isArray(c.size) && clipCount(c) > 0;
-// pastes a clipboard group with its floor's centre at `at` (snapped to the grid): one undo step, the copies selected
-export function pasteGroup(d, clip, at, grid = 0.125) {
+// the min corner a paste at `at` puts the group's bounds at: its floor's centre on `at`, snapped to the grid
+export function pasteBase(clip, at, grid = 0.125) { return [snap(at[0] - clip.size[0] / 2, grid), tidy(at[1]), snap(at[2] - clip.size[2] / 2, grid)]; }
+// pastes a clipboard group with its bounds' min corner at `base` (pasteBase: at the cursor; clip.origin: in place):
+// one undo step, the copies selected
+export function pasteGroup(d, clip, base) {
   if (!isClip(clip)) return [];
-  const base = [snap(at[0] - clip.size[0] / 2, grid), tidy(at[1]), snap(at[2] - clip.size[2] / 2, grid)];
-  const lists = Object.values(LISTS).filter(l => Array.isArray(clip[l]) && clip[l].length);
+  const lists = Object.values(LISTS).filter(l => itemsOf(clip, l).length);
   const added = [];
-  d.edit("paste " + clipCount(clip) + " objects", lists.map(keyOf), () => {
+  d.edit("paste " + plural(clipCount(clip), "object"), lists.map(keyOf), () => {
     for (const l of lists) {
-      const arr = d.get(keyOf(l)), shape = KINDS[KIND_OF[l]].shape;
-      for (const o of clip[l]) { const c = structuredClone(o); shift(shape, c, base); arr.push(c); added.push({ k: KIND_OF[l], i: arr.length - 1 }); }
+      const kind = KIND_OF[l], K = KINDS[kind];
+      for (const o of itemsOf(clip, l)) {
+        const c = structuredClone(o); shift(K.shape, c, base);
+        if (K.single) { d.put(K.key, c); added.push({ k: kind, i: 0 }); continue; }
+        const arr = d.get(K.key); arr.push(c); added.push({ k: kind, i: arr.length - 1 });
+      }
     }
   }, { touch: [] });
   d.select(added);
@@ -90,7 +102,7 @@ export class Library {
     this.clip = c;
     this.api.setClipboard(c).catch(e => banner("The clipboard wasn't kept: " + e.message, true));
     if (!quiet && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(JSON.stringify(c)).catch(() => {});
-    banner("Copied " + clipCount(c) + " objects: Ctrl+V pastes them here or in another map", false, 3000);
+    banner("Copied " + plural(clipCount(c), "object") + ": Ctrl+V pastes them here or in another map", false, 3000);
     this.render();
     return c;
   }
@@ -99,8 +111,8 @@ export class Library {
     if (!c) { try { const s = await this.api.clipboard(); if (isClip(s)) c = this.clip = s; } catch { /* (no server clipboard) */ } }
     if (!isClip(c)) { banner("Nothing copied yet: select objects and Copy (Ctrl+C)", true, 3000); return; }
     if (this.doc.readOnly) this.app.readOnlyNote();
-    pasteGroup(this.doc, c, this.app.editor.pastePoint(), this.app.editor.grid);
-    banner("Pasted " + clipCount(c) + " objects" + (c.from ? " from " + c.from : ""), false, 2500);
+    pasteGroup(this.doc, c, pasteBase(c, this.app.editor.pastePoint(), this.app.editor.grid));
+    banner("Pasted " + plural(clipCount(c), "object") + (c.from ? " from " + c.from : ""), false, 2500);
   }
 
   // ---- the library
@@ -119,7 +131,7 @@ export class Library {
     const c = copySelection(this.doc);
     if (!c) { banner("Select the objects to keep as a group", true, 2500); return; }
     const name = await this.askName("Save the selection as a group", "group");
-    if (name) await this.put(name, { kind: "group", name, note: clipCount(c) + " objects from " + (this.doc.name || "a new map"), clip: c });
+    if (name) await this.put(name, { kind: "group", name, note: plural(clipCount(c), "object") + " from " + (this.doc.name || "a new map"), clip: c });
   }
   // a custom object from the selected boxes (and the parts of selected groups): its unit, the axes it repeats along
   async makeObject() {
@@ -168,7 +180,7 @@ export class Library {
   stampAt(s) {
     const item = this.app.editor.stamp, d = this.doc, ed = this.app.editor;
     if (!item) return;
-    if (item.kind === "group") { pasteGroup(d, item.clip, s.p, ed.grid); return; }
+    if (item.kind === "group") { pasteGroup(d, item.clip, pasteBase(item.clip, s.p, ed.grid)); return; }
     const def = item.def, p = s.p, g = ed.grid;
     const min = [snap(p[0] - def.unit[0] / 2, g), tidy(p[1]), snap(p[2] - def.unit[2] / 2, g)];
     let at = -1;
@@ -187,7 +199,7 @@ export class Library {
     const rows = [];
     const c = this.clip;
     rows.push(el("div", { class: "row faint", title: "Ctrl+C copies the selection, Ctrl+V pastes it (here or in another map)" },
-      el("span", {}, c ? "clipboard: " + clipCount(c) + " objects" + (c.from ? " from " + c.from : "") : "clipboard: empty")));
+      el("span", {}, c ? "clipboard: " + plural(clipCount(c), "object") + (c.from ? " from " + c.from : "") : "clipboard: empty")));
     const groups = this.items.filter(x => x.kind === "group"), objs = this.items.filter(x => x.kind === "object");
     const row = (x, sub) => rows.push(el("div", { class: "row", title: (x.note || "") + (x.builtin ? "\n(shipped with the editor)" : "\nlibrary/" + x.file + ".json"), onclick: () => this.arm(x) },
       el("span", { class: "mname" }, x.name || x.file), el("span", { class: "sub" }, sub),
@@ -195,7 +207,7 @@ export class Library {
     rows.push(el("div", { class: "grp" }, "Custom objects (" + objs.length + ")"));
     for (const x of objs) row(x, ["x", "y", "z"].filter((_, k) => x.def && x.def.axes[k]).join("") + " every " + (x.def ? x.def.spacing.filter((_, k) => x.def.axes[k]).join("/") : "?") + " m");
     rows.push(el("div", { class: "grp" }, "Groups (" + groups.length + ")"));
-    for (const x of groups) row(x, clipCount(x.clip) + " objects");
+    for (const x of groups) row(x, plural(clipCount(x.clip), "object"));
     if (!groups.length) rows.push(el("div", { class: "row faint" }, "none yet: select, then + group"));
     fill(this.listEl, ...rows);
   }

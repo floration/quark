@@ -129,7 +129,7 @@ if (G) {
   ok(clip.brushes[0].min[0] === 1.4 && clip.spawns[0].pos[0] === 0.4, "positions relative to the selection's bounds (the spawn's hull starts at x -0.4)");
   const d2 = open(bigMap(2));
   const n0 = d2.map.brushes.length;
-  G.pasteGroup(d2, clip, [100, 0, 100]);
+  G.pasteGroup(d2, clip, G.pasteBase(clip, [100, 0, 100]));
   ok(d2.map.brushes.length === n0 + 2 && d2.map.lights.length === 1 && d2.map.spawns.length === 3, "pasted into another map");
   ok(d2.sel.length === 4, "the pasted objects are selected");
   ok(d2.undoStack.length === 1, "one undo step");
@@ -137,6 +137,24 @@ if (G) {
   ok(Math.abs(bb.min[0] - 100) < 1e-6 || Math.abs((bb.min[0] + bb.max[0]) / 2 - 100) < 2, "at the paste point");
   d2.undo();
   ok(d2.map.brushes.length === n0 && d2.map.lights.length === 0 && d2.map.spawns.length === 2, "one undo takes the paste out");
+  // every kind copies: bot starts, player figures, path points and the hill too (the hill replaces the map's)
+  {
+    const d4 = open(bigMap(3));
+    d4.sidecar.botStarts.push({ pos: [1, 0, 1], yaw: 0, team: "a" });
+    d4.sidecar.figures.push({ pos: [2, 0, 1], yaw: 0, model: "hull" });
+    d4.map.hill = { min: [0, 0, 0], max: [4, 3, 4] };
+    const kinds = [["brush", 0], ["spawn", 0], ["botstart", 0], ["figure", 0], ["path", 1], ["hill", 0]];
+    d4.select(kinds.map(([k, i]) => ({ k, i })));
+    const c4 = G.copySelection(d4);
+    ok(G.clipCount(c4) === 6 && c4.botStarts.length === 1 && c4.figures.length === 1 && c4.path.length === 1 && c4.hill && !Array.isArray(c4.hill), "copied 6 objects of 6 kinds (the hill as one value)");
+    const d5 = open(bigMap(2)); d5.map.hill = null;
+    G.pasteGroup(d5, JSON.parse(JSON.stringify(c4)), G.pasteBase(c4, [50, 0, 50]));
+    ok(d5.sidecar.botStarts.length === 1 && d5.sidecar.figures.length === 1 && d5.map.path.length === 4 && d5.map.hill && d5.map.hill.min[0] > 40, "pasted bot start, figure, path point and hill");
+    ok(d5.sel.length === 6 && d5.sel.some(s => s.k === "hill"), "all six selected");
+    d5.undo();
+    ok(d5.sidecar.botStarts.length === 0 && d5.sidecar.figures.length === 0 && d5.map.path.length === 3 && d5.map.hill === null, "one undo takes them all out");
+    ok(eq(c4.origin, d4.selBounds().min), "the clipboard keeps where it came from (paste in place)");
+  }
   // repeat objects: a 1 m unit repeated along x
   const def = { name: "post", unit: [1, 1, 1], spacing: [2, 0, 0], axes: [true, false, false], boxes: [{ mat: 3, min: [0, 0, 0], max: [0.5, 1, 0.5] }] };
   const boxes = G.expandRepeat(def, { min: [0, 0, 0], max: [6, 1, 1] });
