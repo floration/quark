@@ -58,4 +58,11 @@ calls.clear()
 with contextlib.redirect_stdout(io.StringIO()):
     install.main(['--dest', os.path.join(tmp, 'dest'), '--extract-if-stale'])
 assert calls == ['build'], calls
+# a fresh dump whose screenshots are not on this PC: extracted once (they come with the extract)
+build.main = lambda argv: calls.append('build') or {'freshness': {'stale': False}, 'shots': 0, 'shotsWanted': 121}
+fake.main = lambda argv: calls.append('extract')
+calls.clear()
+with contextlib.redirect_stdout(io.StringIO()):
+    install.main(['--dest', os.path.join(tmp, 'dest'), '--extract-if-stale'])
+assert calls == ['build', 'extract', 'build'], calls
 print('freshness tests passed (and install.py --extract-if-stale)')

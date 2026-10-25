@@ -13,7 +13,8 @@ deletes or rewrites the owner's files there (provenance.json, saved / exported l
 --extract first regenerates <dest>/extract (dump + screenshots) from this checkout's game source: it needs a game build
 (git, cmake, MinGW-w64; about 8 minutes, a hidden window): extract/extract.py. --extract-if-stale (what the Quark Project
 app runs, at low priority) does that only when the build finds the dump out of date (commits changed src/client since
-its commit), then builds again; without a toolchain, or when the extract fails, the page is kept as built (with its
+its commit) or this PC has no reference screenshots of it (the Screenshot overlay; they are not committed), then builds
+again; without a toolchain, or when the extract fails, the page is kept as built (with its
 out-of-date banner) and the install still succeeds, so the app doesn't retry an 8-minute job on every start. Python 3
 standard library only. Exit 0 = installed."""
 import argparse, datetime, json, os, subprocess, sys, webbrowser
@@ -90,8 +91,10 @@ def main(argv=None):
     import build
     info = build.main(['--out-dir', dest]) or {}
     fresh = info.get('freshness') or {}
-    if a.extract_if_stale and not a.extract and fresh.get('stale'):
-        print(f"  the UI dump is out of date ({fresh['why']}): regenerating it (about 8 minutes, a hidden window)")
+    no_shots = bool(info.get('shotsWanted')) and not info.get('shots')
+    if a.extract_if_stale and not a.extract and (fresh.get('stale') or no_shots):
+        why = f"the UI dump is out of date ({fresh['why']})" if fresh.get('stale') else "this PC has no reference screenshots of the dump"
+        print(f"  {why}: regenerating it (about 8 minutes, a hidden window)")
         if extract_dump(dest):
             info = build.main(['--out-dir', dest]) or {}
             fresh = info.get('freshness') or {}

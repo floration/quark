@@ -548,6 +548,8 @@ def main(argv=None):
     args.out = os.path.abspath(args.out or os.path.join(OUT_DIR, "ui-customizer.html"))
 
     dump, dump_name, is_sample = load_dump(args.dump)
+    shot_pages = lambda: sum(1 for p in (dump or {}).get("pages") or [] if p.get("screenshot"))
+    shots_wanted = shot_pages()
     shots = check_shots(dump)
     font = find_font(dump)
     cat, font_files, notes = font_trials(font)
@@ -557,6 +559,7 @@ def main(argv=None):
     fresh = freshness(dump) if not is_sample else None
     info = {
         "dump": dump_name, "sample": is_sample, "freshness": fresh, "origins": game_origins(),
+        "shots": shot_pages(), "shotsWanted": shots_wanted,   # (pages with a reference screenshot on this PC / in the dump)
         "font": rel(font) if font else None,
         "built": datetime.datetime.now().isoformat(timespec="seconds"),
     }

@@ -21,8 +21,8 @@ and never deletes or rewrites anything else in that folder (the owner's provenan
 `install.py --extract` first regenerates the dump and the screenshots from this checkout's game source (below). The
 screenshots (about 15 MB) are not committed: without them the page works the same, minus the reference-screenshot
 overlay.
-`install.py --extract-if-stale` (what the app runs, at low priority) does that only when the dump is out of date (below),
-then builds again: the dump follows the game without anyone running a command. Without the game's build tools, or when
+`install.py --extract-if-stale` (what the app runs, at low priority) does that only when the dump is out of date (below)
+or this PC has no screenshots of it yet, then builds again: the dump follows the game without anyone running a command. Without the game's build tools, or when
 the extract fails, the page is built from the old dump (red banner) and the install still succeeds.
 
 **Out-of-date dump.** build.py counts the commits that changed `src/client` since the dump's commit. When there are
