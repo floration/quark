@@ -2,7 +2,7 @@
 import { el, fill, $, numInput, select, check, fmt, tidy, rgbHex, hexRgb, plural } from "./util.js";
 import { KINDS, objectiveName } from "./doc.js";
 import { LIMITS } from "./validate.js";
-import { repeatCounts, repeatLen, capAxis } from "./repeat.js";
+import { repeatCounts, repeatLen, capAxis, sameDef } from "./repeat.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 export const TEAMS = ["a", "b", "any", "race", ...Array.from({ length: 10 }, (_, i) => "att" + i), ...Array.from({ length: 10 }, (_, i) => "def" + i)];
@@ -196,7 +196,12 @@ export class Panels {
           el("button", { class: "mini", disabled: !!noCap, title: noCap || "the piece after the last unit, e.g. a railing's closing post (build or change it as plain boxes, then Done)", onclick: () => L.editPart(s.i, "end") }, "end piece"))));
         add(this.field("", el("div", { class: "btnrow" },
           el("button", { class: "mini", title: "turn it into plain boxes (no longer a custom object)", onclick: () => this.app.library.explode(s.i) }, "make plain boxes"),
-          el("button", { class: "mini", title: "save its definition (with this spacing) in the library", onclick: () => this.app.library.saveDef(o.def) }, "save to library"))));
+          el("button", { class: "mini", title: "save its definition (with this spacing and pieces) in the library" + (o.lib ? " as " + o.lib + " (and, asked, to every placed copy)" : ""), onclick: () => L.saveDef(s.i) }, "save to library"))));
+        if (o.lib) {
+          const it = L.item(o.lib), same = it && sameDef(o.def, it.def);
+          add(this.field("library", el("div", { class: "btnrow" }, el("span", { class: it ? (same ? "dim" : "warn") : "faint" }, o.lib + (it ? (same ? " (the same)" : " (differs from the library)") : " (not in the library)")),
+            it && !same ? el("button", { class: "mini", title: "every placed copy of " + o.lib + " in this map takes the library's definition (same place, turn and units)", onclick: () => L.updateFromLibrary(o.lib) }, "update from library") : null)));
+        }
         break;
       }
       case "ladder": add(this.field("", check("draws its rails and rungs (auto)", o.auto, v => this.set("ladder auto", s, x => { x.auto = v; })))); boxFields(); break;

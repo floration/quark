@@ -230,6 +230,19 @@ section("custom objects: start / end pieces, editing a part in place");
   ok(R.withPart(o, "unit", []) === null, "a unit can't be empty");
 }
 
+section("linked library objects and plurals");
+{
+  const R = await import(pathToFileURL(path.join(tmp, "repeat.js")));
+  const U = await import(pathToFileURL(path.join(tmp, "util.js")));
+  ok(U.plural(1, "box") === "1 box" && U.plural(2, "box") === "2 boxes" && U.plural(3, "placed copy") === "3 placed copies" && U.plural(0, "object") === "0 objects", "plural()");
+  const def = { name: "p", unit: [1, 1, 1], axes: [true, false, false], spacing: [2, 1, 1], boxes: [{ mat: 0, min: [0, 0, 0], max: [0.5, 1, 0.5] }] };
+  const o = { name: "p", def, rot: 1, min: [0, 0, 0], max: [1, 1, 7], lib: "p" };
+  ok(R.sameDef(def, { ...def, name: "other" }), "sameDef ignores the name");
+  const def2 = { ...def, unit: [1, 2, 1], spacing: [3, 2, 1], boxes: [{ mat: 1, min: [0, 0, 0], max: [1, 2, 1] }] };
+  const o2 = R.relink(o, def2);
+  ok(o2.rot === 1 && eq(o2.min, [0, 0, 0]) && eq(R.repeatCounts(R.turnDef(def2, 1), o2), [1, 1, 4]) && o2.max[2] === 10 && o2.max[1] === 2 && o2.lib === "p", "relinked: same place, turn and 4 units, the new spacing");
+}
+
 section("flips and the point-symmetric twin (xform.js)");
 {
   const X = await import(pathToFileURL(path.join(tmp, "xform.js")));

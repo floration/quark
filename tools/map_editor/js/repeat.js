@@ -153,3 +153,13 @@ export function withPart(o, part, boxes) {
   const min = o.min.slice(); if (part === "start") min[a] = org[a];
   return { ...o, def, rot: 0, ...fitBox(def, { min }, n) };
 }
+
+// ---- linked library objects: a placed object remembers the library item it came from (object.lib)
+const defKey = (def) => { const { name, ...rest } = def || {}; return JSON.stringify(rest); };
+// the object's definition is the library item's (names aside)
+export const sameDef = (a, b) => defKey(a) === defKey(b);
+// the object with a new definition: the same place, turn and number of units
+export function relink(o, def) {
+  const n = repeatCounts(turnDef(o.def, o.rot || 0), o);
+  return { ...o, def: structuredClone(def), ...fitBox(turnDef(def, o.rot || 0), { min: o.min }, n) };
+}

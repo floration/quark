@@ -7,7 +7,7 @@
 // the shipped library_presets/.
 import { KINDS } from "./doc.js";
 import { el, fill, $, banner, dialog, prompt, check, numInput, validMapName, snap, tidy, plural } from "./util.js";
-import { defFromBoxes, expandRepeat, fitBox, repeatCounts, turnDef, partBoxes, withoutPiece, withPart } from "./repeat.js";
+import { defFromBoxes, expandRepeat, fitBox, repeatCounts, turnDef, partBoxes, withoutPiece, withPart, sameDef, relink } from "./repeat.js";
 export { expandRepeat } from "./repeat.js";
 
 export const CLIP_FORMAT = "quark-map-group";
@@ -65,14 +65,14 @@ export function pasteGroup(d, clip, base) {
 }
 
 // the selected boxes and groups replaced by a custom object of definition `def` made from them (`boxes`: their boxes),
-// one unit big, so it is exactly those boxes: one undo step, the object selected
-export function replaceWithObject(d, name, def, boxes) {
+// one unit big, so it is exactly those boxes (lib: the library item it is linked to): one undo step, the object selected
+export function replaceWithObject(d, name, def, boxes, lib = undefined) {
   const mn = [0, 1, 2].map(k => Math.min(...boxes.map(b => b.min[k]))), goneB = new Set(d.selOf("brush")), goneG = new Set(d.selOf("group"));
   let at = -1;
   d.edit("make custom object " + name, ["brushes", "groups", "sc.objects"], (map, sc) => {
     if (goneB.size) map.brushes = map.brushes.filter((_, i) => !goneB.has(i));
     if (goneG.size) map.groups = map.groups.filter((_, i) => !goneG.has(i));
-    sc.objects.push({ name, def, rot: 0, ...fitBox(def, { min: mn }, [1, 1, 1]) }); at = sc.objects.length - 1;
+    sc.objects.push({ name, def, rot: 0, ...fitBox(def, { min: mn }, [1, 1, 1]), ...(lib ? { lib } : {}) }); at = sc.objects.length - 1;
   }, { touch: [] });
   d.select([{ k: "object", i: at }]);
   return at;
@@ -103,7 +103,8 @@ export class Library {
       e.preventDefault();
       this.paste(c);
     });
-    this.doc.on("open", () => { this.editing = null; });
+    this.doc.on("open", () => { this.editing = null; this.render(); });
+    this.doc.on("map", (keys, live) => { if (!live && keys && keys.includes("sc.objects")) this.render(); });   // (the "update N" buttons)
     this.load();
   }
   async load() {
@@ -137,12 +138,18 @@ export class Library {
     try { await this.api.putLibrary(name, item); await this.load(); banner("Saved " + name + " in the library", false, 2500); }
     catch (e) { banner(e.message, true); }
   }
-  async askName(title, def) {
+  async askName(title, def, linked = null) {
     const n = await prompt(title, def, "1-40 letters, digits, - and _ (library/<name>.json next to serve.py)");
     if (n === null) return null;
     if (!validMapName(n)) { banner("A name is 1-40 letters, digits, - and _", true); return null; }
-    if (this.items.some(x => x.file === n && !x.builtin) && !confirm(n + " is in the library: replace it?")) return null;
-    return n;
+    return this.nameFree(n, linked) ? n : null;
+  }
+  // a library name may be used: asks before hiding a shipped item or replacing one of yours (other than `linked`)
+  nameFree(n, linked = null) {
+    const had = this.items.find(x => x.file === n);
+    if (had && had.builtin) return confirm(n + " is a shipped " + had.kind + ": yours will hide it in the library (delete yours to get it back). Use this name?");
+    if (had && n !== linked) return confirm(n + " is in the library: replace it?");
+    return true;
   }
   async saveGroup() {
     const c = copySelection(this.doc);
@@ -171,11 +178,37 @@ export class Library {
     const n = name.value.trim() || "object";
     if (!validMapName(n)) { banner("A name is 1-40 letters, digits, - and _", true); return; }
     if (!axes.some(Boolean)) { banner("Tick at least one axis to repeat along", true); return; }
+    if (!this.nameFree(n)) return;
     const made = defFromBoxes(n, boxes, axes, sp);
-    if (replace) replaceWithObject(d, n, made, boxes);
+    if (replace) replaceWithObject(d, n, made, boxes, n);
     await this.put(n, { kind: "object", name: n, def: made });
   }
-  saveDef(def) { this.askName("Save this object in the library", def.name || "object").then(n => n && this.put(n, { kind: "object", name: n, def: { ...def, name: n } })); }
+  // ---- linked objects: object.lib names the library item it was placed from (or saved as)
+  item(file) { return this.items.find(x => x.file === file && x.kind === "object"); }
+  // the placed objects of library item `file` in this map whose definition is not the library's
+  stale(file) { const it = this.item(file); return it ? (this.doc.sidecar.objects || []).map((o, i) => ({ o, i })).filter(x => x.o.lib === file && !sameDef(x.o.def, it.def)) : []; }
+  copiesOf(file) { return (this.doc.sidecar.objects || []).filter(o => o.lib === file).length; }
+  // every placed copy of `file` in this map takes the library's definition (same place, turn and units): one step
+  updateFromLibrary(file) {
+    const it = this.item(file), list = this.stale(file); if (!it || !list.length) return 0;
+    this.doc.edit("update " + plural(list.length, it.name || file) + " from the library", ["sc.objects"], (m, sc) => { for (const x of list) sc.objects[x.i] = relink(x.o, { ...it.def, name: it.name || file }); }, { touch: [] });
+    banner("Updated " + plural(list.length, "placed copy") + " of " + (it.name || file) + " from the library", false, 3000);
+    return list.length;
+  }
+  // object i's definition saved in the library (under its linked name, or a new one) and, asked, to every other copy
+  async saveDef(i) {
+    const d = this.doc, o = d.sidecar.objects[i]; if (!o) return;
+    const n = await this.askName("Save this object in the library", o.lib || o.def.name || o.name || "object", o.lib);
+    if (!n) return;
+    const def = { ...o.def, name: n };
+    await this.put(n, { kind: "object", name: n, def });
+    const others = (d.sidecar.objects || []).filter((x, j) => j !== i && x.lib === n && !sameDef(x.def, def)).length;
+    const relinkAll = others && confirm("Update the " + plural(others, "other placed copy") + " of " + n + " in this map too?");
+    d.edit("link to library " + n, ["sc.objects"], (m, sc) => {
+      sc.objects.forEach((x, j) => { if (j === i) sc.objects[j] = { ...x, lib: n, name: n, def }; else if (relinkAll && x.lib === n) sc.objects[j] = relink(x, def); });
+    }, { touch: [] });
+    d.select([{ k: "object", i }]);
+  }
   async remove(item) {
     if (!confirm("Delete " + item.name + " from the library?")) return;
     try { await this.api.deleteLibrary(item.file); await this.load(); } catch (e) { banner(e.message, true); }
@@ -194,7 +227,7 @@ export class Library {
     const size = fitBox(def, { min: [0, 0, 0] }, [1, 1, 1]).max;
     const min = [snap(p[0] - size[0] / 2, g), tidy(p[1]), snap(p[2] - size[2] / 2, g)];
     let at = -1;
-    d.edit("add " + item.name, ["sc.objects"], (m, sc) => { sc.objects.push({ name: item.name, def: structuredClone(def), rot: 0, ...fitBox(def, { min }, [1, 1, 1]) }); at = sc.objects.length - 1; }, { touch: [] });
+    d.edit("add " + item.name, ["sc.objects"], (m, sc) => { sc.objects.push({ name: item.name, def: structuredClone(def), rot: 0, ...fitBox(def, { min }, [1, 1, 1]), lib: item.file }); at = sc.objects.length - 1; }, { touch: [] });
     d.select([{ k: "object", i: at }]);
   }
   // a custom object back to the plain boxes it is made of
@@ -251,6 +284,7 @@ export class Library {
     const groups = this.items.filter(x => x.kind === "group"), objs = this.items.filter(x => x.kind === "object");
     const row = (x, sub) => rows.push(el("div", { class: "row", title: (x.note || "") + (x.builtin ? "\n(shipped with the editor)" : "\nlibrary/" + x.file + ".json"), onclick: () => this.arm(x) },
       el("span", { class: "mname" }, x.name || x.file), el("span", { class: "sub" }, sub),
+      x.kind === "object" && this.stale(x.file).length ? el("button", { class: "mini warn", title: "update the " + plural(this.stale(x.file).length, "placed copy") + " in this map that differ from the library", onclick: (e) => { e.stopPropagation(); this.updateFromLibrary(x.file); } }, "update " + this.stale(x.file).length) : null,
       x.builtin ? el("span", { class: "tag" }, "shipped") : el("span", { class: "acts" }, el("button", { class: "mini danger", title: "delete from the library", onclick: (e) => { e.stopPropagation(); this.remove(x); } }, "x"))));
     rows.push(el("div", { class: "grp" }, "Custom objects (" + objs.length + ")"));
     for (const x of objs) row(x, ["x", "y", "z"].filter((_, k) => x.def && x.def.axes[k]).join("") + " every " + (x.def ? x.def.spacing.filter((_, k) => x.def.axes[k]).join("/") : "?") + " m");

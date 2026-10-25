@@ -94,7 +94,12 @@ is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
     railing and fence end with a closing post). **edit unit / start piece / end piece** puts that part out as plain
     boxes (selected; for a piece the object stays, without it, so you see where it joins): move, resize, add or
     delete boxes, then **Done** takes the selected boxes back in as that part (none selected removes a piece), or
-    **Cancel**. Each is one undo step. Objects live in the sidecar (`objects`), so they
+    **Cancel**. Each is one undo step.
+  - **Linked objects**: an object placed from the library (or made / saved there) remembers that item (`lib` in the
+    sidecar). When the library's item changes, its Properties say "differs from the library" and the library row
+    shows **update N**: every placed copy in the open map takes the library's definition, keeping its place, turn
+    and number of units (one undo step). **save to library** on a linked object saves it under its item's name and
+    offers to update the other copies in the map too. Copies in other maps update when you open them and click it. Objects live in the sidecar (`objects`), so they
     stay editable; a save writes their boxes into the .qmap as plain boxes the game loads, and opening the map takes
     them out again (an object whose boxes were changed outside the editor turns into plain boxes). At most 20 000
     boxes per object.
