@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Installs / updates the UI customizer from this game checkout (the Quark Project app runs it; safe to re-run).
 
-    python tools/ui_customizer/install.py [--dest <Quark>/ui-customizer] [--extract] [--open]
+    python tools/ui_customizer/install.py [--dest <Quark>/ui-customizer] [--extract | --extract-if-stale] [--open]
 
 Run from anywhere (usually cwd = Quark\\repository, a checkout of testing). It builds <dest>/ui-customizer.html (the
 app finds tools at Quark\\<folder>\\<folder>.html) from this checkout's tools/ui_customizer sources and the newest dump
@@ -11,8 +11,12 @@ it opens no browser unless --open is given (and never when QUARK_SHELL=1). It on
 deletes or rewrites the owner's files there (provenance.json, saved / exported layouts, extract/, fonts/ofl/, uploads).
 
 --extract first regenerates <dest>/extract (dump + screenshots) from this checkout's game source: it needs a game build
-(git, cmake, MinGW-w64; about 8 minutes, a hidden window): extract/extract.py. Python 3 standard library only.
-Exit 0 = installed."""
+(git, cmake, MinGW-w64; about 8 minutes, a hidden window): extract/extract.py. --extract-if-stale (what the Quark Project
+app runs, at low priority) does that only when the build finds the dump out of date (commits changed src/client since
+its commit) or this PC has no reference screenshots of it (the Screenshot overlay; they are not committed), then builds
+again; without a toolchain, or when the extract fails, the page is kept as built (with its
+out-of-date banner) and the install still succeeds, so the app doesn't retry an 8-minute job on every start. Python 3
+standard library only. Exit 0 = installed."""
 import argparse, datetime, json, os, subprocess, sys, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -46,10 +50,26 @@ def ensure_provenance(dest):
         return f'kept provenance.json as it is (warning: not readable JSON: {e}; it is not embedded)'
 
 
+def extract_dump(dest):
+    """extract/extract.py into <dest>/extract; False (with the reason printed) when it can't run or fails."""
+    sys.path.insert(0, os.path.join(HERE, 'extract'))
+    import extract
+    try:
+        extract.main(['--out', os.path.join(dest, 'extract')])
+        return True
+    except SystemExit as e:   # (extract.py exits with the reason: no toolchain, a failed build or UI test)
+        if e.code in (0, None):
+            return True
+        print(f'  WARNING: could not regenerate the dump ({e.code}); the page is built from the old one')
+        return False
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='Install / update the Quark UI customizer.')
     ap.add_argument('--dest', default=DEFAULT_DEST, help='the tool folder (default: Quark\\ui-customizer next to the checkout)')
     ap.add_argument('--extract', action='store_true', help='regenerate the dump + screenshots from the game source first (needs a game build)')
+    ap.add_argument('--extract-if-stale', action='store_true',
+                    help='regenerate the dump only when it is out of date (UI code commits since it), then build again')
     ap.add_argument('--open', action='store_true', help='open the page in the browser afterwards (never when QUARK_SHELL=1)')
     a = ap.parse_args(argv)
     dest = os.path.abspath(a.dest)
@@ -66,14 +86,23 @@ def main(argv=None):
     if a.extract:
         sys.path.insert(0, os.path.join(HERE, 'extract'))
         import extract
-        extract.main(['--out', os.path.join(dest, 'extract')])
+        extract.main(['--out', os.path.join(dest, 'extract')])   # (asked for by hand: a failure fails the install)
     sys.path.insert(0, HERE)
     import build
     info = build.main(['--out-dir', dest]) or {}
     fresh = info.get('freshness') or {}
+    no_shots = bool(info.get('shotsWanted')) and not info.get('shots')
+    if a.extract_if_stale and not a.extract and (fresh.get('stale') or no_shots):
+        why = f"the UI dump is out of date ({fresh['why']})" if fresh.get('stale') else "this PC has no reference screenshots of the dump"
+        print(f"  {why}: regenerating it (about 8 minutes, a hidden window)")
+        if extract_dump(dest):
+            info = build.main(['--out-dir', dest]) or {}
+            fresh = info.get('freshness') or {}
     dump_line = f"dump {info.get('dump') or 'none'}: {fresh.get('dumpVersion') or '?'} {(fresh.get('dumpCommit') or '?')[:12]}"
     if fresh.get('stale'):
         dump_line += f" - OUT OF DATE ({fresh['why']}); refresh it: {fresh['refresh']}"
+    elif fresh.get('note'):
+        dump_line += f" - up to date ({fresh['note']})"
     with open(os.path.join(dest, 'INSTALLED.txt'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(f'ui-customizer.html built {datetime.datetime.now().isoformat(timespec="seconds")} by tools/ui_customizer/install.py\n'
                 f'from {REPO} at {ver} {sha}\n'

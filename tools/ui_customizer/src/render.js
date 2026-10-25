@@ -490,6 +490,35 @@ const QRender = (() => {
   }
 
   // The page's backdrop: the menu backdrop (a dark blue night), or the game world dimmed.
+  // How a widget's own text fits, as drawElement fits it (the layout check): {t, room, want, ts, cut} for the kinds
+  // that fit one line of text into their box (null for the others, and for empty text). ts < want: shrunk; cut: "...".
+  function textFitOf(ctx, e) {
+    const { w, h } = e;
+    if (!(w > 0 && h > 0)) return null;
+    const label = e.label || '';
+    let t = '', room = 0;
+    switch (e.kind) {
+      case 'button': case 'tab': t = label; room = w - 8; break;
+      case 'custom': if (e.origId) return null; t = label; room = w - 8; break;
+      case 'toggle': t = label + ': ' + (on(e.value) ? 'ON' : 'OFF'); room = w - 8; break;
+      case 'dropdown': t = (label ? label + ': ' : '') + optionText(e) + '  V'; room = w - 8; break;
+      case 'cycle': { const bw = Math.min(h, w / 3); t = optionText(e); room = w - 2 * bw - 8; break; }
+      case 'key': t = label; room = w - Math.min(w * 0.45, Math.max(60, w * 0.35)) - 16; break;
+      case 'colorpicker': t = label; room = w - 36 - 8 - 16; break;
+      case 'slider': {   // (shrinks, then cuts the label: no closing up)
+        t = label + ': ' + cfmt(e.fmt, Number.isFinite(Number(e.value)) ? Number(e.value) : Number(e.def) || 0);
+        room = w - 8;
+        const ws = want(uiTs), tw = textWidth(ctx, t, ws);
+        const ts = tw <= room ? ws : Math.max(MIN_TS, room / (textWidth(ctx, t, 10) / 10));
+        return { t, room, want: ws, ts, cut: textWidth(ctx, t, ts) > room + 0.01 };
+      }
+      default: return null;
+    }
+    if (!t) return null;
+    const f = fitAt(ctx, t, want(uiTs), room);
+    return { t, room, want: want(uiTs), ts: f.ts, cut: f.t !== t };
+  }
+
   function backdrop(ctx, page, W, H) {
     const g = ctx.createLinearGradient(0, 0, 0, H);
     if (page.editor) { g.addColorStop(0, '#2c3440'); g.addColorStop(1, '#1a1f26'); } else if (page.inGame) { g.addColorStop(0, '#36404a'); g.addColorStop(0.55, '#4a4a40'); g.addColorStop(1, '#2b2a24'); }
@@ -524,7 +553,7 @@ const QRender = (() => {
   }
 
   return { setStyle, setFontCfg, setTextOpts, getFontCfg, drawPage, drawElement, backdrop, box, textWidth, text, rect, cfmt, rgba, MIN_TS,
-    setLogoFont, logoWidth, logoText, LOGO, fitAt };
+    setLogoFont, logoWidth, logoText, LOGO, fitAt, textFitOf };
 })();
 
 if (typeof module !== 'undefined') module.exports = QRender;

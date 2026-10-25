@@ -9,15 +9,18 @@
     try { return JSON.parse(t); } catch (err) { console.warn('bad embedded JSON in #' + id, err); return null; }
   };
   const build = readJson('buildInfo') || {};
+  // ?theme=light|dark pins the page's theme; otherwise it follows the system / the app (prefers-color-scheme, app.css)
+  try { const th = new URLSearchParams(location.search).get('theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) { /* none */ }
   // storage namespace: a proposal build (build.py --layout) has its own, so it never reads or overwrites the plain tool's
   const NS = build.storeNs || 'quark-ui-customizer';
   const STORE_KEY = NS + '/layout/v1';
   const PREFS_KEY = NS + '/prefs/v1';
   const PAGE_KEY = NS + '/page/v1';   // the page on screen (small, written on every page switch; the layout is not)
+  const HIST_KEY = NS + '/undo/v1';   // the last undo steps, so a reload / app restart can still undo (saveHistory)
   const UNDO_MAX = 200;
   const INTERACTIVE = new Set(['button', 'toggle', 'cycle', 'slider', 'text', 'key', 'custom', 'colorpicker', 'dropdown', 'handle', 'view']);
   const KNOWN = new Set(['kind', 'x', 'y', 'w', 'h', 'label', 'value', 'options', 'min', 'max', 'def', 'fmt', 'maxLen', 'enabled', 'color',
-    'textScale', 'align', 'style', 'action', 'id', 'where', 'scope', 'dynamic', 'uid', 'origId', 'notes', 'copyOf']);
+    'textScale', 'align', 'style', 'action', 'id', 'where', 'scope', 'dynamic', 'uid', 'origId', 'notes', 'copyOf', 'anchor']);
   const PALETTE = [['button', 'Button'], ['toggle', 'Toggle'], ['cycle', 'Cycle'], ['slider', 'Slider'], ['text', 'Text field'],
     ['key', 'Keybind'], ['label', 'Label'], ['panel', 'Panel'], ['colorpicker', 'Color picker'], ['dropdown', 'Dropdown'],
     ['rect', 'Rectangle'], ['view', '3D view']];
@@ -42,8 +45,8 @@
   QFonts.init(readJson('fontCatalog'), readJson('fontFiles'), { ns: NS });
   const S = {
     doc: null, pageUid: null, sel: new Set(), undo: [], redo: [], clip: null, hover: null, drag: null, gesture: null,
-    diff: null, search: '', guides: [], lastNudge: null, saveState: '', provState: '', pasteN: 0,
-    prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false, specLayout: 'changed' },
+    diff: null, search: '', guides: [], lastNudge: null, saveState: '', provState: '', fontState: '', pasteN: 0,
+    prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false, specLayout: 'changed', check: false },
     // font trial (saved with the layout): null = the font's own default
     font: { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null, mult: 1, minTs: 0, cmp: '', side: false },
     flip: false, sheet: false, tour: 0, originFilter: '', view: '',
@@ -57,7 +60,7 @@
 
   function loadInitial() {
     try { Object.assign(S.prefs, JSON.parse(store.get(PREFS_KEY) || '{}')); } catch (e) { /* defaults */ }
-    let doc = null;
+    let doc = null, at = '';
     const raw = store.get(STORE_KEY);
     if (raw) {
       try {
@@ -67,9 +70,10 @@
         if (saved.baseSig !== SIG) setTimeout(() => toast('The saved layout was made against another dump (' + String(saved.source && saved.source.commit || '?').slice(0, 8) + '). ' +
           (refs ? 'Your changed pages are kept as you left them; the others now show this dump.' : 'Kept it as it was.') + ' Reset starts over.', 7000), 300);
         S.pageUid = store.get(PAGE_KEY) || saved.pageUid || null;
+        at = String(saved.savedAt || '');
         if (saved.font) S.font = sanitizeFont(saved.font);
         else if (fontOfDoc(doc)) S.font = fontOfDoc(doc);
-      } catch (e) { console.warn('saved layout unreadable, starting from the default', e); doc = null; }
+      } catch (e) { console.warn('saved layout unreadable, starting from the default', e); doc = null; at = ''; }
     }
     if (!doc && startLayout) {
       doc = JSON.parse(startLayout.json);
@@ -78,13 +82,16 @@
     }
     S.doc = doc || QModel.makeWorking(baseline);
     if (!S.doc.pages.length) S.doc.pages.push(QModel.newPage('new-page', 'New page'));
-    if (!page()) S.pageUid = S.doc.pages[0].uid;
+    if (!page()) S.pageUid = firstPageUid();
     markProposal();
     syncSeen();
+    loadHistory(at);
   }
 
   const page = () => S.doc.pages.find((p) => p.uid === S.pageUid) || null;
   const curPage = () => page() || S.doc.pages[0];
+  // the page a fresh start / reset / import opens on: the first in the page list (the main menu), not the dump's first
+  const firstPageUid = () => (visiblePageOrder()[0] || S.doc.pages[0]).uid;
   const selected = () => { const p = curPage(); return p ? p.elements.filter((e) => S.sel.has(e.uid)) : []; };
   const getDiff = () => S.diff || (S.diff = QModel.diff(baseline, S.doc));
   const diffEntry = (p) => getDiff().pages.find((e) => e.page === p);
@@ -135,8 +142,10 @@
     if (S.undo.length > UNDO_MAX) S.undo.shift();
     S.redo = [];
   }
-  // Runs fn as one undo step (nothing is recorded when it changed nothing).
+  // Runs fn as one undo step (nothing is recorded when it changed nothing). Refused while a resolution preview is on
+  // (readOnly), except for what replaces the whole layout and shows in the preview (import, reset: opts.anyView).
   function commit(fn, opts = {}) {
+    if (!opts.anyView && readOnly()) return;
     const before = snap();
     fn();
     if (differs(before)) { pushUndo(before); changed(opts); }
@@ -155,6 +164,12 @@
     S.undo.push(snap());
     restore(S.redo.pop());
     changed({ history: true });
+  }
+  // The resolution preview is read only: every edit path asks this first (it says why when it refuses).
+  function readOnly() {
+    if (!viewOf()) return false;
+    toast('Preview at ' + S.view + ' is read only: pick View: 1280x720 to edit');
+    return true;
   }
   // Inspector typing: the first input of a field starts a gesture, its change event ends it (one undo step).
   function beginGesture() { if (!S.gesture) S.gesture = snap(); }
@@ -193,18 +208,18 @@
   const markProposal = () => { if (startLayout) { QModel.markAi(baseline, S.doc); forgetPages(); S.diff = null; } };
 
   // ---- save ------------------------------------------------------------------------------------------------------
-  let saveTimer = 0;
+  let saveTimer = 0, editGen = 0;   // (editGen: +1 for every change of the layout, the layout check's cache key)
   // the layout carries its font too (doc.font {id, weight}: what a redesign script sets, e.g. redesign/logo/apply-logo.js)
   const syncDocFont = () => { if (S.doc) QModel.setLayoutFont(S.doc, S.font.id, S.font.weight != null ? S.font.weight : null); };
   // S.font from a layout's doc.font (null when it has none)
   const fontOfDoc = (doc) => { const f = QModel.layoutFont(doc); return f ? sanitizeFont(Object.assign({}, S.font, { id: f.id, weight: f.weight, ls: null, upper: null, sizeK: null })) : null; };
-  const payloadHead = () => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: new Date().toISOString(), baseSig: SIG, source: baseline.source,
+  const payloadHead = (at) => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: at || new Date().toISOString(), baseSig: SIG, source: baseline.source,
     pageUid: S.pageUid, font: S.font });
   const payload = () => Object.assign(payloadHead(), { doc: S.doc });
   // The autosave: the pages from the snapshot strings (no second stringify of the whole layout), and a page that is
   // still the game's as a reference to the dump (QModel.baseRefJson): a few KB instead of 1.7 MB per save.
-  function payloadJson() {
-    const head = payloadHead(), { pages, ...rest } = S.doc, open = (o) => JSON.stringify(o).slice(0, -1) + (Object.keys(o).length ? ',' : '');
+  function payloadJson(at) {
+    const head = payloadHead(at), { pages, ...rest } = S.doc, open = (o) => JSON.stringify(o).slice(0, -1) + (Object.keys(o).length ? ',' : '');
     const entries = new Map(getDiff().pages.map((e) => [e.page, e]));
     const snap = docSnap().map((j, i) => QModel.baseRefJson(entries.get(S.doc.pages[i]), j));
     return open(head) + '"doc":' + open(rest) + '"pages":[' + snap.join(',') + ']}}';
@@ -212,8 +227,79 @@
   function saveNow() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    S.saveState = store.set(STORE_KEY, payloadJson()) ? 'saved in this browser' : 'NOT saved (browser storage unavailable: export the layout)';
+    const at = new Date().toISOString();
+    const ok = store.set(STORE_KEY, payloadJson(at));
+    S.saveState = ok ? 'saved in this browser' : 'NOT saved (browser storage unavailable: export the layout)';
+    if (ok) { savedAt = at; scheduleHistory(); }
     renderStatus();
+  }
+  // ---- undo across reloads ----
+  // The newest undo steps (at most HIST_MAX, HIST_BYTES of text) are kept next to the autosave, written in idle time
+  // after it (never in an edit's frame) and on unload. A step's page is stored as the index of the autosaved layout's
+  // page when it is the same text (most pages of most steps), else in a string table, where a page that is still the
+  // game's (as after Reset) becomes a reference to the dump: an Import or a Reset can be undone after a reload too.
+  // Read back only with the autosave it was written with (savedAt) and the same dump.
+  const HIST_MAX = 30, HIST_BYTES = 1024 * 1024;
+  let savedAt = '', histTimer = 0;
+  const baseText = new Map();   // origId -> the dump's page as a working page without uids (made when first needed)
+  const histText = new Map();   // page text -> its table text (a dump reference or itself): each new text costs once
+  const noUids = (j) => JSON.stringify(JSON.parse(j), (k, v) => (k === 'uid' ? undefined : v));
+  function tableText(j) {
+    let t = histText.get(j);
+    if (t !== undefined) return t;
+    t = j;
+    try {
+      const p = JSON.parse(j), bp = p.origId && baseline.pages.find((b) => b.origId === p.origId);
+      if (bp && !baseText.has(p.origId))
+        baseText.set(p.origId, JSON.stringify(QModel.sanitizeWorking(QModel.makeWorking({ pages: [bp] })).pages[0], (k, v) => (k === 'uid' ? undefined : v)));
+      if (bp && baseText.get(p.origId) === noUids(j)) t = JSON.stringify({ $base: p.origId, uid: p.uid });
+    } catch (e) { /* kept as it is */ }
+    histText.set(j, t);
+    return t;
+  }
+  function scheduleHistory() {
+    clearTimeout(histTimer);
+    histTimer = setTimeout(() => (window.requestIdleCallback || setTimeout)(saveHistory, { timeout: 4000 }), 1500);
+  }
+  function saveHistory() {
+    clearTimeout(histTimer);
+    histTimer = 0;
+    if (!savedAt) return;
+    if (!S.undo.length) { store.del(HIST_KEY); return; }
+    const cur = docSnap(), at = new Map(cur.map((j, i) => [j, i]));
+    const table = [], tix = new Map(), steps = [];
+    let bytes = 0;
+    for (let i = S.undo.length - 1; i >= 0 && steps.length < HIST_MAX; i--) {
+      const n0 = table.length;
+      const pages = S.undo[i].pages.map((j) => {
+        if (at.has(j)) return at.get(j);
+        let k = tix.get(j);
+        if (k === undefined) { k = table.length; table.push(tableText(j)); tix.set(j, k); }
+        return -1 - k;
+      });
+      const add = table.slice(n0).reduce((n, t) => n + t.length, 0) + pages.length * 4;
+      if (bytes + add > HIST_BYTES) { table.length = n0; break; }   // (older steps than this one are dropped)
+      bytes += add;
+      steps.unshift({ p: pages, u: S.undo[i].pageUid });
+    }
+    if (!store.set(HIST_KEY, JSON.stringify({ v: 1, sig: SIG, at: savedAt, n: cur.length, table, steps }))) store.del(HIST_KEY);
+    for (const k of histText.keys()) if (!tix.has(k)) histText.delete(k);   // (only the texts still in use stay cached)
+  }
+  // after loading the autosave written at `at`: its undo steps back (refs to the loaded pages, table texts expanded)
+  function loadHistory(at) {
+    let h = null;
+    try { h = JSON.parse(store.get(HIST_KEY) || 'null'); } catch (e) { /* none */ }
+    if (!h || h.v !== 1 || h.sig !== SIG || !at || h.at !== at || !Array.isArray(h.steps) || !Array.isArray(h.table)) return;
+    const cur = docSnap();
+    if (cur.length !== h.n) return;
+    try {
+      const table = h.table.map((t) => {
+        const o = JSON.parse(t);
+        return o && o.$base ? JSON.stringify(QModel.sanitizeWorking(QModel.expandBaseRefs(baseline, { pages: [o] })).pages[0]) : t;
+      });
+      const steps = h.steps.map((st) => ({ pages: st.p.map((i) => (i >= 0 ? cur[i] : table[-1 - i])), pageUid: st.u, sel: [] }));
+      if (steps.every((st) => st.pages.length && st.pages.every((j) => typeof j === 'string'))) { S.undo = steps; savedAt = at; }
+    } catch (e) { console.warn('saved undo history unreadable', e); }
   }
   function scheduleSave() { clearTimeout(saveTimer); S.saveState = 'saving...'; saveTimer = setTimeout(saveNow, 400); }
   const savePrefs = () => store.set(PREFS_KEY, JSON.stringify(S.prefs));
@@ -222,6 +308,7 @@
   // undo / redo / import / reset: opts.history, opts.noMark), save, redraw (the inspector too unless it's being typed in).
   function changed(opts = {}) {
     S.diff = null;
+    editGen++;
     if (opts.history || opts.noMark) syncSeen();
     else markEdits();
     scheduleSave();
@@ -254,7 +341,7 @@
   // In-page dialogs instead of prompt() / confirm() / alert(): the Quark Project app's Electron window has no
   // window.prompt() (it throws), and native boxes block the page. Resolves with the typed text (input), true (OK) or
   // null (Cancel, Esc, a click outside). check(text) returns why the text can't be used ('' = fine).
-  let dlgDone = null;
+  let dlgDone = null, dlgAt = 0;   // (dlgAt: when it opened; the second click of a double click must not cancel it)
   function ask({ title, text = '', input = null, ok = 'OK', cancel = 'Cancel', danger = false, check = null }) {
     if (dlgDone) dlgDone(null);
     const inp = $('dlgInput'), err = $('dlgErr');
@@ -268,6 +355,7 @@
     $('dlgCancel').hidden = !cancel;
     $('dlgCancel').textContent = cancel || '';
     $('dlg').hidden = false;
+    dlgAt = performance.now();
     const back = document.activeElement;
     if (input !== null) { inp.focus(); inp.select(); } else $('dlgOk').focus();
     return new Promise((resolve) => {
@@ -339,9 +427,11 @@
     const s = String(p).replace(/\\/g, '/');
     return /^(extract\/|[a-z]+:|\/|\.\.?\/)/i.test(s) ? s : 'extract/' + s;
   };
+  // the page (other than `self`) whose id is this one, compared trimmed and case-insensitively ('Main', 'main ' = 'main')
+  const idTaken = (id, self) => { const k = String(id).trim().toLowerCase(); return S.doc.pages.find((p) => p !== self && String(p.id).trim().toLowerCase() === k) || null; };
   function uniquePageId(id) {
     let out = id, k = 2;
-    while (S.doc.pages.some((p) => p.id === out)) out = id + '-' + k++;
+    while (idTaken(out)) out = id + '-' + k++;
     return out;
   }
   // Panels and plain rectangles go under the widgets (drawn first); everything else on top.
@@ -366,7 +456,9 @@
   // the text rounds: 1080p and 1440p are exact), 16:10 is narrower (1152), 21:9 wider (1680). The dump has the widgets'
   // positions, not the code's anchors, so this guesses them as the menus are written: a widget (or the panel around it)
   // that hugs the left / right edge stays on that edge, a full-width bar stretches, everything else keeps its offset
-  // from the centre (cx + (x - 640) * s). Widgets that end up off the screen are outlined in red.
+  // from the centre (cx + (x - 640) * s). Widgets that end up off the screen are outlined in red. A widget's own
+  // anchor field (set in the inspector, also while previewing; QModel.ANCHORS) replaces the guess, for it and for the
+  // widgets inside it when it is a panel, and goes into the spec.
   const VIEWS = [['', 'View: 1280x720 (edit)'], ['1920x1080', '1920x1080 16:9'], ['2560x1440', '2560x1440 16:9'], ['3840x2160', '3840x2160 16:9'],
     ['1920x1200', '1920x1200 16:10'], ['2560x1600', '2560x1600 16:10'], ['2560x1080', '2560x1080 21:9'], ['3440x1440', '3440x1440 21:9'],
     ['5120x1440', '5120x1440 32:9'], ['1280x1024', '1280x1024 5:4']];
@@ -377,6 +469,8 @@
     return { w, h, s, fw: Math.round(w / s), ts: Math.max(1, Math.round(2 * s)), k: Math.max(1, Math.round(2 * s)) / (2 * s) };
   }
   const frameW = () => { const v = viewOf(); return v ? v.fw : W; };
+  // the guess for a box (anchorOf), or the element's own anchor
+  const anchorFor = (e, b) => (QModel.ANCHORS.includes(e.anchor) ? e.anchor : anchorOf(b));
   function anchorOf(b) {
     if (b.x <= 1 && b.x + b.w >= W - 1) return 'stretch';
     if (b.x < EDGE && b.x + b.w <= W / 2) return 'left';
@@ -387,7 +481,7 @@
   function previewPage(p, v) {
     const boxes = p.elements.map((e) => boxOf(e));
     const conts = p.elements.map((e, i) => ({ e, b: boxes[i] }))
-      .filter((c) => c.b && (c.e.kind === 'panel' || c.e.kind === 'rect') && !isBackdrop(c.e) && anchorOf(c.b) !== 'stretch');
+      .filter((c) => c.b && (c.e.kind === 'panel' || c.e.kind === 'rect') && !isBackdrop(c.e) && anchorFor(c.e, c.b) !== 'stretch');
     const inside = (a, c) => a !== c && a.x >= c.x - 0.5 && a.y >= c.y - 0.5 && a.x + a.w <= c.x + c.w + 0.5 && a.y + a.h <= c.y + c.h + 0.5;
     const clipped = [];
     let pinned = 0;
@@ -395,32 +489,121 @@
       const b = boxes[i];
       if (!b) return e;
       let outer = null;   // (the biggest panel around it decides: a panel's labels move with the panel)
-      for (const c of conts) if (inside(b, c.b) && (!outer || c.b.w * c.b.h > outer.w * outer.h)) outer = c.b;
-      const a = anchorOf(outer || b);
-      let dx = a === 'left' ? 0 : a === 'right' ? v.fw - W : (v.fw - W) / 2;
+      for (const c of conts) if (inside(b, c.b) && (!outer || c.b.w * c.b.h > outer.b.w * outer.b.h)) outer = c;
+      const a = QModel.ANCHORS.includes(e.anchor) ? e.anchor : outer ? anchorFor(outer.e, outer.b) : anchorOf(b);
+      let dx = a === 'left' || a === 'stretch' ? 0 : a === 'right' ? v.fw - W : (v.fw - W) / 2;
       const m = Object.assign({}, e);
-      if (a === 'stretch') { m.x = 0; m.w = v.fw; dx = 0; } else m.x = e.x + dx;
+      m.x = e.x + dx;
+      if (a === 'stretch') m.w = e.w + (v.fw - W);   // (keeps both margins: a full-width bar fills the screen)
       if (a === 'left' || a === 'right') pinned++;
-      const nb = { x: b.x + dx, y: b.y, w: a === 'stretch' ? v.fw : b.w, h: b.h };
+      const nb = { x: b.x + dx, y: b.y, w: a === 'stretch' ? b.w + (v.fw - W) : b.w, h: b.h };
       if (nb.x < -0.5 || nb.x + nb.w > v.fw + 0.5) clipped.push(nb);
       return m;
     });
     return { page: Object.assign({}, p, { elements }), clipped, pinned };
   }
+  let lastPv = null;
   // draws page p (a preview's mapped page when one is on) with the preview's text rounding
   function drawFrame(c, p, hover) {
     const v = viewOf();
     if (!v) { QRender.drawPage(c, p, W, H, hover); return null; }
     const pv = previewPage(p, v);
+    if (c === ctx) lastPv = pv;   // (what a click in the preview picks from)
     QRender.setTextOpts({ mult: S.font.mult * v.k, minTs: S.font.minTs });
     try { QRender.drawPage(c, pv.page, v.fw, H, null); } finally { QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs }); }
     return pv;
   }
+  // ---- layout check (K): the in-page version of audit/audit.py's rules that matter while editing ------------------
+  // On the page as drawn (at the preview's size and text rounding when one is on, so 21:9 / 32:9 problems show):
+  // interactive widgets overlapping, labels running into widgets, anything off the screen, text the game would cut
+  // ("...") or shrink, widgets sticking out of their panel, tiny text. Marked on the canvas (red = bad, amber = check
+  // it) and listed in the page inspector. Cached per layout change / page / view / font: a frame costs nothing.
+  const LIVE = new Set(['button', 'tab', 'toggle', 'cycle', 'slider', 'text', 'custom', 'colorpicker', 'dropdown', 'key']);
+  let checkCache = { key: '', res: [] };
+  const checkKey = () => [editGen, S.pageUid, S.view, fontGen, S.flip, S.font.mult, S.font.minTs, S.prefs.widgetsOnly].join('|');
+  function layoutCheck() {
+    const key = checkKey();
+    if (checkCache.key === key) return checkCache.res;
+    const p0 = curPage(), v = viewOf();
+    let res = [];
+    if (p0) {
+      if (v) {
+        QRender.setTextOpts({ mult: S.font.mult * v.k, minTs: S.font.minTs });
+        try { res = checkPage(previewPage(p0, v).page, v.fw); } finally { QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs }); }
+      } else res = checkPage(p0, W);
+    }
+    checkCache = { key, res };
+    return res;
+  }
+  function checkPage(p, fw) {
+    const out = [], name = (e) => e.kind + (e.label ? ' "' + String(e.label).slice(0, 28) + '"' : '');
+    const add = (sev, rule, text, els) => out.push({ sev, rule, text, uids: els.map((e) => e.uid), boxes: els.map((e) => boxOf(e)).filter(Boolean) });
+    // (a full-screen backdrop drawn after other things is a veil: a pause menu or dialog over the HUD / editor, which is
+    // checked on its own page; as audit.py, only what is drawn after the veil counts, and muted draws never)
+    let veil = -1;
+    p.elements.forEach((e, i) => { if (i > 2 && isBackdrop(e)) veil = i; });
+    const items = p.elements.map((e, i) => ({ e, i, b: boxOf(e) }))
+      .filter((x) => x.b && x.i > veil && !x.e.muted && !isBackdrop(x.e) && x.e.kind !== 'handle' && x.e.kind !== 'popup');
+    const live = items.filter((x) => LIVE.has(x.e.kind)), labels = items.filter((x) => x.e.kind === 'label' && String(x.e.label || '').trim());
+    const panels = items.filter((x) => x.e.kind === 'panel');
+    const inter = (a, b) => [Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)];
+    const inside = (o, i, t = 0.5) => i.x >= o.x - t && i.y >= o.y - t && i.x + i.w <= o.x + o.w + t && i.y + i.h <= o.y + o.h + t;
+    for (let a = 0; a < live.length; a++) {
+      for (let b = a + 1; b < live.length; b++) {
+        const A = live[a], B = live[b], [w, h] = inter(A.b, B.b);
+        if (w > 1 && h > 1 && !((A.e.kind === 'custom' || B.e.kind === 'custom') && (inside(A.b, B.b) || inside(B.b, A.b))))
+          add('bad', 'overlap', `${name(A.e)} and ${name(B.e)} overlap by ${Math.round(w)}x${Math.round(h)} px`, [A.e, B.e]);
+      }
+    }
+    for (const L of labels) {
+      for (const X of live) {
+        const [w, h] = inter(L.b, X.b);
+        if (w <= 1 || h <= 1 || X.e.kind === 'custom' || X.e.kind === 'text') continue;
+        add('warn', 'label-on-widget', `label "${String(L.e.label).slice(0, 28)}" runs into ${name(X.e)} (${Math.round(w)}x${Math.round(h)} px)`, [L.e, X.e]);
+        break;
+      }
+      if (Number(L.e.textScale) > 0 && Number(L.e.textScale) < 1.5 && !S.font.minTs)
+        add('warn', 'small-text', `label "${String(L.e.label).slice(0, 28)}" at text scale ${L.e.textScale} (drawn at the 1.3 minimum: hard to read)`, [L.e]);
+    }
+    const off = items.filter((x) => x.b.x < -0.5 || x.b.y < -0.5 || x.b.x + x.b.w > fw + 0.5 || x.b.y + x.b.h > H + 0.5);
+    for (const x of off) add('bad', 'off-screen', `${name(x.e)} is off the screen (${Math.round(x.b.x)},${Math.round(x.b.y)} to ${Math.round(x.b.x + x.b.w)},${Math.round(x.b.y + x.b.h)} in a ${Math.round(fw)}x${H} frame)`, [x.e]);
+    for (const X of live) {
+      const f = QRender.textFitOf(ctx, X.e);
+      if (f && f.cut) add('bad', 'text-cut', `"${f.t.slice(0, 32)}" is cut with "..." in ${name(X.e)} (needs ${Math.round(QRender.textWidth(ctx, f.t, f.want))} px, has ${Math.round(f.room)})`, [X.e]);
+      else if (f && f.ts < f.want * 0.875) add('warn', 'text-shrunk', `"${f.t.slice(0, 32)}" is shrunk to ${Math.round(f.ts / f.want * 100)}% to fit ${name(X.e)}`, [X.e]);
+      const P = panels.find((q) => { const cx = X.b.x + X.b.w / 2, cy = X.b.y + X.b.h / 2; return cx >= q.b.x && cx <= q.b.x + q.b.w && cy >= q.b.y && cy <= q.b.y + q.b.h; });
+      if (P && !inside(P.b, X.b, 1)) add('warn', 'out-of-panel', `${name(X.e)} sticks out of its panel`, [X.e, P.e]);
+    }
+    return out.sort((a, b) => (a.sev === b.sev ? 0 : a.sev === 'bad' ? -1 : 1));
+  }
+  // red / amber outlines of what the check found (o: the overlay, already in game units)
+  function drawCheckMarks(o, px) {
+    if (!S.prefs.check || S.drag) return;
+    o.setLineDash([]);
+    o.lineWidth = 2 * px;
+    for (const f of layoutCheck()) {
+      o.strokeStyle = f.sev === 'bad' ? 'rgba(255,70,70,0.95)' : 'rgba(255,179,71,0.9)';
+      for (const b of f.boxes) o.strokeRect(b.x - 2 * px, b.y - 2 * px, b.w + 4 * px, b.h + 4 * px);
+    }
+  }
+  function checkSection() {
+    if (!S.prefs.check) return null;
+    const res = layoutCheck(), bad = res.filter((f) => f.sev === 'bad').length;
+    const head = el('div', { class: 'sec-t', text: `Layout check${S.view ? ' at ' + S.view : ''}: ` + (res.length ? `${bad} bad, ${res.length - bad} to check` : 'nothing found') });
+    const list = el('div', { class: 'checks' }, res.slice(0, 60).map((f) => el('div', {
+      class: 'chk ' + f.sev, text: f.text, title: S.view ? '' : 'Click to select ' + (f.uids.length > 1 ? 'them' : 'it'),
+      onclick: () => { if (!viewOf()) { S.sel = new Set(f.uids.filter((u) => curPage().elements.some((e) => e.uid === u && !isBackdrop(e)))); renderAfterSelect(); } },
+    })), res.length > 60 ? el('div', { class: 'hint', text: `... and ${res.length - 60} more` }) : null);
+    return el('div', { class: 'sec' }, head, list);
+  }
+
   function setView(id) {
     S.view = VIEWS.some(([v]) => v === id) ? id : '';
-    if (S.view) { S.sel = new Set(); S.hover = null; ov.style.cursor = ''; }
+    if (S.view) { S.hover = null; ov.style.cursor = ''; }   // (the selection stays: its anchor can be set while previewing)
     $('sView').value = S.view;
     $('stage').classList.toggle('preview', !!S.view);
+    // (read only: the palette and + Page are off, the inspector is drawn disabled; commit() refuses the rest)
+    for (const b of [$('bAddPage'), ...$('palette').children]) b.disabled = !!S.view;
     layoutStage();
     renderAfterSelect();
   }
@@ -437,15 +620,21 @@
     const st = $('stage');
     st.style.width = FW * zoom + 'px';
     st.style.height = H * zoom + 'px';
-    for (const c of [cv, ov]) { c.width = Math.round(FW * zoom * dpr); c.height = Math.round(H * zoom * dpr); }
+    for (const c of [cv, ov]) sizeCanvas(c, FW * zoom * dpr, H * zoom * dpr);
     if (side) {
       const s2 = $('stage2'), c2 = $('cv2');
       s2.style.width = FW * zoom + 'px';
       s2.style.height = H * zoom + 'px';
-      c2.width = Math.round(FW * zoom * dpr); c2.height = Math.round(H * zoom * dpr);
+      sizeCanvas(c2, FW * zoom * dpr, H * zoom * dpr);
     }
     renderCaptions();
     requestRender();
+  }
+  // (setting a canvas's width / height, even to the same value, reallocates and clears it: only when it changes)
+  function sizeCanvas(c, w, h) {
+    w = Math.round(w); h = Math.round(h);
+    if (c.width !== w) c.width = w;
+    if (c.height !== h) c.height = h;
   }
   function requestRender() { if (!raf) raf = requestAnimationFrame(draw); }
   const boxOf = (e) => QRender.box(ctx, e);
@@ -484,8 +673,12 @@
     o.strokeStyle = 'rgba(255,90,90,0.95)';
     o.lineWidth = 2 * px;
     for (const b of pv.clipped) o.strokeRect(Math.max(0, b.x), b.y, Math.min(v.fw, b.x + b.w) - Math.max(0, b.x), b.h);
+    drawCheckMarks(o, px);
+    o.strokeStyle = '#ff4fd8';
+    o.lineWidth = 1.5 * px;
+    for (const e of pv.page.elements) if (S.sel.has(e.uid)) { const b = boxOf(e); if (b) o.strokeRect(b.x - px, b.y - px, b.w + 2 * px, b.h + 2 * px); }
     $('cap1').textContent = `${v.w}x${v.h}: UI scale ${v.s.toFixed(2)}, text scale ${v.ts}${v.k !== 1 ? ` (text ${Math.round(v.k * 100)}% of the 720p size)` : ''}` +
-      `  -  ${pv.pinned} pinned to an edge${pv.clipped.length ? `, ${pv.clipped.length} off the screen (red)` : ''}  -  read only: View: 1280x720 to edit`;
+      `  -  ${pv.pinned} pinned to an edge${pv.clipped.length ? `, ${pv.clipped.length} off the screen (red)` : ''}  -  click a widget to set its anchor; View: 1280x720 to edit`;
   }
 
   function drawOverlay(p, k) {
@@ -565,6 +758,7 @@
         o.strokeRect(h.x - s / 2, h.y - s / 2, s, s);
       }
     }
+    drawCheckMarks(o, px);
     if (S.drag && S.drag.mode === 'band') {
       const r = bandRect();
       o.fillStyle = 'rgba(255,79,216,0.08)';
@@ -576,11 +770,15 @@
   }
 
   let shotErrFor = null;
+  // why the Screenshot overlay is off for page p
+  const shotWhyNot = (p) => (viewOf() ? 'The screenshots are 1280x720: pick View: 1280x720' :
+    build.shotsWanted && !build.shots ? 'The dump\'s screenshots are not on this PC: the Quark Project app takes them at its next UI Editor update (install.py --extract-if-stale), or run install.py --extract' :
+    'This page has no screenshot in the dump' + (p && !p.origId ? ' (a page made here)' : ''));
   function updateShot(p) {
     const has = !!(p && p.screenshot) && !viewOf();
     $('cShot').disabled = !has;
     $('rShot').disabled = !has;
-    $('shotGroup').title = has ? 'Reference screenshot: ' + p.screenshot : 'This page has no screenshot in the dump';
+    $('shotGroup').title = has ? 'Reference screenshot: ' + p.screenshot : shotWhyNot(p);
     if (has && S.prefs.shot) {
       const url = shotUrl(p.screenshot);
       if (shot.getAttribute('src') !== url) shot.setAttribute('src', url);
@@ -633,7 +831,7 @@
     if (S.tour) toggleTour();
     if (ev.button !== 0) return;
     ev.preventDefault();
-    if (viewOf()) { toast('Preview at ' + S.view + ' is read only: pick View: 1280x720 to edit'); return; }
+    if (viewOf()) { previewPick(toGame(ev), ev.shiftKey); return; }
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     endGesture();
     const rect = ov.getBoundingClientRect();
@@ -666,6 +864,18 @@
     renderAfterSelect();
   });
 
+  // a click in the resolution preview selects (nothing moves: the preview is read only; the anchor can be set)
+  function previewPick(pt, add) {
+    const els = lastPv ? lastPv.page.elements : [];
+    let hit = null;
+    for (let i = els.length - 1; i >= 0 && !hit; i--) {
+      const b = pickable(els[i]);
+      if (b && pt.x >= b.x && pt.x < b.x + b.w && pt.y >= b.y && pt.y < b.y + b.h) hit = els[i];
+    }
+    if (!add) S.sel = new Set();
+    if (hit) { if (add && S.sel.has(hit.uid)) S.sel.delete(hit.uid); else S.sel.add(hit.uid); }
+    renderAfterSelect();
+  }
   window.addEventListener('mousemove', (ev) => {
     const d = S.drag;
     const pt = toGame(ev, d ? d.rect : undefined);
@@ -714,9 +924,10 @@
   function moveDrag(d, dx, dy, noSnap) {
     S.guides = [];
     const p0 = d.items.find((i) => i.el === d.primary) || d.items[0];
-    let nx = p0.x + dx, ny = p0.y + dy;
-    // only an axis the pointer moved along snaps: a sideways drag never nudges y onto the grid or the centre line
+    // an axis the pointer moved less than 3 screen px along stays put (and never snaps): a sideways drag with a pixel of
+    // mouse jitter keeps y exactly, so the spec reports no y move (arrow keys do 1 px steps)
     const ax = Math.abs(dx) * zoom >= 3, ay = Math.abs(dy) * zoom >= 3;
+    let nx = ax ? p0.x + dx : p0.x, ny = ay ? p0.y + dy : p0.y;
     if (!noSnap) {
       if (S.prefs.grid) { if (ax) nx = snapGrid(nx); if (ay) ny = snapGrid(ny); }
       const b = boxOf(d.primary) || { w: d.primary.w, h: d.primary.h };
@@ -762,7 +973,7 @@
   }
   function deleteSel() {
     const ids = new Set(S.sel);
-    if (!ids.size) return;
+    if (!ids.size || readOnly()) return;
     commit(() => { const p = curPage(); p.elements = p.elements.filter((e) => !ids.has(e.uid)); S.sel = new Set(); });
     toast(`Deleted ${ids.size} widget${ids.size > 1 ? 's' : ''}`);
   }
@@ -777,7 +988,7 @@
   }
   function copySel(cut) {
     const sel = selected();
-    if (!sel.length) return;
+    if (!sel.length || (cut && readOnly())) return;
     S.clip = { mode: cut ? 'cut' : 'copy', items: QModel.clone(sel), fromPage: S.pageUid };
     S.pasteN = 0;
     if (cut) {
@@ -807,7 +1018,7 @@
   }
   function nudge(dx, dy, resize) {
     const sel = selected();
-    if (!sel.length) return;
+    if (!sel.length || readOnly()) return;
     const key = [...S.sel].join() + (resize ? 'r' : 'm');
     const now = Date.now();
     const merge = S.lastNudge && S.lastNudge.key === key && now - S.lastNudge.t < 1000 && S.undo.length && S.lastNudge.depth === S.undo.length;
@@ -821,7 +1032,7 @@
   }
   function moveSelToPage(uid) {
     const sel = selected(), target = S.doc.pages.find((p) => p.uid === uid);
-    if (!sel.length || !target || target.uid === S.pageUid) return;
+    if (!sel.length || !target || target.uid === S.pageUid || readOnly()) return;
     commit(() => {
       const ids = new Set(sel.map((e) => e.uid)), p = curPage();
       p.elements = p.elements.filter((e) => !ids.has(e.uid));
@@ -895,7 +1106,13 @@
     S.pageUid = uid;
     S.sel = new Set();
     S.hover = null;
-    renderAll();
+    // (the page list is not rebuilt: 121 rows of DOM and their layout were most of a switch's cost; two rows change class)
+    markCurrentPage();
+    renderInspector();
+    renderOffCanvas();
+    renderStatus();
+    updateButtons();
+    requestRender();
     store.set(PAGE_KEY, uid);
   }
   function stepPage(d) {
@@ -905,6 +1122,7 @@
     selectPage(list[(i + d + list.length) % list.length].uid);
   }
   async function addPage() {
+    if (readOnly()) return;
     const id = await ask({ title: 'Add a page', text: 'Page id: a screen path, e.g. settings/accessibility (a taken id gets -2, -3 ...)',
       input: 'new-page', ok: 'Add page', check: (v) => (v.trim() ? '' : 'Give the page an id') });
     if (id === null) return;
@@ -931,7 +1149,7 @@
   }
   async function deletePage() {
     const p = curPage();
-    if (p.origId) return;
+    if (p.origId || readOnly()) return;
     if (p.elements.length && !(await confirmed('Delete page', `Delete page "${p.id}" and its ${p.elements.length} widget(s)? (Undo brings it back.)`, 'Delete'))) return;
     if (!S.doc.pages.includes(p)) return;
     commit(() => {
@@ -946,8 +1164,23 @@
   // ---- page list -------------------------------------------------------------------------------------------------
   const visiblePageOrder = () => [...pageGroups(S.doc.pages).values()].flat();
   const ORIGIN_TAG = { human: 'HU', ai: 'AI', unknown: '?' };
+  let pageRows = new Map();   // page uid -> its row in the list (renderPages)
+  // the widgets of page p the search matches (label, action or id)
+  const searchHits = (p, q) => p.elements.filter((e) => ((e.label || '') + ' ' + (e.action || '') + ' ' + (e.id || '')).toLowerCase().includes(q));
+  // a page picked in the list: with a search on, its matching widgets are selected (Enter in the search box: the first)
+  function openPage(p) {
+    selectPage(p.uid);
+    const q = S.search.trim().toLowerCase(), hits = q ? searchHits(p, q) : [];
+    if (hits.length) { S.sel = new Set(hits.map((e) => e.uid)); renderAfterSelect(); }
+  }
+  function markCurrentPage() {
+    for (const r of $('pageList').querySelectorAll('.pg.cur')) r.classList.remove('cur');
+    const row = !S.sheet && pageRows.get(S.pageUid);
+    if (row) { row.classList.add('cur'); row.scrollIntoView({ block: 'nearest' }); }
+  }
   function renderPages() {
     const list = $('pageList');
+    pageRows = new Map();
     const q = S.search.trim().toLowerCase();
     const D = getDiff();
     const entries = new Map(D.pages.map((e) => [e.page, e]));
@@ -960,7 +1193,7 @@
       let matches = 0;
       if (q) {
         const hitPage = (p.id + ' ' + p.title).toLowerCase().includes(q);
-        matches = p.elements.filter((e) => ((e.label || '') + ' ' + (e.action || '') + ' ' + (e.id || '')).toLowerCase().includes(q)).length;
+        matches = searchHits(p, q).length;
         if (!hitPage && !matches) continue;
       }
       shown.push(p);
@@ -981,14 +1214,16 @@
       for (const p of items) {
         const { entry, o, matches } = info.get(p);
         const st = entry ? entry.status : 'unchanged';
-        list.append(el('div', {
+        const row = el('div', {
           class: 'pg' + (p.uid === S.pageUid && !S.sheet ? ' cur' : '') + (p.hidden ? ' hidden' : ''), title: p.id + (p.title !== p.id ? ' - ' + p.title : '') + '\nmade by: ' + o.origin + ' (' + o.why + ')',
-          onclick: () => selectPage(p.uid),
+          onclick: () => openPage(p),
         }, el('span', { class: 'org o-' + o.origin, text: ORIGIN_TAG[o.origin] }),
         el('span', { class: 't', text: p.title || p.id }),
         matches ? el('span', { class: 'badge match', text: matches }) : null,
         st !== 'unchanged' ? el('span', { class: 'badge ' + st, text: st === 'added' ? 'new' : st }) : null,
-        el('span', { class: 'n', text: p.elements.length })));
+        el('span', { class: 'n', text: p.elements.length }));
+        pageRows.set(p.uid, row);
+        list.append(row);
       }
     }
     if (!groups.size) list.append(el('div', { class: 'pg-group', text: 'no match' }));
@@ -1002,7 +1237,7 @@
 
   // A bound input: edits on 'input' (one undo step per field edit, ended by 'change').
   function bind(input, apply) {
-    input.addEventListener('input', () => { beginGesture(); apply(); changed({ keepInspector: true }); });
+    input.addEventListener('input', () => { if (readOnly()) { renderInspector(); return; } beginGesture(); apply(); changed({ keepInspector: true }); });
     input.addEventListener('change', () => { endGesture(); });
     return input;
   }
@@ -1114,9 +1349,28 @@
     const box = insp();
     box.textContent = '';
     const sel = selected();
-    if (sel.length === 1) box.append(...elementInspector(sel[0]));
-    else if (sel.length > 1) box.append(...multiInspector(sel));
-    else box.append(...pageInspector(curPage()));
+    const parts = sel.length === 1 ? elementInspector(sel[0]) : sel.length > 1 ? multiInspector(sel) : pageInspector(curPage());
+    const chk = sel.length ? null : checkSection(), anc = sel.length ? anchorSection(sel) : null;
+    if (!viewOf()) box.append(...parts.slice(0, sel.length === 1 ? 4 : 2), anc || '', ...parts.slice(sel.length === 1 ? 4 : 2), chk || '');
+    else box.append(el('div', { class: 'sub ro-note', text: 'Preview at ' + S.view + ': read only but for the anchor (View: 1280x720 to edit)' }),
+      anc || '', chk || '', el('fieldset', { class: 'ro', disabled: true }, ...parts));
+  }
+
+  // How the selection follows a wider / narrower screen (the resolution preview uses it; the spec states it). Auto =
+  // the preview's guess (edge-hugging: that edge; full width: stretch; else the centre), shown in brackets.
+  function anchorSection(sel) {
+    const ok = sel.filter((e) => boxOf(e));
+    if (!ok.length) return null;
+    const own = new Set(ok.map((e) => (QModel.ANCHORS.includes(e.anchor) ? e.anchor : '')));
+    const guess = new Set(ok.map((e) => anchorOf(boxOf(e))));
+    const s = el('select', { title: 'Left / right: stays on that edge; centre: keeps its offset from the screen centre; stretch: keeps both margins (grows with the screen). A panel\'s anchor moves the widgets inside it.' },
+      el('option', { value: '', text: 'auto' + (guess.size === 1 ? ' (' + [...guess][0] + ')' : '') }),
+      QModel.ANCHORS.map((a) => el('option', { value: a, text: a })));
+    s.value = own.size === 1 ? [...own][0] : '';
+    s.addEventListener('change', () => commit(() => { for (const e of ok) { if (s.value) e.anchor = s.value; else delete e.anchor; } }, { anyView: true }));
+    const lab = el('label', { text: 'anchor' });
+    if (ok.length === 1) mark(lab, ok[0], 'anchor');
+    return sec('', el('div', { class: 'row' }, lab, s));
   }
 
   function elementInspector(e) {
@@ -1220,7 +1474,11 @@
       bind(inp, () => { p[f] = inp.value; });
       return el('div', { class: 'row' }, lab, inp);
     };
-    const idCheck = (v) => (!v.trim() ? 'A page needs an id' : S.doc.pages.some((x) => x !== p && x.id === v) ? `Another page is "${v}" already: ids must be unique (the spec and provenance go by id)` : '');
+    const idCheck = (v) => {
+      const o = !v.trim() ? null : idTaken(v, p);
+      return !v.trim() ? 'A page needs an id' : /^\s|\s$/.test(v) ? 'No spaces at the start or end of an id' :
+        o ? `Another page is "${o.id}" already: ids must be unique, whatever the case (the spec and provenance go by id)` : '';
+    };
     out.push(sec('', pageField('id', 'id', { placeholder: 'screen path, e.g. settings/video', check: idCheck }), pageField('title', 'title'), pageField('background', 'backdrop')));
     const ig = el('input', { type: 'checkbox' });
     ig.checked = !!p.inGame;
@@ -1268,16 +1526,18 @@
   function renderStatus() {
     renderSelStatus();
     const src = baseline.source;
-    const from = (dump ? (build.dump || 'dump') + ' @ ' + (src.commit || '?') : 'NO DATA (run install.py)') + (startLayout ? '  -  proposal ' + (build.layout || '') : '');
+    const fr = build.freshness;   // (a VERSION-only difference: a note here, not the red banner; showFreshness)
+    const from = (dump ? (build.dump || 'dump') + ' @ ' + (src.commit || '?') + (fr && !fr.stale && fr.note ? ' (' + fr.note + ')' : '') : 'NO DATA (run install.py)') +
+      (startLayout ? '  -  proposal ' + (build.layout || '') : '');
     const sample = build.sample ? '  [SAMPLE DATA]' : '';
     const fe = QFonts.get(activeId());
     const fl = fe ? `  -  font ${fe.name}${S.flip ? ' (compare, F)' : ''} [${LIC_WORD[licOf(fe)]}]` : '';
-    $('stInfo').textContent = $('stInfo').title = `${from}${sample}${fl}  -  undo ${S.undo.length}  -  ${S.saveState}` + (S.provState ? '  -  ' + S.provState : '');
+    $('stInfo').textContent = $('stInfo').title = (S.fontState ? S.fontState + '  -  ' : '') + `${from}${sample}${fl}  -  undo ${S.undo.length}  -  ${S.saveState}` + (S.provState ? '  -  ' + S.provState : '');
   }
   function updateButtons() {
     $('bUndo').disabled = !S.undo.length;
     $('bRedo').disabled = !S.redo.length;
-    $('bDup').disabled = $('bDel').disabled = !S.sel.size;
+    $('bDup').disabled = $('bDel').disabled = !S.sel.size || !!viewOf();   // (a preview is read only)
   }
   function renderAll() {
     renderPages();
@@ -1404,7 +1664,7 @@
       try {
         const data = JSON.parse(fr.result);
         const doc = QModel.sanitizeWorking(data.doc || data);
-        commit(() => { S.doc = doc; S.pageUid = doc.pages[0] && doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+        commit(() => { S.doc = doc; S.pageUid = firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
         markProposal();
         if (data.font) { S.font = sanitizeFont(data.font); applyFont(); }
         else if (fontOfDoc(doc)) { S.font = fontOfDoc(doc); applyFont(); scheduleSave(); }
@@ -1417,7 +1677,7 @@
   async function resetAll() {
     if (startLayout) return resetToProposal();
     if (!(await confirmed('Reset', 'Reset the whole layout to the game\'s default? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
-    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
     toast('Back to the default layout');
   }
   // proposal builds only: the font a start layout asks for (its saved font, else its doc.font), else the current one
@@ -1429,7 +1689,7 @@
     if (!(await confirmed('Reset', 'Reset the whole layout to the proposal this file was built with? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
     const doc = JSON.parse(startLayout.json);
     const pu = startLayout.data.pageUid;
-    commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+    commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
     markProposal();
     S.font = startFont(doc);
     applyFont();
@@ -1438,7 +1698,7 @@
   }
   async function resetToGameDefault() {
     if (!(await confirmed('Reset to game default', 'Reset the whole layout to the game\'s default layout and font, dropping the proposal? (Undo can bring the layout back while this tab is open; Reset goes back to the proposal.)', 'Reset'))) return;
-    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
+    commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = firstPageUid(); S.sel = new Set(); }, { noMark: true, anyView: true });
     S.font = sanitizeFont(Object.assign({}, S.font, { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null }));
     applyFont();
     scheduleSave();
@@ -1496,6 +1756,7 @@
     const gen = ++fontGen;
     const set = () => {
       if (gen !== fontGen) return;
+      checkCache.key = '';   // (the font may have loaded since: text widths changed)
       QRender.setFontCfg(cfgFor(activeId()));
       QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs });
       syncFontUI();
@@ -1508,7 +1769,29 @@
       QFonts.ensure('rubik').then((e) => { logoReady = true; QRender.setLogoFont(e.family); requestRender(); }, (err) => console.warn('logo font', err));
     }
     const ids = [S.font.id, S.font.cmp].filter((id) => id && QFonts.get(id));
-    Promise.all(ids.map((id) => QFonts.ensure(id))).then(set, (err) => { console.warn('font', err); toast('Could not load that font: ' + err.message, 4000); });
+    if (ids.every(QFonts.ready)) return;   // (loaded already: one redraw, not two)
+    fontBusy(true);
+    Promise.all(ids.map((id) => QFonts.ensure(id))).then(() => { fontBusy(false); set(); },
+      (err) => { fontBusy(false); console.warn('font', err); toast('Could not load that font: ' + err.message, 4000); });
+  }
+  // a font still loading: the busy cursor and a word in the status bar (the page draws in the fallback meanwhile)
+  let busyN = 0;
+  function fontBusy(on) {
+    busyN = Math.max(0, busyN + (on ? 1 : -1));
+    document.body.classList.toggle('busy', busyN > 0);
+    S.fontState = busyN ? 'loading font...' : '';
+    renderStatus();
+  }
+  // The trial fonts load in idle time after the start, one at a time, so a later switch (and the Font sheet) is
+  // immediate instead of a 60-230 ms decode at the click.
+  function preloadFonts() {
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
+    const next = () => {
+      const e = QFonts.list().find((x) => !QFonts.ready(x.id) && !x.failed);
+      if (!e) return;
+      idle(() => QFonts.ensure(e.id).then(next, () => { e.failed = true; next(); }), { timeout: 3000 });
+    };
+    setTimeout(next, 1500);
   }
   function setFont(id) {
     if (!QFonts.get(id)) return false;
@@ -1692,7 +1975,12 @@
     $('offCanvas').hidden = S.sheet;
     $('sheetWrap').hidden = !S.sheet;
     renderPages();
-    if (on) { renderInspector(); QFonts.ensureAll().then(() => { renderFontMenus(); requestRender(); }); }
+    if (on) {
+      renderInspector();
+      const all = QFonts.list().every((e) => QFonts.ready(e.id));
+      if (!all) fontBusy(true);   // (the sheet draws now and again once every font is in)
+      QFonts.ensureAll().then(() => { if (!all) fontBusy(false); renderFontMenus(); requestRender(); });
+    }
     layoutStage();
   }
   let sheetSamples = null;
@@ -1806,7 +2094,7 @@
     $('nSizeK').onchange = () => setFontOpt('sizeK', $('nSizeK').value === '' ? null : Number($('nSizeK').value));
     $('bSizeAuto').onclick = () => setFontOpt('sizeK', null);
     $('cUpper').onchange = () => setFontOpt('upper', $('cUpper').checked);
-    $('bFonts').onclick = () => { $('fontPanel').hidden = !$('fontPanel').hidden; $('help').hidden = true; };
+    $('bFonts').onclick = () => togglePopover('fontPanel');
     $('fpClose').onclick = () => { $('fontPanel').hidden = true; };
     $('bTour').onclick = toggleTour;
     $('bUpload').onclick = () => $('fFont').click();
@@ -1848,7 +2136,7 @@
     else if (ctrl && lk === 'x') copySel(true);
     else if (ctrl && lk === 'v') paste();
     else if (ctrl && lk === 'd') duplicateSel();
-    else if (ctrl && lk === 'a' && viewOf()) toast('Preview is read only: pick View: 1280x720 to edit');
+    else if (ctrl && lk === 'a' && readOnly()) { /* (preview: nothing to select) */ }
     else if (ctrl && lk === 'a') { S.sel = new Set(curPage().elements.filter(pickable).map((e) => e.uid)); renderAfterSelect(); }
     else if (ctrl && lk === 's') { saveNow(); toast('Saved in this browser (it saves by itself too)'); }
     else if (ctrl) handled = false;
@@ -1863,14 +2151,26 @@
     else if (lk === 'g') toggle('grid');
     else if (lk === 'w') { toggle('widgetsOnly'); renderOffCanvas(); }
     else if (lk === 'o') toggle('ghost');
-    else if (lk === 'r') toggle('shot');
+    else if (lk === 'k') { toggle('check'); renderInspector(); }
+    else if (lk === 'r') { if ($('cShot').disabled) toast(shotWhyNot(curPage()), 5000); else toggle('shot'); }
     else if (lk === 'f') flipFont();
     else if (lk === 't') toggleTour();
-    else if (k === '?' || k === 'F1') $('help').hidden = !$('help').hidden;
+    else if (k === '?' || k === 'F1') togglePopover('help');
     else handled = false;
     if (handled) ev.preventDefault();
   });
 
+  // Help and Fonts... open under the toolbar as it is now (it wraps to two rows at 1280 wide), never over its buttons.
+  function togglePopover(id) {
+    const pop = $(id), other = $(id === 'help' ? 'fontPanel' : 'help');
+    other.hidden = true;
+    pop.hidden = !pop.hidden;
+    placePopovers();
+  }
+  function placePopovers() {
+    const top = Math.round($('toolbar').getBoundingClientRect().bottom + 4);
+    for (const pop of [$('help'), $('fontPanel')]) if (!pop.hidden) { pop.style.top = top + 'px'; pop.style.maxHeight = (window.innerHeight - top - 10) + 'px'; }
+  }
   function toggle(pref) {
     S.prefs[pref] = !S.prefs[pref];
     savePrefs();
@@ -1883,6 +2183,7 @@
     $('cGhost').checked = S.prefs.ghost;
     $('cWidgets').checked = S.prefs.widgetsOnly;
     $('cShot').checked = S.prefs.shot;
+    $('cCheck').checked = S.prefs.check;
     $('rShot').value = S.prefs.shotOpacity;
     $('sZoom').value = String(S.prefs.zoom);
   }
@@ -1896,6 +2197,7 @@
     $('cGrid').onchange = () => { S.prefs.grid = $('cGrid').checked; savePrefs(); requestRender(); };
     $('nGrid').onchange = () => { S.prefs.gridSize = Math.max(2, Math.min(100, Number($('nGrid').value) || 10)); savePrefs(); syncToolbar(); requestRender(); };
     $('cGhost').onchange = () => { S.prefs.ghost = $('cGhost').checked; savePrefs(); requestRender(); };
+    $('cCheck').onchange = () => { S.prefs.check = $('cCheck').checked; savePrefs(); requestRender(); renderInspector(); };
     $('cWidgets').onchange = () => { S.prefs.widgetsOnly = $('cWidgets').checked; savePrefs(); renderOffCanvas(); requestRender(); };
     $('cShot').onchange = () => { S.prefs.shot = $('cShot').checked; savePrefs(); requestRender(); };
     $('rShot').oninput = () => { S.prefs.shotOpacity = Number($('rShot').value); savePrefs(); requestRender(); };
@@ -1930,15 +2232,25 @@
       $('bReset').title = 'Back to the proposal this file was built with (' + (build.layout || 'embedded layout') + ')';
       document.title = 'Quark UI Customizer - PROPOSAL';
     }
-    $('bHelp').onclick = () => { $('help').hidden = !$('help').hidden; };
+    $('bHelp').onclick = () => togglePopover('help');
+    $('helpClose').onclick = () => { $('help').hidden = true; };
+    // help closes on a click anywhere else (Fonts... stays open while the toolbar's font menus are used)
+    window.addEventListener('mousedown', (ev) => { if (!$('help').hidden && !$('help').contains(ev.target) && ev.target !== $('bHelp')) $('help').hidden = true; });
     $('bAddPage').onclick = addPage;
     $('qSearch').oninput = () => { S.search = $('qSearch').value; renderPages(); };
+    $('qSearch').addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      const q = S.search.trim().toLowerCase(), list = visiblePageOrder();
+      const from = list.findIndex((p) => p.uid === S.pageUid);   // (Enter again: the next page with a match)
+      const next = q && [...list.slice(from + 1), ...list.slice(0, from + 1)].find((p) => searchHits(p, q).length);
+      if (next) openPage(next); else if (q) toast('No widget matches "' + S.search.trim() + '"');
+    });
     $('mClose').onclick = () => { $('modal').hidden = true; };
     $('mCopy').onclick = copySpec;
     $('mDownload').onclick = () => { if (lastSpec) download(lastSpec.fileName, lastSpec.markdown, 'text/markdown'); };
     $('sSpecLayout').onchange = () => { S.prefs.specLayout = $('sSpecLayout').value; savePrefs(); showSpec(makeSpec(), false); };
     $('modal').addEventListener('mousedown', (ev) => { if (ev.target === $('modal')) $('modal').hidden = true; });
-    $('dlg').addEventListener('mousedown', (ev) => { if (ev.target === $('dlg') && dlgDone) dlgDone(null); });
+    $('dlg').addEventListener('mousedown', (ev) => { if (ev.target === $('dlg') && dlgDone && performance.now() - dlgAt > 400) dlgDone(null); });
     const pal = $('palette');
     for (const [kind, name] of PALETTE) {
       const proposed = QModel.NEW_KINDS.includes(kind);
@@ -1949,15 +2261,16 @@
       }));
     }
     wireFonts();
-    window.addEventListener('resize', () => { layoutStage(); if (S.sheet) requestRender(); });
-    window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
+    window.addEventListener('resize', () => { layoutStage(); placePopovers(); if (S.sheet) requestRender(); });
+    window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); if (histTimer) saveHistory(); });
     if (document.fonts) {
       document.fonts.load('700 15px QuarkUI').then(() => { S.diff = null; requestRender(); }, () => {});
       document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', requestRender);
     }
   }
 
-  // ---- an out-of-date dump (build.py freshness: the checkout's VERSION / UI code moved on since the extract) ----
+  // ---- an out-of-date dump (build.py freshness: commits changed the UI code since the extract; when git can't tell,
+  // the checkout's VERSION moved on). A VERSION-only bump is no reason for the red bar: renderStatus notes it. ----
   function showFreshness() {
     const f = build.freshness;
     if (!f || !f.stale) return;
@@ -1983,6 +2296,7 @@
   }, (e) => console.warn('uploaded fonts', e));
   layoutStage();
   renderAll();
+  preloadFonts();
   S.saveState = store.get(STORE_KEY) ? 'saved in this browser' : startLayout ? 'proposal layout' : 'default layout';
   renderStatus();
   if (!dump) toast('No layout data embedded: run tools/ui_customizer/install.py to build ui-customizer.html', 8000);
@@ -1991,7 +2305,7 @@
   // for tests and the console
   window.QApp = { S, baseline, commit, undo, redo, addWidget, selectPage, paste, copySel, deleteSel, moveSelToPage, exportSpec,
     spec: (layout) => QModel.specMarkdown(baseline, S.doc, { dumpName: build.dump, font: fontDesc(), freshness: build.freshness, layout: layout || S.prefs.specLayout }).markdown,
-    zoom: () => zoom, setView, preview: () => { const v = viewOf(), p = curPage(); return v && p ? Object.assign(previewPage(p, v), { view: v }) : null; },
+    zoom: () => zoom, setView, check: () => layoutCheck(), preview: () => { const v = viewOf(), p = curPage(); return v && p ? Object.assign(previewPage(p, v), { view: v }) : null; },
     setFont, setFontOpt, showSheet, fontDesc, fonts: QFonts, addFontFile: (f) => addFonts([f]), tour: toggleTour,
     provItems, exportProvenance, forgetProvFolder: () => { provDir = null; } };
 })();
