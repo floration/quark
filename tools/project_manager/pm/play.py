@@ -1152,6 +1152,7 @@ class Play:
         b = {"id": bid, "label": label, "kind": kind, "folder": e["path"], "present": e.get("present"),
              "version": e.get("version"), "tag": e.get("tag"), "commit": e.get("commit"), "dirty": e.get("dirty"),
              "mtime": e.get("mtime"), "lines": e.get("lines") or [], "note": e.get("note"),
+             "fromRelease": e.get("kind") == "release",   # (BUILD.txt written when a release was put there)
              "exe": os.path.basename(exe) if exe else None, "playable": bool(exe), "running": running,
              "missing": None if exe else ("folder missing" if not e.get("present") else "no quark.exe in it")}
         m = self._maps(e["path"]) if exe else None
@@ -1164,6 +1165,8 @@ class Play:
                 info = None
             if isinstance(info, dict) and info.get("check") in ("signed", "sha256", "none"):
                 b["check"], b["checkNote"] = info["check"], one_line(info.get("note") or "", 300)
+            if isinstance(info, dict) and isinstance(info.get("installedAt"), str):
+                b["installedAt"] = info["installedAt"]
         return b
 
     def find_build(self, bid):
@@ -1910,9 +1913,11 @@ class Play:
         want = parse_sums(self._fetch_small(rel["sums"])) if rel.get("sums") else None
         if want and sha256_hex != want:
             raise PlayError(500, "The download does not match the release's SHA256SUMS; not installed.")
+        # (a tag like build-1 names no version: unsigned, but not known to be from before signing)
+        why = "from before signing (1.16.x or older)" if util.parse_version(rel["tag"]) else "unsigned, and its tag names no version"
         if want:
-            return "sha256", "from before signing (1.16.x or older): matches its SHA256SUMS, no signature to check"
-        return "none", "from before signing (1.16.x or older): no signature and no SHA256SUMS to check it against"
+            return "sha256", why + ": matches its SHA256SUMS, no signature to check"
+        return "none", why + ": no signature and no SHA256SUMS to check it against"
 
     def _install(self, rel):
         tag = rel["tag"]
@@ -2014,7 +2019,7 @@ class Play:
             b = inst.get(x["tag"])
             row = dict(x, installed=b is not None)
             if b is not None and b.get("check"):
-                row["check"] = b["check"]
+                row["check"], row["checkNote"] = b["check"], b.get("checkNote")
             row["folders"] = [f for f, lb in local.items() if (lb.get("tag") and lb["tag"] == x["tag"]) or
                               (x["version"] and lb.get("version") == x["version"])]
             mine = local.get(x["channel"])  # (production / testing: the folder that follows that channel)

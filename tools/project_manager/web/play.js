@@ -68,7 +68,8 @@
     sha256: ['idle', 'unsigned', 'From before signing (1.16.x or older): matched its SHA256SUMS; there is no signature to check'],
     none: ['warn', 'not checked', 'From before signing (1.16.x or older): no signature and no SHA256SUMS to check it against'],
   };
-  function checkPill(c, note) { const p = CHECK_PILL[c]; return p ? pill(p[0], p[1], note || p[2]) : ''; }
+  // an installed version without play-install.json (installed before the Play tab recorded it): said so, card and row alike
+  function checkPill(c, note) { const p = CHECK_PILL[c]; return p ? pill(p[0], p[1], note || p[2]) : pill('idle', 'check not recorded', 'Installed before the Play tab recorded how it checked a download'); }
   function toast(msg, bad) {
     const t = $('toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false;
     clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, bad ? 7000 : 3500);
@@ -141,11 +142,12 @@
       const meta = [];
       if (has(b.tag) && b.tag !== b.label) meta.push('<span class="mono">' + esc(b.tag) + '</span>');
       if (has(b.commit)) meta.push('<span class="mono">' + esc(String(b.commit).slice(0, 7)) + '</span>' + (b.dirty ? ' <span class="warn">dirty</span>' : ''));
-      if (has(b.mtime)) meta.push('built ' + esc(when(b.mtime)));
+      // (a release put in a folder was installed then, not built: BUILD.txt's time is the install's)
+      if (has(b.installedAt) || has(b.mtime)) meta.push((b.kind === 'version' || b.fromRelease ? 'installed ' : 'built ') + esc(when(b.installedAt || b.mtime)));
       const last = sess.find(s => s.build === b.id && s.state !== 'running');
       const lines = arr(b.lines);
       const bd = '<div class="n"><span>' + esc(b.label) + '</span><span class="kind">' + (b.kind === 'version' ? 'older version' : 'game folder') + '</span></div>' +
-        '<div class="v">' + (has(b.version) ? esc(b.version) : '<span class="muted">unknown version</span>') + (b.kind === 'version' ? ' ' + (checkPill(b.check, b.checkNote) || pill('idle', 'check not recorded', 'Installed before the Play tab recorded how it checked a download')) : '') + '</div>' +
+        '<div class="v">' + (has(b.version) ? esc(b.version) : '<span class="muted">' + (b.kind === 'version' ? 'no version in its tag' : 'unknown version') + '</span>') + (b.kind === 'version' ? ' ' + checkPill(b.check, b.checkNote) : '') + '</div>' +
         (meta.length ? '<div class="m">' + meta.join(' &middot; ') + '</div>' : '') +
         (b.playable ? '' : '<div class="m">' + esc(b.missing || 'not playable') + '</div>') +
         (last ? '<div class="m">last played ' + esc(when(last.startedAt)) + ' for ' + esc(dur(last.durationSec)) + ' ' + exitPill(last.exit) + '</div>' : '') +
@@ -336,7 +338,7 @@
       act = '<span class="prog"><i style="width:' + (f * 100).toFixed(1) + '%"></i></span> <span class="small muted">' + esc(i.state === 'downloading' ? Math.round(f * 100) + '% of ' + size(i.total) : i.state + '…') + '</span>' +
         (i.cancel ? ' <span class="small muted">cancelling&hellip;</span>' : ' <button type="button" class="btn small ghost" data-cancel="' + esc(r.tag) + '">Cancel</button>');
     } else if (r.installed) {
-      act = '<button type="button" class="btn small primary" data-play="versions/' + esc(r.tag) + '">Play</button> <button type="button" class="btn small ghost danger" data-remove="' + esc(r.tag) + '">Remove</button> ' + checkPill(r.check);
+      act = '<button type="button" class="btn small primary" data-play="versions/' + esc(r.tag) + '">Play</button> <button type="button" class="btn small ghost danger" data-remove="' + esc(r.tag) + '">Remove</button> ' + checkPill(r.check, r.checkNote);
     } else if (!r.zip) act = '<span class="muted small">no Windows zip</span>';
     else if (r.needsSig && !(r.sig && r.manifest && r.manifestSig)) act = '<span class="muted small" title="It claims 1.17.0 or later but has no signature: the launcher doesn\'t offer it either">unsigned: not offered</span>';
     else act = '<button type="button" class="btn small" data-install="' + esc(r.tag) + '" title="' + (r.needsSig ? 'Checked like the launcher: signature and signed release manifest' : 'From before signing: checked against SHA256SUMS when it has one') + '">Install</button>' +

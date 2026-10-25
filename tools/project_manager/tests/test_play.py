@@ -553,6 +553,21 @@ class TestPlay(unittest.TestCase):
         self.assertNotEqual(p.find_build("testing")["maps"], sig)
         self.assertEqual(p.api_get("maps", {"build": ["../x"]})[0], 404)
 
+    def test_install_labels(self):
+        p = self.new()
+        c, note = p._verify({"needsSig": False, "tag": "build-1", "sums": None}, "0" * 64, b"")
+        self.assertEqual((c, note.split(":")[0]), ("none", "unsigned, and its tag names no version"))
+        c, note = p._verify({"needsSig": False, "tag": "v1.16.0", "sums": None}, "0" * 64, b"")
+        self.assertTrue(note.startswith("from before signing (1.16.x or older)"))
+        v = os.path.join(self.quark, "versions", "v1.16.0")
+        write(os.path.join(v, "BUILD.txt"), "v1.16.0 (GitHub release, published 2026-01-02T00:00:00Z)\n")
+        fake_game(v)
+        b = p.find_build("versions/v1.16.0")
+        self.assertEqual((b.get("check"), b.get("installedAt"), b["fromRelease"]), (None, None, True))  # (no record)
+        util.write_json_atomic(os.path.join(v, play.INSTALL_INFO), {"check": "none", "note": "n", "installedAt": "2026-10-24T19:00:00Z"})
+        b = p.find_build("versions/v1.16.0")
+        self.assertEqual((b["check"], b["installedAt"]), ("none", "2026-10-24T19:00:00Z"))
+
     def test_stop_log_open(self):
         fake_game(os.path.join(self.quark, "testing"), seconds=30, code=0)
         opened = []
