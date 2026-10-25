@@ -284,6 +284,30 @@ class TestUpdater(unittest.TestCase):
         self.assertGreater(wait, 50)
         self.assertEqual(updater.Updater(self.paths, enabled=False).request(), (False, None))
 
+    def test_request_only_one_tool(self):
+        # the Board's per-tool retry: request(only=id) installs just that entry, even when it is up to date
+        u, _, ents = self.run_pass(min_gap=0)
+        self.assertEqual((runs(self.q, "alpha"), runs(self.q, "beta")), (1, 1))
+        self.assertEqual(u.request(only="nope"), (False, 0))  # (unknown id)
+        self.assertEqual(u.request(only="alpha"), (True, 0.0))
+        self.assertEqual(u.request(only="beta")[0], False)  # (one pass at a time: pending)
+        u.run_once()
+        self.assertEqual((runs(self.q, "alpha"), runs(self.q, "beta")), (2, 1))
+        rows = {e["id"]: e for e in u.view()["entries"]}
+        self.assertEqual((rows["alpha"]["state"], rows["beta"]["state"]), ("ok", "ok"))
+        self.assertIsNone(u.only)
+        # the next plain pass is a normal one again (nothing changed: nothing runs)
+        self.assertEqual(u.request(), (True, 0.0))
+        u.run_once()
+        self.assertEqual((runs(self.q, "alpha"), runs(self.q, "beta")), (2, 1))
+        # the rate limit applies to it as to any request
+        slow = updater.Updater(self.paths, enabled=True)
+        self.assertEqual(slow.request(only="alpha"), (True, 0.0))
+        slow.pending = False
+        ok, wait = slow.request(only="alpha")
+        self.assertFalse(ok)
+        self.assertGreater(wait, 50)
+
     def test_reload_requests_for_page_tools(self):
         # a tool with no server (Sound, UI, Model): a reload request for its folder, so the shell reloads its open tab
         self.set_registry([entry("alpha", restartsPort=8769), entry("beta")])

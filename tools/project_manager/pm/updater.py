@@ -566,6 +566,7 @@ class Updater:
         self.stop = threading.Event()
         self.running = False
         self.pending = False
+        self.only = None      # the one entry id the requested pass installs (request(only=...)), else None
         self.last_request = -1e18
         self.last_run_at = None
         self.repo = {"head": None, "behind": None, "ffOk": None, "error": None}
@@ -599,9 +600,13 @@ class Updater:
             util.log("installs-state.json not saved (%s)" % type(e).__name__)
 
     # -- API -------------------------------------------------------------------------------------------------------
-    def request(self, now=None):
-        """Run soon (the page's "Update now", the shell at app open). -> (accepted, seconds until allowed)."""
+    def request(self, now=None, only=None):
+        """Run soon (the page's "Update now", the shell at app open). -> (accepted, seconds until allowed).
+        only = an installs.json entry id: that pass installs just that entry, even when it is up to date (the Board's
+        per-tool retry); the repository is still fast-forwarded first. Same rate limit; an unknown id -> (False, 0)."""
         now = now or time.time()
+        if only is not None and only not in {e["id"] for e in load_registry(self.paths)[0]}:
+            return False, 0
         with self.lock:
             if not self.enabled:
                 return False, None
@@ -612,6 +617,7 @@ class Updater:
                 return False, round(wait, 1)
             self.last_request = now
             self.pending = True
+            self.only = only
         self.wake.set()
         return True, 0.0
 
@@ -775,7 +781,7 @@ class Updater:
                     self.restarts.append(req)
         return ok
 
-    def electron(self, entry, now=None):
+    def electron(self, entry, now=None, force=False):
         """builtin:electron-update: at most once per ELECTRON_CHECK_GAP (a failed check is tried again next pass).
         The versions go in installedVersion / latestVersion (the Tools & updates row shows them); state "staged" while
         a downloaded Electron waits for the app to close. Between checks the row is rebuilt from the local folders
@@ -783,7 +789,7 @@ class Updater:
         eid = entry["id"]
         now = now or time.time()
         rec = self.saved["entries"].setdefault(eid, {})
-        if now - (rec.get("checkedTs") or 0) < ELECTRON_CHECK_GAP:
+        if not force and now - (rec.get("checkedTs") or 0) < ELECTRON_CHECK_GAP:
             state, note, have = electron_view(self.paths, rec.get("latest"))
             self._set(eid, state=state or "ok", note=note or rec.get("note"), installedVersion=have or rec.get("installed"),
                       latestVersion=rec.get("latest"))
@@ -808,8 +814,9 @@ class Updater:
         with self.lock:
             self.running = True
             self.pending = False
+            only, self.only = self.only, None
         try:
-            self._run()
+            self._run(only)
         except Exception:  # (never let the thread die)
             util.log("updater: %s" % traceback.format_exc(limit=4))
             with self.lock:
@@ -819,7 +826,7 @@ class Updater:
                 self.running = False
                 self.last_run_at = util.now_iso()
 
-    def _run(self):
+    def _run(self, only=None):
         usable = self.update_repo()
         entries, where = load_registry(self.paths)
         saved = self.saved["entries"]
@@ -836,13 +843,15 @@ class Updater:
                 "exitCode": (saved.get(e["id"]) or {}).get("exitCode"),
                 "logTail": tail(self.paths.pm("logs", "install-%s.log" % e["id"])),
                 "restartsPort": e["restartsPort"], "check": e["check"], "note": None} for e in entries}
+            if only:  # (a one-tool pass: the other rows keep what they showed)
+                self.entries.update({k: v for k, v in prev.items() if k != only and k in self.entries})
         for e in entries:
             if self.stop.is_set():
                 return
-            if not e["enabled"]:
+            if not e["enabled"] or (only and e["id"] != only):
                 continue
             if e["run"] == ELECTRON_UPDATE:
-                self.electron(e)  # (needs no repository)
+                self.electron(e, force=bool(only))  # (needs no repository)
                 continue
             if not usable:
                 self._set(e["id"], state="pending", note=self.repo.get("error"))
@@ -855,7 +864,7 @@ class Updater:
             rec = saved.get(e["id"]) or {}
             check = self._check_path(e)
             missing = bool(check) and not os.path.exists(check)
-            if rec.get("stamp") == cur and not missing:
+            if rec.get("stamp") == cur and not missing and not only:
                 self._set(e["id"], state="ok")
                 continue
             # (a version that failed before is retried on each pass: app open or "Update now", never in a loop)
