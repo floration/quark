@@ -21,6 +21,8 @@ const COL_TIP = { range: "hitscan: its range; a projectile: how far it hits a ta
     knock: "the knock field: shotgun m/s per pellet's worth, crossbow m/s, laser m/s per s of beam, a blast m/s at its centre",
     wallbang: "one shot's damage through a wallbang wall (hitscan)", selfDmg: "your own damage from the centre of your blast (below your feet: 0.1 of it)" };
 
+const instant = (r) => r.kind !== "projectile";
+
 export class ValuesView {
     constructor(app, root) {
         this.app = app; this.root = root;
@@ -62,7 +64,8 @@ export class ValuesView {
         if (this.onlyChanged) rows = rows.filter((x) => x.changed);
         if (this.sort.key) {
             const k = this.sort.key, s = this.sort.asc ? 1 : -1;
-            const val = (x) => (k === "label" ? x.r.label : Number.isFinite(x.r[k]) ? x.r[k] : Infinity);
+            // (an instant weapon sorts as the fastest: speed infinite, time to 20 m 0)
+            const val = (x) => (k === "label" ? x.r.label : k === "speed" && instant(x.r) ? Infinity : Number.isFinite(x.r[k]) ? x.r[k] : Infinity);
             rows.sort((a, b) => { const A = val(a), B = val(b); return (typeof A === "string" ? A.localeCompare(B) : A - B) * s; });
         }
         return rows;
@@ -82,6 +85,8 @@ export class ValuesView {
             h += `<tr class="${changed ? "changed" : ""}${r.weapon === app.sel ? " sel" : ""}" data-w="${r.weapon}"><td>${esc(r.label)}${r.logic ? ` <span class="logic" title="the set's slot ${esc(r.logic)} is counted in these numbers">ƒ</span>` : ""}</td>`;
             for (const [k, , , lower, kind] of COLS) {
                 const a = r[k], b = c ? c[k] : undefined;
+                // (hitscan, beam and melee have no flight: their speed and time to 20 m read "instant", not 0)
+                if ((k === "speed" || k === "t20") && instant(r)) { h += `<td class="n"><span class="muted" title="${esc(r.kind)}: no flight time">instant</span></td>`; continue; }
                 const blank = ((k === "splashMax" || k === "splashRadius") && !r.splashRadius && !(c && c.splashRadius)) || ((k === "wallbang" || k === "selfDmg") && a == null && !(c && c[k] != null));
                 const show = blank ? "" : f(a, kind);
                 h += `<td class="n">${show}${c && show !== "" ? diffSpan(a, b, lower) : ""}${this.showStd && c && show !== "" ? `<span class="d muted">${f(b, kind)}</span>` : ""}</td>`;
