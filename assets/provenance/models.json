@@ -3,9 +3,12 @@
  "category": "models",
  "items": {
   "models/crown/CROWN.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/BANDIT.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/player/FIGHTER.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/player/HEAVY.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/player/KNIGHT.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/NINJA.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
+  "models/player/PIRATE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/player/ROBOT.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/player/SIMPLE.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},
   "models/player/STANDARD.gltf": {"origin": "ai", "source": "box model in src/client/models.cpp"},

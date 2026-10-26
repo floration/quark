@@ -65,3 +65,6 @@ Every change on `testing` since production 1.19.0, with what changed and why. Th
 - The rest are rebuilt with legs, boots, belts, shoulders and face details (13-21 boxes, the limit is 32). Crouching squashes body boxes and keeps head sizes, as before. Cosmetic parts may poke slightly past the hitbox (the wizard's hat, the zombie's reaching arms); hits are unchanged.
 - Projectiles get more parts each (rocket 11, sticky 11, bolt 7, knife 6, syringe 7, bubble 4, orb 3), same sizes and the same flame / core / wobble animation.
 - Provenance: SCOUT removed, SIMPLE / WIZARD / ZOMBIE / FIGHTER added (AI-made).
+
+## More player models (q, 2026-10-26: "also add pirate, ninja, bandit")
+- kPlayerModels 8 -> 11 (ids 8-10, appended, so no saved id changes; an older client shows them as STANDARD). Same hitbox; 18-20 boxes each. Provenance: three AI-made entries.

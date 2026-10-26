@@ -29,7 +29,7 @@ struct Settings {
     int maxFps = 0;             // 0 = unlimited
     int width = 1280, height = 720;
     bool shadows = true;
-    int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SIMPLE, ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER
+    int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SIMPLE, ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT
     int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
     int nameColor = -1;         // your name's colour as others see it (0xRRGGBB; -1 = the default)
     bool hbMigrated = false;    // (1.17: health bars were switched on once for every existing config)
