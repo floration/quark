@@ -74,3 +74,7 @@ Every change on `testing` since production 1.19.0, with what changed and why. Th
 - Map format 2 -> 3 (owner rule): an identity converter step (version 2 files have no nograpple boxes); make_maps.py and the web map editor write version 3. An older game rejects a version 3 map's `nograpple` line, which is why the version moves.
 - Look: lit like base, slate blue (0.30, 0.33, 0.42) with diagonal stripes so players can tell it apart; same colour in the in-game and web editors.
 - Test: testGrappleAgainstWall also holds the grapple at a nograpple wall for 1.5 s (no grab), walks into it (blocked) and casts a ray at it (stops).
+
+## Invisible box faces (bug; q, 2026-10-26: "sometimes on stairs and stuff, certain faces of boxes will be invisible in game")
+- Cause: the world build dropped a face when 81 sample points (a 9 x 9 grid) just off it were all inside some brush. A visible strip narrower than a ninth of the face (a stair side or riser mostly covered by the next step) could fall between the samples, and the whole face was dropped. The test also counted clip boxes, which are invisible, so a face behind a clip wall vanished.
+- Fix (src/client/lightmap.cpp PointGrid::buried): exact coverage. The brushes that hold the face's plane (lifted 1 cm) are clipped to the face, and every cell between their edges is tested once; clip never hides anything. Same cost class (a handful of nearby brushes per face) and run once per map load in the parallel prepass.
