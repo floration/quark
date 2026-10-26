@@ -54,3 +54,7 @@ Every change on `testing` since production 1.19.0, with what changed and why. Th
 - **Tilt**: PITCH / YAW / ROLL, -90..90 degrees, for both models. The gun turns about its pivot, the launcher about its housing (inside its turn toward the hook). With every angle 0 the old drawing path runs, so there's no extra cost.
 - **Muzzles follow**: own shots, tracers, the laser beam, the knife slash and projectile starts all come from one `weaponFrame` (used by `muzzlePoint`), and the rope from the launcher's frame, so they leave the moved, tilted barrels.
 - `--settingstab hud/viewmodel` / `hud/grapple` (screenshots). RELEASE_CHECKLIST: HUD and launcher rows updated, plus a row for the corner placement at 16:9, 4:3 and ultrawide.
+
+## Weapon models (q, 2026-10-26: "create some new weapon models; up to 20 boxes per weapon")
+- `viewmodelParts` (src/client/models.cpp): rifle 17 boxes (was 6), rocket 18 (7), knife 13 (5), sniper 20 (11), laser 19 (8), shotgun 16 (6), sticky 16 (6), bubble 16 (7), syringe 14 (7), crossbow 19 (5); locator unchanged (12). Each keeps its old silhouette, size and pivot so the HUD viewmodel offsets still fit; the new parts are sights, rails, vents, grips, stocks, bands and glowing details on the same colour slots (metal, base, team, glow), so team colours and map tints apply as before.
+- Cost: at most 20 boxes per weapon (the limit is kMaxDefaultParts = 32), one viewmodel drawn per frame, so a few dozen extra triangles. Still AI-made in the provenance registry.

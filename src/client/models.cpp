@@ -154,79 +154,156 @@ void viewmodelParts(int w, const ModelPalette& pal, ModelParts& out) {
     const uint8_t M = TINT_METAL, B = TINT_BASE, A = TINT_TEAM, G = TINT_GLOW;
     auto part = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t slot) { e(Vec3(x, y, z), Vec3(hx, hy, hz), c, slot); };
     switch (w) {
-        case WPN_RIFLE:      // receiver, long barrel with a front sight, magazine, stock, accent rail
-            part(0, 0, 0, 0.026f, 0.032f, 0.12f, dark, M);
-            part(0, 0.008f, -0.2f, 0.009f, 0.009f, 0.09f, mid, M);
-            part(0, 0.022f, -0.27f, 0.004f, 0.012f, 0.006f, mid, M);
-            part(0, -0.06f, -0.03f, 0.016f, 0.035f, 0.022f, mid, M);
-            part(0, -0.012f, 0.15f, 0.02f, 0.03f, 0.05f, dark, M);
-            part(0, 0.038f, -0.01f, 0.01f, 0.005f, 0.09f, acc, A);
+        case WPN_RIFLE:      // receiver with an ejection port, handguard with vents, barrel, muzzle brake, front and rear
+                             // sights, top rail, curved magazine, pistol grip, trigger guard, stock with a butt pad (17)
+            part(0, 0, 0, 0.026f, 0.032f, 0.11f, dark, M);
+            part(0.027f, 0.01f, -0.01f, 0.002f, 0.009f, 0.025f, mid, M);
+            part(0, 0.004f, -0.15f, 0.022f, 0.024f, 0.06f, mid, M);
+            for (int k = 0; k < 3; k++) part(0, 0.029f, -0.12f - k * 0.03f, 0.016f, 0.003f, 0.008f, dark, M);
+            part(0, 0.008f, -0.26f, 0.008f, 0.008f, 0.06f, mid, M);
+            part(0, 0.008f, -0.325f, 0.012f, 0.012f, 0.012f, dark, M);
+            part(0, 0.03f, -0.29f, 0.003f, 0.014f, 0.004f, mid, M);
+            part(0, 0.044f, 0.06f, 0.008f, 0.01f, 0.006f, mid, M);
+            part(0, 0.036f, -0.03f, 0.01f, 0.004f, 0.08f, acc, A);
+            part(0, -0.055f, -0.04f, 0.016f, 0.03f, 0.018f, mid, M);
+            part(0, -0.09f, -0.03f, 0.016f, 0.012f, 0.018f, mid, M);
+            part(0, -0.065f, 0.06f, 0.014f, 0.035f, 0.016f, dark, M);
+            part(0, -0.04f, 0.01f, 0.004f, 0.004f, 0.03f, mid, M);
+            part(0, -0.01f, 0.17f, 0.02f, 0.03f, 0.06f, dark, M);
+            part(0, -0.01f, 0.235f, 0.022f, 0.036f, 0.006f, acc, A);
             break;
-        case WPN_ROCKET:     // fat tube with flared muzzle and exhaust rings, side sight, grip
+        case WPN_ROCKET:     // fat tube, flared muzzle and exhaust, glowing warhead band, accent stripes, heat shield,
+                             // side scope, front grip, pistol grip, shoulder rest, a rocket's nose in the muzzle (18)
             part(0, 0, -0.02f, 0.045f, 0.045f, 0.2f, mid, M);
             part(0, 0, -0.23f, 0.055f, 0.055f, 0.02f, dark, M);
+            part(0, 0, -0.245f, 0.035f, 0.035f, 0.004f, glow * 0.5f, G);
             part(0, 0, 0.19f, 0.052f, 0.052f, 0.015f, dark, M);
+            part(0, 0, 0.21f, 0.04f, 0.04f, 0.006f, dark, M);
             part(0, 0, -0.14f, 0.0475f, 0.0475f, 0.005f, glow, G);
             part(0, 0, 0.05f, 0.047f, 0.047f, 0.006f, acc, A);
+            part(0, 0, 0.11f, 0.047f, 0.047f, 0.006f, acc, A);
+            part(0, 0.05f, -0.02f, 0.02f, 0.006f, 0.08f, dark, M);
             part(-0.058f, 0.025f, -0.06f, 0.012f, 0.02f, 0.03f, dark, M);
+            part(-0.058f, 0.025f, -0.092f, 0.009f, 0.009f, 0.002f, glow, G);
+            part(-0.058f, 0.025f, -0.025f, 0.007f, 0.007f, 0.005f, mid, M);
+            part(0, -0.065f, -0.1f, 0.012f, 0.025f, 0.014f, dark, M);
             part(0, -0.07f, 0.04f, 0.014f, 0.03f, 0.02f, dark, M);
+            part(0, -0.045f, 0.065f, 0.004f, 0.004f, 0.02f, mid, M);
+            part(0, -0.05f, 0.14f, 0.03f, 0.008f, 0.04f, dark, M);
+            part(0, 0, -0.215f, 0.025f, 0.025f, 0.012f, acc, A);
+            part(0.047f, 0, 0.02f, 0.002f, 0.03f, 0.03f, light, B);
             break;
-        case WPN_KNIFE:      // grip, cross guard, long bright blade, accent pommel
+        case WPN_KNIFE:      // wrapped grip, cross guard with tips, blade with a spine, edge and point, a glowing fuller,
+                             // accent pommel and lanyard ring (13)
             part(0, -0.01f, 0.04f, 0.012f, 0.016f, 0.05f, dark, M);
+            for (int k = 0; k < 3; k++) part(0, -0.01f, 0.01f + k * 0.03f, 0.013f, 0.017f, 0.004f, mid, M);
             part(0, -0.01f, -0.015f, 0.035f, 0.008f, 0.008f, mid, M);
-            part(0, -0.006f, -0.11f, 0.004f, 0.018f, 0.09f, light, B);
-            part(0, 0.006f, -0.2f, 0.003f, 0.008f, 0.012f, light, B);
+            part(-0.037f, -0.004f, -0.015f, 0.004f, 0.012f, 0.007f, dark, M); part(0.037f, -0.004f, -0.015f, 0.004f, 0.012f, 0.007f, dark, M);
+            part(0, 0.004f, -0.11f, 0.005f, 0.006f, 0.09f, mid, M);
+            part(0, -0.012f, -0.11f, 0.003f, 0.013f, 0.09f, light, B);
+            part(0, -0.006f, -0.1f, 0.0055f, 0.003f, 0.06f, glow * 0.6f, G);
+            part(0, -0.002f, -0.21f, 0.003f, 0.012f, 0.012f, light, B);
             part(0, -0.01f, 0.095f, 0.014f, 0.014f, 0.008f, acc, A);
+            part(0, -0.01f, 0.11f, 0.005f, 0.008f, 0.006f, mid, M);
             break;
-        case WPN_SNIPER:     // long thin barrel with muzzle brake, receiver, scope on rings, bolt, stock
+        case WPN_SNIPER:     // receiver, fluted barrel, muzzle brake with ports, scope with lens, caps and turrets on
+                             // rings, bolt, magazine, bipod legs folded, grip, cheek rest and stock (20)
             part(0, 0, 0, 0.022f, 0.028f, 0.13f, dark, M);
             part(0, 0.006f, -0.27f, 0.007f, 0.007f, 0.15f, mid, M);
+            part(0, 0.014f, -0.22f, 0.002f, 0.002f, 0.08f, dark, M);
             part(0, 0.006f, -0.43f, 0.012f, 0.01f, 0.018f, dark, M);
+            part(0, 0.006f, -0.43f, 0.0125f, 0.004f, 0.004f, mid, M);
             part(0, 0.058f, -0.02f, 0.017f, 0.017f, 0.09f, dark, M);
             part(0, 0.058f, -0.115f, 0.02f, 0.02f, 0.008f, acc, A);
             part(0, 0.058f, -0.124f, 0.012f, 0.012f, 0.002f, glow, G);
+            part(0, 0.058f, 0.075f, 0.019f, 0.019f, 0.006f, acc, A);
+            part(0, 0.08f, -0.02f, 0.006f, 0.006f, 0.008f, mid, M); part(0.022f, 0.058f, -0.02f, 0.006f, 0.006f, 0.008f, mid, M);
             part(0, 0.036f, -0.06f, 0.006f, 0.01f, 0.006f, mid, M); part(0, 0.036f, 0.03f, 0.006f, 0.01f, 0.006f, mid, M);
             part(0.03f, 0.01f, 0.05f, 0.012f, 0.006f, 0.006f, light, B);
+            part(0, -0.045f, -0.02f, 0.012f, 0.02f, 0.025f, mid, M);
+            part(-0.008f, -0.02f, -0.24f, 0.003f, 0.003f, 0.06f, dark, M); part(0.008f, -0.02f, -0.24f, 0.003f, 0.003f, 0.06f, dark, M);
+            part(0, -0.06f, 0.08f, 0.013f, 0.033f, 0.015f, dark, M);
+            part(0, 0.02f, 0.16f, 0.016f, 0.01f, 0.05f, acc, A);
             part(0, -0.015f, 0.17f, 0.018f, 0.035f, 0.06f, dark, M);
             break;
-        case WPN_LASER:      // chunky body, coil segments on top, glowing emitter rings at the front
+        case WPN_LASER:      // chunky body with side fins, coil segments on top, capacitor glow down the side, emitter
+                             // with three glowing rings, sight, grip and a power cell behind (19)
             part(0, 0, 0, 0.036f, 0.04f, 0.15f, mid, M);
             for (int k = 0; k < 4; k++) part(0, 0.046f, -0.09f + k * 0.05f, 0.022f, 0.008f, 0.012f, k % 2 ? dark : glow, k % 2 ? M : G);
+            part(-0.04f, 0, -0.02f, 0.006f, 0.03f, 0.08f, dark, M); part(0.04f, 0, -0.02f, 0.006f, 0.03f, 0.08f, dark, M);
+            part(0.047f, 0, -0.02f, 0.002f, 0.006f, 0.06f, glow, G);
             part(0, 0, -0.165f, 0.03f, 0.03f, 0.012f, dark, M);
-            part(0, 0, -0.185f, 0.022f, 0.022f, 0.008f, glow * 1.4f, G);
+            for (int k = 0; k < 3; k++) part(0, 0, -0.185f - k * 0.02f, 0.024f - k * 0.004f, 0.024f - k * 0.004f, 0.004f, glow * (1.0f + 0.25f * k), G);
+            part(0, 0, -0.205f, 0.01f, 0.01f, 0.03f, dark, M);
+            part(0, 0.06f, 0.06f, 0.006f, 0.008f, 0.006f, acc, A);
             part(0, -0.07f, 0.03f, 0.014f, 0.03f, 0.02f, dark, M);
+            part(0, -0.035f, 0.12f, 0.022f, 0.02f, 0.03f, dark, M);
+            part(0, -0.035f, 0.152f, 0.016f, 0.012f, 0.002f, acc, A);
+            part(0, 0, 0.155f, 0.03f, 0.034f, 0.006f, dark, M);
             break;
-        case WPN_SHOTGUN:    // twin barrels, pump under them, heavy receiver and stock
+        case WPN_SHOTGUN:    // twin barrels with a rib and bead, muzzle band, ribbed pump, shell carrier on the side,
+                             // heavy receiver, trigger guard, grip and stock with a pad (16)
             part(-0.012f, 0.012f, -0.17f, 0.011f, 0.011f, 0.13f, mid, M);
             part(0.012f, 0.012f, -0.17f, 0.011f, 0.011f, 0.13f, mid, M);
+            part(0, 0.025f, -0.17f, 0.003f, 0.002f, 0.13f, dark, M);
+            part(0, 0.03f, -0.29f, 0.003f, 0.003f, 0.003f, light, B);
+            part(0, 0.012f, -0.29f, 0.026f, 0.013f, 0.008f, dark, M);
             part(0, -0.018f, -0.15f, 0.022f, 0.016f, 0.06f, dark, M);
+            for (int k = 0; k < 3; k++) part(0, -0.018f, -0.19f + k * 0.04f, 0.024f, 0.018f, 0.005f, mid, M);
             part(0, 0, 0.02f, 0.03f, 0.035f, 0.08f, dark, M);
+            for (int k = 0; k < 3; k++) part(0.033f, 0.004f, -0.02f + k * 0.022f, 0.004f, 0.012f, 0.008f, acc, A);
+            part(0, -0.045f, 0.05f, 0.005f, 0.008f, 0.025f, mid, M);
             part(0, -0.015f, 0.16f, 0.024f, 0.035f, 0.06f, mid, M);
             part(0, 0.038f, 0.0f, 0.008f, 0.004f, 0.06f, acc, A);
             break;
-        case WPN_STICKY:     // drum magazine, stubby wide barrel, canister on top
+        case WPN_STICKY:     // drum magazine with accent bands and glowing windows, stubby wide barrel with a flared
+                             // mouth, a canister on top with a glow strip, grip and stock (16)
             part(0, 0, -0.06f, 0.03f, 0.03f, 0.13f, mid, M);
             part(0, -0.02f, 0.04f, 0.055f, 0.055f, 0.04f, dark, M);
             part(0, -0.02f, 0.04f, 0.057f, 0.012f, 0.03f, acc, A);
+            part(0, -0.02f, 0.04f, 0.012f, 0.057f, 0.03f, acc, A);
+            part(-0.056f, 0.015f, 0.04f, 0.002f, 0.008f, 0.008f, glow, G); part(0.056f, 0.015f, 0.04f, 0.002f, 0.008f, 0.008f, glow, G);
             part(0, 0.045f, -0.02f, 0.014f, 0.014f, 0.05f, dark, M);
             part(0, 0.06f, -0.02f, 0.008f, 0.003f, 0.04f, glow, G);
+            part(0, 0.045f, 0.035f, 0.01f, 0.01f, 0.006f, mid, M);
             part(0, 0, -0.2f, 0.036f, 0.036f, 0.012f, dark, M);
+            part(0, 0, -0.218f, 0.042f, 0.042f, 0.006f, mid, M);
+            part(0, 0, -0.222f, 0.022f, 0.022f, 0.003f, glow * 0.4f, G);
+            part(0, -0.012f, -0.13f, 0.032f, 0.006f, 0.04f, dark, M);
+            part(0, -0.075f, 0.1f, 0.014f, 0.03f, 0.016f, dark, M);
+            part(0, -0.03f, 0.14f, 0.02f, 0.025f, 0.05f, mid, M);
+            part(0, -0.03f, 0.192f, 0.022f, 0.028f, 0.004f, acc, A);
             break;
-        case WPN_BUBBLE:     // a round soap tank on top, a fat body, a flared wand nozzle with a bubble on it
+        case WPN_BUBBLE:     // a round soap tank on top (with a cap and a level window), a fat body with side bubbles,
+                             // a flared wand nozzle with a ring and a bubble on it, grip (16)
             part(0, 0, 0, 0.03f, 0.035f, 0.11f, mid, M);
             part(0, 0.065f, 0.02f, 0.04f, 0.035f, 0.045f, light, B);
             part(0, 0.065f, 0.02f, 0.03f, 0.04f, 0.035f, glow, G);
+            part(0, 0.108f, 0.02f, 0.014f, 0.006f, 0.014f, acc, A);
+            part(0.041f, 0.065f, 0.02f, 0.002f, 0.025f, 0.006f, glow * 1.4f, G);
+            part(0, 0.03f, 0.02f, 0.008f, 0.01f, 0.008f, dark, M);
+            part(-0.033f, 0.01f, -0.04f, 0.006f, 0.006f, 0.006f, glow, G); part(0.033f, -0.01f, 0.05f, 0.008f, 0.008f, 0.008f, glow, G);
             part(0, 0.004f, -0.15f, 0.014f, 0.014f, 0.05f, dark, M);
+            part(0, 0.004f, -0.12f, 0.018f, 0.018f, 0.005f, acc, A);
             part(0, 0.004f, -0.205f, 0.03f, 0.03f, 0.006f, acc, A);
             part(0, 0.004f, -0.235f, 0.022f, 0.022f, 0.022f, glow, G);
+            part(0.02f, 0.03f, -0.27f, 0.008f, 0.008f, 0.008f, glow, G);
             part(0, -0.06f, 0.03f, 0.014f, 0.035f, 0.02f, dark, M);
+            part(0, -0.035f, -0.005f, 0.004f, 0.004f, 0.02f, mid, M);
+            part(0, 0, 0.115f, 0.028f, 0.03f, 0.008f, dark, M);
             break;
-        case WPN_SYRINGE:    // barrel full of glowing serum, plunger and finger grips behind, steel needle in front
+        case WPN_SYRINGE:    // glass barrel with dose marks, glowing serum, plunger rod, thumb pad and finger flange,
+                             // hub, needle and a bright tip (14)
             part(0, 0, 0, 0.022f, 0.022f, 0.09f, light, B);
             part(0, 0, -0.01f, 0.016f, 0.016f, 0.07f, glow, G);
+            for (int k = 0; k < 3; k++) part(0, 0.023f, -0.05f + k * 0.035f, 0.008f, 0.001f, 0.002f, dark, M);
+            part(0, 0, 0.065f, 0.017f, 0.017f, 0.006f, dark, M);
             part(0, 0, 0.1f, 0.006f, 0.006f, 0.03f, mid, M); part(0, 0, 0.135f, 0.02f, 0.02f, 0.006f, dark, M);
+            part(0, 0, 0.143f, 0.016f, 0.016f, 0.002f, acc, A);
             part(0, 0, 0.085f, 0.045f, 0.008f, 0.006f, acc, A);
+            part(0, 0, -0.095f, 0.018f, 0.018f, 0.005f, dark, M);
             part(0, 0, -0.1f, 0.01f, 0.01f, 0.01f, dark, M); part(0, 0, -0.15f, 0.0025f, 0.0025f, 0.05f, mid, M);
+            part(0, 0, -0.201f, 0.0015f, 0.0015f, 0.002f, glow * 1.5f, G);
             break;
         case WPN_LOCATOR:    // a handheld tracker: pistol grip, a slab body with a glowing radar screen on top, an emitter
                              // in front, a whip antenna with an accent tip (hide and seek / tag: the seeker's / tagger's)
@@ -240,12 +317,23 @@ void viewmodelParts(int w, const ModelPalette& pal, ModelParts& out) {
             part(0.032f, 0.05f, -0.07f, 0.0035f, 0.05f, 0.0035f, mid, M); part(0.032f, 0.104f, -0.07f, 0.007f, 0.007f, 0.007f, acc, A);
             part(-0.043f, -0.004f, -0.015f, 0.002f, 0.007f, 0.06f, acc, A);
             break;
-        case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
+        case WPN_CROSSBOW:   // stock with a cheek rest, rail, bow riser, limbs angled back with tips, a string to the
+                             // latch, a bolt with a glowing head, a scope, foot stirrup, grip (19)
             part(0, 0, 0.02f, 0.02f, 0.025f, 0.2f, dark, M);
-            part(0, 0.012f, -0.17f, 0.13f, 0.008f, 0.012f, mid, M);
-            part(-0.115f, 0.012f, -0.15f, 0.012f, 0.01f, 0.03f, mid, M); part(0.115f, 0.012f, -0.15f, 0.012f, 0.01f, 0.03f, mid, M);
+            part(0, 0.03f, 0.14f, 0.016f, 0.008f, 0.05f, acc, A);
+            part(0, 0.027f, -0.06f, 0.008f, 0.002f, 0.12f, mid, M);
+            part(0, 0.012f, -0.17f, 0.04f, 0.014f, 0.016f, dark, M);
+            part(-0.075f, 0.012f, -0.165f, 0.04f, 0.008f, 0.01f, mid, M); part(0.075f, 0.012f, -0.165f, 0.04f, 0.008f, 0.01f, mid, M);
+            part(-0.122f, 0.012f, -0.15f, 0.012f, 0.009f, 0.02f, mid, M); part(0.122f, 0.012f, -0.15f, 0.012f, 0.009f, 0.02f, mid, M);
+            part(-0.134f, 0.012f, -0.135f, 0.004f, 0.012f, 0.006f, acc, A); part(0.134f, 0.012f, -0.135f, 0.004f, 0.012f, 0.006f, acc, A);
             part(0, 0.014f, -0.08f, 0.12f, 0.002f, 0.002f, light, B);
+            part(0, 0.03f, -0.08f, 0.012f, 0.008f, 0.01f, dark, M);
             part(0, 0.032f, -0.12f, 0.004f, 0.004f, 0.11f, acc, A);
+            part(0, 0.032f, -0.235f, 0.006f, 0.006f, 0.008f, glow, G);
+            part(0, 0.06f, -0.02f, 0.012f, 0.012f, 0.05f, dark, M); part(0, 0.06f, -0.071f, 0.008f, 0.008f, 0.002f, glow, G);
+            part(0, -0.01f, -0.215f, 0.02f, 0.025f, 0.004f, mid, M);
+            part(0, -0.06f, 0.07f, 0.013f, 0.033f, 0.015f, dark, M);
+            part(0, -0.03f, 0.03f, 0.004f, 0.006f, 0.02f, mid, M);
             break;
     }
 }
