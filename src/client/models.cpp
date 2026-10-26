@@ -98,54 +98,158 @@ struct Emit {
 };
 }
 
-// (the same boxes drawWorld drew before they moved here: see git history of src/client/game.cpp)
+// Every model stands in the same hitbox (kPlayerHalfWidth x kPlayerHeight, the head its top kHeadFraction): models are
+// cosmetic. Heights are given standing; a crouch (hs < 1) squashes the legs and body, the head keeps its size.
 void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& out) {
     out.clear();
     Emit e{out};
     const Vec3 col = pal.c[TINT_TEAM];
-    auto at = [&](float h) { return Vec3(0, h * hs, 0); };
-    const Vec3 fwd = {0, 0, -1}, rgt = {1, 0, 0};
     const Vec3 grey = col * 0.6f + Vec3(0.06f, 0.06f, 0.07f), dark = {0.05f, 0.05f, 0.06f};
     const uint8_t T = TINT_TEAM, N = TINT_NONE;
+    // b(x, y, z, hx, hy, hz): a body box (y and hy follow the crouch); h(...): a head box (its centre follows, not its size)
+    auto b = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
+        e(Vec3(x, y * hs, z), Vec3(hx, hy * hs, hz), c, s, sh, vis); };
+    auto h = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c, uint8_t s, bool sh = true, bool vis = false) {
+        e(Vec3(x, y * hs, z), Vec3(hx, hy, hz), c, s, sh, vis); };
+    const Vec3 skin = {0.72f, 0.52f, 0.4f}, rot = {0.36f, 0.5f, 0.3f}, eyeW = {1.6f, 1.6f, 1.5f};
     switch (model) {
-        case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
-            e(at(0.45f), Vec3(0.32f, 0.45f * hs, 0.24f), col * 0.45f, T);
-            e(at(1.15f), Vec3(0.44f, 0.3f * hs, 0.28f), col, T);
-            for (float sd : {-1.0f, 1.0f}) e(at(1.38f) + rgt * (sd * 0.42f), Vec3(0.14f, 0.1f, 0.22f), grey, T);
-            e(at(1.6f), Vec3(0.18f, 0.16f, 0.18f), col * 1.1f, T);
-            e(at(1.6f) + fwd * 0.18f, Vec3(0.15f, 0.04f, 0.02f), dark, N, false, true);
+        case 1: // HEAVY: wide armoured legs and boots, a big chest plate with a belt, shoulder pads, a small helmet
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.15f, 0.42f, 0, 0.14f, 0.42f, 0.2f, col * 0.45f, T);
+                b(sd * 0.15f, 0.08f, -0.03f, 0.16f, 0.08f, 0.24f, dark, N);
+                b(sd * 0.15f, 0.5f, -0.2f, 0.11f, 0.08f, 0.02f, grey, T, false, true);
+                b(sd * 0.42f, 1.38f, 0, 0.14f, 0.1f, 0.22f, grey, T);
+                b(sd * 0.42f, 1.24f, 0, 0.1f, 0.06f, 0.16f, col * 0.45f, T);
+            }
+            b(0, 1.13f, 0, 0.4f, 0.3f, 0.27f, col, T);
+            b(0, 1.15f, -0.27f, 0.24f, 0.18f, 0.02f, grey, T, false, true);
+            b(0, 0.86f, 0, 0.36f, 0.04f, 0.25f, dark, N);
+            b(0, 0.86f, -0.25f, 0.06f, 0.035f, 0.01f, col * 1.5f, T, false, true);
+            b(0, 1.12f, 0.29f, 0.22f, 0.22f, 0.05f, grey * 0.8f, T);
+            h(0, 1.6f, 0, 0.18f, 0.16f, 0.18f, col * 1.1f, T);
+            h(0, 1.6f, -0.18f, 0.15f, 0.04f, 0.02f, dark, N, false, true);
+            h(0, 1.77f, 0, 0.12f, 0.02f, 0.14f, grey, T, false);
             break;
-        case 2: // SCOUT: slim, tall head with a long glowing visor
-            e(at(0.47f), Vec3(0.22f, 0.47f * hs, 0.16f), col * 0.6f, T);
-            e(at(1.17f), Vec3(0.3f, 0.26f * hs, 0.18f), col, T);
-            e(at(1.63f), Vec3(0.17f, 0.2f, 0.17f), col * 1.2f, T);
-            e(at(1.66f) + fwd * 0.17f, Vec3(0.17f, 0.035f, 0.02f), col * 1.8f + Vec3(0.3f, 0.3f, 0.3f), T, false, true);
+        case 2: // SIMPLE: just the hitbox: the body box and the head box, nothing else
+            b(0, 0.72f, 0, kPlayerHalfWidth, 0.72f, kPlayerHalfWidth, col, T);
+            h(0, 1.62f, 0, kPlayerHalfWidth * kHeadWidthFraction, 0.18f, kPlayerHalfWidth * kHeadWidthFraction, col * 1.25f, T);
             break;
-        case 3: // ROBOT: grey frame, team-coloured chest, cube head, glowing eye, antenna
-            e(at(0.45f), Vec3(0.26f, 0.45f * hs, 0.2f), grey * 0.8f, T);
-            e(at(1.15f), Vec3(0.38f, 0.3f * hs, 0.26f), grey, T);
-            e(at(1.18f) + fwd * 0.26f, Vec3(0.26f, 0.18f, 0.02f), col, T, false, true);
-            e(at(1.62f), Vec3(0.23f, 0.19f, 0.23f), grey * 1.15f, T);
-            e(at(1.64f) + fwd * 0.23f, Vec3(0.12f, 0.035f, 0.02f), col * 2.0f + Vec3(0.4f, 0.4f, 0.4f), T, false, true);
-            e(at(1.9f), Vec3(0.02f, 0.1f, 0.02f), grey, T, false);
-            e(at(2.0f), Vec3(0.045f, 0.045f, 0.045f), col * 1.8f, T, false);
+        case 3: // ROBOT: grey frame on piston legs, team chest with a glowing core, cube head, eye bar, antenna
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.14f, 0.5f, 0, 0.1f, 0.3f, 0.12f, grey * 0.8f, T);
+                b(sd * 0.14f, 0.12f, -0.03f, 0.13f, 0.12f, 0.19f, grey * 0.6f, T);
+                b(sd * 0.14f, 0.5f, -0.12f, 0.04f, 0.2f, 0.01f, dark, N, false, true);
+                b(sd * 0.41f, 1.33f, 0, 0.08f, 0.12f, 0.16f, dark, N);
+            }
+            b(0, 0.83f, 0, 0.3f, 0.05f, 0.2f, dark, N);
+            b(0, 1.14f, 0, 0.36f, 0.27f, 0.26f, grey, T);
+            b(0, 1.18f, -0.26f, 0.24f, 0.16f, 0.02f, col, T, false, true);
+            b(0, 1.18f, -0.28f, 0.07f, 0.07f, 0.01f, col * 2.0f + Vec3(0.4f, 0.4f, 0.4f), T, false, true);
+            b(0, 1.12f, 0.27f, 0.18f, 0.18f, 0.02f, dark, N);
+            h(0, 1.45f, 0, 0.08f, 0.04f, 0.08f, dark, N);
+            h(0, 1.63f, 0, 0.18f, 0.15f, 0.18f, grey * 1.15f, T);
+            h(0, 1.65f, -0.18f, 0.13f, 0.03f, 0.02f, col * 2.0f + Vec3(0.4f, 0.4f, 0.4f), T, false, true);
+            for (float sd : {-1.0f, 1.0f}) h(sd * 0.19f, 1.63f, 0, 0.02f, 0.06f, 0.06f, dark, N);
+            h(0.08f, 1.84f, 0.05f, 0.012f, 0.06f, 0.012f, grey, T, false);
+            h(0.08f, 1.92f, 0.05f, 0.03f, 0.03f, 0.03f, col * 1.8f, T, false);
             break;
-        case 4: // KNIGHT: plate armour, team tabard, crested helmet with a visor slit
-            e(at(0.45f), Vec3(0.27f, 0.45f * hs, 0.2f), grey * 0.85f, T);
-            e(at(1.15f), Vec3(0.4f, 0.3f * hs, 0.25f), grey, T);
-            e(at(1.05f) + fwd * 0.25f, Vec3(0.2f, 0.36f, 0.02f), col, T, false, true);
-            e(at(1.6f), Vec3(0.21f, 0.2f, 0.21f), grey * 1.1f, T);
-            e(at(1.86f), Vec3(0.03f, 0.08f, 0.19f), col * 1.1f, T, false);
-            e(at(1.62f) + fwd * 0.21f, Vec3(0.15f, 0.025f, 0.02f), dark, N, false, true);
+        case 4: // KNIGHT: plate legs and sabatons, breastplate, team tabard, pauldrons, belt, helmet with a visor and crest
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.16f, grey * 0.85f, T);
+                b(sd * 0.14f, 0.06f, -0.04f, 0.13f, 0.06f, 0.2f, grey * 0.6f, T);
+                b(sd * 0.14f, 0.52f, -0.16f, 0.09f, 0.06f, 0.02f, grey * 1.1f, T, false, true);
+                b(sd * 0.38f, 1.38f, 0, 0.13f, 0.09f, 0.2f, grey * 1.1f, T);
+                b(sd * 0.38f, 1.27f, 0, 0.11f, 0.05f, 0.18f, grey * 0.8f, T);
+            }
+            b(0, 1.13f, 0, 0.32f, 0.29f, 0.23f, grey, T);
+            b(0, 0.98f, -0.23f, 0.18f, 0.38f, 0.02f, col, T, false, true);
+            b(0, 1.12f, -0.25f, 0.06f, 0.12f, 0.01f, grey * 1.3f, T, false, true);
+            b(0, 0.87f, 0, 0.33f, 0.04f, 0.24f, dark, N);
+            b(0, 1.0f, 0.24f, 0.2f, 0.32f, 0.02f, col * 0.7f, T);
+            h(0, 1.6f, 0, 0.18f, 0.18f, 0.18f, grey * 1.1f, T);
+            h(0, 1.62f, -0.18f, 0.14f, 0.022f, 0.02f, dark, N, false, true);
+            h(0, 1.52f, -0.19f, 0.1f, 0.05f, 0.01f, grey * 1.3f, T, false, true);
+            h(0, 1.84f, 0, 0.025f, 0.07f, 0.18f, col * 1.1f, T, false);
             break;
-        default: // STANDARD
-            e(at(0.45f), Vec3(0.28f, 0.45f * hs, 0.2f), col * 0.55f, T);
-            e(at(1.15f), Vec3(0.38f, 0.28f * hs, 0.24f), col, T);
-            e(at(1.6f), Vec3(0.2f, 0.18f, 0.2f), col * 1.15f, T);
-            e(at(1.62f) + fwd * 0.2f, Vec3(0.16f, 0.05f, 0.02f), dark, N, false, true);
+        case 5: // WIZARD: a long team robe flaring at the hem, a sash, a beard, a tall pointed hat with a band and a star
+            b(0, 0.18f, 0, 0.32f, 0.18f, 0.28f, col * 0.55f, T);
+            b(0, 0.6f, 0, 0.27f, 0.26f, 0.23f, col * 0.65f, T);
+            b(0, 1.1f, 0, 0.3f, 0.26f, 0.22f, col * 0.8f, T);
+            b(0, 0.6f, -0.235f, 0.04f, 0.42f, 0.01f, col * 1.4f + Vec3(0.2f, 0.2f, 0.2f), T, false, true);
+            b(0, 0.88f, 0, 0.31f, 0.035f, 0.23f, Vec3(0.75f, 0.6f, 0.2f), N);
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.36f, 1.15f, -0.02f, 0.1f, 0.2f, 0.12f, col * 0.75f, T);
+                b(sd * 0.36f, 0.9f, -0.04f, 0.12f, 0.06f, 0.14f, col * 0.55f, T);
+            }
+            b(0, 1.38f, 0, 0.32f, 0.04f, 0.24f, col * 0.6f, T);
+            h(0, 1.56f, 0, 0.15f, 0.14f, 0.15f, skin, N);
+            h(0, 1.47f, -0.12f, 0.12f, 0.12f, 0.05f, Vec3(0.85f, 0.85f, 0.88f), N, false, true);
+            for (float sd : {-1.0f, 1.0f}) h(sd * 0.06f, 1.6f, -0.155f, 0.025f, 0.015f, 0.01f, dark, N, false, true);
+            h(0, 1.72f, 0, 0.26f, 0.02f, 0.26f, col * 0.7f, T, false);
+            h(0, 1.8f, 0, 0.15f, 0.06f, 0.15f, col * 0.8f, T, false);
+            h(0, 1.76f, 0, 0.155f, 0.02f, 0.155f, Vec3(0.75f, 0.6f, 0.2f), N, false);
+            h(0, 1.92f, 0.03f, 0.09f, 0.07f, 0.09f, col * 0.85f, T, false);
+            h(0, 2.03f, 0.08f, 0.04f, 0.05f, 0.04f, col * 0.9f, T, false);
+            h(0, 1.81f, -0.155f, 0.03f, 0.03f, 0.005f, Vec3(1.6f, 1.4f, 0.5f), N, false, true);
+            break;
+        case 6: // ZOMBIE: torn team clothes over green skin, uneven legs, a hunched head with glowing eyes, arms reaching out
+            b(-0.14f, 0.42f, 0, 0.12f, 0.42f, 0.15f, col * 0.4f, T);
+            b(0.14f, 0.4f, 0.03f, 0.12f, 0.4f, 0.15f, col * 0.35f, T);
+            b(0.14f, 0.2f, -0.13f, 0.08f, 0.1f, 0.02f, rot, N, false, true);
+            for (float sd : {-1.0f, 1.0f}) b(sd * 0.14f, 0.05f, -0.03f, 0.12f, 0.05f, 0.18f, Vec3(0.18f, 0.14f, 0.1f), N);
+            b(0, 1.1f, 0.03f, 0.33f, 0.28f, 0.22f, col * 0.7f, T);
+            b(0.12f, 0.95f, -0.2f, 0.12f, 0.12f, 0.02f, rot, N, false, true);
+            b(-0.2f, 1.25f, -0.2f, 0.06f, 0.05f, 0.01f, Vec3(0.4f, 0.08f, 0.06f), N, false, true);
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.4f, 1.3f, -0.14f, 0.08f, 0.08f, 0.2f, col * 0.6f, T);
+                b(sd * 0.4f, 1.3f, -0.4f, 0.07f, 0.07f, 0.08f, rot, N, true, true);
+            }
+            h(0, 1.42f, -0.06f, 0.07f, 0.05f, 0.07f, rot * 0.8f, N);
+            h(0.02f, 1.56f, -0.1f, 0.17f, 0.16f, 0.17f, rot, N);
+            for (float sd : {-1.0f, 1.0f}) h(sd * 0.07f, 1.6f, -0.27f, 0.03f, 0.025f, 0.01f, Vec3(1.8f, 1.6f, 0.4f), N, false, true);
+            h(0.02f, 1.48f, -0.27f, 0.09f, 0.02f, 0.01f, Vec3(0.15f, 0.05f, 0.05f), N, false, true);
+            h(-0.08f, 1.73f, -0.1f, 0.08f, 0.02f, 0.1f, Vec3(0.2f, 0.25f, 0.15f), N, false);
+            break;
+        case 7: // FIGHTER: shorts and wrapped legs, bare arms and a team belt, a vest, gloves up in a guard, a headband
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.14f, 0.3f, 0, 0.1f, 0.3f, 0.12f, skin, N);
+                b(sd * 0.14f, 0.04f, -0.03f, 0.11f, 0.04f, 0.16f, Vec3(0.9f, 0.9f, 0.9f), N);
+                b(sd * 0.14f, 0.12f, 0, 0.11f, 0.06f, 0.13f, Vec3(0.85f, 0.85f, 0.82f), N);
+                b(sd * 0.36f, 1.22f, -0.12f, 0.07f, 0.07f, 0.16f, skin, N);
+                b(sd * 0.3f, 1.4f, -0.3f, 0.09f, 0.09f, 0.09f, col * 1.2f, T, true, true);
+            }
+            b(0, 0.72f, 0, 0.27f, 0.14f, 0.18f, col * 0.5f, T);
+            b(0, 0.86f, 0, 0.29f, 0.04f, 0.19f, col * 1.2f, T);
+            b(0, 0.86f, -0.19f, 0.05f, 0.03f, 0.01f, Vec3(1.2f, 1.0f, 0.3f), N, false, true);
+            b(0, 1.15f, 0, 0.32f, 0.25f, 0.2f, skin, N);
+            b(0, 1.15f, 0, 0.33f, 0.24f, 0.17f, col * 0.8f, T);
+            b(0, 1.15f, -0.2f, 0.1f, 0.22f, 0.01f, skin, N, false, true);
+            h(0, 1.45f, 0, 0.08f, 0.05f, 0.08f, skin, N);
+            h(0, 1.6f, 0, 0.16f, 0.16f, 0.16f, skin, N);
+            h(0, 1.7f, 0, 0.165f, 0.025f, 0.165f, col * 1.2f, T, false);
+            h(0.05f, 1.68f, 0.2f, 0.02f, 0.02f, 0.05f, col * 1.2f, T, false);
+            h(0, 1.77f, 0.02f, 0.165f, 0.03f, 0.15f, Vec3(0.1f, 0.07f, 0.05f), N, false);
+            for (float sd : {-1.0f, 1.0f}) h(sd * 0.06f, 1.62f, -0.165f, 0.025f, 0.015f, 0.01f, dark, N, false, true);
+            break;
+        default: // STANDARD: two legs with boots and knee pads, a jacket with a team chest, a belt, shoulders, a visor
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.16f, col * 0.55f, T);
+                b(sd * 0.14f, 0.06f, -0.03f, 0.13f, 0.06f, 0.19f, dark, N);
+                b(sd * 0.14f, 0.5f, -0.16f, 0.09f, 0.07f, 0.02f, col * 0.35f, T, false, true);
+                b(sd * 0.36f, 1.33f, 0, 0.1f, 0.1f, 0.2f, col * 0.8f, T);
+            }
+            b(0, 0.87f, 0, 0.3f, 0.04f, 0.2f, dark, N);
+            b(0, 1.13f, 0, 0.34f, 0.24f, 0.22f, col, T);
+            b(0, 1.15f, -0.22f, 0.2f, 0.14f, 0.02f, col * 1.3f, T, false, true);
+            b(0, 1.15f, 0.24f, 0.16f, 0.18f, 0.04f, col * 0.55f, T);
+            h(0, 1.42f, 0, 0.08f, 0.04f, 0.08f, col * 0.55f, T);
+            h(0, 1.6f, 0, 0.18f, 0.16f, 0.18f, col * 1.15f, T);
+            h(0, 1.62f, -0.18f, 0.16f, 0.05f, 0.02f, dark, N, false, true);
+            h(0.12f, 1.62f, -0.2f, 0.03f, 0.03f, 0.01f, col * 1.6f, T, false, true);
             break;
     }
 }
+
 
 void viewmodelParts(int w, const ModelPalette& pal, ModelParts& out) {
     out.clear();
@@ -345,44 +449,73 @@ void projectileParts(int type, const ModelPalette& pal, float fl, float core, fl
     const Vec3 metalC = {0.22f, 0.23f, 0.26f};
     const uint8_t T = TINT_TEAM, N = TINT_NONE;
     switch (type) {
-        case WPN_STICKY: // a spiked mine: dark shell, team-coloured core, spikes (the game spins it)
-            e({0, 0, 0}, {0.11f, 0.11f, 0.11f}, metalC, N);
-            e({0, 0, 0}, {0.075f, 0.135f, 0.075f}, col * 1.3f * core, T);
-            e({0, 0, 0}, {0.135f, 0.075f, 0.075f}, metalC * 0.7f, N);
-            e({0, 0, 0}, {0.075f, 0.075f, 0.135f}, metalC * 0.7f, N);
+        case WPN_STICKY: // a spiked mine: dark shell, a team-coloured core showing through slots, six spikes with tips,
+                         // a blinking light (the game spins it)
+            e({0, 0, 0}, {0.1f, 0.1f, 0.1f}, metalC, N);
+            e({0, 0, 0}, {0.075f, 0.12f, 0.075f}, col * 1.3f * core, T);
+            e({0, 0, 0}, {0.12f, 0.075f, 0.075f}, col * 1.1f * core, T);
+            e({0, 0, 0}, {0.075f, 0.075f, 0.12f}, col * 1.1f * core, T);
+            for (int k = 0; k < 3; k++) for (float sd : {-1.0f, 1.0f}) {
+                Vec3 d = k == 0 ? Vec3(sd, 0, 0) : k == 1 ? Vec3(0, sd, 0) : Vec3(0, 0, sd);
+                e(d * 0.15f, Vec3(0.022f, 0.022f, 0.022f) + Vec3(std::fabs(d.x), std::fabs(d.y), std::fabs(d.z)) * 0.012f, metalC * 0.7f, N);
+            }
+            e({0.07f, 0.07f, 0.07f}, {0.02f, 0.02f, 0.02f}, glow * (0.6f + core), TINT_GLOW);
             break;
-        case WPN_ROCKET: // a rocket: nose cone, body with a team band, four fins and a flickering flame
-            e({0, 0, 0.05f}, {0.07f, 0.07f, 0.22f}, metalC * 1.6f, N);
-            e({0, 0, -0.22f}, {0.045f, 0.045f, 0.06f}, col * 1.2f, T);
-            e({0, 0, 0}, {0.075f, 0.075f, 0.03f}, col, T);
-            e({0, 0, 0.24f}, {0.14f, 0.012f, 0.05f}, metalC, N);
-            e({0, 0, 0.24f}, {0.012f, 0.14f, 0.05f}, metalC, N);
-            e({0, 0, 0.34f}, {0.05f * fl, 0.05f * fl, 0.08f * fl}, Vec3(2.0f, 1.3f, 0.5f), N);
+        case WPN_ROCKET: // a rocket: pointed nose, team band, body with panel lines, a glowing seeker eye, four fins, a nozzle
+                         // and a flickering flame with a hot core
+            e({0, 0, 0.05f}, {0.065f, 0.065f, 0.2f}, metalC * 1.6f, N);
+            e({0, 0, -0.19f}, {0.05f, 0.05f, 0.05f}, col * 1.2f, T);
+            e({0, 0, -0.26f}, {0.03f, 0.03f, 0.03f}, col * 1.4f, T);
+            e({0, 0, -0.295f}, {0.012f, 0.012f, 0.008f}, glow * 1.5f, TINT_GLOW);
+            e({0, 0, -0.08f}, {0.07f, 0.07f, 0.025f}, col, T);
+            e({0, 0, 0.1f}, {0.067f, 0.067f, 0.006f}, metalC, N);
+            e({0, 0, 0.24f}, {0.14f, 0.01f, 0.05f}, metalC, N);
+            e({0, 0, 0.24f}, {0.01f, 0.14f, 0.05f}, metalC, N);
+            e({0, 0, 0.27f}, {0.045f, 0.045f, 0.025f}, metalC * 0.6f, N);
+            e({0, 0, 0.36f}, {0.05f * fl, 0.05f * fl, 0.08f * fl}, Vec3(2.0f, 1.3f, 0.5f), N);
+            e({0, 0, 0.33f}, {0.025f * fl, 0.025f * fl, 0.05f * fl}, Vec3(2.4f, 2.2f, 1.6f), N);
             break;
-        case WPN_SYRINGE: // thrown syringe: serum barrel, needle first
+        case WPN_SYRINGE: // thrown syringe: glass barrel, glowing serum, flange, plunger, hub and needle first
             e({0, 0, 0}, {0.03f, 0.03f, 0.12f}, Vec3(0.8f, 0.85f, 0.9f), N);
-            e({0, 0, 0}, {0.022f, 0.022f, 0.09f}, glow * 1.5f, TINT_GLOW);
-            e({0, 0, -0.17f}, {0.005f, 0.005f, 0.06f}, metalC * 2.0f, N);
+            e({0, 0, -0.01f}, {0.022f, 0.022f, 0.09f}, glow * 1.5f, TINT_GLOW);
+            e({0, 0, 0.12f}, {0.06f, 0.012f, 0.008f}, col, T);
+            e({0, 0, 0.16f}, {0.008f, 0.008f, 0.04f}, metalC * 2.0f, N);
+            e({0, 0, 0.2f}, {0.026f, 0.026f, 0.006f}, metalC, N);
+            e({0, 0, -0.13f}, {0.012f, 0.012f, 0.012f}, metalC, N);
+            e({0, 0, -0.19f}, {0.005f, 0.005f, 0.06f}, metalC * 2.0f, N);
             break;
-        case WPN_KNIFE: // thrown knife (the game spins it end over end)
-            e({0, 0, 0}, {0.012f, 0.03f, 0.18f}, {0.75f, 0.77f, 0.8f}, N);
+        case WPN_KNIFE: // thrown knife (the game spins it end over end): blade with a spine and point, guard, grip, pommel
+            e({0, 0, -0.06f}, {0.008f, 0.03f, 0.12f}, {0.75f, 0.77f, 0.8f}, N);
+            e({0, 0.022f, -0.06f}, {0.01f, 0.008f, 0.12f}, {0.5f, 0.52f, 0.55f}, N);
+            e({0, 0, -0.2f}, {0.006f, 0.018f, 0.02f}, {0.8f, 0.82f, 0.85f}, N);
+            e({0, 0, 0.065f}, {0.012f, 0.05f, 0.008f}, metalC * 1.5f, N);
+            e({0, 0, 0.12f}, {0.014f, 0.018f, 0.05f}, metalC, N);
+            e({0, 0, 0.175f}, {0.018f, 0.02f, 0.008f}, col, T);
             break;
-        case WPN_BUBBLE: { // a wobbling bubble: a bright core in a see-through shell
+        case WPN_BUBBLE: { // a wobbling bubble: a see-through shell, a bright core and two highlights
             float r = 0.17f + wob;
             e({0, 0, 0}, {r, r - wob, r}, col, T, false, false, 0.35f);
+            e({0, 0, 0}, {r * 0.55f, (r - wob) * 0.55f, r * 0.55f}, col * 1.4f, T, false, false, 0.25f);
             e({0.05f, 0.06f, 0}, {0.035f, 0.035f, 0.035f}, Vec3(1, 1, 1) * 1.5f, N);
+            e({-0.07f, -0.04f, 0.04f}, {0.015f, 0.015f, 0.015f}, Vec3(1, 1, 1) * 1.2f, N);
         } break;
-        case WPN_CROSSBOW: // a bolt: dark shaft, steel broadhead, team-coloured fletching
-            e({0, 0, 0}, {0.02f, 0.02f, 0.33f}, {0.12f, 0.09f, 0.06f}, N);
-            e({0, 0, -0.36f}, {0.045f, 0.012f, 0.05f}, Vec3(0.8f, 0.82f, 0.86f), N);
-            e({0, 0, 0.28f}, {0.06f, 0.006f, 0.06f}, col * 1.2f, T);
-            e({0, 0, 0.28f}, {0.006f, 0.06f, 0.06f}, col * 1.2f, T);
+        case WPN_CROSSBOW: // a bolt: dark shaft with a nock, a steel broadhead with a tip, team-coloured fletching
+            e({0, 0, 0}, {0.018f, 0.018f, 0.33f}, {0.12f, 0.09f, 0.06f}, N);
+            e({0, 0, -0.35f}, {0.04f, 0.012f, 0.04f}, Vec3(0.8f, 0.82f, 0.86f), N);
+            e({0, 0, -0.4f}, {0.012f, 0.008f, 0.02f}, Vec3(0.9f, 0.92f, 0.95f), N);
+            e({0, 0, -0.31f}, {0.024f, 0.024f, 0.012f}, metalC, N);
+            e({0, 0, 0.26f}, {0.06f, 0.006f, 0.06f}, col * 1.2f, T);
+            e({0, 0, 0.26f}, {0.006f, 0.06f, 0.06f}, col * 1.2f, T);
+            e({0, 0, 0.34f}, {0.024f, 0.024f, 0.01f}, col * 0.6f, T);
             break;
-        default: // an orb
-            e({0, 0, 0}, {0.12f, 0.12f, 0.12f}, col * 1.3f, T);
+        default: // an orb: a bright core in a team shell with a ring around it
+            e({0, 0, 0}, {0.1f, 0.1f, 0.1f}, col * 1.3f, T);
+            e({0, 0, 0}, {0.06f, 0.06f, 0.06f}, col * 2.0f + Vec3(0.3f, 0.3f, 0.3f), T);
+            e({0, 0, 0}, {0.13f, 0.02f, 0.13f}, col * 0.9f, T);
             break;
     }
 }
+
 
 void crownParts(const ModelPalette& pal, ModelParts& out) {
     out.clear();
