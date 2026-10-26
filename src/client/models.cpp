@@ -231,6 +231,67 @@ void playerModelParts(int model, float hs, const ModelPalette& pal, ModelParts& 
             h(0, 1.77f, 0.02f, 0.165f, 0.03f, 0.15f, Vec3(0.1f, 0.07f, 0.05f), N, false);
             for (float sd : {-1.0f, 1.0f}) h(sd * 0.06f, 1.62f, -0.165f, 0.025f, 0.015f, 0.01f, dark, N, false, true);
             break;
+        case 8: // PIRATE: boots and striped trousers, a team coat with a sash, a belt buckle, a beard, an eye patch,
+                // a tricorn hat with a skull badge
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.15f, Vec3(0.85f, 0.85f, 0.8f), N);
+                b(sd * 0.14f, 0.2f, -0.01f, 0.13f, 0.2f, 0.17f, Vec3(0.12f, 0.08f, 0.05f), N);
+                b(sd * 0.14f, 0.55f, -0.155f, 0.12f, 0.03f, 0.01f, col * 0.6f, T, false, true);
+                b(sd * 0.35f, 1.3f, 0, 0.1f, 0.12f, 0.18f, col * 0.8f, T);
+            }
+            b(0, 1.08f, 0, 0.32f, 0.3f, 0.22f, col, T);
+            b(0, 0.82f, 0, 0.33f, 0.08f, 0.23f, col * 0.75f, T);
+            b(0, 0.92f, 0, 0.33f, 0.04f, 0.23f, Vec3(0.12f, 0.08f, 0.05f), N);
+            b(0, 0.92f, -0.235f, 0.05f, 0.035f, 0.01f, Vec3(0.9f, 0.75f, 0.25f), N, false, true);
+            b(0, 1.15f, -0.225f, 0.12f, 0.2f, 0.01f, Vec3(0.9f, 0.9f, 0.85f), N, false, true);
+            h(0, 1.57f, 0, 0.16f, 0.15f, 0.16f, skin, N);
+            h(0, 1.47f, -0.13f, 0.13f, 0.08f, 0.04f, Vec3(0.2f, 0.12f, 0.06f), N, false, true);
+            h(-0.06f, 1.6f, -0.165f, 0.04f, 0.03f, 0.01f, dark, N, false, true);
+            h(0.06f, 1.6f, -0.165f, 0.022f, 0.015f, 0.01f, dark, N, false, true);
+            h(0, 1.73f, 0, 0.26f, 0.03f, 0.2f, dark, N, false);
+            h(0, 1.81f, 0, 0.17f, 0.06f, 0.15f, dark, N, false);
+            h(0, 1.77f, -0.21f, 0.03f, 0.03f, 0.005f, Vec3(1.2f, 1.2f, 1.1f), N, false, true);
+            break;
+        case 9: // NINJA: dark wrapped suit, tabi boots, a team sash and belt knot, arm guards, a hood with an eye slit and
+                // the headband tails flying behind
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.13f, 0.44f, 0, 0.11f, 0.44f, 0.14f, dark * 2.0f, N);
+                b(sd * 0.13f, 0.05f, -0.03f, 0.115f, 0.05f, 0.17f, dark, N);
+                b(sd * 0.13f, 0.3f, 0, 0.115f, 0.03f, 0.145f, dark * 3.0f, N);
+                b(sd * 0.35f, 1.28f, 0, 0.09f, 0.11f, 0.15f, dark * 2.4f, N);
+                b(sd * 0.35f, 1.12f, 0, 0.095f, 0.04f, 0.155f, col * 0.8f, T);
+            }
+            b(0, 1.1f, 0, 0.3f, 0.28f, 0.2f, dark * 2.0f, N);
+            b(0, 0.88f, 0, 0.31f, 0.045f, 0.21f, col, T);
+            b(0.12f, 0.8f, -0.21f, 0.04f, 0.08f, 0.01f, col, T, false, true);
+            b(0, 1.12f, 0.21f, 0.04f, 0.26f, 0.02f, Vec3(0.3f, 0.3f, 0.32f), N);
+            h(0, 1.58f, 0, 0.16f, 0.16f, 0.16f, dark * 2.4f, N);
+            h(0, 1.61f, -0.165f, 0.12f, 0.025f, 0.01f, skin, N, false, true);
+            for (float sd : {-1.0f, 1.0f}) h(sd * 0.05f, 1.61f, -0.172f, 0.02f, 0.012f, 0.005f, dark, N, false, true);
+            h(0, 1.69f, 0, 0.165f, 0.025f, 0.165f, col, T, false);
+            h(0.05f, 1.67f, 0.24f, 0.02f, 0.015f, 0.08f, col, T, false);
+            h(-0.03f, 1.64f, 0.26f, 0.02f, 0.015f, 0.09f, col, T, false);
+            break;
+        case 10: // BANDIT: boots and chaps, a team shirt under a dark vest, a gun belt with a holster, a bandana over the
+                 // face, a wide-brimmed hat with a team band
+            for (float sd : {-1.0f, 1.0f}) {
+                b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.15f, Vec3(0.3f, 0.22f, 0.15f), N);
+                b(sd * 0.14f, 0.12f, -0.02f, 0.13f, 0.12f, 0.17f, Vec3(0.18f, 0.12f, 0.07f), N);
+                b(sd * 0.14f, 0.5f, -0.155f, 0.1f, 0.3f, 0.01f, Vec3(0.4f, 0.3f, 0.2f), N, false, true);
+                b(sd * 0.35f, 1.3f, 0, 0.09f, 0.11f, 0.16f, col * 0.85f, T);
+            }
+            b(0, 1.1f, 0, 0.31f, 0.28f, 0.21f, col * 0.85f, T);
+            b(0, 1.1f, 0, 0.32f, 0.27f, 0.19f, Vec3(0.15f, 0.1f, 0.07f), N);
+            b(0, 1.12f, -0.2f, 0.1f, 0.24f, 0.01f, col * 0.85f, T, false, true);
+            b(0, 0.86f, 0, 0.33f, 0.045f, 0.22f, Vec3(0.2f, 0.13f, 0.07f), N);
+            b(0.33f, 0.76f, 0, 0.04f, 0.1f, 0.06f, Vec3(0.2f, 0.13f, 0.07f), N);
+            h(0, 1.57f, 0, 0.16f, 0.15f, 0.16f, skin, N);
+            h(0, 1.51f, -0.04f, 0.17f, 0.08f, 0.13f, Vec3(0.6f, 0.12f, 0.1f), N, false);
+            for (float sd : {-1.0f, 1.0f}) h(sd * 0.06f, 1.62f, -0.165f, 0.025f, 0.015f, 0.01f, dark, N, false, true);
+            h(0, 1.72f, 0, 0.3f, 0.015f, 0.3f, Vec3(0.3f, 0.2f, 0.12f), N, false);
+            h(0, 1.79f, 0, 0.17f, 0.06f, 0.17f, Vec3(0.3f, 0.2f, 0.12f), N, false);
+            h(0, 1.745f, 0, 0.175f, 0.015f, 0.175f, col, T, false);
+            break;
         default: // STANDARD: two legs with boots and knee pads, a jacket with a team chest, a belt, shoulders, a visor
             for (float sd : {-1.0f, 1.0f}) {
                 b(sd * 0.14f, 0.44f, 0, 0.12f, 0.44f, 0.16f, col * 0.55f, T);

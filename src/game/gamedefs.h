@@ -43,9 +43,9 @@ constexpr int kMaxHealth = 100;
 
 enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_POINTS, MODE_COUNT };
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
-constexpr int kPlayerModels = 8;          // STANDARD, HEAVY, SIMPLE (was SCOUT, 2026-10-26), ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER: cosmetic, every one has the same hitbox
+constexpr int kPlayerModels = 11;          // STANDARD, HEAVY, SIMPLE (was SCOUT, 2026-10-26), ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT: cosmetic, every one has the same hitbox
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
-inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SIMPLE", "ROBOT", "KNIGHT", "WIZARD", "ZOMBIE", "FIGHTER"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
+inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SIMPLE", "ROBOT", "KNIGHT", "WIZARD", "ZOMBIE", "FIGHTER", "PIRATE", "NINJA", "BANDIT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
 // Seconds a player waits to respawn during play, or < 0 where nobody does: rounds with one life (VS, bomb, duel,
 // 1v1, tourney, hide and seek). The one list behind modeRespawns() (the engine, keyed on the base mode) and each mode's
 // ModeParams::respawn default (modeparams.h), which rulesRespawnDelay() reads (warmup / match end aside).

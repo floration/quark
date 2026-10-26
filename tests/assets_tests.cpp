@@ -327,7 +327,7 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 8 + 11 + 7 + 1 + 8);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE HOOK_ARM HOOK)
+    ACHECK(models == 11 + 11 + 7 + 1 + 8);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE HOOK_ARM HOOK)
     ACHECK(modelPath(MODEL_PROP, PROP_CART) == "models/prop/CART" && modelPath(MODEL_PROP, PROP_BOMB_PACK) == "models/prop/BOMB_PACK");
     // a prop's slot colours come from the palette (the cart: 11 boxes, its band the team colour, its rim the accent)
     {
@@ -804,7 +804,7 @@ static void testExport() {
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices - quips == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
     ACHECK(quips >= (size_t)kAnnouncerVoices);   // (every voice has its quips: the default set, or the shipped quips/ files)
-    ACHECK(models == 35 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 8 props)
+    ACHECK(models == 38 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 8 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);
