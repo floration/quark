@@ -1,7 +1,7 @@
 // A JS reader / writer of .qmap text, for when quark_maptool is missing (viewing a map, saving a simple edit).
 // It gives the map JSON of INTERFACE.md. The helper is the real path: it runs the game's own Map::parse / serialize
 // (this one doesn't check limits or report every error the game would).
-export const MATERIALS = ["box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"];
+export const MATERIALS = ["box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple"];
 export const MODES = ["vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"];
 export const PLAYER = { halfWidth: 0.4, height: 1.8, crouchHeight: 1.2, eye: 1.6, crouchEye: 1.05, stepUp: 0.5, jumpHeight: 1.25 };
 
@@ -137,7 +137,7 @@ function yawDeg(yaw) {
 }
 
 export function serializeQmap(m) {
-  let o = "# made with the quark map editor\nversion 2\nhandmade\n";
+  let o = "# made with the quark map editor\nversion 3\nhandmade\n";
   const B = (kw, b) => { o += kw + " " + [...b.min, ...b.max].map(num).join(" ") + "\n"; };
   if (m.title) o += "title " + m.title + "\n";
   if (m.setting) o += "setting " + m.setting + "\n";

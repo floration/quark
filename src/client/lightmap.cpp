@@ -370,7 +370,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     if (!ran) { out.cancelled = true; return; }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
-    for (auto& f : faces) if (f.material < 4) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
+    for (auto& f : faces) if (f.material < 4 || f.material == kMatNoGrapple) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
     float density = 4.0f;
     while (area * density * density > 2048.0f * 2048.0f * 0.55f && density > 0.25f) density *= 0.8f;
     auto sizeFaces = [&] {

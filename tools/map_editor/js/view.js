@@ -21,7 +21,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const FS = `
-uniform vec3 uCol[10]; uniform vec3 uSun; uniform vec3 uFloor; uniform vec3 uFog; uniform vec3 uCam; uniform vec3 uSky;
+uniform vec3 uCol[11]; uniform vec3 uSun; uniform vec3 uFloor; uniform vec3 uFog; uniform vec3 uCam; uniform vec3 uSky;
 uniform float uFogD; uniform float uAlpha; uniform float uOutline; uniform float uPanels;
 varying vec3 vWorld; varying vec3 vN; varying vec3 vLocal; varying vec3 vSize; varying float vMat; varying float vSel;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -88,7 +88,7 @@ export class View {
     this.scene.add(new THREE.HemisphereLight(0xdde6ff, 0x404040, 1.6));
     this.sunLight = new THREE.DirectionalLight(0xffffff, 1.6); this.scene.add(this.sunLight); this.scene.add(this.sunLight.target);
     this.uniforms = {
-      uCol: { value: Array.from({ length: 10 }, () => new THREE.Color()) }, uSun: { value: new THREE.Vector3(0, 1, 0) },
+      uCol: { value: Array.from({ length: 11 }, () => new THREE.Color()) }, uSun: { value: new THREE.Vector3(0, 1, 0) },
       uFloor: { value: new THREE.Color() }, uFog: { value: new THREE.Color() }, uSky: { value: new THREE.Color() }, uCam: { value: new THREE.Vector3() },
       uFogD: { value: 0.0025 }, uOutline: { value: 1.3 }, uPanels: { value: 1 },
     };
@@ -133,7 +133,7 @@ export class View {
     const lin = (c, k = 1) => new THREE.Color(c[0] * k, c[1] * k, c[2] * k);
     C[0].copy(lin(p.base)); C[1].copy(lin(p.accent)); C[2].copy(lin(p.base, 0.42)); C[3].copy(lin(p.metal));
     C[4].copy(lin(p.glow, 0.95)); C[5].copy(lin(p.metal, 0.9)); C[6].setRGB(0.1, 0.32, 0.5); C[7].setRGB(1.0, 0.45, 0.1);
-    C[8].copy(lin(p.accent)); C[9].setRGB(0.75, 0.35, 1.0);
+    C[8].copy(lin(p.accent)); C[9].setRGB(0.75, 0.35, 1.0); C[10].setRGB(0.3, 0.33, 0.42);
     this.uniforms.uFloor.value.copy(lin(p.metal.map(v => Math.min(1, v * 1.35))));
     this.uniforms.uFog.value.copy(lin(p.sky)); this.uniforms.uSky.value.copy(lin(p.sky));
     this.renderer.setClearColor(lin(p.sky));

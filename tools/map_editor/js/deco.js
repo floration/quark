@@ -11,8 +11,8 @@
 const D = G.MapDeco = G.MapDeco || {};
 D.FORMAT = 1;                       // the sidecar 'deco' entry's version
 const EPS = 1e-4;
-const MATS = ['box', 'accent', 'wallbang', 'metal', 'glow', 'far', 'water', 'lava', 'trim', 'clip'];
-const isSolid = (m) => m < 5 || m === 9;   // Map::gridSolid: what players collide with (glow IS solid, trim is not)
+const MATS = ['box', 'accent', 'wallbang', 'metal', 'glow', 'far', 'water', 'lava', 'trim', 'clip', 'nograpple'];
+const isSolid = (m) => m < 5 || m === 9 || m === 10;   // Map::gridSolid: what players collide with (glow IS solid, trim is not)
 const isVisual = (m) => m < 5;             // drawn and solid: what hides a face (clip is invisible)
 D.MATS = MATS; D.isSolid = isSolid;
 D.generators = D.generators || {};

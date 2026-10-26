@@ -352,7 +352,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
         const Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
         const float range = kGrappleRange * mt.m[MV_HOOK_RANGE];
-        float t = map.raycast(eye, dir, range);
+        int wallMat = -1;
+        float t = map.raycast(eye, dir, range, nullptr, &wallMat);
         int caught = -1;   // a player in front of the wall (or in the open) catches it instead
         if (hp && hp->n > 0) {
             float best = t >= 0 ? t : range;
@@ -371,7 +372,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
             s.events |= ME_HOOK;
             grabbed = true;
-        } else if (t >= 0) {
+        } else if (t >= 0 && wallMat != kMatNoGrapple) {   // (nograpple: the hook hits it and lets go)
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;

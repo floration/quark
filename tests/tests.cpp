@@ -644,6 +644,18 @@ static void testGrappleAgainstWall() {
     printf("  %d grabs in 1.5 s held (at %d ms and %d ms)\n", grabs, firstMs, secondMs);
     CHECK(grabs == 2 && firstMs == 0 && secondMs >= 990 && secondMs <= 1010);   // (the 1 s cooldown between them)
     CHECK(!(s.flags & MF_HOOKED));
+    {   // nograpple: the same wall made of it is never grabbed, but still blocks you like a wall
+        Map n;
+        CHECK(n.parse("box -10 -1 -10 10 0 10\nnograpple -10 0 -1.5 10 4 -1\nspawn any 0 0 0\n", &err) && n.brushes[1].material == kMatNoGrapple);
+        MoveState q; q.flags = MF_ONGROUND;
+        int g = 0;
+        for (int t = 0; t < 1500; t++) { q.events = 0; pmove(q, c, n); g += (q.events & ME_HOOK) != 0; }
+        CHECK(g == 0 && !(q.flags & MF_HOOKED));
+        UserCmd w; w.msec = 8; w.forward = 127;   // walk into it
+        for (int t = 0; t < 300; t++) pmove(q, w, n);
+        CHECK(q.pos.z > -1.0f + kPlayerHalfWidth - 0.01f);
+        CHECK(n.raycast(Vec3(0, 1, 0), Vec3(0, 0, -1), 50) > 0.9f);   // shots and sight stop at it
+    }
 }
 
 static void testMovement() {
@@ -3342,7 +3354,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 10 && seen[8] == 8 && seen[9] == 9 && nextMapMaterial(9) == 0);   // M: ..., lava, trim, clip, base
+    CHECK(seen.size() == 11 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && nextMapMaterial(kMatNoGrapple) == 0);   // M: ..., lava, trim, clip, nograpple, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
