@@ -1,0 +1,116 @@
+{
+ "kind": "object",
+ "name": "volcano conveyor",
+ "note": "a conveyor belt on a frame with rollers and a glowing ore load (repeats along x)",
+ "def": {
+  "unit": [
+   2,
+   1.1,
+   1.6
+  ],
+  "axes": [
+   true,
+   false,
+   false
+  ],
+  "spacing": [
+   2,
+   1.1,
+   1.6
+  ],
+  "boxes": [
+   {
+    "mat": 3,
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     0.15,
+     0.8,
+     0.15
+    ]
+   },
+   {
+    "mat": 3,
+    "min": [
+     0,
+     0,
+     1.45
+    ],
+    "max": [
+     0.15,
+     0.8,
+     1.6
+    ]
+   },
+   {
+    "mat": 3,
+    "min": [
+     0,
+     0.8,
+     0
+    ],
+    "max": [
+     2,
+     0.95,
+     1.6
+    ]
+   },
+   {
+    "mat": 2,
+    "min": [
+     0,
+     0.95,
+     0.1
+    ],
+    "max": [
+     2,
+     1.0,
+     1.5
+    ]
+   },
+   {
+    "mat": 1,
+    "min": [
+     0,
+     0.6,
+     0.05
+    ],
+    "max": [
+     2,
+     0.7,
+     0.1
+    ]
+   },
+   {
+    "mat": 1,
+    "min": [
+     0,
+     0.6,
+     1.5
+    ],
+    "max": [
+     2,
+     0.7,
+     1.55
+    ]
+   },
+   {
+    "mat": 4,
+    "min": [
+     0.5,
+     1.0,
+     0.5
+    ],
+    "max": [
+     1.0,
+     1.15,
+     1.0
+    ]
+   }
+  ],
+  "name": "volcano conveyor"
+ }
+}
