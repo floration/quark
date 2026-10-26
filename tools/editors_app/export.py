@@ -66,6 +66,13 @@ def main():
             with z.open(m) as s, open(dst, "wb") as d: shutil.copyfileobj(s, d)
     if not os.path.isfile(os.path.join(py, "python.exe")): sys.exit("no tools/python.exe in " + a.python)
 
+    # the map editor's three.js (its build.py downloads it, sha256-checked)
+    src = open(os.path.join(ROOT, "tools", "map_editor", "build.py"), encoding="utf-8").read()
+    map_build = {"__file__": os.path.join(ROOT, "tools", "map_editor", "build.py"), "__name__": "map_build"}
+    exec(compile(src[:src.rindex("\nmain()")], "map_editor/build.py", "exec"), map_build)
+    vend = os.path.join(bundle, "tools", "map_editor", "vendor"); os.makedirs(vend)
+    open(os.path.join(vend, map_build["THREE_FILE"]), "wb").write(map_build["three_js"](os.path.join(ROOT, "build", "map_editor_vendor")))
+
     # the static editors (one HTML page each, with their data next to it)
     pages = os.path.join(bundle, "pages")
     run([sys.executable, os.path.join(ROOT, "tools", "sound_editor", "build.py"), a.assets, os.path.join(pages, "sound-editor")])
