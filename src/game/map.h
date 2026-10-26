@@ -17,13 +17,16 @@ inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map)
+    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go)
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
 };
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
-constexpr int kMapMaterials = 10;
+constexpr int kMapMaterials = 11;
+constexpr int kMatNoGrapple = 10;
+// solid to players, shots and sight (not far scenery, water, lava, trim; clip is solid to players only)
+inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple; }
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
-inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, base
+inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, base
 
 // What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
 // groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
@@ -69,7 +72,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 2;
+constexpr int kMapFormatVersion = 3;   // 3: the nograpple material
 
 struct Map {
     std::string name;
@@ -170,7 +173,7 @@ struct Map {
     bool inLava(const AABB& box) const { for (auto& l : lava) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     // Returns hit distance or -1. normal receives the face normal on hit.
-    float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr) const;
+    float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr) const;   // *material: the hit brush's (-1: a moving solid)
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
     // hitClip (movement probes: clip blocks players).
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;
@@ -207,7 +210,7 @@ struct Map {
     // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
     float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
-    static bool gridSolid(const Brush& b) { return b.material < 5 || b.material == 9; } // in the grid: far scenery, water, lava aren't
+    static bool gridSolid(const Brush& b) { return solidMaterial(b.material) || b.material == 9; } // in the grid: far scenery, water, lava aren't
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
@@ -228,7 +231,7 @@ struct Map {
 //                                         o multi point capture zone (box), d ladder (auto + box),
 //                                         g group (type material dir box; ins makes it empty, set keeps its parts)
 //   g part <index> <material> <6 fractions of the box>: adds a part to custom group <index>
-//   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8 and clip 9 included)
+//   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8, clip 9 and nograpple 10 included)
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and updates the grid (in place
 // for brushes and custom group parts). It doesn't serialize: m.source goes stale until m.sourceText() is asked for.

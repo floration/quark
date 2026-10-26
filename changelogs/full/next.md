@@ -68,3 +68,9 @@ Every change on `testing` since production 1.19.0, with what changed and why. Th
 
 ## More player models (q, 2026-10-26: "also add pirate, ninja, bandit")
 - kPlayerModels 8 -> 11 (ids 8-10, appended, so no saved id changes; an older client shows them as STANDARD). Same hitbox; 18-20 boxes each. Provenance: three AI-made entries.
+
+## NOGRAPPLE material (q, 2026-10-26: "a material in the editor you cannot grapple to, but can interact with otherwise")
+- Material 10 (`nograpple` in map files; kMatNoGrapple): solidMaterial() is true for it, so collision, bounds, the grid, bots, sight, hitscan and projectiles treat it like base. Map::raycast reports the hit brush's material; pmove's grapple trace skips the grab when it is nograpple (the hook stops there, so it can't reach a grabbable wall behind it). Shared pmove, so client prediction and the server agree.
+- Map format 2 -> 3 (owner rule): an identity converter step (version 2 files have no nograpple boxes); make_maps.py and the web map editor write version 3. An older game rejects a version 3 map's `nograpple` line, which is why the version moves.
+- Look: lit like base, slate blue (0.30, 0.33, 0.42) with diagonal stripes so players can tell it apart; same colour in the in-game and web editors.
+- Test: testGrappleAgainstWall also holds the grapple at a nograpple wall for 1.5 s (no grab), walks into it (blocked) and casts a ray at it (stops).

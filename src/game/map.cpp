@@ -304,7 +304,10 @@ static void upgradeMap1to2(std::vector<std::string>& lines) {
 // Step k turns version k into k + 1. Changing the map format means: raise kMapFormatVersion and add its step here
 // (with a test that converts a file of the old version); the static_assert below holds the two together.
 using MapUpgradeStep = void (*)(std::vector<std::string>& lines);
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2};
+// 2 -> 3: the nograpple material was added; a version 2 file has none, so nothing changes
+static void upgradeMap2to3(std::vector<std::string>&) {}
+
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -652,15 +655,15 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
         } else if (kw == "title") {
             ls.rest(title);
             ok = cleanMapTitle(title);   // (the same rule as the editor's title edit)
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip" || kw == "nograpple") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : kw == "nograpple" ? kMatNoGrapple : 0;
             hasWallbang |= b.material == 2;
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
                 brushes.push_back(b);
-                if (b.material >= 5) continue; // far scenery / water / lava surfaces: not part of the playable bounds
+                if (!solidMaterial(b.material)) continue; // far scenery / water / lava surfaces: not part of the playable bounds
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
@@ -763,7 +766,7 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
         return false;
     }
     if (!validate(err)) return false;   // and what they made
-    for (auto& b : brushes) if (b.generated && b.material < 5) { bounds.mn = vmin(bounds.mn, b.box.mn); bounds.mx = vmax(bounds.mx, b.box.mx); }
+    for (auto& b : brushes) if (b.generated && solidMaterial(b.material)) { bounds.mn = vmin(bounds.mn, b.box.mn); bounds.mx = vmax(bounds.mx, b.box.mx); }
     if (!buildGrid()) { if (err) *err = "too much geometry for the collision grid"; return false; }
     return true;
 }
@@ -875,7 +878,7 @@ std::string Map::serialize() const {
         auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};
+    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple"};
     for (auto& br : brushes) if (!br.generated) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
@@ -1184,7 +1187,7 @@ bool Map::rebuild() {
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     hasWallbang = false;
     for (auto& b : brushes) {
-        if (b.material >= 5) continue; // far scenery, water / lava surfaces: never collide (clip: not part of the bounds)
+        if (!solidMaterial(b.material)) continue; // far scenery, water / lava surfaces: never collide (clip: not part of the bounds)
         bounds.mn = vmin(bounds.mn, b.box.mn);
         bounds.mx = vmax(bounds.mx, b.box.mx);
         hasWallbang |= b.material == 2;
@@ -1264,11 +1267,11 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
     };
     AABB nb = bounds;
     bool wallbang = hasWallbang || (op != 2 && b.material == 2);
-    bool oldGone = op == 1 || old.material >= 5 || inside(old.box, bounds, true), newIn = op == 2 || b.material >= 5 || inside(b.box, bounds, false);
+    bool oldGone = op == 1 || !solidMaterial(old.material) || inside(old.box, bounds, true), newIn = op == 2 || !solidMaterial(b.material) || inside(b.box, bounds, false);
     if (!oldGone || !newIn || (op != 1 && old.material == 2) || brushes.size() + (op == 1) - (op == 2) == 0) {
         nb = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
         wallbang = false;
-        auto add = [&](const Brush& x) { if (x.material >= 5) return; nb.mn = vmin(nb.mn, x.box.mn); nb.mx = vmax(nb.mx, x.box.mx); wallbang |= x.material == 2; };
+        auto add = [&](const Brush& x) { if (!solidMaterial(x.material)) return; nb.mn = vmin(nb.mn, x.box.mn); nb.mx = vmax(nb.mx, x.box.mx); wallbang |= x.material == 2; };
         for (size_t k = 0; k < brushes.size(); k++) if (k != i || op == 1) add(brushes[k]);
         if (op != 2) add(b);
         if (brushes.size() + (op == 1) - (op == 2) == 0) nb = {{-1, -1, -1}, {1, 1, 1}};
@@ -1427,24 +1430,25 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
     }
 }
 
-float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal) const {
+float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, int* material) const {
     Vec3 inv = safeInv(dir);
     float best = -1.0f;
-    int bestAxis = -1;
+    int bestAxis = -1, bestMat = -1;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
             if (brushes[cellBrushes[k]].material == 9) continue;   // clip: players only
             int axis;
             float t = rayAABB(o, inv, brushes[cellBrushes[k]].box, best < 0 ? maxDist : best, &axis);
-            if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; }
+            if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; bestMat = brushes[cellBrushes[k]].material; }
         }
         return !(best >= 0 && best <= tExit); // nearest hit is inside this cell: done
     });
     for (const AABB& b : dynSolids) {
         int axis;
         float t = rayAABB(o, inv, b, best < 0 ? maxDist : best, &axis);
-        if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; }
+        if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; bestMat = -1; }
     }
+    if (material) *material = best >= 0 ? bestMat : -1;
     if (best >= 0 && normal) {
         *normal = Vec3(0, 0, 0);
         if (bestAxis >= 0) (*normal)[bestAxis] = dir[bestAxis] > 0 ? -1.0f : 1.0f;

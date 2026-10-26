@@ -123,6 +123,7 @@ void main() {
     }
     vec2 lm = texture(uLightmap, vUV).rg;
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
+    if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);

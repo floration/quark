@@ -30,7 +30,7 @@ const float kGrids[] = {0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f};   // (1/8 m up t
 const int kGridCount = (int)(sizeof kGrids / sizeof kGrids[0]);
 const char kKindChar[] = "bslzhcpdg"; // ED_* -> edit op kind
 const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER", "GROUP"};
-const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};   // (group files)
+const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple"};   // (group files)
 static_assert(sizeof kMatNames / sizeof *kMatNames == kMapMaterials, "a name per material");
 const char* kGroupTypes[] = {"custom", "room", "stairs"};
 const Vec3 kTeamColors[] = {{0.25f, 0.6f, 1.0f}, {1.0f, 0.35f, 0.25f}, {0.9f, 0.9f, 0.9f}, {0.3f, 1.0f, 0.4f}};
@@ -1413,7 +1413,7 @@ void Game::editorFrame(double dt) {
             r_.setStaticBoxes([&] {
                 for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent; clip below)
                     if (b.material == 9) continue;
-                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : r_.accentColor;
+                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : r_.accentColor;
                     r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
                 }
             });

@@ -261,7 +261,7 @@ void NavGraph::build(const Map& m, NavKind k) {
     for (size_t bi = 0; bi < m.brushes.size(); bi++) {
         const Brush& b = m.brushes[bi];
         const AABB& a = b.box;
-        if (b.material >= 5) continue; // far scenery, water / lava
+        if (!solidMaterial(b.material)) continue; // far scenery, water / lava
         if (a.mx.x - a.mn.x < 0.4f || a.mx.z - a.mn.z < 0.4f) continue; // (0.5 m stair steps are floor)
         const Rect r = {a.mn.x, a.mn.z, a.mx.x, a.mx.z};
         const float y = a.mx.y;

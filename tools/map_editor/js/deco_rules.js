@@ -9,7 +9,7 @@
 'use strict';
 const D = G.MapDeco = G.MapDeco || {};
 const GEN = D.generators = D.generators || {};
-const MAT_OPTS = ['box', 'accent', 'wallbang', 'metal', 'glow', 'far', 'water', 'lava', 'trim', 'clip'].map((n, i) => ({ value: i, label: i + ' ' + n }));
+const MAT_OPTS = ['box', 'accent', 'wallbang', 'metal', 'glow', 'far', 'water', 'lava', 'trim', 'clip', 'nograpple'].map((n, i) => ({ value: i, label: i + ' ' + n }));
 const num = (key, label, def, min, max, step, help) => ({ key, label, type: 'number', default: def, min, max, step: step || 0.05, help });
 const mat = (key, label, def, help) => ({ key, label, type: 'mat', default: def, options: MAT_OPTS, help });
 const sel = (key, label, def, options, help) => ({ key, label, type: 'select', default: def, options, help });

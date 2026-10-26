@@ -214,7 +214,7 @@ class App extends Emitter {
   }
   async newMap(quiet) {
     if (!quiet && !this.confirmDiscard()) return;
-    const text = "version 2\nhandmade\ntitle New Map\nbox -16 -1 -16 16 0 16\nspawn a -8 0 0 270\nspawn b 8 0 0 90\n";
+    const text = "version 3\nhandmade\ntitle New Map\nbox -16 -1 -16 16 0 16\nspawn a -8 0 0 270\nspawn b 8 0 0 90\n";
     const map = await api.tool("parse", { text, name: "" });
     this.origin = { origin: "human", note: "made in the map editor" };
     this.doc.open(map, "", "new", {});
