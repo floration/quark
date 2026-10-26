@@ -58,3 +58,10 @@ Every change on `testing` since production 1.19.0, with what changed and why. Th
 ## Weapon models (q, 2026-10-26: "create some new weapon models; up to 20 boxes per weapon")
 - `viewmodelParts` (src/client/models.cpp): rifle 17 boxes (was 6), rocket 18 (7), knife 13 (5), sniper 20 (11), laser 19 (8), shotgun 16 (6), sticky 16 (6), bubble 16 (7), syringe 14 (7), crossbow 19 (5); locator unchanged (12). Each keeps its old silhouette, size and pivot so the HUD viewmodel offsets still fit; the new parts are sights, rails, vents, grips, stocks, bands and glowing details on the same colour slots (metal, base, team, glow), so team colours and map tints apply as before.
 - Cost: at most 20 boxes per weapon (the limit is kMaxDefaultParts = 32), one viewmodel drawn per frame, so a few dozen extra triangles. Still AI-made in the provenance registry.
+
+## Player and projectile models (q, 2026-10-26: "redo all of the projectiles/player models ... +simple (just the hitbox) +wizard -scout +zombie +fighter")
+- kPlayerModels 5 -> 8: STANDARD, HEAVY, SIMPLE, ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER. SIMPLE takes SCOUT's id 2, so saved configs and servers that named SCOUT show SIMPLE; no protocol change (a model id is already range-checked: an older client shows ids 5-7 as STANDARD).
+- SIMPLE draws exactly the hitbox: the body box (kPlayerHalfWidth wide, up to the head) and the head box (kHeadFraction tall, kHeadWidthFraction wide), for players who want to see what they can hit.
+- The rest are rebuilt with legs, boots, belts, shoulders and face details (13-21 boxes, the limit is 32). Crouching squashes body boxes and keeps head sizes, as before. Cosmetic parts may poke slightly past the hitbox (the wizard's hat, the zombie's reaching arms); hits are unchanged.
+- Projectiles get more parts each (rocket 11, sticky 11, bolt 7, knife 6, syringe 7, bubble 4, orb 3), same sizes and the same flame / core / wobble animation.
+- Provenance: SCOUT removed, SIMPLE / WIZARD / ZOMBIE / FIGHTER added (AI-made).
