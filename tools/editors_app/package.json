@@ -1,0 +1,18 @@
+{
+  "name": "quarkology-editors",
+  "productName": "Quarkology Editors",
+  "version": "1.0.0",
+  "description": "Quarkology Editors: the Quark editors in one window, to make maps, HUDs, sounds, modes and more and send them to q.",
+  "main": "main.js",
+  "private": true,
+  "build": {
+    "appId": "io.github.floration.quarkology-editors",
+    "productName": "Quarkology Editors",
+    "files": ["main.js", "preload.js", "index.html", "tabs.json", "package.json"],
+    "extraResources": [{ "from": "bundle", "to": "bundle" }],
+    "directories": { "output": "dist" },
+    "win": { "target": ["portable"], "signAndEditExecutable": false },
+    "portable": { "artifactName": "quarkology-editors-windows.exe" },
+    "compression": "normal"
+  }
+}
