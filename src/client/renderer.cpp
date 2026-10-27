@@ -60,10 +60,14 @@ void main() {
 
 const char* kShadowFn = R"(
 
-// 1 at a face's middle, 0 on its edges: the outline. w = its width in pixels (settings; 1 = the default look,
-// smoothstep(1, 2)); 0 = no outline.
+// RENDER SCALE: the scene's pixels per window pixel (1 at 100%), so widths given in window pixels stay that wide
+uniform float uPxScale;
+// 1 at a face's middle, 0 on its edges: the outline. w = its width in window pixels (settings; 1 = the default look,
+// smoothstep(1, 2)); 0 = no outline. Below 100% never under a scene pixel, and its 1 pixel ramp stays a scene pixel
+// (thinner, the outlines went grey and shimmered).
 float outline(vec4 e, float w) {
     if (w <= 0.0) return 1.0;
+    w = max(w * uPxScale, min(w, 1.0));
     vec2 d2 = min(e.xy, e.zw - e.xy);
     float d = min(d2.x, d2.y);
     float px = fwidth(d);
@@ -132,7 +136,7 @@ void main() {
     vec3 an = abs(vN);
     vec2 pp = an.y > 0.5 ? vPos.xz * 0.25 : an.x > 0.5 ? vPos.zy * 0.5 : vPos.xy * 0.5;
     if (mat == 3) pp = pp * vec2(2.0, 0.5);
-    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * 1.5;
+    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
     float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
     albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
@@ -170,6 +174,26 @@ void main() {
     vec3 b = a * 0.5 + 0.25 * (texture(uScene, vUV - dir * 0.5).rgb + texture(uScene, vUV + dir * 0.5).rgb);
     float lB = luma(b);
     fragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
+})";
+
+// RENDER SCALE below 100%: the scene stretched to the window with a light contrast-adaptive sharpen (CAS-style, the
+// 5-tap cross): each pixel pushed away from its 4 neighbours by an amount that shrinks where the cross already has
+// strong contrast (no halos on the outlines) or is near black / white (no clipping). The taps are a scene pixel apart,
+// read with linear filtering at the window pixel's own spot, so the stretch is the same pass. uSharp: -1/8 (light) to
+// -1/5 (strong).
+const char* kSharpFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uScene;
+uniform vec2 uRcp;
+uniform float uSharp;
+out vec4 fragColor;
+void main() {
+    vec3 c = texture(uScene, vUV).rgb;
+    vec3 n = texture(uScene, vUV + vec2(0.0, -uRcp.y)).rgb, s = texture(uScene, vUV + vec2(0.0, uRcp.y)).rgb;
+    vec3 w = texture(uScene, vUV + vec2(-uRcp.x, 0.0)).rgb, e = texture(uScene, vUV + vec2(uRcp.x, 0.0)).rgb;
+    vec3 mn = min(c, min(min(n, s), min(w, e))), mx = max(c, max(max(n, s), max(w, e)));
+    vec3 k = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0)) * uSharp;
+    fragColor = vec4(clamp((c + (n + s + w + e) * k) / (1.0 + 4.0 * k), 0.0, 1.0), 1.0);
 })";
 
 // sky: one full-screen triangle at the far plane, drawn after the world so only uncovered pixels shade
@@ -423,6 +447,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uiProg_ = compile(kUiVS, kUiFS, err);
     skyProg_ = compile(kSkyVS, kSkyFS, err);
     edgeProg_ = compile(kEdgeVS, kEdgeFS, err);
+    sharpProg_ = compile(kEdgeVS, kSharpFS, err);
     if (!skyProg_ || !worldProg_ || !dynProg_ || !flatProg_ || !shadowProg_ || !uiProg_) return false;
 
     // VAOs
@@ -436,6 +461,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glBindBuffer(GL_ARRAY_BUFFER, flatVbo_);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(FlatVertex), (void*)0);
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(FlatVertex), (void*)12);
+
+    glGenVertexArrays(1, &fsVao_);   // (no attributes: the fullscreen passes make their triangle from gl_VertexID)
 
     glGenVertexArrays(1, &uiVao_);
     glGenBuffers(1, &uiVbo_);
@@ -515,6 +542,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     setVec3(U(worldProg_, "uSunColor"), sunColor);
     setVec3(U(worldProg_, "uSkyColor"), skyLight);
     glUniform1f(U(worldProg_, "uFogDensity"), fog);
+    glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
              U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
@@ -523,6 +551,9 @@ bool Renderer::init(int shadowRes, std::string* err) {
     setVec3(U(dynProg_, "uSunColor"), sunColor);
     setVec3(U(dynProg_, "uSkyColor"), skyLight);
     glUniform1f(U(dynProg_, "uFogDensity"), fog);
+    glUniform1f(U(dynProg_, "uPxScale"), 1.0f);
+    uWorldPx_ = U(worldProg_, "uPxScale"); uDynPx_ = U(dynProg_, "uPxScale");
+    pxScale_ = 1.0f;
     uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
     uFlatViewProj_ = U(flatProg_, "uViewProj");
@@ -542,8 +573,14 @@ bool Renderer::init(int shadowRes, std::string* err) {
         uEdgeRcp_ = U(edgeProg_, "uRcp");
         glUniform1i(U(edgeProg_, "uScene"), 0);
     }
+    if (sharpProg_) {
+        glUseProgram(sharpProg_);
+        uSharpRcp_ = U(sharpProg_, "uRcp");
+        glUniform1i(U(sharpProg_, "uScene"), 0);
+        glUniform1f(U(sharpProg_, "uSharp"), -1.0f / 6.5f);   // (CAS's sharpness 0.5: between its -1/8 and -1/5)
+    }
     glUseProgram(0);
-    uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = 0;   // (set on first use)
+    uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = sharpRcp_[0] = sharpRcp_[1] = 0;   // (set on first use)
 
     // the frame's vertex lists sized for a busy frame up front, so one never grows them mid-frame
     dyn_.reserve(16384); dynShadowOnly_.reserve(16384);
@@ -1042,7 +1079,13 @@ void Renderer::drawScene(bool shadows) {
 
     ensureMsaaTarget();
     if (msaaActive_) glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
-    glViewport(0, 0, width_, height_);
+    glViewport(0, 0, sceneW_, sceneH_);
+    const float px = (float)sceneW_ / (float)std::max(1, width_);
+    if (px != pxScale_) {   // (only when the render scale or the size changes: the outlines' width in window pixels)
+        pxScale_ = px;
+        glUseProgram(worldProg_); glUniform1f(uWorldPx_, px);
+        glUseProgram(dynProg_); glUniform1f(uDynPx_, px);
+    }
     glClearColor(clear_[0], clear_[1], clear_[2], 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -1143,22 +1186,41 @@ void Renderer::drawScene(bool shadows) {
             if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
         }
     }
-    if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
+    const bool scaled = sceneW_ != width_ || sceneH_ != height_;
+    unsigned srcFbo = msaaFbo_, srcTex = edgeTex_;   // (what the window is drawn from, single-sampled)
+    if (msaaActive_ >= 2 && !scaled) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(0, 0, width_, height_, 0, 0, width_, height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    } else if (msaaActive_ == 1) { // edges: one fullscreen pass from the scene texture into the window
+    } else if (msaaActive_ >= 2) { // RENDER SCALE: a multisampled blit can't change size, so resolve at the scene's size first
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
+        glBlitFramebuffer(0, 0, sceneW_, sceneH_, 0, 0, sceneW_, sceneH_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        srcFbo = resolveFbo_; srcTex = resolveTex_;
+    }
+    if (msaaActive_ == 1 || (msaaActive_ >= 2 && scaled)) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_DEPTH_TEST);
-        glUseProgram(edgeProg_);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, edgeTex_);
-        const float rx = 1.0f / width_, ry = 1.0f / height_;
-        if (rx != edgeRcp_[0] || ry != edgeRcp_[1]) { glUniform2f(uEdgeRcp_, rx, ry); edgeRcp_[0] = rx; edgeRcp_[1] = ry; }   // (only when the size changes)
-        glBindVertexArray(worldVao_);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        glEnable(GL_DEPTH_TEST);
+        if (scaled) glViewport(0, 0, width_, height_);
+        // edges: one fullscreen pass from the scene texture into the window (its taps a scene pixel apart: stretched
+        // in the same pass); RENDER SCALE below 100% with SHARPEN: the sharpening pass, which stretches it too
+        const bool edges = msaa_ == 1, sharpen = !edges && sharpen_ && sharpProg_ && sceneW_ < width_;
+        if (edges || sharpen) {
+            glDisable(GL_DEPTH_TEST);
+            glUseProgram(edges ? edgeProg_ : sharpProg_);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, srcTex);
+            const float rx = 1.0f / sceneW_, ry = 1.0f / sceneH_;
+            float* last = edges ? edgeRcp_ : sharpRcp_;
+            if (rx != last[0] || ry != last[1]) { glUniform2f(edges ? uEdgeRcp_ : uSharpRcp_, rx, ry); last[0] = rx; last[1] = ry; }   // (only when the size changes)
+            glBindVertexArray(fsVao_);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glEnable(GL_DEPTH_TEST);
+        } else {   // RENDER SCALE: stretched to the window, filtered (above 100%, 2x: each window pixel the mean of 4)
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, srcFbo);
+            glBlitFramebuffer(0, 0, sceneW_, sceneH_, 0, 0, width_, height_, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
     dyn_.clear();
     dynShadowOnly_.clear();
@@ -1514,52 +1576,81 @@ void Renderer::drawWorldChunks() {
     if (!drawFirst_.empty()) glMultiDrawArrays(GL_TRIANGLES, drawFirst_.data(), drawCount_.data(), (GLsizei)drawFirst_.size());
 }
 
-// (Re)create the multisampled scene target when the setting or the window size changes.
+// (Re)create the scene target when the anti-aliasing, the render scale or the window size changes (never otherwise:
+// every other frame this is a few compares). No target at 100% with AA off: the scene draws straight into the window.
 void Renderer::ensureMsaaTarget() {
     int want = msaa_ > 1 ? msaa_ : 0;
-    if (msaa_ == 1 && !worldVao_) return; // edges need a VAO to draw the fullscreen pass (any will do)
-    static GLint64 maxS = -1;
+    static GLint64 maxS = -1, maxDim = -1;
     if (want && maxS < 0) glGetInteger64v(GL_MAX_SAMPLES, &maxS); // once
     if (want) { want = std::min(want, (int)std::max<GLint64>(0, maxS)); if (want < 2) want = 0; }
     if (msaa_ == 1) want = 1; // edges
-    if (want == msaaActive_ && (!want || (msaaW_ == width_ && msaaH_ == height_))) return;
+    // RENDER SCALE: the scene at the window's size times it (a texture target even with AA off), stretched to the window
+    int sw = width_, sh = height_;
+    if (scalePct_ != 100 && width_ > 0 && height_ > 0) {
+        if (maxDim < 0) {   // once: the largest target the driver makes (200% of 4K is 7680 x 4320)
+            GLint64 t = 0, r = 0;
+            glGetInteger64v(GL_MAX_TEXTURE_SIZE, &t);
+            glGetInteger64v(GL_MAX_RENDERBUFFER_SIZE, &r);
+            maxDim = std::max<GLint64>(1, std::min(t > 0 ? t : 4096, r > 0 ? r : 4096));
+        }
+        sw = (int)std::lround(width_ * (scalePct_ / 100.0)); sh = (int)std::lround(height_ * (scalePct_ / 100.0));
+        const double fit = std::min(1.0, (double)maxDim / std::max(sw, sh));   // (too big: the largest that fits, same shape)
+        sw = std::max(1, (int)(sw * fit)); sh = std::max(1, (int)(sh * fit));
+        if (!want) want = 1;
+    }
+    const bool scaled = sw != width_ || sh != height_;
+    // (what was asked for last: a target the driver turned down isn't tried again every frame)
+    if (want == triedAa_ && sw == triedW_ && sh == triedH_) return;
+    triedAa_ = want; triedW_ = sw; triedH_ = sh;
     if (msaaFbo_) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; }
     if (edgeTex_) { glDeleteTextures(1, &edgeTex_); edgeTex_ = 0; }
+    if (resolveFbo_) { glDeleteFramebuffers(1, &resolveFbo_); glDeleteTextures(1, &resolveTex_); resolveFbo_ = resolveTex_ = 0; }
     msaaActive_ = 0;
+    sceneW_ = width_; sceneH_ = height_;   // (no target: the window's own size)
     if (!want || width_ <= 0 || height_ <= 0) return;
-    if (want == 1) { // edges: a plain colour texture + depth
-        glGenFramebuffers(1, &msaaFbo_);
-        glGenTextures(1, &edgeTex_);
-        glGenRenderbuffers(1, &msaaDepth_);
-        glBindTexture(GL_TEXTURE_2D, edgeTex_);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    // a plain colour texture (linear: the stretch and the edge / sharpen passes read it) as fbo's colour
+    auto colorTex = [&](unsigned fbo, unsigned& tex) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    };
+    if (want == 1) { // edges, or AA off at another render scale: a plain colour texture + depth
+        glGenFramebuffers(1, &msaaFbo_);
+        glGenRenderbuffers(1, &msaaDepth_);
         glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
-        glRenderbufferStorageMultisample(GL_RENDERBUFFER, 0, GL_DEPTH24_STENCIL8, width_, height_);
-        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, edgeTex_, 0);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, 0, GL_DEPTH24_STENCIL8, sw, sh);
+        colorTex(msaaFbo_, edgeTex_);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepth_);
         bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteTextures(1, &edgeTex_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = edgeTex_ = msaaDepth_ = 0; return; }
-        msaaActive_ = 1; msaaW_ = width_; msaaH_ = height_;
+        msaaActive_ = 1; sceneW_ = sw; sceneH_ = sh;
         return;
     }
     glGenFramebuffers(1, &msaaFbo_);
     glGenRenderbuffers(1, &msaaColor_);
     glGenRenderbuffers(1, &msaaDepth_);
     glBindRenderbuffer(GL_RENDERBUFFER, msaaColor_);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_RGBA8, width_, height_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_RGBA8, sw, sh);
     glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_DEPTH24_STENCIL8, width_, height_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_DEPTH24_STENCIL8, sw, sh);
     glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColor_);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepth_);
     bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if (ok && scaled) {   // RENDER SCALE: the single-sampled texture the samples resolve into, at the scene's size
+        glGenFramebuffers(1, &resolveFbo_);
+        colorTex(resolveFbo_, resolveTex_);
+        ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (!ok) { glDeleteFramebuffers(1, &resolveFbo_); glDeleteTextures(1, &resolveTex_); resolveFbo_ = resolveTex_ = 0; }
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; return; }
-    msaaActive_ = want; msaaW_ = width_; msaaH_ = height_;
+    msaaActive_ = want; sceneW_ = sw; sceneH_ = sh;
 }

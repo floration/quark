@@ -39,3 +39,8 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - **The score box, kill feed and chat are now HUD elements**: move, size, recolour and style them like the others (Settings > HUD and EDIT ON SCREEN).
 - **Fixed the HUD tab's footer covering the weapon list**: BACK and RESET WHOLE HUD now sit higher, clear of the HUD's bottom row.
 - **The HUD and menus draw a little cheaper**: the HUD costs slightly less CPU per frame than before even with all of the above, and every piece of text and every box in the UI sends a third less data to the GPU.
+
+## Video
+- **RENDER SCALE** (Settings > VIDEO + AUDIO > IMAGE, 50% to 200%, default 100%): draws the 3D world at that share of your window's resolution and stretches it to fit, while the HUD, text and menus stay at full resolution and sharp. Below 100% for more frame rate on a weak GPU; above 100% for a smoother, supersampled picture. Works with every ANTI-ALIASING mode. F3 shows the resolution the world is drawn at (`3D 960X540`). At 100% nothing changes.
+- **SHARPEN** (next to it, on by default): below 100%, sharpens the stretched world a little so it looks less blurry. It does nothing at 100% and above, or with ANTI-ALIASING: SMOOTH, which smooths the edges instead.
+- BRIGHTNESS and PLAYER SHADOWS now share a row, to make room.

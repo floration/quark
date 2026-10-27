@@ -395,6 +395,10 @@ if(QUARK_BUILD_TESTS)
     add_test(NAME uitest COMMAND sh ${CMAKE_SOURCE_DIR}/tools/uitest.sh $<TARGET_FILE:quark> ${CMAKE_BINARY_DIR}/uitest-report.json
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
+    # RENDER SCALE: screenshots at 50 / 100 / 200% are the window's size, with the HUD at its resolution (needs a display)
+    add_test(NAME renderscale COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/renderscale_check.py $<TARGET_FILE:quark>
+             WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(renderscale PROPERTIES TIMEOUT 900 SKIP_RETURN_CODE 77)
   endif()
   # The editors' native helper (tools/maptool/map/README.md): the map editor's commands plus the bot, physics, mode and
   # weapons editors' (tools/maptool/<part>/). The editors themselves live in floration/quarkology; the helper stays

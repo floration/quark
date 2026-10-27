@@ -1,6 +1,7 @@
 #!/bin/bash
 # The pre-push check used for 1.17.0 (docs/HANDOVER.md section 0): every quark_tests group, 3 per core at a time, then the
-# timing-sensitive ones alone, then every map hosted headless in FFA and screenshotted (it loads and the game runs).
+# timing-sensitive ones alone, then every map hosted headless in FFA and screenshotted (it loads and the game runs), then
+# the RENDER SCALE screenshots (tools/renderscale_check.py).
 # Usage: tools/release_check.sh [--skip "bots botaim botfalls maps mapbounds"]     (run from the repo root, after a build)
 # Needs Xvfb on Linux for the map check (skipped with a note if there's no Xvfb). Exit code 0 = everything passed.
 cd "$(dirname "$0")/.." || exit 2
@@ -31,6 +32,8 @@ if command -v Xvfb >/dev/null; then
     DISPLAY=:97 timeout 300 build/quark --host ffa --map "$n" --screenshot "$TMPDIR/$n.png" > "$TMPDIR/$n.map.log" 2>&1; rc=$?
     if [ $rc = 0 ] && [ -s "$TMPDIR/$n.png" ]; then echo "map $n ok"; else echo "map $n FAILED rc=$rc"; fail=1; fi
   done
+  # RENDER SCALE: 50 / 100 / 200% screenshots the window's size, the HUD at the window's resolution
+  if DISPLAY=:97 python3 tools/renderscale_check.py build/quark > "$TMPDIR/renderscale.log" 2>&1; then echo "renderscale ok"; else echo "renderscale FAILED (see renderscale.log)"; fail=1; fi
   kill $xpid
 else
   echo "(no Xvfb: map load check skipped; host each map once by hand instead)"

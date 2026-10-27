@@ -40,6 +40,8 @@ struct Settings {
     // per-mode rules: a huds/ or controls/ profile file used automatically in that mode ("" = your default)
     std::string modeHud[MODE_COUNT], modeCtl[MODE_COUNT];     // draw the widgets from hud.cfg
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
+    int renderScale = 100;      // RENDER SCALE: the 3D scene drawn at the window's size times this % (50 - 200), the HUD at the window's
+    bool renderSharpen = true;  // ...and below 100% sharpened as it's stretched (SHARPEN)
     float volume = 0.6f;
     float volumeEffects = 1.0f;    // x volume: every sound effect (the hitsound too)
     float volumeAnnouncer = 1.0f;  // x volume: the announcer's lines

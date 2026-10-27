@@ -142,6 +142,13 @@ public:
     // this frame's drawScene will run the shadow pass (false: off-screen casters aren't even built). Set before drawing.
     bool shadowCasters = true;
     void setMsaa(int samples) { msaa_ = samples; }     // 0 = off, 1 = edges (FXAA-style), 2 / 4 / 8 MSAA (clamped to what the driver supports)
+    // RENDER SCALE (VIDEO): the 3D scene drawn at the window's size times pct / 100 (50 - 200), then stretched to the
+    // window, filtered; the 2D layer (HUD, text, menus) is drawn after at the window's own size, so it stays sharp.
+    // sharpen: below 100%, a contrast-adaptive sharpen in the stretch (not with EDGES, which smooths instead).
+    void setRenderScale(int pct, bool sharpen) { scalePct_ = std::max(50, std::min(200, pct)); sharpen_ = sharpen; }
+    // the size the scene was last drawn at (the window's, at 100% or with no world drawn yet): F3
+    int sceneWidth() const { return sceneW_; }
+    int sceneHeight() const { return sceneH_; }
     bool screenshot(const std::string& path);
 
     // palette
@@ -176,9 +183,10 @@ private:
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
-    GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1;
+    GLint uFlatViewProj_ = -1, uShadowViewProj_ = -1, uUiScreen_ = -1, uEdgeRcp_ = -1, uSharpRcp_ = -1, uWorldPx_ = -1, uDynPx_ = -1;
     GLint uLogoA_ = -1, uLogoB_ = -1, uSplitP_ = -1, uSplitN_ = -1, uSplitSeam_ = -1;   // (the title: Renderer::logo)
-    float uiScreen_[2] = {}, edgeRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)
+    float uiScreen_[2] = {}, edgeRcp_[2] = {}, sharpRcp_[2] = {};   // (the values last set: uScreen / uRcp change only with the size)
+    float pxScale_ = 1;                          // (uPxScale's value: scene pixels per window pixel)
     float clear_[3] = {};                        // (the sky colour in display space: prepareScene works it out)
     Vec3 camFwd_, camRight_, camUp_;
     float tanX_ = 1, tanY_ = 1;
@@ -192,8 +200,14 @@ private:
     // before the UI is drawn (so the HUD and menus don't pay for it). 0 / 1 = off.
     // aa: 0 off, 1 edges (the scene goes to a texture, then one cheap FXAA-style pass smooths the high-contrast
     // edges, i.e. the outlines), 2 / 4 / 8 MSAA
-    int msaa_ = 0, msaaW_ = 0, msaaH_ = 0, msaaActive_ = 0;
+    // RENDER SCALE: the target is sceneW_ x sceneH_ (the window's size times scalePct_ / 100), and is made even with AA
+    // off (a texture, as edges); with MSAA, resolveFbo_ / resolveTex_ take the resolved samples at that size, since a
+    // multisampled blit can't stretch. At 100% with AA off there's no target at all (the scene draws to the window).
+    int msaa_ = 0, msaaActive_ = 0, scalePct_ = 100, sceneW_ = 1280, sceneH_ = 720;
+    int triedAa_ = -1, triedW_ = 0, triedH_ = 0;   // (the target last asked for: ensureMsaaTarget)
+    bool sharpen_ = true;
     unsigned msaaFbo_ = 0, msaaColor_ = 0, msaaDepth_ = 0, edgeTex_ = 0, edgeProg_ = 0;
+    unsigned resolveFbo_ = 0, resolveTex_ = 0, sharpProg_ = 0, fsVao_ = 0;
     void ensureMsaaTarget();
 public:
     bool inView(const Vec3& center, float radius) const; // sphere vs the current view frustum

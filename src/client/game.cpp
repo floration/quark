@@ -1436,6 +1436,7 @@ void Game::frame(double dt) {
         debugSettingsTab();
     }
     r_.setMsaa(cfg_.msaa);
+    r_.setRenderScale(cfg_.renderScale, cfg_.renderSharpen);
     {   // per-mode HUD / controls rules follow the running mode (back to your defaults outside a game)
         // ranked never takes a rule: the default HUD and your own binds, no control scripts
         int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !fairRules() ? (int)net_.mode().mode : -1;
@@ -5311,8 +5312,11 @@ void Game::drawVideoSettings(const SetLayout& L) {
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("IMAGE");
-    ui_.slider(g.x(), g.top(), w, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
+    // (BRIGHTNESS and PLAYER SHADOWS share a row, as RENDER SCALE and SHARPEN do: a row more would push SOUND into
+    // DEVICES with Windows' EXCLUSIVE AUDIO)
+    ui_.slider(g.x(), g.top(), hw, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
     cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
+    ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
     g.next();
     {
         static const int aaModes[] = {0, 1, 2, 4};
@@ -5322,8 +5326,14 @@ void Game::drawVideoSettings(const SetLayout& L) {
         if (ui_.cycle(g.x(), g.top(), w, h, "ANTI-ALIASING", ai, 4, aaNames, UiExp::cfg("msaa"))) cfg_.msaa = aaModes[ai];
         g.next();
     }
-    ui_.toggle(g.x(), g.top(), w, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
-    g.next();
+    {   // the 3D scene at this % of the window's pixels (the HUD and menus always at 100%): below for frame rate, above
+        // as supersampling; SHARPEN: below 100%, sharpened as it's stretched
+        float v = (float)cfg_.renderScale;
+        if (ui_.slider(g.x(), g.top(), hw, h, "RENDER SCALE", v, 50, 200, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
+            cfg_.renderScale = std::max(50, std::min(200, (int)std::lround(v)));
+        ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "SHARPEN", cfg_.renderSharpen, UiExp::cfg("render_sharpen"));
+        g.next();
+    }
     g.section("SOUND");
     if (ui_.slider(g.x(), g.top(), w, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"), defaultSettings().volume)) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
     g.next();
@@ -6693,7 +6703,8 @@ void Game::drawPerf() {
         char b[200];
         snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f", t.size() / sum, 1.0 / p99, 1.0 / p999);
         perfText_ = b;
-        snprintf(b, sizeof b, "WORST %.1fMS  PING %d", worst * 1000.0, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
+        snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", worst * 1000.0, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
+                 r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
         pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
