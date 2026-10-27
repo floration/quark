@@ -93,6 +93,9 @@ public:
     // inside its edge (a border): one quad in the same 2D batch, the corners cut by a distance test in the UI shader
     // (HUD themes, theme.h). Radius 0 and no ring is rect().
     void roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring = 0);
+    // Every 2D colour's alpha times a (a HUD element's theme opacity, set around its drawing); 1: as given.
+    void setAlpha(float a) { alpha_ = a; }
+    float alpha() const { return alpha_; }
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
     // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
     // `enemy` (the player's team colours); friendly's alpha fades all of it. In Rubik: the baked logo
@@ -198,6 +201,7 @@ private:
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
     int fontGen_ = 0;
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
+    float alpha_ = 1;         // (setAlpha)
     size_t uiUploaded_ = 0;   // (prepare2D: this many 2D vertices are in uiVbo_ already; 0: none)
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;

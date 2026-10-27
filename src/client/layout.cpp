@@ -127,8 +127,9 @@ void Layout::place() {
         Rect& r = rects_[i];
         const Decl& d = decl_[i];
         if (parent_[i] < 0) {   // a root: on the screen, by its anchor
-            r.x = W_ * d.ax - r.w * d.px + d.ox;
-            r.y = H_ * d.ay - r.h * d.py + d.oy;
+            // ((anchor + offset) first: a box anchored to an edge lands exactly on the point it was given)
+            r.x = (W_ * d.ax + d.ox) - r.w * d.px;
+            r.y = (H_ * d.ay + d.oy) - r.h * d.py;
             clip_[i] = {0, 0, W_, H_};
         }
         const Rect& cr = clip_[i];
@@ -159,8 +160,8 @@ void Layout::place() {
             const Decl& cd = decl_[ch];
             clip_[ch] = inner;
             if (cd.floating) {
-                q.x = r.x + r.w * cd.ax - q.w * cd.px + cd.ox - sx;
-                q.y = r.y + r.h * cd.ay - q.h * cd.py + cd.oy - sy;
+                q.x = (r.x + r.w * cd.ax + cd.ox) - q.w * cd.px - sx;
+                q.y = (r.y + r.h * cd.ay + cd.oy) - q.h * cd.py - sy;
                 continue;
             }
             float* qp[2] = {&q.x, &q.y};

@@ -2765,49 +2765,159 @@ void Game::drawRps(float W, float H, float s, float top) {
     }
 }
 
-// ---- The HUD's elements: each drawn from its values, so the live HUD and Settings > HUD's preview (sample values in
-// the main menu, the live ones in game) are the same code; each returns where it is on screen (draw false: only that,
-// for a hidden element's outline; a drawn one may return an empty rect, so the live HUD measures nothing extra).
-// Positions and sizes from the element's HUD settings.
-static Color hudTint(const Settings::HudElem& e, Color c) { return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; }
+// ---- The HUD's elements: each drawn from its values, so the live HUD and Settings > HUD's editor (sample values in
+// the main menu, the live ones in game) are the same code; each returns its box on screen (draw false: only that, for
+// the editor's outlines and hit tests).
+//
+// Each element is laid out by the layout engine (layout.h) in a Layout of its own, so it re-solves only when its own
+// content, settings or theme change (most frames reuse the last solve): a floating box anchored to the screen's
+// corner, edge or centre it belongs to, holding its content. ref is where the element's box puts that anchor point in
+// the default look (its HUD offsets included); the theme (theme.cfg, theme.h) adds padding inside the box (it grows
+// away from the screen edge it's anchored to, around the content on a centred axis), a margin that moves it, a
+// background and border with rounded corners, a colour, a text size and an opacity. With no theme every element is
+// where and as it always was.
 
-Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float, float H, float s, int hp, Color num, Color bar, bool draw) {
-    // health: number + bar, bottom left
-    float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
-    if (draw) {
-        float hts = std::max(1.0f, std::round(ui_.textScale() * 2 * e.scale));
-        r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? num : kRed);
-        r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
-        r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? bar : kRed);
+namespace {
+const char* const kHudElemLabels[Settings::HUD_COUNT] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
+                                                        "WEAPON MODEL", "KEY OVERLAY", "GRAPPLE MODEL", "SCORE BOX", "KILL FEED", "CHAT"};
+// a HUD element's theme opacity, for the draws of one scope (Renderer::setAlpha)
+struct AlphaScope {
+    Renderer& r; float old;
+    AlphaScope(Renderer& rr, float a) : r(rr), old(rr.alpha()) { r.setAlpha(old * a); }
+    ~AlphaScope() { r.setAlpha(old); }
+};
+}
+
+// theme.cfg, looked at once a second (the file's key comes from the watcher thread: filewatch.h); a new error shows once
+void Game::pollTheme() {
+    if (!theme_.pollDue()) return;
+    if (themePath_.empty()) themePath_ = userDataPath("theme.cfg");
+    theme_.poll(themePath_);
+    if (theme_.error() != themeErrShown_) {
+        themeErrShown_ = theme_.error();
+        if (!themeErrShown_.empty()) notify(themeErrShown_, 6);
     }
-    return {ox, oy - 70 * k, 200 * k, 50 * k};
+}
+
+const HudStyle& Game::hudStyle(int el) const {
+    static const HudStyle kNone;
+    return el >= 0 && el < Settings::HUD_COUNT ? theme_.style(el) : kNone;
+}
+
+float Game::hudOpacity(int el) const {
+    const HudStyle& st = hudStyle(el);
+    const float a = st.has(HudStyle::OPACITY) ? st.opacity : 1.0f;
+    return rankedPlayer() ? std::max(a, kRankedMinOpacity) : a;   // (ranked: a theme can dim the HUD, not hide it)
+}
+
+// The element's colour: its own HUD COLOR when that's on, else the theme's, else the built-in one (c; its alpha kept)
+Color Game::hudTint(int el, Color c) const {
+    const Settings::HudElem& e = cfg_.hud[el];
+    if (e.custom) return {e.color.x, e.color.y, e.color.z, c.a};
+    const HudStyle& st = hudStyle(el);
+    if (!st.has(HudStyle::COLOR)) return c;
+    const Color t = st.color.get(rgba(cfg_.colorFriendly), rgba(cfg_.colorEnemy));
+    return {t.r, t.g, t.b, c.a * t.a};
+}
+
+lay::Layout& Game::hudOpen(int el, float W, float H, float ax, float ay, float refX, float refY, float k, lay::Decl d, const float* defPad, bool themePad) {
+    const HudStyle& st = hudStyle(el);
+    // (made once: the chat's holds its whole history while typing, the kill feed's its lines, the rest a few boxes)
+    if (!hudLay_[el]) hudLay_[el] = std::make_unique<lay::Layout>(el == Settings::HUD_CHAT ? 64 : el == Settings::HUD_KILLFEED ? 56 : el == Settings::HUD_SLOTS ? 24 : 8);
+    lay::Layout& L = *hudLay_[el];
+    L.begin(W, H);
+    float pad[4] = {0, 0, 0, 0};
+    if (themePad && st.has(HudStyle::PADDING)) for (int i = 0; i < 4; i++) pad[i] = st.pad[i] * k;
+    else if (defPad) for (int i = 0; i < 4; i++) pad[i] = defPad[i];
+    float mx = 0, my = 0;
+    if (st.has(HudStyle::MARGIN)) { mx = (st.margin[0] - st.margin[2]) * k; my = (st.margin[1] - st.margin[3]) * k; }
+    d.padding(pad[0], pad[1], pad[2], pad[3]).floatAt(ax, ay, ax, ay, refX - ax * W + mx, refY - ay * H + my);
+    L.open(lay::id("hud"), d, kHudElemLabels[el]);
+    return L;
+}
+
+lay::Rect Game::hudClose(int el) {
+    lay::Layout& L = *hudLay_[el];
+    L.close();
+    L.solve();
+    return hudRect_[el] = L.rect(0);
+}
+
+// The element's own box: the theme's background (else def; alpha 0: none) and border, its corners rounded.
+void Game::hudBoxDraw(int el, const lay::Rect& r, float k, Color def) {
+    const HudStyle& st = hudStyle(el);
+    const Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
+    const Color bg = st.has(HudStyle::BACKGROUND) ? st.background.get(fc, ec) : def;
+    const float rad = st.has(HudStyle::RADIUS) ? st.radius * k : 0;
+    if (bg.a > 0) r_.roundRect(r.x, r.y, r.w, r.h, rad, bg);
+    if (st.has(HudStyle::BORDER) && st.borderW > 0) r_.roundRect(r.x, r.y, r.w, r.h, rad, st.border.get(fc, ec), std::max(1.0f, st.borderW * k));
+}
+
+float Game::hudFont(int el) const {
+    const HudStyle& st = hudStyle(el);
+    return (st.has(HudStyle::FONT) ? st.fontScale : 1.0f) * cfg_.hud[el].scale;
+}
+
+Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float W, float H, float s, int hp, Color num, Color bar, bool draw) {
+    // health: number + bar, bottom left (the content 200 x 50, its bottom 20 over the screen's)
+    const int el = Settings::HUD_HEALTH;
+    const float k = s * e.scale;
+    lay::Layout& L = hudOpen(el, W, H, 0, 1, 24 * s + e.x * s, H - 20 * k + e.y * s, k, lay::Decl());
+    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(200 * k), lay::Size::fixed(50 * k)));
+    const lay::Rect r = hudClose(el), c = L.rect(1);
+    if (draw) {
+        AlphaScope a(r_, hudOpacity(el));
+        hudBoxDraw(el, r, k, {0, 0, 0, 0});
+        float hts = std::max(1.0f, std::round(ui_.textScale() * 2 * hudFont(el)));
+        r_.text(c.x, c.y, hts, std::to_string(hp), hp > 30 ? num : kRed);
+        r_.rect(c.x, c.y + 42 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
+        r_.rect(c.x, c.y + 42 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? bar : kRed);
+    }
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudWeaponName(const Settings::HudElem& e, float W, float H, float s, const std::string& wn, Color c, bool draw) {
-    // current weapon name, bottom right
-    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * e.scale)), tw = r_.textWidth(wn, wts);
-    float x = W - 24 * s + e.x * s - tw, y = H - 50 * s * e.scale + e.y * s;
-    if (draw) r_.text(x, y, wts, wn, c);
-    return {x, y, tw, r_.textHeight(wts)};
+    // current weapon name, bottom right (its right edge 24 in, its top 50 up)
+    const int el = Settings::HUD_WEAPON;
+    const float k = s * e.scale;
+    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * hudFont(el))), tw = r_.textWidth(wn, wts), th = r_.textHeight(wts);
+    lay::Layout& L = hudOpen(el, W, H, 1, 1, W - 24 * s + e.x * s, H - 50 * k + th + e.y * s, k, lay::Decl());
+    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(tw), lay::Size::fixed(th)));
+    const lay::Rect r = hudClose(el), t = L.rect(1);
+    if (draw) {
+        AlphaScope a(r_, hudOpacity(el));
+        hudBoxDraw(el, r, k, {0, 0, 0, 0});
+        r_.text(t.x, t.y, wts, wn, c);
+    }
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw) {
     // dash + grapple cooldown bars under the crosshair (full = ready)
-    float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
+    const int el = Settings::HUD_BARS;
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
     // (rows 16 apart, captions at text 1.5 centred on their bar: text 1 was below the redesign's smallest)
-    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * e.scale), lh = r_.textHeight(lts);
-    const float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
-    if (!draw) {
-        const float left = bx - r_.textWidth("WEAPON", lts) - 6 * k;   // (the widest caption)
-        return {left, bcy + 36 * k - 1, bx + bw + 1 - left, 32 * k + bh + 2};
-    }
+    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts);
+    const float bw = 90 * k, bh = 5 * k, capW = r_.textWidth("WEAPON", lts) + 6 * k;   // (the widest caption)
+    const float rowStep = bh + (st.has(HudStyle::GAP) ? st.gap * k : 11 * k);
+    // the content: captions + bars, from the widest caption's left to the bars' outline, the first bar's outline down
+    const float cw = capW + bw + 1, ch = 2 * rowStep + bh + 2;
+    const float left = bcx - bw * 0.5f - capW, top = bcy + 36 * k - 1;
+    lay::Layout& L = hudOpen(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, lay::Decl());
+    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(cw), lay::Size::fixed(ch)));
+    const lay::Rect r = hudClose(el), c = L.rect(1);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    hudBoxDraw(el, r, k, {0, 0, 0, 0});
+    const float bx = c.x + capW, y0 = c.y + 1;
     auto bar = [&](float y, const char* label, float remaining, float total) {
         float f = clampf(1.0f - remaining / total, 0, 1);
         r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
         r_.rect(bx, y, bw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
         r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
     };
-    bar(bcy + 36 * k, "WEAPON", v.wRem, v.wTot);
+    bar(y0, "WEAPON", v.wRem, v.wTot);
     {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
         // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
         // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -2816,7 +2926,7 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
         // made one dash look like it had spent both charges)
         const int n = v.dashN, have = std::min(v.dashHave, n);
         const Color pip = v.dashReady ? full : Color{0.6f, 0.62f, 0.66f, 0.9f};
-        float y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
+        float y = y0 + rowStep, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
         for (int i = 0; i < n; i++) {
             float px = bx + i * (pw + gap);
             r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
@@ -2824,52 +2934,306 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
         }
         r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && v.dashReady ? kWhite : kGrey);
     }
-    bar(bcy + 68 * k, "HOOK", v.hookRem, v.hookTot);
-    return {};
+    bar(y0 + 2 * rowStep, "HOOK", v.hookRem, v.hookTot);
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudSpeed(const Settings::HudElem& e, float W, float H, float s, float v, bool draw) {
     // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve (1 - e^(-v/20)): half full
     // at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
-    float k = s * e.scale, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
-    float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
-    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * e.scale), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
+    const int el = Settings::HUD_SPEED;
+    const float k = s * e.scale, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
+    const float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
+    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
     char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
-    const float left = bx - r_.textWidth("SPEED", lts) - 6 * k;
-    if (!draw) {
-        const float right = bx + bw + 6 * k + r_.textWidth(buf, lts), top = std::min(y - 1, ly), bottom = std::max(y + bh + 1, ly + lh);
-        return {left, top, right - left, bottom - top};
-    } else {
-        float f = 1.0f - std::exp(-v / 20.0f);
-        Color c = hudTint(e, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
-        r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
-        r_.rect(bx, y, bw * f, bh, c);
-        for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
-            r_.rect(bx + bw * (1.0f - std::exp(-m / 20.0f)), y, 1, bh, {0, 0, 0, 0.6f});
-        r_.text(left, ly, lts, "SPEED", kWhite);
-        r_.text(bx + bw + 6 * k, ly, lts, buf, kWhite);
-    }
-    return {};
+    // the content: caption, bar and room for the number ("99.9": the box doesn't move as the number changes)
+    const float capW = r_.textWidth("SPEED", lts) + 6 * k, numW = 6 * k + r_.textWidth("99.9", lts);
+    const float top = std::min(y - 1, ly), bottom = std::max(y + bh + 1, ly + lh);
+    const float cw = capW + bw + numW, ch = bottom - top, left = bx - capW;
+    lay::Layout& L = hudOpen(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, lay::Decl());
+    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(cw), lay::Size::fixed(ch)));
+    const lay::Rect r = hudClose(el), c = L.rect(1);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    hudBoxDraw(el, r, k, {0, 0, 0, 0});
+    const float x0 = c.x + capW, y0 = c.y + (y - top), ly0 = c.y + (ly - top);
+    float f = 1.0f - std::exp(-v / 20.0f);
+    Color col = hudTint(el, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
+    r_.rect(x0 - 1, y0 - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
+    r_.rect(x0, y0, bw * f, bh, col);
+    for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
+        r_.rect(x0 + bw * (1.0f - std::exp(-m / 20.0f)), y0, 1, bh, {0, 0, 0, 0.6f});
+    r_.text(c.x, ly0, lts, "SPEED", kWhite);
+    r_.text(x0 + bw + 6 * k, ly0, lts, buf, kWhite);
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, float s, int mode, uint32_t mask, int held, Color heldC, bool live, bool draw) {
-    // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ... right-aligned at the bottom right
-    const float x1 = W - 24 * s + e.x * s, y = H - 74 * s * e.scale + e.y * s;
-    float bx = x1;
-    float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * e.scale));
-    for (int k = WPN_COUNT - 1; k >= 0; k--) {
-        int wi = kWeaponSlots[k];
+    // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ... a row ending 38 in from the right, 74 up
+    const int el = Settings::HUD_SLOTS;
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale;
+    const float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * hudFont(el))), th = r_.textHeight(sts);
+    lay::Layout& L = hudOpen(el, W, H, 1, 1, W - 24 * s - 14 * k + e.x * s, H - 74 * k + th + e.y * s, k,
+                             lay::Decl().row().spacing(st.has(HudStyle::GAP) ? st.gap * k : 14 * k));
+    struct Slot { int kk, wi; bool has; double away; };
+    Slot slots[WPN_COUNT];
+    int n = 0;
+    char t[48];
+    for (int kk = 0; kk < WPN_COUNT; kk++) {
+        int wi = kWeaponSlots[kk];
         bool has = !mask || (mask >> wi & 1);
         if (!weaponInMode(wi, mode) || (isItMode(mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
-        std::string t = std::to_string(weaponSlotKey(k)) + " " + weaponDef(wi).name;
         double awayLeft = live ? weaponAwayLeft(wi) : 0;   // a thrown knife / syringe: disabled, greyed with its timer
-        if (awayLeft > 0) t += " " + std::to_string((int)std::ceil(awayLeft - 1e-6)); // (seconds until it's back)
-        float tw = r_.textWidth(t, sts);
-        bx -= tw + 14 * s * e.scale;
-        bool inPool = has && awayLeft <= 0;
-        if (draw) r_.text(bx, y, sts, t, wi == held && awayLeft <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+        if (awayLeft > 0) snprintf(t, sizeof t, "%d %s %d", weaponSlotKey(kk), weaponDef(wi).name, (int)std::ceil(awayLeft - 1e-6));   // (seconds until it's back)
+        else snprintf(t, sizeof t, "%d %s", weaponSlotKey(kk), weaponDef(wi).name);
+        L.leaf(lay::id(lay::id("slot"), (uint32_t)kk), lay::Decl().size(lay::Size::fixed(r_.textWidth(t, sts)), lay::Size::fixed(th)));
+        slots[n++] = {kk, wi, has, awayLeft};
     }
-    return {bx, y, x1 - bx, r_.textHeight(sts)};
+    const lay::Rect r = hudClose(el);
+    if (draw && n + 1 <= L.count()) {
+        AlphaScope a(r_, hudOpacity(el));
+        hudBoxDraw(el, r, k, {0, 0, 0, 0});
+        // (drawn from the right edge, each weapon's text left of the last as the solver placed them, but with the
+        // same float steps the hand-placed row took: not a glyph moves by a rounding)
+        float bx = W - 24 * s + e.x * s;   // (the row's right edge + one gap)
+        if (st.has(HudStyle::PADDING)) bx -= st.pad[2] * k;
+        if (st.has(HudStyle::MARGIN)) bx += (st.margin[0] - st.margin[2]) * k;
+        const float gap = st.has(HudStyle::GAP) ? st.gap * k : 14 * k;
+        if (st.has(HudStyle::GAP)) bx += gap - 14 * k;
+        const float y = L.rect(1).y;
+        for (int i = n - 1; i >= 0; i--) {
+            const Slot& sl = slots[i];
+            if (sl.away > 0) snprintf(t, sizeof t, "%d %s %d", weaponSlotKey(sl.kk), weaponDef(sl.wi).name, (int)std::ceil(sl.away - 1e-6));
+            else snprintf(t, sizeof t, "%d %s", weaponSlotKey(sl.kk), weaponDef(sl.wi).name);
+            bx -= L.rect(i + 1).w + gap;
+            const bool inPool = sl.has && sl.away <= 0;
+            r_.text(bx, y, sts, t, sl.wi == held && sl.away <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+        }
+    }
+    return {r.x, r.y, r.w, r.h};
+}
+
+// The score box (top centre): your score / your team's on the left, the best other / the enemy's on the right, the
+// mode's title and phase between; at least 440 wide and 64 high, as wide as the screen at most (sized from the real text
+// sizes: HUD text is rounded to whole steps, so it's relatively bigger at small heights). Ranked: a gold stripe and tag.
+Game::HudRect Game::drawHudScore(const ScoreText& t, float W, float H, float s, bool draw) {
+    const int el = Settings::HUD_SCORE;
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, fm = hudFont(el);
+    const float ts = std::max(1.0f, std::round(ui_.textScale() * fm)), sts = ts * 1.5f, th = r_.textHeight(ts), sh = r_.textHeight(sts);
+    const float scoreW = std::max(r_.textWidth(t.scoreA, sts), r_.textWidth(t.scoreB, sts));
+    const float defPad[4] = {20 * k, 8 * k, 20 * k, 8 * k};
+    lay::Layout& L = hudOpen(el, W, H, 0.5f, 0, W * 0.5f + e.x * s, 8 * s + e.y * s, k,
+                             lay::Decl().row().size(lay::Size::fit(440 * k, W - 16 * s), lay::Size::fit(64 * k))
+                                 .spacing(st.has(HudStyle::GAP) ? st.gap * k : 12 * k).align(lay::BETWEEN, lay::START), defPad);
+    L.leaf(lay::id("a"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
+    L.open(lay::id("mid"), lay::Decl().col().align(lay::START, lay::CENTER));
+    L.leaf(lay::id("title"), lay::Decl().size(lay::Size::fixed(r_.textWidth(t.title, ts)), lay::Size::fixed(std::max(22 * k, th + 4 * k))));
+    L.leaf(lay::id("phase"), lay::Decl().size(lay::Size::fixed(r_.textWidth(t.phase, ts)), lay::Size::fixed(th)));
+    L.close();
+    L.leaf(lay::id("b"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
+    const lay::Rect r = hudClose(el);
+    if (!draw || L.count() < 6) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    const Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
+    hudBoxDraw(el, r, k, {0.05f, 0.06f, 0.08f, 0.55f});
+    const float rad = st.has(HudStyle::RADIUS) ? std::min(st.radius * k, std::min(r.w, r.h) * 0.5f) : 0;
+    const float stripeH = st.has(HudStyle::STRIPE) ? st.stripeW * k : 2 * ui_.s();   // (the panel's accent line)
+    if (stripeH > 0) r_.rect(r.x + rad, r.y, r.w - 2 * rad, stripeH, st.has(HudStyle::STRIPE) ? st.stripe.get(fc, ec) : ui_.accent);
+    ui_.box(r.x, r.x + r.w);   // (the title and phase fit inside it)
+    const Color gold = {1.0f, 0.78f, 0.25f, 1};
+    if (t.ranked) { // always visible on a ranked server
+        const float hs = ui_.hintScale(), hh = r_.textHeight(hs);
+        r_.rect(r.x + rad, r.y, r.w - 2 * rad, 3 * s, gold);
+        const char* tag = t.unrated ? "RANKED - NOT RATED" : "RANKED";
+        float tw = r_.textWidth(tag, hs) + 12 * s; // tag on the panel's right edge, clear of the objective line
+        r_.rect(r.x + r.w + 4 * s, r.y, tw, hh + 8 * s, gold);
+        r_.text(r.x + r.w + 10 * s, r.y + 4 * s, hs, tag, {0.1f, 0.08f, 0.02f, 1});
+    }
+    const lay::Rect& m = L.rect(2);
+    const float cx = m.x + m.w * 0.5f;
+    ui_.labelCentered(cx, L.rect(3).y, t.title, hudTint(el, kWhite), fm);
+    ui_.labelCentered(cx, L.rect(4).y, t.phase, kGrey, fm);
+    if (!t.scoreA.empty()) {
+        const lay::Rect &qa = L.rect(1), &qb = L.rect(5);
+        r_.text(qa.x, qa.y, sts, t.scoreA, fc);
+        r_.text(qb.x + qb.w - r_.textWidth(t.scoreB, sts), qb.y, sts, t.scoreB, ec);
+    }
+    ui_.noBox();   // (the notice lines under it are as wide as the screen)
+    return {r.x, r.y, r.w, r.h};
+}
+
+// The score box's text: the mode's title, its phase line, the two scores (sample: a made-up free for all, the HUD
+// editor outside a game).
+void Game::scoreText(ScoreText& t, bool sample) const {
+    t.ranked = t.unrated = false;
+    if (sample) {
+        t.title = modeTitle(MODE_FFA); t.phase = "2:00  -  1ST OF 6"; t.scoreA = "12"; t.scoreB = "9";
+        return;
+    }
+    const ModeState& ms = net_.mode();
+    const int me = net_.clientId();
+    const PlayerSnap* mep = net_.findPlayer(me);
+    const int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
+    t.title = modeTitle(ms.mode);
+    if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP))
+        t.title += std::string(" - ") + arenaVariant(ms.arenaVariant).title;
+    t.phase.clear();
+    switch (ms.phase) {
+        case PHASE_WARMUP:
+            t.phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
+                                      : ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - " + inputName(binds().code[A_VOTESTART][0]) + " TO START THE RACE"
+                                      : "WARMUP - " + inputName(binds().code[A_VOTESTART][0]) + " TO VOTE START";
+            break;
+        case PHASE_FREEZE: // free for all is one long round: just the countdown
+            t.phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
+            break;
+        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h; short enough to stay in the string's own buffer)
+            char line[32];
+            hudLiveLine(ms, line, sizeof line);
+            t.phase = line;
+            if (ms.mode == MODE_FFA) {   // your place (X10): "2ND OF 8", "=2ND" when shared
+                int of = 0; bool tied = false;
+                if (int k = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied); k > 0 && of > 1)
+                    t.phase += (t.phase.empty() ? "" : "  -  ") + std::string(tied ? "=" : "") + std::to_string(k) + ordinalSuffix(k) + " OF " + std::to_string(of);
+            }
+            break;
+        }
+        case PHASE_ROUND_END: t.phase = "ROUND OVER"; break;
+        case PHASE_MATCH_END: t.phase = "MATCH OVER"; break;
+    }
+    t.ranked = (ms.flags & MS_RANKED) != 0;
+    t.unrated = unratedServer_;
+    if (t.ranked) t.title = std::string(rankedKind(ms.arenaVariant)) + " - " + arenaVariant(ms.arenaVariant).title;
+    if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
+    t.scoreA.clear(); t.scoreB.clear();
+    if (modeIsTeamBased(ms.mode)) {
+        t.scoreA = std::to_string(myTeam == TEAM_A ? ms.scoreA : ms.scoreB);
+        t.scoreB = std::to_string(myTeam == TEAM_A ? ms.scoreB : ms.scoreA);
+    } else if (mep) {
+        int best = -9999;
+        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
+        t.scoreA = std::to_string(mep->score);
+        t.scoreB = best == -9999 ? "-" : std::to_string(best);
+    }
+}
+
+// The kill feed (top right, under the verbose info block: top is where it starts, 12 at 720p without it): a line per
+// kill, each on its own dark box (the theme's background, border and padding style each line), 2 apart.
+Game::HudRect Game::drawHudKillFeed(float W, float H, float s, float top, bool sample, bool draw) {
+    const int el = Settings::HUD_KILLFEED;
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, ts = ui_.textScale() * hudFont(el), th = r_.textHeight(ts);
+    static const Feed kSample[] = {{"wraith [ROCKET] lynx", {1, 1, 1, 1}, 0}, {"ghost [RIFLE] ember", {1, 1, 1, 1}, 0}, {"lynx [KNIFE] ghost", {1, 1, 1, 1}, 0}};
+    const Feed* lines[24];
+    int n = 0;
+    if (sample) for (const Feed& f : kSample) lines[n++] = &f;
+    else for (const Feed& f : killFeed_) if (n < 24) lines[n++] = &f;
+    const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::END : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
+    float pad[4] = {6 * k, 3 * k, 6 * k, 3 * k};
+    if (st.has(HudStyle::PADDING)) for (int i = 0; i < 4; i++) pad[i] = st.pad[i] * k;
+    lay::Layout& L = hudOpen(el, W, H, 1, 0, W - 8 * s + e.x * s, top - 3 * s + e.y * s, k,
+                             lay::Decl().col().spacing(st.has(HudStyle::GAP) ? st.gap * k : 2 * k).align(lay::START, al), nullptr, false);
+    for (int i = 0; i < n; i++) {
+        L.open(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().padding(pad[0], pad[1], pad[2], pad[3]));
+        L.leaf(lay::id(lay::id("text"), (uint32_t)i), lay::Decl().size(lay::Size::fixed(r_.textWidth(lines[i]->text, ts)), lay::Size::fixed(th)));
+        L.close();
+    }
+    const lay::Rect r = hudClose(el);
+    if (draw) {
+        AlphaScope a(r_, hudOpacity(el));
+        for (int i = 0; i < n && 2 + 2 * i < L.count(); i++) {
+            hudBoxDraw(el, L.rect(1 + 2 * i), k, {0, 0, 0, 0.4f});
+            const lay::Rect& q = L.rect(2 + 2 * i);
+            drawFeedText(q.x, q.y, ts, *lines[i]);
+        }
+    }
+    return {r.x, r.y, r.w, r.h};
+}
+
+// Chat (bottom left): the recent lines (typing: the whole recent history, on a dark box), the SAY line under them.
+Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sample, bool draw) {
+    const int el = Settings::HUD_CHAT;
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, ts = ts0 * hudFont(el), th = r_.textHeight(ts);
+    if (draw) while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
+    static const Feed kSample[] = {{"wraith: nice shot", {1, 1, 1, 1}, 0, 0, true}, {"ember: gg", {1, 1, 1, 1}, 0, 0, true}};
+    const Feed* lines[48];
+    int n = 0;
+    const bool showLines = !e.hidden || chatting_;   // (hidden: only while typing)
+    if (sample) for (const Feed& f : kSample) lines[n++] = &f;
+    else if (showLines)
+        for (const Feed& c : chatting_ ? chatLog_ : chatFeed_)   // (chat off: players' lines are hidden, server messages stay)
+            if (!(c.player && cfg_.chatOff) && n < 48) lines[n++] = &c;
+    const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::START : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
+    const float defPad[4] = {6 * k, 4 * k, 6 * k, 4 * k};
+    lay::Layout& L = hudOpen(el, W, H, 0, 1, 18 * s + e.x * s, H - 110 * s + e.y * s, k,
+                             lay::Decl().col().size(lay::Size::fixed(520 * k), lay::Size::fit()).spacing(st.has(HudStyle::GAP) ? st.gap * k : 4 * k)
+                                 .align(lay::START, al), defPad);
+    for (int i = 0; i < n; i++) {
+        const float cw = lines[i]->crown ? th * 1.2f : 0;
+        L.leaf(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().size(lay::Size::fixed((cw ? cw + 4 * s : 0) + r_.textWidth(lines[i]->text, ts)), lay::Size::fixed(th)));
+    }
+    const lay::Rect r = hudClose(el);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    {
+        AlphaScope a(r_, hudOpacity(el));
+        if (n > 0 && (chatting_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER))) hudBoxDraw(el, r, k, chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
+        for (int i = 0; i < n && i + 1 < L.count(); i++) {
+            const Feed& c = *lines[i];
+            const lay::Rect& q = L.rect(i + 1);
+            float cw = c.crown ? th * 1.2f : 0;
+            if (c.crown) drawCrown(q.x, q.y + th * 0.1f, cw, c.crown);
+            drawFeedText(q.x + (cw ? cw + 4 * s : 0), q.y, ts, c);
+        }
+    }
+    if (sample) return {r.x, r.y, r.w, r.h};
+    if (chatting_ && console_) drawConsole(W, H, s, ts0);
+    else if (chatting_) {
+        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
+        chatEdit(120, false);
+        float lts = std::max(1.0f, std::round(ui_.textScale()));
+        const float x = r.x + (st.has(HudStyle::PADDING) ? st.pad[0] * k : defPad[0]), y = r.y + r.h + 10 * k;
+        ui_.label(x, y, "SAY: " + chatText_, kWhite);
+        drawCaret(x, y, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
+    }
+    return {r.x, r.y, r.w, r.h};
+}
+
+Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool draw) {
+    const int el = Settings::HUD_KEYS;
+    const auto& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, u = 30 * k, g = st.has(HudStyle::GAP) ? st.gap * k : 4 * k, side = 4 * u + 3 * g;
+    lay::Layout& L = hudOpen(el, W, H, 0.5f, 1, W * 0.5f + e.x * s, H - 230 * s + side + e.y * s, k, lay::Decl());
+    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(side), lay::Size::fixed(side)));
+    const lay::Rect r = hudClose(el), c = L.rect(1);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    hudBoxDraw(el, r, k, {0, 0, 0, 0});
+    const float ox = c.x, oy = c.y, rad = st.has(HudStyle::RADIUS) ? st.radius * k : 0;
+    Color lit = hudTint(el, rgba(cfg_.colorFriendly, 0.9f));
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * hudFont(el)));
+    // alive: our own keys; spectating: what the watched player is holding (from the snapshot)
+    // (sample: Settings > HUD outside a game, nothing held)
+    const int spec = sample || net_.selfAlive() ? -1 : specKeysOf();
+    const uint16_t held = spec >= 0 ? net_.findPlayer(spec)->keys : 0;
+    auto key = [&](float col, float row, float wUnits, const char* label, int action, uint16_t bit) {
+        float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
+        bool on = spec >= 0 ? (held & bit) != 0 : !sample && isDown(action);
+        r_.roundRect(x, y, w, u, rad, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
+        r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
+    };
+    key(1, 0, 1, "W", A_FORWARD, KEY_FWD);
+    key(0, 1, 1, "A", A_LEFT, KEY_LEFT); key(1, 1, 1, "S", A_BACK, KEY_BACK); key(2, 1, 1, "D", A_RIGHT, KEY_RIGHT);
+    key(3, 0, 1, "LMB", A_FIRE, KEY_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE, KEY_ALT);
+    key(0, 2, 2, "JUMP", A_JUMP, KEY_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH, KEY_CROUCH);
+    key(0, 3, 2, "DASH", A_DASH, KEY_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE, KEY_HOOK);
+    return {r.x, r.y, r.w, r.h};
 }
 
 // The HUD while alive (drawHud; preview: Settings > HUD in game, where the cooldown bars and the speed meter show
@@ -2891,7 +3255,7 @@ void Game::drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, floa
             const auto& e = he[Settings::HUD_WEAPON];
             float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
             std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(weaponAlt().stickyMax);
-            r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : hudTint(e, kWhite));
+            r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : hudTint(Settings::HUD_WEAPON, kWhite));
         }
     }
     {   // enemy stickies stuck on you: a blinking warning under the crosshair
@@ -2914,9 +3278,9 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
     const Color fc = rgba(cfg_.colorFriendly);
     switch (el) {
         case Settings::HUD_HEALTH:
-            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(e, kWhite), hudTint(e, fc), draw);
+            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(el, kWhite), hudTint(el, fc), draw);
         case Settings::HUD_WEAPON:
-            return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(e, kWhite), draw);
+            return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(el, kWhite), draw);
         case Settings::HUD_BARS: {
             HudBarVals v;
             if (!sample) {
@@ -2932,7 +3296,7 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
                 v.hookRem = mv.hookCooldown;
                 v.hookTot = kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map());
             }
-            return drawHudBars(e, W, H, s, v, hudTint(e, fc), draw);
+            return drawHudBars(e, W, H, s, v, hudTint(el, fc), draw);
         }
         case Settings::HUD_SPEED: {
             const MoveState& mv = net_.predicted();
@@ -2941,9 +3305,15 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
         case Settings::HUD_SLOTS: {
             const ModeState& ms = net_.mode();
             return drawHudSlots(e, W, H, s, sample ? (int)MODE_FFA : (int)ms.mode, sample ? 0u : ms.weaponMask,
-                                sample ? kWeaponSlots[0] : heldWeapon_, hudTint(e, fc), !sample, draw);
+                                sample ? kWeaponSlots[0] : heldWeapon_, hudTint(el, fc), !sample, draw);
         }
         case Settings::HUD_KEYS: return drawKeyOverlay(W, H, s, sample, draw);
+        case Settings::HUD_SCORE: {
+            scoreText(hudScoreText_, sample);
+            return drawHudScore(hudScoreText_, W, H, s, draw);
+        }
+        case Settings::HUD_KILLFEED: return drawHudKillFeed(W, H, s, hudFeedTop_ * s, sample, draw);
+        case Settings::HUD_CHAT: return drawChatBox(W, H, s, ui_.textScale(), sample, draw);
         default: return {};
     }
 }
@@ -2991,6 +3361,7 @@ void Game::drawHud() {
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
+    pollTheme();
     float ts = ui_.textScale();
     if (paused_ && settingsInGame_ && !widgetEdit_ && hudPreviewOn()) {
         // Settings > HUD: the HUD's own elements live under the see-through shell (the world only lightly dimmed, so they
@@ -3029,7 +3400,6 @@ void Game::drawHud() {
     const PlayerSnap* mep = net_.findPlayer(me);
     int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
     Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
-    bool teamMode = modeIsTeamBased(ms.mode);
     // (held scoreboard: known up front, the round-end message and the tiebreak make way for it)
     showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
 
@@ -3144,73 +3514,16 @@ void Game::drawHud() {
         r_.rect(0, 0, b, H, {ec.r, ec.g, ec.b, a}); r_.rect(W - b, 0, b, H, {ec.r, ec.g, ec.b, a});
     }
 
-    // top: mode, timer, scores
-    std::string title = modeTitle(ms.mode);
-    if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP))
-        title += std::string(" - ") + arenaVariant(ms.arenaVariant).title;
-    std::string phase;
-    switch (ms.phase) {
-        case PHASE_WARMUP:
-            phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
-                                    : ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - " + inputName(binds().code[A_VOTESTART][0]) + " TO START THE RACE"
-                                    : "WARMUP - " + inputName(binds().code[A_VOTESTART][0]) + " TO VOTE START";
-            break;
-        case PHASE_FREEZE: // free for all is one long round: just the countdown
-            phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
-            break;
-        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h; short enough to stay in the string's own buffer)
-            char line[32];
-            hudLiveLine(ms, line, sizeof line);
-            phase = line;
-            if (ms.mode == MODE_FFA) {   // your place (X10): "2ND OF 8", "=2ND" when shared
-                int of = 0; bool tied = false;
-                if (int k = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied); k > 0 && of > 1)
-                    phase += (phase.empty() ? "" : "  -  ") + std::string(tied ? "=" : "") + std::to_string(k) + ordinalSuffix(k) + " OF " + std::to_string(of);
-            }
-            break;
-        }
-        case PHASE_ROUND_END: phase = "ROUND OVER"; break;
-        case PHASE_MATCH_END: phase = "MATCH OVER"; break;
+    // top: mode, timer, scores (the score box: shown in ranked whatever the HUD says, for the RANKED tag)
+    float boxH = 64 * s;
+    const bool rankedGame = ms.flags & MS_RANKED;
+    if (!cfg_.hud[Settings::HUD_SCORE].hidden || rankedGame) {
+        scoreText(hudScoreText_, false);
+        boxH = drawHudScore(hudScoreText_, W, H, s).h;
     }
-    bool rankedGame = ms.flags & MS_RANKED;
-    if (rankedGame) title = std::string(rankedKind(ms.arenaVariant)) + " - " + arenaVariant(ms.arenaVariant).title;
-    if (ms.flags & MS_TIMETRIAL) title = "TIME TRIAL - VIADUCT";
-    // score box sized from the real text sizes (HUD text is rounded to whole steps, so it's relatively
-    // bigger at small heights): the scores sit outside the widest centre line, the phase under the title
-    std::string scoreA, scoreB;
-    if (teamMode) {
-        scoreA = std::to_string(myTeam == TEAM_A ? ms.scoreA : ms.scoreB);
-        scoreB = std::to_string(myTeam == TEAM_A ? ms.scoreB : ms.scoreA);
-    } else if (mep) {
-        int best = -9999;
-        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
-        scoreA = std::to_string(mep->score);
-        scoreB = best == -9999 ? "-" : std::to_string(best);
-    }
-    const float sts = ts * 1.5f, th = r_.textHeight(ts);
-    const float scoreW = std::max(r_.textWidth(scoreA, sts), r_.textWidth(scoreB, sts));
-    const float midW = std::max(r_.textWidth(title, ts), r_.textWidth(phase, ts));
-    const float half = std::min(W * 0.5f - 8 * s, std::max(220 * s, midW * 0.5f + scoreW + 32 * s));
-    const float phaseY = 16 * s + std::max(22 * s, th + 4 * s);
-    const float boxH = std::max(64 * s, phaseY + th);
-    const float scoreY = 8 * s + (boxH - r_.textHeight(sts)) * 0.5f;
-    ui_.panel(cx - half, 8 * s, half * 2, boxH, 0.55f);
+    const float th = r_.textHeight(ts);
     const Color gold = {1.0f, 0.78f, 0.25f, 1};
     const float hs = ui_.hintScale(), hh = r_.textHeight(hs);
-    if (rankedGame) { // always visible on a ranked server
-        r_.rect(cx - half, 8 * s, half * 2, 3 * s, gold);
-        const char* tag = unratedServer_ ? "RANKED - NOT RATED" : "RANKED";
-        float tw = r_.textWidth(tag, hs) + 12 * s; // tag on the panel's right edge, clear of the objective line
-        r_.rect(cx + half + 4 * s, 8 * s, tw, hh + 8 * s, gold);
-        r_.text(cx + half + 10 * s, 12 * s, hs, tag, {0.1f, 0.08f, 0.02f, 1});
-    }
-    ui_.labelCentered(cx, 16 * s, title, kWhite);
-    ui_.labelCentered(cx, phaseY, phase, kGrey);
-    if (!scoreA.empty()) {
-        r_.text(cx - half + 20 * s, scoreY, sts, scoreA, fc);
-        r_.text(cx + half - 20 * s - r_.textWidth(scoreB, sts), scoreY, sts, scoreB, ec);
-    }
-    ui_.noBox();   // (the notice lines under it are as wide as the screen)
 
     // objective line
     std::string obj;
@@ -3362,12 +3675,8 @@ void Game::drawHud() {
     }
     if (wantWidgets && !widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
     while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
-    for (auto& k : killFeed_) {
-        float tw = r_.textWidth(k.text, ts);
-        r_.rect(W - tw - 20 * s, y - 3 * s, tw + 12 * s, r_.textHeight(ts) + 6 * s, {0, 0, 0, 0.4f});
-        drawFeedText(W - tw - 14 * s, y, ts, k);
-        y += r_.textHeight(ts) + 8 * s;
-    }
+    hudFeedTop_ = y / s;   // (where the feed starts: under the verbose block when it's on)
+    if (!cfg_.hud[Settings::HUD_KILLFEED].hidden && !killFeed_.empty()) drawHudKillFeed(W, H, s, y, false);
     // chat (bottom left)
     drawChatBox(W, H, s, ts);
     // notices
@@ -3769,33 +4078,6 @@ void Game::drawFeedText(float x, float y, float ts, const Feed& f) {
     run(f.text.size(), f.color);
 }
 
-void Game::drawChatBox(float W, float H, float s, float ts) {
-    float y;
-    while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
-    {
-    const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
-    size_t shown = 0;   // chat off: players' lines are hidden (server messages stay)
-    for (auto& c : lines) shown += !(c.player && cfg_.chatOff);
-    y = H - 110 * s - shown * (r_.textHeight(ts) + 4 * s);
-    if (chatting_ && shown) r_.rect(18 * s, y - 4 * s, 520 * s, shown * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
-    for (auto& c : lines) {
-        if (c.player && cfg_.chatOff) continue;
-        float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
-        if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
-        drawFeedText(24 * s + (cw ? cw + 4 * s : 0), y, ts, c);
-        y += r_.textHeight(ts) + 4 * s;
-    }
-    }
-    if (chatting_ && console_) drawConsole(W, H, s, ts);
-    else if (chatting_) {
-        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
-        chatEdit(120, false);
-        float lts = std::max(1.0f, std::round(ui_.textScale()));
-        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_, kWhite);
-        drawCaret(24 * s, H - 100 * s, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
-    }
-}
-
 // A running vote: what it is, the count, F1 / F2.
 float Game::drawVotePanel(float cx, float s, float ts, float y) {
     if (y < 0) y = 122 * s;
@@ -3808,32 +4090,6 @@ float Game::drawVotePanel(float cx, float s, float ts, float y) {
     r_.rect(cx - vw * 0.5f, y, vw, vh, {0, 0, 0, 0.6f});
     ui_.labelCentered(cx, y + 6 * s, vb, kWhite);
     return y + vh + 4 * s;
-}
-
-Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool draw) {
-    const auto& e = cfg_.hud[Settings::HUD_KEYS];
-    float k = s * e.scale, u = 30 * k, g = 4 * k;
-    float ox = W * 0.5f - (4 * u + 3 * g) * 0.5f + e.x * s, oy = H - 230 * s + e.y * s;
-    const HudRect rc{ox, oy, 4 * u + 3 * g, 4 * u + 3 * g};
-    if (!draw) return rc;
-    Color lit = e.custom ? Color{e.color.x, e.color.y, e.color.z, 0.9f} : rgba(cfg_.colorFriendly, 0.9f);
-    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * e.scale));
-    // alive: our own keys; spectating: what the watched player is holding (from the snapshot)
-    // (sample: Settings > HUD outside a game, nothing held)
-    const int spec = sample || net_.selfAlive() ? -1 : specKeysOf();
-    const uint16_t held = spec >= 0 ? net_.findPlayer(spec)->keys : 0;
-    auto key = [&](float col, float row, float wUnits, const char* label, int action, uint16_t bit) {
-        float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
-        bool on = spec >= 0 ? (held & bit) != 0 : !sample && isDown(action);
-        r_.rect(x, y, w, u, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
-        r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
-    };
-    key(1, 0, 1, "W", A_FORWARD, KEY_FWD);
-    key(0, 1, 1, "A", A_LEFT, KEY_LEFT); key(1, 1, 1, "S", A_BACK, KEY_BACK); key(2, 1, 1, "D", A_RIGHT, KEY_RIGHT);
-    key(3, 0, 1, "LMB", A_FIRE, KEY_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE, KEY_ALT);
-    key(0, 2, 2, "JUMP", A_JUMP, KEY_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH, KEY_CROUCH);
-    key(0, 3, 2, "DASH", A_DASH, KEY_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE, KEY_HOOK);
-    return rc;
 }
 
 // The player we're spectating, if they're alive and in the snapshot (else -1).

@@ -1181,7 +1181,7 @@ static inline int16_t px(float v) { return (int16_t)clampf(uiRound(v), -32768, 3
 // font atlas texel coords as the vertex stores them, (texel + 1) * 32: whole texels, so plain integers
 static inline uint16_t u16uv(int texel) { return (uint16_t)((texel + 1) * 32); }
 struct Rgba8 { uint8_t v[4]; };
-static inline Rgba8 rgba8(const Color& c) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a)}}; }   // (once per rect / text)
+static inline Rgba8 rgba8(const Color& c, float a) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a * a)}}; }   // (once per rect / text; a: setAlpha)
 
 // one quad (2 triangles) into the UI batch. Every glyph of every text is one: each distinct value is converted once
 // (the corners share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
@@ -1204,15 +1204,15 @@ static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, flo
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c), 0, 0);
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c, alpha_), 0, 0);
 }
 
 void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl), 0, 0);
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl, alpha_), 0, 0);
     // corners 0 tl, 1 tr, 2 br, 5 bl (3 = 0, 4 = 2): their own colours
-    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a); };
+    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a * alpha_); };
     Vertex2D* d = ui_.data() + n;
     col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
 }
@@ -1225,7 +1225,7 @@ void Renderer::roundRect(float x, float y, float w, float h, float radius, const
     // the quad's own pixel coords in its uv (* 4: a quarter pixel, rects up to 16383 px), corners 0 1 2 / 0 3 2 so both
     // triangles end on corner 2, whose uv is the size (the shader's flat vSize: the provoking vertex is the last)
     const uint16_t U1 = (uint16_t)std::min(65535, (X1 - X0) * 4), V1 = (uint16_t)std::min(65535, (Y1 - Y0) * 4);
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
     const uint8_t rad = (uint8_t)clampf(std::round(radius), 0, 255), rg = (uint8_t)clampf(std::round(ring * 4), 0, 255);
     const size_t n = ui_.size();
     ui_.resize(n + 6);
@@ -1250,7 +1250,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
         // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
         const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
-        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}), 255, 255);
+        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
         logoDrawn_ = true;
         return;
     }
@@ -1288,7 +1288,7 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
     int prev = -1;
     for (char ch : str) {
         int g = glyphIndex(ch);
@@ -1313,7 +1313,7 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     float sc = clampf(s * k, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         if (g == 0) continue;

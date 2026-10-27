@@ -10,6 +10,8 @@
 #include <thread>
 #include <vector>
 #include "hudwidgets.h"
+#include "layout.h"
+#include "theme.h"
 #include "weaponpredict.h"
 #include "../game/netclient.h"
 #include "../game/server.h"
@@ -658,7 +660,7 @@ private:
     int crownOf(int playerId) const;              // 1 = #1 on a ranked board, 2-10 top 10, 0 none (or crowns off)
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
-    void drawChatBox(float W, float H, float s, float ts);
+    HudRect drawChatBox(float W, float H, float s, float ts, bool sample = false, bool draw = true);   // (the HUD's chat element)
     void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
     float drawVotePanel(float cx, float s, float ts, float y = -1);   // a running vote, its box from y (-1: 122 at 720p); returns where it ends
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
@@ -825,6 +827,30 @@ private:
     HudRect drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw = true);
     HudRect drawHudSpeed(const Settings::HudElem& e, float W, float H, float s, float v, bool draw = true);
     HudRect drawHudSlots(const Settings::HudElem& e, float W, float H, float s, int mode, uint32_t mask, int held, Color heldC, bool live, bool draw = true);
+    struct ScoreText { std::string title, phase, scoreA, scoreB; bool ranked = false, unrated = false; };
+    ScoreText hudScoreText_;                          // (reused: its strings keep their buffers from frame to frame)
+    void scoreText(ScoreText& t, bool sample) const;  // the score box's lines (sample: a made-up free for all)
+    HudRect drawHudScore(const ScoreText& t, float W, float H, float s, bool draw = true);
+    HudRect drawHudKillFeed(float W, float H, float s, float top, bool sample, bool draw = true);
+    float hudFeedTop_ = 12;                           // (where the kill feed starts, 720p units: under the verbose block)
+    // ---- the HUD's elements on the layout engine (layout.h), styled by theme.cfg (theme.h): drawHudElement and friends
+    HudTheme theme_;
+    std::string themePath_;                           // (theme.cfg's path, built once)
+    std::string themeErrShown_;                       // (the theme's error last shown as a notice)
+    void pollTheme();
+    std::unique_ptr<lay::Layout> hudLay_[Settings::HUD_COUNT];   // one per element: each re-solves only when its own content changes
+    lay::Rect hudRect_[Settings::HUD_COUNT];          // each element's box as last laid out (the editor: outlines, hits, snapping)
+    static constexpr float kRankedMinOpacity = 0.3f;  // ranked: a theme's opacity can't take an element below this
+    const HudStyle& hudStyle(int el) const;
+    float hudOpacity(int el) const;
+    Color hudTint(int el, Color c) const;             // the element's colour: its HUD COLOR, else the theme's, else c
+    float hudFont(int el) const;                      // its text size: SIZE x the theme's font-size
+    // opens element el's layout and its root box (anchored at (ax, ay) of the screen, its anchor point by default at
+    // refX, refY); defPad: its built-in padding (px), themePad false: the theme's padding styles its lines instead
+    lay::Layout& hudOpen(int el, float W, float H, float ax, float ay, float refX, float refY, float k, lay::Decl d,
+                         const float* defPad = nullptr, bool themePad = true);
+    lay::Rect hudClose(int el);                       // closes the root, solves (cached), keeps and returns its rect
+    void hudBoxDraw(int el, const lay::Rect& r, float k, Color def);   // its background (def: the built-in one) and border
     // Settings > HUD's live preview: the tab is showing (not the widget editor, FONT or DEVICES)
     bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !fontsOpen_ && !devicesOpen_; }
     void drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview);   // (alive)
