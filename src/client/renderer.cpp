@@ -340,8 +340,8 @@ void setMat(GLint loc, const Mat4& m) { glUniformMatrix4fv(loc, 1, GL_FALSE, m.m
 #ifdef QUARK_TRACY
 static size_t g_uploadBytes = 0, g_uploads = 0, g_dynVerts = 0, g_shadowVerts = 0; // per-frame counters (profiling builds)
 #endif
-template <class T>
-void upload(unsigned vbo, size_t& cap, const std::vector<T>& v) {
+template <class T, class A>
+void upload(unsigned vbo, size_t& cap, const std::vector<T, A>& v) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     size_t bytes = v.size() * sizeof(T);
 #ifdef QUARK_TRACY
@@ -1185,7 +1185,20 @@ static inline Rgba8 rgba8(const Color& c, float a) { return {{u8c(c.r), u8c(c.g)
 
 // one quad (2 triangles) into the UI batch. Every glyph of every text is one: each distinct value is converted once
 // (the corners share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
-static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+// (writes the 6 vertices at d: text() makes room for a whole string at once)
+static inline void uiQuadAt(Vertex2D* d, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+                            const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
+    const int16_t X0 = px(x0), X1 = px(x1), Y0 = px(y0), Y1 = px(y1);
+    auto put = [&](Vertex2D& v, int16_t x, int16_t y, uint16_t u, uint16_t w) {
+        v.pos[0] = x; v.pos[1] = y; v.uv[0] = u; v.uv[1] = w;
+        memcpy(v.color, c.v, 4);
+        v.scaleInt = scaleInt; v.scaleFrac = scaleFrac; v.pad[0] = v.pad[1] = 0;
+    };
+    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1);
+    d[3] = d[0]; d[4] = d[2]; put(d[5], X0, Y1, U0, V1);
+}
+
+static void uiQuad(Vertex2DList& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
                    const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
     const int16_t X0 = px(x0), X1 = px(x1), Y0 = px(y0), Y1 = px(y1);
     const size_t n = out.size();
@@ -1289,6 +1302,11 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
     const Rgba8 col = rgba8(c, alpha_);
+    // (room for every glyph at once, written in place, then trimmed to the glyphs drawn: one grow per string, not per
+    // glyph)
+    const size_t n0 = ui_.size();
+    ui_.resize(n0 + 6 * str.size());
+    Vertex2D* d = ui_.data() + n0;
     int prev = -1;
     for (char ch : str) {
         int g = glyphIndex(ch);
@@ -1298,8 +1316,10 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
         // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
         float qx = uiRound(cx - kUiOrigin * sk) - pad, qy = top - pad;
         int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        uiQuadAt(d, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        d += 6;
     }
+    ui_.resize((size_t)(d - ui_.data()));
 }
 
 // Monospaced (console): every glyph gets the same advance (a little over a digit's), centred in it, no kerning;

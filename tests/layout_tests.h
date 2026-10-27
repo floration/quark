@@ -191,6 +191,33 @@ void testLayoutCache() {
     L->close();
     L->solve();
     CHECK(L->overflowed() && L->count() == L->capacity());
+    // same(): a page skips declaring while its key is unchanged (and only once something was solved)
+    {
+        lay::Layout C(4);
+        const float k1[] = {1, 2, 3}, k2[] = {1, 2, 4};
+        CHECK(!C.same(k1, sizeof k1));                 // nothing solved yet
+        C.begin(10, 10); C.leaf(1, lay::Decl().size(lay::Size::fixed(3), lay::Size::fixed(3))); C.solve();
+        CHECK(C.same(k1, sizeof k1) && C.rect(0).w == 3);
+        CHECK(!C.same(k2, sizeof k2));                 // changed: declare again
+        C.begin(10, 10); C.leaf(1, lay::Decl().size(lay::Size::fixed(4), lay::Size::fixed(3))); C.solve();
+        CHECK(C.same(k2, sizeof k2) && C.rect(0).w == 4);
+        float big[lay::Layout::kMaxKey / sizeof(float) + 1] = {};
+        CHECK(!C.same(big, sizeof big) && !C.same(big, sizeof big));   // too long: never the same
+    }
+    // one declaration at a time per thread (the shared scratch): a Layout begun in the middle of another's declaration
+    // leaves that one's last result standing, and it works it out again next time
+    {
+        lay::Layout A(8), B(8);
+        auto declA = [&](float w) { A.begin(100, 100); A.open(1, lay::Decl()); A.leaf(2, lay::Decl().size(lay::Size::fixed(w), lay::Size::fixed(5))); A.close(); };
+        declA(10);
+        CHECK(A.solve() && A.rect(1).w == 10);
+        declA(20);
+        B.begin(50, 50); B.leaf(3, lay::Decl().size(lay::Size::fixed(7), lay::Size::fixed(7)));
+        CHECK(B.solve() && B.rect(0).w == 7);
+        CHECK(!A.solve() && A.rect(1).w == 10 && A.count() == 2);   // interrupted: the last result
+        declA(20);
+        CHECK(A.solve() && A.rect(1).w == 20);
+    }
     // zero heap allocations: declare + solve, changed or not
     g_allocs = 0;
     g_countAllocs = true;

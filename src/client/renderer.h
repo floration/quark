@@ -20,6 +20,16 @@ struct FlatVertex { float pos[3]; float color[4]; };
 // in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: a rounded rect (roundRect: uv its
 // own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4).
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
+// The 2D batch's allocator: growing the batch leaves the new vertices unset (every writer sets all of a vertex's
+// fields), so text and rects don't zero a vertex just before writing it.
+template <class T> struct NoInitAlloc : std::allocator<T> {
+    template <class U> struct rebind { using other = NoInitAlloc<U>; };
+    NoInitAlloc() = default;
+    template <class U> NoInitAlloc(const NoInitAlloc<U>&) noexcept {}
+    template <class U> void construct(U* p) noexcept { ::new ((void*)p) U; }
+    template <class U, class... A> void construct(U* p, A&&... a) { ::new ((void*)p) U(std::forward<A>(a)...); }
+};
+using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
@@ -216,7 +226,7 @@ private:
     void setupDynVao(unsigned vao, unsigned vbo);
     std::vector<FlatVertex> flat_;
     std::vector<FlatVertex> viewFlat_;   // the view model's translucent parts (drawn in its pass; empty for most models)
-    std::vector<Vertex2D> ui_;
+    Vertex2DList ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
     bool prep_ = false, prepShadows_ = false;   // (prepareScene ran this frame; with the shadow pass)
     size_t prepN_[6] = {};                      // (its uploads: shadow only, lit casting, lit not casting, view model; flat, view flat)

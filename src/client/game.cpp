@@ -2822,9 +2822,7 @@ Color Game::hudTint(int el, Color c) const {
 
 lay::Layout& Game::hudOpen(int el, float W, float H, float ax, float ay, float refX, float refY, float k, lay::Decl d, const float* defPad, bool themePad) {
     const HudStyle& st = hudStyle(el);
-    // (made once: the chat's holds its whole history while typing, the kill feed's its lines, the rest a few boxes)
-    if (!hudLay_[el]) hudLay_[el] = std::make_unique<lay::Layout>(el == Settings::HUD_CHAT ? 64 : el == Settings::HUD_KILLFEED ? 56 : el == Settings::HUD_SLOTS ? 24 : 8);
-    lay::Layout& L = *hudLay_[el];
+    lay::Layout& L = hudLay_[el];
     L.begin(W, H);
     float pad[4] = {0, 0, 0, 0};
     if (themePad && st.has(HudStyle::PADDING)) for (int i = 0; i < 4; i++) pad[i] = st.pad[i] * k;
@@ -2836,8 +2834,32 @@ lay::Layout& Game::hudOpen(int el, float W, float H, float ax, float ay, float r
     return L;
 }
 
+// True when element el's declaration would be the same as last frame's (the screen, the theme's version and v: what
+// its declaration is made from), so its last layout stands and it declares nothing (Layout::same: most frames).
+bool Game::hudSame(int el, float W, float H, const float* v, int n) {
+    float key[lay::Layout::kMaxKey / sizeof(float)];
+    if (n + 3 > (int)(lay::Layout::kMaxKey / sizeof(float))) { hudLay_[el].same(nullptr, lay::Layout::kMaxKey + 1); return false; }
+    const uint32_t ver = theme_.version();
+    key[0] = W; key[1] = H; std::memcpy(&key[2], &ver, 4);
+    std::memcpy(key + 3, v, sizeof(float) * (size_t)n);
+    return hudLay_[el].same(key, (n + 3) * (int)sizeof(float));
+}
+
+// An element of one box of content (cw x ch), its anchor point at (refX, refY): its box, and the content's in c.
+lay::Rect Game::hudSimple(int el, float W, float H, float ax, float ay, float refX, float refY, float k, float cw, float ch, lay::Rect& c) {
+    const float v[] = {refX, refY, k, cw, ch};
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, v, 5)) {
+        hudOpen(el, W, H, ax, ay, refX, refY, k, lay::Decl());
+        L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(cw), lay::Size::fixed(ch)));
+        hudClose(el);
+    }
+    c = L.rect(1);
+    return hudRect_[el] = L.rect(0);
+}
+
 lay::Rect Game::hudClose(int el) {
-    lay::Layout& L = *hudLay_[el];
+    lay::Layout& L = hudLay_[el];
     L.close();
     L.solve();
     return hudRect_[el] = L.rect(0);
@@ -2862,9 +2884,8 @@ Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float W, float H, 
     // health: number + bar, bottom left (the content 200 x 50, its bottom 20 over the screen's)
     const int el = Settings::HUD_HEALTH;
     const float k = s * e.scale;
-    lay::Layout& L = hudOpen(el, W, H, 0, 1, 24 * s + e.x * s, H - 20 * k + e.y * s, k, lay::Decl());
-    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(200 * k), lay::Size::fixed(50 * k)));
-    const lay::Rect r = hudClose(el), c = L.rect(1);
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0, 1, 24 * s + e.x * s, H - 20 * k + e.y * s, k, 200 * k, 50 * k, c);
     if (draw) {
         AlphaScope a(r_, hudOpacity(el));
         hudBoxDraw(el, r, k, {0, 0, 0, 0});
@@ -2880,10 +2901,9 @@ Game::HudRect Game::drawHudWeaponName(const Settings::HudElem& e, float W, float
     // current weapon name, bottom right (its right edge 24 in, its top 50 up)
     const int el = Settings::HUD_WEAPON;
     const float k = s * e.scale;
-    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * hudFont(el))), tw = r_.textWidth(wn, wts), th = r_.textHeight(wts);
-    lay::Layout& L = hudOpen(el, W, H, 1, 1, W - 24 * s + e.x * s, H - 50 * k + th + e.y * s, k, lay::Decl());
-    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(tw), lay::Size::fixed(th)));
-    const lay::Rect r = hudClose(el), t = L.rect(1);
+    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * hudFont(el))), tw = hudWidth(hudCapW_[0], wn.c_str(), wts), th = r_.textHeight(wts);
+    lay::Rect t;
+    const lay::Rect r = hudSimple(el, W, H, 1, 1, W - 24 * s + e.x * s, H - 50 * k + th + e.y * s, k, tw, th, t);
     if (draw) {
         AlphaScope a(r_, hudOpacity(el));
         hudBoxDraw(el, r, k, {0, 0, 0, 0});
@@ -2899,25 +2919,24 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
     const float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
     // (rows 16 apart, captions at text 1.5 centred on their bar: text 1 was below the redesign's smallest)
     const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts);
-    const float bw = 90 * k, bh = 5 * k, capW = r_.textWidth("WEAPON", lts) + 6 * k;   // (the widest caption)
+    const float bw = 90 * k, bh = 5 * k, wW = hudWidth(hudCapW_[1], "WEAPON", lts), capW = wW + 6 * k;   // (the widest caption)
     const float rowStep = bh + (st.has(HudStyle::GAP) ? st.gap * k : 11 * k);
     // the content: captions + bars, from the widest caption's left to the bars' outline, the first bar's outline down
     const float cw = capW + bw + 1, ch = 2 * rowStep + bh + 2;
     const float left = bcx - bw * 0.5f - capW, top = bcy + 36 * k - 1;
-    lay::Layout& L = hudOpen(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, lay::Decl());
-    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(cw), lay::Size::fixed(ch)));
-    const lay::Rect r = hudClose(el), c = L.rect(1);
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, cw, ch, c);
     if (!draw) return {r.x, r.y, r.w, r.h};
     AlphaScope a(r_, hudOpacity(el));
     hudBoxDraw(el, r, k, {0, 0, 0, 0});
     const float bx = c.x + capW, y0 = c.y + 1;
-    auto bar = [&](float y, const char* label, float remaining, float total) {
+    auto bar = [&](float y, const char* label, float lw, float remaining, float total) {
         float f = clampf(1.0f - remaining / total, 0, 1);
         r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
         r_.rect(bx, y, bw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
-        r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
+        r_.text(bx - lw - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
     };
-    bar(y0, "WEAPON", v.wRem, v.wTot);
+    bar(y0, "WEAPON", wW, v.wRem, v.wTot);
     {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
         // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
         // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -2932,9 +2951,9 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
             r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
             if (i < have) r_.rect(px, y, pw, bh, pip);
         }
-        r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && v.dashReady ? kWhite : kGrey);
+        r_.text(bx - hudWidth(hudCapW_[2], "DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && v.dashReady ? kWhite : kGrey);
     }
-    bar(y0 + 2 * rowStep, "HOOK", v.hookRem, v.hookTot);
+    bar(y0 + 2 * rowStep, "HOOK", hudWidth(hudCapW_[3], "HOOK", lts), v.hookRem, v.hookTot);
     return {r.x, r.y, r.w, r.h};
 }
 
@@ -2947,12 +2966,11 @@ Game::HudRect Game::drawHudSpeed(const Settings::HudElem& e, float W, float H, f
     const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
     char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
     // the content: caption, bar and room for the number ("99.9": the box doesn't move as the number changes)
-    const float capW = r_.textWidth("SPEED", lts) + 6 * k, numW = 6 * k + r_.textWidth("99.9", lts);
+    const float capW = hudWidth(hudCapW_[4], "SPEED", lts) + 6 * k, numW = 6 * k + hudWidth(hudCapW_[5], "99.9", lts);
     const float top = std::min(y - 1, ly), bottom = std::max(y + bh + 1, ly + lh);
     const float cw = capW + bw + numW, ch = bottom - top, left = bx - capW;
-    lay::Layout& L = hudOpen(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, lay::Decl());
-    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(cw), lay::Size::fixed(ch)));
-    const lay::Rect r = hudClose(el), c = L.rect(1);
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, cw, ch, c);
     if (!draw) return {r.x, r.y, r.w, r.h};
     AlphaScope a(r_, hudOpacity(el));
     hudBoxDraw(el, r, k, {0, 0, 0, 0});
@@ -2974,12 +2992,12 @@ Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, f
     const HudStyle& st = hudStyle(el);
     const float k = s * e.scale;
     const float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * hudFont(el))), th = r_.textHeight(sts);
-    lay::Layout& L = hudOpen(el, W, H, 1, 1, W - 24 * s - 14 * k + e.x * s, H - 74 * k + th + e.y * s, k,
-                             lay::Decl().row().spacing(st.has(HudStyle::GAP) ? st.gap * k : 14 * k));
     struct Slot { int kk, wi; bool has; double away; };
     Slot slots[WPN_COUNT];
     int n = 0;
-    char t[48];
+    SlotLabels& sl = hudSlotW_;   // (each slot's label and width, kept: measured again only when its text changes)
+    if (sl.ts != sts || sl.gen != r_.fontGeneration()) { sl.ts = sts; sl.gen = r_.fontGeneration(); for (auto& t : sl.t) t[0] = 0; }
+    char t[32];
     for (int kk = 0; kk < WPN_COUNT; kk++) {
         int wi = kWeaponSlots[kk];
         bool has = !mask || (mask >> wi & 1);
@@ -2987,10 +3005,22 @@ Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, f
         double awayLeft = live ? weaponAwayLeft(wi) : 0;   // a thrown knife / syringe: disabled, greyed with its timer
         if (awayLeft > 0) snprintf(t, sizeof t, "%d %s %d", weaponSlotKey(kk), weaponDef(wi).name, (int)std::ceil(awayLeft - 1e-6));   // (seconds until it's back)
         else snprintf(t, sizeof t, "%d %s", weaponSlotKey(kk), weaponDef(wi).name);
-        L.leaf(lay::id(lay::id("slot"), (uint32_t)kk), lay::Decl().size(lay::Size::fixed(r_.textWidth(t, sts)), lay::Size::fixed(th)));
+        if (std::strcmp(t, sl.t[kk]) != 0) { std::memcpy(sl.t[kk], t, sizeof t); sl.w[kk] = r_.textWidth(t, sts); }
         slots[n++] = {kk, wi, has, awayLeft};
     }
-    const lay::Rect r = hudClose(el);
+    const float refX = W - 24 * s - 14 * k + e.x * s, refY = H - 74 * k + th + e.y * s;
+    float key[5 + WPN_COUNT] = {refX, refY, k, th};   // (which slots, as a bit each, and how wide each is)
+    uint32_t which = 0;
+    for (int i = 0; i < n; i++) { which |= 1u << slots[i].kk; key[5 + i] = sl.w[slots[i].kk]; }
+    std::memcpy(&key[4], &which, 4);
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, 5 + n)) {
+        hudOpen(el, W, H, 1, 1, refX, refY, k, lay::Decl().row().spacing(st.has(HudStyle::GAP) ? st.gap * k : 14 * k));
+        for (int i = 0; i < n; i++)
+            L.leaf(lay::id(lay::id("slot"), (uint32_t)slots[i].kk), lay::Decl().size(lay::Size::fixed(sl.w[slots[i].kk]), lay::Size::fixed(th)));
+        hudClose(el);
+    }
+    const lay::Rect r = hudRect_[el] = L.rect(0);
     if (draw && n + 1 <= L.count()) {
         AlphaScope a(r_, hudOpacity(el));
         hudBoxDraw(el, r, k, {0, 0, 0, 0});
@@ -3003,12 +3033,10 @@ Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, f
         if (st.has(HudStyle::GAP)) bx += gap - 14 * k;
         const float y = L.rect(1).y;
         for (int i = n - 1; i >= 0; i--) {
-            const Slot& sl = slots[i];
-            if (sl.away > 0) snprintf(t, sizeof t, "%d %s %d", weaponSlotKey(sl.kk), weaponDef(sl.wi).name, (int)std::ceil(sl.away - 1e-6));
-            else snprintf(t, sizeof t, "%d %s", weaponSlotKey(sl.kk), weaponDef(sl.wi).name);
+            const Slot& q = slots[i];
             bx -= L.rect(i + 1).w + gap;
-            const bool inPool = sl.has && sl.away <= 0;
-            r_.text(bx, y, sts, t, sl.wi == held && sl.away <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+            const bool inPool = q.has && q.away <= 0;
+            r_.text(bx, y, sts, sl.t[q.kk], q.wi == held && q.away <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
         }
     }
     return {r.x, r.y, r.w, r.h};
@@ -3023,18 +3051,30 @@ Game::HudRect Game::drawHudScore(const ScoreText& t, float W, float H, float s, 
     const HudStyle& st = hudStyle(el);
     const float k = s * e.scale, fm = hudFont(el);
     const float ts = std::max(1.0f, std::round(ui_.textScale() * fm)), sts = ts * 1.5f, th = r_.textHeight(ts), sh = r_.textHeight(sts);
-    const float scoreW = std::max(r_.textWidth(t.scoreA, sts), r_.textWidth(t.scoreB, sts));
+    // (the lines' widths: measured again only when a line, the size or the font changes)
+    ScoreWidths& cw = hudScoreW_;
+    if (cw.ts != ts || cw.gen != r_.fontGeneration()) { cw.ts = ts; cw.gen = r_.fontGeneration(); cw.title = "\x01"; cw.phase = cw.scoreA = cw.scoreB = cw.title; }
+    if (cw.title != t.title) { cw.title = t.title; cw.wTitle = r_.textWidth(t.title, ts); }
+    if (cw.phase != t.phase) { cw.phase = t.phase; cw.wPhase = r_.textWidth(t.phase, ts); }
+    if (cw.scoreA != t.scoreA) { cw.scoreA = t.scoreA; cw.wA = r_.textWidth(t.scoreA, sts); }
+    if (cw.scoreB != t.scoreB) { cw.scoreB = t.scoreB; cw.wB = r_.textWidth(t.scoreB, sts); }
+    const float scoreW = std::max(cw.wA, cw.wB);
     const float defPad[4] = {20 * k, 8 * k, 20 * k, 8 * k};
-    lay::Layout& L = hudOpen(el, W, H, 0.5f, 0, W * 0.5f + e.x * s, 8 * s + e.y * s, k,
-                             lay::Decl().row().size(lay::Size::fit(440 * k, W - 16 * s), lay::Size::fit(64 * k))
-                                 .spacing(st.has(HudStyle::GAP) ? st.gap * k : 12 * k).align(lay::BETWEEN, lay::START), defPad);
-    L.leaf(lay::id("a"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
-    L.open(lay::id("mid"), lay::Decl().col().align(lay::START, lay::CENTER));
-    L.leaf(lay::id("title"), lay::Decl().size(lay::Size::fixed(r_.textWidth(t.title, ts)), lay::Size::fixed(std::max(22 * k, th + 4 * k))));
-    L.leaf(lay::id("phase"), lay::Decl().size(lay::Size::fixed(r_.textWidth(t.phase, ts)), lay::Size::fixed(th)));
-    L.close();
-    L.leaf(lay::id("b"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
-    const lay::Rect r = hudClose(el);
+    const float key[] = {W * 0.5f + e.x * s, 8 * s + e.y * s, k, s, scoreW, sh, cw.wTitle, cw.wPhase, th};
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, 9)) {
+        hudOpen(el, W, H, 0.5f, 0, W * 0.5f + e.x * s, 8 * s + e.y * s, k,
+                                 lay::Decl().row().size(lay::Size::fit(440 * k, W - 16 * s), lay::Size::fit(64 * k))
+                                     .spacing(st.has(HudStyle::GAP) ? st.gap * k : 12 * k).align(lay::BETWEEN, lay::START), defPad);
+        L.leaf(lay::id("a"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
+        L.open(lay::id("mid"), lay::Decl().col().align(lay::START, lay::CENTER));
+        L.leaf(lay::id("title"), lay::Decl().size(lay::Size::fixed(cw.wTitle), lay::Size::fixed(std::max(22 * k, th + 4 * k))));
+        L.leaf(lay::id("phase"), lay::Decl().size(lay::Size::fixed(cw.wPhase), lay::Size::fixed(th)));
+        L.close();
+        L.leaf(lay::id("b"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
+        hudClose(el);
+    }
+    const lay::Rect r = hudRect_[el] = L.rect(0);
     if (!draw || L.count() < 6) return {r.x, r.y, r.w, r.h};
     AlphaScope a(r_, hudOpacity(el));
     const Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
@@ -3059,7 +3099,7 @@ Game::HudRect Game::drawHudScore(const ScoreText& t, float W, float H, float s, 
     if (!t.scoreA.empty()) {
         const lay::Rect &qa = L.rect(1), &qb = L.rect(5);
         r_.text(qa.x, qa.y, sts, t.scoreA, fc);
-        r_.text(qb.x + qb.w - r_.textWidth(t.scoreB, sts), qb.y, sts, t.scoreB, ec);
+        r_.text(qb.x + qb.w - cw.wB, qb.y, sts, t.scoreB, ec);
     }
     ui_.noBox();   // (the notice lines under it are as wide as the screen)
     return {r.x, r.y, r.w, r.h};
@@ -3068,6 +3108,7 @@ Game::HudRect Game::drawHudScore(const ScoreText& t, float W, float H, float s, 
 // The score box's text: the mode's title, its phase line, the two scores (sample: a made-up free for all, the HUD
 // editor outside a game).
 void Game::scoreText(ScoreText& t, bool sample) const {
+    // (every line formatted into a buffer and assigned: the strings keep their capacity, so no allocation per frame)
     t.ranked = t.unrated = false;
     if (sample) {
         t.title = modeTitle(MODE_FFA); t.phase = "2:00  -  1ST OF 6"; t.scoreA = "12"; t.scoreB = "9";
@@ -3077,46 +3118,51 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     const int me = net_.clientId();
     const PlayerSnap* mep = net_.findPlayer(me);
     const int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
-    t.title = modeTitle(ms.mode);
-    if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP))
-        t.title += std::string(" - ") + arenaVariant(ms.arenaVariant).title;
-    t.phase.clear();
+    char b[160];
+    if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
+    else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
+    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP)) {
+        snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
+    } else t.title = modeTitle(ms.mode);
+    b[0] = 0;
     switch (ms.phase) {
-        case PHASE_WARMUP:
-            t.phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
-                                      : ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - " + inputName(binds().code[A_VOTESTART][0]) + " TO START THE RACE"
-                                      : "WARMUP - " + inputName(binds().code[A_VOTESTART][0]) + " TO VOTE START";
+        case PHASE_WARMUP: {
+            if (ms.timeLeft > 0) { snprintf(b, sizeof b, "MATCH STARTS IN %d", (int)std::ceil(ms.timeLeft)); break; }
+            const int code = binds().code[A_VOTESTART][0];   // (the key's name: looked up when the bind changes)
+            if (code != voteKeyCode_) { voteKeyCode_ = code; voteKeyName_ = inputName(code); }
+            snprintf(b, sizeof b, ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - %s TO START THE RACE" : "WARMUP - %s TO VOTE START", voteKeyName_.c_str());
             break;
+        }
         case PHASE_FREEZE: // free for all is one long round: just the countdown
-            t.phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
+            if (ms.mode == MODE_FFA) snprintf(b, sizeof b, "STARTING IN %d", (int)std::ceil(ms.timeLeft));
+            else snprintf(b, sizeof b, "ROUND %d - STARTS IN %d", ms.round, (int)std::ceil(ms.timeLeft));
             break;
-        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h; short enough to stay in the string's own buffer)
+        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h)
             char line[32];
             hudLiveLine(ms, line, sizeof line);
-            t.phase = line;
+            snprintf(b, sizeof b, "%s", line);
             if (ms.mode == MODE_FFA) {   // your place (X10): "2ND OF 8", "=2ND" when shared
                 int of = 0; bool tied = false;
                 if (int k = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied); k > 0 && of > 1)
-                    t.phase += (t.phase.empty() ? "" : "  -  ") + std::string(tied ? "=" : "") + std::to_string(k) + ordinalSuffix(k) + " OF " + std::to_string(of);
+                    snprintf(b, sizeof b, "%s%s%s%d%s OF %d", line, line[0] ? "  -  " : "", tied ? "=" : "", k, ordinalSuffix(k), of);
             }
             break;
         }
-        case PHASE_ROUND_END: t.phase = "ROUND OVER"; break;
-        case PHASE_MATCH_END: t.phase = "MATCH OVER"; break;
+        case PHASE_ROUND_END: snprintf(b, sizeof b, "ROUND OVER"); break;
+        case PHASE_MATCH_END: snprintf(b, sizeof b, "MATCH OVER"); break;
     }
+    t.phase = b;
     t.ranked = (ms.flags & MS_RANKED) != 0;
     t.unrated = unratedServer_;
-    if (t.ranked) t.title = std::string(rankedKind(ms.arenaVariant)) + " - " + arenaVariant(ms.arenaVariant).title;
-    if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
     t.scoreA.clear(); t.scoreB.clear();
     if (modeIsTeamBased(ms.mode)) {
-        t.scoreA = std::to_string(myTeam == TEAM_A ? ms.scoreA : ms.scoreB);
-        t.scoreB = std::to_string(myTeam == TEAM_A ? ms.scoreB : ms.scoreA);
+        snprintf(b, sizeof b, "%d", myTeam == TEAM_A ? ms.scoreA : ms.scoreB); t.scoreA = b;
+        snprintf(b, sizeof b, "%d", myTeam == TEAM_A ? ms.scoreB : ms.scoreA); t.scoreB = b;
     } else if (mep) {
         int best = -9999;
         for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
-        t.scoreA = std::to_string(mep->score);
-        t.scoreB = best == -9999 ? "-" : std::to_string(best);
+        snprintf(b, sizeof b, "%d", (int)mep->score); t.scoreA = b;
+        if (best == -9999) t.scoreB = "-"; else { snprintf(b, sizeof b, "%d", best); t.scoreB = b; }
     }
 }
 
@@ -3135,14 +3181,20 @@ Game::HudRect Game::drawHudKillFeed(float W, float H, float s, float top, bool s
     const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::END : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
     float pad[4] = {6 * k, 3 * k, 6 * k, 3 * k};
     if (st.has(HudStyle::PADDING)) for (int i = 0; i < 4; i++) pad[i] = st.pad[i] * k;
-    lay::Layout& L = hudOpen(el, W, H, 1, 0, W - 8 * s + e.x * s, top - 3 * s + e.y * s, k,
-                             lay::Decl().col().spacing(st.has(HudStyle::GAP) ? st.gap * k : 2 * k).align(lay::START, al), nullptr, false);
-    for (int i = 0; i < n; i++) {
-        L.open(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().padding(pad[0], pad[1], pad[2], pad[3]));
-        L.leaf(lay::id(lay::id("text"), (uint32_t)i), lay::Decl().size(lay::Size::fixed(r_.textWidth(lines[i]->text, ts)), lay::Size::fixed(th)));
-        L.close();
+    float key[24] = {W - 8 * s + e.x * s, top - 3 * s + e.y * s, k, ts, th, (float)n};
+    for (int i = 0; i < n && 6 + i < 24; i++) key[6 + i] = feedWidth(*lines[i], ts);
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, n <= 18 ? 6 + n : 99)) {
+        hudOpen(el, W, H, 1, 0, W - 8 * s + e.x * s, top - 3 * s + e.y * s, k,
+                lay::Decl().col().spacing(st.has(HudStyle::GAP) ? st.gap * k : 2 * k).align(lay::START, al), nullptr, false);
+        for (int i = 0; i < n; i++) {
+            L.open(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().padding(pad[0], pad[1], pad[2], pad[3]));
+            L.leaf(lay::id(lay::id("text"), (uint32_t)i), lay::Decl().size(lay::Size::fixed(feedWidth(*lines[i], ts)), lay::Size::fixed(th)));
+            L.close();
+        }
+        hudClose(el);
     }
-    const lay::Rect r = hudClose(el);
+    const lay::Rect r = hudRect_[el] = L.rect(0);
     if (draw) {
         AlphaScope a(r_, hudOpacity(el));
         for (int i = 0; i < n && 2 + 2 * i < L.count(); i++) {
@@ -3171,14 +3223,18 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
             if (!(c.player && cfg_.chatOff) && n < 48) lines[n++] = &c;
     const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::START : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
     const float defPad[4] = {6 * k, 4 * k, 6 * k, 4 * k};
-    lay::Layout& L = hudOpen(el, W, H, 0, 1, 18 * s + e.x * s, H - 110 * s + e.y * s, k,
-                             lay::Decl().col().size(lay::Size::fixed(520 * k), lay::Size::fit()).spacing(st.has(HudStyle::GAP) ? st.gap * k : 4 * k)
-                                 .align(lay::START, al), defPad);
-    for (int i = 0; i < n; i++) {
-        const float cw = lines[i]->crown ? th * 1.2f : 0;
-        L.leaf(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().size(lay::Size::fixed((cw ? cw + 4 * s : 0) + r_.textWidth(lines[i]->text, ts)), lay::Size::fixed(th)));
+    auto lineW = [&](int i) { const float cw = lines[i]->crown ? th * 1.2f : 0; return (cw ? cw + 4 * s : 0) + feedWidth(*lines[i], ts); };
+    float key[24] = {18 * s + e.x * s, H - 110 * s + e.y * s, k, s, th, (float)n};
+    for (int i = 0; i < n && 6 + i < 24; i++) key[6 + i] = lineW(i);
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, n <= 18 ? 6 + n : 99)) {
+        hudOpen(el, W, H, 0, 1, 18 * s + e.x * s, H - 110 * s + e.y * s, k,
+                lay::Decl().col().size(lay::Size::fixed(520 * k), lay::Size::fit()).spacing(st.has(HudStyle::GAP) ? st.gap * k : 4 * k)
+                    .align(lay::START, al), defPad);
+        for (int i = 0; i < n; i++) L.leaf(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().size(lay::Size::fixed(lineW(i)), lay::Size::fixed(th)));
+        hudClose(el);
     }
-    const lay::Rect r = hudClose(el);
+    const lay::Rect r = hudRect_[el] = L.rect(0);
     if (!draw) return {r.x, r.y, r.w, r.h};
     {
         AlphaScope a(r_, hudOpacity(el));
@@ -3209,9 +3265,8 @@ Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool 
     const auto& e = cfg_.hud[el];
     const HudStyle& st = hudStyle(el);
     const float k = s * e.scale, u = 30 * k, g = st.has(HudStyle::GAP) ? st.gap * k : 4 * k, side = 4 * u + 3 * g;
-    lay::Layout& L = hudOpen(el, W, H, 0.5f, 1, W * 0.5f + e.x * s, H - 230 * s + side + e.y * s, k, lay::Decl());
-    L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(side), lay::Size::fixed(side)));
-    const lay::Rect r = hudClose(el), c = L.rect(1);
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0.5f, 1, W * 0.5f + e.x * s, H - 230 * s + side + e.y * s, k, side, side, c);
     if (!draw) return {r.x, r.y, r.w, r.h};
     AlphaScope a(r_, hudOpacity(el));
     hudBoxDraw(el, r, k, {0, 0, 0, 0});
@@ -3358,6 +3413,14 @@ void Game::drawHudPreviewTop() {
 
 void Game::drawHud() {
     QZONE("drawHud");
+    // (the elements' layouts and styles, fetched together: drawn after the world pass, they're out of the caches, and
+    // waiting on them one element at a time cost more than laying the elements out)
+    for (int el = 0; el < Settings::HUD_COUNT; el++) {
+        hudLay_[el].prefetch();
+#if defined(__GNUC__) || defined(__clang__)
+        __builtin_prefetch(&theme_.style(el));
+#endif
+    }
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
