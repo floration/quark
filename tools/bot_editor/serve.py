@@ -4,7 +4,7 @@
     python3 tools/bot_editor/serve.py [--port 8769] [--data-dir DIR] [--maptool PATH] [--quark-tests PATH]
                                      [--maps-dir DIR ...] [--no-browser]
     tools/bot_editor/run.sh   (Linux / macOS)        tools\\bot_editor\\run.cmd   (Windows)
-    --no-open (or QUARK_SHELL=1): no browser; the project manager shell starts this and shows http://127.0.0.1:8769/
+    --no-open (or QUARK_SHELL=1): no browser; the Quarkology app starts this and shows http://127.0.0.1:8769/
 
 Python 3 standard library only. Binds 127.0.0.1 only. It:
   - serves the page (web/),
@@ -36,7 +36,7 @@ EXE = ".exe" if IS_WIN else ""
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")   # brain / scenario / map names: no slashes, no "..", no leading dot
 MAX_BODY = 8 << 20
-DEFAULT_PORT = 8769          # fixed (the project manager shell opens http://127.0.0.1:8769/); bot_editor.json / --port change it
+DEFAULT_PORT = 8769          # fixed (the Quarkology app opens http://127.0.0.1:8769/); bot_editor.json / --port change it
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
         ".qbrain": "text/plain; charset=utf-8", ".qmap": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8",
@@ -605,7 +605,7 @@ def main():
     ap.add_argument("--quark-tests", help="path to quark_tests (checkbrain / exportbrain)")
     ap.add_argument("--maps-dir", action="append", help="another folder of .qmap files to list (repeatable)")
     ap.add_argument("--no-browser", "--no-open", dest="no_browser", action="store_true",
-                    help="don't open a browser (also when QUARK_SHELL=1: the project manager shows the page)")
+                    help="don't open a browser (also when QUARK_SHELL=1: Quarkology shows the page)")
     args = ap.parse_args()
     CFG = Config(args)
     if not CFG.default_maps_dir():   # (in the background: GET / answers at once; the page asks again when it's done)

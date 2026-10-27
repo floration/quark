@@ -9,7 +9,7 @@
      POST /api/mark {ids, origin, by, note | clear} the dashboard's own sidecar (never a git clone)
      POST /api/merge {confirm: true}                tools/provenance.py merge, run hidden in the registry clone
    Views render with innerHTML from plain data; the asset list is virtualized (only the rows on screen are in the DOM),
-   other long lists show their first LIST_MAX entries until "show all". Inside the Quark Project app (window.quarkShell)
+   other long lists show their first LIST_MAX entries until "show all". Inside the Quarkology app (window.quarkShell)
    an editor link switches to that editor's tab instead of opening a window. */
 "use strict";
 
@@ -23,13 +23,13 @@ const STATUS_LABEL = {
   none: ["no net change", "changed by a commit, then changed back"],
   unc: ["uncommitted", "not committed in this clone"],
 };
-// the version of an editor the Quark Project app installed, compared with testing's (installs-state.json)
+// the version of an editor the Quarkology app installed, compared with testing's (installs-state.json)
 const INSTALL_LABEL = {
   current: ["testing's", "st-both", "installed from testing's tip"],
   head: ["repository's", "st-testing", "installed from repository\\'s HEAD; testing is newer: the app updates it on its next pass"],
   older: ["older than testing", "st-local", "installed from an older testing: the app updates it on its next pass (or Update now)"],
   failed: ["update failed", "st-local", "the app's last try to install testing's failed: see its log in the Supervisor Board"],
-  never: ["not by the app", "st-none", "the Quark Project app has no record of installing it"],
+  never: ["not by the app", "st-none", "the Quarkology app has no record of installing it"],
   waiting: ["not in testing yet", "st-none", "its source isn't in testing yet"],
   unknown: ["?", "st-none", "no git clone to compare with"],
 };
@@ -152,7 +152,7 @@ async function poll() {
 
 // ---- the nav bar and the editor links ---------------------------------------------------------------------------------
 // The Supervisor Board (8768) is a sibling local server: dashboard.py checks it answers and the bar dims it when it
-// doesn't. A server editor (map, bot, gamemode, physics, weapons) runs its own serve.py on the port the Quark Project
+// doesn't. A server editor (map, bot, gamemode, physics, weapons) runs its own serve.py on the port the Quarkology
 // app's tabs.json gives it: linked there, dimmed while it doesn't answer. A page editor (sound, UI, model) is served by
 // dashboard.py under /editors/<folder>/ (Chrome / Edge don't follow a file:// link from an http page). In the app, an
 // editor link opens the app's tab for it (the app starts a server editor that isn't running).
@@ -203,9 +203,9 @@ async function checkLinks() {
     if (S.tab === "changes" && $("#pane")) { const sc = $("#pane").scrollTop; renderChanges(); $("#pane").scrollTop = sc; }
   } catch { /* the server is gone: loadAll says so */ }
 }
-// (no console command: the Quark Project app starts its servers, and a server editor has a Start button here)
-const downText = (x) => x.folder ? "not running: Start starts it here (hidden), or open its tab in the Quark Project app"
-  : "not running: the Quark Project app starts it";
+// (no console command: the Quarkology app starts its servers, and a server editor has a Start button here)
+const downText = (x) => x.folder ? "not running: Start starts it here (hidden), or open its tab in the Quarkology app"
+  : "not running: the Quarkology app starts it";
 function openEditor(ev, a) {
   const e = edOf(a.dataset.ed);
   if (!e) return;
@@ -223,7 +223,7 @@ function openEditor(ev, a) {
     }).catch(() => { if (win) win.close(); });
   }
 }
-// Start: dashboard.py starts a stopped server editor hidden, the way the Quark Project app does (POST /api/start)
+// Start: dashboard.py starts a stopped server editor hidden, the way the Quarkology app does (POST /api/start)
 const starting = new Set();
 async function startEditor(folder, win) {
   const e = edOf(folder);
@@ -284,7 +284,7 @@ function writeHash() {
 }
 
 // ---- header ---------------------------------------------------------------------------------------------------------
-// In the Quark Project app (?embed=1) its tab bar shows Testing / Production / Human-made / Last refresh (from
+// In the Quarkology app (?embed=1) its tab bar shows Testing / Production / Human-made / Last refresh (from
 // /api/summary), so the page drops its header row: Refresh and fetch move to the right of the view tabs, and the row
 // comes back only for the "no git clones" error. shellStats() asks the app to re-read the summary after a refresh / mark.
 const EMBED = document.documentElement.classList.contains("embed");

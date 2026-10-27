@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Installs / updates the UI customizer from this game checkout (the Quark Project app runs it; safe to re-run).
+"""Installs / updates the UI customizer from this game checkout (the Quarkology app runs it; safe to re-run).
 
     python tools/ui_customizer/install.py [--dest <Quark>/ui-customizer] [--extract | --extract-if-stale] [--open]
 
@@ -11,7 +11,7 @@ it opens no browser unless --open is given (and never when QUARK_SHELL=1). It on
 deletes or rewrites the owner's files there (provenance.json, saved / exported layouts, extract/, fonts/ofl/, uploads).
 
 --extract first regenerates <dest>/extract (dump + screenshots) from this checkout's game source: it needs a game build
-(git, cmake, MinGW-w64; about 8 minutes, a hidden window): extract/extract.py. --extract-if-stale (what the Quark Project
+(git, cmake, MinGW-w64; about 8 minutes, a hidden window): extract/extract.py. --extract-if-stale (what the Quarkology
 app runs, at low priority) does that only when the build finds the dump out of date (commits changed src/client since
 its commit) or this PC has no reference screenshots of it (the Screenshot overlay; they are not committed), then builds
 again; without a toolchain, or when the extract fails, the page is kept as built (with its

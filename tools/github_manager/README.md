@@ -94,14 +94,14 @@ Output folder default: `%USERPROFILE%\Desktop\Quark\github-manager`. Nothing ope
 - `install.cmd` (or `python install.py [--dest <folder>]`; a folder given without `--dest` works too) copies the
   server, launcher and page files there, so the tool doesn't depend on the branch a working copy is on, then starts
   it the same way (pythonw, detached, idle priority), or opens the page if it is already running (no browser with
-  `QUARK_SHELL=1`). `--no-start` only copies (the Quark Project app uses it, then starts and restarts the server
+  `QUARK_SHELL=1`). `--no-start` only copies (the Quarkology app uses it, then starts and restarts the server
   itself). It never asks anything and is safe to re-run: only files that differ are copied (stale page files are
   removed), and the data already in the folder (`github-manager.json`, `cache\`, `history.jsonl`, `logs\`,
   `mirror.git`, `editor\`, `claude-docs\`, `server.log`) is never touched. It never stops a running server: when files changed, it
   prints "restart needed" (the running one keeps its old code until it is restarted). What it did goes to
   `install.log`. `--help` prints the options; an unknown option prints a message and exits with code 2 (1: the copy
   failed).
-- The Quark Project app runs `python server.py --data <Quark>\github-manager` hidden, with `QUARK_SHELL=1` (then
+- The Quarkology app runs `python server.py --data <Quark>\github-manager` hidden, with `QUARK_SHELL=1` (then
   `--open` is ignored: the app shows the page), and restarts it if it stops.
 
 The server writes its own log, `server.log` in the output folder (rotating at about 1 MB, 3 old files kept): start

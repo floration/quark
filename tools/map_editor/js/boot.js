@@ -424,7 +424,7 @@ class App extends Emitter {
   }
 }
 
-// ?embed=1: the page runs as a tab inside another app's window (the project manager's shell), which has its own
+// ?embed=1: the page runs as a tab inside another app's window (the Quarkology app's shell), which has its own
 // title bar: the page's brand / title line goes and the toolbar stays. Kept in the URL when a map opens.
 const EMBED = new URLSearchParams(location.search).get("embed") === "1";
 if (EMBED) document.documentElement.classList.add("embed");

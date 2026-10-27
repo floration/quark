@@ -62,7 +62,7 @@ class Fixture(unittest.TestCase):
         write(os.path.join(q, "sound-editor", "exports", "overrides", "sounds", "default", "HIT.wav"), "RIFFlocal")
         write(os.path.join(q, "map-editor", "index.html"), "<html></html>")
         write(os.path.join(q, "map-editor", "serve.py"), "")
-        write(os.path.join(q, "project-manager", "tabs.json"), json.dumps({"tabs": [
+        write(os.path.join(q, "quarkology", "tabs.json"), json.dumps({"tabs": [
             {"id": "sound", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
             {"id": "map", "parent": "dashboard", "url": "http://127.0.0.1:1/?embed=1&x=2", "port": 1, "folder": "map-editor"}]}))
         cls.data = os.path.join(cls.tmp, "data")
@@ -122,6 +122,21 @@ class Fixture(unittest.TestCase):
         self.assertEqual([e["path"] for e in files], ["sounds/default/JUMP.wav"])
         self.assertEqual(unowned, ["textures/wall.png"])
 
+    def test_tabs_list_paths(self):
+        # Quarkology's tabs.json; (one release) Quarkology's, while the app has not moved yet
+        self.assertEqual(D.tabs_list(self.cfg)[1], os.path.join(self.quark, "quarkology", "tabs.json"))
+        new = os.path.join(self.quark, "quarkology", "tabs.json")
+        old = os.path.join(self.quark, "project-manager", "tabs.json")
+        keep = open(new, encoding="utf-8").read()
+        try:
+            os.rename(new, old)
+            tabs, path = D.tabs_list(self.cfg)
+            self.assertEqual(path, old)
+            self.assertEqual({t["id"] for t in tabs}, {"sound", "map"})
+        finally:
+            os.replace(old, new)
+        self.assertEqual(open(new, encoding="utf-8").read(), keep)
+
     def test_editor_links_from_tabs(self):
         eds = {e["folder"]: e for e in D.editor_links(self.cfg)[0]}
         self.assertEqual((eds["map-editor"]["kind"], eds["map-editor"]["url"], eds["map-editor"]["tab"]), ("server", "http://127.0.0.1:1/?x=2", "map"))
@@ -133,19 +148,25 @@ class Fixture(unittest.TestCase):
 
     def test_installs_view(self):
         repo = os.path.join(self.quark, "repository")
-        write(os.path.join(repo, "tools", "project_manager", "installs.json"), json.dumps({"entries": [
+        write(os.path.join(repo, "tools", "quarkology", "installs.json"), json.dumps({"entries": [
             {"id": "sound", "sources": ["tools/sound_editor", "VERSION"], "run": "x", "check": "sound-editor\\sound-editor.html"}]}))
         cur = "+".join(git(repo, "rev-parse", "%s:%s" % (self.new, s)) for s in ("tools/sound_editor", "VERSION"))
         old = "+".join(git(repo, "rev-parse", "%s:%s" % (self.old, s)) for s in ("tools/sound_editor", "VERSION"))
-        state = os.path.join(self.quark, "project-manager", "installs-state.json")
+        # (Quarkology's installs-state.json; one release: Quark Project's, in project-manager\\, before the move)
+        state = os.path.join(self.quark, "quarkology", "installs-state.json")
+        old_state = os.path.join(self.quark, "project-manager", "installs-state.json")
         try:
-            for stamp, want in ((cur, "current"), (old, "older")):
-                write(state, json.dumps({"entries": {"sound": {"stamp": stamp}}}))
+            for path, stamp, want in ((state, cur, "current"), (state, old, "older"), (old_state, cur, "current")):
+                for f in (state, old_state):
+                    if os.path.exists(f): os.remove(f)
+                write(path, json.dumps({"entries": {"sound": {"stamp": stamp}}}))
                 v = D.installs_view(self.cfg, repo, "origin/testing", {"origin/testing": "1.2.3"})
                 self.assertEqual(v["sound-editor"]["state"], want)
             self.assertEqual(v["sound-editor"]["entry"], "sound")
         finally:
-            os.remove(os.path.join(repo, "tools", "project_manager", "installs.json")); os.remove(state)
+            os.remove(os.path.join(repo, "tools", "quarkology", "installs.json"))
+            for f in (state, old_state):
+                if os.path.exists(f): os.remove(f)
 
     def test_marks(self):
         reg = {"sounds/default/HIT.wav": "ai"}

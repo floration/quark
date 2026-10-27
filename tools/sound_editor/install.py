@@ -1,4 +1,4 @@
-"""Install or update the sound editor next to the repository checkout, non-interactively (the Quark Project app runs it).
+"""Install or update the sound editor next to the repository checkout, non-interactively (the Quarkology app runs it).
 
     python tools/sound_editor/install.py [out_dir] [--no-build]   (cwd: any; out_dir default: <checkout>/../sound-editor)
 

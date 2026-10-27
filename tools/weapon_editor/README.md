@@ -17,7 +17,7 @@ the set check). Nothing is fetched from the internet. The file format and the pl
 - Linux / macOS: `./run.sh` (or `python3 serve.py`).
 
 Then open http://127.0.0.1:8773/ (it opens by itself unless `--no-open` is given or `QUARK_SHELL=1` is set).
-`?embed=1` hides the page's own header (the Quark Project app shows the page in its own window). `?mock` uses the
+`?embed=1` hides the page's own header (the Quarkology app shows the page in its own window). `?mock` uses the
 page's own numbers and the built-in catalog even when the game's programs are there.
 
 Flags (or the same keys in `weapon_editor.json` next to `serve.py`; `weapon_editor.example.json` lists them):
@@ -36,7 +36,7 @@ Flags (or the same keys in `weapon_editor.json` next to `serve.py`; `weapon_edit
 
 Needs Python 3.8+ and a current Chrome, Edge or Firefox (WebGL for the 3D views).
 
-### Install (the Quark Project app)
+### Install (the Quarkology app)
 
 `py -3 tools\weapon_editor\serve.py --install` (from a repository checkout) copies the tool to
 `<Quark folder>/weapons-editor` (or the folder given): `serve.py`, `web/`, `run.cmd`, `run.sh`, this README,

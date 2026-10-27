@@ -1,6 +1,6 @@
 # Quark HUD Editor
 
-The Quark Project app's **Editor Manager > HUD Editor** tab (http://127.0.0.1:8774/). A 1280x720 preview of the
+The Quarkology app's **Editor Manager > HUD Editor** tab (http://127.0.0.1:8774/). A 1280x720 preview of the
 in-game HUD (the game's 720p units, so it holds at every resolution) where you drag, size and recolour:
 
 - **Built-in HUD** (quark.cfg `hud_<N>=x,y,scale,custom,r,g,b,hidden,z[,pitch,yaw,roll]`, `Settings::HUD_*` in

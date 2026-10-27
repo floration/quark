@@ -16,7 +16,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .fact .k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--qt-muted); }
 .fact .bar { width: 120px; margin-top: 3px; }
 .actions { display: flex; gap: 10px; align-items: center; }
-/* (?embed=1: the Quark Project tab bar shows the facts; the header row is only for the "no git clones" error, and
+/* (?embed=1: the Quarkology tab bar shows the facts; the header row is only for the "no git clones" error, and
    dashboard.js moves Refresh / fetch into the view tabs' row) */
 .embed #top { display: none; }
 .embed #top.alert { display: flex; padding: 6px 14px; }

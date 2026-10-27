@@ -1,6 +1,6 @@
 # Weapons editor: design (v1)
 
-The owner's ask (2026-10-24): a Weapons Editor tab under the Editor Manager in the Quark Project app, where they can
+The owner's ask (2026-10-24): a Weapons Editor tab under the Editor Manager in the Quarkology app, where they can
 create and modify weapons, test them against static targets and bots, watch bot fights on maps, write custom weapon
 logic in Code / Blocks / Graph views (like the bot brain and gamemode editors), and compare damage and DPS (head vs
 body, alt fires) in a values table, also against as many other games' weapon numbers as can be found.
@@ -11,7 +11,7 @@ Three parts, each owned by one worker:
    for the logic slots. `src/game/weaponset.{h,cpp}` (new), small hooks in `customrules.*`, `gamedefs.h`,
    `server.cpp`, the client and `bots.cpp`. Tests in `tests/`.
 2. **Helper**: `quark_maptool` commands for the editor, in `tools/weapon_editor/native/*.cpp` (CMake globs it in).
-3. **Page**: `tools/weapon_editor/serve.py` + `web/` on `127.0.0.1:8773`, installed by the Quark Project app
+3. **Page**: `tools/weapon_editor/serve.py` + `web/` on `127.0.0.1:8773`, installed by the Quarkology app
    (`installs.json` + tabs).
 
 Performance comes first (CLAUDE.md): a weapon set without logic costs nothing per shot (the tuned table is built

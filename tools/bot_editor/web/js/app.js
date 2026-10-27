@@ -99,7 +99,7 @@ class App {
     }
 
     async boot() {
-        if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed");   // (inside the project manager)
+        if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed");   // (inside Quarkology)
         try { this.config = await api.config(); }
         catch (e) { document.body.innerHTML = `<div class="pad">Can't reach serve.py (${e.message}). Start it with tools/bot_editor/run.sh or run.cmd.</div>`; return; }
         this.helper = await createHelper(this.config);

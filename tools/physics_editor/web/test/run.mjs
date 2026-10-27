@@ -290,7 +290,7 @@ async function browserChecks(browser, mode, shots) {
     await page.click("#tabs button[data-page=drive]");
     await page.waitForFunction(() => window.qpe.drive.d, null, { timeout: 10000 });
     await page.waitForTimeout(400);
-    // the window refuses pointer lock (the Quark Project app's shell did): a click still starts Drive, drag-to-look
+    // the window refuses pointer lock (the Quarkology app's shell did): a click still starts Drive, drag-to-look
     await page.evaluate(() => { const c = document.getElementById("driveCanvas"); c.requestPointerLock = () => Promise.reject(new DOMException("denied", "NotAllowedError")); });
     await page.click("#driveCanvas");
     await page.waitForTimeout(100);

@@ -20,7 +20,7 @@ Python 3 standard library only. `--page-only` rewrites only the page and keeps `
 Rebuild after a game update so the page shows the current defaults. Your work is not in these files: it is autosaved in
 the browser and in the project files you save.
 
-**Install / update in one step** (non-interactive; the Quark Project app runs it): `python tools/sound_editor/install.py [out]
+**Install / update in one step** (non-interactive; the Quarkology app runs it): `python tools/sound_editor/install.py [out]
 [--no-build]` (default out: `<checkout>/../sound-editor`). It exports the sounds with a `quark_tests` whose export names this
 checkout's `VERSION`: `$QUARK_TESTS` first, then every build folder the other installs use (`build-win`, `build`,
 `build-model-editor`, `build-editors`, `../working-repo-sound/build-win`, `../.src/*/build*`), newest first. A build of

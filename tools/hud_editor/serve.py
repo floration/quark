@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Quark HUD Editor: the local server behind the HUD editor page (the Quark Project app's Editor Manager > HUD tab).
+"""Quark HUD Editor: the local server behind the HUD editor page (the Quarkology app's Editor Manager > HUD tab).
 
     python3 tools/hud_editor/serve.py [--port 8774] [--data-dir DIR] [--no-open]
     python3 tools/hud_editor/serve.py --install [FOLDER]     copy the tool to FOLDER (default <Quark folder>/hud-editor)
-    --no-open (or QUARK_SHELL=1): no browser; the Quark Project app starts it and shows http://127.0.0.1:8774/?embed=1
+    --no-open (or QUARK_SHELL=1): no browser; the Quarkology app starts it and shows http://127.0.0.1:8774/?embed=1
 
 Python 3 standard library only. Binds 127.0.0.1 only. It reads and writes the game's own files in its user data folder
 (QUARK_DATA_DIR, else %APPDATA%\\quark, ~/Library/Application Support/quark or ~/.local/share/quark):
@@ -24,7 +24,7 @@ from urllib.parse import urlparse, parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(HERE, "web")
 IS_WIN = os.name == "nt"
-DEFAULT_PORT = 8774          # fixed (the Quark Project app opens http://127.0.0.1:8774/)
+DEFAULT_PORT = 8774          # fixed (the Quarkology app opens http://127.0.0.1:8774/)
 MAX_BODY = 1 << 20
 PROFILE_RE = re.compile(r"^[^\\/:*?\"<>|.\x00-\x1f][^\\/:*?\"<>|\x00-\x1f]{0,127}$")   # plainFileName (src/game/map.h)
 HUD_KEY_RE = re.compile(r"^hud_(\d+)$")

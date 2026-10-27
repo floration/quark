@@ -34,7 +34,7 @@ py -3 tools\tests_editor\install.py [--target DIR] [--quiet]      (or install.cm
 ```
 
 Copies the tool into the `tests-editor` folder beside the checkout it runs from (from `Quark\repository\` that is
-`Quark\tests-editor\`). The Quark Project app runs exactly `py -3 tools\tests_editor\install.py --quiet` from
+`Quark\tests-editor\`). The Quarkology app runs exactly `py -3 tools\tests_editor\install.py --quiet` from
 `repository\` every time it opens: it asks nothing, opens nothing, overwrites the tool files (serve.py, model/, web/,
 API.md, README.md, tests-editor.cmd), keeps an existing `tests_editor.json` and `cache/`, and is safe to re-run while
 the server runs from there (the app restarts it). Exit 0 on success; on failure one line on stderr and exit 1. A

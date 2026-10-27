@@ -1,0 +1,8 @@
+{
+  "name": "quarkology",
+  "productName": "Quarkology",
+  "version": "1.1.0",
+  "description": "Quarkology: one window with the Supervisor Board, the managers and the Quark editors as tabs (local tooling).",
+  "main": "main.js",
+  "private": true
+}

@@ -280,7 +280,7 @@ kbd { font: 11px var(--mono); background: var(--bg2); border: 1px solid var(--li
 .modal h3 { margin-top: 0; }
 #toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--bg2); border: 1px solid var(--acc); padding: 6px 12px; border-radius: 6px; z-index: 3000; display: none; box-shadow: var(--qt-shadow); }
 
-/* ?embed=1: inside the Quark Project app (its own title bar): no logo / data folder, slimmer tabs */
+/* ?embed=1: inside the Quarkology app (its own title bar): no logo / data folder, slimmer tabs */
 .embed #top .logo, .embed #status #dataDir { display: none; }
 .embed #app { grid-template-rows: 32px 1fr; }
 .embed #tabs { margin-left: 0; }

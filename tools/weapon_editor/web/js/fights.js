@@ -55,7 +55,7 @@ export class FightsView {
         if (!H.sim) {
             const why = H.mockWanted ? "the page is in MOCK mode (<code>?mock</code> in the address): open it without <code>?mock</code> for fights"
                 : this.app.config.maptool ? "this quark_maptool has no sim (an older build): rebuild the game (cmake --build build) or update the Quark folder"
-                : "no quark_maptool was found next to the editor (install the editor from the Quark Project app, or set \"maptool\" in weapon_editor.json)";
+                : "no quark_maptool was found next to the editor (install the editor from the Quarkology app, or set \"maptool\" in weapon_editor.json)";
             b.innerHTML = `<b>Fights need the helper.</b> quark_maptool with the bot editor's <code>sim</code> / <code>simbatch</code> runs the game's own bots; ${why}.`;
             b.classList.add("on");
         } else if (start && start.weaponSet === undefined) {

@@ -20,7 +20,7 @@ What it reads (README.md has the views):
   - each editor folder (EDITORS below): its exported files and its provenance.json sidecar (docs/PROVENANCE.md), and
     the game's own overrides folder on this PC;
   - the provenance registry, <repo>/assets/provenance/*.json;
-  - the Quark Project app's tab list (tabs.json / tabs.default.json: each editor's tab and port, checked for up / down)
+  - the Quarkology app's tab list (tabs.json / tabs.default.json: each editor's tab and port, checked for up / down)
     and its installs-state.json (the version of each editor installed, compared with testing's).
 
 What it writes: its own sidecar, <install dir>\\provenance.json (tool "dashboard"), when the owner marks items; its
@@ -1024,15 +1024,20 @@ def by_program(clones, repos, ref_key, exports):
     return out
 
 
-# --- the editors: their Quark Project tabs, links, up / down, the version installed --------------------------------------
+# --- the editors: their Quarkology tabs, links, up / down, the version installed ----------------------------------------
+
+def app_dirs(cfg):
+    """the Quarkology app's folder, Quark\\quarkology, then (one release) Quark\\project-manager, where it lived as
+    Quark Project: an install not yet moved still reads"""
+    return [os.path.join(cfg.quark, d) for d in ("quarkology", "project-manager")]
+
 
 def tabs_list(cfg):
-    """the Quark Project app's tab list (read-only): q's Quark\\project-manager\\tabs.json, else the app's
+    """the Quarkology app's tab list (read-only): q's Quark\\quarkology\\tabs.json, else the app's
     shell\\tabs.default.json, else the repository's copy -> (tabs, the file read or None)"""
-    for path in (os.path.join(cfg.quark, "project-manager", "tabs.json"),
-                 os.path.join(cfg.quark, "project-manager", "shell", "tabs.default.json"),
-                 os.path.join(cfg.quark, "repository", "tools", "project_manager", "shell", "tabs.default.json"),
-                 os.path.join(os.path.dirname(HERE), "project_manager", "shell", "tabs.default.json")):
+    for path in [p for d in app_dirs(cfg) for p in (os.path.join(d, "tabs.json"), os.path.join(d, "shell", "tabs.default.json"))] + [
+                 os.path.join(cfg.quark, "repository", "tools", "quarkology", "shell", "tabs.default.json"),
+                 os.path.join(os.path.dirname(HERE), "quarkology", "shell", "tabs.default.json")]:
         doc, _ = read_json(path)
         tabs = doc.get("tabs") if isinstance(doc, dict) else doc
         if isinstance(tabs, list): return [t for t in tabs if isinstance(t, dict)], path
@@ -1047,7 +1052,7 @@ def root_pages(d, folder):
 
 
 def editor_links(cfg):
-    """each editor (EDITORS order): its Quark Project tab and its link, unprobed. A server editor (its tab has a local
+    """each editor (EDITORS order): its Quarkology tab and its link, unprobed. A server editor (its tab has a local
     http url: map, bot, gamemode, physics, weapons, hud) runs its own serve.py on the tab's port and is linked there (without
     ?embed=1, which is for the app); a page editor (a folder + file tab: sound, UI, model) is served from here under
     /editors/<folder>/ (Chrome / Edge won't follow a file:// link from an http page). -> (editors, tabs file)"""
@@ -1126,7 +1131,7 @@ STARTED, START_LOCK, START_WAIT = {}, threading.Lock(), 12.0
 
 
 def start_editor(cfg, folder):
-    """POST /api/start: start a stopped server editor the way the Quark Project app does, hidden (no console window),
+    """POST /api/start: start a stopped server editor the way the Quarkology app does, hidden (no console window),
     in its folder, on its tab's port; its output goes to <the dashboard's folder>/logs/<folder>.log. Waits up to
     START_WAIT s for it to answer -> (ok, message)"""
     e = next((x for x in editor_links(cfg)[0] if x["folder"] == folder), None)
@@ -1134,7 +1139,7 @@ def start_editor(cfg, folder):
     url = "http://127.0.0.1:%d/" % e["port"]
     if answers(url): return True, "%s is already running" % e["program"]
     argv = start_command(e)
-    if not argv: return False, "%s: its start command in tabs.json isn't a plain Python command; the Quark Project app starts it" % e["program"]
+    if not argv: return False, "%s: its start command in tabs.json isn't a plain Python command; the Quarkology app starts it" % e["program"]
     log = os.path.join(os.path.dirname(cfg.sidecar), "logs", folder + ".log")
     with START_LOCK:                                                     # (one start at a time per editor)
         p = STARTED.get(folder)
@@ -1163,9 +1168,10 @@ def start_editor(cfg, folder):
 
 def installs_registry(cfg):
     """installs.json (what the app installs from: repository\\'s copy, else the installed one) -> [entries]"""
-    for path in (os.path.join(cfg.quark, "repository", "tools", "project_manager", "installs.json"),
-                 os.path.join(cfg.quark, "project-manager", "installs.json"),
-                 os.path.join(os.path.dirname(HERE), "project_manager", "installs.json")):
+    # (not repository\\tools\\project_manager\\installs.json: that one only hands Quark Project over to Quarkology)
+    for path in [os.path.join(cfg.quark, "repository", "tools", "quarkology", "installs.json")] + \
+                [os.path.join(d, "installs.json") for d in app_dirs(cfg)] + \
+                [os.path.join(os.path.dirname(HERE), "quarkology", "installs.json")]:
         doc, _ = read_json(path)
         lst = doc.get("entries") if isinstance(doc, dict) else doc
         if isinstance(lst, list): return [e for e in lst if isinstance(e, dict) and e.get("id") and isinstance(e.get("sources"), list)]
@@ -1173,14 +1179,17 @@ def installs_registry(cfg):
 
 
 def installs_view(cfg, ref_cwd, testing_rev, versions):
-    """per editor folder, the version the Quark Project app installed compared with testing's. The app stores, per
-    installs.json entry, the git ids of its `sources` when the install ran (Quark\\project-manager\\installs-state.json);
+    """per editor folder, the version the Quarkology app installed compared with testing's. The app stores, per
+    installs.json entry, the git ids of its `sources` when the install ran (Quark\\quarkology\\installs-state.json);
     the same ids at testing's tip and at the reference clone's HEAD come from one `cat-file --batch-check`.
     -> {folder: {entry, name, state, at, version}}, state: current (testing's) / head (repository\\'s HEAD, testing is
     newer: the app pulls on its next pass) / older / failed (the last try at testing's failed) / never (the app has no
     record) / waiting (not in testing yet) / unknown (no git)"""
     entries = installs_registry(cfg)
-    saved, _ = read_json(os.path.join(cfg.quark, "project-manager", "installs-state.json"))
+    saved = None
+    for d in app_dirs(cfg):
+        saved, _ = read_json(os.path.join(d, "installs-state.json"))
+        if isinstance(saved, dict): break
     saved = saved.get("entries") if isinstance(saved, dict) and isinstance(saved.get("entries"), dict) else {}
     pick = {}
     for folder, _, _ in EDITORS:
@@ -1445,7 +1454,7 @@ class State:
                 "ready": self.ready.is_set()}
 
     def summary(self):
-        """GET /api/summary: the compact, stable shape other tools read (the Supervisor Board on 8768, the Quark Project
+        """GET /api/summary: the compact, stable shape other tools read (the Supervisor Board on 8768, the Quarkology
         tab bar). Keep its keys (new ones may be added)."""
         st, a = self.status, self.assets
         cats, tot = {}, {"human": 0, "third_party": 0, "ai": 0}
@@ -1468,7 +1477,7 @@ class State:
                             "build": st["testing"].get("build")},
                 "production": {"version": st["production"]["version"], "tag": st["production"]["tag"],
                                "sha": st["production"]["sha"]},
-                "fetched": bool(st["fetched"]),             # (the Quark Project tab bar shows these: "with fetch" / "no fetch")
+                "fetched": bool(st["fetched"]),             # (the Quarkology tab bar shows these: "with fetch" / "no fetch")
                 "provenance": dict(total=n, pct_human=pct_human(tot["human"] + tot["third_party"], n),
                                    by_category=cats, **tot),
                 "pending_marks": sum(1 for r in a["rows"] if r.get("pm") or r.get("bad")),
@@ -1681,7 +1690,7 @@ def main():
         state.refresh()
         json.dump({"summary": state.summary(), "status": state.status, "changes": state.changes, "assets": state.assets}, sys.stdout, indent=1)
         return
-    if os.environ.get("QUARK_SHELL") == "1": a.no_browser = True           # (the Quark Project app shows the page itself)
+    if os.environ.get("QUARK_SHELL") == "1": a.no_browser = True           # (the Quarkology app shows the page itself)
     if already_running(a.port):                                         # (a second double-click: show the open one)
         if not a.no_browser: webbrowser.open("http://127.0.0.1:%d/" % a.port)
         print("already running on port %d" % a.port); return

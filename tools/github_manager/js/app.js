@@ -122,7 +122,7 @@ function renderStatus() {
 function renderBanner() {
   const s = store.state, msgs = [];
   if (store.reachable === false && s) {
-    msgs.push(html`<div class="msg bad"><b>Can't reach the GitHub manager server</b> (last answer ${rel(new Date(store.lastFetchAt).toISOString())}). Showing the last data it sent. ${s.shell ? 'The Quark Project app restarts it by itself' : html`Start it again with <code>github-manager.cmd</code> (it runs without a window)`}; this page reconnects by itself.</div>`);
+    msgs.push(html`<div class="msg bad"><b>Can't reach the GitHub manager server</b> (last answer ${rel(new Date(store.lastFetchAt).toISOString())}). Showing the last data it sent. ${s.shell ? 'The Quarkology app restarts it by itself' : html`Start it again with <code>github-manager.cmd</code> (it runs without a window)`}; this page reconnects by itself.</div>`);
   }
   if (s && s.poll && s.poll.lastError) {
     msgs.push(html`<div class="msg warn"><b>The last GitHub poll failed:</b> ${s.poll.lastError}. ${s.poll.lastOk ? html`Data is from the last good poll, ${rel(s.poll.lastOk)}.` : ''}</div>`);
@@ -170,7 +170,7 @@ function renderOffline() {
   el.view.innerHTML = String(html`<section class="offline card">
     <h2>The GitHub manager server isn't running</h2>
     <p>This page gets everything from the local server at <code>http://127.0.0.1:8767/</code>, and nothing answered there.</p>
-    <p>In the Quark Project app the server is started, and restarted, for you: give it a moment. Otherwise <b>run <code>github-manager.cmd</code></b>: it starts the server in the background, with no window. This page keeps trying every few seconds and fills in by itself.</p>
+    <p>In the Quarkology app the server is started, and restarted, for you: give it a moment. Otherwise <b>run <code>github-manager.cmd</code></b>: it starts the server in the background, with no window. This page keeps trying every few seconds and fills in by itself.</p>
     <p class="muted small">${store.fetchError}</p></section>`);
 }
 

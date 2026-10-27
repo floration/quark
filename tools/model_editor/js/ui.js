@@ -704,12 +704,12 @@
   };
   // Try in game: the edited models into the game's own overrides folder (%APPDATA%\quark\overrides, remembered; the
   // first time, or when a folder needs choosing or allowing, a dialog asks), provenance.json into Quark\model-editor,
-  // then the game command for this view: in the Quark Project app the Play tab opens with it (#args=), else it is shown;
+  // then the game command for this view: in the Quarkology app the Play tab opens with it (#args=), else it is shown;
   // it is copied either way. (A page on disk cannot start a program itself.)
   U.tryInGame = async function () {
     const keys = Q.exportableList();
     if (!keys.length) { U.toast(Q.exportList().length ? 'Every edited model has an error that blocks its export (see the panel)' : 'No model is edited yet'); return; }
-    if (!Q.canPickFolder()) { U.dialog('Not in this browser', h('p', 'Writing into the game\'s overrides folder needs Chrome or Edge (or the Quark Project app). Use Export to game > Download .zip.')); return; }
+    if (!Q.canPickFolder()) { U.dialog('Not in this browser', h('p', 'Writing into the game\'s overrides folder needs Chrome or Edge (or the Quarkology app). Use Export to game > Download .zip.')); return; }
     let dir = await Q.loadHandle('tryDir'), ok = !!dir && await Q.folderPermission(dir, true);
     const prov = await U.provPicker();
     if (!ok || !prov.dir()) {

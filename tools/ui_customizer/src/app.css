@@ -28,7 +28,7 @@
   --scrim: rgba(0,0,0,0.6);
   color-scheme: dark;
 }
-/* Light: follows the system / the Quark Project app's theme (Electron passes it as prefers-color-scheme); data-theme
+/* Light: follows the system / the Quarkology app's theme (Electron passes it as prefers-color-scheme); data-theme
    (?theme=light|dark) overrides it. The game pages on the canvas keep the game's own dark look. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
