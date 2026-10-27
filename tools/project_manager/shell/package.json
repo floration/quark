@@ -1,0 +1,8 @@
+{
+  "name": "quarkology-handover",
+  "productName": "Quarkology",
+  "version": "1.1.0",
+  "description": "Quark Project is now Quarkology: starts Quark\\quarkology\\ (the old app's hand-over, kept for one release).",
+  "main": "main.js",
+  "private": true
+}

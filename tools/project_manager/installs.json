@@ -1,0 +1,7 @@
+{"entries": [
+  {"id": "quarkology", "name": "Quarkology (the app's new name: installs it and moves your tabs over)", "sources": ["tools/quarkology"],
+   "run": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools\\quarkology\\setup.ps1 -Quark \"%QUARK%\"",
+   "check": "quarkology\\server.py", "timeoutSec": 1800},
+  {"id": "project-manager", "name": "Supervisor Board (this app: hands over to Quarkology)", "sources": ["tools/project_manager"],
+   "run": "builtin:self-update", "check": "project-manager\\server.py"}
+]}

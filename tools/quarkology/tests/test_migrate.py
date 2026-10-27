@@ -1,5 +1,6 @@
 """Tests for the move from Quark Project to Quarkology: qo/migrate.py (through server.py --init, as setup.ps1 and the
-self-update run it) (SPEC.md section 4, "Moving from Quark Project")."""
+self-update run it) and the hand-over folder tools/project_manager/ that an install from before the rename updates
+from (SPEC.md section 4, "Moving from Quark Project")."""
 import hashlib
 import json
 import os
@@ -12,9 +13,10 @@ from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PM_ROOT = os.path.dirname(HERE)
+BRIDGE = os.path.join(os.path.dirname(PM_ROOT), "project_manager")
 sys.path.insert(0, PM_ROOT)
 
-from qo import config, migrate  # noqa: E402
+from qo import config, migrate, updater  # noqa: E402
 
 
 def write(path, text):
@@ -223,6 +225,63 @@ class Migrate(unittest.TestCase):
             ms.return_value.serve_forever.side_effect = KeyboardInterrupt
             self.assertEqual(server.main(["--quark", self.q, "--port", "0", "--no-update"]), 0)
         self.assertTrue(json.loads(read(os.path.join(self.new, migrate.MARKER)))["syncedAt"])
+
+
+class HandOver(unittest.TestCase):
+    """tools/project_manager/: what an install from before the rename (Quark\\project-manager\\) updates from."""
+
+    def test_registry(self):
+        data = json.loads(read(os.path.join(BRIDGE, "installs.json")))
+        entries = [updater.normalize_entry(e) for e in data["entries"]]
+        self.assertTrue(all(entries))
+        first, second = entries
+        # Quarkology is installed (and q's files copied) before the old app replaces itself with the hand-over
+        self.assertEqual(first["id"], "quarkology")
+        self.assertEqual(first["sources"], ["tools/quarkology"])
+        self.assertIn("tools\\quarkology\\setup.ps1", first["run"])
+        self.assertIn("-NonInteractive", first["run"])
+        self.assertTrue(os.path.isfile(os.path.join(PM_ROOT, "setup.ps1")))
+        self.assertEqual(first["check"], "quarkology\\server.py")
+        self.assertEqual((second["id"], second["run"], second["sources"]),
+                         ("project-manager", updater.SELF_UPDATE, ["tools/project_manager"]))
+
+    def test_what_the_old_self_update_copies(self):
+        # the old updater copies these files and mirrors shell\ (pm\ and web\ are not here: it leaves them alone)
+        for f in ("server.py", "project-manager.cmd", "project-manager-hidden.vbs", "installs.json"):
+            self.assertTrue(os.path.isfile(os.path.join(BRIDGE, f)), f)
+        for d in ("pm", "web"):
+            self.assertFalse(os.path.exists(os.path.join(BRIDGE, d)), d)
+        pkg = json.loads(read(os.path.join(BRIDGE, "shell", "package.json")))
+        self.assertEqual(pkg["main"], "main.js")
+        main = read(os.path.join(BRIDGE, "shell", "main.js"))
+        self.assertIn("quarkology", main)
+        self.assertNotIn("electron-data", main.split("app.setPath('userData'")[1].split("\n")[0])
+        # the old shell keeps loading its preload and tab bar until it restarts
+        for f in ("preload.js", "tabbar.html", "tabbar.css", "tabbar.js"):
+            self.assertTrue(os.path.isfile(os.path.join(BRIDGE, "shell", f)), f)
+        if shutil.which("node"):
+            p = subprocess.run(["node", "--check", os.path.join(BRIDGE, "shell", "main.js")], stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+            self.assertEqual(p.returncode, 0, p.stdout.decode())
+
+    def test_server_stand_in(self):
+        tmp = tempfile.mkdtemp(prefix="qo-bridge-")
+        try:
+            q = os.path.join(tmp, "Quark")
+            old = os.path.join(q, "project-manager")
+            os.makedirs(old)
+            shutil.copy2(os.path.join(BRIDGE, "server.py"), old)
+            run = lambda *a: subprocess.run([sys.executable, os.path.join(old, "server.py")] + list(a),
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+            self.assertEqual(run("--quark", q, "--init").returncode, 0)          # (the old self-update's --init)
+            self.assertEqual(sorted(os.listdir(old)), ["server.py"])
+            self.assertEqual(run("--port", "8768").returncode, 2)                # (no Quarkology yet)
+            write(os.path.join(q, "quarkology", "server.py"),
+                  "import sys, os\nopen(os.path.join(os.path.dirname(__file__), 'args.txt'), 'w').write(' '.join(sys.argv[1:]))\n")
+            self.assertEqual(run("--port", "8768").returncode, 0)
+            self.assertEqual(read(os.path.join(q, "quarkology", "args.txt")), "--port 8768")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
