@@ -47,6 +47,8 @@ typedef struct __GLsync* GLsync;
 #define GL_SHORT 0x1402
 #define GL_UNSIGNED_SHORT 0x1403
 #define GL_ARRAY_BUFFER 0x8892
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#define GL_UNSIGNED_INT 0x1405
 #define GL_STATIC_DRAW 0x88E4
 #define GL_DYNAMIC_DRAW 0x88E8
 #define GL_STREAM_DRAW 0x88E0
@@ -121,6 +123,7 @@ typedef struct __GLsync* GLsync;
     X(void, glBlendFunc, (GLenum, GLenum)) \
     X(void, glPolygonOffset, (GLfloat, GLfloat)) \
     X(void, glDrawArrays, (GLenum, GLint, GLsizei)) \
+    X(void, glDrawElements, (GLenum, GLsizei, GLenum, const void*)) \
     X(void, glPixelStorei, (GLenum, GLint)) \
     X(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*)) \
     X(const GLubyte*, glGetString, (GLenum)) \

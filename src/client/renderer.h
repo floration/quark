@@ -212,6 +212,9 @@ private:
     int fontGen_ = 0;
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
     float alpha_ = 1;         // (setAlpha)
+    void uiIndices(size_t quads);   // (the 2D batch's index buffer covers at least this many quads)
+    unsigned uiEbo_ = 0;      // the 2D batch's indices: 4 vertices a quad, drawn as 0 1 2 / 0 3 2 (fixed; grown when needed)
+    size_t uiIdxQuads_ = 0;   // (quads the index buffer covers)
     size_t uiUploaded_ = 0;   // (prepare2D: this many 2D vertices are in uiVbo_ already; 0: none)
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
