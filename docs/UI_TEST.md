@@ -111,7 +111,7 @@ one JOIN > CONNECT leaves is.
 Settings is one shell with six tabs, the same in the menus (`settings...`) and in game (`ingame/pause/settings...`):
 `settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE
 KEYS), `settings/controls/movement` (MOVE + WEAPON KEYS), `settings/controls/files` (the import list), `settings/video`
-(VIDEO + AUDIO), `settings/video/devices` (VIDEO + AUDIO > DEVICES), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open),
+(VIDEO + AUDIO), `settings/video/devices` (VIDEO + AUDIO > DEVICES), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open), `settings/hud/edit` (EDIT ON SCREEN: each element a handle, the selection's corner a size handle, the editor's keys key actions),
 `settings/hud/widgets` (+ `/files`, `/values`). The tab row's tabs are `nav("~settings/<tab>")` buttons (the current one
 too); BACK and Esc leave settings from any tab (Esc first closes an open picker, dropdown or list). `quark
 --settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a

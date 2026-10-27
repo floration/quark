@@ -345,6 +345,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/hudwidgets.cpp
     src/client/filewatch.cpp
     src/client/layout.cpp
+    src/client/hudeditor.cpp
     src/client/theme.cpp
     src/client/profiles.cpp
     src/client/binds.cpp

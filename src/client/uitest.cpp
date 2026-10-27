@@ -47,6 +47,7 @@ std::string Game::uiScreenPath() const {
             case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
             case TAB_HUD:
+                if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
                 return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
         }
@@ -137,6 +138,13 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "custom") return editRules_.toText();
     if (w == "multisel") { std::string o; for (bool v : multiSel_) o += v ? '1' : '0'; return o; }
     if (w == "hudsel") return std::to_string(hudSel_);
+    if (w == "hudedsel") return std::to_string(hudEdSel_);
+    if (w == "theme") return theme_.toText();
+    if (w == "hudedit") {   // (undo / redo: the elements and the theme)
+        std::string o;
+        for (auto& e : cfg_.hud) o += std::to_string(e.x) + "," + std::to_string(e.y) + "," + std::to_string(e.scale) + "," + std::to_string(e.hidden) + ";";
+        return o + "|" + theme_.toText();
+    }
     if (w == "edsel") {
         char c[128];
         snprintf(c, sizeof c, "%d/%d+%zu %.3f %.3f %.3f", edSel_.kind, edSel_.idx, edMulti_.size(), edCam_.x, edCam_.y, edCam_.z);
@@ -555,6 +563,14 @@ private:
         g.fontScroll_ = 0;   // (the font itself follows the settings put back below: Game::frame applies ui_font)
         if (g.widgetEdit_) g.widgets_.save(g.activeHudPath());
         g.widgetEdit_ = g.valueDrop_ = false;
+        g.hudEditClose();
+        g.hudEdSel_ = Settings::HUD_HEALTH;
+        g.hudEdLeft_ = false;
+        if (!g.theme_.empty()) {   // (a theme a widget made: gone, so the next one starts from the default HUD)
+            g.theme_.clearRules();
+            if (g.themePath_.empty()) g.themePath_ = userDataPath("theme.cfg");
+            g.theme_.save(g.themePath_);
+        }
         g.widgetSel_ = -1;
         g.filePick_ = 0;
         g.captureAction_ = -1;

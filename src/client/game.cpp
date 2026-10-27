@@ -336,6 +336,7 @@ void Game::leaveGame(const std::string& error) {
     paused_ = chatting_ = console_ = false;
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
+    hudEditClose();
     if (settingsInGame_) cfg_.save();
     settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
@@ -704,6 +705,8 @@ void Game::onKey(int key, int action, int mods) {
         editorKey(key, mods); // presses and key repeat (hold an arrow to keep nudging)
         return;
     }
+    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_)) && !ui_.typing() &&
+        !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
     bool typing = chatting_ || ui_.typing();
@@ -757,6 +760,7 @@ void Game::onKey(int key, int action, int mods) {
             if (ui_.popupOpen()) { ui_.closePopup(); return; }   // (a colour picker / dropdown first)
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
+            if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
@@ -771,6 +775,7 @@ void Game::onKey(int key, int action, int mods) {
         if (ui_.popupOpen()) { ui_.closePopup(); return; }   // (a colour picker / dropdown first)
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
+        if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
@@ -877,6 +882,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
+    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -3375,6 +3381,7 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
 
 // Settings > HUD outside a game (and in one while dead): every shown element with sample values where it really goes
 void Game::drawHudSample(float W, float H, float s) {
+    if (theme_.pollDue()) { if (themePath_.empty()) themePath_ = userDataPath("theme.cfg"); theme_.poll(themePath_); }   // (drawHud polls it in game)
     static const int els[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS};
     for (int el : els) if (!cfg_.hud[el].hidden) drawHudElement(el, W, H, s, true);
     if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden) drawKeyOverlay(W, H, s, true);   // (verbose only, as in game)
@@ -3452,7 +3459,7 @@ void Game::drawHud() {
     if (paused_ && settingsInGame_ && !widgetEdit_) {
         // settings in game (every tab but HUD): no HUD under the shell (it would cut the score and weapon bars), the
         // world dimmed behind it; notices in the strip over it
-        r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 0.55f});
+        r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, hudEdit_ ? 0.2f : 0.55f});   // (EDIT ON SCREEN: the world only lightly dimmed)
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
         if (ui_.probing()) uiTestActions();
@@ -4889,6 +4896,7 @@ void Game::drawPauseMenu(float cx, float y) {
 // menu draw the same pages. Nothing here allocates per frame beyond what the widgets did before (static name lists).
 namespace {
 constexpr float kColL = 268, kColR = 652, kColW = 360, kHalfW = 176, kRowH = 32;
+constexpr float kHudFootY = 560;   // (the HUD tab's footer: clear of the bottom row of the HUD under it)
 const Color kHintC = {0.7f, 0.72f, 0.75f, 1}, kLabelC = {0.85f, 0.87f, 0.9f, 1};
 constexpr int kNameColorOn = 0xFFD040;   // NAME COLOR turned on (the old R / G / B sliders' default)
 constexpr int kCustomInterpMs = 10;      // SMOOTHING: CUSTOM starts here (and a right-click on its slider goes back to it)
@@ -4922,6 +4930,7 @@ int packOf(const Vec3& c) {
 }
 
 void Game::openSettingsTab(int tab) {
+    hudEditClose();
     setTab_ = tab;
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
@@ -4958,6 +4967,7 @@ void Game::debugSettingsTab() {
     if (t == "controls/files") filePick_ = 2;
     if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
     if (t == "hud/widgets") { widgetEdit_ = true; widgetSel_ = 0; }
+    if (t == "hud/edit") hudEditOpen();
     static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys", "hud/viewmodel", "hud/grapple"};
     static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS,
                                 Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE};
@@ -4967,13 +4977,16 @@ void Game::debugSettingsTab() {
 
 void Game::drawSettings() {
     if (setTab_ == TAB_HUD && widgetEdit_) { drawWidgetEditor(); return; }   // (the HUD's widget editor: the whole screen)
+    if (setTab_ == TAB_HUD && hudEdit_) { drawHudEditor(); return; }        // (EDIT ON SCREEN: the whole screen)
     const SetLayout L{ui_.s(), r_.width() * 0.5f};
     const bool modal = setTab_ == TAB_CONTROLS && filePick_ == 2;   // the import list: the page under it takes nothing
     ui_.muted = modal;
     // HUD tab: the HUD under a see-through panel (in game drawHud drew the live one; the main menu's: sample values)
     const bool hudPreview = hudPreviewOn();
     if (hudPreview && !settingsInGame_) drawHudSample((float)r_.width(), (float)r_.height(), (float)r_.height() / 720.0f);
-    ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(656), hudPreview ? 0.6f : 1.0f);
+    // (the HUD tab's panel ends higher: its footer stays clear of the HUD's bottom row, the weapon list and health)
+    const float footY = setTab_ == TAB_HUD ? kHudFootY : 640;
+    ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
     {   // the tab row, an accent line under it
         static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
         static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud"};
@@ -4994,13 +5007,13 @@ void Game::drawSettings() {
         case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
         case TAB_HUD: drawHudSettings(L); break;
     }
-    if (setTab_ == TAB_HUD && widgetEdit_) return;   // (WIDGET EDITOR was just clicked)
+    if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
     // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO), and the page's reset on the right (drawn by the page)
     if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
-    } else if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
+    } else if (ui_.button(L.X(268), L.Y(footY), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         leaveSettings();
         return;
     }
@@ -5724,6 +5737,9 @@ void Game::drawHudSettings(const SetLayout& L) {
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("WHOLE HUD");
+    if (ui_.button(g.x(), g.top(), w, h, "EDIT ON SCREEN", UiExp::nav("~settings/hud/edit"))) { hudEditOpen(); return; }
+    g.next();
+    g.hint("DRAG, SIZE AND STYLE EVERY ELEMENT IN PLACE");
     ui_.toggle(g.x(), g.top(), w, h, "VERBOSE INFO", cfg_.hudVerbose, UiExp::cfg("hud_verbose"));
     g.next();
     ui_.toggle(g.x(), g.top(), w, h, "CUSTOM WIDGETS", cfg_.hudWidgets, UiExp::cfg("hud_widgets"));
@@ -5733,7 +5749,7 @@ void Game::drawHudSettings(const SetLayout& L) {
     g.hint("DRAG, ADD, IMPORT / EXPORT WIDGETS");
     g.section("PER MODE");
     if (profileRows(ui_, g, true, ruleMode_, cfg_.modeHud, profilesCached("huds", time_))) { cfg_.save(); appliedMode_ = -2; }   // (re-applied now)
-    if (ui_.button(L.X(836), L.Y(640), hw, h, "RESET WHOLE HUD", he, !std::all_of(std::begin(cfg_.hud), std::end(cfg_.hud), isDefault)))
+    if (ui_.button(L.X(836), L.Y(kHudFootY), hw, h, "RESET WHOLE HUD", he, !std::all_of(std::begin(cfg_.hud), std::end(cfg_.hud), isDefault)))
         for (auto& el : cfg_.hud) el = Settings::HudElem{};
     // the dropdown last: its list opens over the rows under it
     int di = 0;

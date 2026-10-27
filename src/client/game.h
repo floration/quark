@@ -865,6 +865,26 @@ private:
     SlotLabels hudSlotW_ = {};                        // (the weapon list's labels and widths, measured when one changes)
     lay::Rect hudRect_[Settings::HUD_COUNT];          // each element's box as last laid out (the editor: outlines, hits, snapping)
     static constexpr float kRankedMinOpacity = 0.3f;  // ranked: a theme's opacity can't take an element below this
+    // ---- the on-screen HUD editor (Settings > HUD > EDIT ON SCREEN; hudeditor.cpp): nothing of it runs while closed
+    bool hudEdit_ = false;
+    int hudEdSel_ = Settings::HUD_HEALTH;
+    int hudEdDrag_ = 0;                               // 0 none, 1 moving the selection, 2 sizing it (a corner)
+    bool hudEdLeft_ = false;                          // (the inspector on the left: the selection is under its usual place)
+    float hudEdX0_ = 0, hudEdY0_ = 0;                 // (where the drag started)
+    Settings::HudElem hudEdOrig_{};
+    lay::Rect hudEdRect0_;
+    double hudEdWheel_ = 0;                           // (wheel notches since the last frame: sizes what's under the mouse)
+    struct HudSnap { Settings::HudElem hud[Settings::HUD_COUNT]; std::string theme; };   // an undo step: the elements and theme.cfg
+    std::vector<HudSnap> hudUndo_, hudRedo_;
+    HudSnap hudEdLast_;                               // (the state the last step ended in)
+    uint32_t hudEdLastVer_ = 0;
+    void hudEditOpen();
+    void hudEditClose();
+    void drawHudEditor();
+    bool hudEditKey(int key, int action, int mods);
+    void hudEdCommit(bool force);
+    void hudEdApply(const HudSnap& sn);
+    bool hudEdUndo(bool redo);
     const HudStyle& hudStyle(int el) const;
     float hudOpacity(int el) const;
     Color hudTint(int el, Color c) const;             // the element's colour: its HUD COLOR, else the theme's, else c
@@ -878,7 +898,7 @@ private:
     lay::Rect hudClose(int el);                       // closes the root, solves (cached), keeps and returns its rect
     void hudBoxDraw(int el, const lay::Rect& r, float k, Color def);   // its background (def: the built-in one) and border
     // Settings > HUD's live preview: the tab is showing (not the widget editor, FONT or DEVICES)
-    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !fontsOpen_ && !devicesOpen_; }
+    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !hudEdit_ && !fontsOpen_ && !devicesOpen_; }
     void drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview);   // (alive)
     HudRect drawHudElement(int el, float W, float H, float s, bool sample, bool draw = true);   // one element (the overlay)
     void drawHudSample(float W, float H, float s);   // every element with made-up values (the main menu's settings)
