@@ -627,22 +627,74 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does 40
-// on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
+// 5.5: the head is a head-sized box on top, not the full-width top 20%. Owner 2026-10-27: the head hitbox is just the
+// head and the body ends at its bottom: a shot beside the head over the shoulders misses (it was a body hit). The
+// sniper does 40 on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
-    printf("headshots: the head, not the shoulders\n");
+    printf("hit boxes: the body up to the head's bottom, the head, nothing beside the head\n");
     CHECK(weaponDef(WPN_SNIPER).damage == 40 && headDamage(WPN_SNIPER) == 50);
-    AABB hb = playerBox(Vec3(0, 0, 0), false);
-    AABB h = headBox(hb);
-    CHECK(h.mx.y == hb.mx.y && std::fabs(h.mn.y - (hb.mx.y - kPlayerHeight * kHeadFraction)) < 1e-5f);
-    CHECK(h.mx.x - h.mn.x < (hb.mx.x - hb.mn.x) * 0.5f && std::fabs(h.center().x) < 1e-6f);
-    Vec3 o(0, 1.62f, 10);   // level shots from 10 m in front (+z), at head height
-    CHECK(rayHitsHead(o, normalize(Vec3(0, 1.62f, 0) - o), hb));          // the middle of the head
-    CHECK(!rayHitsHead(o + Vec3(0.3f, 0, 0), Vec3(0, 0, -1), hb));       // the shoulder, at the same height
-    CHECK(!rayHitsHead(Vec3(0.3f, 5, 0), Vec3(0, -1, 0), hb));           // straight down onto the shoulder
-    CHECK(rayHitsHead(Vec3(0.05f, 5, 0), Vec3(0, -1, 0), hb));           // ...or onto the head
-    CHECK(!rayHitsHead(o + Vec3(0, -0.6f, 0), Vec3(0, 0, -1), hb));      // the chest
-    // in play: rifle bullets at the shoulder are body shots
+    // every size: standing, crouched, a giant (duel double size) crouched, a tiny player
+    struct Size { const char* name; bool crouched; float scale; };
+    for (Size sz : {Size{"standing", false, 1.0f}, Size{"crouched", true, 1.0f}, Size{"giant crouched", true, kBigScale}, Size{"tiny", false, kTinyScale}}) {
+        const Vec3 feet(2, 3, -4);
+        const AABB hb = playerBox(feet, sz.crouched, sz.scale), h = headBox(hb), body = bodyBox(hb);
+        const float H = hb.mx.y - hb.mn.y, W = hb.mx.x - hb.mn.x, seam = hb.mx.y - H * kHeadFraction;
+        CHECK(std::fabs(H - (sz.crouched ? kPlayerCrouchHeight : kPlayerHeight) * sz.scale) < 1e-4f);
+        CHECK(h.mx.y == hb.mx.y && h.mn.y == seam && body.mx.y == seam && body.mn.y == hb.mn.y);   // (one line: no gap, no overlap)
+        CHECK(body.mn.x == hb.mn.x && body.mx.x == hb.mx.x && body.mn.z == hb.mn.z && body.mx.z == hb.mx.z);   // (the body: full width)
+        CHECK(std::fabs((h.mx.x - h.mn.x) - W * kHeadWidthFraction) < 1e-4f && std::fabs(h.center().x - feet.x) < 1e-5f);
+        const float headY = seam + H * kHeadFraction * 0.5f, side = 0.5f * (W * 0.5f + W * 0.5f * kHeadWidthFraction);   // (between the head's side and the box's)
+        const Vec3 in(0, 0, -1), inv = safeInv(in), front(0, 0, 10);   // level shots from 10 m in front (+z)
+        auto shot = [&](float dx, float y, const Vec3& dir, bool* head) {
+            const Vec3 o = dir.y != 0 ? Vec3(feet.x + dx, hb.mx.y + 5, feet.z) : Vec3(feet.x + dx, y, feet.z) + front;
+            return rayHitbox(o, safeInv(dir), hb, 100.0f, head);
+        };
+        bool head = false;
+        float t = shot(0, headY, in, &head);
+        CHECK(t > 0 && head);                                               // through the head: a headshot
+        t = shot(side, headY, in, &head);
+        CHECK(t < 0);                                                       // beside the head, at head height: a miss
+        t = shot(side, hb.mx.y - 0.01f * sz.scale, in, &head);
+        CHECK(t < 0);                                                       // the corner above the shoulder: a miss
+        t = shot(side, seam - 0.01f * sz.scale, in, &head);
+        CHECK(t > 0 && !head);                                              // just below the head's bottom: the body
+        t = shot(0, seam - 0.01f * sz.scale, in, &head);
+        CHECK(t > 0 && !head);                                              // ...under the chin too
+        t = shot(0, hb.mn.y + H * 0.4f, in, &head);
+        CHECK(t > 0 && !head);                                              // the chest
+        t = shot(side, 0, Vec3(0, -1, 0), &head);
+        CHECK(t > 0 && !head && std::fabs((hb.mx.y + 5 - t) - seam) < 1e-3f); // straight down past the head: the shoulder's top
+        t = shot(0.05f * sz.scale, 0, Vec3(0, -1, 0), &head);
+        CHECK(t > 0 && head && std::fabs((hb.mx.y + 5 - t) - hb.mx.y) < 1e-3f); // ...or onto the head
+        // from below, straight up through the body toward the head: the body is hit first (it was a headshot)
+        CHECK(rayHitbox(feet - Vec3(0, 2, 0), safeInv(Vec3(0, 1, 0)), hb, 100.0f, &head) > 0 && !head);
+        // the knife's wider swing: both boxes grow, the gap beside the head stays
+        CHECK(rayHitbox(Vec3(feet.x + side, headY, feet.z) + front, inv, hb, 100.0f, &head, kKnifeGrow) < 0);
+        CHECK(rayHitbox(Vec3(hb.mx.x + kKnifeGrow * 0.5f, seam - 0.01f, feet.z) + front, inv, hb, 100.0f, &head, kKnifeGrow) > 0 && !head);
+        // blasts: the nearest point is on the body or the head (over the shoulder: as far as the head's side)
+        const Vec3 over(feet.x + W * 0.5f, headY, feet.z), c = hitboxClosest(hb, over);
+        CHECK(std::fabs(length(c - over) - std::min(W * 0.5f * (1 - kHeadWidthFraction), headY - seam)) < 1e-4f);
+        CHECK(length(hitboxClosest(hb, feet + Vec3(0, H * 0.4f, 0)) - (feet + Vec3(0, H * 0.4f, 0))) < 1e-6f);   // (inside: itself)
+        // the grapple's ray (pmove, the server's and the client's prediction): beside the head it flies on to the wall
+        Map m;
+        std::string err;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nbox -0.5 0 -20 0.5 9 20\nspawn any 8 0 0\n", &err));
+        for (int k = 0; k < 3; k++) {
+            const AABB tb = playerBox(Vec3(3, 2, 0), sz.crouched, sz.scale), th = headBox(tb);
+            const float tw = (tb.mx.z - tb.mn.z) * 0.5f, tSide = 0.5f * (tw + tw * kHeadWidthFraction);
+            const float tSeam = th.mn.y, tHead = th.center().y;
+            const Vec3 tgt = k == 0 ? Vec3(3, tHead, 0) : k == 1 ? Vec3(3, tHead, tSide) : Vec3(3, tSeam - 0.02f, tSide);
+            const Vec3 eye(8, tgt.y, 0);   // (level: the same height)
+            MoveState ms; ms.pos = eye - Vec3(0, kEyeHeight, 0);
+            HookProbe hp; hp.box[0] = tb; hp.id[0] = 5; hp.n = 1;
+            pmove(ms, hookAim(eye, tgt, BTN_GRAPPLE), m, &hp);
+            CHECK((ms.flags & MF_HOOKED) && hp.hit == (k == 1 ? -1 : 0) && hp.head == (k == 0));
+            if (k == 1) CHECK(std::fabs(ms.hookPoint.x - 0.5f) < 0.01f);   // (caught on the wall behind them)
+        }
+        printf("  %s: head %.2f-%.2f m, the body below it; beside the head misses\n", sz.name, seam - feet.y, hb.mx.y - feet.y);
+    }
+    // in play: rifle bullets at the head, beside the head (a miss), and just below the head's bottom (the body);
+    // the client's ray against the player where it sees them gives the server's answer
     Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
@@ -650,33 +702,64 @@ static void testHeadBox(uint16_t port) {
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
     pump(s, cls, 2.0, idle);
-    auto& sa = s.players_[c[0].clientId()];
-    auto& sb = s.players_[c[1].clientId()];
-    for (float side : {0.0f, 0.3f}) {   // the head, then the shoulder
-        sa.move.pos = {10, 0, 19}; sb.move.pos = {-10, 0, 19}; sa.move.vel = sb.move.vel = {};
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    const Vec3 A0(10, 0, 19), B0(-10, 0, 19);
+    const AABB bb = s.hitBox(B0, false);
+    const float seam = headBox(bb).mn.y, headY = headBox(bb).center().y, beside = 0.3f;   // (the head's side 0.18, the body's 0.4)
+    struct Aim { const char* name; float side, y; int expect; };   // expect: 2 head, 1 body, 0 a miss
+    for (Aim am : {Aim{"head", 0, headY, 2}, Aim{"beside the head", beside, headY, 0}, Aim{"just below the head", beside, seam - 0.03f, 1}}) {
+        sa.move.pos = A0; sb.move.pos = B0; sa.move.vel = sb.move.vel = {};
         sb.health = 100;
+        const Vec3 eye = A0 + Vec3(0, kEyeHeight, 0), tgt = B0 + Vec3(0, am.y, am.side), d = normalize(tgt - eye);
         auto aim = [&](int i, uint16_t b) {
             UserCmd u; if (i != 0) return u;
-            Vec3 eye = sa.move.pos + Vec3(0, kEyeHeight, 0), tgt = sb.move.pos + Vec3(0, 1.62f, side);
-            Vec3 d = normalize(tgt - eye);
             u.pitch = std::asin(d.y); u.yaw = std::atan2(-d.x, -d.z); u.weapon = WPN_RIFLE; u.buttons = b;
             return u;
         };
-        pump(s, cls, 0.4, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, 0); });
+        pump(s, cls, 0.4, [&](int i) { sa.move.pos = A0; sb.move.pos = B0; return aim(i, 0); });
         c[0].takeEvents();
+        {   // the client: its own aim against the target as it draws them (game.cpp's sparks test exactly this)
+            NetClient::PlayerArray ps = c[0].interpolatedPlayers();
+            const Vec3 ad = angleForward(aim(0, 0).yaw, aim(0, 0).pitch);
+            bool head = false;
+            const float t = ps[ib].valid ? rayHitbox(eye, safeInv(ad), playerBox(ps[ib].snap.pos, false, 1.0f), 100.0f, &head) : -1.0f;
+            CHECK(ps[ib].valid && (t < 0 ? 0 : head ? 2 : 1) == am.expect);
+        }
         float hp0 = sb.health;
         int d0 = sb.deaths;
-        pump(s, cls, 0.25, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, BTN_FIRE); });
+        pump(s, cls, 0.25, [&](int i) { sa.move.pos = A0; sb.move.pos = B0; return aim(i, BTN_FIRE); });
         float dealt = hp0 - sb.health;
-        float per = side == 0 ? kRifleHeadDamage : weaponDef(WPN_RIFLE).damage;
-        float n = dealt / per;
-        printf("  rifle at the %s: %.2f damage (%.2f bullets of %.2f)\n", side == 0 ? "head" : "shoulder", dealt, n, per);
-        CHECK(sb.deaths == d0 && dealt > 0 && std::fabs(n - std::round(n)) < 0.02f);
         pump(s, cls, 0.2, idle);
         int heads = 0, bodies = 0;   // the hit events: headshots marked "h" (the client draws them red)
-        for (auto& e : c[0].takeEvents()) if (e.type == EV_HIT && e.b == c[1].clientId()) (e.text == "h" ? heads : bodies)++;
-        printf("  hit events: %d head, %d body\n", heads, bodies);
-        CHECK(side == 0 ? (heads > 0 && bodies == 0) : (heads == 0 && bodies > 0));
+        for (auto& e : c[0].takeEvents()) if (e.type == EV_HIT && e.b == ib) (e.text == "h" ? heads : bodies)++;
+        printf("  rifle %s: %.2f damage, hit events %d head, %d body\n", am.name, dealt, heads, bodies);
+        CHECK(sb.deaths == d0);
+        if (am.expect == 0) CHECK(dealt == 0 && heads == 0 && bodies == 0);
+        else {
+            float per = am.expect == 2 ? kRifleHeadDamage : weaponDef(WPN_RIFLE).damage, n = dealt / per;
+            CHECK(dealt > 0 && std::fabs(n - std::round(n)) < 0.02f);
+            CHECK(am.expect == 2 ? (heads > 0 && bodies == 0) : (heads == 0 && bodies > 0));
+        }
+    }
+    // projectiles: a crossbow bolt through the head, past it, and just under it (the server's projectile test)
+    for (Aim am : {Aim{"head", 0, headY, 2}, Aim{"beside the head", beside, headY, 0}, Aim{"just below the head", beside, seam - 0.03f, 1}}) {
+        auto pin = [&](int) { sa.move.pos = A0; sb.move.pos = B0; sa.move.vel = sb.move.vel = {}; return UserCmd(); };
+        pump(s, cls, 0.1, pin);
+        sb.health = 100;
+        c[0].takeEvents();
+        for (auto& pr : s.projectiles_) pr.active = false;
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = 4200; pr.type = WPN_CROSSBOW; pr.owner = ia;
+        pr.pos = B0 + Vec3(1.5f, am.y, am.side); pr.vel = {-weaponDef(WPN_CROSSBOW).projSpeed, 0, 0}; pr.dieAt = s.time() + 0.2;
+        pump(s, cls, 0.3, pin);
+        const float dealt = 100 - sb.health;
+        printf("  bolt %s: %.1f damage\n", am.name, dealt);
+        const float body = (float)weaponDef(WPN_CROSSBOW).damage;
+        CHECK(std::fabs(dealt - (am.expect == 2 ? std::max(body, headDamage(WPN_CROSSBOW)) : am.expect == 1 ? body : 0.0f)) < 1e-3f);
+        sb.health = 100;
     }
     s.stop();
 }

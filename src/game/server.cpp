@@ -2440,17 +2440,19 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
     int hit = -1;
-    AABB hitBb;
+    bool hitHead = false;
     Vec3 inv = safeInv(dir);
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == id || !players_[i].connected || !players_[i].alive) continue;
-        AABB bb = rewoundHitBox(i, vt);   // newest recorded state at or before the shooter's view time
-        bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow;
+        // where they were at the shooter's view time (the newest recorded state at or before it): the body and the
+        // head, nothing beside the head (rayHitbox)
+        const AABB& bb = rewoundHitBox(i, vt);
+        bool inHead;
+        float t = rayHitbox(eye, inv, bb, best, &inHead, grow);
         if (pierce) { // sniper collateral: every player along the line up to the wall is hit
-            float t = rayAABB(eye, inv, bb, best);
             if (t < 0) continue;
             float d = dmg;
-            const bool head = headDmg > 0 && rayHitsHead(eye, dir, bb);
+            const bool head = headDmg > 0 && inHead;
             if (head) { d = std::max(d, headDmg); headHit_[i] = true; }
             if (ex.falloff) d *= weaponFalloff(ex, t);
             hitDist_[i] = t;
@@ -2459,11 +2461,10 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             if (head && headPer) headPer[i] += d;
             continue;
         }
-        float t = rayAABB(eye, inv, bb, best);
-        if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
+        if (t >= 0 && t < best) { best = t; hit = i; hitHead = inHead; }
     }
     if (hit < 0) return;
-    const bool head = headDmg > 0 && rayHitsHead(eye, dir, hitBb);   // (the head, not the shoulders)
+    const bool head = headDmg > 0 && hitHead;   // (the head, not the shoulders)
     if (head) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }
     if (ex.falloff) dmg *= weaponFalloff(ex, best);
     hitDist_[hit] = best;
@@ -2654,7 +2655,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, floa
         Vec3 inv = safeInv(dir);
         for (int i = 0; i < kMaxPlayers; i++) {
             if (i == id || !players_[i].connected || !players_[i].alive) continue; // your own ricochets never hit you
-            float t = rayAABB(o, inv, rewoundHitBox(i, vt), best);
+            float t = rayHitbox(o, inv, rewoundHitBox(i, vt), best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
         if (hit >= 0) { dmgPer[hit] += dmg; hitDist_[hit] = travelled + best; return; }
@@ -2863,14 +2864,17 @@ void Server::stepProjectile(Projectile& pr) {
         float wall = map_.raycast(pr.pos, dir, len, &n);
         float best = wall >= 0 ? wall : len;
         int hitPlayer = -1;
-        AABB hitBb;
+        bool hitHead = false;
+        AABB hitBb;   // the part it hit: their body or their head (stickies and stuck props sit inside it)
         Vec3 inv = safeInv(dir);
         for (int k = 0; k < projTargets_; k++) {
             int i = projTargetId_[k];
             if (i == pr.owner || !players_[i].alive) continue;   // (killed earlier this tick)
-            float t = rayAABB(pr.pos, inv, projTargetBox_[k], best);
-            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = projTargetBox_[k]; }
+            bool inHead;
+            float t = rayHitbox(pr.pos, inv, projTargetBox_[k], best, &inHead);
+            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
+        if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
         if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
@@ -2918,7 +2922,7 @@ void Server::stepProjectile(Projectile& pr) {
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
             if (hitPlayer >= 0) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
-                if (head > 0 && rayHitsHead(pr.pos, dir, hitBb)) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
+                if (head > 0 && hitHead) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
                 const WeaponExtra& ex = weaponExtra(pr.type);
                 const bool wantDist = ex.falloff || activeWeaponLogic();   // (only a weapon set needs it)
                 float dist = wantDist && pr.owner >= 0 && pr.owner < kMaxPlayers ? length(at - shooterEye(pr.owner)) : 0.0f;
@@ -3016,7 +3020,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         auto& p = players_[i];
         if (!p.connected || !p.alive) continue;
         AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
-        Vec3 closest = vmax(b.mn, vmin(at, b.mx));
+        Vec3 closest = hitboxClosest(b, at);   // (the body or the head: a blast over the shoulders is as far as the head)
         float d = length(closest - at);
         if (d > wd.splashRadius) continue;
         // Splash is blocked by walls between the blast and the target's center.

@@ -93,10 +93,39 @@ constexpr float kHookCooldown = 1.0f;   // after the hook is released
 // The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
 AABB playerBox(const Vec3& feet, bool crouched, float scale = 1.0f);
 inline AABB playerBox(const MoveState& m) { return playerBox(m.pos, (m.flags & MF_CROUCHED) != 0, moveScale(m.mods)); }
-// The head inside a hitbox: a head-sized box on top, centred (owner 5.5: shoulders aren't headshots).
-AABB headBox(const AABB& hitbox);
-// A shot along o + dir * t that hit `hitbox` at entry: is it a headshot? (It passes through the head box.)
-bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
+// What hits test, inside a player's hitbox (the hull above): two boxes. The head is a head-sized box on top, centred
+// (owner 5.5: shoulders aren't headshots); the body is the full width from the feet up to the head's bottom (owner
+// 2026-10-27: nothing above that line but the head, so a shot past the head over the shoulders misses). Crouching and
+// size modifiers scale both with the hull. Movement and zones still use the whole hull.
+// (inline: hitscan tests every player for every pellet)
+inline AABB headBox(const AABB& b) {
+    Vec3 c = b.center();
+    float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
+    return {{c.x - hx, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, c.z - hz}, {c.x + hx, b.mx.y, c.z + hz}};
+}
+inline AABB bodyBox(const AABB& b) {   // (its top is the same expression as the head's bottom: no gap, no overlap)
+    return {b.mn, {b.mx.x, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, b.mx.z}};
+}
+// A ray o + dir * t (inv = safeInv(dir)) against a player as hits see them: the entry into the nearer of body and head
+// in [0, maxT], else -1 (two slab tests, nothing else). *head: the head was hit first (a tie is the body's). grow: both
+// boxes this much wider each side (the knife swing).
+inline float rayHitbox(const Vec3& o, const Vec3& inv, const AABB& hitbox, float maxT, bool* head = nullptr, float grow = 0.0f) {
+    AABB body = bodyBox(hitbox), hd = headBox(hitbox);
+    if (grow != 0.0f) {
+        body.mn.x -= grow; body.mn.z -= grow; body.mx.x += grow; body.mx.z += grow;
+        hd.mn.x -= grow; hd.mn.z -= grow; hd.mx.x += grow; hd.mx.z += grow;
+    }
+    const float tb = rayAABB(o, inv, body, maxT), th = rayAABB(o, inv, hd, maxT);
+    const bool h = th >= 0 && (tb < 0 || th < tb);
+    if (head) *head = h;
+    return h ? th : tb;
+}
+// The point of the two boxes nearest p (blast distances)
+inline Vec3 hitboxClosest(const AABB& hitbox, const Vec3& p) {
+    const AABB body = bodyBox(hitbox), hd = headBox(hitbox);
+    const Vec3 a = vmax(body.mn, vmin(p, body.mx)), b = vmax(hd.mn, vmin(p, hd.mx));
+    return dot(a - p, a - p) <= dot(b - p, b - p) ? a : b;
+}
 // the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
@@ -133,7 +162,7 @@ struct HookProbe {
     AABB box[kMax];
     uint8_t id[kMax] = {};
     int hit = -1;        // out: index of the box the hook caught (-1: none, or the map)
-    bool head = false;   // out: the ray went through that player's head box
+    bool head = false;   // out: the hook caught that player's head (rayHitbox)
 };
 // Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players the
 // grapple can catch (server only; prediction hooks the map and the server's state corrects it).
