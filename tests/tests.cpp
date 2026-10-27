@@ -658,6 +658,145 @@ static void testGrappleAgainstWall() {
     }
 }
 
+// Acid (map material 11): 10% of max health on contact, then 10% a second while touching it, counted in pmove's 1 ms
+// steps (the same at every tick rate, and the same on the client's prediction as on the server); a new contact only
+// after kAcidRearmMs fully out; on the wire while it runs (protocol 45); the server takes the health, pauses regen,
+// and alone decides the death ("dissolved", the knocker's kill however long it took). Not in the freeze.
+static void testAcid() {
+    printf("acid: contact hit, 10%% a second at any tick rate, re-contact, the wire, the server's health and death\n");
+    const char* text = "box -20 -1 -20 20 0 20\nacid -3 0 -3 3 0.25 3\nspawn any 0 0 -10\n";
+    Map m;
+    std::string err;
+    CHECK(m.parse(text, &err) && m.acid.size() == 1);
+    auto still = [](int ms) { UserCmd c; c.msec = (uint8_t)ms; return c; };
+    auto stand = [&](MoveState& s, int ms, int cmdMs) { for (int t = 0; t < ms; t += cmdMs) pmove(s, still(cmdMs), m); };
+    for (int rate : {1000, 500, 250, 125}) {   // one second standing in it, at each tick rate's command length
+        MoveState s; s.flags = MF_ONGROUND;
+        stand(s, 1000, 1000 / rate);
+        printf("  %4d Hz: %.5f of max health in 1 s (contact + 1 s)\n", rate, s.acidTaken);
+        CHECK(std::fabs(s.acidTaken - (kAcidContact + kAcidPerSec)) < 1e-4f && s.acidOutMs == 0);
+    }
+    {   // the contact hit alone on entry; nothing outside it; back in after 0.4 s out: no new contact, after 0.5 s: one
+        MoveState s; s.flags = MF_ONGROUND; s.pos = {0, 0, 10};
+        stand(s, 200, 8);
+        CHECK(s.acidTaken == 0 && s.acidOutMs == kAcidRearmMs);
+        s.pos = {0, 0, 0}; stand(s, 1, 1);
+        CHECK(std::fabs(s.acidTaken - (kAcidContact + kAcidPerSec * 0.001f)) < 1e-6f);
+        float before = s.acidTaken;
+        s.pos = {0, 0, 10}; stand(s, 400, 8);
+        CHECK(s.acidTaken == before && s.acidOutMs == 400);
+        s.pos = {0, 0, 0}; stand(s, 1, 1);
+        CHECK(std::fabs(s.acidTaken - before - kAcidPerSec * 0.001f) < 1e-6f);   // (a bumpy edge: no second contact)
+        before = s.acidTaken;
+        s.pos = {0, 0, 10}; stand(s, 504, 8);
+        CHECK(s.acidOutMs == kAcidRearmMs);
+        s.pos = {0, 0, 0}; stand(s, 1, 1);
+        CHECK(std::fabs(s.acidTaken - before - kAcidContact - kAcidPerSec * 0.001f) < 1e-6f);
+    }
+    {   // the wire: acidOutMs rides on mods bit 64 while it's below kAcidRearmMs (2 bytes); protocol 44 reads as before
+        auto roundTrip = [](const MoveState& in, uint16_t proto, MoveState& out, int& size) {
+            Snapshot sn; sn.tickRate = 1000; sn.self = in;
+            uint8_t buf[512];
+            Writer w(buf, sizeof buf);
+            writeSnapshotClient(w, sn);
+            size = w.size();
+            Reader r(buf, w.size());
+            Snapshot back;
+            bool ok = readSnapshotClient(r, back, proto);
+            out = back.self;
+            return ok;
+        };
+        MoveState a; a.mods = MOVE_TINY;
+        MoveState got; int n0 = 0, n1 = 0;
+        CHECK(roundTrip(a, kProtocolVersion, got, n0) && got.acidOutMs == kAcidRearmMs && got.mods == MOVE_TINY);
+        CHECK(roundTrip(a, 44, got, n0) && got.acidOutMs == kAcidRearmMs && got.mods == MOVE_TINY);   // (the bytes are protocol 44's)
+        a.acidOutMs = 123; a.acidTaken = 0.5f;
+        CHECK(roundTrip(a, kProtocolVersion, got, n1) && got.acidOutMs == 123 && got.mods == MOVE_TINY && got.acidTaken == 0 && n1 == n0 + 2);
+        CHECK(demo::convertible(44) && kSnapAcidSince == kProtocolVersion);
+    }
+    auto fresh = [&](Server& s, int n) {
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(text));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        s.timeMs_ = 10000;
+        for (int i = 0; i < n; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = s.lifeMaxHealth(); p.team = TEAM_A; p.joinId = 100 + i;
+            p.move = MoveState(); p.move.flags = MF_ONGROUND; p.move.pos = {0, 0, 10.0f + 2 * i};
+        }
+    };
+    auto run = [](Server& s, int id, int ms, int cmdMs, MoveState* client = nullptr) {   // standing still, ms of it
+        for (int t = 0; t < ms && s.players_[id].alive; t += cmdMs) {
+            UserCmd c; c.msec = (uint8_t)cmdMs;
+            s.timeMs_ += (uint64_t)cmdMs;
+            s.runPlayerCmdForTest(id, c);
+            if (client) pmove(*client, c, s.map_);   // (the client's prediction of the same commands)
+        }
+    };
+    for (float maxHp : {100.0f, 500.0f})
+        for (int cmdMs : {1, 8}) {   // the server takes what pmove counted: the same health at 1000 Hz and 125 Hz
+            Server s;
+            if (maxHp != 100.0f) { s.cfg_.custom.name = "acidtest"; s.cfg_.custom.health = (int)maxHp; }
+            fresh(s, 1);
+            CHECK(s.lifeMaxHealth() == maxHp && s.players_[0].health == maxHp);
+            s.players_[0].move.pos = {0, 0, 0};
+            MoveState client = s.players_[0].move;
+            run(s, 0, 1000, cmdMs, &client);
+            const float lost = maxHp - s.players_[0].health;
+            printf("  %3.0f max health, %d ms commands: %.3f lost in 1 s (predicted %.3f)\n", maxHp, cmdMs, lost, client.acidTaken * maxHp);
+            CHECK(std::fabs(lost - maxHp * (kAcidContact + kAcidPerSec)) < maxHp * 1e-4f);
+            CHECK(std::fabs(client.acidTaken * maxHp - lost) < maxHp * 1e-4f);   // the prediction showed the same
+            CHECK(s.players_[0].move.acidTaken == 0 && s.players_[0].lastDamagedAt >= s.time() - 0.01);   // (regen waits)
+        }
+    {   // the death: about 9 s in (10% then 10% a second), the server's alone, "dissolved", nobody's kill
+        Server s; fresh(s, 1);
+        s.players_[0].move.pos = {0, 0, 0};
+        const uint64_t t0 = s.timeMs_;
+        run(s, 0, 20000, 1);
+        const double took = (s.timeMs_ - t0) / 1000.0;
+        printf("  dissolved after %.3f s in it\n", took);
+        CHECK(!s.players_[0].alive && std::fabs(took - 9.0) < 0.01);
+        int kills = 0;
+        for (auto& e : s.players_[0].events)
+            if (e.type == EV_KILL) { kills++; CHECK(e.a == 255 && (e.c & KILL_WEAPON) == kDamageAcid); }
+        CHECK(kills == 1 && s.players_[0].deaths == 1);
+    }
+    {   // knocked in: the knocker's kill, though the death comes long after kRingOutCredit
+        Server s; fresh(s, 2);
+        s.damagePlayer(0, 1, 5, WPN_ROCKET, Vec3());
+        s.timeMs_ += 1000;
+        s.players_[0].move.pos = {0, 0, 0};
+        run(s, 0, 20000, 8);
+        CHECK(!s.players_[0].alive && s.players_[1].kills == 1);
+        bool credited = false;
+        for (auto& e : s.players_[1].events) credited |= e.type == EV_KILL && e.a == 1 && e.b == 0 && (e.c & KILL_WEAPON) == kDamageAcid;
+        CHECK(credited);
+    }
+    {   // the freeze: no damage (nativeCanDamage's phases), and nothing saved up for later
+        Server s; fresh(s, 1);
+        s.ms_.phase = PHASE_FREEZE;
+        s.players_[0].move.pos = {0, 0, 0};
+        run(s, 0, 500, 8);
+        CHECK(s.players_[0].health == 100 && s.players_[0].move.acidTaken == 0);
+    }
+    {   // bots: a pool on the floor is wet ground (dearer), not a hole: routes still cross it when there's no way round
+        NavGraph g;
+        g.build(m);
+        int wet = 0;
+        for (auto& nd : g.nodes) wet += nd.wet;
+        const int a = g.nodeAt({0, 0, -10}), b = g.nodeAt({0, 0, 0});
+        std::vector<int> path;
+        CHECK(wet >= 1 && a >= 0 && b >= 0 && g.nodes[b].wet && !g.nodes[a].wet && g.findPath(a, b, path));
+        Map corridor;   // a 3 m wide corridor flooded across: the only way, so the route goes through
+        CHECK(corridor.parse("box -1.5 -1 -20 1.5 0 20\nbox -2.5 0 -20 -1.5 4 20\nbox 1.5 0 -20 2.5 4 20\nacid -1.5 0 -2 1.5 0.2 2\nspawn any 0 0 -10\n"));
+        NavGraph h;
+        h.build(corridor);
+        const int c0 = h.nodeAt({0, 0, -10}), c1 = h.nodeAt({0, 0, 10});
+        CHECK(c0 >= 0 && c1 >= 0 && h.findPath(c0, c1, path));
+    }
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -1891,6 +2030,18 @@ static void testMapConverter() {
         CHECK(a.parse(v1) && b.parse(out) && a.formatVersion == 1 && b.formatVersion == kMapFormatVersion);
         CHECK(a.stairs.size() == 1 && b.stairs.size() == 1 && a.setting == "old town" && b.setting == a.setting && a.title == "Old");
         CHECK(a.id() == b.id() && a.sourceText() == out);                                     // (one identity for a map, whatever copy a peer holds)
+    }
+    {   // version 3 (nograpple, before acid): only the version line changes, and the map is the same
+        const std::string v3 = "version 3\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base;
+        std::string o;
+        CHECK(upgradeMapText(v3, &o) && mapTextVersion(o) == 4 && o == "version 4\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base);
+        Map a, b;
+        CHECK(a.parse(v3) && b.parse(o) && a.formatVersion == 3 && b.formatVersion == 4 && a.warnings.empty() && a.acid.empty());
+        CHECK(a.brushes.size() == b.brushes.size() && a.brushes[0].material == kMatNoGrapple && a.serialize() == b.serialize());
+        Map c;   // and acid itself, from version 4 on: read, written back, kept out of the bounds and the collision grid
+        CHECK(c.parse("version 4\nacid -2 0 -2 2 0.3 2\n" + base) && c.warnings.empty() && c.brushes[0].material == kMatAcid && c.acid.size() == 1);
+        CHECK(c.serialize().find("acid -2 0 -2 2 0.3 2\n") != std::string::npos && !c.boxSolid(playerBox({0, 0, 0}, false)) && c.inAcid(playerBox({0, 0, 0}, false)));
+        CHECK(c.bounds.mx.y == 0 && c.raycast({0, 2, 0}, {0, -1, 0}, 10) > 1.99f);   // (shots and sight go through it to the floor)
     }
     for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
         std::string o;
@@ -3354,7 +3505,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 11 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && nextMapMaterial(kMatNoGrapple) == 0);   // M: ..., lava, trim, clip, nograpple, base
+    CHECK(seen.size() == 12 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == 0);   // M: ..., lava, trim, clip, nograpple, acid, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -3455,12 +3606,13 @@ static void testIncrementalEdits() {
     auto r = [&](float a, float b) { return std::uniform_real_distribution<float>(a, b)(rng); };
     auto same = [&](const Map& a, const Map& b) {
         if (a.brushes.size() != b.brushes.size() || a.gridW != b.gridW || a.gridH != b.gridH || a.gridX0 != b.gridX0 || a.gridZ0 != b.gridZ0 ||
-            a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.cells.size() != b.cells.size() ||
+            a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.acid.size() != b.acid.size() || a.cells.size() != b.cells.size() ||
             memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0)
             return false;
         for (size_t k = 0; k < a.brushes.size(); k++)
             if (memcmp(&a.brushes[k].box, &b.brushes[k].box, sizeof(AABB)) || a.brushes[k].material != b.brushes[k].material || a.brushes[k].generated != b.brushes[k].generated) return false;
         for (size_t k = 0; k < a.lava.size(); k++) if (memcmp(&a.lava[k], &b.lava[k], sizeof(AABB))) return false;
+        for (size_t k = 0; k < a.acid.size(); k++) if (memcmp(&a.acid[k], &b.acid[k], sizeof(AABB))) return false;
         for (size_t c = 0; c < a.cells.size(); c++) {
             uint32_t na = a.cells[c].end - a.cells[c].start, nb = b.cells[c].end - b.cells[c].start;
             if (na != nb || memcmp(&a.cellBrushes[a.cells[c].start], &b.cellBrushes[b.cells[c].start], na * sizeof(uint16_t))) return false;
@@ -8080,7 +8232,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},

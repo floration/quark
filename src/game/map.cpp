@@ -306,8 +306,10 @@ static void upgradeMap1to2(std::vector<std::string>& lines) {
 using MapUpgradeStep = void (*)(std::vector<std::string>& lines);
 // 2 -> 3: the nograpple material was added; a version 2 file has none, so nothing changes
 static void upgradeMap2to3(std::vector<std::string>&) {}
+// 3 -> 4: the acid material was added; a version 3 file has none, so nothing changes
+static void upgradeMap3to4(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -655,10 +657,10 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
         } else if (kw == "title") {
             ls.rest(title);
             ok = cleanMapTitle(title);   // (the same rule as the editor's title edit)
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip" || kw == "nograpple") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip" || kw == "nograpple" || kw == "acid") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : kw == "nograpple" ? kMatNoGrapple : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : kw == "nograpple" ? kMatNoGrapple : kw == "acid" ? kMatAcid : 0;
             hasWallbang |= b.material == 2;
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
@@ -878,7 +880,8 @@ std::string Map::serialize() const {
         auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple"};
+    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
+    static_assert(sizeof matNames / sizeof *matNames == kMapMaterials, "a file keyword per material");
     for (auto& br : brushes) if (!br.generated) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
@@ -1213,7 +1216,8 @@ static void gridShape(const AABB& bounds, float& gx0, float& gz0, int& gw, int& 
 
 bool Map::buildGrid() {
     lava.clear();   // (touch it and die)
-    for (auto& b : brushes) if (b.material == 7) lava.push_back(b.box);
+    acid.clear();   // (touch it and it hurts: pmove)
+    for (auto& b : brushes) if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
     gridShape(bounds, gridX0, gridZ0, gridW, gridH);
     size_t ncells = (size_t)gridW * gridH;
     // count per cell, then fill: one allocation, refused before it's made if it's too big
@@ -1318,6 +1322,10 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
     if (old.material == 7 || (op != 2 && b.material == 7)) {
         lava.clear();
         for (auto& x : brushes) if (x.material == 7) lava.push_back(x.box);
+    }
+    if (old.material == kMatAcid || (op != 2 && b.material == kMatAcid)) {
+        acid.clear();
+        for (auto& x : brushes) if (x.material == kMatAcid) acid.push_back(x.box);
     }
     const uint16_t ix = (uint16_t)i;
     if (oldSolid)   // out of the cells it was in

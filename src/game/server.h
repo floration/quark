@@ -217,6 +217,8 @@ struct ServerPlayer {
     int lastHitBy = -1;
     uint32_t lastHitByJoin = 0;
     double lastHitByAt = -1e9;
+    double acidSince = -1;   // when this acid contact began (-1: out of acid kAcidRearmMs or more): a death in it credits
+                             // a hit up to kRingOutCredit before then, however long they stayed in (takeAcid)
     // The command clock (seconds on the server clock): advanced by each command's msec, kept within
     // [time() - kCmdClockLag, time()]. Refire is timed by it (the Quake 3 way) rather than by when a packet arrived,
     // so a shot fires on the command that ends its cooldown, with that command's aim. -1: no command yet.
@@ -451,7 +453,8 @@ public:
     void killPlayer(int victim, int killer, int weapon);
     void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
-    int ringOutKiller(int victim) const;
+    int ringOutKiller(int victim, double since = -1) const;   // (since: count the credit window back from then, not now)
+    bool takeAcid(int id);   // the acid this command's pmove counted: the health off, a death (true) credited
     void muffledGunfire(int shooter, int weapon);   // X9: EV_GUNFIRE to the players who can't see the shot but are near   // who a fall / lava / "kill" now credits (T21), or -1
     // A weapon's hit on a player: the weapon set's hit / kill slots around damagePlayer (no set logic: damagePlayer)
     void weaponHit(int victim, int attacker, float dmg, const Vec3& knock, int weapon, bool alt, float dist, bool direct, float splash);

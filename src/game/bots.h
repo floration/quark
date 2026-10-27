@@ -115,7 +115,7 @@ enum class NavKind : uint8_t { Bots, Surfaces };
 
 struct NavGraph {
     NavKind kind = NavKind::Bots;
-    struct Node { float x0, z0, x1, z1, y; };
+    struct Node { float x0, z0, x1, z1, y; bool wet = false; };   // wet: an acid pool on the top (bots: dearer to cross, kAcidNavCost)
     std::vector<Node> nodes;
     std::vector<int> surf;     // per node: the brush whose top it is (pieces of one top link only where they meet)
     std::vector<int> region;   // per node: its region

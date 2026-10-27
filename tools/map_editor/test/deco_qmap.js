@@ -1,7 +1,7 @@
 // A tiny .qmap -> map JSON reader for the decoration tests when build/quark_maptool is missing (the shape of
 // tools/map_editor/INTERFACE.md; only what the decoration engine reads). The helper's `parse` is the real one.
 'use strict';
-const MATS = ['box', 'accent', 'wallbang', 'metal', 'glow', 'far', 'water', 'lava', 'trim', 'clip'];
+const MATS = ['box', 'accent', 'wallbang', 'metal', 'glow', 'far', 'water', 'lava', 'trim', 'clip', 'nograpple', 'acid'];
 function parseQmap(text, name) {
     const m = { name: name || '', title: '', formatVersion: 1, brushes: [], groups: [], spawns: [], sites: [], hill: null, points: [], checkpoints: [],
                 path: [], ladders: [], stairs: [], lights: [] };

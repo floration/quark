@@ -2,6 +2,7 @@
 #pragma once
 #include "../common/qmath.h"
 #include "map.h"
+#include "gamedefs.h"
 
 struct UserCmd {
     uint32_t seq = 0;       // monotonically increasing per client
@@ -54,6 +55,11 @@ struct MoveState {
     float landSpeed = 0;   // ME_LAND: the hardest landing's speed in that call, m/s
     uint16_t phaseMs = 0;   // ms since you last landed or left the floor (MF_ONGROUND says which), at most 65535: counted
                             // only while a custom mode's movement equation reads p.air / p.ground (moveexpr.h), else 0
+    uint16_t acidOutMs = kAcidRearmMs;   // ms fully out of acid (0: touching it in the last step), up to kAcidRearmMs: there,
+                                         // the next touch is a new contact (its kAcidContact hit). Sent while below it
+    float acidTaken = 0;   // share of max health acid took (kAcidContact, kAcidPerSec x 1 ms per step in it): the server
+                           // takes it as damage after each command and zeroes it, so it's 0 on the wire; prediction keeps
+                           // adding (NetClient::pendingAcid: the part the server hasn't acked yet)
 };
 enum : uint8_t {
     ME_JUMP = 1,    // left the floor by a jump (a bhop off a landing too, and a jump off a ladder)
@@ -71,7 +77,7 @@ enum : uint8_t {
     MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
     MOVE_BIG = 16,         // duel "double size" / "giant snipers": the hull (and eyes) x kBigScale
     MOVE_TINY = 32,        // duel "tiny players": x kTinyScale
-};
+};                         // (64 and 128 are taken on the wire: the own state's acid and phase flags, protocol.cpp)
 constexpr float kBigScale = 2.0f, kTinyScale = 0.6f;
 inline float moveScale(uint8_t mods) { return (mods & MOVE_BIG) ? kBigScale : (mods & MOVE_TINY) ? kTinyScale : 1.0f; }
 // the MOVE_* size bit for a body scale (DuelModDef::size: 1, 2 or 0.6)

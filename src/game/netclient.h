@@ -79,7 +79,11 @@ public:
         return true;
     }
     bool selfAlive() const;
-    int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
+    // The server's health for you, less the acid your prediction counted since the command it acked (pendingAcid):
+    // acid damage shows at once. Never below 1 while the server has you alive: only it decides a death.
+    int selfHealth() const;
+    float pendingAcid() const;   // health acid took in the commands the server hasn't acked yet (0: none, or a demo)
+    float lifeMaxHealth() const; // as the server's Server::lifeMaxHealth: a duel life's, a custom mode's, or kMaxHealth
     int selfWeapon() const;
     // Interpolated view of every player at render time.
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;

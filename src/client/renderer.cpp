@@ -98,6 +98,7 @@ uniform float uBright;   // the brightness setting (exposure, before the filmic 
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
+uniform float uTime;     // seconds (wrapped every hour): acid's slow shimmer
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 finish(vec3 c) {
@@ -109,12 +110,14 @@ vec3 finish(vec3 c) {
 void main() {
     int mat = int(vMat + 0.5);
     if (uFull > 0.5) {
-        float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
-        fragColor = vec4(uFullColor * g * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
+        float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 || mat == 11 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
+        fragColor = vec4(uFullColor * g * ((mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
         return;
     }
-    if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
+    if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
         vec3 c = mat == 4 ? uGlow * 0.9
+               : mat == 11 ? mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0))      // acid: glowing toxic green, darker sides,
+                             * (0.85 + 0.15 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) // with a slow shimmer
                : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
                : mat == 7 ? vec3(1.6, 0.42, 0.08)                                                         // lava: glowing
                : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
@@ -485,7 +488,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
                U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
-               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW")};
+               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
+               U(worldProg_, "uTime")};
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
@@ -997,6 +1001,7 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
     setVec3(uWorld_.fullColor, fullbrightColor);
     glUniform1f(uWorld_.outlineW, worldOutline);
+    glUniform1f(uWorld_.time, (float)std::fmod(timeNow(), 3600.0));
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
     glUniform1f(uSky_.bright, brightness);

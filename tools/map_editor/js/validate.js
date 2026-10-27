@@ -5,7 +5,7 @@
 export const LIMITS = { extent: 4096, brushes: 60000, spawns: 256, lights: 512, ladders: 256, groups: 256, parts: 1024, stairs: 512,
   sites: 16, checkpoints: 128, path: 512, points: 16, cartChecks: 64, height: 64, title: 40, lightRadius: [0.5, 100], lightIntensity: 10 };
 
-const solid = (mat) => mat < 5 || mat === 9;   // Map::gridSolid: what players collide with
+const solid = (mat) => mat < 5 || mat === 9 || mat === 10;   // Map::gridSolid: what players collide with (nograpple 10 too)
 
 export function validateMap(m) {
   const errors = [], warnings = [];

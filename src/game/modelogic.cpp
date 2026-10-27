@@ -320,6 +320,7 @@ const ConstInfo kConsts[] = {
     {"spawn.defend", T_SPAWN, 5, "the defence's staged spawns (the stage reached)"},
     {"fell", T_WEAPON, 252, "kill cause: a fall (the void, lava)"}, {"bombed", T_WEAPON, 253, "kill cause: the bomb's blast"},
     {"drained", T_WEAPON, 254, "kill cause: the stalemate drain, damage()"},
+    {"dissolved", T_WEAPON, kDamageAcid, "kill cause: acid"},
     {"hill", T_ZONE, MZ_HILL, "the hill"}, {"sites", T_ZONE, MZ_SITES, "any bomb site"},
 };
 const ConstInfo* constByName(const std::string& n) { for (auto& c : kConsts) if (n == c.name) return &c; return nullptr; }
