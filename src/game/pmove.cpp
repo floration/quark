@@ -620,6 +620,16 @@ float moveValue(const MoveState& s, int param, const Map* map) {
     return stepTuning(s, map, t).m[param];
 }
 
+// Acid, after each 1 ms step (only on maps that have it): where the step left the hull. Deterministic, so the
+// client's prediction counts the same damage the server will take.
+static inline void acidStep(MoveState& s, const Map& map) {
+    if (map.inAcid(playerBox(s))) {
+        if (s.acidOutMs >= kAcidRearmMs) s.acidTaken += kAcidContact;   // a new contact
+        s.acidTaken += kAcidPerSec * kMoveStep;
+        s.acidOutMs = 0;
+    } else if (s.acidOutMs < kAcidRearmMs) s.acidOutMs++;
+}
+
 // A custom mode's dynamic movement equations (moveexpr.h): before each 1 ms step, the player's state (p.*) goes in
 // and the dynamic settings come out, into this command's own copy of the tuning (the static ones are already in it).
 // Out of line, so the standard path below stays as it was: one predictable branch per command.
@@ -635,6 +645,7 @@ float moveValue(const MoveState& s, int param, const Map* map) {
         exprInputs(s, &map, need, in);
         prog.run(in, t);
         pmoveStep(s, cmd, map, kMoveStep, probe, cx);
+        if (!map.acid.empty()) acidStep(s, map);
         if (need & mexpr::kPhaseInputs)
             s.phaseMs = ((s.flags & MF_ONGROUND) != 0) != ground ? 0 : (uint16_t)(s.phaseMs < 65535 ? s.phaseMs + 1 : 65535);
     }
@@ -649,7 +660,8 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     const MoveTuning& mt = moveTuning();
     if (__builtin_expect(mt.expr != nullptr, 0)) { pmoveExpr(s, cmd, map, probe, mt, {-sy, 0, -cy}, {cy, 0, -sy}, n); return; }
     const CmdCtx cx{mt, {-sy, 0, -cy}, {cy, 0, -sy}};
-    for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx);
+    if (__builtin_expect(map.acid.empty(), 1)) { for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx); return; }
+    for (int i = 0; i < n; i++) { pmoveStep(s, cmd, map, kMoveStep, probe, cx); acidStep(s, map); }
 }
 
 float moveParamBase(int i) {

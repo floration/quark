@@ -4,6 +4,7 @@
 #include <cctype>
 #include "demo.h"
 #include "gamemodes.h"
+#include "customrules.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -517,7 +518,7 @@ void NetClient::reconcile(const Snapshot& s) {
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
                  length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget &&
-                 sameCharges(mine, s.self);
+                 sameCharges(mine, s.self) && mine.acidOutMs == s.self.acidOutMs;
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
@@ -742,6 +743,32 @@ void NetClient::interpolatedPlayers(PlayerArray& out) const {
         }
     }
     for (int i = 0; i < kMaxPlayers; i++) if (!(set >> i & 1)) out[i] = InterpPlayer();   // (the rest as a fresh array has them)
+}
+
+int NetClient::selfHealth() const {
+    if (!hasSnapshot()) return 0;
+    const int hp = latest().selfHealth;
+    const float acid = hp > 0 ? pendingAcid() : 0.0f;
+    return acid > 0 ? std::max(1, (int)std::ceil(hp - acid)) : hp;
+}
+
+float NetClient::pendingAcid() const {
+    if (play_.active || !mapReady_ || map_.acid.empty() || !hasSnapshot() || !selfAlive()) return 0;
+    const Snapshot& s = latest();
+    if (!acidHurts(s.ms.phase)) return 0;
+    // pred_.acidTaken keeps adding as prediction runs; at the acked command it held what the server has taken by now
+    // (a replay starts from the server's state, whose acidTaken is 0)
+    const uint32_t k = s.ackCmdSeq % kCmdRing;
+    const float acked = predictedSeq_[k] == s.ackCmdSeq ? predicted_[k].acidTaken : 0.0f;
+    return std::max(0.0f, pred_.acidTaken - acked) * lifeMaxHealth();
+}
+
+float NetClient::lifeMaxHealth() const {
+    const ModeState* m = hasSnapshot() ? &latest().ms : nullptr;
+    const float h = duelModDef(m && m->mode == MODE_DUEL ? m->duelMod : 255).health;
+    if (h != kMaxHealth) return h;
+    const CustomRules& r = activeRules();
+    return r.active() ? (float)r.health : (float)kMaxHealth;
 }
 
 float NetClient::bodyScale() const {

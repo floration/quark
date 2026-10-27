@@ -17,16 +17,17 @@ inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go)
+    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
 };
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
-constexpr int kMapMaterials = 11;
+constexpr int kMapMaterials = 12;
 constexpr int kMatNoGrapple = 10;
-// solid to players, shots and sight (not far scenery, water, lava, trim; clip is solid to players only)
+constexpr int kMatAcid = 11;
+// solid to players, shots and sight (not far scenery, water, lava, trim, acid; clip is solid to players only)
 inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple; }
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
-inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, base
+inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, acid, base
 
 // What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
 // groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
@@ -72,7 +73,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 3;   // 3: the nograpple material
+constexpr int kMapFormatVersion = 4;   // 3: the nograpple material; 4: the acid material
 
 struct Map {
     std::string name;
@@ -159,7 +160,7 @@ struct Map {
     // back to the same float (spawn yaws to the same radians), so a saved map is exactly the map its edits made.
     std::string serialize() const;
     bool rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid (false: over the limits)
-    // One brush replaced, inserted or removed, with bounds, wallbang flag, lava list and grid left exactly as rebuild()
+    // One brush replaced, inserted or removed, with bounds, wallbang flag, lava and acid lists and grid left exactly as rebuild()
     // would leave them, but updated in place (the edit path: Midtown's full rebuild is ~0.3 ms, this a few us). The
     // generated brushes aren't remade (the caller keeps them right). false: over the grid's limit, nothing changed.
     bool setBrush(size_t i, const Brush& b) { return changeBrush(0, i, b); }
@@ -172,6 +173,8 @@ struct Map {
     bool boxSolid(const AABB& box) const;
     bool inLava(const AABB& box) const { for (auto& l : lava) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
+    bool inAcid(const AABB& box) const { for (auto& l : acid) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
+    std::vector<AABB> acid;   // acid brushes (pmove counts the damage while you touch one), from rebuild()
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr) const;   // *material: the hit brush's (-1: a moving solid)
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
@@ -231,7 +234,7 @@ struct Map {
 //                                         o multi point capture zone (box), d ladder (auto + box),
 //                                         g group (type material dir box; ins makes it empty, set keeps its parts)
 //   g part <index> <material> <6 fractions of the box>: adds a part to custom group <index>
-//   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8, clip 9 and nograpple 10 included)
+//   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8, clip 9, nograpple 10 and acid 11 included)
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and updates the grid (in place
 // for brushes and custom group parts). It doesn't serialize: m.source goes stale until m.sourceText() is asked for.

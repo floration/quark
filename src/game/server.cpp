@@ -1976,6 +1976,7 @@ void Server::spawnPlayer(int id) {
     }
     p.move = MoveState();
     p.move.pos = pos;
+    p.acidSince = -1;
     p.yaw = yaw;
     p.pitch = 0;
     p.alive = true;
@@ -2120,12 +2121,30 @@ void Server::muffledGunfire(int shooter, int weapon) {
     }
 }
 
-int Server::ringOutKiller(int victim) const {
+int Server::ringOutKiller(int victim, double since) const {
     const ServerPlayer& v = players_[victim];
     const int a = v.lastHitBy;
-    if (a < 0 || a >= kMaxPlayers || a == victim || time() - v.lastHitByAt > kRingOutCredit) return -1;
+    if (a < 0 || a >= kMaxPlayers || a == victim || (since >= 0 ? since : time()) - v.lastHitByAt > kRingOutCredit) return -1;
     const ServerPlayer& k = players_[a];
     return k.connected && k.joinId == v.lastHitByJoin && k.team != TEAM_SPECTATOR ? a : -1;
+}
+
+// Acid (gamedefs.h): pmove counted this command's share of max health in move.acidTaken, as the client's prediction
+// did, so the health the client showed comes off here; the death is the server's alone. Not in the freeze or after a
+// round (nativeCanDamage's phases), but in race too: it's the map, like lava, not another racer. Regeneration waits.
+bool Server::takeAcid(int id) {
+    ServerPlayer& p = players_[id];
+    const float share = p.move.acidTaken;
+    p.move.acidTaken = 0;
+    if (share > 0) { if (p.acidSince < 0) p.acidSince = time(); }
+    else if (p.move.acidOutMs >= kAcidRearmMs) p.acidSince = -1;   // (out long enough that the next touch is a new contact)
+    if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
+    p.health -= share * lifeMaxHealth();
+    p.lastDamagedAt = time();
+    glog(LOG_VERBOSE, "acid victim=%d dmg=%.3f health=%.2f", id, share * lifeMaxHealth(), p.health);
+    if (p.health > 0) return false;
+    killPlayer(id, ringOutKiller(id, p.acidSince), kDamageAcid);   // (knocked in: the knocker's, however long it took)
+    return true;
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -2271,6 +2290,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
     }
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
+    if ((p.move.acidTaken > 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
     // it's the only weapon this mode allows it stays in hand, unusable, until it's back.

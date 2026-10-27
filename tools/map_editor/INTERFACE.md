@@ -33,7 +33,7 @@ Server routes besides `POST /api/<command>` (see `serve.py`'s docstring): `PUT /
   "path":[[x,y,z]], "cartChecks":[0..1], "ladders":[{"min","max","auto":bool}],
   "stairs":[{"x0","z0","x1","z1","base","top","axis":"x|z","rising":±1,"solid":bool}],
   "lights":[{"pos":[x,y,z],"radius":r,"intensity":i}],
-  "materials": ["box","accent","wallbang","metal","glow","far","water","lava","trim","clip"],
+  "materials": ["box","accent","wallbang","metal","glow","far","water","lava","trim","clip","nograpple","acid"],
   "player": {"halfWidth":0.4,"height":1.8,"crouchHeight":..,"eye":..,"crouchEye":..,"stepUp":..,"jumpHeight":..} }
 ```
 

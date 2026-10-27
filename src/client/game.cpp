@@ -52,6 +52,7 @@ const ModelPalette kNoSlots;   // (props with no colour slots: the arms, the bom
 
 const char* weaponName(int w) {
     if (w == kDamageGrapple) return "grapple";
+    if (w == kDamageAcid) return "dissolved";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";

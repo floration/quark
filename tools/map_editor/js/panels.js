@@ -9,7 +9,8 @@ export const TEAMS = ["a", "b", "any", "race", ...Array.from({ length: 10 }, (_,
 const TEAM_NAMES = { a: "team A", b: "team B", any: "any", race: "race" };
 export const RANKED = ["vanilla", "vampire", "classic", "quirky", "hitscan", "instagib"];
 const MAT_NOTES = ["solid", "solid (accent colour)", "solid, hitscan passes for half damage", "solid", "solid, glows", "scenery outside the walls: not solid",
-  "water: not solid", "lava: kills", "decoration: not solid", "invisible: blocks players only"];
+  "water: not solid", "lava: kills", "decoration: not solid", "invisible: blocks players only", "solid, the grapple can't latch onto it",
+  "acid: not solid, 10% of max health on touch, then 10% a second"];
 const D2R = Math.PI / 180;
 const X = LIMITS.extent, clampX = (v) => Math.max(-X, Math.min(X, v));   // (every coordinate the game loads: within 4096 m)
 // the keys the Map tab shows: it redraws only when one of them changes

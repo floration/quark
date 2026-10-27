@@ -21,7 +21,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const FS = `
-uniform vec3 uCol[11]; uniform vec3 uSun; uniform vec3 uFloor; uniform vec3 uFog; uniform vec3 uCam; uniform vec3 uSky;
+uniform vec3 uCol[12]; uniform vec3 uSun; uniform vec3 uFloor; uniform vec3 uFog; uniform vec3 uCam; uniform vec3 uSky;
 uniform float uFogD; uniform float uAlpha; uniform float uOutline; uniform float uPanels;
 varying vec3 vWorld; varying vec3 vN; varying vec3 vLocal; varying vec3 vSize; varying float vMat; varying float vSel;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -29,7 +29,7 @@ void main() {
   int m = int(vMat + 0.5);
   vec3 c = uCol[m];
   vec3 an = abs(vN);
-  bool unlit = m >= 4 && m < 8;
+  bool unlit = (m >= 4 && m < 8) || m == 11;
   if (!unlit) {
     if (uPanels > 0.5) {
       vec2 pp = an.y > 0.5 ? vWorld.xz * 0.25 : an.x > 0.5 ? vWorld.zy * 0.5 : vWorld.xy * 0.5;
@@ -45,6 +45,8 @@ void main() {
     c = mix(c * (0.55 + 0.25 * vN.y + 0.15 * an.x), uFog, 0.45);
   } else if (m == 6) {
     c = mix(vec3(0.04, 0.16, 0.28), vec3(0.14, 0.40, 0.58), 1.0 - an.y * 0.6);
+  } else if (m == 11) {
+    c = mix(c * 0.35, c, max(vN.y, 0.0));   // acid: glowing green on top, darker at the sides (as in the game)
   }
   // outlines: darken near the box's edges, a constant width in pixels
   vec2 p, s;
@@ -88,7 +90,7 @@ export class View {
     this.scene.add(new THREE.HemisphereLight(0xdde6ff, 0x404040, 1.6));
     this.sunLight = new THREE.DirectionalLight(0xffffff, 1.6); this.scene.add(this.sunLight); this.scene.add(this.sunLight.target);
     this.uniforms = {
-      uCol: { value: Array.from({ length: 11 }, () => new THREE.Color()) }, uSun: { value: new THREE.Vector3(0, 1, 0) },
+      uCol: { value: Array.from({ length: 12 }, () => new THREE.Color()) }, uSun: { value: new THREE.Vector3(0, 1, 0) },
       uFloor: { value: new THREE.Color() }, uFog: { value: new THREE.Color() }, uSky: { value: new THREE.Color() }, uCam: { value: new THREE.Vector3() },
       uFogD: { value: 0.0025 }, uOutline: { value: 1.3 }, uPanels: { value: 1 },
     };
@@ -133,7 +135,7 @@ export class View {
     const lin = (c, k = 1) => new THREE.Color(c[0] * k, c[1] * k, c[2] * k);
     C[0].copy(lin(p.base)); C[1].copy(lin(p.accent)); C[2].copy(lin(p.base, 0.42)); C[3].copy(lin(p.metal));
     C[4].copy(lin(p.glow, 0.95)); C[5].copy(lin(p.metal, 0.9)); C[6].setRGB(0.1, 0.32, 0.5); C[7].setRGB(1.0, 0.45, 0.1);
-    C[8].copy(lin(p.accent)); C[9].setRGB(0.75, 0.35, 1.0); C[10].setRGB(0.3, 0.33, 0.42);
+    C[8].copy(lin(p.accent)); C[9].setRGB(0.75, 0.35, 1.0); C[10].setRGB(0.3, 0.33, 0.42); C[11].setRGB(0.36, 1.0, 0.23);
     this.uniforms.uFloor.value.copy(lin(p.metal.map(v => Math.min(1, v * 1.35))));
     this.uniforms.uFog.value.copy(lin(p.sky)); this.uniforms.uSky.value.copy(lin(p.sky));
     this.renderer.setClearColor(lin(p.sky));
@@ -257,7 +259,7 @@ export class View {
   mapBounds() {
     const m = this.doc.map;
     const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-    for (const b of m.brushes) { if (b.mat >= 5 && b.mat !== 8) continue; for (let k = 0; k < 3; k++) { if (b.min[k] < mn[k]) mn[k] = b.min[k]; if (b.max[k] > mx[k]) mx[k] = b.max[k]; } }
+    for (const b of m.brushes) { if (b.mat >= 5 && b.mat !== 8 && b.mat !== 10) continue; for (let k = 0; k < 3; k++) { if (b.min[k] < mn[k]) mn[k] = b.min[k]; if (b.max[k] > mx[k]) mx[k] = b.max[k]; } }
     if (!isFinite(mn[0])) return { min: [-20, 0, -20], max: [20, 10, 20] };
     return { min: mn, max: mx };
   }

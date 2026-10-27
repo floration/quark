@@ -52,7 +52,8 @@ int modeFromJson(const Json& j, int def) {
     return def;
 }
 
-static const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};
+static const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
+static_assert(sizeof kMatNames / sizeof *kMatNames == kMapMaterials, "a name per material (map.cpp's file keywords)");
 
 Json playerJson() {
     Json p = Json::object();

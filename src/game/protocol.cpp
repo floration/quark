@@ -27,8 +27,10 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges || m.dashCooldownMs > 0 || m.dashRecharging > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
                   ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
                   (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
-    // (44: mods bit 128 = the u16 phaseMs follows the opt parts; only while a movement equation counts it, else 0)
-    w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8((uint8_t)(m.mods | (m.phaseMs ? 128 : 0))); w.u8(opt);
+    // (44: mods bit 128 = the u16 phaseMs follows the opt parts; only while a movement equation counts it, else 0;
+    // 45: mods bit 64 = the u16 acidOutMs after that, while it's below kAcidRearmMs: in acid or just out)
+    const bool acid = m.acidOutMs < kAcidRearmMs;
+    w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8((uint8_t)(m.mods | (m.phaseMs ? 128 : 0) | (acid ? 64 : 0))); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
     if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); w.f32(m.dashFromSpeed); }   // (43: + the speed the dash started from)
     if (opt & 4) {   // (43: charges | recharging << 4, the cooldown in ms, each recharge's ms; 42: charges + the cooldown; 41: the charges alone; before: the cooldown f32)
@@ -42,6 +44,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
     if (opt & 128) w.u8(m.dashBounces);
     if (m.phaseMs) w.u16(m.phaseMs);
+    if (acid) w.u16(m.acidOutMs);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
     w.u32(s.baseTick);
 }
@@ -59,6 +62,8 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     m.pos = r.vec(); m.vel = r.vec(); m.flags = r.u8(); m.mods = r.u8();
     const bool phase = proto >= kSnapPhaseSince && (m.mods & 128);
     if (proto >= kSnapPhaseSince) m.mods &= 127;
+    const bool acid = proto >= kSnapAcidSince && (m.mods & 64);
+    if (proto >= kSnapAcidSince) m.mods &= 63;
     uint8_t opt = r.u8();
     if (opt & 1) m.hookPoint = r.vec();
     if (opt & 2) {
@@ -83,6 +88,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
     if (opt & 128) m.dashBounces = r.u8();
     if (phase) m.phaseMs = r.u16();
+    if (acid) m.acidOutMs = (uint16_t)std::min<int>(r.u16(), kAcidRearmMs);
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
