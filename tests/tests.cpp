@@ -6940,6 +6940,44 @@ static void testDemoUpgrade() {
         CHECK(m41.dashCharges == 1 && m41.dashCooldownMs == 0 && m40.dashCharges == 2 && m40.dashCooldownMs == 500);
         uint16_t pv = 0; memcpy(&pv, &out41[4], 2);
         CHECK(pv == kProtocolVersion && demo::convertible(42) && demo::convertible(41) && demo::convertible(40));
+        // protocol 46 (before rocket riding): a grapple on a player reads as it was; a hookTarget past the players was
+        // nothing then and has nothing after it (47 adds the rocket's id, velocity and gravity only for kHookRocket)
+        auto demo46 = [&](uint8_t target) {
+            Snapshot sn;
+            sn.tick = 1; sn.selfWeapon = WPN_ROCKET;
+            sn.self.flags = MF_HOOKED; sn.self.hookPoint = {1, 2, 3}; sn.self.hookTarget = 5;
+            std::vector<uint8_t> b(4096);
+            Writer w(b.data(), (int)b.size());
+            writeSnapshotClient(w, sn);
+            std::string hdr((const char*)b.data(), (size_t)w.size());
+            const size_t optAt = 19 + 24 + 2;
+            CHECK((uint8_t)hdr[optAt] == (1 | 16) && (uint8_t)hdr[optAt + 13] == 5);
+            hdr[optAt + 13] = (char)target;   // (46's bytes: nothing follows the u8)
+            Writer w2(b.data(), (int)b.size());
+            writeSnapshotWorld(w2, sn, nullptr); writeSnapshotEvents(w2, sn.events);
+            std::string body = hdr + std::string((const char*)b.data(), (size_t)w2.size()), out = cur;
+            const uint16_t proto = 46;
+            memcpy(&out[4], &proto, 2);
+            uint8_t type = 2; double t = 1e6; uint32_t n = (uint32_t)body.size();
+            out.append((const char*)&type, 1); out.append((const char*)&t, 8); out.append((const char*)&n, 4); out += body;
+            return out;
+        };
+        std::string out46a, out46b;
+        MoveState m46a, m46b;
+        CHECK(demo::convertible(46) && demo::convert(demo46(5), &out46a, &why) && lastSelf(out46a, &m46a));
+        CHECK(demo::convert(demo46(kHookRocket), &out46b, &why) && lastSelf(out46b, &m46b));
+        printf("  protocol 46 -> %d: hook target %d (was 5), %d (was %d)\n", (int)kProtocolVersion, (int)m46a.hookTarget, (int)m46b.hookTarget, (int)kHookRocket);
+        CHECK(m46a.hookTarget == 5 && (m46a.flags & MF_HOOKED) && m46a.hookPoint.y == 2 && m46b.hookTarget == 0 && (m46b.flags & MF_HOOKED));
+        // and today's: riding a rocket round-trips the rocket's id, velocity and gravity
+        Snapshot sr;
+        sr.self.flags = MF_HOOKED; sr.self.hookTarget = kHookRocket; sr.self.hookProj = 777; sr.self.hookVel = {48, -1, 2}; sr.self.hookGrav = 13.5f;
+        uint8_t rb[256];
+        Writer wr(rb, sizeof rb);
+        writeSnapshotClient(wr, sr);
+        Reader rr(rb, wr.size());
+        Snapshot back;
+        CHECK(readSnapshotClient(rr, back) && back.self.hookTarget == kHookRocket && back.self.hookProj == 777 && back.self.hookVel.x == 48 &&
+              back.self.hookGrav == 13.5f && rr.remaining() == 0);
     }
     // a second conversion of the same name keeps both originals
     put("old.qdemo", fixture, -1);

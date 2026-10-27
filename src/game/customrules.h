@@ -19,6 +19,7 @@ struct CustomRules {
     float move[MV_COUNT];             // every other movement constant: x the normal value (MOVEMENT page)
     int health = 100;
     bool dash = true, grapple = true, selfDamage = true, instagib = false, vampire = false, regen = false;
+    bool rocketRide = true;           // the grapple catches rockets in flight (rocket riding)
     int timeLimit = 0, scoreLimit = 0, roundsToWin = 0;   // 0 = the mode's default
     std::vector<std::string> maps;    // map pool (rotates after each match); empty = the host's map only
     // Lines this build doesn't read but must not lose: a save from Host > Custom modes rewrites the known keys and

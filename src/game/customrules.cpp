@@ -55,7 +55,7 @@ void rebuild(Tuned& t) {
     t.move = MoveTuning();
     if (t.rules.active()) {
         t.move.gravity = t.rules.gravity; t.move.speed = t.rules.moveSpeed; t.move.jump = t.rules.jump;
-        t.move.dash = t.rules.dash; t.move.grapple = t.rules.grapple;
+        t.move.dash = t.rules.dash; t.move.grapple = t.rules.grapple; t.move.rocketRide = t.rules.rocketRide;
         for (int k = 0; k < MV_COUNT; k++) t.move.m[k] = t.rules.move[k];
     }
     t.exprs = mexpr::Program();   // (equations: resolved and compiled here, once, never in the 1 ms step)
@@ -106,7 +106,7 @@ std::string CustomRules::toNetText() const {
     std::ostringstream o;
     o << "custommode=" << name << "\nmode=" << modeName(baseMode) << "\nweapons=" << weapons
       << "\ngravity=" << gravity << "\nspeed=" << moveSpeed << "\njump=" << jump << "\nknockback=" << knockback
-      << "\nhealth=" << health << "\ndash=" << dash << "\ngrapple=" << grapple << "\nselfdamage=" << selfDamage
+      << "\nhealth=" << health << "\ndash=" << dash << "\ngrapple=" << grapple << (rocketRide ? "" : "\nrocketride=0") << "\nselfdamage=" << selfDamage
       << "\ninstagib=" << instagib << "\nvampire=" << vampire << "\nregen=" << regen
       << "\ntimelimit=" << timeLimit << "\nscorelimit=" << scoreLimit << "\nrounds=" << roundsToWin;
     for (int k = 0; k < MV_COUNT; k++) if (move[k] != 1) o << "\nmove_" << moveParamKey(k) << "=" << move[k];   // (only the changed ones)
@@ -178,6 +178,7 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "health") health = std::max(1, std::min(1000, i));
         else if (k == "dash") dash = i != 0;
         else if (k == "grapple") grapple = i != 0;
+        else if (k == "rocketride") rocketRide = i != 0;
         else if (k == "selfdamage") selfDamage = i != 0;
         else if (k == "instagib") instagib = i != 0;
         else if (k == "vampire") vampire = i != 0;

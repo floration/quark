@@ -39,7 +39,10 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
         for (int i = 0; i < n; i++) w.u16(m.dashRechargeMs[i]);
     }
     if (opt & 8) w.f32(m.hookCooldown);
-    if (opt & 16) w.u8(m.hookTarget);    // (38: the grapple latched onto a player, and the one it holds)
+    if (opt & 16) {   // (38: the grapple latched onto a player, and the one it holds; 47: or riding a rocket, which follows)
+        w.u8(m.hookTarget);
+        if (m.hookTarget == kHookRocket) { w.u16(m.hookProj); w.vec(m.hookVel); w.f32(m.hookGrav); }
+    }
     if (opt & 32) w.vec(m.pullPoint);
     if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
     if (opt & 128) w.u8(m.dashBounces);
@@ -83,8 +86,12 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     }
     if (opt & 8) m.hookCooldown = r.f32();
     if (opt & 16) m.hookTarget = r.u8();   // (older demos never set these bits)
+    if (m.hookTarget == kHookRocket && proto >= kSnapRocketRideSince) {   // (before 47 nothing rode a rocket, and nothing follows)
+        m.hookProj = r.u16(); m.hookVel = r.vec();
+        const float g = r.f32();
+        m.hookGrav = g >= -100.0f && g <= 100.0f ? g : 0.0f;   // (a hostile value, NaN too: none)
+    } else if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
     if (opt & 32) m.pullPoint = r.vec();
-    if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
     if (opt & 128) m.dashBounces = r.u8();
     if (phase) m.phaseMs = r.u16();
@@ -197,7 +204,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
             if (b->ping != p.ping) m |= P_PING;
             if (b->keys != p.keys) m |= P_KEYS;
             if (b->checkpoint != p.checkpoint) m |= P_CHECK;
-            if (!p.hidden && (b->hooked != p.hooked || (p.hooked && !samePos(b->hookPoint, p.hookPoint)))) m |= P_HOOK;
+            if (!p.hidden && (b->hooked != p.hooked || (p.hooked && !samePos(b->hookPoint, p.hookPoint)) || b->hookProj != p.hookProj)) m |= P_HOOK;
         }
         if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK | P_KEYS | P_HEALTH | P_WEAPON);   // (out of sight: nor health, weapon)
         w.u8(p.id); w.u16(m);
@@ -214,7 +221,11 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_PING) w.u16(p.ping);
         if (m & P_KEYS) w.u16(p.keys);
         if (m & P_CHECK) w.u8(p.checkpoint);
-        if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
+        if (m & P_HOOK) {   // (47: on a rocket, its id follows: no older writer sent that value)
+            w.u8(p.hooked);
+            if (p.hooked) w.vecq(p.hookPoint);
+            if (p.hooked == 1 + kHookRocket) w.u16(p.hookProj);
+        }
     }
     // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = PROJ_LOB, 8 = PROJ_STUCK,
     // 16 = out of sight: nothing follows, 32 = PROJ_ON_PLAYER: u8 player, i8 x, u8 y, i8 z of its attachOffset follow
@@ -275,8 +286,13 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
         if (m & P_PING) p.ping = r.u16();
         if (m & P_KEYS) p.keys = r.u16();
         if (m & P_CHECK) p.checkpoint = r.u8();
-        if (m & P_HOOK) { p.hooked = r.u8(); if (p.hooked) p.hookPoint = r.vecq(); }
-        if (p.hidden) p.hooked = 0;
+        if (m & P_HOOK) {
+            p.hooked = r.u8();
+            if (p.hooked) p.hookPoint = r.vecq();
+            p.hookProj = p.hooked == 1 + kHookRocket ? r.u16() : 0;
+            if (p.hooked > 1 + kHookRocket) p.hooked = 0;   // (the map, a player or a rocket: nothing else)
+        }
+        if (p.hidden) { p.hooked = 0; p.hookProj = 0; }
         if (p.weapon >= WPN_COUNT) return false;
     }
     s.projectiles.resize(r.u8());

@@ -691,6 +691,7 @@ private:
     void syncLatch(int attacker);
     void endLatch(int attacker);
     void tickLatches();
+    void tickRocketRides();   // rocket riding: the anchor on the rocket each tick, or let go
     uint64_t rewindViewMs(int id, uint32_t viewTick) const;   // the view time lag compensation tests at (capped)
     Vec3 rewoundPos(int i, uint64_t viewMs, bool* crouched) const;   // where player i was at that view time
     // fireWeapon's lag-compensated hit boxes, rewound once per shot (rwHave_ cleared at each shot): a shotgun blast's

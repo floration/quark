@@ -2229,6 +2229,7 @@ void Server::simulate() {
         p.histMs = timeMs_;
     }
     { QZONE("projectiles"); tickProjectiles(); }
+    tickRocketRides();   // grapples riding rockets: on the rocket where it flew, or let go
     tickVote();
     if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -2282,10 +2283,11 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     {
         HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
         grappleTargets(id, cmd, probe);
-        pmove(p.move, cmd, map_, probe.n ? &probe : nullptr);
+        pmove(p.move, cmd, map_, probe.n || probe.nr ? &probe : nullptr);
         if (p.move.events & (ME_JUMP | ME_LAND | ME_DASH | ME_SUPER | ME_HYPER))   // (for everyone else's sounds: PlayerSnap::keys)
             p.moveEv |= (uint16_t)((p.move.events & 31) << kKeyEvShift) | (p.move.landSpeed > kHardLandSpeed ? KEY_EV_LAND_HARD : 0);
         if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
+        if (probe.hitRocket >= 0) p.hookSince = time();   // (riding a rocket: tickRocketRides keeps it on it)
         if (p.hookVictim >= 0) syncLatch(id);           // released / met / out of reach: let go; else the anchors follow
         if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
     }
@@ -2554,6 +2556,57 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         Vec3 pos = rewoundPos(i, vt, &crouched);
         probe.box[probe.n] = hitBox(pos, crouched);
         probe.id[probe.n++] = (uint8_t)i;
+    }
+    // Rocket riding: the rockets in reach, anyone's. Your own are tested where they are now (the client draws them that
+    // far ahead: X5), anyone else's rewound along their path to where you saw them (the view time plus the
+    // interpolation delay the client draws projectiles ahead by: rocketSeenMs). Bots don't ride rockets.
+    if (!moveTuning().rocketRide || p.isBot) return;
+    const Vec3 eye = p.move.pos + Vec3(0, kEyeHeight * moveScale(p.move.mods), 0);
+    const float reach = kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) + 2 * kRocketCatchHalf;
+    uint64_t seen = 0;   // (the time anyone else's rocket is tested at: worked out at the first)
+    bool haveSeen = false;
+    for (const Projectile& pr : projectiles_) {
+        if (probe.nr >= HookProbe::kRockets) break;
+        if (!pr.active || pr.type != WPN_ROCKET || pr.stuck) continue;
+        const Vec3 d = pr.pos - eye;
+        if (dot(d, d) > reach * reach) continue;
+        const float g = projectileGravity(pr.type, pr.gravMul);
+        Vec3 at = pr.pos;
+        if (pr.owner != id) {
+            if (!haveSeen) {
+                if (!rewound) { vt = rewindViewMs(id, cmd.viewTick); rewound = true; }
+                seen = std::min<uint64_t>(timeMs_, vt + rocketSeenMs(p.interpMs, snapRate()));
+                haveSeen = true;
+            }
+            Vec3 v = pr.vel;
+            projectileRewind(at, v, g, (float)(timeMs_ - seen) * 0.001f);
+        }
+        const int k = probe.nr++;
+        probe.at[k] = at; probe.pos[k] = pr.pos; probe.vel[k] = pr.vel; probe.grav[k] = g; probe.rid[k] = pr.id;
+    }
+}
+
+// Riding a rocket, once a tick after the projectiles flew: the anchor is the rocket as it now is (pmove flew it the same
+// steps); the hook lets go, momentum kept and the usual cooldown, when the rocket is gone (it exploded or its time ran
+// out), out of reach or sight, after kGrappleLatchMax, or when the rules no longer allow it.
+void Server::tickRocketRides() {
+    for (auto& p : players_) {
+        if (!p.connected || !p.alive || !(p.move.flags & MF_HOOKED) || p.move.hookTarget != kHookRocket) continue;
+        const Projectile* pr = nullptr;
+        for (const Projectile& q : projectiles_) if (q.active && q.id == p.move.hookProj && q.type == WPN_ROCKET && !q.stuck) { pr = &q; break; }
+        bool hold = pr && moveTuning().rocketRide && time() - p.hookSince <= kGrappleLatchMax;
+        if (hold) {
+            const Vec3 from = p.move.pos + Vec3(0, 1.0f * moveScale(p.move.mods), 0), d = pr->pos - from;
+            const float dist = length(d);
+            hold = dist <= kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) && !(dist > 1e-3f && map_.raycastAny(from, d / dist, dist));
+        }
+        if (hold) {
+            p.move.hookPoint = pr->pos; p.move.hookVel = pr->vel; p.move.hookGrav = projectileGravity(pr->type, pr->gravMul);
+            continue;
+        }
+        p.move.flags &= ~MF_HOOKED;
+        p.move.hookTarget = 0; p.move.hookProj = 0;
+        p.move.hookCooldown = kHookCooldown * moveValue(p.move, MV_HOOK_COOLDOWN, &map_);   // (its per-step value: movement equations)
     }
 }
 
@@ -3262,6 +3315,7 @@ void Server::sendSnapshots() {
         p.moveEv = 0;   // (every client's snapshot is built from this one list: each event goes out once)
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED) ? (uint8_t)(1 + p.move.hookTarget) : 0;   // (2 + id: latched onto that player)
         ps.hookPoint = p.move.hookPoint;
+        ps.hookProj = ps.hooked == 1 + kHookRocket ? p.move.hookProj : 0;   // (riding that rocket)
         all.push_back(ps);
     }
     std::vector<ProjectileSnap>& allProj = snapProj_;
@@ -3355,7 +3409,7 @@ void Server::sendSnapshots() {
             hiddenPlayers |= 1u << ps.id;
             // out of sight: nothing but the scoreboard (no health, weapon, firing, crouch or the bomb)
             ps.flags &= (uint8_t)~(PS_FIRING | PS_CROUCHED | (isItMode(ms_.mode) ? 0 : PS_HASBOMB));
-            ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookPoint = Vec3();
+            ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookProj = 0; ps.hookPoint = Vec3();
             ps.pos = Vec3(); ps.yaw = ps.pitch = 0;
         }
         if (!seesAll)   // a grapple latched onto a player out of this client's sight: no rope (its end would give them away)

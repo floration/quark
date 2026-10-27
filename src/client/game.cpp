@@ -1436,6 +1436,7 @@ void Game::frame(double dt) {
         debugSettingsTab();
     }
     r_.setMsaa(cfg_.msaa);
+    r_.setRenderScale(cfg_.renderScale, cfg_.renderSharpen);
     {   // per-mode HUD / controls rules follow the running mode (back to your defaults outside a game)
         // ranked never takes a rule: the default HUD and your own binds, no control scripts
         int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !fairRules() ? (int)net_.mode().mode : -1;
@@ -1623,6 +1624,19 @@ void Game::frame(double dt) {
                 }
             }
             localPrevButtons_ = c.buttons;
+            {   // rocket riding: your rockets not handed over yet can be caught too (only while the grapple's held)
+                NetClient::RocketCopy rc[HookProbe::kRockets];
+                int n = 0;
+                if ((c.buttons & BTN_GRAPPLE) && moveTuning().rocketRide)
+                    for (const auto& q : predProj_)
+                        if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
+                            const float g = projectileGravity(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
+                            Vec3 p = q.pos0, v = q.vel0;
+                            projectileExtrapolate(p, v, g, (float)(time_ - q.born));
+                            rc[n++] = {p, v, g};
+                        }
+                net_.setRocketCopies(rc, n);
+            }
             net_.tick(c);
             if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
             tickAcc_ -= period;
@@ -2129,7 +2143,11 @@ void Game::drawWorld(float alpha) {
     r_.outlineWidth = 1.0f;
     // grapple ropes
     // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
-    auto ropeEnd = [&](int target, const Vec3& anchor) {
+    auto ropeEnd = [&](int target, const Vec3& anchor, uint16_t rocket = 0) {
+        if (target == kHookRocket - 1) {   // riding a rocket: to it as it's drawn (yours: the anchor, drawn as far ahead)
+            if (rocket) for (const auto& pr : lastProjectiles_) if (pr.id == rocket && pr.owner != me) return pr.pos;
+            return anchor;
+        }
         if (target < 0 || target >= kMaxPlayers || !players[target].valid || players[target].snap.hidden || !(players[target].snap.flags & PS_ALIVE)) return anchor;
         Vec3 at = target == me && alive ? net_.smoothedPos(alpha) : players[target].snap.pos;
         return at + Vec3(0, 1.0f * bs, 0);
@@ -2147,10 +2165,10 @@ void Game::drawWorld(float alpha) {
     Vec3 fpHookTo;
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
         fpHooked = true;
-        fpHookTo = ropeEnd((int)net_.predicted().hookTarget - 1, net_.predicted().hookPoint);
+        fpHookTo = ropeEnd((int)net_.predicted().hookTarget - 1, net_.predicted().hookPoint, net_.predicted().hookProj);
     } else if (specGun && players[viewing].snap.hooked) {
         fpHooked = true;
-        fpHookTo = ropeEnd((int)players[viewing].snap.hooked - 2, players[viewing].snap.hookPoint);
+        fpHookTo = ropeEnd((int)players[viewing].snap.hooked - 2, players[viewing].snap.hookPoint, players[viewing].snap.hookProj);
     }
     const float hk = gm.scale * kHookViewScale;
     const Vec3 hookHousing = {0, 0.015f, -0.42f};      // (PROP_HOOK_ARM's housing: the point the arm is placed and turned by)
@@ -2197,7 +2215,7 @@ void Game::drawWorld(float alpha) {
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == me || !players[i].valid || !players[i].snap.hooked) continue;
         const Vec3 from = i == viewing && fpHook ? fpMuzzle : hookMuzzleFrame_[i] == drawFrame_ ? hookMuzzle_[i] : players[i].snap.pos + Vec3(0, 1.2f, 0);
-        rope(from, ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint), 0.04f);
+        rope(from, ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint, players[i].snap.hookProj), 0.04f);
     }
 
     // other players' shots: laser beams while firing, a tracer when a sniper fires
@@ -5294,8 +5312,11 @@ void Game::drawVideoSettings(const SetLayout& L) {
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("IMAGE");
-    ui_.slider(g.x(), g.top(), w, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
+    // (BRIGHTNESS and PLAYER SHADOWS share a row, as RENDER SCALE and SHARPEN do: a row more would push SOUND into
+    // DEVICES with Windows' EXCLUSIVE AUDIO)
+    ui_.slider(g.x(), g.top(), hw, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
     cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
+    ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
     g.next();
     {
         static const int aaModes[] = {0, 1, 2, 4};
@@ -5305,8 +5326,14 @@ void Game::drawVideoSettings(const SetLayout& L) {
         if (ui_.cycle(g.x(), g.top(), w, h, "ANTI-ALIASING", ai, 4, aaNames, UiExp::cfg("msaa"))) cfg_.msaa = aaModes[ai];
         g.next();
     }
-    ui_.toggle(g.x(), g.top(), w, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
-    g.next();
+    {   // the 3D scene at this % of the window's pixels (the HUD and menus always at 100%): below for frame rate, above
+        // as supersampling; SHARPEN: below 100%, sharpened as it's stretched
+        float v = (float)cfg_.renderScale;
+        if (ui_.slider(g.x(), g.top(), hw, h, "RENDER SCALE", v, 50, 200, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
+            cfg_.renderScale = std::max(50, std::min(200, (int)std::lround(v)));
+        ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "SHARPEN", cfg_.renderSharpen, UiExp::cfg("render_sharpen"));
+        g.next();
+    }
     g.section("SOUND");
     if (ui_.slider(g.x(), g.top(), w, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"), defaultSettings().volume)) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
     g.next();
@@ -6310,9 +6337,10 @@ void Game::drawCustomModeEditor(const SetLayout& L) {
         p = at(1, 3);
         ui_.slider(p.first, p.second, cw, h, "KNOCKBACK", r.knockback, 0, 5, "%.2fX", ce, kStd.knockback);
         r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
-        struct { const char* name; bool* v; } abil[6] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"SELF DAMAGE", &r.selfDamage},
-                                                         {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire}, {"REGEN", &r.regen}};
-        for (int i = 0; i < 6; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
+        struct { const char* name; bool* v; } abil[7] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"ROCKET RIDE", &r.rocketRide},
+                                                         {"SELF DAMAGE", &r.selfDamage}, {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire},
+                                                         {"REGEN", &r.regen}};
+        for (int i = 0; i < 7; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
     } else if (customTab_ == 1) {   // a row per weapon: on / off, then FIRE RATE, DAMAGE, SPEED as this mode makes them
         static const CustomRules kStdW;
         int row = 0;
@@ -6675,7 +6703,8 @@ void Game::drawPerf() {
         char b[200];
         snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f", t.size() / sum, 1.0 / p99, 1.0 / p999);
         perfText_ = b;
-        snprintf(b, sizeof b, "WORST %.1fMS  PING %d", worst * 1000.0, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
+        snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", worst * 1000.0, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
+                 r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
         pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)

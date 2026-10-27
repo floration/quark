@@ -2605,6 +2605,150 @@ static void testModeSounds(uint16_t port) {
     }
 }
 
+// Rocket riding (owner 2026-10-27): the grapple catches a rocket in flight, anyone's, and only rockets; the anchor flies
+// with it and the hook lets go where it explodes (momentum kept, the cooldown started). Predicted: the client catches
+// it as the server does (its own rockets where the server has them, others' where it sees them), and the wall it
+// meets. A custom mode can turn it off (ROCKET RIDE).
+static void testRocketRide(uint16_t port) {
+    printf("grapple rides rockets\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;   // (warmup: free play)
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 1.0, idle);
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    CHECK(ia >= 0 && ib >= 0);
+    if (ia < 0 || ib < 0) { s.stop(); return; }
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    // a level line of fire from A0 to a wall 18-40 m away, open on the way
+    const Vec3 A0(10, 0, 19), eye = A0 + Vec3(0, kEyeHeight, 0);
+    float yaw = 0, wall = -1;
+    for (int k = 0; k < 32 && !(wall > 18 && wall < 40); k++) { yaw = k * PI / 16; wall = s.map_.raycast(eye, angleForward(yaw, 0), 45); }
+    CHECK(wall > 18 && wall < 40);
+    const Vec3 aim = angleForward(yaw, 0), B0 = A0 - aim * 6.0f;   // (b behind a: out of the hook's way)
+    bool pin = true;
+    uint16_t btn = 0;
+    auto in = [&](int i) {
+        if (pin) { sa.move.pos = A0; sa.move.vel = {}; }
+        sb.move.pos = B0; sb.move.vel = {};
+        UserCmd u; u.weapon = WPN_ROCKET;
+        if (i == 0) { u.yaw = yaw; u.pitch = 0; u.buttons = btn; }
+        return u;
+    };
+    auto rearm = [&]() { btn = 0; pin = true; pumpServerTime(s, cls, 1.3, in); sa.health = sb.health = 100; };
+    auto rocketOf = [&](int owner) -> Projectile* { for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_ROCKET && pr.owner == owner) return &pr; return nullptr; };
+    // 1. your own: fire, hook it at once, ride it
+    rearm();
+    btn = BTN_FIRE;
+    for (int k = 0; k < 50 && !rocketOf(ia); k++) pump(s, cls, 0.005, in);
+    Projectile* mine = rocketOf(ia);
+    CHECK(mine != nullptr);
+    if (!mine) { s.stop(); return; }
+    const uint16_t mineId = mine->id;
+    btn = BTN_GRAPPLE;
+    bool predictedFirst = false;   // the client had it hooked while the server's word still said not
+    for (int k = 0; k < 200 && sa.move.hookTarget != kHookRocket; k++) {
+        pump(s, cls, 0.001, in);
+        pin = false;
+        if (c[0].predicted().hookTarget == kHookRocket && !(c[0].latest().self.flags & MF_HOOKED)) predictedFirst = true;
+    }
+    const Vec3 caughtAt = sa.move.pos;
+    printf("  own rocket: server hooked %d on %u (fired %u), predicted first %d\n", sa.move.hookTarget == kHookRocket, (unsigned)sa.move.hookProj,
+           (unsigned)mineId, predictedFirst);
+    CHECK(sa.move.hookTarget == kHookRocket && sa.move.hookProj == mineId && predictedFirst);
+    pumpServerTime(s, cls, 0.15, in);
+    const float along = dot(sa.move.pos - caughtAt, aim), speed = dot(sa.move.vel, aim);
+    printf("  ridden 0.15 s: %.2f m along, %.1f m/s; anchor on it %.3f m; predicted on %u (server %u)\n", along, speed,
+           mine->active ? length(sa.move.hookPoint - mine->pos) : -1.0f, (unsigned)c[0].predicted().hookProj, (unsigned)sa.move.hookProj);
+    CHECK((sa.move.flags & MF_HOOKED) && along > 0.2f && speed > 3.0f && mine->active && length(sa.move.hookPoint - mine->pos) < 1e-3f);
+    CHECK(c[0].predicted().hookTarget == kHookRocket && c[0].predicted().hookProj == mineId);
+    // the client's prediction stays on the server's path: compare at the same command (as testGrapplePlayers does)
+    for (int k = 0; k < 500 && sa.lastCmdSeq != c[0].nextSeq() - 1; k++) { s.frame(); hostSleepMs(1); }
+    const float err = length(sa.move.pos - c[0].predicted().pos);
+    printf("  predicted vs server while riding: %.4f m\n", err);
+    CHECK(err < 0.05f);
+    // 2. it explodes on the wall: the hook lets go there, momentum kept, the cooldown running (predicted too)
+    for (int k = 0; k < 300 && mine->active && mine->id == mineId; k++) pump(s, cls, 0.005, in);
+    pump(s, cls, 0.02, in);
+    const float kept = length(sa.move.vel);
+    printf("  exploded: hooked %d, %.1f m/s kept, cooldown %.2f s (predicted: hooked %d, cooldown %.2f s)\n", (sa.move.flags & MF_HOOKED) != 0, kept,
+           sa.move.hookCooldown, (c[0].predicted().flags & MF_HOOKED) != 0, c[0].predicted().hookCooldown);
+    CHECK(!(sa.move.flags & MF_HOOKED) && sa.move.hookTarget == 0 && kept > 3.0f && sa.move.hookCooldown > 0.5f);
+    CHECK(!(c[0].predicted().flags & MF_HOOKED) && c[0].predicted().hookCooldown > 0.5f);
+    // 3. an enemy's, flying away down the same line: seen by the client, then hooked
+    rearm();
+    for (auto& pr : s.projectiles_) pr.active = false;
+    auto launch = [&](int type, uint16_t id) {
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = id; pr.type = type; pr.owner = ib;
+        pr.pos = eye + aim * 2.0f; pr.vel = aim * 20.0f; pr.dieAt = s.time() + 5;
+        return &pr;
+    };
+    launch(WPN_ROCKET, 4300);
+    pump(s, cls, 0.04, in);
+    btn = BTN_GRAPPLE;
+    predictedFirst = false;
+    for (int k = 0; k < 200 && sa.move.hookTarget != kHookRocket; k++) {
+        pump(s, cls, 0.001, in);
+        pin = false;
+        if (c[0].predicted().hookTarget == kHookRocket && !(c[0].latest().self.flags & MF_HOOKED)) predictedFirst = true;
+    }
+    pump(s, cls, 0.05, in);
+    printf("  enemy rocket: server on %u, predicted on %u, predicted first %d\n", (unsigned)sa.move.hookProj, (unsigned)c[0].predicted().hookProj, predictedFirst);
+    CHECK(sa.move.hookTarget == kHookRocket && sa.move.hookProj == 4300 && c[0].predicted().hookProj == 4300 && predictedFirst);
+    // your own rocket the server hasn't sent yet (the game's predicted copy): caught as id 0; with no such rocket on the
+    // server (a refused shot) the server's word takes it back
+    rearm();
+    for (auto& pr : s.projectiles_) pr.active = false;
+    const NetClient::RocketCopy copy{eye + aim * 3.0f, aim * 48.0f, 0.0f};
+    btn = BTN_GRAPPLE;
+    bool copyCaught = false;
+    for (int k = 0; k < 50 && !copyCaught; k++) {
+        c[0].setRocketCopies(&copy, 1);
+        pump(s, cls, 0.001, in);
+        copyCaught = c[0].predicted().hookTarget == kHookRocket && c[0].predicted().hookProj == 0;
+    }
+    c[0].setRocketCopies(nullptr, 0);
+    pump(s, cls, 0.05, in);
+    printf("  a predicted copy: caught %d, after the server's word on a rocket %d\n", copyCaught, c[0].predicted().hookTarget == kHookRocket);
+    CHECK(copyCaught && c[0].predicted().hookTarget != kHookRocket && sa.move.hookTarget != kHookRocket);
+    // 4. only rockets: anything else in flight down that line lets the hook through to the wall (server and prediction)
+    auto hookPast = [&](int type, uint16_t id) {   // true: the hook went past it onto the wall
+        rearm();
+        for (auto& pr : s.projectiles_) pr.active = false;
+        launch(type, id);
+        pump(s, cls, 0.03, in);
+        btn = BTN_GRAPPLE;
+        pump(s, cls, 0.08, in);
+        const bool past = (sa.move.flags & MF_HOOKED) && sa.move.hookTarget == 0 && length(sa.move.hookPoint - (eye + aim * wall)) < 0.5f &&
+                          (c[0].predicted().flags & MF_HOOKED) && c[0].predicted().hookTarget == 0;
+        printf("  %s in flight: hook on the wall behind it %d (target %d, predicted %d)\n", baseWeaponDef(type).name, past,
+               (int)sa.move.hookTarget, (int)c[0].predicted().hookTarget);
+        return past;
+    };
+    for (int type : {WPN_STICKY, WPN_KNIFE, WPN_SYRINGE, WPN_CROSSBOW, WPN_BUBBLE}) CHECK(hookPast(type, (uint16_t)(4400 + type)));
+    // 5. a custom mode with ROCKET RIDE off: the hook goes past a rocket too
+    CustomRules off;
+    off.name = "norides"; off.rocketRide = false;
+    CustomRules back;
+    CHECK(back.fromText(off.toText()) && !back.rocketRide && back.toText().find("rocketride=0") != std::string::npos);
+    CHECK(CustomRules().toNetText().find("rocketride") == std::string::npos);   // (on: no line, so older modes' text and labels stay the same)
+    s.cfg_.custom = off;   // (the server keeps its own rules on the thread it runs on: this test's)
+    setActiveRules(off);
+    CHECK(!moveTuning().rocketRide);
+    printf("  ROCKET RIDE off:\n");
+    CHECK(hookPast(WPN_ROCKET, 4500));
+    s.cfg_.custom = CustomRules();
+    setActiveRules(CustomRules());
+    CHECK(moveTuning().rocketRide);
+    setActiveRules(CustomRules());
+    s.stop();
+}
+
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
 // half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
 // on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
@@ -2620,6 +2764,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
         {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", 1, [] { testHeadBox(TP(29246)); }},
+        {"rocketride", 1, [] { testRocketRide(TP(29278)); }},
         {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
         {"shorthanded", 2, [] { testShortHanded(TP(29288)); }},
         {"vsbots", 1, [] { testVsBotsDuo(TP(29294)); }},
