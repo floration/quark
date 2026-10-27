@@ -654,7 +654,7 @@ def make_halting(data, port=8766):
 
 
 def make_summary(data, port=8766):
-    """The small, stable /api/summary for the sibling project manager."""
+    """The small, stable /api/summary for the sibling Supervisor Board (Quarkology)."""
     es = [e for e in data["entries"] if not e.get("archived")]
     inprog = [e for e in es if e["file"].startswith("02") and e["section"].lower().startswith("in progress")
               and e["status"] in ("in-progress", "open", "unknown")]

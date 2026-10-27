@@ -379,7 +379,7 @@ svg.chart { display: block; max-width: 100%; height: auto; margin: 2px 0 6px; }
 .modal h3 { margin-top: 0; }
 #toast { position: fixed; bottom: 60px; left: 50%; pointer-events: none; max-width: min(900px, calc(100vw - 32px)); transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--line2); padding: 6px 12px; border-radius: 6px; z-index: 3000; display: none; }
 
-/* ?embed=1: inside the project manager (its own title bar): no logo / status, slimmer tabs */
+/* ?embed=1: inside Quarkology (its own title bar): no logo / status, slimmer tabs */
 .embed #top .logo, .embed #status #dataDir { display: none; }
 .embed #app { grid-template-rows: 32px 1fr; }
 .embed #tabs { margin-left: 0; }

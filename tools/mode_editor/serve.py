@@ -143,7 +143,7 @@ def repo_roots(explicit=None):
 
 def find_binary(name, explicit, roots):
     """The newest `name` in a checkout's build folders (build, build-release, build-editors, any other build-*/,
-    build/<config>, bin), then next to serve.py, then PATH. Newest wins, so a fresh build-editors/ (the Quark Project
+    build/<config>, bin), then next to serve.py, then PATH. Newest wins, so a fresh build-editors/ (the Quarkology
     app's auto-install build) beats a stale build/."""
     if explicit:
         return os.path.abspath(explicit) if os.path.isfile(explicit) else None

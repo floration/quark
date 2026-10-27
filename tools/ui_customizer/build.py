@@ -6,7 +6,7 @@
     python build.py --dump other.json --out test.html          (another dump / output file)
     python build.py --layout my-layout.json                    (-> ui-customizer-<name>.html, a PROPOSAL build)
 
-Usually run by install.py (the Quark Project app's installer). The output folder (--out-dir, default the
+Usually run by install.py (the Quarkology app's installer). The output folder (--out-dir, default the
 `ui-customizer` folder next to the checkout, i.e. Quark\\ui-customizer) also holds the owner's own files, which
 this script reads and never writes: provenance.json, extract/ (a dump + screenshots made on this PC by
 extract/extract.py), fonts/ofl/ (open fonts downloaded from github.com/google/fonts).

@@ -5,7 +5,7 @@ An offline, single-file page (`ui-customizer.html`) that shows every page of the
 the result as a layout (JSON) and a change spec (Markdown) for implementing it in the game, plus who made each page
 (`provenance.json`, merged into the registry by `tools/provenance.py merge`).
 
-## Install / update (the Quark Project app does this)
+## Install / update (the Quarkology app does this)
 
 ```
 cd Quark\repository                       (a checkout of testing)
@@ -31,7 +31,7 @@ command and a Copy button) and an exported spec starts with a warning. A `VERSIO
 it; 0 UI commits) is only a note in the page's status bar and `INSTALLED.txt`: the pages match the game apart from the
 version label. Only when git can't count (no git, or the dump's commit is not in the checkout) does a `VERSION`
 difference raise the warning. Refresh = `install.py --extract` (or `extract/extract.py --gz` to also rewrite the
-committed dump), then reload. The Quark Project app re-runs the install when the UI code, `VERSION` or the provenance
+committed dump), then reload. The Quarkology app re-runs the install when the UI code, `VERSION` or the provenance
 registry change (its `installs.json`), so the banner follows the game.
 
 ## Using it
@@ -54,7 +54,7 @@ registry change (its `installs.json`), so the banner follows the game.
   overlapping, labels running into widgets, anything off the screen, text the game would cut ("...") or shrink, widgets
   sticking out of their panel, tiny text. Red = bad, amber = check it; the page inspector lists them (click one to select
   its widgets). With a View on, it checks the page at that resolution and text rounding (21:9, 32:9 ...).
-- Light or dark as the system / the Quark Project app is (`?theme=light` or `dark` pins one); the game's pages keep
+- Light or dark as the system / the Quarkology app is (`?theme=light` or `dark` pins one); the game's pages keep
   the game's dark look.
 - Everything autosaves in the browser. A page still as the game has it is saved as a reference to the dump (a few KB
   per save, not 1.7 MB), so after a dump refresh the pages you never touched show the new game; Export layout writes
@@ -62,7 +62,7 @@ registry change (its `installs.json`), so the banner follows the game.
   The last 30 undo steps (up to 1 MB) are kept with it, written in idle time and on closing: Undo still works after a
   reload or an app restart, even for an Import or a Reset.
 - **Export spec**: the changes, then widget tables of the changed pages (the spec window switches to every page, about
-  800 KB, or to no tables). Dialogs are in the page (the Quark Project app's Electron has no `window.prompt`).
+  800 KB, or to no tables). Dialogs are in the page (the Quarkology app's Electron has no `window.prompt`).
 
 ## Files
 

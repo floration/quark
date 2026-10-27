@@ -20,8 +20,8 @@ APP_FILES = ("main.js", "preload.js", "index.html", "tabs.json", "package.json")
 # tools/ folders the editors need; everything else in tools/ stays out
 TOOLS = ("bot_editor", "bots", "map_editor", "maps", "mode_editor", "modes", "physics_editor", "weapon_editor", "hud_editor")
 TOOL_FILES = ("provenance.py",)
-NEVER = ("docs_manager", "github_manager", "project_manager", "tests_editor", "editor_dashboard", "master", "sign",
-         "githooks", "local", "server", "Claude Documents")
+NEVER = ("docs_manager", "github_manager", "quarkology", "project_manager", "tests_editor", "editor_dashboard", "master",
+         "sign", "githooks", "local", "server", "Claude Documents")
 SECRET_RE = re.compile(rb"(BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{30}|github_pat_|discord(app)?\.com/api/webhooks/|xox[bp]-)")
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc", "test", "tests", "*.example.json", "node_modules")
 

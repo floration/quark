@@ -3471,7 +3471,7 @@ class Manager:
 
     def tests_editor_script(self):
         """-> (serve.py of the tests editor or None, the places looked in). `testsEditor` in github-manager.json (the
-        file or its folder) first, then the Quark Project app's install (<quarkDir>/tests-editor), then each watched
+        file or its folder) first, then the Quarkology app's install (<quarkDir>/tests-editor), then each watched
         local copy's tools/tests_editor, then <quarkDir>/repository's."""
         q = self.cfg.get("quarkDir") or ""
         places = []
@@ -4737,7 +4737,7 @@ def setup_logging(data, console=True):
 
 
 def wants_browser(a):
-    """--open, unless the Quark Project app runs us (QUARK_SHELL=1): it shows the page itself."""
+    """--open, unless the Quarkology app runs us (QUARK_SHELL=1): it shows the page itself."""
     return bool(a.open) and os.environ.get("QUARK_SHELL") != "1"
 
 

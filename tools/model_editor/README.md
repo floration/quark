@@ -15,7 +15,7 @@ python3 tools/model_editor/build.py <export folder> <output folder>
 tools\model_editor\build.cmd <export folder> [output folder]      (Windows; default output %USERPROFILE%\Desktop\Quark\model-editor)
 ```
 
-On Windows, `tools\model_editor\install.cmd [folder]` from any repository checkout installs or updates the editor in one step: it builds only `quark_tests` (MinGW, in `build-model-editor\`), exports the assets and runs build.cmd (non-interactive, safe to re-run). The folder is the Quark folder (the page goes into its `model-editor\`; the project manager passes `%QUARK%`) or the `model-editor` folder itself; without one, `%QUARK%\model-editor`, else `%USERPROFILE%\Desktop\Quark\model-editor`.
+On Windows, `tools\model_editor\install.cmd [folder]` from any repository checkout installs or updates the editor in one step: it builds only `quark_tests` (MinGW, in `build-model-editor\`), exports the assets and runs build.cmd (non-interactive, safe to re-run). The folder is the Quark folder (the page goes into its `model-editor\`; Quarkology passes `%QUARK%`) or the `model-editor` folder itself; without one, `%QUARK%\model-editor`, else `%USERPROFILE%\Desktop\Quark\model-editor`.
 
 The output folder gets `model-editor.html` (this folder's `index.html` with `editor.css` and `js/*.js` inlined) and
 `data/manifest.js`: every model of the export (its .gltf, with its box list), the model overrides already shipped in this
@@ -74,7 +74,7 @@ website show) with the box list in the mesh's extras (what the game draws).
   a folder needs choosing or allowing, with the model-editor folder for provenance.json), then the game command for
   this view (`U.gameArgs`: the lineup `--models --yaw --pitch`, a viewmodel `--weapon N`, "it" `--host hide`, bomb mode,
   a projectile `--weapon N --fire`, the cart's `--cam`, on the chosen map or the mode's map). It is copied, and in the
-  Quark Project app the Play tab opens with `#args=<the options>`; otherwise the page shows it (a page on disk cannot
+  Quarkology app the Play tab opens with `#args=<the options>`; otherwise the page shows it (a page on disk cannot
   start a program).
 - **Download .glb** (the model panel): one model.
 - **Project > Load the models in an overrides folder**: reads every `models/<kind>/<NAME>.glb|.gltf` in a folder back

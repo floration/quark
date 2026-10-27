@@ -8,7 +8,7 @@ server is never stopped: when files changed it keeps its old code, and this prin
     python install.py [--dest <folder>] [--no-start]    (default %USERPROFILE%\\Desktop\\Quark\\github-manager)
     python install.py <folder> [--no-start]              (the same; install.cmd passes the folder like this)
 
---no-start only copies (the Quark Project app does this, then starts and restarts the server itself). No browser
+--no-start only copies (the Quarkology app does this, then starts and restarts the server itself). No browser
 opens when QUARK_SHELL=1. What it did goes to <output folder>\\install.log as well as the console (if there is one).
 Exit codes: 0 done, 1 the copy failed, 2 bad arguments.
 """
@@ -137,7 +137,7 @@ def parse_args(argv):
     ap.add_argument("folder", nargs="?", help="output folder (same as --dest)")
     ap.add_argument("--dest", help="output folder (default %%USERPROFILE%%\\Desktop\\Quark\\github-manager)")
     ap.add_argument("--no-start", action="store_true", help="only copy the files; don't start the server or open "
-                    "the page (the Quark Project app starts it itself)")
+                    "the page (the Quarkology app starts it itself)")
     a = ap.parse_args(argv)  # unknown arguments: a message and exit code 2
     if a.folder and a.dest and os.path.abspath(a.folder) != os.path.abspath(a.dest):
         ap.error("give the output folder once (a folder argument or --dest)")

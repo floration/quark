@@ -1,7 +1,7 @@
 @echo off
 rem Quark Model Editor: install or update from this checkout (non-interactive, safe to re-run).
 rem   tools\model_editor\install.cmd [folder]     (run from anywhere)
-rem The folder is the Quark folder (the page goes into its model-editor\, what the project manager passes as %QUARK%)
+rem The folder is the Quark folder (the page goes into its model-editor\, what Quarkology passes as %QUARK%)
 rem or the model-editor folder itself; default %QUARK%\model-editor, else %USERPROFILE%\Desktop\Quark\model-editor.
 rem Builds only quark_tests (MinGW, Release, in build-model-editor\), exports the game assets, rebuilds the page.
 rem Needs git, cmake, MinGW-w64 g++ / mingw32-make and Python 3 on PATH (as tools\build_windows.ps1 -Setup installs).

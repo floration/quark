@@ -125,7 +125,7 @@ One run (runSummary + jobs, as in `runs`), for a `#run=` deep link to a run olde
 
 ## GET /api/summary
 
-A small digest for the other local tools (the project manager on :8768), rebuilt each poll:
+A small digest for the other local tools (the Supervisor Board on :8768, in Quarkology), rebuilt each poll:
 ```
 {"generatedAt": "...", "repo": "floration/quark", "poll": {...same as /api/state...},
  "testing": {"sha": "...", "version": "1.18.6", "prerelease": {...} | null},
@@ -143,7 +143,7 @@ A small digest for the other local tools (the project manager on :8768), rebuilt
 
 GET (and POST /api/refresh) on `/api/*` answer with `Access-Control-Allow-Origin: <Origin>` when the Origin is
 `http://127.0.0.1:<port>` or `http://localhost:<port>` for a port 8765-8768 (the dashboard, docs manager, this tool,
-project manager) or 8775 (the tests editor), and nothing for any other origin (`file://` pages send `Origin: null`,
+Supervisor Board) or 8775 (the tests editor), and nothing for any other origin (`file://` pages send `Origin: null`,
 which is not allowed). `OPTIONS` preflights get Allow-Methods `GET, POST, PUT, DELETE, OPTIONS` for those origins.
 Requests whose Host header is not 127.0.0.1 / localhost get 403 (DNS rebinding). Writes (notes and the GitHub editor) are stricter (below).
 

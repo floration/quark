@@ -61,7 +61,7 @@ class App {
             f.click();
         });
     }
-    // an in-page yes / no (never window.confirm: it blocks the page, and the Quark Project app's shell may not show it)
+    // an in-page yes / no (never window.confirm: it blocks the page, and the Quarkology app's shell may not show it)
     confirm(title, msg, okLabel = "OK", danger = false) {
         return new Promise((res) => {
             const m = document.createElement("div");

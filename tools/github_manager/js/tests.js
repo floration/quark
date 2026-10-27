@@ -29,7 +29,7 @@ function down(box, note) {
   box.innerHTML = String(html`<section class="card offline tests-down">
     <h2>The tests editor isn't running</h2>
     <p>This tab shows the tests editor from <a href="${TESTS_URL}" target="quark-tests-editor" rel="noopener"><code>${TESTS_URL}</code></a>, and nothing answered there.
-      <b>Start it</b> runs its <code>serve.py</code> in the background (no window, low priority; the Quark Project app's install, or the one in a local copy).</p>
+      <b>Start it</b> runs its <code>serve.py</code> in the background (no window, low priority; the Quarkology app's install, or the one in a local copy).</p>
     ${note || ''}
     <p><button type="button" class="primary" data-tests-start>Start it</button> <button type="button" data-tests-retry>Try again</button></p></section>`);
 }

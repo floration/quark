@@ -23,7 +23,7 @@ export class DriveView {
         this.dirty = true;
         this.scene = new GLScene(this.c);
         if (!this.scene.gl) $("driveMsg").innerHTML = "<div>WebGL isn't available in this browser: the Drive tab needs it.</div>";
-        // Pointer lock can be refused (the Quark Project app's Electron shell denied it until it allowed 'pointerLock';
+        // Pointer lock can be refused (the Quarkology app's Electron shell denied it until it allowed 'pointerLock';
         // a sandboxed frame; an old browser): then Drive still starts, with the mouse looking while a button is held.
         this.c.addEventListener("click", () => {
             if (document.pointerLockElement === this.c || this.forceLocked) return;

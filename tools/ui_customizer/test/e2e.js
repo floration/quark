@@ -193,7 +193,7 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   const back = await ev((u) => QApp.S.doc.pages.flatMap((p) => p.elements).find((e) => e.uid === u), target.uid);
   assert.ok(back && back.label === 'RENAMED BY TEST', 'Undo after a reload brings back the layout from before the Reset');
 
-  // ---- in-page dialogs (the Quark Project app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
+  // ---- in-page dialogs (the Quarkology app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
   page.on('dialog', (d) => { errors.push('native dialog: ' + d.type() + ' ' + d.message()); d.dismiss(); });
   const nBefore = await ev(() => QApp.S.doc.pages.length);
   await page.locator('#bAddPage').click();

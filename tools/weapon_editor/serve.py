@@ -4,7 +4,7 @@
     python3 tools/weapon_editor/serve.py [--port 8773] [--data-dir DIR] [--maptool PATH] [--quark-tests PATH] [--maps-dir DIR ...] [--no-open]
     python3 tools/weapon_editor/serve.py --install [FOLDER]     copy the tool to FOLDER (default <Quark folder>/weapons-editor)
     tools/weapon_editor/run.sh   (Linux / macOS)        tools\\weapon_editor\\run.cmd   (Windows)
-    --no-open (or QUARK_SHELL=1): no browser; the Quark Project app starts it and shows http://127.0.0.1:8773/?embed=1
+    --no-open (or QUARK_SHELL=1): no browser; the Quarkology app starts it and shows http://127.0.0.1:8773/?embed=1
 
 Python 3 standard library only. Binds 127.0.0.1 only. It:
   - serves the page (web/),
@@ -44,7 +44,7 @@ MODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$")        # custom mode 
 SET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,35}$")         # weapon set names: the same characters, 36 max (wpn-<set> is a mode name)
 BASE_MODES = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"}
 MAX_BODY = 8 << 20
-DEFAULT_PORT = 8773          # fixed (the Quark Project app opens http://127.0.0.1:8773/); weapon_editor.json / --port change it
+DEFAULT_PORT = 8773          # fixed (the Quarkology app opens http://127.0.0.1:8773/); weapon_editor.json / --port change it
 HELPER_CMDS = {"wpnparams", "wpncheck", "wpnstats", "wpnrange", "wpnfight", "sim", "simbatch", "simcheck", "parse"}
 RUN_CMDS = {"sim", "simbatch", "wpnfight", "wpnrange"}
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
@@ -754,7 +754,7 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------- install
 
 def checkout_maptool():
-    """quark_maptool from the checkout this runs from (its build folders), or the current folder's (the Quark Project
+    """quark_maptool from the checkout this runs from (its build folders), or the current folder's (the Quarkology
     app runs --install with cwd = a checkout); never PATH or an installed copy."""
     roots = []
     for r in (ROOT, os.getcwd()):
@@ -825,7 +825,7 @@ def main():
     ap.add_argument("--quark-tests", help="path to quark_tests (the weapon catalog and checks; default: next to serve.py, then build/, then PATH)")
     ap.add_argument("--maps-dir", action="append", help="another folder of .qmap files to list (repeatable)")
     ap.add_argument("--no-browser", "--no-open", dest="no_browser", action="store_true",
-                    help="don't open a browser (also when QUARK_SHELL=1: the Quark Project app shows the page)")
+                    help="don't open a browser (also when QUARK_SHELL=1: the Quarkology app shows the page)")
     ap.add_argument("--install", nargs="?", const="", metavar="FOLDER", help="copy the tool to FOLDER (default <Quark folder>/weapons-editor) and stop")
     args = ap.parse_args()
     CFG = Config(args)

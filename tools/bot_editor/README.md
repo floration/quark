@@ -12,7 +12,7 @@ page and runs the game's helper, `quark_maptool`. Nothing is fetched from the in
 - Linux / macOS: `./run.sh` (or `python3 serve.py`).
 
 Then open http://127.0.0.1:8769/ (it opens by itself unless `--no-open` is given or `QUARK_SHELL=1` is set).
-`?embed=1` hides the page's own header (the project manager shows the page in its own window).
+`?embed=1` hides the page's own header (Quarkology shows the page in its own window).
 
 Flags (or the same keys in `bot_editor.json` next to `serve.py`; `bot_editor.example.json` lists them):
 
@@ -210,6 +210,6 @@ three.js 0.160.0 once (checked by sha256, cached in the build folder).
 
 A bot editor that's running when its files change is restarted on the new ones: install.py asks it to quit
 (`POST /api/quit`) and starts it again on the new files in the background with no window (`pythonw` on Windows;
-its output in `serve.log` there), or, when the Quark Project app is open, leaves the restart to the app's
+its output in `serve.log` there), or, when the Quarkology app is open, leaves the restart to the app's
 watchdog. The build itself opens no window when install.py runs without a console. A map editor that's running still needs restarting by hand (or by the app).
 

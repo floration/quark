@@ -4,7 +4,7 @@
     python3 tools/physics_editor/serve.py [--port 8772] [--data-dir DIR] [--maptool PATH] [--maps-dir DIR ...] [--no-open]
     python3 tools/physics_editor/serve.py --install [FOLDER]     copy the tool to FOLDER (default <Quark folder>/physics-editor)
     tools/physics_editor/run.sh   (Linux / macOS)        tools\\physics_editor\\run.cmd   (Windows)
-    --no-open (or QUARK_SHELL=1): no browser; the Quark Project app starts it and shows http://127.0.0.1:8772/?embed=1
+    --no-open (or QUARK_SHELL=1): no browser; the Quarkology app starts it and shows http://127.0.0.1:8772/?embed=1
 
 Python 3 standard library only. Binds 127.0.0.1 only. It:
   - serves the page (web/),
@@ -43,7 +43,7 @@ EXE = ".exe" if IS_WIN else ""
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")        # scenario / map / state names
 MODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$")        # custom mode names: CustomRules safeName's characters, 40 max
 MAX_BODY = 8 << 20
-DEFAULT_PORT = 8772          # fixed (the Quark Project app opens http://127.0.0.1:8772/); physics_editor.json / --port change it
+DEFAULT_PORT = 8772          # fixed (the Quarkology app opens http://127.0.0.1:8772/); physics_editor.json / --port change it
 HELPER_CMDS = {"physparams", "physsim", "physpresets", "physroom", "physexport", "physdrive", "physexpr", "parse"}
 REFS = os.path.join(HERE, "references")      # other games' movement values (references/index.json + <game>.json)
 # The game's movement code, shown read-only by the Code tab (Movement code) and the Code graph: from the checkout this
@@ -1041,7 +1041,7 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------- install
 
 def checkout_maptool():
-    """quark_maptool from the checkout this runs from (its build folders), or the current folder's (the Quark Project
+    """quark_maptool from the checkout this runs from (its build folders), or the current folder's (the Quarkology
     app runs --install with cwd = a checkout); never PATH or an installed copy."""
     roots = []
     for r in (ROOT, os.getcwd()):
@@ -1118,7 +1118,7 @@ def main():
     ap.add_argument("--maps-dir", action="append", help="another folder of .qmap files to list (repeatable)")
     ap.add_argument("--references", help="the folder of other games' movement values (default: references/ next to serve.py)")
     ap.add_argument("--no-browser", "--no-open", dest="no_browser", action="store_true",
-                    help="don't open a browser (also when QUARK_SHELL=1: the Quark Project app shows the page)")
+                    help="don't open a browser (also when QUARK_SHELL=1: the Quarkology app shows the page)")
     ap.add_argument("--install", nargs="?", const="", metavar="FOLDER", help="copy the tool to FOLDER (default <Quark folder>/physics-editor) and stop")
     args = ap.parse_args()
     CFG = Config(args)

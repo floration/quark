@@ -338,7 +338,7 @@
     for (const c of kids.flat()) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
     return n;
   }
-  // In-page dialogs instead of prompt() / confirm() / alert(): the Quark Project app's Electron window has no
+  // In-page dialogs instead of prompt() / confirm() / alert(): the Quarkology app's Electron window has no
   // window.prompt() (it throws), and native boxes block the page. Resolves with the typed text (input), true (OK) or
   // null (Cancel, Esc, a click outside). check(text) returns why the text can't be used ('' = fine).
   let dlgDone = null, dlgAt = 0;   // (dlgAt: when it opened; the second click of a double click must not cancel it)
@@ -772,7 +772,7 @@
   let shotErrFor = null;
   // why the Screenshot overlay is off for page p
   const shotWhyNot = (p) => (viewOf() ? 'The screenshots are 1280x720: pick View: 1280x720' :
-    build.shotsWanted && !build.shots ? 'The dump\'s screenshots are not on this PC: the Quark Project app takes them at its next UI Editor update (install.py --extract-if-stale), or run install.py --extract' :
+    build.shotsWanted && !build.shots ? 'The dump\'s screenshots are not on this PC: the Quarkology app takes them at its next UI Editor update (install.py --extract-if-stale), or run install.py --extract' :
     'This page has no screenshot in the dump' + (p && !p.origId ? ' (a page made here)' : ''));
   function updateShot(p) {
     const has = !!(p && p.screenshot) && !viewOf();

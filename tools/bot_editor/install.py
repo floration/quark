@@ -14,7 +14,7 @@ Run it from the repository folder (the owner's `repository\`): non-interactive, 
      same build folder (its own page, three.js download, maps, models; its config.json is kept).
 A helper that's in use (a live run) is replaced on the next run instead of failing the install. A bot editor that's
 running when its files change is told to quit (POST /api/quit) and started again from the new files, in the background
-with no window (its output in serve.log there); when the Quark Project app is open (its port 8768 answers) its
+with no window (its output in serve.log there); when the Quarkology app is open (its port 8768 answers) its
 watchdog restarts it instead. Exit code 0 = done.
 Python 3 standard library; needs cmake, a C++ compiler (MinGW-w64 on Windows) and python on PATH, like the game build.
 """
@@ -32,7 +32,7 @@ CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
 def has_console():
-    """Windows: started from a console (a terminal, run.cmd) rather than by the Quark Project app or pythonw."""
+    """Windows: started from a console (a terminal, run.cmd) rather than by the Quarkology app or pythonw."""
     if not IS_WIN: return True
     try:
         import ctypes
@@ -138,7 +138,7 @@ def http(url, data=None, timeout=1.5):
 
 def restart_bot_editor(dest, port):
     """A running bot editor keeps serving the old serve.py and page until it restarts: ask it to quit, then start it
-    again (the Quark Project app's watchdog does that itself when the app is open)."""
+    again (the Quarkology app's watchdog does that itself when the app is open)."""
     base = "http://127.0.0.1:%d/api/" % port
     ping = http(base + "ping")
     if not ping or ping.get("tool") != "bot-editor": return
@@ -149,7 +149,7 @@ def restart_bot_editor(dest, port):
         if http(base + "ping", timeout=0.5) is None: break
         time.sleep(0.2)
     if http("http://127.0.0.1:8768/", timeout=1.0) is not None or os.environ.get("QUARK_SHELL") == "1":
-        print("  bot editor stopped: the Quark Project app restarts it from the new files")
+        print("  bot editor stopped: the Quarkology app restarts it from the new files")
         return
     # in the background with no window (the owner wants no console windows): its output goes to serve.log there (this run's only)
     with open(os.path.join(dest, "serve.log"), "wb") as log:
