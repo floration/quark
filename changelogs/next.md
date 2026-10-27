@@ -23,3 +23,9 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - **More player models**: PIRATE, NINJA and BANDIT.
 - **New map material: NOGRAPPLE** (slate blue with diagonal stripes). It is solid like a normal wall for players, shots and sight, but your grapple hits it and lets go instead of latching on. In the editor it comes after CLIP on the M key and the material list. Maps saved by this version are format 3; older games cannot open maps that use it.
 - **Fixed missing box faces**: some faces of stairs and other stacked boxes were invisible in game. The check that hides faces buried inside other boxes was approximate and could hide a face that was still partly visible; it is now exact, and invisible clip boxes no longer hide the faces behind them.
+
+## Sounds
+- **The bomb going off now makes a sound**: a deep, long boom at the bomb that everyone hears. Before, the round just ended in silence.
+- **Tag passes are heard**: being tagged plays a stab and a sting, tagging someone plays a heavy hit sound (with HITSOUND on), and everyone else hears the new "it" get hit.
+- **Race practice checkpoints ding** (CHECKPOINT and FINISH), like in the race itself. Before, practice laps before the race were silent.
+- **Demos: the recorded player's own shots are heard** again. Before, their gunfire was silent in playback.

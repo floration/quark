@@ -16,6 +16,7 @@
 #include "../game/ranked.h"
 #include "audio.h"
 #include "clientfeel.h"
+#include "modecalls.h"
 #include "rawmouse.h"
 #include "gpuprefs.h"
 #include "binds.h"
@@ -470,6 +471,8 @@ private:
     Vec3 hookMuzzle_[kMaxPlayers];
     uint32_t hookMuzzleFrame_[kMaxPlayers] = {};
     uint32_t drawFrame_ = 0;
+    PracticeDing practiceDing_;   // race practice's checkpoint dings (modecalls.h)
+    int tagIt_ = -1;   // tag: who was "it" in the last mode state seen (a pass on: its sounds, updateAnnouncer)
     HurtSoundGate hurtGate_;   // your own hurt sound: one per 0.15 s, louder for more damage (clientfeel.h)
     HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
@@ -636,7 +639,7 @@ private:
     double prevSoundAt_ = 0;   // (updateSounds: when it last ran, for the frame time)
     bool prevAlive_ = false;
     float stepDist_ = 0;
-    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0; };
+    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; bool firing = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0; };   // (firing: a demo's recorded player only)
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;

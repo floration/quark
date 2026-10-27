@@ -72,3 +72,46 @@ inline const char* ordinalSuffix(int k) {
 // Free for all's lead calls, for you only (it played "new leader" to everyone on every lead change): you took a
 // clear lead (the new leader line), or lost yours. lead: you lead alone now; wasLead: you did. -1 none, 0 lost, 1 took.
 inline int ffaLeadCall(bool wasLead, bool lead) { return lead == wasLead ? -1 : lead ? 1 : 0; }
+
+// ---- mode sounds the client works out itself from the states it's sent (no event for them on the wire)
+
+// Bomb: the planted bomb went off between pv and ms (the round's end comes with it, so the phase isn't checked).
+inline bool bombWentOff(const ModeState& pv, const ModeState& ms) {
+    return ms.mode == MODE_BOMB && pv.mode == ms.mode && pv.round == ms.round && pv.bombState == BOMB_PLANTED && ms.bombState == BOMB_EXPLODED;
+}
+
+// Tag: who is "it" (PS_HASBOMB, never hidden in tag) among the alive players, -1 none.
+inline int tagItOf(const std::vector<PlayerSnap>& players) {
+    for (auto& p : players) if ((p.flags & PS_ALIVE) && (p.flags & PS_HASBOMB)) return p.id;
+    return -1;
+}
+// Tag: "it" passed by a stab between pv and ms (live, one round): the tagger, the old "it", or -1. prevIt / nowIt:
+// tagItOf the two states; ms's players. A new "it" after the old one left isn't a tag (the server draws one at random).
+inline int tagPassFrom(const ModeState& pv, const ModeState& ms, int prevIt, int nowIt, const std::vector<PlayerSnap>& players) {
+    if (ms.mode != MODE_TAG || pv.mode != ms.mode || pv.round != ms.round || pv.phase != PHASE_LIVE || ms.phase != PHASE_LIVE) return -1;
+    if (prevIt < 0 || nowIt < 0 || prevIt == nowIt) return -1;
+    for (auto& p : players) if (p.id == prevIt) return prevIt;
+    return -1;
+}
+
+// Race practice (warmup): the server sends no split for its checkpoints, so the ding is the client's: at once when
+// your own predicted box enters the next one, else when the server's count (PlayerSnap::checkpoint) moves on without
+// it. One ding per checkpoint either way.
+struct PracticeDing {
+    int dinged = -1;     // the checkpoint index dinged and not yet passed on the server
+    int lastSnap = -1;   // the server's count last seen
+    void reset() { dinged = lastSnap = -1; }
+    // next: the server's count (the next checkpoint's index); in: your box is in that checkpoint now; total: how many.
+    // 0 none, 1 a checkpoint, 2 the finish (the server sends you round again: its count goes back to 0).
+    int step(int next, bool in, int total) {
+        int r = 0;
+        if (total <= 0 || next < 0 || next >= total) { reset(); return 0; }
+        if (lastSnap >= 0 && next != lastSnap) {   // the server passed one: dinged already, or say it now
+            if (dinged != lastSnap) r = lastSnap + 1 == total ? 2 : 1;
+            dinged = -1;
+        }
+        lastSnap = next;
+        if (!r && in && dinged != next) { dinged = next; r = next + 1 == total ? 2 : 1; }
+        return r;
+    }
+};
