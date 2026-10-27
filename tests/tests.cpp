@@ -8103,6 +8103,7 @@ static void testReachProbe(uint16_t port) {
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
+#include "layout_tests.h"  // the layout engine and the HUD theme (layout_cases.json, cache, allocations, layoutbench)
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 #include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
 
@@ -8190,6 +8191,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && (std::string(argv[1]) == "exportmode" || std::string(argv[1]) == "checkmode" || std::string(argv[1]) == "modeast" || std::string(argv[1]) == "printmode"))
         return modeTool(argv[1], argc, argv);
     if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
+    if (argc >= 2 && std::string(argv[1]) == "layoutbench") return layoutBench();
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
         double secs = argc > 2 ? atof(argv[2]) : 8;
         snapBench("midtown", 32, secs, TP(28820));
@@ -8241,6 +8243,7 @@ int main(int argc, char** argv) {
         {"modelogic", [] { g_fail += modeTests(); }},
         {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
+        {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
     };
     std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)

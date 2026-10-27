@@ -17,8 +17,19 @@ struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4];
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
-// in the shader, so each character is one quad.
+// in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: a rounded rect (roundRect: uv its
+// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4).
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
+// The 2D batch's allocator: growing the batch leaves the new vertices unset (every writer sets all of a vertex's
+// fields), so text and rects don't zero a vertex just before writing it.
+template <class T> struct NoInitAlloc : std::allocator<T> {
+    template <class U> struct rebind { using other = NoInitAlloc<U>; };
+    NoInitAlloc() = default;
+    template <class U> NoInitAlloc(const NoInitAlloc<U>&) noexcept {}
+    template <class U> void construct(U* p) noexcept { ::new ((void*)p) U; }
+    template <class U, class... A> void construct(U* p, A&&... a) { ::new ((void*)p) U(std::forward<A>(a)...); }
+};
+using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
@@ -88,6 +99,13 @@ public:
     void rect(float x, float y, float w, float h, const Color& c);
     // a rect whose corners have their own colours (blended across it): colour pickers' hue and value ramps
     void rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl);
+    // A rect with rounded corners (radius px, at most half its shorter side), or with ring > 0 only a band that wide
+    // inside its edge (a border): one quad in the same 2D batch, the corners cut by a distance test in the UI shader
+    // (HUD themes, theme.h). Radius 0 and no ring is rect().
+    void roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring = 0);
+    // Every 2D colour's alpha times a (a HUD element's theme opacity, set around its drawing); 1: as given.
+    void setAlpha(float a) { alpha_ = a; }
+    float alpha() const { return alpha_; }
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
     // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
     // `enemy` (the player's team colours); friendly's alpha fades all of it. In Rubik: the baked logo
@@ -193,6 +211,10 @@ private:
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
     int fontGen_ = 0;
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
+    float alpha_ = 1;         // (setAlpha)
+    void uiIndices(size_t quads);   // (the 2D batch's index buffer covers at least this many quads)
+    unsigned uiEbo_ = 0;      // the 2D batch's indices: 4 vertices a quad, drawn as 0 1 2 / 0 3 2 (fixed; grown when needed)
+    size_t uiIdxQuads_ = 0;   // (quads the index buffer covers)
     size_t uiUploaded_ = 0;   // (prepare2D: this many 2D vertices are in uiVbo_ already; 0: none)
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
@@ -207,7 +229,7 @@ private:
     void setupDynVao(unsigned vao, unsigned vbo);
     std::vector<FlatVertex> flat_;
     std::vector<FlatVertex> viewFlat_;   // the view model's translucent parts (drawn in its pass; empty for most models)
-    std::vector<Vertex2D> ui_;
+    Vertex2DList ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
     bool prep_ = false, prepShadows_ = false;   // (prepareScene ran this frame; with the shadow pass)
     size_t prepN_[6] = {};                      // (its uploads: shadow only, lit casting, lit not casting, view model; flat, view flat)

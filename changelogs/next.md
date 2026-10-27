@@ -30,3 +30,10 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - **Tag passes are heard**: being tagged plays a stab and a sting, tagging someone plays a heavy hit sound (with HITSOUND on), and everyone else hears the new "it" get hit.
 - **Race practice checkpoints ding** (CHECKPOINT and FINISH), like in the race itself. Before, practice laps before the race were silent.
 - **Demos: the recorded player's own shots are heard** again. Before, their gunfire was silent in playback.
+
+## HUD
+- **Edit the HUD on screen**: Settings > HUD > EDIT ON SCREEN shows every HUD element where it goes, with the score box, kill feed and chat too. Click one to select it, drag it to move it (it snaps to the screen's edges and centre and to the other elements, with guide lines; hold Alt to place it freely), and drag a corner, use the wheel or press + / - to size it. Arrow keys nudge it (Shift: 10 at a time), Tab picks the next element, Delete hides or shows it, and Ctrl+Z / Ctrl+Y undo and redo. A small panel beside it has the element's settings and its style, plus RESET ELEMENT, RESET ALL and DONE.
+- **HUD styles (theme.cfg)**: give any HUD element a background, border, rounded corners, padding, opacity, text size and line spacing, from the on-screen editor or by writing `theme.cfg` (next to `hud.cfg`, in a short CSS-like format). It changes live in a running game. With no theme the HUD looks exactly as before. In ranked, a theme can dim an element to 30% at least, never hide it.
+- **The score box, kill feed and chat are now HUD elements**: move, size, recolour and style them like the others (Settings > HUD and EDIT ON SCREEN).
+- **Fixed the HUD tab's footer covering the weapon list**: BACK and RESET WHOLE HUD now sit higher, clear of the HUD's bottom row.
+- **The HUD and menus draw a little cheaper**: the HUD costs slightly less CPU per frame than before even with all of the above, and every piece of text and every box in the UI sends a third less data to the GPU.

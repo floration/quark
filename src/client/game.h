@@ -1,5 +1,6 @@
 // The client application: menus, hosting, connection, input, world/HUD rendering.
 #pragma once
+#include <cstring>
 #include <map>
 #include <set>
 #include <atomic>
@@ -10,6 +11,8 @@
 #include <thread>
 #include <vector>
 #include "hudwidgets.h"
+#include "layout.h"
+#include "theme.h"
 #include "weaponpredict.h"
 #include "../game/netclient.h"
 #include "../game/server.h"
@@ -52,6 +55,7 @@ struct LaunchOptions {
                                 // a step right before the --screenshot (what was fired is seen from the side)
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool textHeavy = false;     // --textheavy: scoreboard + F3 + chat lines always on, to measure text cost (with --bench)
+    bool feedShot = false;      // --feedshot: made-up kill feed and chat lines that stay (HUD screenshots and benches)
     bool debugCrosshair = false;
     int debugPicker = 0;        // --picker N: open that host-menu list (1 maps, 2 modes, 7 rulesets)
     bool debugPause = false, debugVote = false; // --pause / --votemenu
@@ -457,7 +461,20 @@ private:
 
     // effects + feeds
     struct Span { size_t at, len; Color color; };   // part of a feed line in its own colour (a player's chosen name colour)
-    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; std::vector<Span> spans{}; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
+    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; std::vector<Span> spans{};   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
+                  mutable float w = 0, wts = -1; mutable int wgen = -1; };   // (its text's width at text size wts: measured once, not every frame)
+    float feedWidth(const Feed& f, float ts) const {
+        if (f.wts != ts || f.wgen != r_.fontGeneration()) { f.w = r_.textWidth(f.text, ts); f.wts = ts; f.wgen = r_.fontGeneration(); }
+        return f.w;
+    }
+    // a short HUD text's width, measured again only when the text, its size or the font changes (longer: every time)
+    struct HudWidth { char t[32] = {}; float ts = -1, w = 0; int gen = -1; };
+    float hudWidth(HudWidth& c, const char* t, float ts) const {
+        if (c.ts == ts && c.gen == r_.fontGeneration() && std::strcmp(c.t, t) == 0) return c.w;
+        const float w = r_.textWidth(t, ts);
+        if (std::strlen(t) < sizeof c.t) { std::strcpy(c.t, t); c.ts = ts; c.gen = r_.fontGeneration(); c.w = w; }
+        return w;
+    }
     std::deque<Feed> killFeed_, chatFeed_, notices_;
     void drawFeedText(float x, float y, float ts, const Feed& f);
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
@@ -657,7 +674,7 @@ private:
     int crownOf(int playerId) const;              // 1 = #1 on a ranked board, 2-10 top 10, 0 none (or crowns off)
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
-    void drawChatBox(float W, float H, float s, float ts);
+    HudRect drawChatBox(float W, float H, float s, float ts, bool sample = false, bool draw = true);   // (the HUD's chat element)
     void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
     float drawVotePanel(float cx, float s, float ts, float y = -1);   // a running vote, its box from y (-1: 122 at 720p); returns where it ends
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
@@ -824,8 +841,65 @@ private:
     HudRect drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw = true);
     HudRect drawHudSpeed(const Settings::HudElem& e, float W, float H, float s, float v, bool draw = true);
     HudRect drawHudSlots(const Settings::HudElem& e, float W, float H, float s, int mode, uint32_t mask, int held, Color heldC, bool live, bool draw = true);
+    struct ScoreText { std::string title, phase, scoreA, scoreB; bool ranked = false, unrated = false; };
+    struct ScoreWidths { std::string title, phase, scoreA, scoreB; float ts = -1, wTitle = 0, wPhase = 0, wA = 0, wB = 0; int gen = -1; };
+    ScoreWidths hudScoreW_;                           // (the score box's text widths: measured again only when a line changes)
+    ScoreText hudScoreText_;                          // (reused: its strings keep their buffers from frame to frame)
+    void scoreText(ScoreText& t, bool sample) const;  // the score box's lines (sample: a made-up free for all)
+    mutable int voteKeyCode_ = -2;                    // (the vote-start key's name, for the warmup line: looked up when the bind changes)
+    mutable std::string voteKeyName_;
+    HudRect drawHudScore(const ScoreText& t, float W, float H, float s, bool draw = true);
+    HudRect drawHudKillFeed(float W, float H, float s, float top, bool sample, bool draw = true);
+    float hudFeedTop_ = 12;                           // (where the kill feed starts, 720p units: under the verbose block)
+    // ---- the HUD's elements on the layout engine (layout.h), styled by theme.cfg (theme.h): drawHudElement and friends
+    HudTheme theme_;
+    std::string themePath_;                           // (theme.cfg's path, built once)
+    double themePolledAt_ = -1e9;                     // (time_ when theme.cfg was last looked at: once a second)
+    std::string themeErrShown_;                       // (the theme's error last shown as a notice)
+    void pollTheme();
+    // one per element, each re-solving only when its own content changes (held here, not on the heap: a frame's HUD
+    // touches as few cache lines as it can; capacities: the weapon list's slots, the kill feed's and chat's lines)
+    lay::Layout hudLay_[Settings::HUD_COUNT] = {lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(24), lay::Layout(4),
+                                                lay::Layout(4), lay::Layout(4), lay::Layout(8), lay::Layout(56), lay::Layout(64)};
+    HudWidth hudCapW_[8];                             // (captions: the bars' WEAPON / DASH / HOOK, the speed meter's, the weapon name)
+    struct SlotLabels { char t[WPN_COUNT][32]; float w[WPN_COUNT]; int away[WPN_COUNT]; float ts = -1; int gen = -1; };   // (away: the seconds in t; INT_MIN: not made)
+    SlotLabels hudSlotW_ = {};                        // (the weapon list's labels and widths, measured when one changes)
+    lay::Rect hudRect_[Settings::HUD_COUNT];          // each element's box as last laid out (the editor: outlines, hits, snapping)
+    static constexpr float kRankedMinOpacity = 0.3f;  // ranked: a theme's opacity can't take an element below this
+    // ---- the on-screen HUD editor (Settings > HUD > EDIT ON SCREEN; hudeditor.cpp): nothing of it runs while closed
+    bool hudEdit_ = false;
+    int hudEdSel_ = Settings::HUD_HEALTH;
+    int hudEdDrag_ = 0;                               // 0 none, 1 moving the selection, 2 sizing it (a corner)
+    bool hudEdLeft_ = false;                          // (the inspector on the left: the selection is under its usual place)
+    float hudEdX0_ = 0, hudEdY0_ = 0;                 // (where the drag started)
+    Settings::HudElem hudEdOrig_{};
+    lay::Rect hudEdRect0_;
+    double hudEdWheel_ = 0;                           // (wheel notches since the last frame: sizes what's under the mouse)
+    struct HudSnap { Settings::HudElem hud[Settings::HUD_COUNT]; std::string theme; };   // an undo step: the elements and theme.cfg
+    std::vector<HudSnap> hudUndo_, hudRedo_;
+    HudSnap hudEdLast_;                               // (the state the last step ended in)
+    uint32_t hudEdLastVer_ = 0;
+    void hudEditOpen();
+    void hudEditClose();
+    void drawHudEditor();
+    bool hudEditKey(int key, int action, int mods);
+    void hudEdCommit(bool force);
+    void hudEdApply(const HudSnap& sn);
+    bool hudEdUndo(bool redo);
+    const HudStyle& hudStyle(int el) const;
+    float hudOpacity(int el) const;
+    Color hudTint(int el, Color c) const;             // the element's colour: its HUD COLOR, else the theme's, else c
+    float hudFont(int el) const;                      // its text size: SIZE x the theme's font-size
+    bool hudSame(int el, float W, float H, const float* v, int n);
+    lay::Rect hudSimple(int el, float W, float H, float ax, float ay, float refX, float refY, float k, float cw, float ch, lay::Rect& c);
+    // opens element el's layout and its root box (anchored at (ax, ay) of the screen, its anchor point by default at
+    // refX, refY); defPad: its built-in padding (px), themePad false: the theme's padding styles its lines instead
+    lay::Layout& hudOpen(int el, float W, float H, float ax, float ay, float refX, float refY, float k, lay::Decl d,
+                         const float* defPad = nullptr, bool themePad = true);
+    lay::Rect hudClose(int el);                       // closes the root, solves (cached), keeps and returns its rect
+    void hudBoxDraw(int el, const lay::Rect& r, float k, Color def);   // its background (def: the built-in one) and border
     // Settings > HUD's live preview: the tab is showing (not the widget editor, FONT or DEVICES)
-    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !fontsOpen_ && !devicesOpen_; }
+    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !hudEdit_ && !fontsOpen_ && !devicesOpen_; }
     void drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview);   // (alive)
     HudRect drawHudElement(int el, float W, float H, float s, bool sample, bool draw = true);   // one element (the overlay)
     void drawHudSample(float W, float H, float s);   // every element with made-up values (the main menu's settings)

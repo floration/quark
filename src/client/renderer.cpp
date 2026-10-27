@@ -271,9 +271,14 @@ uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
 out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
+// a rounded rect (aText.w 1, Renderer::roundRect): its pixel position in it, its size (the last corner's: both
+// triangles end on it), corner radius and ring width
+out vec2 vLocal; flat out vec2 vSize; flat out vec3 vShape;
 void main() {
     vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
     vSplit = aText.z;
+    vShape = vec3(aText.w, aText.x, aText.y * 0.25);
+    vLocal = aUV * 0.25; vSize = aUV * 0.25;
     vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
@@ -281,6 +286,7 @@ void main() {
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
 in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
+in vec2 vLocal; flat in vec2 vSize; flat in vec3 vShape;
 uniform sampler2D uFont;
 uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
@@ -291,6 +297,17 @@ uniform vec2 uSplitP, uSplitN;
 uniform float uSplitSeam;
 out vec4 fragColor;
 void main() {
+    if (vShape.x > 0.5) {   // a rounded rect: coverage from its signed distance (< 0 inside), a ring minus what's further in
+        vec2 b = vSize * 0.5, p = vLocal - b;
+        float r = min(vShape.y, min(b.x, b.y));
+        vec2 q = abs(p) - b + r;
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+        float a = clamp(0.5 - d, 0.0, 1.0);
+        if (vShape.z > 0.0) a -= clamp(0.5 - d - vShape.z, 0.0, 1.0);
+        if (a <= 0.004) discard;
+        fragColor = vec4(vColor.rgb, vColor.a * a);
+        return;
+    }
     if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
         vec4 t = texture(uLogo, vUV);
         float a = max(t.a, max(t.r, t.g));
@@ -323,8 +340,8 @@ void setMat(GLint loc, const Mat4& m) { glUniformMatrix4fv(loc, 1, GL_FALSE, m.m
 #ifdef QUARK_TRACY
 static size_t g_uploadBytes = 0, g_uploads = 0, g_dynVerts = 0, g_shadowVerts = 0; // per-frame counters (profiling builds)
 #endif
-template <class T>
-void upload(unsigned vbo, size_t& cap, const std::vector<T>& v) {
+template <class T, class A>
+void upload(unsigned vbo, size_t& cap, const std::vector<T, A>& v) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     size_t bytes = v.size() * sizeof(T);
 #ifdef QUARK_TRACY
@@ -431,6 +448,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)4);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex2D), (void*)8);
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);   // (scale, frac, split Q flag, 0)
+    glGenBuffers(1, &uiEbo_);
+    uiIndices((1 << 15) / 4);   // (bound to the VAO: the index pattern for the reserved batch)
     glBindVertexArray(0);
 
     // Font texture: the UI font's distance field (linear filtering: one atlas serves every text size)
@@ -1164,40 +1183,80 @@ static inline int16_t px(float v) { return (int16_t)clampf(uiRound(v), -32768, 3
 // font atlas texel coords as the vertex stores them, (texel + 1) * 32: whole texels, so plain integers
 static inline uint16_t u16uv(int texel) { return (uint16_t)((texel + 1) * 32); }
 struct Rgba8 { uint8_t v[4]; };
-static inline Rgba8 rgba8(const Color& c) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a)}}; }   // (once per rect / text)
+static inline Rgba8 rgba8(const Color& c, float a) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a * a)}}; }   // (once per rect / text; a: setAlpha)
 
-// one quad (2 triangles) into the UI batch. Every glyph of every text is one: each distinct value is converted once
-// (the corners share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
-static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
-                   const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
+// The 2D batch is quads: 4 vertices each, corners 0 (x0,y0) 1 (x1,y0) 2 (x1,y1) 3 (x0,y1), drawn through a fixed index
+// buffer as triangles 0 1 2 and 0 3 2 (both end on corner 2: the provoking vertex for the shader's flat inputs). 4
+// vertices written a quad instead of 6: a third less to write and upload for every glyph and rect.
+void Renderer::uiIndices(size_t quads) {   // (the VAO bound: the element buffer is part of its state)
+    if (quads <= uiIdxQuads_) return;
+    std::vector<uint32_t> idx(quads * 6);
+    for (size_t q = 0; q < quads; q++) {
+        const uint32_t b = (uint32_t)(q * 4);
+        uint32_t* i = &idx[q * 6];
+        i[0] = b; i[1] = b + 1; i[2] = b + 2; i[3] = b; i[4] = b + 3; i[5] = b + 2;
+    }
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, uiEbo_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(uint32_t), idx.data(), GL_STATIC_DRAW);
+    uiIdxQuads_ = quads;
+}
+
+// one quad into the UI batch. Every glyph of every text is one: each distinct value is converted once (the corners
+// share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
+// (writes the 4 vertices at d: text() makes room for a whole string at once)
+static inline void uiQuadAt(Vertex2D* d, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+                            const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
     const int16_t X0 = px(x0), X1 = px(x1), Y0 = px(y0), Y1 = px(y1);
-    const size_t n = out.size();
-    out.resize(n + 6);
-    Vertex2D* d = out.data() + n;
     auto put = [&](Vertex2D& v, int16_t x, int16_t y, uint16_t u, uint16_t w) {
         v.pos[0] = x; v.pos[1] = y; v.uv[0] = u; v.uv[1] = w;
         memcpy(v.color, c.v, 4);
         v.scaleInt = scaleInt; v.scaleFrac = scaleFrac; v.pad[0] = v.pad[1] = 0;
     };
-    // corners 0 (x0,y0) 1 (x1,y0) 2 (x1,y1) 3 (x0,y1), as triangles 0 1 2 and 0 2 3
-    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1);
-    d[3] = d[0]; d[4] = d[2]; put(d[5], X0, Y1, U0, V1);
+    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, U0, V1);
+}
+
+static void uiQuad(Vertex2DList& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+                   const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
+    const size_t n = out.size();
+    out.resize(n + 4);
+    uiQuadAt(out.data() + n, x0, y0, x1, y1, U0, V0, U1, V1, c, scaleInt, scaleFrac);
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c), 0, 0);
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c, alpha_), 0, 0);
 }
 
 void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl), 0, 0);
-    // corners 0 tl, 1 tr, 2 br, 5 bl (3 = 0, 4 = 2): their own colours
-    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a); };
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl, alpha_), 0, 0);
+    // corners 0 tl, 1 tr, 2 br, 3 bl: their own colours
+    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a * alpha_); };
     Vertex2D* d = ui_.data() + n;
-    col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
+    col(d[1], tr); col(d[2], br); col(d[3], bl);
+}
+
+void Renderer::roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring) {
+    if (w <= 0 || h <= 0) return;
+    if (radius < 0.5f && ring <= 0) { rect(x, y, w, h, c); return; }
+    const int16_t X0 = px(x), X1 = px(x + w), Y0 = px(y), Y1 = px(y + h);
+    if (X1 <= X0 || Y1 <= Y0) return;
+    // the quad's own pixel coords in its uv (* 4: a quarter pixel, rects up to 16383 px); both triangles end on corner
+    // 2 (the index pattern), whose uv is the size (the shader's flat vSize: the provoking vertex is the last)
+    const uint16_t U1 = (uint16_t)std::min(65535, (X1 - X0) * 4), V1 = (uint16_t)std::min(65535, (Y1 - Y0) * 4);
+    const Rgba8 col = rgba8(c, alpha_);
+    const uint8_t rad = (uint8_t)clampf(std::round(radius), 0, 255), rg = (uint8_t)clampf(std::round(ring * 4), 0, 255);
+    const size_t n = ui_.size();
+    ui_.resize(n + 4);
+    Vertex2D* d = ui_.data() + n;
+    auto put = [&](Vertex2D& v, int16_t X, int16_t Y, uint16_t u, uint16_t w2) {
+        v.pos[0] = X; v.pos[1] = Y; v.uv[0] = u; v.uv[1] = w2;
+        memcpy(v.color, col.v, 4);
+        v.scaleInt = rad; v.scaleFrac = rg; v.pad[0] = 0; v.pad[1] = 1;
+    };
+    put(d[0], X0, Y0, 0, 0); put(d[1], X1, Y0, U1, 0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, 0, V1);
 }
 
 // The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
@@ -1211,7 +1270,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
         // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
         const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
-        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}), 255, 255);
+        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
         logoDrawn_ = true;
         return;
     }
@@ -1249,7 +1308,12 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
+    // (room for every glyph at once, written in place, then trimmed to the glyphs drawn: one grow per string, not per
+    // glyph)
+    const size_t n0 = ui_.size();
+    ui_.resize(n0 + 4 * str.size());
+    Vertex2D* d = ui_.data() + n0;
     int prev = -1;
     for (char ch : str) {
         int g = glyphIndex(ch);
@@ -1259,8 +1323,10 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
         // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
         float qx = uiRound(cx - kUiOrigin * sk) - pad, qy = top - pad;
         int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        uiQuadAt(d, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        d += 4;
     }
+    ui_.resize((size_t)(d - ui_.data()));
 }
 
 // Monospaced (console): every glyph gets the same advance (a little over a digit's), centred in it, no kerning;
@@ -1274,7 +1340,7 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     float sc = clampf(s * k, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         if (g == 0) continue;
@@ -1377,7 +1443,8 @@ void Renderer::flush2D() {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)ui_.size());
+    if (ui_.size() / 4 > uiIdxQuads_) uiIndices(ui_.size() / 4 * 2);   // (grown with room to spare: rare)
+    glDrawElements(GL_TRIANGLES, (GLsizei)(ui_.size() / 4 * 6), GL_UNSIGNED_INT, nullptr);
     glDisable(GL_BLEND);
     ui_.clear();
 #ifdef QUARK_TRACY
