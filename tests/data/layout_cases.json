@@ -1,0 +1,110 @@
+{
+  "about": "Layout engine cases (src/client/layout.h): each tree is declared on a screen, solved, and every box's [x, y, w, h] compared (0.01 px). quark_tests layout checks the C++ solver against these; an editor's JS copy of the solver checks itself against the same file. Sizes: [\"fit\"], [\"fixed\", px], [\"grow\"], [\"pct\", fraction]; \"min\" / \"max\" clamp a size: {\"w\": [\"fit\"], \"wmin\": 100}. float: [anchorX, anchorY, pivotX, pivotY, offsetX, offsetY]. pad: [left, top, right, bottom].",
+  "cases": [
+    {
+      "name": "row that fits its children, padding and gap, on the screen at an offset",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "row", "pad": [10, 5, 10, 5], "gap": 4, "float": [0, 0, 0, 0, 20, 30], "children": [
+        {"id": "a", "w": ["fixed", 50], "h": ["fixed", 20]},
+        {"id": "b", "w": ["fixed", 30], "h": ["fixed", 40]}]},
+      "expect": {"root": [20, 30, 104, 50], "a": [30, 35, 50, 20], "b": [84, 35, 30, 40]}
+    },
+    {
+      "name": "column centred on the cross axis, anchored to the bottom-right corner",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "col", "w": ["fixed", 100], "gap": 2, "cross": "center", "float": [1, 1, 1, 1, -10, -10], "children": [
+        {"id": "a", "w": ["fixed", 40], "h": ["fixed", 10]},
+        {"id": "b", "w": ["fixed", 60], "h": ["fixed", 20]}]},
+      "expect": {"root": [1170, 678, 100, 32], "a": [1200, 678, 40, 10], "b": [1190, 690, 60, 20]}
+    },
+    {
+      "name": "main-axis alignment: end, space between, centre",
+      "screen": [1280, 720],
+      "trees": [
+        {"id": "end", "dir": "row", "w": ["fixed", 200], "h": ["fixed", 50], "gap": 10, "main": "end", "children": [
+          {"id": "e1", "w": ["fixed", 20], "h": ["fixed", 10]}, {"id": "e2", "w": ["fixed", 20], "h": ["fixed", 10]}, {"id": "e3", "w": ["fixed", 20], "h": ["fixed", 10]}]},
+        {"id": "between", "dir": "row", "w": ["fixed", 200], "h": ["fixed", 50], "gap": 10, "main": "between", "float": [0, 0, 0, 0, 0, 100], "children": [
+          {"id": "b1", "w": ["fixed", 20], "h": ["fixed", 10]}, {"id": "b2", "w": ["fixed", 20], "h": ["fixed", 10]}, {"id": "b3", "w": ["fixed", 20], "h": ["fixed", 10]}]},
+        {"id": "center", "dir": "row", "w": ["fixed", 200], "h": ["fixed", 50], "gap": 10, "main": "center", "float": [0, 0, 0, 0, 0, 200], "children": [
+          {"id": "c1", "w": ["fixed", 20], "h": ["fixed", 10]}, {"id": "c2", "w": ["fixed", 20], "h": ["fixed", 10]}, {"id": "c3", "w": ["fixed", 20], "h": ["fixed", 10]}]}],
+      "expect": {"e1": [120, 0, 20, 10], "e2": [150, 0, 20, 10], "e3": [180, 0, 20, 10],
+                 "b1": [0, 100, 20, 10], "b2": [90, 100, 20, 10], "b3": [180, 100, 20, 10],
+                 "c1": [60, 200, 20, 10], "c2": [90, 200, 20, 10], "c3": [120, 200, 20, 10]}
+    },
+    {
+      "name": "growing children share the room left, each within its max",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "row", "w": ["fixed", 300], "pad": [10, 10, 10, 10], "children": [
+        {"id": "a", "w": ["fixed", 50], "h": ["fixed", 20]},
+        {"id": "b", "w": ["grow"], "h": ["fixed", 20]},
+        {"id": "c", "w": ["grow"], "wmax": 60, "h": ["fixed", 20]}]},
+      "expect": {"root": [0, 0, 300, 40], "a": [10, 10, 50, 20], "b": [60, 10, 115, 20], "c": [175, 10, 60, 20]}
+    },
+    {
+      "name": "percent sizes, stretch on the cross axis, a child's own alignment",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "col", "w": ["fixed", 200], "h": ["fixed", 100], "cross": "stretch", "children": [
+        {"id": "a", "h": ["fixed", 30]},
+        {"id": "b", "w": ["pct", 0.5], "h": ["pct", 0.5]},
+        {"id": "c", "w": ["fixed", 40], "h": ["fixed", 10], "self": "center"}]},
+      "expect": {"root": [0, 0, 200, 100], "a": [0, 0, 200, 30], "b": [0, 30, 100, 50], "c": [80, 80, 40, 10]}
+    },
+    {
+      "name": "align self to the end in a row",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "row", "h": ["fixed", 50], "children": [
+        {"id": "a", "w": ["fixed", 10], "h": ["fixed", 10], "self": "end"},
+        {"id": "b", "w": ["fixed", 10], "h": ["fixed", 20]}]},
+      "expect": {"root": [0, 0, 20, 50], "a": [0, 40, 10, 10], "b": [10, 0, 10, 20]}
+    },
+    {
+      "name": "floating children: anchored to their parent, and out of its fitted size",
+      "screen": [1280, 720],
+      "trees": [
+        {"id": "root", "w": ["fixed", 100], "h": ["fixed", 100], "float": [0, 0, 0, 0, 100, 100], "children": [
+          {"id": "tip", "w": ["fixed", 20], "h": ["fixed", 20], "float": [1, 0, 0, 0, 5, 0]}]},
+        {"id": "empty", "pad": [3, 3, 3, 3], "float": [0, 0, 0, 0, 0, 300], "children": [
+          {"id": "f", "w": ["fixed", 50], "h": ["fixed", 50], "float": [0.5, 0.5, 0.5, 0.5, 0, 0]}]}],
+      "expect": {"root": [100, 100, 100, 100], "tip": [205, 100, 20, 20], "empty": [0, 300, 6, 6], "f": [-22, 278, 50, 50]}
+    },
+    {
+      "name": "min and max clamps on fitted sizes",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "row", "wmin": 100, "hmax": 15, "children": [
+        {"id": "a", "w": ["fixed", 30], "h": ["fixed", 20]}]},
+      "expect": {"root": [0, 0, 100, 15], "a": [0, 0, 30, 20]}
+    },
+    {
+      "name": "a scrolled clipping column culls what's out of it",
+      "screen": [1280, 720],
+      "tree": {"id": "root", "dir": "col", "w": ["fixed", 100], "h": ["fixed", 50], "clip": true, "scroll": [0, 30], "children": [
+        {"id": "a", "w": ["fixed", 100], "h": ["fixed", 20]},
+        {"id": "b", "w": ["fixed", 100], "h": ["fixed", 20]},
+        {"id": "c", "w": ["fixed", 100], "h": ["fixed", 20]},
+        {"id": "d", "w": ["fixed", 100], "h": ["fixed", 20]},
+        {"id": "e", "w": ["fixed", 100], "h": ["fixed", 20]}]},
+      "expect": {"a": [0, -30, 100, 20], "b": [0, -10, 100, 20], "c": [0, 10, 100, 20], "d": [0, 30, 100, 20], "e": [0, 50, 100, 20]},
+      "visible": {"a": false, "b": true, "c": true, "d": true, "e": true}
+    },
+    {
+      "name": "the HUD's score box: scores at the edges, the title column between, a minimum size",
+      "screen": [1280, 720],
+      "tree": {"id": "score", "dir": "row", "wmin": 440, "hmin": 64, "pad": [20, 8, 20, 8], "gap": 12, "main": "between", "float": [0.5, 0, 0.5, 0, 0, 8], "children": [
+        {"id": "A", "w": ["fixed", 30], "h": ["fixed", 36], "self": "center"},
+        {"id": "mid", "dir": "col", "cross": "center", "children": [
+          {"id": "title", "w": ["fixed", 120], "h": ["fixed", 24]},
+          {"id": "phase", "w": ["fixed", 200], "h": ["fixed", 20]}]},
+        {"id": "B", "w": ["fixed", 30], "h": ["fixed", 36], "self": "center"}]},
+      "expect": {"score": [420, 8, 440, 64], "A": [440, 22, 30, 36], "mid": [540, 16, 200, 44], "title": [580, 16, 120, 24],
+                 "phase": [540, 40, 200, 20], "B": [810, 22, 30, 36]}
+    },
+    {
+      "name": "a root that grows to the screen, a percent root",
+      "screen": [1000, 500],
+      "trees": [
+        {"id": "full", "w": ["grow"], "h": ["grow"]},
+        {"id": "half", "w": ["pct", 0.5], "h": ["pct", 0.25], "float": [1, 1, 1, 1, 0, 0]}],
+      "expect": {"full": [0, 0, 1000, 500], "half": [500, 375, 500, 125]}
+    }
+  ]
+}
