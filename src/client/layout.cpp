@@ -47,6 +47,11 @@ void Layout::prefetch() const {
     __builtin_prefetch(key_);
     __builtin_prefetch(out_.data());
     __builtin_prefetch(out_.data() + 2);
+#endif
+}
+
+void Layout::prefetchScratch() {
+#if defined(__GNUC__) || defined(__clang__)
     const Scratch& S = threadScratch();
     if (S.cap > 0) { __builtin_prefetch(S.decl.data()); __builtin_prefetch((const char*)S.decl.data() + 64); __builtin_prefetch((const char*)S.decl.data() + 128); }
 #endif

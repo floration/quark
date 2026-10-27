@@ -854,6 +854,7 @@ private:
     // ---- the HUD's elements on the layout engine (layout.h), styled by theme.cfg (theme.h): drawHudElement and friends
     HudTheme theme_;
     std::string themePath_;                           // (theme.cfg's path, built once)
+    double themePolledAt_ = -1e9;                     // (time_ when theme.cfg was last looked at: once a second)
     std::string themeErrShown_;                       // (the theme's error last shown as a notice)
     void pollTheme();
     // one per element, each re-solving only when its own content changes (held here, not on the heap: a frame's HUD
@@ -861,7 +862,7 @@ private:
     lay::Layout hudLay_[Settings::HUD_COUNT] = {lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(24), lay::Layout(4),
                                                 lay::Layout(4), lay::Layout(4), lay::Layout(8), lay::Layout(56), lay::Layout(64)};
     HudWidth hudCapW_[8];                             // (captions: the bars' WEAPON / DASH / HOOK, the speed meter's, the weapon name)
-    struct SlotLabels { char t[WPN_COUNT][32]; float w[WPN_COUNT]; float ts = -1; int gen = -1; };
+    struct SlotLabels { char t[WPN_COUNT][32]; float w[WPN_COUNT]; int away[WPN_COUNT]; float ts = -1; int gen = -1; };   // (away: the seconds in t; INT_MIN: not made)
     SlotLabels hudSlotW_ = {};                        // (the weapon list's labels and widths, measured when one changes)
     lay::Rect hudRect_[Settings::HUD_COUNT];          // each element's box as last laid out (the editor: outlines, hits, snapping)
     static constexpr float kRankedMinOpacity = 0.3f;  // ranked: a theme's opacity can't take an element below this

@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <cstring>
+#include <climits>
 #include "../game/demo.h"
 #include "../game/gamemodes.h"
 #include "../common/version.h"
@@ -2796,7 +2797,8 @@ struct AlphaScope {
 
 // theme.cfg, looked at once a second (the file's key comes from the watcher thread: filewatch.h); a new error shows once
 void Game::pollTheme() {
-    if (!theme_.pollDue()) return;
+    if (std::fabs(time_ - themePolledAt_) < 1.0) return;   // (the frame's clock: no clock read on the other frames)
+    themePolledAt_ = time_;
     if (themePath_.empty()) themePath_ = userDataPath("theme.cfg");
     theme_.poll(themePath_);
     if (theme_.error() != themeErrShown_) {
@@ -3002,16 +3004,20 @@ Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, f
     Slot slots[WPN_COUNT];
     int n = 0;
     SlotLabels& sl = hudSlotW_;   // (each slot's label and width, kept: measured again only when its text changes)
-    if (sl.ts != sts || sl.gen != r_.fontGeneration()) { sl.ts = sts; sl.gen = r_.fontGeneration(); for (auto& t : sl.t) t[0] = 0; }
-    char t[32];
+    if (sl.ts != sts || sl.gen != r_.fontGeneration()) { sl.ts = sts; sl.gen = r_.fontGeneration(); for (int& a : sl.away) a = INT_MIN; }
     for (int kk = 0; kk < WPN_COUNT; kk++) {
         int wi = kWeaponSlots[kk];
         bool has = !mask || (mask >> wi & 1);
         if (!weaponInMode(wi, mode) || (isItMode(mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
         double awayLeft = live ? weaponAwayLeft(wi) : 0;   // a thrown knife / syringe: disabled, greyed with its timer
-        if (awayLeft > 0) snprintf(t, sizeof t, "%d %s %d", weaponSlotKey(kk), weaponDef(wi).name, (int)std::ceil(awayLeft - 1e-6));   // (seconds until it's back)
-        else snprintf(t, sizeof t, "%d %s", weaponSlotKey(kk), weaponDef(wi).name);
-        if (std::strcmp(t, sl.t[kk]) != 0) { std::memcpy(sl.t[kk], t, sizeof t); sl.w[kk] = r_.textWidth(t, sts); }
+        // (the label: formatted and measured only when its seconds change; -1: none)
+        const int away = awayLeft > 0 ? (int)std::ceil(awayLeft - 1e-6) : -1;
+        if (sl.away[kk] != away) {
+            sl.away[kk] = away;
+            if (away >= 0) snprintf(sl.t[kk], sizeof sl.t[kk], "%d %s %d", weaponSlotKey(kk), weaponDef(wi).name, away);   // (seconds until it's back)
+            else snprintf(sl.t[kk], sizeof sl.t[kk], "%d %s", weaponSlotKey(kk), weaponDef(wi).name);
+            sl.w[kk] = r_.textWidth(sl.t[kk], sts);
+        }
         slots[n++] = {kk, wi, has, awayLeft};
     }
     const float refX = W - 24 * s - 14 * k + e.x * s, refY = H - 74 * k + th + e.y * s;
@@ -3422,12 +3428,12 @@ void Game::drawHud() {
     QZONE("drawHud");
     // (the elements' layouts and styles, fetched together: drawn after the world pass, they're out of the caches, and
     // waiting on them one element at a time cost more than laying the elements out)
-    for (int el = 0; el < Settings::HUD_COUNT; el++) {
-        hudLay_[el].prefetch();
+    // (two passes: the layouts' own lines and the styles first, all in flight at once; then what their pointers name)
 #if defined(__GNUC__) || defined(__clang__)
-        __builtin_prefetch(&theme_.style(el));
+    for (int el = 0; el < Settings::HUD_COUNT; el++) { __builtin_prefetch(&hudLay_[el]); __builtin_prefetch(&theme_.style(el)); }
 #endif
-    }
+    lay::Layout::prefetchScratch();
+    for (int el = 0; el < Settings::HUD_COUNT; el++) hudLay_[el].prefetch();
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);

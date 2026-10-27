@@ -113,10 +113,12 @@ public:
     bool overflowed() const { return dropped_ > 0; }   // something didn't fit in capacity() this declaration
     long solves() const { return solves_; }           // how many real solves (tests: the cache works)
     void invalidate() { lastHash_ = 0; }              // the next solve() works it all out again
-    // Asks the CPU to fetch what the next declaration and solve read (this, its first results, the thread's scratch),
-    // so a page of several layouts drawn after the world pass (cold caches) waits on all its misses at once, not on
-    // each in turn. Costs a few instructions; changes nothing.
+    // Asks the CPU to fetch what the next declaration and solve read (this, its first results; prefetchScratch: the
+    // thread's declaration arrays, once for them all), so a page of several layouts drawn after the world pass (cold
+    // caches) waits on all its misses at once, not on each in turn. Costs a few instructions; changes nothing. (It
+    // reads this object's result pointer: prefetch the objects themselves first, e.g. a loop before.)
     void prefetch() const;
+    static void prefetchScratch();
     // A page's shortcut past declaring at all: key holds everything its declaration is made from (sizes, offsets,
     // measured text widths, a theme's version). True when it's byte for byte the key of the last call and that
     // declaration was solved: the last result stands, so skip begin() .. solve(). False: declare and solve as usual
