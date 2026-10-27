@@ -3,6 +3,8 @@
 // (Included by tests.cpp after server_tests.h: it uses g_countAllocs / g_allocs.)
 #pragma once
 #include "../src/client/layout.h"
+#include "../src/client/theme.h"
+#include "../src/client/config.h"
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -182,13 +184,13 @@ void testLayoutCache() {
     const int title = L->find(lay::id("title"));
     CHECK(title >= 0 && L->rect(title).w > 160);
     CHECK(!L->overflowed());
-    // overflow: past kMaxBoxes the extra boxes (and their children) are dropped, and open / close stay paired
+    // overflow: past capacity() the extra boxes (and their children) are dropped, and open / close stay paired
     L->begin(100, 100);
     L->open(1, lay::Decl().col());
-    for (int k = 0; k < lay::Layout::kMaxBoxes + 10; k++) { L->open(lay::id(7, k), lay::Decl()); L->leaf(lay::id(9, k), lay::Decl()); L->close(); }
+    for (int k = 0; k < L->capacity() + 10; k++) { L->open(lay::id(7, k), lay::Decl()); L->leaf(lay::id(9, k), lay::Decl()); L->close(); }
     L->close();
     L->solve();
-    CHECK(L->overflowed() && L->count() == lay::Layout::kMaxBoxes);
+    CHECK(L->overflowed() && L->count() == L->capacity());
     // zero heap allocations: declare + solve, changed or not
     g_allocs = 0;
     g_countAllocs = true;
@@ -218,4 +220,67 @@ int layoutBench() {
     double solved = run(true), cached = run(false);
     printf("layoutbench: target under 5 us for the HUD: %s\n", solved < 5 ? "OK" : "OVER");
     return solved < 5 && cached < 5 ? 0 : 1;
+}
+
+// theme.cfg: selectors and the cascade, every property, clamps, colours, errors (a skipped declaration, a broken file
+// giving the default theme), and toText() reading back the same.
+void testHudTheme() {
+    HudTheme t;
+    CHECK(t.empty());
+    const char* text =
+        "/* a comment { with braces } */\n"
+        "hud { radius: 4; opacity: 80%; }\n"
+        "hud-panel { background: #0d0f14 55%; stripe: 3 enemy; }\n"
+        "hud.health, hud.weapon {\n"
+        "  background: rgba(0, 0, 0, 0.4); border: 1 #fff 30%;\n"
+        "  padding: 2 4; margin: 0 0 10 0; color: team;\n"
+        "}\n"
+        "killfeed { text-align: left; gap: 99; font-size: 120%; padding: 30px; }\n"
+        "health { radius: 6px }\n";
+    CHECK(t.fromText(text) == 5);
+    CHECK(t.error().empty());
+    if (!t.error().empty()) printf("  theme error: %s\n", t.error().c_str());
+    const HudStyle& h = t.style(Settings::HUD_HEALTH);
+    CHECK(h.has(HudStyle::RADIUS) && h.radius == 6);                 // (hud.health over hud, a later rule over an earlier)
+    CHECK(h.has(HudStyle::OPACITY) && std::fabs(h.opacity - 0.8f) < 1e-6f);
+    CHECK(h.has(HudStyle::BACKGROUND) && std::fabs(h.background.c.a - 0.4f) < 1e-6f && h.background.c.r == 0);
+    CHECK(h.borderW == 1 && std::fabs(h.border.c.a - 0.3f) < 1e-6f && h.border.c.g == 1);
+    CHECK(h.pad[0] == 4 && h.pad[1] == 2 && h.pad[2] == 4 && h.pad[3] == 2);   // (CSS order: top right bottom left)
+    CHECK(h.margin[3] == 10 && h.margin[0] == 0);
+    CHECK(h.color.kind == ThemeColor::TEAM);
+    CHECK(!h.has(HudStyle::STRIPE));
+    const HudStyle& w = t.style(Settings::HUD_WEAPON);
+    CHECK(w.radius == 4 && w.has(HudStyle::PADDING));
+    const HudStyle& sc = t.style(Settings::HUD_SCORE);
+    CHECK(sc.has(HudStyle::STRIPE) && sc.stripeW == 3 && sc.stripe.kind == ThemeColor::ENEMY && !sc.has(HudStyle::PADDING));
+    const HudStyle& kf = t.style(Settings::HUD_KILLFEED);
+    CHECK(kf.align == 0 && kf.gap == 48 && std::fabs(kf.fontScale - 1.2f) < 1e-6f && kf.pad[0] == 24);   // (clamped: gap 48, padding 24)
+    CHECK(!t.style(Settings::HUD_CHAT).has(HudStyle::GAP) && t.style(Settings::HUD_CHAT).radius == 4);
+    // round trip
+    HudTheme u;
+    CHECK(u.fromText(t.toText()) > 0 && u.error().empty());
+    for (int el = 0; el < HudTheme::kElems; el++) CHECK(u.style(el) == t.style(el));
+    for (int k = 0; k < HudTheme::kSelectors; k++) CHECK(u.rule(k) == t.rule(k));
+    // a bad declaration is skipped (the rest of the rule stands), with the line in the error
+    HudTheme b;
+    CHECK(b.fromText("hud.speed {\n  radius: 3;\n  wobble: 2;\n  color: #12345;\n}\nnosuch { radius: 1; }\n") == 1);
+    CHECK(b.style(Settings::HUD_SPEED).radius == 3 && !b.style(Settings::HUD_SPEED).has(HudStyle::COLOR));
+    CHECK(b.error().find("LINE 3") != std::string::npos);
+    // a broken file: the default theme, and an error
+    HudTheme x;
+    x.fromText("hud { radius: 2; }\nhud.health { radius: 5;\n");
+    CHECK(x.empty() && !x.error().empty());
+    // colours
+    ThemeColor c;
+    CHECK(parseThemeColor("#abc", c) && std::fabs(c.c.r - 0xaa / 255.0f) < 1e-6f && c.c.a == 1);
+    CHECK(parseThemeColor("#11223380", c) && std::fabs(c.c.a - 0x80 / 255.0f) < 1e-6f);
+    CHECK(parseThemeColor("rgb(255, 0, 0) 50%", c) && c.c.r == 1 && std::fabs(c.c.a - 0.5f) < 1e-6f);
+    CHECK(parseThemeColor("none", c) && c.c.a == 0);
+    CHECK(parseThemeColor("WHITE", c) && c.c.g == 1);
+    CHECK(!parseThemeColor("#12", c) && !parseThemeColor("rgb(1,2)", c) && !parseThemeColor("blurple", c) && !parseThemeColor("#fff 40", c));
+    CHECK(themeColorText(ThemeColor()) == "#ffffff");
+    // clearRules: nothing left; the version moves on every change (what caches compare)
+    const uint32_t v = t.version();
+    t.clearRules();
+    CHECK(t.empty() && t.version() != v);
 }

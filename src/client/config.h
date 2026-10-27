@@ -109,8 +109,10 @@ struct Settings {
     bool chHitFlash = true;     // a hit flashes the crosshair in chHitColor (and a center square on styles without a dot)
     Vec3 chHitColor = {1, 1, 1};
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
-    // (keys, then the grapple launcher: after the weapon model, so saved layouts keep their indices)
-    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_GRAPPLE, HUD_COUNT };
+    // (keys, then the grapple launcher: after the weapon model, so saved layouts keep their indices; then the score box,
+    // kill feed and chat, which could only be themed and moved from 1.19.0.testing on)
+    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_GRAPPLE, HUD_SCORE, HUD_KILLFEED, HUD_CHAT,
+           HUD_COUNT };
     // x / y / scale move and size an element (720p units); hidden removes it. For the two first-person models (the
     // weapon, the grapple launcher), x / y / depth move it in front of the camera (depth: z, + = further away), pitch /
     // yaw / roll tilt it about its pivot (degrees) and colour tints its accent parts (the launcher: its stripe).

@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
         else if (a == "--consoleshot") opts.consoleShot = next();
         else if (a == "--bench") opts.bench = atof(next().c_str());
         else if (a == "--textheavy") opts.textHeavy = true;
+        else if (a == "--feedshot") opts.feedShot = true;
         else if (a == "--edsel") opts.editSel = atoi(next().c_str());
         else if (a == "--edscript") opts.editScript = next();
         else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
@@ -118,7 +119,7 @@ int main(int argc, char** argv) {
     // Not in automated runs (screenshots, benchmarks, scripted editor sessions): they start and quit in seconds and
     // must not touch the player's launchers. Whatever way main returns, the thread is stopped between steps (never
     // inside a swap) and joined, waiting at most 2 s (selfupdate::finishFromGame).
-    bool automated = !opts.screenshot.empty() || opts.bench > 0 || !opts.editScript.empty() || opts.textHeavy ||
+    bool automated = !opts.screenshot.empty() || opts.bench > 0 || !opts.editScript.empty() || opts.textHeavy || opts.feedShot ||
                      opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf || opts.uiTest;
     if (opts.uiTest) uiTestPrepare(opts);   // (its own data folder and settings: before anything reads them)
     if (!automated) selfupdate::startFromGame(argv[0]);

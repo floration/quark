@@ -8243,7 +8243,7 @@ int main(int argc, char** argv) {
         {"modelogic", [] { g_fail += modeTests(); }},
         {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
-        {"layout", [] { testLayoutCases(); testLayoutCache(); }},
+        {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
     };
     std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)

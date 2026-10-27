@@ -1414,6 +1414,12 @@ void Game::frame(double dt) {
         showPerf_ = true;
         while (chatFeed_.size() < 8) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
     }
+    if (opts_.feedShot && screen_ == Screen::InGame && killFeed_.empty()) {   // (kill feed and chat lines that stay)
+        static const char* kills[] = {"wraith [ROCKET] lynx", "player [RIFLE] ghost", "ghost [KNIFE] player", "ember [SNIPER] wraith"};
+        for (const char* k : kills) killFeed_.push_back(Feed{k, std::string(k).rfind("player", 0) == 0 ? rgba(cfg_.colorFriendly) : kWhite, time_ + 1e9});
+        addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
+        addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
+    }
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
@@ -5353,9 +5359,9 @@ void Game::drawHudSettings(const SetLayout& L) {
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), x2 = L.X(kColL + 184);
     // the element: one dropdown (the weapon and grapple models, 3D models and not HUD elements, are its first entries)
     static const int order[] = {Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE, Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS,
-                                Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
+                                Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS, Settings::HUD_SCORE, Settings::HUD_KILLFEED, Settings::HUD_CHAT};
     static const std::vector<std::string> names = {"WEAPON MODEL", "GRAPPLE MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
-                                                   "KEY OVERLAY (VERBOSE)"};
+                                                   "KEY OVERLAY (VERBOSE)", "SCORE BOX", "KILL FEED", "CHAT"};
     static_assert(sizeof(order) / sizeof(order[0]) == Settings::HUD_COUNT, "every HUD element in the dropdown");
     SetFlow f{ui_, L, kColL, 90};
     f.header("ELEMENT");

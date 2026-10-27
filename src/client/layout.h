@@ -8,12 +8,13 @@
 //   solve    two passes over the flat array per axis: sizes bottom-up (fit), then grow / percent and positions top-down
 //   draw     rect(i); visible(i) is false for a box clipped out by a scrolled or clipping ancestor (culling)
 //
-// Cost rules (latency first): fixed-capacity arrays (kMaxBoxes) and no heap allocation, ever (quark_tests layoutbench
-// counts them); and a cached solve: what's declared is hashed as it's declared, and solve() keeps the last result when
+// Cost rules (latency first): fixed-capacity arrays (sized once, when the Layout is made) and no heap allocation after
+// that (quark_tests layoutbench counts them); and a cached solve: what's declared is hashed as it's declared, and solve() keeps the last result when
 // the hash and the screen are unchanged, so a frame whose layout didn't change only pays for the declaration (a few
 // stores and hash mixes per box). Lengths are pixels; nothing is rounded here (the renderer rounds).
 #pragma once
 #include <cstdint>
+#include <vector>
 
 namespace lay {
 
@@ -74,13 +75,14 @@ constexpr uint32_t id(uint32_t base, uint32_t index) { return (base ^ (index + 0
 
 class Layout {
 public:
-    static constexpr int kMaxBoxes = 256;
     static constexpr int kMaxDepth = 32;
+    explicit Layout(int capacity = 256);   // (the only allocation: every array, once)
+    int capacity() const { return cap_; }
 
     // Starts a declaration for a screen W x H (the roots' parent).
     void begin(float W, float H);
     // A box under the open one (a root when none is open); returns its index, -1 when full (it and its children are
-    // dropped: close() still pairs with it). label: a static string, for the debug overlay and the UI test.
+    // dropped: close() still pairs with it; overflowed() says so). label: a static string, for the debug overlay and the UI test.
     int open(uint32_t boxId, const Decl& d, const char* label = nullptr);
     void close();
     int leaf(uint32_t boxId, const Decl& d, const char* label = nullptr) { int i = open(boxId, d, label); close(); return i; }
@@ -97,7 +99,7 @@ public:
     int parent(int i) const { return parent_[i]; }
     const Decl& decl(int i) const { return decl_[i]; }
     int depth(int i) const { int d = 0; for (int p = parent_[i]; p >= 0; p = parent_[p]) d++; return d; }
-    bool overflowed() const { return dropped_ > 0; }   // something didn't fit in kMaxBoxes this declaration
+    bool overflowed() const { return dropped_ > 0; }   // something didn't fit in capacity() this declaration
     long solves() const { return solves_; }           // how many real solves (tests: the cache works)
     void invalidate() { lastHash_ = 0; }              // the next solve() works it all out again
 
@@ -107,14 +109,15 @@ private:
     void sizeAxis(int axis);   // fit sizes bottom-up, then grow / percent / stretch top-down, on one axis
     void place();              // positions, top-down; floating boxes; scroll and culling
 
-    Decl decl_[kMaxBoxes];
-    uint32_t ids_[kMaxBoxes];
-    const char* labels_[kMaxBoxes];
-    int16_t parent_[kMaxBoxes], first_[kMaxBoxes], next_[kMaxBoxes], last_[kMaxBoxes];
-    float fit_[kMaxBoxes][2];          // (solve: each box's fitted size per axis)
-    Rect rects_[kMaxBoxes];
-    Rect clip_[kMaxBoxes];             // (place: what each box's children are culled against)
-    bool visible_[kMaxBoxes];
+    int cap_;
+    std::vector<Decl> decl_;
+    std::vector<uint32_t> ids_;
+    std::vector<const char*> labels_;
+    std::vector<int16_t> parent_, first_, next_, last_;
+    std::vector<float> fit_;           // (solve: each box's fitted size, 2 per box)
+    std::vector<Rect> rects_;
+    std::vector<Rect> clip_;           // (place: what each box's children are culled against)
+    std::vector<uint8_t> visible_;
     int16_t stack_[kMaxDepth];
     int depth_ = 0, n_ = 0, dropped_ = 0, dropDepth_ = 0;
     float W_ = 0, H_ = 0;

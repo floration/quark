@@ -4,6 +4,10 @@
 
 namespace lay {
 
+Layout::Layout(int capacity)
+    : cap_(capacity < 1 ? 1 : capacity > 32000 ? 32000 : capacity), decl_(cap_), ids_(cap_), labels_(cap_), parent_(cap_), first_(cap_),
+      next_(cap_), last_(cap_), fit_(2 * cap_), rects_(cap_), clip_(cap_), visible_(cap_) {}
+
 void Layout::begin(float W, float H) {
     n_ = depth_ = dropped_ = dropDepth_ = 0;
     W_ = W; H_ = H;
@@ -14,7 +18,7 @@ void Layout::begin(float W, float H) {
 void Layout::mixf(float f) { uint32_t u; std::memcpy(&u, &f, 4); mix(u); }
 
 int Layout::open(uint32_t boxId, const Decl& d, const char* label) {
-    if (dropDepth_ > 0 || n_ >= kMaxBoxes || depth_ >= kMaxDepth) { dropDepth_++; dropped_++; return -1; }
+    if (dropDepth_ > 0 || n_ >= cap_ || depth_ >= kMaxDepth) { dropDepth_++; dropped_++; return -1; }
     const int i = n_++;
     const int p = depth_ ? stack_[depth_ - 1] : -1;
     decl_[i] = d; ids_[i] = boxId; labels_[i] = label;
@@ -71,17 +75,17 @@ void Layout::sizeAxis(int a) {
         int k = 0;
         for (int c = first_[i]; c >= 0; c = next_[c]) {
             if (decl_[c].floating || sizeOf(decl_[c]).mode == PERCENT) continue;   // (out of the flow / sized from us)
-            const float f = fit_[c][a];
+            const float f = fit_[2 * c + a];
             if (mainAxis(d)) content += f + (k ? d.gap : 0); else content = std::max(content, f);
             k++;
         }
-        fit_[i][a] = clampSize(sz, sz.mode == FIXED ? sz.v : content + padSum(d));
+        fit_[2 * i + a] = clampSize(sz, sz.mode == FIXED ? sz.v : content + padSum(d));
     }
     // top-down: the final sizes; a box sizes its children once its own is known
     auto setSize = [&](int i, float v) { if (a) rects_[i].h = v; else rects_[i].w = v; };
     auto getSize = [&](int i) { return a ? rects_[i].h : rects_[i].w; };
     auto outerSize = [&](const Size& s, int i, float space) {   // a root's or a floating box's size in `space`
-        return s.mode == GROW ? clampSize(s, space) : s.mode == PERCENT ? clampSize(s, space * s.v) : fit_[i][a];
+        return s.mode == GROW ? clampSize(s, space) : s.mode == PERCENT ? clampSize(s, space * s.v) : fit_[2 * i + a];
     };
     for (int i = 0; i < n_; i++) {
         const Decl& d = decl_[i];
@@ -94,7 +98,7 @@ void Layout::sizeAxis(int a) {
                 const Decl& cd = decl_[c];
                 if (cd.floating) { setSize(c, outerSize(sizeOf(cd), c, inner)); continue; }
                 const Size& s = sizeOf(cd);
-                const float v = s.mode == PERCENT ? clampSize(s, inner * s.v) : fit_[c][a];
+                const float v = s.mode == PERCENT ? clampSize(s, inner * s.v) : fit_[2 * c + a];
                 setSize(c, v);
                 used += v + (k ? d.gap : 0);
                 grow += s.mode == GROW;
@@ -112,7 +116,7 @@ void Layout::sizeAxis(int a) {
                 if (cd.floating) { setSize(c, outerSize(s, c, inner)); continue; }
                 const Align al = cd.self >= 0 ? (Align)cd.self : d.cross;
                 setSize(c, s.mode == GROW || (al == STRETCH && s.mode == FIT) ? clampSize(s, inner)
-                         : s.mode == PERCENT ? clampSize(s, inner * s.v) : fit_[c][a]);
+                         : s.mode == PERCENT ? clampSize(s, inner * s.v) : fit_[2 * c + a]);
             }
         }
     }

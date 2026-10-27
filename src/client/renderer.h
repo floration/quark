@@ -17,7 +17,8 @@ struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4];
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
-// in the shader, so each character is one quad.
+// in the shader, so each character is one quad. pad[0]: the title's split Q; pad[1]: a rounded rect (roundRect: uv its
+// own pixel position * 4, scaleInt its corner radius, scaleFrac its ring width * 4).
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
 
 struct Color { float r, g, b, a; };
@@ -88,6 +89,10 @@ public:
     void rect(float x, float y, float w, float h, const Color& c);
     // a rect whose corners have their own colours (blended across it): colour pickers' hue and value ramps
     void rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl);
+    // A rect with rounded corners (radius px, at most half its shorter side), or with ring > 0 only a band that wide
+    // inside its edge (a border): one quad in the same 2D batch, the corners cut by a distance test in the UI shader
+    // (HUD themes, theme.h). Radius 0 and no ring is rect().
+    void roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring = 0);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
     // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
     // `enemy` (the player's team colours); friendly's alpha fades all of it. In Rubik: the baked logo

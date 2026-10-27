@@ -52,6 +52,7 @@ struct LaunchOptions {
                                 // a step right before the --screenshot (what was fired is seen from the side)
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool textHeavy = false;     // --textheavy: scoreboard + F3 + chat lines always on, to measure text cost (with --bench)
+    bool feedShot = false;      // --feedshot: made-up kill feed and chat lines that stay (HUD screenshots and benches)
     bool debugCrosshair = false;
     int debugPicker = 0;        // --picker N: open that host-menu list (1 maps, 2 modes, 7 rulesets)
     bool debugPause = false, debugVote = false; // --pause / --votemenu

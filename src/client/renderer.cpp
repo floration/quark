@@ -271,9 +271,14 @@ uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
 out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
+// a rounded rect (aText.w 1, Renderer::roundRect): its pixel position in it, its size (the last corner's: both
+// triangles end on it), corner radius and ring width
+out vec2 vLocal; flat out vec2 vSize; flat out vec3 vShape;
 void main() {
     vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
     vSplit = aText.z;
+    vShape = vec3(aText.w, aText.x, aText.y * 0.25);
+    vLocal = aUV * 0.25; vSize = aUV * 0.25;
     vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
@@ -281,6 +286,7 @@ void main() {
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
 in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
+in vec2 vLocal; flat in vec2 vSize; flat in vec3 vShape;
 uniform sampler2D uFont;
 uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
@@ -291,6 +297,17 @@ uniform vec2 uSplitP, uSplitN;
 uniform float uSplitSeam;
 out vec4 fragColor;
 void main() {
+    if (vShape.x > 0.5) {   // a rounded rect: coverage from its signed distance (< 0 inside), a ring minus what's further in
+        vec2 b = vSize * 0.5, p = vLocal - b;
+        float r = min(vShape.y, min(b.x, b.y));
+        vec2 q = abs(p) - b + r;
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+        float a = clamp(0.5 - d, 0.0, 1.0);
+        if (vShape.z > 0.0) a -= clamp(0.5 - d - vShape.z, 0.0, 1.0);
+        if (a <= 0.004) discard;
+        fragColor = vec4(vColor.rgb, vColor.a * a);
+        return;
+    }
     if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
         vec4 t = texture(uLogo, vUV);
         float a = max(t.a, max(t.r, t.g));
@@ -1198,6 +1215,28 @@ void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl,
     auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a); };
     Vertex2D* d = ui_.data() + n;
     col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
+}
+
+void Renderer::roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring) {
+    if (w <= 0 || h <= 0) return;
+    if (radius < 0.5f && ring <= 0) { rect(x, y, w, h, c); return; }
+    const int16_t X0 = px(x), X1 = px(x + w), Y0 = px(y), Y1 = px(y + h);
+    if (X1 <= X0 || Y1 <= Y0) return;
+    // the quad's own pixel coords in its uv (* 4: a quarter pixel, rects up to 16383 px), corners 0 1 2 / 0 3 2 so both
+    // triangles end on corner 2, whose uv is the size (the shader's flat vSize: the provoking vertex is the last)
+    const uint16_t U1 = (uint16_t)std::min(65535, (X1 - X0) * 4), V1 = (uint16_t)std::min(65535, (Y1 - Y0) * 4);
+    const Rgba8 col = rgba8(c);
+    const uint8_t rad = (uint8_t)clampf(std::round(radius), 0, 255), rg = (uint8_t)clampf(std::round(ring * 4), 0, 255);
+    const size_t n = ui_.size();
+    ui_.resize(n + 6);
+    Vertex2D* d = ui_.data() + n;
+    auto put = [&](Vertex2D& v, int16_t X, int16_t Y, uint16_t u, uint16_t w2) {
+        v.pos[0] = X; v.pos[1] = Y; v.uv[0] = u; v.uv[1] = w2;
+        memcpy(v.color, col.v, 4);
+        v.scaleInt = rad; v.scaleFrac = rg; v.pad[0] = 0; v.pad[1] = 1;
+    };
+    put(d[0], X0, Y0, 0, 0); put(d[1], X1, Y0, U1, 0); put(d[2], X1, Y1, U1, V1);
+    d[3] = d[0]; put(d[4], X0, Y1, 0, V1); d[5] = d[2];
 }
 
 // The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
