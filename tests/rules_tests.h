@@ -2414,6 +2414,114 @@ static void testModeCalls(uint16_t port) {
     s.stop();
 }
 
+// The mode sounds the client works out itself (modecalls.h), with no event on the wire: the bomb going off, "it"
+// passed on in tag, race practice's checkpoint dings. The rules first, then each on a real server through a client's
+// own states, once each.
+static void testModeSounds(uint16_t port) {
+    printf("mode sounds: bomb goes off, tag pass, race practice checkpoints\n");
+    auto st = [](int mode, int phase, int round, int bomb = BOMB_NONE) {
+        ModeState m; m.mode = (uint8_t)mode; m.phase = (uint8_t)phase; m.round = (uint8_t)round; m.bombState = (uint8_t)bomb; return m;
+    };
+    CHECK(bombWentOff(st(MODE_BOMB, PHASE_LIVE, 2, BOMB_PLANTED), st(MODE_BOMB, PHASE_ROUND_END, 2, BOMB_EXPLODED)));   // (the blast ends the round)
+    CHECK(!bombWentOff(st(MODE_BOMB, PHASE_LIVE, 2, BOMB_PLANTED), st(MODE_BOMB, PHASE_LIVE, 2, BOMB_DEFUSED)));
+    CHECK(!bombWentOff(st(MODE_BOMB, PHASE_ROUND_END, 2, BOMB_EXPLODED), st(MODE_BOMB, PHASE_ROUND_END, 2, BOMB_EXPLODED)));
+    CHECK(!bombWentOff(st(MODE_BOMB, PHASE_LIVE, 1, BOMB_PLANTED), st(MODE_BOMB, PHASE_FREEZE, 2, BOMB_EXPLODED)));
+    std::vector<PlayerSnap> ps(3);
+    for (int i = 0; i < 3; i++) { ps[i].id = (uint8_t)i; ps[i].flags = PS_ALIVE; }
+    ps[2].flags |= PS_HASBOMB;
+    CHECK(tagItOf(ps) == 2);
+    const ModeState live = st(MODE_TAG, PHASE_LIVE, 1);
+    CHECK(tagPassFrom(live, live, 0, 2, ps) == 0 && tagPassFrom(live, live, 2, 2, ps) == -1 && tagPassFrom(live, live, -1, 2, ps) == -1);
+    CHECK(tagPassFrom(live, live, 7, 2, ps) == -1);   // (the old "it" left: a new one drawn, not a tag)
+    CHECK(tagPassFrom(st(MODE_TAG, PHASE_FREEZE, 1), live, 0, 2, ps) == -1 && tagPassFrom(st(MODE_TAG, PHASE_LIVE, 0), live, 0, 2, ps) == -1);
+    PracticeDing pd;
+    CHECK(pd.step(0, false, 3) == 0 && pd.step(0, true, 3) == 1 && pd.step(0, true, 3) == 0);   // predicted: at once, once
+    CHECK(pd.step(1, false, 3) == 0);                        // (the server's count catches up: no second ding)
+    CHECK(pd.step(2, false, 3) == 1);                        // passed on the server only: dinged then
+    CHECK(pd.step(2, true, 3) == 2 && pd.step(0, false, 3) == 0 && pd.step(0, true, 3) == 1);   // the finish, and round again
+
+    {   // bomb: planted with a short fuse, followed through a client
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false;
+        NetClient cl[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 2, cls)) { s.stop(); return; }
+        ModeState pv = cl[0].mode();
+        s.ms_.bombState = BOMB_PLANTED;
+        s.ms_.bombPos = s.map_.bombSites[0].center();
+        s.ms_.bombTimer = 0.3f;
+        int booms = 0;
+        for (double t = 0; t < 1.0; t += 0.02) { pump(s, cls, 0.02, idle); booms += bombWentOff(pv, cl[0].mode()); pv = cl[0].mode(); }
+        printf("  bomb: state %d, booms heard %d\n", s.ms_.bombState, booms);
+        CHECK(s.ms_.bombState == BOMB_EXPLODED && booms == 1);
+        s.stop();
+    }
+    {   // tag: "it" stabs another player
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = (uint16_t)(port + 1);
+        NetClient cl[3];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 3, cls)) { s.stop(); return; }
+        pump(s, cls, 0.2, idle);
+        int it = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) it = i;
+        int victim = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (i != it && s.players_[i].connected && s.players_[i].alive) victim = i;
+        CHECK(it >= 0 && victim >= 0);
+        if (it < 0 || victim < 0) { s.stop(); return; }
+        ModeState pv = cl[0].mode();
+        int prevIt = tagItOf(cl[0].latest().players), passes = 0, from = -1, to = -1;
+        s.damagePlayer(victim, it, 50, WPN_KNIFE, Vec3());
+        for (double t = 0; t < 0.5; t += 0.02) {
+            pump(s, cls, 0.02, idle);
+            const int now = tagItOf(cl[0].latest().players);
+            if (int f = tagPassFrom(pv, cl[0].mode(), prevIt, now, cl[0].latest().players); f >= 0) { passes++; from = f; to = now; }
+            pv = cl[0].mode(); prevIt = now;
+        }
+        printf("  tag: %d -> %d, passes heard %d (%d -> %d)\n", it, victim, passes, from, to);
+        CHECK(s.players_[victim].it && passes == 1 && from == it && to == victim);
+        s.stop();
+    }
+    {   // race practice (warmup): through each checkpoint in turn, dinged from the server's count alone
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = (uint16_t)(port + 2);
+        NetClient cl[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 1, cls, false)) { s.stop(); return; }
+        const int me = cl[0].clientId();
+        const int n = (int)s.map_.checkpoints.size();
+        CHECK(me >= 0 && n >= 2 && s.ms_.phase == PHASE_WARMUP);
+        if (me < 0 || n < 2) { s.stop(); return; }
+        const Vec3 home = s.players_[me].move.pos;
+        int target = 0, dings = 0, finishes = 0;
+        bool settled = false;   // (home first: the client has seen the count before the first checkpoint)
+        auto in = [&](int id) {
+            if (id == me) {
+                const AABB& cp = s.map_.checkpoints[std::min(target, n - 1)];
+                s.players_[me].move.pos = settled && target < n && s.players_[me].checkpoint == target ? Vec3(cp.center().x, cp.mn.y + 0.05f, cp.center().z) : home;
+                s.players_[me].move.vel = {};
+            }
+            return UserCmd();
+        };
+        PracticeDing pd;
+        for (int k = 0; k < 400 && finishes == 0; k++) {
+            pump(s, cls, 0.02, in);
+            const PlayerSnap* mine = cl[0].findPlayer(me);
+            if (!mine) continue;
+            settled |= k >= 10;
+            const int d = pd.step(mine->checkpoint, false, n);
+            dings += d != 0; finishes += d == 2;
+            if (target < n && s.players_[me].checkpoint != target) target = s.players_[me].checkpoint < target ? n : s.players_[me].checkpoint;   // (n: round again, back home)
+        }
+        printf("  race practice: %d checkpoints, dings %d, finish %d, phase %d\n", n, dings, finishes, s.ms_.phase);
+        CHECK(dings == n && finishes == 1 && s.ms_.phase == PHASE_WARMUP);
+        s.stop();
+    }
+}
+
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
 // half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
 // on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
@@ -2446,6 +2554,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"scoreboard", 2, [] { testScoreboardValue(); }},
         {"hudclock", 2, [] { testHudClock(TP(29280)); }},
         {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
+        {"modesounds", 2, [] { testModeSounds(TP(29313)); }},
         {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},

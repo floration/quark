@@ -1028,6 +1028,22 @@ void Game::updateAnnouncer() {
             if (calls[k].voice >= 0) say(calls[k].voice, calls[k].level);
         }
     }
+    {   // mode sounds the server sends no event for (modecalls.h): the bomb going off, "it" passed on in tag
+        const int itNow = ms.mode == MODE_TAG ? tagItOf(net_.latest().players) : -1;
+        if (annPrevValid_ && bombWentOff(annPrev_, ms))   // a deep, long boom at the bomb, louder than a rocket's (it ends the round)
+            audio_.play3D(SND_EXPLOSION, ms.bombPos, 2.5f, 0.6f);
+        const int tagger = annPrevValid_ ? tagPassFrom(annPrev_, ms, tagIt_, itNow, net_.latest().players) : -1;
+        if (tagger >= 0 && itNow == net_.clientId()) {   // you're it: the stab, and the sting of something stuck on you
+            audio_.play(SND_HURT, 1.0f);
+            audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
+        } else if (tagger >= 0 && tagger == net_.clientId()) {   // you tagged them: a heavy hit's sound (no EV_HIT for a tag)
+            if (cfg_.hitsounds && hitGate_.pass(time_, SND_HIT_HEAVY)) audio_.play(SND_HIT_HEAVY, 0.9f);
+        } else if (tagger >= 0) {   // someone else tagged: their hurt sound from the new "it"
+            const PlayerSnap* v = net_.findPlayer(itNow);
+            if (v && !v->hidden) audio_.play3D(SND_HURT, v->pos + Vec3(0, 1.2f, 0), 0.8f, 1.0f, net_.playerSoundPack(itNow));
+        }
+        tagIt_ = itNow;
+    }
     if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
     else if (annLeader_ == -2) annLeader_ = -1;
     // Killstreaks are per match and per player: a new match (back to warmup, or another mode) starts them again, and a
@@ -7426,10 +7442,36 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     }
     prevMove_ = m;
     prevAlive_ = alive;
+    {   // race practice: its checkpoint dings (the server sends a split only in the race itself; modecalls.h)
+        const ModeState& ms = net_.mode();
+        const PlayerSnap* mine = net_.findPlayer(me);
+        const auto& cps = net_.map().checkpoints;
+        if (ms.mode == MODE_RACE && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
+            const int next = mine->checkpoint;
+            const bool in = next < (int)cps.size() && playerBox(m).overlaps(cps[next]);
+            if (int d = practiceDing_.step(next, in, (int)cps.size())) audio_.play(d == 2 ? SND_FINISH : SND_CHECKPOINT, 0.9f);
+        } else practiceDing_.reset();
+    }
 
     for (int i = 0; i < kMaxPlayers; i++) {
         RemoteAudio& ra = remoteAudio_[i];
-        if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; continue; }
+        if (i == me && net_.playback() && players[i].valid && (players[i].snap.flags & PS_ALIVE)) {
+            // a demo: the recorded player's shots (theirs came from their input, which a demo hasn't), as your own
+            // sound (2D, the same levels) on each firing edge
+            const PlayerSnap& p = players[i].snap;
+            const bool firing = (p.flags & PS_FIRING) != 0;
+            if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
+                audio_.play(SND_LASER, 0.6f, 0.97f + (qrand() % 7) * 0.01f, net_.playerSoundPack(i));
+                ra.nextLaser = time_ + 0.05;
+            } else if (firing && !ra.firing && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {
+                ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f;
+                audio_.play(SND_RIFLE + p.weapon, 0.8f, 0.97f + (qrand() % 7) * 0.01f, net_.playerSoundPack(i));
+            }
+            ra.firing = firing;
+            ra.valid = false;   // (their steps, hurt and grapple: your own sounds' code plays those)
+            continue;
+        }
+        if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; ra.firing = false; continue; }
         const PlayerSnap& p = players[i].snap;
         int sp = net_.playerSoundPack(i); // their sounds in the pack they picked
         if (ra.valid) {

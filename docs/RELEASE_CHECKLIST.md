@@ -142,8 +142,8 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ✓ | Mode | Map | Mode-specific checks |
 |---|---|---|---|
 | ☐ | VS | Bastion / Orbital | Rounds, no respawn, health drains in a stalemate. |
-| ☐ | Bomb | Depot | Plant, defuse, a dropped bomb falls to the floor and returns to an attacker after 15 s, overtime. **Bomb vs bots on Depot and Lodestone** (1.18.21): defender bots split across the sites; Depot attackers leave spawn and get kills (no sticking on the gatehouse wall). |
-| ☐ | Race | Viaduct | Checkpoints, finish time, the time trial records a best time. |
+| ☐ | Bomb | Depot | Plant, defuse, a dropped bomb falls to the floor and returns to an attacker after 15 s, overtime. Let a planted bomb go off: a deep, long boom from the bomb (also from across the map). **Bomb vs bots on Depot and Lodestone** (1.18.21): defender bots split across the sites; Depot attackers leave spawn and get kills (no sticking on the gatehouse wall). |
+| ☐ | Race | Viaduct | Checkpoints, finish time, the time trial records a best time. Practice (warmup, before vote start): each checkpoint dings once as you enter it and the finish plays FINISH. |
 | ☐ | King of the hill | Summit / Downtown | Capture, a contested hill freezes the clock. |
 | ☐ | Payload | Railyard | The cart moves only with attackers on it, checkpoints add time, overtime. Round 1 ends with "TEAM A pushed N m - TEAM B must beat it" (no ROUND WON); round 2 ends **as soon as** the attackers pass that mark. A level push goes to the side there sooner ("there sooner than its 3:40"), no tiebreaker rounds. Past the last checkpoint, attackers respawn in 3 s (death screen says RESPAWN IN 3; **open for 1.19.0**: bots never reached the last leg in testing, so check it with people). |
 | ☐ | Neutral payload | Canal | Both teams push. |
@@ -152,7 +152,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | 1v1 | Temple, Furnace, Dojo | Rulesets (vampire, instagib, ...), first to 5; Dojo's 5 s hold-fire start. Play vs bots 1V1 is exactly one bot; the round end is 2.5 s (was 4) and the calls use names, not TEAM A. |
 | ☐ | Tourney | Colosseum | Bracket, seeding, byes, a drop isn't an instant walkover. |
 | ☐ | Hide and seek | Hamlet / Hightown | Everyone seeks once. A hider still unfound at round end scores 1 and the seeker 1 per hider found. Only the seeker holds the knife and the **locator** (key 0: one random hider shown for 1 s, every 5 s). Hiders are never shown the seeker's position, but every hider (and spectator) hears each locator ping in 3D from where the seeker stands, in the seeker's sound pack, even out of sight; the seeker hears their own ping once, flat (2D). A tie for first after the last round goes to whoever **stayed hidden longest** (the message says so); only a dead level tie → **rock paper scissors** (keys 1 / 2 / 3). A seeker who jumps off the map is **back after 2 s**, still seeker. |
-| ☐ | Tag | Foundry | Only the tagger holds the knife + locator; runners always see the tagger (marker through walls / edge arrow) and hear the locator's ping from the tagger (3D). Leaving or spectating eliminates you; `addbot` mid-match waits for the next match. |
+| ☐ | Tag | Foundry | Only the tagger holds the knife + locator; runners always see the tagger (marker through walls / edge arrow) and hear the locator's ping from the tagger (3D). Leaving or spectating eliminates you; `addbot` mid-match waits for the next match. A tag is heard: tagged, a stab and a sting; tagging, a heavy hit sound (HITSOUND on); someone else's tag, a hit sound from the new tagger. |
 | ☐ | Multi point | Midtown / Lodestone | Points A–E in order, staged spawns move forward, overtime. Round 2 ends once the result is settled; a level attack goes to the side there sooner, no tiebreaker rounds. |
 | ☐ | Custom mode | any | Make one in the custom-mode editor, host it, the rules apply. |
 | ☐ | Custom mode with movement equations | any | Save a `.qmode` (physics editor, or by hand in `custom_modes\`) with `expr.friction=curve(p.hspeed, 2, 9.5, 2, 1)` and `expr.gravity=p.air > 0.15 ? 2 : 1`: hosted, you stop sooner than standard (about 0.8 m from a run, against 1.2) and a standing jump peaks lower (about 1.04 m, against 1.22); a second PC joined to it moves smoothly (no rubber-banding: its prediction runs the same equations). A broken line (`expr.speed=bad(`) changes nothing and doesn't stop the mode loading. **Protocol 44**: this build can't join servers of the protocol 43 versions (1.18.7 to 1.18.21) or of production 1.17.0 (protocol 42), or host for their clients (the version message says so); their demos convert at startup. |
@@ -205,7 +205,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 
 | ✓ | Check |
 |---|---|
-| ☐ | Record a demo in a game, stop it, play it back from DEMOS: seek, speed, free camera / follow player. |
+| ☐ | Record a demo in a game, stop it, play it back from DEMOS: seek, speed, free camera / follow player. Watching through the recorded player, their own shots are heard (each shot once, the laser as a steady buzz). |
 | ☐ | A demo from the previous production version plays (it was converted on update). |
 
 ## 10. Hosting and joining (two machines, or two game windows)
