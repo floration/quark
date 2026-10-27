@@ -138,6 +138,8 @@ public:
     double recordingTime() const;
     bool startPlayback(const std::string& path, std::string& err);
     bool playback() const { return play_.active; }
+    bool playbackDone() const { return play_.active && play_.pos + 13 > play_.data.size(); }   // (every record played)
+    double playbackLeft() const { return play_.active ? std::max(0.0, play_.length - play_.t) : 0; }   // (seconds of the demo still to play)
     float playbackProgress() const { return play_.active && play_.length > 0 ? (float)(play_.t / play_.length) : 0; }
     void setPlaybackSpeed(float s) { play_.speed = s; }
     void holdPlaybackClock() { play_.wall = timeNow(); }   // don't count time spent elsewhere (a map bake) as watched

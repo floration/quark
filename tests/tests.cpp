@@ -49,6 +49,7 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "game/benchmark.h"
 #include "walkgrid.h"
 #include "common/proc.h"
 #include "groupproc.h"
@@ -8145,6 +8146,107 @@ static void testReachProbe(uint16_t port) {
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 #include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
 
+
+// ---- BENCHMARK (src/game/benchmark.h): the frame-time statistics on arrays whose answers are known, and a demo like
+// the shipped one (Hamlet, free for all, 31 bots, recorded by a spectator) made and played back to its end.
+static bool near(double a, double b, double tol) { return std::fabs(a - b) <= tol; }
+static void testBenchStats() {
+    printf("benchmark: frame-time stats (avg, 1%% / 0.1%% lows, min, stdev) and the graph\n");
+    std::vector<float> scratch;
+    {   // 990 frames of 10 ms, 9 of 20 ms, one of 50 ms (in a shuffled order: the answer can't depend on it)
+        std::vector<float> t(990, 0.010f);
+        t.insert(t.end(), 9, 0.020f);
+        t.push_back(0.050f);
+        std::mt19937 rng(7);
+        std::shuffle(t.begin(), t.end(), rng);
+        const std::vector<float> before = t;
+        bench::Stats st = bench::compute(t.data(), t.size(), scratch);
+        CHECK(t == before);   // (the input isn't reordered: the run's frames stay in order for the graph)
+        CHECK(st.frames == 1000 && near(st.seconds, 10.13, 1e-4));
+        CHECK(near(st.avgFps, 1000 / 10.13, 1e-3) && near(st.avgMs, 10.13, 1e-4));
+        CHECK(near(st.p99Ms, 20, 1e-4) && near(st.low1, 50, 1e-3));      // element 990 of the sorted times
+        CHECK(near(st.p999Ms, 50, 1e-4) && near(st.low01, 20, 1e-3));    // element 999
+        CHECK(near(st.worstMs, 50, 1e-4) && near(st.minFps, 20, 1e-3));
+        // population stdev: sqrt((990 * 0.13^2 + 9 * 9.87^2 + 39.87^2) / 1000) ms
+        CHECK(near(st.stdevMs, std::sqrt((990 * 0.13 * 0.13 + 9 * 9.87 * 9.87 + 39.87 * 39.87) / 1000), 1e-3));
+        CHECK(bench::graphTopMs(st) == 80);   // (50 ms x 1.25 = 62.5: the next of 5, 10, 20, 40, 80)
+    }
+    {   // a steady 3 ms: no spread, every low the average
+        std::vector<float> t(5000, 0.003f);
+        bench::Stats st = bench::compute(t.data(), t.size(), scratch);
+        CHECK(near(st.avgFps, 333.33, 1e-1) && near(st.low1, 333.33, 1e-1) && near(st.low01, 333.33, 1e-1) && near(st.minFps, 333.33, 1e-1));
+        CHECK(st.stdevMs < 1e-4);
+        CHECK(bench::graphTopMs(st) == 5);    // (never under 5: the 240 fps line stays on the graph)
+    }
+    {   // 1, 2 .. 100 ms: index floor(n * p) of the sorted times
+        std::vector<float> t;
+        for (int i = 100; i >= 1; i--) t.push_back(i * 0.001f);
+        bench::Stats st = bench::compute(t.data(), t.size(), scratch);
+        CHECK(near(st.p99Ms, 100, 1e-3) && near(st.p999Ms, 100, 1e-3) && near(st.worstMs, 100, 1e-3));   // (99 and 99.9: both the last)
+        CHECK(near(st.avgMs, 50.5, 1e-3) && near(st.stdevMs, std::sqrt((100.0 * 100 - 1) / 12), 1e-3));
+        CHECK(bench::pctIndex(100, 0.99) == 99 && bench::pctIndex(1000, 0.99) == 990 && bench::pctIndex(1000, 0.999) == 999 && bench::pctIndex(1, 0.999) == 0);
+    }
+    {   // one frame, and none
+        float one = 0.008f;
+        bench::Stats st = bench::compute(&one, 1, scratch);
+        CHECK(st.frames == 1 && near(st.avgFps, 125, 1e-2) && near(st.low01, 125, 1e-2) && near(st.minFps, 125, 1e-2) && st.stdevMs < 1e-6);
+        bench::Stats z = bench::compute(nullptr, 0, scratch);
+        CHECK(z.frames == 0 && z.avgFps == 0 && z.minFps == 0);
+    }
+    {   // the graph: each column the slowest and the mean frame of its share, in order
+        const float t[10] = {0.001f, 0.003f, 0.002f, 0.002f, 0.010f, 0.004f, 0.001f, 0.001f, 0.005f, 0.007f};
+        std::vector<float> mx, mean;
+        bench::graphColumns(t, 10, 5, mx, mean);
+        CHECK(mx.size() == 5 && mean.size() == 5);
+        CHECK(near(mx[0], 3, 1e-4) && near(mean[0], 2, 1e-4) && near(mx[2], 10, 1e-4) && near(mean[2], 7, 1e-4) && near(mx[4], 7, 1e-4) && near(mean[4], 6, 1e-4));
+        bench::graphColumns(t, 3, 464, mx, mean);   // (fewer frames than columns: a column each)
+        CHECK(mx.size() == 3 && near(mx[1], 3, 1e-4));
+    }
+}
+
+// A benchmark demo as the shipped one is made: Hamlet, free for all, 31 bots (expert) and a spectator recording.
+// `quark_tests benchdemo OUT [seconds]` writes one for `quark --benchmark OUT` (tools/benchmark_check.sh); the group
+// makes a short one and checks it plays to its end with the bots in it.
+static bool recordBenchDemo(const std::string& path, double seconds, uint16_t port) {
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_FFA; cfg.port = port; cfg.maxPlayers = kMaxPlayers;
+    cfg.vsBots = true; cfg.botsEnemy = kMaxPlayers - 1; cfg.botSkill = BOT_EXPERT; cfg.balanceBots = false; cfg.lanOnly = true;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return false; } }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "camera");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    a.sendCommand("team spec");
+    pump(s, cls, 0.5, idle);
+    const bool rec = a.startRecording(path);
+    pump(s, cls, seconds, idle);
+    a.stopRecording();
+    int bots = 0;
+    for (auto& p : s.players_) if (p.connected && p.isBot) bots++;
+    s.stop();
+    CHECK(rec && bots == kMaxPlayers - 1);
+    return rec;
+}
+static void testBenchDemo(uint16_t port) {
+    printf("benchmark: a Hamlet demo with 31 bots plays back to its end (playbackDone)\n");
+    const std::string path = userDataPath() + "/zz_bench.qdemo";
+    if (!recordBenchDemo(path, 3.0, port)) return;
+    NetClient p;
+    std::string err;
+    CHECK(p.startPlayback(path, err) && p.mapReady() && p.map().name == "hamlet");
+    int most = 0;
+    double end = timeNow() + 10;
+    while (p.playback() && !p.playbackDone() && timeNow() < end) {
+        p.poll();
+        if (p.hasSnapshot()) { int n = 0; for (auto& q : p.latest().players) if ((q.flags & PS_CONNECTED) && q.team() != TEAM_SPECTATOR) n++; most = std::max(most, n); }
+        hostSleepMs(2);
+    }
+    CHECK(p.playbackDone() && p.playbackLeft() < 0.05);
+    CHECK(most == kMaxPlayers - 1);
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     pinTestingBuildForTests(0);   // (production behaviour, whatever version CI built this as: governor.h)
@@ -8230,6 +8332,8 @@ int main(int argc, char** argv) {
         return modeTool(argv[1], argc, argv);
     if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
     if (argc >= 2 && std::string(argv[1]) == "layoutbench") return layoutBench();
+    if (argc >= 3 && std::string(argv[1]) == "benchdemo")   // a benchmark demo for `quark --benchmark FILE` (tools/benchmark_check.sh)
+        return recordBenchDemo(argv[2], argc > 3 ? atof(argv[3]) : 20, TP(29175)) && !g_fail ? 0 : 1;
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
         double secs = argc > 2 ? atof(argv[2]) : 8;
         snapBench("midtown", 32, secs, TP(28820));
@@ -8282,6 +8386,7 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
         {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
+        {"benchmark", [] { testBenchStats(); testBenchDemo(TP(29160)); }},
     };
     std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)

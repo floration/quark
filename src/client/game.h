@@ -88,6 +88,9 @@ struct LaunchOptions {
     int debugFonts = 0;         // --fonts: open Settings > FONT in the main menu (1); --settingsmenu: the settings page (2)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
+    bool benchmark = false;     // --benchmark [DEMO] [SECONDS]: the main menu's BENCHMARK (benchmark.cpp), printed, then quit
+    std::string benchmarkDemo;  // ...on this demo instead of the shipped one
+    double benchmarkSeconds = 0;   // ...measuring at most this long (0: to the demo's end)
     bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)
     std::string uiTestReport;   // where the report goes (default uitest-report.json)
     std::string uiTestOnly;     // --uitest-only a,b: just these scenarios (development)
@@ -139,7 +142,7 @@ private:
     const char* edGroupsPath() const { return edOnline_ ? "editor-online/groups" : "editor/groups"; }
     const char* edKeepPath() const { return edOnline_ ? "editor-online/keep-edits" : "editor/keep-edits"; }
     bool edGroupTakesEveryBox() const;      // GROUP would leave the map without a box of its own (refused)
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos, Benchmarks, BenchmarkResult };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -263,6 +266,54 @@ private:
     int socdLastF_ = 0, socdLastS_ = 0;     // control scripts: SOCD press order, alt-fire toggle state
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     void benchFrame(double dt);
+    // ---- BENCHMARK (main menu; --benchmark): a fixed bot match on Hamlet watched from a fixed camera path, then its
+    // frame times (benchmark.cpp; the match and the maths: src/game/benchmark.h)
+    struct BenchRun {
+        enum Phase { OFF, STARTING, WARMUP, MEASURING } phase = OFF;
+        std::string demo;            // the demo it plays
+        double seconds = 0;          // measured at most (0: to the demo's end)
+        double startedAt = 0;        // (time_) the demo's world first drawn: the warm-up's start
+        double measureAt = 0;        // (time_) measuring from
+        std::vector<float> times;    // the measured frames' times (s): allocated at the start, never grown during the run
+        size_t n = 0;
+    } bench_;
+    struct BenchFile {               // a saved run (benchmarks/<date>.qbench): its "# key,value" header and its frames
+        std::string path, name, label, when, map, demo;
+        double avgFps = 0, low1 = 0, low01 = 0, minFps = 0, stdevMs = 0, avgMs = 0, worstMs = 0, seconds = 0;
+        size_t frames = 0;
+        int uploaded = 0;            // to the ranking server: 0 not yet (retried), 1 done, 2 refused there (not retried)
+        std::vector<std::pair<std::string, std::string>> setup;   // RESOLUTION, RENDER SCALE, ... GPU, DRIVER, VERSION
+        std::vector<float> times;                                 // (s; only when loaded with its frames)
+    };
+    struct BenchResult {             // the run the result page shows, and the one saved before it (to compare)
+        BenchFile run, prev;
+        bool havePrev = false, nameDirty = false;
+        float topMs = 20;
+        std::vector<float> colMax, colMean;   // the graph (bench::graphColumns)
+    } benchRes_;
+    std::vector<BenchFile> benchList_;   // the BENCHMARKS page's runs, newest first (headers only)
+    double benchListAt_ = 0;             // (rescanned every 2 s while it's open, as the demos list)
+    int benchScroll_ = 0;
+    std::set<std::string> benchSending_;  // runs whose upload is on its way (RankService::request key "bench:<path>")
+    void benchUpload(const BenchFile& f);   // a finished run's numbers to the ranking server (POST /bench; no key: none)
+    void benchUploads();                    // each frame while any is on its way: the answers into the run files
+    void benchRetryUploads();               // the runs not uploaded yet (at the start, and when BENCHMARKS opens)
+    std::string benchDemoFound_;         // (benchDemoPath, looked for again with the list)
+    std::string benchShot_;              // EXPORT PNG: the result page into this file at the end of the frame
+    void benchStart();               // host the benchmark's match and join it as the camera
+    void benchFrameTime(double dt);  // each frame: the warm-up, then the frame's time into the buffer
+    std::string benchDemoPath() const;   // the demo a run plays ("" if it's missing)
+    void benchFinish();              // the run saved, then its result page (or, with --benchmark, printed and quit)
+    void benchCancel();              // Esc: back to the main menu, nothing saved
+    std::string benchSave(const float* t, size_t n);   // a run's file from its frame times (s): its path ("" if not written)
+    bool benchWrite(const BenchFile& f);               // (the whole file: a new run, or a rename)
+    bool benchOpen(const std::string& path);           // the result page for a saved run
+    static bool benchLoad(const std::string& path, BenchFile& f, bool frames);   // frames: read them too, else the header only
+    void benchDelete();
+    void benchExportCsv();
+    void drawBenchOverlay(float W, float H, float s);  // BENCHMARK and the time left (the HUD is off)
+    void drawBenchList(const SetLayout& L);
+    void drawBenchResults(const SetLayout& L);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
     bool unratedServer_ = false;   // the server said its ranked isn't rated (kUnratedNotice: a testing server)
     std::string chatText_, joinAddr_, error_;

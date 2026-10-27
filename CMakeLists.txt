@@ -336,6 +336,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/gpuprefs.cpp
     src/client/community.cpp
     src/client/editor.cpp
+    src/client/benchmark.cpp
     src/client/openurl.cpp
     src/client/gl.cpp
     src/client/renderer.cpp
@@ -395,6 +396,9 @@ if(QUARK_BUILD_TESTS)
     add_test(NAME uitest COMMAND sh ${CMAKE_SOURCE_DIR}/tools/uitest.sh $<TARGET_FILE:quark> ${CMAKE_BINARY_DIR}/uitest-report.json
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
+    # BENCHMARK end to end (tools/benchmark_check.sh): a demo made at test time, quark --benchmark on it
+    add_test(NAME benchmark COMMAND sh ${CMAKE_SOURCE_DIR}/tools/benchmark_check.sh ${CMAKE_BINARY_DIR} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(benchmark PROPERTIES TIMEOUT 600 SKIP_RETURN_CODE 77)
     # RENDER SCALE: screenshots at 50 / 100 / 200% are the window's size, with the HUD at its resolution (needs a display)
     add_test(NAME renderscale COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/renderscale_check.py $<TARGET_FILE:quark>
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

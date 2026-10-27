@@ -610,6 +610,35 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await call("/lifetime", { secret: secret(7), kills: "200", deaths: "0" })) === "hourly limit", "lifetime hourly cap");
   check((await call("/lifetime")).startsWith(`15 6 ${id(7)} `), "lifetime top");
 }
+// FPS benchmark runs: one row a run, from the secret's player; text hex, numbers checked, 30 a day
+{
+  const hx = (t) => Buffer.from(t).toString("hex");
+  const run = (n, over = {}) => call("/bench", { secret: secret(n), name: hx("bencher"), version: hx("1.19.0.testing.7"), channel: "testing", build: hx("O3 LTO"),
+    cpu: hx("AMD Ryzen 7 7800X3D 8-Core Processor"), gpu: hx("NVIDIA GeForce RTX 4070/PCIe/SSE2"), driver: hx("4.6.0 NVIDIA 560.35"), avg: "612.5", low1: "301.2",
+    low01: "220.0", min: "150.4", stdev: "0.512", frames: "28000", seconds: "45.7", res: hx("1920 X 1080"), scale: hx("100%"), aa: hx("OFF / 2048"),
+    vsync: hx("OFF / ON"), fpscap: hx("UNLIMITED"), demo: hx("hamlet"), ...over });
+  check((await run(60)) === "ok", "bench run stored");
+  const row = db.prepare("SELECT * FROM bench_runs WHERE player = ?").get(id(60));
+  check(row && row.channel === "testing" && row.build === "O3 LTO" && row.cpu.startsWith("AMD Ryzen") && row.avg_fps === 612.5 && row.frames === 28000 && row.stdev_ms === 0.512, "bench row " + JSON.stringify(row));
+  check((await run(60, { secret: "x" })) === "bad request", "bench needs the secret");
+  check((await run(60, { cpu: "zz" })) === "bad cpu", "bench text must be hex");
+  check((await run(60, { cpu: hx("x".repeat(97)) })) === "bad cpu", "bench text length");
+  check((await run(60, { cpu: hx("caf\u00e9") })) === "bad cpu", "bench text printable");
+  check((await run(60, { version: hx("1.19") })) === "bad version", "bench version");
+  check((await run(60, { avg: "NaN" })) === "bad avg", "bench numbers finite");
+  check((await run(60, { frames: "0" })) === "bad frames", "bench frames");
+  check((await run(60, { min: "500" })) === "bad numbers", "bench min over the lows");
+  check((await run(61, { avg: "9e9", version: hx("1.20.0"), channel: "production" })) === "ok", "bench clamps");
+  const r61 = db.prepare("SELECT avg_fps, channel FROM bench_runs WHERE player = ?").get(id(61));
+  check(r61.avg_fps === 100000 && r61.channel === "production", "bench clamped " + JSON.stringify(r61));
+  db.prepare("UPDATE bench_runs SET created = ? WHERE player = ?").run(Date.now(), id(60));
+  for (let k = 1; k < 30; k++) db.prepare("INSERT INTO bench_runs SELECT NULL, player, created, version, channel, build, cpu, gpu, driver, avg_fps, low1_fps, low01_fps, min_fps, stdev_ms, frames, seconds, res, scale, aa, vsync, fpscap, demo FROM bench_runs WHERE player = ? LIMIT 1").run(id(60));
+  check((await run(60)) === "daily limit", "bench 30 a day");
+  db.prepare("UPDATE bench_runs SET created = 0 WHERE player = ?").run(id(60));
+  check((await run(60)) === "ok", "bench the next day");
+  const list = await call("/bench");
+  check(list.split("\n").length === 25 && list.split("\n")[0].includes(" 1.19.0.testing.7 testing "), "bench newest list");
+}
 // Testing servers (a prerelease version: the testing server every box runs next to production) are never rated
 {
   check(isTestingVersion("1.17.0-test.42") && isTestingVersion("~1.17.0-test.4") && !isTestingVersion("1.17.0") && !isTestingVersion("~1.17.0"), "testing versions");

@@ -97,6 +97,15 @@ int main(int argc, char** argv) {
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();
         else if (a == "--bench") opts.bench = atof(next().c_str());
+        else if (a == "--benchmark") {   // the main menu's BENCHMARK, printed, then quit: [demo file] [seconds measured]
+            opts.benchmark = true;
+            while (i + 1 < argc && argv[i + 1][0] != '-') {
+                std::string v = next();
+                char* end = nullptr;
+                double d = strtod(v.c_str(), &end);
+                if (end && *end == 0 && d > 0) opts.benchmarkSeconds = d; else opts.benchmarkDemo = v;
+            }
+        }
         else if (a == "--textheavy") opts.textHeavy = true;
         else if (a == "--feedshot") opts.feedShot = true;
         else if (a == "--edsel") opts.editSel = atoi(next().c_str());
@@ -110,7 +119,7 @@ int main(int argc, char** argv) {
         else if (a == "--uitest-only") { opts.uiTest = true; opts.uiTestOnly = next(); }   // scenarios a,b,c
         else if (a == "--uitest-path") { opts.uiTest = true; opts.uiTestPath = next(); }   // screens under this path
         else if (a == "-h" || a == "--help") {
-            printf("quark [--connect ip:port] [--host mode --map name] [--data-dir DIR]\n");
+            printf("quark [--connect ip:port] [--host mode --map name] [--data-dir DIR] [--benchmark [seconds]]\n");
             return 0;
         }
     }
@@ -119,7 +128,7 @@ int main(int argc, char** argv) {
     // Not in automated runs (screenshots, benchmarks, scripted editor sessions): they start and quit in seconds and
     // must not touch the player's launchers. Whatever way main returns, the thread is stopped between steps (never
     // inside a swap) and joined, waiting at most 2 s (selfupdate::finishFromGame).
-    bool automated = !opts.screenshot.empty() || opts.bench > 0 || !opts.editScript.empty() || opts.textHeavy || opts.feedShot ||
+    bool automated = !opts.screenshot.empty() || opts.bench > 0 || opts.benchmark || !opts.editScript.empty() || opts.textHeavy || opts.feedShot ||
                      opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf || opts.uiTest;
     if (opts.uiTest) uiTestPrepare(opts);   // (its own data folder and settings: before anything reads them)
     if (!automated) selfupdate::startFromGame(argv[0]);

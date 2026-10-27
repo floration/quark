@@ -78,6 +78,8 @@ std::string Game::uiScreenPath() const {
         case Screen::Leaderboard: return raceStatsView_ ? "leaderboard/race-stats" : "leaderboard";
         case Screen::Info: return std::string("info/") + info[std::min(std::max(infoTab_, 0), 5)];
         case Screen::Demos: return "demos";
+        case Screen::Benchmarks: return "benchmarks";
+        case Screen::BenchmarkResult: return "benchmarks/result";
         case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
         case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
@@ -133,6 +135,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "ctlimport") return cfg_.toText() + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w.rfind("files:", 0) == 0) return listDir(profileDir(w.substr(6).c_str()));
     if (w == "groups") return listDir(userDataPath("groups"));
+    if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
     if (w == "usermaps") return listDir(userMapsDir());
     if (w == "queue") { std::string o; for (auto& q : queued_) o += q + " "; return o; }
     if (w == "custom") return editRules_.toText();
@@ -1359,6 +1362,20 @@ private:
                          return false;
                      },
                      [=] { return g_.screen_ == Game::Screen::InGame && g_.net_.playback(); }});
+        // BENCHMARKS: the saved runs (three made up, as a run saves them), each run's result page (rename, export, delete)
+        v.push_back({"benchmark", "benchmarks", {"benchmarks"}, {},
+                     [=] {
+                         leaveAll();
+                         for (int k = 0; k < 3; k++) {
+                             std::vector<float> t(3000);
+                             for (size_t i = 0; i < t.size(); i++) t[i] = 0.004f + 0.002f * (float)((i * 7919 + k) % 13) / 13 + (i % 997 == 0 ? 0.02f : 0);
+                             if (g_.benchSave(t.data(), t.size()).empty()) { printf("uitest: benchmark: couldn't save a run\n"); return false; }
+                         }
+                         g_.setScreen(Game::Screen::Benchmarks);
+                         step(2);
+                         return path() == "benchmarks";
+                     },
+                     [=] { return (g_.screen_ == Game::Screen::Benchmarks || g_.screen_ == Game::Screen::BenchmarkResult) && !g_.host_ && !g_.net_.playback(); }});
         // hide and seek: the seeker's locator (slot key 0), and the tiebreak's rock / paper / scissors keys
         v.push_back({"hide-seeker", "ingame", inGameAll, {"ingame/"}, [=] { return hideSeeker(); },
                      [=] { return g_.screen_ == Game::Screen::InGame && srv_ && g_.net_.hasSnapshot() && iAmIt(); }});
