@@ -125,7 +125,7 @@ const OLD_DATA_DIR = IS_WIN && process.env.LOCALAPPDATA ? path.join(process.env.
 const MIGRATED_FILE = path.join(DATA_DIR, 'migrated.json');
 const OLD_APP_WAIT_MS = 20000;
 // (caches Chromium rebuilds by itself, the bulk of a profile; the old app's locks and status)
-const MIGRATE_SKIP = new Set(['Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache',
+const MIGRATE_SKIP = new Set(['Cache', 'Code Cache', 'GPUCache', 'GPUPersistentCache', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache',
   'GraphiteDawnCache', 'GrShaderCache', 'ShaderCache', 'Crashpad', 'lockfile', 'SingletonLock', 'SingletonCookie',
   'SingletonSocket', 'shell-status.json', 'migrated.json']);
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -174,7 +174,8 @@ try { MIGRATION = migrateOldData(); } catch (err) { logShellError('moving from Q
 // The Chromium profile lives next to state.json, off the Desktop (DATA_DIR).
 // Must be set before the single-instance lock (the lock file is in userData).
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch { /* setPath below still works or fails loudly */ }
-app.setPath('userData', path.join(DATA_DIR, 'electron-data'));
+// (while the old app is open this start only says so: its throwaway profile keeps the real one untouched for the copy)
+app.setPath('userData', MIGRATION === 'busy' ? path.join(os.tmpdir(), 'quarkology-waiting') : path.join(DATA_DIR, 'electron-data'));
 app.setName('Quarkology');
 if (IS_WIN) app.setAppUserModelId('Quark.Quarkology');
 
