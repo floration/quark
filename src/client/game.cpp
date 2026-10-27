@@ -7562,7 +7562,7 @@ void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
 
 // X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
 // the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
-// in sight, once a shot (the laser: at most 20 a second).
+// in sight, once a shot (the laser: at most 20 a second). Players are their body and head (rayHitbox), as the server's.
 void Game::localImpactSparks(int w, const UserCmd& c) {
     const MoveState& m = net_.predicted();
     const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
@@ -7580,7 +7580,7 @@ void Game::localImpactSparks(int w, const UserCmd& c) {
         float best = t;
         for (int i = 0; i < kMaxPlayers; i++) {
             if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
-            const float tk = rayAABB(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+            const float tk = rayHitbox(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
             if (tk >= 0 && tk < best) best = tk;
         }
         if (best < t) explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true});
@@ -7605,7 +7605,7 @@ bool Game::shotSpark(const Vec3& from, const Vec3& d, float wallT, float range, 
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == me || i == shooter || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
         if (teams && ps[i].snap.team() == sh->team()) continue;
-        const float tk = rayAABB(from, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+        const float tk = rayHitbox(from, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
         if (tk >= 0 && tk < best) { best = tk; player = true; }
     }
     if (player) explosions_.push_back({from + d * best, time_, 0.1f, false, false, true});
@@ -7627,7 +7627,8 @@ void Game::localBoom(uint16_t id, int type, const Vec3& at) {
     localBooms_.push_back({id, (uint8_t)type, at, time_});
 }
 
-// The nearest enemy (alive, as drawn) whose box the segment a -> b passes through: *t its fraction along it.
+// The nearest enemy (alive, as drawn) whose body or head (rayHitbox, as the server's projectiles) the segment a -> b
+// passes through: *t its fraction along it.
 bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
     const Vec3 d = b - a;
     const float len = length(d);
@@ -7638,7 +7639,7 @@ bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == net_.clientId() || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
-        const float tk = rayAABB(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+        const float tk = rayHitbox(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
         if (tk >= 0 && tk < best) { best = tk; any = true; }
     }
     if (any) *t = best / len;

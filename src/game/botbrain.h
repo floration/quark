@@ -100,7 +100,7 @@ float evalBrainCurve(const BrainCurve& c, float x);
     X(leadSd, F32, "drop: x 0.7", 0, 1.4, "sd of the lead", 0.35f, 0.3f, 0.2f, 0.12f) \
     X(canLead, BOOL, "", 0, 1, "leads well: projectile weapon lists, knife throws, rockets at the feet, rifle scope", false, false, true, true) \
     X(rocketFeetHeight, F32, "m", 0, 0.4, "with canLead: rockets aim this high above the target's feet", 0.1f, 0.1f, 0.1f, 0.1f) \
-    X(aimHeight, F32, "m, x body scale", 0, 5.2, "aim point above the feet", 1.0f, 1.1f, 1.2f, 1.3f) \
+    X(aimHeight, F32, "m, x body scale", 0, 5.2, "aim point above the feet", 0.8f, 0.88f, 0.96f, 1.04f) \
     X(weapons, BOOL, "else the rifle", 0, 1, "picks weapons by range", false, true, true, true) \
     X(weaponClose, F32, "m", 0, 28, "close range ends here", 7.0f, 7.0f, 7.0f, 7.0f) \
     X(weaponMid, F32, "m", 0, 72, "mid range ends here", 18.0f, 18.0f, 18.0f, 18.0f) \

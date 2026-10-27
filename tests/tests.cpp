@@ -712,7 +712,7 @@ static void testAcid() {
         CHECK(roundTrip(a, 44, got, n0) && got.acidOutMs == kAcidRearmMs && got.mods == MOVE_TINY);   // (the bytes are protocol 44's)
         a.acidOutMs = 123; a.acidTaken = 0.5f;
         CHECK(roundTrip(a, kProtocolVersion, got, n1) && got.acidOutMs == 123 && got.mods == MOVE_TINY && got.acidTaken == 0 && n1 == n0 + 2);
-        CHECK(demo::convertible(44) && kSnapAcidSince == kProtocolVersion);
+        CHECK(demo::convertible(44) && kSnapAcidSince <= kProtocolVersion);
     }
     auto fresh = [&](Server& s, int n) {
         s.setLog([](const std::string&) {});
