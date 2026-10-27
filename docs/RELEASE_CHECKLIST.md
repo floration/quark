@@ -3,7 +3,7 @@
 Do this for **every** update, after it has been pushed to the `testing` branch and published as a testing prerelease, and **before** it goes to production (the `testing` → default-branch PR and the `v<VERSION>` tag). Claude never pushes to production until you have been through this list and said so.
 
 - **When:** CI has published the prerelease `test-<VERSION>.testing.<N>` (before 1.19.0: `test-<VERSION>-test.<N>`). The launcher's TESTING channel and Discord's #testing-updates both show it.
-- **Time:** about 60–90 minutes for the full list. For a small patch (one fix, no netcode, map or server changes), do sections 0–2, the parts of 3–15 the changelog touches, and 16.
+- **Time:** about 60–90 minutes for the full list. For a small patch (one fix, no netcode, map or server changes), do sections 0–2, the parts of 3–16 the changelog touches, and 17.
 - **How to record it:** copy the sign-off table at the bottom into the PR description (or a note), and tick each section as you go. Write down anything odd, even if it seems minor, and give it to Claude before production.
 - **If something fails:** stop. Tell Claude what failed and how to reproduce it. The fix goes to `testing` as a new build (`.testing.<N+1>`), and you redo the sections it touches. Never tag production on a build with a known failure in sections 0, 1, 2, 11, 12 or 13.
 
@@ -98,7 +98,7 @@ menu and from the pause menu: BACK (bottom-left) and Esc leave it from any tab; 
 | ☐ | Announcer: every voice (Settings > VOICE) has 27 lines, none silent: the Asset Studio / `/sounds/` Voices list no AIRBORNE, TEN_SECONDS or FIVE_SECONDS (removed: never played, never recorded); the countdown, kill calls and "one minute" / "thirty seconds" still say the right words in each voice. |
 | ☐ | Audio (Windows): sound is clean with EXCLUSIVE AUDIO off (shared, 10 ms) and on (3 ms on the owner's PC; other programs go silent, back when it's turned off); unplugging or switching the output device mid-game moves the sound to the new default. |
 | ☐ | Sound levels: put a quiet `ROCKET.wav` in `%APPDATA%\quark\overrides\sounds\default\` and restart: the rocket is as loud as before (matched). Add `sounds/default/ROCKET` to `%APPDATA%\quark\overrides\sound-levels.txt` and restart: it is now quiet (its own level). Remove both after. The sound editor (`tools\sound_editor\build.cmd`) builds and its Export to game writes these files. |
-| ☐ | Model overrides: install the model editor (`tools\model_editor\install.cmd`; it opens from `%USERPROFILE%\Desktop\Quark\model-editor\model-editor.html`), recolour `models/player/STANDARD` (e.g. bright green), Export to game into `%APPDATA%\quark\overrides` and restart. A casual game (vs bots) shows it, with outlines and crouching like the default; a **ranked** match (and a time trial) shows the default STANDARD instead. The payload cart and checkpoint gates (railyard), the bomb on a carrier's back and on the ground (depot), and the arms (other players' gun arms; the held-weapon arms in hide and seek) look as in the last release. Remove the file after. |
+| ☐ | Model overrides: open the model editor (Quarkology installs it by itself: its Model Editor tab, or `Quark\model-editor\model-editor.html`), recolour `models/player/STANDARD` (e.g. bright green), Export to game into `%APPDATA%\quark\overrides` and restart. A casual game (vs bots) shows it, with outlines and crouching like the default; a **ranked** match (and a time trial) shows the default STANDARD instead. The payload cart and checkpoint gates (railyard), the bomb on a carrier's back and on the ground (depot), and the arms (other players' gun arms; the held-weapon arms in hide and seek) look as in the last release. Remove the file after. |
 | ☐ | Controls: rebind every action you use (GENERAL + INTERFACE KEYS and MOVE + WEAPON KEYS); **right-click** a slot unbinds it (or click it and press Del). Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** (GAMEPLAY) stays in sync with the toggle. |
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
 | ☐ | HUD tab: the ELEMENT dropdown lists WEAPON MODEL and GRAPPLE MODEL first and every HUD element; each one's SHOW / offsets / size / depth and PITCH / YAW / ROLL (the two models: tilts it about its pivot; your shots / laser / knife slash leave the tilted gun's muzzle, the rope the tilted launcher's barrel; hiding one model leaves the other) / colour work, RESET ELEMENT and RESET WHOLE HUD put the defaults back. **Live preview**: on the HUD tab (in a game and from the main menu) the HUD shows under a see-through panel (in game with live values; from the menu health 100, full bars, 12 m/s, FFA's weapon list, the key overlay when VERBOSE INFO is on); the selected element has a thin pulsing accent outline (dashed and dim when SHOW is off; none for WEAPON MODEL / GRAPPLE MODEL); dragging its X / Y OFFSET or SIZE, or changing its colour, draws it over the panel at full strength as it moves, for 1.5 s after the last change; the panel's text stays readable; other tabs look as before (opaque, no HUD). |
@@ -157,24 +157,22 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Custom mode | any | Make one in the custom-mode editor, host it, the rules apply. |
 | ☐ | Custom mode with movement equations | any | Save a `.qmode` (physics editor, or by hand in `custom_modes\`) with `expr.friction=curve(p.hspeed, 2, 9.5, 2, 1)` and `expr.gravity=p.air > 0.15 ? 2 : 1`: hosted, you stop sooner than standard (about 0.8 m from a run, against 1.2) and a standing jump peaks lower (about 1.04 m, against 1.22); a second PC joined to it moves smoothly (no rubber-banding: its prediction runs the same equations). A broken line (`expr.speed=bad(`) changes nothing and doesn't stop the mode loading. **Protocol 44**: this build can't join servers of the protocol 43 versions (1.18.7 to 1.18.21) or of production 1.17.0 (protocol 42), or host for their clients (the version message says so); their demos convert at startup. |
 
-### Mode logic and the gamemode editor
+### Mode logic
+
+(The gamemode editor's own checks are in section 16: floration/quarkology's CHECKLIST.md.)
 
 | ✓ | Check |
 |---|---|
-| ☐ | **Gamemode editor** (`py -3 tools\mode_editor\install.py "%USERPROFILE%\Desktop\Quark\gamemode-editor"`, then `run.cmd` there): http://127.0.0.1:8771/ opens; the catalog badge doesn't say SNAPSHOT CATALOG with a build; open FFA, switch Code / Blocks / Graph / Values / Diff / Phases (an edit in one shows in the others). |
-| ☐ | Make a mode from FFA whose `slot kill` scores 2 a frag and Save it. If the file has physics lines (gravity etc., from the physics editor), they are still there, unchanged and in place, after the save. **Sim** runs a match with bots live (frames, kills, the end scoreboard) and a small batch fills its table. |
-| ☐ | Host > Custom modes: that mode shows **LOGIC: name#xxxxxxxx** (break a line in its logic: the error shows in red and hosting it is refused with the line). Host it: the server list name starts `[name#xxxxxxxx]`, joining shows CUSTOM MODE ... - LOGIC: name#xxxxxxxx, and a frag scores 2. Saving the mode in Host > Custom modes keeps its logic. |
+| ☐ | A mode with logic: in the gamemode editor (section 16) make one from FFA whose `slot kill` scores 2 a frag and Save it (or copy FFA's `.qlogic` into a `.qmode` in `custom_modes\` and change that slot by hand). Host > Custom modes: that mode shows **LOGIC: name#xxxxxxxx** (break a line in its logic: the error shows in red and hosting it is refused with the line). Host it: the server list name starts `[name#xxxxxxxx]`, joining shows CUSTOM MODE ... - LOGIC: name#xxxxxxxx, and a frag scores 2. Saving the mode in Host > Custom modes keeps its logic. |
 | ☐ | A **ranked** match (and a time trial) plays the standard rules: no custom numbers or logic, no LOGIC label. The 13 built-in modes play as in the last release. |
 
-### Weapon sets and the weapons editor
+### Weapon sets
+
+(The weapons editor's own checks are in section 16: floration/quarkology's CHECKLIST.md.)
 
 | ✓ | Check |
 |---|---|
-| ☐ | **Weapons editor** (the Quarkology app's Editor Manager > Weapons Editor tab, or `py -3 tools\weapon_editor\serve.py --install`, then `run.cmd` in `Quark\weapons-editor`, http://127.0.0.1:8773/): the badge says quark_maptool (not MOCK); Values shows the rifle 21 / 14 shots and 3.03 / 1.97 s to kill body / head, the sniper 3 / 2; Other games lists 19 games; an edit in Weapon shows in Code, Blocks and Graph. |
-| ☐ | **HUD editor** (the Quarkology app's Editor Manager > HUD Editor tab, http://127.0.0.1:8774/): it shows your quark.cfg HUD layout and hud.cfg widgets; drag a widget and Save: it moves in a running game within a second; with the game closed, move the health element and the grapple launcher (Give it its own settings), Save, start the game: both are where the editor put them; the rest of quark.cfg is unchanged. |
-| ☐ | Make a set: rocket damage 40 and a `slot hit sniper:` that doubles airborne damage; Save writes `custom_weapons\<name>.qweapons`. **Range**: the rocket's numbers per target change; **Fights**: a live bot match runs with the set (no "standard weapons" banner) and a batch fills the per-weapon table. |
-| ☐ | **Write wpn-<set>.qmode**, then Host > Custom modes > that mode: rockets do 40 (a direct hit at least 50), an airborne sniper body hit 80. A second client joining gets the same refire / spread / projectiles (no rubber-banding of shots), and the gamemode or physics editor saving that .qmode keeps its `weaponset=` line. Ranked and time trials play the standard weapons. |
-| ☐ | **Quarkology (the app, once after the rename from Quark Project)**: on each PC, the first open of the old "Quark Project" app after this update closes and reopens as **Quarkology** by itself (title, taskbar, desktop shortcut "Quarkology"; "Quark Project" is gone); the tab order, hidden tabs, window size and place, Claude Manager history, Play notes and the GitHub Manager sign-in are as before; Tools & updates reinstalls nothing that was up to date; `Quark\project-manager\MOVED.txt` and `%LOCALAPPDATA%\Quarkology\migrated.json` exist. |
+| ☐ | In the weapons editor (section 16) make a set with rocket damage 40 and a `slot hit sniper:` that doubles airborne damage, then **Write wpn-<set>.qmode**. Host > Custom modes > that mode: rockets do 40 (a direct hit at least 50), an airborne sniper body hit 80. A second client joining gets the same refire / spread / projectiles (no rubber-banding of shots), and the gamemode or physics editor saving that .qmode keeps its `weaponset=` line. Ranked and time trials play the standard weapons. |
 
 ## 7. Maps
 
@@ -188,7 +186,6 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Bots on 3–4 maps for a few minutes: they navigate, use objectives, and don't keep falling off. |
 | ☐ | **Bot routes round walls and crates**: Depot (bomb): the attackers' bomb carrier goes round the gatehouse's front wall, and bots cross the defenders' yard past the perch; Summit (KOTH): bots from the west spawn (behind the ledge ramp) head for the hill straight away; Viaduct (race): bots take the zig-zag pads. No bot runs on the spot into a wall for more than a second or two. |
 | ☐ | **Bot brains** (1.18.11): the default bots play as before. Copy `tools/bots/default.qbrain` to `%APPDATA%\quark\bots\fast.qbrain`, change `reactMs` to 40 for every level, host, console `addbot b expert brain=fast`: the join line reads `BOT <NAME> (EXPERT, fast#xxxxxxxx)` and that bot reacts much faster. A broken file (delete a `:`) is refused with `file:line:col`. `brain=default` gives the built-in bot. Ranked never loads brain files. **HOST GAME → ADVANCED → BOT BRAIN** lists BUILT-IN and every file in the bots folder (a file added while the game runs shows the next time HOST opens); pick FAST, START: every bot's join line shows `fast#...`; the choice is still there after a restart. A broken file shows `ERROR ON LINE n - BOTS PLAY THE BUILT-IN BRAIN` there, and hosting with it says so and the bots join with no brain label. With MODE > RANKED it reads BOT BRAIN: OFF (RANKED). VS BOTS always plays the built-in brain. |
-| ☐ | **Bot editor** (`tools\bot_editor\run.cmd`, http://127.0.0.1:8769): a map loads; place 2 bots, give one a hold objective, run live: they move, the inspector shows decisions; in Brain edit `reactMs`, switch Code / Blocks / Graph (the change shows in each), run that brain against the default; a 6-match batch fills the brain table; Save writes `%APPDATA%\quark\bots\<name>.qbrain`. |
 
 ## 8. Map editor
 
@@ -198,9 +195,6 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | SAVE, SAVE AS, OPEN, TEST (plays it), back to the editor. Names are what you typed. |
 | ☐ | Open a **built-in** map, change something, then SAVE / leave: it asks whether to keep your edits as a **new map** (suggests e.g. `temple_edit`). Yes saves a copy; No drops the edits; the built-in map is never changed. |
 | ☐ | EDIT THE MAP TOGETHER with a second player: edits appear for both; leaving offers a copy. |
-| ☐ | **Map editor tool** (`tools\map_editor\build.cmd`, then `run.cmd` in `Quark\map-editor`): it opens a default map and one of yours; Checks all pass on a default map; Metrics shows times to points with routes; a 10 s Bots run plays live and scrubs; a player figure stands 1.8 m against the scale bar; a decoration preset applies, undoes and regenerates; Save as writes a map the game's MAP EDITOR opens. |
-| ☐ | **Physics editor tool** (`py -3 tools\physics_editor\serve.py --install`, then `run.cmd` in `Quark\physics-editor`, http://127.0.0.1:8772/): the header badge says quark_maptool; Standing jump gives 1.22 m with the standard physics; gravity x0.5 in Values updates Code and gives about 2.44 m; Drive with WASD reaches 9.5 m/s; Save writes `custom_modes\<name>.qmode` and the game's Host > Custom modes plays it with the same jump height; a .qmode with a `logic` section keeps it untouched after a save. |
-| ☐ | **Physics editor v2** (same tool): Values › Compare with games: tick Quake III and Xonotic: a column each (value, ×, confidence dot, ⚠ outside the range, *no analogue*), reference facts under the groups; **load all** puts `# imported from ...` in Code. Friction ƒ = `sqrt(speed)`, speed ×1.44: friction shows ×1.2 STATIC, Code has `expr.friction=sqrt(speed)` and `move_friction=1.2`. Air accel ⌒: pick `out`, drag an end point: the curve text follows. Code › Movement code: pmove.cpp with chips (`kFriction 7 × ƒ ... = 8.4`), a chip opens the setting. Code graph: friction's edges highlighted, a step opens its code. Movement graph: 3D with the scrubber; lock height at 0..5 survives a re-run; A / B with B = Quake III side by side shows B − A. Saved with an equation, the mode plays in the game the same way (row above). |
 | ☐ | Layout (the redesign), at 1280x720 and in a 4:3 window: the side panel in sections (FILE with NEW / SAVE / EXIT / TEST and BAKE LIGHT beside HOST EDIT SESSION, ADD, the GROUPS row, MODES, the selection), 12 px from the edges, no text smaller than the captions; select a box, room, stairs, ladder, spawn, light, bomb site, hill, checkpoint, path point and a custom group: the selection starts at the same height each time and ROTATE / MIRROR stay on screen. The line under the 3D view shows PLAYABLE AS and the counts, the key help fits the view (a 4:3 window puts it on more lines); EXPORT's question, IMPORT's list and the keep-your-edits question sit in the middle of the 3D view; in a session the chat's SAY line is above the key help. |
 
 ## 9. Demos
@@ -289,11 +283,17 @@ The site is only redeployed by a production release (a testing build only replac
 | ☐ | **After** production: https://floration.github.io/quark shows the new version and changelog; each download link works, and its `.sig` and `SHA256SUMS` are there. |
 | ☐ | **After** production: https://floration.github.io/quark/updates/ lists the new version, and https://floration.github.io/quark/updates/<VERSION>/ shows its full changelog. The Discord #updates post links to that page. |
 
-## 16. Sign-off and going to production
+## 16. Quarkology and the editors
+
+Quarkology (the Supervisor Board app) and the editors live in their own repository since 1.20, floration/quarkology (private), and so do their checks: its `CHECKLIST.md`, which Quarkology keeps in `Quark\quarkology-repo\CHECKLIST.md`. The Supervisor Board's Release testing tab shows them here, under this section. Do them every release: the editors run the game's code (`quark_maptool`, `quark_tests`), so a game change can break one.
+
+- Every row of `CHECKLIST.md` in floration/quarkology (`Quark\quarkology-repo\CHECKLIST.md`): the app on both PCs (the clone of floration/quarkology, the WIP sync), then each editor.
+
+## 17. Sign-off and going to production
 
 | ✓ | Check |
 |---|---|
-| ☐ | Sections 0–15 are done (or skipped for a small patch, with a reason), and nothing is open. |
+| ☐ | Sections 0–16 are done (or skipped for a small patch, with a reason), and nothing is open. |
 | ☐ | Tell Claude: **"the testing build passed the checklist, go to production"**. Claude opens the `testing` → default-branch PR. |
 | ☐ | You merge the PR, then tag the merge commit: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. The production run needs Windows, Linux **and** macOS green; it publishes the release as Latest and deploys the website. |
 | ☐ | Check the "after production" rows in sections 1, 11, 14 and 15 within the hour. |

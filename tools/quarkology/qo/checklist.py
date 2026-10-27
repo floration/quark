@@ -1,5 +1,7 @@
 """Source `checklist` (300 s): the section headings of repository\\docs\\RELEASE_CHECKLIST.md and each section's check
-items; and q's ticks of those sections per testing version (`Ticks`, POST /api/checklist)."""
+items; and q's ticks of those sections per testing version (`Ticks`, POST /api/checklist). The game checklist's
+section "Quarkology and the editors" gets its items from this repository's CHECKLIST.md (Quark\\quarkology-repo\\
+CHECKLIST.md), where the app's and the editors' checks live since they moved to floration/quarkology."""
 import os
 import re
 import threading
@@ -9,6 +11,9 @@ from . import util
 KEY = "checklist"
 INTERVAL = 300
 URL_BASE = "https://github.com/floration/quark/blob/testing/docs/RELEASE_CHECKLIST.md"
+APP_URL = "https://github.com/floration/quarkology/blob/main/CHECKLIST.md"
+APP_FILE = ("quarkology-repo", "CHECKLIST.md")
+APP_SECTION = "Quarkology and the editors"   # (its key: section_key)
 
 
 def parse(text):
@@ -76,9 +81,35 @@ def fetch(ctx):
     except OSError as e:
         raise util.SourceError("RELEASE_CHECKLIST.md unreadable (%s)" % type(e).__name__)
     title = next((l[2:].strip() for l in text.splitlines() if l.startswith("# ")), None)
+    headings, sections = parse(text), parse_sections(text)
+    app = merge_app(ctx.paths.q(*APP_FILE), headings, sections)
     # (`sections` holds every item: GET /api/checklist sends it; /api/pm sends only the headings)
-    return {"title": title, "headings": parse(text), "sections": parse_sections(text), "mtime": util.iso(mtime),
-            "path": path, "url": URL_BASE}
+    return {"title": title, "headings": headings, "sections": sections, "mtime": util.iso(mtime),
+            "path": path, "url": URL_BASE, "app": app}
+
+
+def merge_app(path, headings, sections):
+    """The app repository's CHECKLIST.md into the game checklist's "Quarkology and the editors" section (in place): its
+    items replace that section's (the game file only points at it), each in its ### group; a game checklist without
+    the section gets it at the end, before the sign-off. -> {path, url, items, error} (None: no such file here)."""
+    try:
+        text = util.read_text(path)
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        return {"path": path, "url": APP_URL, "items": 0, "error": "unreadable (%s)" % type(e).__name__}
+    items = []
+    for sec in parse_sections(text):
+        for it in sec["items"]:
+            items.append({"text": it["text"], "group": it["group"] or sec["heading"], "from": "quarkology"})
+    keys = [section_key(s["heading"]) for s in sections]
+    if APP_SECTION in keys:
+        sections[keys.index(APP_SECTION)]["items"] = items
+    else:
+        at = next((i for i, k in enumerate(keys) if k.lower().startswith("sign-off")), len(sections))
+        sections.insert(at, {"heading": APP_SECTION, "items": items})
+        headings.insert(min(at, len(headings)), APP_SECTION)
+    return {"path": path, "url": APP_URL, "items": len(items), "error": None}
 
 
 # ---- q's ticks: which sections of the checklist he has hand-tested, per testing VERSION ----------------------------

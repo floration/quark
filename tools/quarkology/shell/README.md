@@ -119,12 +119,28 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    `testing` with no changes to tracked files (untracked files such as `build-model-editor\` do not count). Otherwise
    it does nothing and says why ("has local changes", "is on <branch>, not testing", "fast-forward refused"). Never a
    reset or a force, and never any other folder (`working-repo*` are q's). Git never prompts (`GIT_TERMINAL_PROMPT=0`).
-2. Every entry of `installs.json` (read from `repository\tools\quarkology\` right after the pull, else the copy
-   next to `server.py`): its stamp is the git object ids of its `sources` at `repository\` HEAD (`git rev-parse
-   HEAD:<path>`; a folder gives a tree id, a file a blob id). When the stamp differs from the one in
-   `Quark\quarkology\installs-state.json`, or its `check` file is missing, `run` runs hidden (`cmd.exe /d /s /c`
-   with CREATE_NO_WINDOW, working folder `repository\`, stdin closed, `QUARK_SHELL=1`, `QUARK_DIR=<Quark>`,
-   timeout `timeoutSec`, default 600 s, then the process tree is killed). Output: `Quark\quarkology\logs\install-<id>.log`.
+1b. `Quark\quarkology-repo\` (this app and the editors: floration/quarkology, private, branch `main`): when it is
+   missing it is cloned, hidden (`git clone --branch main` into `quarkology-repo.clone-tmp\`, renamed when complete),
+   from the game clone's own origin with the repository name changed (https stays https, ssh stays ssh: the sign-in
+   that already works), first with the PC's git sign-in (Git Credential Manager with `GCM_INTERACTIVE=Never`, ssh),
+   then with GitHub CLI's (`gh auth git-credential`, which is then kept in the clone's own config). A clone that fails
+   is a red HALTING item on the Supervisor Board saying what to do (sign in with `gh auth login`, then Update now);
+   the app keeps running and updating itself from the game's hand-over copy `repository\tools\quarkology\` (one
+   release) until it works, and the next pass tries again. Once there: `git fetch origin main` and a fast-forward, as
+   in 1, except that changes under `wip\` don't count (the WIP sync below owns them).
+2. Every entry of `installs.json`, read from `quarkology-repo\quarkology\` once that clone has the app
+   (`"sourcesIn": "app"`), else from the game's hand-over copy `repository\tools\quarkology\` (`"sourcesIn": "game"`:
+   only Quarkology itself and Electron), else the copy next to `server.py`. Per entry, explicitly: `sources` are paths
+   in the repository `sourcesIn` names, `gameSources` paths in `repository\` (the game files a tool is built from), and
+   `cwd` is where `run` runs (`"app"` = `quarkology-repo\`, `"game"` = `repository\`; default: `sourcesIn`). Its stamp
+   is the git object ids of its `sources`, then its `gameSources`, at each clone's HEAD (`git rev-parse HEAD:<path>`;
+   a folder gives a tree id, a file a blob id), so a change on either side reinstalls it. When the stamp differs from
+   the one in `Quark\quarkology\installs-state.json`, or its `check` file is missing, `run` runs hidden (`cmd.exe /d
+   /s /c` with CREATE_NO_WINDOW, in its `cwd`, stdin closed, `QUARK_SHELL=1`, `QUARK_DIR=<Quark>`,
+   `QUARK_GAME_REPO=<Quark>\repository`, `QUARK_APP_REPO=<Quark>\quarkology-repo` (once cloned); `%APP%`, `%GAME%`,
+   `%REPO%` (= `%GAME%`, from before the move), `%QUARK%` and `%PM%` in `run` are expanded; timeout `timeoutSec`,
+   default 600 s, then the process tree is killed). The switch from the hand-over registry to the app's is one pass:
+   every editor's stamp is new then, so each reinstalls once, from `quarkology-repo\`. Output: `Quark\quarkology\logs\install-<id>.log`.
    The new stamp is stored only on exit code 0, so a failed install is tried again on the next app open or "Update
    now". An entry whose first source is not at HEAD yet (not merged) is `waiting` and skipped; a later missing source
    counts as `-` in the stamp.
@@ -141,8 +157,8 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    open file tab in that folder; one with unsaved changes keeps its old page and shows a blue ↻ on its tab ("Updated:
    save, then reload") until its next load.
 4. The `quarkology` entry (`"run": "builtin:self-update"`) copies `server.py`, `quarkology.cmd`,
-   `quarkology-hidden.vbs`, `installs.json`, `qo\`, `web\` and `shell\` from `repository\tools\quarkology`
-   into `Quark\quarkology\` (file by file, only what changed, files deleted from the repo go; `tabs.json`,
+   `quarkology-hidden.vbs`, `installs.json`, `quark.ico`, `qo\`, `web\` and `shell\` from the registry's folder
+   (`quarkology-repo\quarkology`, or the hand-over `repository\tools\quarkology`) into `Quark\quarkology\` (file by file, only what changed, files deleted from the repo go; `tabs.json`,
    `config.json`, `history.jsonl`, `state.json`, `installs-state.json`, `logs\` and `electron\` are never touched),
    then runs the new `server.py --init` (tabs.json gets new default tabs). When any file changed, `selfUpdated` is set
    and the tab bar shows "Quarkology updated — reopen to finish" with a Restart button (it asks, then stops the old
@@ -160,7 +176,7 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
 
 5. The `electron` entry (`"run": "builtin:electron-update"`, last, no sources): see Electron updates below.
 
-The Supervisor Board's "Tools & updates" card shows the repository state, each entry with a status pill (`ok`,
+The Supervisor Board's "Tools & updates" card shows both clones' state, each entry with a status pill (`ok`,
 `updating`, `failed`, `pending`, `waiting`, `disabled`), the last run time (Dallas) and the log's last lines, and an
 "Update now" button (`POST /api/updates/run`, at most once per 60 s).
 
@@ -192,6 +208,31 @@ A new tool with an installer is one more line, e.g.
 {"id": "gamemode", "name": "Gamemode Editor", "sources": ["tools/<its folder>"], "run": "<its installer command>",
  "check": "gamemode-editor\\<a file it installs>", "restartsPort": 8771}
 ```
+
+## WIP sync (`qo/wipsync.py`)
+
+`Quark\quarkology-repo\wip\` (maps, sounds, models, HUDs and anything else in progress: `../../wip/README.md`) is
+kept the same on q's PCs with no step by q. When the app opens and every 3 minutes (and the Board's "Sync now",
+`POST /api/wip/sync`, at most every 10 s), one background thread, hidden, with the PC's own git sign-in:
+
+1. commits what changed under `wip\` on `main` (new, changed, deleted; a temporary index, so nothing outside `wip\`
+   is ever committed and what q staged stays staged; files over 90 MB are left out and named), message
+   `WIP sync from <PC>: <n> files (...)` (the PC's name: `COMPUTERNAME`); when the PC has no git identity the commit
+   is authored `Quarkology WIP sync (<PC>)` (q's git config is never changed);
+2. `git fetch origin main`: behind only, a fast-forward; both sides moved (the other PC synced), this PC's WIP commits
+   become one commit on top of `origin/main` (a linear history): the other PC's files win their own paths, a file
+   only one side changed keeps that change (a delete against an edit keeps the edit), and a file both changed keeps
+   the other PC's at its name and this PC's beside it as `<name>.conflict-<PC>-<YYYYMMDD-HHMMSS><.ext>`, so neither
+   side is lost. The work tree follows with `git reset --keep` (it refuses rather than overwrite a file changed
+   meanwhile);
+3. `git push origin HEAD:main`, once more after a fresh fetch when the other PC pushed in between.
+
+It stops and says so (the WIP sync card, and an amber "Needs you" item) instead of touching anything when the clone
+is on another branch, a merge or rebase is in progress, a tracked file outside `wip\` is changed while there is
+something to pull, or this PC has unpushed commits outside `wip\`. Every conflict copy still under `wip\` is a red
+"Needs you" item on both PCs until q keeps one version and deletes the other (the next sync carries that over too).
+The updater and the WIP sync never run git in the clone at the same time. The map editor's and the sound editor's
+"Save to WIP" write into `wip\maps\` / `wip\sounds\`.
 
 ## Electron updates (`builtin:electron-update`, `electron-swap.ps1`)
 

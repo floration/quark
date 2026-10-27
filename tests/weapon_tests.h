@@ -1,4 +1,4 @@
-// Weapon sets (.qweapons, src/game/weaponset.h, tools/weapon_editor/DESIGN.md): the standard set is today's game bit
+// Weapon sets (.qweapons, src/game/weaponset.h, tools/maptool/weapon/DESIGN.md): the standard set is today's game bit
 // for bit, the grammar (canonical text, errors with line:col), the interpreter, the rules' network / disk forms and
 // a set changing damage, headshots, falloff and logic slots through the real Server. Plus the editor's quark_tests
 // tools: exportweapons / checkweapons / weaponsast / printweapons.

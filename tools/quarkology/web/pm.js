@@ -21,7 +21,7 @@
   const REFRESH_MIN_MS = 10000;
   const UPDATE_MIN_MS = 60000;
   // after Refresh / Check now / Update now: poll this often until the new data is in (or the time is up)
-  const SETTLE = { refresh: { every: 1500, max: 15000 }, oracle: { every: 3000, max: 55000 }, update: { every: 2000, max: 20000 } };
+  const SETTLE = { refresh: { every: 1500, max: 15000 }, oracle: { every: 3000, max: 55000 }, update: { every: 2000, max: 20000 }, wip: { every: 2000, max: 60000 } };
   const FULL_HISTORY_PAGE = 300;
   const CHANGELOGS_SHOWN = 3;
   const FIXTURE_URL = 'static/fixtures/pm-sample.json';
@@ -574,7 +574,7 @@
 
   // ---------------------------------------------------------------- 2. needs you
   // (an item without a link into another tab: this page's own card about it)
-  const NEED_GOTO = { local: ['#sec-local', 'Local copies'] };
+  const NEED_GOTO = { local: ['#sec-local', 'Local copies'], wip: ['#sec-wip', 'WIP sync'] };
   function renderNeeds() {
     const d = derived();
     const att = arr(d.attention).filter(isObj);
@@ -946,9 +946,9 @@
   function renderTools() {
     const u = updatesInfo();
     const last = parseTime(u.lastRunAt);
-    const meta = '<span class="src" title="Checked when the app opens and on Update now (installs.json in Quark\\repository)">' +
+    const meta = '<span class="src" title="Checked when the app opens and on Update now (installs.json in Quark\\quarkology-repo, or the game\'s hand-over copy in Quark\\repository)">' +
       (u.running === true ? pill('run', 'checking now') : 'checked ' + (last != null ? ageSpan(last) : '<span class="muted">not yet</span>')) +
-      (u.enabled === false ? '' : ' <button type="button" class="btn small" id="tools-update" title="Pull testing into Quark\\repository and install what changed (at most once a minute)">Update now</button>') + '</span>';
+      (u.enabled === false ? '' : ' <button type="button" class="btn small" id="tools-update" title="Pull testing into Quark\\repository and main into Quark\\quarkology-repo, then install what changed (at most once a minute)">Update now</button>') + '</span>';
     let html = head('h-tools', 'Tools & updates', '', meta);
     if (!state.pm) return html + '<p class="empty">Loading&hellip;</p>';
     if (!isObj(state.pm.updates)) return html + '<p class="empty">This PM server does not report updates (an older version: reopen Quarkology).</p>';
@@ -963,6 +963,16 @@
       html += '<div class="tools-repo"><span class="mono">repository\\</span> <span class="mono">' + esc(r.branch || '?') + '</span> ' +
         (has(r.head) ? '<span class="mono muted">' + esc(short(r.head)) + '</span> ' : '') + st +
         (has(r.error) ? '<div class="err small">' + esc(r.error) + '</div>' : '') + '</div>';
+    }
+    const a = obj(u.appRepo);
+    if (Object.keys(a).length) {
+      const bh = num(a.behind);
+      const st = has(a.cloneError) ? pill('crit', 'not cloned') : has(a.error) ? pill(a.ffOk === true ? 'warn' : 'crit', a.ffOk === true ? 'note' : 'not updated') :
+        a.ffOk === true ? pill('good', a.cloned === true ? 'cloned' : num(a.pulled) ? 'pulled ' + plural(num(a.pulled), 'commit') : 'up to date') : bh ? pill('warn', bh + ' behind') : pill('idle', 'unknown');
+      html += '<div class="tools-repo"><span class="mono">quarkology-repo\\</span> <span class="mono">' + esc(a.branch || 'main') + '</span> ' +
+        (has(a.head) ? '<span class="mono muted">' + esc(short(a.head)) + '</span> ' : '') + st +
+        (has(a.cloneError) ? '<div class="err small">' + esc(a.cloneError) + ' (running from Quark\\repository\\tools\\quarkology until it is cloned)</div>' :
+          has(a.error) ? '<div class="err small">' + esc(a.error) + '</div>' : has(a.note) ? '<div class="small muted">' + esc(a.note) + '</div>' : '') + '</div>';
     }
     const ents = arr(u.entries).filter(isObj);
     if (!ents.length) return html + (u.enabled === false ? '' : '<p class="empty">' + (u.running === true || !last ? 'Checking the tools&hellip;' : 'No tools in installs.json.') + '</p>');
@@ -981,6 +991,36 @@
           (tailLines.length ? ' title="' + esc(tailLines.slice(-6).join('\n')) + '"' : '') + '>Log</button>' +
           (e.state === 'failed' && u.canRetryOne === true && u.enabled !== false ? '<button type="button" class="btn small" data-retry="' + esc(e.id) + '"' + (u.running === true ? ' disabled' : '') + '>Retry</button>' : '') + '</div>' : '') + '</li>';
     }).join('') + '</ul>';
+    return html;
+  }
+
+  // the WIP sync (qo/wipsync.py): Quark\\quarkology-repo\\wip\\ the same on q's PCs
+  function wipInfo() { return obj(state.pm && state.pm.wip); }
+  function renderWip() {
+    const w = wipInfo();
+    const last = parseTime(w.lastOkAt);
+    const meta = '<span class="src" title="Every few minutes and when the app opens: commits what changed under wip\\, pulls the other PC\'s, pushes">' +
+      (w.running === true ? pill('run', 'syncing now') : 'synced ' + (last != null ? ageSpan(last) : '<span class="muted">not yet</span>')) +
+      (w.enabled === false || !state.pm || !isObj(state.pm.wip) ? '' : ' <button type="button" class="btn small" id="wip-sync">Sync now</button>') + '</span>';
+    let html = head('h-wip', 'WIP sync', '', meta);
+    if (!state.pm) return html + '<p class="empty">Loading&hellip;</p>';
+    if (!isObj(state.pm.wip)) return html + '<p class="empty">This PM server has no WIP sync (an older version: reopen Quarkology).</p>';
+    if (w.enabled === false) return html + '<p class="empty">The WIP sync is off (the PM server was started with --no-update).</p>';
+    if (state.wipMsg) html += '<p class="small muted">' + esc(state.wipMsg) + '</p>';
+    const st = w.state === 'ok' ? pill('good', 'in sync') : w.state === 'waiting' ? pill('idle', 'waiting') : w.state === 'error' ? pill('crit', 'stopped') : pill('idle', String(w.state || 'unknown'));
+    const bits = [];
+    if (num(w.committed)) bits.push('committed ' + plural(num(w.committed), 'file'));
+    if (num(w.pulled)) bits.push('pulled ' + plural(num(w.pulled), 'commit'));
+    if (num(w.pushed)) bits.push('pushed ' + plural(num(w.pushed), 'commit'));
+    const lp = parseTime(w.lastPushAt);
+    html += '<div class="tools-repo"><span class="mono">' + esc(w.folder || 'quarkology-repo\\wip') + '</span> ' + st +
+      ' <span class="small muted">this PC: <span class="mono">' + esc(w.machine || '?') + '</span>' + (bits.length ? ' &middot; last sync ' + esc(bits.join(', ')) : '') +
+      (lp != null ? ' &middot; last push ' + whenSpan(lp) : '') + '</span>' +
+      (has(w.error) ? '<div class="err small">' + esc(w.error) + '</div>' : has(w.note) ? '<div class="small muted">' + esc(w.note) + '</div>' : '') + '</div>';
+    const conf = arr(w.conflicts).map(String);
+    if (conf.length) html += '<p class="small"><b>' + esc(plural(conf.length, 'conflict copy', 'conflict copies')) + '</b> (both PCs changed the file: the other PC\'s is at its own name, this one\'s next to it; keep one, delete the other):</p><ul class="tools">' +
+      conf.map(c => '<li><span class="mono">' + esc(c) + '</span></li>').join('') + '</ul>';
+    else html += '<p class="small muted">Maps, sounds, models and HUDs saved to WIP (the editors\' Save to WIP) reach the other PC within a few minutes.</p>';
     return html;
   }
 
@@ -1167,7 +1207,7 @@
   // ---------------------------------------------------------------- render
   const SECTIONS = [
     ['sec-halting', renderHalting], ['sec-pipeline', renderPipeline], ['sec-needs', renderNeeds], ['sec-progress', renderProgress], ['sec-ci', renderCi],
-    ['sec-assets', renderAssets], ['sec-servers', renderServers], ['sec-local', renderLocal], ['sec-tools', renderTools],
+    ['sec-assets', renderAssets], ['sec-servers', renderServers], ['sec-local', renderLocal], ['sec-tools', renderTools], ['sec-wip', renderWip],
     ['sec-changelogs', renderChangelogs], ['sec-history', renderHistory], ['sec-tabs', renderTabs], ['sec-play', renderPlay],
   ];
   const DRAW = { buckets: drawBuckets, stack: drawStack, mem: drawMem, timeline: drawTimeline };
@@ -1419,6 +1459,18 @@
     }
     if (t.closest('[data-dismiss]')) { document.getElementById('halt-toast').hidden = true; if (!t.closest('a')) return; }
     if (t.closest('#refresh-btn')) { state.refreshAt = performance.now(); tick(); poll(true); return; }
+    if (t.closest('#wip-sync')) {
+      state.wipMsg = ''; if (FIXTURE) return;
+      const before = wipInfo().lastRunAt;
+      fetch('/api/wip/sync', { method: 'POST', cache: 'no-store' })
+        .then(r => r.json())
+        .then(j => {
+          const o = obj(j);
+          if (o.accepted !== true) { state.wipMsg = o.enabled === false ? 'The WIP sync is off on this server.' : 'Not started: a sync ran a few seconds ago.'; rerender('sec-wip'); }
+          else settleOn('wip', () => wipInfo().running === true || wipInfo().lastRunAt !== before);
+        }, () => { state.wipMsg = 'The PM server did not answer.'; rerender('sec-wip'); });
+      return;
+    }
     if (t.closest('#tools-update')) {
       state.updateClickAt = nowMs(); state.updateMsg = ''; tick();
       if (FIXTURE) return;

@@ -367,6 +367,23 @@ def updates_halting(u):
                     "what": "Fix Quark\\repository\\ so it can fast-forward to testing: %s" % str(repo["error"])[:200],
                     "blocks": "installing Claude's merged tool changes on this PC",
                     "thread": None, "threadUrl": None, "since": u.get("lastRunAt"), "link": None, "source": "updates"})
+    app = u.get("appRepo") if isinstance(u.get("appRepo"), dict) else {}
+    if app.get("cloneError"):
+        out.append({"id": None, "title": "Quarkology repository not cloned",
+                    "what": "Quarkology could not clone floration/quarkology into Quark\\quarkology-repo\\ (%s). Sign in "
+                            "to GitHub on this PC with an account that can read floration/quarkology (run `gh auth "
+                            "login`, or `git clone %s` once in a terminal so Git Credential Manager keeps the sign-in), "
+                            "then press Update now. Until then Quarkology runs from Quark\\repository\\tools\\quarkology "
+                            "and the editors are not updated." % (str(app["cloneError"])[:240],
+                                                                  app.get("url") or "https://github.com/floration/quarkology.git"),
+                    "blocks": "Quarkology and editor updates, and the WIP sync between q's PCs",
+                    "level": "red", "thread": None, "threadUrl": None, "since": u.get("lastRunAt"), "link": None,
+                    "source": "updates"})
+    elif app.get("ffOk") is False and app.get("error"):
+        out.append({"id": None, "title": "quarkology-repo\\ not updated",
+                    "what": "Fix Quark\\quarkology-repo\\ so it can fast-forward to main: %s" % str(app["error"])[:200],
+                    "blocks": "installing the merged Quarkology and editor changes on this PC",
+                    "thread": None, "threadUrl": None, "since": u.get("lastRunAt"), "link": None, "source": "updates"})
     failed = [e for e in as_list(u.get("entries")) if isinstance(e, dict) and e.get("state") == "failed"]
     names = [str(e.get("name") or e.get("id") or "a tool") for e in failed]
     codes = {e.get("exitCode") for e in failed}
@@ -398,6 +415,35 @@ def with_updates(derived, updates):
     d = dict(derived)
     d["halting"] = list(derived.get("halting") or []) + extra
     d["haltingCount"] = len(d["halting"])
+    return d
+
+
+def wip_attention(w):
+    """From qo/wipsync.py's view (/api/pm `wip`): open conflict copies (red), a sync that stopped (amber)."""
+    out = []
+    if not isinstance(w, dict) or w.get("enabled") is False:
+        return out
+    conf = [c for c in as_list(w.get("conflicts")) if isinstance(c, str)]
+    if conf:
+        out.append({"level": "red", "text": "WIP sync: %d conflict cop%s to sort out (both PCs changed the same file; "
+                                            "the other PC's is at the file's own name, this one's next to it): %s%s. "
+                                            "Keep the right one, delete the other." %
+                                            (len(conf), "y" if len(conf) == 1 else "ies", ", ".join(conf[:4]),
+                                             ", ..." if len(conf) > 4 else ""),
+                    "link": None, "goto": "wip", "source": "wip"})
+    if w.get("state") == "error" and w.get("error"):
+        out.append({"level": "amber", "text": "WIP sync stopped: %s" % str(w["error"])[:240], "link": None, "goto": "wip",
+                    "source": "wip"})
+    return out
+
+
+def with_wip(derived, wip):
+    """`derived` plus the WIP sync's attention items (a copy, like with_updates)."""
+    extra = wip_attention(wip)
+    if not extra:
+        return derived
+    d = dict(derived)
+    d["attention"] = extra + list(derived.get("attention") or [])
     return d
 
 
@@ -689,7 +735,8 @@ def derive(results, now=None, memo=None):
                       "source": "derived", "why": "testing (%s) is ahead of production (%s)" % (v["testing"], v["production"]),
                       "steps": (chk or {}).get("headings") or []})
     for x in locs:
-        if (x.get("ahead") or 0) > 0:
+        # (quarkology-repo's own commits are the WIP sync's to push: its card and items say when it can't)
+        if (x.get("ahead") or 0) > 0 and x.get("name") != "quarkology-repo":
             steps.append({"text": "%s has %d commit%s not on testing" % (x["name"], x["ahead"], "" if x["ahead"] == 1 else "s"),
                           "owner": "q", "link": x["link"], "source": x["source"], "why": "local copy ahead of testing",
                           "goto": "local"})

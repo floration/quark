@@ -1,5 +1,6 @@
 # Installs (or updates) Quarkology (the Supervisor Board, the managers and the editors as tabs) into Quark\quarkology\
-# (tools/quarkology/SPEC.md section 4).
+# (quarkology/SPEC.md section 4). Runs from either clone: Quark\quarkology-repo\quarkology\ (floration/quarkology,
+# where the app lives) or, for one release, the game's hand-over copy Quark\repository\tools\quarkology\.
 #   setup.cmd                       (double-click; runs this)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 [-Quark C:\Users\user\Desktop\Quark] [-NoElectron]
 # Copies server.py, qo\, web\, shell\, quarkology.cmd, quarkology-hidden.vbs, installs.json and quark.ico; writes tabs.json / config.json only when
@@ -11,7 +12,7 @@
 # tabs.json.old).
 # Moving from Quark Project (the app's old name, in Quark\project-manager\): server.py --init copies q's files and its
 # Electron from there once (qo/migrate.py), and the old "Quark Project" shortcut is replaced by "Quarkology". The old
-# app runs this by itself, hidden, when it updates to the version with the new name (tools/project_manager/installs.json).
+# app runs this by itself, hidden, when it updates to the version with the new name (the game repository's tools/project_manager/installs.json).
 # PowerShell 5.1 compatible, ASCII only.
 param(
   [string]$Quark = '',
@@ -20,12 +21,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # (Invoke-WebRequest is many times slower with the progress bar on 5.1)
 
-$Src = $PSScriptRoot                                 # repository\tools\quarkology
-$RepoRoot = Split-Path -Parent (Split-Path -Parent $Src)
+$Src = $PSScriptRoot                                 # quarkology-repo\quarkology, or repository\tools\quarkology
+$RepoRoot = Split-Path -Parent $Src                  # (the clone holding it)
+if ((Split-Path -Leaf $RepoRoot) -eq 'tools') { $RepoRoot = Split-Path -Parent $RepoRoot }
 if (-not $Quark) {
-  # repository\ sits in Quark\ (docs/LOCAL_BUILD.md); otherwise the usual Desktop\Quark
+  # the clones sit in Quark\ (docs/LOCAL_BUILD.md); otherwise the usual Desktop\Quark
   $Quark = Split-Path -Parent $RepoRoot
-  if (-not ((Test-Path (Join-Path $Quark 'repository')) -or (Test-Path (Join-Path $Quark 'working-repo')))) {
+  if (-not ((Test-Path (Join-Path $Quark 'repository')) -or (Test-Path (Join-Path $Quark 'quarkology-repo')) -or
+            (Test-Path (Join-Path $Quark 'working-repo')))) {
     $Quark = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Quark'
   }
 }
@@ -39,7 +42,7 @@ Write-Host "Installing Quarkology into $Dest"
 Copy-Item -Force (Join-Path $Src 'server.py') $Dest
 Copy-Item -Force (Join-Path $Src 'quarkology.cmd') $Dest
 Copy-Item -Force (Join-Path $Src 'quarkology-hidden.vbs') $Dest
-# (the tools the app installs and updates by itself; repository\tools\quarkology\installs.json wins when present)
+# (the tools the app installs and updates by itself; quarkology-repo\quarkology\installs.json wins when present)
 if (Test-Path (Join-Path $Src 'installs.json')) { Copy-Item -Force (Join-Path $Src 'installs.json') $Dest }
 foreach ($dir in 'qo', 'web', 'shell') {
   $from = Join-Path $Src $dir
@@ -50,8 +53,9 @@ foreach ($dir in 'qo', 'web', 'shell') {
   Get-ChildItem -Path $to -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
   Get-ChildItem -Path $to -Recurse -Directory -Filter 'node_modules' | Remove-Item -Recurse -Force
 }
-$ico = Join-Path $RepoRoot 'assets\quark.ico'
-if (Test-Path $ico) { Copy-Item -Force $ico $Dest } else { Write-Warning "assets\quark.ico not found: the shortcut gets no icon" }
+$ico = Join-Path $Src 'quark.ico'
+if (-not (Test-Path $ico)) { $ico = Join-Path $RepoRoot 'assets\quark.ico' }
+if (Test-Path $ico) { Copy-Item -Force $ico $Dest } else { Write-Warning "quark.ico not found: the shortcut gets no icon" }
 
 # ---- Python (the server needs it) -------------------------------------------------------------------------------
 $py = $null

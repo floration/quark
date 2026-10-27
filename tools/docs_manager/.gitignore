@@ -1,6 +1,0 @@
-# State of a running manager (its own clone of the PRIVATE Claude Documents repo, and caches): never commit.
-mirror/
-cache/
-# Snapshot of the private Claude Documents: local test data only, never commit (the game repo is public).
-tests/sample-data.json
-tests/page-fixture.json

@@ -392,16 +392,12 @@ if(QUARK_BUILD_TESTS)
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
   endif()
-  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics, mode and weapons editors'
-  # commands linked into it (an empty or missing tools/mode_editor/native globs to nothing)
-  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/weapon_editor/native/*.cpp)
+  # The editors' native helper (tools/maptool/map/README.md): the map editor's commands plus the bot, physics, mode and
+  # weapons editors' (tools/maptool/<part>/). The editors themselves live in floration/quarkology; the helper stays
+  # here because it links the game's code and has to change with it.
+  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maptool/*/*.cpp)
   add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
-  target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
-  if(EXISTS ${CMAKE_SOURCE_DIR}/tools/mode_editor/native)
-    target_include_directories(quark_maptool PRIVATE tools/mode_editor/native)
-  endif()
+  target_include_directories(quark_maptool PRIVATE tests tools/maptool/map tools/maptool/mode)
   target_link_libraries(quark_maptool quark_core)
   if(WIN32)
     target_link_options(quark_maptool PRIVATE -Wl,--stack,16777216)
