@@ -11,6 +11,7 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - **The gun and the grapple launcher now sit further back in the bottom corners** by default, covering less of the screen, and in the same place at every aspect ratio (16:9, 4:3, ultrawide) and FOV.
 - **New HUD > GRAPPLE MODEL setting**: move, size, hide and colour the launcher on its own, separately from the WEAPON MODEL.
 - **Tilt for both models**: PITCH, YAW and ROLL sliders (-90 to 90 degrees) next to x / y / depth, so each can be placed on all 6 axes. Your shots and the rope leave the moved, tilted barrels.
+- **Rocket riding**: the grapple now catches rockets in flight, anyone's, your own too: fire a rocket, hook it and it pulls you along behind it. Only rockets (not knives, syringes, stickies or bolts). The hook lets go when the rocket explodes or after the usual 3 s, range and line of sight limits, you keep your speed and the grapple's cooldown starts. Custom modes can turn it off (GENERAL > ABILITIES > ROCKET RIDE); it's on everywhere else. A new network protocol (47): servers and players need this version.
 
 ## Shots and explosions
 - **Impact sparks everywhere**: hitscan shots (rifle, sniper, shotgun, laser) now spark where they hit a wall, not only on enemies, and other players' shots spark too. Settings > GAMEPLAY > SHOTS > IMPACT SPARKS turns them off.

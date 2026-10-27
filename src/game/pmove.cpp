@@ -343,8 +343,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const float range = kGrappleRange * mt.m[MV_HOOK_RANGE];
         int wallMat = -1;
         float t = map.raycast(eye, dir, range, nullptr, &wallMat);
-        int caught = -1;   // a player in front of the wall (or in the open) catches it instead
-        if (hp && hp->n > 0) {
+        int caught = -1, rocket = -1;   // a player or a rocket in front of the wall (or in the open) catches it instead
+        if (hp && (hp->n > 0 || hp->nr > 0)) {
             float best = t >= 0 ? t : range;
             Vec3 inv = safeInv(dir);
             for (int k = 0; k < hp->n && k < HookProbe::kMax; k++) {
@@ -352,8 +352,27 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float tk = rayHitbox(eye, inv, hp->box[k], best, &head);   // (the body and the head, as shots)
                 if (tk >= 0 && tk < best) { best = tk; caught = k; hp->head = head; }
             }
+            for (int k = 0; k < hp->nr && k < HookProbe::kRockets; k++) {
+                float tk = rayAABB(eye, inv, rocketCatchBox(hp->at[k]), best);
+                if (tk >= 0 && tk < best) { best = tk; rocket = k; caught = -1; }
+            }
         }
-        if (caught >= 0) {
+        // (a rocket still inside the release distance, one you just fired: the hook waits for it rather than catching it
+        // and letting go at once, or going past it to the wall; held, it catches it a few ms later)
+        const float release = kHookRelease * mt.m[MV_HOOK_RELEASE];
+        if (rocket >= 0 && length(hp->pos[rocket] - (s.pos + Vec3(0, 1.0f * scale, 0))) < release) {
+        } else if (rocket >= 0) {   // riding it: the anchor is the rocket as the server has it, flown with it from here on
+            hp->hitRocket = rocket;
+            s.hookPoint = hp->pos[rocket];
+            s.hookVel = hp->vel[rocket];
+            s.hookGrav = hp->grav[rocket];
+            s.hookProj = hp->rid[rocket];
+            s.hookTarget = kHookRocket;
+            s.flags |= MF_HOOKED | MF_HOOKHELD;
+            s.flags &= ~MF_PULLED;
+            s.events |= ME_HOOK;
+            grabbed = true;
+        } else if (caught >= 0) {
             hp->hit = caught;
             s.hookPoint = hp->box[caught].center();   // (the server moves it with them from here on)
             s.hookTarget = (uint8_t)(hp->id[caught] + 1);
@@ -370,7 +389,22 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             grabbed = true;
         }
     }
+    if (hp)   // (the rockets a held grapple could still catch fly on with this step, as the server's do)
+        for (int k = 0; k < hp->nr && k < HookProbe::kRockets; k++) {
+            hp->vel[k].y -= hp->grav[k] * kMoveStep; hp->pos[k] += hp->vel[k] * kMoveStep;
+            hp->at[k] += hp->vel[k] * kMoveStep;   // (where it's seen moves on at the same speed)
+        }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
+    if ((s.flags & MF_HOOKED) && s.hookTarget == kHookRocket) {
+        // riding a rocket: the anchor flies its step the way Server::stepProjectile does (the same arithmetic, so the
+        // two agree), and lets go where the rocket meets a wall (it explodes there). A player it hits is the server's
+        // word: it lets go a snapshot later.
+        s.hookVel.y -= s.hookGrav * kMoveStep;
+        const Vec3 step = s.hookVel * kMoveStep;
+        const float len = length(step);
+        if (len >= 1e-6f && map.raycast(s.hookPoint, step / len, len) >= 0) s.flags &= ~MF_HOOKED;
+        else if (len >= 1e-6f) s.hookPoint += step;
+    }
     bool hooked = (s.flags & MF_HOOKED) != 0;
     if (hooked) {
         Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f * scale, 0));
@@ -391,7 +425,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // (a grab already inside the release distance, e.g. against a wall, lets go in the step it grabbed: without the
     // cooldown it grabbed again every 1 ms step, and its sound played every frame; owner 1.18.32)
     if ((wasHooked || grabbed) && !(s.flags & MF_HOOKED)) s.hookCooldown = (kHookCooldown * mt.m[MV_HOOK_COOLDOWN]);
-    if (!(s.flags & MF_HOOKED)) s.hookTarget = 0;
+    if (!(s.flags & MF_HOOKED)) { s.hookTarget = 0; s.hookProj = 0; }
     // Held by another player's grapple: pulled toward them like a hook pulls its owner (the same acceleration and
     // top speed, momentum kept, half gravity). The server moves pullPoint with them and ends it; dashing or grabbing
     // with your own grapple (above) breaks free.
