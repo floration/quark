@@ -10,6 +10,7 @@
 #include "game.h"
 #include "complete.h"
 #include "openurl.h"
+#include "../game/benchmark.h"
 #include "profiles.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -139,7 +140,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setQuipVolume(cfg_.volumeQuips);
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
-    if (opts_.timeTrial) startTimeTrial();
+    if (!opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark) benchRetryUploads();   // (runs whose upload didn't get through)
+    if (opts_.benchmark) benchStart();   // --benchmark: the main menu's, printed then quit
+    else if (opts_.timeTrial) startTimeTrial();
     else if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
         botMapIdx_ = bestMapFor(cfg_.botMode);
@@ -327,6 +330,7 @@ void Game::leaveGame(const std::string& error) {
     }
     bool wasEditing = edOnline_;
     edSession_ = edOnline_ = false;
+    bench_.phase = BenchRun::OFF;   // (a benchmark that lost its game: nothing saved)
     stopBake();
     net_.disconnect();
     stopHost();
@@ -361,6 +365,7 @@ void Game::setScreen(Screen s) {
     captureMouse(s == Screen::InGame && !paused_ && !chatting_);
     if (s == Screen::Join) { browser_.refresh(); joinScroll_ = 0; }
     if (s == Screen::Demos) demoScroll_ = 0;
+    if (s == Screen::Benchmarks) { benchScroll_ = 0; benchListAt_ = 0; benchRetryUploads(); }
     if (s == Screen::Host || s == Screen::VsBots) rescanMaps();
     if (s == Screen::Host) refreshHostBrains();
     if (s != Screen::Host) hostAdvanced_ = false;
@@ -665,6 +670,10 @@ void Game::onKey(int key, int action, int mods) {
         }
         return;
     }
+    if (bench_.phase != BenchRun::OFF && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) {      // BENCHMARK: Esc cancels, nothing else
+        if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) benchCancel();
+        return;
+    }
     if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
@@ -784,7 +793,8 @@ void Game::onKey(int key, int action, int mods) {
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info) {
+        if (screen_ == Screen::BenchmarkResult) { setScreen(Screen::Benchmarks); return; }   // (as its BACK; a name being typed is saved as the field closes)
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -881,6 +891,7 @@ void Game::onScroll(double dy) {
     if (dy == 0) return;
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
+    if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
@@ -1456,6 +1467,7 @@ void Game::frame(double dt) {
     pendingInput_ = -1;
     frameDt_ = dt;
     if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
+    if (bench_.phase != BenchRun::OFF) benchFrameTime(dt);   // (BENCHMARK: one store a frame while it measures)
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
@@ -1465,6 +1477,7 @@ void Game::frame(double dt) {
     }
     polledEarly_ = false;
     updateCommunity();
+    if (!benchSending_.empty() && bench_.phase == BenchRun::OFF) benchUploads();   // (BENCHMARK: answers to the runs' uploads; never mid-run)
     if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
@@ -1761,6 +1774,10 @@ void Game::frame(double dt) {
     pipeMark(PM_HUD);
     pipeGpuEnd();
 
+    if (!benchShot_.empty()) {   // BENCHMARK > EXPORT PNG: the result page as drawn this frame
+        if (screen_ == Screen::BenchmarkResult) notify((r_.screenshot(benchShot_) ? "SAVED " : "COULD NOT WRITE ") + upper(benchShot_), 6);
+        benchShot_.clear();
+    }
     if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
@@ -2603,7 +2620,8 @@ void Game::drawWorld(float alpha) {
     // The HUD, F3 / F4 and their upload, before the late read: off the mouse to photon path (it used to sit between the
     // read and the swap, ~87 us at 4000 fps). What it places in the 3D view (damage numbers, the locator box) uses the
     // aim from before the read, a sliver of a turn behind, like the name tags above (owner: the UI may lag the aim).
-    drawHud();
+    if (bench_.phase != BenchRun::OFF) drawBenchOverlay((float)r_.width(), (float)r_.height(), r_.height() / 720.0f);   // (a camera: no HUD)
+    else drawHud();
     if (showPerf_) drawPerf();
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
@@ -5894,6 +5912,17 @@ void Game::debugMenuPage() {
     size_t plus = p.find('+');
     if (plus != std::string::npos) { scroll = atoi(p.c_str() + plus + 1); p = p.substr(0, plus); }
     auto under = [&](const char* a) { return p.rfind(a, 0) == 0; };
+    if (under("benchmarks")) {   // (benchmarks/result: the newest saved run)
+        setScreen(Screen::Benchmarks);
+        if (p == "benchmarks/result") {
+            std::error_code ec;
+            std::string newest;
+            for (auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(userDataPath("benchmarks")), ec))
+                if (e.path().extension() == ".qbench" && e.path().u8string() > newest) newest = e.path().u8string();
+            if (!newest.empty()) benchOpen(newest);
+        }
+        return;
+    }
     auto pickerOf = [&](bool host) {
         size_t c = p.find("/picker:");
         if (c == std::string::npos) return;
@@ -5951,6 +5980,8 @@ void Game::drawMenu() {
         case Screen::Leaderboard: drawLeaderboard(menuLayout(960)); break;
         case Screen::Info: drawInfo(menuLayout(960)); break;
         case Screen::Demos: drawDemos(menuLayout(592)); break;
+        case Screen::Benchmarks: drawBenchList(menuLayout(592)); break;
+        case Screen::BenchmarkResult: drawBenchResults(menuLayout(960)); break;
         case Screen::CustomMode: drawCustomModeEditor(menuLayout(960)); break;
         case Screen::Connecting: drawConnecting(L); break;
         default: break;
@@ -5972,8 +6003,9 @@ void Game::drawMainMenu(const SetLayout& L) {
     if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
     if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
     if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
-    if (ui_.button(x, L.Y(546), w, h, "QUIT", UiExp::quit())) quit_ = true;   // (destructive: its own row, 20 px below)
-    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(602), error_, kRed, 1.0f, L.L(960));
+    if (ui_.button(x, L.Y(534), w, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
+    if (ui_.button(x, L.Y(594), w, h, "QUIT", UiExp::quit())) quit_ = true;   // (destructive: its own row, 20 px below)
+    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(650), error_, kRed, 1.0f, L.L(960));
 }
 
 // JOIN: the address and CONNECT, the server list (column headers, 6 rows of 32, the wheel scrolls the rest), BACK and
@@ -6690,20 +6722,12 @@ void Game::drawPerf() {
         perfNextUpdate_ = time_ + 0.5;
         // percentiles with nth_element on a reused buffer: no allocation, no full sort (this runs while
         // measuring frame spikes, so it mustn't cause one)
-        std::vector<float>& t = perfScratch_;
-        t.assign(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
-        double sum = 0;
-        for (float f : t) sum += f;
-        // the 99th, then the 99.9th within what's above it, then the worst within what's above that
-        size_t k1 = std::min(t.size() - 1, (size_t)(t.size() * 0.99)), k2 = std::min(t.size() - 1, (size_t)(t.size() * 0.999));
-        std::nth_element(t.begin(), t.begin() + k1, t.end());
-        float p99 = t[k1];
-        std::nth_element(t.begin() + k1, t.begin() + k2, t.end());
-        float p999 = t[k2], worst = *std::max_element(t.begin() + k2, t.end());
+        // (the same maths as BENCHMARK's: src/game/benchmark.h)
+        const bench::Stats st = bench::compute(frameTimes_.data(), frameCount_, perfScratch_);
         char b[200];
-        snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f", t.size() / sum, 1.0 / p99, 1.0 / p999);
+        snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f", st.avgFps, st.low1, st.low01);
         perfText_ = b;
-        snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", worst * 1000.0, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
+        snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", st.worstMs, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
                  r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
         pipeAverages();
@@ -7923,17 +7947,14 @@ void Game::benchFrame(double dt) {
     benchTimes_.push_back((float)dt);
     benchCpu_.push_back((float)lastCpu_);
     if (time_ - benchStart_ < 3.0 + opts_.bench) return;
-    std::vector<float> t = benchTimes_;
-    std::sort(t.begin(), t.end());
-    double sum = 0;
-    for (float f : t) sum += f;
-    auto pct = [&](double p) { return t[std::min(t.size() - 1, (size_t)(t.size() * p))]; };
+    std::vector<float> scratch;
+    const bench::Stats st = bench::compute(benchTimes_.data(), benchTimes_.size(), scratch);   // (BENCHMARK's maths)
     std::vector<float> c = benchCpu_;
     std::sort(c.begin(), c.end());
     double csum = 0;
     for (float f : c) csum += f;
     printf("BENCH %s: %zu frames  avg %.1f fps  1%% low %.1f  0.1%% low %.1f  worst %.2f ms  |  cpu avg %.3f ms  99%% %.3f ms  99.9%% %.3f ms\n",
-           net_.map().name.c_str(), t.size(), t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), t.back() * 1000.0,
+           net_.map().name.c_str(), st.frames, st.avgFps, st.low1, st.low01, st.worstMs,
            csum / c.size() * 1000.0, c[std::min(c.size() - 1, (size_t)(c.size() * 0.99))] * 1000.0, c[std::min(c.size() - 1, (size_t)(c.size() * 0.999))] * 1000.0);
     qzoneDump();
     fflush(stdout);

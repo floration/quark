@@ -208,6 +208,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 |---|---|
 | ☐ | Record a demo in a game, stop it, play it back from DEMOS: seek, speed, free camera / follow player. Watching through the recorded player, their own shots are heard (each shot once, the laser as a steady buzz). |
 | ☐ | A demo from the previous production version plays (it was converted on update). |
+| ☐ | **BENCHMARK** (main menu): RUN BENCHMARK plays the Hamlet demo with only the BENCHMARK / time-left box (no HUD); Esc cancels back to the menu with nothing saved. A full run ends on its result page: the frame-time graph with 60 / 144 / 240 FPS lines, AVG / 1% LOW / 0.1% LOW / MIN FPS / STDEV / FRAMES, the setup (resolution, render scale, display, vsync, FPS limit, AA / shadows, CPU, GPU, driver, version) and the previous run's numbers. Rename it (NAME, then click away): the BENCHMARKS list shows the new name after a restart. EXPORT CSV and EXPORT PNG write `benchmarks/exports/<run>.csv` (a header, then whole microseconds) and `.png` (the page), the notice says where; OPEN FOLDER opens it; DELETE removes the run. With `FLAGS.txt` next to quark.exe its first line starts the run's name. With a ranked key, the run is marked UPLOADED in the list once the ranking server has the `/bench` endpoint (production Worker; testing builds before that keep retrying). `quark --benchmark` prints the results. |
 
 ## 10. Hosting and joining (two machines, or two game windows)
 

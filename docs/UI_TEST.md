@@ -92,6 +92,7 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 | `hide-seeker` | hosting hide and seek, seeking | the locator's slot key (0) |
 | `hide-rps` | hosting hide and seek, at the tiebreak | rock / paper / scissors (slot keys 1 / 2 / 3) |
 | `editor-builtin` | the offline editor, a built-in map with edits | the "keep your edits as a new map?" prompt from each way out (save, leave, test, host, open); only that prompt's buttons |
+| `benchmark` | BENCHMARKS with three saved runs (made up, saved as a run is) | the runs list (RUN BENCHMARK, a row per run), a run's result page: NAME, EXPORT CSV / PNG, DELETE, OPEN FOLDER, RUN AGAIN |
 | `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page, FONT too: each font is picked and the layout checked in it), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
 
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
@@ -102,7 +103,8 @@ The menus' pages and their paths: `main` (`main/save-copy`: the "keep your copy?
 session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG, BOT BRAIN (the test's data folder has two brains, one that doesn't compile); `host/picker:maps`,
 `:modes`, `:variants`, `:ladders`), `vsbots` (+ the same pickers), `custom/general`, `custom/weapons`, `custom/maps`,
 `custom/movement`, `custom/dash` (DASH + GRAPPLE), `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
-`info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`.
+`info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`,
+`benchmarks` (`benchmarks/result`: a saved run's page; `--menupage benchmarks/result` opens the newest).
 A custom mode's sliders show the value in the mode (standard x multiplier, with its unit) and store the multiplier:
 what's typed is that value, and the `.qmode` read back must show it again to the slider's decimals. A CONNECTING screen
 reached by starting a game of the scenario's own (TIME TRIAL hosts one) is on its way in game and isn't explored: the
