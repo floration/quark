@@ -1,5 +1,5 @@
 'use strict';
-// Quarkology: the Electron shell (tools/quarkology/SPEC.md, section 1).
+// Quarkology: the Electron shell (quarkology/SPEC.md in floration/quarkology, section 1).
 // One window: a 34 px tab bar view on top and one WebContentsView per tab, created on first open and kept alive.
 // Runs on the plain prebuilt electron.exe (no npm packages): `electron.exe <this folder> [--quark=<dir>] [--tab=<id>]`.
 //
@@ -119,7 +119,7 @@ const SELFTEST_SCRIPT = process.env.QUARK_SHELL_SELFTEST === '1' ? argValue('sel
 // once (DATA_DIR\migrated.json): the Chromium profile (sign-ins, the pages' saved data), state.json (window, last tab)
 // and the logs, never over a file already here and leaving the old folder as it is (qo/migrate.py does the same for
 // Quark\project-manager\). A live Chromium profile cannot be copied, so this waits for the old app to exit (its
-// restart hands over to this one, tools/project_manager/shell/main.js); while it stays open nothing is copied and
+// restart hands over to this one, the game repository's tools/project_manager/shell/main.js); while it stays open nothing is copied and
 // this start only says so (MIGRATION 'busy').
 const OLD_DATA_DIR = IS_WIN && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'QuarkProject') : null;
 const MIGRATED_FILE = path.join(DATA_DIR, 'migrated.json');

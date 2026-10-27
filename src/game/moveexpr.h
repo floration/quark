@@ -1,7 +1,7 @@
 // Movement equations (owner 2026-10-24: "i should be able to set value equations, not just fixed values ... curves,
 // ease in, out, whatever with bounds"): a custom mode's movement setting given as an expression, one `expr.<key>=`
 // line per setting in the .qmode (CustomRules::exprs). The expression's value is the setting's multiplier (1 =
-// standard), clamped to the setting's range. Syntax and semantics: tools/physics_editor/INTERFACE.md, "v2".
+// standard), clamped to the setting's range. Syntax and semantics: tools/maptool/physics/INTERFACE.md, "v2".
 //
 // - Static expressions (numbers, other settings by key, base.<key>) are worked out once, when the rules are set
 //   (setActiveRules -> build), in dependency order, into the MoveTuning every step reads.

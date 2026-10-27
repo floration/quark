@@ -16,6 +16,8 @@ The owner's PC keeps one folder per version of the game, with two clones beside 
 ```
 Desktop\Quark\
   repository\     a clone that mirrors GitHub's testing branch (only ever pulled)
+  quarkology-repo\  Quarkology's own clone (floration/quarkology, private: the Supervisor Board app, the editors and
+                  wip\), on main; Quarkology clones and updates it by itself and syncs its wip\ between your PCs
   working-repo\   your own clone: local code changes live here, committed locally, pushed when you choose
   working\        the game built from working-repo\              (build-working.cmd)
   testing\        the tip of the testing branch, built here       (build-releases.cmd)
@@ -32,6 +34,8 @@ over the old files and never empty a folder first. All three share one set of se
 (`%APPDATA%\quark`); to keep one apart, start it with `quark.exe --data-dir <folder>`.
 
 working-repo\ is a separate clone, not a worktree of repository\, so either one survives the other being damaged.
+The editors and the Supervisor Board app are no longer in this repository (1.20): Quarkology installs them from
+quarkology-repo\ and builds their native helper, `quark_maptool`, from repository\ (`tools/maptool/`).
 To bring in work pushed from elsewhere (a cloud session's PR merged into testing): `git -C working-repo pull`.
 
 ## 1. One-time setup

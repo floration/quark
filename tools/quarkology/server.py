@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Supervisor Board server (Quarkology): http://127.0.0.1:8768 (tools/quarkology/SPEC.md section 2).
+"""Supervisor Board server (Quarkology): http://127.0.0.1:8768 (quarkology/SPEC.md section 2, in floration/quarkology).
 
     py -3 server.py [--quark C:\\Users\\user\\Desktop\\Quark] [--port 8768]
     py -3 server.py [--no-update]  no automatic installs / updates of the tools (qo/updater.py, installs.json)
@@ -10,9 +10,9 @@
 Python 3 standard library only. Binds 127.0.0.1 only. Every source refreshes in the background on its own interval
 and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1][&raw=1] (ETag: a 304 when
 nothing changed; raw=1 keeps the siblings' raw data)  /api/tabs  /api/history?limit=N  /api/health  /api/updates
-/api/updates/log?id=<tool>  /api/checklist (sections with items, ticks);  POST /api/refresh?source=<key|all>
-/api/updates/run[?id=<tool>]  /api/updates/ack?id=<restart request id>  /api/checklist (JSON {version, section, done}:
-q's release-checklist ticks).
+/api/updates/log?id=<tool>  /api/checklist (sections with items, ticks)  /api/wip (the WIP sync, qo/wipsync.py);
+POST /api/refresh?source=<key|all>  /api/wip/sync  /api/updates/run[?id=<tool>]  /api/updates/ack?id=<restart request
+id>  /api/checklist (JSON {version, section, done}: q's release-checklist ticks).
 The Play tab (qo/play.py): GET /play  /api/play[?refresh=1]  /api/play/pending;  POST (JSON body) /api/play/launch
 {build, args}  /api/play/note {session, did, noticed, change, other}  /api/play/skip {session}  /api/play/install {tag}
 /api/play/remove {tag}  /api/play/sync; and the routes qo/play.py answers itself (Play.api_get / api_post, SPEC.md 3b).
@@ -32,7 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from qo import checklist, config, derive, migrate, play, scheduler, tabs, updater, util  # noqa: E402
+from qo import checklist, config, derive, migrate, play, scheduler, tabs, updater, util, wipsync  # noqa: E402
 from qo.history import History  # noqa: E402
 
 DEFAULT_PORT = 8768
@@ -61,12 +61,15 @@ class App:
         self.stop = self.store.stop
         # (off unless asked for: main() turns it on, --no-update and the tests leave it off)
         self.updater = updater.Updater(paths, enabled=update)
+        # (Quark\quarkology-repo\wip\ between q's PCs: on with the updater)
+        self.wip = wipsync.WipSync(paths, enabled=update)
         self.play = play.Play(paths, **(play_opts or {}))
         self.ticks = checklist.Ticks(paths)
 
     def start(self):
         self.store.start()
         self.updater.start()
+        self.wip.start()
         self.play.start()
         threading.Thread(target=self._tabs_loop, name="pm-tabs", daemon=True).start()
 
@@ -134,12 +137,14 @@ class App:
 
     def pm(self, refresh=False, raw=False):
         upd = dict(self.updater.view(), canRetryOne=self.can_retry_one())
-        d = derive.with_updates(self.store.derived, upd)  # (+ failed installs: halting)
+        wip = self.wip.view()
+        d = derive.with_updates(self.store.derived, upd)  # (+ failed installs, the clone of the app repo: halting)
+        d = derive.with_wip(d, wip)  # (+ WIP conflicts and sync errors: attention)
         d = derive.with_checklist(d, self.ticks.view((d.get("versions") or {}).get("testing")))
         # serverNow: the page's clock (generatedAt is the last derive, up to a source interval old)
         out = {"generatedAt": self.store.generated_at, "serverNow": int(time.time() * 1000),
                "sources": self.store.results() if raw else self.slim_sources(self.store.results()), "derived": d,
-               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd,
+               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd, "wip": wip,
                "play": self.play.summary()}
         if refresh:
             ok, wait = self.store.refresh_all()
@@ -262,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.tabs_view())
             if p == "/api/updates":
                 return self._json(self.app.updater.view())
+            if p == "/api/wip":
+                return self._json(self.app.wip.view())
             if p == "/api/history":
                 limit = util.to_int(q.get("limit", ["100"])[0], 100)
                 return self._json({"events": self.app.history.latest(max(1, min(limit, 10000)))})
@@ -305,6 +312,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"accepted": False, "message": "This updater runs every tool at once (Update now)."}, 501)
             ok, wait = self.app.updater.request(only=only) if only is not None else self.app.updater.request()
             return self._json({"accepted": ok, "nextAllowedIn": wait, "enabled": self.app.updater.enabled})
+        if u.path == "/api/wip/sync":
+            ok, wait = self.app.wip.request()
+            return self._json({"accepted": ok, "nextAllowedIn": wait, "enabled": self.app.wip.enabled})
         if u.path == "/api/updates/ack":
             rid = urllib.parse.parse_qs(u.query).get("id", [""])[0]
             return self._json({"removed": self.app.updater.ack(rid)})
@@ -432,6 +442,7 @@ def main(argv=None):
     finally:
         app.store.shutdown()
         app.updater.shutdown()
+        app.wip.shutdown()
         app.play.shutdown()
         httpd.server_close()
     return 0

@@ -88,6 +88,20 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 3. **Performance check on real hardware** (REMAINING.md 0.3): the F3 1% and 0.1% lows against 1.16 on Midtown, Hightown and Lodestone. Include the cost of drawing stuck knives, bolts and syringes: 0.1 ms in the draw function, and 3–5 fps lost under software GL in the worst case.
 4. **Automatic Worker deploys** ([OPERATIONS.md](OPERATIONS.md) section 3), whenever convenient.
 
+### Quarkology and the editors moved out (2026-10-27)
+
+The owner's Supervisor Board app (Quarkology), its managers and every editor now live in **floration/quarkology**
+(private; its README says what moved and why). This repository keeps what the game's build, `quark_tests`, CI, the
+website and the release checklist use: the editors' native helper `quark_maptool` (`tools/maptool/`), the bots,
+modes and maps. On the owner's PCs Quarkology clones floration/quarkology into `Quark\quarkology-repo\` by itself and
+keeps `Quark\repository\` (this repository, `testing`) for the game-side builds and this checklist. The editors'
+release checks are `CHECKLIST.md` there (section 16 of [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)).
+
+**To delete next release** (once both PCs show `quarkology-repo\` cloned on the Supervisor Board):
+- `tools/quarkology/`: the one-release hand-over copy of the app (an install from before the move updates from it, and
+  falls back to it while the clone can't be made);
+- `tools/project_manager/`: the hand-over from the app's old name (Quark Project).
+
 
 ### Notes from the 1.17.0 session (things learned the hard way)
 
@@ -121,7 +135,7 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 - **The clang-only unused warnings** are listed in REMAINING.md section 2.
 
 **Assets**
-- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (tools/sound_editor), which lists all 33 sounds of each kit.
+- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (in floration/quarkology since 1.20; Quarkology installs it), which lists all 33 sounds of each kit.
 
 
 ## 1. What quark is
@@ -162,7 +176,9 @@ A fast, minimal FPS on a custom C++17 engine:
 | `tools/master/` | The ranking server: `worker.js`, `schema.sql`, `test.mjs`, README with the deployment steps and the SQL to run per version |
 | `tools/server/` | Dedicated server install (`install.sh`), auto-update (`autoupdate.sh`), alerts |
 | `tools/studio/` | `build.py`: the asset export's file builder for the website /assets/ page (the Asset Studio page was retired 2026-10-24) |
-| `tools/modes/`, `tools/mode_editor/` | The 13 built-in modes' logic (`*.qlogic`, `GRAMMAR.md`; embedded at build time) and the gamemode editor (local page on 127.0.0.1:8771, README there) |
+| `tools/modes/` | The 13 built-in modes' logic (`*.qlogic`, `GRAMMAR.md`; embedded at build time). The gamemode editor that edits them is in floration/quarkology |
+| `tools/maptool/` | `quark_maptool`, the native helper of the owner's editors (map checks, bot / mode / movement / weapon simulations; built by CMake on every CI run because it links the game's code). One folder per part (`map/`, `bot/`, `mode/`, `physics/`, `weapon/`), with their specs (`physics/INTERFACE.md`, `weapon/DESIGN.md`, `mode/MODESIM.md`) |
+| `tools/quarkology/`, `tools/project_manager/` | One release only (delete in the next): the hand-over that moves the owner's installs of Quarkology to floration/quarkology (its README) |
 | `tools/launcher_build.sh` | Builds the shipped launcher from the `launcher` branch (release jobs) |
 | `site/` (not in `testing`) | The website: the `site` branch, checked out there as a worktree (README) |
 | `assets/` | Fonts, sounds, voice, icons; `assets/overrides/` holds the owner's replacement assets |
@@ -304,7 +320,7 @@ Workflows are in `.github/workflows/`:
 | [SIGNING.md](SIGNING.md) | Release signing and key handling |
 | [OPERATIONS.md](OPERATIONS.md) | Automatic updates for the dedicated servers, the Discord bot and the Cloudflare Worker; every secret and how to keep it secret |
 | [ASSETS.md](ASSETS.md) | The asset export, overrides |
-| [MAP_STRUCTURES.md](MAP_STRUCTURES.md) | Why each map is built the way it is (the grading and map report were removed 2026-10-24; the old metrics are in git at 07ef254; the map editor's measurement, tools/map_editor/native, carries a copy) |
+| [MAP_STRUCTURES.md](MAP_STRUCTURES.md) | Why each map is built the way it is (the grading and map report were removed 2026-10-24; the old metrics are in git at 07ef254; the map editor's measurement, tools/maptool/map, carries a copy) |
 | `tools/master/README.md`, the `discord-bot` branch's README | Deploying the ranking server and the bot |
 | [AUDIT.md](AUDIT.md), [RELEASE_PLAN.md](RELEASE_PLAN.md) | History from the road to 1.0.0 |
 

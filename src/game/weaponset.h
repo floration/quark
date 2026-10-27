@@ -1,4 +1,4 @@
-// Weapon sets (.qweapons, tools/weapon_editor/DESIGN.md sections 1-3): every weapon number as a field a set can
+// Weapon sets (.qweapons, tools/maptool/weapon/DESIGN.md sections 1-3): every weapon number as a field a set can
 // change, the .qweapons parser / canonical printer / JSON AST, the type checker and the small interpreter that runs
 // a set's `hit` / `kill` slots on the server. No dependency on Server: server.cpp fills a WsCall and runs the slot.
 //

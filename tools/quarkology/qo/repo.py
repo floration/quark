@@ -1,4 +1,5 @@
-"""Source `repo` (60 s): Quark\\repository\\ (the mirror of testing) and the local clones' git state.
+"""Source `repo` (60 s): Quark\\repository\\ (the mirror of testing) and the local clones' git state (Quark\\quarkology-repo\\
+(floration/quarkology) among them).
 
 Only read-only git commands, with --no-optional-locks so not even the index is refreshed.
 """
@@ -9,7 +10,7 @@ from . import util
 
 KEY = "repo"
 INTERVAL = 60
-LOCAL_COPIES = ("repository", "working-repo")
+LOCAL_COPIES = ("repository", "working-repo", "quarkology-repo")
 LOG_FORMAT = "%H%x1f%h%x1f%cI%x1f%s"
 
 

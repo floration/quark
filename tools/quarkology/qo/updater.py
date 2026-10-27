@@ -1,18 +1,29 @@
 """Automatic installs and updates of the local tools (installs.json; shell/README.md "Automatic installs").
 
-On each app open (server start, and the shell's POST /api/updates/run) and on demand (at most once per MIN_GAP s),
-in one background thread:
+Two clones in Quark\\: repository\\ (the game, floration/quark, branch testing) and quarkology-repo\\ (this app and the
+editors, floration/quarkology, private, branch main). On each app open (server start, and the shell's POST
+/api/updates/run) and on demand (at most once per MIN_GAP s), in one background thread:
   1. Quark\\repository\\: `git fetch origin testing`, then `git merge --ff-only origin/testing` when it is on branch
      testing with no tracked changes. Never a reset, never a force, never another folder (working-repo* are q's).
-  2. Each installs.json entry: the git object ids of its `sources` at repository\\ HEAD form its stamp. When the stamp
-     differs from the one in Quark\\quarkology\\installs-state.json, or its `check` file (relative to Quark\\) is
-     missing, its `run` command runs hidden in repository\\ (one entry at a time, output in logs\\install-<id>.log);
+  1b. Quark\\quarkology-repo\\: cloned when missing (hidden, `git clone --branch main`, with the PC's git sign-in, then
+     again with gh's when that fails; into a temp folder renamed when complete); then `git fetch origin main` and
+     `git merge --ff-only origin/main` when it is on main with no tracked changes outside wip\\ (qo/wipsync.py owns
+     wip\\). A clone that fails leaves the app running from repository\\tools\\quarkology (the hand-over copy) and
+     is a red item on the Supervisor Board saying what to do; the next pass tries again.
+  2. installs.json: quarkology-repo\\quarkology\\'s once the clone has it ("sourcesIn": "app"), else the game's
+     hand-over copy (repository\\tools\\quarkology, "sourcesIn": "game"), else the installed one. Per entry: `sources`
+     are paths in the repository named by sourcesIn, `gameSources` paths in repository\\, and `cwd` ("app" or "game";
+     default: sourcesIn) is where its `run` runs. Their git object ids at each clone's HEAD form its stamp. When the
+     stamp differs from the one in Quark\\quarkology\\installs-state.json, or its `check` file (relative to Quark\\) is
+     missing, its `run` command runs hidden (one entry at a time, output in logs\\install-<id>.log), with
+     QUARK_GAME_REPO / QUARK_APP_REPO set to the two clones and %APP% %GAME% %REPO% (= %GAME%) %QUARK% %PM% expanded;
      the stamp is stored only when it exits with 0. An entry whose first source is not at HEAD yet (not merged) is
      "waiting" and skipped.
   3. A successful install of an entry with `restartsPort` queues a restart request (GET /api/updates); the shell
      restarts that server and acknowledges it (POST /api/updates/ack?id=). One without (a page tool: Sound, UI, Model)
      queues a reload request (port null, "reload": true, its folder): the shell reloads that open tab.
-  4. `"run": "builtin:self-update"` copies this program from repository\\tools\\quarkology into
+  4. `"run": "builtin:self-update"` copies this program from the registry's folder (quarkology-repo\\quarkology, or
+     the hand-over repository\\tools\\quarkology) into
      Quark\\quarkology\\ (q's tabs.json / config.json / history / state are never touched), runs the new
      server.py --init (tabs.json upgrade), and sets `selfUpdated` when any file changed: the shell then offers a restart.
   5. `"run": "builtin:electron-update"` (no sources, no stamp; at most every ELECTRON_CHECK_GAP): when the latest
@@ -36,7 +47,7 @@ import traceback
 import urllib.request
 import zipfile
 
-from . import tabs, util
+from . import config, tabs, util
 
 MIN_GAP = 60.0
 DEFAULT_TIMEOUT = 600
@@ -45,7 +56,11 @@ TAIL_LINES = 15
 RESTART_TTL = 600.0   # an unacknowledged restart request is dropped after 10 minutes
 REGISTRY = "installs.json"
 STATE_FILE = "installs-state.json"
-BRANCH = "testing"
+BRANCH = config.GAME_BRANCH
+APP_BRANCH = config.APP_BRANCH
+CLONE_TIMEOUT = 600
+# the app repository's clone and qo/wipsync.py take turns (a fast-forward never runs while WIP is being committed)
+APP_REPO_LOCK = threading.RLock()
 SELF_UPDATE = "builtin:self-update"
 ELECTRON_UPDATE = "builtin:electron-update"
 # Electron (the app's browser) updates itself: GitHub's "latest" release is the newest stable one (never a beta or
@@ -60,7 +75,7 @@ ELECTRON_REJECTED = "electron.rejected"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # what setup.ps1 copies (quark.ico aside); q's files next to them (tabs.json, config.json, history.jsonl, state.json,
 # oracle-last.json, installs-state.json, logs\, electron\) are never written here
-SELF_FILES = ("server.py", "quarkology.cmd", "quarkology-hidden.vbs", REGISTRY)
+SELF_FILES = ("server.py", "quarkology.cmd", "quarkology-hidden.vbs", REGISTRY, "quark.ico")
 SELF_DIRS = ("qo", "web", "shell")
 SKIP_DIRS = {"__pycache__", "node_modules", ".git"}
 ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
@@ -72,11 +87,13 @@ def _git_env():
                 LC_ALL="C", LANG="C")
 
 
-def git(repo, *args, timeout=30.0):
-    """-> (code, stdout, stderr). Hidden on Windows; stdin closed."""
+def git(repo, *args, timeout=30.0, env=None, input=None):
+    """-> (code, stdout, stderr). Hidden on Windows; stdin closed (or `input`, bytes). repo None: no -C."""
     try:
-        p = subprocess.run(["git", "-C", repo] + list(args), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, timeout=timeout, creationflags=util.NO_WINDOW, env=_git_env())
+        p = subprocess.run(["git"] + (["-C", repo] if repo else []) + list(args),
+                           stdin=subprocess.DEVNULL if input is None else None, input=input, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=timeout, creationflags=util.NO_WINDOW,
+                           env=dict(_git_env(), **(env or {})))
     except FileNotFoundError:
         return 127, "", "git not found"
     except subprocess.TimeoutExpired:
@@ -88,28 +105,114 @@ def git(repo, *args, timeout=30.0):
 def _first_line(s):
     for line in (s or "").splitlines():
         if line.strip():
-            return line.strip()[:200]
+            return redact(line.strip())[:200]
     return ""
+
+
+def redact(s):
+    """A URL's user:token@ part never reaches a log or the Board."""
+    return re.sub(r"(\w+://)[^/@\s]+@", r"\1", s or "")
+
+
+# ---- the Quarkology repository's clone (floration/quarkology) -----------------------------------------------------
+
+def app_origin_url(paths):
+    """Where Quark\\quarkology-repo\\ is cloned from: paths.app_origin (tests), else the game clone's origin with the
+    repository name changed (so https stays https and ssh stays ssh: the sign-in that already works), else the https
+    URL (config.APP_REPO_URL)."""
+    if paths.app_origin:
+        return paths.app_origin
+    code, out, _ = git(paths.game_repo, "config", "--get", "remote.origin.url") if os.path.isdir(paths.game_repo) else (1, "", "")
+    m = re.match(r"^(.*[/:])floration/quark(?:\.git)?/?$", out.strip(), re.I) if code == 0 else None
+    return m.group(1) + "floration/quarkology.git" if m else config.APP_REPO_URL
+
+
+def gh_path():
+    """GitHub CLI (its sign-in is the fallback for the clone), or None."""
+    p = shutil.which("gh")
+    if p or not util.IS_WINDOWS:
+        return p
+    for c in (os.path.join(os.environ.get("ProgramFiles") or "C:\\Program Files", "GitHub CLI", "gh.exe"),
+              os.path.join(os.environ.get("LOCALAPPDATA") or "", "Programs", "GitHub CLI", "gh.exe")):
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def gh_helper(gh):
+    return '!"%s" auth git-credential' % gh.replace("\\", "/")
+
+
+def clone_app_repo(paths, timeout=CLONE_TIMEOUT):
+    """git clone --branch main <app_origin_url> into Quark\\quarkology-repo.clone-tmp, renamed to quarkology-repo when it
+    is complete and has the app. First with the PC's own git sign-in (Git Credential Manager, ssh), then with gh's
+    (`gh auth git-credential`, then kept in the clone's own config so its fetches and pushes use it too); never a
+    prompt or a window. -> (ok, error or None, how: "git" / "gh")."""
+    url = app_origin_url(paths)
+    tmp = paths.app_repo + ".clone-tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(paths.quark, exist_ok=True)
+
+    def attempt(extra):
+        return git(None, *(extra + ["clone", "--quiet", "--no-tags", "--branch", APP_BRANCH, url, tmp]), timeout=timeout)
+    code, _, err = attempt([])
+    how = "git"
+    if code != 0:
+        first = _first_line(err) or "exit %d" % code
+        shutil.rmtree(tmp, ignore_errors=True)
+        gh = gh_path()
+        if not gh:
+            return False, "git clone %s failed: %s (and GitHub CLI isn't installed)" % (redact(url), first), None
+        code, _, err = attempt(["-c", "credential.helper=", "-c", "credential.helper=" + gh_helper(gh)])
+        if code != 0:
+            shutil.rmtree(tmp, ignore_errors=True)
+            return False, "git clone %s failed: %s; with gh's sign-in too: %s" % (
+                redact(url), first, _first_line(err) or "exit %d" % code), None
+        how = "gh"
+        git(tmp, "config", "--local", "credential.helper", "")
+        git(tmp, "config", "--local", "--add", "credential.helper", gh_helper(gh))
+    if not os.path.isfile(os.path.join(tmp, *config.APP_SOURCE_DIR, "server.py")):
+        shutil.rmtree(tmp, ignore_errors=True)
+        return False, "the clone of %s has no %s/server.py on %s" % (redact(url), "/".join(config.APP_SOURCE_DIR), APP_BRANCH), None
+    for attempt in range(6):  # (Windows: a virus scanner or the indexer may hold a file of the new clone a moment)
+        try:
+            if os.path.isdir(paths.app_repo):
+                os.rmdir(paths.app_repo)  # (only ever an empty folder: update_app_repo checked)
+            os.replace(tmp, paths.app_repo)
+            return True, None, how
+        except OSError as e:
+            if attempt == 5:
+                shutil.rmtree(tmp, ignore_errors=True)
+                return False, "could not move the clone into %s: %s" % (paths.app_repo, e), None
+            time.sleep(1.0)
 
 
 # ---- the registry ----------------------------------------------------------------------------------------------
 
-def normalize_entry(raw):
-    """One installs.json entry -> a clean dict, or None when it is unusable (no id / run / sources)."""
+def _paths(v):
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list):
+        return None
+    return [s.replace("\\", "/").strip("/") for s in v if isinstance(s, str) and s.strip("/\\ ")]
+
+
+def normalize_entry(raw, sources_in="game"):
+    """One installs.json entry -> a clean dict, or None when it is unusable (no id / run / sources). sources_in: the
+    registry's "sourcesIn" (where its `sources` are: "app" = the Quarkology repository, "game" = the game's)."""
     if not isinstance(raw, dict):
         return None
     eid = raw.get("id")
     if not isinstance(eid, str) or not ID_RE.match(eid):
         return None
-    srcs = raw.get("sources", [])
-    if isinstance(srcs, str):
-        srcs = [srcs]
-    if not isinstance(srcs, list):
+    srcs = _paths(raw.get("sources", []))
+    game_srcs = _paths(raw.get("gameSources", []))
+    if srcs is None or game_srcs is None:
         return None
-    srcs = [s.replace("\\", "/").strip("/") for s in srcs if isinstance(s, str) and s.strip("/\\ ")]
     run = raw.get("run")
-    if not isinstance(run, str) or not run.strip() or (not srcs and run.strip() != ELECTRON_UPDATE):
+    if not isinstance(run, str) or not run.strip() or (not srcs and not game_srcs and run.strip() != ELECTRON_UPDATE):
         return None
+    cwd = raw.get("cwd") if raw.get("cwd") in ("app", "game") else sources_in
     check = raw.get("check") if isinstance(raw.get("check"), str) and raw.get("check").strip() else None
     rp = raw.get("restartsPort")
     ports = []
@@ -118,16 +221,21 @@ def normalize_entry(raw):
         if p and 0 < p < 65536 and p not in ports:
             ports.append(p)
     timeout = util.to_int(raw.get("timeoutSec"))
-    return {"id": eid, "name": str(raw.get("name") or eid), "sources": srcs, "run": run.strip(), "check": check,
+    return {"id": eid, "name": str(raw.get("name") or eid), "sources": srcs, "gameSources": game_srcs,
+            "sourcesIn": sources_in, "cwd": cwd, "run": run.strip(), "check": check,
             "restartsPort": ports, "timeoutSec": timeout if timeout and timeout > 0 else DEFAULT_TIMEOUT,
             "lowPriority": raw.get("lowPriority") is True, "enabled": raw.get("enabled") is not False}
 
 
 def load_registry(paths):
-    """(entries, where from): repository\\tools\\quarkology\\installs.json (just fast-forwarded, so new entries
-    arrive with the pull), else the copy next to server.py."""
-    for path, where in ((os.path.join(paths.source_dir, REGISTRY), "repository"),
-                        (os.path.join(paths.script_dir, REGISTRY), "installed")):
+    """(entries, where from): quarkology-repo\\quarkology\\installs.json once that clone has the app ("quarkology-repo"),
+    else the game's hand-over copy repository\\tools\\quarkology\\installs.json ("repository"; both just
+    fast-forwarded, so new entries arrive with the pull), else the copy next to server.py ("installed"). A registry
+    names where its `sources` are ("sourcesIn": "app" / "game"; none: "game", as every registry before the move)."""
+    cands = [(os.path.join(paths.app_source_dir, REGISTRY), "quarkology-repo")] if paths.has_app_repo() else []
+    cands += [(os.path.join(paths.legacy_source_dir, REGISTRY), "repository"),
+              (os.path.join(paths.script_dir, REGISTRY), "installed")]
+    for path, where in cands:
         try:
             data = util.read_json_file(path)
         except FileNotFoundError:
@@ -135,9 +243,10 @@ def load_registry(paths):
         except (OSError, ValueError) as e:
             return [], "%s (%s unreadable: %s)" % (where, REGISTRY, type(e).__name__)
         lst = data.get("entries") if isinstance(data, dict) else data
+        sources_in = data.get("sourcesIn") if isinstance(data, dict) and data.get("sourcesIn") in ("app", "game") else "game"
         out, seen = [], set()
         for raw in lst if isinstance(lst, list) else []:
-            e = normalize_entry(raw)
+            e = normalize_entry(raw, sources_in)
             if e and e["id"] not in seen:
                 seen.add(e["id"])
                 out.append(e)
@@ -176,10 +285,12 @@ def fix_python(cmd):
 
 
 def expand(cmd, paths):
-    """%QUARK%, %PM%, %REPO% (case-insensitive); everything else is left for cmd.exe."""
+    """%QUARK%, %PM%, %APP% (Quark\\quarkology-repo), %GAME% and %REPO% (both Quark\\repository, the game's clone;
+    %REPO% from before the move) (case-insensitive); everything else is left for cmd.exe."""
     vals = {"QUARK": paths.quark.rstrip("\\/"), "PM": paths.pm_dir.rstrip("\\/"),
-            "REPO": paths.q("repository").rstrip("\\/")}
-    return re.sub(r"%(QUARK|PM|REPO)%", lambda m: vals[m.group(1).upper()], cmd, flags=re.I)
+            "REPO": paths.game_repo.rstrip("\\/"), "GAME": paths.game_repo.rstrip("\\/"),
+            "APP": paths.app_repo.rstrip("\\/")}
+    return re.sub(r"%(QUARK|PM|REPO|GAME|APP)%", lambda m: vals[m.group(1).upper()], cmd, flags=re.I)
 
 
 def shell_argv(cmd):
@@ -309,10 +420,10 @@ def _sync_dir(src, dst):
     return changed
 
 
-def self_update(paths, log_path, run_init=True):
-    """Copy repository\\tools\\quarkology -> Quark\\quarkology (code only) and upgrade tabs.json with the new
-    code. -> (exit code, tail, files changed)."""
-    src = paths.source_dir
+def self_update(paths, log_path, run_init=True, src=None):
+    """Copy the app's source (src: the registry's folder; default paths.source_dir) -> Quark\\quarkology (code only)
+    and upgrade tabs.json with the new code. -> (exit code, tail, files changed)."""
+    src = src or paths.source_dir
     dst = paths.pm_dir
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     lines = ["[%s] self-update: %s -> %s" % (util.now_iso(), src, dst)]
@@ -556,6 +667,66 @@ def electron_update(paths, log_path, releases_url=None, plat=None):
 
 # ---- the updater ------------------------------------------------------------------------------------------------
 
+def fast_forward(repo, branch, label, outside_wip=False):
+    """`git fetch origin <branch>`, then `git merge --ff-only origin/<branch>` when the clone is on <branch> with no
+    tracked changes (outside_wip: none outside wip\\, which qo/wipsync.py commits; git itself refuses a fast-forward
+    that would overwrite a changed file). Never a reset or a force. -> the repo view {head, behind, ahead, ffOk, error,
+    branch, fetched, dirty, pulled?}."""
+    info = {"head": None, "behind": None, "ffOk": None, "error": None, "branch": None, "fetched": False}
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        info["error"] = "Quark\\%s\\ is not a git clone" % label if os.path.isdir(repo) else "Quark\\%s\\ not found" % label
+        return info
+    errors = []
+    code, _, err = git(repo, "fetch", "--quiet", "--no-tags", "origin", branch, timeout=FETCH_TIMEOUT)
+    if code == 0:
+        info["fetched"] = True
+    else:
+        errors.append("fetch failed: " + (_first_line(err) or "exit %d" % code))
+    code, out, _ = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    cur = out.strip() if code == 0 else None
+    info["branch"] = cur
+    code, out, _ = git(repo, "rev-list", "--left-right", "--count", "HEAD...origin/" + branch)
+    ahead = behind = None
+    if code == 0 and len(out.split()) == 2:
+        ahead, behind = (int(x) for x in out.split())
+    info["behind"], info["ahead"] = behind, ahead
+    # (untracked files do not count: builds such as build-model-editor\ live there; a merge that would
+    #  overwrite an untracked file refuses by itself)
+    code, out, _ = git(repo, "status", "--porcelain", "--untracked-files=no",
+                       *(["--", ".", ":(exclude)wip"] if outside_wip else []))
+    dirty = code != 0 or bool(out.strip())
+    info["dirty"] = dirty
+    if behind is None:
+        info["ffOk"] = False
+        errors.append("origin/%s unknown (never fetched?)" % branch)
+    elif behind == 0:
+        info["ffOk"] = True
+    elif cur != branch or dirty:
+        info["ffOk"] = False
+        if cur != branch:
+            errors.append("%s\\ is on %s, not %s: not updated (%d commits behind)"
+                          % (label, cur or "a detached HEAD", branch, behind))
+        else:
+            errors.append("%s\\ has local changes%s: not updated (%d commits behind)"
+                          % (label, " outside wip\\" if outside_wip else "", behind))
+    else:
+        code, _, err = git(repo, "merge", "--ff-only", "--quiet", "origin/" + branch, timeout=120)
+        if code == 0:
+            info["ffOk"] = True
+            info["pulled"] = behind
+            info["behind"] = 0
+        elif outside_wip and (ahead or git(repo, "status", "--porcelain", "--", "wip")[1].strip()):
+            info["note"] = "has WIP changes of its own: the WIP sync brings it up to date"
+        else:
+            info["ffOk"] = False
+            errors.append("fast-forward refused: " + (_first_line(err) or "exit %d" % code))
+    code, out, _ = git(repo, "rev-parse", "HEAD")
+    info["head"] = out.strip() if code == 0 else None
+    info["error"] = "; ".join(errors) or None
+    return info
+
+
+
 class Updater:
     def __init__(self, paths, enabled=True, min_gap=MIN_GAP):
         self.paths = paths
@@ -570,6 +741,7 @@ class Updater:
         self.last_request = -1e18
         self.last_run_at = None
         self.repo = {"head": None, "behind": None, "ffOk": None, "error": None}
+        self.app_repo = {"head": None, "behind": None, "ffOk": None, "error": None, "cloneError": None}
         self.entries = {}
         self.order = []
         self.registry_from = None
@@ -637,8 +809,8 @@ class Updater:
                 entries.append(e)
             wait = self.last_request + self.min_gap - now
             return {"enabled": self.enabled, "running": self.running or self.pending, "lastRunAt": self.last_run_at,
-                    "repo": dict(self.repo), "entries": entries, "selfUpdated": self.self_updated,
-                    "registry": self.registry_from,
+                    "repo": dict(self.repo), "appRepo": dict(self.app_repo), "entries": entries,
+                    "selfUpdated": self.self_updated, "registry": self.registry_from,
                     "restart": [{k: v for k, v in r.items() if k != "atTs"} for r in self.restarts],
                     "nextAllowedIn": round(max(0.0, wait), 1) if self.enabled else None}
 
@@ -650,73 +822,68 @@ class Updater:
 
     def update_repo(self):
         """Step 1. -> True when repository\\ is usable for the installs (a git clone)."""
-        repo = self.paths.q("repository")
-        info = {"head": None, "behind": None, "ffOk": None, "error": None, "branch": None, "fetched": False}
-        if not os.path.isdir(os.path.join(repo, ".git")):
-            info["error"] = "Quark\\repository\\ is not a git clone" if os.path.isdir(repo) else "Quark\\repository\\ not found"
-            with self.lock:
-                self.repo = info
-            return False
-        errors = []
-        code, _, err = git(repo, "fetch", "--quiet", "--no-tags", "origin", BRANCH, timeout=FETCH_TIMEOUT)
-        if code == 0:
-            info["fetched"] = True
-        else:
-            errors.append("fetch failed: " + (_first_line(err) or "exit %d" % code))
-        code, out, _ = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
-        branch = out.strip() if code == 0 else None
-        info["branch"] = branch
-        code, out, _ = git(repo, "rev-list", "--left-right", "--count", "HEAD...origin/" + BRANCH)
-        ahead = behind = None
-        if code == 0 and len(out.split()) == 2:
-            ahead, behind = (int(x) for x in out.split())
-        info["behind"], info["ahead"] = behind, ahead
-        # (untracked files do not count: builds such as build-model-editor\ live there; a merge that would
-        #  overwrite an untracked file refuses by itself)
-        code, out, _ = git(repo, "status", "--porcelain", "--untracked-files=no")
-        dirty = code != 0 or bool(out.strip())
-        info["dirty"] = dirty
-        if behind is None:
-            info["ffOk"] = False
-            errors.append("origin/%s unknown (never fetched?)" % BRANCH)
-        elif behind == 0:
-            info["ffOk"] = True
-        elif branch != BRANCH or dirty:
-            info["ffOk"] = False
-            if branch != BRANCH:
-                errors.append("repository\\ is on %s, not %s: not updated (%d commits behind)"
-                              % (branch or "a detached HEAD", BRANCH, behind))
-            else:
-                errors.append("repository\\ has local changes: not updated (%d commits behind)" % behind)
-        else:
-            code, _, err = git(repo, "merge", "--ff-only", "--quiet", "origin/" + BRANCH, timeout=120)
-            if code == 0:
-                info["ffOk"] = True
-                info["pulled"] = behind
-                info["behind"] = 0
-            else:
-                info["ffOk"] = False
-                errors.append("fast-forward refused: " + (_first_line(err) or "exit %d" % code))
-        code, out, _ = git(repo, "rev-parse", "HEAD")
-        info["head"] = out.strip() if code == 0 else None
-        info["error"] = "; ".join(errors) or None
+        info = fast_forward(self.paths.game_repo, BRANCH, "repository")
         with self.lock:
             self.repo = info
         return info["head"] is not None
 
+    def update_app_repo(self):
+        """Step 1b: Quark\\quarkology-repo\\ cloned when missing, then fast-forwarded on main (wip\\ aside). -> True when
+        it is usable (a clone with the app in it)."""
+        p = self.paths
+        with APP_REPO_LOCK:
+            cloned, how, err = False, None, None
+            if not os.path.isdir(os.path.join(p.app_repo, ".git")):
+                try:
+                    busy = os.path.isdir(p.app_repo) and bool(os.listdir(p.app_repo))
+                except OSError:
+                    busy = True
+                if busy:
+                    err = "Quark\\quarkology-repo\\ is there but is not a git clone (move it away; the next pass clones it)"
+                else:
+                    ok, err, how = clone_app_repo(p)
+                    cloned = ok
+                if err:
+                    info = {"head": None, "behind": None, "ffOk": None, "error": err, "cloneError": err,
+                            "url": redact(app_origin_url(p)), "path": p.app_repo, "fallback": p.legacy_source_dir}
+                    with self.lock:
+                        self.app_repo = info
+                    return False
+            info = fast_forward(p.app_repo, APP_BRANCH, "quarkology-repo", outside_wip=True)
+            info.update(cloneError=None, cloned=cloned, clonedVia=how, path=p.app_repo)
+            if not p.has_app_repo():
+                info["error"] = (info.get("error") + "; " if info.get("error") else "") + \
+                    "no %s\\server.py in quarkology-repo\\" % "\\".join(config.APP_SOURCE_DIR)
+        with self.lock:
+            self.app_repo = info
+        return info["head"] is not None and p.has_app_repo()
+
+    def _repo_of(self, which):
+        return self.paths.app_repo if which == "app" else self.paths.game_repo
+
     def stamp(self, entry):
-        """-> (stamp, waiting note). The first source missing at HEAD = not merged yet = waiting."""
-        repo = self.paths.q("repository")
+        """-> (stamp, waiting note): the ids of its `sources` (in the repository its registry names) then its
+        `gameSources` (in repository\\), at each clone's HEAD. The first one missing = not merged yet = waiting."""
+        specs = [(self._repo_of(entry.get("sourcesIn", "game")), s) for s in entry["sources"]] + \
+                [(self.paths.game_repo, s) for s in entry.get("gameSources") or []]
         parts = []
-        for i, s in enumerate(entry["sources"]):
+        for i, (repo, s) in enumerate(specs):
             code, out, _ = git(repo, "rev-parse", "--verify", "--quiet", "HEAD:" + s)
             if code != 0 or not out.strip():
                 if i == 0:
-                    return None, "%s is not in repository\\ yet" % s
+                    return None, "%s is not in %s\\ yet" % (s, os.path.basename(repo))
                 parts.append("-")
             else:
                 parts.append(out.strip()[:40])
         return "+".join(parts), None
+
+    def needs(self, entry):
+        """The clones an entry needs: "app" and/or "game"."""
+        out = {entry.get("sourcesIn", "game") if entry["sources"] else None, entry.get("cwd", "game")}
+        if entry.get("gameSources"):
+            out.add("game")
+        out.discard(None)
+        return out
 
     def _check_path(self, entry):
         c = entry.get("check")
@@ -725,8 +892,14 @@ class Updater:
         return os.path.join(self.paths.quark, *[p for p in re.split(r"[\\/]+", c) if p])
 
     def _env(self):
-        return dict(os.environ, QUARK_SHELL="1", QUARK_DIR=self.paths.quark, PYTHONUNBUFFERED="1",
-                    PYTHONIOENCODING="utf-8", GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never")
+        env = dict(os.environ, QUARK_SHELL="1", QUARK_DIR=self.paths.quark, PYTHONUNBUFFERED="1",
+                   PYTHONIOENCODING="utf-8", GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never",
+                   QUARK_GAME_REPO=self.paths.game_repo)
+        if self.paths.has_app_repo():
+            env["QUARK_APP_REPO"] = self.paths.app_repo
+        else:
+            env.pop("QUARK_APP_REPO", None)
+        return env
 
     def install(self, entry, cur):
         eid = entry["id"]
@@ -736,14 +909,15 @@ class Updater:
         changed = None
         note = None
         if entry["run"] == SELF_UPDATE:
-            code, lines, changed = self_update(self.paths, log_path)
+            src = self.paths.app_source_dir if entry.get("sourcesIn") == "app" else self.paths.legacy_source_dir
+            code, lines, changed = self_update(self.paths, log_path, src=src)
         elif entry["run"].startswith("builtin:"):
             code, lines = -1, ["unknown builtin %s" % entry["run"]]
         else:
             cmd = fix_python(expand(entry["run"], self.paths))
             try:
-                code, lines, note = run_command(cmd, self.paths.q("repository"), self._env(), entry["timeoutSec"], log_path,
-                                               entry.get("lowPriority"))
+                code, lines, note = run_command(cmd, self._repo_of(entry.get("cwd", "game")), self._env(),
+                                               entry["timeoutSec"], log_path, entry.get("lowPriority"))
             except OSError as e:
                 code, lines, note = -1, ["log not writable: %s" % e], "log not writable"
         now_iso = util.now_iso()
@@ -827,7 +1001,7 @@ class Updater:
                 self.last_run_at = util.now_iso()
 
     def _run(self, only=None):
-        usable = self.update_repo()
+        usable = {"game": self.update_repo(), "app": self.update_app_repo()}
         entries, where = load_registry(self.paths)
         saved = self.saved["entries"]
         with self.lock:
@@ -853,8 +1027,11 @@ class Updater:
             if e["run"] == ELECTRON_UPDATE:
                 self.electron(e, force=bool(only))  # (needs no repository)
                 continue
-            if not usable:
-                self._set(e["id"], state="pending", note=self.repo.get("error"))
+            down = [w for w in sorted(self.needs(e)) if not usable[w]]
+            if down:
+                info = self.app_repo if down[0] == "app" else self.repo
+                self._set(e["id"], state="pending", note=info.get("error") or "Quark\\%s\\ is not usable" % (
+                    config.APP_SOURCE_CLONE if down[0] == "app" else config.GAME_CLONE))
                 continue
             cur, waiting = self.stamp(e)
             if cur is None:

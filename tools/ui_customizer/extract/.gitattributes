@@ -1,2 +1,0 @@
-# probe.patch is applied with git apply: keep it exactly as committed (LF), whatever core.autocrlf says
-probe.patch -text

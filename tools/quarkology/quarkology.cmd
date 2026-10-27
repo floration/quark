@@ -3,7 +3,7 @@ rem Quarkology: starts the Supervisor Board server (127.0.0.1:8768) if it is not
 rem   quarkology.cmd          Electron (electron\electron.exe, put there by setup.ps1)
 rem   quarkology.cmd --edge   Edge (else Chrome) as an --app window with its own profile in
 rem                           %LOCALAPPDATA%\Quarkology\edge-profile (no Electron needed)
-rem Installed by tools\quarkology\setup.ps1 into Quark\quarkology\ (SPEC.md section 4).
+rem Installed by quarkology\setup.ps1 (floration/quarkology) into Quark\quarkology\ (SPEC.md section 4).
 rem The desktop shortcut does not use this file (no console window): it starts electron\electron.exe directly, or
 rem without Electron runs quarkology-hidden.vbs (this file with --edge, hidden).
 setlocal EnableExtensions
