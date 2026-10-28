@@ -107,6 +107,7 @@ typedef struct __GLsync* GLsync;
 #define GL_CONDITION_SATISFIED 0x911C
 #define GL_WAIT_FAILED 0x911D
 #define GL_TIMESTAMP 0x8E28
+#define GL_QUERY_COUNTER_BITS 0x8864
 #define GL_QUERY_RESULT 0x8866
 #define GL_QUERY_RESULT_AVAILABLE 0x8867
 
@@ -188,6 +189,7 @@ typedef struct __GLsync* GLsync;
     X(GLenum, glClientWaitSync, (GLsync, GLbitfield, GLuint64)) \
     X(void, glDeleteSync, (GLsync)) \
     X(void, glGenQueries, (GLsizei, GLuint*)) \
+    X(void, glGetQueryiv, (GLenum, GLenum, GLint*)) \
     X(void, glQueryCounter, (GLuint, GLenum)) \
     X(void, glGetQueryObjectiv, (GLuint, GLenum, GLint*)) \
     X(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64*)) \

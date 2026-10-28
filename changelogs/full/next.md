@@ -204,3 +204,6 @@ Nothing changes in the game, its build, `quark_tests`, CI, the website or the re
 
 ## Shadow size capped to the GPU (antagonist review, render pipeline)
 - A shadow size larger than the GPU's largest texture (GL_MAX_TEXTURE_SIZE) left the shadow framebuffer incomplete, so shadows silently turned off. The renderer now uses the largest size the GPU has instead (src/client/renderer.cpp).
+
+## Profiling: GPU zones in Tracy builds (q, 2026-10-27: "cant we use this very deep and advanced tracy data to optimize the game more")
+- A Tracy capture of the benchmark (o3 + LTO + AVX2, 2560x1440, RTX 3080 laptop) showed 223 us of CPU work per 513 us frame and 290 us outside every zone: LOW LATENCY's wait for the GPU. Tracy builds (`-DQUARK_TRACY=ON`) now time each pass on the GPU too (shadow, world, dynamic, resolve / scale, HUD: TracyGpuZone via src/client/gpuprofile.h, compiled out of every other build), and that wait is its own zone ("low latency: wait for the GPU").
