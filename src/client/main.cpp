@@ -2,6 +2,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "../common/profile.h"
+#include "gpuprofile.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -216,6 +217,7 @@ int main(int argc, char** argv) {
         game.beforeSwap();   // (latent sync: the finished frame held until the vertical blank)
         game.pipeMark(Game::PM_SWAP0);
         { QZONE("swap"); glfwSwapBuffers(win); }
+        QGPUCOLLECT();
         game.pipeMark(Game::PM_SWAP1);
         { QZONE("after swap (low latency wait)"); game.afterSwap(); }
         QFRAME();

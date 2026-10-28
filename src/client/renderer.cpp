@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "../common/u8file.h"
 #include "../common/profile.h"
+#include "gpuprofile.h"
 #include "../common/net.h"
 #include <cstdio>
 #include <cstring>
@@ -433,6 +434,7 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 }
 
 bool Renderer::init(int shadowRes, std::string* err) {
+    QGPUCONTEXT();
     {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13); the shadow map too (a size past it
         // left the framebuffer incomplete, so shadows turned off instead of using the largest the GPU has)
         GLint64 maxTex = 0;
@@ -998,6 +1000,7 @@ void Renderer::prepareScene(bool shadows) {
         shadowMat = Mat4::ortho(cx - R, cx + R, cy - R, cy + R, -cz - 120.0f, -cz + 120.0f) * lv;
 
         QZONE("shadow pass");
+        QGPUZONE("GPU shadow pass");
         // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
         // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
         // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
@@ -1103,6 +1106,7 @@ void Renderer::drawScene(bool shadows) {
     // (only the view's own uniforms here: init set the fixed ones, prepareScene the rest of the frame's)
     if (worldVerts_) {
         QZONE("world pass");
+        QGPUZONE("GPU world pass");
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
@@ -1125,7 +1129,7 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(dynVao_);
         if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
     };
-    { QZONE("dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true, viewProj_); }   // (lit and shadowed; the no-cast ones cast none)
+    { QZONE("dynamic pass"); QGPUZONE("GPU dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true, viewProj_); }   // (lit and shadowed; the no-cast ones cast none)
     if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
         QZONE("static boxes pass");
         staticOn_ = false;
@@ -1188,6 +1192,7 @@ void Renderer::drawScene(bool shadows) {
             if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
         }
     }
+    QGPUZONE("GPU resolve / scale");
     const bool scaled = sceneW_ != width_ || sceneH_ != height_;
     unsigned srcFbo = msaaFbo_, srcTex = edgeTex_;   // (what the window is drawn from, single-sampled)
     if (msaaActive_ >= 2 && !scaled) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled

@@ -644,6 +644,7 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check(isTestingVersion("1.17.0-test.42") && isTestingVersion("~1.17.0-test.4") && !isTestingVersion("1.17.0") && !isTestingVersion("~1.17.0"), "testing versions");
   check(isTestingVersion("1.19.0.testing.42") && isTestingVersion("~1.19.0.testing.4") && isTestingVersion("1.19.0.testing.4+abc") &&
         !isTestingVersion("1.19.0+abc") && !isTestingVersion(""), "testing versions from 1.19.0 on (<VERSION>.testing.<run>)");
+  check(isTestingVersion("1.19.1.1") && isTestingVersion("~1.19.1.12") && !isTestingVersion("1.19.1"), "testing versions from 1.19.1 on (<VERSION>.<N>)");
   const nr = "testing server: ranked not rated";
   const T = await server("1.19.0.testing.42");
   check((await T.ticket("7a7a7a7a7a7a7a7a", "vanilla", [41, 42])) === nr, "a testing server can't open a match ticket");

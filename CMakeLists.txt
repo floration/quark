@@ -10,13 +10,14 @@ if(MSVC)
 endif()
 
 # The version lives in one generated .cpp (src/common/version.h), not a global define: a bump recompiles one file.
-# QUARK_VERSION_SUFFIX: testing builds are <VERSION>.testing.<N> (release.yml, from 1.19.0 on): VERSION stays at the
-# production release they follow, and they sort above it (and below the next one). Before: <VERSION>-test.<N>.
-set(QUARK_VERSION_SUFFIX "" CACHE STRING "Appended to VERSION (CI testing builds: .testing.<run number>)")
+# QUARK_VERSION_SUFFIX: testing builds are <VERSION>.<N> (release.yml, from 1.19.1 on; N counts that VERSION's testing
+# builds from 1): VERSION stays at the production release they follow, and they sort above it (and below the next
+# one). 1.19.0 to 1.19.1: <VERSION>.testing.<run number>; before: <VERSION>-test.<N>.
+set(QUARK_VERSION_SUFFIX "" CACHE STRING "Appended to VERSION (CI testing builds: .<N>)")
 file(STRINGS ${CMAKE_SOURCE_DIR}/VERSION QUARK_VERSION LIMIT_COUNT 1)
 string(STRIP "${QUARK_VERSION}${QUARK_VERSION_SUFFIX}" QUARK_VERSION)
-if(NOT QUARK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(\\.testing\\.[0-9]+|-[0-9A-Za-z.]+)?$")
-  message(FATAL_ERROR "version '${QUARK_VERSION}' isn't x.y.z[.testing.N|-suffix]")
+if(NOT QUARK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+|\\.testing\\.[0-9]+|-[0-9A-Za-z.]+)?$")
+  message(FATAL_ERROR "version '${QUARK_VERSION}' isn't x.y.z[.N|.testing.N|-suffix]")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/VERSION)
 # (the launcher marker is found in launcher files by src/launcher/selfupdate.cpp, so it's one contiguous string)

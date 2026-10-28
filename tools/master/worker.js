@@ -34,7 +34,7 @@
 //                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
 //                 (the name is saved only with a run that's kept)
-//   A server whose announced version is a testing build (1.19.0.testing.42, or before 1.19.0 1.18.9-test.42: the testing
+//   A server whose announced version is a testing build (1.19.1.42; 1.19.0.testing.42 from 1.19.0, 1.18.9-test.42 before: the testing
 //   server every box runs next to production, tools/server/install.sh) gets none of these: "testing server: ranked
 //   not rated" (403). Players' /report under a ticket from such a server is refused the same way. Its matches are
 //   played and tested, never rated (the game server doesn't send them either: Server::rated).
@@ -242,8 +242,8 @@ async function saveName(env, me, nameHex, now) {
       .bind(me, name.trim().slice(0, 20) || "player", now).run();
 }
 
-// A version that isn't a production release x.y.z: CI's testing builds, "1.19.0.testing.42" (from 1.19.0 on: anything past
-// x.y.z) or "1.18.9-test.42" (before: a prerelease suffix); "~" marks a hidden server, "+..." is build metadata.
+// A version that isn't a production release x.y.z: CI's testing builds, "1.19.1.42" or "1.19.0.testing.42" (from 1.19.0 on:
+// anything past x.y.z) or "1.18.9-test.42" (before: a prerelease suffix); "~" marks a hidden server, "+..." is build metadata.
 // Testing servers play ranked but are never rated (above, /ticket ... /racerun).
 export function isTestingVersion(v) {
   const s = String(v || "").split("+")[0];
@@ -426,7 +426,7 @@ async function benchReport(env, form, now) {
   if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
   const t = {};
   for (const [k, max] of Object.entries(BENCH_TEXT)) { t[k] = benchText(form.get(k), max); if (t[k] === null) return "bad " + k; }
-  if (!/^\d+\.\d+\.\d+(\.testing\.\d+|-[0-9A-Za-z.]+)?$/.test(t.version)) return "bad version";
+  if (!/^\d+\.\d+\.\d+(\.\d+|\.testing\.\d+|-[0-9A-Za-z.]+)?$/.test(t.version)) return "bad version";
   const n = {};
   for (const [k, lo, hi] of [["avg", 0, 100000], ["low1", 0, 100000], ["low01", 0, 100000], ["min", 0, 100000], ["stdev", 0, 10000], ["seconds", 0, 86400]]) {
     const v = parseFloat(String(form.get(k) || ""));

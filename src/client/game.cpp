@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <sstream>
 #include "../common/profile.h"
+#include "gpuprofile.h"
 #include <array>
 #include "game.h"
 #include "complete.h"
@@ -1770,7 +1771,7 @@ void Game::frame(double dt) {
         else if (perfMini_) drawPerfMini();
     }
     hudBuilt_ = false;
-    { QZONE("flush2D"); r_.flush2D(); }
+    { QZONE("flush2D"); QGPUZONE("GPU HUD"); r_.flush2D(); }
     pipeMark(PM_HUD);
     pipeGpuEnd();
 
@@ -7175,6 +7176,7 @@ void Game::beforeInput() {
     if (cfg_.lowLatency == 1 && !ultraPaced()) {   // (Latent Sync paces like ultra: these fences would add nothing)
         int older = fenceIdx_;
         if (fence_[older]) {
+            QZONE("low latency: wait for the GPU");   // (an idle CPU here = GPU-bound)
             glClientWaitSync((GLsync)fence_[older], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
             glDeleteSync((GLsync)fence_[older]);
             fence_[older] = nullptr;
