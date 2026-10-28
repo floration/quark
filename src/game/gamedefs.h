@@ -410,6 +410,9 @@ constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
 // Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
 // (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
+constexpr float kProjRubberBounce = 0.85f;   // rockets and stickies off rubber: this share of the speed into it (owner, 2026-10-28)
+constexpr float kStickyIceFriction = 1.5f;   // a sticky sliding on ice slows this much a second...
+constexpr float kStickyIceRest = 0.5f;       // ...and sticks once it's slower than this
 inline float projectileGravity(int type, float gravMul, const WeaponDef& wd) {   // wd: weaponDef(type) (stepProjectile has it)
     // (gravMul != 1 marks a rocket lob: it drops at the lob's own gravity; the primary flies straight)
     if (type == WPN_ROCKET && gravMul != 1) return weaponAlt().lobGravity;

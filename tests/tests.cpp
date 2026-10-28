@@ -4754,6 +4754,50 @@ static void testMaterials() {
     }
 }
 
+// Rockets and stickies on rubber and ice (owner, 2026-10-28): a rocket bounces off rubber (no blast), a sticky bounces off
+// it too, a sticky thrown along ice slides before it sticks.
+static void testProjectileMaterials(uint16_t port) {
+    printf("projectiles: rubber bounces, ice slides\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::vector<NetClient*> none;
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, none, 0.1, idle);
+    CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nrubber 10 0 -5 11 6 5\nice -40 0 -40 -10 0.5 40\nspawn any 0 0 0\n"));
+    auto fire = [&](int type, Vec3 pos, Vec3 vel) -> Projectile& {
+        Projectile& p = s.projectiles_[1];
+        p = Projectile();
+        p.active = true; p.type = (uint8_t)type; p.owner = 0; p.id = 1001; p.pos = pos; p.vel = vel; p.dieAt = s.time() + 20;
+        return p;
+    };
+    {
+        Projectile& r = fire(WPN_ROCKET, {0, 3, 0}, {20, 0, 0});
+        pump(s, none, 0.8, idle);
+        CHECK(r.active && r.vel.x < -10 && r.pos.x < 9);   // (off the wall at x 10, back toward -x)
+        r.active = false;
+    }
+    {
+        Projectile& st = fire(WPN_STICKY, {0, 3, 0}, {15, 0, 0});
+        pump(s, none, 0.5, idle);
+        CHECK(st.active && !st.stuck && st.pos.x < 9.5f);
+        st.active = false;
+    }
+    {
+        Projectile& st = fire(WPN_STICKY, {-20, 1.5f, 0}, {-8, -2, 0});   // (onto the ice, going -x)
+        pump(s, none, 0.25, idle);
+        const float x0 = st.pos.x;
+        pump(s, none, 0.5, idle);
+        printf("    sticky on ice: %.2f -> %.2f, stuck %d\n", x0, st.pos.x, (int)st.stuck);
+        CHECK(st.active && st.pos.x < x0 - 1.0f && st.pos.y > 0.4f);
+        pump(s, none, 6.0, idle);
+        CHECK(st.stuck);
+    }
+    s.stop();
+}
+
 static void testSurf() {
     printf("surf: ride a ramp end to end\n");
     Map m;
@@ -8681,7 +8725,7 @@ int main(int argc, char** argv) {
         {"slopes", [] { testSlopes(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
-        {"materials", [] { testMaterials(); }},
+        {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

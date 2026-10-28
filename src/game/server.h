@@ -396,6 +396,9 @@ public:
     float bestTime_[2] = {0, 0};   // payload / multi point: when (since the round went live) each attack reached its best (T17)
     float kothPoints_[2] = {0, 0};
     double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
+    Vec3 bombVel_;               // a dropped bomb still moving: over ice (sliding) or rubber (bouncing); zero once it rests
+    bool bombMoving_ = false;
+    Vec3 bombLastGround_;        // ...and where its carrier last stood (it goes back there from the void or lava)
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
     // the mode's rules (gamemodes.cpp)
     const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)

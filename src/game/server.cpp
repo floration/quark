@@ -2915,7 +2915,8 @@ void Server::stepProjectile(Projectile& pr) {
         if (len < 1e-6f) return;
         Vec3 dir = step / len;
         Vec3 n;
-        float wall = map_.raycast(pr.pos, dir, len, &n);
+        int wallMat = -1;
+        float wall = map_.raycast(pr.pos, dir, len, &n, &wallMat);
         float best = wall >= 0 ? wall : len;
         int hitPlayer = -1;
         bool hitHead = false;
@@ -2931,6 +2932,24 @@ void Server::stepProjectile(Projectile& pr) {
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        // Rubber and ice (owner, 2026-10-28): rockets and stickies bounce off rubber (kProjRubberBounce of what goes into
+        // it), stickies slide along ice and only stick once they've slowed down; anything else, as before
+        if (hitPlayer < 0 && (pr.type == WPN_ROCKET || wd.sticky)) {
+            const float vn = dot(pr.vel, n);
+            if (wallMat == kMatRubber && vn < 0) { pr.pos = at; pr.vel -= n * (vn * (1.0f + kProjRubberBounce)); return; }
+            if (wallMat == kMatIce && wd.sticky && vn < 0) {
+                pr.vel -= n * vn;
+                const float sp = length(pr.vel);
+                pr.vel = sp > 0 ? pr.vel * (std::max(0.0f, sp - kStickyIceFriction * kMoveStep) / sp) : pr.vel;
+                if (length(pr.vel) > kStickyIceRest) {   // on along the ice for what's left of the step (if nothing's in the way)
+                    pr.pos = at;
+                    const Vec3 rest = pr.vel * (kMoveStep * std::max(0.0f, 1.0f - best / len));
+                    const float rl = length(rest);
+                    if (rl > 1e-6f && map_.raycast(pr.pos, rest / rl, rl + 0.05f) < 0) pr.pos += rest;
+                    return;
+                }
+            }
+        }
         if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
             auto& o = players_[pr.owner];
             if (hitPlayer >= 0 && modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == o.team) {

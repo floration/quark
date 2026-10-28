@@ -618,10 +618,15 @@ void Game::edAdd(int kind, int variant) {
     float t = ed_.raycast(edCam_, dir, 200, &n);
     Vec3 at = t >= 0 ? edCam_ + dir * t + n * 0.001f : edCam_ + dir * 8.0f;
     at = snapTo(at, g);
-    if (t >= 0 && n.y < -0.5f) at.y -= 1; // hit a ceiling: hang below it
+    if (t >= 0 && n.y < -0.5f) at.y -= kind == ED_BRUSH ? g : 1; // hit a ceiling: hang below it
     Map tmp = copyNoSource(ed_);
     switch (kind) {
-        case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, edMat_}); break;
+        case ED_BRUSH: {   // one grid cell (owner, 2026-10-28: "the same scale as your grid size"), the cell under the crosshair
+            Vec3 lo = snapTo(at - Vec3(g * 0.5f, 0, g * 0.5f), g);
+            lo.y = at.y;
+            tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{lo, lo + Vec3(g, g, g)}, edMat_});
+            break;
+        }
         case ED_GROUP: { // variant: GROUP_ROOM (8 x 3.5 x 8, a door each side) or GROUP_STAIRS (2 wide, 2 up over 4, rising away from you)
             Map::Group gr;
             gr.type = variant;

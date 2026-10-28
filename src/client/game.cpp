@@ -2326,8 +2326,17 @@ void Game::drawWorld(float alpha) {
         projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
         const Vec3 d = p - q.pos;
         const float len = length(d);
-        float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len) : -1.0f, et;
-        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
+        Vec3 hn;
+        int hm = -1;
+        float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len, &hn, &hm) : -1.0f, et;
+        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+        if (hit >= 0 && hm == kMatRubber && q.type == WPN_ROCKET && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
+            q.pos0 = q.pos + d / len * std::max(0.0f, hit - 0.05f);
+            q.vel0 = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
+            q.born = time_;
+            q.pos = q.pos0;
+            continue;
+        }
         if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
             q.atWall = true;
             if (q.type != WPN_KNIFE) { localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true; }
