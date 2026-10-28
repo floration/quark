@@ -13,7 +13,7 @@ Do this for **every** update, after it has been pushed to the `testing` branch a
 
 | ✓ | Check |
 |---|---|
-| ☐ | GitHub → Actions: the run for the `testing` push is green: meta (VERSION, changelogs, secrets check), the Windows, Linux and macOS builds, the testing prerelease. CI runs **no** gameplay or UI tests (owner, 2026-10-24): those are the local runs below and this checklist. |
+| ☐ | GitHub → Actions: the `build-and-release` run for the `testing` push is green: meta (VERSION, changelogs, secrets check), the Windows and Linux builds, the testing prerelease. The `macos` workflow's run for it (separate; it waits for a free Mac) builds macOS and adds its files. CI runs **no** gameplay or UI tests (owner, 2026-10-24): those are the local runs below and this checklist. |
 | ☐ | This is the **final test build** (the one you mean to ship) and its **sanitizers** run is green. Mark it either way: put `[final]` in the subject line (first line) of the push's head commit (for a merged PR, in the PR's title; a mention further down a message doesn't count), or after the push run Actions → **build-and-release** → **Run workflow** on `testing` with **final** ticked (that runs only the sanitizers, on the branch's current commit; nothing is built or published). The sanitizers fail only on a memory or undefined-behaviour error (ASan / UBSan / the fuzzers), never on a test's own result. No other build runs them (work branches and pull requests included): only a human marks a final test, never an agent. |
 | ☐ | Claude's local test runs passed **on this commit** (ask for the results): `tools/release_check.sh` (every `build/quark_tests` group, plus every map hosted headless; exit 0) and the UI test `build/quark --uitest` under Xvfb ([UI_TEST.md](UI_TEST.md); exit 0). CI no longer runs them, so nothing else checks them before production. |
 | ☐ | GitHub → Releases: the prerelease `test-<VERSION>.<N>` exists. It is marked **Pre-release**, not "Latest". |
@@ -35,6 +35,7 @@ Do this on Windows; also on Linux / macOS if you have one.
 | ☐ | Files the old version shipped and the new one doesn't are gone from the install folder; nothing you made was deleted. |
 | ☐ | If this update changed the demo format (1.19.0 does: protocol 42 → 44 from 1.17.0): old demos were converted (originals in `demos/old/<version>/`), and an old demo plays. A demo that couldn't convert says "recorded with version X" instead of failing. |
 | ☐ | If this update changed the map format (1.19.0 doesn't: still version 2, as in 1.17.0, so skip this row): your own maps were converted (originals in `maps/old/v<N>/`, `maps/old/convert.log`) and still open in the editor. |
+| ☐ | The release lists `quark-<platform>.qpakz` + `.qpakz.sig` next to each `.qpak` (about half its size), and `quark-release.txt` names it. A launcher built with the `.qpakz` reading (launcher branch) downloads the `.qpakz` and installs the same game as before. |
 | ☐ | Switch the launcher back to PRODUCTION: it offers the production version and installs it cleanly (so players can always go back), then return to TESTING. |
 | ☐ | A fresh install (empty folder, new user) works too: first start makes the user folder, no errors. |
 
@@ -302,7 +303,7 @@ Quarkology (the Supervisor Board app) and the editors live in their own reposito
 |---|---|
 | ☐ | Sections 0–16 are done (or skipped for a small patch, with a reason), and nothing is open. |
 | ☐ | Tell Claude: **"the testing build passed the checklist, go to production"**. Claude opens the `testing` → default-branch PR. |
-| ☐ | You merge the PR, then tag the merge commit: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. The production run needs Windows, Linux **and** macOS green; it publishes the release as Latest and deploys the website. |
+| ☐ | You merge the PR, then tag the merge commit: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. The production run needs Windows and Linux green; it publishes the release as Latest and deploys the website. The `macos` run adds the macOS files to it when GitHub has a Mac free (check they arrive: `quark-macos.qpak`, `.qpakz`, `quark-release-macos.txt`, each with a `.sig`). |
 | ☐ | Check the "after production" rows in sections 1, 11, 14 and 15 within the hour. |
 
 **If production turns out broken:** don't delete or move the tag (launchers and servers may already have it). Fix it on `testing`, bump the patch version (e.g. 1.19.1), run this checklist on the fix, and release that. Dedicated servers update to it by themselves.

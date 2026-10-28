@@ -462,6 +462,7 @@ inline Vec3 stickyInherit(const Vec3& shooterVel, const Vec3& aim) {
     if (fl > 1e-4f) { float fx = aim.x / fl, fz = aim.z / fl, along = shooterVel.x * fx + shooterVel.z * fz; v.x = fx * along; v.z = fz * along; }
     return v * weaponAlt().stickyInherit;   // (standard kProjInherit)
 }
+constexpr float kSniperKnock = 1.33f;   // a sniper hit shoves this hard (m/s along the shot; owner 2026-10-28: +33%, from the hitscan 1)
 constexpr float kCrossbowKnock = 21.28f; // a bolt hit shoves hard (m/s along the bolt; owner 2026-10-28: +33%, from 16)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round

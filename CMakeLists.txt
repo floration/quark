@@ -295,6 +295,7 @@ endif()
 # In the launcher, the game (it updates old launchers, docs/SIGNING.md) and the tests.
 add_library(quark_launcher_core STATIC
   src/launcher/qpak.cpp
+  src/launcher/inflate.c
   src/launcher/releases.cpp
   src/launcher/selfupdate.cpp
   src/launcher/install.cpp

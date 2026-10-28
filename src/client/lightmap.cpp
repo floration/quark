@@ -28,6 +28,7 @@ struct Face {
     int wu, wv;   // texels
     int rx, ry;   // atlas rect origin (including 1px padding)
     int material;
+    int group;    // the brush's map group, -1 for none
 };
 
 bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) { return m.raycastAny(o, d, maxT); }
@@ -302,6 +303,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 f.axis = axis;
                 f.sign = sign;
                 f.material = br.material;
+                f.group = br.group;
                 f.plane = sign > 0 ? br.box.mx[axis] : br.box.mn[axis];
                 int ua = (axis + 1) % 3, va = (axis + 2) % 3;
                 f.u0 = br.box.mn[ua]; f.u1 = br.box.mx[ua];
@@ -316,7 +318,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     for (size_t s = 0; s < slots.size(); s++) if (keep[s]) faces.push_back(slots[s]);
     // 1b. Outline edges: an edge shared flush with another face of the same material in the same plane is
     // not a real edge (a wall built from several boxes reads as one wall), so its outline is turned off.
-    // edgeOff[f] bit 0: u0 edge, 1: u1, 2: v0, 3: v1.
+    // (Piece by piece where a neighbour covers only part of an edge: see splits below.)
     // Both passes below only compare faces on the same side of the same plane, near each other: bucket faces by
     // (axis, sign, material, plane in mm, 8 m cell of the plane) so each lookup sees a handful of faces, not all
     // of them (this was O(faces^2): minutes on a big map). Planes match within 1e-4, so the plane slot either
@@ -353,28 +355,87 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             }
         return false;
     };
-    std::vector<uint8_t> edgeOff(faces.size(), 0);
+    // A neighbour can cover only part of an edge (a taller step beside a shorter one, a wall meeting a longer
+    // wall): then the edge is split where the neighbours' edges cross it, and the face drawn as a grid of pieces, so
+    // each piece of the border keeps or drops its outline on its own (the whole edge kept it before: a line ran
+    // across the neighbour). Edges between a face's own pieces never have one.
+    // Flush within 1 mm: parts of a scaled group (stored as fractions of its box) land a hair off each other's plane.
+    const float kFlush = 1e-3f;
+    // Which flush neighbours join without a seam (owner, 2026-10-28): in a hand-made map, only parts of the same group,
+    // whatever their materials (ungrouped boxes always keep their outlines); in a generated map (no groups), faces of
+    // the same material, as before.
+    const bool byGroup = map.handmade;
+    auto joins = [&](const Face& f, const Face& o) {
+        return byGroup ? f.group >= 0 && o.group == f.group : o.material == f.material;
+    };
+    // near() for every material a face can join (all of them by group)
+    auto nearJoin = [&](const Face& f, int cu, int cv, auto fn) {
+        if (!byGroup) return near(f, f.material, cu, cv, fn);
+        if (f.group < 0) return false;
+        for (int m = 0; m < kMapMaterials; m++) if (near(f, m, cu, cv, fn)) return true;
+        return false;
+    };
+    struct Split { std::vector<float> bu, bv; std::vector<uint8_t> off; };   // off: per piece, bit 0 u0, 1 u1, 2 v0, 3 v1
+    std::vector<Split> splits(faces.size());
     auto covered = [&](size_t self, float u, float v) {
         const Face& f = faces[self];
-        return near(f, f.material, cellOf(u), cellOf(v), [&](uint32_t k) {
+        return nearJoin(f, cellOf(u), cellOf(v), [&](uint32_t k) {
             const Face& o = faces[k];
-            if (k == self || o.axis != f.axis || o.sign != f.sign || o.material != f.material || std::fabs(o.plane - f.plane) > 1e-4f) return false;
+            if (k == self || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
             return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
         });
     };
     ran = parallelFor(faces.size(), stopped, [&](size_t i) {
         const Face& f = faces[i];
-        const float e = 0.02f;
-        for (int edge = 0; edge < 4; edge++) {
-            bool all = true;
-            for (int k = 0; k < 7 && all; k++) {
-                float t = (k + 0.5f) / 7.0f;
-                float u = edge == 0 ? f.u0 - e : edge == 1 ? f.u1 + e : lerpf(f.u0, f.u1, t);
-                float v = edge == 2 ? f.v0 - e : edge == 3 ? f.v1 + e : lerpf(f.v0, f.v1, t);
-                all = covered(i, u, v);
-            }
-            if (all) edgeOff[i] |= 1 << edge;
+        const float e = 0.02f, kMin = 0.01f;
+        Split& sp = splits[i];
+        sp.bu = {f.u0, f.u1}; sp.bv = {f.v0, f.v1};
+        // where the neighbours along the border start and stop
+        auto add = [&](uint32_t k) {
+            const Face& o = faces[k];
+            if (k == i || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
+            if (!(o.u0 < f.u1 + e && o.u1 > f.u0 - e && o.v0 < f.v1 + e && o.v1 > f.v0 - e)) return false;
+            for (float x : {o.u0, o.u1}) if (x > f.u0 + kMin && x < f.u1 - kMin) sp.bu.push_back(x);
+            for (float x : {o.v0, o.v1}) if (x > f.v0 + kMin && x < f.v1 - kMin) sp.bv.push_back(x);
+            return false;
+        };
+        const int cu0 = cellOf(f.u0 - e), cu1 = cellOf(f.u1 + e), cv0 = cellOf(f.v0 - e), cv1 = cellOf(f.v1 + e);
+        auto row = [&](int cv) { for (int cu = cu0; cu <= cu1; cu++) nearJoin(f, cu, cv, add); };
+        auto col = [&](int cu) { for (int cv = cv0; cv <= cv1; cv++) nearJoin(f, cu, cv, add); };
+        if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) <= 64 * 64) {   // (the border's cells; a neighbour touching it is bucketed there)
+            for (int cv : {cellOf(f.v0 - e), cellOf(f.v0 + e), cellOf(f.v1 - e), cellOf(f.v1 + e)}) row(cv);
+            for (int cu : {cellOf(f.u0 - e), cellOf(f.u0 + e), cellOf(f.u1 - e), cellOf(f.u1 + e)}) col(cu);
         }
+        auto tidy = [&](std::vector<float>& b) {
+            std::sort(b.begin(), b.end());
+            std::vector<float> o;
+            for (float x : b) if (o.empty() || x - o.back() > kMin) o.push_back(x);
+            o.back() = b.back();
+            b.swap(o);
+        };
+        tidy(sp.bu); tidy(sp.bv);
+        if ((sp.bu.size() - 1) * (sp.bv.size() - 1) > 1024) { sp.bu = {f.u0, f.u1}; sp.bv = {f.v0, f.v1}; }   // (a cap on the pieces: whole edges, as before)
+        // each border piece: off when every sample just outside it is inside a neighbour
+        auto seg = [&](int edge, float a, float b) {
+            for (int k = 0; k < 5; k++) {
+                float t = lerpf(a, b, (k + 0.5f) / 5.0f);
+                float u = edge == 0 ? f.u0 - e : edge == 1 ? f.u1 + e : t;
+                float v = edge == 2 ? f.v0 - e : edge == 3 ? f.v1 + e : t;
+                if (!covered(i, u, v)) return false;
+            }
+            return true;
+        };
+        const int nu = (int)sp.bu.size() - 1, nv = (int)sp.bv.size() - 1;
+        sp.off.assign((size_t)nu * nv, 0);
+        for (int b = 0; b < nv; b++)
+            for (int a = 0; a < nu; a++) {
+                uint8_t o = 0;
+                if (a > 0 || seg(0, sp.bv[b], sp.bv[b + 1])) o |= 1;
+                if (a < nu - 1 || seg(1, sp.bv[b], sp.bv[b + 1])) o |= 2;
+                if (b > 0 || seg(2, sp.bu[a], sp.bu[a + 1])) o |= 4;
+                if (b < nv - 1 || seg(3, sp.bu[a], sp.bu[a + 1])) o |= 8;
+                sp.off[(size_t)b * nu + a] = o;
+            }
     });
     if (!ran) { out.cancelled = true; return; }
     // 1c. Coplanar faces of different materials overlapping would z-fight: the higher material (wallbang >
@@ -454,26 +515,32 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         Vec3 n = faceNormal(f);
         Vec3 lift = needLift[fi] ? n * (0.002f * f.material) : Vec3();
         const float B = 1000.0f; // a turned-off edge is "infinitely far": no outline
-        uint8_t off = edgeOff[fi];
-        auto vert = [&](float u, float v) {
-            WorldVertex wv;
-            Vec3 p = facePoint(f, u, v) + lift;
-            memcpy(wv.pos, &p.x, 12);
-            memcpy(wv.normal, &n.x, 12);
-            wv.uv[0] = (f.rx + 1 + (u - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;
-            wv.uv[1] = (f.ry + 1 + (v - f.v0) / (f.v1 - f.v0) * f.wv) / (float)H;
-            wv.material = (float)f.material;
-            wv.edge[0] = u - f.u0; wv.edge[1] = v - f.v0; wv.edge[2] = f.u1 - f.u0; wv.edge[3] = f.v1 - f.v0;
-            // outline distance = min(edge.xy, edge.zw - edge.xy): push an edge away to hide its outline
-            if (off & 1) { wv.edge[0] += B; wv.edge[2] += B; }
-            if (off & 2) wv.edge[2] += B;
-            if (off & 4) { wv.edge[1] += B; wv.edge[3] += B; }
-            if (off & 8) wv.edge[3] += B;
-            return wv;
-        };
-        WorldVertex a = vert(f.u0, f.v0), b = vert(f.u1, f.v0), c = vert(f.u1, f.v1), d = vert(f.u0, f.v1);
-        if (f.sign > 0) { out.verts.insert(out.verts.end(), {a, b, c, a, c, d}); }
-        else { out.verts.insert(out.verts.end(), {a, c, b, a, d, c}); }
+        const Split& sp = splits[fi];
+        const int nu = (int)sp.bu.size() - 1, nv = (int)sp.bv.size() - 1;
+        for (int pb = 0; pb < nv; pb++)
+            for (int pa = 0; pa < nu; pa++) {
+                const float pu0 = sp.bu[pa], pu1 = sp.bu[pa + 1], pv0 = sp.bv[pb], pv1 = sp.bv[pb + 1];
+                const uint8_t off = sp.off[(size_t)pb * nu + pa];
+                auto vert = [&](float u, float v) {
+                    WorldVertex wv;
+                    Vec3 p = facePoint(f, u, v) + lift;
+                    memcpy(wv.pos, &p.x, 12);
+                    memcpy(wv.normal, &n.x, 12);
+                    wv.uv[0] = (f.rx + 1 + (u - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;
+                    wv.uv[1] = (f.ry + 1 + (v - f.v0) / (f.v1 - f.v0) * f.wv) / (float)H;
+                    wv.material = (float)f.material;
+                    wv.edge[0] = u - pu0; wv.edge[1] = v - pv0; wv.edge[2] = pu1 - pu0; wv.edge[3] = pv1 - pv0;
+                    // outline distance = min(edge.xy, edge.zw - edge.xy): push an edge away to hide its outline
+                    if (off & 1) { wv.edge[0] += B; wv.edge[2] += B; }
+                    if (off & 2) wv.edge[2] += B;
+                    if (off & 4) { wv.edge[1] += B; wv.edge[3] += B; }
+                    if (off & 8) wv.edge[3] += B;
+                    return wv;
+                };
+                WorldVertex a = vert(pu0, pv0), b = vert(pu1, pv0), c = vert(pu1, pv1), d = vert(pu0, pv1);
+                if (f.sign > 0) { out.verts.insert(out.verts.end(), {a, b, c, a, c, d}); }
+                else { out.verts.insert(out.verts.end(), {a, c, b, a, d, c}); }
+            }
     }
 
     if (file ? readCache(*file, map, out) : loadCache(map, out)) { out.fromCache = true; if (progress) progress(1.0f); return; }

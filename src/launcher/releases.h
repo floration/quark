@@ -25,7 +25,7 @@ std::string versionFromTag(const std::string& tag);
 struct Release {
     std::string tag, version, name, body;
     std::string url, sigUrl;   // this platform's quark-<platform>.qpak and its Ed25519 .sig (docs/SIGNING.md)
-    std::string asset;         // that package's name, "quark-<platform>.qpak"
+    std::string asset;         // that package's name, "quark-<platform>.qpakz" when the release has it, else ".qpak"
     // The release's signed manifest (quark-release.txt + .sig; a testing build's macOS package, added after the
     // release went out, comes with its own quark-release-macos.txt): names this release and every package's sha256.
     std::string manifestUrl, manifestSigUrl;

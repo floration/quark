@@ -6742,23 +6742,28 @@ void Game::drawPerf() {
         pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
+        // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
+        // window focused before its focus callback was set never got the call)
+        if (!uiTest_) setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+        perfPrio_ = gamePriorityStatus();
     }
     // four lines in a box at (24, 8) no wider than x 396 at 720p, so it stays left of the score bar (x 420..860; it
     // ran under it): a line too long for it is closed up / shrunk to fit (Ui::label, cached), not cut
     const float s = r_.height() / 720.0f;
     float ts = std::max(1.0f, std::round(s * 2.0f));
-    const std::string* lines[4] = {&perfText_, &perfText2_, &latText_, &perfTick_};
+    const std::string* lines[5] = {&perfText_, &perfText2_, &latText_, &perfTick_, &perfPrio_};
+    const int nl = perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows only)
     const float lh = r_.textHeight(ts) + 4 * s, x = 24 * s, y = 8 * s, maxW = 372 * s - 16 * s;
-    float lw[4], w = 0;
-    for (int i = 0; i < 4; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));
+    float lw[5], w = 0;
+    for (int i = 0; i < nl; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));
     w = std::min(w, maxW);
-    r_.rect(x, y, w + 16 * s, lh * 4 + 4 * s, {0, 0, 0, 0.6f});
+    r_.rect(x, y, w + 16 * s, lh * nl + 4 * s, {0, 0, 0, 0.6f});
     const Color yc = {1, 1, 0.4f, 1};
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < nl; i++) {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (screen_ == Screen::InGame) drawPipeline(x, y + lh * 4 + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (screen_ == Screen::InGame) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs

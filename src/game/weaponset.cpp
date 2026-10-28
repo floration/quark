@@ -62,6 +62,7 @@ WeaponValues makeStandard() {
     v.ex[WPN_SHOTGUN].knock = kShotgunKnock;
     v.ex[WPN_LASER].knock = kLaserPush;
     v.ex[WPN_CROSSBOW].knock = kCrossbowKnock;
+    v.ex[WPN_SNIPER].knock = kSniperKnock;
     v.ex[WPN_ROCKET].knock = v.ex[WPN_STICKY].knock = v.ex[WPN_BUBBLE].knock = 11.0f;   // a blast's centre (Server::explode)
     v.ex[WPN_ROCKET].directDamage = kRocketDirectDamage;
     WeaponAlt& a = v.alt;

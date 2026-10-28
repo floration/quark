@@ -3,6 +3,7 @@
 #include <fstream>
 #include <vector>
 #include "../common/sha256.h"
+#include "inflate.h"
 #ifndef _WIN32
 #include <sys/stat.h>
 #endif
@@ -29,7 +30,9 @@ bool safeEntryName(const std::string& name) {
 
 bool read(std::istream& in, uint64_t remaining, const FileSink& file, std::string* err) {
     char magic[6];
-    if (remaining < 6 || !in.read(magic, 6) || memcmp(magic, "QPAK1\n", 6) != 0) { *err = "corrupt download"; return false; }
+    if (remaining < 6 || !in.read(magic, 6)) { *err = "corrupt download"; return false; }
+    const bool packed = memcmp(magic, "QPAK2\n", 6) == 0;   // (.qpakz: each file zlib-compressed, or stored as is)
+    if (!packed && memcmp(magic, "QPAK1\n", 6) != 0) { *err = "corrupt download"; return false; }
     remaining -= 6;
     auto rd = [&](void* p, size_t n) {
         if (n > remaining) return false;
@@ -47,9 +50,27 @@ bool read(std::istream& in, uint64_t remaining, const FileSink& file, std::strin
         std::string name(nl, 0);
         if (!rd(&name[0], nl) || !rd(&mode, 4) || !rd(&size, 8)) { *err = "corrupt archive"; return false; }
         if (!safeEntryName(name)) { *err = "unsafe path in archive"; return false; }
-        if (size > remaining) { *err = "truncated archive"; return false; } // never trust size for the allocation
-        buf.resize((size_t)size);
-        if (size && !rd(buf.data(), (size_t)size)) { *err = "truncated archive"; return false; }
+        if (packed) {
+            uint64_t csize;
+            if (!rd(&csize, 8)) { *err = "corrupt archive"; return false; }
+            if (csize > remaining) { *err = "truncated archive"; return false; }
+            // never trust size for the allocation: stored (csize == size) it's within the package; compressed, deflate
+            // expands at most 1032 to 1, and no file is near a gigabyte
+            if (csize > size || size > kMaxEntry || size > csize * 1032 + 1024) { *err = "corrupt archive"; return false; }
+            if (csize == size) {
+                buf.resize((size_t)size);
+                if (size && !rd(buf.data(), (size_t)size)) { *err = "truncated archive"; return false; }
+            } else {
+                std::vector<char> z((size_t)csize);
+                if (!rd(z.data(), (size_t)csize)) { *err = "truncated archive"; return false; }
+                buf.resize((size_t)size);
+                if (qpakInflate(z.data(), (int)csize, buf.data(), (int)size) != (int)size) { *err = "corrupt archive"; return false; }
+            }
+        } else {
+            if (size > remaining) { *err = "truncated archive"; return false; } // never trust size for the allocation
+            buf.resize((size_t)size);
+            if (size && !rd(buf.data(), (size_t)size)) { *err = "truncated archive"; return false; }
+        }
         if (!file(name, mode, buf.data(), (size_t)size, err)) return false;
     }
     return true;
