@@ -11,7 +11,7 @@ param(
   [switch]$Clean,   # start from an empty build-win/
   [string]$Play = '',   # also copy the build into this folder (merged over what's there)
   [string]$Source = '',  # build this checkout instead of the one holding this script (build_release.ps1 uses it)
-  [string]$VersionSuffix = ''   # appended to VERSION as CI does for testing builds (-test.<run number>; build_release.ps1)
+  [string]$VersionSuffix = ''   # appended to VERSION as CI does for testing builds (.testing.<run number>; build_release.ps1)
 )
 $ErrorActionPreference = 'Stop'
 $Root = if ($Source) { (Resolve-Path $Source).Path } else { Split-Path -Parent $PSScriptRoot }

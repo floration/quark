@@ -31,3 +31,7 @@ CREATE INDEX IF NOT EXISTS queue_joined ON queue (joined);
 CREATE INDEX IF NOT EXISTS filled_created ON filled (created);
 CREATE INDEX IF NOT EXISTS link_codes_created ON link_codes (created);
 CREATE INDEX IF NOT EXISTS lifetime_kills ON lifetime (kills);
+-- FPS benchmark runs (1.20+, migrations/0002_bench_runs.sql): POST /bench, one row a finished run
+CREATE TABLE IF NOT EXISTS bench_runs (run INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, created INTEGER NOT NULL, version TEXT NOT NULL, channel TEXT NOT NULL, build TEXT NOT NULL, cpu TEXT NOT NULL, gpu TEXT NOT NULL, driver TEXT NOT NULL, avg_fps REAL NOT NULL, low1_fps REAL NOT NULL, low01_fps REAL NOT NULL, min_fps REAL NOT NULL, stdev_ms REAL NOT NULL, frames INTEGER NOT NULL, seconds REAL NOT NULL, res TEXT NOT NULL, scale TEXT NOT NULL, aa TEXT NOT NULL, vsync TEXT NOT NULL, fpscap TEXT NOT NULL, demo TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS bench_runs_player ON bench_runs (player, created);
+CREATE INDEX IF NOT EXISTS bench_runs_created ON bench_runs (created);

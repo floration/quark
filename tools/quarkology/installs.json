@@ -1,0 +1,7 @@
+{"sourcesIn": "game",
+ "about": "The one-release hand-over: Quarkology and the editors now live in floration/quarkology (private), cloned by Quarkology into Quark\\quarkology-repo and installed from its quarkology\\installs.json. This copy is what an install from before the move updates from (it brings the code that makes that clone), and what Quarkology falls back to while the clone can't be made. sources and cwd: the game repository (Quark\\repository).",
+ "entries": [
+  {"id": "quarkology", "name": "Quarkology (this app)", "sources": ["tools/quarkology"], "cwd": "game",
+   "run": "builtin:self-update", "check": "quarkology\\server.py"},
+  {"id": "electron", "name": "Electron (the app window)", "run": "builtin:electron-update"}
+]}

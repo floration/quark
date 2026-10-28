@@ -10,12 +10,14 @@ if(MSVC)
 endif()
 
 # The version lives in one generated .cpp (src/common/version.h), not a global define: a bump recompiles one file.
-# QUARK_VERSION_SUFFIX: testing builds are <VERSION>-test.<N> (release.yml), so they sort below the production release.
-set(QUARK_VERSION_SUFFIX "" CACHE STRING "Appended to VERSION (CI testing builds: -test.<run number>)")
+# QUARK_VERSION_SUFFIX: testing builds are <VERSION>.<N> (release.yml, from 1.19.1 on; N counts that VERSION's testing
+# builds from 1): VERSION stays at the production release they follow, and they sort above it (and below the next
+# one). 1.19.0 to 1.19.1: <VERSION>.testing.<run number>; before: <VERSION>-test.<N>.
+set(QUARK_VERSION_SUFFIX "" CACHE STRING "Appended to VERSION (CI testing builds: .<N>)")
 file(STRINGS ${CMAKE_SOURCE_DIR}/VERSION QUARK_VERSION LIMIT_COUNT 1)
 string(STRIP "${QUARK_VERSION}${QUARK_VERSION_SUFFIX}" QUARK_VERSION)
-if(NOT QUARK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$")
-  message(FATAL_ERROR "version '${QUARK_VERSION}' isn't x.y.z[-suffix]")
+if(NOT QUARK_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+|\\.testing\\.[0-9]+|-[0-9A-Za-z.]+)?$")
+  message(FATAL_ERROR "version '${QUARK_VERSION}' isn't x.y.z[.N|.testing.N|-suffix]")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/VERSION)
 # (the launcher marker is found in launcher files by src/launcher/selfupdate.cpp, so it's one contiguous string)
@@ -26,7 +28,7 @@ file(WRITE ${CMAKE_BINARY_DIR}/generated/version.cpp.tmp
 configure_file(${CMAKE_BINARY_DIR}/generated/version.cpp.tmp ${CMAKE_BINARY_DIR}/generated/version.cpp COPYONLY)
 
 # Windows resources for every shipped exe (src/win/app.rc.in, app.manifest.in): the icon, a VERSIONINFO (product quark,
-# company floration, a description, the version incl. a -test.N suffix: FILEVERSION x.y.z.N, flagged prerelease) and an
+# company floration, a description, the version incl. a .testing.N (or -test.N) suffix: FILEVERSION x.y.z.N, flagged prerelease) and an
 # application manifest (asInvoker, Windows 7-11, per-monitor DPI for the windowed ones, as GLFW sets at runtime).
 # Anonymous exes without them are what antivirus heuristics flag most (docs/SIGNING.md). Exes are never packed.
 if(WIN32)
@@ -36,10 +38,10 @@ if(WIN32)
   set(QV_PATCH ${CMAKE_MATCH_3})
   set(QV_BUILD 0)
   set(QV_FLAGS 0x0L)
-  if(QUARK_VERSION MATCHES "-")
+  if(QUARK_VERSION MATCHES "-|\\.testing\\.")
     set(QV_FLAGS 0x2L)   # VS_FF_PRERELEASE
-    if(QUARK_VERSION MATCHES "-test\\.([0-9]+)$")
-      set(QV_BUILD ${CMAKE_MATCH_1})
+    if(QUARK_VERSION MATCHES "(-test|\\.testing)\\.([0-9]+)$")
+      set(QV_BUILD ${CMAKE_MATCH_2})
       if(QV_BUILD GREATER 65535)
         set(QV_BUILD 65535)
       endif()
@@ -72,7 +74,7 @@ endif()
 
 option(QUARK_BUILD_CLIENT "Build the game client (needs OpenGL)" ON)
 option(QUARK_BUILD_TESTS "Build headless tests" ON)
-option(QUARK_LTO "Link-time optimization" OFF)
+option(QUARK_LTO "Link-time optimization" ON)   # (1.19 laptop benchmark: o3 1540 fps avg, o3 + LTO 1613, o3 + LTO + AVX2 1962)
 # Robustness builds (REVIEW ENG-3), never for releases:
 #   QUARK_SANITIZE: everything built with AddressSanitizer + UndefinedBehaviorSanitizer (the CI "sanitizers" job runs
 #                   quark_tests like that); any report is fatal.
@@ -98,7 +100,35 @@ endif()
 
 # precise FP everywhere: client prediction (pmove / map / collision) must match a server built by another
 # toolchain bit for bit, so no fast-math and no FMA contraction
-add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O2>")
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O3>")
+add_link_options(-fno-fast-math -ffp-contract=off)   # (with LTO the code is generated at link time: the same rules there)
+
+# Instruction set (x86-64 only; arm64 and macOS's universal build keep the compiler's default). The packages ship two
+# game clients: quark (QUARK_ISA v2: SSE4.2 + POPCNT, every x86-64 CPU since about 2009) and quark_avx2 (v3: AVX2,
+# BMI2, FMA as an instruction set; Intel 2013+, every Ryzen), and quark starts quark_avx2 when the CPU has it
+# (src/client/isa.h). Both compute bit-identical results: no fast-math and no FMA contraction (above), so vector
+# code doesn't reorder or fuse floating point (quark_tests simhash checks it: tools/isa_check.sh). "none" = the
+# compiler's default (SSE2). 1.19 laptop benchmark: -O2 1114 fps avg / 635 0.1% low, -O3 1540 / 911.
+set(QUARK_ISA "v2" CACHE STRING "x86-64 instruction set level: none, v2 (SSE4.2) or v3 (AVX2)")
+set_property(CACHE QUARK_ISA PROPERTY STRINGS none v2 v3)
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("#if !defined(__x86_64__)\n#error not x86-64\n#endif\nint main() { return 0; }" QUARK_X86_64)
+if(QUARK_X86_64 AND NOT APPLE AND QUARK_ISA STREQUAL "v2")
+  add_compile_options(-march=x86-64-v2 -mtune=generic)
+  add_link_options(-march=x86-64-v2 -mtune=generic)
+elseif(QUARK_X86_64 AND NOT APPLE AND QUARK_ISA STREQUAL "v3")
+  add_compile_options(-march=x86-64-v3 -mtune=generic)
+  add_link_options(-march=x86-64-v3 -mtune=generic)
+  add_compile_definitions(QUARK_ISA_AVX2=1)
+  if(WIN32)
+    # MinGW gcc spills 32-byte AVX registers with aligned moves to a stack Win64 only aligns to 16 bytes: an aligned
+    # move there crashes. The assembler turns them into unaligned moves (as fast on any AVX2 CPU). binutils 2.38+.
+    add_compile_options(-Wa,-muse-unaligned-vector-move)
+    add_link_options(-Wa,-muse-unaligned-vector-move)   # (LTO compiles at link time: the assembler runs there too)
+  endif()
+elseif(NOT QUARK_ISA STREQUAL "none" AND NOT QUARK_ISA STREQUAL "v2" AND NOT QUARK_ISA STREQUAL "v3")
+  message(FATAL_ERROR "QUARK_ISA must be none, v2 or v3 (not ${QUARK_ISA})")
+endif()
 if(WIN32)
   add_compile_definitions(_WIN32_WINNT=0x0601 NOMINMAX)   # Windows 7; no min / max macros from windows.h
 endif()
@@ -242,6 +272,9 @@ if(QUARK_TRACY)
   target_include_directories(quark_core PUBLIC ${tracy_SOURCE_DIR}/public)
   target_compile_definitions(quark_core PUBLIC QUARK_TRACY TRACY_ENABLE)
   target_link_libraries(quark_core PUBLIC ${CMAKE_DL_LIBS})
+  if(WIN32)
+    target_link_libraries(quark_core PUBLIC dbghelp)   # (Tracy's call stacks: SymInitialize / SymFromAddr)
+  endif()
 endif()
 target_link_libraries(quark_core PUBLIC Threads::Threads quark_crypto)
 if(WIN32)
@@ -335,6 +368,8 @@ if(QUARK_BUILD_CLIENT)
     src/client/gpuprefs.cpp
     src/client/community.cpp
     src/client/editor.cpp
+    src/client/benchmark.cpp
+    src/client/isa.cpp
     src/client/openurl.cpp
     src/client/gl.cpp
     src/client/renderer.cpp
@@ -342,6 +377,10 @@ if(QUARK_BUILD_CLIENT)
     src/client/ui.cpp
     src/client/config.cpp
     src/client/hudwidgets.cpp
+    src/client/filewatch.cpp
+    src/client/layout.cpp
+    src/client/hudeditor.cpp
+    src/client/theme.cpp
     src/client/profiles.cpp
     src/client/binds.cpp
     src/client/uitest.cpp
@@ -374,7 +413,7 @@ endif()
 
 if(QUARK_BUILD_TESTS)
   # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
-  add_executable(quark_tests tests/tests.cpp tests/mapbounds.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp tests/groupproc.cpp src/client/lightmap.cpp)
+  add_executable(quark_tests tests/tests.cpp tests/mapbounds.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp tests/groupproc.cpp src/client/lightmap.cpp src/client/layout.cpp src/client/theme.cpp src/client/filewatch.cpp)
   target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
@@ -390,17 +429,20 @@ if(QUARK_BUILD_TESTS)
     add_test(NAME uitest COMMAND sh ${CMAKE_SOURCE_DIR}/tools/uitest.sh $<TARGET_FILE:quark> ${CMAKE_BINARY_DIR}/uitest-report.json
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
+    # BENCHMARK end to end (tools/benchmark_check.sh): a demo made at test time, quark --benchmark on it
+    add_test(NAME benchmark COMMAND sh ${CMAKE_SOURCE_DIR}/tools/benchmark_check.sh ${CMAKE_BINARY_DIR} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(benchmark PROPERTIES TIMEOUT 600 SKIP_RETURN_CODE 77)
+    # RENDER SCALE: screenshots at 50 / 100 / 200% are the window's size, with the HUD at its resolution (needs a display)
+    add_test(NAME renderscale COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/renderscale_check.py $<TARGET_FILE:quark>
+             WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(renderscale PROPERTIES TIMEOUT 900 SKIP_RETURN_CODE 77)
   endif()
-  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics, mode and weapons editors'
-  # commands linked into it (an empty or missing tools/mode_editor/native globs to nothing)
-  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/weapon_editor/native/*.cpp)
+  # The editors' native helper (tools/maptool/map/README.md): the map editor's commands plus the bot, physics, mode and
+  # weapons editors' (tools/maptool/<part>/). The editors themselves live in floration/quarkology; the helper stays
+  # here because it links the game's code and has to change with it.
+  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maptool/*/*.cpp)
   add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
-  target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
-  if(EXISTS ${CMAKE_SOURCE_DIR}/tools/mode_editor/native)
-    target_include_directories(quark_maptool PRIVATE tools/mode_editor/native)
-  endif()
+  target_include_directories(quark_maptool PRIVATE tests tools/maptool/map tools/maptool/mode)
   target_link_libraries(quark_maptool quark_core)
   if(WIN32)
     target_link_options(quark_maptool PRIVATE -Wl,--stack,16777216)

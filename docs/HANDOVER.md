@@ -88,6 +88,20 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 3. **Performance check on real hardware** (REMAINING.md 0.3): the F3 1% and 0.1% lows against 1.16 on Midtown, Hightown and Lodestone. Include the cost of drawing stuck knives, bolts and syringes: 0.1 ms in the draw function, and 3–5 fps lost under software GL in the worst case.
 4. **Automatic Worker deploys** ([OPERATIONS.md](OPERATIONS.md) section 3), whenever convenient.
 
+### Quarkology and the editors moved out (2026-10-27)
+
+The owner's Supervisor Board app (Quarkology), its managers and every editor now live in **floration/quarkology**
+(private; its README says what moved and why). This repository keeps what the game's build, `quark_tests`, CI, the
+website and the release checklist use: the editors' native helper `quark_maptool` (`tools/maptool/`), the bots,
+modes and maps. On the owner's PCs Quarkology clones floration/quarkology into `Quark\quarkology-repo\` by itself and
+keeps `Quark\repository\` (this repository, `testing`) for the game-side builds and this checklist. The editors'
+release checks are `CHECKLIST.md` there (section 16 of [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)).
+
+**To delete next release** (once both PCs show `quarkology-repo\` cloned on the Supervisor Board):
+- `tools/quarkology/`: the one-release hand-over copy of the app (an install from before the move updates from it, and
+  falls back to it while the clone can't be made);
+- `tools/project_manager/`: the hand-over from the app's old name (Quark Project).
+
 
 ### Notes from the 1.17.0 session (things learned the hard way)
 
@@ -121,7 +135,7 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 - **The clang-only unused warnings** are listed in REMAINING.md section 2.
 
 **Assets**
-- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (tools/sound_editor), which lists all 33 sounds of each kit.
+- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them with the sound editor (in floration/quarkology since 1.20; Quarkology installs it), which lists all 33 sounds of each kit.
 
 
 ## 1. What quark is
@@ -162,11 +176,13 @@ A fast, minimal FPS on a custom C++17 engine:
 | `tools/master/` | The ranking server: `worker.js`, `schema.sql`, `test.mjs`, README with the deployment steps and the SQL to run per version |
 | `tools/server/` | Dedicated server install (`install.sh`), auto-update (`autoupdate.sh`), alerts |
 | `tools/studio/` | `build.py`: the asset export's file builder for the website /assets/ page (the Asset Studio page was retired 2026-10-24) |
-| `tools/modes/`, `tools/mode_editor/` | The 13 built-in modes' logic (`*.qlogic`, `GRAMMAR.md`; embedded at build time) and the gamemode editor (local page on 127.0.0.1:8771, README there) |
+| `tools/modes/` | The 13 built-in modes' logic (`*.qlogic`, `GRAMMAR.md`; embedded at build time). The gamemode editor that edits them is in floration/quarkology |
+| `tools/maptool/` | `quark_maptool`, the native helper of the owner's editors (map checks, bot / mode / movement / weapon simulations; built by CMake on every CI run because it links the game's code). One folder per part (`map/`, `bot/`, `mode/`, `physics/`, `weapon/`), with their specs (`physics/INTERFACE.md`, `weapon/DESIGN.md`, `mode/MODESIM.md`) |
+| `tools/quarkology/`, `tools/project_manager/` | One release only (delete in the next): the hand-over that moves the owner's installs of Quarkology to floration/quarkology (its README) |
 | `tools/launcher_build.sh` | Builds the shipped launcher from the `launcher` branch (release jobs) |
 | `site/` (not in `testing`) | The website: the `site` branch, checked out there as a worktree (README) |
 | `assets/` | Fonts, sounds, voice, icons; `assets/overrides/` holds the owner's replacement assets |
-| `changelogs/<VERSION>.md` | One per release, shown by the website, the launcher, the release notes and the bot |
+| `changelogs/<VERSION>.md` | One per release, shown by the website, the launcher, the release notes and the bot. `changelogs/next.md` (and `full/next.md`): what's on `testing` since the last production release, the testing prereleases' notes; the release PR renames them |
 | `docs/` | See section 10 |
 
 ## 3. Build and test
@@ -203,7 +219,7 @@ A cloud session can push only its own `claude/...` branch, so its work reaches `
 
 | Branch | What it is |
 |---|---|
-| `testing` | Where all new work lands. Every push publishes a signed prerelease `test-<VERSION>-test.<N>`. Dependabot targets it. |
+| `testing` | Where all new work lands. Every push publishes a signed prerelease `test-<VERSION>.<N>`, built as version `<VERSION>.<N>`, N counting that VERSION's testing builds from 1 (from 1.19.1 on; 1.19.0 to 1.19.1: `test-<VERSION>.testing.<run>`, before 1.19.0: `test-<VERSION>-test.<N>`). Dependabot targets it. |
 | Default branch (protected) | Updated only by a PR from `testing`. Production releases come only from a `v<VERSION>` tag on it. |
 | `launcher` | The launcher that ships: a full copy of the tree, branched at 1.17.0. It should almost never change. Every platform job builds `quark_launcher` from it (`tools/launcher_build.sh`, without the testing suffix) and packages that one, so a release only changes the launcher when this branch does. A launcher change goes here (by PR) **with a higher `VERSION`**, or installed launchers won't take it (`selfupdate::isNewer`). `src/launcher/` stays in `testing` too: the game links its launcher-upgrade code, and the tests cover it. Keep the two compatible (release manifest, signatures, qpak format). |
 | `site` | The website source (its files at the top level). The linux job and the pages job check it out into `site/`; production releases build the site from it, plus the changelogs and weapon tables, into `gh-pages`. A change here goes live with the next production release or a site-only run. `master.txt` and its signature are committed here. |
@@ -212,10 +228,10 @@ A cloud session can push only its own `claude/...` branch, so its work reaches `
 | `map-tests` | Later: maps uploaded by the owner's dev map editor (section 9). |
 
 **Release flow:**
-1. Work is committed on `testing`, with `VERSION` bumped and `changelogs/<VERSION>.md` written.
+1. Work is committed on `testing`. `VERSION` stays at the last production release (owner, 2026-10-24): CI builds each testing push as `<VERSION>.<N>` (N counting that VERSION's testing builds from 1; 1.19.0 to 1.19.1: `<VERSION>.testing.<run number>`), which the launcher and the server updater sort above that release and below the next one. Each change adds its notes to `changelogs/next.md` (short) and `changelogs/full/next.md` (full), which the testing prerelease shows. (Before 1.19.0 every push bumped `VERSION` and wrote `changelogs/<VERSION>.md`; testing builds were `<VERSION>-test.<N>`, below the release.)
 2. The push to `testing` runs CI: meta checks and the Windows, Linux and macOS builds (no gameplay or UI tests: those run locally before the push). It publishes the signed testing prerelease (Windows + Linux; macOS files follow). The build meant for production is marked final (`[final]` in its head commit's subject line or the merged PR's title, or a manual run with **final** ticked), which runs the sanitizers on it; nothing waits for them, but the checklist wants them green. Nothing else runs the sanitizers (work branches included; only a human adds the final mark, never an agent); production tags never do.
 3. **The owner tests that build by hand with [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).** Nothing goes further until the owner says it passed.
-4. A PR from `testing` to the default branch; the owner merges it.
+4. The release PR (on `testing`, before the final build of step 2) bumps `VERSION` to the new release and renames `changelogs/next.md` and `changelogs/full/next.md` to `<VERSION>.md` (a production tag fails while a `next.md` is left). Then a PR from `testing` to the default branch; the owner merges it.
 5. The owner tags it: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. CI publishes the production release only when Windows, Linux and macOS all build; then it deploys the website. Dedicated servers update to it by themselves.
 
 Workflows are in `.github/workflows/`:
@@ -304,7 +320,7 @@ Workflows are in `.github/workflows/`:
 | [SIGNING.md](SIGNING.md) | Release signing and key handling |
 | [OPERATIONS.md](OPERATIONS.md) | Automatic updates for the dedicated servers, the Discord bot and the Cloudflare Worker; every secret and how to keep it secret |
 | [ASSETS.md](ASSETS.md) | The asset export, overrides |
-| [MAP_STRUCTURES.md](MAP_STRUCTURES.md) | Why each map is built the way it is (the grading and map report were removed 2026-10-24; the old metrics are in git at 07ef254; the map editor's measurement, tools/map_editor/native, carries a copy) |
+| [MAP_STRUCTURES.md](MAP_STRUCTURES.md) | Why each map is built the way it is (the grading and map report were removed 2026-10-24; the old metrics are in git at 07ef254; the map editor's measurement, tools/maptool/map, carries a copy) |
 | `tools/master/README.md`, the `discord-bot` branch's README | Deploying the ranking server and the bot |
 | [AUDIT.md](AUDIT.md), [RELEASE_PLAN.md](RELEASE_PLAN.md) | History from the road to 1.0.0 |
 

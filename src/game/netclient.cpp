@@ -4,6 +4,7 @@
 #include <cctype>
 #include "demo.h"
 #include "gamemodes.h"
+#include "customrules.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -500,7 +501,42 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
         probe.box[probe.n] = playerBox(q.pos, (q.flags & PS_CROUCHED) != 0, scale);
         probe.id[probe.n++] = (uint8_t)i;
     }
-    return probe.n > 0;
+    // Rocket riding, as Server::grappleTargets picks them: the rockets in reach as the server will have them when it runs
+    // this command (the newest snapshot's, flown on by the commands before it: one a tick), your own tested there, anyone
+    // else's where the server tests them (your view time + rocketSeenMs: about where they're drawn). Then your copies.
+    if (moveTuning().rocketRide) {
+        const Snapshot& s = snaps_.back();
+        const Vec3 eye = m.pos + Vec3(0, kEyeHeight * moveScale(m.mods), 0);
+        const float reach = kGrappleRange * moveValue(m, MV_HOOK_RANGE, &map_) + 2 * kRocketCatchHalf;
+        const int64_t nowMs = (int64_t)s.timeMs + (int64_t)std::max<int64_t>(0, (int64_t)cmd.seq - s.ackCmdSeq - 1) * cmd.msec;   // (the server's clock then)
+        const int64_t seenMs = std::min<int64_t>(nowMs, (int64_t)cmd.viewTick + rocketSeenMs((uint32_t)interpSent_, snapRate()));
+        for (const ProjectileSnap& pr : s.projectiles) {
+            if (probe.nr >= HookProbe::kRockets) break;
+            if (pr.hidden || pr.type != WPN_ROCKET || (pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) continue;
+            const float g = projectileGravity(pr.type, (pr.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f);
+            Vec3 pos = pr.pos, vel = pr.vel;
+            projectileExtrapolate(pos, vel, g, (float)(nowMs - (int64_t)s.timeMs) * 0.001f);
+            const Vec3 d = pos - eye;
+            if (dot(d, d) > reach * reach) continue;
+            Vec3 at = pr.pos;
+            if (pr.owner == clientId_) at = pos;
+            else {
+                Vec3 v = pr.vel;
+                const int64_t dt = seenMs - (int64_t)s.timeMs;
+                if (dt >= 0) projectileExtrapolate(at, v, g, (float)dt * 0.001f);
+                else projectileRewind(at, v, g, (float)-dt * 0.001f);
+            }
+            const int k = probe.nr++;
+            probe.at[k] = at; probe.pos[k] = pos; probe.vel[k] = vel; probe.grav[k] = g; probe.rid[k] = pr.id;
+        }
+        for (int c = 0; c < nCopies_ && probe.nr < HookProbe::kRockets; c++) {
+            const Vec3 d = copies_[c].pos - eye;
+            if (dot(d, d) > reach * reach) continue;
+            const int k = probe.nr++;
+            probe.at[k] = probe.pos[k] = copies_[c].pos; probe.vel[k] = copies_[c].vel; probe.grav[k] = copies_[c].grav; probe.rid[k] = 0;
+        }
+    }
+    return probe.n > 0 || probe.nr > 0;
 }
 
 void NetClient::reconcile(const Snapshot& s) {
@@ -517,7 +553,7 @@ void NetClient::reconcile(const Snapshot& s) {
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
                  length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget &&
-                 sameCharges(mine, s.self);
+                 sameCharges(mine, s.self) && mine.acidOutMs == s.self.acidOutMs;
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
@@ -538,9 +574,12 @@ void NetClient::reconcile(const Snapshot& s) {
             lastReplay_++;
             if (c.seq != seq) continue;
             predPrev_ = pred_;
-            if (hookCatch_.seq == seq) {   // (the command whose grapple caught a player: that player again)
+            if (hookCatch_.seq == seq) {   // (the command whose grapple caught a player or a rocket: that one again)
                 HookProbe probe;
-                probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id;
+                if (hookCatch_.rocket) {
+                    probe.nr = 1; probe.at[0] = hookCatch_.at; probe.pos[0] = hookCatch_.pos; probe.vel[0] = hookCatch_.vel;
+                    probe.grav[0] = hookCatch_.grav; probe.rid[0] = hookCatch_.rid;
+                } else { probe.n = 1; probe.box[0] = hookCatch_.box; probe.id[0] = hookCatch_.id; }
                 pmove(pred_, c, map_, &probe);
             } else pmove(pred_, c, map_);
             predicted_[seq % kCmdRing] = pred_;
@@ -552,9 +591,13 @@ void NetClient::reconcile(const Snapshot& s) {
     // A grapple latched onto a player (or another's holding us): the anchor moves with them, and only the server knows
     // where they are now. Prediction pulls toward its latest value (the replay above already started from it).
     if (alive && mapReady_) {
-        if ((s.self.flags & MF_HOOKED) && s.self.hookTarget && (pred_.flags & MF_HOOKED) && pred_.hookTarget == s.self.hookTarget)
+        if ((s.self.flags & MF_HOOKED) && s.self.hookTarget && s.self.hookTarget != kHookRocket && (pred_.flags & MF_HOOKED) && pred_.hookTarget == s.self.hookTarget)
             pred_.hookPoint = s.self.hookPoint;
         if ((s.self.flags & MF_PULLED) && (pred_.flags & MF_PULLED)) pred_.pullPoint = s.self.pullPoint;
+        // riding your own rocket caught as a predicted copy: the server's name for it (prediction already flies the anchor
+        // with it; a replay started from the server's)
+        if ((s.self.flags & MF_HOOKED) && s.self.hookTarget == kHookRocket && (pred_.flags & MF_HOOKED) && pred_.hookTarget == kHookRocket && !pred_.hookProj)
+            pred_.hookProj = s.self.hookProj;
     }
 
 }
@@ -579,8 +622,16 @@ void NetClient::tick(UserCmd cmd) {
     if (selfAlive()) {
         HookProbe probe;   // a grapple this command may fire: the enemies you see can catch it, as on the server (F20)
         if (hookProbe(cmd, probe)) {
+            Vec3 at0[HookProbe::kRockets], pos0[HookProbe::kRockets], vel0[HookProbe::kRockets];   // (pmove flies the probe's rockets on)
+            for (int k = 0; k < probe.nr; k++) { at0[k] = probe.at[k]; pos0[k] = probe.pos[k]; vel0[k] = probe.vel[k]; }
             pmove(pred_, cmd, map_, &probe);
-            if (probe.hit >= 0) { hookCatch_.seq = cmd.seq; hookCatch_.box = probe.box[probe.hit]; hookCatch_.id = probe.id[probe.hit]; }
+            if (probe.hit >= 0) { hookCatch_ = HookCatch(); hookCatch_.seq = cmd.seq; hookCatch_.box = probe.box[probe.hit]; hookCatch_.id = probe.id[probe.hit]; }
+            if (probe.hitRocket >= 0) {
+                const int k = probe.hitRocket;   // (as the probe had it as this command started: pmove flew it on since)
+                hookCatch_ = HookCatch(); hookCatch_.seq = cmd.seq; hookCatch_.rocket = true;
+                hookCatch_.at = at0[k]; hookCatch_.pos = pos0[k]; hookCatch_.vel = vel0[k];
+                hookCatch_.grav = probe.grav[k]; hookCatch_.rid = probe.rid[k];
+            }
         } else pmove(pred_, cmd, map_);
         moveEv_ |= pred_.events;
         moveLand_ = std::max(moveLand_, pred_.landSpeed);
@@ -742,6 +793,32 @@ void NetClient::interpolatedPlayers(PlayerArray& out) const {
         }
     }
     for (int i = 0; i < kMaxPlayers; i++) if (!(set >> i & 1)) out[i] = InterpPlayer();   // (the rest as a fresh array has them)
+}
+
+int NetClient::selfHealth() const {
+    if (!hasSnapshot()) return 0;
+    const int hp = latest().selfHealth;
+    const float acid = hp > 0 ? pendingAcid() : 0.0f;
+    return acid > 0 ? std::max(1, (int)std::ceil(hp - acid)) : hp;
+}
+
+float NetClient::pendingAcid() const {
+    if (play_.active || !mapReady_ || map_.acid.empty() || !hasSnapshot() || !selfAlive()) return 0;
+    const Snapshot& s = latest();
+    if (!acidHurts(s.ms.phase)) return 0;
+    // pred_.acidTaken keeps adding as prediction runs; at the acked command it held what the server has taken by now
+    // (a replay starts from the server's state, whose acidTaken is 0)
+    const uint32_t k = s.ackCmdSeq % kCmdRing;
+    const float acked = predictedSeq_[k] == s.ackCmdSeq ? predicted_[k].acidTaken : 0.0f;
+    return std::max(0.0f, pred_.acidTaken - acked) * lifeMaxHealth();
+}
+
+float NetClient::lifeMaxHealth() const {
+    const ModeState* m = hasSnapshot() ? &latest().ms : nullptr;
+    const float h = duelModDef(m && m->mode == MODE_DUEL ? m->duelMod : 255).health;
+    if (h != kMaxHealth) return h;
+    const CustomRules& r = activeRules();
+    return r.active() ? (float)r.health : (float)kMaxHealth;
 }
 
 float NetClient::bodyScale() const {

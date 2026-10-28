@@ -1,6 +1,7 @@
 #!/bin/bash
 # The pre-push check used for 1.17.0 (docs/HANDOVER.md section 0): every quark_tests group, 3 per core at a time, then the
-# timing-sensitive ones alone, then every map hosted headless in FFA and screenshotted (it loads and the game runs).
+# timing-sensitive ones alone, then every map hosted headless in FFA and screenshotted (it loads and the game runs), then
+# the RENDER SCALE screenshots (tools/renderscale_check.py); and the SSE4.2 / AVX2 builds simulate the same (tools/isa_check.sh).
 # Usage: tools/release_check.sh [--skip "bots botaim botfalls maps mapbounds"]     (run from the repo root, after a build)
 # Needs Xvfb on Linux for the map check (skipped with a note if there's no Xvfb). Exit code 0 = everything passed.
 cd "$(dirname "$0")/.." || exit 2
@@ -22,6 +23,7 @@ for g in $alone; do
   build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; rc=$?
   echo "$g rc=$rc $(grep '^group ' "$TMPDIR/$g.log")"; [ $rc = 0 ] || { fail=1; hint="; timing groups: re-run alone on an idle machine"; }
 done
+if sh tools/isa_check.sh > "$TMPDIR/isa.log" 2>&1; then tail -1 "$TMPDIR/isa.log"; else echo "isa FAILED (see isa.log)"; fail=1; fi
 if command -v Xvfb >/dev/null; then
   Xvfb :97 >/dev/null 2>&1 & xpid=$!
   for i in $(seq 50); do [ -S /tmp/.X11-unix/X97 ] && break; sleep 0.2; done   # (until the display is up)
@@ -31,6 +33,8 @@ if command -v Xvfb >/dev/null; then
     DISPLAY=:97 timeout 300 build/quark --host ffa --map "$n" --screenshot "$TMPDIR/$n.png" > "$TMPDIR/$n.map.log" 2>&1; rc=$?
     if [ $rc = 0 ] && [ -s "$TMPDIR/$n.png" ]; then echo "map $n ok"; else echo "map $n FAILED rc=$rc"; fail=1; fi
   done
+  # RENDER SCALE: 50 / 100 / 200% screenshots the window's size, the HUD at the window's resolution
+  if DISPLAY=:97 python3 tools/renderscale_check.py build/quark > "$TMPDIR/renderscale.log" 2>&1; then echo "renderscale ok"; else echo "renderscale FAILED (see renderscale.log)"; fail=1; fi
   kill $xpid
 else
   echo "(no Xvfb: map load check skipped; host each map once by hand instead)"

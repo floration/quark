@@ -1,0 +1,140 @@
+:root {
+  --bg: #16181c;
+  --line: #262a30;
+  --hover: #21242a;
+  --active: #2a2e35;
+  --text: #c9cdd4;
+  --strong: #eef0f3;
+  --muted: #7d838d;
+  --up: #3fb26b;
+  --starting: #e0a43a;
+  --down: #5d636c;
+  --dead: #d8574b;
+  --accent: #4c8dff;
+  --human: #3fbf7f;
+  --third: #36b3c4;
+  --ai: #c8664f;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 34px; overflow: hidden; background: var(--bg); color: var(--text);
+  font: 12.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif; user-select: none; cursor: default;
+}
+#bar { display: flex; align-items: center; height: 34px; padding: 0 8px 0 7px; gap: 6px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
+/* the bar moves the window (there is no title bar); everything clickable in it does not */
+.tab, .icon, #update, #clock, #err, #stats, #more, #find, #zoom, #logo { -webkit-app-region: no-drag; }
+#logo { flex: none; display: flex; align-items: center; padding-right: 4px; cursor: pointer; }
+#tabs { flex: 0 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 100%; }
+/* past the right end (still tabs to scroll to): the strip fades out there; #more says how many and lists them */
+#tabs.cut { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+#more { flex: none; height: 22px; padding: 0 7px; border: 0; border-radius: 11px; background: var(--active); color: var(--strong);
+  font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+#more[hidden] { display: none; }
+#more:hover { background: var(--accent); }
+#tabs::-webkit-scrollbar { display: none; }
+/* (the space between the tabs and the right-hand items; the tabs shrink only once it is gone) */
+#fill { flex: 1 1 0; min-width: 0; }
+/* the Editor Manager's facts: Testing · Production · Human-made · Refreshed. tabbar.js's fit() sets data-lv as the
+   window narrows: 1 short labels, 2 no Refreshed, 3 no Production / bar, 4 hidden; the tabs never shrink for them. */
+#stats { flex: none; display: flex; align-items: center; gap: 0; height: 26px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+#stats[hidden], #stats[data-lv="4"] { display: none; }
+#stats:hover { background: var(--hover); }
+#stats:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+#stats.stale { opacity: .5; }
+#stats .f { display: flex; align-items: baseline; gap: 5px; }
+#stats .f + .f { margin-left: 9px; padding-left: 10px; border-left: 1px solid var(--line); }
+#stats .k { color: var(--muted); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+#stats .k.s { display: none; }
+#stats .v { color: var(--strong); font-variant-numeric: tabular-nums; }
+#stats .v.none { color: var(--muted); }
+#stats .x { color: var(--muted); font-size: 11px; }
+#stats .hbar { align-self: center; display: flex; width: 44px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--down); margin-left: 2px; }
+#stats .hbar i { display: block; height: 100%; }
+#stats .hbar .h { background: var(--human); }
+#stats .hbar .t { background: var(--third); }
+#stats .hbar .a { background: var(--ai); }
+#stats[data-lv="1"] .k.l, #stats[data-lv="2"] .k.l, #stats[data-lv="3"] .k.l { display: none; }
+#stats[data-lv="1"] .k.s, #stats[data-lv="2"] .k.s, #stats[data-lv="3"] .k.s { display: inline; }
+#stats[data-lv="1"] .x, #stats[data-lv="2"] .x, #stats[data-lv="3"] .x { display: none; }
+#stats[data-lv="2"] .f.r, #stats[data-lv="3"] .f.r, #stats[data-lv="3"] .f.p, #stats[data-lv="3"] .hbar { display: none; }
+/* Tabs shorten (ellipsis, longest names most) once the facts have shrunk away and before any tab is cut off; the
+   active tab keeps its whole name. Groups are display: contents so every tab is a flex item of #tabs. A short name
+   ("UI") in a tab held at min-width sits in the middle, so the gaps between the tabs stay even. */
+.tab {
+  flex: 0 1 auto; min-width: 58px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 26px; padding: 0 9px 0 8px; border: 0;
+  border-radius: 6px; background: transparent; color: var(--text); font: inherit; cursor: pointer; position: relative; white-space: nowrap;
+}
+.tab.active { flex-shrink: 0; }
+.tab:has(.badge), .tab:has(.caret) { min-width: 78px; }
+.tab .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab .dot, .tab .badge, .tab .caret, .tab .key { flex: none; }
+/* dragging a tab among its siblings (saved to tabs.json) */
+.tab.dragging { z-index: 2; background: var(--active); box-shadow: 0 2px 8px rgba(0,0,0,.45); cursor: grabbing; transition: none; }
+.tab.drop-before::before, .tab.drop-after::before { content: ""; position: absolute; top: 3px; bottom: 3px; width: 2px; border-radius: 1px; background: var(--accent); }
+.tab.drop-before::before { left: -2px; }
+.tab.drop-after::before { right: -2px; }
+.tab:hover { background: var(--hover); color: var(--strong); }
+.tab.active { background: var(--active); color: var(--strong); }
+.tab.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -4px; height: 2px; border-radius: 2px; background: var(--accent); }
+.tab:focus-visible, .icon:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--down); flex: none; }
+.tab[data-status="up"] .dot { background: var(--up); }
+/* down (not running) is red; grey is "not checked yet" */
+.tab[data-status="down"] .dot { background: var(--dead); }
+.tab[data-status="starting"] .dot { background: var(--starting); animation: pulse .9s ease-in-out infinite alternate; }
+.tab[data-status="restarting"] .dot { background: transparent; box-shadow: inset 0 0 0 2px var(--starting); }
+.tab[data-status="missing"] { color: var(--muted); }
+.tab[data-status="missing"] .dot { background: transparent; box-shadow: inset 0 0 0 1px var(--down); }
+.tab[data-status="missing"] .name { text-decoration: line-through; text-decoration-color: rgba(125,131,141,.5); }
+.tab .key { color: var(--muted); font-size: 10.5px; margin-left: -2px; display: none; }
+body.keys .tab .key { display: inline; }
+.tab .caret { color: var(--muted); font-size: 10.5px; min-width: 6px; margin-left: -2px; }
+.tab .caret::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 4px; border: solid currentColor; border-width: 0 1.3px 1.3px 0; transform: rotate(-45deg) translateY(-2px); }
+.tab .caret.open::before { transform: rotate(45deg) translate(-2px, -1px); }
+.tab .badge { min-width: 17px; height: 16px; padding: 0 5px; border-radius: 8px; background: #d92d20; color: #fff; font-size: 10.5px; font-weight: 700;
+  line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; margin-left: -1px; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.tab .badge.note { background: #2f7de1; }
+/* reinstalled while the page had unsaved changes (main.js reloadForUpdate): reload to get the new version */
+.tab .upd { flex: none; color: var(--accent); font-size: 12px; font-weight: 700; margin-left: -2px; }
+.tab.halting .name { color: #ffb4a8; }
+.tab.halting.active .name { color: var(--strong); }
+.sep { flex: none; width: 1px; height: 16px; background: var(--line); margin: 0 5px; }
+.group { display: contents; }
+.glabel { flex: none; display: flex; align-items: center; height: 26px; margin-left: 4px; padding-left: 9px; border-left: 1px solid var(--line);
+  color: var(--muted); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; margin-right: 1px; white-space: nowrap; }
+.gend { flex: none; width: 1px; height: 26px; background: var(--line); margin: 0 4px; }
+@keyframes pulse { to { opacity: .35; } }
+.icon {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 28px; height: 26px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.icon:hover { background: var(--hover); color: var(--strong); }
+#clock { flex: none; color: var(--text); font-variant-numeric: tabular-nums; padding-left: 8px; border-left: 1px solid var(--line); height: 18px; display: flex; align-items: center; gap: 5px; }
+#clock .where { color: var(--muted); }
+#update { flex: none; display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 3px 0 9px; border-radius: 6px;
+  background: rgba(76,141,255,.16); color: var(--strong); font-size: 11.5px; white-space: nowrap; }
+#update[hidden] { display: none; }
+#update .msg { overflow: hidden; text-overflow: ellipsis; }
+#update button { height: 18px; padding: 0 9px; border: 0; border-radius: 4px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+#update button:hover { filter: brightness(1.12); }
+#update button:disabled { opacity: .6; cursor: default; }
+#update button:focus-visible { outline: 1px solid #fff; outline-offset: 1px; }
+/* a bad tabs.json: a slot of its own in the bar (it never covers the facts); the whole text is its title */
+#err { flex: 0 1 auto; min-width: 60px; max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: #4a2a12; color: #f3c58b; border-radius: 5px; padding: 4px 8px; font-size: 11.5px; }
+#err[hidden] { display: none; }
+#zoom { flex: none; height: 22px; padding: 0 8px; border: 0; border-radius: 11px; background: rgba(224,164,58,.18); color: #f0c77a;
+  font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
+#zoom[hidden] { display: none; }
+#zoom:hover { background: rgba(224,164,58,.32); }
+/* find in page */
+#find { flex: none; display: flex; align-items: center; gap: 2px; height: 26px; padding: 0 2px 0 4px; border-radius: 6px; background: var(--hover); }
+#find[hidden] { display: none; }
+#find input { width: 190px; height: 20px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--strong);
+  font: inherit; padding: 0 6px; outline: none; user-select: text; cursor: text; }
+#find input:focus { border-color: var(--accent); }
+#find-n { min-width: 54px; color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#find-n.none { color: var(--dead); }
+.icon.sm { width: 22px; height: 22px; }
+body.finding #stats { display: none; }

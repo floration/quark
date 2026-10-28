@@ -38,7 +38,7 @@ enum ModeSlot : uint8_t {
 // A slot's arguments (ModeArgs.v[k], in this order): kill [victim, killer, weapon]; stab [attacker, victim];
 // leave, spectate, plant, defuse, finish, respawnDelay, frozen, spawnType [p]; cartCheckpoint, capture [i];
 // checkpoint [p, i]; canDamage, canHit [attacker, victim, weapon]. Players are 0-31 (-1: none), weapons the
-// WPN_* ids or a kill cause (251 grapple, 252 fell, 253 bombed, 254 drained; -1 none).
+// WPN_* ids or a kill cause (250 dissolved (acid), 251 grapple, 252 fell, 253 bombed, 254 drained; -1 none).
 struct ModeArgs { int v[3] = {-1, -1, -1}; };
 
 // ---- what the logic reads and writes through the host: ModeHost::get / set (GRAMMAR.md section 6)

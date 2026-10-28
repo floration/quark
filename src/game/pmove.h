@@ -2,6 +2,7 @@
 #pragma once
 #include "../common/qmath.h"
 #include "map.h"
+#include "gamedefs.h"
 
 struct UserCmd {
     uint32_t seq = 0;       // monotonically increasing per client
@@ -45,7 +46,13 @@ struct MoveState {
     float hookCooldown = 0;
     Vec3 hookPoint;    // grapple anchor while MF_HOOKED (latched onto a player: their body, moved by the server every tick)
     uint8_t mods = 0;  // MOVE_* rule modifiers (duel)
-    uint8_t hookTarget = 0; // while MF_HOOKED: 0 = the map, 1 + id = latched onto that player
+    uint8_t hookTarget = 0; // while MF_HOOKED: 0 = the map, 1 + id = latched onto that player, kHookRocket = riding a rocket
+    // riding a rocket (hookTarget kHookRocket): its id (0: your own one the server hasn't named yet, a predicted copy),
+    // and its velocity and gravity: pmove flies the anchor with it in the projectile's own 1 ms steps (stepProjectile's
+    // arithmetic), so prediction follows it without the server; the server sets all three from the rocket every tick
+    uint16_t hookProj = 0;
+    Vec3 hookVel;
+    float hookGrav = 0;
     Vec3 pullPoint;    // while MF_PULLED: the body of the player whose grapple holds you (set by the server every tick)
     // What the last pmove call did (ME_*; each call clears it), for sounds: a frame or a snapshot can hold several 1 ms
     // steps, and comparing states across it missed a jump and a landing in the same step (a bhop) or a dash and its dash
@@ -54,6 +61,11 @@ struct MoveState {
     float landSpeed = 0;   // ME_LAND: the hardest landing's speed in that call, m/s
     uint16_t phaseMs = 0;   // ms since you last landed or left the floor (MF_ONGROUND says which), at most 65535: counted
                             // only while a custom mode's movement equation reads p.air / p.ground (moveexpr.h), else 0
+    uint16_t acidOutMs = kAcidRearmMs;   // ms fully out of acid (0: touching it in the last step), up to kAcidRearmMs: there,
+                                         // the next touch is a new contact (its kAcidContact hit). Sent while below it
+    float acidTaken = 0;   // share of max health acid took (kAcidContact, kAcidPerSec x 1 ms per step in it): the server
+                           // takes it as damage after each command and zeroes it, so it's 0 on the wire; prediction keeps
+                           // adding (NetClient::pendingAcid: the part the server hasn't acked yet)
 };
 enum : uint8_t {
     ME_JUMP = 1,    // left the floor by a jump (a bhop off a landing too, and a jump off a ladder)
@@ -71,7 +83,7 @@ enum : uint8_t {
     MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
     MOVE_BIG = 16,         // duel "double size" / "giant snipers": the hull (and eyes) x kBigScale
     MOVE_TINY = 32,        // duel "tiny players": x kTinyScale
-};
+};                         // (64 and 128 are taken on the wire: the own state's acid and phase flags, protocol.cpp)
 constexpr float kBigScale = 2.0f, kTinyScale = 0.6f;
 inline float moveScale(uint8_t mods) { return (mods & MOVE_BIG) ? kBigScale : (mods & MOVE_TINY) ? kTinyScale : 1.0f; }
 // the MOVE_* size bit for a body scale (DuelModDef::size: 1, 2 or 0.6)
@@ -82,15 +94,55 @@ enum : uint8_t {
     MF_PULLED = 128,   // another player's grapple holds you: pulled toward pullPoint (a fresh dash or grab breaks free)
 };
 constexpr float kGrappleRange = 45.0f;
+constexpr uint8_t kHookRocket = kMaxPlayers + 1;   // MoveState::hookTarget: the grapple rides a rocket (PlayerSnap hooked: 1 + it)
+// Rocket riding (owner 2026-10-27): the grapple catches a live rocket in flight, anyone's, as this box round it: 0.8 m
+// across, a player's width. The rocket is 0.6 m long and 0.3 m over its fins, and at 48 m/s it moves 0.8 m in a 60 Hz
+// frame, so a box the size of one frame's flight catches a hook aimed at it in any frame, and covers the few ms the
+// client's idea of where the server has it can be out (snapshot jitter, the 1/64 m grid)
+constexpr float kRocketCatchHalf = 0.4f;
+// How far past its view time a client draws projectiles (it extrapolates them by its interpolation delay), in ms: its
+// fixed delay as it reported it ("interp"), else the adaptive delay's base, two snapshots. The server tests anyone
+// else's rocket there, and the client's prediction does the same sum.
+inline uint32_t rocketSeenMs(uint32_t fixedInterpMs, int snapRate) { return fixedInterpMs ? fixedInterpMs : 2000u / (uint32_t)(snapRate > 0 ? snapRate : 1); }
+inline AABB rocketCatchBox(const Vec3& p) { const Vec3 h(kRocketCatchHalf, kRocketCatchHalf, kRocketCatchHalf); return {p - h, p + h}; }
 constexpr float kHookCooldown = 1.0f;   // after the hook is released
 
 // The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
 AABB playerBox(const Vec3& feet, bool crouched, float scale = 1.0f);
 inline AABB playerBox(const MoveState& m) { return playerBox(m.pos, (m.flags & MF_CROUCHED) != 0, moveScale(m.mods)); }
-// The head inside a hitbox: a head-sized box on top, centred (owner 5.5: shoulders aren't headshots).
-AABB headBox(const AABB& hitbox);
-// A shot along o + dir * t that hit `hitbox` at entry: is it a headshot? (It passes through the head box.)
-bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
+// What hits test, inside a player's hitbox (the hull above): two boxes. The head is a head-sized box on top, centred
+// (owner 5.5: shoulders aren't headshots); the body is the full width from the feet up to the head's bottom (owner
+// 2026-10-27: nothing above that line but the head, so a shot past the head over the shoulders misses). Crouching and
+// size modifiers scale both with the hull. Movement and zones still use the whole hull.
+// (inline: hitscan tests every player for every pellet)
+inline AABB headBox(const AABB& b) {
+    Vec3 c = b.center();
+    float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
+    return {{c.x - hx, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, c.z - hz}, {c.x + hx, b.mx.y, c.z + hz}};
+}
+inline AABB bodyBox(const AABB& b) {   // (its top is the same expression as the head's bottom: no gap, no overlap)
+    return {b.mn, {b.mx.x, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, b.mx.z}};
+}
+// A ray o + dir * t (inv = safeInv(dir)) against a player as hits see them: the entry into the nearer of body and head
+// in [0, maxT], else -1 (two slab tests, nothing else). *head: the head was hit first (a tie is the body's). grow: both
+// boxes this much wider each side (the knife swing).
+inline float rayHitbox(const Vec3& o, const Vec3& inv, const AABB& hitbox, float maxT, bool* head = nullptr, float grow = 0.0f) {
+    AABB body = bodyBox(hitbox), hd = headBox(hitbox);
+    if (grow != 0.0f) {
+        body.mn.x -= grow; body.mn.z -= grow; body.mx.x += grow; body.mx.z += grow;
+        hd.mn.x -= grow; hd.mn.z -= grow; hd.mx.x += grow; hd.mx.z += grow;
+    }
+    const float tb = rayAABB(o, inv, body, maxT), th = rayAABB(o, inv, hd, maxT);
+    const bool h = th >= 0 && (tb < 0 || th < tb);
+    if (head) *head = h;
+    return h ? th : tb;
+}
+// The point of the two boxes nearest p (blast distances)
+inline Vec3 hitboxClosest(const AABB& hitbox, const Vec3& p) {
+    const AABB body = bodyBox(hitbox), hd = headBox(hitbox);
+    const Vec3 a = vmax(body.mn, vmin(p, body.mx)), b = vmax(hd.mn, vmin(p, hd.mx));
+    return dot(a - p, a - p) <= dot(b - p, b - p) ? a : b;
+}
 // the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
@@ -127,8 +179,18 @@ struct HookProbe {
     AABB box[kMax];
     uint8_t id[kMax] = {};
     int hit = -1;        // out: index of the box the hook caught (-1: none, or the map)
-    bool head = false;   // out: the ray went through that player's head box
+    bool head = false;   // out: the hook caught that player's head (rayHitbox)
+    // Rocket riding: the rockets in flight it can catch (only while the mode allows it; never for bots), at most kRockets
+    // (the nearest few in reach: a few box tests a try). at: where the box is tested (where the shooter sees it: an
+    // enemy's rewound to their view, your own where the server has it); pos / vel / grav: the rocket as the server has
+    // it at this command, the anchor's start. pmove moves both along by the rocket's steps as its steps go by.
+    static constexpr int kRockets = 6;
+    int nr = 0;
+    Vec3 at[kRockets], pos[kRockets], vel[kRockets];
+    float grav[kRockets] = {};
+    uint16_t rid[kRockets] = {};   // the rocket's id (0: your own predicted copy, not named by the server yet)
+    int hitRocket = -1;   // out: index of the rocket the hook caught (-1: none)
 };
-// Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players the
-// grapple can catch (server only; prediction hooks the map and the server's state corrects it).
+// Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players and rockets
+// the grapple can catch (the server's lag compensated picks; the client's, as it sees them: NetClient::hookProbe).
 void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe = nullptr);

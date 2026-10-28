@@ -49,6 +49,7 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "game/benchmark.h"
 #include "walkgrid.h"
 #include "common/proc.h"
 #include "groupproc.h"
@@ -644,6 +645,157 @@ static void testGrappleAgainstWall() {
     printf("  %d grabs in 1.5 s held (at %d ms and %d ms)\n", grabs, firstMs, secondMs);
     CHECK(grabs == 2 && firstMs == 0 && secondMs >= 990 && secondMs <= 1010);   // (the 1 s cooldown between them)
     CHECK(!(s.flags & MF_HOOKED));
+    {   // nograpple: the same wall made of it is never grabbed, but still blocks you like a wall
+        Map n;
+        CHECK(n.parse("box -10 -1 -10 10 0 10\nnograpple -10 0 -1.5 10 4 -1\nspawn any 0 0 0\n", &err) && n.brushes[1].material == kMatNoGrapple);
+        MoveState q; q.flags = MF_ONGROUND;
+        int g = 0;
+        for (int t = 0; t < 1500; t++) { q.events = 0; pmove(q, c, n); g += (q.events & ME_HOOK) != 0; }
+        CHECK(g == 0 && !(q.flags & MF_HOOKED));
+        UserCmd w; w.msec = 8; w.forward = 127;   // walk into it
+        for (int t = 0; t < 300; t++) pmove(q, w, n);
+        CHECK(q.pos.z > -1.0f + kPlayerHalfWidth - 0.01f);
+        CHECK(n.raycast(Vec3(0, 1, 0), Vec3(0, 0, -1), 50) > 0.9f);   // shots and sight stop at it
+    }
+}
+
+// Acid (map material 11): 10% of max health on contact, then 10% a second while touching it, counted in pmove's 1 ms
+// steps (the same at every tick rate, and the same on the client's prediction as on the server); a new contact only
+// after kAcidRearmMs fully out; on the wire while it runs (protocol 45); the server takes the health, pauses regen,
+// and alone decides the death ("dissolved", the knocker's kill however long it took). Not in the freeze.
+static void testAcid() {
+    printf("acid: contact hit, 10%% a second at any tick rate, re-contact, the wire, the server's health and death\n");
+    const char* text = "box -20 -1 -20 20 0 20\nacid -3 0 -3 3 0.25 3\nspawn any 0 0 -10\n";
+    Map m;
+    std::string err;
+    CHECK(m.parse(text, &err) && m.acid.size() == 1);
+    auto still = [](int ms) { UserCmd c; c.msec = (uint8_t)ms; return c; };
+    auto stand = [&](MoveState& s, int ms, int cmdMs) { for (int t = 0; t < ms; t += cmdMs) pmove(s, still(cmdMs), m); };
+    for (int rate : {1000, 500, 250, 125}) {   // one second standing in it, at each tick rate's command length
+        MoveState s; s.flags = MF_ONGROUND;
+        stand(s, 1000, 1000 / rate);
+        printf("  %4d Hz: %.5f of max health in 1 s (contact + 1 s)\n", rate, s.acidTaken);
+        CHECK(std::fabs(s.acidTaken - (kAcidContact + kAcidPerSec)) < 1e-4f && s.acidOutMs == 0);
+    }
+    {   // the contact hit alone on entry; nothing outside it; back in after 0.4 s out: no new contact, after 0.5 s: one
+        MoveState s; s.flags = MF_ONGROUND; s.pos = {0, 0, 10};
+        stand(s, 200, 8);
+        CHECK(s.acidTaken == 0 && s.acidOutMs == kAcidRearmMs);
+        s.pos = {0, 0, 0}; stand(s, 1, 1);
+        CHECK(std::fabs(s.acidTaken - (kAcidContact + kAcidPerSec * 0.001f)) < 1e-6f);
+        float before = s.acidTaken;
+        s.pos = {0, 0, 10}; stand(s, 400, 8);
+        CHECK(s.acidTaken == before && s.acidOutMs == 400);
+        s.pos = {0, 0, 0}; stand(s, 1, 1);
+        CHECK(std::fabs(s.acidTaken - before - kAcidPerSec * 0.001f) < 1e-6f);   // (a bumpy edge: no second contact)
+        before = s.acidTaken;
+        s.pos = {0, 0, 10}; stand(s, 504, 8);
+        CHECK(s.acidOutMs == kAcidRearmMs);
+        s.pos = {0, 0, 0}; stand(s, 1, 1);
+        CHECK(std::fabs(s.acidTaken - before - kAcidContact - kAcidPerSec * 0.001f) < 1e-6f);
+    }
+    {   // the wire: acidOutMs rides on mods bit 64 while it's below kAcidRearmMs (2 bytes); protocol 44 reads as before
+        auto roundTrip = [](const MoveState& in, uint16_t proto, MoveState& out, int& size) {
+            Snapshot sn; sn.tickRate = 1000; sn.self = in;
+            uint8_t buf[512];
+            Writer w(buf, sizeof buf);
+            writeSnapshotClient(w, sn);
+            size = w.size();
+            Reader r(buf, w.size());
+            Snapshot back;
+            bool ok = readSnapshotClient(r, back, proto);
+            out = back.self;
+            return ok;
+        };
+        MoveState a; a.mods = MOVE_TINY;
+        MoveState got; int n0 = 0, n1 = 0;
+        CHECK(roundTrip(a, kProtocolVersion, got, n0) && got.acidOutMs == kAcidRearmMs && got.mods == MOVE_TINY);
+        CHECK(roundTrip(a, 44, got, n0) && got.acidOutMs == kAcidRearmMs && got.mods == MOVE_TINY);   // (the bytes are protocol 44's)
+        a.acidOutMs = 123; a.acidTaken = 0.5f;
+        CHECK(roundTrip(a, kProtocolVersion, got, n1) && got.acidOutMs == 123 && got.mods == MOVE_TINY && got.acidTaken == 0 && n1 == n0 + 2);
+        CHECK(demo::convertible(44) && kSnapAcidSince <= kProtocolVersion);
+    }
+    auto fresh = [&](Server& s, int n) {
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(text));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_LIVE;
+        s.timeMs_ = 10000;
+        for (int i = 0; i < n; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = s.lifeMaxHealth(); p.team = TEAM_A; p.joinId = 100 + i;
+            p.move = MoveState(); p.move.flags = MF_ONGROUND; p.move.pos = {0, 0, 10.0f + 2 * i};
+        }
+    };
+    auto run = [](Server& s, int id, int ms, int cmdMs, MoveState* client = nullptr) {   // standing still, ms of it
+        for (int t = 0; t < ms && s.players_[id].alive; t += cmdMs) {
+            UserCmd c; c.msec = (uint8_t)cmdMs;
+            s.timeMs_ += (uint64_t)cmdMs;
+            s.runPlayerCmdForTest(id, c);
+            if (client) pmove(*client, c, s.map_);   // (the client's prediction of the same commands)
+        }
+    };
+    for (float maxHp : {100.0f, 500.0f})
+        for (int cmdMs : {1, 8}) {   // the server takes what pmove counted: the same health at 1000 Hz and 125 Hz
+            Server s;
+            if (maxHp != 100.0f) { s.cfg_.custom.name = "acidtest"; s.cfg_.custom.health = (int)maxHp; }
+            fresh(s, 1);
+            CHECK(s.lifeMaxHealth() == maxHp && s.players_[0].health == maxHp);
+            s.players_[0].move.pos = {0, 0, 0};
+            MoveState client = s.players_[0].move;
+            run(s, 0, 1000, cmdMs, &client);
+            const float lost = maxHp - s.players_[0].health;
+            printf("  %3.0f max health, %d ms commands: %.3f lost in 1 s (predicted %.3f)\n", maxHp, cmdMs, lost, client.acidTaken * maxHp);
+            CHECK(std::fabs(lost - maxHp * (kAcidContact + kAcidPerSec)) < maxHp * 1e-4f);
+            CHECK(std::fabs(client.acidTaken * maxHp - lost) < maxHp * 1e-4f);   // the prediction showed the same
+            CHECK(s.players_[0].move.acidTaken == 0 && s.players_[0].lastDamagedAt >= s.time() - 0.01);   // (regen waits)
+        }
+    {   // the death: about 9 s in (10% then 10% a second), the server's alone, "dissolved", nobody's kill
+        Server s; fresh(s, 1);
+        s.players_[0].move.pos = {0, 0, 0};
+        const uint64_t t0 = s.timeMs_;
+        run(s, 0, 20000, 1);
+        const double took = (s.timeMs_ - t0) / 1000.0;
+        printf("  dissolved after %.3f s in it\n", took);
+        CHECK(!s.players_[0].alive && std::fabs(took - 9.0) < 0.01);
+        int kills = 0;
+        for (auto& e : s.players_[0].events)
+            if (e.type == EV_KILL) { kills++; CHECK(e.a == 255 && (e.c & KILL_WEAPON) == kDamageAcid); }
+        CHECK(kills == 1 && s.players_[0].deaths == 1);
+    }
+    {   // knocked in: the knocker's kill, though the death comes long after kRingOutCredit
+        Server s; fresh(s, 2);
+        s.damagePlayer(0, 1, 5, WPN_ROCKET, Vec3());
+        s.timeMs_ += 1000;
+        s.players_[0].move.pos = {0, 0, 0};
+        run(s, 0, 20000, 8);
+        CHECK(!s.players_[0].alive && s.players_[1].kills == 1);
+        bool credited = false;
+        for (auto& e : s.players_[1].events) credited |= e.type == EV_KILL && e.a == 1 && e.b == 0 && (e.c & KILL_WEAPON) == kDamageAcid;
+        CHECK(credited);
+    }
+    {   // the freeze: no damage (nativeCanDamage's phases), and nothing saved up for later
+        Server s; fresh(s, 1);
+        s.ms_.phase = PHASE_FREEZE;
+        s.players_[0].move.pos = {0, 0, 0};
+        run(s, 0, 500, 8);
+        CHECK(s.players_[0].health == 100 && s.players_[0].move.acidTaken == 0);
+    }
+    {   // bots: a pool on the floor is wet ground (dearer), not a hole: routes still cross it when there's no way round
+        NavGraph g;
+        g.build(m);
+        int wet = 0;
+        for (auto& nd : g.nodes) wet += nd.wet;
+        const int a = g.nodeAt({0, 0, -10}), b = g.nodeAt({0, 0, 0});
+        std::vector<int> path;
+        CHECK(wet >= 1 && a >= 0 && b >= 0 && g.nodes[b].wet && !g.nodes[a].wet && g.findPath(a, b, path));
+        Map corridor;   // a 3 m wide corridor flooded across: the only way, so the route goes through
+        CHECK(corridor.parse("box -1.5 -1 -20 1.5 0 20\nbox -2.5 0 -20 -1.5 4 20\nbox 1.5 0 -20 2.5 4 20\nacid -1.5 0 -2 1.5 0.2 2\nspawn any 0 0 -10\n"));
+        NavGraph h;
+        h.build(corridor);
+        const int c0 = h.nodeAt({0, 0, -10}), c1 = h.nodeAt({0, 0, 10});
+        CHECK(c0 >= 0 && c1 >= 0 && h.findPath(c0, c1, path));
+    }
 }
 
 static void testMovement() {
@@ -1879,6 +2031,18 @@ static void testMapConverter() {
         CHECK(a.parse(v1) && b.parse(out) && a.formatVersion == 1 && b.formatVersion == kMapFormatVersion);
         CHECK(a.stairs.size() == 1 && b.stairs.size() == 1 && a.setting == "old town" && b.setting == a.setting && a.title == "Old");
         CHECK(a.id() == b.id() && a.sourceText() == out);                                     // (one identity for a map, whatever copy a peer holds)
+    }
+    {   // version 3 (nograpple, before acid): only the version line changes, and the map is the same
+        const std::string v3 = "version 3\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base;
+        std::string o;
+        CHECK(upgradeMapText(v3, &o) && mapTextVersion(o) == 4 && o == "version 4\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base);
+        Map a, b;
+        CHECK(a.parse(v3) && b.parse(o) && a.formatVersion == 3 && b.formatVersion == 4 && a.warnings.empty() && a.acid.empty());
+        CHECK(a.brushes.size() == b.brushes.size() && a.brushes[0].material == kMatNoGrapple && a.serialize() == b.serialize());
+        Map c;   // and acid itself, from version 4 on: read, written back, kept out of the bounds and the collision grid
+        CHECK(c.parse("version 4\nacid -2 0 -2 2 0.3 2\n" + base) && c.warnings.empty() && c.brushes[0].material == kMatAcid && c.acid.size() == 1);
+        CHECK(c.serialize().find("acid -2 0 -2 2 0.3 2\n") != std::string::npos && !c.boxSolid(playerBox({0, 0, 0}, false)) && c.inAcid(playerBox({0, 0, 0}, false)));
+        CHECK(c.bounds.mx.y == 0 && c.raycast({0, 2, 0}, {0, -1, 0}, 10) > 1.99f);   // (shots and sight go through it to the floor)
     }
     for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
         std::string o;
@@ -3342,7 +3506,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 10 && seen[8] == 8 && seen[9] == 9 && nextMapMaterial(9) == 0);   // M: ..., lava, trim, clip, base
+    CHECK(seen.size() == 12 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == 0);   // M: ..., lava, trim, clip, nograpple, acid, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -3443,12 +3607,13 @@ static void testIncrementalEdits() {
     auto r = [&](float a, float b) { return std::uniform_real_distribution<float>(a, b)(rng); };
     auto same = [&](const Map& a, const Map& b) {
         if (a.brushes.size() != b.brushes.size() || a.gridW != b.gridW || a.gridH != b.gridH || a.gridX0 != b.gridX0 || a.gridZ0 != b.gridZ0 ||
-            a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.cells.size() != b.cells.size() ||
+            a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.acid.size() != b.acid.size() || a.cells.size() != b.cells.size() ||
             memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0)
             return false;
         for (size_t k = 0; k < a.brushes.size(); k++)
             if (memcmp(&a.brushes[k].box, &b.brushes[k].box, sizeof(AABB)) || a.brushes[k].material != b.brushes[k].material || a.brushes[k].generated != b.brushes[k].generated) return false;
         for (size_t k = 0; k < a.lava.size(); k++) if (memcmp(&a.lava[k], &b.lava[k], sizeof(AABB))) return false;
+        for (size_t k = 0; k < a.acid.size(); k++) if (memcmp(&a.acid[k], &b.acid[k], sizeof(AABB))) return false;
         for (size_t c = 0; c < a.cells.size(); c++) {
             uint32_t na = a.cells[c].end - a.cells[c].start, nb = b.cells[c].end - b.cells[c].start;
             if (na != nb || memcmp(&a.cellBrushes[a.cells[c].start], &b.cellBrushes[b.cells[c].start], na * sizeof(uint16_t))) return false;
@@ -6776,6 +6941,44 @@ static void testDemoUpgrade() {
         CHECK(m41.dashCharges == 1 && m41.dashCooldownMs == 0 && m40.dashCharges == 2 && m40.dashCooldownMs == 500);
         uint16_t pv = 0; memcpy(&pv, &out41[4], 2);
         CHECK(pv == kProtocolVersion && demo::convertible(42) && demo::convertible(41) && demo::convertible(40));
+        // protocol 46 (before rocket riding): a grapple on a player reads as it was; a hookTarget past the players was
+        // nothing then and has nothing after it (47 adds the rocket's id, velocity and gravity only for kHookRocket)
+        auto demo46 = [&](uint8_t target) {
+            Snapshot sn;
+            sn.tick = 1; sn.selfWeapon = WPN_ROCKET;
+            sn.self.flags = MF_HOOKED; sn.self.hookPoint = {1, 2, 3}; sn.self.hookTarget = 5;
+            std::vector<uint8_t> b(4096);
+            Writer w(b.data(), (int)b.size());
+            writeSnapshotClient(w, sn);
+            std::string hdr((const char*)b.data(), (size_t)w.size());
+            const size_t optAt = 19 + 24 + 2;
+            CHECK((uint8_t)hdr[optAt] == (1 | 16) && (uint8_t)hdr[optAt + 13] == 5);
+            hdr[optAt + 13] = (char)target;   // (46's bytes: nothing follows the u8)
+            Writer w2(b.data(), (int)b.size());
+            writeSnapshotWorld(w2, sn, nullptr); writeSnapshotEvents(w2, sn.events);
+            std::string body = hdr + std::string((const char*)b.data(), (size_t)w2.size()), out = cur;
+            const uint16_t proto = 46;
+            memcpy(&out[4], &proto, 2);
+            uint8_t type = 2; double t = 1e6; uint32_t n = (uint32_t)body.size();
+            out.append((const char*)&type, 1); out.append((const char*)&t, 8); out.append((const char*)&n, 4); out += body;
+            return out;
+        };
+        std::string out46a, out46b;
+        MoveState m46a, m46b;
+        CHECK(demo::convertible(46) && demo::convert(demo46(5), &out46a, &why) && lastSelf(out46a, &m46a));
+        CHECK(demo::convert(demo46(kHookRocket), &out46b, &why) && lastSelf(out46b, &m46b));
+        printf("  protocol 46 -> %d: hook target %d (was 5), %d (was %d)\n", (int)kProtocolVersion, (int)m46a.hookTarget, (int)m46b.hookTarget, (int)kHookRocket);
+        CHECK(m46a.hookTarget == 5 && (m46a.flags & MF_HOOKED) && m46a.hookPoint.y == 2 && m46b.hookTarget == 0 && (m46b.flags & MF_HOOKED));
+        // and today's: riding a rocket round-trips the rocket's id, velocity and gravity
+        Snapshot sr;
+        sr.self.flags = MF_HOOKED; sr.self.hookTarget = kHookRocket; sr.self.hookProj = 777; sr.self.hookVel = {48, -1, 2}; sr.self.hookGrav = 13.5f;
+        uint8_t rb[256];
+        Writer wr(rb, sizeof rb);
+        writeSnapshotClient(wr, sr);
+        Reader rr(rb, wr.size());
+        Snapshot back;
+        CHECK(readSnapshotClient(rr, back) && back.self.hookTarget == kHookRocket && back.self.hookProj == 777 && back.self.hookVel.x == 48 &&
+              back.self.hookGrav == 13.5f && rr.remaining() == 0);
     }
     // a second conversion of the same name keeps both originals
     put("old.qdemo", fixture, -1);
@@ -7321,7 +7524,9 @@ static void testHiddenInfo(uint16_t port) {
 // is in-process (a scripted bot), so no network timing gets in. It runs on the manual clock (simRun: every tick, the
 // warmup before the restart too, which is seeded as well), so a seed plays out exactly the same match every time.
 struct FfaRun { int kills = 0, playerDeaths = 0, hooks = 0, phase = 0; };
-static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
+// hash (simhash, tools/isa_check.sh): every tick's player positions, velocities, health and projectiles, bit for bit,
+// so two builds of the game (the SSE4.2 and AVX2 clients) can be checked to simulate exactly the same match
+static FfaRun ffaVsExperts(uint16_t port, uint32_t seed, uint64_t* hash = nullptr) {
     FfaRun r;
     SimClock clock;
     qsrand(seed);   // (the warmup's spawn picks and the bots' first dice)
@@ -7357,6 +7562,17 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
             r.hooks += h && !was[k];
             was[k] = h;
         }
+        if (!hash) return;
+        auto mix = [&](const void* p, size_t n) {   // FNV-1a
+            for (size_t b = 0; b < n; b++) *hash = (*hash ^ ((const unsigned char*)p)[b]) * 1099511628211ull;
+        };
+        for (auto& p : s.players_) {
+            if (!p.connected) continue;
+            mix(&p.move.pos, sizeof p.move.pos);
+            mix(&p.move.vel, sizeof p.move.vel);
+            mix(&p.health, sizeof p.health);
+        }
+        for (auto& pr : s.projectiles_) if (pr.active) mix(&pr.pos, sizeof pr.pos);
     });
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != me) r.kills += s.players_[i].kills;
     r.playerDeaths = s.players_[me].deaths;
@@ -7939,8 +8155,110 @@ static void testReachProbe(uint16_t port) {
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
+#include "layout_tests.h"  // the layout engine and the HUD theme (layout_cases.json, cache, allocations, layoutbench)
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 #include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
+
+
+// ---- BENCHMARK (src/game/benchmark.h): the frame-time statistics on arrays whose answers are known, and a demo like
+// the shipped one (Hamlet, free for all, 31 bots, recorded by a spectator) made and played back to its end.
+static bool near(double a, double b, double tol) { return std::fabs(a - b) <= tol; }
+static void testBenchStats() {
+    printf("benchmark: frame-time stats (avg, 1%% / 0.1%% lows, min, stdev) and the graph\n");
+    std::vector<float> scratch;
+    {   // 990 frames of 10 ms, 9 of 20 ms, one of 50 ms (in a shuffled order: the answer can't depend on it)
+        std::vector<float> t(990, 0.010f);
+        t.insert(t.end(), 9, 0.020f);
+        t.push_back(0.050f);
+        std::mt19937 rng(7);
+        std::shuffle(t.begin(), t.end(), rng);
+        const std::vector<float> before = t;
+        bench::Stats st = bench::compute(t.data(), t.size(), scratch);
+        CHECK(t == before);   // (the input isn't reordered: the run's frames stay in order for the graph)
+        CHECK(st.frames == 1000 && near(st.seconds, 10.13, 1e-4));
+        CHECK(near(st.avgFps, 1000 / 10.13, 1e-3) && near(st.avgMs, 10.13, 1e-4));
+        CHECK(near(st.p99Ms, 20, 1e-4) && near(st.low1, 50, 1e-3));      // element 990 of the sorted times
+        CHECK(near(st.p999Ms, 50, 1e-4) && near(st.low01, 20, 1e-3));    // element 999
+        CHECK(near(st.worstMs, 50, 1e-4) && near(st.minFps, 20, 1e-3));
+        // population stdev: sqrt((990 * 0.13^2 + 9 * 9.87^2 + 39.87^2) / 1000) ms
+        CHECK(near(st.stdevMs, std::sqrt((990 * 0.13 * 0.13 + 9 * 9.87 * 9.87 + 39.87 * 39.87) / 1000), 1e-3));
+        CHECK(bench::graphTopMs(st) == 80);   // (50 ms x 1.25 = 62.5: the next of 5, 10, 20, 40, 80)
+    }
+    {   // a steady 3 ms: no spread, every low the average
+        std::vector<float> t(5000, 0.003f);
+        bench::Stats st = bench::compute(t.data(), t.size(), scratch);
+        CHECK(near(st.avgFps, 333.33, 1e-1) && near(st.low1, 333.33, 1e-1) && near(st.low01, 333.33, 1e-1) && near(st.minFps, 333.33, 1e-1));
+        CHECK(st.stdevMs < 1e-4);
+        CHECK(bench::graphTopMs(st) == 5);    // (never under 5: the 240 fps line stays on the graph)
+    }
+    {   // 1, 2 .. 100 ms: index floor(n * p) of the sorted times
+        std::vector<float> t;
+        for (int i = 100; i >= 1; i--) t.push_back(i * 0.001f);
+        bench::Stats st = bench::compute(t.data(), t.size(), scratch);
+        CHECK(near(st.p99Ms, 100, 1e-3) && near(st.p999Ms, 100, 1e-3) && near(st.worstMs, 100, 1e-3));   // (99 and 99.9: both the last)
+        CHECK(near(st.avgMs, 50.5, 1e-3) && near(st.stdevMs, std::sqrt((100.0 * 100 - 1) / 12), 1e-3));
+        CHECK(bench::pctIndex(100, 0.99) == 99 && bench::pctIndex(1000, 0.99) == 990 && bench::pctIndex(1000, 0.999) == 999 && bench::pctIndex(1, 0.999) == 0);
+    }
+    {   // one frame, and none
+        float one = 0.008f;
+        bench::Stats st = bench::compute(&one, 1, scratch);
+        CHECK(st.frames == 1 && near(st.avgFps, 125, 1e-2) && near(st.low01, 125, 1e-2) && near(st.minFps, 125, 1e-2) && st.stdevMs < 1e-6);
+        bench::Stats z = bench::compute(nullptr, 0, scratch);
+        CHECK(z.frames == 0 && z.avgFps == 0 && z.minFps == 0);
+    }
+    {   // the graph: each column the slowest and the mean frame of its share, in order
+        const float t[10] = {0.001f, 0.003f, 0.002f, 0.002f, 0.010f, 0.004f, 0.001f, 0.001f, 0.005f, 0.007f};
+        std::vector<float> mx, mean;
+        bench::graphColumns(t, 10, 5, mx, mean);
+        CHECK(mx.size() == 5 && mean.size() == 5);
+        CHECK(near(mx[0], 3, 1e-4) && near(mean[0], 2, 1e-4) && near(mx[2], 10, 1e-4) && near(mean[2], 7, 1e-4) && near(mx[4], 7, 1e-4) && near(mean[4], 6, 1e-4));
+        bench::graphColumns(t, 3, 464, mx, mean);   // (fewer frames than columns: a column each)
+        CHECK(mx.size() == 3 && near(mx[1], 3, 1e-4));
+    }
+}
+
+// A benchmark demo as the shipped one is made: Hamlet, free for all, 31 bots (expert) and a spectator recording.
+// `quark_tests benchdemo OUT [seconds]` writes one for `quark --benchmark OUT` (tools/benchmark_check.sh); the group
+// makes a short one and checks it plays to its end with the bots in it.
+static bool recordBenchDemo(const std::string& path, double seconds, uint16_t port) {
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_FFA; cfg.port = port; cfg.maxPlayers = kMaxPlayers;
+    cfg.vsBots = true; cfg.botsEnemy = kMaxPlayers - 1; cfg.botSkill = BOT_EXPERT; cfg.balanceBots = false; cfg.lanOnly = true;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return false; } }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "camera");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    a.sendCommand("team spec");
+    pump(s, cls, 0.5, idle);
+    const bool rec = a.startRecording(path);
+    pump(s, cls, seconds, idle);
+    a.stopRecording();
+    int bots = 0;
+    for (auto& p : s.players_) if (p.connected && p.isBot) bots++;
+    s.stop();
+    CHECK(rec && bots == kMaxPlayers - 1);
+    return rec;
+}
+static void testBenchDemo(uint16_t port) {
+    printf("benchmark: a Hamlet demo with 31 bots plays back to its end (playbackDone)\n");
+    const std::string path = userDataPath() + "/zz_bench.qdemo";
+    if (!recordBenchDemo(path, 3.0, port)) return;
+    NetClient p;
+    std::string err;
+    CHECK(p.startPlayback(path, err) && p.mapReady() && p.map().name == "hamlet");
+    int most = 0;
+    double end = timeNow() + 10;
+    while (p.playback() && !p.playbackDone() && timeNow() < end) {
+        p.poll();
+        if (p.hasSnapshot()) { int n = 0; for (auto& q : p.latest().players) if ((q.flags & PS_CONNECTED) && q.team() != TEAM_SPECTATOR) n++; most = std::max(most, n); }
+        hostSleepMs(2);
+    }
+    CHECK(p.playbackDone() && p.playbackLeft() < 0.05);
+    CHECK(most == kMaxPlayers - 1);
+}
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
@@ -8009,6 +8327,15 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "bounds") { g_fail += outOfBoundsTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "exprbench") return moveExprBench();
     if (argc >= 2 && std::string(argv[1]) == "navbench") { navBench(argc > 2 && std::string(argv[2]) != "all" ? argv[2] : nullptr, argc > 3 && std::string(argv[3]) == "surfaces"); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "simhash") {   // [seeds]: the seeded FFA's every tick, hashed (tools/isa_check.sh)
+        int n = argc > 2 ? atoi(argv[2]) : 3;
+        for (int k = 0; k < n; k++) {
+            uint64_t h = 1469598103934665603ull;
+            FfaRun r = ffaVsExperts(TP(29070 + k % 10), 0x5EED0001u + k, &h);
+            printf("seed %d: %016llx (%d kills)\n", k, (unsigned long long)h, r.kills);
+        }
+        return g_fail ? 1 : 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
         int n = argc > 2 ? atoi(argv[2]) : 10;
         for (int k = 0; k < n; k++) {
@@ -8026,6 +8353,9 @@ int main(int argc, char** argv) {
     if (argc >= 2 && (std::string(argv[1]) == "exportmode" || std::string(argv[1]) == "checkmode" || std::string(argv[1]) == "modeast" || std::string(argv[1]) == "printmode"))
         return modeTool(argv[1], argc, argv);
     if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
+    if (argc >= 2 && std::string(argv[1]) == "layoutbench") return layoutBench();
+    if (argc >= 3 && std::string(argv[1]) == "benchdemo")   // a benchmark demo for `quark --benchmark FILE` (tools/benchmark_check.sh)
+        return recordBenchDemo(argv[2], argc > 3 ? atof(argv[3]) : 20, TP(29175)) && !g_fail ? 0 : 1;
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
         double secs = argc > 2 ? atof(argv[2]) : 8;
         snapBench("midtown", 32, secs, TP(28820));
@@ -8068,7 +8398,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
@@ -8077,6 +8407,8 @@ int main(int argc, char** argv) {
         {"modelogic", [] { g_fail += modeTests(); }},
         {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
+        {"layout", [] { testLayoutCases(); testLayoutCache(); testHudTheme(); }},
+        {"benchmark", [] { testBenchStats(); testBenchDemo(TP(29160)); }},
     };
     std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
@@ -8113,7 +8445,7 @@ int main(int argc, char** argv) {
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
                 }
-        printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts,\n"
+        printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts, simhash,\n"
                "racefloors, bounds, exportassets, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
         return 1;
     }

@@ -76,6 +76,48 @@ struct PointGrid {
     bool inside(const Brush& b, const Vec3& p) const {
         return p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z;
     }
+    // A face's rectangle (on plane `plane` of `axis`, lifted `off` along its normal) completely inside the union of
+    // occluding brushes, exactly: the brushes that hold that lifted plane, their rectangles clipped to the face, then
+    // every cell between their edges tested once. (A 9 x 9 sample grid missed visible strips thinner than a ninth of
+    // the face: stair sides and risers vanished.) Clip boxes are invisible, so they hide nothing.
+    bool buried(int axis, float plane, float u0, float u1, float v0, float v1) const {
+        const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
+        Vec3 lo, hi;
+        lo[axis] = hi[axis] = plane; lo[ua] = u0; hi[ua] = u1; lo[va] = v0; hi[va] = v1;
+        std::vector<uint32_t> cand(big);
+        int x0c = std::max(0, cx(lo.x)), x1c = std::min(w - 1, cx(hi.x)), z0c = std::max(0, cz(lo.z)), z1c = std::min(h - 1, cz(hi.z));
+        for (int z = z0c; z <= z1c; z++) for (int x = x0c; x <= x1c; x++) {
+            const size_t c = (size_t)z * w + x;
+            for (uint32_t k = start[c]; k < start[c + 1]; k++) cand.push_back(ids[k]);
+        }
+        std::sort(cand.begin(), cand.end());
+        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        struct R { float u0, u1, v0, v1; };
+        std::vector<R> rs;
+        std::vector<float> us = {u0, u1}, vs = {v0, v1};
+        for (uint32_t i : cand) {
+            const Brush& b = m->brushes[i];
+            if (b.material == 9 || !(plane > b.box.mn[axis] && plane < b.box.mx[axis])) continue;
+            R r{std::max(u0, b.box.mn[ua]), std::min(u1, b.box.mx[ua]), std::max(v0, b.box.mn[va]), std::min(v1, b.box.mx[va])};
+            if (r.u1 <= r.u0 || r.v1 <= r.v0) continue;
+            rs.push_back(r); us.push_back(r.u0); us.push_back(r.u1); vs.push_back(r.v0); vs.push_back(r.v1);
+        }
+        if (rs.empty()) return false;
+        std::sort(us.begin(), us.end()); us.erase(std::unique(us.begin(), us.end()), us.end());
+        std::sort(vs.begin(), vs.end()); vs.erase(std::unique(vs.begin(), vs.end()), vs.end());
+        for (size_t i = 0; i + 1 < us.size(); i++) {
+            if (us[i + 1] - us[i] < 1e-4f) continue;   // (slivers below the snap: not visible)
+            const float u = 0.5f * (us[i] + us[i + 1]);
+            for (size_t j = 0; j + 1 < vs.size(); j++) {
+                if (vs[j + 1] - vs[j] < 1e-4f) continue;
+                const float v = 0.5f * (vs[j] + vs[j + 1]);
+                bool in = false;
+                for (const R& r : rs) if (u > r.u0 && u < r.u1 && v > r.v0 && v < r.v1) { in = true; break; }
+                if (!in) return false;
+            }
+        }
+        return true;
+    }
     bool solid(const Vec3& p) const {
         for (uint32_t i : big) if (inside(m->brushes[i], p)) return true;
         int x = cx(p.x), z = cz(p.z);
@@ -265,16 +307,8 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 f.u0 = br.box.mn[ua]; f.u1 = br.box.mx[ua];
                 f.v0 = br.box.mn[va]; f.v1 = br.box.mx[va];
                 if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) continue;
-                // Cull faces completely buried in other solids.
-                Vec3 n = faceNormal(f);
-                // Buried only if a 9x9 grid over the face is all inside solids (5 samples used to be fooled:
-                // corner columns + something in the middle hid entire floors).
-                bool hidden = true;
-                for (int k = 0; k < 81 && hidden; k++) {
-                    float fu = (k % 9 + 0.5f) / 9.0f, fv = (k / 9 + 0.5f) / 9.0f;
-                    Vec3 p = facePoint(f, lerpf(f.u0, f.u1, fu), lerpf(f.v0, f.v1, fv)) + n * 0.01f;
-                    hidden = solidAt.solid(p);
-                }
+                // Cull faces completely buried in other (visible) brushes.
+                bool hidden = solidAt.buried(axis, f.plane + sign * 0.01f, f.u0, f.u1, f.v0, f.v1);
                 if (!hidden) { const size_t s = bi * 6 + axis * 2 + (sign > 0); slots[s] = f; keep[s] = 1; }
             }
     });
@@ -370,7 +404,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     if (!ran) { out.cancelled = true; return; }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
-    for (auto& f : faces) if (f.material < 4) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
+    for (auto& f : faces) if (f.material < 4 || f.material == kMatNoGrapple) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
     float density = 4.0f;
     while (area * density * density > 2048.0f * 2048.0f * 0.55f && density > 0.25f) density *= 0.8f;
     auto sizeFaces = [&] {
@@ -379,7 +413,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             f.wv = std::max(2, (int)std::ceil((f.v1 - f.v0) * density));
             f.wu = std::min(f.wu, 1000);
             f.wv = std::min(f.wv, 1000);
-            if (f.material >= 4 && f.material < 8) f.wu = f.wv = 2;
+            if ((f.material >= 4 && f.material < 8) || f.material == kMatAcid) f.wu = f.wv = 2;   // (unlit: the shader skips the lightmap)
         }
     };
     sizeFaces();

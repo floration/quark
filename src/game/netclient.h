@@ -63,6 +63,10 @@ public:
     uint32_t nextSeq() const { return nextSeq_; } // seq the next tick()'s command will get
     static constexpr uint32_t kCmdRing = 1024;     // commands (and predicted states) kept for replay: over 1 s at 1000 Hz
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
+    // Rocket riding: your own rockets the server hasn't sent yet (the client's predicted copies, X5), where they are as
+    // the next tick() starts, so a grapple can catch one at once. Set before each tick (n = 0: none).
+    struct RocketCopy { Vec3 pos, vel; float grav = 0; };
+    void setRocketCopies(const RocketCopy* c, int n) { nCopies_ = std::min(std::max(n, 0), (int)HookProbe::kRockets); for (int k = 0; k < nCopies_; k++) copies_[k] = c[k]; }
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
     Vec3 visualPos_;
@@ -79,7 +83,11 @@ public:
         return true;
     }
     bool selfAlive() const;
-    int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
+    // The server's health for you, less the acid your prediction counted since the command it acked (pendingAcid):
+    // acid damage shows at once. Never below 1 while the server has you alive: only it decides a death.
+    int selfHealth() const;
+    float pendingAcid() const;   // health acid took in the commands the server hasn't acked yet (0: none, or a demo)
+    float lifeMaxHealth() const; // as the server's Server::lifeMaxHealth: a duel life's, a custom mode's, or kMaxHealth
     int selfWeapon() const;
     // Interpolated view of every player at render time.
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
@@ -130,6 +138,8 @@ public:
     double recordingTime() const;
     bool startPlayback(const std::string& path, std::string& err);
     bool playback() const { return play_.active; }
+    bool playbackDone() const { return play_.active && play_.pos + 13 > play_.data.size(); }   // (every record played)
+    double playbackLeft() const { return play_.active ? std::max(0.0, play_.length - play_.t) : 0; }   // (seconds of the demo still to play)
     float playbackProgress() const { return play_.active && play_.length > 0 ? (float)(play_.t / play_.length) : 0; }
     void setPlaybackSpeed(float s) { play_.speed = s; }
     void holdPlaybackClock() { play_.wall = timeNow(); }   // don't count time spent elsewhere (a map bake) as watched
@@ -224,9 +234,12 @@ private:
     MoveState predicted_[kCmdRing];        // our predicted state after each command
     uint32_t predictedSeq_[kCmdRing] = {};
     uint32_t lastReplay_ = 0;
-    bool hookProbe(const UserCmd& cmd, HookProbe& probe);   // the enemies a grapple in cmd can catch (F20)
+    bool hookProbe(const UserCmd& cmd, HookProbe& probe);   // the enemies (and rockets) a grapple in cmd can catch (F20)
     PlayerArray probePlayers_;
-    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; } hookCatch_;   // the last predicted catch, for replays
+    RocketCopy copies_[HookProbe::kRockets];
+    int nCopies_ = 0;
+    // the last predicted catch, for replays: a player (box, id) or a rocket (rocket: at, pos, vel, grav, rid as the probe had them)
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0; uint16_t rid = 0; } hookCatch_;
     uint8_t moveEv_ = 0;
     float moveLand_ = 0;
     static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)

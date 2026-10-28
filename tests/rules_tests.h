@@ -442,6 +442,12 @@ static void testGrapplePlayers(uint16_t port) {
     CHECK(sa.move.hookCooldown > 0);
     CHECK(maxErr[0] < 0.15f && maxErr[1] < 0.15f);
     pumpServerTime(s, cls, 0.3, [&](int i) { btn = 0; return in(i); });
+    // The clients are ahead of the server by the commands they sent after its last frame: as many as the last pump
+    // iteration's ticks, which wall-clock scheduling decides. Still sliding apart at ~3 m/s after letting go, a late
+    // wake-up there (16+ commands) put them 0.05 m apart with no misprediction. So the server runs the commands already
+    // sent and the same command is compared: no client tick or poll meanwhile, so no server answer replaces the prediction.
+    for (int k = 0; k < 500 && (sa.lastCmdSeq != c[0].nextSeq() - 1 || sb.lastCmdSeq != c[1].nextSeq() - 1); k++) { s.frame(); hostSleepMs(1); }
+    CHECK(sa.lastCmdSeq == c[0].nextSeq() - 1 && sb.lastCmdSeq == c[1].nextSeq() - 1);
     CHECK(length(sa.move.pos - c[0].predicted().pos) < 0.05f && length(sb.move.pos - c[1].predicted().pos) < 0.05f);
     // 2. through the head: 15 (a headshot hit event); letting go of the button ends it
     rearm();
@@ -621,22 +627,74 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does 40
-// on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
+// 5.5: the head is a head-sized box on top, not the full-width top 20%. Owner 2026-10-27: the head hitbox is just the
+// head and the body ends at its bottom: a shot beside the head over the shoulders misses (it was a body hit). The
+// sniper does 40 on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
-    printf("headshots: the head, not the shoulders\n");
+    printf("hit boxes: the body up to the head's bottom, the head, nothing beside the head\n");
     CHECK(weaponDef(WPN_SNIPER).damage == 40 && headDamage(WPN_SNIPER) == 50);
-    AABB hb = playerBox(Vec3(0, 0, 0), false);
-    AABB h = headBox(hb);
-    CHECK(h.mx.y == hb.mx.y && std::fabs(h.mn.y - (hb.mx.y - kPlayerHeight * kHeadFraction)) < 1e-5f);
-    CHECK(h.mx.x - h.mn.x < (hb.mx.x - hb.mn.x) * 0.5f && std::fabs(h.center().x) < 1e-6f);
-    Vec3 o(0, 1.62f, 10);   // level shots from 10 m in front (+z), at head height
-    CHECK(rayHitsHead(o, normalize(Vec3(0, 1.62f, 0) - o), hb));          // the middle of the head
-    CHECK(!rayHitsHead(o + Vec3(0.3f, 0, 0), Vec3(0, 0, -1), hb));       // the shoulder, at the same height
-    CHECK(!rayHitsHead(Vec3(0.3f, 5, 0), Vec3(0, -1, 0), hb));           // straight down onto the shoulder
-    CHECK(rayHitsHead(Vec3(0.05f, 5, 0), Vec3(0, -1, 0), hb));           // ...or onto the head
-    CHECK(!rayHitsHead(o + Vec3(0, -0.6f, 0), Vec3(0, 0, -1), hb));      // the chest
-    // in play: rifle bullets at the shoulder are body shots
+    // every size: standing, crouched, a giant (duel double size) crouched, a tiny player
+    struct Size { const char* name; bool crouched; float scale; };
+    for (Size sz : {Size{"standing", false, 1.0f}, Size{"crouched", true, 1.0f}, Size{"giant crouched", true, kBigScale}, Size{"tiny", false, kTinyScale}}) {
+        const Vec3 feet(2, 3, -4);
+        const AABB hb = playerBox(feet, sz.crouched, sz.scale), h = headBox(hb), body = bodyBox(hb);
+        const float H = hb.mx.y - hb.mn.y, W = hb.mx.x - hb.mn.x, seam = hb.mx.y - H * kHeadFraction;
+        CHECK(std::fabs(H - (sz.crouched ? kPlayerCrouchHeight : kPlayerHeight) * sz.scale) < 1e-4f);
+        CHECK(h.mx.y == hb.mx.y && h.mn.y == seam && body.mx.y == seam && body.mn.y == hb.mn.y);   // (one line: no gap, no overlap)
+        CHECK(body.mn.x == hb.mn.x && body.mx.x == hb.mx.x && body.mn.z == hb.mn.z && body.mx.z == hb.mx.z);   // (the body: full width)
+        CHECK(std::fabs((h.mx.x - h.mn.x) - W * kHeadWidthFraction) < 1e-4f && std::fabs(h.center().x - feet.x) < 1e-5f);
+        const float headY = seam + H * kHeadFraction * 0.5f, side = 0.5f * (W * 0.5f + W * 0.5f * kHeadWidthFraction);   // (between the head's side and the box's)
+        const Vec3 in(0, 0, -1), inv = safeInv(in), front(0, 0, 10);   // level shots from 10 m in front (+z)
+        auto shot = [&](float dx, float y, const Vec3& dir, bool* head) {
+            const Vec3 o = dir.y != 0 ? Vec3(feet.x + dx, hb.mx.y + 5, feet.z) : Vec3(feet.x + dx, y, feet.z) + front;
+            return rayHitbox(o, safeInv(dir), hb, 100.0f, head);
+        };
+        bool head = false;
+        float t = shot(0, headY, in, &head);
+        CHECK(t > 0 && head);                                               // through the head: a headshot
+        t = shot(side, headY, in, &head);
+        CHECK(t < 0);                                                       // beside the head, at head height: a miss
+        t = shot(side, hb.mx.y - 0.01f * sz.scale, in, &head);
+        CHECK(t < 0);                                                       // the corner above the shoulder: a miss
+        t = shot(side, seam - 0.01f * sz.scale, in, &head);
+        CHECK(t > 0 && !head);                                              // just below the head's bottom: the body
+        t = shot(0, seam - 0.01f * sz.scale, in, &head);
+        CHECK(t > 0 && !head);                                              // ...under the chin too
+        t = shot(0, hb.mn.y + H * 0.4f, in, &head);
+        CHECK(t > 0 && !head);                                              // the chest
+        t = shot(side, 0, Vec3(0, -1, 0), &head);
+        CHECK(t > 0 && !head && std::fabs((hb.mx.y + 5 - t) - seam) < 1e-3f); // straight down past the head: the shoulder's top
+        t = shot(0.05f * sz.scale, 0, Vec3(0, -1, 0), &head);
+        CHECK(t > 0 && head && std::fabs((hb.mx.y + 5 - t) - hb.mx.y) < 1e-3f); // ...or onto the head
+        // from below, straight up through the body toward the head: the body is hit first (it was a headshot)
+        CHECK(rayHitbox(feet - Vec3(0, 2, 0), safeInv(Vec3(0, 1, 0)), hb, 100.0f, &head) > 0 && !head);
+        // the knife's wider swing: both boxes grow, the gap beside the head stays
+        CHECK(rayHitbox(Vec3(feet.x + side, headY, feet.z) + front, inv, hb, 100.0f, &head, kKnifeGrow) < 0);
+        CHECK(rayHitbox(Vec3(hb.mx.x + kKnifeGrow * 0.5f, seam - 0.01f, feet.z) + front, inv, hb, 100.0f, &head, kKnifeGrow) > 0 && !head);
+        // blasts: the nearest point is on the body or the head (over the shoulder: as far as the head's side)
+        const Vec3 over(feet.x + W * 0.5f, headY, feet.z), c = hitboxClosest(hb, over);
+        CHECK(std::fabs(length(c - over) - std::min(W * 0.5f * (1 - kHeadWidthFraction), headY - seam)) < 1e-4f);
+        CHECK(length(hitboxClosest(hb, feet + Vec3(0, H * 0.4f, 0)) - (feet + Vec3(0, H * 0.4f, 0))) < 1e-6f);   // (inside: itself)
+        // the grapple's ray (pmove, the server's and the client's prediction): beside the head it flies on to the wall
+        Map m;
+        std::string err;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nbox -0.5 0 -20 0.5 9 20\nspawn any 8 0 0\n", &err));
+        for (int k = 0; k < 3; k++) {
+            const AABB tb = playerBox(Vec3(3, 2, 0), sz.crouched, sz.scale), th = headBox(tb);
+            const float tw = (tb.mx.z - tb.mn.z) * 0.5f, tSide = 0.5f * (tw + tw * kHeadWidthFraction);
+            const float tSeam = th.mn.y, tHead = th.center().y;
+            const Vec3 tgt = k == 0 ? Vec3(3, tHead, 0) : k == 1 ? Vec3(3, tHead, tSide) : Vec3(3, tSeam - 0.02f, tSide);
+            const Vec3 eye(8, tgt.y, 0);   // (level: the same height)
+            MoveState ms; ms.pos = eye - Vec3(0, kEyeHeight, 0);
+            HookProbe hp; hp.box[0] = tb; hp.id[0] = 5; hp.n = 1;
+            pmove(ms, hookAim(eye, tgt, BTN_GRAPPLE), m, &hp);
+            CHECK((ms.flags & MF_HOOKED) && hp.hit == (k == 1 ? -1 : 0) && hp.head == (k == 0));
+            if (k == 1) CHECK(std::fabs(ms.hookPoint.x - 0.5f) < 0.01f);   // (caught on the wall behind them)
+        }
+        printf("  %s: head %.2f-%.2f m, the body below it; beside the head misses\n", sz.name, seam - feet.y, hb.mx.y - feet.y);
+    }
+    // in play: rifle bullets at the head, beside the head (a miss), and just below the head's bottom (the body);
+    // the client's ray against the player where it sees them gives the server's answer
     Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
@@ -644,33 +702,64 @@ static void testHeadBox(uint16_t port) {
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
     pump(s, cls, 2.0, idle);
-    auto& sa = s.players_[c[0].clientId()];
-    auto& sb = s.players_[c[1].clientId()];
-    for (float side : {0.0f, 0.3f}) {   // the head, then the shoulder
-        sa.move.pos = {10, 0, 19}; sb.move.pos = {-10, 0, 19}; sa.move.vel = sb.move.vel = {};
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    const Vec3 A0(10, 0, 19), B0(-10, 0, 19);
+    const AABB bb = s.hitBox(B0, false);
+    const float seam = headBox(bb).mn.y, headY = headBox(bb).center().y, beside = 0.3f;   // (the head's side 0.18, the body's 0.4)
+    struct Aim { const char* name; float side, y; int expect; };   // expect: 2 head, 1 body, 0 a miss
+    for (Aim am : {Aim{"head", 0, headY, 2}, Aim{"beside the head", beside, headY, 0}, Aim{"just below the head", beside, seam - 0.03f, 1}}) {
+        sa.move.pos = A0; sb.move.pos = B0; sa.move.vel = sb.move.vel = {};
         sb.health = 100;
+        const Vec3 eye = A0 + Vec3(0, kEyeHeight, 0), tgt = B0 + Vec3(0, am.y, am.side), d = normalize(tgt - eye);
         auto aim = [&](int i, uint16_t b) {
             UserCmd u; if (i != 0) return u;
-            Vec3 eye = sa.move.pos + Vec3(0, kEyeHeight, 0), tgt = sb.move.pos + Vec3(0, 1.62f, side);
-            Vec3 d = normalize(tgt - eye);
             u.pitch = std::asin(d.y); u.yaw = std::atan2(-d.x, -d.z); u.weapon = WPN_RIFLE; u.buttons = b;
             return u;
         };
-        pump(s, cls, 0.4, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, 0); });
+        pump(s, cls, 0.4, [&](int i) { sa.move.pos = A0; sb.move.pos = B0; return aim(i, 0); });
         c[0].takeEvents();
+        {   // the client: its own aim against the target as it draws them (game.cpp's sparks test exactly this)
+            NetClient::PlayerArray ps = c[0].interpolatedPlayers();
+            const Vec3 ad = angleForward(aim(0, 0).yaw, aim(0, 0).pitch);
+            bool head = false;
+            const float t = ps[ib].valid ? rayHitbox(eye, safeInv(ad), playerBox(ps[ib].snap.pos, false, 1.0f), 100.0f, &head) : -1.0f;
+            CHECK(ps[ib].valid && (t < 0 ? 0 : head ? 2 : 1) == am.expect);
+        }
         float hp0 = sb.health;
         int d0 = sb.deaths;
-        pump(s, cls, 0.25, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, BTN_FIRE); });
+        pump(s, cls, 0.25, [&](int i) { sa.move.pos = A0; sb.move.pos = B0; return aim(i, BTN_FIRE); });
         float dealt = hp0 - sb.health;
-        float per = side == 0 ? kRifleHeadDamage : weaponDef(WPN_RIFLE).damage;
-        float n = dealt / per;
-        printf("  rifle at the %s: %.2f damage (%.2f bullets of %.2f)\n", side == 0 ? "head" : "shoulder", dealt, n, per);
-        CHECK(sb.deaths == d0 && dealt > 0 && std::fabs(n - std::round(n)) < 0.02f);
         pump(s, cls, 0.2, idle);
         int heads = 0, bodies = 0;   // the hit events: headshots marked "h" (the client draws them red)
-        for (auto& e : c[0].takeEvents()) if (e.type == EV_HIT && e.b == c[1].clientId()) (e.text == "h" ? heads : bodies)++;
-        printf("  hit events: %d head, %d body\n", heads, bodies);
-        CHECK(side == 0 ? (heads > 0 && bodies == 0) : (heads == 0 && bodies > 0));
+        for (auto& e : c[0].takeEvents()) if (e.type == EV_HIT && e.b == ib) (e.text == "h" ? heads : bodies)++;
+        printf("  rifle %s: %.2f damage, hit events %d head, %d body\n", am.name, dealt, heads, bodies);
+        CHECK(sb.deaths == d0);
+        if (am.expect == 0) CHECK(dealt == 0 && heads == 0 && bodies == 0);
+        else {
+            float per = am.expect == 2 ? kRifleHeadDamage : weaponDef(WPN_RIFLE).damage, n = dealt / per;
+            CHECK(dealt > 0 && std::fabs(n - std::round(n)) < 0.02f);
+            CHECK(am.expect == 2 ? (heads > 0 && bodies == 0) : (heads == 0 && bodies > 0));
+        }
+    }
+    // projectiles: a crossbow bolt through the head, past it, and just under it (the server's projectile test)
+    for (Aim am : {Aim{"head", 0, headY, 2}, Aim{"beside the head", beside, headY, 0}, Aim{"just below the head", beside, seam - 0.03f, 1}}) {
+        auto pin = [&](int) { sa.move.pos = A0; sb.move.pos = B0; sa.move.vel = sb.move.vel = {}; return UserCmd(); };
+        pump(s, cls, 0.1, pin);
+        sb.health = 100;
+        c[0].takeEvents();
+        for (auto& pr : s.projectiles_) pr.active = false;
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = 4200; pr.type = WPN_CROSSBOW; pr.owner = ia;
+        pr.pos = B0 + Vec3(1.5f, am.y, am.side); pr.vel = {-weaponDef(WPN_CROSSBOW).projSpeed, 0, 0}; pr.dieAt = s.time() + 0.2;
+        pump(s, cls, 0.3, pin);
+        const float dealt = 100 - sb.health;
+        printf("  bolt %s: %.1f damage\n", am.name, dealt);
+        const float body = (float)weaponDef(WPN_CROSSBOW).damage;
+        CHECK(std::fabs(dealt - (am.expect == 2 ? std::max(body, headDamage(WPN_CROSSBOW)) : am.expect == 1 ? body : 0.0f)) < 1e-3f);
+        sb.health = 100;
     }
     s.stop();
 }
@@ -2408,6 +2497,258 @@ static void testModeCalls(uint16_t port) {
     s.stop();
 }
 
+// The mode sounds the client works out itself (modecalls.h), with no event on the wire: the bomb going off, "it"
+// passed on in tag, race practice's checkpoint dings. The rules first, then each on a real server through a client's
+// own states, once each.
+static void testModeSounds(uint16_t port) {
+    printf("mode sounds: bomb goes off, tag pass, race practice checkpoints\n");
+    auto st = [](int mode, int phase, int round, int bomb = BOMB_NONE) {
+        ModeState m; m.mode = (uint8_t)mode; m.phase = (uint8_t)phase; m.round = (uint8_t)round; m.bombState = (uint8_t)bomb; return m;
+    };
+    CHECK(bombWentOff(st(MODE_BOMB, PHASE_LIVE, 2, BOMB_PLANTED), st(MODE_BOMB, PHASE_ROUND_END, 2, BOMB_EXPLODED)));   // (the blast ends the round)
+    CHECK(!bombWentOff(st(MODE_BOMB, PHASE_LIVE, 2, BOMB_PLANTED), st(MODE_BOMB, PHASE_LIVE, 2, BOMB_DEFUSED)));
+    CHECK(!bombWentOff(st(MODE_BOMB, PHASE_ROUND_END, 2, BOMB_EXPLODED), st(MODE_BOMB, PHASE_ROUND_END, 2, BOMB_EXPLODED)));
+    CHECK(!bombWentOff(st(MODE_BOMB, PHASE_LIVE, 1, BOMB_PLANTED), st(MODE_BOMB, PHASE_FREEZE, 2, BOMB_EXPLODED)));
+    std::vector<PlayerSnap> ps(3);
+    for (int i = 0; i < 3; i++) { ps[i].id = (uint8_t)i; ps[i].flags = PS_ALIVE; }
+    ps[2].flags |= PS_HASBOMB;
+    CHECK(tagItOf(ps) == 2);
+    const ModeState live = st(MODE_TAG, PHASE_LIVE, 1);
+    CHECK(tagPassFrom(live, live, 0, 2, ps) == 0 && tagPassFrom(live, live, 2, 2, ps) == -1 && tagPassFrom(live, live, -1, 2, ps) == -1);
+    CHECK(tagPassFrom(live, live, 7, 2, ps) == -1);   // (the old "it" left: a new one drawn, not a tag)
+    CHECK(tagPassFrom(st(MODE_TAG, PHASE_FREEZE, 1), live, 0, 2, ps) == -1 && tagPassFrom(st(MODE_TAG, PHASE_LIVE, 0), live, 0, 2, ps) == -1);
+    PracticeDing pd;
+    CHECK(pd.step(0, false, 3) == 0 && pd.step(0, true, 3) == 1 && pd.step(0, true, 3) == 0);   // predicted: at once, once
+    CHECK(pd.step(1, false, 3) == 0);                        // (the server's count catches up: no second ding)
+    CHECK(pd.step(2, false, 3) == 1);                        // passed on the server only: dinged then
+    CHECK(pd.step(2, true, 3) == 2 && pd.step(0, false, 3) == 0 && pd.step(0, true, 3) == 1);   // the finish, and round again
+
+    {   // bomb: planted with a short fuse, followed through a client
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false;
+        NetClient cl[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 2, cls)) { s.stop(); return; }
+        ModeState pv = cl[0].mode();
+        s.ms_.bombState = BOMB_PLANTED;
+        s.ms_.bombPos = s.map_.bombSites[0].center();
+        s.ms_.bombTimer = 0.3f;
+        int booms = 0;
+        for (double t = 0; t < 1.0; t += 0.02) { pump(s, cls, 0.02, idle); booms += bombWentOff(pv, cl[0].mode()); pv = cl[0].mode(); }
+        printf("  bomb: state %d, booms heard %d\n", s.ms_.bombState, booms);
+        CHECK(s.ms_.bombState == BOMB_EXPLODED && booms == 1);
+        s.stop();
+    }
+    {   // tag: "it" stabs another player
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = (uint16_t)(port + 1);
+        NetClient cl[3];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 3, cls)) { s.stop(); return; }
+        pump(s, cls, 0.2, idle);
+        int it = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) it = i;
+        int victim = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (i != it && s.players_[i].connected && s.players_[i].alive) victim = i;
+        CHECK(it >= 0 && victim >= 0);
+        if (it < 0 || victim < 0) { s.stop(); return; }
+        ModeState pv = cl[0].mode();
+        int prevIt = tagItOf(cl[0].latest().players), passes = 0, from = -1, to = -1;
+        s.damagePlayer(victim, it, 50, WPN_KNIFE, Vec3());
+        for (double t = 0; t < 0.5; t += 0.02) {
+            pump(s, cls, 0.02, idle);
+            const int now = tagItOf(cl[0].latest().players);
+            if (int f = tagPassFrom(pv, cl[0].mode(), prevIt, now, cl[0].latest().players); f >= 0) { passes++; from = f; to = now; }
+            pv = cl[0].mode(); prevIt = now;
+        }
+        printf("  tag: %d -> %d, passes heard %d (%d -> %d)\n", it, victim, passes, from, to);
+        CHECK(s.players_[victim].it && passes == 1 && from == it && to == victim);
+        s.stop();
+    }
+    {   // race practice (warmup): through each checkpoint in turn, dinged from the server's count alone
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = (uint16_t)(port + 2);
+        NetClient cl[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, cl, 1, cls, false)) { s.stop(); return; }
+        const int me = cl[0].clientId();
+        const int n = (int)s.map_.checkpoints.size();
+        CHECK(me >= 0 && n >= 2 && s.ms_.phase == PHASE_WARMUP);
+        if (me < 0 || n < 2) { s.stop(); return; }
+        const Vec3 home = s.players_[me].move.pos;
+        int target = 0, dings = 0, finishes = 0;
+        bool settled = false;   // (home first: the client has seen the count before the first checkpoint)
+        auto in = [&](int id) {
+            if (id == me) {
+                const AABB& cp = s.map_.checkpoints[std::min(target, n - 1)];
+                s.players_[me].move.pos = settled && target < n && s.players_[me].checkpoint == target ? Vec3(cp.center().x, cp.mn.y + 0.05f, cp.center().z) : home;
+                s.players_[me].move.vel = {};
+            }
+            return UserCmd();
+        };
+        PracticeDing pd;
+        for (int k = 0; k < 400 && finishes == 0; k++) {
+            pump(s, cls, 0.02, in);
+            const PlayerSnap* mine = cl[0].findPlayer(me);
+            if (!mine) continue;
+            settled |= k >= 10;
+            const int d = pd.step(mine->checkpoint, false, n);
+            dings += d != 0; finishes += d == 2;
+            if (target < n && s.players_[me].checkpoint != target) target = s.players_[me].checkpoint < target ? n : s.players_[me].checkpoint;   // (n: round again, back home)
+        }
+        printf("  race practice: %d checkpoints, dings %d, finish %d, phase %d\n", n, dings, finishes, s.ms_.phase);
+        CHECK(dings == n && finishes == 1 && s.ms_.phase == PHASE_WARMUP);
+        s.stop();
+    }
+}
+
+// Rocket riding (owner 2026-10-27): the grapple catches a rocket in flight, anyone's, and only rockets; the anchor flies
+// with it and the hook lets go where it explodes (momentum kept, the cooldown started). Predicted: the client catches
+// it as the server does (its own rockets where the server has them, others' where it sees them), and the wall it
+// meets. A custom mode can turn it off (ROCKET RIDE).
+static void testRocketRide(uint16_t port) {
+    printf("grapple rides rockets\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;   // (warmup: free play)
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 1.0, idle);
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    CHECK(ia >= 0 && ib >= 0);
+    if (ia < 0 || ib < 0) { s.stop(); return; }
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    // a level line of fire from A0 to a wall 18-40 m away, open on the way
+    const Vec3 A0(10, 0, 19), eye = A0 + Vec3(0, kEyeHeight, 0);
+    float yaw = 0, wall = -1;
+    for (int k = 0; k < 32 && !(wall > 18 && wall < 40); k++) { yaw = k * PI / 16; wall = s.map_.raycast(eye, angleForward(yaw, 0), 45); }
+    CHECK(wall > 18 && wall < 40);
+    const Vec3 aim = angleForward(yaw, 0), B0 = A0 - aim * 6.0f;   // (b behind a: out of the hook's way)
+    bool pin = true;
+    uint16_t btn = 0;
+    auto in = [&](int i) {
+        if (pin) { sa.move.pos = A0; sa.move.vel = {}; }
+        sb.move.pos = B0; sb.move.vel = {};
+        UserCmd u; u.weapon = WPN_ROCKET;
+        if (i == 0) { u.yaw = yaw; u.pitch = 0; u.buttons = btn; }
+        return u;
+    };
+    auto rearm = [&]() { btn = 0; pin = true; pumpServerTime(s, cls, 1.3, in); sa.health = sb.health = 100; };
+    auto rocketOf = [&](int owner) -> Projectile* { for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_ROCKET && pr.owner == owner) return &pr; return nullptr; };
+    // 1. your own: fire, hook it at once, ride it
+    rearm();
+    btn = BTN_FIRE;
+    for (int k = 0; k < 50 && !rocketOf(ia); k++) pump(s, cls, 0.005, in);
+    Projectile* mine = rocketOf(ia);
+    CHECK(mine != nullptr);
+    if (!mine) { s.stop(); return; }
+    const uint16_t mineId = mine->id;
+    btn = BTN_GRAPPLE;
+    bool predictedFirst = false;   // the client had it hooked while the server's word still said not
+    for (int k = 0; k < 200 && sa.move.hookTarget != kHookRocket; k++) {
+        pump(s, cls, 0.001, in);
+        pin = false;
+        if (c[0].predicted().hookTarget == kHookRocket && !(c[0].latest().self.flags & MF_HOOKED)) predictedFirst = true;
+    }
+    const Vec3 caughtAt = sa.move.pos;
+    printf("  own rocket: server hooked %d on %u (fired %u), predicted first %d\n", sa.move.hookTarget == kHookRocket, (unsigned)sa.move.hookProj,
+           (unsigned)mineId, predictedFirst);
+    CHECK(sa.move.hookTarget == kHookRocket && sa.move.hookProj == mineId && predictedFirst);
+    pumpServerTime(s, cls, 0.15, in);
+    const float along = dot(sa.move.pos - caughtAt, aim), speed = dot(sa.move.vel, aim);
+    printf("  ridden 0.15 s: %.2f m along, %.1f m/s; anchor on it %.3f m; predicted on %u (server %u)\n", along, speed,
+           mine->active ? length(sa.move.hookPoint - mine->pos) : -1.0f, (unsigned)c[0].predicted().hookProj, (unsigned)sa.move.hookProj);
+    CHECK((sa.move.flags & MF_HOOKED) && along > 0.2f && speed > 3.0f && mine->active && length(sa.move.hookPoint - mine->pos) < 1e-3f);
+    CHECK(c[0].predicted().hookTarget == kHookRocket && c[0].predicted().hookProj == mineId);
+    // the client's prediction stays on the server's path: compare at the same command (as testGrapplePlayers does)
+    for (int k = 0; k < 500 && sa.lastCmdSeq != c[0].nextSeq() - 1; k++) { s.frame(); hostSleepMs(1); }
+    const float err = length(sa.move.pos - c[0].predicted().pos);
+    printf("  predicted vs server while riding: %.4f m\n", err);
+    CHECK(err < 0.05f);
+    // 2. it explodes on the wall: the hook lets go there, momentum kept, the cooldown running (predicted too)
+    for (int k = 0; k < 300 && mine->active && mine->id == mineId; k++) pump(s, cls, 0.005, in);
+    pump(s, cls, 0.02, in);
+    const float kept = length(sa.move.vel);
+    printf("  exploded: hooked %d, %.1f m/s kept, cooldown %.2f s (predicted: hooked %d, cooldown %.2f s)\n", (sa.move.flags & MF_HOOKED) != 0, kept,
+           sa.move.hookCooldown, (c[0].predicted().flags & MF_HOOKED) != 0, c[0].predicted().hookCooldown);
+    CHECK(!(sa.move.flags & MF_HOOKED) && sa.move.hookTarget == 0 && kept > 3.0f && sa.move.hookCooldown > 0.5f);
+    CHECK(!(c[0].predicted().flags & MF_HOOKED) && c[0].predicted().hookCooldown > 0.5f);
+    // 3. an enemy's, flying away down the same line: seen by the client, then hooked
+    rearm();
+    for (auto& pr : s.projectiles_) pr.active = false;
+    auto launch = [&](int type, uint16_t id) {
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = id; pr.type = type; pr.owner = ib;
+        pr.pos = eye + aim * 2.0f; pr.vel = aim * 20.0f; pr.dieAt = s.time() + 5;
+        return &pr;
+    };
+    launch(WPN_ROCKET, 4300);
+    pump(s, cls, 0.04, in);
+    btn = BTN_GRAPPLE;
+    predictedFirst = false;
+    for (int k = 0; k < 200 && sa.move.hookTarget != kHookRocket; k++) {
+        pump(s, cls, 0.001, in);
+        pin = false;
+        if (c[0].predicted().hookTarget == kHookRocket && !(c[0].latest().self.flags & MF_HOOKED)) predictedFirst = true;
+    }
+    pump(s, cls, 0.05, in);
+    printf("  enemy rocket: server on %u, predicted on %u, predicted first %d\n", (unsigned)sa.move.hookProj, (unsigned)c[0].predicted().hookProj, predictedFirst);
+    CHECK(sa.move.hookTarget == kHookRocket && sa.move.hookProj == 4300 && c[0].predicted().hookProj == 4300 && predictedFirst);
+    // your own rocket the server hasn't sent yet (the game's predicted copy): caught as id 0; with no such rocket on the
+    // server (a refused shot) the server's word takes it back
+    rearm();
+    for (auto& pr : s.projectiles_) pr.active = false;
+    const NetClient::RocketCopy copy{eye + aim * 3.0f, aim * 48.0f, 0.0f};
+    btn = BTN_GRAPPLE;
+    bool copyCaught = false;
+    for (int k = 0; k < 50 && !copyCaught; k++) {
+        c[0].setRocketCopies(&copy, 1);
+        pump(s, cls, 0.001, in);
+        copyCaught = c[0].predicted().hookTarget == kHookRocket && c[0].predicted().hookProj == 0;
+    }
+    c[0].setRocketCopies(nullptr, 0);
+    pump(s, cls, 0.05, in);
+    printf("  a predicted copy: caught %d, after the server's word on a rocket %d\n", copyCaught, c[0].predicted().hookTarget == kHookRocket);
+    CHECK(copyCaught && c[0].predicted().hookTarget != kHookRocket && sa.move.hookTarget != kHookRocket);
+    // 4. only rockets: anything else in flight down that line lets the hook through to the wall (server and prediction)
+    auto hookPast = [&](int type, uint16_t id) {   // true: the hook went past it onto the wall
+        rearm();
+        for (auto& pr : s.projectiles_) pr.active = false;
+        launch(type, id);
+        pump(s, cls, 0.03, in);
+        btn = BTN_GRAPPLE;
+        pump(s, cls, 0.08, in);
+        const bool past = (sa.move.flags & MF_HOOKED) && sa.move.hookTarget == 0 && length(sa.move.hookPoint - (eye + aim * wall)) < 0.5f &&
+                          (c[0].predicted().flags & MF_HOOKED) && c[0].predicted().hookTarget == 0;
+        printf("  %s in flight: hook on the wall behind it %d (target %d, predicted %d)\n", baseWeaponDef(type).name, past,
+               (int)sa.move.hookTarget, (int)c[0].predicted().hookTarget);
+        return past;
+    };
+    for (int type : {WPN_STICKY, WPN_KNIFE, WPN_SYRINGE, WPN_CROSSBOW, WPN_BUBBLE}) CHECK(hookPast(type, (uint16_t)(4400 + type)));
+    // 5. a custom mode with ROCKET RIDE off: the hook goes past a rocket too
+    CustomRules off;
+    off.name = "norides"; off.rocketRide = false;
+    CustomRules back;
+    CHECK(back.fromText(off.toText()) && !back.rocketRide && back.toText().find("rocketride=0") != std::string::npos);
+    CHECK(CustomRules().toNetText().find("rocketride") == std::string::npos);   // (on: no line, so older modes' text and labels stay the same)
+    s.cfg_.custom = off;   // (the server keeps its own rules on the thread it runs on: this test's)
+    setActiveRules(off);
+    CHECK(!moveTuning().rocketRide);
+    printf("  ROCKET RIDE off:\n");
+    CHECK(hookPast(WPN_ROCKET, 4500));
+    s.cfg_.custom = CustomRules();
+    setActiveRules(CustomRules());
+    CHECK(moveTuning().rocketRide);
+    setActiveRules(CustomRules());
+    s.stop();
+}
+
 // "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
 // half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
 // on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
@@ -2423,6 +2764,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
         {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", 1, [] { testHeadBox(TP(29246)); }},
+        {"rocketride", 1, [] { testRocketRide(TP(29278)); }},
         {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
         {"shorthanded", 2, [] { testShortHanded(TP(29288)); }},
         {"vsbots", 1, [] { testVsBotsDuo(TP(29294)); }},
@@ -2440,6 +2782,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"scoreboard", 2, [] { testScoreboardValue(); }},
         {"hudclock", 2, [] { testHudClock(TP(29280)); }},
         {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
+        {"modesounds", 2, [] { testModeSounds(TP(29313)); }},
         {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},

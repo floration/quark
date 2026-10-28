@@ -90,7 +90,7 @@ struct ServerConfig {
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
-    // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a -test. version).
+    // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a testing version).
     // A testing server (or any testing build) plays ranked normally but never sends anything to the ranking server.
     int channel = -1;
     // Load governor (governor.h): a directory shared with the other server on this machine (tools/server/install.sh
@@ -217,6 +217,8 @@ struct ServerPlayer {
     int lastHitBy = -1;
     uint32_t lastHitByJoin = 0;
     double lastHitByAt = -1e9;
+    double acidSince = -1;   // when this acid contact began (-1: out of acid kAcidRearmMs or more): a death in it credits
+                             // a hit up to kRingOutCredit before then, however long they stayed in (takeAcid)
     // The command clock (seconds on the server clock): advanced by each command's msec, kept within
     // [time() - kCmdClockLag, time()]. Refire is timed by it (the Quake 3 way) rather than by when a packet arrived,
     // so a shot fires on the command that ends its cooldown, with that command's aim. -1: no command yet.
@@ -451,7 +453,8 @@ public:
     void killPlayer(int victim, int killer, int weapon);
     void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
-    int ringOutKiller(int victim) const;
+    int ringOutKiller(int victim, double since = -1) const;   // (since: count the credit window back from then, not now)
+    bool takeAcid(int id);   // the acid this command's pmove counted: the health off, a death (true) credited
     void muffledGunfire(int shooter, int weapon);   // X9: EV_GUNFIRE to the players who can't see the shot but are near   // who a fall / lava / "kill" now credits (T21), or -1
     // A weapon's hit on a player: the weapon set's hit / kill slots around damagePlayer (no set logic: damagePlayer)
     void weaponHit(int victim, int attacker, float dmg, const Vec3& knock, int weapon, bool alt, float dist, bool direct, float splash);
@@ -490,7 +493,7 @@ public:
     bool restartRequested() const { return restartNow_; }
     bool matchInProgress() const;
     bool restartNow_ = false, restartAnnounced_ = false;
-    // Ranked here is rated: not a testing server (--channel testing) and not a testing build (a -test. version).
+    // Ranked here is rated: not a testing server (--channel testing) and not a testing build (isTestingVersion).
     // Otherwise ranked plays normally (queue, lock, everything) but no ticket, result or race run leaves the server.
     bool rated() const;
     // Load governor (cfg_.governorDir): its thread decides; the tick thread reports a few times a second and applies
@@ -688,6 +691,7 @@ private:
     void syncLatch(int attacker);
     void endLatch(int attacker);
     void tickLatches();
+    void tickRocketRides();   // rocket riding: the anchor on the rocket each tick, or let go
     uint64_t rewindViewMs(int id, uint32_t viewTick) const;   // the view time lag compensation tests at (capped)
     Vec3 rewoundPos(int i, uint64_t viewMs, bool* crouched) const;   // where player i was at that view time
     // fireWeapon's lag-compensated hit boxes, rewound once per shot (rwHave_ cleared at each shot): a shotgun blast's

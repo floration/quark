@@ -6,15 +6,18 @@
 #include <algorithm>
 #include <sstream>
 #include "../common/profile.h"
+#include "gpuprofile.h"
 #include <array>
 #include "game.h"
 #include "complete.h"
 #include "openurl.h"
+#include "../game/benchmark.h"
 #include "profiles.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <cstring>
+#include <climits>
 #include "../game/demo.h"
 #include "../game/gamemodes.h"
 #include "../common/version.h"
@@ -52,6 +55,7 @@ const ModelPalette kNoSlots;   // (props with no colour slots: the arms, the bom
 
 const char* weaponName(int w) {
     if (w == kDamageGrapple) return "grapple";
+    if (w == kDamageAcid) return "dissolved";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";
@@ -137,7 +141,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setQuipVolume(cfg_.volumeQuips);
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
-    if (opts_.timeTrial) startTimeTrial();
+    if (!opts_.uiTest && opts_.screenshot.empty() && !opts_.benchmark) benchRetryUploads();   // (runs whose upload didn't get through)
+    if (opts_.benchmark) benchStart();   // --benchmark: the main menu's, printed then quit
+    else if (opts_.timeTrial) startTimeTrial();
     else if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
         botMapIdx_ = bestMapFor(cfg_.botMode);
@@ -325,6 +331,7 @@ void Game::leaveGame(const std::string& error) {
     }
     bool wasEditing = edOnline_;
     edSession_ = edOnline_ = false;
+    bench_.phase = BenchRun::OFF;   // (a benchmark that lost its game: nothing saved)
     stopBake();
     net_.disconnect();
     stopHost();
@@ -335,6 +342,7 @@ void Game::leaveGame(const std::string& error) {
     paused_ = chatting_ = console_ = false;
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
+    hudEditClose();
     if (settingsInGame_) cfg_.save();
     settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
@@ -358,6 +366,7 @@ void Game::setScreen(Screen s) {
     captureMouse(s == Screen::InGame && !paused_ && !chatting_);
     if (s == Screen::Join) { browser_.refresh(); joinScroll_ = 0; }
     if (s == Screen::Demos) demoScroll_ = 0;
+    if (s == Screen::Benchmarks) { benchScroll_ = 0; benchListAt_ = 0; benchRetryUploads(); }
     if (s == Screen::Host || s == Screen::VsBots) rescanMaps();
     if (s == Screen::Host) refreshHostBrains();
     if (s != Screen::Host) hostAdvanced_ = false;
@@ -585,10 +594,18 @@ bool Game::pressInput(int code) {
     const Binds& b = binds();
     if (b.has(A_PERF, code)) { const bool was = perfOn(); showPerf_ = !showPerf_; if (!was) pipeReset(); return true; }
     if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
-    if (b.has(A_SCREENSHOT, code)) {
-        static int n = 0;
-        r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
-        notify("screenshot saved");
+    if (b.has(A_SCREENSHOT, code)) {   // screenshots/<date>_<time>.png in your data folder (was screenshot_<n>.png in
+        // the working directory with n from 0 each launch: the first one of every session overwrote the last session's)
+        const std::string dir = userDataPath("screenshots");
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
+        time_t t = time(nullptr);
+        char stamp[32];
+        strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", localtime(&t));
+        std::string name = std::string(stamp) + ".png";
+        for (int k = 2; std::filesystem::exists(std::filesystem::u8path(dir + "/" + name), ec); k++)   // (two in one second)
+            name = std::string(stamp) + "_" + std::to_string(k) + ".png";
+        notify(r_.screenshot(dir + "/" + name) ? "SCREENSHOT SAVED: SCREENSHOTS/" + name : "COULDN'T SAVE THE SCREENSHOT", 3);
         return true;
     }
     if (screen_ != Screen::InGame || chatting_) return false;
@@ -654,6 +671,10 @@ void Game::onKey(int key, int action, int mods) {
         }
         return;
     }
+    if (bench_.phase != BenchRun::OFF && (screen_ == Screen::InGame || screen_ == Screen::Connecting)) {      // BENCHMARK: Esc cancels, nothing else
+        if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) benchCancel();
+        return;
+    }
     if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
@@ -695,6 +716,8 @@ void Game::onKey(int key, int action, int mods) {
         editorKey(key, mods); // presses and key repeat (hold an arrow to keep nudging)
         return;
     }
+    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_)) && !ui_.typing() &&
+        !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
     bool typing = chatting_ || ui_.typing();
@@ -748,6 +771,7 @@ void Game::onKey(int key, int action, int mods) {
             if (ui_.popupOpen()) { ui_.closePopup(); return; }   // (a colour picker / dropdown first)
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
+            if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
             if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
@@ -762,6 +786,7 @@ void Game::onKey(int key, int action, int mods) {
         if (ui_.popupOpen()) { ui_.closePopup(); return; }   // (a colour picker / dropdown first)
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
+        if (hudEdit_) { hudEditClose(); return; }   // (EDIT ON SCREEN: back to the HUD tab)
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
         if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
@@ -769,7 +794,8 @@ void Game::onKey(int key, int action, int mods) {
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
         if (screen_ == Screen::Host && hostAdvanced_) { hostAdvanced_ = false; cfg_.save(); return; }   // ADVANCED: back to HOST, as its BACK
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info) {
+        if (screen_ == Screen::BenchmarkResult) { setScreen(Screen::Benchmarks); return; }   // (as its BACK; a name being typed is saved as the field closes)
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info || screen_ == Screen::Benchmarks) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -866,8 +892,10 @@ void Game::onScroll(double dy) {
     if (dy == 0) return;
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
+    if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
+    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -943,6 +971,7 @@ UserCmd Game::buildCmd() {
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
     if (opts_.debugScope) c.buttons |= BTN_ALTFIRE;
     if (opts_.debugFire) c.buttons |= BTN_FIRE;
+    if (opts_.debugHook && !opts_.debugModels) c.buttons |= BTN_GRAPPLE;   // (with --models: only the lineup hangs on ropes)
     if (opts_.debugPulse && (std::fmod(time_, 0.6) < 0.3 || (shotAt_ > 0 && time_ > shotAt_ - 0.4))) c.buttons &= (uint16_t)~(BTN_FIRE | BTN_ALTFIRE);
     if (opts_.debugPulse && shotAt_ > 0 && time_ > shotAt_ - 0.4) c.side = 127;   // (then a step aside: a bolt seen end on is a dot)
     return c;
@@ -1018,6 +1047,22 @@ void Game::updateAnnouncer() {
             if (calls[k].text[0]) notify(calls[k].text, 4);
             if (calls[k].voice >= 0) say(calls[k].voice, calls[k].level);
         }
+    }
+    {   // mode sounds the server sends no event for (modecalls.h): the bomb going off, "it" passed on in tag
+        const int itNow = ms.mode == MODE_TAG ? tagItOf(net_.latest().players) : -1;
+        if (annPrevValid_ && bombWentOff(annPrev_, ms))   // a deep, long boom at the bomb, louder than a rocket's (it ends the round)
+            audio_.play3D(SND_EXPLOSION, ms.bombPos, 2.5f, 0.6f);
+        const int tagger = annPrevValid_ ? tagPassFrom(annPrev_, ms, tagIt_, itNow, net_.latest().players) : -1;
+        if (tagger >= 0 && itNow == net_.clientId()) {   // you're it: the stab, and the sting of something stuck on you
+            audio_.play(SND_HURT, 1.0f);
+            audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
+        } else if (tagger >= 0 && tagger == net_.clientId()) {   // you tagged them: a heavy hit's sound (no EV_HIT for a tag)
+            if (cfg_.hitsounds && hitGate_.pass(time_, SND_HIT_HEAVY)) audio_.play(SND_HIT_HEAVY, 0.9f);
+        } else if (tagger >= 0) {   // someone else tagged: their hurt sound from the new "it"
+            const PlayerSnap* v = net_.findPlayer(itNow);
+            if (v && !v->hidden) audio_.play3D(SND_HURT, v->pos + Vec3(0, 1.2f, 0), 0.8f, 1.0f, net_.playerSoundPack(itNow));
+        }
+        tagIt_ = itNow;
     }
     if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
     else if (annLeader_ == -2) annLeader_ = -1;
@@ -1388,6 +1433,12 @@ void Game::frame(double dt) {
         showPerf_ = true;
         while (chatFeed_.size() < 8) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
     }
+    if (opts_.feedShot && screen_ == Screen::InGame && killFeed_.empty()) {   // (kill feed and chat lines that stay)
+        static const char* kills[] = {"wraith [ROCKET] lynx", "player [RIFLE] ghost", "ghost [KNIFE] player", "ember [SNIPER] wraith"};
+        for (const char* k : kills) killFeed_.push_back(Feed{k, std::string(k).rfind("player", 0) == 0 ? rgba(cfg_.colorFriendly) : kWhite, time_ + 1e9});
+        addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
+        addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
+    }
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
@@ -1397,6 +1448,7 @@ void Game::frame(double dt) {
         debugSettingsTab();
     }
     r_.setMsaa(cfg_.msaa);
+    r_.setRenderScale(cfg_.renderScale, cfg_.renderSharpen);
     {   // per-mode HUD / controls rules follow the running mode (back to your defaults outside a game)
         // ranked never takes a rule: the default HUD and your own binds, no control scripts
         int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !fairRules() ? (int)net_.mode().mode : -1;
@@ -1416,6 +1468,7 @@ void Game::frame(double dt) {
     pendingInput_ = -1;
     frameDt_ = dt;
     if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
+    if (bench_.phase != BenchRun::OFF) benchFrameTime(dt);   // (BENCHMARK: one store a frame while it measures)
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
@@ -1425,6 +1478,7 @@ void Game::frame(double dt) {
     }
     polledEarly_ = false;
     updateCommunity();
+    if (!benchSending_.empty() && bench_.phase == BenchRun::OFF) benchUploads();   // (BENCHMARK: answers to the runs' uploads; never mid-run)
     if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
@@ -1547,9 +1601,10 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR) muzzleUntil_ = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
                 if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
-                    (w != WPN_LASER || time_ >= nextLocalSpark_))
+                    (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
@@ -1571,6 +1626,7 @@ void Game::frame(double dt) {
                                 Vec3 to = o + d * (t < 0 ? range : t);
                                 tracers_.push_back({b ? o : from, to, time_ + 0.3});
                                 if (t < 0) break;
+                                if (cfg_.impactSparks) explosions_.push_back({to - d * 0.03f, time_, 0.06f, false, false, false, true, 0.2f});
                                 o = to + n * 0.01f; d = d - n * (2.0f * dot(d, n)); range -= t;
                             }
                             continue;
@@ -1582,6 +1638,19 @@ void Game::frame(double dt) {
                 }
             }
             localPrevButtons_ = c.buttons;
+            {   // rocket riding: your rockets not handed over yet can be caught too (only while the grapple's held)
+                NetClient::RocketCopy rc[HookProbe::kRockets];
+                int n = 0;
+                if ((c.buttons & BTN_GRAPPLE) && moveTuning().rocketRide)
+                    for (const auto& q : predProj_)
+                        if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
+                            const float g = projectileGravity(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
+                            Vec3 p = q.pos0, v = q.vel0;
+                            projectileExtrapolate(p, v, g, (float)(time_ - q.born));
+                            rc[n++] = {p, v, g};
+                        }
+                net_.setRocketCopies(rc, n);
+            }
             net_.tick(c);
             if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
             tickAcc_ -= period;
@@ -1607,6 +1676,16 @@ void Game::frame(double dt) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
             if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
+            if (!still && old.owner == net_.clientId()) {   // yours: already shown at once (localBoom), if it blew up near there
+                bool shown = false;
+                for (size_t k = 0; k < localBooms_.size() && !shown; k++) {
+                    const LocalBoom& b = localBooms_[k];
+                    if ((b.id == old.id || (b.id == 0xFFFF && b.type == old.type)) && length(b.at - old.pos) < 4.0f) {
+                        shown = true; localBooms_.erase(localBooms_.begin() + k);
+                    }
+                }
+                if (shown) continue;
+            }
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
@@ -1620,6 +1699,20 @@ void Game::frame(double dt) {
             if (!was) audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
         }
         lastProjectiles_.swap(projScratch_);
+        for (size_t k = 0; k < localBooms_.size();)   // (one the server never blew up near there: forgotten after 2 s)
+            if (time_ - localBooms_[k].t > 2.0) localBooms_.erase(localBooms_.begin() + k); else k++;
+        // your sticky detonate, at once: alt-fire with the launcher out sets off your armed stickies (the server's rule,
+        // server.cpp; armed: seen for the arm time, so never one the server would still hold back)
+        if (heldWeapon_ == WPN_STICKY && isDown(A_ALTFIRE) && !localFireLocked_ && net_.selfAlive() && !paused_ && !chatting_)
+            for (auto& st : projStarts_) {
+                if (st.boomed || time_ - st.seen < weaponAlt().stickyArmTime) continue;
+                for (auto& p : lastProjectiles_)
+                    if (p.id == st.id && p.type == WPN_STICKY) {
+                        Vec3 at = p.pos;
+                        if ((p.flags & PROJ_ON_PLAYER) && p.onPlayer == net_.clientId()) net_.attachedPos(p, 1.0f, &at);
+                        localBoom(p.id, WPN_STICKY, at); st.boomed = true;
+                    }
+            }
 
         int hp = net_.selfHealth();
         {   // the hurt sound: one per 0.15 s at most, louder for more damage (clientfeel.h; it played on every drop)
@@ -1678,10 +1771,14 @@ void Game::frame(double dt) {
         else if (perfMini_) drawPerfMini();
     }
     hudBuilt_ = false;
-    { QZONE("flush2D"); r_.flush2D(); }
+    { QZONE("flush2D"); QGPUZONE("GPU HUD"); r_.flush2D(); }
     pipeMark(PM_HUD);
     pipeGpuEnd();
 
+    if (!benchShot_.empty()) {   // BENCHMARK > EXPORT PNG: the result page as drawn this frame
+        if (screen_ == Screen::BenchmarkResult) notify((r_.screenshot(benchShot_) ? "SAVED " : "COULD NOT WRITE ") + upper(benchShot_), 6);
+        benchShot_.clear();
+    }
     if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
@@ -1711,20 +1808,71 @@ static const Vec3 kMuzzle[WPN_COUNT] = {
     {0, 0, -0.125f},        // locator (its emitter)
 };
 
+// The first-person models (the weapon, the grapple launcher): their pivots in camera space (+x right, +y up, -z ahead)
+// in the reference view, 16:9 at a 100 degree horizontal FOV (the default), low in the bottom corners; the HUD
+// element's x / y (720p units, 0.5 mm each, +y down the screen) and depth (mm) move it from there.
+static constexpr Vec3 kWeaponBase = {0.33f, -0.28f, -0.66f};    // (was 0.2, -0.17, -0.55)
+static constexpr Vec3 kHookBase = {-0.33f, -0.295f, -0.68f};    // (was -0.2, -0.19, -0.58)
+static constexpr float kHookViewScale = 0.7f;                   // the launcher at 70% of a weapon's size (the off hand)
+static constexpr float kRefAspect = 16.0f / 9.0f, kRefTanY = 1.19175359f / kRefAspect;   // (tan 50 degrees / aspect)
+
+// A first-person model's pivot (camera space) on this screen: kept at the same spot on the screen (as a fraction of
+// it) and the same height, whatever the aspect or FOV: x follows the aspect (out to the corner on an ultrawide, in on
+// 4:3), depth the vertical FOV (so a wider FOV or a zoom doesn't shrink or grow the model).
+Vec3 Game::viewAnchor(const Settings::HudElem& e, const Vec3& base) const {
+    const Vec3 p = base + Vec3(e.x * 0.0005f, -e.y * 0.0005f, -e.z * 0.001f);
+    const float tx = r_.tanX(), ty = r_.tanY();
+    if (!(tx > 0) || !(ty > 0)) return p;
+    return {p.x * (tx / ty) / kRefAspect, p.y, p.z * kRefTanY / ty};
+}
+
+// A HUD model element's tilt about its pivot (degrees: + pitch = up, + yaw = right, + roll = clockwise)
+static Mat4 viewTilt(const Settings::HudElem& e) {
+    const float r = -deg2rad(e.roll), c = std::cos(r), s = std::sin(r);
+    Mat4 rz;
+    rz.m[0] = c; rz.m[1] = s; rz.m[4] = -s; rz.m[5] = c;
+    return Mat4::rotY(-deg2rad(e.yaw)) * Mat4::rotX(deg2rad(e.pitch)) * rz;
+}
+static bool tilted(const Settings::HudElem& e) { return e.pitch != 0 || e.yaw != 0 || e.roll != 0; }
+
+// The weapon model's frame (weapon space x its size -> camera space): at its pivot, pushed back by the kick, tilted
+Mat4 Game::weaponFrame(float kick) const {
+    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    Vec3 at = viewAnchor(vm, kWeaponBase);
+    at.z += kick;
+    return tilted(vm) ? Mat4::translate(at) * viewTilt(vm) : Mat4::translate(at);
+}
+
 // Where your shots come out: the muzzle of the weapon model wherever the HUD settings put it (x / y / depth /
-// size), so beams, tracers and your projectiles leave the gun you see. Hidden model: a spot low and right.
+// size / tilt), so beams, tracers and your projectiles leave the gun you see. Hidden model: a spot low and right.
 Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     Vec3 d = angleForward(yaw_, pitch_), right = normalize(cross(d, {0, 1, 0}));
     if (weapon < 0 || weapon >= WPN_COUNT) return eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0); // (hidden model: where it would be)
-    Vec3 o = Vec3(0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + (float)recoil_ * 0.06f) + kMuzzle[weapon] * vm.scale;
+    const Mat4 f = weaponFrame((float)recoil_ * 0.06f);
+    const Vec3 m = kMuzzle[weapon] * vm.scale;
+    Vec3 o = {f.m[0] * m.x + f.m[4] * m.y + f.m[8] * m.z + f.m[12], f.m[1] * m.x + f.m[5] * m.y + f.m[9] * m.z + f.m[13],
+              f.m[2] * m.x + f.m[6] * m.y + f.m[10] * m.z + f.m[14]};
     float cp = std::cos(pitch_), sp = std::sin(pitch_), cy = std::cos(yaw_), sy = std::sin(yaw_);
     Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};           // the viewmodel's own transform (rotX, then rotY)
     return eye + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
 }
 
+// A point in an arm prop's space (offset from the shoulder, models.h) in the world: turned by the aim (rotX(pitch), then
+// rotY(yaw)), as drawArm turns the arm
+static Vec3 armPoint(const Vec3& shoulder, float yaw, float pitch, const Vec3& o) {
+    float cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
+    Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};
+    return shoulder + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
+}
+static Vec3 xfPoint(const Mat4& m, const Vec3& p) {
+    return {m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12], m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13],
+            m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14]};
+}
+
 void Game::drawWorld(float alpha) {
     QZONE("drawWorld");
+    drawFrame_++;
     r_.shadowCasters = cfg_.shadows;   // (shadows off: nothing off screen is built just to be thrown away)
     const Map& map = net_.map();
     const ModeState& ms = net_.mode();
@@ -1808,6 +1956,14 @@ void Game::drawWorld(float alpha) {
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
             ip.snap.yaw = yaw_ + 3.14159265f;
             if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
+            if (opts_.debugHook) {   // --hook: turned side-on (the launcher arm toward you); every other one hangs on a
+                                     // rope to a point up behind them, the rest have the claw in the barrel
+                ip.snap.yaw -= 1.3f;
+                if (k % 2) {
+                    ip.snap.hooked = 1;
+                    ip.snap.hookPoint = ip.snap.pos + f * 6.0f + rt * ((k - 2) * 2.0f) + Vec3(0, 7.0f, 0);
+                }
+            }
             if (isItMode(net_.mode().mode)) {   // hide and seek / tag: each as "it", holding the knife (or --weapon)
                 ip.snap.flags |= PS_HASBOMB;
                 ip.snap.yaw -= 1.0f;   // (turned aside: the weapon side-on)
@@ -1818,6 +1974,7 @@ void Game::drawWorld(float alpha) {
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
     const float bs = bodyScale();
     const bool ranked = rankedPlayer();
+    const bool grappleOn = moveTuning().grapple;   // (the mode's rules: no grapple, no launcher on anyone's arm)
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
         const PlayerSnap& p = players[i].snap;
@@ -1865,7 +2022,10 @@ void Game::drawWorld(float alpha) {
             if (p.flags & PS_HASBOMB) drawHeldWeapon(i, p.weapon, at(1.3f) + rgt * (0.3f * bs), yaw, pitch, bs, col, sv);
         } else if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
-            drawArm(PROP_GUN_ARM, shoulder, yaw, pitch, bs, sv);
+            drawArm(PROP_GUN_ARM, shoulder, yaw, pitch, bs, sv, kNoSlots);
+            if (cfg_.muzzleFlash && time_ < remoteMuzzleUntil_[i])   // (the gun arm is 0.7 long, along the aim)
+                drawMuzzleFlash(shoulder + angleForward(yaw, pitch) * (0.74f * bs), p.weapon, teamColor(i),
+                                (float)std::min(1.0, (remoteMuzzleUntil_[i] - time_) / 0.05), bs);
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode)) {   // the bomb on its carrier's back (player space)
                 if (const ModelMesh* bov = modelOverride(MODEL_PROP, PROP_BOMB_PACK)) {
                     Vec3 tint[TINT_COUNT];
@@ -1883,6 +2043,16 @@ void Game::drawWorld(float alpha) {
                     }
                 }
             }
+        }
+        if (vis && grappleOn) {   // the grapple launcher on the left arm: the claw in its barrel, or out on the rope
+            const Vec3 lsh = at(1.3f) - rgt * (0.3f * bs);
+            ModelPalette hpal = referencePalette(MODEL_PROP, PROP_HOOK_ARM);
+            hpal.c[TINT_TEAM] = col;
+            drawArm(PROP_HOOK_ARM, lsh, yaw, pitch, bs, sv, hpal);
+            const bool hookOut = self && alive ? (net_.predicted().flags & MF_HOOKED) != 0 : p.hooked != 0;
+            if (!hookOut) drawHookClaw(lsh, (kHookMuzzle + kHookSeat) * bs, yaw, pitch, bs, sv);
+            hookMuzzle_[i] = armPoint(lsh, yaw, pitch, kHookMuzzle * bs);   // (their rope starts here)
+            hookMuzzleFrame_[i] = drawFrame_;
         }
         // hide and seek: the seeker is marked only where you can see them (hiders are never shown where the seeker is,
         // owner B8); tag: the HUD marks the tagger everywhere, through walls (drawTaggerMarker)
@@ -1991,20 +2161,79 @@ void Game::drawWorld(float alpha) {
     r_.outlineWidth = 1.0f;
     // grapple ropes
     // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
-    auto ropeEnd = [&](int target, const Vec3& anchor) {
+    auto ropeEnd = [&](int target, const Vec3& anchor, uint16_t rocket = 0) {
+        if (target == kHookRocket - 1) {   // riding a rocket: to it as it's drawn (yours: the anchor, drawn as far ahead)
+            if (rocket) for (const auto& pr : lastProjectiles_) if (pr.id == rocket && pr.owner != me) return pr.pos;
+            return anchor;
+        }
         if (target < 0 || target >= kMaxPlayers || !players[target].valid || players[target].snap.hidden || !(players[target].snap.flags & PS_ALIVE)) return anchor;
         Vec3 at = target == me && alive ? net_.smoothedPos(alpha) : players[target].snap.pos;
         return at + Vec3(0, 1.0f * bs, 0);
     };
+    // The first-person grapple launcher, low on the left (its own HUD element, GRAPPLE MODEL: x / y / depth / size /
+    // tilt / accent colour): placed here, before the ropes, so your rope leaves its muzzle; drawn with the viewmodel
+    // below. Not on a mode without the grapple, nor while hidden or scoped. While hooked the claw is out on the rope and
+    // the arm comes up a little and turns toward the hook (eased).
+    const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
+    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    const auto& gm = cfg_.hud[Settings::HUD_GRAPPLE];
+    const bool fpHook = grappleOn && (alive || specGun) && !(alive && (net_.predicted().mods & MOVE_RUN_ONLY)) &&
+                        !(scoped_ && scopeOverlay_ && !specGun) && !gm.hidden;
+    bool fpHooked = false;
+    Vec3 fpHookTo;
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
-        Vec3 d = angleForward(yaw_, pitch_);
-        Vec3 right = normalize(cross(d, {0, 1, 0}));
-        const MoveState& pm = net_.predicted();
-        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, ropeEnd((int)pm.hookTarget - 1, pm.hookPoint), 0.03f, {0.1f, 0.1f, 0.1f, 1});
+        fpHooked = true;
+        fpHookTo = ropeEnd((int)net_.predicted().hookTarget - 1, net_.predicted().hookPoint, net_.predicted().hookProj);
+    } else if (specGun && players[viewing].snap.hooked) {
+        fpHooked = true;
+        fpHookTo = ropeEnd((int)players[viewing].snap.hooked - 2, players[viewing].snap.hookPoint, players[viewing].snap.hookProj);
+    }
+    const float hk = gm.scale * kHookViewScale;
+    const Vec3 hookHousing = {0, 0.015f, -0.42f};      // (PROP_HOOK_ARM's housing: the point the arm is placed and turned by)
+    Mat4 fpHookXf;                                    // PROP_HOOK_ARM space (x hk) -> camera space
+    Vec3 fpMuzzle;                                    // its muzzle in the world
+    if (fpHook) {
+        const Vec3 base = viewAnchor(gm, kHookBase);
+        float tYaw = -0.06f, tPitch = 0, tRaise = 0;  // (at rest: the barrel turned in a touch, toward the crosshair)
+        if (fpHooked) {   // toward the hook, from where the launcher is (camera space), at most ~30 degrees
+            const Vec3 f = angleForward(camYaw, camPitch), rt = normalize(cross(f, {0, 1, 0})), up = cross(rt, f);
+            const Vec3 d = fpHookTo - r_.viewPoint(base);
+            const Vec3 c = {dot(d, rt), dot(d, up), -dot(d, f)};
+            const float l = length(c);
+            if (l > 0.3f) {
+                tYaw = clampf(std::atan2(-c.x, -c.z), -0.5f, 0.5f);
+                tPitch = clampf(std::asin(clampf(c.y / l, -1, 1)), -0.5f, 0.5f);
+            }
+            tRaise = 1;
+        }
+        const float e = 1.0f - std::exp(-14.0f * (float)frameDt_);
+        hookAimYaw_ += (tYaw - hookAimYaw_) * e;
+        hookAimPitch_ += (tPitch - hookAimPitch_) * e;
+        hookRaise_ += (tRaise - hookRaise_) * e;
+        fpHookXf = Mat4::translate(base + Vec3(0.01f, 0.035f, -0.03f) * hookRaise_) * Mat4::rotY(hookAimYaw_) * Mat4::rotX(hookAimPitch_);
+        if (tilted(gm)) fpHookXf = fpHookXf * viewTilt(gm);   // (about the housing, inside the turn toward the hook)
+        fpHookXf = fpHookXf * Mat4::translate(hookHousing * -hk);
+        fpMuzzle = r_.viewPoint(xfPoint(fpHookXf, kHookMuzzle * hk));
+    } else {
+        hookAimYaw_ = -0.06f; hookAimPitch_ = hookRaise_ = 0;   // (shown again: from rest, not from where it was)
+    }
+    // a rope, and the claw at its far end (sunk into what it caught, turned along the rope)
+    auto rope = [&](const Vec3& from, const Vec3& to, float width) {
+        r_.line(from, to, width, {0.1f, 0.1f, 0.1f, 1});
+        Vec3 d = to - from;
+        const float l = length(d);
+        if (l < 0.1f) return;
+        d = d / l;
+        drawHookClaw(to - d * (0.06f * bs), {0, 0, 0}, std::atan2(-d.x, -d.z), std::asin(clampf(d.y, -1, 1)), bs, 1.0f);
+    };
+    if (alive && fpHooked) {   // yours: from the first-person launcher (hidden viewmodel: low left of the eye)
+        Vec3 right = normalize(cross(angleForward(yaw_, pitch_), {0, 1, 0}));
+        rope(fpHook ? fpMuzzle : eye - Vec3(0, 0.25f, 0) - right * 0.15f, fpHookTo, 0.03f);
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == me || !players[i].valid || !players[i].snap.hooked) continue;
-        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint), 0.04f, {0.1f, 0.1f, 0.1f, 1});
+        const Vec3 from = i == viewing && fpHook ? fpMuzzle : hookMuzzleFrame_[i] == drawFrame_ ? hookMuzzle_[i] : players[i].snap.pos + Vec3(0, 1.2f, 0);
+        rope(from, ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint, players[i].snap.hookProj), 0.04f);
     }
 
     // other players' shots: laser beams while firing, a tracer when a sniper fires
@@ -2014,7 +2243,10 @@ void Game::drawWorld(float alpha) {
             const PlayerSnap& p = players[i].snap;
             int w = p.weapon;
             if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
-            if (w == WPN_SHOTGUN && !remoteFiring_[i] && cfg_.enemyShots) { // pellet tracers in the server's fixed pattern
+            // muzzle flash: each shot's firing edge (the laser's for as long as it fires)
+            if (w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && (!remoteFiring_[i] || w == WPN_LASER))
+                remoteMuzzleUntil_[i] = time_ + (w == WPN_SNIPER ? 0.07 : 0.05);
+            if (w == WPN_SHOTGUN && !remoteFiring_[i] && (cfg_.enemyShots || cfg_.impactSparks)) { // pellet tracers in the server's fixed pattern
                 const PlayerSnap& q = players[i].snap;
                 Vec3 eyeP = q.pos + Vec3(0, ((q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);   // (giant / double size: their eye, not a body below it)
                 Vec3 aim = angleForward(q.yaw, q.pitch);
@@ -2022,11 +2254,12 @@ void Game::drawWorld(float alpha) {
                 for (int k = 0; k < wd.pellets; k++) {
                     Vec3 d = spreadAim(aim, wd.spread, k, wd.pellets, 0);
                     float bangT, t = map.raycastBullet(eyeP, d, wd.range, &bangT);
-                    tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
+                    if (cfg_.enemyShots) tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
+                    if (cfg_.impactSparks) shotSpark(eyeP, d, t, wd.range, i);
                 }
             }
             // (the rifle too, X3: each of its shots is its own firing edge, 0.15 s apart against the flag's 0.1 s)
-            if (cfg_.enemyShots && (w == WPN_LASER || ((w == WPN_SNIPER || w == WPN_RIFLE) && !remoteFiring_[i]))) {
+            if ((cfg_.enemyShots || cfg_.impactSparks) && (w == WPN_LASER || ((w == WPN_SNIPER || w == WPN_RIFLE) && !remoteFiring_[i]))) {
                 Vec3 eyeP = p.pos + Vec3(0, ((p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
@@ -2036,12 +2269,19 @@ void Game::drawWorld(float alpha) {
                 // (watching through their eyes: a line from the eye along the view is edge on, invisible; from the
                 // gun's place, low and to the right, like your own)
                 if (i == viewing && !alive) start += Vec3(std::cos(p.yaw), 0, -std::sin(p.yaw)) * 0.2f + Vec3(0, -0.17f, 0);
-                if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
+                if (!cfg_.enemyShots) {}
+                else if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
                 else tracers_.push_back({start, end, time_ + (w == WPN_SNIPER ? 0.9 : 0.2)});
+                if (cfg_.impactSparks && (w != WPN_LASER || time_ >= remoteSparkAt_[i]) && shotSpark(eyeP, d, t, range, i) && w == WPN_LASER)
+                    remoteSparkAt_[i] = time_ + 0.05;   // (the laser fires every 10 ms: a spark at 20 Hz, like yours)
             }
         }
         remoteFiring_[i] = firing;
     }
+    // your muzzle flash, at the weapon model's muzzle (none with the model hidden, or scoped: the scope covers it)
+    if (alive && cfg_.muzzleFlash && time_ < muzzleUntil_ && !scoped_ && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden)
+        drawMuzzleFlash(muzzlePoint(heldWeapon_, eye), heldWeapon_, cfg_.colorFriendly, (float)std::min(1.0, (muzzleUntil_ - time_) / 0.05),
+                        cfg_.hud[Settings::HUD_VIEWMODEL].scale * 0.5f);
     // own laser beam follows the crosshair while held; alt-fire (pull) adds pulses running back toward you
     if (alive && time_ < laserUntil_ && heldWeapon_ == WPN_LASER) {
         Vec3 d = angleForward(yaw_, pitch_);
@@ -2082,7 +2322,13 @@ void Game::drawWorld(float alpha) {
         projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
         const Vec3 d = p - q.pos;
         const float len = length(d);
-        if (len > 1e-4f && map.raycast(q.pos, d / len, len) >= 0) { q.atWall = true; continue; }   // (hidden; the server's copy still takes over from it)
+        float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len) : -1.0f, et;
+        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
+        if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
+            q.atWall = true;
+            if (q.type != WPN_KNIFE) { localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true; }
+            continue;
+        }
         q.pos = p;
         if (!q.started) { q.started = true; q.offset = muzzlePoint(q.type, eye) - q.pos0; }
     }
@@ -2104,6 +2350,10 @@ void Game::drawWorld(float alpha) {
                 projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
                 if (length(st.offset) > 3.0f) st.offset = {};
+                if (copy->boomed) {   // it blew up on your screen before the server's copy came: that one is it
+                    st.boomed = true;
+                    for (auto& b : localBooms_) if (b.id == 0xFFFF && b.type == pr.type) { b.id = pr.id; break; }
+                }
                 copy->live = false;
             } else if (!found && alive) {
                 // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
@@ -2159,17 +2409,22 @@ void Game::drawWorld(float alpha) {
         else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
         };
     for (auto pr : lastProjectiles_) {
+        bool boomed = false;
         for (auto& st : projStarts_)
-            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) {   // (X5: as far along as its copy was, short of the wall)
+            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)) && !st.boomed) {   // (X5: as far along as its copy was, short of the wall)
                 Vec3 p = pr.pos, v = pr.vel;
                 projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 const Vec3 d = p - pr.pos;
                 const float len = length(d);
-                const float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f;
+                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f, et;
+                const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
+                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
+                if (blows && hit >= 0) { localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true; }   // where it lands, as you see it
                 pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
                 pr.vel = v;
             }
-        drawProj(pr, false);
+        for (auto& st : projStarts_) boomed |= st.id == pr.id && st.boomed;
+        if (!boomed) drawProj(pr, false);
     }
     for (auto& q : predProj_) {
         if (!q.live || q.atWall) continue;
@@ -2186,11 +2441,11 @@ void Game::drawWorld(float alpha) {
     drawStuckProps(eye, alpha);
     // explosions
     for (size_t i = 0; i < explosions_.size();) {
-        float t = (float)(time_ - explosions_[i].start) / 0.35f;
+        float t = (float)(time_ - explosions_[i].start) / explosions_[i].life;
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
+        Color ec = explosions_[i].wall ? Color{1.0f, 0.82f, 0.45f, 0.85f * (1 - t)} : explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
                  : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)} : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
@@ -2292,10 +2547,9 @@ void Game::drawWorld(float alpha) {
 
     // viewmodel (hide and seek / tag: only "it" holds anything)
     // (spectating: the gun of whoever we're watching)
-    const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
+    r_.viewOpacity = cfg_.viewmodelOpacity;   // (GAMEPLAY > WEAPON MODEL OPACITY: the gun and the launcher, in the view pass)
     const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
     bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB)) && !(opts_.debugWeapon > 0 && !specGun);   // (--weapon: shown anyway, for screenshots)
-    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps; outside the view model's test: scoped, hidden
     // or dead it never decayed, and unscoping replayed the whole kick, and the muzzle stayed pushed back)
     recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);
@@ -2309,26 +2563,66 @@ void Game::drawWorld(float alpha) {
         vpal.c[TINT_BASE] = viewmodelBase(r_.baseColor);
         vpal.c[TINT_TEAM] = vm.custom ? vm.color : cfg_.colorFriendly;
         vpal.c[TINT_GLOW] = r_.glowColor;
-        // placed from the HUD settings: x / y in 720p units (+y down the screen), depth in mm, scale
-        Vec3 at = {0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + kick};
+        // placed from the HUD settings: x / y in 720p units (+y down the screen), depth in mm, scale, tilt
+        // (untilted: the plain camera-space boxes, no matrix per box)
+        const Mat4 wf = weaponFrame(kick);
+        const bool tilt = tilted(vm);
+        const Vec3 at = {wf.m[12], wf.m[13], wf.m[14]};
         const float k = vm.scale;
         if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_WEAPON, w, vpal, tint);
-            r_.viewMesh(*ov, at, k, tint);
+            if (tilt) {
+                Mat4 sc;
+                sc.m[0] = sc.m[5] = sc.m[10] = k;
+                r_.viewMeshXf(*ov, wf * sc, tint);
+            } else r_.viewMesh(*ov, at, k, tint);
         } else {
             if (const ModelParts* bx = boxOverride(MODEL_WEAPON, w)) overrideBoxParts(MODEL_WEAPON, w, *bx, vpal, 1.0f, parts_);
             else viewmodelParts(w, vpal, parts_);
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
-            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
+            for (const ModelPart& q : parts_) {
+                const Vec3 c = q.slot == TINT_GLOW ? q.color * glow : q.color;
+                if (tilt) r_.viewBoxXf(wf * Mat4::translate(q.c * k), q.h * k, c);
+                else r_.viewBox(at + q.c * k, q.h * k, c);
+            }
+        }
+    }
+    if (fpHook) {   // the grapple launcher (placed above, with the ropes); the claw in its barrel unless it's out
+        ModelPalette hpal = referencePalette(MODEL_PROP, PROP_HOOK_ARM);
+        hpal.c[TINT_TEAM] = gm.custom ? gm.color : cfg_.colorFriendly;   // (its stripe: the element's accent colour)
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = hk;
+        if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK_ARM)) {   // the owner's model (docs/ASSETS.md)
+            Vec3 tint[TINT_COUNT];
+            overrideTints(MODEL_PROP, PROP_HOOK_ARM, hpal, tint);
+            r_.viewMeshXf(*ov, fpHookXf * sc, tint);
+        } else {
+            if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK_ARM)) overrideBoxParts(MODEL_PROP, PROP_HOOK_ARM, *bx, hpal, 1.0f, parts_);
+            else propParts(PROP_HOOK_ARM, hpal, parts_);
+            for (const ModelPart& q : parts_) r_.viewBoxXf(fpHookXf * Mat4::translate(q.c * hk), q.h * hk, q.color);
+        }
+        if (!fpHooked) {
+            const Mat4 seat = fpHookXf * Mat4::translate((kHookMuzzle + kHookSeat) * hk);
+            const ModelPalette& cpal = referencePalette(MODEL_PROP, PROP_HOOK);
+            if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK)) {
+                Vec3 tint[TINT_COUNT];
+                overrideTints(MODEL_PROP, PROP_HOOK, cpal, tint);
+                r_.viewMeshXf(*ov, seat * sc, tint);
+            } else {
+                if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK)) overrideBoxParts(MODEL_PROP, PROP_HOOK, *bx, cpal, 1.0f, parts_);
+                else propParts(PROP_HOOK, cpal, parts_);
+                for (const ModelPart& q : parts_) r_.viewBoxXf(seat * Mat4::translate(q.c * hk), q.h * hk, q.color);
+            }
         }
     }
     sceneSettings();
     // The HUD, F3 / F4 and their upload, before the late read: off the mouse to photon path (it used to sit between the
     // read and the swap, ~87 us at 4000 fps). What it places in the 3D view (damage numbers, the locator box) uses the
     // aim from before the read, a sliver of a turn behind, like the name tags above (owner: the UI may lag the aim).
-    drawHud();
+    if (bench_.phase != BenchRun::OFF) drawBenchOverlay((float)r_.width(), (float)r_.height(), r_.height() / 720.0f);   // (a camera: no HUD)
+    else drawHud();
     if (showPerf_) drawPerf();
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
@@ -2515,49 +2809,179 @@ void Game::drawRps(float W, float H, float s, float top) {
     }
 }
 
-// ---- The HUD's elements: each drawn from its values, so the live HUD and Settings > HUD's preview (sample values in
-// the main menu, the live ones in game) are the same code; each returns where it is on screen (draw false: only that,
-// for a hidden element's outline; a drawn one may return an empty rect, so the live HUD measures nothing extra).
-// Positions and sizes from the element's HUD settings.
-static Color hudTint(const Settings::HudElem& e, Color c) { return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; }
+// ---- The HUD's elements: each drawn from its values, so the live HUD and Settings > HUD's editor (sample values in
+// the main menu, the live ones in game) are the same code; each returns its box on screen (draw false: only that, for
+// the editor's outlines and hit tests).
+//
+// Each element is laid out by the layout engine (layout.h) in a Layout of its own, so it re-solves only when its own
+// content, settings or theme change (most frames reuse the last solve): a floating box anchored to the screen's
+// corner, edge or centre it belongs to, holding its content. ref is where the element's box puts that anchor point in
+// the default look (its HUD offsets included); the theme (theme.cfg, theme.h) adds padding inside the box (it grows
+// away from the screen edge it's anchored to, around the content on a centred axis), a margin that moves it, a
+// background and border with rounded corners, a colour, a text size and an opacity. With no theme every element is
+// where and as it always was.
 
-Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float, float H, float s, int hp, Color num, Color bar, bool draw) {
-    // health: number + bar, bottom left
-    float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
-    if (draw) {
-        float hts = std::max(1.0f, std::round(ui_.textScale() * 2 * e.scale));
-        r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? num : kRed);
-        r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
-        r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? bar : kRed);
+namespace {
+const char* const kHudElemLabels[Settings::HUD_COUNT] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
+                                                        "WEAPON MODEL", "KEY OVERLAY", "GRAPPLE MODEL", "SCORE BOX", "KILL FEED", "CHAT"};
+// a HUD element's theme opacity, for the draws of one scope (Renderer::setAlpha)
+struct AlphaScope {
+    Renderer& r; float old;
+    AlphaScope(Renderer& rr, float a) : r(rr), old(rr.alpha()) { r.setAlpha(old * a); }
+    ~AlphaScope() { r.setAlpha(old); }
+};
+}
+
+// theme.cfg, looked at once a second (the file's key comes from the watcher thread: filewatch.h); a new error shows once
+void Game::pollTheme() {
+    if (std::fabs(time_ - themePolledAt_) < 1.0) return;   // (the frame's clock: no clock read on the other frames)
+    themePolledAt_ = time_;
+    if (themePath_.empty()) themePath_ = userDataPath("theme.cfg");
+    theme_.poll(themePath_);
+    if (theme_.error() != themeErrShown_) {
+        themeErrShown_ = theme_.error();
+        if (!themeErrShown_.empty()) notify(themeErrShown_, 6);
     }
-    return {ox, oy - 70 * k, 200 * k, 50 * k};
+}
+
+const HudStyle& Game::hudStyle(int el) const {
+    static const HudStyle kNone;
+    return el >= 0 && el < Settings::HUD_COUNT ? theme_.style(el) : kNone;
+}
+
+float Game::hudOpacity(int el) const {
+    const HudStyle& st = hudStyle(el);
+    const float a = st.has(HudStyle::OPACITY) ? st.opacity : 1.0f;
+    return rankedPlayer() ? std::max(a, kRankedMinOpacity) : a;   // (ranked: a theme can dim the HUD, not hide it)
+}
+
+// The element's colour: its own HUD COLOR when that's on, else the theme's, else the built-in one (c; its alpha kept)
+Color Game::hudTint(int el, Color c) const {
+    const Settings::HudElem& e = cfg_.hud[el];
+    if (e.custom) return {e.color.x, e.color.y, e.color.z, c.a};
+    const HudStyle& st = hudStyle(el);
+    if (!st.has(HudStyle::COLOR)) return c;
+    const Color t = st.color.get(rgba(cfg_.colorFriendly), rgba(cfg_.colorEnemy));
+    return {t.r, t.g, t.b, c.a * t.a};
+}
+
+lay::Layout& Game::hudOpen(int el, float W, float H, float ax, float ay, float refX, float refY, float k, lay::Decl d, const float* defPad, bool themePad) {
+    const HudStyle& st = hudStyle(el);
+    lay::Layout& L = hudLay_[el];
+    L.begin(W, H);
+    float pad[4] = {0, 0, 0, 0};
+    if (themePad && st.has(HudStyle::PADDING)) for (int i = 0; i < 4; i++) pad[i] = st.pad[i] * k;
+    else if (defPad) for (int i = 0; i < 4; i++) pad[i] = defPad[i];
+    float mx = 0, my = 0;
+    if (st.has(HudStyle::MARGIN)) { mx = (st.margin[0] - st.margin[2]) * k; my = (st.margin[1] - st.margin[3]) * k; }
+    d.padding(pad[0], pad[1], pad[2], pad[3]).floatAt(ax, ay, ax, ay, refX - ax * W + mx, refY - ay * H + my);
+    L.open(lay::id("hud"), d, kHudElemLabels[el]);
+    return L;
+}
+
+// True when element el's declaration would be the same as last frame's (the screen, the theme's version and v: what
+// its declaration is made from), so its last layout stands and it declares nothing (Layout::same: most frames).
+bool Game::hudSame(int el, float W, float H, const float* v, int n) {
+    float key[lay::Layout::kMaxKey / sizeof(float)];
+    if (n + 3 > (int)(lay::Layout::kMaxKey / sizeof(float))) { hudLay_[el].same(nullptr, lay::Layout::kMaxKey + 1); return false; }
+    const uint32_t ver = theme_.version();
+    key[0] = W; key[1] = H; std::memcpy(&key[2], &ver, 4);
+    std::memcpy(key + 3, v, sizeof(float) * (size_t)n);
+    return hudLay_[el].same(key, (n + 3) * (int)sizeof(float));
+}
+
+// An element of one box of content (cw x ch), its anchor point at (refX, refY): its box, and the content's in c.
+lay::Rect Game::hudSimple(int el, float W, float H, float ax, float ay, float refX, float refY, float k, float cw, float ch, lay::Rect& c) {
+    const float v[] = {refX, refY, k, cw, ch};
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, v, 5)) {
+        hudOpen(el, W, H, ax, ay, refX, refY, k, lay::Decl());
+        L.leaf(lay::id("content"), lay::Decl().size(lay::Size::fixed(cw), lay::Size::fixed(ch)));
+        hudClose(el);
+    }
+    c = L.rect(1);
+    return hudRect_[el] = L.rect(0);
+}
+
+lay::Rect Game::hudClose(int el) {
+    lay::Layout& L = hudLay_[el];
+    L.close();
+    L.solve();
+    return hudRect_[el] = L.rect(0);
+}
+
+// The element's own box: the theme's background (else def; alpha 0: none) and border, its corners rounded.
+void Game::hudBoxDraw(int el, const lay::Rect& r, float k, Color def) {
+    const HudStyle& st = hudStyle(el);
+    const Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
+    const Color bg = st.has(HudStyle::BACKGROUND) ? st.background.get(fc, ec) : def;
+    const float rad = st.has(HudStyle::RADIUS) ? st.radius * k : 0;
+    if (bg.a > 0) r_.roundRect(r.x, r.y, r.w, r.h, rad, bg);
+    if (st.has(HudStyle::BORDER) && st.borderW > 0) r_.roundRect(r.x, r.y, r.w, r.h, rad, st.border.get(fc, ec), std::max(1.0f, st.borderW * k));
+}
+
+float Game::hudFont(int el) const {
+    const HudStyle& st = hudStyle(el);
+    return (st.has(HudStyle::FONT) ? st.fontScale : 1.0f) * cfg_.hud[el].scale;
+}
+
+Game::HudRect Game::drawHudHealth(const Settings::HudElem& e, float W, float H, float s, int hp, Color num, Color bar, bool draw) {
+    // health: number + bar, bottom left (the content 200 x 50, its bottom 20 over the screen's)
+    const int el = Settings::HUD_HEALTH;
+    const float k = s * e.scale;
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0, 1, 24 * s + e.x * s, H - 20 * k + e.y * s, k, 200 * k, 50 * k, c);
+    if (draw) {
+        AlphaScope a(r_, hudOpacity(el));
+        hudBoxDraw(el, r, k, {0, 0, 0, 0});
+        float hts = std::max(1.0f, std::round(ui_.textScale() * 2 * hudFont(el)));
+        r_.text(c.x, c.y, hts, std::to_string(hp), hp > 30 ? num : kRed);
+        r_.rect(c.x, c.y + 42 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
+        r_.rect(c.x, c.y + 42 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? bar : kRed);
+    }
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudWeaponName(const Settings::HudElem& e, float W, float H, float s, const std::string& wn, Color c, bool draw) {
-    // current weapon name, bottom right
-    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * e.scale)), tw = r_.textWidth(wn, wts);
-    float x = W - 24 * s + e.x * s - tw, y = H - 50 * s * e.scale + e.y * s;
-    if (draw) r_.text(x, y, wts, wn, c);
-    return {x, y, tw, r_.textHeight(wts)};
+    // current weapon name, bottom right (its right edge 24 in, its top 50 up)
+    const int el = Settings::HUD_WEAPON;
+    const float k = s * e.scale;
+    float wts = std::max(1.0f, std::round(ui_.textScale() * 1.5f * hudFont(el))), tw = hudWidth(hudCapW_[0], wn.c_str(), wts), th = r_.textHeight(wts);
+    lay::Rect t;
+    const lay::Rect r = hudSimple(el, W, H, 1, 1, W - 24 * s + e.x * s, H - 50 * k + th + e.y * s, k, tw, th, t);
+    if (draw) {
+        AlphaScope a(r_, hudOpacity(el));
+        hudBoxDraw(el, r, k, {0, 0, 0, 0});
+        r_.text(t.x, t.y, wts, wn, c);
+    }
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, float s, const HudBarVals& v, Color full, bool draw) {
     // dash + grapple cooldown bars under the crosshair (full = ready)
-    float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
+    const int el = Settings::HUD_BARS;
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, bcx = W * 0.5f + e.x * s, bcy = H * 0.5f + e.y * s;
     // (rows 16 apart, captions at text 1.5 centred on their bar: text 1 was below the redesign's smallest)
-    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * e.scale), lh = r_.textHeight(lts);
-    const float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
-    if (!draw) {
-        const float left = bx - r_.textWidth("WEAPON", lts) - 6 * k;   // (the widest caption)
-        return {left, bcy + 36 * k - 1, bx + bw + 1 - left, 32 * k + bh + 2};
-    }
-    auto bar = [&](float y, const char* label, float remaining, float total) {
+    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts);
+    const float bw = 90 * k, bh = 5 * k, wW = hudWidth(hudCapW_[1], "WEAPON", lts), capW = wW + 6 * k;   // (the widest caption)
+    const float rowStep = bh + (st.has(HudStyle::GAP) ? st.gap * k : 11 * k);
+    // the content: captions + bars, from the widest caption's left to the bars' outline, the first bar's outline down
+    const float cw = capW + bw + 1, ch = 2 * rowStep + bh + 2;
+    const float left = bcx - bw * 0.5f - capW, top = bcy + 36 * k - 1;
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, cw, ch, c);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    hudBoxDraw(el, r, k, {0, 0, 0, 0});
+    const float bx = c.x + capW, y0 = c.y + 1;
+    auto bar = [&](float y, const char* label, float lw, float remaining, float total) {
         float f = clampf(1.0f - remaining / total, 0, 1);
         r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
         r_.rect(bx, y, bw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
-        r_.text(bx - r_.textWidth(label, lts) - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
+        r_.text(bx - lw - 6 * k, y + (bh - lh) * 0.5f, lts, label, f >= 1 ? kWhite : kGrey);
     };
-    bar(bcy + 36 * k, "WEAPON", v.wRem, v.wTot);
+    bar(y0, "WEAPON", wW, v.wRem, v.wTot);
     {   // dash: a pip per charge (the ground refills them, a bhop landing one): a spent charge is empty; a charge
         // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
         // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
@@ -2566,60 +2990,354 @@ Game::HudRect Game::drawHudBars(const Settings::HudElem& e, float W, float H, fl
         // made one dash look like it had spent both charges)
         const int n = v.dashN, have = std::min(v.dashHave, n);
         const Color pip = v.dashReady ? full : Color{0.6f, 0.62f, 0.66f, 0.9f};
-        float y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
+        float y = y0 + rowStep, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
         for (int i = 0; i < n; i++) {
             float px = bx + i * (pw + gap);
             r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
             if (i < have) r_.rect(px, y, pw, bh, pip);
         }
-        r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && v.dashReady ? kWhite : kGrey);
+        r_.text(bx - hudWidth(hudCapW_[2], "DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && v.dashReady ? kWhite : kGrey);
     }
-    bar(bcy + 68 * k, "HOOK", v.hookRem, v.hookTot);
-    return {};
+    bar(y0 + 2 * rowStep, "HOOK", hudWidth(hudCapW_[3], "HOOK", lts), v.hookRem, v.hookTot);
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudSpeed(const Settings::HudElem& e, float W, float H, float s, float v, bool draw) {
     // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve (1 - e^(-v/20)): half full
     // at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
-    float k = s * e.scale, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
-    float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
-    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * e.scale), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
+    const int el = Settings::HUD_SPEED;
+    const float k = s * e.scale, bcx = W * 0.5f + e.x * s, y = H * 0.5f + 84 * k + e.y * s;
+    const float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
+    const float lts = std::max(r_.minTextScale(), ui_.textScale() * 0.75f * hudFont(el)), lh = r_.textHeight(lts), ly = y + (bh - lh) * 0.5f;
     char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
-    const float left = bx - r_.textWidth("SPEED", lts) - 6 * k;
-    if (!draw) {
-        const float right = bx + bw + 6 * k + r_.textWidth(buf, lts), top = std::min(y - 1, ly), bottom = std::max(y + bh + 1, ly + lh);
-        return {left, top, right - left, bottom - top};
-    } else {
-        float f = 1.0f - std::exp(-v / 20.0f);
-        Color c = hudTint(e, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
-        r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
-        r_.rect(bx, y, bw * f, bh, c);
-        for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
-            r_.rect(bx + bw * (1.0f - std::exp(-m / 20.0f)), y, 1, bh, {0, 0, 0, 0.6f});
-        r_.text(left, ly, lts, "SPEED", kWhite);
-        r_.text(bx + bw + 6 * k, ly, lts, buf, kWhite);
-    }
-    return {};
+    // the content: caption, bar and room for the number ("99.9": the box doesn't move as the number changes)
+    const float capW = hudWidth(hudCapW_[4], "SPEED", lts) + 6 * k, numW = 6 * k + hudWidth(hudCapW_[5], "99.9", lts);
+    const float top = std::min(y - 1, ly), bottom = std::max(y + bh + 1, ly + lh);
+    const float cw = capW + bw + numW, ch = bottom - top, left = bx - capW;
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0.5f, 0.5f, left + cw * 0.5f, top + ch * 0.5f, k, cw, ch, c);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    hudBoxDraw(el, r, k, {0, 0, 0, 0});
+    const float x0 = c.x + capW, y0 = c.y + (y - top), ly0 = c.y + (ly - top);
+    float f = 1.0f - std::exp(-v / 20.0f);
+    Color col = hudTint(el, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
+    r_.rect(x0 - 1, y0 - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
+    r_.rect(x0, y0, bw * f, bh, col);
+    for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
+        r_.rect(x0 + bw * (1.0f - std::exp(-m / 20.0f)), y0, 1, bh, {0, 0, 0, 0.6f});
+    r_.text(c.x, ly0, lts, "SPEED", kWhite);
+    r_.text(x0 + bw + 6 * k, ly0, lts, buf, kWhite);
+    return {r.x, r.y, r.w, r.h};
 }
 
 Game::HudRect Game::drawHudSlots(const Settings::HudElem& e, float W, float H, float s, int mode, uint32_t mask, int held, Color heldC, bool live, bool draw) {
-    // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ... right-aligned at the bottom right
-    const float x1 = W - 24 * s + e.x * s, y = H - 74 * s * e.scale + e.y * s;
-    float bx = x1;
-    float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * e.scale));
-    for (int k = WPN_COUNT - 1; k >= 0; k--) {
-        int wi = kWeaponSlots[k];
+    // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ... a row ending 38 in from the right, 74 up
+    const int el = Settings::HUD_SLOTS;
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale;
+    const float sts = std::max(1.0f, std::round(ui_.textScale() * 0.75f * hudFont(el))), th = r_.textHeight(sts);
+    struct Slot { int kk, wi; bool has; double away; };
+    Slot slots[WPN_COUNT];
+    int n = 0;
+    SlotLabels& sl = hudSlotW_;   // (each slot's label and width, kept: measured again only when its text changes)
+    if (sl.ts != sts || sl.gen != r_.fontGeneration()) { sl.ts = sts; sl.gen = r_.fontGeneration(); for (int& a : sl.away) a = INT_MIN; }
+    for (int kk = 0; kk < WPN_COUNT; kk++) {
+        int wi = kWeaponSlots[kk];
         bool has = !mask || (mask >> wi & 1);
         if (!weaponInMode(wi, mode) || (isItMode(mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
-        std::string t = std::to_string(weaponSlotKey(k)) + " " + weaponDef(wi).name;
         double awayLeft = live ? weaponAwayLeft(wi) : 0;   // a thrown knife / syringe: disabled, greyed with its timer
-        if (awayLeft > 0) t += " " + std::to_string((int)std::ceil(awayLeft - 1e-6)); // (seconds until it's back)
-        float tw = r_.textWidth(t, sts);
-        bx -= tw + 14 * s * e.scale;
-        bool inPool = has && awayLeft <= 0;
-        if (draw) r_.text(bx, y, sts, t, wi == held && awayLeft <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+        // (the label: formatted and measured only when its seconds change; -1: none)
+        const int away = awayLeft > 0 ? (int)std::ceil(awayLeft - 1e-6) : -1;
+        if (sl.away[kk] != away) {
+            sl.away[kk] = away;
+            if (away >= 0) snprintf(sl.t[kk], sizeof sl.t[kk], "%d %s %d", weaponSlotKey(kk), weaponDef(wi).name, away);   // (seconds until it's back)
+            else snprintf(sl.t[kk], sizeof sl.t[kk], "%d %s", weaponSlotKey(kk), weaponDef(wi).name);
+            sl.w[kk] = r_.textWidth(sl.t[kk], sts);
+        }
+        slots[n++] = {kk, wi, has, awayLeft};
     }
-    return {bx, y, x1 - bx, r_.textHeight(sts)};
+    const float refX = W - 24 * s - 14 * k + e.x * s, refY = H - 74 * k + th + e.y * s;
+    float key[5 + WPN_COUNT] = {refX, refY, k, th};   // (which slots, as a bit each, and how wide each is)
+    uint32_t which = 0;
+    for (int i = 0; i < n; i++) { which |= 1u << slots[i].kk; key[5 + i] = sl.w[slots[i].kk]; }
+    std::memcpy(&key[4], &which, 4);
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, 5 + n)) {
+        hudOpen(el, W, H, 1, 1, refX, refY, k, lay::Decl().row().spacing(st.has(HudStyle::GAP) ? st.gap * k : 14 * k));
+        for (int i = 0; i < n; i++)
+            L.leaf(lay::id(lay::id("slot"), (uint32_t)slots[i].kk), lay::Decl().size(lay::Size::fixed(sl.w[slots[i].kk]), lay::Size::fixed(th)));
+        hudClose(el);
+    }
+    const lay::Rect r = hudRect_[el] = L.rect(0);
+    if (draw && n + 1 <= L.count()) {
+        AlphaScope a(r_, hudOpacity(el));
+        hudBoxDraw(el, r, k, {0, 0, 0, 0});
+        // (drawn from the right edge, each weapon's text left of the last as the solver placed them, but with the
+        // same float steps the hand-placed row took: not a glyph moves by a rounding)
+        float bx = W - 24 * s + e.x * s;   // (the row's right edge + one gap)
+        if (st.has(HudStyle::PADDING)) bx -= st.pad[2] * k;
+        if (st.has(HudStyle::MARGIN)) bx += (st.margin[0] - st.margin[2]) * k;
+        const float gap = st.has(HudStyle::GAP) ? st.gap * k : 14 * k;
+        if (st.has(HudStyle::GAP)) bx += gap - 14 * k;
+        const float y = L.rect(1).y;
+        for (int i = n - 1; i >= 0; i--) {
+            const Slot& q = slots[i];
+            bx -= L.rect(i + 1).w + gap;
+            const bool inPool = q.has && q.away <= 0;
+            r_.text(bx, y, sts, sl.t[q.kk], q.wi == held && q.away <= 0 ? heldC : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+        }
+    }
+    return {r.x, r.y, r.w, r.h};
+}
+
+// The score box (top centre): your score / your team's on the left, the best other / the enemy's on the right, the
+// mode's title and phase between; at least 440 wide and 64 high, as wide as the screen at most (sized from the real text
+// sizes: HUD text is rounded to whole steps, so it's relatively bigger at small heights). Ranked: a gold stripe and tag.
+Game::HudRect Game::drawHudScore(const ScoreText& t, float W, float H, float s, bool draw) {
+    const int el = Settings::HUD_SCORE;
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, fm = hudFont(el);
+    const float ts = std::max(1.0f, std::round(ui_.textScale() * fm)), sts = ts * 1.5f, th = r_.textHeight(ts), sh = r_.textHeight(sts);
+    // (the lines' widths: measured again only when a line, the size or the font changes)
+    ScoreWidths& cw = hudScoreW_;
+    if (cw.ts != ts || cw.gen != r_.fontGeneration()) { cw.ts = ts; cw.gen = r_.fontGeneration(); cw.title = "\x01"; cw.phase = cw.scoreA = cw.scoreB = cw.title; }
+    if (cw.title != t.title) { cw.title = t.title; cw.wTitle = r_.textWidth(t.title, ts); }
+    if (cw.phase != t.phase) { cw.phase = t.phase; cw.wPhase = r_.textWidth(t.phase, ts); }
+    if (cw.scoreA != t.scoreA) { cw.scoreA = t.scoreA; cw.wA = r_.textWidth(t.scoreA, sts); }
+    if (cw.scoreB != t.scoreB) { cw.scoreB = t.scoreB; cw.wB = r_.textWidth(t.scoreB, sts); }
+    const float scoreW = std::max(cw.wA, cw.wB);
+    const float defPad[4] = {20 * k, 8 * k, 20 * k, 8 * k};
+    const float key[] = {W * 0.5f + e.x * s, 8 * s + e.y * s, k, s, scoreW, sh, cw.wTitle, cw.wPhase, th};
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, 9)) {
+        hudOpen(el, W, H, 0.5f, 0, W * 0.5f + e.x * s, 8 * s + e.y * s, k,
+                                 lay::Decl().row().size(lay::Size::fit(440 * k, W - 16 * s), lay::Size::fit(64 * k))
+                                     .spacing(st.has(HudStyle::GAP) ? st.gap * k : 12 * k).align(lay::BETWEEN, lay::START), defPad);
+        L.leaf(lay::id("a"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
+        L.open(lay::id("mid"), lay::Decl().col().align(lay::START, lay::CENTER));
+        L.leaf(lay::id("title"), lay::Decl().size(lay::Size::fixed(cw.wTitle), lay::Size::fixed(std::max(22 * k, th + 4 * k))));
+        L.leaf(lay::id("phase"), lay::Decl().size(lay::Size::fixed(cw.wPhase), lay::Size::fixed(th)));
+        L.close();
+        L.leaf(lay::id("b"), lay::Decl().size(lay::Size::fixed(scoreW), lay::Size::fixed(sh)).alignSelf(lay::CENTER));
+        hudClose(el);
+    }
+    const lay::Rect r = hudRect_[el] = L.rect(0);
+    if (!draw || L.count() < 6) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    const Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
+    hudBoxDraw(el, r, k, {0.05f, 0.06f, 0.08f, 0.55f});
+    const float rad = st.has(HudStyle::RADIUS) ? std::min(st.radius * k, std::min(r.w, r.h) * 0.5f) : 0;
+    const float stripeH = st.has(HudStyle::STRIPE) ? st.stripeW * k : 2 * ui_.s();   // (the panel's accent line)
+    if (stripeH > 0) r_.rect(r.x + rad, r.y, r.w - 2 * rad, stripeH, st.has(HudStyle::STRIPE) ? st.stripe.get(fc, ec) : ui_.accent);
+    ui_.box(r.x, r.x + r.w);   // (the title and phase fit inside it)
+    const Color gold = {1.0f, 0.78f, 0.25f, 1};
+    if (t.ranked) { // always visible on a ranked server
+        const float hs = ui_.hintScale(), hh = r_.textHeight(hs);
+        r_.rect(r.x + rad, r.y, r.w - 2 * rad, 3 * s, gold);
+        const char* tag = t.unrated ? "RANKED - NOT RATED" : "RANKED";
+        float tw = r_.textWidth(tag, hs) + 12 * s; // tag on the panel's right edge, clear of the objective line
+        r_.rect(r.x + r.w + 4 * s, r.y, tw, hh + 8 * s, gold);
+        r_.text(r.x + r.w + 10 * s, r.y + 4 * s, hs, tag, {0.1f, 0.08f, 0.02f, 1});
+    }
+    const lay::Rect& m = L.rect(2);
+    const float cx = m.x + m.w * 0.5f;
+    ui_.labelCentered(cx, L.rect(3).y, t.title, hudTint(el, kWhite), fm);
+    ui_.labelCentered(cx, L.rect(4).y, t.phase, kGrey, fm);
+    if (!t.scoreA.empty()) {
+        const lay::Rect &qa = L.rect(1), &qb = L.rect(5);
+        r_.text(qa.x, qa.y, sts, t.scoreA, fc);
+        r_.text(qb.x + qb.w - cw.wB, qb.y, sts, t.scoreB, ec);
+    }
+    ui_.noBox();   // (the notice lines under it are as wide as the screen)
+    return {r.x, r.y, r.w, r.h};
+}
+
+// The score box's text: the mode's title, its phase line, the two scores (sample: a made-up free for all, the HUD
+// editor outside a game).
+void Game::scoreText(ScoreText& t, bool sample) const {
+    // (every line formatted into a buffer and assigned: the strings keep their capacity, so no allocation per frame)
+    t.ranked = t.unrated = false;
+    if (sample) {
+        t.title = modeTitle(MODE_FFA); t.phase = "2:00  -  1ST OF 6"; t.scoreA = "12"; t.scoreB = "9";
+        return;
+    }
+    const ModeState& ms = net_.mode();
+    const int me = net_.clientId();
+    const PlayerSnap* mep = net_.findPlayer(me);
+    const int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
+    char b[160];
+    if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
+    else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
+    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP)) {
+        snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
+    } else t.title = modeTitle(ms.mode);
+    b[0] = 0;
+    switch (ms.phase) {
+        case PHASE_WARMUP: {
+            if (ms.timeLeft > 0) { snprintf(b, sizeof b, "MATCH STARTS IN %d", (int)std::ceil(ms.timeLeft)); break; }
+            const int code = binds().code[A_VOTESTART][0];   // (the key's name: looked up when the bind changes)
+            if (code != voteKeyCode_) { voteKeyCode_ = code; voteKeyName_ = inputName(code); }
+            snprintf(b, sizeof b, ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - %s TO START THE RACE" : "WARMUP - %s TO VOTE START", voteKeyName_.c_str());
+            break;
+        }
+        case PHASE_FREEZE: // free for all is one long round: just the countdown
+            if (ms.mode == MODE_FFA) snprintf(b, sizeof b, "STARTING IN %d", (int)std::ceil(ms.timeLeft));
+            else snprintf(b, sizeof b, "ROUND %d - STARTS IN %d", ms.round, (int)std::ceil(ms.timeLeft));
+            break;
+        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h)
+            char line[32];
+            hudLiveLine(ms, line, sizeof line);
+            snprintf(b, sizeof b, "%s", line);
+            if (ms.mode == MODE_FFA) {   // your place (X10): "2ND OF 8", "=2ND" when shared
+                int of = 0; bool tied = false;
+                if (int k = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied); k > 0 && of > 1)
+                    snprintf(b, sizeof b, "%s%s%s%d%s OF %d", line, line[0] ? "  -  " : "", tied ? "=" : "", k, ordinalSuffix(k), of);
+            }
+            break;
+        }
+        case PHASE_ROUND_END: snprintf(b, sizeof b, "ROUND OVER"); break;
+        case PHASE_MATCH_END: snprintf(b, sizeof b, "MATCH OVER"); break;
+    }
+    t.phase = b;
+    t.ranked = (ms.flags & MS_RANKED) != 0;
+    t.unrated = unratedServer_;
+    t.scoreA.clear(); t.scoreB.clear();
+    if (modeIsTeamBased(ms.mode)) {
+        snprintf(b, sizeof b, "%d", myTeam == TEAM_A ? ms.scoreA : ms.scoreB); t.scoreA = b;
+        snprintf(b, sizeof b, "%d", myTeam == TEAM_A ? ms.scoreB : ms.scoreA); t.scoreB = b;
+    } else if (mep) {
+        int best = -9999;
+        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
+        snprintf(b, sizeof b, "%d", (int)mep->score); t.scoreA = b;
+        if (best == -9999) t.scoreB = "-"; else { snprintf(b, sizeof b, "%d", best); t.scoreB = b; }
+    }
+}
+
+// The kill feed (top right, under the verbose info block: top is where it starts, 12 at 720p without it): a line per
+// kill, each on its own dark box (the theme's background, border and padding style each line), 2 apart.
+Game::HudRect Game::drawHudKillFeed(float W, float H, float s, float top, bool sample, bool draw) {
+    const int el = Settings::HUD_KILLFEED;
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, ts = ui_.textScale() * hudFont(el), th = r_.textHeight(ts);
+    static const Feed kSample[] = {{"wraith [ROCKET] lynx", {1, 1, 1, 1}, 0}, {"ghost [RIFLE] ember", {1, 1, 1, 1}, 0}, {"lynx [KNIFE] ghost", {1, 1, 1, 1}, 0}};
+    const Feed* lines[24];
+    int n = 0;
+    if (sample) for (const Feed& f : kSample) lines[n++] = &f;
+    else for (const Feed& f : killFeed_) if (n < 24) lines[n++] = &f;
+    const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::END : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
+    float pad[4] = {6 * k, 3 * k, 6 * k, 3 * k};
+    if (st.has(HudStyle::PADDING)) for (int i = 0; i < 4; i++) pad[i] = st.pad[i] * k;
+    float key[24] = {W - 8 * s + e.x * s, top - 3 * s + e.y * s, k, ts, th, (float)n};
+    for (int i = 0; i < n && 6 + i < 24; i++) key[6 + i] = feedWidth(*lines[i], ts);
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, n <= 18 ? 6 + n : 99)) {
+        hudOpen(el, W, H, 1, 0, W - 8 * s + e.x * s, top - 3 * s + e.y * s, k,
+                lay::Decl().col().spacing(st.has(HudStyle::GAP) ? st.gap * k : 2 * k).align(lay::START, al), nullptr, false);
+        for (int i = 0; i < n; i++) {
+            L.open(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().padding(pad[0], pad[1], pad[2], pad[3]));
+            L.leaf(lay::id(lay::id("text"), (uint32_t)i), lay::Decl().size(lay::Size::fixed(feedWidth(*lines[i], ts)), lay::Size::fixed(th)));
+            L.close();
+        }
+        hudClose(el);
+    }
+    const lay::Rect r = hudRect_[el] = L.rect(0);
+    if (draw) {
+        AlphaScope a(r_, hudOpacity(el));
+        for (int i = 0; i < n && 2 + 2 * i < L.count(); i++) {
+            hudBoxDraw(el, L.rect(1 + 2 * i), k, {0, 0, 0, 0.4f});
+            const lay::Rect& q = L.rect(2 + 2 * i);
+            drawFeedText(q.x, q.y, ts, *lines[i]);
+        }
+    }
+    return {r.x, r.y, r.w, r.h};
+}
+
+// Chat (bottom left): the recent lines (typing: the whole recent history, on a dark box), the SAY line under them.
+Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sample, bool draw) {
+    const int el = Settings::HUD_CHAT;
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, ts = ts0 * hudFont(el), th = r_.textHeight(ts);
+    if (draw) while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
+    static const Feed kSample[] = {{"wraith: nice shot", {1, 1, 1, 1}, 0, 0, true}, {"ember: gg", {1, 1, 1, 1}, 0, 0, true}};
+    const Feed* lines[48];
+    int n = 0;
+    const bool showLines = !e.hidden || chatting_;   // (hidden: only while typing)
+    if (sample) for (const Feed& f : kSample) lines[n++] = &f;
+    else if (showLines)
+        for (const Feed& c : chatting_ ? chatLog_ : chatFeed_)   // (chat off: players' lines are hidden, server messages stay)
+            if (!(c.player && cfg_.chatOff) && n < 48) lines[n++] = &c;
+    const lay::Align al = !st.has(HudStyle::ALIGN) ? lay::START : st.align == 0 ? lay::START : st.align == 1 ? lay::CENTER : lay::END;
+    const float defPad[4] = {6 * k, 4 * k, 6 * k, 4 * k};
+    auto lineW = [&](int i) { const float cw = lines[i]->crown ? th * 1.2f : 0; return (cw ? cw + 4 * s : 0) + feedWidth(*lines[i], ts); };
+    float key[24] = {18 * s + e.x * s, H - 110 * s + e.y * s, k, s, th, (float)n};
+    for (int i = 0; i < n && 6 + i < 24; i++) key[6 + i] = lineW(i);
+    lay::Layout& L = hudLay_[el];
+    if (!hudSame(el, W, H, key, n <= 18 ? 6 + n : 99)) {
+        hudOpen(el, W, H, 0, 1, 18 * s + e.x * s, H - 110 * s + e.y * s, k,
+                lay::Decl().col().size(lay::Size::fixed(520 * k), lay::Size::fit()).spacing(st.has(HudStyle::GAP) ? st.gap * k : 4 * k)
+                    .align(lay::START, al), defPad);
+        for (int i = 0; i < n; i++) L.leaf(lay::id(lay::id("line"), (uint32_t)i), lay::Decl().size(lay::Size::fixed(lineW(i)), lay::Size::fixed(th)));
+        hudClose(el);
+    }
+    const lay::Rect r = hudRect_[el] = L.rect(0);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    {
+        AlphaScope a(r_, hudOpacity(el));
+        if (n > 0 && (chatting_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER))) hudBoxDraw(el, r, k, chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
+        for (int i = 0; i < n && i + 1 < L.count(); i++) {
+            const Feed& c = *lines[i];
+            const lay::Rect& q = L.rect(i + 1);
+            float cw = c.crown ? th * 1.2f : 0;
+            if (c.crown) drawCrown(q.x, q.y + th * 0.1f, cw, c.crown);
+            drawFeedText(q.x + (cw ? cw + 4 * s : 0), q.y, ts, c);
+        }
+    }
+    if (sample) return {r.x, r.y, r.w, r.h};
+    if (chatting_ && console_) drawConsole(W, H, s, ts0);
+    else if (chatting_) {
+        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
+        chatEdit(120, false);
+        float lts = std::max(1.0f, std::round(ui_.textScale()));
+        const float x = r.x + (st.has(HudStyle::PADDING) ? st.pad[0] * k : defPad[0]), y = r.y + r.h + 10 * k;
+        ui_.label(x, y, "SAY: " + chatText_, kWhite);
+        drawCaret(x, y, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
+    }
+    return {r.x, r.y, r.w, r.h};
+}
+
+Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool draw) {
+    const int el = Settings::HUD_KEYS;
+    const auto& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float k = s * e.scale, u = 30 * k, g = st.has(HudStyle::GAP) ? st.gap * k : 4 * k, side = 4 * u + 3 * g;
+    lay::Rect c;
+    const lay::Rect r = hudSimple(el, W, H, 0.5f, 1, W * 0.5f + e.x * s, H - 230 * s + side + e.y * s, k, side, side, c);
+    if (!draw) return {r.x, r.y, r.w, r.h};
+    AlphaScope a(r_, hudOpacity(el));
+    hudBoxDraw(el, r, k, {0, 0, 0, 0});
+    const float ox = c.x, oy = c.y, rad = st.has(HudStyle::RADIUS) ? st.radius * k : 0;
+    Color lit = hudTint(el, rgba(cfg_.colorFriendly, 0.9f));
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * hudFont(el)));
+    // alive: our own keys; spectating: what the watched player is holding (from the snapshot)
+    // (sample: Settings > HUD outside a game, nothing held)
+    const int spec = sample || net_.selfAlive() ? -1 : specKeysOf();
+    const uint16_t held = spec >= 0 ? net_.findPlayer(spec)->keys : 0;
+    auto key = [&](float col, float row, float wUnits, const char* label, int action, uint16_t bit) {
+        float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
+        bool on = spec >= 0 ? (held & bit) != 0 : !sample && isDown(action);
+        r_.roundRect(x, y, w, u, rad, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
+        r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
+    };
+    key(1, 0, 1, "W", A_FORWARD, KEY_FWD);
+    key(0, 1, 1, "A", A_LEFT, KEY_LEFT); key(1, 1, 1, "S", A_BACK, KEY_BACK); key(2, 1, 1, "D", A_RIGHT, KEY_RIGHT);
+    key(3, 0, 1, "LMB", A_FIRE, KEY_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE, KEY_ALT);
+    key(0, 2, 2, "JUMP", A_JUMP, KEY_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH, KEY_CROUCH);
+    key(0, 3, 2, "DASH", A_DASH, KEY_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE, KEY_HOOK);
+    return {r.x, r.y, r.w, r.h};
 }
 
 // The HUD while alive (drawHud; preview: Settings > HUD in game, where the cooldown bars and the speed meter show
@@ -2641,7 +3359,7 @@ void Game::drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, floa
             const auto& e = he[Settings::HUD_WEAPON];
             float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
             std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(weaponAlt().stickyMax);
-            r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : hudTint(e, kWhite));
+            r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : hudTint(Settings::HUD_WEAPON, kWhite));
         }
     }
     {   // enemy stickies stuck on you: a blinking warning under the crosshair
@@ -2664,9 +3382,9 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
     const Color fc = rgba(cfg_.colorFriendly);
     switch (el) {
         case Settings::HUD_HEALTH:
-            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(e, kWhite), hudTint(e, fc), draw);
+            return drawHudHealth(e, W, H, s, sample ? 100 : net_.selfHealth(), hudTint(el, kWhite), hudTint(el, fc), draw);
         case Settings::HUD_WEAPON:
-            return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(e, kWhite), draw);
+            return drawHudWeaponName(e, W, H, s, weaponDef(sample ? kWeaponSlots[0] : heldWeapon_).name, hudTint(el, kWhite), draw);
         case Settings::HUD_BARS: {
             HudBarVals v;
             if (!sample) {
@@ -2682,7 +3400,7 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
                 v.hookRem = mv.hookCooldown;
                 v.hookTot = kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map());
             }
-            return drawHudBars(e, W, H, s, v, hudTint(e, fc), draw);
+            return drawHudBars(e, W, H, s, v, hudTint(el, fc), draw);
         }
         case Settings::HUD_SPEED: {
             const MoveState& mv = net_.predicted();
@@ -2691,15 +3409,22 @@ Game::HudRect Game::drawHudElement(int el, float W, float H, float s, bool sampl
         case Settings::HUD_SLOTS: {
             const ModeState& ms = net_.mode();
             return drawHudSlots(e, W, H, s, sample ? (int)MODE_FFA : (int)ms.mode, sample ? 0u : ms.weaponMask,
-                                sample ? kWeaponSlots[0] : heldWeapon_, hudTint(e, fc), !sample, draw);
+                                sample ? kWeaponSlots[0] : heldWeapon_, hudTint(el, fc), !sample, draw);
         }
         case Settings::HUD_KEYS: return drawKeyOverlay(W, H, s, sample, draw);
+        case Settings::HUD_SCORE: {
+            scoreText(hudScoreText_, sample);
+            return drawHudScore(hudScoreText_, W, H, s, draw);
+        }
+        case Settings::HUD_KILLFEED: return drawHudKillFeed(W, H, s, hudFeedTop_ * s, sample, draw);
+        case Settings::HUD_CHAT: return drawChatBox(W, H, s, ui_.textScale(), sample, draw);
         default: return {};
     }
 }
 
 // Settings > HUD outside a game (and in one while dead): every shown element with sample values where it really goes
 void Game::drawHudSample(float W, float H, float s) {
+    if (theme_.pollDue()) { if (themePath_.empty()) themePath_ = userDataPath("theme.cfg"); theme_.poll(themePath_); }   // (drawHud polls it in game)
     static const int els[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS};
     for (int el : els) if (!cfg_.hud[el].hidden) drawHudElement(el, W, H, s, true);
     if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden) drawKeyOverlay(W, H, s, true);   // (verbose only, as in game)
@@ -2712,9 +3437,10 @@ void Game::drawHudPreviewTop() {
     const auto& e = cfg_.hud[hudSel_];
     const bool same = hudSel_ == hudPrevSel_ && e.x == hudPrevElem_.x && e.y == hudPrevElem_.y && e.scale == hudPrevElem_.scale &&
                       e.custom == hudPrevElem_.custom && e.hidden == hudPrevElem_.hidden && e.z == hudPrevElem_.z &&
+                      e.pitch == hudPrevElem_.pitch && e.yaw == hudPrevElem_.yaw && e.roll == hudPrevElem_.roll &&
                       e.color.x == hudPrevElem_.color.x && e.color.y == hudPrevElem_.color.y && e.color.z == hudPrevElem_.color.z;
     if (!same) { hudChangedAt_ = time_; hudPrevSel_ = hudSel_; hudPrevElem_ = e; }
-    if (hudSel_ == Settings::HUD_VIEWMODEL) return;
+    if (Settings::isModelElem(hudSel_)) return;
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     const bool sample = !settingsInGame_ || !net_.selfAlive();
     const bool shown = !e.hidden && (hudSel_ != Settings::HUD_KEYS || cfg_.hudVerbose);
@@ -2737,9 +3463,18 @@ void Game::drawHudPreviewTop() {
 
 void Game::drawHud() {
     QZONE("drawHud");
+    // (the elements' layouts and styles, fetched together: drawn after the world pass, they're out of the caches, and
+    // waiting on them one element at a time cost more than laying the elements out)
+    // (two passes: the layouts' own lines and the styles first, all in flight at once; then what their pointers name)
+#if defined(__GNUC__) || defined(__clang__)
+    for (int el = 0; el < Settings::HUD_COUNT; el++) { __builtin_prefetch(&hudLay_[el]); __builtin_prefetch(&theme_.style(el)); }
+#endif
+    lay::Layout::prefetchScratch();
+    for (int el = 0; el < Settings::HUD_COUNT; el++) hudLay_[el].prefetch();
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
+    pollTheme();
     float ts = ui_.textScale();
     if (paused_ && settingsInGame_ && !widgetEdit_ && hudPreviewOn()) {
         // Settings > HUD: the HUD's own elements live under the see-through shell (the world only lightly dimmed, so they
@@ -2767,7 +3502,7 @@ void Game::drawHud() {
     if (paused_ && settingsInGame_ && !widgetEdit_) {
         // settings in game (every tab but HUD): no HUD under the shell (it would cut the score and weapon bars), the
         // world dimmed behind it; notices in the strip over it
-        r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 0.55f});
+        r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, hudEdit_ ? 0.2f : 0.55f});   // (EDIT ON SCREEN: the world only lightly dimmed)
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
         if (ui_.probing()) uiTestActions();
@@ -2778,7 +3513,6 @@ void Game::drawHud() {
     const PlayerSnap* mep = net_.findPlayer(me);
     int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
     Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
-    bool teamMode = modeIsTeamBased(ms.mode);
     // (held scoreboard: known up front, the round-end message and the tiebreak make way for it)
     showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
 
@@ -2893,73 +3627,16 @@ void Game::drawHud() {
         r_.rect(0, 0, b, H, {ec.r, ec.g, ec.b, a}); r_.rect(W - b, 0, b, H, {ec.r, ec.g, ec.b, a});
     }
 
-    // top: mode, timer, scores
-    std::string title = modeTitle(ms.mode);
-    if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP))
-        title += std::string(" - ") + arenaVariant(ms.arenaVariant).title;
-    std::string phase;
-    switch (ms.phase) {
-        case PHASE_WARMUP:
-            phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
-                                    : ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - " + inputName(binds().code[A_VOTESTART][0]) + " TO START THE RACE"
-                                    : "WARMUP - " + inputName(binds().code[A_VOTESTART][0]) + " TO VOTE START";
-            break;
-        case PHASE_FREEZE: // free for all is one long round: just the countdown
-            phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
-            break;
-        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h; short enough to stay in the string's own buffer)
-            char line[32];
-            hudLiveLine(ms, line, sizeof line);
-            phase = line;
-            if (ms.mode == MODE_FFA) {   // your place (X10): "2ND OF 8", "=2ND" when shared
-                int of = 0; bool tied = false;
-                if (int k = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied); k > 0 && of > 1)
-                    phase += (phase.empty() ? "" : "  -  ") + std::string(tied ? "=" : "") + std::to_string(k) + ordinalSuffix(k) + " OF " + std::to_string(of);
-            }
-            break;
-        }
-        case PHASE_ROUND_END: phase = "ROUND OVER"; break;
-        case PHASE_MATCH_END: phase = "MATCH OVER"; break;
+    // top: mode, timer, scores (the score box: shown in ranked whatever the HUD says, for the RANKED tag)
+    float boxH = 64 * s;
+    const bool rankedGame = ms.flags & MS_RANKED;
+    if (!cfg_.hud[Settings::HUD_SCORE].hidden || rankedGame) {
+        scoreText(hudScoreText_, false);
+        boxH = drawHudScore(hudScoreText_, W, H, s).h;
     }
-    bool rankedGame = ms.flags & MS_RANKED;
-    if (rankedGame) title = std::string(rankedKind(ms.arenaVariant)) + " - " + arenaVariant(ms.arenaVariant).title;
-    if (ms.flags & MS_TIMETRIAL) title = "TIME TRIAL - VIADUCT";
-    // score box sized from the real text sizes (HUD text is rounded to whole steps, so it's relatively
-    // bigger at small heights): the scores sit outside the widest centre line, the phase under the title
-    std::string scoreA, scoreB;
-    if (teamMode) {
-        scoreA = std::to_string(myTeam == TEAM_A ? ms.scoreA : ms.scoreB);
-        scoreB = std::to_string(myTeam == TEAM_A ? ms.scoreB : ms.scoreA);
-    } else if (mep) {
-        int best = -9999;
-        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
-        scoreA = std::to_string(mep->score);
-        scoreB = best == -9999 ? "-" : std::to_string(best);
-    }
-    const float sts = ts * 1.5f, th = r_.textHeight(ts);
-    const float scoreW = std::max(r_.textWidth(scoreA, sts), r_.textWidth(scoreB, sts));
-    const float midW = std::max(r_.textWidth(title, ts), r_.textWidth(phase, ts));
-    const float half = std::min(W * 0.5f - 8 * s, std::max(220 * s, midW * 0.5f + scoreW + 32 * s));
-    const float phaseY = 16 * s + std::max(22 * s, th + 4 * s);
-    const float boxH = std::max(64 * s, phaseY + th);
-    const float scoreY = 8 * s + (boxH - r_.textHeight(sts)) * 0.5f;
-    ui_.panel(cx - half, 8 * s, half * 2, boxH, 0.55f);
+    const float th = r_.textHeight(ts);
     const Color gold = {1.0f, 0.78f, 0.25f, 1};
     const float hs = ui_.hintScale(), hh = r_.textHeight(hs);
-    if (rankedGame) { // always visible on a ranked server
-        r_.rect(cx - half, 8 * s, half * 2, 3 * s, gold);
-        const char* tag = unratedServer_ ? "RANKED - NOT RATED" : "RANKED";
-        float tw = r_.textWidth(tag, hs) + 12 * s; // tag on the panel's right edge, clear of the objective line
-        r_.rect(cx + half + 4 * s, 8 * s, tw, hh + 8 * s, gold);
-        r_.text(cx + half + 10 * s, 12 * s, hs, tag, {0.1f, 0.08f, 0.02f, 1});
-    }
-    ui_.labelCentered(cx, 16 * s, title, kWhite);
-    ui_.labelCentered(cx, phaseY, phase, kGrey);
-    if (!scoreA.empty()) {
-        r_.text(cx - half + 20 * s, scoreY, sts, scoreA, fc);
-        r_.text(cx + half - 20 * s - r_.textWidth(scoreB, sts), scoreY, sts, scoreB, ec);
-    }
-    ui_.noBox();   // (the notice lines under it are as wide as the screen)
 
     // objective line
     std::string obj;
@@ -3111,12 +3788,8 @@ void Game::drawHud() {
     }
     if (wantWidgets && !widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
     while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
-    for (auto& k : killFeed_) {
-        float tw = r_.textWidth(k.text, ts);
-        r_.rect(W - tw - 20 * s, y - 3 * s, tw + 12 * s, r_.textHeight(ts) + 6 * s, {0, 0, 0, 0.4f});
-        drawFeedText(W - tw - 14 * s, y, ts, k);
-        y += r_.textHeight(ts) + 8 * s;
-    }
+    hudFeedTop_ = y / s;   // (where the feed starts: under the verbose block when it's on)
+    if (!cfg_.hud[Settings::HUD_KILLFEED].hidden && !killFeed_.empty()) drawHudKillFeed(W, H, s, y, false);
     // chat (bottom left)
     drawChatBox(W, H, s, ts);
     // notices
@@ -3518,33 +4191,6 @@ void Game::drawFeedText(float x, float y, float ts, const Feed& f) {
     run(f.text.size(), f.color);
 }
 
-void Game::drawChatBox(float W, float H, float s, float ts) {
-    float y;
-    while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
-    {
-    const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
-    size_t shown = 0;   // chat off: players' lines are hidden (server messages stay)
-    for (auto& c : lines) shown += !(c.player && cfg_.chatOff);
-    y = H - 110 * s - shown * (r_.textHeight(ts) + 4 * s);
-    if (chatting_ && shown) r_.rect(18 * s, y - 4 * s, 520 * s, shown * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
-    for (auto& c : lines) {
-        if (c.player && cfg_.chatOff) continue;
-        float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
-        if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
-        drawFeedText(24 * s + (cw ? cw + 4 * s : 0), y, ts, c);
-        y += r_.textHeight(ts) + 4 * s;
-    }
-    }
-    if (chatting_ && console_) drawConsole(W, H, s, ts);
-    else if (chatting_) {
-        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
-        chatEdit(120, false);
-        float lts = std::max(1.0f, std::round(ui_.textScale()));
-        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_, kWhite);
-        drawCaret(24 * s, H - 100 * s, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
-    }
-}
-
 // A running vote: what it is, the count, F1 / F2.
 float Game::drawVotePanel(float cx, float s, float ts, float y) {
     if (y < 0) y = 122 * s;
@@ -3557,32 +4203,6 @@ float Game::drawVotePanel(float cx, float s, float ts, float y) {
     r_.rect(cx - vw * 0.5f, y, vw, vh, {0, 0, 0, 0.6f});
     ui_.labelCentered(cx, y + 6 * s, vb, kWhite);
     return y + vh + 4 * s;
-}
-
-Game::HudRect Game::drawKeyOverlay(float W, float H, float s, bool sample, bool draw) {
-    const auto& e = cfg_.hud[Settings::HUD_KEYS];
-    float k = s * e.scale, u = 30 * k, g = 4 * k;
-    float ox = W * 0.5f - (4 * u + 3 * g) * 0.5f + e.x * s, oy = H - 230 * s + e.y * s;
-    const HudRect rc{ox, oy, 4 * u + 3 * g, 4 * u + 3 * g};
-    if (!draw) return rc;
-    Color lit = e.custom ? Color{e.color.x, e.color.y, e.color.z, 0.9f} : rgba(cfg_.colorFriendly, 0.9f);
-    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * e.scale));
-    // alive: our own keys; spectating: what the watched player is holding (from the snapshot)
-    // (sample: Settings > HUD outside a game, nothing held)
-    const int spec = sample || net_.selfAlive() ? -1 : specKeysOf();
-    const uint16_t held = spec >= 0 ? net_.findPlayer(spec)->keys : 0;
-    auto key = [&](float col, float row, float wUnits, const char* label, int action, uint16_t bit) {
-        float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
-        bool on = spec >= 0 ? (held & bit) != 0 : !sample && isDown(action);
-        r_.rect(x, y, w, u, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
-        r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
-    };
-    key(1, 0, 1, "W", A_FORWARD, KEY_FWD);
-    key(0, 1, 1, "A", A_LEFT, KEY_LEFT); key(1, 1, 1, "S", A_BACK, KEY_BACK); key(2, 1, 1, "D", A_RIGHT, KEY_RIGHT);
-    key(3, 0, 1, "LMB", A_FIRE, KEY_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE, KEY_ALT);
-    key(0, 2, 2, "JUMP", A_JUMP, KEY_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH, KEY_CROUCH);
-    key(0, 3, 2, "DASH", A_DASH, KEY_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE, KEY_HOOK);
-    return rc;
 }
 
 // The player we're spectating, if they're alive and in the snapshot (else -1).
@@ -4319,6 +4939,7 @@ void Game::drawPauseMenu(float cx, float y) {
 // menu draw the same pages. Nothing here allocates per frame beyond what the widgets did before (static name lists).
 namespace {
 constexpr float kColL = 268, kColR = 652, kColW = 360, kHalfW = 176, kRowH = 32;
+constexpr float kHudFootY = 560;   // (the HUD tab's footer: clear of the bottom row of the HUD under it)
 const Color kHintC = {0.7f, 0.72f, 0.75f, 1}, kLabelC = {0.85f, 0.87f, 0.9f, 1};
 constexpr int kNameColorOn = 0xFFD040;   // NAME COLOR turned on (the old R / G / B sliders' default)
 constexpr int kCustomInterpMs = 10;      // SMOOTHING: CUSTOM starts here (and a right-click on its slider goes back to it)
@@ -4352,6 +4973,7 @@ int packOf(const Vec3& c) {
 }
 
 void Game::openSettingsTab(int tab) {
+    hudEditClose();
     setTab_ = tab;
     controlsSub_ = 0;
     fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
@@ -4388,21 +5010,26 @@ void Game::debugSettingsTab() {
     if (t == "controls/files") filePick_ = 2;
     if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
     if (t == "hud/widgets") { widgetEdit_ = true; widgetSel_ = 0; }
-    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys"};
-    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
-    for (int i = 0; i < 6; i++) if (t == els[i]) hudSel_ = elIds[i];
+    if (t == "hud/edit") hudEditOpen();
+    static const char* els[] = {"hud/health", "hud/weapon", "hud/bars", "hud/speed", "hud/slots", "hud/keys", "hud/viewmodel", "hud/grapple"};
+    static const int elIds[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS,
+                                Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE};
+    for (int i = 0; i < 8; i++) if (t == els[i]) hudSel_ = elIds[i];
     if (!pick.empty()) ui_.openPopup(pick, false);
 }
 
 void Game::drawSettings() {
     if (setTab_ == TAB_HUD && widgetEdit_) { drawWidgetEditor(); return; }   // (the HUD's widget editor: the whole screen)
+    if (setTab_ == TAB_HUD && hudEdit_) { drawHudEditor(); return; }        // (EDIT ON SCREEN: the whole screen)
     const SetLayout L{ui_.s(), r_.width() * 0.5f};
     const bool modal = setTab_ == TAB_CONTROLS && filePick_ == 2;   // the import list: the page under it takes nothing
     ui_.muted = modal;
     // HUD tab: the HUD under a see-through panel (in game drawHud drew the live one; the main menu's: sample values)
     const bool hudPreview = hudPreviewOn();
     if (hudPreview && !settingsInGame_) drawHudSample((float)r_.width(), (float)r_.height(), (float)r_.height() / 720.0f);
-    ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(656), hudPreview ? 0.6f : 1.0f);
+    // (the HUD tab's panel ends higher: its footer stays clear of the HUD's bottom row, the weapon list and health)
+    const float footY = setTab_ == TAB_HUD ? kHudFootY : 640;
+    ui_.panel(L.X(252), L.Y(32), L.L(776), L.L(footY + 48 - 32), hudPreview ? 0.6f : 1.0f);
     {   // the tab row, an accent line under it
         static const char* names[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
         static const char* navs[] = {"~settings", "~settings/gameplay", "~settings/controls", "~settings/video", "~settings/crosshair", "~settings/hud"};
@@ -4423,13 +5050,13 @@ void Game::drawSettings() {
         case TAB_CROSSHAIR: drawCrosshairSettings(L); break;
         case TAB_HUD: drawHudSettings(L); break;
     }
-    if (setTab_ == TAB_HUD && widgetEdit_) return;   // (WIDGET EDITOR was just clicked)
+    if (setTab_ == TAB_HUD && (widgetEdit_ || hudEdit_)) return;   // (WIDGET EDITOR / EDIT ON SCREEN was just clicked)
     // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO), and the page's reset on the right (drawn by the page)
     if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
     } else if (devicesOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
-    } else if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
+    } else if (ui_.button(L.X(268), L.Y(footY), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         leaveSettings();
         return;
     }
@@ -4558,6 +5185,10 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     ui_.slider(f.x(), f.top(), w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity"), defaultSettings().scopeOpacity);
     cfg_.scopeOpacity = clampf(cfg_.scopeOpacity, 0, 1);
     f.next();
+    // the first-person gun (and grapple launcher) see-through: 1 solid, 0 not drawn; HUD > WEAPON MODEL still places it
+    ui_.slider(f.x(), f.top(), w, h, "WEAPON MODEL OPACITY", cfg_.viewmodelOpacity, 0, 1, "%.2f", UiExp::cfg("viewmodel_opacity"), defaultSettings().viewmodelOpacity);
+    cfg_.viewmodelOpacity = clampf(cfg_.viewmodelOpacity, 0, 1);
+    f.next();
     // the sniper's and rifle's alt-fire zoom (degrees, as FOV). Client-side only.
     ui_.slider(f.x(), f.top(), w, h, "SNIPER ZOOM FOV", cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"), defaultSettings().zoomFovSniper);
     f.next();
@@ -4576,6 +5207,12 @@ void Game::drawGameplaySettings(const SetLayout& L) {
     f.hint("TRACERS + LASER START WHERE THE GUN IS");
     ui_.toggle(f.x(), f.top(), w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots, UiExp::cfg("enemy_shots"));
     f.next();
+    {   // hit sparks (on walls and players) and muzzle flashes, yours and everyone's: cosmetic, visibility
+        const float hw = L.L(kHalfW);
+        ui_.toggle(f.x(), f.top(), hw, h, "IMPACT SPARKS", cfg_.impactSparks, UiExp::cfg("impact_sparks"));
+        ui_.toggle(L.X(kColL + kColW - kHalfW), f.top(), hw, h, "MUZZLE FLASH", cfg_.muzzleFlash, UiExp::cfg("muzzle_flash"));
+        f.next();
+    }
     f.section("NETWORK");
     {   // other players' interpolation delay (ranked: always 10 ms): adaptive (the default), custom (the slider), or off
         static const std::vector<std::string> imn = {"SMOOTHING (INTERP): ADAPTIVE", "SMOOTHING (INTERP): CUSTOM", "SMOOTHING (INTERP): OFF"};
@@ -4694,8 +5331,11 @@ void Game::drawVideoSettings(const SetLayout& L) {
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("IMAGE");
-    ui_.slider(g.x(), g.top(), w, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
+    // (BRIGHTNESS and PLAYER SHADOWS share a row, as RENDER SCALE and SHARPEN do: a row more would push SOUND into
+    // DEVICES with Windows' EXCLUSIVE AUDIO)
+    ui_.slider(g.x(), g.top(), hw, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
     cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
+    ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
     g.next();
     {
         static const int aaModes[] = {0, 1, 2, 4};
@@ -4705,8 +5345,14 @@ void Game::drawVideoSettings(const SetLayout& L) {
         if (ui_.cycle(g.x(), g.top(), w, h, "ANTI-ALIASING", ai, 4, aaNames, UiExp::cfg("msaa"))) cfg_.msaa = aaModes[ai];
         g.next();
     }
-    ui_.toggle(g.x(), g.top(), w, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
-    g.next();
+    {   // the 3D scene at this % of the window's pixels (the HUD and menus always at 100%): below for frame rate, above
+        // as supersampling; SHARPEN: below 100%, sharpened as it's stretched
+        float v = (float)cfg_.renderScale;
+        if (ui_.slider(g.x(), g.top(), hw, h, "RENDER SCALE", v, 50, 200, "%.0f%%", UiExp::cfg("render_scale"), (float)defaultSettings().renderScale))
+            cfg_.renderScale = std::max(50, std::min(200, (int)std::lround(v)));
+        ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "SHARPEN", cfg_.renderSharpen, UiExp::cfg("render_sharpen"));
+        g.next();
+    }
     g.section("SOUND");
     if (ui_.slider(g.x(), g.top(), w, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"), defaultSettings().volume)) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
     g.next();
@@ -5095,16 +5741,19 @@ void Game::drawCrosshairSettings(const SetLayout& L) {
 
 void Game::drawHudSettings(const SetLayout& L) {
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), x2 = L.X(kColL + 184);
-    // the element: one dropdown (the weapon model, a 3D model and not a HUD element, is its first entry)
-    static const int order[] = {Settings::HUD_VIEWMODEL, Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
-    static const std::vector<std::string> names = {"WEAPON MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "KEY OVERLAY (VERBOSE)"};
+    // the element: one dropdown (the weapon and grapple models, 3D models and not HUD elements, are its first entries)
+    static const int order[] = {Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE, Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS,
+                                Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS, Settings::HUD_SCORE, Settings::HUD_KILLFEED, Settings::HUD_CHAT};
+    static const std::vector<std::string> names = {"WEAPON MODEL", "GRAPPLE MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
+                                                   "KEY OVERLAY (VERBOSE)", "SCORE BOX", "KILL FEED", "CHAT"};
+    static_assert(sizeof(order) / sizeof(order[0]) == Settings::HUD_COUNT, "every HUD element in the dropdown");
     SetFlow f{ui_, L, kColL, 90};
     f.header("ELEMENT");
     const float dropY = f.top();
     f.next();
     auto& e = cfg_.hud[hudSel_];
     const auto& de = defaultSettings().hud[hudSel_];   // (right-click on a slider: the element's default)
-    const bool vm = hudSel_ == Settings::HUD_VIEWMODEL;
+    const bool vm = Settings::isModelElem(hudSel_);   // (a 3D model: depth, tilt, an accent colour)
     const UiExp he = UiExp::cfg("hud_*");
     bool shown = !e.hidden;
     ui_.toggle(f.x(), f.top(), w, h, "SHOW", shown, he);
@@ -5117,11 +5766,18 @@ void Game::drawHudSettings(const SetLayout& L) {
     ui_.slider(f.x(), f.top(), hw, h, "SIZE", e.scale, 0.5f, 3, "%.2f", he, de.scale); e.scale = clampf(e.scale, 0.5f, 3);
     if (vm) { ui_.slider(x2, f.top(), hw, h, "DEPTH", e.z, -300, 300, "%.0f", he, de.z); e.z = clampf(std::round(e.z), -300, 300); }
     f.next();
+    if (vm) {   // the tilt about its pivot, in degrees
+        ui_.slider(f.x(), f.top(), hw, h, "PITCH", e.pitch, -90, 90, "%.0f", he, de.pitch); e.pitch = clampf(std::round(e.pitch), -90, 90);
+        ui_.slider(x2, f.top(), hw, h, "YAW", e.yaw, -90, 90, "%.0f", he, de.yaw); e.yaw = clampf(std::round(e.yaw), -90, 90);
+        f.next();
+        ui_.slider(f.x(), f.top(), hw, h, "ROLL", e.roll, -90, 90, "%.0f", he, de.roll); e.roll = clampf(std::round(e.roll), -90, 90);
+        f.next();
+    }
     // (a RESET with nothing to reset is greyed out)
     auto isDefault = [](const Settings::HudElem& el) {
         Settings::HudElem d;
         return el.x == d.x && el.y == d.y && el.scale == d.scale && el.custom == d.custom && el.hidden == d.hidden && el.z == d.z &&
-               el.color.x == d.color.x && el.color.y == d.color.y && el.color.z == d.color.z;
+               el.pitch == d.pitch && el.yaw == d.yaw && el.roll == d.roll && el.color.x == d.color.x && el.color.y == d.color.y && el.color.z == d.color.z;
     };
     if (ui_.button(f.x(), f.top(), w, h, "RESET ELEMENT", he, !isDefault(e))) e = Settings::HudElem{};
     f.next();
@@ -5133,6 +5789,9 @@ void Game::drawHudSettings(const SetLayout& L) {
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("WHOLE HUD");
+    if (ui_.button(g.x(), g.top(), w, h, "EDIT ON SCREEN", UiExp::nav("~settings/hud/edit"))) { hudEditOpen(); return; }
+    g.next();
+    g.hint("DRAG, SIZE AND STYLE EVERY ELEMENT IN PLACE");
     ui_.toggle(g.x(), g.top(), w, h, "VERBOSE INFO", cfg_.hudVerbose, UiExp::cfg("hud_verbose"));
     g.next();
     ui_.toggle(g.x(), g.top(), w, h, "CUSTOM WIDGETS", cfg_.hudWidgets, UiExp::cfg("hud_widgets"));
@@ -5142,11 +5801,11 @@ void Game::drawHudSettings(const SetLayout& L) {
     g.hint("DRAG, ADD, IMPORT / EXPORT WIDGETS");
     g.section("PER MODE");
     if (profileRows(ui_, g, true, ruleMode_, cfg_.modeHud, profilesCached("huds", time_))) { cfg_.save(); appliedMode_ = -2; }   // (re-applied now)
-    if (ui_.button(L.X(836), L.Y(640), hw, h, "RESET WHOLE HUD", he, !std::all_of(std::begin(cfg_.hud), std::end(cfg_.hud), isDefault)))
+    if (ui_.button(L.X(836), L.Y(kHudFootY), hw, h, "RESET WHOLE HUD", he, !std::all_of(std::begin(cfg_.hud), std::end(cfg_.hud), isDefault)))
         for (auto& el : cfg_.hud) el = Settings::HudElem{};
     // the dropdown last: its list opens over the rows under it
     int di = 0;
-    for (int k = 0; k < 7; k++) if (order[k] == hudSel_) di = k;
+    for (int k = 0; k < Settings::HUD_COUNT; k++) if (order[k] == hudSel_) di = k;
     if (ui_.dropdown(f.x(), dropY, w, h, "ELEMENT", di, names, UiExp::nav("~settings/hud/elements").withId("HUD ELEMENT"), UiExp::nav("~settings/hud"), UiExp::state("hudsel")))
         hudSel_ = order[di];
 }
@@ -5254,6 +5913,17 @@ void Game::debugMenuPage() {
     size_t plus = p.find('+');
     if (plus != std::string::npos) { scroll = atoi(p.c_str() + plus + 1); p = p.substr(0, plus); }
     auto under = [&](const char* a) { return p.rfind(a, 0) == 0; };
+    if (under("benchmarks")) {   // (benchmarks/result: the newest saved run)
+        setScreen(Screen::Benchmarks);
+        if (p == "benchmarks/result") {
+            std::error_code ec;
+            std::string newest;
+            for (auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(userDataPath("benchmarks")), ec))
+                if (e.path().extension() == ".qbench" && e.path().u8string() > newest) newest = e.path().u8string();
+            if (!newest.empty()) benchOpen(newest);
+        }
+        return;
+    }
     auto pickerOf = [&](bool host) {
         size_t c = p.find("/picker:");
         if (c == std::string::npos) return;
@@ -5311,6 +5981,8 @@ void Game::drawMenu() {
         case Screen::Leaderboard: drawLeaderboard(menuLayout(960)); break;
         case Screen::Info: drawInfo(menuLayout(960)); break;
         case Screen::Demos: drawDemos(menuLayout(592)); break;
+        case Screen::Benchmarks: drawBenchList(menuLayout(592)); break;
+        case Screen::BenchmarkResult: drawBenchResults(menuLayout(960)); break;
         case Screen::CustomMode: drawCustomModeEditor(menuLayout(960)); break;
         case Screen::Connecting: drawConnecting(L); break;
         default: break;
@@ -5332,8 +6004,9 @@ void Game::drawMainMenu(const SetLayout& L) {
     if (ui_.button(x2, L.Y(438), hw, h, "INFO", UiExp::nav("info/*"))) setScreen(Screen::Info);   // how everything works
     if (ui_.button(x, L.Y(486), hw, h, "DISCORD", UiExp::url())) openUrl(kDiscordUrl);
     if (ui_.button(x2, L.Y(486), hw, h, "DEMOS", UiExp::nav("demos"))) setScreen(Screen::Demos);
-    if (ui_.button(x, L.Y(546), w, h, "QUIT", UiExp::quit())) quit_ = true;   // (destructive: its own row, 20 px below)
-    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(602), error_, kRed, 1.0f, L.L(960));
+    if (ui_.button(x, L.Y(534), w, h, "BENCHMARK", UiExp::nav("benchmarks"))) setScreen(Screen::Benchmarks);
+    if (ui_.button(x, L.Y(594), w, h, "QUIT", UiExp::quit())) quit_ = true;   // (destructive: its own row, 20 px below)
+    if (!error_.empty()) ui_.labelCentered(L.X(640), L.Y(650), error_, kRed, 1.0f, L.L(960));
 }
 
 // JOIN: the address and CONNECT, the server list (column headers, 6 rows of 32, the wheel scrolls the rest), BACK and
@@ -5697,9 +6370,10 @@ void Game::drawCustomModeEditor(const SetLayout& L) {
         p = at(1, 3);
         ui_.slider(p.first, p.second, cw, h, "KNOCKBACK", r.knockback, 0, 5, "%.2fX", ce, kStd.knockback);
         r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
-        struct { const char* name; bool* v; } abil[6] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"SELF DAMAGE", &r.selfDamage},
-                                                         {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire}, {"REGEN", &r.regen}};
-        for (int i = 0; i < 6; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
+        struct { const char* name; bool* v; } abil[7] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"ROCKET RIDE", &r.rocketRide},
+                                                         {"SELF DAMAGE", &r.selfDamage}, {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire},
+                                                         {"REGEN", &r.regen}};
+        for (int i = 0; i < 7; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
     } else if (customTab_ == 1) {   // a row per weapon: on / off, then FIRE RATE, DAMAGE, SPEED as this mode makes them
         static const CustomRules kStdW;
         int row = 0;
@@ -5841,7 +6515,7 @@ static const char* const kInfoPages[][48] = {
         "Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.",
         "# HUD LAYOUT (Settings > HUD LAYOUT)",
         "Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.",
-        "WEAPON MODEL (its own button): move the gun model left / right / up / down, change its size and depth, give it its own accent colour, or hide it. Your shots come out of the model wherever you put it.",
+        "WEAPON MODEL and GRAPPLE MODEL (the first two entries): move the gun / the grapple launcher left / right / up / down, change its size and depth, tilt it (pitch / yaw / roll), give it its own accent colour, or hide it. Your shots come out of the gun and your rope out of the launcher wherever you put them.",
         "CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.",
         "# CROSSHAIR (Settings > CROSSHAIR)",
         "Style, length, thickness, gap, colour and outline, with a live preview.",
@@ -6049,20 +6723,13 @@ void Game::drawPerf() {
         perfNextUpdate_ = time_ + 0.5;
         // percentiles with nth_element on a reused buffer: no allocation, no full sort (this runs while
         // measuring frame spikes, so it mustn't cause one)
-        std::vector<float>& t = perfScratch_;
-        t.assign(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
-        double sum = 0;
-        for (float f : t) sum += f;
-        // the 99th, then the 99.9th within what's above it, then the worst within what's above that
-        size_t k1 = std::min(t.size() - 1, (size_t)(t.size() * 0.99)), k2 = std::min(t.size() - 1, (size_t)(t.size() * 0.999));
-        std::nth_element(t.begin(), t.begin() + k1, t.end());
-        float p99 = t[k1];
-        std::nth_element(t.begin() + k1, t.begin() + k2, t.end());
-        float p999 = t[k2], worst = *std::max_element(t.begin() + k2, t.end());
+        // (the same maths as BENCHMARK's: src/game/benchmark.h)
+        const bench::Stats st = bench::compute(frameTimes_.data(), frameCount_, perfScratch_);
         char b[200];
-        snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f", t.size() / sum, 1.0 / p99, 1.0 / p999);
+        snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f", st.avgFps, st.low1, st.low01);
         perfText_ = b;
-        snprintf(b, sizeof b, "WORST %.1fMS  PING %d", worst * 1000.0, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
+        snprintf(b, sizeof b, "WORST %.1fMS  PING %d  3D %dX%d", st.worstMs, net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0,
+                 r_.sceneWidth(), r_.sceneHeight());   // (the world's own resolution: RENDER SCALE)
         perfText2_ = b;
         pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
@@ -6509,6 +7176,7 @@ void Game::beforeInput() {
     if (cfg_.lowLatency == 1 && !ultraPaced()) {   // (Latent Sync paces like ultra: these fences would add nothing)
         int older = fenceIdx_;
         if (fence_[older]) {
+            QZONE("low latency: wait for the GPU");   // (an idle CPU here = GPU-bound)
             glClientWaitSync((GLsync)fence_[older], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
             glDeleteSync((GLsync)fence_[older]);
             fence_[older] = nullptr;
@@ -6829,25 +7497,40 @@ void Game::drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float
         r_.box(origin + Vec3(right.x * q.c.x + back.x * q.c.z, q.c.y, right.z * q.c.x + back.z * q.c.z), q.h, boxYaw, q.color, sv, q.shadow);
 }
 
-void Game::drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv) {
+void Game::drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv, const ModelPalette& pal) {
     if (const ModelMesh* ov = modelOverride(MODEL_PROP, prop)) {
         Vec3 tint[TINT_COUNT];
-        overrideTints(MODEL_PROP, prop, kNoSlots, tint);
+        overrideTints(MODEL_PROP, prop, pal, tint);
         Mat4 sc;
         sc.m[0] = sc.m[5] = sc.m[10] = bs;
         r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * sc, tint, sv, true);
         return;
     }
-    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, kNoSlots, 1.0f, parts_);
-    else propParts(prop, kNoSlots, parts_);
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, pal, 1.0f, parts_);
+    else propParts(prop, pal, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(shoulder, q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
+}
+
+void Game::drawHookClaw(const Vec3& pivot, const Vec3& offset, float yaw, float pitch, float bs, float sv) {
+    const ModelPalette& pal = referencePalette(MODEL_PROP, PROP_HOOK);   // (fixed steel: no slot follows anything)
+    if (const ModelMesh* ov = modelOverride(MODEL_PROP, PROP_HOOK)) {
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_PROP, PROP_HOOK, pal, tint);
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = bs;
+        r_.mesh(*ov, Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset) * sc, tint, sv, false);
+        return;
+    }
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_HOOK)) overrideBoxParts(MODEL_PROP, PROP_HOOK, *bx, pal, 1.0f, parts_);
+    else propParts(PROP_HOOK, pal, parts_);
+    for (const ModelPart& q : parts_) r_.boxPitched(pivot, offset + q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
 }
 
 void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {
     if (w < 0 || w >= WPN_COUNT) w = WPN_KNIFE;
     float sw = (float)(time_ - knifeSlash_[i]) / 0.18f;   // a knife swing: the hand chops down and back up
     if (w == WPN_KNIFE && knifeSlash_[i] > 0 && sw < 1) pitch -= 0.7f * std::sin(sw * 3.14159f);
-    drawArm(PROP_ARM, shoulder, yaw, pitch, bs, sv);
+    drawArm(PROP_ARM, shoulder, yaw, pitch, bs, sv, kNoSlots);
     const Vec3 hand = Vec3(0, 0.02f, -0.5f) * bs;
     const float k = 2.0f * bs;   // the viewmodel's boxes at world size (a held weapon reads at a distance)
     ModelPalette pal;
@@ -6934,7 +7617,7 @@ void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
 
 // X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
 // the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
-// in sight, once a shot (the laser: at most 20 a second).
+// in sight, once a shot (the laser: at most 20 a second). Players are their body and head (rayHitbox), as the server's.
 void Game::localImpactSparks(int w, const UserCmd& c) {
     const MoveState& m = net_.predicted();
     const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
@@ -6952,12 +7635,81 @@ void Game::localImpactSparks(int w, const UserCmd& c) {
         float best = t;
         for (int i = 0; i < kMaxPlayers; i++) {
             if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
-            const float tk = rayAABB(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+            const float tk = rayHitbox(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
             if (tk >= 0 && tk < best) best = tk;
         }
-        if (best < t) { explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true}); any = true; }
+        if (best < t) explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true});
+        else if (t < wd.range) explosions_.push_back({eye + d * (t - 0.03f), time_, 0.06f, false, false, false, true, 0.2f});   // a wall
+        else continue;
+        if (bangT >= 0 && bangT < best) explosions_.push_back({eye + d * bangT, time_, 0.05f, false, false, false, true, 0.2f});   // (through a wallbang)
+        any = true;
     }
     if (any) nextLocalSpark_ = time_ + 0.05;
+}
+
+// Someone else's hitscan shot as you see it: a spark on the first player in its way (not the shooter, their teammates
+// or you), else on the wall it ends at. Cosmetic only (the server decides hits). wallT < 0: it hit nothing within range.
+bool Game::shotSpark(const Vec3& from, const Vec3& d, float wallT, float range, int shooter) {
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    const PlayerSnap* sh = net_.findPlayer(shooter);
+    const bool teams = sh && modeIsTeamBased(net_.mode().mode);
+    const Vec3 inv = safeInv(d);
+    float best = wallT < 0 ? range : wallT;
+    bool player = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == me || i == shooter || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
+        if (teams && ps[i].snap.team() == sh->team()) continue;
+        const float tk = rayHitbox(from, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+        if (tk >= 0 && tk < best) { best = tk; player = true; }
+    }
+    if (player) explosions_.push_back({from + d * best, time_, 0.1f, false, false, true});
+    else if (wallT >= 0) explosions_.push_back({from + d * (wallT - 0.03f), time_, 0.06f, false, false, false, true, 0.2f});
+    else return false;
+    return true;
+}
+
+// One of your projectiles hits on your screen now, not a round trip later: its explosion / pop / bolt hit, as the
+// server's would look (that one is then left out: see the vanish check in frame()).
+void Game::localBoom(uint16_t id, int type, const Vec3& at) {
+    const int pack = net_.playerSoundPack(net_.clientId());
+    if (type == WPN_BUBBLE) { explosions_.push_back({at, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, at, 0.7f, 1.7f, pack); }
+    else if (weaponDef(type).splashRadius > 0) { explosions_.push_back({at, time_}); audio_.play3D(SND_EXPLOSION, at, 1.25f, 1.0f, pack); }
+    else if (type == WPN_CROSSBOW) {
+        audio_.play3D(SND_BOLT_HIT, at, 0.8f, 1.0f, pack);
+        if (cfg_.impactSparks) explosions_.push_back({at, time_, 0.08f, false, false, false, true, 0.2f});
+    } else return;
+    localBooms_.push_back({id, (uint8_t)type, at, time_});
+}
+
+// The nearest enemy (alive, as drawn) whose body or head (rayHitbox, as the server's projectiles) the segment a -> b
+// passes through: *t its fraction along it.
+bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
+    const Vec3 d = b - a;
+    const float len = length(d);
+    if (len < 1e-4f) return false;
+    const Vec3 dir = d / len, inv = safeInv(dir);
+    const auto& ps = framePlayers();
+    float best = len;
+    bool any = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == net_.clientId() || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
+        const float tk = rayHitbox(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+        if (tk >= 0 && tk < best) { best = tk; any = true; }
+    }
+    if (any) *t = best / len;
+    return any;
+}
+
+// A muzzle flash: a hot core in a bigger, fainter glow (two see-through boxes), fading over its life (a 0..1).
+// The laser's is small and in its beam's colour.
+void Game::drawMuzzleFlash(const Vec3& at, int w, const Vec3& beam, float a, float scale) {
+    const bool laser = w == WPN_LASER;
+    const float c = (laser ? 0.03f : 0.045f) * scale, g = (laser ? 0.05f : 0.1f) * scale;
+    const Color core = laser ? rgba(beam, 0.9f * a) : Color{1.0f, 0.95f, 0.75f, 0.9f * a};
+    const Color glow = laser ? rgba(beam, 0.35f * a) : Color{1.0f, 0.6f, 0.2f, 0.4f * a};
+    r_.translucentBox({at - Vec3(g, g, g), at + Vec3(g, g, g)}, glow);
+    r_.translucentBox({at - Vec3(c, c, c), at + Vec3(c, c, c)}, core);
 }
 
 // Where the hits you took came from (X3): a red arc round the crosshair toward each attacker (as they stood when it
@@ -7094,10 +7846,36 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     }
     prevMove_ = m;
     prevAlive_ = alive;
+    {   // race practice: its checkpoint dings (the server sends a split only in the race itself; modecalls.h)
+        const ModeState& ms = net_.mode();
+        const PlayerSnap* mine = net_.findPlayer(me);
+        const auto& cps = net_.map().checkpoints;
+        if (ms.mode == MODE_RACE && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
+            const int next = mine->checkpoint;
+            const bool in = next < (int)cps.size() && playerBox(m).overlaps(cps[next]);
+            if (int d = practiceDing_.step(next, in, (int)cps.size())) audio_.play(d == 2 ? SND_FINISH : SND_CHECKPOINT, 0.9f);
+        } else practiceDing_.reset();
+    }
 
     for (int i = 0; i < kMaxPlayers; i++) {
         RemoteAudio& ra = remoteAudio_[i];
-        if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; continue; }
+        if (i == me && net_.playback() && players[i].valid && (players[i].snap.flags & PS_ALIVE)) {
+            // a demo: the recorded player's shots (theirs came from their input, which a demo hasn't), as your own
+            // sound (2D, the same levels) on each firing edge
+            const PlayerSnap& p = players[i].snap;
+            const bool firing = (p.flags & PS_FIRING) != 0;
+            if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
+                audio_.play(SND_LASER, 0.6f, 0.97f + (qrand() % 7) * 0.01f, net_.playerSoundPack(i));
+                ra.nextLaser = time_ + 0.05;
+            } else if (firing && !ra.firing && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {
+                ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f;
+                audio_.play(SND_RIFLE + p.weapon, 0.8f, 0.97f + (qrand() % 7) * 0.01f, net_.playerSoundPack(i));
+            }
+            ra.firing = firing;
+            ra.valid = false;   // (their steps, hurt and grapple: your own sounds' code plays those)
+            continue;
+        }
+        if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; ra.firing = false; continue; }
         const PlayerSnap& p = players[i].snap;
         int sp = net_.playerSoundPack(i); // their sounds in the pack they picked
         if (ra.valid) {
@@ -7171,17 +7949,14 @@ void Game::benchFrame(double dt) {
     benchTimes_.push_back((float)dt);
     benchCpu_.push_back((float)lastCpu_);
     if (time_ - benchStart_ < 3.0 + opts_.bench) return;
-    std::vector<float> t = benchTimes_;
-    std::sort(t.begin(), t.end());
-    double sum = 0;
-    for (float f : t) sum += f;
-    auto pct = [&](double p) { return t[std::min(t.size() - 1, (size_t)(t.size() * p))]; };
+    std::vector<float> scratch;
+    const bench::Stats st = bench::compute(benchTimes_.data(), benchTimes_.size(), scratch);   // (BENCHMARK's maths)
     std::vector<float> c = benchCpu_;
     std::sort(c.begin(), c.end());
     double csum = 0;
     for (float f : c) csum += f;
     printf("BENCH %s: %zu frames  avg %.1f fps  1%% low %.1f  0.1%% low %.1f  worst %.2f ms  |  cpu avg %.3f ms  99%% %.3f ms  99.9%% %.3f ms\n",
-           net_.map().name.c_str(), t.size(), t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), t.back() * 1000.0,
+           net_.map().name.c_str(), st.frames, st.avgFps, st.low1, st.low01, st.worstMs,
            csum / c.size() * 1000.0, c[std::min(c.size() - 1, (size_t)(c.size() * 0.99))] * 1000.0, c[std::min(c.size() - 1, (size_t)(c.size() * 0.999))] * 1000.0);
     qzoneDump();
     fflush(stdout);

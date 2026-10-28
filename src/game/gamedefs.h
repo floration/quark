@@ -16,12 +16,14 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 44;   // 44: movement equations (a custom mode's expr.<key>= lines, moveexpr.h: every client evaluates them in its own pmove, so an older one would mispredict), own movement state: mods bit 128 = a u16 ms since the last landing / take-off after the opt parts (p.air / p.ground; sent only while an equation counts it); 43: dash charges recharge (own movement state opt bit 4: the u8 is charges | recharging << 4, then the u16 cooldown, then each recharging charge's u16 ms left; sent when charges != 2 or a timer runs; opt bit 2 adds the f32 speed the dash started from, for the super dash's +5); 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
+constexpr uint16_t kProtocolVersion = 47;   // 47: rocket riding: the grapple catches rockets (own movement state: hookTarget kHookRocket, opt bit 16, is followed by the u16 rocket id, its velocity (3 x f32) and its gravity (f32), so prediction flies the anchor with it; PlayerSnap hooked 1 + kHookRocket = on a rocket, its u16 id after hookPoint, which no older writer sends); 46: hits test two boxes, the body up to the head's bottom and the head (rayHitbox, pmove.h; nothing beside the head): the client's grapple prediction catches players the same way, so an older one would mispredict (no wire change: 45's bytes); 45: acid (own movement state: mods bit 64 = the u16 acidOutMs follows phaseMs, sent while it's below kAcidRearmMs, so prediction knows whether the next touch is a new contact); 44: movement equations (a custom mode's expr.<key>= lines, moveexpr.h: every client evaluates them in its own pmove, so an older one would mispredict), own movement state: mods bit 128 = a u16 ms since the last landing / take-off after the opt parts (p.air / p.ground; sent only while an equation counts it); 43: dash charges recharge (own movement state opt bit 4: the u8 is charges | recharging << 4, then the u16 cooldown, then each recharging charge's u16 ms left; sent when charges != 2 or a timer runs; opt bit 2 adds the f32 speed the dash started from, for the super dash's +5); 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
 constexpr uint16_t kSnapSyringeSince = 35;  // the snapshot header carries syringeAway from this protocol on (older demos are read without it)
 constexpr uint16_t kSnapDashChargesSince = 41;   // own movement state opt bit 4: the dash charges (u8) from here on, the dash cooldown (f32) before
 constexpr uint16_t kSnapDashCooldownSince = 42;  // ...and from here on also the dash cooldown (u16 ms) after the charges
 constexpr uint16_t kSnapDashRechargeSince = 43;  // ...and from here on the charge byte's high 4 bits count the recharging charges, their u16 ms after the cooldown; opt bit 2 ends with the dash's start speed (f32)
 constexpr uint16_t kSnapPhaseSince = 44;          // own movement state: mods bit 128 flags the u16 phaseMs (older demos: mods as it is, no phase)
+constexpr uint16_t kSnapAcidSince = 45;           // own movement state: mods bit 64 flags the u16 acidOutMs (older demos: none, never in acid)
+constexpr uint16_t kSnapRocketRideSince = 47;     // own movement state: hookTarget kHookRocket carries the rocket's id, velocity and gravity (older demos: no rocket, a hookTarget over kMaxPlayers is nothing)
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
@@ -43,9 +45,9 @@ constexpr int kMaxHealth = 100;
 
 enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_POINTS, MODE_COUNT };
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
-constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT: cosmetic, every one has the same hitbox
+constexpr int kPlayerModels = 11;          // STANDARD, HEAVY, SIMPLE (was SCOUT, 2026-10-26), ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT: cosmetic, every one has the same hitbox
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
-inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SCOUT", "ROBOT", "KNIGHT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
+inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SIMPLE", "ROBOT", "KNIGHT", "WIZARD", "ZOMBIE", "FIGHTER", "PIRATE", "NINJA", "BANDIT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
 // Seconds a player waits to respawn during play, or < 0 where nobody does: rounds with one life (VS, bomb, duel,
 // 1v1, tourney, hide and seek). The one list behind modeRespawns() (the engine, keyed on the base mode) and each mode's
 // ModeParams::respawn default (modeparams.h), which rulesRespawnDelay() reads (warmup / match end aside).
@@ -116,10 +118,18 @@ enum ArenaRule : uint8_t {
 constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // the locator (WPN_LOCATOR, held by the seeker / tagger): fire it to see one random hider / runner this long, every kLocatorCooldown
 // The grapple's hook catching an enemy (owner): it latches on, 10 damage (15 through the head), then pulls both players
 // together; a damage source of its own (not a weapon: no slot, pool or stats row), "grapple" in the kill feed.
-constexpr int kDamageGrapple = 251;   // (252 fell, 253 bomb, 254 drained)
+constexpr int kDamageGrapple = 251;   // (250 acid, 252 fell, 253 bomb, 254 drained)
 constexpr float kGrappleDamage = 10.0f, kGrappleHeadDamage = 15.0f;
 constexpr float kGrappleLatchMax = 3.0f;   // a latch lets go after this long at most
 constexpr int KILL_HEADSHOT = 0x100, KILL_AIRBORNE = 0x200, KILL_WEAPON = 0xFF; // EV_KILL c: weapon in the low byte
+// Acid (map material 11; q, 2026-10-25): touching it costs kAcidContact of your max health at once, then kAcidPerSec of
+// it a second (in every 1 ms step: smooth, at any tick rate) while your box touches it, so anyone lasts about 9 s
+// whatever the mode's health. The contact hit comes back only after kAcidRearmMs fully out, so a bumpy edge doesn't
+// repeat it. pmove counts it (MoveState::acidTaken), so prediction shows it at once; the server takes the health and
+// decides the death. A kill cause of its own, "dissolved" in the kill feed.
+constexpr float kAcidContact = 0.10f, kAcidPerSec = 0.10f;
+constexpr int kAcidRearmMs = 500;
+constexpr int kDamageAcid = 250;
 #define WB(w) (1u << (w))
 
 // DUEL (1v1 or 2v2): every life (round) is played under one of these, picked at random (never the same twice
@@ -168,6 +178,9 @@ enum Phase : uint8_t {
     PHASE_ROUND_END,
     PHASE_MATCH_END,
 };
+// the phases acid (kAcidContact) hurts in: nativeCanDamage's, not the freeze, not after a round. The server and the
+// client's prediction both ask it.
+inline bool acidHurts(uint8_t phase) { return phase != PHASE_FREEZE && phase != PHASE_ROUND_END && phase != PHASE_MATCH_END; }
 
 // Input buttons
 enum : uint16_t {
@@ -362,6 +375,7 @@ inline const char* moveParamLabel(int i) {
 namespace mexpr { struct Program; }
 struct MoveTuning {
     float gravity = 1, speed = 1, jump = 1; bool dash = true, grapple = true;
+    bool rocketRide = true;   // the grapple catches rockets in flight (custom mode ROCKET RIDE; on in every standard mode)
     float m[MV_COUNT];
     // a custom mode's dynamic movement equations (moveexpr.h; null = none, the standard and most custom rules): pmove
     // runs them at the start of every 1 ms step on its own copy of this. The values above hold the static ones resolved
@@ -374,7 +388,8 @@ const MoveTuning& moveTuning();
 // x the custom mode's damage multiplier)
 inline float headDamage(int w) { return weaponExtra(w).headDamage; }
 constexpr float kHeadFraction = 0.2f;       // the head: the top 20% of the hitbox...
-constexpr float kHeadWidthFraction = 0.45f; // ...and 45% of its width, centred (0.36 m of 0.8): the shoulders beside it are body
+constexpr float kHeadWidthFraction = 0.45f; // ...and 45% of its width, centred (0.36 m of 0.8). The body ends at its bottom
+                                            // (bodyBox): beside the head there's nothing to hit
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 13.5f; // rocket alt-fire: a lob at 70% speed that drops at 13.5 m/s2 (owner 1.17: the old primary's 10.8 + 25%; was 3x 10.8); the primary flies straight
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
@@ -408,6 +423,16 @@ inline void projectileExtrapolate(Vec3& pos, Vec3& vel, float gravity, float t) 
     pos.y -= gravity * h * h * (0.5f * (float)n * (float)(n + 1));
     vel.y -= gravity * h * n;
     if (rest > 0) pos += vel * rest;
+}
+// The same path run back t seconds (t >= 0): where those steps had it t seconds ago (rocket riding: a rocket where a
+// grapple's shooter saw it). The inverse of projectileExtrapolate's sum, the part of a step first.
+inline void projectileRewind(Vec3& pos, Vec3& vel, float gravity, float t) {
+    const int n = t > 0 ? (int)(t / kMoveStep) : 0;
+    const float h = kMoveStep, rest = t - n * kMoveStep;
+    if (rest > 0) pos -= vel * rest;
+    pos -= vel * (n * h);
+    pos.y -= gravity * h * h * (0.5f * (float)n * (float)(n - 1));
+    vel.y += gravity * h * n;
 }
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;

@@ -1976,6 +1976,7 @@ void Server::spawnPlayer(int id) {
     }
     p.move = MoveState();
     p.move.pos = pos;
+    p.acidSince = -1;
     p.yaw = yaw;
     p.pitch = 0;
     p.alive = true;
@@ -2120,12 +2121,30 @@ void Server::muffledGunfire(int shooter, int weapon) {
     }
 }
 
-int Server::ringOutKiller(int victim) const {
+int Server::ringOutKiller(int victim, double since) const {
     const ServerPlayer& v = players_[victim];
     const int a = v.lastHitBy;
-    if (a < 0 || a >= kMaxPlayers || a == victim || time() - v.lastHitByAt > kRingOutCredit) return -1;
+    if (a < 0 || a >= kMaxPlayers || a == victim || (since >= 0 ? since : time()) - v.lastHitByAt > kRingOutCredit) return -1;
     const ServerPlayer& k = players_[a];
     return k.connected && k.joinId == v.lastHitByJoin && k.team != TEAM_SPECTATOR ? a : -1;
+}
+
+// Acid (gamedefs.h): pmove counted this command's share of max health in move.acidTaken, as the client's prediction
+// did, so the health the client showed comes off here; the death is the server's alone. Not in the freeze or after a
+// round (nativeCanDamage's phases), but in race too: it's the map, like lava, not another racer. Regeneration waits.
+bool Server::takeAcid(int id) {
+    ServerPlayer& p = players_[id];
+    const float share = p.move.acidTaken;
+    p.move.acidTaken = 0;
+    if (share > 0) { if (p.acidSince < 0) p.acidSince = time(); }
+    else if (p.move.acidOutMs >= kAcidRearmMs) p.acidSince = -1;   // (out long enough that the next touch is a new contact)
+    if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
+    p.health -= share * lifeMaxHealth();
+    p.lastDamagedAt = time();
+    glog(LOG_VERBOSE, "acid victim=%d dmg=%.3f health=%.2f", id, share * lifeMaxHealth(), p.health);
+    if (p.health > 0) return false;
+    killPlayer(id, ringOutKiller(id, p.acidSince), kDamageAcid);   // (knocked in: the knocker's, however long it took)
+    return true;
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -2210,6 +2229,7 @@ void Server::simulate() {
         p.histMs = timeMs_;
     }
     { QZONE("projectiles"); tickProjectiles(); }
+    tickRocketRides();   // grapples riding rockets: on the rocket where it flew, or let go
     tickVote();
     if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -2263,14 +2283,16 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     {
         HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
         grappleTargets(id, cmd, probe);
-        pmove(p.move, cmd, map_, probe.n ? &probe : nullptr);
+        pmove(p.move, cmd, map_, probe.n || probe.nr ? &probe : nullptr);
         if (p.move.events & (ME_JUMP | ME_LAND | ME_DASH | ME_SUPER | ME_HYPER))   // (for everyone else's sounds: PlayerSnap::keys)
             p.moveEv |= (uint16_t)((p.move.events & 31) << kKeyEvShift) | (p.move.landSpeed > kHardLandSpeed ? KEY_EV_LAND_HARD : 0);
         if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
+        if (probe.hitRocket >= 0) p.hookSince = time();   // (riding a rocket: tickRocketRides keeps it on it)
         if (p.hookVictim >= 0) syncLatch(id);           // released / met / out of reach: let go; else the anchors follow
         if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
     }
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
+    if ((p.move.acidTaken > 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
     // it's the only weapon this mode allows it stays in hand, unusable, until it's back.
@@ -2420,17 +2442,19 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
     int hit = -1;
-    AABB hitBb;
+    bool hitHead = false;
     Vec3 inv = safeInv(dir);
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == id || !players_[i].connected || !players_[i].alive) continue;
-        AABB bb = rewoundHitBox(i, vt);   // newest recorded state at or before the shooter's view time
-        bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow;
+        // where they were at the shooter's view time (the newest recorded state at or before it): the body and the
+        // head, nothing beside the head (rayHitbox)
+        const AABB& bb = rewoundHitBox(i, vt);
+        bool inHead;
+        float t = rayHitbox(eye, inv, bb, best, &inHead, grow);
         if (pierce) { // sniper collateral: every player along the line up to the wall is hit
-            float t = rayAABB(eye, inv, bb, best);
             if (t < 0) continue;
             float d = dmg;
-            const bool head = headDmg > 0 && rayHitsHead(eye, dir, bb);
+            const bool head = headDmg > 0 && inHead;
             if (head) { d = std::max(d, headDmg); headHit_[i] = true; }
             if (ex.falloff) d *= weaponFalloff(ex, t);
             hitDist_[i] = t;
@@ -2439,11 +2463,10 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             if (head && headPer) headPer[i] += d;
             continue;
         }
-        float t = rayAABB(eye, inv, bb, best);
-        if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
+        if (t >= 0 && t < best) { best = t; hit = i; hitHead = inHead; }
     }
     if (hit < 0) return;
-    const bool head = headDmg > 0 && rayHitsHead(eye, dir, hitBb);   // (the head, not the shoulders)
+    const bool head = headDmg > 0 && hitHead;   // (the head, not the shoulders)
     if (head) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }
     if (ex.falloff) dmg *= weaponFalloff(ex, best);
     hitDist_[hit] = best;
@@ -2533,6 +2556,57 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         Vec3 pos = rewoundPos(i, vt, &crouched);
         probe.box[probe.n] = hitBox(pos, crouched);
         probe.id[probe.n++] = (uint8_t)i;
+    }
+    // Rocket riding: the rockets in reach, anyone's. Your own are tested where they are now (the client draws them that
+    // far ahead: X5), anyone else's rewound along their path to where you saw them (the view time plus the
+    // interpolation delay the client draws projectiles ahead by: rocketSeenMs). Bots don't ride rockets.
+    if (!moveTuning().rocketRide || p.isBot) return;
+    const Vec3 eye = p.move.pos + Vec3(0, kEyeHeight * moveScale(p.move.mods), 0);
+    const float reach = kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) + 2 * kRocketCatchHalf;
+    uint64_t seen = 0;   // (the time anyone else's rocket is tested at: worked out at the first)
+    bool haveSeen = false;
+    for (const Projectile& pr : projectiles_) {
+        if (probe.nr >= HookProbe::kRockets) break;
+        if (!pr.active || pr.type != WPN_ROCKET || pr.stuck) continue;
+        const Vec3 d = pr.pos - eye;
+        if (dot(d, d) > reach * reach) continue;
+        const float g = projectileGravity(pr.type, pr.gravMul);
+        Vec3 at = pr.pos;
+        if (pr.owner != id) {
+            if (!haveSeen) {
+                if (!rewound) { vt = rewindViewMs(id, cmd.viewTick); rewound = true; }
+                seen = std::min<uint64_t>(timeMs_, vt + rocketSeenMs(p.interpMs, snapRate()));
+                haveSeen = true;
+            }
+            Vec3 v = pr.vel;
+            projectileRewind(at, v, g, (float)(timeMs_ - seen) * 0.001f);
+        }
+        const int k = probe.nr++;
+        probe.at[k] = at; probe.pos[k] = pr.pos; probe.vel[k] = pr.vel; probe.grav[k] = g; probe.rid[k] = pr.id;
+    }
+}
+
+// Riding a rocket, once a tick after the projectiles flew: the anchor is the rocket as it now is (pmove flew it the same
+// steps); the hook lets go, momentum kept and the usual cooldown, when the rocket is gone (it exploded or its time ran
+// out), out of reach or sight, after kGrappleLatchMax, or when the rules no longer allow it.
+void Server::tickRocketRides() {
+    for (auto& p : players_) {
+        if (!p.connected || !p.alive || !(p.move.flags & MF_HOOKED) || p.move.hookTarget != kHookRocket) continue;
+        const Projectile* pr = nullptr;
+        for (const Projectile& q : projectiles_) if (q.active && q.id == p.move.hookProj && q.type == WPN_ROCKET && !q.stuck) { pr = &q; break; }
+        bool hold = pr && moveTuning().rocketRide && time() - p.hookSince <= kGrappleLatchMax;
+        if (hold) {
+            const Vec3 from = p.move.pos + Vec3(0, 1.0f * moveScale(p.move.mods), 0), d = pr->pos - from;
+            const float dist = length(d);
+            hold = dist <= kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) && !(dist > 1e-3f && map_.raycastAny(from, d / dist, dist));
+        }
+        if (hold) {
+            p.move.hookPoint = pr->pos; p.move.hookVel = pr->vel; p.move.hookGrav = projectileGravity(pr->type, pr->gravMul);
+            continue;
+        }
+        p.move.flags &= ~MF_HOOKED;
+        p.move.hookTarget = 0; p.move.hookProj = 0;
+        p.move.hookCooldown = kHookCooldown * moveValue(p.move, MV_HOOK_COOLDOWN, &map_);   // (its per-step value: movement equations)
     }
 }
 
@@ -2634,7 +2708,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, floa
         Vec3 inv = safeInv(dir);
         for (int i = 0; i < kMaxPlayers; i++) {
             if (i == id || !players_[i].connected || !players_[i].alive) continue; // your own ricochets never hit you
-            float t = rayAABB(o, inv, rewoundHitBox(i, vt), best);
+            float t = rayHitbox(o, inv, rewoundHitBox(i, vt), best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
         if (hit >= 0) { dmgPer[hit] += dmg; hitDist_[hit] = travelled + best; return; }
@@ -2843,14 +2917,17 @@ void Server::stepProjectile(Projectile& pr) {
         float wall = map_.raycast(pr.pos, dir, len, &n);
         float best = wall >= 0 ? wall : len;
         int hitPlayer = -1;
-        AABB hitBb;
+        bool hitHead = false;
+        AABB hitBb;   // the part it hit: their body or their head (stickies and stuck props sit inside it)
         Vec3 inv = safeInv(dir);
         for (int k = 0; k < projTargets_; k++) {
             int i = projTargetId_[k];
             if (i == pr.owner || !players_[i].alive) continue;   // (killed earlier this tick)
-            float t = rayAABB(pr.pos, inv, projTargetBox_[k], best);
-            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = projTargetBox_[k]; }
+            bool inHead;
+            float t = rayHitbox(pr.pos, inv, projTargetBox_[k], best, &inHead);
+            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitHead = inHead; hitBb = projTargetBox_[k]; }
         }
+        if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
         if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
@@ -2898,7 +2975,7 @@ void Server::stepProjectile(Projectile& pr) {
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
             if (hitPlayer >= 0) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
-                if (head > 0 && rayHitsHead(pr.pos, dir, hitBb)) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
+                if (head > 0 && hitHead) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
                 const WeaponExtra& ex = weaponExtra(pr.type);
                 const bool wantDist = ex.falloff || activeWeaponLogic();   // (only a weapon set needs it)
                 float dist = wantDist && pr.owner >= 0 && pr.owner < kMaxPlayers ? length(at - shooterEye(pr.owner)) : 0.0f;
@@ -2996,7 +3073,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         auto& p = players_[i];
         if (!p.connected || !p.alive) continue;
         AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
-        Vec3 closest = vmax(b.mn, vmin(at, b.mx));
+        Vec3 closest = hitboxClosest(b, at);   // (the body or the head: a blast over the shoulders is as far as the head)
         float d = length(closest - at);
         if (d > wd.splashRadius) continue;
         // Splash is blocked by walls between the blast and the target's center.
@@ -3238,6 +3315,7 @@ void Server::sendSnapshots() {
         p.moveEv = 0;   // (every client's snapshot is built from this one list: each event goes out once)
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED) ? (uint8_t)(1 + p.move.hookTarget) : 0;   // (2 + id: latched onto that player)
         ps.hookPoint = p.move.hookPoint;
+        ps.hookProj = ps.hooked == 1 + kHookRocket ? p.move.hookProj : 0;   // (riding that rocket)
         all.push_back(ps);
     }
     std::vector<ProjectileSnap>& allProj = snapProj_;
@@ -3331,7 +3409,7 @@ void Server::sendSnapshots() {
             hiddenPlayers |= 1u << ps.id;
             // out of sight: nothing but the scoreboard (no health, weapon, firing, crouch or the bomb)
             ps.flags &= (uint8_t)~(PS_FIRING | PS_CROUCHED | (isItMode(ms_.mode) ? 0 : PS_HASBOMB));
-            ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookPoint = Vec3();
+            ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookProj = 0; ps.hookPoint = Vec3();
             ps.pos = Vec3(); ps.yaw = ps.pitch = 0;
         }
         if (!seesAll)   // a grapple latched onto a player out of this client's sight: no rope (its end would give them away)

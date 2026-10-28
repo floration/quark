@@ -1,5 +1,5 @@
 // Weapon sets: fields, the .qweapons parser / printer / JSON AST, compiler and interpreter (weaponset.h,
-// tools/weapon_editor/DESIGN.md). The grammar is the bot brain grammar (tools/bots/GRAMMAR.md) with a `weapons`
+// tools/maptool/weapon/DESIGN.md). The grammar is the bot brain grammar (tools/bots/GRAMMAR.md) with a `weapons`
 // header, one value per param, `label` declarations and `hit` / `kill` slots; the lexer, parser and printer follow
 // botbrain.cpp's so the editors' code works on both.
 #include "weaponset.h"

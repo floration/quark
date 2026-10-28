@@ -29,7 +29,7 @@ struct Settings {
     int maxFps = 0;             // 0 = unlimited
     int width = 1280, height = 720;
     bool shadows = true;
-    int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT
+    int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SIMPLE, ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT
     int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
     int nameColor = -1;         // your name's colour as others see it (0xRRGGBB; -1 = the default)
     bool hbMigrated = false;    // (1.17: health bars were switched on once for every existing config)
@@ -40,6 +40,8 @@ struct Settings {
     // per-mode rules: a huds/ or controls/ profile file used automatically in that mode ("" = your default)
     std::string modeHud[MODE_COUNT], modeCtl[MODE_COUNT];     // draw the widgets from hud.cfg
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
+    int renderScale = 100;      // RENDER SCALE: the 3D scene drawn at the window's size times this % (50 - 200), the HUD at the window's
+    bool renderSharpen = true;  // ...and below 100% sharpened as it's stretched (SHARPEN)
     float volume = 0.6f;
     float volumeEffects = 1.0f;    // x volume: every sound effect (the hitsound too)
     float volumeAnnouncer = 1.0f;  // x volume: the announcer's lines
@@ -56,6 +58,9 @@ struct Settings {
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
+    bool impactSparks = true;   // a spark where a hitscan shot meets a wall or a player (yours and everyone's)
+    bool muzzleFlash = true;    // a flash at the gun's muzzle on each shot (yours and everyone's)
+    float viewmodelOpacity = 1.0f; // the first-person gun and grapple launcher: 1 solid, 0 not drawn (see-through between)
     bool healthBars = true;     // health bars over other players (not in ranked; on by default, owner 1.17)
     bool healthBarsBottom = false;  // ... at their feet instead of over the head
     float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)
@@ -106,10 +111,18 @@ struct Settings {
     bool chHitFlash = true;     // a hit flashes the crosshair in chHitColor (and a center square on styles without a dot)
     Vec3 chHitColor = {1, 1, 1};
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
-    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_COUNT }; // (keys: after the model, so saved layouts keep their indices)
-    // x / y / scale move and size an element (720p units); hidden removes it. For the weapon model, x / y / depth
-    // move it in front of the camera (depth: z, + = further away) and colour tints its accent parts.
-    struct HudElem { float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; bool hidden = false; float z = 0; };
+    // (keys, then the grapple launcher: after the weapon model, so saved layouts keep their indices; then the score box,
+    // kill feed and chat, which could only be themed and moved from 1.19.0.testing on)
+    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_GRAPPLE, HUD_SCORE, HUD_KILLFEED, HUD_CHAT,
+           HUD_COUNT };
+    // x / y / scale move and size an element (720p units); hidden removes it. For the two first-person models (the
+    // weapon, the grapple launcher), x / y / depth move it in front of the camera (depth: z, + = further away), pitch /
+    // yaw / roll tilt it about its pivot (degrees) and colour tints its accent parts (the launcher: its stripe).
+    struct HudElem {
+        float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; bool hidden = false; float z = 0;
+        float pitch = 0, yaw = 0, roll = 0;
+    };
+    static bool isModelElem(int el) { return el == HUD_VIEWMODEL || el == HUD_GRAPPLE; }
     HudElem hud[HUD_COUNT];
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert

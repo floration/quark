@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <thread>
 #include "bots.h"
 #include "botbrain.h"
@@ -32,6 +33,8 @@ constexpr float kNavInf = 1e30f;
 constexpr float kNavStep = 0.56f;
 constexpr float kNavHead = kPlayerHeight;
 constexpr float kNavClear = kPlayerHalfWidth - 0.01f;
+constexpr float kAcidNavCost = 4.0f;   // a link onto a piece in acid costs this many times its length: bots go round a pool
+                                       // if it's under ~4x shorter, through it when it's the only way (and out by the nearest edge)
 constexpr float kNavSnap = 0.1f;   // blockers' edges this close together are one edge (no slivers: a gap under 0.88 m closes)
 constexpr size_t kNavSplitAt = 48;  // a surface with more blockers than this is halved first (keeps the cutting cheap)
 constexpr float kNavTile = 12.0f;   // regions are cut at these tiles (by piece centre): a region's centre then says where it is
@@ -235,7 +238,7 @@ float linkGap(const NavGraph::Node& a, const NavGraph::Node& b) {
 }
 bool linkReach(float gap, float up) { return gap <= kLinkGap && up <= 1.15f && up >= -8.0f; }
 float linkCostOf(const NavGraph::Node& a, const NavGraph::Node& b, float gap) {
-    return centreDist(a.x0, a.z0, a.x1, a.z1, b.x0, b.z0, b.x1, b.z1) + gap * 2 + std::max(b.y - a.y, 0.0f) * 2;
+    return (centreDist(a.x0, a.z0, a.x1, a.z1, b.x0, b.z0, b.x1, b.z1) + gap * 2 + std::max(b.y - a.y, 0.0f) * 2) * (b.wet ? kAcidNavCost : 1.0f);
 }
 }  // namespace
 
@@ -257,11 +260,11 @@ void NavGraph::build(const Map& m, NavKind k) {
     // pillars on a floor split it, so a route goes round them instead of into them).
     std::vector<uint32_t> seen(m.brushes.size(), 0);
     uint32_t mark = 0;
-    std::vector<Rect> blk, pieces;
+    std::vector<Rect> blk, pieces, wet, wetPieces;
     for (size_t bi = 0; bi < m.brushes.size(); bi++) {
         const Brush& b = m.brushes[bi];
         const AABB& a = b.box;
-        if (b.material >= 5) continue; // far scenery, water / lava
+        if (!solidMaterial(b.material)) continue; // far scenery, water / lava
         if (a.mx.x - a.mn.x < 0.4f || a.mx.z - a.mn.z < 0.4f) continue; // (0.5 m stair steps are floor)
         const Rect r = {a.mn.x, a.mn.z, a.mx.x, a.mx.z};
         const float y = a.mx.y;
@@ -286,10 +289,25 @@ void NavGraph::build(const Map& m, NavKind k) {
             }
             if (free) pieces.push_back(r);
         } else {
+            // acid pools on this top (a player standing on it would touch them): pieces of their own, wet, cut out of
+            // the dry ones (maps without acid: nothing changes)
+            wet.clear();
+            for (const AABB& ac : m.acid) {
+                const Rect c = {std::max(ac.mn.x, r.x0), std::max(ac.mn.z, r.z0), std::min(ac.mx.x, r.x1), std::min(ac.mx.z, r.z1)};
+                if (ac.mn.y < y + kNavHead && ac.mx.y > y && c.x1 > c.x0 && c.z1 > c.z0) wet.push_back(c);
+            }
+            wetPieces.clear();
+            const size_t nb = blk.size();
+            for (const Rect& w : wet) { freeRects(w, blk, wetPieces); blk.push_back(w); }   // (each pool less the ones before: no overlaps)
             freeRects(r, blk, pieces);
+            blk.resize(nb);
         }
         for (const Rect& p : pieces) {
             nodes.push_back({p.x0, p.z0, p.x1, p.z1, y});
+            surf.push_back((int)bi);
+        }
+        for (const Rect& p : wetPieces) {
+            nodes.push_back({p.x0, p.z0, p.x1, p.z1, y, true});
             surf.push_back((int)bi);
         }
     }
@@ -404,7 +422,7 @@ void NavGraph::build(const Map& m, NavKind k) {
         q.assign(1, i);
         for (size_t k = 0; k < q.size(); k++)
             for (auto& l : links[q[k]])
-                if (region[l.first] < 0 && surf[l.first] == surf[i] && tile(l.first) == ti) {
+                if (region[l.first] < 0 && surf[l.first] == surf[i] && nodes[l.first].wet == nodes[i].wet && tile(l.first) == ti) {
                     const Node& nd = nodes[l.first];
                     region[l.first] = r; q.push_back(l.first);
                     rg.x0 = std::min(rg.x0, nd.x0); rg.z0 = std::min(rg.z0, nd.z0); rg.x1 = std::max(rg.x1, nd.x1); rg.z1 = std::max(rg.z1, nd.z1);

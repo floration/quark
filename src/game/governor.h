@@ -44,10 +44,12 @@ constexpr const char* kGovernorClosedText = "testing server closed: this machine
                                             "it reopens by itself later (play on the production server meanwhile)";
 const char* govChannelName(int ch);   // "prod" / "testing"
 int govChannelFromName(const std::string& s);   // -1 if neither
-// A version that isn't a production release: any semver prerelease suffix ("1.17.0-test.42", CI's testing builds).
+// A version that isn't a production release (x.y.z): CI's testing builds, "1.19.1.5" (from 1.19.1 on: the production
+// VERSION plus .<N>, newer than that release; 1.19.0 to 1.19.1 "1.19.0.testing.5") or "1.18.9-test.42" (before: a
+// semver prerelease).
 bool isTestingVersion(const char* version);
 // This build is a testing one (isTestingVersion(QUARK_VERSION)): it never rates ranked and its servers default to the
-// testing channel. quark_tests pins it (0: production): CI builds the tests as a -test. version on the testing branch,
+// testing channel. quark_tests pins it (0: production): CI builds the tests as a testing version on the testing branch,
 // and the tests check the production behaviour, plus the testing one where they pin it to 1.
 bool testingBuild();
 void pinTestingBuildForTests(int testing);   // -1: by the version again

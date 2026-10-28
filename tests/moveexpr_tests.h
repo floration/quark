@@ -282,7 +282,7 @@ static void testMoveExpr() {
         CHECK(roundTrip(m, 43, got, n0) && got.mods == m.mods);   // (no phase: the bytes are protocol 43's)
         m.phaseMs = 1234;
         CHECK(roundTrip(m, kProtocolVersion, got, n1) && got.mods == m.mods && got.phaseMs == 1234 && n1 == n0 + 2);
-        CHECK(demo::convertible(43) && kSnapPhaseSince == kProtocolVersion);
+        CHECK(demo::convertible(43) && kSnapPhaseSince <= kProtocolVersion);
     }
 }
 

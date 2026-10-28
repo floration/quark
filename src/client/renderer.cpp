@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "../common/u8file.h"
 #include "../common/profile.h"
+#include "gpuprofile.h"
 #include "../common/net.h"
 #include <cstdio>
 #include <cstring>
@@ -60,10 +61,14 @@ void main() {
 
 const char* kShadowFn = R"(
 
-// 1 at a face's middle, 0 on its edges: the outline. w = its width in pixels (settings; 1 = the default look,
-// smoothstep(1, 2)); 0 = no outline.
+// RENDER SCALE: the scene's pixels per window pixel (1 at 100%), so widths given in window pixels stay that wide
+uniform float uPxScale;
+// 1 at a face's middle, 0 on its edges: the outline. w = its width in window pixels (settings; 1 = the default look,
+// smoothstep(1, 2)); 0 = no outline. Below 100% never under a scene pixel, and its 1 pixel ramp stays a scene pixel
+// (thinner, the outlines went grey and shimmered).
 float outline(vec4 e, float w) {
     if (w <= 0.0) return 1.0;
+    w = max(w * uPxScale, min(w, 1.0));
     vec2 d2 = min(e.xy, e.zw - e.xy);
     float d = min(d2.x, d2.y);
     float px = fwidth(d);
@@ -98,6 +103,7 @@ uniform float uBright;   // the brightness setting (exposure, before the filmic 
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
+uniform float uTime;     // seconds (wrapped every hour): acid's slow shimmer
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 finish(vec3 c) {
@@ -109,12 +115,14 @@ vec3 finish(vec3 c) {
 void main() {
     int mat = int(vMat + 0.5);
     if (uFull > 0.5) {
-        float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
-        fragColor = vec4(uFullColor * g * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
+        float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 || mat == 11 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
+        fragColor = vec4(uFullColor * g * ((mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
         return;
     }
-    if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
+    if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
         vec3 c = mat == 4 ? uGlow * 0.9
+               : mat == 11 ? mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0))      // acid: glowing toxic green, darker sides,
+                             * (0.85 + 0.15 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) // with a slow shimmer
                : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
                : mat == 7 ? vec3(1.6, 0.42, 0.08)                                                         // lava: glowing
                : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
@@ -123,12 +131,13 @@ void main() {
     }
     vec2 lm = texture(uLightmap, vUV).rg;
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
+    if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
     vec2 pp = an.y > 0.5 ? vPos.xz * 0.25 : an.x > 0.5 ? vPos.zy * 0.5 : vPos.xy * 0.5;
     if (mat == 3) pp = pp * vec2(2.0, 0.5);
-    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * 1.5;
+    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
     float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
     albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
@@ -166,6 +175,26 @@ void main() {
     vec3 b = a * 0.5 + 0.25 * (texture(uScene, vUV - dir * 0.5).rgb + texture(uScene, vUV + dir * 0.5).rgb);
     float lB = luma(b);
     fragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
+})";
+
+// RENDER SCALE below 100%: the scene stretched to the window with a light contrast-adaptive sharpen (CAS-style, the
+// 5-tap cross): each pixel pushed away from its 4 neighbours by an amount that shrinks where the cross already has
+// strong contrast (no halos on the outlines) or is near black / white (no clipping). The taps are a scene pixel apart,
+// read with linear filtering at the window pixel's own spot, so the stretch is the same pass. uSharp: -1/8 (light) to
+// -1/5 (strong).
+const char* kSharpFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uScene;
+uniform vec2 uRcp;
+uniform float uSharp;
+out vec4 fragColor;
+void main() {
+    vec3 c = texture(uScene, vUV).rgb;
+    vec3 n = texture(uScene, vUV + vec2(0.0, -uRcp.y)).rgb, s = texture(uScene, vUV + vec2(0.0, uRcp.y)).rgb;
+    vec3 w = texture(uScene, vUV + vec2(-uRcp.x, 0.0)).rgb, e = texture(uScene, vUV + vec2(uRcp.x, 0.0)).rgb;
+    vec3 mn = min(c, min(min(n, s), min(w, e))), mx = max(c, max(max(n, s), max(w, e)));
+    vec3 k = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0)) * uSharp;
+    fragColor = vec4(clamp((c + (n + s + w + e) * k) / (1.0 + 4.0 * k), 0.0, 1.0), 1.0);
 })";
 
 // sky: one full-screen triangle at the far plane, drawn after the world so only uncovered pixels shade
@@ -226,6 +255,7 @@ uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
 uniform float uBright;
+uniform float uFade;   // the view model's see-through amount (1 - WEAPON MODEL OPACITY); 0 (unset) everywhere else
 out vec4 fragColor;
 void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
@@ -234,7 +264,7 @@ void main() {
     vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
-    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0 - uFade);
 })";
 
 const char* kFlatVS = R"(#version 330 core
@@ -245,8 +275,9 @@ out vec4 vColor;
 void main() { vColor = aColor; gl_Position = uViewProj * vec4(aPos, 1.0); })";
 const char* kFlatFS = R"(#version 330 core
 in vec4 vColor;
+uniform float uFade;   // (as the dynamic shader's: the view model's translucent parts)
 out vec4 fragColor;
-void main() { fragColor = vec4(pow(vColor.rgb, vec3(1.0 / 2.2)), vColor.a); })";
+void main() { fragColor = vec4(pow(vColor.rgb, vec3(1.0 / 2.2)), vColor.a * (1.0 - uFade)); })";
 
 const char* kShadowVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -265,9 +296,14 @@ uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
 out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
+// a rounded rect (aText.w 1, Renderer::roundRect): its pixel position in it, its size (the last corner's: both
+// triangles end on it), corner radius and ring width
+out vec2 vLocal; flat out vec2 vSize; flat out vec3 vShape;
 void main() {
     vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
     vSplit = aText.z;
+    vShape = vec3(aText.w, aText.x, aText.y * 0.25);
+    vLocal = aUV * 0.25; vSize = aUV * 0.25;
     vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
@@ -275,6 +311,7 @@ void main() {
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
 in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
+in vec2 vLocal; flat in vec2 vSize; flat in vec3 vShape;
 uniform sampler2D uFont;
 uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
@@ -285,6 +322,17 @@ uniform vec2 uSplitP, uSplitN;
 uniform float uSplitSeam;
 out vec4 fragColor;
 void main() {
+    if (vShape.x > 0.5) {   // a rounded rect: coverage from its signed distance (< 0 inside), a ring minus what's further in
+        vec2 b = vSize * 0.5, p = vLocal - b;
+        float r = min(vShape.y, min(b.x, b.y));
+        vec2 q = abs(p) - b + r;
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+        float a = clamp(0.5 - d, 0.0, 1.0);
+        if (vShape.z > 0.0) a -= clamp(0.5 - d - vShape.z, 0.0, 1.0);
+        if (a <= 0.004) discard;
+        fragColor = vec4(vColor.rgb, vColor.a * a);
+        return;
+    }
     if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
         vec4 t = texture(uLogo, vUV);
         float a = max(t.a, max(t.r, t.g));
@@ -317,8 +365,8 @@ void setMat(GLint loc, const Mat4& m) { glUniformMatrix4fv(loc, 1, GL_FALSE, m.m
 #ifdef QUARK_TRACY
 static size_t g_uploadBytes = 0, g_uploads = 0, g_dynVerts = 0, g_shadowVerts = 0; // per-frame counters (profiling builds)
 #endif
-template <class T>
-void upload(unsigned vbo, size_t& cap, const std::vector<T>& v) {
+template <class T, class A>
+void upload(unsigned vbo, size_t& cap, const std::vector<T, A>& v) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     size_t bytes = v.size() * sizeof(T);
 #ifdef QUARK_TRACY
@@ -386,10 +434,13 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 }
 
 bool Renderer::init(int shadowRes, std::string* err) {
-    {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13)
+    QGPUCONTEXT();
+    {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13); the shadow map too (a size past it
+        // left the framebuffer incomplete, so shadows turned off instead of using the largest the GPU has)
         GLint64 maxTex = 0;
         glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
         if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
+        if (maxTex > 0 && shadowRes > maxTex) shadowRes = (int)maxTex;
     }
     std::string worldFS = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;
@@ -400,6 +451,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uiProg_ = compile(kUiVS, kUiFS, err);
     skyProg_ = compile(kSkyVS, kSkyFS, err);
     edgeProg_ = compile(kEdgeVS, kEdgeFS, err);
+    sharpProg_ = compile(kEdgeVS, kSharpFS, err);
     if (!skyProg_ || !worldProg_ || !dynProg_ || !flatProg_ || !shadowProg_ || !uiProg_) return false;
 
     // VAOs
@@ -414,6 +466,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(FlatVertex), (void*)0);
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(FlatVertex), (void*)12);
 
+    glGenVertexArrays(1, &fsVao_);   // (no attributes: the fullscreen passes make their triangle from gl_VertexID)
+
     glGenVertexArrays(1, &uiVao_);
     glGenBuffers(1, &uiVbo_);
     glBindVertexArray(uiVao_);
@@ -425,6 +479,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)4);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex2D), (void*)8);
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);   // (scale, frac, split Q flag, 0)
+    glGenBuffers(1, &uiEbo_);
+    uiIndices((1 << 15) / 4);   // (bound to the VAO: the index pattern for the reserved batch)
     glBindVertexArray(0);
 
     // Font texture: the UI font's distance field (linear filtering: one atlas serves every text size)
@@ -482,13 +538,15 @@ bool Renderer::init(int shadowRes, std::string* err) {
     uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
                U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
-               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW")};
+               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
+               U(worldProg_, "uTime")};
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
     setVec3(U(worldProg_, "uSunColor"), sunColor);
     setVec3(U(worldProg_, "uSkyColor"), skyLight);
     glUniform1f(U(worldProg_, "uFogDensity"), fog);
+    glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
              U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
@@ -497,9 +555,13 @@ bool Renderer::init(int shadowRes, std::string* err) {
     setVec3(U(dynProg_, "uSunColor"), sunColor);
     setVec3(U(dynProg_, "uSkyColor"), skyLight);
     glUniform1f(U(dynProg_, "uFogDensity"), fog);
+    glUniform1f(U(dynProg_, "uPxScale"), 1.0f);
+    uWorldPx_ = U(worldProg_, "uPxScale"); uDynPx_ = U(dynProg_, "uPxScale");
+    pxScale_ = 1.0f;
     uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
     uFlatViewProj_ = U(flatProg_, "uViewProj");
+    uDynFade_ = U(dynProg_, "uFade"); uFlatFade_ = U(flatProg_, "uFade");
     uShadowViewProj_ = U(shadowProg_, "uViewProj");
     glUseProgram(uiProg_);
     uUiScreen_ = U(uiProg_, "uScreen");
@@ -515,8 +577,14 @@ bool Renderer::init(int shadowRes, std::string* err) {
         uEdgeRcp_ = U(edgeProg_, "uRcp");
         glUniform1i(U(edgeProg_, "uScene"), 0);
     }
+    if (sharpProg_) {
+        glUseProgram(sharpProg_);
+        uSharpRcp_ = U(sharpProg_, "uRcp");
+        glUniform1i(U(sharpProg_, "uScene"), 0);
+        glUniform1f(U(sharpProg_, "uSharp"), -1.0f / 6.5f);   // (CAS's sharpness 0.5: between its -1/8 and -1/5)
+    }
     glUseProgram(0);
-    uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = 0;   // (set on first use)
+    uiScreen_[0] = uiScreen_[1] = edgeRcp_[0] = edgeRcp_[1] = sharpRcp_[0] = sharpRcp_[1] = 0;   // (set on first use)
 
     // the frame's vertex lists sized for a busy frame up front, so one never grows them mid-frame
     dyn_.reserve(16384); dynShadowOnly_.reserve(16384);
@@ -779,6 +847,10 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
     emitBox(view_, xf, half, color, 1.0f);
 }
 
+void Renderer::viewBoxXf(const Mat4& local, const Vec3& half, const Vec3& color) {
+    emitBox(view_, Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local, half, color, 1.0f);
+}
+
 // An override model (models.h): opaque triangles into `out` like a box's faces (lit, shadowed; no outline: the
 // edge attribute sits mid-face), translucent ones into `flatOut` (a flat layer; none: left out). Colours times tint[slot].
 void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut) {
@@ -829,6 +901,10 @@ void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, con
     s.m[0] = s.m[5] = s.m[10] = scale;
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
     emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);   // (translucent parts: drawn over the view model, in its pass)
+}
+
+void Renderer::viewMeshXf(const ModelMesh& m, const Mat4& local, const Vec3* tint) {
+    emitMesh(view_, m, Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * local, tint, 1.0f, &viewFlat_);
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {
@@ -924,6 +1000,7 @@ void Renderer::prepareScene(bool shadows) {
         shadowMat = Mat4::ortho(cx - R, cx + R, cy - R, cy + R, -cz - 120.0f, -cz + 120.0f) * lv;
 
         QZONE("shadow pass");
+        QGPUZONE("GPU shadow pass");
         // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
         // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
         // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
@@ -985,6 +1062,7 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
     setVec3(uWorld_.fullColor, fullbrightColor);
     glUniform1f(uWorld_.outlineW, worldOutline);
+    glUniform1f(uWorld_.time, (float)std::fmod(timeNow(), 3600.0));
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
     glUniform1f(uSky_.bright, brightness);
@@ -1006,7 +1084,13 @@ void Renderer::drawScene(bool shadows) {
 
     ensureMsaaTarget();
     if (msaaActive_) glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
-    glViewport(0, 0, width_, height_);
+    glViewport(0, 0, sceneW_, sceneH_);
+    const float px = (float)sceneW_ / (float)std::max(1, width_);
+    if (px != pxScale_) {   // (only when the render scale or the size changes: the outlines' width in window pixels)
+        pxScale_ = px;
+        glUseProgram(worldProg_); glUniform1f(uWorldPx_, px);
+        glUseProgram(dynProg_); glUniform1f(uDynPx_, px);
+    }
     glClearColor(clear_[0], clear_[1], clear_[2], 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -1022,6 +1106,7 @@ void Renderer::drawScene(bool shadows) {
     // (only the view's own uniforms here: init set the fixed ones, prepareScene the rest of the frame's)
     if (worldVerts_) {
         QZONE("world pass");
+        QGPUZONE("GPU world pass");
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
@@ -1044,7 +1129,7 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(dynVao_);
         if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
     };
-    { QZONE("dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true, viewProj_); }   // (lit and shadowed; the no-cast ones cast none)
+    { QZONE("dynamic pass"); QGPUZONE("GPU dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true, viewProj_); }   // (lit and shadowed; the no-cast ones cast none)
     if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
         QZONE("static boxes pass");
         staticOn_ = false;
@@ -1078,27 +1163,71 @@ void Renderer::drawScene(bool shadows) {
     };
     if (nFlat) drawFlat(0, nFlat, viewProj_);
 
-    if (nView || nViewFlat) {
+    if ((nView || nViewFlat) && viewOpacity > 0.005f) {   // (WEAPON MODEL OPACITY 0: not drawn at all)
         glClear(GL_DEPTH_BUFFER_BIT);
-        drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);   // (viewFix_: built for the aim before relatch)
-        if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
+        if (viewOpacity < 0.995f) {
+            // see-through: its depth first (no colour), then its colour blended over only its nearest faces, so it
+            // fades as one solid thing (the parts behind its front faces don't show through). Twice the view's few
+            // hundred triangles; nothing extra at full opacity.
+            const float fade = 1.0f - viewOpacity;
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            glUniform1f(uDynFade_, fade);   // (drawDyn's program, still bound)
+            drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);
+            glUniform1f(uDynFade_, 0);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+            if (nViewFlat) {
+                glUseProgram(flatProg_);
+                glUniform1f(uFlatFade_, fade);
+                drawFlat(nFlat, nViewFlat, viewProjFix_);
+                glUniform1f(uFlatFade_, 0);
+            }
+        } else {
+            drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProjFix_);   // (viewFix_: built for the aim before relatch)
+            if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProjFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
+        }
     }
-    if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
+    QGPUZONE("GPU resolve / scale");
+    const bool scaled = sceneW_ != width_ || sceneH_ != height_;
+    unsigned srcFbo = msaaFbo_, srcTex = edgeTex_;   // (what the window is drawn from, single-sampled)
+    if (msaaActive_ >= 2 && !scaled) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBlitFramebuffer(0, 0, width_, height_, 0, 0, width_, height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    } else if (msaaActive_ == 1) { // edges: one fullscreen pass from the scene texture into the window
+    } else if (msaaActive_ >= 2) { // RENDER SCALE: a multisampled blit can't change size, so resolve at the scene's size first
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
+        glBlitFramebuffer(0, 0, sceneW_, sceneH_, 0, 0, sceneW_, sceneH_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        srcFbo = resolveFbo_; srcTex = resolveTex_;
+    }
+    if (msaaActive_ == 1 || (msaaActive_ >= 2 && scaled)) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_DEPTH_TEST);
-        glUseProgram(edgeProg_);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, edgeTex_);
-        const float rx = 1.0f / width_, ry = 1.0f / height_;
-        if (rx != edgeRcp_[0] || ry != edgeRcp_[1]) { glUniform2f(uEdgeRcp_, rx, ry); edgeRcp_[0] = rx; edgeRcp_[1] = ry; }   // (only when the size changes)
-        glBindVertexArray(worldVao_);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        glEnable(GL_DEPTH_TEST);
+        if (scaled) glViewport(0, 0, width_, height_);
+        // edges: one fullscreen pass from the scene texture into the window (its taps a scene pixel apart: stretched
+        // in the same pass); RENDER SCALE below 100% with SHARPEN: the sharpening pass, which stretches it too
+        const bool edges = msaa_ == 1, sharpen = !edges && sharpen_ && sharpProg_ && sceneW_ < width_;
+        if (edges || sharpen) {
+            glDisable(GL_DEPTH_TEST);
+            glUseProgram(edges ? edgeProg_ : sharpProg_);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, srcTex);
+            const float rx = 1.0f / sceneW_, ry = 1.0f / sceneH_;
+            float* last = edges ? edgeRcp_ : sharpRcp_;
+            if (rx != last[0] || ry != last[1]) { glUniform2f(edges ? uEdgeRcp_ : uSharpRcp_, rx, ry); last[0] = rx; last[1] = ry; }   // (only when the size changes)
+            glBindVertexArray(fsVao_);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glEnable(GL_DEPTH_TEST);
+        } else {   // RENDER SCALE: stretched to the window, filtered (above 100%, 2x: each window pixel the mean of 4)
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, srcFbo);
+            glBlitFramebuffer(0, 0, sceneW_, sceneH_, 0, 0, width_, height_, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
     dyn_.clear();
     dynShadowOnly_.clear();
@@ -1106,6 +1235,7 @@ void Renderer::drawScene(bool shadows) {
     view_.clear();
     flat_.clear();
     viewFlat_.clear();
+    viewOpacity = 1.0f;   // (this frame's: the game sets it again with its view model; the editor's handles stay solid)
 }
 
 // std::round (half away from zero) without the library call, bit for bit the same whole number: the 2D layer rounds
@@ -1122,40 +1252,80 @@ static inline int16_t px(float v) { return (int16_t)clampf(uiRound(v), -32768, 3
 // font atlas texel coords as the vertex stores them, (texel + 1) * 32: whole texels, so plain integers
 static inline uint16_t u16uv(int texel) { return (uint16_t)((texel + 1) * 32); }
 struct Rgba8 { uint8_t v[4]; };
-static inline Rgba8 rgba8(const Color& c) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a)}}; }   // (once per rect / text)
+static inline Rgba8 rgba8(const Color& c, float a) { return {{u8c(c.r), u8c(c.g), u8c(c.b), u8c(c.a * a)}}; }   // (once per rect / text; a: setAlpha)
 
-// one quad (2 triangles) into the UI batch. Every glyph of every text is one: each distinct value is converted once
-// (the corners share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
-static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
-                   const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
+// The 2D batch is quads: 4 vertices each, corners 0 (x0,y0) 1 (x1,y0) 2 (x1,y1) 3 (x0,y1), drawn through a fixed index
+// buffer as triangles 0 1 2 and 0 3 2 (both end on corner 2: the provoking vertex for the shader's flat inputs). 4
+// vertices written a quad instead of 6: a third less to write and upload for every glyph and rect.
+void Renderer::uiIndices(size_t quads) {   // (the VAO bound: the element buffer is part of its state)
+    if (quads <= uiIdxQuads_) return;
+    std::vector<uint32_t> idx(quads * 6);
+    for (size_t q = 0; q < quads; q++) {
+        const uint32_t b = (uint32_t)(q * 4);
+        uint32_t* i = &idx[q * 6];
+        i[0] = b; i[1] = b + 1; i[2] = b + 2; i[3] = b; i[4] = b + 3; i[5] = b + 2;
+    }
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, uiEbo_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(uint32_t), idx.data(), GL_STATIC_DRAW);
+    uiIdxQuads_ = quads;
+}
+
+// one quad into the UI batch. Every glyph of every text is one: each distinct value is converted once (the corners
+// share 2 x and 2 y; the colour comes packed, the texel coords as integers), written in place.
+// (writes the 4 vertices at d: text() makes room for a whole string at once)
+static inline void uiQuadAt(Vertex2D* d, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+                            const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
     const int16_t X0 = px(x0), X1 = px(x1), Y0 = px(y0), Y1 = px(y1);
-    const size_t n = out.size();
-    out.resize(n + 6);
-    Vertex2D* d = out.data() + n;
     auto put = [&](Vertex2D& v, int16_t x, int16_t y, uint16_t u, uint16_t w) {
         v.pos[0] = x; v.pos[1] = y; v.uv[0] = u; v.uv[1] = w;
         memcpy(v.color, c.v, 4);
         v.scaleInt = scaleInt; v.scaleFrac = scaleFrac; v.pad[0] = v.pad[1] = 0;
     };
-    // corners 0 (x0,y0) 1 (x1,y0) 2 (x1,y1) 3 (x0,y1), as triangles 0 1 2 and 0 2 3
-    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1);
-    d[3] = d[0]; d[4] = d[2]; put(d[5], X0, Y1, U0, V1);
+    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, U0, V1);
+}
+
+static void uiQuad(Vertex2DList& out, float x0, float y0, float x1, float y1, uint16_t U0, uint16_t V0, uint16_t U1, uint16_t V1,
+                   const Rgba8& c, uint8_t scaleInt, uint8_t scaleFrac) {
+    const size_t n = out.size();
+    out.resize(n + 4);
+    uiQuadAt(out.data() + n, x0, y0, x1, y1, U0, V0, U1, V1, c, scaleInt, scaleFrac);
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c), 0, 0);
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c, alpha_), 0, 0);
 }
 
 void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
     const size_t n = ui_.size();
-    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl), 0, 0);
-    // corners 0 tl, 1 tr, 2 br, 5 bl (3 = 0, 4 = 2): their own colours
-    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a); };
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl, alpha_), 0, 0);
+    // corners 0 tl, 1 tr, 2 br, 3 bl: their own colours
+    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a * alpha_); };
     Vertex2D* d = ui_.data() + n;
-    col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
+    col(d[1], tr); col(d[2], br); col(d[3], bl);
+}
+
+void Renderer::roundRect(float x, float y, float w, float h, float radius, const Color& c, float ring) {
+    if (w <= 0 || h <= 0) return;
+    if (radius < 0.5f && ring <= 0) { rect(x, y, w, h, c); return; }
+    const int16_t X0 = px(x), X1 = px(x + w), Y0 = px(y), Y1 = px(y + h);
+    if (X1 <= X0 || Y1 <= Y0) return;
+    // the quad's own pixel coords in its uv (* 4: a quarter pixel, rects up to 16383 px); both triangles end on corner
+    // 2 (the index pattern), whose uv is the size (the shader's flat vSize: the provoking vertex is the last)
+    const uint16_t U1 = (uint16_t)std::min(65535, (X1 - X0) * 4), V1 = (uint16_t)std::min(65535, (Y1 - Y0) * 4);
+    const Rgba8 col = rgba8(c, alpha_);
+    const uint8_t rad = (uint8_t)clampf(std::round(radius), 0, 255), rg = (uint8_t)clampf(std::round(ring * 4), 0, 255);
+    const size_t n = ui_.size();
+    ui_.resize(n + 4);
+    Vertex2D* d = ui_.data() + n;
+    auto put = [&](Vertex2D& v, int16_t X, int16_t Y, uint16_t u, uint16_t w2) {
+        v.pos[0] = X; v.pos[1] = Y; v.uv[0] = u; v.uv[1] = w2;
+        memcpy(v.color, col.v, 4);
+        v.scaleInt = rad; v.scaleFrac = rg; v.pad[0] = 0; v.pad[1] = 1;
+    };
+    put(d[0], X0, Y0, 0, 0); put(d[1], X1, Y0, U1, 0); put(d[2], X1, Y1, U1, V1); put(d[3], X0, Y1, 0, V1);
 }
 
 // The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
@@ -1169,7 +1339,7 @@ void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Co
         const float k = 7.5f * ts * kLogoEmK / kLogoEm;
         // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
         const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
-        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}), 255, 255);
+        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}, alpha_), 255, 255);
         logoDrawn_ = true;
         return;
     }
@@ -1207,7 +1377,12 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * sk, box = 8.0f * sk, top = cy + uiMetrics().fitShift * s, o = outlineUnits(sk);
     const TextMetrics& m = uiMetrics();
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
+    // (room for every glyph at once, written in place, then trimmed to the glyphs drawn: one grow per string, not per
+    // glyph)
+    const size_t n0 = ui_.size();
+    ui_.resize(n0 + 4 * str.size());
+    Vertex2D* d = ui_.data() + n0;
     int prev = -1;
     for (char ch : str) {
         int g = glyphIndex(ch);
@@ -1217,8 +1392,10 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
         // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
         float qx = uiRound(cx - kUiOrigin * sk) - pad, qy = top - pad;
         int tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
-        uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        uiQuadAt(d, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, u16uv(tx), u16uv(ty), u16uv(tx + kUiCell), u16uv(ty + kUiCell), col, si, sf);
+        d += 4;
     }
+    ui_.resize((size_t)(d - ui_.data()));
 }
 
 // Monospaced (console): every glyph gets the same advance (a little over a digit's), centred in it, no kerning;
@@ -1232,7 +1409,7 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     float sc = clampf(s * k, 1.0f / 256, 255);
     uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
     const float pad = kUiPad * s * k, cy = uiRound(y) + uiMetrics().fitShift * s;
-    const Rgba8 col = rgba8(c);
+    const Rgba8 col = rgba8(c, alpha_);
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         if (g == 0) continue;
@@ -1335,7 +1512,8 @@ void Renderer::flush2D() {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)ui_.size());
+    if (ui_.size() / 4 > uiIdxQuads_) uiIndices(ui_.size() / 4 * 2);   // (grown with room to spare: rare)
+    glDrawElements(GL_TRIANGLES, (GLsizei)(ui_.size() / 4 * 6), GL_UNSIGNED_INT, nullptr);
     glDisable(GL_BLEND);
     ui_.clear();
 #ifdef QUARK_TRACY
@@ -1405,52 +1583,81 @@ void Renderer::drawWorldChunks() {
     if (!drawFirst_.empty()) glMultiDrawArrays(GL_TRIANGLES, drawFirst_.data(), drawCount_.data(), (GLsizei)drawFirst_.size());
 }
 
-// (Re)create the multisampled scene target when the setting or the window size changes.
+// (Re)create the scene target when the anti-aliasing, the render scale or the window size changes (never otherwise:
+// every other frame this is a few compares). No target at 100% with AA off: the scene draws straight into the window.
 void Renderer::ensureMsaaTarget() {
     int want = msaa_ > 1 ? msaa_ : 0;
-    if (msaa_ == 1 && !worldVao_) return; // edges need a VAO to draw the fullscreen pass (any will do)
-    static GLint64 maxS = -1;
+    static GLint64 maxS = -1, maxDim = -1;
     if (want && maxS < 0) glGetInteger64v(GL_MAX_SAMPLES, &maxS); // once
     if (want) { want = std::min(want, (int)std::max<GLint64>(0, maxS)); if (want < 2) want = 0; }
     if (msaa_ == 1) want = 1; // edges
-    if (want == msaaActive_ && (!want || (msaaW_ == width_ && msaaH_ == height_))) return;
+    // RENDER SCALE: the scene at the window's size times it (a texture target even with AA off), stretched to the window
+    int sw = width_, sh = height_;
+    if (scalePct_ != 100 && width_ > 0 && height_ > 0) {
+        if (maxDim < 0) {   // once: the largest target the driver makes (200% of 4K is 7680 x 4320)
+            GLint64 t = 0, r = 0;
+            glGetInteger64v(GL_MAX_TEXTURE_SIZE, &t);
+            glGetInteger64v(GL_MAX_RENDERBUFFER_SIZE, &r);
+            maxDim = std::max<GLint64>(1, std::min(t > 0 ? t : 4096, r > 0 ? r : 4096));
+        }
+        sw = (int)std::lround(width_ * (scalePct_ / 100.0)); sh = (int)std::lround(height_ * (scalePct_ / 100.0));
+        const double fit = std::min(1.0, (double)maxDim / std::max(sw, sh));   // (too big: the largest that fits, same shape)
+        sw = std::max(1, (int)(sw * fit)); sh = std::max(1, (int)(sh * fit));
+        if (!want) want = 1;
+    }
+    const bool scaled = sw != width_ || sh != height_;
+    // (what was asked for last: a target the driver turned down isn't tried again every frame)
+    if (want == triedAa_ && sw == triedW_ && sh == triedH_) return;
+    triedAa_ = want; triedW_ = sw; triedH_ = sh;
     if (msaaFbo_) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; }
     if (edgeTex_) { glDeleteTextures(1, &edgeTex_); edgeTex_ = 0; }
+    if (resolveFbo_) { glDeleteFramebuffers(1, &resolveFbo_); glDeleteTextures(1, &resolveTex_); resolveFbo_ = resolveTex_ = 0; }
     msaaActive_ = 0;
+    sceneW_ = width_; sceneH_ = height_;   // (no target: the window's own size)
     if (!want || width_ <= 0 || height_ <= 0) return;
-    if (want == 1) { // edges: a plain colour texture + depth
-        glGenFramebuffers(1, &msaaFbo_);
-        glGenTextures(1, &edgeTex_);
-        glGenRenderbuffers(1, &msaaDepth_);
-        glBindTexture(GL_TEXTURE_2D, edgeTex_);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    // a plain colour texture (linear: the stretch and the edge / sharpen passes read it) as fbo's colour
+    auto colorTex = [&](unsigned fbo, unsigned& tex) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    };
+    if (want == 1) { // edges, or AA off at another render scale: a plain colour texture + depth
+        glGenFramebuffers(1, &msaaFbo_);
+        glGenRenderbuffers(1, &msaaDepth_);
         glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
-        glRenderbufferStorageMultisample(GL_RENDERBUFFER, 0, GL_DEPTH24_STENCIL8, width_, height_);
-        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, edgeTex_, 0);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, 0, GL_DEPTH24_STENCIL8, sw, sh);
+        colorTex(msaaFbo_, edgeTex_);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepth_);
         bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteTextures(1, &edgeTex_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = edgeTex_ = msaaDepth_ = 0; return; }
-        msaaActive_ = 1; msaaW_ = width_; msaaH_ = height_;
+        msaaActive_ = 1; sceneW_ = sw; sceneH_ = sh;
         return;
     }
     glGenFramebuffers(1, &msaaFbo_);
     glGenRenderbuffers(1, &msaaColor_);
     glGenRenderbuffers(1, &msaaDepth_);
     glBindRenderbuffer(GL_RENDERBUFFER, msaaColor_);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_RGBA8, width_, height_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_RGBA8, sw, sh);
     glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_DEPTH24_STENCIL8, width_, height_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_DEPTH24_STENCIL8, sw, sh);
     glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColor_);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepth_);
     bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if (ok && scaled) {   // RENDER SCALE: the single-sampled texture the samples resolve into, at the scene's size
+        glGenFramebuffers(1, &resolveFbo_);
+        colorTex(resolveFbo_, resolveTex_);
+        ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (!ok) { glDeleteFramebuffers(1, &resolveFbo_); glDeleteTextures(1, &resolveTex_); resolveFbo_ = resolveTex_ = 0; }
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; return; }
-    msaaActive_ = want; msaaW_ = width_; msaaH_ = height_;
+    msaaActive_ = want; sceneW_ = sw; sceneH_ = sh;
 }

@@ -34,7 +34,7 @@
 //                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
 //                 (the name is saved only with a run that's kept)
-//   A server whose announced version is a testing build (a prerelease version, e.g. 1.17.0-test.42: the testing
+//   A server whose announced version is a testing build (1.19.1.42; 1.19.0.testing.42 from 1.19.0, 1.18.9-test.42 before: the testing
 //   server every box runs next to production, tools/server/install.sh) gets none of these: "testing server: ranked
 //   not rated" (403). Players' /report under a ticket from such a server is refused the same way. Its matches are
 //   played and tested, never rated (the game server doesn't send them either: Server::rated).
@@ -105,7 +105,7 @@ const MAX_SERVERS_PER_IP = 8;        // fresh /announce entries one address may 
 const MAX_BODY = 16384;              // bytes of form a request may carry (counted as it's read, not from Content-Length)
 // Cache API: only works on a custom domain (on *.workers.dev caches.default stores nothing); the Cache-Control
 // header still lets clients and proxies keep reads for these many seconds.
-const CACHE_S = { "/list": 20, "/leaderboard": 60, "/raceboard": 60, "/crowns": 60, "/lifetime": 30, "/queue": 10, "/filled": 5, "/ratings": 10 };
+const CACHE_S = { "/list": 20, "/leaderboard": 60, "/raceboard": 60, "/crowns": 60, "/lifetime": 30, "/bench": 30, "/queue": 10, "/filled": 5, "/ratings": 10 };
 const LINK_CODE_MS = 10 * 60000;
 
 // Rate limiting: token buckets kept in memory per isolate (Cloudflare runs a few isolates per region, so the
@@ -116,7 +116,7 @@ const LINK_CODE_MS = 10 * 60000;
 // and spends none of its address's: one "Queue for all" is 16 POSTs.
 const LIMITS = {
   ip: { burst: 240, perSec: 6 },        // every request except the bot's, per client IP (a few dozen games polling /queue, /filled)
-  write: { burst: 60, perSec: 0.5 },    // also, per client IP: POST /hello /report /racetime /lifetime /queue /link /linkcode
+  write: { burst: 60, perSec: 0.5 },    // also, per client IP: POST /hello /report /racetime /lifetime /bench /queue /link /linkcode
                                         // /disputes (not /announce /remove: they're per address and token)
   id: { burst: 10, perSec: 0.1 },       // the same writes, per player id (when they carry a secret)
   bot: { burst: 200, perSec: 5 },       // instead of ip + write: requests carrying the right BOT_KEY (/queue /linkcode)
@@ -242,9 +242,13 @@ async function saveName(env, me, nameHex, now) {
       .bind(me, name.trim().slice(0, 20) || "player", now).run();
 }
 
-// A version that isn't a production release: any prerelease suffix ("1.17.0-test.42"; "~" marks a hidden server).
+// A version that isn't a production release x.y.z: CI's testing builds, "1.19.1.42" or "1.19.0.testing.42" (from 1.19.0 on:
+// anything past x.y.z) or "1.18.9-test.42" (before: a prerelease suffix); "~" marks a hidden server, "+..." is build metadata.
 // Testing servers play ranked but are never rated (above, /ticket ... /racerun).
-export function isTestingVersion(v) { return String(v || "").includes("-"); }
+export function isTestingVersion(v) {
+  const s = String(v || "").split("+")[0];
+  return s.includes("-") || s.split(".").length > 3;
+}
 
 // The server that ran a match / time trial: its ip:port must have announced recently with this token.
 // Returns { addr, version } (the version it announced), or null.
@@ -333,7 +337,7 @@ async function raceRun(env, form, addr, now) {
   await env.DB.prepare(
     "INSERT INTO race_times (map, id, ms, splits, version, created) VALUES (?, ?, ?, ?, ?, ?) " +
     "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created"
-  ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 16), now).run();
+  ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 32), now).run();
   await saveName(env, me, String(form.get("name") || ""), now);   // (only with an accepted run)
   return best ? `new best (was ${best.ms})` : "first time";
 }
@@ -405,6 +409,47 @@ async function lifetimeReport(env, form, now) {
     "hour_start = excluded.hour_start, hour_kills = excluded.hour_kills, hour_deaths = excluded.hour_deaths")
     .bind(me, kills, deaths, now, hour, hk, hd).run();
   return "ok";
+}
+// FPS benchmark runs (game 1.20+: main menu > BENCHMARK, src/client/benchmark.cpp): one row a finished run, from the
+// player's own game with its secret. Every text field comes hex-encoded (printable ASCII only), every number is
+// checked and clamped, and one player stores at most BENCH_PER_DAY a rolling day. GET /bench: the 25 newest runs.
+const BENCH_PER_DAY = 30;
+const BENCH_TEXT = { version: 32, build: 32, cpu: 96, gpu: 96, driver: 64, res: 24, scale: 32, aa: 32, vsync: 32, fpscap: 16, demo: 32 };
+function benchText(h, max) {
+  h = String(h || "");
+  if (!/^([0-9a-f]{2})*$/.test(h) || h.length > max * 2) return null;
+  const t = h ? h.match(/../g).map((x) => String.fromCharCode(parseInt(x, 16))).join("") : "";
+  return /^[\x20-\x7e]*$/.test(t) ? t.trim() : null;
+}
+async function benchReport(env, form, now) {
+  const secret = String(form.get("secret") || "");
+  if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
+  const t = {};
+  for (const [k, max] of Object.entries(BENCH_TEXT)) { t[k] = benchText(form.get(k), max); if (t[k] === null) return "bad " + k; }
+  if (!/^\d+\.\d+\.\d+(\.\d+|\.testing\.\d+|-[0-9A-Za-z.]+)?$/.test(t.version)) return "bad version";
+  const n = {};
+  for (const [k, lo, hi] of [["avg", 0, 100000], ["low1", 0, 100000], ["low01", 0, 100000], ["min", 0, 100000], ["stdev", 0, 10000], ["seconds", 0, 86400]]) {
+    const v = parseFloat(String(form.get(k) || ""));
+    if (!Number.isFinite(v)) return "bad " + k;
+    n[k] = Math.round(Math.min(hi, Math.max(lo, v)) * 1000) / 1000;
+  }
+  const frames = parseInt(String(form.get("frames") || ""), 10);
+  if (!(frames > 0 && frames <= 10000000)) return "bad frames";
+  if (!(n.min <= n.low01 + 0.001 && n.low01 <= n.low1 + 0.001)) return "bad numbers";   // (min <= 0.1% low <= 1% low)
+  const channel = String(form.get("channel") || "") === "testing" || isTestingVersion(t.version) ? "testing" : "production";
+  const me = await playerOf(env, secret, now);
+  await saveName(env, me, String(form.get("name") || ""), now);
+  const day = await env.DB.prepare("SELECT COUNT(*) AS c FROM bench_runs WHERE player = ? AND created > ?").bind(me, now - 86400000).first();
+  if (day && day.c >= BENCH_PER_DAY) return "daily limit";
+  await env.DB.prepare("INSERT INTO bench_runs (player, created, version, channel, build, cpu, gpu, driver, avg_fps, low1_fps, low01_fps, min_fps, stdev_ms, frames, seconds, res, scale, aa, vsync, fpscap, demo) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(me, now, t.version, channel, t.build, t.cpu, t.gpu, t.driver, n.avg, n.low1, n.low01, n.min, n.stdev, frames, n.seconds, t.res, t.scale, t.aa, t.vsync, t.fpscap, t.demo).run();
+  return "ok";
+}
+// "avg low1 low01 min stdev version channel build cpuhex gpuhex namehex" lines, newest first
+async function benchGet(env) {
+  const { results } = await env.DB.prepare("SELECT b.*, COALESCE(n.name, 'player') AS name FROM bench_runs b LEFT JOIN names n ON n.id = b.player ORDER BY b.created DESC LIMIT 25").all();
+  return results.map((r) => `${r.avg_fps} ${r.low1_fps} ${r.low01_fps} ${r.min_fps} ${r.stdev_ms} ${r.version} ${r.channel} ${textHex(r.build)} ${textHex(r.cpu)} ${textHex(r.gpu)} ${textHex(r.name)}`).join("\n");
 }
 // GET /lifetime?ids=a,b,c (ranked ids, up to 32): "id kills deaths" lines. GET /lifetime: the top 10 by kills,
 // "kills deaths id namehex" lines.
@@ -760,7 +805,7 @@ async function cached(req, u, ctx, make) {
 }
 
 // (/disputes only reads, but it carries ADMIN_KEY: a POST like the writes, the key in the body, no CORS)
-const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode", "/disputes"]);
+const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/bench", "/queue", "/link", "/linkcode", "/disputes"]);
 const SERVER_WRITES = new Set(["/ticket", "/result", "/racerun"]);
 
 export default {
@@ -770,8 +815,8 @@ export default {
     const now = Date.now();
     const conn = req.headers.get("CF-Connecting-IP") || "";
     const srcIp = ipv4(conn); // the caller's own IPv4, if it came over IPv4 (can't be spoofed over TCP)
-    const isWrite = WRITES.has(u.pathname) && u.pathname !== "/queue" && u.pathname !== "/lifetime" || SERVER_WRITES.has(u.pathname) ||
-                    (req.method === "POST" && (u.pathname === "/queue" || u.pathname === "/lifetime"));
+    const both = u.pathname === "/queue" || u.pathname === "/lifetime" || u.pathname === "/bench";   // (GET reads, POST writes)
+    const isWrite = WRITES.has(u.pathname) && !both || SERVER_WRITES.has(u.pathname) || (req.method === "POST" && both);
     // reads may be fetched by web pages (the website's leaderboard); writes never answer cross-origin
     const text = (body, status = 200) => new Response(body, { status, headers: isWrite ? { "content-type": "text/plain" } :
       { "content-type": "text/plain", "access-control-allow-origin": "*" } });
@@ -827,7 +872,7 @@ export default {
       await env.DB.prepare(
         "INSERT INTO servers (addr, version, seen, token) VALUES (?, ?, ?, ?) " +
         "ON CONFLICT(addr) DO UPDATE SET version = excluded.version, seen = excluded.seen, token = excluded.token"
-      ).bind(addr, (f("hidden") === "1" ? "~" : "") + f("v").slice(0, 16), now, newToken).run(); // "~": never matches /list
+      ).bind(addr, (f("hidden") === "1" ? "~" : "") + f("v").slice(0, 32), now, newToken).run(); // "~": never matches /list (32: "1.19.0.testing.1234" is 19)
       return text("ok " + newToken);
     }
     if (u.pathname === "/hello") {
@@ -841,6 +886,7 @@ export default {
     if (u.pathname === "/link") return text(await link(env, form, now, conn));
     if (u.pathname === "/linkcode") return text(await linkCode(env, form, now));
     if (u.pathname === "/lifetime" && isWrite) return text(await lifetimeReport(env, form, now));
+    if (u.pathname === "/bench" && isWrite) return text(await benchReport(env, form, now));
     if (u.pathname === "/queue" && isWrite) return text(await queue(env, form, now));
     if (u.pathname === "/disputes") {
       if (!keyEq(form.get("key"), env.ADMIN_KEY)) return text("forbidden", 403);
@@ -852,7 +898,7 @@ export default {
       if (u.pathname === "/list") {
         const { results } = await env.DB.prepare(
           "SELECT addr FROM servers WHERE seen > ? AND version = ? ORDER BY seen DESC LIMIT 400"
-        ).bind(now - FRESH_MS, q("v").slice(0, 16)).all();
+        ).bind(now - FRESH_MS, q("v").slice(0, 32)).all();
         const per = new Map();   // (also capped here: entries from before the per-address limit)
         const out = results.filter((r) => { const ip = r.addr.split(":")[0]; per.set(ip, (per.get(ip) || 0) + 1); return per.get(ip) <= MAX_SERVERS_PER_IP; });
         return text(out.slice(0, 200).map((r) => r.addr).join("\n"));
@@ -880,6 +926,7 @@ export default {
       }
       if (u.pathname === "/crowns") return text(await crowns(env));
       if (u.pathname === "/lifetime") return text(await lifetimeGet(env, q("ids")));
+      if (u.pathname === "/bench") return text(await benchGet(env));
       if (u.pathname === "/queue") {   // (read only: stale entries are pruned by the cron, not here - WEB-6)
         const { results } = await env.DB.prepare("SELECT mode, COUNT(*) AS n FROM queue WHERE joined >= ? GROUP BY mode").bind(now - QUEUE_STALE_MS).all();
         return text(results.map((r) => `${r.mode} ${r.n} ${QUEUE_SIZES[r.mode] || 0}`).join("\n"));

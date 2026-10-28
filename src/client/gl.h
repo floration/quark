@@ -47,6 +47,8 @@ typedef struct __GLsync* GLsync;
 #define GL_SHORT 0x1402
 #define GL_UNSIGNED_SHORT 0x1403
 #define GL_ARRAY_BUFFER 0x8892
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#define GL_UNSIGNED_INT 0x1405
 #define GL_STATIC_DRAW 0x88E4
 #define GL_DYNAMIC_DRAW 0x88E8
 #define GL_STREAM_DRAW 0x88E0
@@ -90,6 +92,7 @@ typedef struct __GLsync* GLsync;
 #define GL_RGBA8 0x8058
 #define GL_DEPTH24_STENCIL8 0x88F0
 #define GL_MAX_SAMPLES 0x8D57
+#define GL_MAX_RENDERBUFFER_SIZE 0x84E8
 #define GL_MAX_TEXTURE_SIZE 0x0D33
 #define GL_MULTISAMPLE 0x809D
 #define GL_NONE 0
@@ -104,6 +107,7 @@ typedef struct __GLsync* GLsync;
 #define GL_CONDITION_SATISFIED 0x911C
 #define GL_WAIT_FAILED 0x911D
 #define GL_TIMESTAMP 0x8E28
+#define GL_QUERY_COUNTER_BITS 0x8864
 #define GL_QUERY_RESULT 0x8866
 #define GL_QUERY_RESULT_AVAILABLE 0x8867
 
@@ -116,10 +120,12 @@ typedef struct __GLsync* GLsync;
     X(void, glScissor, (GLint, GLint, GLsizei, GLsizei)) \
     X(void, glDepthFunc, (GLenum)) \
     X(void, glDepthMask, (GLboolean)) \
+    X(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean)) \
     X(void, glCullFace, (GLenum)) \
     X(void, glBlendFunc, (GLenum, GLenum)) \
     X(void, glPolygonOffset, (GLfloat, GLfloat)) \
     X(void, glDrawArrays, (GLenum, GLint, GLsizei)) \
+    X(void, glDrawElements, (GLenum, GLsizei, GLenum, const void*)) \
     X(void, glPixelStorei, (GLenum, GLint)) \
     X(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*)) \
     X(const GLubyte*, glGetString, (GLenum)) \
@@ -183,6 +189,7 @@ typedef struct __GLsync* GLsync;
     X(GLenum, glClientWaitSync, (GLsync, GLbitfield, GLuint64)) \
     X(void, glDeleteSync, (GLsync)) \
     X(void, glGenQueries, (GLsizei, GLuint*)) \
+    X(void, glGetQueryiv, (GLenum, GLenum, GLint*)) \
     X(void, glQueryCounter, (GLuint, GLenum)) \
     X(void, glGetQueryObjectiv, (GLuint, GLenum, GLint*)) \
     X(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64*)) \

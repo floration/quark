@@ -2,6 +2,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "../common/profile.h"
+#include "gpuprofile.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -10,6 +11,7 @@
 #include "gl.h"
 #include "lightmap.h"
 #include "../launcher/selfupdate.h"
+#include "isa.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -27,6 +29,7 @@
 static Game* g_game = nullptr;
 
 int main(int argc, char** argv) {
+    if (int code = isa::runAvx2Build(argc, argv); code >= 0) return code;   // the AVX2 build, on a CPU that has it
 #ifdef _WIN32
     // argv is in the ANSI code page on Windows: take the command line as UTF-16 and keep UTF-8 strings, like every
     // other path in the game (a demo / map / data dir under a non-ASCII folder), and argv[0] = this exe's real path
@@ -61,6 +64,7 @@ int main(int argc, char** argv) {
         else if (a == "--weapon") opts.debugWeapon = atoi(next().c_str());
         else if (a == "--scope") opts.debugScope = true;
         else if (a == "--fire") opts.debugFire = true;
+        else if (a == "--hook") opts.debugHook = true;   // the grapple held (screenshots)
         else if (a == "--pulse") opts.debugPulse = true;   // (with --fire: stuck bolt / knife screenshots)
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
@@ -96,7 +100,17 @@ int main(int argc, char** argv) {
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();
         else if (a == "--bench") opts.bench = atof(next().c_str());
+        else if (a == "--benchmark") {   // the main menu's BENCHMARK, printed, then quit: [demo file] [seconds measured]
+            opts.benchmark = true;
+            while (i + 1 < argc && argv[i + 1][0] != '-') {
+                std::string v = next();
+                char* end = nullptr;
+                double d = strtod(v.c_str(), &end);
+                if (end && *end == 0 && d > 0) opts.benchmarkSeconds = d; else opts.benchmarkDemo = v;
+            }
+        }
         else if (a == "--textheavy") opts.textHeavy = true;
+        else if (a == "--feedshot") opts.feedShot = true;
         else if (a == "--edsel") opts.editSel = atoi(next().c_str());
         else if (a == "--edscript") opts.editScript = next();
         else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
@@ -108,7 +122,7 @@ int main(int argc, char** argv) {
         else if (a == "--uitest-only") { opts.uiTest = true; opts.uiTestOnly = next(); }   // scenarios a,b,c
         else if (a == "--uitest-path") { opts.uiTest = true; opts.uiTestPath = next(); }   // screens under this path
         else if (a == "-h" || a == "--help") {
-            printf("quark [--connect ip:port] [--host mode --map name] [--data-dir DIR]\n");
+            printf("quark [--connect ip:port] [--host mode --map name] [--data-dir DIR] [--benchmark [seconds]]\n");
             return 0;
         }
     }
@@ -117,7 +131,7 @@ int main(int argc, char** argv) {
     // Not in automated runs (screenshots, benchmarks, scripted editor sessions): they start and quit in seconds and
     // must not touch the player's launchers. Whatever way main returns, the thread is stopped between steps (never
     // inside a swap) and joined, waiting at most 2 s (selfupdate::finishFromGame).
-    bool automated = !opts.screenshot.empty() || opts.bench > 0 || !opts.editScript.empty() || opts.textHeavy ||
+    bool automated = !opts.screenshot.empty() || opts.bench > 0 || opts.benchmark || !opts.editScript.empty() || opts.textHeavy || opts.feedShot ||
                      opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf || opts.uiTest;
     if (opts.uiTest) uiTestPrepare(opts);   // (its own data folder and settings: before anything reads them)
     if (!automated) selfupdate::startFromGame(argv[0]);
@@ -203,6 +217,7 @@ int main(int argc, char** argv) {
         game.beforeSwap();   // (latent sync: the finished frame held until the vertical blank)
         game.pipeMark(Game::PM_SWAP0);
         { QZONE("swap"); glfwSwapBuffers(win); }
+        QGPUCOLLECT();
         game.pipeMark(Game::PM_SWAP1);
         { QZONE("after swap (low latency wait)"); game.afterSwap(); }
         QFRAME();

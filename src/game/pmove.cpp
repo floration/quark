@@ -89,17 +89,6 @@ AABB playerBox(const Vec3& f, bool crouched, float scale) {
     return {{f.x - w, f.y, f.z - w}, {f.x + w, f.y + h, f.z + w}};
 }
 
-AABB headBox(const AABB& b) {
-    Vec3 c = b.center();
-    float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
-    return {{c.x - hx, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, c.z - hz}, {c.x + hx, b.mx.y, c.z + hz}};
-}
-
-bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox) {
-    float far = length(hitbox.mx - hitbox.mn) + length(hitbox.center() - o) + 1.0f;   // (anywhere along the line through the box)
-    return rayAABB(o, safeInv(dir), headBox(hitbox), far) >= 0;
-}
-
 // Air strafing: Quake acceleration, except that the part of the push that would brake you (wish direction turned
 // past 90 degrees from your momentum: overstrafing) is softened, so a sloppy turn costs a little, not a lot.
 // A strafe key held (side != 0) pushes harder: x kStrafeAccelAD at every speed (owner 1.18), and at speed the
@@ -352,26 +341,46 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
         const Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
         const float range = kGrappleRange * mt.m[MV_HOOK_RANGE];
-        float t = map.raycast(eye, dir, range);
-        int caught = -1;   // a player in front of the wall (or in the open) catches it instead
-        if (hp && hp->n > 0) {
+        int wallMat = -1;
+        float t = map.raycast(eye, dir, range, nullptr, &wallMat);
+        int caught = -1, rocket = -1;   // a player or a rocket in front of the wall (or in the open) catches it instead
+        if (hp && (hp->n > 0 || hp->nr > 0)) {
             float best = t >= 0 ? t : range;
             Vec3 inv = safeInv(dir);
             for (int k = 0; k < hp->n && k < HookProbe::kMax; k++) {
-                float tk = rayAABB(eye, inv, hp->box[k], best);
-                if (tk >= 0 && tk < best) { best = tk; caught = k; }
+                bool head;
+                float tk = rayHitbox(eye, inv, hp->box[k], best, &head);   // (the body and the head, as shots)
+                if (tk >= 0 && tk < best) { best = tk; caught = k; hp->head = head; }
+            }
+            for (int k = 0; k < hp->nr && k < HookProbe::kRockets; k++) {
+                float tk = rayAABB(eye, inv, rocketCatchBox(hp->at[k]), best);
+                if (tk >= 0 && tk < best) { best = tk; rocket = k; caught = -1; }
             }
         }
-        if (caught >= 0) {
+        // (a rocket still inside the release distance, one you just fired: the hook waits for it rather than catching it
+        // and letting go at once, or going past it to the wall; held, it catches it a few ms later)
+        const float release = kHookRelease * mt.m[MV_HOOK_RELEASE];
+        if (rocket >= 0 && length(hp->pos[rocket] - (s.pos + Vec3(0, 1.0f * scale, 0))) < release) {
+        } else if (rocket >= 0) {   // riding it: the anchor is the rocket as the server has it, flown with it from here on
+            hp->hitRocket = rocket;
+            s.hookPoint = hp->pos[rocket];
+            s.hookVel = hp->vel[rocket];
+            s.hookGrav = hp->grav[rocket];
+            s.hookProj = hp->rid[rocket];
+            s.hookTarget = kHookRocket;
+            s.flags |= MF_HOOKED | MF_HOOKHELD;
+            s.flags &= ~MF_PULLED;
+            s.events |= ME_HOOK;
+            grabbed = true;
+        } else if (caught >= 0) {
             hp->hit = caught;
-            hp->head = rayHitsHead(eye, dir, hp->box[caught]);
             s.hookPoint = hp->box[caught].center();   // (the server moves it with them from here on)
             s.hookTarget = (uint8_t)(hp->id[caught] + 1);
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
             s.events |= ME_HOOK;
             grabbed = true;
-        } else if (t >= 0) {
+        } else if (t >= 0 && wallMat != kMatNoGrapple) {   // (nograpple: the hook hits it and lets go)
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
@@ -380,7 +389,22 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             grabbed = true;
         }
     }
+    if (hp)   // (the rockets a held grapple could still catch fly on with this step, as the server's do)
+        for (int k = 0; k < hp->nr && k < HookProbe::kRockets; k++) {
+            hp->vel[k].y -= hp->grav[k] * kMoveStep; hp->pos[k] += hp->vel[k] * kMoveStep;
+            hp->at[k] += hp->vel[k] * kMoveStep;   // (where it's seen moves on at the same speed)
+        }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
+    if ((s.flags & MF_HOOKED) && s.hookTarget == kHookRocket) {
+        // riding a rocket: the anchor flies its step the way Server::stepProjectile does (the same arithmetic, so the
+        // two agree), and lets go where the rocket meets a wall (it explodes there). A player it hits is the server's
+        // word: it lets go a snapshot later.
+        s.hookVel.y -= s.hookGrav * kMoveStep;
+        const Vec3 step = s.hookVel * kMoveStep;
+        const float len = length(step);
+        if (len >= 1e-6f && map.raycast(s.hookPoint, step / len, len) >= 0) s.flags &= ~MF_HOOKED;
+        else if (len >= 1e-6f) s.hookPoint += step;
+    }
     bool hooked = (s.flags & MF_HOOKED) != 0;
     if (hooked) {
         Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f * scale, 0));
@@ -401,7 +425,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // (a grab already inside the release distance, e.g. against a wall, lets go in the step it grabbed: without the
     // cooldown it grabbed again every 1 ms step, and its sound played every frame; owner 1.18.32)
     if ((wasHooked || grabbed) && !(s.flags & MF_HOOKED)) s.hookCooldown = (kHookCooldown * mt.m[MV_HOOK_COOLDOWN]);
-    if (!(s.flags & MF_HOOKED)) s.hookTarget = 0;
+    if (!(s.flags & MF_HOOKED)) { s.hookTarget = 0; s.hookProj = 0; }
     // Held by another player's grapple: pulled toward them like a hook pulls its owner (the same acceleration and
     // top speed, momentum kept, half gravity). The server moves pullPoint with them and ends it; dashing or grabbing
     // with your own grapple (above) breaks free.
@@ -619,6 +643,16 @@ float moveValue(const MoveState& s, int param, const Map* map) {
     return stepTuning(s, map, t).m[param];
 }
 
+// Acid, after each 1 ms step (only on maps that have it): where the step left the hull. Deterministic, so the
+// client's prediction counts the same damage the server will take.
+static inline void acidStep(MoveState& s, const Map& map) {
+    if (map.inAcid(playerBox(s))) {
+        if (s.acidOutMs >= kAcidRearmMs) s.acidTaken += kAcidContact;   // a new contact
+        s.acidTaken += kAcidPerSec * kMoveStep;
+        s.acidOutMs = 0;
+    } else if (s.acidOutMs < kAcidRearmMs) s.acidOutMs++;
+}
+
 // A custom mode's dynamic movement equations (moveexpr.h): before each 1 ms step, the player's state (p.*) goes in
 // and the dynamic settings come out, into this command's own copy of the tuning (the static ones are already in it).
 // Out of line, so the standard path below stays as it was: one predictable branch per command.
@@ -634,6 +668,7 @@ float moveValue(const MoveState& s, int param, const Map* map) {
         exprInputs(s, &map, need, in);
         prog.run(in, t);
         pmoveStep(s, cmd, map, kMoveStep, probe, cx);
+        if (!map.acid.empty()) acidStep(s, map);
         if (need & mexpr::kPhaseInputs)
             s.phaseMs = ((s.flags & MF_ONGROUND) != 0) != ground ? 0 : (uint16_t)(s.phaseMs < 65535 ? s.phaseMs + 1 : 65535);
     }
@@ -648,7 +683,8 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     const MoveTuning& mt = moveTuning();
     if (__builtin_expect(mt.expr != nullptr, 0)) { pmoveExpr(s, cmd, map, probe, mt, {-sy, 0, -cy}, {cy, 0, -sy}, n); return; }
     const CmdCtx cx{mt, {-sy, 0, -cy}, {cy, 0, -sy}};
-    for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx);
+    if (__builtin_expect(map.acid.empty(), 1)) { for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx); return; }
+    for (int i = 0; i < n; i++) { pmoveStep(s, cmd, map, kMoveStep, probe, cx); acidStep(s, map); }
 }
 
 float moveParamBase(int i) {

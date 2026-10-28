@@ -1,5 +1,5 @@
 // The game's built-in models (players, weapon viewmodels, projectiles, the leaderboard crown, the props: arms, the
-// bomb, the payload cart and its checkpoint gates) as lists of boxes in each model's own space. drawWorld draws these boxes; the asset export (quark_tests exportassets) turns the same
+// bomb, the payload cart and its checkpoint gates, the grapple launcher arm and its hook) as lists of boxes in each model's own space. drawWorld draws these boxes; the asset export (quark_tests exportassets) turns the same
 // lists into glTF files, so an export always matches the game. The owner's glTF overrides (docs/ASSETS.md) are drawn
 // in their place: loaded once at startup into a ModelMesh, nothing at all when there are none.
 //
@@ -12,7 +12,10 @@
 //   prop        GUN_ARM / ARM: origin at the shoulder, reaching along -Z (the game turns it with the aim, yaw and
 //               pitch, and scales it with the body); BOMB_PACK: the player's space (worn on the back, +Z);
 //               BOMB: origin on the ground under it; CART: origin on the track under its middle, front (-Z) the way
-//               it is pushed; GATE: origin on the track at the checkpoint, -Z the cart's way, the posts at +-X
+//               it is pushed; GATE: origin on the track at the checkpoint, -Z the cart's way, the posts at +-X;
+//               HOOK_ARM: the left arm with the grapple launcher, origin at the left shoulder like GUN_ARM, the
+//               launcher's muzzle at kHookMuzzle; HOOK: the grapple's claw, origin where the rope ties on, prongs
+//               toward -Z (sits in the launcher's barrel at kHookMuzzle + kHookSeat, flies out to the hook point)
 // Pure C++ (no GL): the game, the exporter and the tests share it.
 #pragma once
 #include <algorithm>
@@ -54,8 +57,14 @@ enum ModelKind { MODEL_PLAYER, MODEL_WEAPON, MODEL_PROJECTILE, MODEL_CROWN, MODE
 constexpr int kProjectileModels = WPN_COUNT + 1;  // per weapon type (only some fly as a model) + the plain orb
 constexpr int MODEL_PROJ_ORB = WPN_COUNT;
 // The props: everything else drawWorld draws as a model (not the map, explosions, tracers or zone volumes)
-enum PropModel { PROP_GUN_ARM, PROP_ARM, PROP_BOMB_PACK, PROP_BOMB, PROP_CART, PROP_GATE, PROP_COUNT };
-int modelCount(int kind);                         // 5 players, 11 weapons, 12 projectile slots, 1 crown, 6 props
+// (new props go at the end: an override's and the export's paths are by name, but older indexes stay put)
+enum PropModel { PROP_GUN_ARM, PROP_ARM, PROP_BOMB_PACK, PROP_BOMB, PROP_CART, PROP_GATE, PROP_HOOK_ARM, PROP_HOOK, PROP_COUNT };
+// The grapple launcher on the left arm (PROP_HOOK_ARM space): where the rope leaves it (the barrel's mouth), and where
+// the claw (PROP_HOOK) sits in the barrel while the hook is in: kHookMuzzle + kHookSeat (the shank inside, prongs out).
+// The game starts the rope here (first and third person), so the model and the rope agree.
+constexpr Vec3 kHookMuzzle = {0, 0.07f, -0.66f};
+constexpr Vec3 kHookSeat = {0, 0, 0.07f};
+int modelCount(int kind);                         // 5 players, 11 weapons, 12 projectile slots, 1 crown, 8 props
 bool modelExists(int kind, int idx);              // projectiles: ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB
 const char* modelKindName(int kind);              // "player", "weapon", "projectile", "crown", "prop"
 const char* modelName(int kind, int idx);         // "HEAVY", "RIFLE", "ORB", "CROWN", "CART"
@@ -83,7 +92,8 @@ void crownParts(const ModelPalette& pal, ModelParts& out);
 Vec3 crownColor(int place);
 // prop (PROP_*): BOMB: glow = its colour (dark; red while a planted one blinks); CART: team = the cart's colour (team
 // or neutral grey), metal = cartMetal, accent = cartAccent, glow = the map's glow; GATE: team = grey, or the attackers'
-// colour once the cart has reached it; the rest have no colour slots
+// colour once the cart has reached it; HOOK_ARM: team = the player's team colour (a stripe on the launcher), metal = a
+// fixed gunmetal (referencePalette: reads on any map); HOOK: metal = the same fixed steel; the rest have no colour slots
 void propParts(int prop, const ModelPalette& pal, ModelParts& out);
 
 // A default model's boxes as the export writes them (the reference colours, standing, still) with mul / add / crouch
