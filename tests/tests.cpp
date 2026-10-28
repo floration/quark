@@ -3510,7 +3510,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 12 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == 0);   // M: ..., lava, trim, clip, nograpple, acid, base
+    CHECK(seen.size() == 20 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatDiamond) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -4501,7 +4501,7 @@ static void testSlopes() {
         Map b;
         CHECK(b.parse(t) && b.serialize() == t);
         Map bad;
-        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 12 0 0 0 0 1 1 1\n" + base));
+        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 20 0 0 0 0 1 1 1\n" + base));
     }
     Map m;
     // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
@@ -4688,6 +4688,70 @@ static void testGroupSlopes() {
     const float lb = outlineAt(l, {1.97f, 1.0f, 0}, nz), lt = outlineAt(l, {2.03f, 1.0f, 0}, nz);
     if (getenv("SLOPE_TRACE")) printf("    loose: box side %.3f, triangle side %.3f\n", lb, lt);
     CHECK(lb >= 0 && lb < 0.1f && lt >= 0 && lt < 0.1f);
+}
+
+// Materials 12-19 (owner, 2026-10-28): ice is slippery underfoot, rubber bounces you off it (floor and walls), the rest
+// are solid like base; every keyword reads and writes.
+static void testMaterials() {
+    printf("materials: ice, rubber, the new keywords\n");
+    {
+        Map m;
+        std::string t = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+        for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
+        CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k));
+        const std::string out = m.serialize();
+        CHECK(out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
+    }
+    auto slide = [](const char* floor) {   // running at 8 m/s, then nothing held for 0.5 s: how far the speed fell
+        Map m;
+        CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+        MoveState s; s.pos = {0, 0, 0}; s.vel = {8, 0, 0}; s.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 8;
+        for (int t = 0; t < 62; t++) pmove(s, c, m);
+        return std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+    };
+    const float onBase = slide("box"), onIce = slide("ice");
+    printf("    let go at 8 m/s, 0.5 s later: base %.2f, ice %.2f m/s\n", onBase, onIce);
+    CHECK(onBase < 0.5f && onIce > 5.0f);
+    {   // rubber grips: from standing, running reaches speed sooner than on base, and stops sooner
+        auto run = [](const char* floor, int ticks, bool held) {
+            Map m;
+            CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+            MoveState s; s.flags = MF_ONGROUND; s.vel = held ? Vec3() : Vec3(8, 0, 0);
+            UserCmd c; c.msec = 8; c.forward = held ? 127 : 0; c.yaw = -PI * 0.5f;
+            for (int t = 0; t < ticks; t++) pmove(s, c, m);
+            return std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+        };
+        const float gb = run("box", 6, true), gr = run("rubber", 6, true), sb = run("box", 6, false), sr = run("rubber", 6, false);
+        printf("    48 ms running from standing: base %.2f, rubber %.2f m/s; 48 ms letting go of 8: base %.2f, rubber %.2f\n", gb, gr, sb, sr);
+        CHECK(gr > gb * 1.2f && sr < sb * 0.9f);
+    }
+    {   // dropped 5 m onto rubber: back up at most of the landing speed; onto base: stays
+        auto drop = [](const char* floor) {
+            Map m;
+            CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+            MoveState s; s.pos = {0, 5, 0};
+            UserCmd c; c.msec = 8;
+            float top = 0;
+            bool landed = false;
+            for (int t = 0; t < 250; t++) { pmove(s, c, m); if (s.pos.y < 0.05f) landed = true; if (landed) top = std::max(top, s.pos.y); }
+            return top;
+        };
+        const float rb = drop("rubber"), bb = drop("box");
+        printf("    dropped 5 m: rubber back up to %.2f m, base %.2f m\n", rb, bb);
+        CHECK(rb > 3.0f && rb < 5.0f && bb < 0.01f);
+    }
+    {   // running into a rubber wall at 10 m/s: back off it
+        Map m;
+        CHECK(m.parse("box -40 -1 -40 40 0 40\nrubber 3 0 -5 4 4 5\nspawn any 0 0 0\n"));
+        MoveState s; s.pos = {0, 0, 0}; s.vel = {10, 0, 0}; s.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 8; c.forward = 127; c.yaw = -PI * 0.5f;   // (running at it, +x)
+        float minVx = 0;
+        for (int t = 0; t < 40; t++) { pmove(s, c, m); minVx = std::min(minVx, s.vel.x); }
+        printf("    into a rubber wall at 10 m/s: back at %.2f m/s\n", -minVx);
+        CHECK(minVx < -5.0f);
+    }
 }
 
 static void testSurf() {
@@ -8617,6 +8681,7 @@ int main(int argc, char** argv) {
         {"slopes", [] { testSlopes(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
+        {"materials", [] { testMaterials(); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

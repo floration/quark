@@ -17,7 +17,7 @@ inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
+    int material = 0; // (12-19: ice, sand, wood, plastic, grass, rubber, steel, diamond plate: solid, see kMatIce) 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
     int group = -1;         // the map group it's a part of (generated from groups[group]), -1 for none: seams (outlines) only between groups
     // Shape (map format 5): a box, or the solid under a sloped top inside the box (its slope is whatever the box gives).
@@ -295,13 +295,26 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 }
 
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
-constexpr int kMapMaterials = 12;
+// 12-19 (owner, 2026-10-28): solid like base, each its own look made in the world shader (no textures); ice is slippery
+// underfoot, rubber bounces you off it.
+constexpr int kMapMaterials = 20;
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
+constexpr int kMatIce = 12, kMatSand = 13, kMatWood = 14, kMatPlastic = 15, kMatGrass = 16, kMatRubber = 17, kMatSteel = 18, kMatDiamond = 19;
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid; clip is solid to players only)
-inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple; }
+inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatDiamond); }
+// lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip isn't drawn)
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatDiamond); }
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
-inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, acid, base
+// a box line's keyword per material in map files ("box" is base)
+inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid",
+                                                    "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate"};
+static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
+inline int materialKeyword(const std::string& w) {
+    for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
+    return -1;
+}
+inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, acid, ice .. diamond plate, base
 
 // What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
 // groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
@@ -471,6 +484,7 @@ struct Map {
     // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
     bool hasWallbang = false;
+    bool hasIce = false, hasRubber = false;   // (pmove asks what's underfoot / hit only on maps with them)
 
     bool supportsMode(int mode) const;  // allowed and has what the mode needs
     bool canSupportMode(int mode) const; // has what the mode needs (ignores allowedModes)

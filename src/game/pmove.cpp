@@ -48,6 +48,12 @@ constexpr float kDashAirGap = 0.35f;    // a dash in the air leaves with this sh
                                         // 31 -> 31.35 (then kDashKeep's +1 is more); on the floor only kDashKeep, as before.
                                         // A custom mode's dash keep multiplier scales it too
 constexpr float kRampAirAccel = 2.0f;   // surf, touching a ramp's face: x air acceleration (owner 2026-10-28: "make it like 2x base", 8 was "insane")
+constexpr float kIceFriction = 0.08f;    // standing on ice: ground friction x this (owner, 2026-10-28: "ice is slippery")...
+constexpr float kIceAccel = 0.2f;        // ...and ground acceleration x this (you push off it as badly as you stop on it)
+constexpr float kRubberBounce = 0.85f;   // hitting rubber (floor, wall or ceiling) faster than kRubberMin: you leave it at this
+constexpr float kRubberMin = 3.0f;       // share of the speed you hit it with, back the way you came (owner: "extra bouncy")
+constexpr float kRubberGrip = 1.6f;      // standing on rubber: ground friction and acceleration x this (owner: "more acceleration
+                                         // for ground movement and quicker breaking")
 constexpr float kSlopeGravityBack = 0.5f;   // riding a ramp's face: this share of a step's gravity is given back (owner 2026-10-28)
 constexpr float kDashVerticalUp = 0.5f;    // looking straight up makes the dash this vertical (the sine: 50% of its speed
                                            // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways;
@@ -527,14 +533,23 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
         onGround = false;
     } else if (onGround) {
+        // the floor's grip: ice slippery (little friction, little push), rubber grippy (more of both); asked only on a
+        // map with either
+        float grip = 1.0f, push = 1.0f;
+        if (map.hasIce || map.hasRubber) {
+            const Brush* fb = nullptr;
+            map.sweepAxis(playerBox(s.pos, crouched, scale), 1, -0.05f, &fb);
+            if (fb && fb->material == kMatIce) { grip = kIceFriction; push = kIceAccel; }
+            else if (fb && fb->material == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
+        }
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         if (sp > 0) {
-            float drop = std::max(sp, (kStopSpeed * mt.m[MV_STOP_SPEED])) * (kFriction * mt.m[MV_FRICTION]) * dt;
+            float drop = std::max(sp, (kStopSpeed * mt.m[MV_STOP_SPEED])) * (kFriction * mt.m[MV_FRICTION]) * grip * dt;
             float ns = std::max(sp - drop, 0.0f) / sp;
             s.vel.x *= ns;
             s.vel.z *= ns;
         }
-        accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * mt.m[MV_GROUND_ACCEL]), dt);
+        accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * mt.m[MV_GROUND_ACCEL]) * push, dt);
         s.vel.y = 0;
     } else {
         if (!dashing && !onLadder) {
@@ -657,6 +672,16 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.vel.z = s.dashDirZ * bounce * hs;
         }
     }
+    // Rubber walls and ceilings: a hit faster than kRubberMin bounces back (the floor: at landing, below)
+    if (map.hasRubber && (blocked & 0b111)) {
+        const AABB b = playerBox(s.pos, crouched, scale);
+        for (int a = 0; a < 3; a++) {
+            if (!(blocked & (1 << a)) || (a == 1 && delta.y <= 0) || std::fabs(s.vel[a]) < kRubberMin) continue;
+            const Brush* hb = nullptr;
+            map.sweepAxis(b, a, delta[a] > 0 ? 0.02f : -0.02f, &hb);
+            if (hb && hb->material == kMatRubber) { s.vel[a] = -s.vel[a] * kRubberBounce; blocked &= ~(1 << a); }
+        }
+    }
     if (blocked & 1) s.vel.x = 0;
     if (blocked & 4) s.vel.z = 0;
     if (blocked & 2) {
@@ -674,7 +699,15 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.pos.y += probe; // settle onto the floor
         float impact = -before.vel.y;
         if (!grounded && !dashing && impact > kLandSoundSpeed) { s.events |= ME_LAND; s.landSpeed = std::max(s.landSpeed, impact); }
-        if ((jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
+        const bool hop = (jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing;
+        if (under && under->material == kMatRubber && impact > kRubberMin && !onLadder) {
+            // rubber: back up at kRubberBounce of the landing speed (a hop off it: whichever is higher)
+            s.vel.y = impact * kRubberBounce;
+            if (hop) s.vel.y = std::max(s.vel.y, jumpSpeed + std::min((impact - jumpSpeed) * (kBounceGain * mt.m[MV_BOUNCE_GAIN]), (kBounceMax * mt.m[MV_BOUNCE_MAX])));
+            nowGround = false;
+            bounced = true;
+            if (hop) { s.events |= ME_JUMP; if (tapped) s.jumpBuffer = 0; s.jumpGrace = jumpWindow; }
+        } else if ((jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly). Not off a dash's own push into the floor: that's a super dash
             // (next step, from the floor) or nothing.

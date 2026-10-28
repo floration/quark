@@ -103,9 +103,18 @@ uniform float uBright;   // the brightness setting (exposure, before the filmic 
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
-uniform float uTime;     // seconds (wrapped every hour): acid's slow shimmer
+uniform float uTime;     // seconds (wrapped every hour): water, lava and acid flow
+uniform vec3 uSunDir;    // toward the sun: metals' highlights
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// value noise and three octaves of it (water, lava, acid flow; sand, grass, ice, rubber surfaces): no textures
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), f.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 17.1) + 0.2 * vnoise(p * 4.01 + 41.7); }
+vec3 lin(vec3 c) { return pow(c, vec3(2.2)) * 1.5; }   // a display colour as the palette is given to the shader
 vec3 finish(vec3 c) {
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
@@ -120,12 +129,27 @@ void main() {
         return;
     }
     if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
-        vec3 c = mat == 4 ? uGlow * 0.9
-               : mat == 11 ? mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0))      // acid: glowing toxic green, darker sides,
-                             * (0.85 + 0.15 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) // with a slow shimmer
-               : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
-               : mat == 7 ? vec3(1.6, 0.42, 0.08)                                                         // lava: glowing
-               : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
+        vec3 c;
+        if (mat == 6 || mat == 7 || mat == 11) {
+            // liquids: noise flowing across the surface (owner, 2026-10-28: "so you can tell its actually lava"), in the
+            // face's plane (tops xz, sides along their face, sliding down them)
+            vec3 an = abs(vN);
+            vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;
+            vec2 flow = an.y > 0.5 ? vec2(0.31, 0.19) : vec2(0.0, 0.6);
+            if (mat == 6) {   // water: deep blue, lighter at grazing faces; two layers of ripples drifting apart, bright crests
+                float r = fbm(q * 0.7 + flow * uTime) * 0.6 + fbm(q * 1.6 - flow.yx * uTime * 1.3) * 0.4;
+                c = mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - an.y * 0.6) * (0.75 + 0.5 * r) + vec3(0.10, 0.18, 0.22) * smoothstep(0.62, 0.72, r);
+            } else if (mat == 7) {   // lava: a dark crust broken by glowing veins that slowly flow and churn
+                float n = fbm(q * 0.35 + flow * uTime * 0.25 + vec2(fbm(q * 0.3 - uTime * 0.05)) * 1.5);
+                float r = 1.0 - abs(2.0 * n - 1.0), vein = smoothstep(0.86, 0.98, r), warm = smoothstep(0.4, 0.8, fbm(q * 0.8 + uTime * 0.03));
+                c = mix(vec3(0.16, 0.025, 0.01) + vec3(0.35, 0.06, 0.0) * warm, vec3(1.9, 0.55, 0.08), vein) + vec3(0.8, 0.5, 0.1) * pow(vein, 4.0);
+            } else {   // acid: glowing toxic green, darker sides, with drifting foam and a slow shimmer
+                float n = fbm(q * 0.9 + flow * uTime * 0.6);
+                c = mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0)) * (0.7 + 0.45 * n)
+                  * (0.9 + 0.1 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) + vec3(0.25, 0.5, 0.1) * smoothstep(0.66, 0.76, n);
+            }
+        } else c = mat == 4 ? uGlow * 0.9
+                 : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
         fragColor = vec4(finish(c), 1.0);
         return;
     }
@@ -135,15 +159,64 @@ void main() {
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
-    vec2 pp = an.y > 0.5 ? vPos.xz * 0.25 : an.x > 0.5 ? vPos.zy * 0.5 : vPos.xy * 0.5;
-    if (mat == 3) pp = pp * vec2(2.0, 0.5);
-    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
-    float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
-    albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
+    vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;   // the face's plane, metres
+    float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
+    if (mat < 12) {
+        vec2 pp = q * (an.y > 0.5 ? 0.25 : 0.5);
+        if (mat == 3) pp = pp * vec2(2.0, 0.5);
+        vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
+        float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
+        albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
+        if (mat == 3) {   // metal: brushed streaks along each panel and a soft sheen (owner, 2026-10-28: "not just black box")
+            albedo *= 1.15 + 0.12 * (vnoise(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
+            spec = 0.35; gloss = 24.0;
+        }
+    } else if (mat == 12) {   // ice: pale blue, cloudy depths and fine white cracks, glossy
+        float n = fbm(q * 0.8), cr = abs(vnoise(q * 3.0) - 0.5);
+        albedo = lin(mix(vec3(0.55, 0.72, 0.86), vec3(0.80, 0.90, 0.97), n)) * (1.0 + 0.6 * (1.0 - smoothstep(0.0, 0.03, cr)));
+        spec = 0.6; gloss = 64.0;
+    } else if (mat == 13) {   // sand: warm tan, fine grain, wind ripples on tops
+        float g = hash2(floor(q * 40.0)), rip = an.y > 0.5 ? sin(q.x * 3.0 + fbm(q * 0.5) * 6.0) : 0.0;
+        albedo = lin(vec3(0.78, 0.67, 0.46)) * (0.88 + 0.12 * g + 0.05 * rip) * (0.9 + 0.2 * fbm(q * 0.3));
+    } else if (mat == 14) {   // wood: planks 0.25 m wide along the face's long way, each its own shade, grain and rings
+        vec2 r = an.y > 0.5 ? q : vec2(q.y, q.x);
+        float plank = floor(r.y * 4.0), along = r.x + hash2(vec2(plank, 3.0)) * 7.0, across = fract(r.y * 4.0);
+        float grain = sin((along * 0.6 + vnoise(vec2(along * 0.3, plank)) * 4.0 + across * 2.0) * 9.0) * 0.5 + 0.5;
+        float joint = min(smoothstep(0.0, 0.04, across), smoothstep(0.0, 0.04, 1.0 - across)) * smoothstep(0.0, 0.02, abs(fract(along / 2.4) - 0.5) * 2.0);
+        albedo = lin(mix(vec3(0.42, 0.26, 0.14), vec3(0.62, 0.42, 0.24), 0.5 * hash2(vec2(plank, 9.0)) + 0.3 * grain)) * mix(0.55, 1.0, joint);
+    } else if (mat == 15) {   // plastic: the map's accent colour, smooth and even, a tight shine
+        albedo = uAccentL * 1.1;
+        spec = 0.45; gloss = 80.0;
+    } else if (mat == 16) {   // grass: green blotches and blades on tops; sides earth with a grass fringe
+        float n = fbm(q * 0.6), blade = hash2(floor(q * 30.0));
+        vec3 green = lin(mix(vec3(0.20, 0.42, 0.12), vec3(0.36, 0.60, 0.20), n)) * (0.85 + 0.25 * blade);
+        if (an.y > 0.5) albedo = green;
+        else albedo = mix(lin(vec3(0.36, 0.26, 0.17)) * (0.85 + 0.2 * fbm(q * 2.0)), green, smoothstep(0.55, 0.7, fbm(vec2(q.x * 3.0, q.y * 0.7))));   // (earth, mossy streaks)
+    } else if (mat == 17) {   // rubber: near-black, matte, fine pebbled dots
+        vec2 d = fract(q * 12.0) - 0.5;
+        albedo = lin(vec3(0.13, 0.13, 0.14)) * (0.85 + 0.3 * smoothstep(0.32, 0.2, length(d)));
+        spec = 0.05; gloss = 8.0;
+    } else if (mat == 18) {   // steel: light grey, long brushed streaks, a bright sharp highlight
+        albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoise(vec2(q.x * 0.5, q.y * 60.0)));
+        spec = 0.7; gloss = 48.0;
+    } else {   // diamond plate: grey metal with raised diamonds (lit on one side, shadowed on the other), in rows offset
+        vec2 r = vec2(q.x + q.y, q.x - q.y) * 2.5;
+        vec2 cell = floor(r), f = fract(r) - 0.5;
+        float lug = (mod(cell.x + cell.y, 2.0) < 0.5 ? f.x : f.y);
+        float bump = smoothstep(0.09, 0.05, abs(lug) + 0.35 * abs((mod(cell.x + cell.y, 2.0) < 0.5 ? f.y : f.x)));
+        albedo = lin(vec3(0.50, 0.52, 0.55)) * (0.9 + 0.1 * vnoise(q * 9.0)) * (1.0 + 0.6 * bump * sign(lug + 0.0001));
+        spec = 0.55; gloss = 40.0;
+    }
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
     if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
-    vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
-    vec3 c = albedo * light * 0.62 * outline(vEdge, uOutlineW);
+    float sun = lm.r * shadowAt(vShadow);
+    vec3 light = uSkyColor * lm.g + uSunColor * sun;
+    vec3 c = albedo * light * 0.62;
+    if (spec > 0.0) {
+        vec3 v = normalize(uCamPos - vPos), h = normalize(v + uSunDir);
+        c += uSunColor * sun * spec * pow(max(dot(normalize(vN), h), 0.0), gloss);
+    }
+    c *= outline(vEdge, uOutlineW);
     fragColor = vec4(finish(c), 1.0);
 })";
 
@@ -539,7 +612,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
                U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
                U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime")};
+               U(worldProg_, "uTime"), U(worldProg_, "uSunDir")};
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
@@ -1097,6 +1170,7 @@ void Renderer::prepareScene(bool shadows) {
     setVec3(uWorld_.fullColor, fullbrightColor);
     glUniform1f(uWorld_.outlineW, worldOutline);
     glUniform1f(uWorld_.time, (float)std::fmod(timeNow(), 3600.0));
+    setVec3(uWorld_.sunDir, sunDir_);
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
     glUniform1f(uSky_.bright, brightness);

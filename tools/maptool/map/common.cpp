@@ -52,8 +52,7 @@ int modeFromJson(const Json& j, int def) {
     return def;
 }
 
-static const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
-static_assert(sizeof kMatNames / sizeof *kMatNames == kMapMaterials, "a name per material (map.cpp's file keywords)");
+static const char* const* kMatNames = kMapMaterialWords;   // (map.cpp's file keywords)
 
 Json playerJson() {
     Json p = Json::object();
@@ -173,7 +172,7 @@ Json mapToJson(const Map& m) {
     j.set("lights", std::move(li));
     j.set("bounds", jbox(m.bounds));
     Json mats = Json::array();
-    for (auto* n : kMatNames) mats.push(n);
+    for (int k = 0; k < kMapMaterials; k++) mats.push(kMatNames[k]);
     j.set("materials", std::move(mats));
     Json w = Json::array();
     for (auto& s : m.warnings) w.push(s);

@@ -432,7 +432,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     auto cellOf = [&](float x) { return (int)std::floor(std::max(-8192.0f, std::min(8192.0f, x)) / kBucket); };
     auto planeOf = [](float p) { return (int64_t)std::floor((double)p * 1000.0); };
     auto key = [](int axis, int sign, int material, int64_t plane, int cu, int cv) {
-        uint64_t k = (uint64_t)axis | (uint64_t)(sign > 0) << 2 | (uint64_t)(material & 15) << 3;
+        uint64_t k = (uint64_t)axis | (uint64_t)(sign > 0) << 2 | (uint64_t)(material & 31) << 3;
         k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)plane;
         k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)cu;
         k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)cv;
@@ -621,7 +621,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     if (!ran) { out.cancelled = true; return; }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
-    for (auto& f : faces) if (f.material < 4 || f.material == kMatNoGrapple) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
+    for (auto& f : faces) if (litMaterial(f.material) && f.material != 8) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting (trim: small, not counted)
     float density = 4.0f;
     while (area * density * density > 2048.0f * 2048.0f * 0.55f && density > 0.25f) density *= 0.8f;
     auto sizeFaces = [&] {

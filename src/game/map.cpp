@@ -660,10 +660,10 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
         } else if (kw == "title") {
             ls.rest(title);
             ok = cleanMapTitle(title);   // (the same rule as the editor's title edit)
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip" || kw == "nograpple" || kw == "acid") {
+        } else if (materialKeyword(kw) >= 0) {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : kw == "nograpple" ? kMatNoGrapple : kw == "acid" ? kMatAcid : 0;
+            b.material = materialKeyword(kw);
             hasWallbang |= b.material == 2;
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
@@ -905,11 +905,9 @@ std::string Map::serialize() const {
         auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
-    static_assert(sizeof matNames / sizeof *matNames == kMapMaterials, "a file keyword per material");
     for (auto& br : brushes) {
         if (br.generated) continue;
-        if (br.shape == BRUSH_BOX) { box(matNames[br.material], br.box); continue; }
+        if (br.shape == BRUSH_BOX) { box(kMapMaterialWords[br.material], br.box); continue; }
         snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", br.shape == BRUSH_WEDGE ? "wedge" : "corner", br.material, (int)br.dir + 4 * br.up,
                  exactNum(nb[0], 24, br.box.mn.x), exactNum(nb[1], 24, br.box.mn.y), exactNum(nb[2], 24, br.box.mn.z),
                  exactNum(nb[3], 24, br.box.mx.x), exactNum(nb[4], 24, br.box.mx.y), exactNum(nb[5], 24, br.box.mx.z));
@@ -1273,7 +1271,12 @@ static void gridShape(const AABB& bounds, float& gx0, float& gz0, int& gw, int& 
 bool Map::buildGrid() {
     lava.clear();   // (touch it and die)
     acid.clear();   // (touch it and it hurts: pmove)
-    for (auto& b : brushes) if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
+    hasIce = hasRubber = false;
+    for (auto& b : brushes) {
+        if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
+        hasIce |= b.material == kMatIce;
+        hasRubber |= b.material == kMatRubber;
+    }
     gridShape(bounds, gridX0, gridZ0, gridW, gridH);
     size_t ncells = (size_t)gridW * gridH;
     // count per cell, then fill: one allocation, refused before it's made if it's too big
@@ -1383,6 +1386,7 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         acid.clear();
         for (auto& x : brushes) if (x.material == kMatAcid) acid.push_back(x.box);
     }
+    if (op != 2) { hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber; }   // (kept until a rebuild: only costs a probe)
     const uint16_t ix = (uint16_t)i;
     if (oldSolid)   // out of the cells it was in
         for (int z = so.z0; z <= so.z1; z++)
