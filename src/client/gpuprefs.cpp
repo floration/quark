@@ -174,9 +174,26 @@ bool nvMaxClocks(bool on, std::string* msg) {
     return false;
 }
 
+// ---- setGamePriority: gdi32's D3DKMTSetProcessSchedulingPriorityClass (Windows 7+; MinGW's headers lack it) ----------
+
+void setGamePriority(bool high) {
+    static int now = -1;   // (what's set: -1 nothing yet, 0 normal, 1 high)
+    if (now == (int)high) return;
+    now = high;
+    enum { kNormal = 2, kAboveNormal = 3, kHigh = 4 };   // (D3DKMT_SCHEDULINGPRIORITYCLASS)
+    using SetClassFn = LONG(APIENTRY*)(HANDLE, int);
+    static const auto setClass = gdi() ? (SetClassFn)GetProcAddress(gdi(), "D3DKMTSetProcessSchedulingPriorityClass") : nullptr;
+    HANDLE self = GetCurrentProcess();
+    if (setClass && setClass(self, high ? kHigh : kNormal) != 0 && high) setClass(self, kAboveNormal);   // (0 = STATUS_SUCCESS)
+    // ABOVE_NORMAL, not HIGH: the hosted server's and audio threads already run raised, and a HIGH process at thousands of
+    // frames a second can starve the rest of the desktop (input, the launcher, voice chat)
+    SetPriorityClass(self, high ? ABOVE_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+}
+
 #else
 bool RasterClock::open(GLFWmonitor*) { return false; }
 void RasterClock::close() {}
 bool RasterClock::nextBlank(double, double*) { return false; }
 bool nvMaxClocks(bool, std::string* msg) { *msg = "GPU MAX CLOCKS: WINDOWS ONLY"; return false; }
+void setGamePriority(bool) {}
 #endif
