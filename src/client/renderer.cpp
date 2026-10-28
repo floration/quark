@@ -433,10 +433,12 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 }
 
 bool Renderer::init(int shadowRes, std::string* err) {
-    {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13)
+    {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13); the shadow map too (a size past it
+        // left the framebuffer incomplete, so shadows turned off instead of using the largest the GPU has)
         GLint64 maxTex = 0;
         glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
         if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
+        if (maxTex > 0 && shadowRes > maxTex) shadowRes = (int)maxTex;
     }
     std::string worldFS = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;

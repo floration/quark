@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <thread>
 #include "bots.h"
 #include "botbrain.h"

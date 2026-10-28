@@ -1,6 +1,7 @@
 // The analysis behind check / metrics / route / custom, and the map report's measurement as JSON.
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <queue>
 #include "common/u8file.h"
 #include "analysis.h"

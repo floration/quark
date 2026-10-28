@@ -1,7 +1,7 @@
 #!/bin/bash
 # The pre-push check used for 1.17.0 (docs/HANDOVER.md section 0): every quark_tests group, 3 per core at a time, then the
 # timing-sensitive ones alone, then every map hosted headless in FFA and screenshotted (it loads and the game runs), then
-# the RENDER SCALE screenshots (tools/renderscale_check.py).
+# the RENDER SCALE screenshots (tools/renderscale_check.py); and the SSE4.2 / AVX2 builds simulate the same (tools/isa_check.sh).
 # Usage: tools/release_check.sh [--skip "bots botaim botfalls maps mapbounds"]     (run from the repo root, after a build)
 # Needs Xvfb on Linux for the map check (skipped with a note if there's no Xvfb). Exit code 0 = everything passed.
 cd "$(dirname "$0")/.." || exit 2
@@ -23,6 +23,7 @@ for g in $alone; do
   build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; rc=$?
   echo "$g rc=$rc $(grep '^group ' "$TMPDIR/$g.log")"; [ $rc = 0 ] || { fail=1; hint="; timing groups: re-run alone on an idle machine"; }
 done
+if sh tools/isa_check.sh > "$TMPDIR/isa.log" 2>&1; then tail -1 "$TMPDIR/isa.log"; else echo "isa FAILED (see isa.log)"; fail=1; fi
 if command -v Xvfb >/dev/null; then
   Xvfb :97 >/dev/null 2>&1 & xpid=$!
   for i in $(seq 50); do [ -S /tmp/.X11-unix/X97 ] && break; sleep 0.2; done   # (until the display is up)

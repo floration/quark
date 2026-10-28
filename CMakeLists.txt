@@ -73,7 +73,7 @@ endif()
 
 option(QUARK_BUILD_CLIENT "Build the game client (needs OpenGL)" ON)
 option(QUARK_BUILD_TESTS "Build headless tests" ON)
-option(QUARK_LTO "Link-time optimization" OFF)
+option(QUARK_LTO "Link-time optimization" ON)   # (1.19 laptop benchmark: o3 1540 fps avg, o3 + LTO 1613, o3 + LTO + AVX2 1962)
 # Robustness builds (REVIEW ENG-3), never for releases:
 #   QUARK_SANITIZE: everything built with AddressSanitizer + UndefinedBehaviorSanitizer (the CI "sanitizers" job runs
 #                   quark_tests like that); any report is fatal.
@@ -99,7 +99,35 @@ endif()
 
 # precise FP everywhere: client prediction (pmove / map / collision) must match a server built by another
 # toolchain bit for bit, so no fast-math and no FMA contraction
-add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O2>")
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O3>")
+add_link_options(-fno-fast-math -ffp-contract=off)   # (with LTO the code is generated at link time: the same rules there)
+
+# Instruction set (x86-64 only; arm64 and macOS's universal build keep the compiler's default). The packages ship two
+# game clients: quark (QUARK_ISA v2: SSE4.2 + POPCNT, every x86-64 CPU since about 2009) and quark_avx2 (v3: AVX2,
+# BMI2, FMA as an instruction set; Intel 2013+, every Ryzen), and quark starts quark_avx2 when the CPU has it
+# (src/client/isa.h). Both compute bit-identical results: no fast-math and no FMA contraction (above), so vector
+# code doesn't reorder or fuse floating point (quark_tests simhash checks it: tools/isa_check.sh). "none" = the
+# compiler's default (SSE2). 1.19 laptop benchmark: -O2 1114 fps avg / 635 0.1% low, -O3 1540 / 911.
+set(QUARK_ISA "v2" CACHE STRING "x86-64 instruction set level: none, v2 (SSE4.2) or v3 (AVX2)")
+set_property(CACHE QUARK_ISA PROPERTY STRINGS none v2 v3)
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("#if !defined(__x86_64__)\n#error not x86-64\n#endif\nint main() { return 0; }" QUARK_X86_64)
+if(QUARK_X86_64 AND NOT APPLE AND QUARK_ISA STREQUAL "v2")
+  add_compile_options(-march=x86-64-v2 -mtune=generic)
+  add_link_options(-march=x86-64-v2 -mtune=generic)
+elseif(QUARK_X86_64 AND NOT APPLE AND QUARK_ISA STREQUAL "v3")
+  add_compile_options(-march=x86-64-v3 -mtune=generic)
+  add_link_options(-march=x86-64-v3 -mtune=generic)
+  add_compile_definitions(QUARK_ISA_AVX2=1)
+  if(WIN32)
+    # MinGW gcc spills 32-byte AVX registers with aligned moves to a stack Win64 only aligns to 16 bytes: an aligned
+    # move there crashes. The assembler turns them into unaligned moves (as fast on any AVX2 CPU). binutils 2.38+.
+    add_compile_options(-Wa,-muse-unaligned-vector-move)
+    add_link_options(-Wa,-muse-unaligned-vector-move)   # (LTO compiles at link time: the assembler runs there too)
+  endif()
+elseif(NOT QUARK_ISA STREQUAL "none" AND NOT QUARK_ISA STREQUAL "v2" AND NOT QUARK_ISA STREQUAL "v3")
+  message(FATAL_ERROR "QUARK_ISA must be none, v2 or v3 (not ${QUARK_ISA})")
+endif()
 if(WIN32)
   add_compile_definitions(_WIN32_WINNT=0x0601 NOMINMAX)   # Windows 7; no min / max macros from windows.h
 endif()
@@ -243,6 +271,9 @@ if(QUARK_TRACY)
   target_include_directories(quark_core PUBLIC ${tracy_SOURCE_DIR}/public)
   target_compile_definitions(quark_core PUBLIC QUARK_TRACY TRACY_ENABLE)
   target_link_libraries(quark_core PUBLIC ${CMAKE_DL_LIBS})
+  if(WIN32)
+    target_link_libraries(quark_core PUBLIC dbghelp)   # (Tracy's call stacks: SymInitialize / SymFromAddr)
+  endif()
 endif()
 target_link_libraries(quark_core PUBLIC Threads::Threads quark_crypto)
 if(WIN32)
@@ -337,6 +368,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/community.cpp
     src/client/editor.cpp
     src/client/benchmark.cpp
+    src/client/isa.cpp
     src/client/openurl.cpp
     src/client/gl.cpp
     src/client/renderer.cpp
