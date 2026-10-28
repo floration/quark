@@ -262,7 +262,7 @@ constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's vie
 constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
-constexpr float kShotgunKnock = 0.30f;     // shotgun knockback per pellet's worth of damage (m/s; a full blast: 20 x 0.30 = 6 m/s; owner 1.17: doubled from 0.15)
+constexpr float kShotgunKnock = 0.40f;     // shotgun knockback per pellet's worth of damage (m/s; a full blast: 20 x 0.40 = 8 m/s; owner 1.17: doubled from 0.15; owner 2026-10-28: +33%, from 0.30)
 constexpr float kLaserPullScale = 1.82f;   // alt-fire pulls this much harder than the normal beam pushes
 constexpr float kLaserPullDamage = 0.75f;  // ...for 75% damage
 
@@ -317,12 +317,13 @@ inline const WeaponDef& baseWeaponDef(int w) {
         // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
         // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added. 1.17: rifle 1 less a
         // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50; 1.18: the
-        // sniper 40 body, 50 head, kSniperHeadDamage; the owner, 2026-10: rifle 4.95 -> 5.0, so 20 body shots kill, not leave 1 hp).
-        // Perfect-aim time to kill from 100 hp in the trailing comment. DPS against the laser's 40: rifle 0.82 body,
-        // 1.24 head; sniper 0.67 body, 0.83 head (the laser out-damages the rifle inside its 24 m unless you land
-        // headshots).
+        // sniper 40 body, 50 head, kSniperHeadDamage; the owner, 2026-10: rifle 4.95 -> 5.0, so 20 body shots kill, not leave 1 hp;
+        // the owner, 2026-10-28 (after 1.19.1): rifle +1 a shot (6 body, 8.5 head), bubble fire rate +20% (5 -> 6 a second)).
+        // Perfect-aim time to kill from 100 hp in the trailing comment. DPS against the laser's 40: rifle 0.99 body,
+        // 1.40 head; sniper 0.67 body, 0.83 head (the rifle now matches the laser inside its 24 m on body shots and
+        // out-damages it with headshots).
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       0.75f*2.0f/9.9f, 5.0f,  300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 20 shots, 2.9 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
+        {"RIFLE",       0.75f*2.0f/9.9f, 6.0f,  300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s body; 12, 1.7 s head (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0.0f,  false, 5}, // 3, 2.4 s (flies straight: owner, 1.17; the lob drops, kRocketLobGravity)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
         {"SNIPER",      1.5f,    40,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3 shots, 3.0 s body; 2, 1.5 s head (owner 1.18: 40 body, 50 head; 1.17 a flat 50)
@@ -330,7 +331,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 3, 4.0 s body; 2, 2.0 s with a headshot (75: kCrossbowHeadDamage)
-        {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
+        {"BUBBLE",      1.0f/6,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.5 s (floats up a little; 6 a second: owner, 2026-10-28, was 5)
         {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
         {"LOCATOR",     kLocatorCooldown, 0, 0, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // no damage: shows a hider / runner (hide and seek / tag only)
     };
@@ -341,7 +342,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
 constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
 constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide; sniper 50 of a 40 body): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
-constexpr float kRifleHeadDamage = 7.5f;   // (1.17: 8.5 -> 7.5 with the body 5.95 -> 4.95)
+constexpr float kRifleHeadDamage = 8.5f;   // (1.17: 8.5 -> 7.5 with the body 5.95 -> 4.95; 2026-10-28: +1 with the body 5 -> 6)
 constexpr float kPelletHeadDamage = 2.6f;   // (owner, 2026-10: 2.55 -> 2.6, so two point-blank head blasts kill: 98.6 -> 100.4)
 const WeaponDef& weaponDef(int w);   // customrules.cpp
 float tunedDamage(int w);            // the active custom mode's damage multiplier for this weapon (1 = standard)
@@ -438,9 +439,10 @@ constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 1.0f / 0.9f; // refire multiplier while scoped (10% slower fire rate; owner 1.17, was 25%)
 // Bubble gun alt-fire: a stream of bubbles all at once, each at its own speed, then a long reload.
-// The stream: 5 bubbles with the nearest enemy within 5 m, up to 15 from 30 m away (so it can't one-shot up close),
+// The stream: 5 bubbles with the nearest enemy within 5 m, up to 25 from 30 m away (so it can't one-shot up close;
+// owner, 2026-10-28: the most 15 -> 25, the 5 up close kept),
 // spread evenly from slow to fast.
-constexpr int kBubbleStreamMin = 5, kBubbleStreamMax = 15;
+constexpr int kBubbleStreamMin = 5, kBubbleStreamMax = 25;
 constexpr float kBubbleStreamNear = 5.0f, kBubbleStreamFar = 30.0f;
 constexpr float kBubbleStreamRefire = 1.8f;
 constexpr float kBubbleStreamSlow = 8.4f, kBubbleStreamFast = 24.0f;
@@ -460,7 +462,7 @@ inline Vec3 stickyInherit(const Vec3& shooterVel, const Vec3& aim) {
     if (fl > 1e-4f) { float fx = aim.x / fl, fz = aim.z / fl, along = shooterVel.x * fx + shooterVel.z * fz; v.x = fx * along; v.z = fz * along; }
     return v * weaponAlt().stickyInherit;   // (standard kProjInherit)
 }
-constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
+constexpr float kCrossbowKnock = 21.28f; // a bolt hit shoves hard (m/s along the bolt; owner 2026-10-28: +33%, from 16)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
 // The refire for this shot: alt-fire modes change it.

@@ -5,4 +5,10 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 ## Performance
 - **New Settings > VIDEO > PRIORITIZE GAME (Windows, on by default)**: while the game has focus, Windows runs its GPU work before other programs' (a YouTube tab, Discord or other hardware-accelerated apps) and gives it a higher CPU priority. Before, a video playing in the background could take a big share of every frame. Alt-tab and the other programs get their normal share back.
 
+## Weapons
+- **Rifle: +1 damage a shot**: 6 body (was 5), 8.5 head (was 7.5). A kill takes 17 body shots in 2.4 s (was 20 in 2.9 s), or 12 headshots in 1.7 s.
+- **Bubble gun fires 20% faster**: 6 bubbles a second (was 5), so 10 pops kill in 1.5 s (was 1.8 s).
+- **Bubble gun alt-fire: up to 25 bubbles** a stream from 30 m away (was 15). Still 5 when the nearest enemy is within 5 m, and the same 1.8 s reload.
+- **33% more knockback** from the shotgun (a full blast shoves 8 m/s, was 6) and the crossbow (21.3 m/s a bolt, was 16).
+
 - Human-made assets: 16.1%, unchanged (no asset changes).
