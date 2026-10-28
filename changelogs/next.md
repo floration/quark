@@ -5,6 +5,9 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 ## Performance
 - **New Settings > VIDEO > PRIORITIZE GAME (Windows, on by default)**: while the game has focus, Windows runs its GPU work before other programs' (a YouTube tab, Discord or other hardware-accelerated apps) and gives it a higher CPU priority. Before, a video playing in the background could take a big share of every frame. Alt-tab and the other programs get their normal share back.
 
+## Maps
+- **Fewer stray outlines**: where a box's edge was only partly against a flush neighbour (a taller step next to a shorter one, a wall meeting a longer wall), the whole edge kept its line; now only the uncovered part does. In hand-made maps, outlines now follow groups: parts of the same group join with no line, even across materials, and separate groups or ungrouped boxes keep theirs. The official maps keep joining same-material boxes.
+
 ## Weapons
 - **Rifle: +1 damage a shot**: 6 body (was 5), 8.5 head (was 7.5). A kill takes 17 body shots in 2.4 s (was 20 in 2.9 s), or 12 headshots in 1.7 s.
 - **Bubble gun fires 20% faster**: 6 bubbles a second (was 5), so 10 pops kill in 1.5 s (was 1.8 s).
