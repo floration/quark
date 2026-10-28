@@ -8,6 +8,7 @@ param(
   [string]$OutDir = (Join-Path $env:USERPROFILE 'quark-builds'),
   [switch]$Setup,   # install Git, CMake, Python and MinGW-w64 (WinLibs, posix threads) with winget, then build
   [switch]$Tests,   # also build quark_tests and run it (every group; a busy machine can fail the timing groups)
+  [switch]$Editors,   # also build the editors' helpers (quark_maptool, quark_tests) here, not run: shared code compiles once
   [switch]$Clean,   # start from an empty build-win/
   [string]$Play = '',   # also copy the build into this folder (merged over what's there)
   [string]$Source = '',  # build this checkout instead of the one holding this script (build_release.ps1 uses it)
@@ -56,10 +57,10 @@ $name = "quark-$version-$commit"
 $cache = 'build-win\CMakeCache.txt'
 if ((Test-Path $cache) -and -not (Select-String -Path $cache -SimpleMatch "CMAKE_HOME_DIRECTORY:INTERNAL=$($Root -replace '\\', '/')" -Quiet)) { $Clean = $true }
 if ($Clean -and (Test-Path build-win)) { Remove-Item -Recurse -Force build-win }
-$testsFlag = if ($Tests) { 'ON' } else { 'OFF' }
+$testsFlag = if ($Tests -or $Editors) { 'ON' } else { 'OFF' }
 cmake -S . -B build-win -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release "-DPython3_EXECUTABLE=$py" "-DQUARK_BUILD_TESTS=$testsFlag" "-DQUARK_VERSION_SUFFIX=$VersionSuffix"
 if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }
-$targets = @('quark', 'quark_server', 'quark_launcher'); if ($Tests) { $targets += 'quark_tests' }
+$targets = @('quark', 'quark_server', 'quark_launcher'); if ($Tests -or $Editors) { $targets += 'quark_tests' }; if ($Editors) { $targets += @('quark_maptool', 'copy_maps') }
 cmake --build build-win -j $env:NUMBER_OF_PROCESSORS --target $targets
 if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 
