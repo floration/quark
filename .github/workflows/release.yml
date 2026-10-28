@@ -44,9 +44,8 @@ on:
         default: false
 permissions:
   contents: read   # every job only reads; release and pages get write below
-env:
-  # (testing builds carry their own version, <VERSION>.<N>: meta's suffix output, which each build job sets as
-  # QUARK_VERSION_SUFFIX)
+# (testing builds carry their own version, <VERSION>.<N>: meta's suffix output, which each build job sets as
+# QUARK_VERSION_SUFFIX)
 concurrency:
   # (a final-test run gets its own group: a testing push queued after it must not replace it, nor it the push)
   group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && inputs.final && '-final' || '' }}
