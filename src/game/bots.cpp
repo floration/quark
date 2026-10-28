@@ -315,8 +315,8 @@ void NavGraph::build(const Map& m, NavKind k) {
     for (size_t bi = 0; bi < m.brushes.size(); bi++) {
         const Brush& b = m.brushes[bi];
         if (!solidMaterial(b.material)) continue; // far scenery, water / lava
-        if (b.shape == BRUSH_BOX) { surface(bi, b.box, b.box.mx.y); continue; }
-        if (slopeSteepness(b) > 1.0f + 1e-4f) continue;
+        if (b.shape == BRUSH_BOX || b.up == 1) { surface(bi, b.box, b.box.mx.y); continue; }   // (upside down: its base on top)
+        if (b.up != 0 || slopeSteepness(b) > 1.0f + 1e-4f) continue;   // (on its side, or steep: no floor to walk)
         const AABB& a = b.box;
         const bool alongX = b.shape == BRUSH_WEDGE && b.dir < 2;
         const float run = b.shape == BRUSH_CORNER ? std::min(a.mx.x - a.mn.x, a.mx.z - a.mn.z) : alongX ? a.mx.x - a.mn.x : a.mx.z - a.mn.z;

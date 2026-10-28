@@ -323,12 +323,35 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             slots[bi * 7 + slot] = f; keep[bi * 7 + slot] = 1;
         };
         if (br.shape != BRUSH_BOX) {
-            const AABB& a = br.box;
+            // built in the slope's own frame (map.h: standing on its base), each face then turned into the world
+            const SlopeFrame fr = slopeFrame(br);
+            const bool rev = slopeFrameMirrors(fr);
+            const Brush lb = slopeLocal(br);
+            auto lface = [&](int slot, std::initializer_list<Vec3> lp, Vec3 ln) {
+                Vec3 P[4];
+                const int np = (int)lp.size();
+                for (int k = 0; k < np; k++) P[k] = slopeToWorld(br, fr, lp.begin()[rev ? np - 1 - k : k]);
+                const Vec3 n = slopeDirToWorld(fr, ln);
+                if (np == 3) genFace(slot, {P[0], P[1], P[2]}, n); else genFace(slot, {P[0], P[1], P[2], P[3]}, n);
+            };
+            // a whole rectangle of the box (own-frame axis la, sign ls): an ordinary face (seams, culling)
+            auto rect = [&](int slot, int la, int ls) {
+                const int axis = la == 0 ? fr.u : la == 1 ? fr.h : fr.v;
+                const int sign = la == 1 && fr.flip ? -ls : ls;
+                const AABB& a = br.box;
+                Face f;
+                f.axis = axis; f.sign = sign; f.material = br.material; f.group = br.group;
+                f.plane = sign > 0 ? a.mx[axis] : a.mn[axis];
+                const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
+                f.u0 = a.mn[ua]; f.u1 = a.mx[ua]; f.v0 = a.mn[va]; f.v1 = a.mx[va];
+                if (!solidAt.buried(axis, f.plane + sign * 0.01f, f.u0, f.u1, f.v0, f.v1)) { slots[bi * 7 + slot] = f; keep[bi * 7 + slot] = 1; }
+            };
+            const AABB& a = lb.box;
             const float y0 = a.mn.y;
             // the four footprint corners, in order round it, with the slope's height at each
             const Vec3 c[4] = {{a.mn.x, 0, a.mn.z}, {a.mx.x, 0, a.mn.z}, {a.mx.x, 0, a.mx.z}, {a.mn.x, 0, a.mx.z}};
             Vec3 t[4];
-            for (int k = 0; k < 4; k++) t[k] = {c[k].x, brushTopAt(br, c[k].x, c[k].z), c[k].z};
+            for (int k = 0; k < 4; k++) t[k] = {c[k].x, brushTopAt(lb, c[k].x, c[k].z), c[k].z};
             // the sides: each a rectangle (full height), a triangle (rising along it) or nothing (the low edge)
             for (int k = 0; k < 4; k++) {
                 const Vec3 &p0 = c[k], &p1 = c[(k + 1) % 4], &q0 = t[k], &q1 = t[(k + 1) % 4];
@@ -336,39 +359,26 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 const int axis = k % 2 == 0 ? 2 : 0;   // (sides 0, 2 face -z, +z; 1, 3 face +x, -x)
                 const int sign = k == 0 || k == 3 ? -1 : 1;
                 if (low0 && low1) continue;
-                if (full0 && full1) {   // a whole rectangle: an ordinary face (seams, culling)
-                    Face f;
-                    f.axis = axis; f.sign = sign; f.material = br.material; f.group = br.group;
-                    f.plane = sign > 0 ? a.mx[axis] : a.mn[axis];
-                    const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
-                    f.u0 = a.mn[ua]; f.u1 = a.mx[ua]; f.v0 = a.mn[va]; f.v1 = a.mx[va];
-                    if (!solidAt.buried(axis, f.plane + sign * 0.01f, f.u0, f.u1, f.v0, f.v1)) { slots[bi * 7 + k] = f; keep[bi * 7 + k] = 1; }
-                    continue;
-                }
+                if (full0 && full1) { rect(k, axis, sign); continue; }
                 Vec3 n; n[axis] = (float)sign;
                 const Vec3 b0 = {p0.x, y0, p0.z}, b1 = {p1.x, y0, p1.z};
-                if (low0) genFace(k, {b0, b1, q1}, n);
-                else if (low1) genFace(k, {b0, b1, q0}, n);
-                else genFace(k, {b0, b1, q1, q0}, n);
+                if (low0) lface(k, {b0, b1, q1}, n);
+                else if (low1) lface(k, {b0, b1, q0}, n);
+                else lface(k, {b0, b1, q1, q0}, n);
             }
-            {   // the bottom: a whole rectangle
-                Face f;
-                f.axis = 1; f.sign = -1; f.material = br.material; f.group = br.group; f.plane = a.mn.y;
-                f.u0 = a.mn.z; f.u1 = a.mx.z; f.v0 = a.mn.x; f.v1 = a.mx.x;
-                if (!solidAt.buried(1, f.plane - 0.01f, f.u0, f.u1, f.v0, f.v1)) { slots[bi * 7 + 4] = f; keep[bi * 7 + 4] = 1; }
-            }
+            rect(4, 1, -1);   // the base: a whole rectangle
             Vec3 pn[2]; float pd[2];
-            slopePlanes(br, pn, pd);
-            if (br.shape == BRUSH_WEDGE) genFace(5, {t[0], t[1], t[2], t[3]}, pn[0]);
+            slopePlanes(lb, pn, pd);
+            if (lb.shape == BRUSH_WEDGE) lface(5, {t[0], t[1], t[2], t[3]}, pn[0]);
             else {   // a corner: two triangles from the corner opposite the high one, over the diagonal to it
-                const int hi = br.dir == 0 ? 0 : br.dir == 1 ? 1 : br.dir == 2 ? 2 : 3, lo = (hi + 2) % 4;
+                const int hi = lb.dir, lo = (hi + 2) % 4;
                 // plane 0 is the one whose height runs along x: the triangle on the side where gx <= gz
                 for (int side = 0; side < 2; side++) {
                     const int mid = side == 0 ? (lo + 1) % 4 : (lo + 3) % 4;
                     const Vec3 tri[3] = {t[lo], t[mid], t[hi]};
                     Vec3 n = normalize(cross(tri[1] - tri[0], tri[2] - tri[0]));
                     if (n.y < 0) n = n * -1.0f;
-                    genFace(5 + side, {tri[0], tri[1], tri[2]}, n);
+                    lface(5 + side, {tri[0], tri[1], tri[2]}, n);
                 }
             }
             return;

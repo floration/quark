@@ -4500,7 +4500,7 @@ static void testSlopes() {
         Map b;
         CHECK(b.parse(t) && b.serialize() == t);
         Map bad;
-        CHECK(!bad.parse("wedge 0 4 0 0 0 1 1 1\n" + base) && !bad.parse("corner 12 0 0 0 0 1 1 1\n" + base));
+        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 12 0 0 0 0 1 1 1\n" + base));
     }
     Map m;
     // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
@@ -4562,6 +4562,63 @@ static void testSlopes() {
             if (n.z0 >= -9 - 1e-3f && n.z1 <= -8 + 1e-3f && n.x0 >= -12 - 1e-3f && n.x1 <= -6 + 1e-3f) hiSteep = std::max(hiSteep, n.y);
         }
         CHECK(hiGentle > 1.7f && hiSteep < 0);
+    }
+    {   // upside down and on its side (up, map.h): the solid, the file, turning one (the editor's rotate / mirror)
+        Map o;
+        CHECK(o.parse("wedge 0 4 0 0 0 4 2 2\nwedge 0 8 10 0 0 14 2 2\ncorner 1 22 20 0 0 24 2 2\n" + base));
+        const Brush &f = o.brushes[0], &sd = o.brushes[1];
+        CHECK(f.up == 1 && f.dir == 0 && sd.up == 2 && sd.dir == 0 && o.brushes[2].up == 5 && o.brushes[2].dir == 2);
+        CHECK(brushContains(f, {3.5f, 1.9f, 1}) && !brushContains(f, {0.5f, 0.5f, 1}) && brushContains(f, {0.5f, 1.95f, 1}));
+        CHECK(brushContains(sd, {11, 1.5f, 1}) && !brushContains(sd, {13, 0.5f, 1}));
+        Map r;
+        CHECK(r.parse(o.serialize()) && r.serialize() == o.serialize() && o.serialize().find("corner 1 22 20 0 0 24 2 2\n") != std::string::npos);
+        // a ray up into the hanging one meets its sloped underside: at x 2 it hangs down to y 1
+        Vec3 n;
+        float t = o.raycast({2, 0.01f, 1}, {0, 1, 0}, 5, &n);
+        CHECK(std::fabs(t - 0.99f) < 1e-3f && n.y < -0.5f);
+        // mirrored upside down, a floor wedge becomes the hanging one; turned about x and z, a solid of the same shape
+        Brush w; w.shape = BRUSH_WEDGE; w.box = {{0, 0, 0}, {4, 2, 2}};
+        Brush m2 = w;
+        CHECK(slopeTurned(w, m2, [](const Vec3& p) { return Vec3(p.x, 2 - p.y, p.z); }) && m2.up == 1 && m2.dir == 0);
+        auto rotX = [](const Vec3& p) { return Vec3(p.x, -p.z, p.y); };
+        Brush m3 = w; m3.box = {{0, -2, 0}, {4, 0, 2}};
+        CHECK(slopeTurned(w, m3, rotX));
+        for (int i = 0; i < 50; i++) {
+            const Vec3 p = {0.05f + 0.077f * i, 0.03f + 0.039f * (i % 50), 0.09f + 0.037f * ((i * 7) % 50)};
+            CHECK(brushContains(w, p) == brushContains(m3, rotX(p)));
+        }
+        // the same solid by its planes and its polygons: every face's corners on the box, its normal pointing out
+        int faces = 0;
+        for (const Brush& b : o.brushes) {
+            if (b.shape == BRUSH_BOX) continue;
+            slopePolygons(b, [&](const Vec3* p, int np, const Vec3& nn) {
+                Vec3 c;
+                for (int k = 0; k < np; k++) c += p[k] * (1.0f / np);
+                CHECK(!brushContains(b, c + nn * 0.01f) && brushContains(b, c - nn * 0.01f));
+                faces++;
+            });
+        }
+        CHECK(faces >= 15);
+    }
+    {   // a dash into the steep one goes up it (owner, 2026-10-28), where running at it doesn't
+        MoveState ms; ms.pos = {-9, 0.02f, -6};
+        for (int t = 0; t < 30; t++) { UserCmd idle; idle.msec = 8; pmove(ms, idle, m); }
+        float top = 0;
+        for (int t = 0; t < 60; t++) {
+            UserCmd cmd; cmd.yaw = 0; cmd.forward = 127; cmd.msec = 8; cmd.buttons = t < 3 ? BTN_DASH : 0;   // (yaw 0: facing -z)
+            pmove(ms, cmd, m);
+            top = std::max(top, ms.pos.y);
+        }
+        if (getenv("SLOPE_TRACE")) printf("    dash: %.2f %.2f %.2f top %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z, top);
+        CHECK(top > 1.5f);
+    }
+    {   // a wall on its side (up 2, rising toward +x along z: a diagonal wall) slides you along it, not stops you
+        Map d;
+        CHECK(d.parse("wedge 0 10 0 0 -4 4 4 4\n" + base));   // (dir 2 + 4 * 2: x thickness 0 at z -4 up to 4 at z 4)
+        MoveState ms; ms.pos = {3.5f, 0.02f, -6};
+        for (int t = 0; t < 150; t++) { UserCmd cmd; cmd.yaw = PI; cmd.forward = 127; cmd.msec = 8; pmove(ms, cmd, d); }   // (yaw pi: +z)
+        if (getenv("SLOPE_TRACE")) printf("    side wall: %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
+        CHECK(ms.pos.z > 0 && ms.pos.x > 4.0f && !d.boxSolid(playerBox(ms.pos, false)));
     }
 }
 

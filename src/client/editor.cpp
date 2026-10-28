@@ -479,14 +479,8 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
             case ED_BRUSH: {
                 Brush& b = tmp.brushes[e.idx];
                 b.box = box(m.brushes[e.idx].box, c);
-                if (b.shape != BRUSH_BOX) {   // a wedge / corner: where it rises (wedge: +X, -X, +Z, -Z; corner: -x-z, +x-z, +x+z, -x+z)
-                    if (op != ED_ROT_Y && op != ED_MIR_X && op != ED_MIR_Z) return false;   // (on its side or upside down: no such shape)
-                    static const int wRot[4] = {2, 3, 1, 0}, cMirX[4] = {1, 0, 3, 2}, cMirZ[4] = {3, 2, 1, 0};
-                    const bool w = b.shape == BRUSH_WEDGE;
-                    if (op == ED_ROT_Y) b.dir = (uint8_t)(w ? wRot[b.dir] : (b.dir + 1) % 4);
-                    else if (op == ED_MIR_X) b.dir = (uint8_t)(w ? (b.dir < 2 ? b.dir ^ 1 : b.dir) : cMirX[b.dir]);
-                    else b.dir = (uint8_t)(w ? (b.dir >= 2 ? b.dir ^ 1 : b.dir) : cMirZ[b.dir]);
-                }
+                // a wedge / corner: the dir and up that make it the same shape turned (on its side, upside down: any)
+                if (b.shape != BRUSH_BOX && !slopeTurned(m.brushes[e.idx], b, [&](const Vec3& p) { return pt(p, c); })) return false;
                 break;
             }
             case ED_LADDER: tmp.ladders[e.idx] = box(m.ladders[e.idx], c); break;
@@ -1087,7 +1081,7 @@ void Game::editorKey(int key, int mods) {
         }, false);
         return;
     }
-    if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +X / -X / +Z / -Z, corner high at each corner, box
+    if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +u / -u / +v / -v, corner high at each corner, box (up kept: turn it with the rotate / mirror keys)
         edModify([&](Map& m) {
             Brush& b = m.brushes[i];
             const int k = (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : 5 + b.dir) + 1;
@@ -1095,8 +1089,14 @@ void Game::editorKey(int key, int mods) {
             b.dir = (uint8_t)(k == 9 ? 0 : k <= 4 ? k - 1 : k - 5);
         }, false);
         const Brush& b = ed_.brushes[i];
-        static const char* wd[4] = {"+X", "-X", "+Z", "-Z"}, *cd[4] = {"-X -Z", "+X -Z", "+X +Z", "-X +Z"};
-        edNotify(b.shape == BRUSH_BOX ? std::string("box") : b.shape == BRUSH_WEDGE ? std::string("wedge rising toward ") + wd[b.dir] : std::string("corner high at ") + cd[b.dir]);
+        const SlopeFrame f = slopeFrame(b);
+        static const char* ax = "XYZ";
+        auto side = [&](int axis, bool plus) { return std::string(plus ? "+" : "-") + ax[axis]; };
+        static const char* ups[kSlopeUps] = {"", ", upside down", ", on its side (+X)", ", on its side (-X)", ", on its side (+Z)", ", on its side (-Z)"};
+        const bool cu = b.dir == 1 || b.dir == 2, cv = b.dir >= 2;
+        edNotify(b.shape == BRUSH_BOX ? std::string("box")
+                 : b.shape == BRUSH_WEDGE ? "wedge rising toward " + side(b.dir < 2 ? f.u : f.v, b.dir % 2 == 0) + ups[b.up]
+                 : "corner high at " + side(f.u, cu) + " " + side(f.v, cv) + ups[b.up]);
         return;
     }
     if ((key == GLFW_KEY_Q || key == GLFW_KEY_E) && kind == ED_SPAWN && !edLook_) {

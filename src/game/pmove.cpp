@@ -126,45 +126,54 @@ static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float ac
     vel += wishDir * a;
 }
 
-// A slope steeper than 45 degrees (map.h) is a wall: you can't walk or step up it, and you slide down it.
-static bool steepSlope(const Brush* b) { return b && b->shape != BRUSH_BOX && slopeSteepness(*b) > 1.0f + 1e-4f; }
-// The way down a slope at (x, z), on the xz plane (unit), and the outward normal of the face there.
-static void slopeDownhill(const Brush& b, float x, float z, float& dx, float& dz, Vec3& normal) {
-    Vec3 n[2]; float d[2];
-    const int np = slopePlanes(b, n, d);
-    int k = 0;
-    if (np == 2) {   // a corner: the face whose height is the lower one here (the top is the min of the two)
-        float gx, gz;
-        slopeFractions(b, x, z, gx, gz);
-        k = gx <= gz ? 0 : 1;
+// A slope's face that `box` touches, if it does (n its outward normal): the box's corner deepest toward the face's
+// plane lies on it, within a sweep's gap (a corner: the face of the two that the box is outside of).
+static bool slopeContact(const Brush* b, const AABB& box, Vec3& n) {
+    if (!b || b->shape == BRUSH_BOX) return false;
+    Vec3 pn[2]; float pd[2];
+    const int np = slopePlanes(*b, pn, pd);
+    float best = -1e30f;
+    for (int k = 0; k < np; k++) {
+        const Vec3 c = {pn[k].x > 0 ? box.mn.x : box.mx.x, pn[k].y > 0 ? box.mn.y : box.mx.y, pn[k].z > 0 ? box.mn.z : box.mx.z};
+        const float dist = dot(pn[k], c) - pd[k];
+        if (dist > best) { best = dist; n = pn[k]; }
     }
-    normal = n[k];
-    const float l = std::sqrt(n[k].x * n[k].x + n[k].z * n[k].z);
-    dx = l > 1e-6f ? n[k].x / l : 0; dz = l > 1e-6f ? n[k].z / l : 0;
+    return std::fabs(best) < 0.01f;
 }
+// A face up to 45 degrees from flat is a floor (you walk and stand on it); a steeper one, one on its side or one
+// facing down is a wall: you can't walk or step up it, and you slide down it.
+static bool floorFace(const Vec3& n) { return n.y >= 0.70710678f - 1e-4f; }
+static bool steepUnder(const Brush* b, const AABB& feet) { Vec3 n; return slopeContact(b, feet, n) && !floorFace(n); }
+static AABB shifted(AABB b, int axis, float d) { b.mn[axis] += d; b.mx[axis] += d; return b; }
 
-// Moves the hull through the world one axis at a time. Returns which axes were blocked. Falling onto a steep slope
-// slides you off it: what the slope stops of the fall goes sideways, downhill (*steep: that slope).
-static int slideMove(MoveState& s, const Map& map, Vec3 delta, bool crouched, const Brush** steep = nullptr) {
+// Moves the hull through the world one axis at a time. Returns which axes were blocked. A slope's wall face (steep,
+// on its side, or facing down) doesn't block: what it stops of the move goes on along it, on the axes still to come
+// (*wall: its outward normal, zero for none). Falling onto a steep face slides you off it: what it stops of the fall
+// goes sideways, downhill.
+static int slideMove(MoveState& s, const Map& map, Vec3 delta, bool crouched, Vec3* wall = nullptr) {
     int blocked = 0;
     const int order[3] = {1, 0, 2};
     const float scale = moveScale(s.mods);
-    if (steep) *steep = nullptr;
-    for (int i : order) {
+    if (wall) *wall = Vec3();
+    for (int o = 0; o < 3; o++) {
+        const int i = order[o];
         AABB box = playerBox(s.pos, crouched, scale);
         const Brush* hit = nullptr;
         float d = map.sweepAxis(box, i, delta[i], &hit);
+        Vec3 n;
         if (std::fabs(d - delta[i]) > 1e-5f) {
-            if (i == 1 && delta[i] < 0 && steepSlope(hit)) {
-                float dx, dz; Vec3 n;
-                slopeDownhill(*hit, s.pos.x, s.pos.z, dx, dz, n);
-                const float rest = d - delta[i], k = slopeSteepness(*hit);   // (the fall it stopped; the slope's rise / run)
-                delta.x += dx * rest / k; delta.z += dz * rest / k;
-                if (steep) *steep = hit;
-            } else {
-                blocked |= 1 << i;
-                if (i != 1 && steep && steepSlope(hit)) *steep = hit;
-            }
+            if (slopeContact(hit, shifted(box, i, d), n) && !floorFace(n)) {
+                if (wall) *wall = n;
+                const float rest = delta[i] - d;   // (what it stopped)
+                if (i == 1 && rest < 0 && n.y > 0) {   // a fall: on downhill, as far sideways as the face drops by it
+                    const float l = std::sqrt(n.x * n.x + n.z * n.z);
+                    delta.x -= n.x / l * rest * n.y / l; delta.z -= n.z / l * rest * n.y / l;
+                } else {   // along the face: what of it doesn't go into it, on the axes still to come
+                    Vec3 r; r[i] = rest;
+                    r -= n * dot(n, r);
+                    for (int k = o + 1; k < 3; k++) delta[order[k]] += r[order[k]];
+                }
+            } else blocked |= 1 << i;
         }
         s.pos[i] += d;
     }
@@ -550,14 +559,31 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     Vec3 delta = s.vel * dt;
     MoveState before = s;
-    const Brush* steep = nullptr;
-    int blocked = slideMove(s, map, delta, crouched, &steep);
-    // on a steep slope: the velocity along it (what goes into it is gone), so you slide down it as you fall
+    Vec3 wall;
+    int blocked = slideMove(s, map, delta, crouched, &wall);
+    const bool steep = wall.x != 0 || wall.y != 0 || wall.z != 0;
+    // against a slope's wall face: the velocity along it (what goes into it is gone), so you slide down it as you
+    // fall and along it as you run; it never lifts you (no climbing a steep slope by running at it). A dash does go
+    // up it (owner, 2026-10-28: "if you dash into a slope ... it should push you up it, even if the angle is >45";
+    // down a downward one too): its direction turns along the face, keeping its speed.
     if (steep) {
-        float dx, dz; Vec3 n;
-        slopeDownhill(*steep, s.pos.x, s.pos.z, dx, dz, n);
-        const float vn = dot(s.vel, n);
-        if (vn < 0) s.vel -= n * vn;
+        const float vn = dot(s.vel, wall);
+        if (vn < 0) {
+            const float vy = s.vel.y;
+            s.vel -= wall * vn;
+            if (!dashing) s.vel.y = std::min(s.vel.y, std::max(vy, 0.0f));
+            else {
+                const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
+                Vec3 d = {s.dashDirX * hs, s.dashUp, s.dashDirZ * hs};
+                const float dn = dot(d, wall);
+                if (dn < 0) {
+                    d -= wall * dn;
+                    const float l = length(d), h = std::sqrt(d.x * d.x + d.z * d.z);
+                    if (l > 1e-3f && h > 1e-4f) { s.dashUp = d.y / l; s.dashDirX = d.x / h; s.dashDirZ = d.z / h; }
+                    else if (l > 1e-3f) s.dashUp = d.y > 0 ? 1.0f : -1.0f;
+                }
+            }
+        }
     }
 
     // Step up small ledges when walking into them, and in the air too (jumping, falling, hooked, dashing):
@@ -615,7 +641,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     const bool canLand = s.vel.y <= 0.01f;   // (rising: no landing whatever the probe says, so don't sweep for it)
     const Brush* under = nullptr;
     float probe = canLand ? map.sweepAxis(feet, 1, -0.05f, &under) : 0.0f;
-    bool nowGround = canLand && probe > -0.049f && !steepSlope(under);   // (a steep slope is no floor: you slide)
+    bool nowGround = canLand && probe > -0.049f && !steepUnder(under, shifted(feet, 1, probe));   // (a wall face is no floor: you slide)
     bool bounced = false;
     if (nowGround) {
         s.pos.y += probe; // settle onto the floor
@@ -634,7 +660,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]), &under);
-        if (down > -(kStepHeight * mt.m[MV_STEP]) + 0.001f && !steepSlope(under)) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
+        if (down > -(kStepHeight * mt.m[MV_STEP]) + 0.001f && !steepUnder(under, shifted(feet, 1, down))) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
     }
 
     // the dash cooldown starts when a dash ends (its timer ran out, or a dash jump / super dash ended it), this step

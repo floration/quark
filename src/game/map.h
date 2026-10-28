@@ -21,13 +21,58 @@ struct Brush {
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
     int group = -1;         // the map group it's a part of (generated from groups[group]), -1 for none: seams (outlines) only between groups
     // Shape (map format 5): a box, or the solid under a sloped top inside the box (its slope is whatever the box gives).
-    //   wedge: one top edge kept; it rises from box.mn.y to box.mx.y toward dir (0 +x, 1 -x, 2 +z, 3 -z, as stairs).
-    //   corner: one top corner kept, a pyramid over the base with its apex above corner dir (0 -x-z, 1 +x-z, 2 +x+z, 3 -x+z).
-    // Both are heightfields: solid where box.mn.y <= y < box.mn.y + height * shapeHeight(x, z) (0..1).
+    // In the brush's own frame (u, h, v: see slopeFrame) the shape stands on its base, the box's low-h face:
+    //   wedge: one top edge kept; it rises from the base to the far face toward dir (0 +u, 1 -u, 2 +v, 3 -v, as stairs).
+    //   corner: one top corner kept, a pyramid over the base with its apex above corner dir (0 -u-v, 1 +u-v, 2 +u+v, 3 -u+v).
+    // Both are heightfields there: solid where 0 <= h < height * shapeHeight(u, v) (0..1).
+    // up turns that frame: 0 standing on the floor (u x, h y, v z: the default), 1 hanging from the ceiling (the same,
+    // mirrored upside down), 2 / 3 on its side rising toward +x / -x (u y, h x, v z), 4 / 5 rising toward +z / -z (u x,
+    // h z, v y); an odd one is the even one mirrored along h.
     uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER
     uint8_t dir = 0;
+    uint8_t up = 0;
 };
 enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2 };
+constexpr int kSlopeUps = 6;
+// A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
+struct SlopeFrame { int u, h, v; bool flip; };
+inline SlopeFrame slopeFrame(const Brush& b) {
+    const bool f = (b.up & 1) != 0;
+    switch (b.up >> 1) { case 1: return {1, 0, 2, f}; case 2: return {0, 2, 1, f}; default: return {0, 1, 2, f}; }
+}
+// (u, h, v) as (x, y, z): an even turn of the axes, or an odd one (a mirror): a polygon's corners go round the other way
+inline bool slopeFrameMirrors(const SlopeFrame& f) { return (f.u != 0) != f.flip; }
+inline Vec3 slopeToLocal(const Brush& b, const SlopeFrame& f, const Vec3& p) {
+    return {p[f.u], f.flip ? b.box.mn[f.h] + b.box.mx[f.h] - p[f.h] : p[f.h], p[f.v]};
+}
+inline Vec3 slopeToWorld(const Brush& b, const SlopeFrame& f, const Vec3& l) {
+    Vec3 p; p[f.u] = l.x; p[f.h] = f.flip ? b.box.mn[f.h] + b.box.mx[f.h] - l.y : l.y; p[f.v] = l.z;
+    return p;
+}
+inline Vec3 slopeDirToWorld(const SlopeFrame& f, const Vec3& l) { Vec3 p; p[f.u] = l.x; p[f.h] = f.flip ? -l.y : l.y; p[f.v] = l.z; return p; }
+// (per axis, so an empty box (mn > mx somewhere) stays empty: the mirror swaps h's ends)
+inline AABB slopeBoxToLocal(const Brush& b, const SlopeFrame& f, const AABB& a) {
+    AABB r{{a.mn[f.u], a.mn[f.h], a.mn[f.v]}, {a.mx[f.u], a.mx[f.h], a.mx[f.v]}};
+    if (f.flip) { const float s = b.box.mn[f.h] + b.box.mx[f.h]; r.mn.y = s - a.mx[f.h]; r.mx.y = s - a.mn[f.h]; }
+    return r;
+}
+inline AABB slopeBoxToWorld(const Brush& b, const SlopeFrame& f, const AABB& l) {
+    AABB r;
+    r.mn[f.u] = l.mn.x; r.mx[f.u] = l.mx.x; r.mn[f.v] = l.mn.z; r.mx[f.v] = l.mx.z;
+    if (f.flip) { const float s = b.box.mn[f.h] + b.box.mx[f.h]; r.mn[f.h] = s - l.mx.y; r.mx[f.h] = s - l.mn.y; }
+    else { r.mn[f.h] = l.mn.y; r.mx[f.h] = l.mx.y; }
+    return r;
+}
+// The brush in its own frame (up 0): what the frame functions below work on.
+inline Brush slopeLocal(const Brush& b) {
+    const SlopeFrame f = slopeFrame(b);
+    Brush l = b;
+    l.box = slopeBoxToLocal(b, f, b.box);
+    l.up = 0;
+    return l;
+}
+
+// In the brush's own frame (the world for up 0; slopeLocal for the rest): x u, y h, z v.
 // A slope's 0..1 fractions toward its high side along x and z (1 where it's high; a wedge rising along x ignores z: 1).
 inline void slopeFractions(const Brush& b, float x, float z, float& gx, float& gz) {
     const Vec3 sz = b.box.mx - b.box.mn;
@@ -40,7 +85,7 @@ inline void slopeFractions(const Brush& b, float x, float z, float& gx, float& g
         gz = (b.dir == 2 || b.dir == 3) ? fz : 1 - fz;
     }
 }
-// The solid's top at (x, z), inside the box's footprint.
+// Own frame: the solid's top at (x, z), inside the box's footprint.
 inline float brushTopAt(const Brush& b, float x, float z) {
     if (b.shape == BRUSH_BOX) return b.box.mx.y;
     float gx, gz;
@@ -48,11 +93,11 @@ inline float brushTopAt(const Brush& b, float x, float z) {
     const float h = std::min(1.0f, std::max(0.0f, std::min(gx, gz)));
     return b.box.mn.y + (b.box.mx.y - b.box.mn.y) * h;
 }
-// What of a brush is solid above height y: for a slope, the part of its box where the top is above y, which is a box
-// too (the heightfield falls away from the high side along x and z), up to box.mx.y. Empty (mn > mx) when nothing is.
-// A box is itself. Collision against a player's box uses this at the box's feet: every point of the player's footprint
-// over that part has solid above its feet.
-inline AABB brushSolidAbove(const Brush& b, float y) {
+// Own frame: what of a brush is solid above height y: for a slope, the part of its box where the top is above y, which
+// is a box too (the heightfield falls away from the high side along x and z), up to box.mx.y. Empty (mn > mx) when
+// nothing is. A box is itself. Collision against a player's box uses this at the box's feet: every point of the
+// player's footprint over that part has solid above its feet.
+inline AABB slopeSolidAbove(const Brush& b, float y) {
     if (b.shape == BRUSH_BOX) return b.box;
     AABB r = b.box;
     const float h = b.box.mx.y - b.box.mn.y;
@@ -67,7 +112,7 @@ inline AABB brushSolidAbove(const Brush& b, float y) {
     if (hiZ) r.mn.z = b.box.mn.z + f * sz; else if (loZ) r.mx.z = b.box.mx.z - f * sz;
     return r;
 }
-// The highest the solid reaches over the part of rectangle [x0, x1] x [z0, z1] inside its footprint.
+// Own frame: the highest the solid reaches over the part of rectangle [x0, x1] x [z0, z1] inside its footprint.
 inline float brushTopOver(const Brush& b, float x0, float x1, float z0, float z1) {
     if (b.shape == BRUSH_BOX) return b.box.mx.y;
     x0 = std::max(x0, b.box.mn.x); x1 = std::min(x1, b.box.mx.x); z0 = std::max(z0, b.box.mn.z); z1 = std::min(z1, b.box.mx.z);
@@ -75,19 +120,61 @@ inline float brushTopOver(const Brush& b, float x0, float x1, float z0, float z1
     const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3);
     return brushTopAt(b, hiX ? x1 : x0, hiZ ? z1 : z0);
 }
+// Own frame: the steepness of a slope's surface: its rise over its run (tan of the angle), per plane; the steepest.
+inline float slopeSteepness(const Brush& b) {
+    if (b.shape == BRUSH_BOX) return 0;
+    const Vec3 sz = b.box.mx - b.box.mn;
+    if (b.shape == BRUSH_WEDGE) return sz.y / std::max(b.dir < 2 ? sz.x : sz.z, 1e-6f);
+    return sz.y / std::max(std::min(sz.x, sz.z), 1e-6f);
+}
+
+// World (any up): what of a brush is solid above height y, as a box. Exact standing on the floor (up 0); otherwise the
+// part of its box above y (a little more than the solid: the bots' blockers only need it not to be less).
+inline AABB brushSolidAbove(const Brush& b, float y) {
+    if (b.shape == BRUSH_BOX || b.up == 0) return slopeSolidAbove(b, y);
+    AABB r = b.box;
+    r.mn.y = std::max(r.mn.y, y);
+    return r;
+}
+// World: the part of a brush that stops `box` moving along `axis` by `delta` (sign is all that matters), as a box: a
+// box itself; a slope, in its own frame, sideways the part solid above the box's base side, toward its base the whole
+// box, onto its top the top under the box's footprint (the slope's highest point there: a box's faces are flat).
+inline AABB brushObstacle(const Brush& b, const AABB& box, int axis, float delta) {
+    if (b.shape == BRUSH_BOX) return b.box;
+    const SlopeFrame f = slopeFrame(b);
+    const Brush l = slopeLocal(b);
+    const AABB lb = slopeBoxToLocal(b, f, box);
+    AABB r;
+    if (axis != f.h) r = slopeSolidAbove(l, lb.mn.y);
+    else if ((delta > 0) != f.flip) r = l.box;   // (toward its base: the flat face)
+    else {
+        r = l.box;
+        if (lb.mx.x <= l.box.mn.x || lb.mn.x >= l.box.mx.x || lb.mx.z <= l.box.mn.z || lb.mn.z >= l.box.mx.z) r.mn.x = r.mx.x + 1;   // (not over it: empty)
+        else r.mx.y = brushTopOver(l, lb.mn.x, lb.mx.x, lb.mn.z, lb.mx.z);
+    }
+    return slopeBoxToWorld(b, f, r);
+}
 // Does `box` overlap the brush's solid (open sets: touching isn't overlapping)?
 inline bool brushOverlaps(const Brush& b, const AABB& box) {
     if (!box.overlaps(b.box)) return false;
-    return b.shape == BRUSH_BOX || box.overlaps(brushSolidAbove(b, box.mn.y));
+    if (b.shape == BRUSH_BOX) return true;
+    const SlopeFrame f = slopeFrame(b);
+    const AABB lb = slopeBoxToLocal(b, f, box);
+    return lb.overlaps(slopeSolidAbove(slopeLocal(b), lb.mn.y));
 }
 inline bool brushContains(const Brush& b, const Vec3& p) {   // strictly inside
     if (!(p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)) return false;
-    return b.shape == BRUSH_BOX || p.y < brushTopAt(b, p.x, p.z);
+    if (b.shape == BRUSH_BOX) return true;
+    const SlopeFrame f = slopeFrame(b);
+    const Vec3 l = slopeToLocal(b, f, p);
+    return l.y < brushTopAt(slopeLocal(b), l.x, l.z);
 }
-// A slope's top planes (n . p <= d inside; n points out and up), 1 for a wedge, 2 for a corner; returns how many.
+// World: a slope's sloped planes (n . p <= d inside; n points out of it), 1 for a wedge, 2 for a corner; returns how many.
 inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
     if (b.shape == BRUSH_BOX) return 0;
-    const Vec3 sz = b.box.mx - b.box.mn;
+    const SlopeFrame fr = slopeFrame(b);
+    const Brush l = slopeLocal(b);
+    const Vec3 sz = l.box.mx - l.box.mn;
     const float h = sz.y;
     int k = 0;
     auto plane = [&](int axis, bool hiPositive) {   // top = mn.y + h * g, g = (p[axis] - lo) / s toward +, or (hi - p) / s toward -
@@ -95,25 +182,39 @@ inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
         Vec3 nn(0, 1, 0);
         // y - mn.y - h * g <= 0
         float dd;
-        if (hiPositive) { nn[axis] = -h / s; dd = b.box.mn.y - h * b.box.mn[axis] / s; }
-        else { nn[axis] = h / s; dd = b.box.mn.y + h * b.box.mx[axis] / s; }
+        if (hiPositive) { nn[axis] = -h / s; dd = l.box.mn.y - h * l.box.mn[axis] / s; }
+        else { nn[axis] = h / s; dd = l.box.mn.y + h * l.box.mx[axis] / s; }
         const float len = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
-        n[k] = nn * (1.0f / len); d[k] = dd / len; k++;
+        // to the world: n . (M p + c) <= d, M the frame's turn (its own inverse's transpose), c the mirror's offset
+        n[k] = slopeDirToWorld(fr, nn * (1.0f / len));
+        d[k] = (dd - (fr.flip ? nn.y * (b.box.mn[fr.h] + b.box.mx[fr.h]) : 0.0f)) / len;
+        k++;
     };
     if (b.shape == BRUSH_WEDGE) plane(b.dir < 2 ? 0 : 2, b.dir == 0 || b.dir == 2);
     else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
     return k;
 }
-// The steepness of a slope's surface: its rise over its run (tan of the angle), per plane; the steepest of them.
-inline float slopeSteepness(const Brush& b) {
-    if (b.shape == BRUSH_BOX) return 0;
-    const Vec3 sz = b.box.mx - b.box.mn;
-    if (b.shape == BRUSH_WEDGE) return sz.y / std::max(b.dir < 2 ? sz.x : sz.z, 1e-6f);
-    return sz.y / std::max(std::min(sz.x, sz.z), 1e-6f);
+// World: the sloped plane at p (a corner's: the one whose height is the lower there, the top being the min of the two).
+inline int slopePlaneAt(const Brush& b, const Vec3& p, Vec3& n, float& d) {
+    Vec3 pn[2]; float pd[2];
+    const int np = slopePlanes(b, pn, pd);
+    if (np == 0) return 0;
+    const int k = np == 2 && dot(pn[1], p) - pd[1] > dot(pn[0], p) - pd[0] ? 1 : 0;
+    n = pn[k]; d = pd[k];
+    return 1;
 }
-// A slope's faces as convex polygons (corners in order round each, 3 or 4), each with its outward normal: fn(pts, n, normal).
-// Sides that are whole rectangles come out as polygons too; the low edge has none. (The light bake builds its own.)
-template <class F> void slopePolygons(const Brush& br, F fn) {
+// World: a slope's faces as convex polygons (corners in order round each, 3 or 4), each with its outward normal:
+// fn(pts, n, normal). Sides that are whole rectangles come out as polygons too; the low edge has none. (The light
+// bake builds its own.)
+template <class F> void slopePolygons(const Brush& world, F fn) {
+    const SlopeFrame fr = slopeFrame(world);
+    const bool rev = slopeFrameMirrors(fr);
+    const Brush br = slopeLocal(world);
+    auto out = [&](const Vec3* lp, int np, const Vec3& ln) {
+        Vec3 p[4];
+        for (int k = 0; k < np; k++) p[k] = slopeToWorld(world, fr, lp[rev ? np - 1 - k : k]);
+        fn(p, np, slopeDirToWorld(fr, ln));
+    };
     const AABB& a = br.box;
     const float y0 = a.mn.y;
     const Vec3 c[4] = {{a.mn.x, y0, a.mn.z}, {a.mx.x, y0, a.mn.z}, {a.mx.x, y0, a.mx.z}, {a.mn.x, y0, a.mx.z}};
@@ -124,23 +225,41 @@ template <class F> void slopePolygons(const Brush& br, F fn) {
         const bool low0 = t[k].y < y0 + 1e-4f, low1 = t[k1].y < y0 + 1e-4f;
         Vec3 n; n[k % 2 == 0 ? 2 : 0] = (k == 0 || k == 3) ? -1.0f : 1.0f;
         if (low0 && low1) continue;
-        if (low0) { const Vec3 p[3] = {c[k], c[k1], t[k1]}; fn(p, 3, n); }
-        else if (low1) { const Vec3 p[3] = {c[k], c[k1], t[k]}; fn(p, 3, n); }
-        else { const Vec3 p[4] = {c[k], c[k1], t[k1], t[k]}; fn(p, 4, n); }
+        if (low0) { const Vec3 p[3] = {c[k], c[k1], t[k1]}; out(p, 3, n); }
+        else if (low1) { const Vec3 p[3] = {c[k], c[k1], t[k]}; out(p, 3, n); }
+        else { const Vec3 p[4] = {c[k], c[k1], t[k1], t[k]}; out(p, 4, n); }
     }
-    { const Vec3 p[4] = {c[0], c[3], c[2], c[1]}; fn(p, 4, Vec3(0, -1, 0)); }
+    { const Vec3 p[4] = {c[0], c[3], c[2], c[1]}; out(p, 4, Vec3(0, -1, 0)); }
     if (br.shape == BRUSH_WEDGE) {
         Vec3 pn[2]; float pd[2];
         slopePlanes(br, pn, pd);
-        fn(t, 4, pn[0]);
+        out(t, 4, pn[0]);
     } else {
         const int hi = br.dir, lo = (hi + 2) % 4;
         for (int side = 0; side < 2; side++) {
             const Vec3 p[3] = {t[lo], t[side == 0 ? (lo + 1) % 4 : (lo + 3) % 4], t[hi]};
             Vec3 n = normalize(cross(p[1] - p[0], p[2] - p[0]));
-            fn(p, 3, n.y < 0 ? n * -1.0f : n);
+            out(p, 3, n.y < 0 ? n * -1.0f : n);
         }
     }
+}
+// A slope turned or mirrored: `to` (its box already the turned box) gets the dir and up whose solid is `from`'s moved
+// by pt (a 90 degree turn or a mirror: any of them maps the 24 dir / up pairs onto each other). Tried on sample points
+// that sit on no slope's surface (fractions unlike on every axis, mirrored too); false if none fits.
+template <class P> bool slopeTurned(const Brush& from, Brush& to, P pt) {
+    static const float fx[3] = {0.11f, 0.34f, 0.58f}, fy[3] = {0.19f, 0.46f, 0.71f}, fz[3] = {0.27f, 0.52f, 0.86f};
+    const Vec3 s = from.box.mx - from.box.mn;
+    for (int up = 0; up < kSlopeUps; up++)
+        for (int dir = 0; dir < 4; dir++) {
+            to.up = (uint8_t)up; to.dir = (uint8_t)dir;
+            bool same = true;
+            for (int i = 0; i < 27 && same; i++) {
+                const Vec3 p = from.box.mn + Vec3(s.x * fx[i % 3], s.y * fy[i / 3 % 3], s.z * fz[i / 9]);
+                same = brushContains(from, p) == brushContains(to, pt(p));
+            }
+            if (same) return true;
+        }
+    return false;
 }
 // Ray vs a brush's solid: entry distance in [0, maxT] or -1; *normal the face it enters (axis faces as rayAABB's axis).
 inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const Brush& b, float maxT, Vec3* normal = nullptr) {
@@ -151,7 +270,7 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
         if (normal) { *normal = Vec3(); if (axis >= 0) (*normal)[axis] = dir[axis] > 0 ? -1.0f : 1.0f; }
         return t;
     }
-    // the box's slab interval, then cut by the top planes
+    // the box's slab interval, then cut by the sloped planes
     float tmin = 0, tmax = maxT;
     Vec3 nIn;
     for (int i = 0; i < 3; i++) {

@@ -672,11 +672,12 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
-        } else if (kw == "wedge" || kw == "corner") {   // "wedge|corner <material> <dir> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
+        } else if (kw == "wedge" || kw == "corner") {   // "wedge|corner <material> <dir + 4 * up> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
             Brush b; int dir = -1;
-            ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 && readBox(ls, b.box);
+            ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 * kSlopeUps && readBox(ls, b.box);
             b.shape = kw == "wedge" ? BRUSH_WEDGE : BRUSH_CORNER;
-            b.dir = (uint8_t)std::max(0, dir);
+            b.dir = (uint8_t)(std::max(0, dir) % 4);
+            b.up = (uint8_t)(std::max(0, dir) / 4);
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
                 hasWallbang |= b.material == 2;
@@ -901,7 +902,7 @@ std::string Map::serialize() const {
     for (auto& br : brushes) {
         if (br.generated) continue;
         if (br.shape == BRUSH_BOX) { box(matNames[br.material], br.box); continue; }
-        snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", br.shape == BRUSH_WEDGE ? "wedge" : "corner", br.material, (int)br.dir,
+        snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", br.shape == BRUSH_WEDGE ? "wedge" : "corner", br.material, (int)br.dir + 4 * br.up,
                  exactNum(nb[0], 24, br.box.mn.x), exactNum(nb[1], 24, br.box.mn.y), exactNum(nb[2], 24, br.box.mn.z),
                  exactNum(nb[3], 24, br.box.mx.x), exactNum(nb[4], 24, br.box.mx.y), exactNum(nb[5], 24, br.box.mx.z));
         o += b;
@@ -952,10 +953,10 @@ static std::string fmtBox(const AABB& b) {
 std::string describeMapObject(const Map& m, char kind, const char* verb, int i) {
     char t[220];
     switch (kind) {
-        case 'b': {   // (a wedge or corner: its shape and dir after the box, "w 2" / "c 0")
+        case 'b': {   // (a wedge or corner: its shape and dir + 4 * up after the box, "w 2" / "c 4")
             const Brush& br = m.brushes[i];
             snprintf(t, sizeof t, "b %s %d %d %s", verb, i, br.material, fmtBox(br.box).c_str());
-            if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", br.shape == BRUSH_WEDGE ? 'w' : 'c', (int)br.dir); }
+            if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", br.shape == BRUSH_WEDGE ? 'w' : 'c', (int)br.dir + 4 * br.up); }
             break;
         }
         case 's': { auto& sp = m.spawns[i]; snprintf(t, sizeof t, "s %s %d %d %.9g %.9g %.9g %.9g", verb, i, sp.team, sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180.0f / PI); break; }
@@ -1043,11 +1044,12 @@ bool applyMapEdit(Map& m, const std::string& op) {
             Brush b;
             if (!((bool)(in >> b.material) && validMapMaterial(b.material) && readBox(b.box))) return false;
             std::string shape;
-            if (in >> shape) {   // "w <dir>" / "c <dir>": a wedge / corner (map format 5)
+            if (in >> shape) {   // "w <dir + 4 * up>" / "c <dir + 4 * up>": a wedge / corner (map format 5)
                 int dir = -1;
-                if (!((shape == "w" || shape == "c") && (bool)(in >> dir) && dir >= 0 && dir < 4)) return false;
+                if (!((shape == "w" || shape == "c") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
                 b.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
-                b.dir = (uint8_t)dir;
+                b.dir = (uint8_t)(dir % 4);
+                b.up = (uint8_t)(dir / 4);
             }
             if (verb == "ins") ok = i >= 0 && (size_t)i <= n && n < kMaxMapBrushes && m.insertBrush((size_t)i, b);
             else ok = i >= 0 && (size_t)i < n && m.setBrush((size_t)i, b);
@@ -1429,15 +1431,8 @@ float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit) 
         }
     };
     forBox(q, [&](const Brush& br) {
-        if (br.shape == BRUSH_BOX) { clip(br.box, &br); return; }
-        // A slope (map.h): sideways, the part of it that is solid above the box's feet, a box; up, its flat bottom;
-        // down, its top under the box's footprint (the highest point of the slope there: feet are flat).
-        if (axis != 1) { clip(brushSolidAbove(br, box.mn.y), &br); return; }
-        if (delta > 0) { clip(br.box, &br); return; }
-        if (box.mx.x <= br.box.mn.x || box.mn.x >= br.box.mx.x || box.mx.z <= br.box.mn.z || box.mn.z >= br.box.mx.z) return;
-        AABB top = br.box;
-        top.mx.y = brushTopOver(br, box.mn.x, box.mx.x, box.mn.z, box.mx.z);
-        clip(top, &br);
+        // (a slope, map.h: the part of it in the way, a box)
+        clip(br.shape == BRUSH_BOX ? br.box : brushObstacle(br, box, axis, delta), &br);
     });
     for (const AABB& b : dynSolids) clip(b, nullptr);
     return delta;
