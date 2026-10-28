@@ -1457,7 +1457,7 @@ void Game::editorFrame(double dt) {
 
     // ---- 3D view
     static const Vec3 kNewMatColors[] = {{0.70f, 0.85f, 0.95f}, {0.80f, 0.70f, 0.48f}, {0.55f, 0.36f, 0.20f}, {0.85f, 0.85f, 0.88f},
-                                         {0.30f, 0.58f, 0.20f}, {0.12f, 0.12f, 0.13f}, {0.62f, 0.64f, 0.68f}, {0.50f, 0.52f, 0.55f}};   // ice .. diamond plate
+                                         {0.30f, 0.58f, 0.20f}, {0.12f, 0.12f, 0.13f}, {0.62f, 0.64f, 0.68f}, {0.50f, 0.52f, 0.55f}, {0.62f, 0.24f, 0.17f}};   // ice .. diamond plate, brick
     static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
@@ -1683,7 +1683,7 @@ void Game::editorFrame(double dt) {
                                             "MATERIAL: WATER (WADE IN IT)", "MATERIAL: LAVA (KILLS)", "MATERIAL: TRIM (NOT SOLID)", "MATERIAL: CLIP (INVISIBLE WALL)",
                                             "MATERIAL: NOGRAPPLE (NO GRAPPLE)", "MATERIAL: ACID (HURTS)", "MATERIAL: ICE (SLIPPERY)", "MATERIAL: SAND",
                                             "MATERIAL: WOOD", "MATERIAL: PLASTIC", "MATERIAL: GRASS", "MATERIAL: RUBBER (BOUNCY)", "MATERIAL: STEEL",
-                                            "MATERIAL: DIAMOND PLATE"};
+                                            "MATERIAL: DIAMOND PLATE", "MATERIAL: BRICK"};
     static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
     static const std::vector<std::string> mats(std::begin(matLabels), std::end(matLabels));
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)

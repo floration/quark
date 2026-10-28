@@ -709,6 +709,21 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             for (int pa = 0; pa < nu; pa++) {
                 const float pu0 = sp.bu[pa], pu1 = sp.bu[pa + 1], pv0 = sp.bv[pb], pv1 = sp.bv[pb + 1];
                 const uint8_t off = sp.off[(size_t)pb * nu + pa];
+                // grass: green down the top 1/4 m of a side (the shader), only on a piece at the side's top with nothing
+                // standing on the block or flush above it there (owner, 2026-10-28); else the material's fraction says
+                // "no fringe" (0.25 over: the shader rounds it away)
+                float matTag = (float)f.material;
+                if (f.material == kMatGrass && f.axis != 1) {
+                    const bool topU = f.axis == 0;   // (x faces: u is y; z faces: v is y)
+                    bool open = topU ? pu1 >= f.u1 - 1e-4f : pv1 >= f.v1 - 1e-4f;
+                    for (int k = 0; k < 3 && open; k++) {
+                        const float t = (k + 0.5f) / 3.0f;
+                        Vec3 p = topU ? facePoint(f, f.u1 + 0.02f, lerpf(pv0, pv1, t)) : facePoint(f, lerpf(pu0, pu1, t), f.v1 + 0.02f);
+                        const Vec3 nn = faceNormal(f) * 0.02f;
+                        open = !solidAt.solid(p - nn) && !solidAt.solid(p + nn);
+                    }
+                    if (!open) matTag += 0.25f;
+                }
                 auto vert = [&](float u, float v) {
                     WorldVertex wv;
                     Vec3 p = facePoint(f, u, v) + lift;
@@ -716,7 +731,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                     memcpy(wv.normal, &n.x, 12);
                     wv.uv[0] = (f.rx + 1 + (u - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;
                     wv.uv[1] = (f.ry + 1 + (v - f.v0) / (f.v1 - f.v0) * f.wv) / (float)H;
-                    wv.material = (float)f.material;
+                    wv.material = matTag;
                     wv.edge[0] = u - pu0; wv.edge[1] = v - pv0; wv.edge[2] = pu1 - pu0; wv.edge[3] = pv1 - pv0;
                     // outline distance = min(edge.xy, edge.zw - edge.xy): push an edge away to hide its outline
                     if (off & 1) { wv.edge[0] += B; wv.edge[2] += B; }

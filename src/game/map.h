@@ -297,18 +297,19 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
 // 12-19 (owner, 2026-10-28): solid like base, each its own look made in the world shader (no textures); ice is slippery
 // underfoot, rubber bounces you off it.
-constexpr int kMapMaterials = 20;
+constexpr int kMapMaterials = 21;
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
 constexpr int kMatIce = 12, kMatSand = 13, kMatWood = 14, kMatPlastic = 15, kMatGrass = 16, kMatRubber = 17, kMatSteel = 18, kMatDiamond = 19;
+constexpr int kMatBrick = 20;   // classic red brick (owner, 2026-10-28)
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid; clip is solid to players only)
-inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatDiamond); }
+inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatBrick); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip isn't drawn)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatDiamond); }
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatBrick); }
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
 // a box line's keyword per material in map files ("box" is base)
 inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid",
-                                                    "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate"};
+                                                    "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;

@@ -3510,7 +3510,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 20 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatDiamond) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, base
+    CHECK(seen.size() == 21 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatBrick) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, brick, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -4501,7 +4501,7 @@ static void testSlopes() {
         Map b;
         CHECK(b.parse(t) && b.serialize() == t);
         Map bad;
-        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 20 0 0 0 0 1 1 1\n" + base));
+        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 21 0 0 0 0 1 1 1\n" + base));
     }
     Map m;
     // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
@@ -4701,7 +4701,7 @@ static void testMaterials() {
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
         for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k));
         const std::string out = m.serialize();
-        CHECK(out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
+        CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
     auto slide = [](const char* floor) {   // running at 8 m/s, then nothing held for 0.5 s: how far the speed fell
         Map m;

@@ -191,7 +191,11 @@ void main() {
         float n = fbm(q * 0.6), blade = hash2(floor(q * 30.0));
         vec3 green = lin(mix(vec3(0.20, 0.42, 0.12), vec3(0.36, 0.60, 0.20), n)) * (0.85 + 0.25 * blade);
         if (an.y > 0.5) albedo = green;
-        else albedo = mix(lin(vec3(0.36, 0.26, 0.17)) * (0.85 + 0.2 * fbm(q * 2.0)), green, smoothstep(0.55, 0.7, fbm(vec2(q.x * 3.0, q.y * 0.7))));   // (earth, mossy streaks)
+        else {   // sides: earth, green down the top 1/4 m (ragged) where the top is open (the bake says: no 0.25 in vMat)
+            float top = an.x > 0.5 ? vEdge.z - vEdge.x : vEdge.w - vEdge.y;   // (to the piece's top edge: the side's top)
+            float fringe = abs(vMat - float(mat)) < 0.1 ? 1.0 - smoothstep(0.2, 0.26, top + 0.05 * (vnoise(q * vec2(9.0, 3.0)) - 0.5)) : 0.0;
+            albedo = mix(lin(vec3(0.36, 0.26, 0.17)) * (0.85 + 0.2 * fbm(q * 2.0)), green, fringe);
+        }
     } else if (mat == 17) {   // rubber: near-black, matte, fine pebbled dots
         vec2 d = fract(q * 12.0) - 0.5;
         albedo = lin(vec3(0.13, 0.13, 0.14)) * (0.85 + 0.3 * smoothstep(0.32, 0.2, length(d)));
@@ -199,6 +203,15 @@ void main() {
     } else if (mat == 18) {   // steel: light grey, long brushed streaks, a bright sharp highlight
         albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoise(vec2(q.x * 0.5, q.y * 60.0)));
         spec = 0.7; gloss = 48.0;
+    } else if (mat == 20) {   // brick: classic red, running bond (0.2 x 0.065 m bricks, 1 cm mortar), each brick its own shade
+        vec2 r = an.y > 0.5 ? q : (an.x > 0.5 ? vec2(vPos.z, vPos.y) : vec2(vPos.x, vPos.y));
+        float row = floor(r.y / 0.075);
+        vec2 b = vec2(r.x / 0.21 + 0.5 * mod(row, 2.0), r.y / 0.075);
+        vec2 cell = floor(b), f = fract(b) * vec2(0.21, 0.075);
+        float mortar = min(min(f.x, 0.21 - f.x), min(f.y, 0.075 - f.y));
+        float m = smoothstep(0.004, 0.007, mortar);
+        vec3 brick = mix(vec3(0.55, 0.20, 0.13), vec3(0.70, 0.30, 0.20), hash2(cell)) * (0.9 + 0.15 * vnoise(r * 40.0));
+        albedo = lin(mix(vec3(0.62, 0.60, 0.55), brick, m));
     } else {   // diamond plate: grey metal with raised diamonds (lit on one side, shadowed on the other), in rows offset
         vec2 r = vec2(q.x + q.y, q.x - q.y) * 2.5;
         vec2 cell = floor(r), f = fract(r) - 0.5;
