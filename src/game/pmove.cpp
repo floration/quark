@@ -42,8 +42,14 @@ constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DA
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 1.0f;       // ...and your old speed plus this, so dashes build momentum (owner 1.17: was 3)
 constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
-constexpr float kDashVerticalUp = 0.4f;    // looking straight up makes the dash this vertical (the sine: 40% of its speed
-                                           // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways)...
+constexpr float kDashAirGap = 0.35f;    // a dash in the air leaves with this share of the gap between your speed and
+                                        // kDashExitMax added (owner, 2026-10-28: "if you dash at 10 m/s it should let you
+                                        // keep a lot more than if you dash at 25"): 0 -> 11.2, 10 -> 17.7, 25 -> 27.5,
+                                        // 31 -> 31.35 (then kDashKeep's +1 is more); on the floor only kDashKeep, as before.
+                                        // A custom mode's dash keep multiplier scales it too
+constexpr float kDashVerticalUp = 0.5f;    // looking straight up makes the dash this vertical (the sine: 50% of its speed
+                                           // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways;
+                                           // owner 2026-10-28: 40% -> 50% up)...
 constexpr float kDashVerticalDown = 0.9f;  // ...and looking straight down this (90% down); a custom mode's dash vertical
                                            // multiplier scales both
 // Dash jump and super dash (owner, after Celeste's super and hyper): jump during a dash on the floor and the dash
@@ -257,7 +263,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // at +0.5 deg a jump made a plain 11 m/s dash, not the 24 m/s dash jump). jumpGrace is on the wire: no new state.
         if (grounded) s.jumpGrace = jumpWindow;
         s.dashFromSpeed = h;   // (a super dash adds to this)
-        s.dashExitSpeed = std::min((kDashExitMax * mt.m[MV_DASH_EXIT_MAX]), std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + (kDashKeep * mt.m[MV_DASH_KEEP])));
+        const float exitMax = kDashExitMax * mt.m[MV_DASH_EXIT_MAX];
+        float keep = kDashKeep * mt.m[MV_DASH_KEEP];   // (in the air: more the further below the top you dash)
+        if (!grounded) keep = std::max(keep, kDashAirGap * mt.m[MV_DASH_KEEP] * (exitMax - h));
+        s.dashExitSpeed = std::min(exitMax, std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + keep));
         s.dashUp = std::sin(cmd.pitch) * ((cmd.pitch > 0 ? kDashVerticalUp : kDashVerticalDown) * mt.m[MV_DASH_VERTICAL]);
         s.dashTimer = (kDashTime * mt.m[MV_DASH_TIME]);
         s.dashBounces = 0;
@@ -286,9 +295,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (grounded && down) {
                 // the hyper: the speed carried into the dash + kSuperDashBoost (owner 1.18.7: "+5 of current"), at least
                 // what the dash leaves with on its own (11 from a standstill), at most kSuperDashMax
+                // (the floor dash's exit, not an air dash's kDashAirGap one: a hyper out of the air is the same as off the floor)
                 const float cap = kSuperDashMax * mt.m[MV_SUPER_DASH_MAX];
-                sp = std::min(std::max(s.dashExitSpeed, s.dashFromSpeed + kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST]),
-                              std::max(cap, s.dashExitSpeed));
+                const float own = std::min(kDashExitMax * mt.m[MV_DASH_EXIT_MAX],
+                                           std::max(kDashExitMin * mt.m[MV_DASH_EXIT_MIN], s.dashFromSpeed + kDashKeep * mt.m[MV_DASH_KEEP]));
+                sp = std::min(std::max(own, s.dashFromSpeed + kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST]), std::max(cap, own));
                 // the bounce: the dash's down share of that speed goes up (the further down it was aimed, the higher;
                 // owner 1.18: "the lower you look the higher you should bounce"), at most kSuperDashJump; the rest stays
                 // level, so the speed is the same whichever way it points

@@ -131,6 +131,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     for (auto& q : latQ_) glGenQueries(1, &q.q);
     audio_.setAnnouncer(cfg_.announcerVoice);
     audio_.setExclusive(cfg_.exclusiveAudio);
+    if (!opts_.uiTest) setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
     audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
     if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
@@ -804,7 +805,10 @@ void Game::onKey(int key, int action, int mods) {
     }
 }
 
-void Game::onFocus(bool focused) { if (focused) focusGained_ = true; else swallowedBtn_ = 0; }   // (let go while away: no release comes)
+void Game::onFocus(bool focused) {
+    if (focused) focusGained_ = true; else swallowedBtn_ = 0;   // (let go while away: no release comes)
+    if (!opts_.uiTest) setGamePriority(cfg_.prioritize && focused);   // (alt-tabbed: the other programs get their share back)
+}
 
 void Game::onMouseButton(int button, int action) {
     // The click that brings the game back from another window (alt-tab, then a click on it) fired the weapon: a
@@ -5312,6 +5316,10 @@ void Game::drawVideoSettings(const SetLayout& L) {
     }
     f.next();
     f.hint("KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER", "F3 SHOWS INPUT->FRAME LATENCY");
+    if (ui_.toggle(f.x(), f.top(), w, h, "PRIORITIZE GAME", cfg_.prioritize, UiExp::cfg("prioritize")) && !uiTest_)
+        setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+    f.next();
+    f.hint("GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED", "(BROWSER VIDEOS, ELECTRON APPS WAIT)");
 #else
     f.y -= 16;
     f.hint("", "F3 SHOWS INPUT->FRAME LATENCY");

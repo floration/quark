@@ -856,13 +856,14 @@ static void testMovement() {
         for (float r : {45.0f, 90.0f, 180.0f}) CHECK(strafeAt(r) > run * 1.1f);   // a wide range of turn speeds gains
         CHECK(strafeAt(720.0f) > run * 0.65f);   // overstrafing (way too fast) loses some speed (the old air control: 5.0 m/s of 8; 1.17: 6.6 of 9.5)
     }
-    // a dash leaves you faster than you started (it used to settle back down): your speed + 1 (1.17: was + 3)
+    // a dash leaves you faster than you started (it used to settle back down): in the air your speed + 35% of what's left
+    // up to 32 (owner 2026-10-28), at least + 1 (1.17: was + 3)
     MoveState d = b; d.dashCharges = 2; d.dashCooldownMs = 0; d.flags &= ~MF_DASHHELD;
     float before = hspeed(d);
     UserCmd dc; dc.msec = 1; dc.yaw = k.yaw; dc.forward = 127; dc.buttons = BTN_DASH;
     for (int i = 0; i < 200; i++) pmove(d, dc, open);
     printf("  dash: %.1f -> %.1f m/s after the burst\n", before, hspeed(d));
-    CHECK(hspeed(d) > before + 0.9f && hspeed(d) < before + 1.1f);
+    { const float want = before + std::max(1.0f, 0.35f * (32.0f - before)); CHECK(hspeed(d) > want - 0.1f && hspeed(d) < want + 0.1f); }
     // landing hard while holding jump bounces higher than a normal jump
     auto peak = [&](float dropFrom) {
         MoveState q; q.pos = {0, dropFrom, 0};
@@ -934,7 +935,8 @@ static void testMovementTuning() {
         step(q, c, m);
         CHECK(std::fabs(q.vel.z - 4.0f) < 1e-3f && q.vel.y > 7.34f * 0.7f - 0.05f && q.vel.y <= 7.34f * 0.7f);
     }
-    { // the dash keeps 1 m/s: the exit is max(11, speed + 1) up to 32; chained from a standstill: 11, 12, 13...
+    { // an air dash keeps 35% of the gap to 32 (at least 1 m/s): the exit is max(11, speed + max(1, 0.35 (32 - speed)))
+      // up to 32; chained from a standstill: 11.2, 18.48, 23.21, 26.29 (owner 2026-10-28; it was 11, 12, 13, 14)
         MoveState q = standing();
         UserCmd d; d.buttons = BTN_DASH;
         std::vector<float> exits;
@@ -947,7 +949,8 @@ static void testMovementTuning() {
             step(q, none, open);   // (release the key)
         }
         printf("  chained dashes: %.2f %.2f %.2f %.2f m/s\n", exits[0], exits[1], exits[2], exits[3]);
-        for (int k = 0; k < 4; k++) CHECK(std::fabs(exits[k] - (11.0f + k)) < 0.02f);
+        float want = 0;
+        for (int k = 0; k < 4; k++) { want = std::max(11.0f, want + std::max(1.0f, 0.35f * (32.0f - want))); CHECK(std::fabs(exits[k] - want) < 0.02f); }
         MoveState f; f.pos = {0, 20, 0}; f.vel = {0, 0, -31.5f};
         step(f, d, open);
         while (f.dashTimer > 0) step(f, UserCmd(), open);

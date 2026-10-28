@@ -52,6 +52,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "present_mode") presentMode = std::min(std::max(iv, 0), 3);
         else if (k == "latent_offset_us") latentOffsetUs = std::min(std::max(iv, -4000), 4000);
         else if (k == "gpu_max_clocks") gpuMaxClocks = iv != 0;
+        else if (k == "prioritize") prioritize = iv != 0;
         else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;
         else if (k == "fullscreen") { if (iv) displayMode = 1; }
@@ -201,7 +202,7 @@ void Settings::save() const {
 std::string Settings::toText() const {
     std::ostringstream f;
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
-      << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
+      << "\npresent_mode=" << presentMode << "\nlatent_offset_us=" << latentOffsetUs << "\ngpu_max_clocks=" << gpuMaxClocks << "\nprioritize=" << prioritize << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nrender_scale=" << renderScale << "\nrender_sharpen=" << renderSharpen << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nvolume_effects=" << volumeEffects << "\nvolume_announcer=" << volumeAnnouncer << "\nquips=" << quips << "\nvolume_quips=" << volumeQuips << "\nhitsounds=" << hitsounds << "\nexclusive_audio=" << exclusiveAudio
