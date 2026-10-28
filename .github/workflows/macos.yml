@@ -1,0 +1,136 @@
+# The macOS build, on its own (owner, 2026-10-28: "it should still pass even if no macos build"). GitHub often has no
+# macOS runner free for hours; inside build-and-release (release.yml) that held the run, and cancelling it to skip
+# macOS turned the run red although Windows and Linux were fine. Here it waits as long as it takes without holding up
+# or failing anything: build-and-release publishes Windows + Linux (testing prerelease or production release), and
+# this adds the macOS files to that same release when its build is done, with their own signed manifest
+# (quark-release-macos.txt, which the launcher prefers for its platform), as release-testing-macos did before.
+#   prep     (Linux) waits for this commit's build-and-release run: its meta (channel, tag, version: the meta artifact)
+#            and its light bakes (the lightcache artifact), so both builds are the same version with the same light
+#   macos    (the Mac) builds and packages, as the macos job of release.yml did
+#   publish  (Linux, testing and production only) waits for the release to exist, then signs and uploads the files
+# A run whose build-and-release was cancelled (a newer push to a work branch) or had nothing to build stops in prep.
+name: macos
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' && github.ref_name != 'testing' }}   # (as build-and-release)
+jobs:
+  prep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      actions: read   # (build-and-release's run, jobs and artifacts)
+    outputs:
+      run: ${{ steps.w.outputs.run }}
+      build: ${{ steps.w.outputs.build }}
+      channel: ${{ steps.w.outputs.channel }}
+      tag: ${{ steps.w.outputs.tag }}
+      version: ${{ steps.w.outputs.version }}
+      suffix: ${{ steps.w.outputs.suffix }}
+    steps:
+      - id: w
+        name: wait for build-and-release's meta and light bakes on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          end=$(( $(date +%s) + 80 * 60 ))
+          while :; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=20" \
+              --jq "[.workflow_runs[] | select(.head_branch == \"$GITHUB_REF_NAME\")][0].id // empty") || run=""
+            if [ -n "$run" ]; then
+              jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" --jq .jobs) || jobs="[]"
+              st() { echo "$jobs" | jq -r --arg n "$1" '[.[] | select(.name == $n)][0] | (.status // "none") + " " + (.conclusion // "")'; }
+              meta=$(st meta); light=$(st lightcache)
+              runst=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq .status) || runst=""
+              if [ "$meta" = "completed success" ] && [ "$light" = "completed success" ]; then break; fi
+              case "$meta $light" in *"completed "[!s]*|*"completed skipped"*) echo "build-and-release run $run: meta '$meta', lightcache '$light': no macOS build"; echo "build=false" >> "$GITHUB_OUTPUT"; exit 0;; esac
+              if [ "$runst" = completed ]; then echo "build-and-release run $run ended without its light bakes: no macOS build"; echo "build=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+            fi
+            [ "$(date +%s)" -lt "$end" ] || { echo "::error::no build-and-release meta + light bakes for $GITHUB_SHA after 80 min"; exit 1; }
+            sleep 30
+          done
+          mkdir -p m && gh run download "$run" -R "$GITHUB_REPOSITORY" -n meta -D m
+          . m/meta.env
+          case "$channel" in production|testing|none) build=true ;; *) build=false ;; esac   # (site / final: nothing to build)
+          { echo "run=$run"; echo "build=$build"; echo "channel=$channel"; echo "tag=$tag"; echo "version=$version"; echo "suffix=$suffix"; } >> "$GITHUB_OUTPUT"
+          echo "### macOS for build-and-release run $run: $channel ${tag:-(build only)} $version" >> "$GITHUB_STEP_SUMMARY"
+
+  macos:
+    needs: prep
+    if: needs.prep.outputs.build == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read   # (the light bakes from build-and-release's run)
+    env: { QUARK_VERSION_SUFFIX: "${{ needs.prep.outputs.suffix }}" }   # (testing: .<N>, as the other platforms)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: lightcache, path: lightcache, run-id: "${{ needs.prep.outputs.run }}", github-token: "${{ github.token }}" }
+      - run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
+            -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
+          cmake --build build -j
+          sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+          mkdir -p pkg && cp -r build/quark.app build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps pkg/
+          mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
+          # (the bakes only where the game reads its maps: pkg/maps is the dedicated server's, which draws nothing)
+          cp -r lightcache pkg/quark.app/Contents/Resources/maps/lightcache && sh tools/check_lightcache.sh build pkg/quark.app/Contents/Resources/maps/lightcache
+          python3 tools/pack.py pkg quark-macos.qpak
+          mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
+          zip -qry quark-macos.zip quark-macos
+          zip -j quark-launcher-macos.zip build-launcher/quark_launcher
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
+
+  publish:   # into the release build-and-release made for this commit (testing prerelease or production release)
+    needs: [prep, macos]
+    if: needs.prep.outputs.channel == 'testing' || needs.prep.outputs.channel == 'production'
+    runs-on: ubuntu-24.04
+    environment: ${{ needs.prep.outputs.channel }}   # (the signing key: testing / production, as their release jobs)
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: macos, path: dist/macos }
+      - name: wait for the release, sign, upload
+        env:
+          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ needs.prep.outputs.channel }}
+          TAG: ${{ needs.prep.outputs.tag }}
+          VER: ${{ needs.prep.outputs.version }}
+          RUN: ${{ needs.prep.outputs.run }}
+        run: |
+          set -eu
+          # (usually out long before a Mac is free; while build-and-release still runs, wait for it, up to 100 min)
+          end=$(( $(date +%s) + 100 * 60 ))
+          until gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; do
+            st=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq .status) || st=""
+            if [ "$st" = completed ] && ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::build-and-release run $RUN finished without publishing $TAG: no release to add macOS to"; exit 1
+            fi
+            [ "$(date +%s)" -lt "$end" ] || { echo "::error::no release $TAG after 100 min"; exit 1; }
+            sleep 30
+          done
+          # quark-release.txt went out without this package: its own signed manifest (the launcher prefers it)
+          sh tools/sign/sign_release.sh --launchers dist/macos/quark-macos.qpak
+          python3 tools/qpakz.py dist/macos/quark-macos.qpak
+          sh tools/sign/release_manifest.sh "$CHANNEL" "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak dist/macos/quark-macos.qpakz dist/macos/quark-launcher-macos.zip \
+            dist/macos/quark-macos.zip > dist/macos/quark-release-macos.txt
+          sh tools/sign/sign_release.sh dist/macos/quark-*   # (the packages, the launcher, the zip and the manifest)
+          (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)
+          sh tools/sign/sign_release.sh dist/macos/SHA256SUMS-macos
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*

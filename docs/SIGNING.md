@@ -55,7 +55,7 @@ passed off as another release or channel). A testing build's macOS package is ad
 it comes with its own signed `quark-release-macos.txt`, which the launcher prefers over `quark-release.txt` when
 present. Releases from before signing (<= 1.16) have neither and stay installable (see the end of this page).
 
-Signing runs in the `release` / `release-testing` / `release-testing-macos` jobs of `.github/workflows/release.yml`
+Signing runs in the `release` / `release-testing` jobs of `.github/workflows/release.yml` (and macOS in `publish` of `.github/workflows/macos.yml`)
 (tools/sign/sign_release.sh), in this order: the launcher inside each package is signed and its `.sig` is added to the
 package (`sign_release.sh --launchers`, tools/sign/qpak_launcher_sig.py: it changes the package, so it comes first),
 then the manifest is made (naming every download), then every published file gets its `.sig`, then `SHA256SUMS` is

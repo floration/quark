@@ -17,5 +17,6 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 
 ## Downloads
 - **Smaller game downloads in the launcher (coming)**: every release now also publishes a compressed copy of the game package, about half the size (Windows: about 40 MB instead of 72). The launcher starts using it once its own update ships; until then nothing changes, and the old package stays for older launchers.
+- **Releases no longer wait for a Mac**: GitHub often has no Mac free for hours, which held releases back (1.19.1 waited for one). Windows and Linux now go out as soon as they're built, and the macOS files follow when a Mac is free.
 
 - Human-made assets: 16.1%, unchanged (no asset changes).

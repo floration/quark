@@ -1,5 +1,5 @@
-# Builds every push and checks it: meta (VERSION, changelogs, no secrets), the Windows / Linux / macOS builds and
-# packages, the website's data, and (only a build a human marks as a final test: meta's sanitizer trigger) the
+# Builds every push and checks it: meta (VERSION, changelogs, no secrets), the Windows / Linux builds and
+# packages (macOS: its own workflow, macos.yml, which never holds this one up or turns it red), the website's data, and (only a build a human marks as a final test: meta's sanitizer trigger) the
 # sanitizers + fuzzers, which fail only on memory / undefined-behaviour errors and which no release waits for.
 # CI runs no gameplay or UI tests (owner, 2026-10-24): quark_tests and quark --uitest are run locally before every
 # push, and the testing build is play-tested by hand (docs/RELEASE_CHECKLIST.md) before production.
@@ -14,10 +14,12 @@
 #               released yet, changelogs/<VERSION>.md. Before 1.19.0 it was <VERSION>-test.<N> (a semver
 #               prerelease, below the release) and every push bumped VERSION. The tag
 #               must not start with v<digit> or a digit: launchers 0.12-1.16 install the highest such tag even when
-#               it's a prerelease. macOS is optional: the prerelease goes out with
-#               Windows + Linux, and the macOS files are added when (if) that build finishes.
+#               it's a prerelease. The prerelease goes out with Windows + Linux; macos.yml adds the macOS files
+#               when (if) a Mac runner was free for it.
 #   PRODUCTION  a pushed tag v<VERSION> (no suffix) on a commit of the protected default branch: a signed release
-#               marked latest, only when Windows, Linux AND macOS all built; then the website. It needs
+#               marked latest, when Windows and Linux built (owner, 2026-10-28: "it should still pass even if no
+#               macos build"; until then it waited for macOS too); then the website. macos.yml adds the macOS files
+#               when a Mac was free (GitHub often has none for hours). It needs
 #               changelogs/<VERSION>.md and changelogs/full/<VERSION>.md, and no changelogs/next.md or
 #               changelogs/full/next.md left (the release PR renames them to <VERSION>.md, bumping VERSION).
 #   SITE        a manual run on the default branch with "site" ticked: builds, then publishes only the website for the
@@ -162,6 +164,10 @@ jobs:
           esac
           { echo "channel=$CHANNEL"; echo "version=$V$SUFFIX"; echo "suffix=$SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "notes=$NOTES"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}$([ "$SANITIZERS" = true ] && echo ', sanitizers')" >> "$GITHUB_STEP_SUMMARY"
+          # (for macos.yml: the same channel, tag and version for the macOS build of this commit)
+          mkdir -p meta-out && printf 'channel=%s\ntag=%s\nversion=%s\nsuffix=%s\n' "$CHANNEL" "$TAG" "$V$SUFFIX" "$SUFFIX" > meta-out/meta.env
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: meta, path: meta-out/meta.env, retention-days: 3 }   # (macos.yml reads it)
       - name: no keys, tokens or secrets in the repository (tools/check_secrets.py; the pre-commit hook runs it too)
         run: python3 -I tools/check_secrets.py
       - name: the asset provenance registry is valid (tools/provenance.py check, docs/PROVENANCE.md)
@@ -327,75 +333,11 @@ jobs:
         if: failure()
         with: { name: fuzz-crashes, path: "build/crash-*", retention-days: 7, if-no-files-found: ignore }
 
-  macos:
-    needs: [meta, lightcache]
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (as windows)
-    runs-on: macos-latest
-    env: { QUARK_VERSION_SUFFIX: "${{ needs.meta.outputs.suffix }}" }   # (testing: .<N>, meta)
-    timeout-minutes: 60
-    continue-on-error: ${{ needs.meta.outputs.channel != 'production' }}   # required for production only
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with: { name: lightcache, path: lightcache }
-      - run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
-            -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
-          cmake --build build -j
-          sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
-          mkdir -p pkg && cp -r build/quark.app build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps pkg/
-          mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
-          # (the bakes only where the game reads its maps: pkg/maps is the dedicated server's, which draws nothing)
-          cp -r lightcache pkg/quark.app/Contents/Resources/maps/lightcache && sh tools/check_lightcache.sh build pkg/quark.app/Contents/Resources/maps/lightcache
-          python3 tools/pack.py pkg quark-macos.qpak
-          mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
-          zip -qry quark-macos.zip quark-macos
-          zip -j quark-launcher-macos.zip build-launcher/quark_launcher
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
-
-  macos-watchdog:   # GitHub often has no macOS runner free: then the macos job waits in the queue for hours and holds the
-    # run (and the next testing push behind it). After 5 min queued, once every other job has finished, this cancels the
-    # run, skipping only the macOS part (the testing prerelease is out by then; production waits for macOS as always), and
-    # macos-retry.yml re-runs the cancelled macOS part (and what needs it) an hour later. Owner's call, 2026-10-23.
-    # (The sanitizers, when they run, are one of those other jobs: the cancel waits for them to finish.)
-    needs: meta
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (no macos job on a final run)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    permissions:
-      actions: write   # (to cancel this run; nothing else)
-    steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          RUN: ${{ github.run_id }}
-          ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -u
-          start=$(date +%s); idle=0
-          while :; do
-            sleep 60
-            jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/attempts/$ATTEMPT/jobs?per_page=100" --jq .jobs) || continue
-            mac=$(echo "$jobs" | jq -r '[.[] | select(.name == "macos")][0].status // "none"')
-            case "$mac" in in_progress|completed|none) echo "macos: $mac"; exit 0;; esac
-            # (jobs that need macos aren't created yet; ask for 3 idle minutes in a row: a job that needs another is
-            # created a few seconds after that one ends)
-            busy=$(echo "$jobs" | jq '[.[] | select(.name != "macos" and .name != "macos-watchdog" and .status != "completed")] | length')
-            if [ "$busy" = 0 ]; then idle=$((idle + 1)); else idle=0; fi
-            if [ $(( $(date +%s) - start )) -ge 300 ] && [ "$idle" -ge 3 ]; then
-              echo "::warning::no macOS runner in 5 min: skipping macOS (cancelling the run); macos-retry.yml re-runs it in about an hour"
-              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/cancel"
-              exit 0
-            fi
-          done
-
-  release:   # PRODUCTION: every platform, signed, latest
-    needs: [meta, windows, linux, macos]
+  release:   # PRODUCTION: Windows + Linux, signed, latest (macOS: macos.yml adds its files when a Mac was free)
+    needs: [meta, windows, linux]
     # (no status function: GitHub's implicit success() also requires every job above to have passed; none of them is
     # ever skipped on a production run)
-    if: needs.meta.outputs.channel == 'production' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success'
+    if: needs.meta.outputs.channel == 'production' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success'
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -406,12 +348,12 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { path: dist }
-      - name: all three platforms are here (no macOS, no release)
+      - name: Windows and Linux are here
         run: |
           # only the platforms' artifacts are release files: drop every other one (the website's assets, which the pages
-          # job publishes, and any a check job uploaded), or `sha256sum */*` below would list them
-          find dist -mindepth 1 -maxdepth 1 ! -name windows ! -name linux ! -name macos -exec rm -rf {} +
-          for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
+          # job publishes, the run's meta, and any a check job uploaded), or `sha256sum */*` below would list them
+          find dist -mindepth 1 -maxdepth 1 ! -name windows ! -name linux -exec rm -rf {} +
+          for p in windows linux; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
       - name: sign the launchers, release manifest, sign every published file (Ed25519, docs/SIGNING.md)
         env:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
@@ -439,9 +381,9 @@ jobs:
           { cat "changelogs/$VER.md"; echo; python3 -I tools/provenance.py summary --markdown; } > notes.md   # (+ the human-made line)
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "quark $VER" --notes-file notes.md \
-            dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
+            dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
 
-  release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
+  release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS: macos.yml adds its files when a Mac was free)
     needs: [meta, windows, linux]
     if: needs.meta.outputs.channel == 'testing' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success'   # (as release)
     runs-on: ubuntu-24.04
@@ -462,7 +404,7 @@ jobs:
           VER: ${{ needs.meta.outputs.version }}
         run: |
           # only Windows + Linux (as the production job: no other artifact, e.g. the website's assets, which the last step
-          # publishes, or a sanitizer / fuzzer report uploaded by then; macOS: release-testing-macos adds it)
+          # publishes, or a sanitizer / fuzzer report uploaded by then; macOS: macos.yml adds it)
           find dist -mindepth 1 -maxdepth 1 ! -name windows ! -name linux -exec rm -rf {} +
           # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
@@ -517,39 +459,6 @@ jobs:
           git add -A
           git commit -qm "testing assets for ${VER} (${GITHUB_SHA})"
           git push -qf "$URL" gh-pages
-
-  release-testing-macos:   # adds the macOS files to the testing prerelease when that build succeeded
-    needs: [meta, macos, release-testing]
-    if: "!cancelled() && needs.meta.outputs.channel == 'testing' && needs.macos.result == 'success' && needs.release-testing.result == 'success'"
-    runs-on: ubuntu-24.04
-    environment: testing
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: dl   # (no artifact when the macOS build failed: then nothing to add, and that's not an error)
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true
-        with: { name: macos, path: dist/macos }
-      - name: sign + upload
-        if: steps.dl.outcome == 'success'
-        env:
-          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.meta.outputs.tag }}
-          VER: ${{ needs.meta.outputs.version }}
-        run: |
-          # quark-release.txt went out without this package: its own signed manifest (the launcher prefers it)
-          sh tools/sign/sign_release.sh --launchers dist/macos/quark-macos.qpak
-          python3 tools/qpakz.py dist/macos/quark-macos.qpak
-          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak dist/macos/quark-macos.qpakz dist/macos/quark-launcher-macos.zip \
-            dist/macos/quark-macos.zip > dist/macos/quark-release-macos.txt
-          sh tools/sign/sign_release.sh dist/macos/quark-*   # (the packages, the launcher, the zip and the manifest)
-          (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)
-          sh tools/sign/sign_release.sh dist/macos/SHA256SUMS-macos
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*
 
   pages:   # the website follows production only (or a site-only run: SITE above)
     needs: [meta, linux, release]   # linux: its site-assets export (a site-only run has no release job to wait on it)
