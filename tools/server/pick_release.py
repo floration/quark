@@ -21,7 +21,10 @@ import re
 import sys
 
 PROD_TAG = re.compile(r"^v(\d+\.\d+\.\d+)$")
-TEST_TAG = re.compile(r"^test-(\d+\.\d+\.\d+(?:\.\d+|\.testing\.\d+|-test\.\d+))$")
+# Any test-<x.y.z + a suffix>, not only the forms CI has used (.N, .testing.N, -test.N): a testing updater runs this
+# file from the last build it installed, so a stricter pattern would make it blind to a later numbering for good
+# (owner, 2026-10-28: install.sh once, never again). The signed manifest, not the tag, is what's trusted.
+TEST_TAG = re.compile(r"^test-(\d+\.\d+\.\d+(?:[.-][0-9A-Za-z]+)+)$")
 
 
 def version_of(tag):
