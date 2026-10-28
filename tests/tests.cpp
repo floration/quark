@@ -2038,9 +2038,9 @@ static void testMapConverter() {
     {   // version 3 (nograpple, before acid): only the version line changes, and the map is the same
         const std::string v3 = "version 3\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base;
         std::string o;
-        CHECK(upgradeMapText(v3, &o) && mapTextVersion(o) == 4 && o == "version 4\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base);
+        CHECK(upgradeMapText(v3, &o) && mapTextVersion(o) == kMapFormatVersion && o == "version " + std::to_string(kMapFormatVersion) + "\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base);
         Map a, b;
-        CHECK(a.parse(v3) && b.parse(o) && a.formatVersion == 3 && b.formatVersion == 4 && a.warnings.empty() && a.acid.empty());
+        CHECK(a.parse(v3) && b.parse(o) && a.formatVersion == 3 && b.formatVersion == kMapFormatVersion && a.warnings.empty() && a.acid.empty());
         CHECK(a.brushes.size() == b.brushes.size() && a.brushes[0].material == kMatNoGrapple && a.serialize() == b.serialize());
         Map c;   // and acid itself, from version 4 on: read, written back, kept out of the bounds and the collision grid
         CHECK(c.parse("version 4\nacid -2 0 -2 2 0.3 2\n" + base) && c.warnings.empty() && c.brushes[0].material == kMatAcid && c.acid.size() == 1);
@@ -4484,6 +4484,87 @@ static void testCustomMode(uint16_t port) {
 // walked from the bottom to the top by the real movement code, and checked against the paths around it:
 // no walkable surface may pass through a solid flight, or run underneath an open one with less than a
 // player's height of clearance.
+// Wedges and corners (map format 5): read and written, collision, rays, walking up a gentle one, sliding off a steep
+// one, and bots' floor on the gentle one.
+static void testSlopes() {
+    printf("slopes: wedges and corners\n");
+    const std::string base = "box -20 -1 -20 20 0 20\nspawn any -10 0 -10\n";
+    {   // version 4 converts (nothing to change); a version 5 file round-trips; an older build would skip the lines
+        std::string o;
+        CHECK(upgradeMapText("version 4\n" + base, &o) && mapTextVersion(o) == 5);
+        Map m;
+        CHECK(m.parse("version 5\nwedge 3 1 0 0 0 4 2 2\ncorner 0 2 5 0 5 9 3 9\n" + base) && m.warnings.empty());
+        CHECK(m.brushes.size() == 3 && m.brushes[0].shape == BRUSH_WEDGE && m.brushes[0].dir == 1 && m.brushes[0].material == 3 && m.brushes[1].shape == BRUSH_CORNER);
+        const std::string t = m.serialize();
+        CHECK(t.find("wedge 3 1 0 0 0 4 2 2\n") != std::string::npos && t.find("corner 0 2 5 0 5 9 3 9\n") != std::string::npos);
+        Map b;
+        CHECK(b.parse(t) && b.serialize() == t);
+        Map bad;
+        CHECK(!bad.parse("wedge 0 4 0 0 0 1 1 1\n" + base) && !bad.parse("corner 12 0 0 0 0 1 1 1\n" + base));
+    }
+    Map m;
+    // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
+    CHECK(m.parse("wedge 0 0 2 0 -3 6 2 3\nwedge 0 3 -12 0 -9 -6 4 -8\ncorner 0 2 8 0 8 12 2 12\n" + base));
+    {   // the solid: under the slope only
+        const Brush& w = m.brushes[0];
+        CHECK(std::fabs(brushTopAt(w, 4, 0) - 1.0f) < 1e-5f && brushContains(w, {4, 0.9f, 0}) && !brushContains(w, {4, 1.1f, 0}));
+        const Brush& c = m.brushes[2];
+        CHECK(std::fabs(brushTopAt(c, 11, 9) - 0.5f) < 1e-5f && std::fabs(brushTopAt(c, 12, 12) - 2.0f) < 1e-5f);
+        CHECK(!m.boxSolid(playerBox({2.5f, 0.6f, 0}, false)) && m.boxSolid(playerBox({5, 0.6f, 0}, false)));
+        float t = m.raycast({4, 5, 0}, {0, -1, 0}, 10);   // straight down onto the wedge at x 4: its top, 1 m up
+        CHECK(std::fabs(t - 4.0f) < 1e-3f);
+        Vec3 n;
+        t = m.raycast({0, 1, 0}, {1, 0, 0}, 10, &n);      // level at 1 m: into the slope where it reaches 1 m (x 4)
+        CHECK(std::fabs(t - 4.0f) < 1e-3f && n.y > 0.8f && n.x < -0.4f);
+        CHECK(!m.raycastAny({0, 2.5f, 0}, {1, 0, 0}, 10) && m.raycastAny({11, 5, 9}, {0, -1, 0}, 10));
+    }
+    auto run = [&](MoveState& ms, Vec3 to, int ticks) {
+        for (int t = 0; t < ticks; t++) {
+            Vec3 d = to - ms.pos;
+            UserCmd cmd; cmd.yaw = std::atan2(-d.x, -d.z); cmd.forward = 127; cmd.msec = 8;
+            pmove(ms, cmd, m);
+        }
+    };
+    {   // walking up the gentle one, onto its top, on the floor all the way up
+        MoveState ms; ms.pos = {-1, 0.02f, 0};
+        int air = 0;
+        for (int t = 0; t < 200; t++) {
+            Vec3 d = Vec3(7, 2, 0) - ms.pos;
+            UserCmd cmd; cmd.yaw = std::atan2(-d.x, -d.z); cmd.forward = 127; cmd.msec = 8;
+            pmove(ms, cmd, m);
+            if (ms.pos.x > 2.5f && ms.pos.x < 5.5f && !(ms.flags & MF_ONGROUND)) air++;
+            if (ms.pos.x > 5.0f) break;
+        }
+        if (getenv("SLOPE_TRACE")) printf("    up: %.2f %.2f %.2f ground %d air %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND), air);
+        CHECK(ms.pos.x > 5.0f && ms.pos.y > 1.5f && (ms.flags & MF_ONGROUND) && air < 5);
+        run(ms, {-3, 0, 0}, 200);   // and back down it
+        if (getenv("SLOPE_TRACE")) printf("    down: %.2f %.2f %.2f ground %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND));
+        CHECK(ms.pos.x < 0 && std::fabs(ms.pos.y) < 0.05f && (ms.flags & MF_ONGROUND));
+    }
+    {   // the steep one is a wall (walking up its slope, from +z)
+        MoveState ms; ms.pos = {-10, 0.02f, -4};
+        run(ms, {-10, 4, -12}, 250);
+        if (getenv("SLOPE_TRACE")) printf("    wall: %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
+        CHECK(ms.pos.y < 0.6f && ms.pos.z > -8.5f);
+    }
+    {   // dropped onto the steep one: it slides you off downhill (+z: it rises toward -z), onto the floor
+        MoveState ms; ms.pos = {-10, 6, -8.6f};
+        for (int t = 0; t < 400; t++) { UserCmd idle; idle.msec = 8; pmove(ms, idle, m); }
+        if (getenv("SLOPE_TRACE")) printf("    slide: %.2f %.2f %.2f ground %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND));
+        CHECK(ms.pos.z > -8.0f && std::fabs(ms.pos.y) < 0.05f && (ms.flags & MF_ONGROUND));
+    }
+    {   // bots: the gentle one is floor to the top, the steep one isn't
+        NavGraph g;
+        g.build(m, NavKind::Bots);
+        float hiGentle = -1, hiSteep = -1;
+        for (auto& n : g.nodes) {
+            if (n.x0 >= 2 - 1e-3f && n.x1 <= 6 + 1e-3f && n.z0 >= -3 - 1e-3f && n.z1 <= 3 + 1e-3f) hiGentle = std::max(hiGentle, n.y);
+            if (n.z0 >= -9 - 1e-3f && n.z1 <= -8 + 1e-3f && n.x0 >= -12 - 1e-3f && n.x1 <= -6 + 1e-3f) hiSteep = std::max(hiSteep, n.y);
+        }
+        CHECK(hiGentle > 1.7f && hiSteep < 0);
+    }
+}
+
 static void testStairs() {
     printf("stairs: every flight walkable, none cutting a path\n");
     int flights = 0;
@@ -8388,6 +8469,7 @@ int main(int argc, char** argv) {
         // (nothing reachable out of bounds, tests/mapbounds.cpp: every other map each; `quark_tests bounds` runs them all)
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
+        {"slopes", [] { testSlopes(); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

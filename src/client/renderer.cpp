@@ -837,6 +837,40 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
     else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
 }
 
+void Renderer::slope(const Brush& b, const Vec3& color) {
+    std::vector<DynVertex>& out = buildingStatic_ ? staticVerts_ : dyn_;
+    const int first = (int)out.size();
+    slopePolygons(b, [&](const Vec3* p, int np, const Vec3& n) {
+        // each edge's distance, a linear function over the face: outline = min(edge.xy, edge.zw - edge.xy)
+        const Vec3 cen = np == 3 ? (p[0] + p[1] + p[2]) * (1.0f / 3) : (p[0] + p[1] + p[2] + p[3]) * 0.25f;
+        auto dist = [&](int e, const Vec3& q) {
+            const Vec3 a = p[e], d = p[(e + 1) % np] - a;
+            const Vec3 inward = cross(n, d);   // (points into the face when the corners run counterclockwise seen from n)
+            const float l = length(inward);
+            if (l < 1e-6f) return 1000.0f;
+            const float s = dot(cen - a, inward) >= 0 ? 1.0f : -1.0f;
+            return s * dot(q - a, inward) / l;
+        };
+        DynVertex v[4];
+        for (int k = 0; k < np; k++) {
+            memcpy(v[k].pos, &p[k].x, 12);
+            memcpy(v[k].normal, &n.x, 12);
+            const Vec3 col = n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color;
+            v[k].color[0] = col.x; v[k].color[1] = col.y; v[k].color[2] = col.z; v[k].color[3] = 1.0f;
+            const float d0 = dist(0, p[k]), d1 = dist(1, p[k]), d2 = dist(2, p[k]), d3 = np > 3 ? dist(3, p[k]) : 1000.0f;
+            v[k].edge[0] = d0; v[k].edge[1] = d1; v[k].edge[2] = d0 + d2; v[k].edge[3] = d1 + d3;
+            memcpy(v[k].outline, &outlineColor.x, 12);
+            v[k].outline[3] = outlineWidth;
+        }
+        const bool ccw = dot(cross(p[1] - p[0], p[2] - p[0]), n) > 0;
+        const DynVertex &a = v[0], &b1 = ccw ? v[1] : v[2], &c1 = ccw ? v[2] : v[1];
+        if (np == 3) out.insert(out.end(), {a, b1, c1, a, c1, c1});
+        else if (ccw) out.insert(out.end(), {v[0], v[1], v[2], v[0], v[2], v[3]});
+        else out.insert(out.end(), {v[0], v[2], v[1], v[0], v[3], v[2]});
+    });
+    if (buildingStatic_) staticItems_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f, first, (int)out.size() - first});
+}
+
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
     Mat4 xf = Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset);
     emitBox(castShadow ? dyn_ : dynNoCast_, xf, half, color, sunVis);   // (no shadow: small things scattered over the map, stuck props, would spread the shadow pass's caster rect over all of it)

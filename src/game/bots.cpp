@@ -205,8 +205,8 @@ bool NavGraph::linkOpen(const Map& m, int i, int j) const {
         const float dx = ex - sx, dz = ez - sz, grow = kNavClear - kNavSnap;
         bool blocked = false;
         brushesNear(m, cx0 - kNavClear, cz0 - kNavClear, cx1 + kNavClear, cz1 + kNavClear, [&](int k) {
-            const AABB& bb = m.brushes[k].box;
-            if (blocked || bb.mn.y >= yHi || bb.mx.y <= yLo) return;
+            const AABB bb = brushSolidAbove(m.brushes[k], yLo);   // (a slope: the part above a step from here)
+            if (blocked || bb.mn.y > bb.mx.y || bb.mn.y >= yHi || bb.mx.y <= yLo) return;
             // slab test of the segment against the grown box in xz (dx, dz are never 0 here: both gaps are open)
             float t0x = (bb.mn.x - grow - sx) / dx, t1x = (bb.mx.x + grow - sx) / dx;
             float t0z = (bb.mn.z - grow - sz) / dz, t1z = (bb.mx.z + grow - sz) / dz;
@@ -223,8 +223,8 @@ bool NavGraph::linkOpen(const Map& m, int i, int j) const {
     const float az0 = lineZ ? cz1 + kNavSnap : cz0 + kNavSnap, az1 = lineZ ? cz0 - kNavSnap : cz1 - kNavSnap;
     bool blocked = false;
     brushesNear(m, cx0 - kNavClear, cz0 - kNavClear, cx1 + kNavClear, cz1 + kNavClear, [&](int k) {
-        const AABB& bb = m.brushes[k].box;
-        blocked |= (bb.mn.y < yHi) & (bb.mx.y > yLo) & (bb.mn.x - kNavClear < ax1) & (bb.mx.x + kNavClear > ax0) &
+        const AABB bb = brushSolidAbove(m.brushes[k], yLo);   // (a slope: the part above a step from here; empty: mn.y > mx.y)
+        blocked |= (bb.mn.y <= bb.mx.y) & (bb.mn.y < yHi) & (bb.mx.y > yLo) & (bb.mn.x - kNavClear < ax1) & (bb.mx.x + kNavClear > ax0) &
                    (bb.mn.z - kNavClear < az1) & (bb.mx.z + kNavClear > az0);   // (&: no branch per test)
     });
     return !blocked;
@@ -261,20 +261,21 @@ void NavGraph::build(const Map& m, NavKind k) {
     std::vector<uint32_t> seen(m.brushes.size(), 0);
     uint32_t mark = 0;
     std::vector<Rect> blk, pieces, wet, wetPieces;
-    for (size_t bi = 0; bi < m.brushes.size(); bi++) {
-        const Brush& b = m.brushes[bi];
-        const AABB& a = b.box;
-        if (!solidMaterial(b.material)) continue; // far scenery, water / lava
-        if (a.mx.x - a.mn.x < 0.4f || a.mx.z - a.mn.z < 0.4f) continue; // (0.5 m stair steps are floor)
+    // A walkable slope (map.h: no steeper than 45 degrees) is floor too: cut into strips (a corner into cells) each at
+    // most kSlopeRise high, each a surface at the highest point of its piece, the way stairs would be; a steeper one
+    // is no floor (it's a wall: you slide off it).
+    constexpr float kSlopeRise = 0.25f;
+    auto surface = [&](size_t bi, const AABB& a, float y) {
+        if (a.mx.x - a.mn.x < 0.4f || a.mx.z - a.mn.z < 0.4f) return; // (0.5 m stair steps are floor)
         const Rect r = {a.mn.x, a.mn.z, a.mx.x, a.mx.z};
-        const float y = a.mx.y;
         blk.clear();
         ++mark;
         if (kind == NavKind::Bots) brushesNear(m, r.x0 - kNavClear, r.z0 - kNavClear, r.x1 + kNavClear, r.z1 + kNavClear, [&](int k) {
             if (seen[k] == mark) return;
             seen[k] = mark;
-            const AABB& o = m.brushes[k].box;
-            if (!blocksAt(o, y)) return;
+            if (k == (int)bi && m.brushes[k].shape != BRUSH_BOX) return;   // (a slope's own strips: under its surface)
+            const AABB o = brushSolidAbove(m.brushes[k], y + kNavStep);   // (a slope: what of it stands above a step)
+            if (o.mn.y > o.mx.y || !blocksAt(o, y)) return;
             Rect c = {std::max(o.mn.x - kNavClear, r.x0), std::max(o.mn.z - kNavClear, r.z0), std::min(o.mx.x + kNavClear, r.x1), std::min(o.mx.z + kNavClear, r.z1)};
             if (c.x1 > c.x0 && c.z1 > c.z0) blk.push_back(c);
         });
@@ -283,7 +284,7 @@ void NavGraph::build(const Map& m, NavKind k) {
             // the whole top, if a player fits on it somewhere (5x5 samples: other blocks may cover parts of it)
             bool free = false;
             for (int s = 0; s < 25 && !free; s++) {
-                Vec3 top = {lerpf(a.mn.x, a.mx.x, 0.1f + 0.2f * (s % 5)), a.mx.y + 0.02f, lerpf(a.mn.z, a.mx.z, 0.1f + 0.2f * (s / 5))};
+                Vec3 top = {lerpf(a.mn.x, a.mx.x, 0.1f + 0.2f * (s % 5)), y + 0.02f, lerpf(a.mn.z, a.mx.z, 0.1f + 0.2f * (s / 5))};
                 AABB probe = {{top.x - 0.05f, top.y, top.z - 0.05f}, {top.x + 0.05f, top.y + kPlayerCrouchHeight, top.z + 0.05f}};
                 free = !m.boxSolid(probe);
             }
@@ -310,6 +311,26 @@ void NavGraph::build(const Map& m, NavKind k) {
             nodes.push_back({p.x0, p.z0, p.x1, p.z1, y, true});
             surf.push_back((int)bi);
         }
+    };
+    for (size_t bi = 0; bi < m.brushes.size(); bi++) {
+        const Brush& b = m.brushes[bi];
+        if (!solidMaterial(b.material)) continue; // far scenery, water / lava
+        if (b.shape == BRUSH_BOX) { surface(bi, b.box, b.box.mx.y); continue; }
+        if (slopeSteepness(b) > 1.0f + 1e-4f) continue;
+        const AABB& a = b.box;
+        const bool alongX = b.shape == BRUSH_WEDGE && b.dir < 2;
+        const float run = b.shape == BRUSH_CORNER ? std::min(a.mx.x - a.mn.x, a.mx.z - a.mn.z) : alongX ? a.mx.x - a.mn.x : a.mx.z - a.mn.z;
+        const int n = std::min(64, std::max(1, std::min((int)std::ceil((a.mx.y - a.mn.y) / kSlopeRise), (int)(run / 0.4f))));
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < (b.shape == BRUSH_CORNER ? n : 1); j++) {
+                AABB c = a;
+                if (b.shape == BRUSH_CORNER || alongX) { c.mn.x = lerpf(a.mn.x, a.mx.x, (float)i / n); c.mx.x = lerpf(a.mn.x, a.mx.x, (float)(i + 1) / n); }
+                if (b.shape == BRUSH_CORNER || !alongX) {
+                    const int k = b.shape == BRUSH_CORNER ? j : i;
+                    c.mn.z = lerpf(a.mn.z, a.mx.z, (float)k / n); c.mx.z = lerpf(a.mn.z, a.mx.z, (float)(k + 1) / n);
+                }
+                surface(bi, c, brushTopOver(b, c.mn.x, c.mx.x, c.mn.z, c.mx.z));
+            }
     }
     const int n = (int)nodes.size();
     // Grid of the surfaces (each in every cell its padded rectangle touches): nodeAt looks in one cell, and the

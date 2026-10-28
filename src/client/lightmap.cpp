@@ -29,6 +29,14 @@ struct Face {
     int rx, ry;   // atlas rect origin (including 1px padding)
     int material;
     int group;    // the brush's map group, -1 for none
+    // A slope's faces that aren't axis-aligned rectangles (its sloped top, its triangle sides): a convex polygon of up to
+    // 4 corners (pu, pv) on the plane through org spanned by U, V (unit), facing N; axis 3, so it never meets a box's
+    // faces in the seam and lift passes. u0..v1 bound the polygon (the lightmap covers that rectangle).
+    bool gen = false;
+    Vec3 org, U, V, N;
+    int np = 0;
+    float pu[4], pv[4];
+    uint8_t genOff = 0;   // its edges (bit i: corner i to i + 1) that join a neighbour's: no outline
 };
 
 bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) { return m.raycastAny(o, d, maxT); }
@@ -74,9 +82,7 @@ struct PointGrid {
             for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) ids[fill[(size_t)z * w + x]++] = (uint32_t)i;
         }
     }
-    bool inside(const Brush& b, const Vec3& p) const {
-        return p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z;
-    }
+    bool inside(const Brush& b, const Vec3& p) const { return brushContains(b, p); }
     // A face's rectangle (on plane `plane` of `axis`, lifted `off` along its normal) completely inside the union of
     // occluding brushes, exactly: the brushes that hold that lifted plane, their rectangles clipped to the face, then
     // every cell between their edges tested once. (A 9 x 9 sample grid missed visible strips thinner than a ninth of
@@ -98,7 +104,7 @@ struct PointGrid {
         std::vector<float> us = {u0, u1}, vs = {v0, v1};
         for (uint32_t i : cand) {
             const Brush& b = m->brushes[i];
-            if (b.material == 9 || !(plane > b.box.mn[axis] && plane < b.box.mx[axis])) continue;
+            if (b.material == 9 || b.shape != BRUSH_BOX || !(plane > b.box.mn[axis] && plane < b.box.mx[axis])) continue;   // (a slope hides nothing whole: never culls)
             R r{std::max(u0, b.box.mn[ua]), std::min(u1, b.box.mx[ua]), std::max(v0, b.box.mn[va]), std::min(v1, b.box.mx[va])};
             if (r.u1 <= r.u0 || r.v1 <= r.v0) continue;
             rs.push_back(r); us.push_back(r.u0); us.push_back(r.u1); vs.push_back(r.v0); vs.push_back(r.v1);
@@ -130,6 +136,7 @@ struct PointGrid {
 };
 
 Vec3 facePoint(const Face& f, float u, float v) {
+    if (f.gen) return f.org + f.U * u + f.V * v;
     Vec3 p;
     p[f.axis] = f.plane;
     p[(f.axis + 1) % 3] = u;
@@ -138,6 +145,7 @@ Vec3 facePoint(const Face& f, float u, float v) {
 }
 
 Vec3 faceNormal(const Face& f) {
+    if (f.gen) return f.N;
     Vec3 n;
     n[f.axis] = (float)f.sign;
     return n;
@@ -292,11 +300,79 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     // The prepass's three loops run on the bake's threads (110-180 ms of every load, a cached one too, on one core):
     // each brush's faces go to its own six slots and are gathered in brush order after, so the faces (and the atlas,
     // the mesh and the cache they key) are the same as a serial loop's.
-    std::vector<Face> slots(map.brushes.size() * 6);
+    std::vector<Face> slots(map.brushes.size() * 7);   // (six box faces; a slope: up to four sides, its bottom, two sloped faces)
     std::vector<uint8_t> keep(slots.size(), 0);
     bool ran = parallelFor(map.brushes.size(), stopped, [&](size_t bi) {
         const Brush& br = map.brushes[bi];
         if (br.material == 9) return;   // clip: invisible
+        // a convex polygon face of a slope (corners in order around it; n its outward normal) into slot `slot`
+        auto genFace = [&](int slot, std::initializer_list<Vec3> pts, Vec3 n) {
+            Face f;
+            f.axis = 3; f.sign = 1; f.plane = 0; f.material = br.material; f.group = br.group; f.gen = true;
+            const Vec3* P = pts.begin();
+            f.np = (int)pts.size();
+            f.N = n; f.org = P[0];
+            f.U = normalize(P[1] - P[0]);
+            f.V = cross(n, f.U);
+            f.u0 = f.v0 = 1e30f; f.u1 = f.v1 = -1e30f;
+            for (int k = 0; k < f.np; k++) {
+                f.pu[k] = dot(P[k] - f.org, f.U); f.pv[k] = dot(P[k] - f.org, f.V);
+                f.u0 = std::min(f.u0, f.pu[k]); f.u1 = std::max(f.u1, f.pu[k]); f.v0 = std::min(f.v0, f.pv[k]); f.v1 = std::max(f.v1, f.pv[k]);
+            }
+            if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) return;
+            slots[bi * 7 + slot] = f; keep[bi * 7 + slot] = 1;
+        };
+        if (br.shape != BRUSH_BOX) {
+            const AABB& a = br.box;
+            const float y0 = a.mn.y;
+            // the four footprint corners, in order round it, with the slope's height at each
+            const Vec3 c[4] = {{a.mn.x, 0, a.mn.z}, {a.mx.x, 0, a.mn.z}, {a.mx.x, 0, a.mx.z}, {a.mn.x, 0, a.mx.z}};
+            Vec3 t[4];
+            for (int k = 0; k < 4; k++) t[k] = {c[k].x, brushTopAt(br, c[k].x, c[k].z), c[k].z};
+            // the sides: each a rectangle (full height), a triangle (rising along it) or nothing (the low edge)
+            for (int k = 0; k < 4; k++) {
+                const Vec3 &p0 = c[k], &p1 = c[(k + 1) % 4], &q0 = t[k], &q1 = t[(k + 1) % 4];
+                const bool full0 = q0.y > a.mx.y - 1e-4f, full1 = q1.y > a.mx.y - 1e-4f, low0 = q0.y < y0 + 1e-4f, low1 = q1.y < y0 + 1e-4f;
+                const int axis = k % 2 == 0 ? 2 : 0;   // (sides 0, 2 face -z, +z; 1, 3 face +x, -x)
+                const int sign = k == 0 || k == 3 ? -1 : 1;
+                if (low0 && low1) continue;
+                if (full0 && full1) {   // a whole rectangle: an ordinary face (seams, culling)
+                    Face f;
+                    f.axis = axis; f.sign = sign; f.material = br.material; f.group = br.group;
+                    f.plane = sign > 0 ? a.mx[axis] : a.mn[axis];
+                    const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
+                    f.u0 = a.mn[ua]; f.u1 = a.mx[ua]; f.v0 = a.mn[va]; f.v1 = a.mx[va];
+                    if (!solidAt.buried(axis, f.plane + sign * 0.01f, f.u0, f.u1, f.v0, f.v1)) { slots[bi * 7 + k] = f; keep[bi * 7 + k] = 1; }
+                    continue;
+                }
+                Vec3 n; n[axis] = (float)sign;
+                const Vec3 b0 = {p0.x, y0, p0.z}, b1 = {p1.x, y0, p1.z};
+                if (low0) genFace(k, {b0, b1, q1}, n);
+                else if (low1) genFace(k, {b0, b1, q0}, n);
+                else genFace(k, {b0, b1, q1, q0}, n);
+            }
+            {   // the bottom: a whole rectangle
+                Face f;
+                f.axis = 1; f.sign = -1; f.material = br.material; f.group = br.group; f.plane = a.mn.y;
+                f.u0 = a.mn.z; f.u1 = a.mx.z; f.v0 = a.mn.x; f.v1 = a.mx.x;
+                if (!solidAt.buried(1, f.plane - 0.01f, f.u0, f.u1, f.v0, f.v1)) { slots[bi * 7 + 4] = f; keep[bi * 7 + 4] = 1; }
+            }
+            Vec3 pn[2]; float pd[2];
+            slopePlanes(br, pn, pd);
+            if (br.shape == BRUSH_WEDGE) genFace(5, {t[0], t[1], t[2], t[3]}, pn[0]);
+            else {   // a corner: two triangles from the corner opposite the high one, over the diagonal to it
+                const int hi = br.dir == 0 ? 0 : br.dir == 1 ? 1 : br.dir == 2 ? 2 : 3, lo = (hi + 2) % 4;
+                // plane 0 is the one whose height runs along x: the triangle on the side where gx <= gz
+                for (int side = 0; side < 2; side++) {
+                    const int mid = side == 0 ? (lo + 1) % 4 : (lo + 3) % 4;
+                    const Vec3 tri[3] = {t[lo], t[mid], t[hi]};
+                    Vec3 n = normalize(cross(tri[1] - tri[0], tri[2] - tri[0]));
+                    if (n.y < 0) n = n * -1.0f;
+                    genFace(5 + side, {tri[0], tri[1], tri[2]}, n);
+                }
+            }
+            return;
+        }
         for (int axis = 0; axis < 3; axis++)
             for (int sign = -1; sign <= 1; sign += 2) {
                 Face f;
@@ -311,7 +387,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) continue;
                 // Cull faces completely buried in other (visible) brushes.
                 bool hidden = solidAt.buried(axis, f.plane + sign * 0.01f, f.u0, f.u1, f.v0, f.v1);
-                if (!hidden) { const size_t s = bi * 6 + axis * 2 + (sign > 0); slots[s] = f; keep[s] = 1; }
+                if (!hidden) { const size_t s = bi * 7 + axis * 2 + (sign > 0); slots[s] = f; keep[s] = 1; }
             }
     });
     if (!ran) { out.cancelled = true; return; }
@@ -381,7 +457,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         const Face& f = faces[self];
         return nearJoin(f, cellOf(u), cellOf(v), [&](uint32_t k) {
             const Face& o = faces[k];
-            if (k == self || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
+            if (k == self || o.gen || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
             return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
         });
     };
@@ -390,10 +466,11 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         const float e = 0.02f, kMin = 0.01f;
         Split& sp = splits[i];
         sp.bu = {f.u0, f.u1}; sp.bv = {f.v0, f.v1};
+        if (f.gen) { sp.off = {0}; return; }   // (a slope's polygon: its own edges, below)
         // where the neighbours along the border start and stop
         auto add = [&](uint32_t k) {
             const Face& o = faces[k];
-            if (k == i || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
+            if (k == i || o.gen || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
             if (!(o.u0 < f.u1 + e && o.u1 > f.u0 - e && o.v0 < f.v1 + e && o.v1 > f.v0 - e)) return false;
             for (float x : {o.u0, o.u1}) if (x > f.u0 + kMin && x < f.u1 - kMin) sp.bu.push_back(x);
             for (float x : {o.v0, o.v1}) if (x > f.v0 + kMin && x < f.v1 - kMin) sp.bv.push_back(x);
@@ -438,16 +515,34 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             }
     });
     if (!ran) { out.cancelled = true; return; }
+    // 1b'. A slope's polygon edges: one that another polygon (one that joins it) has too, in the same plane, has no
+    // outline (wedges side by side read as one ramp). Few faces: every pair.
+    {
+        std::vector<uint32_t> gens;
+        for (size_t i = 0; i < faces.size(); i++) if (faces[i].gen) gens.push_back((uint32_t)i);
+        auto corner = [&](const Face& f, int k) { return facePoint(f, f.pu[k], f.pv[k]); };
+        auto same = [&](const Vec3& a, const Vec3& b) { return length(a - b) < kFlush; };
+        for (uint32_t i : gens)
+            for (uint32_t j : gens) {
+                Face& f = faces[i]; const Face& o = faces[j];
+                if (i == j || !joins(f, o) || dot(f.N, o.N) < 1 - 1e-5f || std::fabs(dot(f.N, f.org - o.org)) > kFlush) continue;
+                for (int a = 0; a < f.np; a++)
+                    for (int b = 0; b < o.np; b++) {
+                        const Vec3 fa = corner(f, a), fb = corner(f, (a + 1) % f.np), oa = corner(o, b), ob = corner(o, (b + 1) % o.np);
+                        if ((same(fa, oa) && same(fb, ob)) || (same(fa, ob) && same(fb, oa))) f.genOff |= 1 << a;
+                    }
+            }
+    }
     // 1c. Coplanar faces of different materials overlapping would z-fight: the higher material (wallbang >
     // accent > base) gets lifted a hair off its plane, so decorations can sit flush on gameplay geometry.
     // Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
     std::vector<uint8_t> needLift(faces.size(), 0);
     ran = parallelFor(faces.size(), stopped, [&](size_t i) {
         const Face& f = faces[i];
-        if (f.material == 0) return;
+        if (f.material == 0 || f.gen) return;
         auto overlaps = [&](uint32_t k) {
             const Face& o = faces[k];
-            if (o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) return false;
+            if (o.gen || o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) return false;
             return f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1;
         };
         int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
@@ -515,6 +610,38 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         Vec3 n = faceNormal(f);
         Vec3 lift = needLift[fi] ? n * (0.002f * f.material) : Vec3();
         const float B = 1000.0f; // a turned-off edge is "infinitely far": no outline
+        if (f.gen) {   // a slope's polygon: its corners, each edge's distance a linear function over it
+            float area = 0;
+            for (int k = 0; k < f.np; k++) { const int k1 = (k + 1) % f.np; area += f.pu[k] * f.pv[k1] - f.pu[k1] * f.pv[k]; }
+            const float side = area >= 0 ? 1.0f : -1.0f;   // (inside is to the left of each edge when counterclockwise)
+            auto dist = [&](int e, float u, float v) {
+                const int e1 = (e + 1) % f.np;
+                const float ex = f.pu[e1] - f.pu[e], ey = f.pv[e1] - f.pv[e], l = std::sqrt(ex * ex + ey * ey);
+                return l < 1e-6f ? B : side * (ex * (v - f.pv[e]) - ey * (u - f.pu[e])) / l + ((f.genOff >> e & 1) ? B : 0.0f);
+            };
+            WorldVertex vs[4];
+            for (int k = 0; k < f.np; k++) {
+                WorldVertex& wv = vs[k];
+                Vec3 p = facePoint(f, f.pu[k], f.pv[k]);
+                memcpy(wv.pos, &p.x, 12);
+                memcpy(wv.normal, &n.x, 12);
+                wv.uv[0] = (f.rx + 1 + (f.pu[k] - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;
+                wv.uv[1] = (f.ry + 1 + (f.pv[k] - f.v0) / (f.v1 - f.v0) * f.wv) / (float)H;
+                wv.material = (float)f.material;
+                // outline distance = min(edge.xy, edge.zw - edge.xy): edges 0, 1 in xy, 2, 3 as zw less them
+                const float d0 = dist(0, f.pu[k], f.pv[k]), d1 = dist(1, f.pu[k], f.pv[k]), d2 = dist(2, f.pu[k], f.pv[k]);
+                const float d3 = f.np > 3 ? dist(3, f.pu[k], f.pv[k]) : B;
+                wv.edge[0] = d0; wv.edge[1] = d1; wv.edge[2] = d0 + d2; wv.edge[3] = d1 + d3;
+            }
+            // counterclockwise seen from outside (N): the order the corners came in, or reversed
+            const Vec3 p0 = facePoint(f, f.pu[0], f.pv[0]), p1 = facePoint(f, f.pu[1], f.pv[1]), p2 = facePoint(f, f.pu[2], f.pv[2]);
+            const bool ccw = dot(cross(p1 - p0, p2 - p0), n) > 0;
+            const WorldVertex &a = vs[0], &b = ccw ? vs[1] : vs[2], &c = ccw ? vs[2] : vs[1];
+            if (f.np == 3) out.verts.insert(out.verts.end(), {a, b, c, a, c, c});   // (6 a face: the second triangle empty)
+            else if (ccw) out.verts.insert(out.verts.end(), {vs[0], vs[1], vs[2], vs[0], vs[2], vs[3]});
+            else out.verts.insert(out.verts.end(), {vs[0], vs[2], vs[1], vs[0], vs[3], vs[2]});
+            continue;
+        }
         const Split& sp = splits[fi];
         const int nu = (int)sp.bu.size() - 1, nv = (int)sp.bv.size() - 1;
         for (int pb = 0; pb < nv; pb++)

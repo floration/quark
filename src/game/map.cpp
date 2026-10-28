@@ -309,7 +309,10 @@ static void upgradeMap2to3(std::vector<std::string>&) {}
 // 3 -> 4: the acid material was added; a version 3 file has none, so nothing changes
 static void upgradeMap3to4(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4};
+// 4 -> 5: wedges and corners ("wedge" / "corner" lines) were added; a version 4 file has none, so nothing changes
+static void upgradeMap4to5(std::vector<std::string>&) {}
+
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -669,6 +672,19 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
+        } else if (kw == "wedge" || kw == "corner") {   // "wedge|corner <material> <dir> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
+            Brush b; int dir = -1;
+            ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 && readBox(ls, b.box);
+            b.shape = kw == "wedge" ? BRUSH_WEDGE : BRUSH_CORNER;
+            b.dir = (uint8_t)std::max(0, dir);
+            if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
+            if (ok) {
+                hasWallbang |= b.material == 2;
+                brushes.push_back(b);
+                if (!solidMaterial(b.material)) continue;
+                bounds.mn = vmin(bounds.mn, b.box.mn);
+                bounds.mx = vmax(bounds.mx, b.box.mx);
+            }
         } else if (kw == "spawn") {
             std::string team;
             SpawnPoint s;
@@ -882,7 +898,14 @@ std::string Map::serialize() const {
     }
     static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
     static_assert(sizeof matNames / sizeof *matNames == kMapMaterials, "a file keyword per material");
-    for (auto& br : brushes) if (!br.generated) box(matNames[br.material], br.box);
+    for (auto& br : brushes) {
+        if (br.generated) continue;
+        if (br.shape == BRUSH_BOX) { box(matNames[br.material], br.box); continue; }
+        snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", br.shape == BRUSH_WEDGE ? "wedge" : "corner", br.material, (int)br.dir,
+                 exactNum(nb[0], 24, br.box.mn.x), exactNum(nb[1], 24, br.box.mn.y), exactNum(nb[2], 24, br.box.mn.z),
+                 exactNum(nb[3], 24, br.box.mx.x), exactNum(nb[4], 24, br.box.mx.y), exactNum(nb[5], 24, br.box.mx.z));
+        o += b;
+    }
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
@@ -929,7 +952,12 @@ static std::string fmtBox(const AABB& b) {
 std::string describeMapObject(const Map& m, char kind, const char* verb, int i) {
     char t[220];
     switch (kind) {
-        case 'b': snprintf(t, sizeof t, "b %s %d %d %s", verb, i, m.brushes[i].material, fmtBox(m.brushes[i].box).c_str()); break;
+        case 'b': {   // (a wedge or corner: its shape and dir after the box, "w 2" / "c 0")
+            const Brush& br = m.brushes[i];
+            snprintf(t, sizeof t, "b %s %d %d %s", verb, i, br.material, fmtBox(br.box).c_str());
+            if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", br.shape == BRUSH_WEDGE ? 'w' : 'c', (int)br.dir); }
+            break;
+        }
         case 's': { auto& sp = m.spawns[i]; snprintf(t, sizeof t, "s %s %d %d %.9g %.9g %.9g %.9g", verb, i, sp.team, sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180.0f / PI); break; }
         case 'l': { auto& l = m.lights[i]; snprintf(t, sizeof t, "l %s %d %.9g %.9g %.9g %.9g %.9g", verb, i, l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); break; }
         case 'z': snprintf(t, sizeof t, "z %s %d %s", verb, i, fmtBox(m.bombSites[i]).c_str()); break;
@@ -1014,6 +1042,13 @@ bool applyMapEdit(Map& m, const std::string& op) {
         else {
             Brush b;
             if (!((bool)(in >> b.material) && validMapMaterial(b.material) && readBox(b.box))) return false;
+            std::string shape;
+            if (in >> shape) {   // "w <dir>" / "c <dir>": a wedge / corner (map format 5)
+                int dir = -1;
+                if (!((shape == "w" || shape == "c") && (bool)(in >> dir) && dir >= 0 && dir < 4)) return false;
+                b.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
+                b.dir = (uint8_t)dir;
+            }
             if (verb == "ins") ok = i >= 0 && (size_t)i <= n && n < kMaxMapBrushes && m.insertBrush((size_t)i, b);
             else ok = i >= 0 && (size_t)i < n && m.setBrush((size_t)i, b);
         }
@@ -1371,35 +1406,46 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
         }
 }
 
-float Map::sweepAxis(const AABB& box, int axis, float delta) const {
+float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit) const {
+    if (hit) *hit = nullptr;
     if (delta == 0.0f) return 0.0f;
     const int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
     constexpr float eps = 0.001f;
     AABB q = box;
     if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
-    auto clip = [&](const AABB& b) {
+    auto clip = [&](const AABB& b, const Brush* who) {
         if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1]) return;
         if (box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
         if (delta > 0) {
             if (box.mx[axis] <= b.mn[axis] + eps) {
                 float allowed = b.mn[axis] - box.mx[axis] - eps;
-                if (allowed < delta) delta = std::max(allowed, 0.0f);
+                if (allowed < delta) { delta = std::max(allowed, 0.0f); if (hit) *hit = who; }
             }
         } else {
             if (box.mn[axis] >= b.mx[axis] - eps) {
                 float allowed = b.mx[axis] - box.mn[axis] + eps;
-                if (allowed > delta) delta = std::min(allowed, 0.0f);
+                if (allowed > delta) { delta = std::min(allowed, 0.0f); if (hit) *hit = who; }
             }
         }
     };
-    forBox(q, [&](const Brush& br) { clip(br.box); });
-    for (const AABB& b : dynSolids) clip(b);
+    forBox(q, [&](const Brush& br) {
+        if (br.shape == BRUSH_BOX) { clip(br.box, &br); return; }
+        // A slope (map.h): sideways, the part of it that is solid above the box's feet, a box; up, its flat bottom;
+        // down, its top under the box's footprint (the highest point of the slope there: feet are flat).
+        if (axis != 1) { clip(brushSolidAbove(br, box.mn.y), &br); return; }
+        if (delta > 0) { clip(br.box, &br); return; }
+        if (box.mx.x <= br.box.mn.x || box.mn.x >= br.box.mx.x || box.mx.z <= br.box.mn.z || box.mn.z >= br.box.mx.z) return;
+        AABB top = br.box;
+        top.mx.y = brushTopOver(br, box.mn.x, box.mx.x, box.mn.z, box.mx.z);
+        clip(top, &br);
+    });
+    for (const AABB& b : dynSolids) clip(b, nullptr);
     return delta;
 }
 
 bool Map::boxSolid(const AABB& box) const {
     bool hit = false;
-    forBox(box, [&](const Brush& b) { hit = hit || box.overlaps(b.box); });
+    forBox(box, [&](const Brush& b) { hit = hit || brushOverlaps(b, box); });
     for (const AABB& b : dynSolids) hit = hit || box.overlaps(b);
     return hit;
 }
@@ -1443,26 +1489,24 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
 float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, int* material) const {
     Vec3 inv = safeInv(dir);
     float best = -1.0f;
-    int bestAxis = -1, bestMat = -1;
+    int bestMat = -1;
+    Vec3 bestN;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
             if (brushes[cellBrushes[k]].material == 9) continue;   // clip: players only
-            int axis;
-            float t = rayAABB(o, inv, brushes[cellBrushes[k]].box, best < 0 ? maxDist : best, &axis);
-            if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; bestMat = brushes[cellBrushes[k]].material; }
+            Vec3 n;
+            float t = rayBrush(o, dir, inv, brushes[cellBrushes[k]], best < 0 ? maxDist : best, &n);
+            if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = n; bestMat = brushes[cellBrushes[k]].material; }
         }
         return !(best >= 0 && best <= tExit); // nearest hit is inside this cell: done
     });
     for (const AABB& b : dynSolids) {
         int axis;
         float t = rayAABB(o, inv, b, best < 0 ? maxDist : best, &axis);
-        if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; bestMat = -1; }
+        if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = Vec3(); if (axis >= 0) bestN[axis] = dir[axis] > 0 ? -1.0f : 1.0f; bestMat = -1; }
     }
     if (material) *material = best >= 0 ? bestMat : -1;
-    if (best >= 0 && normal) {
-        *normal = Vec3(0, 0, 0);
-        if (bestAxis >= 0) (*normal)[bestAxis] = dir[bestAxis] > 0 ? -1.0f : 1.0f;
-    }
+    if (best >= 0 && normal) *normal = bestN;
     return best;
 }
 
@@ -1475,7 +1519,7 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
             const Brush& br = brushes[cellBrushes[k]];
             if (br.material == 9) continue;   // clip: players only
-            float t = rayAABB(o, inv, br.box, best < 0 ? maxDist : best);
+            float t = rayBrush(o, dir, inv, br, best < 0 ? maxDist : best);
             if (t < 0) continue;
             if (br.material == 2) { if (bang < 0 || t < bang) bang = t; }
             else if (best < 0 || t < best) best = t;
@@ -1499,7 +1543,7 @@ template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec
         for (uint32_t k = m.cells[c].start, e = m.cells[c].end; k < e && !hit; k++) {
             const Brush& br = m.brushes[m.cellBrushes[k]];
             if (skipsSight(br, hitClip)) continue;
-            hit = rayAABB(o, inv, br.box, maxDist) >= 0;
+            hit = rayBrush(o, dir, inv, br, maxDist) >= 0;
             if (Learn && hit) *learn = {(uint32_t)c, k, -1};
         }
         return !hit;
@@ -1520,7 +1564,7 @@ bool Map::raycastAnyHinted(const Vec3& o, const Vec3& dir, float maxDist, RayHin
         if ((size_t)hint.dyn < dynSolids.size() && rayAABB(o, inv, dynSolids[hint.dyn], maxDist) >= 0) return true;
     } else if (hint.cell < cells.size() && hint.ref >= cells[hint.cell].start && hint.ref < cells[hint.cell].end) {
         const Brush& br = brushes[cellBrushes[hint.ref]];
-        if (!skipsSight(br, hitClip) && rayAABB(o, inv, br.box, maxDist) >= 0) {
+        if (!skipsSight(br, hitClip) && rayBrush(o, dir, inv, br, maxDist) >= 0) {
             bool reached = false;
             walkCells(*this, o, dir, maxDist, [&](size_t c, float) { reached = c == hint.cell; return !reached; });
             if (reached) return true;

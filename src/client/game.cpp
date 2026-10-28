@@ -6554,7 +6554,7 @@ static const char* const kInfoPages[][48] = {
         "CLICK anything to select it. New things go where the crosshair (the middle of the view) points.",
         "ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).",
         "Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.",
-        "M cycles the material (or a spawn's team), CTRL+D duplicates, DEL deletes, CTRL+Z undoes, CTRL+S saves. [ and ] change the grid.",
+        "M cycles the material (or a spawn's team), N the shape (box, wedge, corner), CTRL+D duplicates, DEL deletes, CTRL+Z undoes, CTRL+S saves. [ and ] change the grid.",
         "BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).",
         "TEST plays the map right away; BAKE LIGHT previews the real lighting.",
         "HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.",

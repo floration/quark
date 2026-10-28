@@ -113,6 +113,7 @@ Json mapToJson(const Map& m) {
     for (auto& b : m.brushes) {
         Json o = Json::object();
         o.set("mat", b.material); o.set("min", jvec(b.box.mn)); o.set("max", jvec(b.box.mx));
+        if (b.shape != BRUSH_BOX) { o.set("shape", b.shape == BRUSH_WEDGE ? "wedge" : "corner"); o.set("dir", (int)b.dir); }   // (map format 5)
         (b.generated ? gen : br).push(std::move(o));
     }
     j.set("brushes", std::move(br));
@@ -204,6 +205,12 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
         int mat = b["mat"].i(0);
         if (!validMapMaterial(mat)) { err = "brush material " + std::to_string(mat) + " isn't 0..9"; return false; }
         Brush br; br.material = mat; br.box = toBox(b);
+        const std::string shape = b["shape"].str("box");
+        if (shape != "box" && shape != "wedge" && shape != "corner") { err = "brush shape '" + shape + "' isn't box, wedge or corner"; return false; }
+        br.shape = shape == "wedge" ? BRUSH_WEDGE : shape == "corner" ? BRUSH_CORNER : BRUSH_BOX;
+        const int dir = b["dir"].i(0);
+        if (dir < 0 || dir > 3) { err = "brush dir " + std::to_string(dir) + " isn't 0..3"; return false; }
+        if (br.shape != BRUSH_BOX) br.dir = (uint8_t)dir;
         m.brushes.push_back(br);
     }
     for (auto& g : j["groups"].items()) {

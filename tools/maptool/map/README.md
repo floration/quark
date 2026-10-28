@@ -39,6 +39,8 @@ Every command that needs a map takes it in one of these keys, in this order of p
 answer carries:
 
 - `humanMade`: a `handmade` line, or a map not written by make_maps.py;
+- each `brushes` entry: `mat`, `min`, `max`, and for a wedge or corner (map format 5) `shape` (`"wedge"` / `"corner"`)
+  and `dir` (0-3; a box has neither). `serialize` reads them back the same way and writes `wedge` / `corner` lines;
 - `modesSupported` and `modesPossible` (gamemodes.h);
 - `killY` and `payloadLength`;
 - `bounds`, `warnings` and `ms`;

@@ -20,7 +20,161 @@ struct Brush {
     int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
     int group = -1;         // the map group it's a part of (generated from groups[group]), -1 for none: seams (outlines) only between groups
+    // Shape (map format 5): a box, or the solid under a sloped top inside the box (its slope is whatever the box gives).
+    //   wedge: one top edge kept; it rises from box.mn.y to box.mx.y toward dir (0 +x, 1 -x, 2 +z, 3 -z, as stairs).
+    //   corner: one top corner kept, a pyramid over the base with its apex above corner dir (0 -x-z, 1 +x-z, 2 +x+z, 3 -x+z).
+    // Both are heightfields: solid where box.mn.y <= y < box.mn.y + height * shapeHeight(x, z) (0..1).
+    uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER
+    uint8_t dir = 0;
 };
+enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2 };
+// A slope's 0..1 fractions toward its high side along x and z (1 where it's high; a wedge rising along x ignores z: 1).
+inline void slopeFractions(const Brush& b, float x, float z, float& gx, float& gz) {
+    const Vec3 sz = b.box.mx - b.box.mn;
+    const float fx = (x - b.box.mn.x) / std::max(sz.x, 1e-6f), fz = (z - b.box.mn.z) / std::max(sz.z, 1e-6f);
+    if (b.shape == BRUSH_WEDGE) {
+        gx = b.dir == 0 ? fx : b.dir == 1 ? 1 - fx : 1;
+        gz = b.dir == 2 ? fz : b.dir == 3 ? 1 - fz : 1;
+    } else {
+        gx = (b.dir == 1 || b.dir == 2) ? fx : 1 - fx;
+        gz = (b.dir == 2 || b.dir == 3) ? fz : 1 - fz;
+    }
+}
+// The solid's top at (x, z), inside the box's footprint.
+inline float brushTopAt(const Brush& b, float x, float z) {
+    if (b.shape == BRUSH_BOX) return b.box.mx.y;
+    float gx, gz;
+    slopeFractions(b, x, z, gx, gz);
+    const float h = std::min(1.0f, std::max(0.0f, std::min(gx, gz)));
+    return b.box.mn.y + (b.box.mx.y - b.box.mn.y) * h;
+}
+// What of a brush is solid above height y: for a slope, the part of its box where the top is above y, which is a box
+// too (the heightfield falls away from the high side along x and z), up to box.mx.y. Empty (mn > mx) when nothing is.
+// A box is itself. Collision against a player's box uses this at the box's feet: every point of the player's footprint
+// over that part has solid above its feet.
+inline AABB brushSolidAbove(const Brush& b, float y) {
+    if (b.shape == BRUSH_BOX) return b.box;
+    AABB r = b.box;
+    const float h = b.box.mx.y - b.box.mn.y;
+    float f = h > 1e-6f ? (y - b.box.mn.y) / h : 1.0f;
+    if (f >= 1.0f) { r.mn.y = r.mx.y + 1; return r; }   // (empty)
+    f = std::max(0.0f, f);
+    const float sx = b.box.mx.x - b.box.mn.x, sz = b.box.mx.z - b.box.mn.z;
+    const bool wedge = b.shape == BRUSH_WEDGE;
+    const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), loX = wedge ? b.dir == 1 : !(b.dir == 1 || b.dir == 2);
+    const bool hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3), loZ = wedge ? b.dir == 3 : !(b.dir == 2 || b.dir == 3);
+    if (hiX) r.mn.x = b.box.mn.x + f * sx; else if (loX) r.mx.x = b.box.mx.x - f * sx;
+    if (hiZ) r.mn.z = b.box.mn.z + f * sz; else if (loZ) r.mx.z = b.box.mx.z - f * sz;
+    return r;
+}
+// The highest the solid reaches over the part of rectangle [x0, x1] x [z0, z1] inside its footprint.
+inline float brushTopOver(const Brush& b, float x0, float x1, float z0, float z1) {
+    if (b.shape == BRUSH_BOX) return b.box.mx.y;
+    x0 = std::max(x0, b.box.mn.x); x1 = std::min(x1, b.box.mx.x); z0 = std::max(z0, b.box.mn.z); z1 = std::min(z1, b.box.mx.z);
+    const bool wedge = b.shape == BRUSH_WEDGE;
+    const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3);
+    return brushTopAt(b, hiX ? x1 : x0, hiZ ? z1 : z0);
+}
+// Does `box` overlap the brush's solid (open sets: touching isn't overlapping)?
+inline bool brushOverlaps(const Brush& b, const AABB& box) {
+    if (!box.overlaps(b.box)) return false;
+    return b.shape == BRUSH_BOX || box.overlaps(brushSolidAbove(b, box.mn.y));
+}
+inline bool brushContains(const Brush& b, const Vec3& p) {   // strictly inside
+    if (!(p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)) return false;
+    return b.shape == BRUSH_BOX || p.y < brushTopAt(b, p.x, p.z);
+}
+// A slope's top planes (n . p <= d inside; n points out and up), 1 for a wedge, 2 for a corner; returns how many.
+inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
+    if (b.shape == BRUSH_BOX) return 0;
+    const Vec3 sz = b.box.mx - b.box.mn;
+    const float h = sz.y;
+    int k = 0;
+    auto plane = [&](int axis, bool hiPositive) {   // top = mn.y + h * g, g = (p[axis] - lo) / s toward +, or (hi - p) / s toward -
+        const float s = std::max(axis == 0 ? sz.x : sz.z, 1e-6f);
+        Vec3 nn(0, 1, 0);
+        // y - mn.y - h * g <= 0
+        float dd;
+        if (hiPositive) { nn[axis] = -h / s; dd = b.box.mn.y - h * b.box.mn[axis] / s; }
+        else { nn[axis] = h / s; dd = b.box.mn.y + h * b.box.mx[axis] / s; }
+        const float len = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
+        n[k] = nn * (1.0f / len); d[k] = dd / len; k++;
+    };
+    if (b.shape == BRUSH_WEDGE) plane(b.dir < 2 ? 0 : 2, b.dir == 0 || b.dir == 2);
+    else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
+    return k;
+}
+// The steepness of a slope's surface: its rise over its run (tan of the angle), per plane; the steepest of them.
+inline float slopeSteepness(const Brush& b) {
+    if (b.shape == BRUSH_BOX) return 0;
+    const Vec3 sz = b.box.mx - b.box.mn;
+    if (b.shape == BRUSH_WEDGE) return sz.y / std::max(b.dir < 2 ? sz.x : sz.z, 1e-6f);
+    return sz.y / std::max(std::min(sz.x, sz.z), 1e-6f);
+}
+// A slope's faces as convex polygons (corners in order round each, 3 or 4), each with its outward normal: fn(pts, n, normal).
+// Sides that are whole rectangles come out as polygons too; the low edge has none. (The light bake builds its own.)
+template <class F> void slopePolygons(const Brush& br, F fn) {
+    const AABB& a = br.box;
+    const float y0 = a.mn.y;
+    const Vec3 c[4] = {{a.mn.x, y0, a.mn.z}, {a.mx.x, y0, a.mn.z}, {a.mx.x, y0, a.mx.z}, {a.mn.x, y0, a.mx.z}};
+    Vec3 t[4];
+    for (int k = 0; k < 4; k++) t[k] = {c[k].x, brushTopAt(br, c[k].x, c[k].z), c[k].z};
+    for (int k = 0; k < 4; k++) {   // sides 0..3 face -z, +x, +z, -x
+        const int k1 = (k + 1) % 4;
+        const bool low0 = t[k].y < y0 + 1e-4f, low1 = t[k1].y < y0 + 1e-4f;
+        Vec3 n; n[k % 2 == 0 ? 2 : 0] = (k == 0 || k == 3) ? -1.0f : 1.0f;
+        if (low0 && low1) continue;
+        if (low0) { const Vec3 p[3] = {c[k], c[k1], t[k1]}; fn(p, 3, n); }
+        else if (low1) { const Vec3 p[3] = {c[k], c[k1], t[k]}; fn(p, 3, n); }
+        else { const Vec3 p[4] = {c[k], c[k1], t[k1], t[k]}; fn(p, 4, n); }
+    }
+    { const Vec3 p[4] = {c[0], c[3], c[2], c[1]}; fn(p, 4, Vec3(0, -1, 0)); }
+    if (br.shape == BRUSH_WEDGE) {
+        Vec3 pn[2]; float pd[2];
+        slopePlanes(br, pn, pd);
+        fn(t, 4, pn[0]);
+    } else {
+        const int hi = br.dir, lo = (hi + 2) % 4;
+        for (int side = 0; side < 2; side++) {
+            const Vec3 p[3] = {t[lo], t[side == 0 ? (lo + 1) % 4 : (lo + 3) % 4], t[hi]};
+            Vec3 n = normalize(cross(p[1] - p[0], p[2] - p[0]));
+            fn(p, 3, n.y < 0 ? n * -1.0f : n);
+        }
+    }
+}
+// Ray vs a brush's solid: entry distance in [0, maxT] or -1; *normal the face it enters (axis faces as rayAABB's axis).
+inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const Brush& b, float maxT, Vec3* normal = nullptr) {
+    int axis = -1;
+    float t = rayAABB(o, invDir, b.box, maxT, &axis);
+    if (t < 0) return -1.0f;
+    if (b.shape == BRUSH_BOX) {
+        if (normal) { *normal = Vec3(); if (axis >= 0) (*normal)[axis] = dir[axis] > 0 ? -1.0f : 1.0f; }
+        return t;
+    }
+    // the box's slab interval, then cut by the top planes
+    float tmin = 0, tmax = maxT;
+    Vec3 nIn;
+    for (int i = 0; i < 3; i++) {
+        float t1 = (b.box.mn[i] - o[i]) * invDir[i], t2 = (b.box.mx[i] - o[i]) * invDir[i];
+        float s = -1;
+        if (t1 > t2) { std::swap(t1, t2); s = 1; }
+        if (t1 > tmin) { tmin = t1; nIn = Vec3(); nIn[i] = s; }
+        if (t2 < tmax) tmax = t2;
+    }
+    Vec3 pn[2]; float pd[2];
+    const int np = slopePlanes(b, pn, pd);
+    for (int k = 0; k < np; k++) {
+        const float den = dot(pn[k], dir), num = pd[k] - dot(pn[k], o);
+        if (std::fabs(den) < 1e-9f) { if (num < 0) return -1.0f; continue; }
+        const float tt = num / den;
+        if (den < 0) { if (tt > tmin) { tmin = tt; nIn = pn[k]; } }
+        else if (tt < tmax) tmax = tt;
+    }
+    if (tmin > tmax) return -1.0f;
+    if (normal) *normal = nIn;
+    return tmin;
+}
+
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
 constexpr int kMapMaterials = 12;
 constexpr int kMatNoGrapple = 10;
@@ -74,7 +228,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 4;   // 3: the nograpple material; 4: the acid material
+constexpr int kMapFormatVersion = 5;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners
 
 struct Map {
     std::string name;
@@ -170,7 +324,8 @@ struct Map {
     bool changeBrush(int op, size_t i, const Brush& b);
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
-    float sweepAxis(const AABB& box, int axis, float delta) const;
+    // *hit (when given): the brush that stopped it, nullptr for none or a moving solid (pmove: a steep slope is a wall).
+    float sweepAxis(const AABB& box, int axis, float delta, const Brush** hit = nullptr) const;
     bool boxSolid(const AABB& box) const;
     bool inLava(const AABB& box) const { for (auto& l : lava) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()

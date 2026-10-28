@@ -476,7 +476,19 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
     tmp = copyNoSource(m);
     for (auto& e : sel) {
         switch (e.kind) {
-            case ED_BRUSH: tmp.brushes[e.idx].box = box(m.brushes[e.idx].box, c); break;
+            case ED_BRUSH: {
+                Brush& b = tmp.brushes[e.idx];
+                b.box = box(m.brushes[e.idx].box, c);
+                if (b.shape != BRUSH_BOX) {   // a wedge / corner: where it rises (wedge: +X, -X, +Z, -Z; corner: -x-z, +x-z, +x+z, -x+z)
+                    if (op != ED_ROT_Y && op != ED_MIR_X && op != ED_MIR_Z) return false;   // (on its side or upside down: no such shape)
+                    static const int wRot[4] = {2, 3, 1, 0}, cMirX[4] = {1, 0, 3, 2}, cMirZ[4] = {3, 2, 1, 0};
+                    const bool w = b.shape == BRUSH_WEDGE;
+                    if (op == ED_ROT_Y) b.dir = (uint8_t)(w ? wRot[b.dir] : (b.dir + 1) % 4);
+                    else if (op == ED_MIR_X) b.dir = (uint8_t)(w ? (b.dir < 2 ? b.dir ^ 1 : b.dir) : cMirX[b.dir]);
+                    else b.dir = (uint8_t)(w ? (b.dir >= 2 ? b.dir ^ 1 : b.dir) : cMirZ[b.dir]);
+                }
+                break;
+            }
             case ED_LADDER: tmp.ladders[e.idx] = box(m.ladders[e.idx], c); break;
             case ED_CHECK: tmp.checkpoints[e.idx] = box(m.checkpoints[e.idx], c); break;
             case ED_LIGHT: tmp.lights[e.idx].pos = pt(m.lights[e.idx].pos, c); break;
@@ -1075,6 +1087,18 @@ void Game::editorKey(int key, int mods) {
         }, false);
         return;
     }
+    if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +X / -X / +Z / -Z, corner high at each corner, box
+        edModify([&](Map& m) {
+            Brush& b = m.brushes[i];
+            const int k = (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : 5 + b.dir) + 1;
+            b.shape = k == 9 ? BRUSH_BOX : k <= 4 ? BRUSH_WEDGE : BRUSH_CORNER;
+            b.dir = (uint8_t)(k == 9 ? 0 : k <= 4 ? k - 1 : k - 5);
+        }, false);
+        const Brush& b = ed_.brushes[i];
+        static const char* wd[4] = {"+X", "-X", "+Z", "-Z"}, *cd[4] = {"-X -Z", "+X -Z", "+X +Z", "-X +Z"};
+        edNotify(b.shape == BRUSH_BOX ? std::string("box") : b.shape == BRUSH_WEDGE ? std::string("wedge rising toward ") + wd[b.dir] : std::string("corner high at ") + cd[b.dir]);
+        return;
+    }
     if ((key == GLFW_KEY_Q || key == GLFW_KEY_E) && kind == ED_SPAWN && !edLook_) {
         edModify([&](Map& m) { m.spawns[i].yaw += key == GLFW_KEY_Q ? PI / 4 : -PI / 4; }, true);
         return;
@@ -1414,7 +1438,8 @@ void Game::editorFrame(double dt) {
                 for (auto& b : ed_.brushes) { // (water, lava, trim, nograpple, acid past the table: blue, orange, accent, slate, green; clip below)
                     if (b.material == 9) continue;
                     Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : r_.accentColor;
-                    r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
+                    if (b.shape != BRUSH_BOX) r_.slope(b, c);
+                    else r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
                 }
             });
             r_.outlineWidth = 1.0f;
