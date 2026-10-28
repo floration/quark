@@ -1131,9 +1131,11 @@ void Map::genLadderBrushes() {
         add(w1 - 0.08f, l.mn.y, w1, top, dc - 0.04f, dc + 0.04f);
         for (float y = l.mn.y + 0.35f; y < top; y += 0.4f) add(w0 + 0.08f, y, w1 - 0.08f, y + 0.06f, dc - 0.03f, dc + 0.03f);
     }
-    std::vector<Brush> parts;
-    for (auto& g : groups) groupBoxes(g, parts);
-    for (auto& b : parts) { b.generated = true; brushes.push_back(b); }
+    for (size_t gi = 0; gi < groups.size(); gi++) {
+        std::vector<Brush> parts;
+        groupBoxes(groups[gi], parts);
+        for (auto& b : parts) { b.generated = true; b.group = (int)gi; brushes.push_back(b); }
+    }
 }
 
 void Map::groupBoxes(const Group& g, std::vector<Brush>& out) {

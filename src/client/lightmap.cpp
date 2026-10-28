@@ -28,6 +28,7 @@ struct Face {
     int wu, wv;   // texels
     int rx, ry;   // atlas rect origin (including 1px padding)
     int material;
+    int group;    // the brush's map group, -1 for none
 };
 
 bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) { return m.raycastAny(o, d, maxT); }
@@ -302,6 +303,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 f.axis = axis;
                 f.sign = sign;
                 f.material = br.material;
+                f.group = br.group;
                 f.plane = sign > 0 ? br.box.mx[axis] : br.box.mn[axis];
                 int ua = (axis + 1) % 3, va = (axis + 2) % 3;
                 f.u0 = br.box.mn[ua]; f.u1 = br.box.mx[ua];
@@ -359,13 +361,27 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     // across the neighbour). Edges between a face's own pieces never have one.
     // Flush within 1 mm: parts of a scaled group (stored as fractions of its box) land a hair off each other's plane.
     const float kFlush = 1e-3f;
+    // Which flush neighbours join without a seam (owner, 2026-10-28): in a hand-made map, only parts of the same group,
+    // whatever their materials (ungrouped boxes always keep their outlines); in a generated map (no groups), faces of
+    // the same material, as before.
+    const bool byGroup = map.handmade;
+    auto joins = [&](const Face& f, const Face& o) {
+        return byGroup ? f.group >= 0 && o.group == f.group : o.material == f.material;
+    };
+    // near() for every material a face can join (all of them by group)
+    auto nearJoin = [&](const Face& f, int cu, int cv, auto fn) {
+        if (!byGroup) return near(f, f.material, cu, cv, fn);
+        if (f.group < 0) return false;
+        for (int m = 0; m < kMapMaterials; m++) if (near(f, m, cu, cv, fn)) return true;
+        return false;
+    };
     struct Split { std::vector<float> bu, bv; std::vector<uint8_t> off; };   // off: per piece, bit 0 u0, 1 u1, 2 v0, 3 v1
     std::vector<Split> splits(faces.size());
     auto covered = [&](size_t self, float u, float v) {
         const Face& f = faces[self];
-        return near(f, f.material, cellOf(u), cellOf(v), [&](uint32_t k) {
+        return nearJoin(f, cellOf(u), cellOf(v), [&](uint32_t k) {
             const Face& o = faces[k];
-            if (k == self || o.axis != f.axis || o.sign != f.sign || o.material != f.material || std::fabs(o.plane - f.plane) > kFlush) return false;
+            if (k == self || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
             return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
         });
     };
@@ -377,15 +393,15 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         // where the neighbours along the border start and stop
         auto add = [&](uint32_t k) {
             const Face& o = faces[k];
-            if (k == i || o.axis != f.axis || o.sign != f.sign || o.material != f.material || std::fabs(o.plane - f.plane) > kFlush) return false;
+            if (k == i || o.axis != f.axis || o.sign != f.sign || !joins(f, o) || std::fabs(o.plane - f.plane) > kFlush) return false;
             if (!(o.u0 < f.u1 + e && o.u1 > f.u0 - e && o.v0 < f.v1 + e && o.v1 > f.v0 - e)) return false;
             for (float x : {o.u0, o.u1}) if (x > f.u0 + kMin && x < f.u1 - kMin) sp.bu.push_back(x);
             for (float x : {o.v0, o.v1}) if (x > f.v0 + kMin && x < f.v1 - kMin) sp.bv.push_back(x);
             return false;
         };
         const int cu0 = cellOf(f.u0 - e), cu1 = cellOf(f.u1 + e), cv0 = cellOf(f.v0 - e), cv1 = cellOf(f.v1 + e);
-        auto row = [&](int cv) { for (int cu = cu0; cu <= cu1; cu++) near(f, f.material, cu, cv, add); };
-        auto col = [&](int cu) { for (int cv = cv0; cv <= cv1; cv++) near(f, f.material, cu, cv, add); };
+        auto row = [&](int cv) { for (int cu = cu0; cu <= cu1; cu++) nearJoin(f, cu, cv, add); };
+        auto col = [&](int cu) { for (int cv = cv0; cv <= cv1; cv++) nearJoin(f, cu, cv, add); };
         if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) <= 64 * 64) {   // (the border's cells; a neighbour touching it is bucketed there)
             for (int cv : {cellOf(f.v0 - e), cellOf(f.v0 + e), cellOf(f.v1 - e), cellOf(f.v1 + e)}) row(cv);
             for (int cu : {cellOf(f.u0 - e), cellOf(f.u0 + e), cellOf(f.u1 - e), cellOf(f.u1 + e)}) col(cu);
