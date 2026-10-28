@@ -4626,6 +4626,70 @@ static void testSlopes() {
 // Surf (owner, 2026-10-28): Cascade's ramps are ridden, not walked (the map checks don't ask bots to): a surfer
 // dropped onto a ramp's face going along it, strafing into it, rides it to its end without falling off, and the run-only
 // movement leaves no dash and no grapple.
+// Slopes in custom groups (map format 5): parts read and written with their shape, edited in, turned with the group, and
+// seams: a wedge part's side triangle flush with a box part's face joins it (no outline across), the slope's own
+// crease keeps its outline, and the same pieces outside a group keep every outline (a hand-made map).
+static void testGroupSlopes() {
+    printf("group slopes: parts with shapes, seams\n");
+    const std::string base = "handmade\nbox -20 -1 -20 20 0 20\nspawn any -10 0 -10\n";
+    const std::string grp = "group custom 0 0 0 0 0 4 2 2\npart 0 0 0 0 0.5 1 1\npart 3 0.5 0 0 1 1 1 wedge 1\n";
+    Map m;
+    std::string err;
+    CHECK(m.parse(grp + base, &err) && m.groups.size() == 1 && m.groups[0].parts.size() == 2);
+    CHECK(m.groups[0].parts[1].shape == BRUSH_WEDGE && m.groups[0].parts[1].dir == 1 && m.groups[0].parts[1].up == 0);
+    CHECK(m.serialize().find("part 3 0.5 0 0 1 1 1 wedge 1\n") != std::string::npos);
+    {   // the world brush: a wedge, in the group, collides (its slope 1 m up at x 3)
+        int wedges = 0;
+        for (auto& b : m.brushes) wedges += b.generated && b.group == 0 && b.shape == BRUSH_WEDGE && b.dir == 1;
+        CHECK(wedges == 1);
+        const float t = m.raycast({3, 5, 1}, {0, -1, 0}, 10);
+        CHECK(std::fabs(t - 4) < 0.02f);
+    }
+    {   // bad shape words fail; an edit adds a corner part (upside down)
+        Map bad;
+        CHECK(!bad.parse("group custom 0 0 0 0 0 4 2 2\npart 0 0 0 0 1 1 1 ramp 1\n" + base) && !bad.parse("group custom 0 0 0 0 0 4 2 2\npart 0 0 0 0 1 1 1 wedge 24\n" + base));
+        Map e;
+        CHECK(e.parse(grp + base));
+        CHECK(applyMapEdit(e, "g part 0 0 0 0 0 0.5 0.5 0.5 c 6") && e.groups[0].parts.size() == 3 && e.groups[0].parts[2].shape == BRUSH_CORNER && e.groups[0].parts[2].dir == 2 && e.groups[0].parts[2].up == 1);
+        CHECK(!applyMapEdit(e, "g part 0 0 0 0 0 0.5 0.5 0.5 x 1"));
+        const std::string t = e.serialize();
+        CHECK(t.find("corner 6\n") != std::string::npos);
+        Map back;
+        CHECK(back.parse(t) && back.groups[0].parts.size() == 3 && back.groups[0].parts[2].shape == BRUSH_CORNER && back.groups[0].parts[2].up == 1);
+    }
+    // the outline's distance at p on the face facing n (the mesh's edge interpolated; 1000 where an edge is off)
+    auto outlineAt = [](const BakedWorld& w, Vec3 p, Vec3 n) {
+        for (size_t i = 0; i + 2 < w.verts.size(); i += 3) {
+            const WorldVertex* v[3] = {&w.verts[i], &w.verts[i + 1], &w.verts[i + 2]};
+            Vec3 a(v[0]->pos[0], v[0]->pos[1], v[0]->pos[2]), b(v[1]->pos[0], v[1]->pos[1], v[1]->pos[2]), c(v[2]->pos[0], v[2]->pos[1], v[2]->pos[2]);
+            Vec3 nn = cross(b - a, c - a);
+            if (length(nn) < 1e-8f) continue;
+            nn = normalize(nn);
+            if (dot(nn, n) < 0.99f || std::fabs(dot(p - a, nn)) > 1e-3f) continue;
+            const float area = dot(cross(b - a, c - a), nn);
+            const float la = dot(cross(c - b, p - b), nn) / area, lb = dot(cross(a - c, p - c), nn) / area, lc = 1 - la - lb;
+            if (la < -1e-4f || lb < -1e-4f || lc < -1e-4f) continue;
+            float e[4];
+            for (int k = 0; k < 4; k++) e[k] = v[0]->edge[k] * la + v[1]->edge[k] * lb + v[2]->edge[k] * lc;
+            return std::min(std::min(e[0], e[1]), std::min(e[2] - e[0], e[3] - e[1]));
+        }
+        return -1.0f;   // (no face there)
+    };
+    BakedWorld g;
+    buildWorld(m, g);
+    const Vec3 nz(0, 0, -1);
+    const float boxSide = outlineAt(g, {1.97f, 1.0f, 0}, nz), triSide = outlineAt(g, {2.03f, 1.0f, 0}, nz), crease = outlineAt(g, {3.0f, 0.97f, 0}, nz);
+    if (getenv("SLOPE_TRACE")) printf("    grouped: box side %.3f, triangle side %.3f, its slope edge %.3f\n", boxSide, triSide, crease);
+    CHECK(boxSide > 0.5f && triSide > 0.5f && crease >= 0 && crease < 0.1f);
+    Map loose;   // the same pieces ungrouped: outlines stay
+    CHECK(loose.parse("box 0 0 0 2 2 2\nwedge 3 1 2 0 0 4 2 2\n" + base));
+    BakedWorld l;
+    buildWorld(loose, l);
+    const float lb = outlineAt(l, {1.97f, 1.0f, 0}, nz), lt = outlineAt(l, {2.03f, 1.0f, 0}, nz);
+    if (getenv("SLOPE_TRACE")) printf("    loose: box side %.3f, triangle side %.3f\n", lb, lt);
+    CHECK(lb >= 0 && lb < 0.1f && lt >= 0 && lt < 0.1f);
+}
+
 static void testSurf() {
     printf("surf: ride a ramp end to end\n");
     Map m;
@@ -8552,6 +8616,7 @@ int main(int argc, char** argv) {
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
         {"surf", [] { testSurf(); }},
+        {"groupslopes", [] { testGroupSlopes(); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

@@ -125,7 +125,11 @@ Json mapToJson(const Map& m) {
         o.set("type", gt[std::clamp(g.type, 0, 2)]); o.set("mat", g.material); o.set("dir", g.dir);
         o.set("min", jvec(g.box.mn)); o.set("max", jvec(g.box.mx));
         Json parts = Json::array();
-        for (auto& p : g.parts) { Json q = Json::object(); q.set("mat", p.material); q.set("min", jvec(p.box.mn)); q.set("max", jvec(p.box.mx)); parts.push(std::move(q)); }
+        for (auto& p : g.parts) {   // (a slope part: shape, dir, up as a brush's)
+            Json q = Json::object(); q.set("mat", p.material); q.set("min", jvec(p.box.mn)); q.set("max", jvec(p.box.mx));
+            if (p.shape != BRUSH_BOX) { q.set("shape", p.shape == BRUSH_WEDGE ? "wedge" : "corner"); q.set("dir", (int)p.dir); if (p.up) q.set("up", (int)p.up); }
+            parts.push(std::move(q));
+        }
         o.set("parts", std::move(parts));
         gs.push(std::move(o));
     }
@@ -201,18 +205,23 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
     if (j["void"].isNum()) { m.hasVoid = true; m.voidY = j["void"].f(); }
     if (j["indoor"].isNum()) { m.indoor = true; m.ceilingY = j["indoor"].f(); }
     m.holdFire = j["holdfire"].f(0);
+    // a brush's or a group part's shape, dir and up (absent: a box)
+    auto readShape = [&](const Json& b, Brush& br, const char* what) {
+        const std::string shape = b["shape"].str("box");
+        if (shape != "box" && shape != "wedge" && shape != "corner") { err = std::string(what) + " shape '" + shape + "' isn't box, wedge or corner"; return false; }
+        br.shape = shape == "wedge" ? BRUSH_WEDGE : shape == "corner" ? BRUSH_CORNER : BRUSH_BOX;
+        const int dir = b["dir"].i(0);
+        if (dir < 0 || dir > 3) { err = std::string(what) + " dir " + std::to_string(dir) + " isn't 0..3"; return false; }
+        const int up = b["up"].i(0);
+        if (up < 0 || up >= kSlopeUps) { err = std::string(what) + " up " + std::to_string(up) + " isn't 0..5"; return false; }
+        if (br.shape != BRUSH_BOX) { br.dir = (uint8_t)dir; br.up = (uint8_t)up; }
+        return true;
+    };
     for (auto& b : j["brushes"].items()) {
         int mat = b["mat"].i(0);
         if (!validMapMaterial(mat)) { err = "brush material " + std::to_string(mat) + " isn't 0..9"; return false; }
         Brush br; br.material = mat; br.box = toBox(b);
-        const std::string shape = b["shape"].str("box");
-        if (shape != "box" && shape != "wedge" && shape != "corner") { err = "brush shape '" + shape + "' isn't box, wedge or corner"; return false; }
-        br.shape = shape == "wedge" ? BRUSH_WEDGE : shape == "corner" ? BRUSH_CORNER : BRUSH_BOX;
-        const int dir = b["dir"].i(0);
-        if (dir < 0 || dir > 3) { err = "brush dir " + std::to_string(dir) + " isn't 0..3"; return false; }
-        const int up = b["up"].i(0);
-        if (up < 0 || up >= kSlopeUps) { err = "brush up " + std::to_string(up) + " isn't 0..5"; return false; }
-        if (br.shape != BRUSH_BOX) { br.dir = (uint8_t)dir; br.up = (uint8_t)up; }
+        if (!readShape(b, br, "brush")) return false;
         m.brushes.push_back(br);
     }
     for (auto& g : j["groups"].items()) {
@@ -220,7 +229,11 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
         std::string t = g["type"].str("custom");
         gr.type = t == "room" ? Map::GROUP_ROOM : t == "stairs" ? Map::GROUP_STAIRS : Map::GROUP_CUSTOM;
         gr.material = g["mat"].i(0); gr.dir = g["dir"].i(0); gr.box = toBox(g);
-        for (auto& p : g["parts"].items()) { Brush b; b.material = p["mat"].i(0); b.box = toBox(p); gr.parts.push_back(b); }
+        for (auto& p : g["parts"].items()) {
+            Brush b; b.material = p["mat"].i(0); b.box = toBox(p);
+            if (!readShape(p, b, "group part")) return false;
+            gr.parts.push_back(b);
+        }
         m.groups.push_back(std::move(gr));
     }
     for (auto& s : j["spawns"].items()) {

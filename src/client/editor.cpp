@@ -139,6 +139,11 @@ template <class H> void handlesOf(const AABB& b, bool point, std::vector<H>& hs)
             }
 }
 
+// After a box in an edit op or a group file: "" for a box, " w <dir + 4 * up>" / " c ..." for a wedge / corner.
+static std::string shapeSuffix(const Brush& b) {
+    return b.shape == BRUSH_BOX ? "" : std::string(b.shape == BRUSH_WEDGE ? " w " : " c ") + std::to_string((int)b.dir + 4 * b.up);
+}
+
 // The "ins" op for object i, plus (a custom group) the ops that add its parts back.
 std::string insertOps(const Map& m, char k, int i) {
     std::string o = describeMapObject(m, k, "ins", i);
@@ -146,13 +151,14 @@ std::string insertOps(const Map& m, char k, int i) {
         for (auto& p : m.groups[i].parts) {
             char t[200];
             snprintf(t, sizeof t, "\ng part %d %d %.7g %.7g %.7g %.7g %.7g %.7g", i, p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z);
-            o += t;
+            o += t + shapeSuffix(p);
         }
     return o;
 }
 
 // ---- group files: "quark-group 1", "size sx sy sz", "type custom|room|stairs material dir", then (custom) one
-// "<material> x0 y0 z0 x1 y1 z1" per box, in metres from the group's low corner (so it pastes anywhere)
+// "<material> x0 y0 z0 x1 y1 z1" per box, in metres from the group's low corner (so it pastes anywhere), then
+// "w|c <dir + 4 * up>" for a wedge / corner
 std::string groupDir() { return userDataPath("groups"); }
 
 std::string groupText(const Map::Group& g) {
@@ -162,8 +168,8 @@ std::string groupText(const Map::Group& g) {
     std::string o = t;
     for (auto& p : g.parts) {
         Vec3 a(p.box.mn.x * sz.x, p.box.mn.y * sz.y, p.box.mn.z * sz.z), c(p.box.mx.x * sz.x, p.box.mx.y * sz.y, p.box.mx.z * sz.z);
-        snprintf(t, sizeof t, "%s %g %g %g %g %g %g\n", kMatNames[p.material], a.x, a.y, a.z, c.x, c.y, c.z);
-        o += t;
+        snprintf(t, sizeof t, "%s %g %g %g %g %g %g", kMatNames[p.material], a.x, a.y, a.z, c.x, c.y, c.z);
+        o += t + shapeSuffix(p) + "\n";
     }
     return o;
 }
@@ -197,7 +203,16 @@ bool parseGroupText(const std::string& text, Map::Group& g) {
         Vec3 a, c;
         if (mat < 0 || !hasSize || !(ls >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z) || g.parts.size() >= 1024) return false;
         Vec3 lo = vmin(a, c), hi = vmax(a, c);
-        g.parts.push_back({{{lo.x / sz.x, lo.y / sz.y, lo.z / sz.z}, {hi.x / sz.x, hi.y / sz.y, hi.z / sz.z}}, mat});
+        Brush part{{{lo.x / sz.x, lo.y / sz.y, lo.z / sz.z}, {hi.x / sz.x, hi.y / sz.y, hi.z / sz.z}}, mat};
+        std::string shape;
+        if (ls >> shape) {
+            int dir = -1;
+            if (!((shape == "w" || shape == "c") && (ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
+            part.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
+            part.dir = (uint8_t)(dir % 4);
+            part.up = (uint8_t)(dir / 4);
+        }
+        g.parts.push_back(part);
     }
     if (!hasSize || !hasType || (g.type == Map::GROUP_CUSTOM) == g.parts.empty()) return false;
     for (auto& p : g.parts) if (!okNum(p.box.mn.x) || !okNum(p.box.mx.x) || !okNum(p.box.mn.y) || !okNum(p.box.mx.y) || !okNum(p.box.mn.z) || !okNum(p.box.mx.z)) return false;
@@ -501,7 +516,12 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
                 if (op == ED_ROT_Y) g.dir = rotY[g.dir];
                 else if (op == ED_MIR_X && g.dir < 2) g.dir ^= 1;
                 else if (op == ED_MIR_Z && g.dir >= 2) g.dir ^= 1;
-                for (auto& p : g.parts) p.box = box(p.box, Vec3(0.5f, 0.5f, 0.5f));   // (parts: 0-1 fractions of the box)
+                for (size_t k = 0; k < g.parts.size(); k++) {   // (parts: 0-1 fractions of the box; a slope turns as a brush does)
+                    const Vec3 mid(0.5f, 0.5f, 0.5f);
+                    Brush& p = g.parts[k];
+                    p.box = box(p.box, mid);
+                    if (p.shape != BRUSH_BOX && !slopeTurned(m.groups[e.idx].parts[k], p, [&](const Vec3& q) { return pt(q, mid); })) return false;
+                }
                 break;
             }
         }
@@ -656,7 +676,10 @@ template <class Sel> static bool groupOf(const Map& m, const std::vector<Sel>& s
     g.box = b;
     for (auto& p : all) {
         Vec3 a = p.box.mn - b.mn, c = p.box.mx - b.mn;
-        g.parts.push_back({{{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}}, p.material});   // (every material, trim and clip too)
+        Brush part = p;   // (every material, trim and clip too; a wedge / corner keeps its shape)
+        part.box = {{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}};
+        part.generated = false; part.group = -1;
+        g.parts.push_back(part);
     }
     return true;
 }
@@ -717,8 +740,8 @@ void Game::edUngroup() {
     for (size_t k = 0; k < parts.size(); k++) {
         char t[220];
         const AABB& b = parts[k].box;
-        snprintf(t, sizeof t, "b ins %d %d %.9g %.9g %.9g %.9g %.9g %.9g\n", n + (int)k, parts[k].material, b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
-        op += t;
+        snprintf(t, sizeof t, "b ins %d %d %.9g %.9g %.9g %.9g %.9g %.9g", n + (int)k, parts[k].material, b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
+        op += t + shapeSuffix(parts[k]) + "\n";
         undo = "b del " + std::to_string(n + (int)k) + "\n" + undo;
     }
     op += "g del " + std::to_string(gi);

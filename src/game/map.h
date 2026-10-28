@@ -376,7 +376,8 @@ struct Map {
     std::vector<AABB> ladders;        // "ladder x0 y0 z0 x1 y1 z1 [auto]": climbable volumes (stand in it and move)
     std::vector<uint8_t> ladderAuto;  // per ladder: draws its own rails and rungs (one editor object; else separate boxes do)
     void genLadderBrushes();          // (re)makes the generated brushes (auto ladders' rails / rungs, groups' parts), at the end of brushes
-    // "group custom|room|stairs <material> <dir> x0 y0 z0 x1 y1 z1" (+ "part <material> fx0 fy0 fz0 fx1 fy1 fz1" lines for custom):
+    // "group custom|room|stairs <material> <dir> x0 y0 z0 x1 y1 z1" (+ "part <material> fx0 fy0 fz0 fx1 fy1 fz1" lines for custom,
+    // a wedge / corner part followed by "wedge|corner <dir + 4 * up>"):
     // one editor object whose boxes are made from its box, so moving / stretching it moves / stretches them all.
     // room: floor, walls with a player-sized doorway each, ceiling. stairs: steps rising toward dir (0 +x, 1 -x, 2 +z,
     // 3 -z), each no taller than pmove's step-up. custom: parts kept as 0..1 fractions of the box.
@@ -508,7 +509,7 @@ struct Map {
 //                                         intensity), z bomb site (box), c checkpoint (box), p path point (x y z), h hill (has + box),
 //                                         o multi point capture zone (box), d ladder (auto + box),
 //                                         g group (type material dir box; ins makes it empty, set keeps its parts)
-//   g part <index> <material> <6 fractions of the box>: adds a part to custom group <index>
+//   g part <index> <material> <6 fractions of the box> [w|c <dir + 4 * up>]: adds a part (a box, wedge or corner) to custom group <index>
 //   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8, clip 9, nograpple 10 and acid 11 included)
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and updates the grid (in place

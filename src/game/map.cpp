@@ -719,8 +719,16 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
             if (ok) groups.push_back(g);
-        } else if (kw == "part") {
+        } else if (kw == "part") {   // "part <material> <6 fractions>", then "wedge|corner <dir + 4 * up>" for a slope (format 5)
             Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < kMaxGroupParts && (bool)(ls >> b.material) && validMapMaterial(b.material) && readBox(ls, b.box);
+            std::string shape;
+            if (ok && ls >> shape) {
+                int dir = -1;
+                ok = (shape == "wedge" || shape == "corner") && (bool)(ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps;
+                b.shape = shape == "wedge" ? BRUSH_WEDGE : BRUSH_CORNER;
+                b.dir = (uint8_t)(std::max(0, dir) % 4);
+                b.up = (uint8_t)(std::max(0, dir) / 4);
+            }
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b) && checkpoints.size() < kMaxMapCheckpoints; if (ok) checkpoints.push_back(b);
@@ -931,7 +939,11 @@ std::string Map::serialize() const {
         char kw[48];
         snprintf(kw, sizeof kw, "group %s %d %d", groupTypes[g.type], g.material, g.dir);
         box(kw, g.box);
-        for (auto& p : g.parts) { snprintf(kw, sizeof kw, "part %d", p.material); box(kw, p.box); }
+        for (auto& p : g.parts) {
+            snprintf(kw, sizeof kw, "part %d", p.material);
+            box(kw, p.box);
+            if (p.shape != BRUSH_BOX) { o.pop_back(); snprintf(kw, sizeof kw, " %s %d\n", p.shape == BRUSH_WEDGE ? "wedge" : "corner", (int)p.dir + 4 * p.up); o += kw; }
+        }
     }
     for (auto& st : stairs) {   // (kept as they were: the editor doesn't move them with the boxes)
         snprintf(b, sizeof b, "stairs %s %s %s %s %s %s %c %s %d\n", exactNum(nb[0], 24, st.x0), exactNum(nb[1], 24, st.z0), exactNum(nb[2], 24, st.x1),
@@ -1013,6 +1025,18 @@ bool applyMapEdit(Map& m, const std::string& op) {
         b.mn = vmin(a, c); b.mx = vmax(a, c);
         return true;
     };
+    // after a brush's or a group part's box: nothing (a box), or "w <dir + 4 * up>" / "c <dir + 4 * up>" (a wedge /
+    // corner, map format 5)
+    auto readShape = [&](Brush& b) {
+        std::string shape;
+        if (!(in >> shape)) return true;
+        int dir = -1;
+        if (!((shape == "w" || shape == "c") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
+        b.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
+        b.dir = (uint8_t)(dir % 4);
+        b.up = (uint8_t)(dir / 4);
+        return true;
+    };
     // generic ins / set / del on one of the lists
     auto edit = [&](auto& vec, auto read, size_t minSize, size_t maxSize) {
         using T = typename std::decay_t<decltype(vec)>::value_type;
@@ -1043,24 +1067,17 @@ bool applyMapEdit(Map& m, const std::string& op) {
         else {
             Brush b;
             if (!((bool)(in >> b.material) && validMapMaterial(b.material) && readBox(b.box))) return false;
-            std::string shape;
-            if (in >> shape) {   // "w <dir + 4 * up>" / "c <dir + 4 * up>": a wedge / corner (map format 5)
-                int dir = -1;
-                if (!((shape == "w" || shape == "c") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
-                b.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
-                b.dir = (uint8_t)(dir % 4);
-                b.up = (uint8_t)(dir / 4);
-            }
+            if (!readShape(b)) return false;
             if (verb == "ins") ok = i >= 0 && (size_t)i <= n && n < kMaxMapBrushes && m.insertBrush((size_t)i, b);
             else ok = i >= 0 && (size_t)i < n && m.setBrush((size_t)i, b);
         }
         if (ok) m.sourceStale = true;
         return ok;
     }
-    if (kind == "g" && verb == "part") {
+    if (kind == "g" && verb == "part") {   // (a slope part: "w|c <dir + 4 * up>" after its box, as for a brush)
         Brush part;
         if (!(i >= 0 && (size_t)i < m.groups.size() && m.groups[i].type == Map::GROUP_CUSTOM && m.groups[i].parts.size() < kMaxGroupParts
-              && (bool)(in >> part.material) && validMapMaterial(part.material) && readBox(part.box)))
+              && (bool)(in >> part.material) && validMapMaterial(part.material) && readBox(part.box) && readShape(part)))
             return false;
         // its box in the world goes right after group i's others: the generated brushes are the ladders' rails and
         // rungs, then each group's boxes in order (genLadderBrushes)
