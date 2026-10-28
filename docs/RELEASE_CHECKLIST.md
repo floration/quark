@@ -2,10 +2,10 @@
 
 Do this for **every** update, after it has been pushed to the `testing` branch and published as a testing prerelease, and **before** it goes to production (the `testing` → default-branch PR and the `v<VERSION>` tag). Claude never pushes to production until you have been through this list and said so.
 
-- **When:** CI has published the prerelease `test-<VERSION>.testing.<N>` (before 1.19.0: `test-<VERSION>-test.<N>`). The launcher's TESTING channel and Discord's #testing-updates both show it.
+- **When:** CI has published the prerelease `test-<VERSION>.<N>` (for example `test-1.19.1.1`; before 1.19.1: `test-<VERSION>.testing.<N>`). The launcher's TESTING channel and Discord's #testing-updates both show it.
 - **Time:** about 60–90 minutes for the full list. For a small patch (one fix, no netcode, map or server changes), do sections 0–2, the parts of 3–16 the changelog touches, and 17.
 - **How to record it:** copy the sign-off table at the bottom into the PR description (or a note), and tick each section as you go. Write down anything odd, even if it seems minor, and give it to Claude before production.
-- **If something fails:** stop. Tell Claude what failed and how to reproduce it. The fix goes to `testing` as a new build (`.testing.<N+1>`), and you redo the sections it touches. Never tag production on a build with a known failure in sections 0, 1, 2, 11, 12 or 13.
+- **If something fails:** stop. Tell Claude what failed and how to reproduce it. The fix goes to `testing` as a new build (`.<N+1>`), and you redo the sections it touches. Never tag production on a build with a known failure in sections 0, 1, 2, 11, 12 or 13.
 
 ---
 
@@ -16,7 +16,7 @@ Do this for **every** update, after it has been pushed to the `testing` branch a
 | ☐ | GitHub → Actions: the run for the `testing` push is green: meta (VERSION, changelogs, secrets check), the Windows, Linux and macOS builds, the testing prerelease. CI runs **no** gameplay or UI tests (owner, 2026-10-24): those are the local runs below and this checklist. |
 | ☐ | This is the **final test build** (the one you mean to ship) and its **sanitizers** run is green. Mark it either way: put `[final]` in the subject line (first line) of the push's head commit (for a merged PR, in the PR's title; a mention further down a message doesn't count), or after the push run Actions → **build-and-release** → **Run workflow** on `testing` with **final** ticked (that runs only the sanitizers, on the branch's current commit; nothing is built or published). The sanitizers fail only on a memory or undefined-behaviour error (ASan / UBSan / the fuzzers), never on a test's own result. No other build runs them (work branches and pull requests included): only a human marks a final test, never an agent. |
 | ☐ | Claude's local test runs passed **on this commit** (ask for the results): `tools/release_check.sh` (every `build/quark_tests` group, plus every map hosted headless; exit 0) and the UI test `build/quark --uitest` under Xvfb ([UI_TEST.md](UI_TEST.md); exit 0). CI no longer runs them, so nothing else checks them before production. |
-| ☐ | GitHub → Releases: the prerelease `test-<VERSION>.testing.<N>` exists. It is marked **Pre-release**, not "Latest". |
+| ☐ | GitHub → Releases: the prerelease `test-<VERSION>.<N>` exists. It is marked **Pre-release**, not "Latest". |
 | ☐ | Its assets: `quark-windows.qpak`, `quark-linux.qpak` (and `quark-macos.qpak` once the macOS build finished), each with a `.sig`; `quark-release.txt` + `.sig`; `SHA256SUMS` + `.sig`. |
 | ☐ | The release PR bumped `VERSION` to the release this build becomes and renamed `changelogs/next.md` and `changelogs/full/next.md` to `changelogs/<VERSION>.md` (the short notes) and `changelogs/full/<VERSION>.md` (every change, and why). Both exist and no `next.md` is left; a production tag fails otherwise. (Testing builds between releases keep `VERSION` and only add to `next.md`.) |
 | ☐ | Discord #testing-updates announced the build (and #updates did **not**). |
@@ -232,7 +232,7 @@ So the testing build is already live on every box: check it there.
 
 | ✓ | Check |
 |---|---|
-| ☐ | Within ~10 minutes of the prerelease, each box's testing server runs it: `journalctl -u quark-testing-update` says `built test-<VERSION>.testing.<N>`, `systemctl status quark-testing` is active, and `journalctl -p crit -t quark-update` has nothing new (an alert there names the instance that failed). |
+| ☐ | Within ~10 minutes of the prerelease, each box's testing server runs it: `journalctl -u quark-testing-update` says `built test-<VERSION>.<N>`, `systemctl status quark-testing` is active, and `journalctl -p crit -t quark-update` has nothing new (an alert there names the instance that failed). (1.19.1.1: a testing server installed before it doesn't see the new build numbers until `install.sh` is run once from a `testing` checkout, docs/OPERATIONS.md.) |
 | ☐ | The testing server appears in the in-game internet list of a testing-build game (and in Discord's live servers) as "... [TESTING]"; you can join it; console commands work (`map`, `mode`, `forcestart`, `kick`, `status`, `quit`, typed in a `quark_server` you run by hand: the service has no console). |
 | ☐ | A ranked match on it plays normally (queue, lock, result) and says **TESTING SERVER - RANKED NOT RATED** (on joining, at the start, at the end, and on the HUD tag); the leaderboard doesn't change. To test that ranking itself still works, play a ranked match on the **production** server after the release (section 12). If the box is behind a forwarded port or in a container, `--own-addr host:port` is set and neither log shows a "ranked key proof is for ..." warning. |
 | ☐ | Load governor: `cat /var/lib/quark-governor/*.status` shows both servers, fresh (`t` within a second or two). With players on both and bots added (`addbot` x10 on each in a hand-run console, or a busy evening), `journalctl -u quark -u quark-testing \| grep governor` shows any throttling in the right order (the empty server first, then the one not in a ranked match), and production never below what it needs. |
@@ -270,7 +270,7 @@ Only needed when the update changes `tools/master/` (worker.js, schema.sql) or t
 | ✓ | Check |
 |---|---|
 | ☐ | The testing build was posted in **#testing-updates** only, with the Testing Updates ping. |
-| ☐ | `/changelog <VERSION>.testing.<N>` shows the notes labelled as testing; `/changelog` alone shows the current production version. |
+| ☐ | `/changelog <VERSION>.<N>` shows the notes labelled as testing; `/changelog` alone shows the current production version. |
 | ☐ | `/servers`, `/leaderboard`, `/queues`, `/queue`, `/leave` all answer; the #queues panel buttons work. |
 | ☐ | `/link`: the code it gives you, typed in the game (SETTINGS → DISCORD CODE), links your account; verified #1 / top 10 players get their roles within 5 minutes. |
 | ☐ | Live server channels appear for busy servers (at most 5) and go away when a server stops. |
@@ -311,4 +311,4 @@ Quarkology (the Supervisor Board app) and the editors live in their own reposito
 
 | Build | Date | Tester | Platforms | Result | Notes |
 |---|---|---|---|---|---|
-| `test-<VERSION>.testing.<N>` | | | Windows / Linux / macOS | pass / fail | |
+| `test-<VERSION>.<N>` | | | Windows / Linux / macOS | pass / fail | |

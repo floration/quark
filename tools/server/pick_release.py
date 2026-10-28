@@ -2,26 +2,26 @@
 # Used by autoupdate.sh (standard library only; run with python3 -I). Which GitHub release a server instance runs:
 #   pick_release.py pick CHANNEL RELEASES_JSON [LATEST_JSON]
 #     CHANNEL production: the newest production release (tag vX.Y.Z, not a prerelease).
-#     CHANNEL testing:    the newest of those and the testing prereleases (tag test-X.Y.Z.testing.N from 1.19.0 on,
-#                         test-X.Y.Z-test.N before), by version: a testing server runs the newest build of either
-#                         channel, never an older one. X.Y.Z.testing.N sorts above production X.Y.Z (CI keeps VERSION
+#     CHANNEL testing:    the newest of those and the testing prereleases (tag test-X.Y.Z.N from 1.19.1 on,
+#                         test-X.Y.Z.testing.N from 1.19.0, test-X.Y.Z-test.N before), by version: a testing server runs the newest build of either
+#                         channel, never an older one. X.Y.Z.N (and X.Y.Z.testing.N) sorts above production X.Y.Z (CI keeps VERSION
 #                         at the production release testing builds follow) and below the next one.
 #     RELEASES_JSON is GitHub's release list (newest first); LATEST_JSON (optional) is /releases/latest, for when the
 #     list holds no production release (more testing builds than one page). Prints, for autoupdate.sh:
-#       tag <tag> / version <x.y.z[.testing.N|-test.N]> / channel <production|testing> (what its signed manifest
+#       tag <tag> / version <x.y.z[.N|.testing.N|-test.N]> / channel <production|testing> (what its signed manifest
 #       must say) / production <tag>   the newest production release (testing only; autoupdate.sh: has it caught up?) /
 #       asset <name> <state> <url>   one line per file
 #     or nothing if there is no such release.
 #   pick_release.py cmp A B   prints -1, 0 or 1: version A against B, as the launcher's versionCmp (releases.cpp):
-#                             1.19.1 > 1.19.0.testing.5 > 1.19.0 > 1.19.0-test.3 > 1.19.0-test.2
-#   pick_release.py version TAG   the version a tag names ("v1.2.3" -> 1.2.3, "test-1.2.3.testing.4" -> 1.2.3.testing.4,
+#                             1.19.1.2 > 1.19.1 > 1.19.0.testing.5 > 1.19.0 > 1.19.0-test.3 > 1.19.0-test.2
+#   pick_release.py version TAG   the version a tag names ("v1.2.3" -> 1.2.3, "test-1.2.3.4" -> 1.2.3.4, "test-1.2.3.testing.4" -> 1.2.3.testing.4,
 #                             "test-1.2.3-test.4" -> 1.2.3-test.4)
 import json
 import re
 import sys
 
 PROD_TAG = re.compile(r"^v(\d+\.\d+\.\d+)$")
-TEST_TAG = re.compile(r"^test-(\d+\.\d+\.\d+(?:\.testing\.\d+|-test\.\d+))$")
+TEST_TAG = re.compile(r"^test-(\d+\.\d+\.\d+(?:\.\d+|\.testing\.\d+|-test\.\d+))$")
 
 
 def version_of(tag):

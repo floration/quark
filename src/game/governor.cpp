@@ -16,7 +16,7 @@ int govChannelFromName(const std::string& s) {
 }
 bool isTestingVersion(const char* v) {
     if (!v) return false;
-    int dots = 0;   // "1.19.0.testing.5" (CI's testing builds from 1.19.0 on): anything past x.y.z; "1.18.9-test.3": a suffix
+    int dots = 0;   // "1.19.1.5" / "1.19.0.testing.5" (CI's testing builds): anything past x.y.z; "1.18.9-test.3": a suffix
     for (const char* c = v; *c && *c != '+'; c++) {
         if (*c == '-') return true;
         if (*c == '.' && ++dots > 2) return true;

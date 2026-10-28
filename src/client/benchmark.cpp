@@ -6,6 +6,7 @@
 #include "../common/version.h"
 #include "../game/benchmark.h"
 #include "../game/demo.h"
+#include "../game/governor.h"
 #include "gl.h"
 #include "isa.h"
 #include "openurl.h"
@@ -63,7 +64,7 @@ std::string cpuBrand() {
 }
 
 // The build a run came from (the upload's "build"): FLAGS.txt's label, else "ci" for a CI build (a testing version's
-// .testing.N, or a launcher install: installed-files.txt beside it), else "local" (built on this machine)
+// .N (isTestingVersion), or a launcher install: installed-files.txt beside it), else "local" (built on this machine)
 // (+ "-avx2" from the AVX2 build, src/client/isa.h)
 std::string buildKind() {
     const std::string flags = buildLabel();
@@ -74,7 +75,7 @@ std::string buildKind() {
     const char* isaTag = "";
 #endif
     std::error_code ec;
-    if (std::string(QUARK_VERSION).find(".testing.") != std::string::npos ||
+    if (isTestingVersion(QUARK_VERSION) ||
         (!executableDir().empty() && std::filesystem::exists(std::filesystem::u8path(executableDir() + "/installed-files.txt"), ec))) return std::string("ci") + isaTag;
     return std::string("local") + isaTag;
 }
@@ -535,7 +536,7 @@ void Game::benchUpload(const BenchFile& f) {
     auto num = [](double v) { char b[32]; snprintf(b, sizeof b, "%.3f", v); return std::string(b); };
     const std::string version = std::string(QUARK_VERSION);
     std::string body = "secret=" + rankKey_.secret + "&name=" + toHex(cfg_.name) + "&version=" + toHex(version) +
-                       "&channel=" + (version.find(".testing.") != std::string::npos ? "testing" : "production") + "&build=" + toHex(buildKind()) +
+                       "&channel=" + (isTestingVersion(version.c_str()) ? "testing" : "production") + "&build=" + toHex(buildKind()) +
                        "&cpu=" + toHex(setup("CPU")) + "&gpu=" + toHex(setup("GPU")) + "&driver=" + toHex(setup("DRIVER")) +
                        "&avg=" + num(f.avgFps) + "&low1=" + num(f.low1) + "&low01=" + num(f.low01) + "&min=" + num(f.minFps) +
                        "&stdev=" + num(f.stdevMs) + "&frames=" + std::to_string(f.frames) + "&seconds=" + num(f.seconds) +

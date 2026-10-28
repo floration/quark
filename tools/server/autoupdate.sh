@@ -3,9 +3,9 @@
 #   quark-update.timer          the PRODUCTION server (/opt/quark): QUARK_CHANNEL=production (the default) follows
 #                               the latest production release, exactly as before;
 #   quark-testing-update.timer  the TESTING server (/opt/quark-testing): QUARK_CHANNEL=testing follows the newest
-#                               testing prerelease (tag test-X.Y.Z.testing.N from 1.19.0 on, test-X.Y.Z-test.N
-#                               before; signed manifest channel "testing") while it's newer than production: by
-#                               version, and not already in production (X.Y.Z.testing.N sorts above X.Y.Z, so a build
+#                               testing prerelease (tag test-X.Y.Z.N from 1.19.1 on, test-X.Y.Z.testing.N from
+#                               1.19.0, test-X.Y.Z-test.N before; signed manifest channel "testing") while it's newer than production: by
+#                               version, and not already in production (X.Y.Z.N sorts above X.Y.Z, so a build
 #                               the production release was merged from counts as caught up by its commit). When it
 #                               isn't (production caught up), the testing server is stopped instead ($STATE/active,
 #                               below) until a newer one comes.
@@ -16,7 +16,7 @@
 #      quark_sign this server already trusts: its channel is the release's (production for vX.Y.Z, testing for
 #      test-*), its tag is this release, its version is the tag's and its commit is what the git tag points at; also
 #      checks the signed Linux package, like the launcher does (docs/SIGNING.md);
-#   3. checks out exactly that commit, builds quark_server as that version (a testing build gets its .testing.N suffix,
+#   3. checks out exactly that commit, builds quark_server as that version (a testing build gets its .N suffix,
 #      checked against the commit's VERSION file) next to the running one, swaps the binary in and drops
 #      update.pending: the server restarts itself as soon as no match is being played (telling players first).
 # Never moves to an older version. Nothing happens when up to date.
@@ -112,7 +112,7 @@ NEWVER=$(sed -n 's/^version //p' "$TMP/release.txt")
 WANTCH=$(sed -n 's/^channel //p' "$TMP/release.txt")
 case "$WANTCH" in
     production) echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "release tag '$TAG' isn't a production tag (vX.Y.Z)" ;;
-    testing) echo "$TAG" | grep -Eq '^test-[0-9]+\.[0-9]+\.[0-9]+(\.testing|-test)\.[0-9]+$' || die "release tag '$TAG' isn't a testing tag (test-X.Y.Z.testing.N)" ;;
+    testing) echo "$TAG" | grep -Eq '^test-[0-9]+\.[0-9]+\.[0-9]+(\.testing|-test)?\.[0-9]+$' || die "release tag '$TAG' isn't a testing tag (test-X.Y.Z.N)" ;;
     *) die "release $TAG: unknown channel" ;;
 esac
 [ "$CHANNEL" = testing ] || [ "$WANTCH" = production ] || die "a production server was offered testing release $TAG"
@@ -120,7 +120,7 @@ esac
 # branch and main branch are on the same update, you dont need to run a testing server"). $STATE/active is the switch:
 # install.sh's quark-testing-active.path starts the server when it appears, and the service's ExecCondition keeps it
 # down when it's gone; removing it also asks the running server to restart (update.pending) once its match ends.
-# From 1.19.0 on a testing build keeps the production VERSION (X.Y.Z.testing.N > X.Y.Z), so the build a production
+# From 1.19.0 on a testing build keeps the production VERSION (X.Y.Z.N > X.Y.Z; 1.19.0 to 1.19.1 X.Y.Z.testing.N), so the build a production
 # release was merged from still sorts above it: one whose commit the newest production tag contains has caught up too.
 # (Checked once per pair of tags, $STATE/caught-up; a failed fetch decides nothing and is tried again next time.)
 if [ "$CHANNEL" = testing ]; then
@@ -207,7 +207,7 @@ BASE=$(head -n1 VERSION | tr -d '[:space:]')
 SUFFIX=${NEWVER#"$BASE"}
 case "$WANTCH:$SUFFIX" in
     production:) ;;
-    testing:.testing.[0-9]*|testing:-test.[0-9]*) echo "$SUFFIX" | grep -Eq '^(\.testing|-test)\.[0-9]+$' || die "$TAG: version $NEWVER isn't $BASE.testing.N" ;;
+    testing:.[0-9]*|testing:.testing.[0-9]*|testing:-test.[0-9]*) echo "$SUFFIX" | grep -Eq '^(\.testing|-test)?\.[0-9]+$' || die "$TAG: version $NEWVER isn't $BASE.N" ;;
     *) die "$TAG: version $NEWVER doesn't match the commit's VERSION $BASE" ;;
 esac
 

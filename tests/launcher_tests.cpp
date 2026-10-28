@@ -98,6 +98,16 @@ static void testVersions() {
     LCHECK(versionCmp("1.19.0.testing.7", "1.19.0.testing.7") == 0);
     LCHECK(versionCmp("1.19.0.testing.7+abc", "1.19.0.testing.7") == 0);
     LCHECK(releases::versionFromTag("test-1.19.0.testing.5") == "1.19.0.testing.5");
+    // from 1.19.1 on: <production VERSION>.<N>, N counting that VERSION's testing builds from 1 (release.yml)
+    LCHECK(versionCmp("1.19.1.1", "1.19.1") > 0);
+    LCHECK(versionCmp("1.19.1.1", "1.19.0.testing.392") > 0);
+    LCHECK(versionCmp("1.19.1.10", "1.19.1.9") > 0);
+    LCHECK(versionCmp("1.19.1.99", "1.19.2") < 0);
+    LCHECK(versionCmp("1.19.1.99", "1.20.0") < 0);
+    LCHECK(releases::versionFromTag("test-1.19.1.1") == "1.19.1.1");
+    LCHECK(releases::shouldAutoInstall("1.19.1.1", "1.19.1", false));
+    LCHECK(releases::shouldAutoInstall("1.19.1.1", "1.19.0.testing.392", false));
+    LCHECK(!releases::shouldAutoInstall("1.19.1", "1.19.1.1", false));
 }
 
 static void testChannels() {

@@ -12,7 +12,8 @@ Channel channelFromName(const std::string& s) { return s == "testing" ? Channel:
 
 namespace {
 // "1.17.0-test.3+build" -> core {1,17,0}, pre {"test","3"} (build metadata ignored); "1.19.0.testing.5" (a testing build
-// from 1.19.0 on) -> core {1,19,0,0,5}: a word in the core reads as 0 (strtol), so it sorts above 1.19.0, below 1.19.1
+// from 1.19.0 on) -> core {1,19,0,0,5}: a word in the core reads as 0 (strtol), so it sorts above 1.19.0, below 1.19.1;
+// "1.19.1.5" (from 1.19.1 on) -> {1,19,1,5}
 void splitVersion(const std::string& v, std::vector<long>* core, std::vector<std::string>* pre) {
     std::string s = v.substr(0, v.find('+'));
     size_t dash = s.find('-');
