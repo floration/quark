@@ -16,7 +16,8 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TOOLS)
 # every map, in the order they're made (each is tools/maps/<name>.py, saved as <name>.qmap)
 MAPS = ["clockwork", "depot", "summit", "railyard", "canal", "harbor", "bastion", "foundry", "temple", "colosseum",
-        "furnace", "dojo", "gantry", "anvil", "viaduct", "hamlet", "downtown", "orbital", "lodestone", "midtown", "hightown"]
+        "furnace", "dojo", "gantry", "anvil", "viaduct", "hamlet", "downtown", "orbital", "lodestone", "midtown", "hightown",
+        "cascade"]
 
 
 def main():

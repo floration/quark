@@ -131,7 +131,7 @@ Json Analysis::objectives(int mode, Json& routes, bool withPaths) {
             add("enemy spawns", "spawns", mid, ab, ba, "a", "b");
             break;
         }
-        case MODE_RACE: {
+        case MODE_RACE: case MODE_SURF: {
             int s0 = race.empty() ? (m.spawns.empty() ? -1 : 0) : race[0];
             if (s0 < 0) break;
             Vec3 at = m.spawns[s0].pos;

@@ -1061,7 +1061,7 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
         return fallbackGoal(s, id, b, sp);
     }
     switch (m.mode) {
-        case MODE_RACE:
+        case MODE_RACE: case MODE_SURF:
             if (me.checkpoint < (int)map.checkpoints.size()) return map.checkpoints[me.checkpoint].center();
             break;
         case MODE_KOTH:
@@ -1209,7 +1209,7 @@ UserCmd botThinkDirect(Server& s, int id) {
     }
 
     // --- perception (20 Hz of game time, each bot at its own phase)
-    bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);
+    bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP);
     // Each bot looks at its own fixed phase of the period, from its id (golden-ratio steps: any number of bots spread
     // evenly), kept through deaths: a round's respawn (everyone on one tick) used to start every bot's looks again
     // together, ten or more of them on one tick from then on (worst-tick cost).
@@ -1489,7 +1489,7 @@ UserCmd botThinkDirect(Server& s, int id) {
                 } else if (onTarget && !(me.move.flags & MF_HOOKHELD)) {
                     cmd.buttons |= BTN_GRAPPLE;   // (fires once the aim is on them)
                 }
-            } else if (moveTuning().grapple && !(me.move.mods & MOVE_RUN_ONLY) && s.ms_.mode != MODE_RACE &&
+            } else if (moveTuning().grapple && !(me.move.mods & MOVE_RUN_ONLY) && !isRaceMode(s.ms_.mode) &&
                 !(me.move.flags & (MF_HOOKED | MF_HOOKHELD)) && me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
                 bool tryIt, go = false;
                 double retry = 0, hold = 0;
@@ -1696,7 +1696,7 @@ UserCmd botThinkDirect(Server& s, int id) {
         Vec3 wish = moveDir;
         bool onGround = (me.move.flags & MF_ONGROUND) != 0;
         bool hopping;
-        if (NATIVE(SLOT_BHOP)) hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > sp.bhopMinDist;
+        if (NATIVE(SLOT_BHOP)) hopping = !fighting && sp.bhop && !isRaceMode(s.ms_.mode) && length(b.waypoint - me.move.pos) > sp.bhopMinDist;
         else { ip->c.in[S_FIGHTING] = fighting; ip->c.in[S_WPDIST] = length(b.waypoint - me.move.pos); hopping = ip->run(SLOT_BHOP)[0] != 0; }
         hopping = hopping && !(me.move.flags & MF_HOOKED);   // (hooked: no air-strafing off the pull)
         // air-strafe: push at the angle to the current velocity that gains speed, curving toward the route

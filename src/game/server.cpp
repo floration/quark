@@ -1862,7 +1862,7 @@ void Server::spawnPlayer(int id) {
     float yaw = 0;
     const float scale = bodyScale();
     bool crouch = false, fits = true;
-    if (ms_.mode == MODE_RACE && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
+    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
         const AABB& c = map_.checkpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
@@ -1992,6 +1992,7 @@ void Server::spawnPlayer(int id) {
     if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
+    if (ms_.mode == MODE_SURF) p.move.mods |= MOVE_RUN_ONLY;   // (surf: strafe only, no dash or grapple)
     p.nextFire = cmdClockOf(p, time()) + kSpawnFireLock;   // (on the command clock, as refire)
     p.respawnAt = -1;
     GameEvent e;
@@ -2541,7 +2542,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
     // only when this command can fire the hook (held, not caught yet this press, the cooldown about done)
     if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY)) return;
     if (!moveTuning().grapple || p.move.hookCooldown > cmd.msec * kMoveStep + 1e-4f) return;
-    if (ms_.mode == MODE_RACE) return;
+    if (isRaceMode(ms_.mode)) return;
     uint64_t vt = 0;
     bool rewound = false;
     for (int i = 0; i < kMaxPlayers; i++) {

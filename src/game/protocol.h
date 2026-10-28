@@ -179,7 +179,7 @@ inline bool scoreboardGibs(const ModeState& ms) {
 }
 inline int scoreboardValue(const PlayerSnap& p, const ModeState& ms) {
     if (scoreboardGibs(ms)) return p.kills;
-    if (ms.mode == MODE_RACE || isItMode(ms.mode) || ms.mode == MODE_FFA) return p.score;
+    if (isRaceMode(ms.mode) || isItMode(ms.mode) || ms.mode == MODE_FFA) return p.score;
     return p.dmg / 10 + p.obj;
 }
 struct Snapshot {

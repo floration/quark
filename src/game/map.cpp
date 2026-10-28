@@ -1582,7 +1582,7 @@ bool Map::canSupportMode(int mode) const {
         case MODE_ARENA: return teams;
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
-        case MODE_RACE: return has(SPAWN_RACE) && !checkpoints.empty();
+        case MODE_RACE: case MODE_SURF: return has(SPAWN_RACE) && !checkpoints.empty();
         case MODE_KOTH: return teams && hasHill;
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD: return teams && payloadPath.size() >= 2;

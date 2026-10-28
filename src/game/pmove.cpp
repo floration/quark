@@ -563,15 +563,16 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     int blocked = slideMove(s, map, delta, crouched, &wall);
     const bool steep = wall.x != 0 || wall.y != 0 || wall.z != 0;
     // against a slope's wall face: the velocity along it (what goes into it is gone), so you slide down it as you
-    // fall and along it as you run; it never lifts you (no climbing a steep slope by running at it). A dash does go
+    // fall and along it as you run; it never lifts you off the floor (no climbing a steep slope by running at it; in
+    // the air it's a plain clip, so a ramp turns a fall along it: surfing). A dash does go
     // up it (owner, 2026-10-28: "if you dash into a slope ... it should push you up it, even if the angle is >45";
     // down a downward one too): its direction turns along the face, keeping its speed.
     if (steep) {
         const float vn = dot(s.vel, wall);
         if (vn < 0) {
-            const float vy = s.vel.y;
+            const float vy = s.vel.y, speed = length(s.vel);
             s.vel -= wall * vn;
-            if (!dashing) s.vel.y = std::min(s.vel.y, std::max(vy, 0.0f));
+            if (!dashing && grounded) s.vel.y = std::min(s.vel.y, std::max(vy, 0.0f));   // (off the floor it's a pure clip: surfing)
             else {
                 const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
                 Vec3 d = {s.dashDirX * hs, s.dashUp, s.dashDirZ * hs};
@@ -581,6 +582,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                     const float l = length(d), h = std::sqrt(d.x * d.x + d.z * d.z);
                     if (l > 1e-3f && h > 1e-4f) { s.dashUp = d.y / l; s.dashDirX = d.x / h; s.dashDirZ = d.z / h; }
                     else if (l > 1e-3f) s.dashUp = d.y > 0 ? 1.0f : -1.0f;
+                    // (owner, 2026-10-28: "keep your velocity from the dash as if there was no block there"): its whole
+                    // speed, turned along the face, nothing lost to the hit
+                    if (l > 1e-3f) s.vel = d * (speed / l);
                 }
             }
         }

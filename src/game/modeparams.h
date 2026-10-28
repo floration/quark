@@ -71,7 +71,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
         case MODE_ARENA: p.rounds = 5; break;
         case MODE_TOURNEY: p.rounds = 3; break;        // each bracket match
         case MODE_BOMB: p.rounds = 7; p.roundTime = 105.0f; break;
-        case MODE_RACE: p.rounds = 3; p.roundTime = 300.0f; break;   // two loops of Viaduct
+        case MODE_RACE: case MODE_SURF: p.rounds = 3; p.roundTime = 300.0f; break;   // two loops of Viaduct
         case MODE_PAYLOAD: p.roundTime = 240.0f; break;              // each team attacks once (rounds 1)
         case MODE_POINTS: p.roundTime = 150.0f; break;               // the attack's clock at the start
         case MODE_NPAYLOAD: p.roundTime = 300.0f; break;
@@ -85,7 +85,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
 inline constexpr ModeParams kBuiltinModeParams[MODE_COUNT] = {
     builtinModeParamsFor(0), builtinModeParamsFor(1), builtinModeParamsFor(2), builtinModeParamsFor(3), builtinModeParamsFor(4),
     builtinModeParamsFor(5), builtinModeParamsFor(6), builtinModeParamsFor(7), builtinModeParamsFor(8), builtinModeParamsFor(9),
-    builtinModeParamsFor(10), builtinModeParamsFor(11), builtinModeParamsFor(12),
+    builtinModeParamsFor(10), builtinModeParamsFor(11), builtinModeParamsFor(12), builtinModeParamsFor(13),
 };
-static_assert(MODE_COUNT == 13, "a new mode needs its row in kBuiltinModeParams");
+static_assert(MODE_COUNT == 14, "a new mode needs its row in kBuiltinModeParams");
 inline const ModeParams& builtinModeParams(int mode) { return kBuiltinModeParams[mode >= 0 && mode < MODE_COUNT ? mode : MODE_FFA]; }

@@ -43,7 +43,10 @@ constexpr float kEyeHeight = 1.6f;
 constexpr float kCrouchEyeHeight = 1.05f;
 constexpr int kMaxHealth = 100;
 
-enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_POINTS, MODE_COUNT };
+enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_POINTS, MODE_SURF, MODE_COUNT };
+// Surf (owner, 2026-10-28: "a surf gamemode where you cant grapple or dash, only strafe"): a race on steep ramps,
+// everything race does, run-only movement (MOVE_RUN_ONLY: no dash, no grapple).
+inline constexpr bool isRaceMode(int m) { return m == MODE_RACE || m == MODE_SURF; }
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
 constexpr int kPlayerModels = 11;          // STANDARD, HEAVY, SIMPLE (was SCOUT, 2026-10-26), ROBOT, KNIGHT, WIZARD, ZOMBIE, FIGHTER, PIRATE, NINJA, BANDIT: cosmetic, every one has the same hitbox
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
@@ -53,7 +56,7 @@ inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD"
 // ModeParams::respawn default (modeparams.h), which rulesRespawnDelay() reads (warmup / match end aside).
 constexpr float modeRespawnDelay(int m) {
     switch (m) {
-        case MODE_RACE: return 1.0f;
+        case MODE_RACE: case MODE_SURF: return 1.0f;
         case MODE_KOTH: return 4.0f;
         case MODE_POINTS: return 5.0f;
         case MODE_PAYLOAD:
@@ -90,11 +93,11 @@ inline int rpsLosingShape(const uint8_t* picks, int n) {
     return RPS_NONE;
 }
 inline const char* modeName(int m) {
-    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"};
+    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points", "surf"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline const char* modeTitle(int m) {
-    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1", "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT"};
+    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1", "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT", "SURF"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline int modeFromName(const char* s) {

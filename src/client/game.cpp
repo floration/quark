@@ -2535,7 +2535,7 @@ void Game::drawWorld(float alpha) {
         cpal.c[TINT_GLOW] = r_.glowColor;
         const float cy = std::cos(yaw), syw = std::sin(yaw);
         drawProp(PROP_CART, cpal, cart, yaw, {cy, 0, -syw}, {syw, 0, cy}, yaw, sv);
-    } else if (ms.mode == MODE_RACE) {
+    } else if (isRaceMode(ms.mode)) {
         int next = mep ? mep->checkpoint : 0;
         for (size_t i = 0; i < map.checkpoints.size(); i++) {
             bool isNext = (int)i == next;
@@ -3183,7 +3183,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
             if (ms.timeLeft > 0) { snprintf(b, sizeof b, "MATCH STARTS IN %d", (int)std::ceil(ms.timeLeft)); break; }
             const int code = binds().code[A_VOTESTART][0];   // (the key's name: looked up when the bind changes)
             if (code != voteKeyCode_) { voteKeyCode_ = code; voteKeyName_ = inputName(code); }
-            snprintf(b, sizeof b, ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - %s TO START THE RACE" : "WARMUP - %s TO VOTE START", voteKeyName_.c_str());
+            snprintf(b, sizeof b, isRaceMode(ms.mode) ? "PRACTICE (UNTIMED) - %s TO START THE RACE" : "WARMUP - %s TO VOTE START", voteKeyName_.c_str());
             break;
         }
         case PHASE_FREEZE: // free for all is one long round: just the countdown
@@ -3665,7 +3665,7 @@ void Game::drawHud() {
     } else if (ms.mode == MODE_NPAYLOAD) {
         obj = (ms.flags & MS_CONTESTED) ? "PAYLOAD CONTESTED" : ms.hillOwner == 255 ? "PUSH THE PAYLOAD TO THE ENEMY END"
               : ms.hillOwner == myTeam ? "YOUR TEAM IS PUSHING" : "ENEMY IS PUSHING";
-    } else if (ms.mode == MODE_RACE && mep) {
+    } else if (isRaceMode(ms.mode) && mep) {
         obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
         obj = "LAST TEAM STANDING WINS";
@@ -4700,7 +4700,7 @@ void Game::drawScoreboard() {
         r_.text(x + w * 0.53f, cy, ts, "GIBS", kGrey);
         r_.text(x + w * 0.65f, cy, ts, "ACC", kGrey);
     } else {
-        r_.text(x + w * 0.40f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
+        r_.text(x + w * 0.40f, cy, ts, isRaceMode(ms.mode) ? "WINS" : "SCORE", kGrey);
         r_.text(x + w * 0.48f, cy, ts, "K", kGrey);
         r_.text(x + w * 0.53f, cy, ts, "D", kGrey);
         r_.text(x + w * 0.58f, cy, ts, "DMG", kGrey);
@@ -7863,7 +7863,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         const ModeState& ms = net_.mode();
         const PlayerSnap* mine = net_.findPlayer(me);
         const auto& cps = net_.map().checkpoints;
-        if (ms.mode == MODE_RACE && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
+        if (isRaceMode(ms.mode) && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
             const int next = mine->checkpoint;
             const bool in = next < (int)cps.size() && playerBox(m).overlaps(cps[next]);
             if (int d = practiceDing_.step(next, in, (int)cps.size())) audio_.play(d == 2 ? SND_FINISH : SND_CHECKPOINT, 0.9f);

@@ -71,6 +71,16 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Causeway blocks.** Cover beside the cart.
 - **Spawn screens.** A wall in front of each team's spawn row, at the causeway's end: the causeway was a 78 m sightline from one spawn to the other.
 
+## Cascade: surf. Setting: a frozen gorge.
+
+Surf (owner, 2026-10-28): race rules on a course you ride, not walk: no dash, no grapple, steep ramps you strafe along.
+
+- **Ridges, not single ramps.** Each ramp is two 60 degree wedges back to back (6 m rise over 3.5 m either side): a face on each side, so a surfer can take either, and the ridge's glow strip shows the line from the air. Steeper than 45 degrees is what makes a face something you slide on, not stand on.
+- **Each ridge lower than the last.** Riding a face loses height; the next ridge starts lower and offset to the side, so you fly from one face onto the next one's near face.
+- **A ledge per stage, its checkpoint on it.** Three stages; a fall drops you into the void (back to your checkpoint), so each stage is its own try. The last ledge is the finish.
+- **Nothing below, walls far off.** The course hangs in the gorge: the void line kills a fall well below the last ledge; the gorge walls are scenery.
+- **Not offered for free for all.** The stages can't be walked between (no spawn reaches another), so the map offers surf only.
+
 ## Clockwork: duel. Setting: inside a giant clock.
 **Why it suits duel:**
 - Compact (1800 m², spawns 4.6 s apart) and point symmetric.

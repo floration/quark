@@ -1574,6 +1574,7 @@ static void testMaps() {
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
         for (int k = 0; k < MODE_COUNT; k++) {
+            if (k == MODE_SURF) continue;   // (a surf course is ramps: Lodestone has none)
             bool compact = k == MODE_VS || k == MODE_DUEL || k == MODE_ARENA || k == MODE_TOURNEY;
             if (m.supportsMode(k) == compact) { printf("  %s: %s %s\n", name, compact ? "offers" : "no", modeName(k)); g_fail++; }
         }
@@ -1852,7 +1853,7 @@ static void testAllMaps() {
         }
         for (auto& s : m.bombSites) goals.push_back(s.center());
         if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
-        for (auto& c : m.checkpoints) goals.push_back(c.center());
+        if (m.preferredMode != MODE_SURF) for (auto& c : m.checkpoints) goals.push_back(c.center());   // (surf: ridden, not walked: testSurf)
         for (auto& p : m.points) goals.push_back({p.center().x, p.mn.y, p.center().z});   // (each point's floor)
         if (m.preferredMode == MODE_HIDE || m.preferredMode == MODE_TAG) for (auto& sp2 : m.spawns) goals.push_back(sp2.pos); // every spawn reaches every other
         int unreachable = 0;
@@ -4620,6 +4621,27 @@ static void testSlopes() {
         if (getenv("SLOPE_TRACE")) printf("    side wall: %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
         CHECK(ms.pos.z > 0 && ms.pos.x > 4.0f && !d.boxSolid(playerBox(ms.pos, false)));
     }
+}
+
+// Surf (owner, 2026-10-28): Cascade's ramps are ridden, not walked (the map checks don't ask bots to): a surfer
+// dropped onto a ramp's face going along it, strafing into it, rides it to its end without falling off, and the run-only
+// movement leaves no dash and no grapple.
+static void testSurf() {
+    printf("surf: ride a ramp end to end\n");
+    Map m;
+    CHECK(m.load("cascade") && m.preferredMode == MODE_SURF && m.supportsMode(MODE_SURF) && m.checkpoints.size() == 3 && !m.supportsMode(MODE_FFA));
+    // the first ridge: x -3.5..3.5 along z 40..82, faces from y 28 to 34; ride its east face toward -z
+    MoveState ms; ms.pos = {2.2f, 33.5f, 80}; ms.vel = {0, 0, -18}; ms.mods = MOVE_RUN_ONLY;
+    float lowest = 1e9f, minX = 1e9f, maxX = -1e9f;
+    int t = 0;
+    for (; t < 400 && ms.pos.z > 41; t++) {
+        UserCmd cmd; cmd.yaw = 0; cmd.side = -127; cmd.msec = 8;   // (facing -z; strafing left, -x: into the face)
+        if (t < 50) cmd.buttons = BTN_DASH | BTN_GRAPPLE;          // (neither does anything)
+        pmove(ms, cmd, m);
+        lowest = std::min(lowest, ms.pos.y); minX = std::min(minX, ms.pos.x); maxX = std::max(maxX, ms.pos.x);
+    }
+    if (getenv("SLOPE_TRACE")) printf("    ride: %d ticks, at %.2f %.2f %.2f, lowest %.2f, x %.2f..%.2f, speed %.1f\n", t, ms.pos.x, ms.pos.y, ms.pos.z, lowest, minX, maxX, length(ms.vel));
+    CHECK(ms.pos.z <= 41 && lowest > 28.5f && maxX < 3.6f && ms.dashTimer == 0 && !(ms.flags & MF_HOOKED) && length(ms.vel) > 12);
 }
 
 static void testStairs() {
@@ -7817,8 +7839,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone"};
-    static_assert(MODE_COUNT == 13, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade"};
+    static_assert(MODE_COUNT == 14, "add the new mode's map here");
     SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         qsrand(0x5EED0100u + mode);
@@ -7846,7 +7868,7 @@ static void testBots(uint16_t& port) {
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
         printf("  %-8s with 5 bots: phase %d, round %d, kills %d, score %d-%d, cart %.1f, bomb %d, race checkpoints %d\n",
                modeName(mode), s.ms_.phase, s.ms_.round, kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.bombState, cps);
-        CHECK(mode == MODE_RACE ? s.ms_.phase == PHASE_WARMUP : s.ms_.phase != PHASE_WARMUP); // bots alone start a match (race: practice until someone starts it)
+        CHECK(isRaceMode(mode) ? s.ms_.phase == PHASE_WARMUP : s.ms_.phase != PHASE_WARMUP); // bots alone start a match (race: practice until someone starts it)
         s.stop();
     }
 }
@@ -8527,6 +8549,7 @@ int main(int argc, char** argv) {
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
         {"slopes", [] { testSlopes(); }},
+        {"surf", [] { testSurf(); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

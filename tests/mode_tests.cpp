@@ -137,7 +137,7 @@ std::string firstDiff(const std::string& a, const std::string& b) {
     }
 }
 
-const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points"};
+const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf"};
 
 void testFormat() {
     printf("  format: every default canonical, numbers, the JSON AST\n");

@@ -484,7 +484,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
     if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
     if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
     const ModeState& ms = mode();
-    if (ms.mode == MODE_RACE || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
+    if (isRaceMode(ms.mode) || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
     const PlayerSnap* me = findPlayer(clientId_);
     if (!me) return false;
     interpolatedPlayers(probePlayers_);
