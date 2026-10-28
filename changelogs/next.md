@@ -10,6 +10,7 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 - **Bubble gun fires 20% faster**: 6 bubbles a second (was 5), so 10 pops kill in 1.5 s (was 1.8 s).
 - **Bubble gun alt-fire: up to 25 bubbles** a stream from 30 m away (was 15). Still 5 when the nearest enemy is within 5 m, and the same 1.8 s reload.
 - **33% more knockback** from the shotgun (a full blast shoves 8 m/s, was 6) and the crossbow (21.3 m/s a bolt, was 16).
+- **Sniper: 33% more knockback** (1.33 m/s a hit, was 1).
 
 ## Movement
 - **Dashing up goes higher**: looking straight up, 50% of a dash goes upward (was 40%).

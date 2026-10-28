@@ -14,6 +14,7 @@ All four are the owner's numbers (2026-10-28, right after 1.19.1), in `src/game/
 - **Bubble fire rate +20%**: refire 1/5 -> 1/6 s, so 60 damage a second (was 50); 10 pops kill in 1.5 s (was 1.8 s).
 - **Bubble stream up to 25**: `kBubbleStreamMax` 15 -> 25 (at 30 m or more; `kBubbleStreamMin` stays 5 within 5 m, the count still grows evenly in between; reload 1.8 s unchanged). At full range a stream is 250 damage if every bubble lands. Trade-off: a stream is 10 more live projectiles; the server holds 128 at once, so in a crowded fight a later stream can come out shorter.
 - **Knockback +33%**: `kShotgunKnock` 0.30 -> 0.40 m/s per pellet's worth of damage (a full 20 pellet blast 6 -> 8 m/s); `kCrossbowKnock` 16 -> 21.28 m/s along the bolt.
+- **Sniper knockback +33%** (owner, 2026-10-28, after the two above): the sniper had no knockback of its own, the hitscan default (1 m/s along the shot, `WeaponExtra::knock` 1); new `kSniperKnock` 1.33 m/s (`weaponset.cpp` sets it, so custom modes scale it like the others). The rifle keeps the default 1.
 
 ## Movement
 
