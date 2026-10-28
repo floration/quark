@@ -398,7 +398,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             b.swap(o);
         };
         tidy(sp.bu); tidy(sp.bv);
-        if (sp.bu.size() > 17 || sp.bv.size() > 17) { sp.bu = {f.u0, f.u1}; sp.bv = {f.v0, f.v1}; }   // (a cap: whole edges, as before)
+        if ((sp.bu.size() - 1) * (sp.bv.size() - 1) > 1024) { sp.bu = {f.u0, f.u1}; sp.bv = {f.v0, f.v1}; }   // (a cap on the pieces: whole edges, as before)
         // each border piece: off when every sample just outside it is inside a neighbour
         auto seg = [&](int edge, float a, float b) {
             for (int k = 0; k < 5; k++) {
