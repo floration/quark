@@ -35,6 +35,7 @@ Do this on Windows; also on Linux / macOS if you have one.
 | ☐ | Files the old version shipped and the new one doesn't are gone from the install folder; nothing you made was deleted. |
 | ☐ | If this update changed the demo format (1.19.0 does: protocol 42 → 44 from 1.17.0): old demos were converted (originals in `demos/old/<version>/`), and an old demo plays. A demo that couldn't convert says "recorded with version X" instead of failing. |
 | ☐ | If this update changed the map format (1.19.0 doesn't: still version 2, as in 1.17.0, so skip this row): your own maps were converted (originals in `maps/old/v<N>/`, `maps/old/convert.log`) and still open in the editor. |
+| ☐ | The release lists `quark-<platform>.qpakz` + `.qpakz.sig` next to each `.qpak` (about half its size), and `quark-release.txt` names it. A launcher built with the `.qpakz` reading (launcher branch) downloads the `.qpakz` and installs the same game as before. |
 | ☐ | Switch the launcher back to PRODUCTION: it offers the production version and installs it cleanly (so players can always go back), then return to TESTING. |
 | ☐ | A fresh install (empty folder, new user) works too: first start makes the user folder, no errors. |
 

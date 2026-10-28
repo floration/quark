@@ -7,6 +7,7 @@ end of this page).
 | What | Signature | Checked by |
 |---|---|---|
 | `quark-<platform>.qpak` (update package) | `quark-<platform>.qpak.sig` | the launcher before installing; server autoupdate |
+| `quark-<platform>.qpakz` (the same package compressed, `tools/qpakz.py`; from the post-1.19.1 testing builds) | `quark-<platform>.qpakz.sig` | the launcher before installing (launchers that know it prefer it); named in the signed manifest like the `.qpak` |
 | `quark-release.txt` (signed manifest, below) | `quark-release.txt.sig` | the launcher; server autoupdate |
 | the launcher inside each package | `quark_launcher[.exe].sig` inside the package, next to it | the launcher's self-update and the game's launcher update: a packaged launcher is only ever put in use when it verifies |
 | `quark-launcher-windows.exe`, `quark-launcher-linux`, `quark-launcher-macos.zip` (the website's downloads) | `<file>.sig` | the player (`quark_sign verify <file>`); also named in the signed manifest |

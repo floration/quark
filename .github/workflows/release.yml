@@ -424,7 +424,8 @@ jobs:
           # (tools/server/autoupdate.sh: this tag is this commit) and the launcher before installing (this release,
           # this channel, these packages' sha256); it names every other download too. Then every file gets a .sig.
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
-          sh tools/sign/release_manifest.sh production "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
+          python3 tools/qpakz.py dist/*/quark-*.qpak   # (the compressed copies new launchers download: from the signed-launcher packages)
+          sh tools/sign/release_manifest.sh production "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-*.qpakz dist/*/quark-launcher-* \
             dist/*/quark-*.zip dist/*/quark-*.tar.gz > dist/quark-release.txt
           sh tools/sign/sign_release.sh dist/*/quark-* dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
@@ -465,7 +466,8 @@ jobs:
           find dist -mindepth 1 -maxdepth 1 ! -name windows ! -name linux -exec rm -rf {} +
           # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
-          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
+          python3 tools/qpakz.py dist/*/quark-*.qpak   # (the compressed copies new launchers download: from the signed-launcher packages)
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-*.qpakz dist/*/quark-launcher-* \
             dist/*/quark-*.zip dist/*/quark-*.tar.gz > dist/quark-release.txt
           sh tools/sign/sign_release.sh dist/*/quark-* dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
@@ -541,7 +543,8 @@ jobs:
         run: |
           # quark-release.txt went out without this package: its own signed manifest (the launcher prefers it)
           sh tools/sign/sign_release.sh --launchers dist/macos/quark-macos.qpak
-          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak dist/macos/quark-launcher-macos.zip \
+          python3 tools/qpakz.py dist/macos/quark-macos.qpak
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak dist/macos/quark-macos.qpakz dist/macos/quark-launcher-macos.zip \
             dist/macos/quark-macos.zip > dist/macos/quark-release-macos.txt
           sh tools/sign/sign_release.sh dist/macos/quark-*   # (the packages, the launcher, the zip and the manifest)
           (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)

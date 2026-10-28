@@ -15,4 +15,7 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 - **Dashing up goes higher**: looking straight up, 50% of a dash goes upward (was 40%).
 - **Air dashes add more speed the slower you are**: a dash in the air now adds 35% of the gap between your speed and the 32 m/s cap. From 10 m/s you leave at 17.7 (was 11), from 25 at 27.5 (was 26), from a standstill at 11.2. Dashes on the floor and super dashes (hypers) are unchanged.
 
+## Downloads
+- **Smaller game downloads in the launcher (coming)**: every release now also publishes a compressed copy of the game package, about half the size (Windows: about 40 MB instead of 72). The launcher starts using it once its own update ships; until then nothing changes, and the old package stays for older launchers.
+
 - Human-made assets: 16.1%, unchanged (no asset changes).

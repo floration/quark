@@ -3,6 +3,7 @@
 // folder, with no more bytes than the package had.
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -17,7 +18,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         total += n + name.size();
         std::filesystem::path out = (stage / std::filesystem::u8path(name)).lexically_normal();
         std::string rel = out.lexically_relative(stage).generic_string();
-        if (!qpak::safeEntryName(name) || rel.empty() || rel == "." || rel.rfind("..", 0) == 0 || total > size) abort();
+        // (a .qpakz entry can unpack to more than the package: at most deflate's 1032 to 1, plus the stored ones)
+        const size_t most = size >= 6 && memcmp(data, "QPAK2\n", 6) == 0 ? size * 1033 + 1024 * size : size;
+        if (!qpak::safeEntryName(name) || rel.empty() || rel == "." || rel.rfind("..", 0) == 0 || total > most) abort();
         return true;
     }, &err);
     return 0;
