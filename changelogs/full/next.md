@@ -201,3 +201,6 @@ Nothing changes in the game, its build, `quark_tests`, CI, the website or the re
 - **Online play**: both builds simulate bit for bit the same: no fast-math and no FMA contraction (`-fno-fast-math -ffp-contract=off`, now on the link as well for LTO), so vectorized code doesn't reorder or fuse floating point. `quark_tests simhash` hashes every tick of seeded FFAs (players' positions, velocities, health, projectiles); `tools/isa_check.sh` builds the AVX2 `quark_tests` and compares (identical over 3 seeds), and `tools/release_check.sh` runs it.
 - **Cost**: one more client build in CI and about +22 MB in the Windows and Linux packages. LTO makes local builds' link step slower (`-DQUARK_LTO=OFF` for quick iteration).
 - **Also**: `-DQUARK_TRACY=ON` now links on Windows (Tracy's call stacks need dbghelp). bots.cpp and maptool's measure.cpp include `<cstdlib>` (std::llabs / std::getenv came in by accident through libstdc++).
+
+## Shadow size capped to the GPU (antagonist review, render pipeline)
+- A shadow size larger than the GPU's largest texture (GL_MAX_TEXTURE_SIZE) left the shadow framebuffer incomplete, so shadows silently turned off. The renderer now uses the largest size the GPU has instead (src/client/renderer.cpp).
