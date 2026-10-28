@@ -47,6 +47,8 @@ constexpr float kDashAirGap = 0.35f;    // a dash in the air leaves with this sh
                                         // keep a lot more than if you dash at 25"): 0 -> 11.2, 10 -> 17.7, 25 -> 27.5,
                                         // 31 -> 31.35 (then kDashKeep's +1 is more); on the floor only kDashKeep, as before.
                                         // A custom mode's dash keep multiplier scales it too
+constexpr float kRampAirAccel = 2.0f;   // surf, touching a ramp's face: x air acceleration (owner 2026-10-28: "make it like 2x base", 8 was "insane")
+constexpr float kSlopeGravityBack = 0.5f;   // riding a ramp's face: this share of a step's gravity is given back (owner 2026-10-28)
 constexpr float kDashVerticalUp = 0.5f;    // looking straight up makes the dash this vertical (the sine: 50% of its speed
                                            // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways;
                                            // owner 2026-10-28: 40% -> 50% up)...
@@ -145,6 +147,19 @@ static bool slopeContact(const Brush* b, const AABB& box, Vec3& n) {
 static bool floorFace(const Vec3& n) { return n.y >= 0.70710678f - 1e-4f; }
 static bool steepUnder(const Brush* b, const AABB& feet) { Vec3 n; return slopeContact(b, feet, n) && !floorFace(n); }
 static AABB shifted(AABB b, int axis, float d) { b.mn[axis] += d; b.mx[axis] += d; return b; }
+// Touching a ramp: a slope's wall face that faces up, within 3 cm of the box (probed down and to the four sides with
+// the sweep, before this step moves), so the air move can know it (surf's ramp air acceleration)
+static bool onRampFace(const Map& map, const AABB& box) {
+    static const int ax[5] = {1, 0, 0, 2, 2};
+    static const float dd[5] = {-0.03f, -0.03f, 0.03f, -0.03f, 0.03f};
+    for (int k = 0; k < 5; k++) {
+        const Brush* hit = nullptr;
+        const float d = map.sweepAxis(box, ax[k], dd[k], &hit);
+        Vec3 n;
+        if (std::fabs(d - dd[k]) > 1e-5f && slopeContact(hit, shifted(box, ax[k], d), n) && !floorFace(n) && n.y > 0) return true;
+    }
+    return false;
+}
 
 // Moves the hull through the world one axis at a time. Returns which axes were blocked. A slope's wall face (steep,
 // on its side, or facing down) doesn't block: what it stops of the move goes on along it, on the axes still to come
@@ -315,6 +330,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
     }
     bool dashing = s.dashTimer > 0;
+    float gravDv = 0;   // (this step's fall from gravity, m/s: a ramp's wall face takes half of it back)
     if (dashing && !frozen) {
         // Dash jump (Celeste's super): jump while a dash runs on the floor (it started there, or it's sliding along it)
         // and the dash ends at once, leaving with its full burst speed along its direction plus a normal jump; also a
@@ -522,11 +538,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.vel.y = 0;
     } else {
         if (!dashing && !onLadder) {
-            const float airAccel = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f, airCap = kAirSpeedCap * mt.m[MV_AIR_CAP];
+            // surf: strafing into a ramp you touch holds you on it (kRampAirAccel: the wish-speed cap stays, so it's grip,
+            // not free speed)
+            const bool ramp = (s.mods & MOVE_RUN_ONLY) && onRampFace(map, playerBox(s.pos, crouched, scale));
+            const float airAccel = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f * (ramp ? kRampAirAccel : 1.0f), airCap = kAirSpeedCap * mt.m[MV_AIR_CAP];
             const float airControl = kAirControl * mt.m[MV_AIR_CONTROL];
             // 22 x 2.3 / 4 = 12.65 m/s: where the A/D boost ramp starts (the base cap and the unscaled air control, so
             // the 1.18 A/D cap and the slower W-only turn leave it where it was)
-            const float cross = airAccel * airCap / airControl;
+            const float cross = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f * airCap / airControl;   // (the ramp boost leaves it)
             const float strafeCap = cmd.side != 0 ? airCap * kStrafeCapAD : airCap;   // A/D: 2.53, W-only: 2.3
             airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, strafeCap), airAccel, dt, cmd.side, cross);
             // Drift: below run speed, held direction pushes you along it (kAirDriftAccel) up to run speed and never
@@ -553,7 +572,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            s.vel.y -= kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            gravDv = kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            s.vel.y -= gravDv;
         }
     }
 
@@ -573,6 +593,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             const float vy = s.vel.y, speed = length(s.vel);
             s.vel -= wall * vn;
             if (!dashing && grounded) s.vel.y = std::min(s.vel.y, std::max(vy, 0.0f));   // (off the floor it's a pure clip: surfing)
+            // riding a ramp's face (it faces up): gravity at half strength, so you slip down it and off it half as fast
+            // (owner, 2026-10-28: "the slopes are too slippery to make surf work ... half of what it currently is")
+            if (!dashing && !grounded && wall.y > 0) s.vel.y += kSlopeGravityBack * gravDv;
             else {
                 const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
                 Vec3 d = {s.dashDirX * hs, s.dashUp, s.dashDirZ * hs};

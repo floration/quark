@@ -172,10 +172,11 @@ static void testSyringeModes() {
         s.ms_.mode = (uint8_t)mode;
         s.cfg_.mode = mode;
         bool has = s.weaponAllowed(WPN_SYRINGE);
-        bool want = modeRespawns(mode) && !isItMode(mode);   // (tag / hide and seek: the knife only)
+        bool want = modeRespawns(mode) && !isItMode(mode) && mode != MODE_SURF;   // (tag / hide and seek, surf: the knife only)
         if (has != want) printf("  %s: syringe %s\n", modeName(mode), has ? "allowed" : "not allowed");
         CHECK(has == want);
-        if (!isItMode(mode)) CHECK(s.weaponAllowed(WPN_ROCKET) || mode == MODE_ARENA || mode == MODE_TOURNEY);
+        if (!isItMode(mode)) CHECK(s.weaponAllowed(WPN_ROCKET) || mode == MODE_ARENA || mode == MODE_TOURNEY || mode == MODE_SURF);
+        if (mode == MODE_SURF) CHECK(s.weaponMask() == (1u << WPN_KNIFE));
     }
     Server s;   // a duel life with every weapon: still no syringe
     s.ms_.mode = MODE_DUEL; s.cfg_.mode = MODE_DUEL; s.ms_.duelMod = 4;   // DOUBLE SIZE (all weapons)

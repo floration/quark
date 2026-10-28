@@ -1,4 +1,4 @@
-"""CASCADE: surf, a run down a frozen gorge on steep ramps. Each stage is a pair of ramps (a ridge with a 60 degree
+"""CASCADE: surf, a run down a frozen gorge on steep ramps. Each stage is a pair of ramps (a ridge with a 52 degree
 face either side) a little lower than the last, then a ledge with the stage's checkpoint: drop off the start onto the
 first ridge, ride a face by strafing into it, fly across to the next ridge, land on the ledge. Three stages, the
 last ledge is the finish. Nothing below but the drop: fall and you're back at your checkpoint."""
@@ -9,9 +9,9 @@ def build():
     m = M("Cascade", "surf", sun=(0.35, 1.0, 0.45))
     m.raw("void -50")
 
-    def ramp(xc, z0, z1, base, top, half=3.5, mat=0):
-        """a ridge running along z: two wedges back to back, each face rising (top - base) over `half` m (60 degrees
-        at 6 over 3.5), a glow strip down the ridge so the line reads from the air"""
+    def ramp(xc, z0, z1, base, top, half=4.7, mat=0):
+        """a ridge running along z: two wedges back to back, each face rising (top - base) over `half` m (52 degrees
+        at 6 over 4.7, owner 2026-10-28: 60 was too steep to hold), a glow strip down the ridge so the line reads from the air"""
         m.raw(f"wedge {mat} 0 {xc - half:g} {base:g} {z0:g} {xc:g} {top:g} {z1:g}")   # west face: rises toward +x
         m.raw(f"wedge {mat} 1 {xc:g} {base:g} {z0:g} {xc + half:g} {top:g} {z1:g}")   # east face: rises toward -x
         m.box(xc - half, base - 1.5, z0, xc + half, base, z1, accent=True)          # the ridge's footing

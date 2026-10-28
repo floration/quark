@@ -15,13 +15,12 @@ slot canAutoStart:
 slot warmup:
   racePractice()
 
-# Knockback only, and only on yourself, once the race is on.
+# knife only, nobody hurts anybody, warmup too (owner, 2026-10-28)
 slot canDamage:
-  if phase == roundEnd or phase == matchEnd or phase == freeze: return no
-  return phase == warmup
+  return no
 
 slot canHit:
-  return phase == warmup or attacker == none or attacker == victim
+  return attacker == none or attacker == victim
 
 slot tick:
   raceStep()

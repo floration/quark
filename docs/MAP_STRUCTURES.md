@@ -75,7 +75,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 
 Surf (owner, 2026-10-28): race rules on a course you ride, not walk: no dash, no grapple, steep ramps you strafe along.
 
-- **Ridges, not single ramps.** Each ramp is two 60 degree wedges back to back (6 m rise over 3.5 m either side): a face on each side, so a surfer can take either, and the ridge's glow strip shows the line from the air. Steeper than 45 degrees is what makes a face something you slide on, not stand on.
+- **Ridges, not single ramps.** Each ramp is two 52 degree wedges back to back (6 m rise over 4.7 m either side; owner 2026-10-28: 60 was too steep to hold, CS surf ramps run about 46-60): a face on each side, so a surfer can take either, and the ridge's glow strip shows the line from the air. Steeper than 45 degrees is what makes a face something you slide on, not stand on.
 - **Each ridge lower than the last.** Riding a face loses height; the next ridge starts lower and offset to the side, so you fly from one face onto the next one's near face.
 - **A ledge per stage, its checkpoint on it.** Three stages; a fall drops you into the void (back to your checkpoint), so each stage is its own try. The last ledge is the finish.
 - **Nothing below, walls far off.** The course hangs in the gorge: the void line kills a fall well below the last ledge; the gorge walls are scenery.

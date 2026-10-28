@@ -1348,6 +1348,7 @@ void nativeSpectate(Server& s, int id) {
 
 bool nativeCanDamage(const Server& s, int attacker, int victim) {
     if (s.ms_.phase == PHASE_ROUND_END || s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_FREEZE) return false;
+    if (s.ms_.mode == MODE_SURF) return false;   // surf: nobody hurts anybody, warmup too (owner, 2026-10-28; surf.qlogic)
     if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false; // race: knockback only
     if (attacker < 0 || attacker == victim) return true;
     if (modeIsTeamBased(s.ms_.mode) && s.players_[attacker].team == s.players_[victim].team) return false;
@@ -1356,7 +1357,8 @@ bool nativeCanDamage(const Server& s, int attacker, int victim) {
 
 bool nativeCanHit(const Server& s, int attacker, int victim, int weapon) {
     if (attacker < 0 || attacker == victim) return true;
-    // Race: you can only affect yourself (rocket jumps etc.), never other racers.
+    // Race: you can only affect yourself (rocket jumps etc.), never other racers. Surf: never, warmup too (owner 2026-10-28).
+    if (s.ms_.mode == MODE_SURF) return false;
     if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false;
     // hide and seek / tag: only "it" can touch anyone, with the knife, once the round is live.
     if (isItMode(s.ms_.mode)) return s.ms_.phase == PHASE_LIVE && s.players_[attacker].it && !s.players_[victim].it && weapon == WPN_KNIFE;

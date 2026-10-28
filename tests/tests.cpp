@@ -4630,18 +4630,20 @@ static void testSurf() {
     printf("surf: ride a ramp end to end\n");
     Map m;
     CHECK(m.load("cascade") && m.preferredMode == MODE_SURF && m.supportsMode(MODE_SURF) && m.checkpoints.size() == 3 && !m.supportsMode(MODE_FFA));
-    // the first ridge: x -3.5..3.5 along z 40..82, faces from y 28 to 34; ride its east face toward -z
+    // the first ridge: x -4.7..4.7 along z 40..82, faces from y 28 to 34; ride its east face toward -z
     MoveState ms; ms.pos = {2.2f, 33.5f, 80}; ms.vel = {0, 0, -18}; ms.mods = MOVE_RUN_ONLY;
     float lowest = 1e9f, minX = 1e9f, maxX = -1e9f;
     int t = 0;
     for (; t < 400 && ms.pos.z > 41; t++) {
-        UserCmd cmd; cmd.yaw = 0; cmd.side = -127; cmd.msec = 8;   // (facing -z; strafing left, -x: into the face)
+        // (facing -z; strafing left, -x: into the face, only while sinking: with the ramp grip a steady push into it
+        // climbs it, over the ridge, as a player easing off the key would not)
+        UserCmd cmd; cmd.yaw = 0; cmd.side = ms.vel.y < 0 ? -127 : 0; cmd.msec = 8;
         if (t < 50) cmd.buttons = BTN_DASH | BTN_GRAPPLE;          // (neither does anything)
         pmove(ms, cmd, m);
         lowest = std::min(lowest, ms.pos.y); minX = std::min(minX, ms.pos.x); maxX = std::max(maxX, ms.pos.x);
     }
     if (getenv("SLOPE_TRACE")) printf("    ride: %d ticks, at %.2f %.2f %.2f, lowest %.2f, x %.2f..%.2f, speed %.1f\n", t, ms.pos.x, ms.pos.y, ms.pos.z, lowest, minX, maxX, length(ms.vel));
-    CHECK(ms.pos.z <= 41 && lowest > 28.5f && maxX < 3.6f && ms.dashTimer == 0 && !(ms.flags & MF_HOOKED) && length(ms.vel) > 12);
+    CHECK(ms.pos.z <= 41 && lowest > 28.5f && maxX < 4.8f && ms.dashTimer == 0 && !(ms.flags & MF_HOOKED) && length(ms.vel) > 12);
 }
 
 static void testStairs() {
