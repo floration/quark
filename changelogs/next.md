@@ -52,5 +52,5 @@ What's on `testing` since production 1.19.0. The release PR renames this file to
 - `quark --benchmark [demo] [seconds]` runs it and prints the results (scripts and comparisons).
 
 ## Performance
-- **Much faster builds of the game**: the game is now compiled with full optimization (-O3 and link-time optimization) and for newer CPU instruction sets. On a Ryzen 9 5900HX + RTX 3080 laptop the Hamlet benchmark went from 1114 to 1962 FPS on average, and the 0.1% low from 635 to 1518 (frame times about 4x steadier).
+- **More optimized builds of the game**: the game is now compiled with full optimization (-O3 and link-time optimization) and for newer CPU instruction sets. How much faster it is still needs a controlled benchmark: the first laptop comparison was skewed by the laptop warming up.
 - **Two game builds in every Windows and Linux package**: `quark` (SSE4.2: any x86-64 CPU from about 2009 on) and `quark_avx2` (AVX2: Intel from 2013 on, every Ryzen). The game starts the AVX2 one by itself when your CPU has it; nothing to choose. Both play exactly the same online. `--no-avx2` (or `QUARK_NO_AVX2=1`) keeps the SSE4.2 one.
