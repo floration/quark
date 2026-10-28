@@ -93,6 +93,11 @@ if(QUARK_LTO)
   check_ipo_supported(RESULT QUARK_IPO_OK OUTPUT QUARK_IPO_ERR LANGUAGES C CXX)
   if(QUARK_IPO_OK)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+    # the link-time optimisation on every core: GCC otherwise runs its LTRANS jobs one after another ("using serial
+    # compilation of 85 LTRANS jobs" on the owner's PC); the same code comes out, only the link is faster
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      add_link_options(-flto=auto)
+    endif()
   else()
     message(WARNING "LTO not supported here: ${QUARK_IPO_ERR}")
   endif()
