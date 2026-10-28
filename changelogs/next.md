@@ -11,4 +11,8 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 - **Bubble gun alt-fire: up to 25 bubbles** a stream from 30 m away (was 15). Still 5 when the nearest enemy is within 5 m, and the same 1.8 s reload.
 - **33% more knockback** from the shotgun (a full blast shoves 8 m/s, was 6) and the crossbow (21.3 m/s a bolt, was 16).
 
+## Movement
+- **Dashing up goes higher**: looking straight up, 50% of a dash goes upward (was 40%).
+- **Air dashes add more speed the slower you are**: a dash in the air now adds 35% of the gap between your speed and the 32 m/s cap. From 10 m/s you leave at 17.7 (was 11), from 25 at 27.5 (was 26), from a standstill at 11.2. Dashes on the floor and super dashes (hypers) are unchanged.
+
 - Human-made assets: 16.1%, unchanged (no asset changes).
