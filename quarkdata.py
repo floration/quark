@@ -49,22 +49,23 @@ MODE_TITLES = ["VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR AL
 RANKED_LADDERS = [("vanilla", "RANKED VANILLA"), ("vampire", "RANKED LASER VAMPIRE"), ("instagib", "RANKED INSTAGIB")]
 RACE_MAP = "viaduct"  # TIME TRIAL is the ranked race on Viaduct (game.cpp INFO page)
 # ---- end of copied constants
-VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-test\.\d+)?")   # 1.2.3 (production) or 1.2.3-test.4 (testing build)
+# 1.2.3 (production), or a testing build: 1.2.3.4 (from 1.19.1 on), 1.2.3.testing.4 (1.19.0 to 1.19.1), 1.2.3-test.4 (before)
+VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)((?:\.\d+|\.testing\.\d+|-test\.\d+)?)")
 
 
 def changelog_lookup(version: str) -> tuple[str, str, str, bool]:
     """What a /changelog argument names: (version, release tag, changelog file's version, testing).
-    Production: "1.2.3" / "v1.2.3" -> tag v1.2.3, changelogs/1.2.3.md. Testing builds are tagged test-<VERSION>-test.N
-    (release.yml) and described by their base version's file: "1.2.3-test.4" / "test-1.2.3-test.4" ->
-    tag test-1.2.3-test.4, changelogs/1.2.3.md. Raises ValueError for anything else."""
+    Production: "1.2.3" / "v1.2.3" -> tag v1.2.3, changelogs/1.2.3.md. Testing builds are tagged test-<their version>
+    (release.yml: test-<VERSION>.N from 1.19.1 on, test-<VERSION>.testing.N from 1.19.0, test-<VERSION>-test.N before)
+    and described by their base version's file: "1.2.3.4" / "test-1.2.3.4" -> tag test-1.2.3.4, changelogs/1.2.3.md. Raises ValueError for anything else."""
     v = version.strip()
     if v.lower().startswith("test-"):
         v = v[5:]
     v = v[1:] if v[:1] in ("v", "V") else v
-    if not VERSION_RE.fullmatch(v):
-        raise ValueError("version must look like 1.2.3 (or 1.2.3-test.4 for a testing build)")
-    base, _, suffix = v.partition("-")
-    testing = bool(suffix)
+    m = VERSION_RE.fullmatch(v)
+    if not m:
+        raise ValueError("version must look like 1.2.3 (or 1.2.3.4 for a testing build)")
+    base, testing = m.group(1), bool(m.group(2))
     return v, (f"test-{v}" if testing else f"v{v}"), base, testing
 
 
