@@ -203,10 +203,17 @@ jobs:
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release \
             -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j   # (every target: quark_tests.exe too, so a MinGW-only compile error in the tests shows here)
+          # the AVX2 client next to it: quark.exe starts it on a CPU that has AVX2 (src/client/isa.h)
+          cmake -S . -B build-avx2 -DCMAKE_SYSTEM_NAME=Windows -DQUARK_ISA=v3 -DQUARK_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+            -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release \
+            -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
+          cmake --build build-avx2 -j --target quark
           sh tools/launcher_build.sh -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release
           mkdir -p pkg && cp build/quark.exe build/quark_server.exe build-launcher/quark_launcher.exe pkg/ && cp -r maps mods pkg/
+          cp build-avx2/quark.exe pkg/quark_avx2.exe
           cp -r lightcache pkg/maps/lightcache && sh tools/check_lightcache.sh build pkg/maps/lightcache
           python3 tools/pack.py pkg quark-windows.qpak
           mkdir -p quark-windows && cp -r pkg/* README.md quark-windows/
@@ -231,6 +238,8 @@ jobs:
       - run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
+          cmake -S . -B build-avx2 -DCMAKE_BUILD_TYPE=Release -DQUARK_ISA=v3 -DQUARK_BUILD_TESTS=OFF -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
+          cmake --build build-avx2 -j --target quark   # (the AVX2 client: src/client/isa.h)
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
           python3 tools/site_updates.py . --allow-missing-full   # (work in progress may not have its full changelog yet)
           # the website's assets/ and sounds/ pages: this build's models, maps, sounds and voices (docs/ASSETS.md)
@@ -239,6 +248,7 @@ jobs:
           python3 tools/site_assets.py --studio build/studio --out site-assets
           sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release
           mkdir -p pkg && cp build/quark build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps mods pkg/
+          cp build-avx2/quark pkg/quark_avx2
           cp -r lightcache pkg/maps/lightcache && sh tools/check_lightcache.sh build pkg/maps/lightcache
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/

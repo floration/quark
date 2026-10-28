@@ -7,6 +7,7 @@
 #include "../game/benchmark.h"
 #include "../game/demo.h"
 #include "gl.h"
+#include "isa.h"
 #include "openurl.h"
 #if defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>
@@ -63,13 +64,19 @@ std::string cpuBrand() {
 
 // The build a run came from (the upload's "build"): FLAGS.txt's label, else "ci" for a CI build (a testing version's
 // .testing.N, or a launcher install: installed-files.txt beside it), else "local" (built on this machine)
+// (+ "-avx2" from the AVX2 build, src/client/isa.h)
 std::string buildKind() {
     const std::string flags = buildLabel();
     if (flags != std::string("V") + QUARK_VERSION) return flags;
+#if defined(QUARK_ISA_AVX2)
+    const char* isaTag = "-avx2";
+#else
+    const char* isaTag = "";
+#endif
     std::error_code ec;
     if (std::string(QUARK_VERSION).find(".testing.") != std::string::npos ||
-        (!executableDir().empty() && std::filesystem::exists(std::filesystem::u8path(executableDir() + "/installed-files.txt"), ec))) return "ci";
-    return "local";
+        (!executableDir().empty() && std::filesystem::exists(std::filesystem::u8path(executableDir() + "/installed-files.txt"), ec))) return std::string("ci") + isaTag;
+    return std::string("local") + isaTag;
 }
 
 std::string toHex(const std::string& t) {
@@ -258,7 +265,7 @@ std::string Game::benchSave(const float* t, size_t n) {
     f.setup.push_back({"CPU", clean(cpuBrand())});
     f.setup.push_back({"GPU", clean(glString(GL_RENDERER))});
     f.setup.push_back({"DRIVER", clean(glString(GL_VERSION)).substr(0, 36)});
-    f.setup.push_back({"VERSION", std::string(QUARK_VERSION)});
+    f.setup.push_back({"VERSION", std::string(QUARK_VERSION) + " " + isa::buildName()});
     int players = 0;
     if (net_.hasSnapshot()) for (auto& p : net_.latest().players) if ((p.flags & PS_CONNECTED) && p.team() != TEAM_SPECTATOR) players++;
     f.map = net_.mapReady() ? net_.map().name : "";

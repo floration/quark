@@ -10,6 +10,7 @@
 #include "gl.h"
 #include "lightmap.h"
 #include "../launcher/selfupdate.h"
+#include "isa.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -27,6 +28,7 @@
 static Game* g_game = nullptr;
 
 int main(int argc, char** argv) {
+    if (int code = isa::runAvx2Build(argc, argv); code >= 0) return code;   // the AVX2 build, on a CPU that has it
 #ifdef _WIN32
     // argv is in the ANSI code page on Windows: take the command line as UTF-16 and keep UTF-8 strings, like every
     // other path in the game (a demo / map / data dir under a non-ASCII folder), and argv[0] = this exe's real path

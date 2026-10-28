@@ -43,6 +43,7 @@ Do this on Windows; also on Linux / macOS if you have one.
 | ✓ | Check |
 |---|---|
 | ☐ | The game starts to the main menu without errors; the version in the corner is the testing build's. |
+| ☐ | **AVX2 build**: the install has `quark_avx2(.exe)` next to `quark(.exe)` (Windows, Linux). On an AVX2 CPU, BENCHMARK's VERSION line ends in **AVX2**; started with `--no-avx2` it ends in **SSE4.2**, and both play the same. Closing the game (or ending quark.exe in Task Manager) leaves no quark_avx2 running. |
 | ☐ | **F3 overlay** in three busy places: Midtown (multi point, 8+ bots), Hightown (hide and seek), Lodestone (FFA, 8 bots). Note avg / **1% low / 0.1% low**. |
 | ☐ | Compare with the same three on the current production build (same settings, same machine). **Lows must not be worse by more than ~5%.** Performance comes first: a regression is a blocker. |
 | ☐ | **F3's mouse-to-photon graph**: every row has a sensible time; with NO VSYNC, LATENT SYNC and VSYNC the total is stable (no row growing without end). **F4** shows the number alone; F3 and F4 give about the same number. |

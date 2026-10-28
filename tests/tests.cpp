@@ -7524,7 +7524,9 @@ static void testHiddenInfo(uint16_t port) {
 // is in-process (a scripted bot), so no network timing gets in. It runs on the manual clock (simRun: every tick, the
 // warmup before the restart too, which is seeded as well), so a seed plays out exactly the same match every time.
 struct FfaRun { int kills = 0, playerDeaths = 0, hooks = 0, phase = 0; };
-static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
+// hash (simhash, tools/isa_check.sh): every tick's player positions, velocities, health and projectiles, bit for bit,
+// so two builds of the game (the SSE4.2 and AVX2 clients) can be checked to simulate exactly the same match
+static FfaRun ffaVsExperts(uint16_t port, uint32_t seed, uint64_t* hash = nullptr) {
     FfaRun r;
     SimClock clock;
     qsrand(seed);   // (the warmup's spawn picks and the bots' first dice)
@@ -7560,6 +7562,17 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
             r.hooks += h && !was[k];
             was[k] = h;
         }
+        if (!hash) return;
+        auto mix = [&](const void* p, size_t n) {   // FNV-1a
+            for (size_t b = 0; b < n; b++) *hash = (*hash ^ ((const unsigned char*)p)[b]) * 1099511628211ull;
+        };
+        for (auto& p : s.players_) {
+            if (!p.connected) continue;
+            mix(&p.move.pos, sizeof p.move.pos);
+            mix(&p.move.vel, sizeof p.move.vel);
+            mix(&p.health, sizeof p.health);
+        }
+        for (auto& pr : s.projectiles_) if (pr.active) mix(&pr.pos, sizeof pr.pos);
     });
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != me) r.kills += s.players_[i].kills;
     r.playerDeaths = s.players_[me].deaths;
@@ -8314,6 +8327,15 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "bounds") { g_fail += outOfBoundsTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "exprbench") return moveExprBench();
     if (argc >= 2 && std::string(argv[1]) == "navbench") { navBench(argc > 2 && std::string(argv[2]) != "all" ? argv[2] : nullptr, argc > 3 && std::string(argv[3]) == "surfaces"); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "simhash") {   // [seeds]: the seeded FFA's every tick, hashed (tools/isa_check.sh)
+        int n = argc > 2 ? atoi(argv[2]) : 3;
+        for (int k = 0; k < n; k++) {
+            uint64_t h = 1469598103934665603ull;
+            FfaRun r = ffaVsExperts(TP(29070 + k % 10), 0x5EED0001u + k, &h);
+            printf("seed %d: %016llx (%d kills)\n", k, (unsigned long long)h, r.kills);
+        }
+        return g_fail ? 1 : 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
         int n = argc > 2 ? atoi(argv[2]) : 10;
         for (int k = 0; k < n; k++) {
@@ -8423,7 +8445,7 @@ int main(int argc, char** argv) {
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
                 }
-        printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts,\n"
+        printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts, simhash,\n"
                "racefloors, bounds, exportassets, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
         return 1;
     }
