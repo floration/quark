@@ -11,6 +11,7 @@
 #include <GLFW/glfw3native.h>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #ifdef __GNUC__
@@ -176,6 +177,8 @@ bool nvMaxClocks(bool on, std::string* msg) {
 
 // ---- setGamePriority: gdi32's D3DKMTSetProcessSchedulingPriorityClass (Windows 7+; MinGW's headers lack it) ----------
 
+static long g_gpuPrioStatus = 1;   // (the last set call's NTSTATUS: 0 done; 1 never called / not available)
+
 void setGamePriority(bool high) {
     static int now = -1;   // (what's set: -1 nothing yet, 0 normal, 1 high)
     if (now == (int)high) return;
@@ -184,10 +187,32 @@ void setGamePriority(bool high) {
     using SetClassFn = LONG(APIENTRY*)(HANDLE, int);
     static const auto setClass = gdi() ? (SetClassFn)GetProcAddress(gdi(), "D3DKMTSetProcessSchedulingPriorityClass") : nullptr;
     HANDLE self = GetCurrentProcess();
-    if (setClass && setClass(self, high ? kHigh : kNormal) != 0 && high) setClass(self, kAboveNormal);   // (0 = STATUS_SUCCESS)
+    if (setClass) {   // (0 = STATUS_SUCCESS)
+        g_gpuPrioStatus = setClass(self, high ? kHigh : kNormal);
+        if (g_gpuPrioStatus != 0 && high) g_gpuPrioStatus = setClass(self, kAboveNormal);
+        if (g_gpuPrioStatus != 0) printf("prioritize: Windows refused the GPU scheduling class (NTSTATUS 0x%08lX)\n", (unsigned long)g_gpuPrioStatus);
+    }
     // ABOVE_NORMAL, not HIGH: the hosted server's and audio threads already run raised, and a HIGH process at thousands of
     // frames a second can starve the rest of the desktop (input, the launcher, voice chat)
     SetPriorityClass(self, high ? ABOVE_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+}
+
+std::string gamePriorityStatus() {
+    using GetClassFn = LONG(APIENTRY*)(HANDLE, int*);
+    static const auto getClass = gdi() ? (GetClassFn)GetProcAddress(gdi(), "D3DKMTGetProcessSchedulingPriorityClass") : nullptr;
+    static const char* names[] = {"IDLE", "BELOW NORMAL", "NORMAL", "ABOVE NORMAL", "HIGH", "REALTIME"};
+    std::string out = "GPU PRIORITY ";
+    int c = -1;
+    if (getClass && getClass(GetCurrentProcess(), &c) == 0 && c >= 0 && c <= 5) out += names[c];
+    else out += "UNKNOWN";
+    if (g_gpuPrioStatus != 0 && g_gpuPrioStatus != 1) {
+        char b[48];
+        snprintf(b, sizeof b, " (REFUSED 0X%08lX)", (unsigned long)g_gpuPrioStatus);
+        out += b;
+    }
+    const DWORD cpu = GetPriorityClass(GetCurrentProcess());
+    out += cpu == ABOVE_NORMAL_PRIORITY_CLASS ? "  CPU ABOVE NORMAL" : cpu == HIGH_PRIORITY_CLASS ? "  CPU HIGH" : cpu == NORMAL_PRIORITY_CLASS ? "  CPU NORMAL" : "  CPU OTHER";
+    return out;
 }
 
 #else
@@ -196,4 +221,5 @@ void RasterClock::close() {}
 bool RasterClock::nextBlank(double, double*) { return false; }
 bool nvMaxClocks(bool, std::string* msg) { *msg = "GPU MAX CLOCKS: WINDOWS ONLY"; return false; }
 void setGamePriority(bool) {}
+std::string gamePriorityStatus() { return ""; }
 #endif

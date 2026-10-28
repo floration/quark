@@ -590,7 +590,8 @@ private:
     int infoRowsTab_ = -1;
     float infoRowsW_ = 0, infoRowsTs_ = 0;
     int infoRowsFont_ = -1;
-    std::string perfTick_;   // (drawPerf: the version / server line, made with the numbers)
+    std::string perfTick_;
+    std::string perfPrio_;   // F3: PRIORITIZE GAME as Windows reports it (gamePriorityStatus; empty off Windows)   // (drawPerf: the version / server line, made with the numbers)
     struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
     JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
     Vec3 viewAnchor(const Settings::HudElem& e, const Vec3& base) const;   // a first-person model's pivot (camera space)
