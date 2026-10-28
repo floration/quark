@@ -205,7 +205,11 @@ class Releases(unittest.TestCase):
         self.assertEqual(L("1.17.1-test.4"), ("1.17.1-test.4", "test-1.17.1-test.4", "1.17.1", True))
         self.assertEqual(L("test-1.17.1-test.4"), ("1.17.1-test.4", "test-1.17.1-test.4", "1.17.1", True))
         self.assertEqual(L(" v1.17.1-test.4 "), ("1.17.1-test.4", "test-1.17.1-test.4", "1.17.1", True))
-        for bad in ("1.17", "test-", "1.17.0-beta", "../x", "1.17.0/../../y", "vv1.17.0"):
+        # from 1.19.0: test-<VERSION>.testing.N; from 1.19.1: test-<VERSION>.N
+        self.assertEqual(L("1.19.0.testing.392"), ("1.19.0.testing.392", "test-1.19.0.testing.392", "1.19.0", True))
+        self.assertEqual(L("test-1.19.1.1"), ("1.19.1.1", "test-1.19.1.1", "1.19.1", True))
+        self.assertEqual(L("1.19.1.12"), ("1.19.1.12", "test-1.19.1.12", "1.19.1", True))
+        for bad in ("1.17", "test-", "1.17.0-beta", "1.19.1.1.1", "../x", "1.17.0/../../y", "vv1.17.0"):
             with self.assertRaises(ValueError):
                 L(bad)
 
