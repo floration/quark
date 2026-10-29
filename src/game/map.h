@@ -17,18 +17,335 @@ inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
+    int material = 0; // (12-19: ice, sand, wood, plastic, grass, rubber, steel, diamond plate: solid, see kMatIce) 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
     int group = -1;         // the map group it's a part of (generated from groups[group]), -1 for none: seams (outlines) only between groups
+    // Shape (map format 5): a box, or the solid under a sloped top inside the box (its slope is whatever the box gives).
+    // In the brush's own frame (u, h, v: see slopeFrame) the shape stands on its base, the box's low-h face:
+    //   wedge: one top edge kept; it rises from the base to the far face toward dir (0 +u, 1 -u, 2 +v, 3 -v, as stairs).
+    //   corner: one top corner kept, a pyramid over the base with its apex above corner dir (0 -u-v, 1 +u-v, 2 +u+v, 3 -u+v).
+    // Both are heightfields there: solid where 0 <= h < height * shapeHeight(u, v) (0..1).
+    // up turns that frame: 0 standing on the floor (u x, h y, v z: the default), 1 hanging from the ceiling (the same,
+    // mirrored upside down), 2 / 3 on its side rising toward +x / -x (u y, h x, v z), 4 / 5 rising toward +z / -z (u x,
+    // h z, v y); an odd one is the even one mirrored along h.
+    uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER
+    uint8_t dir = 0;
+    uint8_t up = 0;
+    // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
+    // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
+    bool gone = false;
 };
+enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2 };
+constexpr int kSlopeUps = 6;
+// A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
+struct SlopeFrame { int u, h, v; bool flip; };
+inline SlopeFrame slopeFrame(const Brush& b) {
+    const bool f = (b.up & 1) != 0;
+    switch (b.up >> 1) { case 1: return {1, 0, 2, f}; case 2: return {0, 2, 1, f}; default: return {0, 1, 2, f}; }
+}
+// (u, h, v) as (x, y, z): an even turn of the axes, or an odd one (a mirror): a polygon's corners go round the other way
+inline bool slopeFrameMirrors(const SlopeFrame& f) { return (f.u != 0) != f.flip; }
+inline Vec3 slopeToLocal(const Brush& b, const SlopeFrame& f, const Vec3& p) {
+    return {p[f.u], f.flip ? b.box.mn[f.h] + b.box.mx[f.h] - p[f.h] : p[f.h], p[f.v]};
+}
+inline Vec3 slopeToWorld(const Brush& b, const SlopeFrame& f, const Vec3& l) {
+    Vec3 p; p[f.u] = l.x; p[f.h] = f.flip ? b.box.mn[f.h] + b.box.mx[f.h] - l.y : l.y; p[f.v] = l.z;
+    return p;
+}
+inline Vec3 slopeDirToWorld(const SlopeFrame& f, const Vec3& l) { Vec3 p; p[f.u] = l.x; p[f.h] = f.flip ? -l.y : l.y; p[f.v] = l.z; return p; }
+// (per axis, so an empty box (mn > mx somewhere) stays empty: the mirror swaps h's ends)
+inline AABB slopeBoxToLocal(const Brush& b, const SlopeFrame& f, const AABB& a) {
+    AABB r{{a.mn[f.u], a.mn[f.h], a.mn[f.v]}, {a.mx[f.u], a.mx[f.h], a.mx[f.v]}};
+    if (f.flip) { const float s = b.box.mn[f.h] + b.box.mx[f.h]; r.mn.y = s - a.mx[f.h]; r.mx.y = s - a.mn[f.h]; }
+    return r;
+}
+inline AABB slopeBoxToWorld(const Brush& b, const SlopeFrame& f, const AABB& l) {
+    AABB r;
+    r.mn[f.u] = l.mn.x; r.mx[f.u] = l.mx.x; r.mn[f.v] = l.mn.z; r.mx[f.v] = l.mx.z;
+    if (f.flip) { const float s = b.box.mn[f.h] + b.box.mx[f.h]; r.mn[f.h] = s - l.mx.y; r.mx[f.h] = s - l.mn.y; }
+    else { r.mn[f.h] = l.mn.y; r.mx[f.h] = l.mx.y; }
+    return r;
+}
+// The brush in its own frame (up 0): what the frame functions below work on.
+inline Brush slopeLocal(const Brush& b) {
+    const SlopeFrame f = slopeFrame(b);
+    Brush l = b;
+    l.box = slopeBoxToLocal(b, f, b.box);
+    l.up = 0;
+    return l;
+}
+
+// In the brush's own frame (the world for up 0; slopeLocal for the rest): x u, y h, z v.
+// A slope's 0..1 fractions toward its high side along x and z (1 where it's high; a wedge rising along x ignores z: 1).
+inline void slopeFractions(const Brush& b, float x, float z, float& gx, float& gz) {
+    const Vec3 sz = b.box.mx - b.box.mn;
+    const float fx = (x - b.box.mn.x) / std::max(sz.x, 1e-6f), fz = (z - b.box.mn.z) / std::max(sz.z, 1e-6f);
+    if (b.shape == BRUSH_WEDGE) {
+        gx = b.dir == 0 ? fx : b.dir == 1 ? 1 - fx : 1;
+        gz = b.dir == 2 ? fz : b.dir == 3 ? 1 - fz : 1;
+    } else {
+        gx = (b.dir == 1 || b.dir == 2) ? fx : 1 - fx;
+        gz = (b.dir == 2 || b.dir == 3) ? fz : 1 - fz;
+    }
+}
+// Own frame: the solid's top at (x, z), inside the box's footprint.
+inline float brushTopAt(const Brush& b, float x, float z) {
+    if (b.shape == BRUSH_BOX) return b.box.mx.y;
+    float gx, gz;
+    slopeFractions(b, x, z, gx, gz);
+    const float h = std::min(1.0f, std::max(0.0f, std::min(gx, gz)));
+    return b.box.mn.y + (b.box.mx.y - b.box.mn.y) * h;
+}
+// Own frame: what of a brush is solid above height y: for a slope, the part of its box where the top is above y, which
+// is a box too (the heightfield falls away from the high side along x and z), up to box.mx.y. Empty (mn > mx) when
+// nothing is. A box is itself. Collision against a player's box uses this at the box's feet: every point of the
+// player's footprint over that part has solid above its feet.
+inline AABB slopeSolidAbove(const Brush& b, float y) {
+    if (b.shape == BRUSH_BOX) return b.box;
+    AABB r = b.box;
+    const float h = b.box.mx.y - b.box.mn.y;
+    float f = h > 1e-6f ? (y - b.box.mn.y) / h : 1.0f;
+    if (f >= 1.0f) { r.mn.y = r.mx.y + 1; return r; }   // (empty)
+    f = std::max(0.0f, f);
+    const float sx = b.box.mx.x - b.box.mn.x, sz = b.box.mx.z - b.box.mn.z;
+    const bool wedge = b.shape == BRUSH_WEDGE;
+    const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), loX = wedge ? b.dir == 1 : !(b.dir == 1 || b.dir == 2);
+    const bool hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3), loZ = wedge ? b.dir == 3 : !(b.dir == 2 || b.dir == 3);
+    if (hiX) r.mn.x = b.box.mn.x + f * sx; else if (loX) r.mx.x = b.box.mx.x - f * sx;
+    if (hiZ) r.mn.z = b.box.mn.z + f * sz; else if (loZ) r.mx.z = b.box.mx.z - f * sz;
+    return r;
+}
+// Own frame: the highest the solid reaches over the part of rectangle [x0, x1] x [z0, z1] inside its footprint.
+inline float brushTopOver(const Brush& b, float x0, float x1, float z0, float z1) {
+    if (b.shape == BRUSH_BOX) return b.box.mx.y;
+    x0 = std::max(x0, b.box.mn.x); x1 = std::min(x1, b.box.mx.x); z0 = std::max(z0, b.box.mn.z); z1 = std::min(z1, b.box.mx.z);
+    const bool wedge = b.shape == BRUSH_WEDGE;
+    const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3);
+    return brushTopAt(b, hiX ? x1 : x0, hiZ ? z1 : z0);
+}
+// Own frame: the steepness of a slope's surface: its rise over its run (tan of the angle), per plane; the steepest.
+inline float slopeSteepness(const Brush& b) {
+    if (b.shape == BRUSH_BOX) return 0;
+    const Vec3 sz = b.box.mx - b.box.mn;
+    if (b.shape == BRUSH_WEDGE) return sz.y / std::max(b.dir < 2 ? sz.x : sz.z, 1e-6f);
+    return sz.y / std::max(std::min(sz.x, sz.z), 1e-6f);
+}
+
+// World (any up): what of a brush is solid above height y, as a box. Exact standing on the floor (up 0); otherwise the
+// part of its box above y (a little more than the solid: the bots' blockers only need it not to be less).
+inline AABB brushSolidAbove(const Brush& b, float y) {
+    if (b.shape == BRUSH_BOX || b.up == 0) return slopeSolidAbove(b, y);
+    AABB r = b.box;
+    r.mn.y = std::max(r.mn.y, y);
+    return r;
+}
+// World: the part of a brush that stops `box` moving along `axis` by `delta` (sign is all that matters), as a box: a
+// box itself; a slope, in its own frame, sideways the part solid above the box's base side, toward its base the whole
+// box, onto its top the top under the box's footprint (the slope's highest point there: a box's faces are flat).
+inline AABB brushObstacle(const Brush& b, const AABB& box, int axis, float delta) {
+    if (b.shape == BRUSH_BOX) return b.box;
+    const SlopeFrame f = slopeFrame(b);
+    const Brush l = slopeLocal(b);
+    const AABB lb = slopeBoxToLocal(b, f, box);
+    AABB r;
+    if (axis != f.h) r = slopeSolidAbove(l, lb.mn.y);
+    else if ((delta > 0) != f.flip) r = l.box;   // (toward its base: the flat face)
+    else {
+        r = l.box;
+        if (lb.mx.x <= l.box.mn.x || lb.mn.x >= l.box.mx.x || lb.mx.z <= l.box.mn.z || lb.mn.z >= l.box.mx.z) r.mn.x = r.mx.x + 1;   // (not over it: empty)
+        else r.mx.y = brushTopOver(l, lb.mn.x, lb.mx.x, lb.mn.z, lb.mx.z);
+    }
+    return slopeBoxToWorld(b, f, r);
+}
+// Does `box` overlap the brush's solid (open sets: touching isn't overlapping)?
+inline bool brushOverlaps(const Brush& b, const AABB& box) {
+    if (!box.overlaps(b.box)) return false;
+    if (b.shape == BRUSH_BOX) return true;
+    const SlopeFrame f = slopeFrame(b);
+    const AABB lb = slopeBoxToLocal(b, f, box);
+    return lb.overlaps(slopeSolidAbove(slopeLocal(b), lb.mn.y));
+}
+inline bool brushContains(const Brush& b, const Vec3& p) {   // strictly inside
+    if (!(p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)) return false;
+    if (b.shape == BRUSH_BOX) return true;
+    const SlopeFrame f = slopeFrame(b);
+    const Vec3 l = slopeToLocal(b, f, p);
+    return l.y < brushTopAt(slopeLocal(b), l.x, l.z);
+}
+// World: a slope's sloped planes (n . p <= d inside; n points out of it), 1 for a wedge, 2 for a corner; returns how many.
+inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
+    if (b.shape == BRUSH_BOX) return 0;
+    const SlopeFrame fr = slopeFrame(b);
+    const Brush l = slopeLocal(b);
+    const Vec3 sz = l.box.mx - l.box.mn;
+    const float h = sz.y;
+    int k = 0;
+    auto plane = [&](int axis, bool hiPositive) {   // top = mn.y + h * g, g = (p[axis] - lo) / s toward +, or (hi - p) / s toward -
+        const float s = std::max(axis == 0 ? sz.x : sz.z, 1e-6f);
+        Vec3 nn(0, 1, 0);
+        // y - mn.y - h * g <= 0
+        float dd;
+        if (hiPositive) { nn[axis] = -h / s; dd = l.box.mn.y - h * l.box.mn[axis] / s; }
+        else { nn[axis] = h / s; dd = l.box.mn.y + h * l.box.mx[axis] / s; }
+        const float len = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
+        // to the world: n . (M p + c) <= d, M the frame's turn (its own inverse's transpose), c the mirror's offset
+        n[k] = slopeDirToWorld(fr, nn * (1.0f / len));
+        d[k] = (dd - (fr.flip ? nn.y * (b.box.mn[fr.h] + b.box.mx[fr.h]) : 0.0f)) / len;
+        k++;
+    };
+    if (b.shape == BRUSH_WEDGE) plane(b.dir < 2 ? 0 : 2, b.dir == 0 || b.dir == 2);
+    else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
+    return k;
+}
+// World: the sloped plane at p (a corner's: the one whose height is the lower there, the top being the min of the two).
+inline int slopePlaneAt(const Brush& b, const Vec3& p, Vec3& n, float& d) {
+    Vec3 pn[2]; float pd[2];
+    const int np = slopePlanes(b, pn, pd);
+    if (np == 0) return 0;
+    const int k = np == 2 && dot(pn[1], p) - pd[1] > dot(pn[0], p) - pd[0] ? 1 : 0;
+    n = pn[k]; d = pd[k];
+    return 1;
+}
+// World: a slope's faces as convex polygons (corners in order round each, 3 or 4), each with its outward normal:
+// fn(pts, n, normal). Sides that are whole rectangles come out as polygons too; the low edge has none. (The light
+// bake builds its own.)
+template <class F> void slopePolygons(const Brush& world, F fn) {
+    const SlopeFrame fr = slopeFrame(world);
+    const bool rev = slopeFrameMirrors(fr);
+    const Brush br = slopeLocal(world);
+    auto out = [&](const Vec3* lp, int np, const Vec3& ln) {
+        Vec3 p[4];
+        for (int k = 0; k < np; k++) p[k] = slopeToWorld(world, fr, lp[rev ? np - 1 - k : k]);
+        fn(p, np, slopeDirToWorld(fr, ln));
+    };
+    const AABB& a = br.box;
+    const float y0 = a.mn.y;
+    const Vec3 c[4] = {{a.mn.x, y0, a.mn.z}, {a.mx.x, y0, a.mn.z}, {a.mx.x, y0, a.mx.z}, {a.mn.x, y0, a.mx.z}};
+    Vec3 t[4];
+    for (int k = 0; k < 4; k++) t[k] = {c[k].x, brushTopAt(br, c[k].x, c[k].z), c[k].z};
+    for (int k = 0; k < 4; k++) {   // sides 0..3 face -z, +x, +z, -x
+        const int k1 = (k + 1) % 4;
+        const bool low0 = t[k].y < y0 + 1e-4f, low1 = t[k1].y < y0 + 1e-4f;
+        Vec3 n; n[k % 2 == 0 ? 2 : 0] = (k == 0 || k == 3) ? -1.0f : 1.0f;
+        if (low0 && low1) continue;
+        if (low0) { const Vec3 p[3] = {c[k], c[k1], t[k1]}; out(p, 3, n); }
+        else if (low1) { const Vec3 p[3] = {c[k], c[k1], t[k]}; out(p, 3, n); }
+        else { const Vec3 p[4] = {c[k], c[k1], t[k1], t[k]}; out(p, 4, n); }
+    }
+    { const Vec3 p[4] = {c[0], c[3], c[2], c[1]}; out(p, 4, Vec3(0, -1, 0)); }
+    if (br.shape == BRUSH_WEDGE) {
+        Vec3 pn[2]; float pd[2];
+        slopePlanes(br, pn, pd);
+        out(t, 4, pn[0]);
+    } else {
+        const int hi = br.dir, lo = (hi + 2) % 4;
+        for (int side = 0; side < 2; side++) {
+            const Vec3 p[3] = {t[lo], t[side == 0 ? (lo + 1) % 4 : (lo + 3) % 4], t[hi]};
+            Vec3 n = normalize(cross(p[1] - p[0], p[2] - p[0]));
+            out(p, 3, n.y < 0 ? n * -1.0f : n);
+        }
+    }
+}
+// A slope turned or mirrored: `to` (its box already the turned box) gets the dir and up whose solid is `from`'s moved
+// by pt (a 90 degree turn or a mirror: any of them maps the 24 dir / up pairs onto each other). Tried on sample points
+// that sit on no slope's surface (fractions unlike on every axis, mirrored too); false if none fits.
+template <class P> bool slopeTurned(const Brush& from, Brush& to, P pt) {
+    static const float fx[3] = {0.11f, 0.34f, 0.58f}, fy[3] = {0.19f, 0.46f, 0.71f}, fz[3] = {0.27f, 0.52f, 0.86f};
+    const Vec3 s = from.box.mx - from.box.mn;
+    for (int up = 0; up < kSlopeUps; up++)
+        for (int dir = 0; dir < 4; dir++) {
+            to.up = (uint8_t)up; to.dir = (uint8_t)dir;
+            bool same = true;
+            for (int i = 0; i < 27 && same; i++) {
+                const Vec3 p = from.box.mn + Vec3(s.x * fx[i % 3], s.y * fy[i / 3 % 3], s.z * fz[i / 9]);
+                same = brushContains(from, p) == brushContains(to, pt(p));
+            }
+            if (same) return true;
+        }
+    return false;
+}
+// Ray vs a brush's solid: entry distance in [0, maxT] or -1; *normal the face it enters (axis faces as rayAABB's axis).
+inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const Brush& b, float maxT, Vec3* normal = nullptr) {
+    int axis = -1;
+    float t = rayAABB(o, invDir, b.box, maxT, &axis);
+    if (t < 0) return -1.0f;
+    if (b.shape == BRUSH_BOX) {
+        if (normal) { *normal = Vec3(); if (axis >= 0) (*normal)[axis] = dir[axis] > 0 ? -1.0f : 1.0f; }
+        return t;
+    }
+    // the box's slab interval, then cut by the sloped planes
+    float tmin = 0, tmax = maxT;
+    Vec3 nIn;
+    for (int i = 0; i < 3; i++) {
+        float t1 = (b.box.mn[i] - o[i]) * invDir[i], t2 = (b.box.mx[i] - o[i]) * invDir[i];
+        float s = -1;
+        if (t1 > t2) { std::swap(t1, t2); s = 1; }
+        if (t1 > tmin) { tmin = t1; nIn = Vec3(); nIn[i] = s; }
+        if (t2 < tmax) tmax = t2;
+    }
+    Vec3 pn[2]; float pd[2];
+    const int np = slopePlanes(b, pn, pd);
+    for (int k = 0; k < np; k++) {
+        const float den = dot(pn[k], dir), num = pd[k] - dot(pn[k], o);
+        if (std::fabs(den) < 1e-9f) { if (num < 0) return -1.0f; continue; }
+        const float tt = num / den;
+        if (den < 0) { if (tt > tmin) { tmin = tt; nIn = pn[k]; } }
+        else if (tt < tmax) tmax = tt;
+    }
+    if (tmin > tmax) return -1.0f;
+    if (normal) *normal = nIn;
+    return tmin;
+}
+
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
-constexpr int kMapMaterials = 12;
+// 12-19 (owner, 2026-10-28): solid like base, each its own look made in the world shader (no textures); ice is slippery
+// underfoot, rubber bounces you off it.
+// 21 glass (see-through, breakable: Map::breakGlass) and 22-35 (owner, 2026-10-28, from the surface ideas): solid, own
+// looks; asphalt grips (faster, quicker to brake), mud holds you back, cobblestone breaks open like brick.
+constexpr int kMapMaterials = 36;
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
+constexpr int kMatIce = 12, kMatSand = 13, kMatWood = 14, kMatPlastic = 15, kMatGrass = 16, kMatRubber = 17, kMatSteel = 18, kMatDiamond = 19;
+constexpr int kMatBrick = 20;   // classic red brick (owner, 2026-10-28)
+constexpr int kMatGlass = 21, kMatAsphalt = 22, kMatMud = 23, kMatCobble = 24, kMatConcrete = 25, kMatTile = 26, kMatMarble = 27,
+              kMatCorrugated = 28, kMatHazard = 29, kMatSnow = 30, kMatStone = 31, kMatCrystal = 32, kMatCircuit = 33, kMatRust = 34,
+              kMatTerracotta = 35;
+// brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
+constexpr float kBreakableThick = 0.125f;
+inline bool holeMaterial(int m) { return m == kMatBrick || m == kMatCobble; }
+constexpr int kMaxHoles = 512;     // per map at once (the world shader's table); past it, blasts leave walls as they are
+constexpr float kHoleSize = 2.5f;   // a direct hit's hole, metres across (owner, 2026-10-28)
+// a hole's cells (u along the wall, v up it; a floor: x and z): the world shader's bricks and stones, rows offset half a cell
+inline void holeCell(int m, float& w, float& h) { if (m == kMatCobble) { w = 0.16f; h = 0.14f; } else { w = 0.21f; h = 0.075f; } }
+inline int holeUAxis(int axis) { return axis == 0 ? 2 : 0; }
+inline int holeVAxis(int axis) { return axis == 1 ? 2 : 1; }
+// whether a hole of half size r centred (u, v) breaks out cell (row, col): a squarish circle (|x|^4 + |y|^4 < 1) with
+// each cell's own nudge, so its edge is broken bricks. The world shader (renderer.cpp) computes the same.
+inline bool holeTakes(float u, float v, float r, float cw, float ch, int row, int col) {
+    const float x = ((col + 0.5f - 0.5f * (float)(row & 1)) * cw - u) / r, y = ((row + 0.5f) * ch - v) / r;
+    const float s = std::sqrt(std::sqrt(x * x * x * x + y * y * y * y));
+    uint32_t k = (uint32_t)row * 73856093u ^ (uint32_t)col * 19349663u;
+    k ^= k >> 13; k *= 0x5bd1e995u; k ^= k >> 15;
+    return s + ((float)(k & 255u) / 255.0f - 0.5f) * 0.3f < 1.0f;
+}
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid; clip is solid to players only)
-inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple; }
+inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials); }
+// lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
+// drawn see-through each frame, so a broken pane can go)
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && m != kMatGlass); }
+inline bool bakedMaterial(int m) { return m != 9 && m != kMatGlass; }   // in the static world mesh
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
-inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, acid, base
+// a box line's keyword per material in map files ("box" is base)
+inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid",
+                                                    "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick",
+                                                    "glass", "asphalt", "mud", "cobblestone", "concrete", "tile", "marble", "corrugated", "hazard",
+                                                    "snow", "stone", "crystal", "circuit", "rust", "terracotta"};
+static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
+inline int materialKeyword(const std::string& w) {
+    for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
+    return -1;
+}
+inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, nograpple, acid, ice .. diamond plate, base
 
 // What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
 // groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
@@ -74,7 +391,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 4;   // 3: the nograpple material; 4: the acid material
+constexpr int kMapFormatVersion = 5;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners
 
 struct Map {
     std::string name;
@@ -103,7 +420,8 @@ struct Map {
     std::vector<AABB> ladders;        // "ladder x0 y0 z0 x1 y1 z1 [auto]": climbable volumes (stand in it and move)
     std::vector<uint8_t> ladderAuto;  // per ladder: draws its own rails and rungs (one editor object; else separate boxes do)
     void genLadderBrushes();          // (re)makes the generated brushes (auto ladders' rails / rungs, groups' parts), at the end of brushes
-    // "group custom|room|stairs <material> <dir> x0 y0 z0 x1 y1 z1" (+ "part <material> fx0 fy0 fz0 fx1 fy1 fz1" lines for custom):
+    // "group custom|room|stairs <material> <dir> x0 y0 z0 x1 y1 z1" (+ "part <material> fx0 fy0 fz0 fx1 fy1 fz1" lines for custom,
+    // a wedge / corner part followed by "wedge|corner <dir + 4 * up>"):
     // one editor object whose boxes are made from its box, so moving / stretching it moves / stretches them all.
     // room: floor, walls with a player-sized doorway each, ceiling. stairs: steps rising toward dir (0 +x, 1 -x, 2 +z,
     // 3 -z), each no taller than pmove's step-up. custom: parts kept as 0..1 fractions of the box.
@@ -170,7 +488,9 @@ struct Map {
     bool changeBrush(int op, size_t i, const Brush& b);
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
-    float sweepAxis(const AABB& box, int axis, float delta) const;
+    // *hit (when given): the brush that stopped it, nullptr for none or a moving solid (pmove: a steep slope is a wall).
+    // *glass (not null): glass doesn't stop the move; the index of the first pane it would have is put there (else -1)
+    float sweepAxis(const AABB& box, int axis, float delta, const Brush** hit = nullptr, int* glass = nullptr) const;
     bool boxSolid(const AABB& box) const;
     bool inLava(const AABB& box) const { for (auto& l : lava) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
@@ -196,6 +516,26 @@ struct Map {
     // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
     bool hasWallbang = false;
+    bool hasIce = false, hasRubber = false;   // (pmove asks what's underfoot / hit only on maps with them)
+    bool hasGripMats = false;                 // ice, rubber, asphalt or mud: pmove asks what's underfoot
+
+    // ---- Destruction in play (owner, 2026-10-28): glass breaks, thin brick and cobblestone get holes blown in them.
+    // The server and every client make the same calls in the same order (EV_DESTRUCT), so all of them collide alike;
+    // resetDestruction undoes it all (each round, a map restart, an edit). Never saved: a map's text stays the map's.
+    // A hole: its centre (u, v) on the wall and half size r, the wall's thin axis and its extent along it, and the cells
+    // (bricks, stones) it breaks out (holeTakes; the world shader draws the same).
+    struct Hole { float u, v, r, cw, ch; int axis; float lo, hi; };
+    std::vector<Hole> holes;
+    std::vector<uint32_t> glass;          // the glass brushes (drawn see-through each frame; a gone one isn't)
+    std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)
+    uint32_t destructSerial = 0;          // counts every change (the renderer sends the holes again)
+    bool breakGlass(size_t i);            // false: not a standing pane
+    int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose box (grown by eps) holds p, -1 none
+    // Blows a hole in every thin (kBreakableThick) brick / cobblestone box near `at`: kHoleSize across where it meets the
+    // wall, less the distance from it to the wall's plane (owner: "if a sticky blows up 1m away ... a 1.5m hole").
+    // Returns how many boxes it cut.
+    int punchHole(const Vec3& at);
+    void resetDestruction();
 
     bool supportsMode(int mode) const;  // allowed and has what the mode needs
     bool canSupportMode(int mode) const; // has what the mode needs (ignores allowedModes)
@@ -214,7 +554,7 @@ struct Map {
     // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
     float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
-    static bool gridSolid(const Brush& b) { return solidMaterial(b.material) || b.material == 9; } // in the grid: far scenery, water, lava aren't
+    static bool gridSolid(const Brush& b) { return !b.gone && (solidMaterial(b.material) || b.material == 9); } // in the grid: far scenery, water, lava aren't
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
@@ -234,7 +574,7 @@ struct Map {
 //                                         intensity), z bomb site (box), c checkpoint (box), p path point (x y z), h hill (has + box),
 //                                         o multi point capture zone (box), d ladder (auto + box),
 //                                         g group (type material dir box; ins makes it empty, set keeps its parts)
-//   g part <index> <material> <6 fractions of the box>: adds a part to custom group <index>
+//   g part <index> <material> <6 fractions of the box> [w|c <dir + 4 * up>]: adds a part (a box, wedge or corner) to custom group <index>
 //   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8, clip 9, nograpple 10 and acid 11 included)
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and updates the grid (in place

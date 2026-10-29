@@ -30,8 +30,7 @@ const float kGrids[] = {0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f};   // (1/8 m up t
 const int kGridCount = (int)(sizeof kGrids / sizeof kGrids[0]);
 const char kKindChar[] = "bslzhcpdg"; // ED_* -> edit op kind
 const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER", "GROUP"};
-const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};   // (group files)
-static_assert(sizeof kMatNames / sizeof *kMatNames == kMapMaterials, "a name per material");
+const char* const* kMatNames = kMapMaterialWords;   // (group files: the map files' keywords)
 const char* kGroupTypes[] = {"custom", "room", "stairs"};
 const Vec3 kTeamColors[] = {{0.25f, 0.6f, 1.0f}, {1.0f, 0.35f, 0.25f}, {0.9f, 0.9f, 0.9f}, {0.3f, 1.0f, 0.4f}};
 
@@ -139,6 +138,11 @@ template <class H> void handlesOf(const AABB& b, bool point, std::vector<H>& hs)
             }
 }
 
+// After a box in an edit op or a group file: "" for a box, " w <dir + 4 * up>" / " c ..." for a wedge / corner.
+static std::string shapeSuffix(const Brush& b) {
+    return b.shape == BRUSH_BOX ? "" : std::string(b.shape == BRUSH_WEDGE ? " w " : " c ") + std::to_string((int)b.dir + 4 * b.up);
+}
+
 // The "ins" op for object i, plus (a custom group) the ops that add its parts back.
 std::string insertOps(const Map& m, char k, int i) {
     std::string o = describeMapObject(m, k, "ins", i);
@@ -146,13 +150,14 @@ std::string insertOps(const Map& m, char k, int i) {
         for (auto& p : m.groups[i].parts) {
             char t[200];
             snprintf(t, sizeof t, "\ng part %d %d %.7g %.7g %.7g %.7g %.7g %.7g", i, p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z);
-            o += t;
+            o += t + shapeSuffix(p);
         }
     return o;
 }
 
 // ---- group files: "quark-group 1", "size sx sy sz", "type custom|room|stairs material dir", then (custom) one
-// "<material> x0 y0 z0 x1 y1 z1" per box, in metres from the group's low corner (so it pastes anywhere)
+// "<material> x0 y0 z0 x1 y1 z1" per box, in metres from the group's low corner (so it pastes anywhere), then
+// "w|c <dir + 4 * up>" for a wedge / corner
 std::string groupDir() { return userDataPath("groups"); }
 
 std::string groupText(const Map::Group& g) {
@@ -162,8 +167,8 @@ std::string groupText(const Map::Group& g) {
     std::string o = t;
     for (auto& p : g.parts) {
         Vec3 a(p.box.mn.x * sz.x, p.box.mn.y * sz.y, p.box.mn.z * sz.z), c(p.box.mx.x * sz.x, p.box.mx.y * sz.y, p.box.mx.z * sz.z);
-        snprintf(t, sizeof t, "%s %g %g %g %g %g %g\n", kMatNames[p.material], a.x, a.y, a.z, c.x, c.y, c.z);
-        o += t;
+        snprintf(t, sizeof t, "%s %g %g %g %g %g %g", kMatNames[p.material], a.x, a.y, a.z, c.x, c.y, c.z);
+        o += t + shapeSuffix(p) + "\n";
     }
     return o;
 }
@@ -197,7 +202,16 @@ bool parseGroupText(const std::string& text, Map::Group& g) {
         Vec3 a, c;
         if (mat < 0 || !hasSize || !(ls >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z) || g.parts.size() >= 1024) return false;
         Vec3 lo = vmin(a, c), hi = vmax(a, c);
-        g.parts.push_back({{{lo.x / sz.x, lo.y / sz.y, lo.z / sz.z}, {hi.x / sz.x, hi.y / sz.y, hi.z / sz.z}}, mat});
+        Brush part{{{lo.x / sz.x, lo.y / sz.y, lo.z / sz.z}, {hi.x / sz.x, hi.y / sz.y, hi.z / sz.z}}, mat};
+        std::string shape;
+        if (ls >> shape) {
+            int dir = -1;
+            if (!((shape == "w" || shape == "c") && (ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
+            part.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
+            part.dir = (uint8_t)(dir % 4);
+            part.up = (uint8_t)(dir / 4);
+        }
+        g.parts.push_back(part);
     }
     if (!hasSize || !hasType || (g.type == Map::GROUP_CUSTOM) == g.parts.empty()) return false;
     for (auto& p : g.parts) if (!okNum(p.box.mn.x) || !okNum(p.box.mx.x) || !okNum(p.box.mn.y) || !okNum(p.box.mx.y) || !okNum(p.box.mn.z) || !okNum(p.box.mx.z)) return false;
@@ -476,7 +490,13 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
     tmp = copyNoSource(m);
     for (auto& e : sel) {
         switch (e.kind) {
-            case ED_BRUSH: tmp.brushes[e.idx].box = box(m.brushes[e.idx].box, c); break;
+            case ED_BRUSH: {
+                Brush& b = tmp.brushes[e.idx];
+                b.box = box(m.brushes[e.idx].box, c);
+                // a wedge / corner: the dir and up that make it the same shape turned (on its side, upside down: any)
+                if (b.shape != BRUSH_BOX && !slopeTurned(m.brushes[e.idx], b, [&](const Vec3& p) { return pt(p, c); })) return false;
+                break;
+            }
             case ED_LADDER: tmp.ladders[e.idx] = box(m.ladders[e.idx], c); break;
             case ED_CHECK: tmp.checkpoints[e.idx] = box(m.checkpoints[e.idx], c); break;
             case ED_LIGHT: tmp.lights[e.idx].pos = pt(m.lights[e.idx].pos, c); break;
@@ -495,7 +515,12 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
                 if (op == ED_ROT_Y) g.dir = rotY[g.dir];
                 else if (op == ED_MIR_X && g.dir < 2) g.dir ^= 1;
                 else if (op == ED_MIR_Z && g.dir >= 2) g.dir ^= 1;
-                for (auto& p : g.parts) p.box = box(p.box, Vec3(0.5f, 0.5f, 0.5f));   // (parts: 0-1 fractions of the box)
+                for (size_t k = 0; k < g.parts.size(); k++) {   // (parts: 0-1 fractions of the box; a slope turns as a brush does)
+                    const Vec3 mid(0.5f, 0.5f, 0.5f);
+                    Brush& p = g.parts[k];
+                    p.box = box(p.box, mid);
+                    if (p.shape != BRUSH_BOX && !slopeTurned(m.groups[e.idx].parts[k], p, [&](const Vec3& q) { return pt(q, mid); })) return false;
+                }
                 break;
             }
         }
@@ -593,10 +618,15 @@ void Game::edAdd(int kind, int variant) {
     float t = ed_.raycast(edCam_, dir, 200, &n);
     Vec3 at = t >= 0 ? edCam_ + dir * t + n * 0.001f : edCam_ + dir * 8.0f;
     at = snapTo(at, g);
-    if (t >= 0 && n.y < -0.5f) at.y -= 1; // hit a ceiling: hang below it
+    if (t >= 0 && n.y < -0.5f) at.y -= kind == ED_BRUSH ? g : 1; // hit a ceiling: hang below it
     Map tmp = copyNoSource(ed_);
     switch (kind) {
-        case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, edMat_}); break;
+        case ED_BRUSH: {   // one grid cell (owner, 2026-10-28: "the same scale as your grid size"), the cell under the crosshair
+            Vec3 lo = snapTo(at - Vec3(g * 0.5f, 0, g * 0.5f), g);
+            lo.y = at.y;
+            tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{lo, lo + Vec3(g, g, g)}, edMat_});
+            break;
+        }
         case ED_GROUP: { // variant: GROUP_ROOM (8 x 3.5 x 8, a door each side) or GROUP_STAIRS (2 wide, 2 up over 4, rising away from you)
             Map::Group gr;
             gr.type = variant;
@@ -650,7 +680,10 @@ template <class Sel> static bool groupOf(const Map& m, const std::vector<Sel>& s
     g.box = b;
     for (auto& p : all) {
         Vec3 a = p.box.mn - b.mn, c = p.box.mx - b.mn;
-        g.parts.push_back({{{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}}, p.material});   // (every material, trim and clip too)
+        Brush part = p;   // (every material, trim and clip too; a wedge / corner keeps its shape)
+        part.box = {{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}};
+        part.generated = false; part.group = -1;
+        g.parts.push_back(part);
     }
     return true;
 }
@@ -711,8 +744,8 @@ void Game::edUngroup() {
     for (size_t k = 0; k < parts.size(); k++) {
         char t[220];
         const AABB& b = parts[k].box;
-        snprintf(t, sizeof t, "b ins %d %d %.9g %.9g %.9g %.9g %.9g %.9g\n", n + (int)k, parts[k].material, b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
-        op += t;
+        snprintf(t, sizeof t, "b ins %d %d %.9g %.9g %.9g %.9g %.9g %.9g", n + (int)k, parts[k].material, b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
+        op += t + shapeSuffix(parts[k]) + "\n";
         undo = "b del " + std::to_string(n + (int)k) + "\n" + undo;
     }
     op += "g del " + std::to_string(gi);
@@ -1075,6 +1108,24 @@ void Game::editorKey(int key, int mods) {
         }, false);
         return;
     }
+    if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +u / -u / +v / -v, corner high at each corner, box (up kept: turn it with the rotate / mirror keys)
+        edModify([&](Map& m) {
+            Brush& b = m.brushes[i];
+            const int k = (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : 5 + b.dir) + 1;
+            b.shape = k == 9 ? BRUSH_BOX : k <= 4 ? BRUSH_WEDGE : BRUSH_CORNER;
+            b.dir = (uint8_t)(k == 9 ? 0 : k <= 4 ? k - 1 : k - 5);
+        }, false);
+        const Brush& b = ed_.brushes[i];
+        const SlopeFrame f = slopeFrame(b);
+        static const char* ax = "XYZ";
+        auto side = [&](int axis, bool plus) { return std::string(plus ? "+" : "-") + ax[axis]; };
+        static const char* ups[kSlopeUps] = {"", ", upside down", ", on its side (+X)", ", on its side (-X)", ", on its side (+Z)", ", on its side (-Z)"};
+        const bool cu = b.dir == 1 || b.dir == 2, cv = b.dir >= 2;
+        edNotify(b.shape == BRUSH_BOX ? std::string("box")
+                 : b.shape == BRUSH_WEDGE ? "wedge rising toward " + side(b.dir < 2 ? f.u : f.v, b.dir % 2 == 0) + ups[b.up]
+                 : "corner high at " + side(f.u, cu) + " " + side(f.v, cv) + ups[b.up]);
+        return;
+    }
     if ((key == GLFW_KEY_Q || key == GLFW_KEY_E) && kind == ED_SPAWN && !edLook_) {
         edModify([&](Map& m) { m.spawns[i].yaw += key == GLFW_KEY_Q ? PI / 4 : -PI / 4; }, true);
         return;
@@ -1405,6 +1456,14 @@ void Game::editorFrame(double dt) {
     if (!edOnline_) edMulti_.erase(std::remove_if(edMulti_.begin(), edMulti_.end(), [&](EdSel e) { return (size_t)e.idx >= kindCount(ed_, e.kind); }), edMulti_.end());
 
     // ---- 3D view
+    static const Vec3 kNewMatColors[] = {{0.70f, 0.85f, 0.95f}, {0.80f, 0.70f, 0.48f}, {0.55f, 0.36f, 0.20f}, {0.85f, 0.85f, 0.88f},
+                                         {0.30f, 0.58f, 0.20f}, {0.12f, 0.12f, 0.13f}, {0.62f, 0.64f, 0.68f}, {0.50f, 0.52f, 0.55f}, {0.62f, 0.24f, 0.17f},
+                                         {0.85f, 0.90f, 0.92f}, {0.20f, 0.20f, 0.21f}, {0.32f, 0.22f, 0.13f}, {0.50f, 0.48f, 0.45f}, {0.58f, 0.58f, 0.56f},
+                                         {0.88f, 0.86f, 0.80f}, {0.88f, 0.87f, 0.85f}, {0.55f, 0.55f, 0.58f}, {0.90f, 0.72f, 0.08f}, {0.93f, 0.95f, 1.00f},
+                                         {0.60f, 0.58f, 0.54f}, {0.35f, 0.40f, 0.75f}, {0.08f, 0.30f, 0.16f}, {0.52f, 0.33f, 0.20f}, {0.75f, 0.38f, 0.20f}};
+    // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
+    // crystal, circuit, rust, terracotta
+    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
     if (!edBaked_) {   // the map's boxes: one static batch, rebuilt only when they change (it was streamed every frame)
@@ -1413,8 +1472,9 @@ void Game::editorFrame(double dt) {
             r_.setStaticBoxes([&] {
                 for (auto& b : ed_.brushes) { // (water, lava, trim, nograpple, acid past the table: blue, orange, accent, slate, green; clip below)
                     if (b.material == 9) continue;
-                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : r_.accentColor;
-                    r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
+                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[b.material - kMatIce] : r_.accentColor;
+                    if (b.shape != BRUSH_BOX) r_.slope(b, c);
+                    else r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
                 }
             });
             r_.outlineWidth = 1.0f;
@@ -1424,6 +1484,7 @@ void Game::editorFrame(double dt) {
         r_.useStaticBoxes();
     }
     mapCache();
+    if (edBaked_) for (auto& b : ed_.brushes) if (b.material == kMatGlass) r_.translucentBox(b.box, kGlassTint);   // (the bake leaves glass out)
     for (auto& b : edClipBoxes_) r_.translucentBox(b, kClipColor);   // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
     for (auto& sp : ed_.spawns) {
         Vec3 c = kTeamColors[sp.team & 3];
@@ -1626,7 +1687,13 @@ void Game::editorFrame(double dt) {
     header("ADD (AT THE SCREEN CENTER)");
     static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "MATERIAL: WALLBANG", "MATERIAL: METAL", "MATERIAL: GLOW", "MATERIAL: FAR",
                                             "MATERIAL: WATER (WADE IN IT)", "MATERIAL: LAVA (KILLS)", "MATERIAL: TRIM (NOT SOLID)", "MATERIAL: CLIP (INVISIBLE WALL)",
-                                            "MATERIAL: NOGRAPPLE (NO GRAPPLE)", "MATERIAL: ACID (HURTS)"};
+                                            "MATERIAL: NOGRAPPLE (NO GRAPPLE)", "MATERIAL: ACID (HURTS)", "MATERIAL: ICE (SLIPPERY)", "MATERIAL: SAND",
+                                            "MATERIAL: WOOD", "MATERIAL: PLASTIC", "MATERIAL: GRASS", "MATERIAL: RUBBER (BOUNCY)", "MATERIAL: STEEL",
+                                            "MATERIAL: DIAMOND PLATE", "MATERIAL: BRICK (THIN: BLOWS OPEN)",
+                                            "MATERIAL: GLASS (BREAKS)", "MATERIAL: ASPHALT (FAST)", "MATERIAL: MUD (STICKY)",
+                                            "MATERIAL: COBBLESTONE (THIN: BLOWS OPEN)", "MATERIAL: CONCRETE", "MATERIAL: TILE", "MATERIAL: MARBLE",
+                                            "MATERIAL: CORRUGATED METAL", "MATERIAL: HAZARD STRIPES", "MATERIAL: SNOW", "MATERIAL: STONE BLOCKS",
+                                            "MATERIAL: CRYSTAL", "MATERIAL: CIRCUIT", "MATERIAL: RUST", "MATERIAL: TERRACOTTA"};
     static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
     static const std::vector<std::string> mats(std::begin(matLabels), std::end(matLabels));
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)

@@ -32,6 +32,7 @@ template <class T> struct NoInitAlloc : std::allocator<T> {
 using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
+constexpr Color kGlassTint = {0.86f, 0.90f, 0.93f, 0.26f};   // glass panes (map material 21): very light grey, see-through
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 
 class Renderer {
@@ -49,6 +50,7 @@ public:
     static void prepareWorld(const Map& map, PreparedWorld& out, const std::function<void(float)>& progress,
                              const std::atomic<bool>* cancel = nullptr);
     void uploadWorld(const Map& map, PreparedWorld& w);
+    void setHoles(const std::vector<Map::Hole>& holes);   // holes blown in thin brick / cobblestone (the world shader cuts them)
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
@@ -71,6 +73,7 @@ public:
 
     // Dynamic geometry (cleared every frame)
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
+    void slope(const Brush& b, const Vec3& color);   // a wedge / corner (map.h), like box(): into the static batch or the frame's
     void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow = true);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)
     void viewBoxXf(const Mat4& local, const Vec3& half, const Vec3& color);  // camera-relative, turned (local: camera space)
@@ -179,7 +182,7 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time; } uWorld_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir; } uWorld_ = {};
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -191,6 +194,8 @@ private:
     Vec3 camFwd_, camRight_, camUp_;
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
+    unsigned holeTex_ = 0;
+    GLint uHoleCount_ = -1;
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

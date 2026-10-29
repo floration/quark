@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include "common/profile.h"
 #include "game/demo.h"
+#include "game/glass.h"
 #include "../src/client/complete.h"
 #include "../src/client/lightmap.h"
 #include "../src/client/hudclock.h"
@@ -1574,6 +1575,7 @@ static void testMaps() {
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
         for (int k = 0; k < MODE_COUNT; k++) {
+            if (k == MODE_SURF) continue;   // (a surf course is ramps: Lodestone has none)
             bool compact = k == MODE_VS || k == MODE_DUEL || k == MODE_ARENA || k == MODE_TOURNEY;
             if (m.supportsMode(k) == compact) { printf("  %s: %s %s\n", name, compact ? "offers" : "no", modeName(k)); g_fail++; }
         }
@@ -1852,7 +1854,7 @@ static void testAllMaps() {
         }
         for (auto& s : m.bombSites) goals.push_back(s.center());
         if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
-        for (auto& c : m.checkpoints) goals.push_back(c.center());
+        if (m.preferredMode != MODE_SURF) for (auto& c : m.checkpoints) goals.push_back(c.center());   // (surf: ridden, not walked: testSurf)
         for (auto& p : m.points) goals.push_back({p.center().x, p.mn.y, p.center().z});   // (each point's floor)
         if (m.preferredMode == MODE_HIDE || m.preferredMode == MODE_TAG) for (auto& sp2 : m.spawns) goals.push_back(sp2.pos); // every spawn reaches every other
         int unreachable = 0;
@@ -2038,9 +2040,9 @@ static void testMapConverter() {
     {   // version 3 (nograpple, before acid): only the version line changes, and the map is the same
         const std::string v3 = "version 3\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base;
         std::string o;
-        CHECK(upgradeMapText(v3, &o) && mapTextVersion(o) == 4 && o == "version 4\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base);
+        CHECK(upgradeMapText(v3, &o) && mapTextVersion(o) == kMapFormatVersion && o == "version " + std::to_string(kMapFormatVersion) + "\ntitle Three\nnograpple -1 0 -1 1 2 1\n" + base);
         Map a, b;
-        CHECK(a.parse(v3) && b.parse(o) && a.formatVersion == 3 && b.formatVersion == 4 && a.warnings.empty() && a.acid.empty());
+        CHECK(a.parse(v3) && b.parse(o) && a.formatVersion == 3 && b.formatVersion == kMapFormatVersion && a.warnings.empty() && a.acid.empty());
         CHECK(a.brushes.size() == b.brushes.size() && a.brushes[0].material == kMatNoGrapple && a.serialize() == b.serialize());
         Map c;   // and acid itself, from version 4 on: read, written back, kept out of the bounds and the collision grid
         CHECK(c.parse("version 4\nacid -2 0 -2 2 0.3 2\n" + base) && c.warnings.empty() && c.brushes[0].material == kMatAcid && c.acid.size() == 1);
@@ -3100,6 +3102,59 @@ static void testRocketSelfDamage(uint16_t port) {
     s.stop();
 }
 
+// Shooter-side damage (owner, 2026-10-28: "all damage should be client side ... this would only happen if you die on
+// the server before the server gets your damage packet"): a game's "hit" report counts unless the shooter is dead
+// there; its own hitscan and rocket hits on others aren't the server's any more (its blast on itself still is).
+static void testClientHits() {
+    printf("client hits: reports count, a dead shooter's don't, the server leaves the reporter's hits to it\n");
+    auto fresh = [](Server& s, bool reports) {
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_WARMUP;
+        s.timeMs_ = 10000;
+        for (int i = 0; i < 2; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = 100; p.team = TEAM_A; p.joinId = 100 + i;
+            p.move.flags = MF_ONGROUND;
+        }
+        s.players_[1].move.pos = {0, 0, -5};
+        if (reports) s.handleStringCmdForTest(0, "clienthits");
+        CHECK(s.players_[0].clientHits == reports);
+    };
+    const std::string rifle = "hit " + std::to_string(WPN_RIFLE) + " 0 1 1 30 0 0 1 5 0 0 0";
+    {   // a report counts, with its damage
+        Server s; fresh(s, true);
+        s.handleStringCmdForTest(0, rifle);
+        CHECK(std::fabs(s.players_[1].health - 70) < 0.01f && s.players_[0].shotsHit == 1);
+    }
+    {   // the shooter dead on the server by the time it comes: nothing
+        Server s; fresh(s, true);
+        s.players_[0].alive = false;
+        s.handleStringCmdForTest(0, rifle);
+        CHECK(s.players_[1].health == 100);
+    }
+    {   // a client that doesn't report (a bot, an old game): its reports are ignored, the server's hits are its
+        Server s; fresh(s, false);
+        s.handleStringCmdForTest(0, rifle);
+        CHECK(s.players_[1].health == 100);
+    }
+    {   // nonsense is dropped: yourself, a bad id, too many
+        Server s; fresh(s, true);
+        s.handleStringCmdForTest(0, "hit " + std::to_string(WPN_RIFLE) + " 0 1 0 30 0 0 1 5 0 0 0");
+        s.handleStringCmdForTest(0, "hit " + std::to_string(WPN_RIFLE) + " 0 1 9 30 0 0 1 5 0 0 0");
+        s.handleStringCmdForTest(0, "hit " + std::to_string(WPN_RIFLE) + " 0 99 1 30 0 0 1 5 0 0 0");
+        CHECK(s.players_[0].health == 100 && s.players_[1].health == 100);
+    }
+    for (int reports = 0; reports < 2; reports++) {   // a rocket at both: the other's damage is the report's, your own the server's
+        Server s; fresh(s, reports != 0);
+        s.players_[1].move.pos = {1.5f, 0, 0};
+        s.explodeForTest({0.75f, 0.5f, 0}, 0, WPN_ROCKET);
+        CHECK(s.players_[0].health < 100);
+        CHECK((s.players_[1].health < 100) == !reports);
+    }
+}
+
 // The 2026-10 feel review's server fixes, on a server that isn't started (no network: the players are set up by hand
 // and the server's own functions are called): the hit before the kill (F13), shotgun headshots (F14), the bubble
 // stream's count (F15), splash round cover (F16), the killer cam (F11), lag compensation between records (F21), refire
@@ -3509,7 +3564,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 12 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == 0);   // M: ..., lava, trim, clip, nograpple, acid, base
+    CHECK(seen.size() == 36 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatBrick) == kMatGlass && nextMapMaterial(kMatTerracotta) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, brick, glass .. terracotta, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -4484,6 +4539,435 @@ static void testCustomMode(uint16_t port) {
 // walked from the bottom to the top by the real movement code, and checked against the paths around it:
 // no walkable surface may pass through a solid flight, or run underneath an open one with less than a
 // player's height of clearance.
+// Wedges and corners (map format 5): read and written, collision, rays, walking up a gentle one, sliding off a steep
+// one, and bots' floor on the gentle one.
+static void testSlopes() {
+    printf("slopes: wedges and corners\n");
+    const std::string base = "box -20 -1 -20 20 0 20\nspawn any -10 0 -10\n";
+    {   // version 4 converts (nothing to change); a version 5 file round-trips; an older build would skip the lines
+        std::string o;
+        CHECK(upgradeMapText("version 4\n" + base, &o) && mapTextVersion(o) == 5);
+        Map m;
+        CHECK(m.parse("version 5\nwedge 3 1 0 0 0 4 2 2\ncorner 0 2 5 0 5 9 3 9\n" + base) && m.warnings.empty());
+        CHECK(m.brushes.size() == 3 && m.brushes[0].shape == BRUSH_WEDGE && m.brushes[0].dir == 1 && m.brushes[0].material == 3 && m.brushes[1].shape == BRUSH_CORNER);
+        const std::string t = m.serialize();
+        CHECK(t.find("wedge 3 1 0 0 0 4 2 2\n") != std::string::npos && t.find("corner 0 2 5 0 5 9 3 9\n") != std::string::npos);
+        Map b;
+        CHECK(b.parse(t) && b.serialize() == t);
+        Map bad;
+        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 36 0 0 0 0 1 1 1\n" + base));
+    }
+    Map m;
+    // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
+    CHECK(m.parse("wedge 0 0 2 0 -3 6 2 3\nwedge 0 3 -12 0 -9 -6 4 -8\ncorner 0 2 8 0 8 12 2 12\n" + base));
+    {   // the solid: under the slope only
+        const Brush& w = m.brushes[0];
+        CHECK(std::fabs(brushTopAt(w, 4, 0) - 1.0f) < 1e-5f && brushContains(w, {4, 0.9f, 0}) && !brushContains(w, {4, 1.1f, 0}));
+        const Brush& c = m.brushes[2];
+        CHECK(std::fabs(brushTopAt(c, 11, 9) - 0.5f) < 1e-5f && std::fabs(brushTopAt(c, 12, 12) - 2.0f) < 1e-5f);
+        CHECK(!m.boxSolid(playerBox({2.5f, 0.6f, 0}, false)) && m.boxSolid(playerBox({5, 0.6f, 0}, false)));
+        float t = m.raycast({4, 5, 0}, {0, -1, 0}, 10);   // straight down onto the wedge at x 4: its top, 1 m up
+        CHECK(std::fabs(t - 4.0f) < 1e-3f);
+        Vec3 n;
+        t = m.raycast({0, 1, 0}, {1, 0, 0}, 10, &n);      // level at 1 m: into the slope where it reaches 1 m (x 4)
+        CHECK(std::fabs(t - 4.0f) < 1e-3f && n.y > 0.8f && n.x < -0.4f);
+        CHECK(!m.raycastAny({0, 2.5f, 0}, {1, 0, 0}, 10) && m.raycastAny({11, 5, 9}, {0, -1, 0}, 10));
+    }
+    auto run = [&](MoveState& ms, Vec3 to, int ticks) {
+        for (int t = 0; t < ticks; t++) {
+            Vec3 d = to - ms.pos;
+            UserCmd cmd; cmd.yaw = std::atan2(-d.x, -d.z); cmd.forward = 127; cmd.msec = 8;
+            pmove(ms, cmd, m);
+        }
+    };
+    {   // walking up the gentle one, onto its top, on the floor all the way up
+        MoveState ms; ms.pos = {-1, 0.02f, 0};
+        int air = 0;
+        for (int t = 0; t < 200; t++) {
+            Vec3 d = Vec3(7, 2, 0) - ms.pos;
+            UserCmd cmd; cmd.yaw = std::atan2(-d.x, -d.z); cmd.forward = 127; cmd.msec = 8;
+            pmove(ms, cmd, m);
+            if (ms.pos.x > 2.5f && ms.pos.x < 5.5f && !(ms.flags & MF_ONGROUND)) air++;
+            if (ms.pos.x > 5.0f) break;
+        }
+        if (getenv("SLOPE_TRACE")) printf("    up: %.2f %.2f %.2f ground %d air %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND), air);
+        CHECK(ms.pos.x > 5.0f && ms.pos.y > 1.5f && (ms.flags & MF_ONGROUND) && air < 5);
+        run(ms, {-3, 0, 0}, 200);   // and back down it
+        if (getenv("SLOPE_TRACE")) printf("    down: %.2f %.2f %.2f ground %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND));
+        CHECK(ms.pos.x < 0 && std::fabs(ms.pos.y) < 0.05f && (ms.flags & MF_ONGROUND));
+    }
+    {   // the steep one is a wall (walking up its slope, from +z)
+        MoveState ms; ms.pos = {-10, 0.02f, -4};
+        run(ms, {-10, 4, -12}, 250);
+        if (getenv("SLOPE_TRACE")) printf("    wall: %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
+        CHECK(ms.pos.y < 0.6f && ms.pos.z > -8.5f);
+    }
+    {   // dropped onto the steep one: it slides you off downhill (+z: it rises toward -z), onto the floor
+        MoveState ms; ms.pos = {-10, 6, -8.6f};
+        for (int t = 0; t < 400; t++) { UserCmd idle; idle.msec = 8; pmove(ms, idle, m); }
+        if (getenv("SLOPE_TRACE")) printf("    slide: %.2f %.2f %.2f ground %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND));
+        CHECK(ms.pos.z > -8.0f && std::fabs(ms.pos.y) < 0.05f && (ms.flags & MF_ONGROUND));
+    }
+    {   // bots: the gentle one is floor to the top, the steep one isn't
+        NavGraph g;
+        g.build(m, NavKind::Bots);
+        float hiGentle = -1, hiSteep = -1;
+        for (auto& n : g.nodes) {
+            if (n.x0 >= 2 - 1e-3f && n.x1 <= 6 + 1e-3f && n.z0 >= -3 - 1e-3f && n.z1 <= 3 + 1e-3f) hiGentle = std::max(hiGentle, n.y);
+            if (n.z0 >= -9 - 1e-3f && n.z1 <= -8 + 1e-3f && n.x0 >= -12 - 1e-3f && n.x1 <= -6 + 1e-3f) hiSteep = std::max(hiSteep, n.y);
+        }
+        CHECK(hiGentle > 1.7f && hiSteep < 0);
+    }
+    {   // upside down and on its side (up, map.h): the solid, the file, turning one (the editor's rotate / mirror)
+        Map o;
+        CHECK(o.parse("wedge 0 4 0 0 0 4 2 2\nwedge 0 8 10 0 0 14 2 2\ncorner 1 22 20 0 0 24 2 2\n" + base));
+        const Brush &f = o.brushes[0], &sd = o.brushes[1];
+        CHECK(f.up == 1 && f.dir == 0 && sd.up == 2 && sd.dir == 0 && o.brushes[2].up == 5 && o.brushes[2].dir == 2);
+        CHECK(brushContains(f, {3.5f, 1.9f, 1}) && !brushContains(f, {0.5f, 0.5f, 1}) && brushContains(f, {0.5f, 1.95f, 1}));
+        CHECK(brushContains(sd, {11, 1.5f, 1}) && !brushContains(sd, {13, 0.5f, 1}));
+        Map r;
+        CHECK(r.parse(o.serialize()) && r.serialize() == o.serialize() && o.serialize().find("corner 1 22 20 0 0 24 2 2\n") != std::string::npos);
+        // a ray up into the hanging one meets its sloped underside: at x 2 it hangs down to y 1
+        Vec3 n;
+        float t = o.raycast({2, 0.01f, 1}, {0, 1, 0}, 5, &n);
+        CHECK(std::fabs(t - 0.99f) < 1e-3f && n.y < -0.5f);
+        // mirrored upside down, a floor wedge becomes the hanging one; turned about x and z, a solid of the same shape
+        Brush w; w.shape = BRUSH_WEDGE; w.box = {{0, 0, 0}, {4, 2, 2}};
+        Brush m2 = w;
+        CHECK(slopeTurned(w, m2, [](const Vec3& p) { return Vec3(p.x, 2 - p.y, p.z); }) && m2.up == 1 && m2.dir == 0);
+        auto rotX = [](const Vec3& p) { return Vec3(p.x, -p.z, p.y); };
+        Brush m3 = w; m3.box = {{0, -2, 0}, {4, 0, 2}};
+        CHECK(slopeTurned(w, m3, rotX));
+        for (int i = 0; i < 50; i++) {
+            const Vec3 p = {0.05f + 0.077f * i, 0.03f + 0.039f * (i % 50), 0.09f + 0.037f * ((i * 7) % 50)};
+            CHECK(brushContains(w, p) == brushContains(m3, rotX(p)));
+        }
+        // the same solid by its planes and its polygons: every face's corners on the box, its normal pointing out
+        int faces = 0;
+        for (const Brush& b : o.brushes) {
+            if (b.shape == BRUSH_BOX) continue;
+            slopePolygons(b, [&](const Vec3* p, int np, const Vec3& nn) {
+                Vec3 c;
+                for (int k = 0; k < np; k++) c += p[k] * (1.0f / np);
+                CHECK(!brushContains(b, c + nn * 0.01f) && brushContains(b, c - nn * 0.01f));
+                faces++;
+            });
+        }
+        CHECK(faces >= 15);
+    }
+    {   // a dash into the steep one goes up it (owner, 2026-10-28), where running at it doesn't
+        MoveState ms; ms.pos = {-9, 0.02f, -6};
+        for (int t = 0; t < 30; t++) { UserCmd idle; idle.msec = 8; pmove(ms, idle, m); }
+        float top = 0;
+        for (int t = 0; t < 60; t++) {
+            UserCmd cmd; cmd.yaw = 0; cmd.forward = 127; cmd.msec = 8; cmd.buttons = t < 3 ? BTN_DASH : 0;   // (yaw 0: facing -z)
+            pmove(ms, cmd, m);
+            top = std::max(top, ms.pos.y);
+        }
+        if (getenv("SLOPE_TRACE")) printf("    dash: %.2f %.2f %.2f top %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z, top);
+        CHECK(top > 1.5f);
+    }
+    {   // a wall on its side (up 2, rising toward +x along z: a diagonal wall) slides you along it, not stops you
+        Map d;
+        CHECK(d.parse("wedge 0 10 0 0 -4 4 4 4\n" + base));   // (dir 2 + 4 * 2: x thickness 0 at z -4 up to 4 at z 4)
+        MoveState ms; ms.pos = {3.5f, 0.02f, -6};
+        for (int t = 0; t < 150; t++) { UserCmd cmd; cmd.yaw = PI; cmd.forward = 127; cmd.msec = 8; pmove(ms, cmd, d); }   // (yaw pi: +z)
+        if (getenv("SLOPE_TRACE")) printf("    side wall: %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
+        CHECK(ms.pos.z > 0 && ms.pos.x > 4.0f && !d.boxSolid(playerBox(ms.pos, false)));
+    }
+}
+
+// Surf (owner, 2026-10-28): Cascade's ramps are ridden, not walked (the map checks don't ask bots to): a surfer
+// dropped onto a ramp's face going along it, strafing into it, rides it to its end without falling off, and the run-only
+// movement leaves no dash and no grapple.
+// Slopes in custom groups (map format 5): parts read and written with their shape, edited in, turned with the group, and
+// seams: a wedge part's side triangle flush with a box part's face joins it (no outline across), the slope's own
+// crease keeps its outline, and the same pieces outside a group keep every outline (a hand-made map).
+static void testGroupSlopes() {
+    printf("group slopes: parts with shapes, seams\n");
+    const std::string base = "handmade\nbox -20 -1 -20 20 0 20\nspawn any -10 0 -10\n";
+    const std::string grp = "group custom 0 0 0 0 0 4 2 2\npart 0 0 0 0 0.5 1 1\npart 3 0.5 0 0 1 1 1 wedge 1\n";
+    Map m;
+    std::string err;
+    CHECK(m.parse(grp + base, &err) && m.groups.size() == 1 && m.groups[0].parts.size() == 2);
+    CHECK(m.groups[0].parts[1].shape == BRUSH_WEDGE && m.groups[0].parts[1].dir == 1 && m.groups[0].parts[1].up == 0);
+    CHECK(m.serialize().find("part 3 0.5 0 0 1 1 1 wedge 1\n") != std::string::npos);
+    {   // the world brush: a wedge, in the group, collides (its slope 1 m up at x 3)
+        int wedges = 0;
+        for (auto& b : m.brushes) wedges += b.generated && b.group == 0 && b.shape == BRUSH_WEDGE && b.dir == 1;
+        CHECK(wedges == 1);
+        const float t = m.raycast({3, 5, 1}, {0, -1, 0}, 10);
+        CHECK(std::fabs(t - 4) < 0.02f);
+    }
+    {   // bad shape words fail; an edit adds a corner part (upside down)
+        Map bad;
+        CHECK(!bad.parse("group custom 0 0 0 0 0 4 2 2\npart 0 0 0 0 1 1 1 ramp 1\n" + base) && !bad.parse("group custom 0 0 0 0 0 4 2 2\npart 0 0 0 0 1 1 1 wedge 24\n" + base));
+        Map e;
+        CHECK(e.parse(grp + base));
+        CHECK(applyMapEdit(e, "g part 0 0 0 0 0 0.5 0.5 0.5 c 6") && e.groups[0].parts.size() == 3 && e.groups[0].parts[2].shape == BRUSH_CORNER && e.groups[0].parts[2].dir == 2 && e.groups[0].parts[2].up == 1);
+        CHECK(!applyMapEdit(e, "g part 0 0 0 0 0 0.5 0.5 0.5 x 1"));
+        const std::string t = e.serialize();
+        CHECK(t.find("corner 6\n") != std::string::npos);
+        Map back;
+        CHECK(back.parse(t) && back.groups[0].parts.size() == 3 && back.groups[0].parts[2].shape == BRUSH_CORNER && back.groups[0].parts[2].up == 1);
+    }
+    // the outline's distance at p on the face facing n (the mesh's edge interpolated; 1000 where an edge is off)
+    auto outlineAt = [](const BakedWorld& w, Vec3 p, Vec3 n) {
+        for (size_t i = 0; i + 2 < w.verts.size(); i += 3) {
+            const WorldVertex* v[3] = {&w.verts[i], &w.verts[i + 1], &w.verts[i + 2]};
+            Vec3 a(v[0]->pos[0], v[0]->pos[1], v[0]->pos[2]), b(v[1]->pos[0], v[1]->pos[1], v[1]->pos[2]), c(v[2]->pos[0], v[2]->pos[1], v[2]->pos[2]);
+            Vec3 nn = cross(b - a, c - a);
+            if (length(nn) < 1e-8f) continue;
+            nn = normalize(nn);
+            if (dot(nn, n) < 0.99f || std::fabs(dot(p - a, nn)) > 1e-3f) continue;
+            const float area = dot(cross(b - a, c - a), nn);
+            const float la = dot(cross(c - b, p - b), nn) / area, lb = dot(cross(a - c, p - c), nn) / area, lc = 1 - la - lb;
+            if (la < -1e-4f || lb < -1e-4f || lc < -1e-4f) continue;
+            float e[4];
+            for (int k = 0; k < 4; k++) e[k] = v[0]->edge[k] * la + v[1]->edge[k] * lb + v[2]->edge[k] * lc;
+            return std::min(std::min(e[0], e[1]), std::min(e[2] - e[0], e[3] - e[1]));
+        }
+        return -1.0f;   // (no face there)
+    };
+    BakedWorld g;
+    buildWorld(m, g);
+    const Vec3 nz(0, 0, -1);
+    const float boxSide = outlineAt(g, {1.97f, 1.0f, 0}, nz), triSide = outlineAt(g, {2.03f, 1.0f, 0}, nz), crease = outlineAt(g, {3.0f, 0.97f, 0}, nz);
+    if (getenv("SLOPE_TRACE")) printf("    grouped: box side %.3f, triangle side %.3f, its slope edge %.3f\n", boxSide, triSide, crease);
+    CHECK(boxSide > 0.5f && triSide > 0.5f && crease >= 0 && crease < 0.1f);
+    Map loose;   // the same pieces ungrouped: outlines stay
+    CHECK(loose.parse("box 0 0 0 2 2 2\nwedge 3 1 2 0 0 4 2 2\n" + base));
+    BakedWorld l;
+    buildWorld(loose, l);
+    const float lb = outlineAt(l, {1.97f, 1.0f, 0}, nz), lt = outlineAt(l, {2.03f, 1.0f, 0}, nz);
+    if (getenv("SLOPE_TRACE")) printf("    loose: box side %.3f, triangle side %.3f\n", lb, lt);
+    CHECK(lb >= 0 && lb < 0.1f && lt >= 0 && lt < 0.1f);
+}
+
+// Materials 12-19 (owner, 2026-10-28): ice is slippery underfoot, rubber bounces you off it (floor and walls), the rest
+// are solid like base; every keyword reads and writes.
+static void testMaterials() {
+    printf("materials: ice, rubber, the new keywords\n");
+    {
+        Map m;
+        std::string t = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+        for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
+        CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k));
+        const std::string out = m.serialize();
+        CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
+    }
+    auto slide = [](const char* floor) {   // running at 8 m/s, then nothing held for 0.5 s: how far the speed fell
+        Map m;
+        CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+        MoveState s; s.pos = {0, 0, 0}; s.vel = {8, 0, 0}; s.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 8;
+        for (int t = 0; t < 62; t++) pmove(s, c, m);
+        return std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+    };
+    {   // a dash off ice does a quarter of what it does off base (owner, 2026-10-28)
+        auto dash = [](const char* floor) {
+            Map m;
+            CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+            MoveState s; s.pos = {0, 0, 0}; s.flags = MF_ONGROUND;
+            UserCmd c; c.msec = 8; c.buttons = BTN_DASH; c.forward = 127;
+            pmove(s, c, m); c.buttons = 0;
+            for (int t = 0; t < 20; t++) pmove(s, c, m);
+            return -s.pos.z;
+        };
+        const float b = dash("box"), i = dash("ice");
+        printf("    a dash from standing, 0.17 s later: base %.2f m, ice %.2f m\n", b, i);
+        CHECK(i > 0.1f && i < b * 0.5f);
+    }
+    const float onBase = slide("box"), onIce = slide("ice");
+    printf("    let go at 8 m/s, 0.5 s later: base %.2f, ice %.2f m/s\n", onBase, onIce);
+    CHECK(onBase < 0.5f && onIce > 5.0f);
+    {   // rubber grips: from standing, running reaches speed sooner than on base, and stops sooner
+        auto run = [](const char* floor, int ticks, bool held) {
+            Map m;
+            CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+            MoveState s; s.flags = MF_ONGROUND; s.vel = held ? Vec3() : Vec3(8, 0, 0);
+            UserCmd c; c.msec = 8; c.forward = held ? 127 : 0; c.yaw = -PI * 0.5f;
+            for (int t = 0; t < ticks; t++) pmove(s, c, m);
+            return std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+        };
+        const float gb = run("box", 6, true), gr = run("rubber", 6, true), sb = run("box", 6, false), sr = run("rubber", 6, false);
+        printf("    48 ms running from standing: base %.2f, rubber %.2f m/s; 48 ms letting go of 8: base %.2f, rubber %.2f\n", gb, gr, sb, sr);
+        CHECK(gr > gb * 1.2f && sr < sb * 0.9f);
+    }
+    {   // dropped 5 m onto rubber: back up at most of the landing speed; onto base: stays
+        auto drop = [](const char* floor) {
+            Map m;
+            CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+            MoveState s; s.pos = {0, 5, 0};
+            UserCmd c; c.msec = 8;
+            float top = 0;
+            bool landed = false;
+            for (int t = 0; t < 250; t++) { pmove(s, c, m); if (s.pos.y < 0.05f) landed = true; if (landed) top = std::max(top, s.pos.y); }
+            return top;
+        };
+        const float rb = drop("rubber"), bb = drop("box");
+        printf("    dropped 5 m: rubber back up to %.2f m, base %.2f m\n", rb, bb);
+        CHECK(rb > 3.0f && rb < 5.0f && bb < 0.01f);
+    }
+    {   // running into a rubber wall at 10 m/s: back off it
+        Map m;
+        CHECK(m.parse("box -40 -1 -40 40 0 40\nrubber 3 0 -5 4 4 5\nspawn any 0 0 0\n"));
+        MoveState s; s.pos = {0, 0, 0}; s.vel = {10, 0, 0}; s.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 8; c.forward = 127; c.yaw = -PI * 0.5f;   // (running at it, +x)
+        float minVx = 0;
+        for (int t = 0; t < 40; t++) { pmove(s, c, m); minVx = std::min(minVx, s.vel.x); }
+        printf("    into a rubber wall at 10 m/s: back at %.2f m/s\n", -minVx);
+        CHECK(minVx < -5.0f);
+    }
+}
+
+// Rockets and stickies on rubber and ice (owner, 2026-10-28): a rocket bounces off rubber (no blast), a sticky bounces off
+// it too, a sticky thrown along ice slides before it sticks.
+// Glass and blown holes (owner, 2026-10-28): a pane breaks and lets shots, players and sight through; thin brick and
+// cobblestone get a hole from a blast (2.5 m less the distance to the wall), thick ones don't; everything comes back.
+static void testDestruction(uint16_t port) {
+    printf("destruction: glass breaks, thin brick blows open, all of it comes back\n");
+    {
+        Map m;
+        CHECK(m.parse("box -20 -1 -20 20 0 20\nglass -2 0 5 2 3 5.05\nbrick -3 0 10 3 3 10.1\nbrick -3 0 15 3 3 15.5\n"
+                      "cobblestone -3 0 20 3 3 20.12\nspawn any 0 0 0\n"));
+        CHECK(m.glass.size() == 1 && m.glass[0] == 1);
+        const Vec3 eye = {0, 1.5f, 0}, fwd = {0, 0, 1};
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);
+        CHECK(!m.raycastAny(eye, fwd, 4.99f) && m.glassAt({0, 1.5f, 5.0f}) == 1);   // (sight passes glass)
+        CHECK(m.breakGlass(1) && !m.breakGlass(1) && m.glassAt({0, 1.5f, 5.0f}) < 0);
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 10.0f) < 0.01f);                     // through the gap to the thin brick
+        // a direct hit on the thin brick: a hole about 2.5 m across; the edge of the wall stays
+        const size_t before = m.brushes.size();
+        CHECK(m.punchHole({0, 1.5f, 9.95f}) == 1 && m.brushes[2].gone && m.brushes.size() > before && m.holes.size() == 1);
+        printf("    hole: %zu pieces, r %.2f\n", m.brushes.size() - before, m.holes.empty() ? 0.0f : m.holes[0].r);
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 15.0f) < 0.01f);                     // through the hole to the thick one
+        CHECK(std::fabs(m.raycast({2.8f, 1.5f, 0}, fwd, 50) - 10.0f) < 0.01f);         // the wall's end: still there
+        CHECK(std::fabs(m.raycast({0, 2.97f, 0}, fwd, 50) - 10.0f) < 0.01f || std::fabs(m.raycast({0, 0.03f, 0}, fwd, 50) - 10.0f) > -1);
+        CHECK(m.punchHole({0, 1.5f, 15.0f - 0.05f}) == 0);                                // too thick: nothing
+        CHECK(m.punchHole({0, 1.5f, 20.0f - 1.6f}) == 1 && m.holes.size() == 2 && m.holes[1].r < 0.7f);   // 1.5 m off: a smaller one
+        m.resetDestruction();
+        CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone);
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);
+        // dashing through a pane: the move isn't stopped, and the pane is named for the server to break
+        MoveState st; st.pos = {0, 0, 3.2f}; st.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 8; c.buttons = BTN_DASH; c.forward = 127; c.yaw = (float)M_PI;   // (yaw pi: facing +z)
+        int pane = -1;
+        for (int t = 0; t < 30 && pane < 0; t++) { pmove(st, c, m); if (st.glassBrush >= 0) pane = st.glassBrush; c.buttons = 0; }
+        printf("    dash: at z %.2f, pane %d\n", st.pos.z, pane);
+        CHECK(pane == 1 && st.pos.z > 4.4f);
+    }
+    {   // the event round trip
+        DestructEv d, r;
+        d.kind = DESTRUCT_GLASS; d.how = GLASS_DASH; d.by = 3; d.brush = 77; d.at = {1, 2, 3}; d.dir = {0, 0, 1}; d.seed = 1234;
+        CHECK(readDestructEvent(destructEvent(d), &r) && r.brush == 77 && r.how == GLASS_DASH && r.by == 3 && r.seed == 1234 && r.at.y == 2);
+        std::vector<uint32_t> g, g2; std::vector<Vec3> h, h2;
+        for (uint32_t k = 0; k < 130; k++) g.push_back(k);
+        for (int k = 0; k < 25; k++) h.push_back({(float)k, 0, 0});
+        auto evs = destructListEvents(g, h);
+        for (auto& e : evs) CHECK(e.text.size() <= 255 && readDestructList(e, &g2, &h2));
+        CHECK(evs.size() == 5 && g2 == g && h2.size() == 25 && h2[24].x == 24);
+        std::vector<GlassShard> a, b;
+        glassShards({{-1, 0, 0}, {1, 2, 0.05f}}, GLASS_SHOT, {0, 1, 0}, {0, 0, 1}, 99, a);
+        glassShards({{-1, 0, 0}, {1, 2, 0.05f}}, GLASS_SHATTER, {0, 1, -1}, {}, 99, b);
+        CHECK(a.size() >= 10 && a.size() <= 20 && b.size() >= 100 && b.size() <= 300);
+        bool on = true; for (auto& x : a) on = on && x.vel.z > 0; for (auto& x : b) on = on && x.vel.z > 0;
+        CHECK(on);   // (along the shot; away from the blast's side)
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::vector<NetClient*> none;
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, none, 0.1, idle);
+    CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nglass -2 0 5 2 3 5.05\nglass -2 0 -5 2 3 -4.95\nbrick -3 0 10 3 3 10.1\nspawn any 0 0 0\n"));
+    s.map_.name = "bastion";
+    int v = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(v >= 0);
+    if (v < 0) { s.stop(); return; }
+    auto& p = s.players_[v];
+    p.alive = true; p.health = 100; p.move.pos = {0, 0, 6.0f}; p.move.vel = {};
+    // a shot's shards fly on through the pane into whoever stands behind it: 10 each
+    CHECK(s.breakGlass(1, GLASS_SHOT, {0, 1.0f, 5.0f}, {0, 0, 1}, -1) && s.shardsFlyingForTest() >= 10);
+    for (int k = 0; k < 20; k++) { p.move.pos = {0, 0, 6.0f}; p.move.vel = {}; s.tickShards(); s.shardStepAt_ = 0; s.timeMs_ += 10; }
+    printf("    shot shards: health 100 -> %.0f\n", p.health);
+    CHECK(p.health < 100 && std::fmod(100 - p.health, 10.0f) < 0.01f);
+    // a rocket next to the other pane and the brick: both break
+    p.health = 100;
+    s.explodeForTest({0, 1.0f, -5.5f}, -1, WPN_ROCKET);
+    CHECK(s.map_.brushes[2].gone);
+    s.explodeForTest({0, 1.5f, 9.95f}, -1, WPN_ROCKET);
+    CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1);
+    s.resetDestruction();
+    CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[2].gone && !s.map_.brushes[3].gone && s.map_.holes.empty() && s.shardsFlyingForTest() == 0);
+    s.stop();
+}
+
+static void testProjectileMaterials(uint16_t port) {
+    printf("projectiles: rubber bounces, ice slides\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::vector<NetClient*> none;
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, none, 0.1, idle);
+    CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nrubber 10 0 -5 11 6 5\nice -40 0 -40 -10 0.5 40\nspawn any 0 0 0\n"));
+    auto fire = [&](int type, Vec3 pos, Vec3 vel) -> Projectile& {
+        Projectile& p = s.projectiles_[1];
+        p = Projectile();
+        p.active = true; p.type = (uint8_t)type; p.owner = 0; p.id = 1001; p.pos = pos; p.vel = vel; p.dieAt = s.time() + 20;
+        return p;
+    };
+    {
+        Projectile& r = fire(WPN_ROCKET, {0, 3, 0}, {20, 0, 0});
+        pump(s, none, 0.8, idle);
+        CHECK(r.active && r.vel.x < -10 && r.pos.x < 9);   // (off the wall at x 10, back toward -x)
+        r.active = false;
+    }
+    {
+        Projectile& st = fire(WPN_STICKY, {0, 3, 0}, {15, 0, 0});
+        pump(s, none, 0.5, idle);
+        CHECK(st.active && !st.stuck && st.pos.x < 9.5f);
+        st.active = false;
+    }
+    {
+        Projectile& st = fire(WPN_STICKY, {-20, 1.5f, 0}, {-8, -2, 0});   // (onto the ice, going -x)
+        pump(s, none, 0.25, idle);
+        const float x0 = st.pos.x;
+        pump(s, none, 0.5, idle);
+        printf("    sticky on ice: %.2f -> %.2f, stuck %d\n", x0, st.pos.x, (int)st.stuck);
+        CHECK(st.active && st.pos.x < x0 - 1.0f && st.pos.y > 0.4f);
+        pump(s, none, 6.0, idle);
+        CHECK(st.stuck);
+    }
+    s.stop();
+}
+
+static void testSurf() {
+    printf("surf: ride a ramp end to end\n");
+    Map m;
+    CHECK(m.load("cascade") && m.preferredMode == MODE_SURF && m.supportsMode(MODE_SURF) && m.checkpoints.size() == 4 && !m.supportsMode(MODE_FFA));
+    // the first ridge: x -4.7..4.7 along z 44..88, faces from y 34 to 40; ride its east face toward -z
+    MoveState ms; ms.pos = {2.2f, 39.5f, 86}; ms.vel = {0, 0, -18}; ms.mods = MOVE_RUN_ONLY;
+    float lowest = 1e9f, minX = 1e9f, maxX = -1e9f;
+    int t = 0;
+    for (; t < 400 && ms.pos.z > 47; t++) {
+        // (facing -z; strafing left, -x: into the face, only while sinking: with the ramp grip a steady push into it
+        // climbs it, over the ridge, as a player easing off the key would not)
+        UserCmd cmd; cmd.yaw = 0; cmd.side = ms.vel.y < 0 ? -127 : 0; cmd.msec = 8;
+        if (t < 50) cmd.buttons = BTN_DASH | BTN_GRAPPLE;          // (neither does anything)
+        pmove(ms, cmd, m);
+        lowest = std::min(lowest, ms.pos.y); minX = std::min(minX, ms.pos.x); maxX = std::max(maxX, ms.pos.x);
+    }
+    if (getenv("SLOPE_TRACE")) printf("    ride: %d ticks, at %.2f %.2f %.2f, lowest %.2f, x %.2f..%.2f, speed %.1f\n", t, ms.pos.x, ms.pos.y, ms.pos.z, lowest, minX, maxX, length(ms.vel));
+    CHECK(ms.pos.z <= 47 && lowest > 34.5f && maxX < 4.8f && ms.dashTimer == 0 && !(ms.flags & MF_HOOKED) && length(ms.vel) > 12);
+}
+
 static void testStairs() {
     printf("stairs: every flight walkable, none cutting a path\n");
     int flights = 0;
@@ -7679,8 +8163,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone"};
-    static_assert(MODE_COUNT == 13, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade"};
+    static_assert(MODE_COUNT == 14, "add the new mode's map here");
     SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         qsrand(0x5EED0100u + mode);
@@ -7708,7 +8192,7 @@ static void testBots(uint16_t& port) {
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
         printf("  %-8s with 5 bots: phase %d, round %d, kills %d, score %d-%d, cart %.1f, bomb %d, race checkpoints %d\n",
                modeName(mode), s.ms_.phase, s.ms_.round, kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.bombState, cps);
-        CHECK(mode == MODE_RACE ? s.ms_.phase == PHASE_WARMUP : s.ms_.phase != PHASE_WARMUP); // bots alone start a match (race: practice until someone starts it)
+        CHECK(isRaceMode(mode) ? s.ms_.phase == PHASE_WARMUP : s.ms_.phase != PHASE_WARMUP); // bots alone start a match (race: practice until someone starts it)
         s.stop();
     }
 }
@@ -8388,6 +8872,10 @@ int main(int argc, char** argv) {
         // (nothing reachable out of bounds, tests/mapbounds.cpp: every other map each; `quark_tests bounds` runs them all)
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
+        {"slopes", [] { testSlopes(); }},
+        {"surf", [] { testSurf(); }},
+        {"groupslopes", [] { testGroupSlopes(); }},
+        {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

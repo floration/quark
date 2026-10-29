@@ -69,6 +69,7 @@ void setPhase(Server& s, Phase p, float duration) {
     const int old = s.ms_.phase;
     // the match is over, or a new one starts (out of warmup or the end screen): stuck knives / bolts / syringes go
     if (p != old && (p == PHASE_WARMUP || p == PHASE_MATCH_END || old == PHASE_WARMUP || old == PHASE_MATCH_END)) s.clearProps();
+    else if (p != old && (p == PHASE_FREEZE || (p == PHASE_LIVE && old == PHASE_ROUND_END))) s.resetDestruction();   // a new round: broken glass and blown holes come back
     s.ms_.phase = p;
     s.phaseSerial_++;   // (a slot that ended the round or the match: its caller stops, as after a native endRound)
     s.phaseEnd_ = duration > 0 ? s.time() + duration : 0;
@@ -688,7 +689,7 @@ int stopwatchLocked(const Server& s) {
 void endRound(Server& s, int winner, const std::string& why, bool award = true) {
     ModeState& m = s.ms_;
     std::string text;
-    if (m.mode == MODE_RACE) {
+    if (isRaceMode(m.mode)) {
         if (winner >= 0) { s.players_[winner].score++; text = s.players_[winner].name + " wins the race"; }
         else text = "nobody finished";
     } else if (m.mode == MODE_PAYLOAD || m.mode == MODE_POINTS) {
@@ -748,7 +749,7 @@ bool nativeRoundOver(Server& s) {
                 return true;
             }
             return false;
-        case MODE_RACE:
+        case MODE_RACE: case MODE_SURF:
             for (int i = 0; i < kMaxPlayers; i++)
                 if (s.players_[i].connected && s.players_[i].score >= rtw) {
                     enterMatchEnd(s, s.players_[i].name + " wins the match", i);
@@ -783,7 +784,7 @@ bool roundOver(Server& s) {
 
 bool nativeCanAutoStart(const Server& s) {
     switch (s.ms_.mode) {
-        case MODE_RACE: return false;   // race never starts itself: its warmup is practice until someone starts it
+        case MODE_RACE: case MODE_SURF: return false;   // race never starts itself: its warmup is practice until someone starts it
         case MODE_FFA:
         case MODE_HIDE:
         case MODE_TAG:
@@ -798,7 +799,7 @@ bool unplayable(const Server& s) { return s.ms_.mode == MODE_POINTS && s.map_.po
 // Enough players for a match that's on (F5's short-handed hold): canAutoStart, except that a race needs one racer
 // (it never starts itself, but one racer can race).
 bool enoughPlayers(const Server& s) {
-    if (s.ms_.mode == MODE_RACE) return s.teamCount(TEAM_A) >= 1;
+    if (isRaceMode(s.ms_.mode)) return s.teamCount(TEAM_A) >= 1;
     double v;
     return hookQuery(s, MSLOT_CAN_AUTO_START, v) ? v != 0 : nativeCanAutoStart(s);
 }
@@ -866,6 +867,50 @@ void tickVS(Server& s) {
     stalemateDrain(s);
 }
 
+// A dropped bomb that's moving (over ice or rubber): a point 0.05 m over its base, gravity, 1 ms steps. Ice: it slides
+// (what goes into the face is gone, little friction); rubber: it bounces at the player's rubber bounce; anything else:
+// it stops there. Into the void or lava: back where its carrier last stood.
+static void bombMove(Server& s, float dt) {
+    ModeState& m = s.ms_;
+    const Map& map = s.map_;
+    constexpr float kBombIceFriction = 0.56f, kBombBounce = 0.85f, kBombRest = 0.3f;   // (per s; x the landing speed; m/s)
+    for (float left = dt; left > 1e-6f && s.bombMoving_; left -= 0.001f) {
+        const float h = std::min(left, 0.001f);
+        s.bombVel_.y -= 22.0f * h;   // (pmove's gravity)
+        Vec3 step = s.bombVel_ * h;
+        for (int bounce = 0; bounce < 3; bounce++) {
+            const float len = length(step);
+            if (len < 1e-7f) break;
+            Vec3 n;
+            int mat = -1;
+            const Vec3 dir = step / len;
+            const float t = map.raycast(m.bombPos, dir, len + 0.02f, &n, &mat);
+            if (t < 0 || t > len) { m.bombPos += step; break; }
+            m.bombPos += dir * std::max(0.0f, t - 0.02f);
+            const float vn = dot(s.bombVel_, n);
+            if (mat == kMatRubber && vn < -kBombRest) s.bombVel_ -= n * (vn * (1.0f + kBombBounce));
+            else if (mat == kMatIce) s.bombVel_ -= n * vn;
+            else { s.bombVel_ = {}; s.bombMoving_ = false; break; }
+            step = (step - dir * t);
+            step -= n * dot(step, n);
+        }
+        if (s.bombMoving_) {   // on ice: friction; resting (slow and on the floor): done
+            int mat = -1;
+            const float d = map.raycast(m.bombPos, Vec3(0, -1, 0), 0.05f, nullptr, &mat);
+            if (d >= 0 && mat == kMatIce) {
+                const float sp = std::sqrt(s.bombVel_.x * s.bombVel_.x + s.bombVel_.z * s.bombVel_.z), drop = kBombIceFriction * std::max(sp, 2.0f) * h;
+                if (sp > 0) { const float k = std::max(0.0f, sp - drop) / sp; s.bombVel_.x *= k; s.bombVel_.z *= k; }
+            }
+            if (d >= 0 && length(s.bombVel_) < kBombRest) { s.bombVel_ = {}; s.bombMoving_ = false; }
+        }
+    }
+    const bool lava = !map.lava.empty() && map.inLava(AABB{m.bombPos - Vec3(0.2f, 0, 0.2f), m.bombPos + Vec3(0.2f, 0.3f, 0.2f)});
+    if (m.bombPos.y < map.killY() + 2.0f || lava) {
+        m.bombPos = s.bombLastGround_;
+        s.bombMoving_ = false; s.bombVel_ = {};
+    }
+}
+
 // ---- the bomb object: pickup, return, plant, fuse, defuse, the blast. Raises plant / defuse / explode.
 void bombStep(Server& s) {
     ModeState& m = s.ms_;
@@ -873,6 +918,7 @@ void bombStep(Server& s) {
     const float dt = s.dt();
     if (m.bombState == BOMB_PLANTED) m.timeLeft = m.bombTimer;   // (the fuse is the clock, before it ticks down)
 
+    if (m.bombState == BOMB_DROPPED && s.bombMoving_) bombMove(s, dt);
     if (m.bombState == BOMB_DROPPED) {
         for (int i = 0; i < kMaxPlayers; i++) {
             auto& p = s.players_[i];
@@ -1252,7 +1298,7 @@ void nativeTick(Server& s) {
         case MODE_ARENA:
         case MODE_TOURNEY: tickVS(s); break;
         case MODE_BOMB: tickBomb(s); break;
-        case MODE_RACE: tickRace(s); break;
+        case MODE_RACE: case MODE_SURF: tickRace(s); break;
         case MODE_KOTH: tickKoth(s); break;
         case MODE_PAYLOAD: tickPayload(s); break;
         case MODE_NPAYLOAD: tickNeutralPayload(s); break;
@@ -1326,10 +1372,20 @@ void objectsOnDeath(Server& s, int victim) {
         // It falls to the floor under where they died (REVIEW GAME-5: it used to hang in the air where an airborne
         // carrier died, out of reach). Over the void, or into lava: where they last stood.
         Vec3 at = v.move.pos;
-        float down = s.map_.raycast(at + Vec3(0, 0.05f, 0), Vec3(0, -1, 0), std::max(0.0f, at.y - s.map_.killY()) + 0.05f);
+        int floorMat = -1;
+        float down = s.map_.raycast(at + Vec3(0, 0.05f, 0), Vec3(0, -1, 0), std::max(0.0f, at.y - s.map_.killY()) + 0.05f, nullptr, &floorMat);
         Vec3 floor = at - Vec3(0, std::max(0.0f, down - 0.05f), 0);
         bool lava = !s.map_.lava.empty() && s.map_.inLava(AABB{floor - Vec3(0.2f, 0, 0.2f), floor + Vec3(0.2f, 0.3f, 0.2f)});
         m.bombPos = (at.y < s.map_.killY() + 2.0f || down < 0 || lava) ? v.lastGround : floor;
+        // over ice or rubber (owner, 2026-10-28: the bomb slides on ice and bounces on rubber): it falls from where they
+        // were with their velocity and moves on (bombStep) until it rests
+        s.bombMoving_ = false; s.bombVel_ = {};
+        if (m.bombPos.x == floor.x && m.bombPos.z == floor.z && down >= 0 && (floorMat == kMatIce || floorMat == kMatRubber)) {
+            m.bombPos = at + Vec3(0, 0.05f, 0);
+            s.bombVel_ = v.move.vel;
+            s.bombMoving_ = true;
+            s.bombLastGround_ = v.lastGround;
+        }
         m.bombCarrier = 255;
         s.bombDroppedAt_ = s.time();
     }
@@ -1348,7 +1404,8 @@ void nativeSpectate(Server& s, int id) {
 
 bool nativeCanDamage(const Server& s, int attacker, int victim) {
     if (s.ms_.phase == PHASE_ROUND_END || s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_FREEZE) return false;
-    if (s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP) return false; // race: knockback only
+    if (s.ms_.mode == MODE_SURF) return false;   // surf: nobody hurts anybody, warmup too (owner, 2026-10-28; surf.qlogic)
+    if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false; // race: knockback only
     if (attacker < 0 || attacker == victim) return true;
     if (modeIsTeamBased(s.ms_.mode) && s.players_[attacker].team == s.players_[victim].team) return false;
     return true;
@@ -1356,8 +1413,9 @@ bool nativeCanDamage(const Server& s, int attacker, int victim) {
 
 bool nativeCanHit(const Server& s, int attacker, int victim, int weapon) {
     if (attacker < 0 || attacker == victim) return true;
-    // Race: you can only affect yourself (rocket jumps etc.), never other racers.
-    if (s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP) return false;
+    // Race: you can only affect yourself (rocket jumps etc.), never other racers. Surf: never, warmup too (owner 2026-10-28).
+    if (s.ms_.mode == MODE_SURF) return false;
+    if (isRaceMode(s.ms_.mode) && s.ms_.phase != PHASE_WARMUP) return false;
     // hide and seek / tag: only "it" can touch anyone, with the knife, once the round is live.
     if (isItMode(s.ms_.mode)) return s.ms_.phase == PHASE_LIVE && s.players_[attacker].it && !s.players_[victim].it && weapon == WPN_KNIFE;
     return true;
@@ -1393,7 +1451,7 @@ bool nativeFrozen(const Server& s, int id) {
 } // namespace
 
 // Tourney warmup is a free for all; during matches the two players are on teams A and B.
-bool modeIsTeamBased(int mode) { return mode != MODE_FFA && mode != MODE_RACE && mode != MODE_TOURNEY && !isItMode(mode); }
+bool modeIsTeamBased(int mode) { return mode != MODE_FFA && !isRaceMode(mode) && mode != MODE_TOURNEY && !isItMode(mode); }
 
 void rulesReset(Server& s) {
     s.clearProps();   // (setPhase below can't tell: the mode state is reset to warmup first)
@@ -1459,7 +1517,7 @@ void rulesTick(Server& s) {
             // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers start by themselves
             // once both sides have someone (canAutoStart). Race never starts itself: its warmup is practice (the
             // course, untimed) until someone starts the race.
-            if (!hookEvent(s, MSLOT_WARMUP) && m.mode == MODE_RACE) tickRacePractice(s);
+            if (!hookEvent(s, MSLOT_WARMUP) && isRaceMode(m.mode)) tickRacePractice(s);
             if (m.phase != PHASE_WARMUP) break;
             double v;
             if (!s.cfg_.autoStart || unplayable(s) || !(hookQuery(s, MSLOT_CAN_AUTO_START, v) ? v != 0 : nativeCanAutoStart(s))) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
@@ -1588,7 +1646,7 @@ int rulesSpawnType(const Server& s, int id) {
 int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
     // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
     // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
-    if (mode == MODE_RACE && m.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (isRaceMode(mode) && m.canSupportMode(MODE_RACE)) return SPAWN_RACE;
     if (mode == MODE_TOURNEY && tourneyMatch && m.canSupportMode(MODE_VS))
         return team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
@@ -1900,7 +1958,7 @@ public:
         switch (action) {
             case MA_END_ROUND:
             case MA_END_ROUND_NO_SCORE: {   // (the winner: a player in race, else a team)
-                int w = s.ms_.mode == MODE_RACE ? (winner >= 0 && winner < kMaxPlayers && s.players_[winner].connected ? winner : -1)
+                int w = isRaceMode(s.ms_.mode) ? (winner >= 0 && winner < kMaxPlayers && s.players_[winner].connected ? winner : -1)
                                                 : (winner == TEAM_A || winner == TEAM_B ? winner : -1);
                 endRound(s, w, text, action == MA_END_ROUND);
                 return;

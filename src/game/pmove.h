@@ -59,6 +59,12 @@ struct MoveState {
     // jump. Not sent and not compared: the client's prediction and the server each make their own.
     uint8_t events = 0;
     float landSpeed = 0;   // ME_LAND: the hardest landing's speed in that call, m/s
+    // Glass this call broke (owner, 2026-10-28), for the server to break and prediction to show: a dash through a pane
+    // (GLASS_DASH, dir the dash's), a grapple fired at one while standing or moving off (GLASS_HOOK_BACK: shards back at
+    // you) or let go next to one it pulled you to (GLASS_HOOK_THROUGH: it shatters on away from you). Not sent.
+    int32_t glassBrush = -1;
+    uint8_t glassHow = 0;
+    Vec3 glassAt, glassDir;
     uint16_t phaseMs = 0;   // ms since you last landed or left the floor (MF_ONGROUND says which), at most 65535: counted
                             // only while a custom mode's movement equation reads p.air / p.ground (moveexpr.h), else 0
     uint16_t acidOutMs = kAcidRearmMs;   // ms fully out of acid (0: touching it in the last step), up to kAcidRearmMs: there,

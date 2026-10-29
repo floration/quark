@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "protocol.h"
+#include "glass.h"
 
 // (= lround(remainder(a, 2 pi) * 32767 / pi), checked for every float: remainder is a itself for |a| <= pi (2 * PI is
 // exactly PI + PI, and at |a| = pi the tie goes to the even quotient 0), its result is within +-pi, so the product is
@@ -387,6 +388,67 @@ GameEvent propEvent(const StuckProp& p) {
     w.i16(angQ(std::atan2(p.dir.x, p.dir.z))); w.i16(angQ(std::asin(clampf(p.dir.y, -1, 1))));
     e.text.assign((const char*)buf, (size_t)w.size());
     return e;
+}
+
+GameEvent destructEvent(const DestructEv& d) {
+    GameEvent e;
+    e.type = EV_DESTRUCT;
+    e.a = d.kind; e.b = d.how; e.c = (int16_t)d.by;
+    if (d.kind == DESTRUCT_RESET) return e;
+    uint8_t buf[32];
+    Writer w(buf, sizeof buf);
+    w.u32(d.brush); w.vec(d.at); w.vec(d.dir); w.u32(d.seed);
+    e.text.assign((const char*)buf, (size_t)w.size());
+    return e;
+}
+
+bool readDestructEvent(const GameEvent& e, DestructEv* d) {
+    if (e.type != EV_DESTRUCT || e.a > DESTRUCT_HOLE) return false;
+    d->kind = e.a; d->how = e.b; d->by = e.c;
+    if (d->kind == DESTRUCT_RESET) return true;
+    if (e.text.size() != 32u || d->how >= GLASS_HOWS) return false;
+    Reader r((const uint8_t*)e.text.data(), (int)e.text.size());
+    d->brush = r.u32(); d->at = r.vec(); d->dir = r.vec(); d->seed = r.u32();
+    auto ok = [](const Vec3& v) { return std::fabs(v.x) < 1e5f && std::fabs(v.y) < 1e5f && std::fabs(v.z) < 1e5f; };
+    return !r.bad() && ok(d->at) && ok(d->dir);
+}
+
+std::vector<GameEvent> destructListEvents(const std::vector<uint32_t>& glass, const std::vector<Vec3>& holes) {
+    std::vector<GameEvent> out;
+    uint8_t buf[256];
+    for (size_t i = 0; i < glass.size(); i += kGlassListMax) {
+        Writer w(buf, sizeof buf);
+        for (size_t k = i; k < glass.size() && k < i + kGlassListMax; k++) w.u32(glass[k]);
+        GameEvent e; e.type = EV_DESTRUCT; e.a = DESTRUCT_GLASS_LIST; e.c = -1;
+        e.text.assign((const char*)buf, (size_t)w.size());
+        out.push_back(e);
+    }
+    for (size_t i = 0; i < holes.size(); i += kHoleListMax) {
+        Writer w(buf, sizeof buf);
+        for (size_t k = i; k < holes.size() && k < i + kHoleListMax; k++) w.vec(holes[k]);
+        GameEvent e; e.type = EV_DESTRUCT; e.a = DESTRUCT_HOLE_LIST; e.c = -1;
+        e.text.assign((const char*)buf, (size_t)w.size());
+        out.push_back(e);
+    }
+    return out;
+}
+
+bool readDestructList(const GameEvent& e, std::vector<uint32_t>* glass, std::vector<Vec3>* holes) {
+    if (e.type != EV_DESTRUCT) return false;
+    Reader r((const uint8_t*)e.text.data(), (int)e.text.size());
+    if (e.a == DESTRUCT_GLASS_LIST && e.text.size() % 4 == 0) {
+        for (size_t k = 0; k < e.text.size() / 4; k++) glass->push_back(r.u32());
+        return !r.bad();
+    }
+    if (e.a == DESTRUCT_HOLE_LIST && e.text.size() % 12 == 0) {
+        for (size_t k = 0; k < e.text.size() / 12; k++) {
+            const Vec3 v = r.vec();
+            if (!(std::fabs(v.x) < 1e5f && std::fabs(v.y) < 1e5f && std::fabs(v.z) < 1e5f)) return false;
+            holes->push_back(v);
+        }
+        return !r.bad();
+    }
+    return false;
 }
 
 GameEvent propClearEvent(int player) {

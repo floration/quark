@@ -480,7 +480,7 @@ bool BotSim::overrideTarget(size_t k, int id, Vec3& at, float& arrive, bool& use
                     at = {p.center().x, p.mn.y, p.center().z}; arrive = 0; useBox = true; boxKind = 2; boxIndex = i;
                     return true;
                 }
-                case MODE_RACE: {
+                case MODE_RACE: case MODE_SURF: {
                     if (map.checkpoints.empty()) break;
                     int i = oi >= 0 ? std::min(oi, (int)map.checkpoints.size() - 1) : std::min(me.checkpoint, (int)map.checkpoints.size() - 1);
                     at = map.checkpoints[i].center(); arrive = 0; useBox = true; boxKind = 3; boxIndex = i;
@@ -593,7 +593,7 @@ UserCmd BotSim::think(int id) {
                 patched = 2;
             }
             break;
-        case MODE_RACE:
+        case MODE_RACE: case MODE_SURF:
             if (me.checkpoint >= 0 && me.checkpoint < (int)map.checkpoints.size()) {
                 savedBox = map.checkpoints[me.checkpoint];
                 map.checkpoints[me.checkpoint] = useBox && boxKind == 3 ? map.checkpoints[boxIndex] : midBox;
@@ -669,7 +669,7 @@ std::string decisionOf(const Server& s, int id, const BotBrain& br, const Server
         return urgent ? "hunt+objective" : "hunt";
     }
     switch (m.mode) {
-        case MODE_RACE: if (p.checkpoint < (int)map.checkpoints.size()) return "objective:checkpoint"; break;
+        case MODE_RACE: case MODE_SURF: if (p.checkpoint < (int)map.checkpoints.size()) return "objective:checkpoint"; break;
         case MODE_KOTH: if (map.hasHill) return "objective:hill"; break;
         case MODE_PAYLOAD: case MODE_NPAYLOAD: if (map.payloadPath.size() >= 2) return "objective:cart"; break;
         case MODE_POINTS: if (m.point < map.points.size()) return "objective:point"; break;

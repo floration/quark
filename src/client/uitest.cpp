@@ -233,6 +233,7 @@ void Game::uiTestActions() {
         bool point = kind == ED_SPAWN || kind == ED_LIGHT || kind == ED_PATH;
         bool mat = kind == ED_BRUSH || kind == ED_SPAWN || (kind == ED_GROUP && ed_.groups[edSel_.idx].type != Map::GROUP_CUSTOM);
         if (mat) ui_.keyAction("M (MATERIAL / TEAM)", GLFW_KEY_M, 0, UiExp::edit());
+        if (kind == ED_BRUSH) ui_.keyAction("N (SHAPE)", GLFW_KEY_N, 0, UiExp::edit());
         ui_.keyAction("ARROW (MOVE)", GLFW_KEY_UP, 0, UiExp::edit());
         ui_.keyAction("PAGE UP (MOVE UP)", GLFW_KEY_PAGE_UP, 0, UiExp::edit());
         if (!point || kind == ED_LIGHT) ui_.keyAction("SHIFT+ARROW (GROW)", GLFW_KEY_UP, GLFW_MOD_SHIFT, UiExp::edit());
