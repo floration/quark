@@ -2015,6 +2015,28 @@ static void testMapFormat() {
 
 // Map format converters (owner rule): every older format converts step by step to the current one, the parser reads
 // only that, and a player's maps on disk are converted once with the originals kept (maps/old/v<N>/).
+static void testMapFix() {
+    printf("editor FIX MAP / FIX GAPS: merges, hidden boxes, small gaps\n");
+    auto load = [](const std::string& body) { Map m; std::string err; bool ok = m.parse("box -20 -1 -20 20 0 20\nspawn any 0 0 0\n" + body, &err); CHECK(ok); return m; };
+    {   // two flush boxes make one; a third of another material stays; one inside the first goes
+        Map m = load("box 0 0 0 1 2 1\nbox 1 0 0 3 2 1\nmetal 3 0 0 4 2 1\nbox 0.2 0.2 0.2 0.5 0.5 0.5\n");
+        MapFix f = mapFixRedundant(m);
+        CHECK(f.merged == 2 && f.hidden == 0);   // (the small one is inside box 1, its material: merged into it)
+        CHECK(!f.del[1] && f.del[2] && !f.del[3] && f.del[4]);   // (brush 0 is the floor)
+        CHECK(std::fabs(f.box[1].mx.x - 3) < 1e-4f && std::fabs(f.box[1].mn.x) < 1e-4f);
+    }
+    {   // a metal box inside two base boxes goes; behind glass or inside thin brick it stays
+        Map m = load("box 0 0 0 2 2 2\nbox 2 0 0 4 2 2\nmetal 1 0.5 0.5 3 1.5 1.5\nglass 10 0 0 12 2 2\nmetal 10.5 0.5 0.5 11.5 1.5 1.5\n");
+        MapFix f = mapFixRedundant(m);
+        CHECK(f.del[3] && f.hidden == 1 && !f.del[4] && !f.del[5]);
+    }
+    {   // a 1/16 gap: the off-grid side stretches to the on-grid one; an on-grid gap stays; never into a third box
+        Map m = load("box 0 0 0 1 2 1\nbox 1.0625 0 0 2 2 1\nbox 5 0 0 6 2 1\nbox 6.125 0 0 7 2 1\n");
+        MapFix f = mapFixGaps(m);
+        CHECK(f.gaps == 1 && std::fabs(f.box[2].mn.x - 1) < 1e-4f && std::fabs(f.box[1].mx.x - 1) < 1e-4f && std::fabs(f.box[4].mn.x - 6.125f) < 1e-4f);
+    }
+}
+
 static void testMapConverter() {
     printf("map format converters: every older version, files on disk\n");
     CHECK(mapTextVersion("") == 1 && mapTextVersion("box 0 0 0 1 1 1\n") == 1 && mapTextVersion("# version 5\n") == 1);
@@ -9008,7 +9030,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
