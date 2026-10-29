@@ -245,6 +245,7 @@ void main() {
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
     vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;   // the face's plane, metres
+    // @LARGE@: Renderer::compileWorld puts the large patterns here (kLarge: their material's look, the plane scaled)
     float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
     vec3 emit = vec3(0.0);            // glowing parts (crystal edges, circuit traces), added after the light
     if (mat < 12) {
@@ -290,7 +291,7 @@ void main() {
         albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoiseAA(vec2(q.x * 0.5, q.y * 60.0)));
         spec = 0.7; gloss = 48.0;
     } else if (mat == 20) {   // brick: classic red, running bond (0.2 x 0.065 m bricks, 1 cm mortar), each brick its own shade
-        vec2 r = an.y > 0.5 ? q : (an.x > 0.5 ? vec2(vPos.z, vPos.y) : vec2(vPos.x, vPos.y));
+        vec2 r = q;   // (the face's plane: a large brick's is scaled)
         float row = floor(r.y / 0.075);
         vec2 b = vec2(r.x / 0.21 + 0.5 * mod(row, 2.0), r.y / 0.075);
         vec2 cell = floor(b), f = fract(b) * vec2(0.21, 0.075);
@@ -645,7 +646,7 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
-static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMapMaterials - kMatBlocks, "a look per material from kMatBlocks on");
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks, "a look per material from kMatBlocks on (the large ones: their base's)");
 
 // The world shader's blockLook(), with only the looks of the materials marked in `used` (by material; null: all of
 // them, for the editor's swatches): a map uses a handful of the 400+, and a shader carrying all of them would cost
@@ -655,7 +656,7 @@ static std::string worldLooks(const std::vector<bool>* used) {
     std::string s = "void blockLook(int k, vec2 q, inout vec3 albedo, inout float spec, inout float gloss, inout vec3 emit) {\n"
                     "    float aa = 1.5 * footprint(q); vec3 an = abs(vN);\n";
     std::vector<int> ks;
-    for (int k = 0; k < kMapMaterials - kMatBlocks; k++) if (!used || (*used)[(size_t)(kMatBlocks + k)]) ks.push_back(k);
+    for (int k = 0; k < kMatLarge - kMatBlocks; k++) if (!used || (*used)[(size_t)(kMatBlocks + k)]) ks.push_back(k);
     for (size_t i = 0; i < ks.size(); i += 50) {
         const size_t end = std::min(ks.size(), i + 50);
         s += std::string(i ? "    else if" : "    if") + " (k <= " + std::to_string(ks[end - 1]) + ") switch (k) {\n";
@@ -669,6 +670,13 @@ unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err)
     std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     const size_t at = fs.find("// @LOOKS@");
     fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
+    // the large patterns: material kMatLarge + i draws kLarge[i].base's look with the face's plane divided by its scale
+    std::string lb, ls;
+    for (int i = 0; i < kLargeCount; i++) { lb += (i ? "," : "") + std::to_string(kLarge[i].base); ls += (i ? "," : "") + std::to_string(kLarge[i].scale) ; }
+    const std::string n = std::to_string(kLargeCount);
+    const size_t lat = fs.find("// @LARGE@");
+    fs.replace(lat, fs.find('\n', lat) - lat, "if (mat >= " + std::to_string(kMatLarge) + ") { const int lb[" + n + "] = int[" + n + "](" + lb + "); const float ls[" + n + "] = float[" + n + "](" + ls +
+               "); int li = min(mat - " + std::to_string(kMatLarge) + ", " + std::to_string(kLargeCount - 1) + "); mat = lb[li]; q /= ls[li]; }");
     return compile(kWorldVS, fs.c_str(), err);
 }
 
@@ -678,7 +686,7 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
     std::vector<bool> used((size_t)kMapMaterials, false);
     for (const WorldVertex& v : bw.verts) {
         const int m = (int)(v.material + 0.5f);
-        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)m] = true;
+        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge ? kLarge[m - kMatLarge].base : m)] = true;
     }
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");

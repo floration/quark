@@ -1568,18 +1568,58 @@ static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "M
                                         "MATERIAL: DEEP OCEAN",
                                         "MATERIAL: FIZZING SODA",
                                         "MATERIAL: LIQUID VOID",
-                                        "MATERIAL: MUD BATH"};
+                                        "MATERIAL: MUD BATH",
+                                        "MATERIAL: WIDE PLANKS",
+                                        "MATERIAL: HUGE PLANKS",
+                                        "MATERIAL: LARGE BRICK",
+                                        "MATERIAL: HUGE BRICK",
+                                        "MATERIAL: LARGE COBBLES",
+                                        "MATERIAL: HUGE COBBLES",
+                                        "MATERIAL: LARGE TILE",
+                                        "MATERIAL: HUGE TILE",
+                                        "MATERIAL: LARGE STONE",
+                                        "MATERIAL: HUGE STONE",
+                                        "MATERIAL: LARGE LONDON STOCK",
+                                        "MATERIAL: LARGE RED ENGINEERING BRICK",
+                                        "MATERIAL: LARGE HERRINGBONE BRICK",
+                                        "MATERIAL: LARGE BASKET-WEAVE BRICK",
+                                        "MATERIAL: LARGE WHITE SQUARE TILE",
+                                        "MATERIAL: LARGE CHECKERBOARD TILE",
+                                        "MATERIAL: LARGE SUBWAY TILE",
+                                        "MATERIAL: LARGE HEX TILE, TERRACOTTA",
+                                        "MATERIAL: LARGE HERRINGBONE TILE",
+                                        "MATERIAL: LARGE SLATE TILE",
+                                        "MATERIAL: LARGE TRAVERTINE TILE",
+                                        "MATERIAL: LARGE LIMESTONE ASHLAR",
+                                        "MATERIAL: LARGE SANDSTONE ASHLAR",
+                                        "MATERIAL: LARGE GRANITE BLOCKS",
+                                        "MATERIAL: LARGE RANDOM ASHLAR",
+                                        "MATERIAL: LARGE DRY-STONE WALL",
+                                        "MATERIAL: LARGE CASTLE STONE",
+                                        "MATERIAL: LARGE POLYGONAL STONE",
+                                        "MATERIAL: LARGE COBBLED SETTS",
+                                        "MATERIAL: LARGE DIAGONAL SETTS",
+                                        "MATERIAL: LARGE FLAGSTONE PAVING",
+                                        "MATERIAL: LARGE RIVER STONE WALL",
+                                        "MATERIAL: LARGE MOSSY STONE BLOCKS",
+                                        "MATERIAL: LARGE BASKET-WEAVE PARQUET",
+                                        "MATERIAL: LARGE LOG CABIN",
+                                        "MATERIAL: LARGE SCAFFOLD BOARDS",
+                                        "MATERIAL: LARGE FROSTED PLANKS",
+                                        "MATERIAL: LARGE CRATE WOOD",
+                                        "MATERIAL: LARGE TEMPLE STONE",
+                                        "MATERIAL: LARGE KERB STONES"};
 static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
 
 // the picker's tabs: the ones this map uses, the last 10 picked, then by kind, then all of them. kMatTabs: the kinds,
 // each a run of materials (the look rounds' categories)
 static const char* const kMatTabNames[] = {"IN THIS MAP", "RECENT", "BASIC", "BRICK", "CONCRETE", "TILE", "STONE", "BUILDINGS",
-                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "LIQUIDS", "ALL"};
+                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "LIQUIDS", "LARGE", "ALL"};
 constexpr int kMatTabCount = (int)(sizeof kMatTabNames / sizeof *kMatTabNames), kMatTabAll = kMatTabCount - 1;
 static const struct { int tab, first, last; } kMatTabs[] = {
     {2, 0, kMatBlocks - 1}, {3, 39, 68}, {4, 69, 88}, {5, 89, 113}, {6, 114, 138}, {8, 139, 163}, {7, 164, 184}, {9, 185, 199},
-    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}, {12, kMatLiquids, kMatLiquids + kLiquidCount - 1}};
-static_assert(kMapMaterials == kMatLiquids + kLiquidCount, "a picker tab for every material (kMatTabs)");
+    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}, {12, kMatLiquids, kMatLiquids + kLiquidCount - 1}, {13, kMatLarge, kMapMaterials - 1}};
+static_assert(kMapMaterials == kMatLarge + kLargeCount && kMatLarge == kMatLiquids + kLiquidCount, "a picker tab for every material (kMatTabs)");
 
 void Game::drawEditorMatMenu() {
     const float s = ui_.s(), pad = 16 * s, gap = 8 * s, bh = 36 * s, th = 30 * s;
@@ -2756,7 +2796,7 @@ void Game::editorFrame(double dt) {
     // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
     // crystal, circuit, rust, terracotta, then breakable brick, glass and cobblestone (their plain ones' colours), then
     // the 100 block looks and the 333 picks of the earlier rounds (each one's mean colour in its preview render)
-    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
+    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMatLarge - kMatIce, "a colour per material from ice on (a large one: its base's)");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
     if (!edBaked_) {   // the map's boxes: one static batch, rebuilt only when they change (it was streamed every frame)
@@ -2765,7 +2805,7 @@ void Game::editorFrame(double dt) {
             r_.setStaticBoxes([&] {
                 for (auto& b : ed_.brushes) { // (water, lava, trim, nograpple, acid past the table: blue, orange, accent, slate, green; clip below)
                     if (b.material == 9) continue;
-                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[b.material - kMatIce] : r_.accentColor;
+                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[(b.material >= kMatLarge ? kLarge[b.material - kMatLarge].base : b.material) - kMatIce] : r_.accentColor;
                     if (b.shape != BRUSH_BOX) r_.slope(b, c);
                     else r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
                 }

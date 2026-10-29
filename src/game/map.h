@@ -546,8 +546,12 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 // 70 wasteland. Solid, plain, each its own look (client/surface_looks.h has every look from 39 on).
 // 472-496 (owner, 2026-10-29, the special blocks round: all 25 liquids): not solid, you wade through like water; each
 // changes how you move in it or hurts / heals / kills (kLiquids). Looks: surface_looks.h, flowing (uTime).
+// 497-536 (owner, 2026-10-29: "add some LARGE patterns 2-4x current size per piece of the surface, especially stone
+// bricks, cobbles, wood"): another material's look with its pieces 2-4 times as big (kLarge: the world shader divides
+// the face's plane by the scale); solid and plain like the one it scales.
 constexpr int kMatLiquids = 472, kLiquidCount = 25;
-constexpr int kMapMaterials = 497;
+constexpr int kMatLarge = 497, kLargeCount = 40;
+constexpr int kMapMaterials = kMatLarge + kLargeCount;
 constexpr int kMatBlocks = 39;   // the first of the 100
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
@@ -612,6 +616,49 @@ inline constexpr LiquidDef kLiquids[kLiquidCount] = {
     {1.00f, 1.8f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // fizzing soda: big jumps out
     {1.00f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, true, false},     // liquid void: kills
     {0.60f, 0.7f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // mud bath: slow
+};
+struct LargeDef { int base; float scale; };
+inline constexpr LargeDef kLarge[kLargeCount] = {
+    {14, 2},   // wide planks
+    {14, 4},   // huge planks
+    {20, 2},   // large brick
+    {20, 4},   // huge brick
+    {24, 2},   // large cobbles
+    {24, 4},   // huge cobbles
+    {26, 2},   // large tile
+    {26, 4},   // huge tile
+    {31, 2},   // large stone
+    {31, 4},   // huge stone
+    {39, 3},   // large london stock
+    {40, 3},   // large red engineering brick
+    {51, 3},   // large herringbone brick
+    {52, 2},   // large basket-weave brick
+    {89, 3},   // large white square tile
+    {91, 3},   // large checkerboard tile
+    {92, 3},   // large subway tile
+    {96, 3},   // large hex tile, terracotta
+    {98, 3},   // large herringbone tile
+    {105, 2},   // large slate tile
+    {106, 2},   // large travertine tile
+    {114, 2},   // large limestone ashlar
+    {115, 2},   // large sandstone ashlar
+    {117, 2},   // large granite blocks
+    {120, 2},   // large random ashlar
+    {123, 3},   // large dry-stone wall
+    {127, 2},   // large castle stone
+    {130, 2},   // large polygonal stone
+    {131, 3},   // large cobbled setts
+    {132, 3},   // large diagonal setts
+    {133, 2},   // large flagstone paving
+    {135, 3},   // large river stone wall
+    {138, 2},   // large mossy stone blocks
+    {167, 2},   // large basket-weave parquet
+    {177, 2},   // large log cabin
+    {199, 2},   // large scaffold boards
+    {274, 2},   // large frosted planks
+    {454, 2},   // large crate wood
+    {128, 2},   // large temple stone
+    {395, 2},   // large kerb stones
 };
 inline bool lavaMaterial(int m) { return m == 7 || (liquidMaterial(m) && kLiquids[m - kMatLiquids].kills); }   // touch it and die
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid, the liquids; clip is solid to players only)
@@ -1095,7 +1142,47 @@ inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang",
                                                     "deepocean",
                                                     "fizzingsoda",
                                                     "liquidvoid",
-                                                    "mudbath"};
+                                                    "mudbath",
+                                                    "wideplanks",
+                                                    "hugeplanks",
+                                                    "largebrick",
+                                                    "hugebrick",
+                                                    "largecobbles",
+                                                    "hugecobbles",
+                                                    "largetile",
+                                                    "hugetile",
+                                                    "largestone",
+                                                    "hugestone",
+                                                    "largelondonstock",
+                                                    "largeredengineeringbrick",
+                                                    "largeherringbonebrick",
+                                                    "largebasketweavebrick",
+                                                    "largewhitesquaretile",
+                                                    "largecheckerboardtile",
+                                                    "largesubwaytile",
+                                                    "largehextileterracotta",
+                                                    "largeherringbonetile",
+                                                    "largeslatetile",
+                                                    "largetravertinetile",
+                                                    "largelimestoneashlar",
+                                                    "largesandstoneashlar",
+                                                    "largegraniteblocks",
+                                                    "largerandomashlar",
+                                                    "largedrystonewall",
+                                                    "largecastlestone",
+                                                    "largepolygonalstone",
+                                                    "largecobbledsetts",
+                                                    "largediagonalsetts",
+                                                    "largeflagstonepaving",
+                                                    "largeriverstonewall",
+                                                    "largemossystoneblocks",
+                                                    "largebasketweaveparquet",
+                                                    "largelogcabin",
+                                                    "largescaffoldboards",
+                                                    "largefrostedplanks",
+                                                    "largecratewood",
+                                                    "largetemplestone",
+                                                    "largekerbstones"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
