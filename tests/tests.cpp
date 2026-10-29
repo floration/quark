@@ -677,7 +677,7 @@ static void testSeeThrough() {
     CHECK(!blocksPlayer(0.05f) && blocksShot(0.05f) && !blocksSight(0.05f));      // laser barrier
     CHECK(!blocksPlayer(5.05f) && !blocksShot(5.05f) && blocksSight(5.05f));      // smoke
     CHECK(!blocksPlayer(10.05f) && !blocksShot(10.05f) && !blocksSight(10.05f));  // water curtain
-    CHECK(!litMaterial(kMatSemi) && !bakedMaterial(kMatSemi) && semiMaterial(kMapMaterials - 1));
+    CHECK(!litMaterial(kMatSemi) && !bakedMaterial(kMatSemi) && semiMaterial(kMatSemi + kSemiCount - 1) && !semiMaterial(kMatBreak));
 }
 
 static void testLiquids() {
@@ -5018,6 +5018,7 @@ static void testDestruction(uint16_t port) {
         std::string o;
         CHECK(upgradeMapText("version 6\nbox 0 0 0 1 1 1\n", &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nbox 0 0 0 1 1 1\n");
         // format 8 (liquids, large patterns) converts unchanged to 9 (the see-through looks)
+        CHECK(upgradeMapText("version 9\nsmokewall 0 0 0 1 1 1\n", &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nsmokewall 0 0 0 1 1 1\n");
         CHECK(upgradeMapText("version 8\nhoney 0 0 0 1 1 1\n", &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nhoney 0 0 0 1 1 1\n");
     }
     {   // format 6 (owner, 2026-10-29): plain brick, cobblestone and glass never break; the breakable ones do
@@ -5134,6 +5135,38 @@ static void testDestruction(uint16_t port) {
     CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1);
     s.resetDestruction();
     CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[2].gone && !s.map_.brushes[3].gone && s.map_.holes.empty() && s.shardsFlyingForTest() == 0);
+    {   // breakable blocks (562-585, owner 2026-10-29): hp from shots (x bullet) and blasts (x blast), or on contact
+        CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nwoodencrate -1 0 10 1 2 12\nthinconcretepanel -1 0 20 1 2 20.2\nsugarglass 5 0 -1 6 2 1\n"
+                           "rottenplanks -10 0 -10 -6 0.5 -6\nplywoodboardup 10 0 -1 10.2 2 1\nspawn any 0 0 0\n"));
+        s.blockDmg_.clear(); s.blockStood_.clear();
+        CHECK(s.map_.blocks.size() == 5 && solidMaterial(kMatBreak) && !bakedMaterial(kMatBreak));
+        s.blockFromRay({0, 1, 0}, {0, 0, 1}, 10.0f, 50.0f, -1);   // crate: 80 hp
+        CHECK(!s.map_.brushes[1].gone);
+        s.blockFromRay({0, 1, 0}, {0, 0, 1}, 10.0f, 50.0f, -1);
+        CHECK(s.map_.brushes[1].gone);
+        for (int k = 0; k < 5; k++) s.blockFromRay({0, 1, 15}, {0, 0, 1}, 5.0f, 100.0f, -1);   // concrete: bullets do nothing
+        CHECK(!s.map_.brushes[2].gone);
+        s.explodeForTest({0, 1.0f, 19.5f}, -1, WPN_ROCKET);   // a rocket at it does
+        s.explodeForTest({0, 1.0f, 19.5f}, -1, WPN_ROCKET);
+        CHECK(s.map_.brushes[2].gone);
+        p.move.pos = {4.69f, 0, 0}; p.move.vel = {}; p.move.flags = MF_ONGROUND;   // touching sugar glass
+        s.blocksTouched(v);
+        CHECK(s.map_.brushes[3].gone);
+        p.move.pos = {9.69f, 0, 0}; p.move.dashTimer = 0;   // plywood: walking into it doesn't, a dash does
+        s.blocksTouched(v);
+        CHECK(!s.map_.brushes[5].gone);
+        p.move.dashTimer = 0.1f;
+        s.blocksTouched(v);
+        CHECK(s.map_.brushes[5].gone);
+        p.move.dashTimer = 0; p.move.pos = {-8, 0.5f, -8};   // standing on rotten planks: gone after kWeightBreakS
+        s.blocksTouched(v);
+        CHECK(!s.map_.brushes[4].gone);
+        s.timeMs_ += 400;
+        s.blocksTouched(v);
+        CHECK(s.map_.brushes[4].gone);
+        s.resetDestruction();
+        CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[4].gone && s.blockDmg_.empty());
+    }
     s.stop();
 }
 

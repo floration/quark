@@ -207,6 +207,11 @@ private:
     unsigned compileWorld(const std::vector<bool>* used, std::string* err);
     void setWorldLooks(const BakedWorld& bw);
     void uploadSeeThrough(const Map& map);
+public:
+    void uploadBlocks(const Map& map);   // the breakable blocks still standing (again when one breaks / they're back)
+private:
+    unsigned blockVao_ = 0, blockVbo_ = 0;
+    int blockVerts_ = 0;
     // the see-through looks (kMatSemi: Map's semiMaterial brushes), drawn blended after the world with their looks
     unsigned seeVao_ = 0, seeVbo_ = 0;
     int seeVerts_ = 0;

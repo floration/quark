@@ -864,7 +864,7 @@ void NetClient::applyDestructEvent(const GameEvent& e, bool fx) {
     }
     for (size_t k = 0; k < pendingGlass_.size(); k++)   // our own, predicted: already broken and shown
         if (pendingGlass_[k].brush == d.brush) { pendingGlass_.erase(pendingGlass_.begin() + (long)k); return; }
-    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false});
+    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material});
 }
 
 void NetClient::replayDestruction() {

@@ -374,8 +374,10 @@ static void upgradeMap6to7(std::vector<std::string>&) {}
 static void upgradeMap7to8(std::vector<std::string>&) {}
 // 8 -> 9: the 25 see-through looks (537-561: new keywords only)
 static void upgradeMap8to9(std::vector<std::string>&) {}
+// 9 -> 10: the 24 breakable blocks (562-585: new keywords only)
+static void upgradeMap9to10(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -1369,8 +1371,9 @@ void Map::rebuildFluids() {
 bool Map::buildGrid() {
     rebuildFluids();   // (lava: touch it and die; acid: touch it and it hurts; liquids: pmove)
     hasIce = hasRubber = hasGripMats = false;
-    glass.clear(); windows.clear();
+    glass.clear(); windows.clear(); blocks.clear();
     for (size_t i = 0; i < brushes.size(); i++) {
+        if (breakMaterial(brushes[i].material)) blocks.push_back((uint32_t)i);
         if (brushes[i].material == kMatGlassBreak) glass.push_back((uint32_t)i);
         else if (brushes[i].material == kMatGlass) windows.push_back((uint32_t)i);
     }
@@ -1486,9 +1489,10 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber;
         hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud;
     }   // (kept until a rebuild: only costs a probe)
-    if (op != 0 || glassMaterial(old.material) || glassMaterial(b.material)) {
-        glass.clear(); windows.clear();
+    if (op != 0 || glassMaterial(old.material) || glassMaterial(b.material) || breakMaterial(old.material) || breakMaterial(b.material)) {
+        glass.clear(); windows.clear(); blocks.clear();
         for (size_t k = 0; k < brushes.size(); k++) {
+            if (breakMaterial(brushes[k].material)) blocks.push_back((uint32_t)k);
             if (brushes[k].material == kMatGlassBreak) glass.push_back((uint32_t)k);
             else if (brushes[k].material == kMatGlass) windows.push_back((uint32_t)k);
         }
@@ -1537,13 +1541,22 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
 }
 
 bool Map::breakGlass(size_t i) {
-    if (i >= brushes.size() || brushes[i].material != kMatGlassBreak || brushes[i].gone) return false;
+    if (i >= brushes.size() || (brushes[i].material != kMatGlassBreak && !breakMaterial(brushes[i].material)) || brushes[i].gone) return false;
     if (pristineBrushes.empty()) pristineBrushes = brushes;
     Brush b = brushes[i];
     b.gone = true;
     if (!setBrush(i, b)) return false;
     destructSerial++;
     return true;
+}
+
+int Map::blockAt(const Vec3& p, float eps) const {
+    for (uint32_t i : blocks) {
+        const Brush& b = brushes[i];
+        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+    }
+    return -1;
 }
 
 int Map::glassAt(const Vec3& p, float eps) const {

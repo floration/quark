@@ -140,6 +140,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "queue") { std::string o; for (auto& q : queued_) o += q + " "; return o; }
     if (w == "custom") return editRules_.toText();
     if (w == "multisel") { std::string o; for (bool v : multiSel_) o += v ? '1' : '0'; return o; }
+    if (w == "edmattab") return std::to_string(edMatTab_) + "|" + edMatSearch_;
     if (w == "hudsel") return std::to_string(hudSel_);
     if (w == "hudedsel") return std::to_string(hudEdSel_);
     if (w == "theme") return theme_.toText();

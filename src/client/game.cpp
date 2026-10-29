@@ -7714,10 +7714,29 @@ void Game::updateDestruction(const Map& map) {
     if (map.destructSerial != holeSerial_ || net_.mapRevision() != holeMapRev_) {
         holeSerial_ = map.destructSerial; holeMapRev_ = net_.mapRevision();
         r_.setHoles(map.holes);
+        r_.uploadBlocks(map);   // (the breakable blocks still standing)
     }
     // what broke since the last frame: shards, chunks, a sound
     net_.takeGlassFx(glassFxScratch_);
     for (const NetClient::GlassFx& fx : glassFxScratch_) {
+        if (breakMaterial(fx.material)) {   // a breakable block: chunks in its colour, out from the hit (a blast: more, faster)
+            const BreakDef& d = kBreaks[fx.material - kMatBreak];
+            uint32_t sd = fx.seed | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const float vol = std::max(0.05f, ext.x * ext.y * ext.z);
+            const int n = std::clamp((int)(vol * 120.0f), 30, 300);
+            const float k = fx.how == GLASS_SHATTER ? 2.0f : 1.0f;
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                Vec3 v = p - fx.at;
+                const float l = length(v);
+                v = ((l > 1e-3f ? v / l : Vec3(0, 1, 0)) * (1.0f + 3.0f * glassRandF(sd)) + fx.dir * 2.0f) * k + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd), glassRandF(sd) - 0.5f) * 2.0f;
+                const float sh = 0.75f + 0.4f * glassRandF(sd);
+                visShards_.push_back({p, v, 0.03f + 0.06f * glassRandF(sd), Vec3(d.r, d.g, d.b) * sh, false, false, time_});
+            }
+            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.45f, 0.9f);
+            continue;
+        }
         if (fx.hole && fx.how == 1) {   // a whole wall coming down: chunks all over it, dropping
             uint32_t sd = ((uint32_t)(fx.pane.mn.x * 97.0f) * 2654435761u ^ (uint32_t)(fx.pane.mn.z * 53.0f)) | 1u;
             const Vec3 ext = fx.pane.mx - fx.pane.mn;

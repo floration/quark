@@ -585,7 +585,43 @@ inline constexpr SemiDef kSemi[kSemiCount] = {
     {false, false, false},  // scanner beam
     {true, true, false},    // bottle green glass
 };
-constexpr int kMapMaterials = kMatSemi + kSemiCount;
+// 562-585 (owner, 2026-10-29, the special blocks round: 24 breakable, all but the clay pot wall): solid until they've
+// taken their hp (kBreaks: a shot counts its damage x bullet, a blast its damage at that distance x blast; 0: that
+// can't hurt it). Some go on contact instead: BREAK_TOUCH (any touch), BREAK_DASH (dashing into it), BREAK_WEIGHT
+// (standing on it for kWeightBreakS). The server decides (EV_DESTRUCT as a pane: the brush is gone; joiners get the
+// list); clients throw debris in its colour. Back every round. Not baked: drawn by their looks from a mesh of their own
+// (Renderer::uploadBlocks), lit by full sun and sky, rebuilt when one breaks.
+constexpr int kMatBreak = kMatSemi + kSemiCount, kBreakCount = 24;
+enum : uint8_t { BREAK_HITS = 0, BREAK_TOUCH, BREAK_DASH, BREAK_WEIGHT };
+struct BreakDef { float hp, bullet, blast; uint8_t touch; float r, g, b; };
+inline constexpr BreakDef kBreaks[kBreakCount] = {
+    {80, 1, 3, BREAK_HITS, 0.52f, 0.36f, 0.20f},   // wooden crate
+    {40, 1, 2, BREAK_DASH, 0.71f, 0.58f, 0.36f},   // plywood board-up: a dash breaks right through
+    {25, 1, 3, BREAK_DASH, 0.79f, 0.79f, 0.78f},   // drywall: blasts tear it
+    {400, 0.5, 1.5, BREAK_HITS, 0.51f, 0.52f, 0.51f},   // cinder block wall: takes a lot
+    {1, 1, 1, BREAK_TOUCH, 0.79f, 0.76f, 0.72f},   // paper screen: tears from anything
+    {60, 1, 2, BREAK_HITS, 0.49f, 0.45f, 0.22f},   // bamboo fence
+    {10, 1, 1, BREAK_TOUCH, 0.64f, 0.49f, 0.29f},   // cardboard boxes: crush under anything
+    {20, 1, 2, BREAK_DASH, 0.65f, 0.65f, 0.65f},   // picket fence
+    {30, 1, 3, BREAK_HITS, 0.65f, 0.51f, 0.31f},   // chipboard: rockets shatter it
+    {50, 1, 3, BREAK_HITS, 0.43f, 0.38f, 0.38f},   // rusted sheet: blasts fold it away
+    {120, 0, 2.5, BREAK_HITS, 0.62f, 0.62f, 0.60f},   // thin concrete panel: holds up to bullets
+    {60, 1, 2, BREAK_HITS, 0.61f, 0.31f, 0.80f},   // crystal cluster
+    {200, 1, 2, BREAK_HITS, 0.73f, 0.63f, 0.41f},   // sandstone slab
+    {1, 1, 1, BREAK_TOUCH, 0.45f, 0.46f, 0.49f},   // sugar glass: breaks when you touch it
+    {100, 0, 3, BREAK_HITS, 0.75f, 0.66f, 0.30f},   // hay bales: blasts only
+    {30, 1, 1, BREAK_WEIGHT, 0.37f, 0.34f, 0.31f},   // rotten planks: give way under you
+    {120, 1, 2, BREAK_HITS, 0.81f, 0.81f, 0.80f},   // ceramic tile wall
+    {12, 1, 2, BREAK_HITS, 0.73f, 0.74f, 0.77f},   // mirror: a couple of shots
+    {80, 1, 2, BREAK_HITS, 0.38f, 0.25f, 0.15f},   // barricade
+    {200, 0.5, 3, BREAK_HITS, 0.75f, 0.82f, 0.86f},   // frozen waterfall: blasts melt it open
+    {20, 1, 2, BREAK_HITS, 0.45f, 0.48f, 0.49f},   // stained glass window
+    {300, 0.25, 2, BREAK_HITS, 0.09f, 0.09f, 0.10f},   // tyre stack: shrugs off bullets
+    {50, 1, 3, BREAK_HITS, 0.71f, 0.67f, 0.62f},   // lath and plaster
+    {10, 1, 2, BREAK_HITS, 0.49f, 0.49f, 0.36f},   // glass bottles
+};
+constexpr float kWeightBreakS = 0.3f;
+constexpr int kMapMaterials = kMatBreak + kBreakCount;
 constexpr int kMatBlocks = 39;   // the first of the 100
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
@@ -599,6 +635,7 @@ constexpr int kMatBrickBreak = 36, kMatGlassBreak = 37, kMatCobbleBreak = 38;
 inline int lookMaterial(int m) { return m == kMatBrickBreak ? kMatBrick : m == kMatGlassBreak ? kMatGlass : m == kMatCobbleBreak ? kMatCobble : m; }
 inline bool glassMaterial(int m) { return m == kMatGlass || m == kMatGlassBreak; }   // see-through, plain or breakable
 inline bool semiMaterial(int m) { return m >= kMatSemi && m < kMatSemi + kSemiCount; }   // the see-through looks (kSemi)
+inline bool breakMaterial(int m) { return m >= kMatBreak && m < kMatBreak + kBreakCount; }   // the breakable blocks (kBreaks)
 // brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
 constexpr float kBreakableThick = 0.125f;
 inline bool holeMaterial(int m) { return m == kMatBrickBreak || m == kMatCobbleBreak; }
@@ -707,8 +744,8 @@ inline bool stopsShots(int m) { return m != 9 && (!semiMaterial(m) || kSemi[m - 
 inline bool stopsSight(int m) { return m != 9 && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !semiMaterial(m)); }
-inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m) && !semiMaterial(m); }   // in the static world mesh (see-through: their own pass)
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !semiMaterial(m) && !breakMaterial(m)); }
+inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m) && !semiMaterial(m) && !breakMaterial(m); }   // in the static world mesh (see-through, breakable: meshes of their own)
 // Editor clean-ups (owner, 2026-10-29), on the editable brushes (generated ones only hide others). box[i] is brush i's
 // box after the fix, del[i] whether it goes. FIX MAP: same-material plain boxes that together make one box become one
 // (and one inside another of its material goes), then a brush wholly inside solid opaque boxes goes (glass, water, clip,
@@ -1249,7 +1286,31 @@ inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang",
                                                     "jellycube",
                                                     "ghostglass",
                                                     "scannerbeam",
-                                                    "bottlegreenglass"};
+                                                    "bottlegreenglass",
+                                                    "woodencrate",
+                                                    "plywoodboardup",
+                                                    "drywall",
+                                                    "cinderblockwall",
+                                                    "paperscreen",
+                                                    "bamboofence",
+                                                    "cardboardboxes",
+                                                    "picketfence",
+                                                    "chipboard",
+                                                    "rustedsheet",
+                                                    "thinconcretepanel",
+                                                    "crystalcluster",
+                                                    "sandstoneslab",
+                                                    "sugarglass",
+                                                    "haybales",
+                                                    "rottenplanks",
+                                                    "ceramictilewall",
+                                                    "mirror",
+                                                    "barricade",
+                                                    "frozenwaterfall",
+                                                    "stainedglasswindow",
+                                                    "tyrestack",
+                                                    "lathandplaster",
+                                                    "glassbottles"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -1301,7 +1362,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 9;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561
+constexpr int kMapFormatVersion = 10;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585
 
 struct Map {
     std::string name;
@@ -1446,12 +1507,14 @@ struct Map {
     // r < 0: the whole wall crumbled (kCrumble): a rectangle, half sizes cw x ch round (u, v).
     struct Hole { float u, v, r, cw, ch; int axis; float lo, hi; };
     std::vector<Hole> holes;
+    std::vector<uint32_t> blocks;         // the breakable blocks (kBreaks: breakGlass takes them too)
     std::vector<uint32_t> glass;          // the breakable glass brushes (drawn see-through each frame; a gone one isn't)
     std::vector<uint32_t> windows;        // the plain glass brushes (never break: drawn see-through each frame, nothing else)
     std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)
     uint32_t destructSerial = 0;          // counts every change (the renderer sends the holes again)
     bool breakGlass(size_t i);            // false: not a standing pane
     int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose box (grown by eps) holds p, -1 none
+    int blockAt(const Vec3& p, float eps = 0.03f) const;   // the same for a standing breakable block
     // Blows a hole in every thin (kBreakableThick) brick / cobblestone box near `at`: kHoleSize across where it meets the
     // wall, less the distance from it to the wall's plane (owner: "if a sticky blows up 1m away ... a 1.5m hole").
     // Returns how many boxes it cut. A wall with less than 1 - kCrumble of it left comes down whole (owner, 2026-10-29:
