@@ -56,6 +56,7 @@ const ModelPalette kNoSlots;   // (props with no colour slots: the arms, the bom
 const char* weaponName(int w) {
     if (w == kDamageGrapple) return "grapple";
     if (w == kDamageAcid) return "dissolved";
+    if (w == kDamageGlass) return "glass";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";
@@ -131,6 +132,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     for (auto& q : latQ_) glGenQueries(1, &q.q);
     audio_.setAnnouncer(cfg_.announcerVoice);
     audio_.setExclusive(cfg_.exclusiveAudio);
+    if (!opts_.uiTest) setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
     audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
     if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
@@ -440,7 +442,7 @@ void Game::loadMapIfNeeded() {
     }
     if (gen == loadedMapGen_) return;
     // a race map: your past runs now, behind the loading screen (it used to be read on the first checkpoint, mid-run)
-    if (!raceRunsLoaded_ && !net_.map().checkpoints.empty()) loadRaceRuns();
+    if (!raceRunsLoaded_ && !net_.map().raceCheckpoints.empty()) loadRaceRuns();
     bake_ = std::make_unique<BakeJob>();
     bake_->map = net_.map();
     bake_->map.dynSolids.clear();   // (the payload cart's box where it was at join time: no shadow of it in the cached light)
@@ -592,7 +594,7 @@ bool Game::pressInput(int code) {
         return true;
     }
     const Binds& b = binds();
-    if (b.has(A_PERF, code)) { const bool was = perfOn(); showPerf_ = !showPerf_; if (!was) pipeReset(); return true; }
+    if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 4; if (!was && perfOn()) pipeReset(); return true; }
     if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
     if (b.has(A_SCREENSHOT, code)) {   // screenshots/<date>_<time>.png in your data folder (was screenshot_<n>.png in
         // the working directory with n from 0 each launch: the first one of every session overwrote the last session's)
@@ -614,14 +616,15 @@ bool Game::pressInput(int code) {
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
     if (b.has(A_QUIP, code) && !paused_) { net_.sendCommand("quip"); return true; }
-    if (paused_) return false;
-    if (b.has(A_CHAT, code)) {
+    if (paused_ && !settingsInGame_) return false;
+    if (b.has(A_CHAT, code)) {   // (in game, and over the settings menu: owner 2026-10-29)
         chatting_ = true;
         chatText_.clear();
         uiIn_.chars.clear();
         captureMouse(false);
         return true;
     }
+    if (paused_) return false;
     if (rpsPicking())   // the hide and seek tiebreak: slot keys 1 / 2 / 3 throw rock / paper / scissors
         for (int k = 0; k < 3; k++)
             if (b.has(slotAction(k), code)) {
@@ -716,7 +719,7 @@ void Game::onKey(int key, int action, int mods) {
         editorKey(key, mods); // presses and key repeat (hold an arrow to keep nudging)
         return;
     }
-    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_)) && !ui_.typing() &&
+    if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_)) && !ui_.typing() &&
         !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
@@ -804,7 +807,10 @@ void Game::onKey(int key, int action, int mods) {
     }
 }
 
-void Game::onFocus(bool focused) { if (focused) focusGained_ = true; else swallowedBtn_ = 0; }   // (let go while away: no release comes)
+void Game::onFocus(bool focused) {
+    if (focused) focusGained_ = true; else swallowedBtn_ = 0;   // (let go while away: no release comes)
+    if (!opts_.uiTest) setGamePriority(cfg_.prioritize && focused);   // (alt-tabbed: the other programs get their share back)
+}
 
 void Game::onMouseButton(int button, int action) {
     // The click that brings the game back from another window (alt-tab, then a click on it) fired the weapon: a
@@ -890,12 +896,13 @@ void Game::onResize(int w, int h) { r_.resize(w, h); mouseHeld_ = false; vmStale
 void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
+    if (screen_ == Screen::Editor && edMatMenu_) { edMatScroll_ = std::max(0, edMatScroll_ - (dy > 0 ? 1 : -1)); return; }   // (a row a notch; clamped when drawn)
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
     if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
-    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
+    if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -1430,7 +1437,7 @@ void Game::frame(double dt) {
         opts_.chatShot.clear(); opts_.consoleShot.clear();
     }
     if (opts_.textHeavy && screen_ == Screen::InGame) {
-        showPerf_ = true;
+        perfStage_ = 3;
         while (chatFeed_.size() < 8) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
     }
     if (opts_.feedShot && screen_ == Screen::InGame && killFeed_.empty()) {   // (kill feed and chat lines that stay)
@@ -1439,7 +1446,7 @@ void Game::frame(double dt) {
         addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
         addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
     }
-    if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+    if (opts_.debugPerf) { perfStage_ = 3; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
         paused_ = true; settingsInGame_ = true;
@@ -1463,6 +1470,7 @@ void Game::frame(double dt) {
     // input packets: one every tick (latency first, and each command rides in 4 packets against loss); batching
     // them per frame saved sendto calls but cut that redundancy to 2 and delayed commands by up to a tick
     net_.setInputBatch(1);
+    net_.setReportHits(true);   // (your hits are yours: Server::clientHitReport)
     net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
@@ -1606,6 +1614,11 @@ void Game::frame(double dt) {
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
                     (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
+                if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt) &&
+                    !net_.map().glass.empty())
+                    predictShotGlass(w, c);
+                if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt))
+                    reportShotHits(w, c);   // (your hits count as you saw them; a ricochet's stay the server's)
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
                 else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
@@ -1646,18 +1659,23 @@ void Game::frame(double dt) {
                         if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
                             const float g = projectileGravity(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
                             Vec3 p = q.pos0, v = q.vel0;
-                            projectileExtrapolate(p, v, g, (float)(time_ - q.born));
+                            net_.map().flyProjectile(p, v, g, (float)(time_ - q.born));
                             rc[n++] = {p, v, g};
                         }
                 net_.setRocketCopies(rc, n);
             }
             net_.tick(c);
             if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
+            if (net_.predicted().glassBrush >= 0) {   // (dashed or grappled through a pane: broken now, as the server will)
+                const MoveState& pm = net_.predicted();
+                net_.predictGlass(pm.glassBrush, pm.glassHow, pm.glassAt, pm.glassDir);
+            }
             tickAcc_ -= period;
         }
         tickYaw_ = yaw_;   // (the last tick's: now's)
         if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
         heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
+        flushLaserHits(false);   // (the laser's last 50 ms of hits)
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
         net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
         pipeMark(PM_TICKS);
@@ -1685,6 +1703,19 @@ void Game::frame(double dt) {
                     }
                 }
                 if (shown) continue;
+                bool mine = false;   // (one that blew up on your screen far from here: its hits went from there)
+                for (auto& st : projStarts_) mine |= st.id == old.id && st.boomed;
+                if (!mine && (old.type == WPN_ROCKET || old.type == WPN_CROSSBOW)) {
+                    // the server's copy landed before yours did on your screen: its hits as you see them, from where it was
+                    const float sp = length(old.vel);
+                    const Vec3 dir = sp > 0.01f ? old.vel / sp : Vec3(0, 0, -1);
+                    float et;
+                    int victim = -1;
+                    bool vHead = false;
+                    const Vec3 from = old.pos - dir * 0.5f, to = old.pos + dir * 0.5f;
+                    if (!enemyOnSegment(from, to, &et, &victim, &vHead)) victim = -1;
+                    reportImpact(old.type, (old.flags & PROJ_LOB) != 0, from, victim >= 0 ? from + (to - from) * et : old.pos, victim, vHead);
+                }
             }
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
@@ -1767,7 +1798,7 @@ void Game::frame(double dt) {
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (!hudBuilt_) {
-        if (showPerf_) drawPerf();
+        if (perfStage_) drawPerf();
         else if (perfMini_) drawPerfMini();
     }
     hudBuilt_ = false;
@@ -2319,14 +2350,29 @@ void Game::drawWorld(float alpha) {
         if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
         if (q.atWall) continue;
         Vec3 p = q.pos0, v = q.vel0;
-        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
+        net_.map().flyProjectile(p, v, projGravity(q.type, q.lob), (float)age);
         const Vec3 d = p - q.pos;
         const float len = length(d);
-        float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len) : -1.0f, et;
-        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
+        Vec3 hn;
+        int hm = -1;
+        float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len, &hn, &hm) : -1.0f, et;
+        int victim = -1;
+        bool vHead = false;
+        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+        else victim = -1;
+        if (hit >= 0 && hm == kMatRubber && q.type == WPN_ROCKET && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
+            q.pos0 = q.pos + d / len * std::max(0.0f, hit - 0.05f);
+            q.vel0 = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
+            q.born = time_;
+            q.pos = q.pos0;
+            continue;
+        }
         if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
             q.atWall = true;
-            if (q.type != WPN_KNIFE) { localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true; }
+            if (q.type != WPN_KNIFE) {
+                localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true;
+                reportImpact(q.type, q.lob, q.pos, q.pos + d / len * hit, victim, vHead);
+            }
             continue;
         }
         q.pos = p;
@@ -2347,7 +2393,7 @@ void Game::drawWorld(float alpha) {
                 const float sp = length(pr.vel);
                 if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
                 Vec3 p = pr.pos, v = pr.vel;
-                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                net_.map().flyProjectile(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
                 if (length(st.offset) > 3.0f) st.offset = {};
                 if (copy->boomed) {   // it blew up on your screen before the server's copy came: that one is it
@@ -2413,13 +2459,31 @@ void Game::drawWorld(float alpha) {
         for (auto& st : projStarts_)
             if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)) && !st.boomed) {   // (X5: as far along as its copy was, short of the wall)
                 Vec3 p = pr.pos, v = pr.vel;
-                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                net_.map().flyProjectile(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 const Vec3 d = p - pr.pos;
                 const float len = length(d);
-                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f, et;
+                Vec3 hn;
+                int hm = -1;
+                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len, &hn, &hm) : -1.0f, et;
                 const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
-                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
-                if (blows && hit >= 0) { localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true; }   // where it lands, as you see it
+                int victim = -1;
+                bool vHead = false;
+                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+                else victim = -1;
+                if (hit >= 0 && hm == kMatRubber && pr.type == WPN_ROCKET && dot(v, hn) < 0) {
+                    // off rubber (as the server's does): drawn on along the bounce, not blown up there (it vanished)
+                    const Vec3 at = pr.pos + d / len * std::max(0.0f, hit - 0.05f);
+                    const Vec3 rv = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
+                    const float rs = length(rv), rest = std::max(0.0f, len - hit);
+                    pr.pos = at;
+                    if (rs > 1e-4f && map.raycast(at, rv / rs, rest) < 0) pr.pos = at + rv / rs * rest;
+                    pr.vel = rv;
+                    continue;   // (the loop over projStarts_: this one's done)
+                }
+                if (blows && hit >= 0) {   // where it lands, as you see it (and its hits: yours)
+                    localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true;
+                    reportImpact(pr.type, (pr.flags & PROJ_LOB) != 0, pr.pos, pr.pos + d / len * hit, victim, vHead);
+                }
                 pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
                 pr.vel = v;
             }
@@ -2431,7 +2495,7 @@ void Game::drawWorld(float alpha) {
         ProjectileSnap pr;
         pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
         Vec3 v = q.vel0, p = q.pos0;
-        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
+        net_.map().flyProjectile(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
         pr.vel = v;
         float f = 1.0f - (float)(time_ - q.born) / 0.2f;   // (from the muzzle, like the server's copy did)
         pr.pos = q.pos + (f > 0 ? q.offset * f : Vec3());
@@ -2457,6 +2521,7 @@ void Game::drawWorld(float alpha) {
         i++;
     }
 
+    updateDestruction(map);   // (glass, shards, holes)
     // objectives
     Vec3 friendly = cfg_.colorFriendly, enemy = cfg_.colorEnemy;
     const PlayerSnap* mep = net_.findPlayer(me);
@@ -2531,16 +2596,16 @@ void Game::drawWorld(float alpha) {
         cpal.c[TINT_GLOW] = r_.glowColor;
         const float cy = std::cos(yaw), syw = std::sin(yaw);
         drawProp(PROP_CART, cpal, cart, yaw, {cy, 0, -syw}, {syw, 0, cy}, yaw, sv);
-    } else if (ms.mode == MODE_RACE) {
+    } else if (isRaceMode(ms.mode)) {
         int next = mep ? mep->checkpoint : 0;
-        for (size_t i = 0; i < map.checkpoints.size(); i++) {
+        for (size_t i = 0; i < map.raceCheckpoints.size(); i++) {
             bool isNext = (int)i == next;
-            bool finish = i + 1 == map.checkpoints.size();
+            bool finish = i + 1 == map.raceCheckpoints.size();
             Color c = isNext ? rgba(friendly, 0.2f) : rgba({1, 1, 1}, (int)i < next ? 0.03f : 0.07f);
-            r_.translucentBox(map.checkpoints[i], c);
+            r_.translucentBox(map.raceCheckpoints[i], c);
             if (isNext) {
-                Vec3 cc = map.checkpoints[i].center();
-                labelAt({cc.x, map.checkpoints[i].mx.y + 0.3f, cc.z}, finish ? "FINISH" : "CHECKPOINT " + std::to_string(i + 1), rgba(friendly));
+                Vec3 cc = map.raceCheckpoints[i].center();
+                labelAt({cc.x, map.raceCheckpoints[i].mx.y + 0.3f, cc.z}, finish ? "FINISH" : "CHECKPOINT " + std::to_string(i + 1), rgba(friendly));
             }
         }
     }
@@ -2623,7 +2688,7 @@ void Game::drawWorld(float alpha) {
     // aim from before the read, a sliver of a turn behind, like the name tags above (owner: the UI may lag the aim).
     if (bench_.phase != BenchRun::OFF) drawBenchOverlay((float)r_.width(), (float)r_.height(), r_.height() / 720.0f);   // (a camera: no HUD)
     else drawHud();
-    if (showPerf_) drawPerf();
+    if (perfStage_) drawPerf();
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
     hudBuilt_ = true;
@@ -3170,7 +3235,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     char b[160];
     if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
     else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
-    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP)) {
+    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP) || (ms.mode == MODE_FFA && ms.arenaVariant != 0)) {   // (free for all: a ruleset other than vanilla)
         snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
     } else t.title = modeTitle(ms.mode);
     b[0] = 0;
@@ -3179,7 +3244,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
             if (ms.timeLeft > 0) { snprintf(b, sizeof b, "MATCH STARTS IN %d", (int)std::ceil(ms.timeLeft)); break; }
             const int code = binds().code[A_VOTESTART][0];   // (the key's name: looked up when the bind changes)
             if (code != voteKeyCode_) { voteKeyCode_ = code; voteKeyName_ = inputName(code); }
-            snprintf(b, sizeof b, ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - %s TO START THE RACE" : "WARMUP - %s TO VOTE START", voteKeyName_.c_str());
+            snprintf(b, sizeof b, isRaceMode(ms.mode) ? "PRACTICE (UNTIMED) - %s TO START THE RACE" : "WARMUP - %s TO VOTE START", voteKeyName_.c_str());
             break;
         }
         case PHASE_FREEZE: // free for all is one long round: just the countdown
@@ -3256,6 +3321,15 @@ Game::HudRect Game::drawHudKillFeed(float W, float H, float s, float top, bool s
 }
 
 // Chat (bottom left): the recent lines (typing: the whole recent history, on a dark box), the SAY line under them.
+// Settings in game: the chat over the menu (owner 2026-10-29: "show chat / allow chatting while in settings"), its
+// recent lines and the SAY line on dark boxes; Enter (the chat key) opens it there as in play.
+void Game::drawMenuChat(float W, float H, float s, float ts) {
+    if (!chatting_ && chatFeed_.empty()) return;
+    chatOverMenu_ = true;
+    drawChatBox(W, H, s, ts);
+    chatOverMenu_ = false;
+}
+
 Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sample, bool draw) {
     const int el = Settings::HUD_CHAT;
     const Settings::HudElem& e = cfg_.hud[el];
@@ -3287,7 +3361,9 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
     if (!draw) return {r.x, r.y, r.w, r.h};
     {
         AlphaScope a(r_, hudOpacity(el));
-        if (n > 0 && (chatting_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER))) hudBoxDraw(el, r, k, chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
+        // (over the settings menu: always on a dark box, the menu's text would show through)
+        if (n > 0 && (chatting_ || chatOverMenu_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER)))
+            hudBoxDraw(el, r, k, chatOverMenu_ ? Color{0, 0, 0, 0.8f} : chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
         for (int i = 0; i < n && i + 1 < L.count(); i++) {
             const Feed& c = *lines[i];
             const lay::Rect& q = L.rect(i + 1);
@@ -3303,6 +3379,7 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
         chatEdit(120, false);
         float lts = std::max(1.0f, std::round(ui_.textScale()));
         const float x = r.x + (st.has(HudStyle::PADDING) ? st.pad[0] * k : defPad[0]), y = r.y + r.h + 10 * k;
+        if (chatOverMenu_) r_.rect(r.x, y - 4 * k, std::max(r.w, r_.textWidth("SAY: " + chatText_, lts) + 16 * k), r_.textHeight(lts) + 8 * k, {0, 0, 0, 0.8f});
         ui_.label(x, y, "SAY: " + chatText_, kWhite);
         drawCaret(x, y, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
     }
@@ -3496,6 +3573,7 @@ void Game::drawHud() {
         }
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
+        drawMenuChat(W, H, s, ts);
         if (ui_.probing()) uiTestActions();
         return;
     }
@@ -3505,6 +3583,7 @@ void Game::drawHud() {
         r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, hudEdit_ ? 0.2f : 0.55f});   // (EDIT ON SCREEN: the world only lightly dimmed)
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
+        drawMenuChat(W, H, s, ts);
         if (ui_.probing()) uiTestActions();
         return;
     }
@@ -3661,8 +3740,8 @@ void Game::drawHud() {
     } else if (ms.mode == MODE_NPAYLOAD) {
         obj = (ms.flags & MS_CONTESTED) ? "PAYLOAD CONTESTED" : ms.hillOwner == 255 ? "PUSH THE PAYLOAD TO THE ENEMY END"
               : ms.hillOwner == myTeam ? "YOUR TEAM IS PUSHING" : "ENEMY IS PUSHING";
-    } else if (ms.mode == MODE_RACE && mep) {
-        obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
+    } else if (isRaceMode(ms.mode) && mep) {
+        obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().raceCheckpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
         obj = "LAST TEAM STANDING WINS";
     } else if (ms.mode == MODE_ARENA) {
@@ -4454,16 +4533,34 @@ const Game::RaceRun* Game::bestRun(const std::string& map, bool trial) const {
     return b;
 }
 
+// (shards, pieces and glitter on screen at once: a shattered 2 x 3 m pane is up to 600 pieces and 1000 glitter)
+constexpr size_t kMaxVisShards = 6000;
+
 void Game::onRaceSplit(int cp, int ms) {
     if (!raceRunsLoaded_) loadRaceRuns();
+    {   // a checkpoint gate flashes when you take it: green sparks all through it
+        const Map& m = net_.map();
+        if (cp >= 1 && (size_t)cp > m.checkpoints.size() && (size_t)cp <= m.raceCheckpoints.size()) {
+            const AABB& g = m.raceCheckpoints[(size_t)cp - 1];
+            const Vec3 ext = g.mx - g.mn;
+            uint32_t sd = (uint32_t)cp * 2654435761u | 1u;
+            for (int i = 0; i < 160 && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {g.mn.x + ext.x * glassRandF(sd), g.mn.y + ext.y * glassRandF(sd), g.mn.z + ext.z * glassRandF(sd)};
+                const Vec3 v = Vec3(glassRandF(sd) - 0.5f, glassRandF(sd) * 1.5f, glassRandF(sd) - 0.5f) * 2.0f;
+                VisShard sh{p, v, 0.04f, Vec3(0.4f, 1.6f, 0.6f), false, false, time_};
+                sh.dust = true;
+                visShards_.push_back(sh);
+            }
+        }
+    }
     if (cp == 1) raceSplits_.clear();
-    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().checkpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
+    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().raceCheckpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
     // a time trial run counts (and is compared) only on the shipped Viaduct, unchanged (the server says so too)
     bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0 && map == "viaduct" && isOfficialMap(net_.map());
     const RaceRun* best = bestRun(map, trial);
-    int total = (int)net_.map().checkpoints.size();
+    int total = (int)net_.map().raceCheckpoints.size();
     audio_.play(cp == total ? SND_FINISH : SND_CHECKPOINT, 0.9f);
     // the split, and how it compares with the same checkpoint on your best run (green = ahead)
     splitText_ = (cp == total ? "FINISH " : "CHECKPOINT " + std::to_string(cp) + "  ") + fmtRace(ms);
@@ -4696,7 +4793,7 @@ void Game::drawScoreboard() {
         r_.text(x + w * 0.53f, cy, ts, "GIBS", kGrey);
         r_.text(x + w * 0.65f, cy, ts, "ACC", kGrey);
     } else {
-        r_.text(x + w * 0.40f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
+        r_.text(x + w * 0.40f, cy, ts, isRaceMode(ms.mode) ? "WINS" : "SCORE", kGrey);
         r_.text(x + w * 0.48f, cy, ts, "K", kGrey);
         r_.text(x + w * 0.53f, cy, ts, "D", kGrey);
         r_.text(x + w * 0.58f, cy, ts, "DMG", kGrey);
@@ -5312,6 +5409,10 @@ void Game::drawVideoSettings(const SetLayout& L) {
     }
     f.next();
     f.hint("KEEPS GPU CLOCKS HIGH: LESS LAG, MORE POWER", "F3 SHOWS INPUT->FRAME LATENCY");
+    if (ui_.toggle(f.x(), f.top(), w, h, "PRIORITIZE GAME", cfg_.prioritize, UiExp::cfg("prioritize")) && !uiTest_)
+        setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+    f.next();
+    f.hint("GPU + CPU GO TO THE GAME FIRST WHILE FOCUSED", "(BROWSER VIDEOS, ELECTRON APPS WAIT)");
 #else
     f.y -= 16;
     f.hint("", "F3 SHOWS INPUT->FRAME LATENCY");
@@ -6133,7 +6234,7 @@ void Game::drawHost(const SetLayout& L) {
             static const int ladders[3] = {0, 1, 5};
             int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
             if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + rankedKind(ladders[k]) + " - " + arenaVariant(ladders[k]).title + "  >", UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
-        } else if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >",
+        } else if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(hostModeIdx_) + (modeHasRuleset(hostModeIdx_) ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >",
                               UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
         y += 48;
         if (extra == 1) {
@@ -6216,7 +6317,7 @@ void Game::drawVsBots(const SetLayout& L) {
     const float kH = 48 * rows + 52;   // the rows, 20 px, BACK / START
     float y = bandTop(kH);
     ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
-    if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(cfg_.botMode) + (cfg_.botMode == MODE_ARENA ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >",
+    if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(cfg_.botMode) + (modeHasRuleset(cfg_.botMode) ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >",
                    UiExp::nav("vsbots/picker:modes").withId("MODE"))) picker_ = PICK_BOT_MODE;
     y += 48;
     if (haveMaps) {
@@ -6546,7 +6647,7 @@ static const char* const kInfoPages[][48] = {
         "CLICK anything to select it. New things go where the crosshair (the middle of the view) points.",
         "ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).",
         "Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.",
-        "M cycles the material (or a spawn's team), CTRL+D duplicates, DEL deletes, CTRL+Z undoes, CTRL+S saves. [ and ] change the grid.",
+        "M cycles the material (or a spawn's team), N the shape (box, wedge, corner), CTRL+D duplicates, DEL deletes, CTRL+Z undoes, CTRL+S saves. [ and ] change the grid.",
         "BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).",
         "TEST plays the map right away; BAKE LIGHT previews the real lighting.",
         "HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.",
@@ -6734,23 +6835,29 @@ void Game::drawPerf() {
         pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
+        // PRIORITIZE GAME: what Windows actually gave (and the focus state is checked again here, twice a second: a
+        // window focused before its focus callback was set never got the call)
+        if (!uiTest_) setGamePriority(cfg_.prioritize && glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0);
+        perfPrio_ = gamePriorityStatus();
     }
     // four lines in a box at (24, 8) no wider than x 396 at 720p, so it stays left of the score bar (x 420..860; it
     // ran under it): a line too long for it is closed up / shrunk to fit (Ui::label, cached), not cut
     const float s = r_.height() / 720.0f;
     float ts = std::max(1.0f, std::round(s * 2.0f));
-    const std::string* lines[4] = {&perfText_, &perfText2_, &latText_, &perfTick_};
+    // (stage 1: the FPS line; 2: + worst frame / ping / 3D size and version / server; 3: all, the graph under them)
+    const std::string* lines[5] = {&perfText_, &perfText2_, &perfTick_, &latText_, &perfPrio_};
+    const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows only)
     const float lh = r_.textHeight(ts) + 4 * s, x = 24 * s, y = 8 * s, maxW = 372 * s - 16 * s;
-    float lw[4], w = 0;
-    for (int i = 0; i < 4; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));
+    float lw[5], w = 0;
+    for (int i = 0; i < nl; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));
     w = std::min(w, maxW);
-    r_.rect(x, y, w + 16 * s, lh * 4 + 4 * s, {0, 0, 0, 0.6f});
+    r_.rect(x, y, w + 16 * s, lh * nl + 4 * s, {0, 0, 0, 0.6f});
     const Color yc = {1, 1, 0.4f, 1};
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < nl; i++) {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (screen_ == Screen::InGame) drawPipeline(x, y + lh * 4 + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ == 3 && screen_ == Screen::InGame) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -7251,7 +7358,7 @@ void Game::afterSwap() {
         gpuCalibAt_ = now;
     }
     pipeCollect();
-    if (!showPerf_) return;   // (F4: the graph's marks only (and the clocks above); F3's input to frame latency below)
+    if (perfStage_ != 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.
@@ -7317,7 +7424,7 @@ void Game::drawPicker(float cx, float y) {
         picker_ = PICK_NONE;
         if (live) {
             std::string cmd = (livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode);
-            if (mode == MODE_ARENA || mode == MODE_TOURNEY) cmd += std::string(" ") + arenaVariant(variant).name;
+            if (modeHasRuleset(mode)) cmd += std::string(" ") + arenaVariant(variant).name;
             net_.sendCommand(cmd);
             voteMenu_ = false;
             paused_ = false;
@@ -7364,7 +7471,7 @@ void Game::drawPicker(float cx, float y) {
               : ladders ? UiExp::nav("host")
               : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
-              : modes ? (i == MODE_ARENA || i == MODE_TOURNEY ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
+              : modes ? (modeHasRuleset(i) ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
                          : live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : live ? UiExp::cmd(livePickVote_ ? "callvote map" : "map") : UiExp::nav(done);
         return it;
@@ -7389,7 +7496,7 @@ void Game::drawPicker(float cx, float y) {
             if (live && serverRanked && !livePickVote_) net_.sendCommand("ranked off"); // host leaves ranked for another mode
             mode = i;
             if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
-            if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
+            if (modeHasRuleset(i)) { // second step: which ruleset (1v1, tourney, free for all)
                 variantCtx_ = live ? 2 : host ? 0 : 1;
                 picker_ = PICK_VARIANT;
             } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)
@@ -7618,6 +7725,155 @@ void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
 // X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
 // the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
 // in sight, once a shot (the laser: at most 20 a second). Players are their body and head (rayHitbox), as the server's.
+void Game::predictShotGlass(int w, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+    for (int k = 0; k < wd.pellets; k++) {
+        const Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+        float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
+        if (t < 0) continue;
+        const int pane = net_.map().glassAt(eye + d * (t + 0.01f));
+        if (pane >= 0) net_.predictGlass(pane, GLASS_SHOT, eye + d * t, d);
+    }
+}
+
+
+void Game::updateDestruction(const Map& map) {
+    // the holes, when they change (and a new map's: none)
+    if (map.destructSerial != holeSerial_ || net_.mapRevision() != holeMapRev_) {
+        holeSerial_ = map.destructSerial; holeMapRev_ = net_.mapRevision();
+        r_.setHoles(map.holes);
+        r_.uploadBlocks(map);   // (the breakable blocks still standing)
+    }
+    // what broke since the last frame: shards, chunks, a sound
+    net_.takeGlassFx(glassFxScratch_);
+    for (const NetClient::GlassFx& fx : glassFxScratch_) {
+        if (fx.material == kMatCrumble) {   // a crumble platform: dust off its underside as it shakes, then it drops in pieces
+            uint32_t sd = (uint32_t)(fx.pane.mn.x * 131.0f + fx.pane.mn.z * 71.0f) * 2654435761u | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const bool shake = fx.how == NetClient::kGlassFxShake;
+            const int n = shake ? 60 : std::clamp((int)(ext.x * ext.y * ext.z * 120.0f), 30, 300);
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), shake ? fx.pane.mn.y : fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                const Vec3 v = Vec3(glassRandF(sd) - 0.5f, -glassRandF(sd), glassRandF(sd) - 0.5f) * (shake ? 0.6f : 1.5f);
+                const float c = 0.75f + 0.4f * glassRandF(sd);
+                VisShard sh{p, v, shake ? 0.02f : 0.04f + 0.08f * glassRandF(sd), Vec3(0.62f, 0.55f, 0.45f) * c, false, false, time_};
+                sh.dust = shake;
+                visShards_.push_back(sh);
+            }
+            audio_.play3D(shake ? SND_LAND : SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, shake ? 0.6f : 0.35f, shake ? 0.6f : 0.8f);
+            continue;
+        }
+        if (breakMaterial(fx.material)) {   // a breakable block: chunks in its colour, out from the hit (a blast: more, faster)
+            const BreakDef& d = kBreaks[fx.material - kMatBreak];
+            uint32_t sd = fx.seed | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const float vol = std::max(0.05f, ext.x * ext.y * ext.z);
+            const int n = std::clamp((int)(vol * 120.0f), 30, 300);
+            const float k = fx.how == GLASS_SHATTER ? 2.0f : 1.0f;
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                Vec3 v = p - fx.at;
+                const float l = length(v);
+                v = ((l > 1e-3f ? v / l : Vec3(0, 1, 0)) * (1.0f + 3.0f * glassRandF(sd)) + fx.dir * 2.0f) * k + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd), glassRandF(sd) - 0.5f) * 2.0f;
+                const float sh = 0.75f + 0.4f * glassRandF(sd);
+                visShards_.push_back({p, v, 0.03f + 0.06f * glassRandF(sd), Vec3(d.r, d.g, d.b) * sh, false, false, time_});
+            }
+            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.45f, 0.9f);
+            continue;
+        }
+        if (fx.hole && fx.how == 1) {   // a whole wall coming down: chunks all over it, dropping
+            uint32_t sd = ((uint32_t)(fx.pane.mn.x * 97.0f) * 2654435761u ^ (uint32_t)(fx.pane.mn.z * 53.0f)) | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
+            const int n = std::clamp((int)(area * 25.0f), 40, 400);
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                Vec3 v = p - fx.at;
+                const float l = length(v);
+                v = (l > 1e-3f ? v / l : Vec3(0, 1, 0)) * (1.0f + 2.0f * glassRandF(sd)) + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd), glassRandF(sd) - 0.5f);
+                const float sh = 0.8f + 0.3f * glassRandF(sd);
+                visShards_.push_back({p, v, 0.04f + 0.05f * glassRandF(sd), Vec3(0.55f, 0.22f, 0.15f) * sh, false, false, time_});
+            }
+            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.6f, 0.6f);
+            continue;
+        }
+        if (fx.hole) {   // a hole: brick-red chunks thrown out of it
+            uint32_t sd = ((uint32_t)(fx.at.x * 131.0f) * 2654435761u ^ (uint32_t)(fx.at.z * 71.0f)) | 1u;
+            for (int i = 0; i < 40 && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 v = {glassRandF(sd) * 8 - 4, glassRandF(sd) * 6 - 1, glassRandF(sd) * 8 - 4};
+                const float sh = 0.8f + 0.3f * glassRandF(sd);
+                visShards_.push_back({fx.at + v * 0.08f, v, 0.03f + 0.04f * glassRandF(sd), Vec3(0.55f, 0.22f, 0.15f) * sh, false, false, time_});
+            }
+            continue;
+        }
+        glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_);
+        uint32_t sd = fx.seed ^ 0x9E3779B9u;
+        for (const GlassShard& g : glassShardScratch_) {
+            if (visShards_.size() >= kMaxVisShards) break;
+            visShards_.push_back({g.pos, g.vel, g.size, {0.86f, 0.90f, 0.93f}, false, true, time_, glassThinAxis(fx.pane)});
+        }
+        {   // glitter, only drawn (q: "shard ... 100-250 particles at impact site", "shatter ... 250-1000 particles"): a shot's
+            // sprays from the hit along the shot, a shatter's flies off the whole pane with its pieces
+            const bool crater = glassCrater(fx.how);
+            const int n = crater ? 100 + (int)(glassRandF(sd) * 151) : 250 + (int)(glassRandF(sd) * 751);
+            const Vec3 ext = fx.pane.mx - fx.pane.mn, away = glassShardScratch_.empty() ? fx.dir : normalize(glassShardScratch_[0].vel + Vec3(0, 1e-3f, 0));
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 r(glassRandF(sd) - 0.5f, glassRandF(sd) - 0.4f, glassRandF(sd) - 0.5f);
+                const Vec3 p = crater ? fx.at : Vec3(fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd));
+                const Vec3 v = (crater ? fx.dir : away) * (1.0f + 5.0f * glassRandF(sd)) + r * 4.0f;
+                VisShard d = {p, v, 0.004f + 0.008f * glassRandF(sd), Vec3(0.9f, 0.94f, 0.97f) * (0.85f + 0.3f * glassRandF(sd)), false, false, time_};
+                d.dust = true;
+                visShards_.push_back(d);
+            }
+        }
+        audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
+    }
+    // the panes still standing: see-through (the bake leaves glass out)
+    for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBox(map.brushes[i].box, kGlassTint);
+    for (uint32_t i : map.windows) r_.translucentBox(map.brushes[i].box, kGlassTint);   // (plain glass: never breaks)
+    // shards fly, land and lie; one out of view is gone
+    const float dt = shardsAt_ < 0 ? 0.0f : (float)std::min(0.05, time_ - shardsAt_);
+    shardsAt_ = time_;
+    if (visShards_.empty()) return;
+    const float W = (float)r_.width(), H = (float)r_.height();
+    size_t keep = 0;
+    for (size_t k = 0; k < visShards_.size(); k++) {
+        VisShard v = visShards_[k];
+        if (time_ - v.born > (v.dust ? 1.5 : 30.0)) continue;
+        if (v.dust) {   // (glitter: falls through everything, no raycast: a thousand of it costs next to nothing)
+            v.vel.y -= 9.0f * dt;
+            v.vel *= 1.0f - std::min(1.0f, 1.5f * dt);
+            v.pos += v.vel * dt;
+        } else if (!v.rest && dt > 0) {
+            v.vel.y -= 22.0f * dt;
+            const Vec3 step = v.vel * dt;
+            const float len = length(step);
+            if (len > 1e-6f) {
+                Vec3 n;
+                const float t = map.raycast(v.pos, step / len, len, &n);
+                if (t < 0) v.pos += step;
+                else {
+                    v.pos += step / len * std::max(0.0f, t - 0.005f);
+                    if (n.y > 0.5f) v.rest = true;   // (on a floor: it lies there)
+                    else v.vel = (v.vel - n * (2.0f * dot(v.vel, n))) * 0.25f;   // (off a wall, falling on)
+                }
+            }
+        }
+        float sx, sy;
+        if (time_ - v.born > 0.05 && (!r_.project(v.pos, sx, sy) || sx < -20 || sy < -20 || sx > W + 20 || sy > H + 20)) continue;
+        Vec3 h(v.size, v.rest ? v.size * 0.3f : v.size, v.size);
+        if (v.thin >= 0) { h = Vec3(v.size, v.size, v.size); h[v.rest ? 1 : v.thin] = 0.015f; }   // (a plate of glass)
+        if (v.glass) r_.translucentBox({v.pos - h, v.pos + h}, {v.color.x, v.color.y, v.color.z, 0.55f});
+        else r_.box(v.pos, h, (float)k, v.color, 1.0f, false);
+        visShards_[keep++] = v;
+    }
+    visShards_.resize(keep);
+}
+
 void Game::localImpactSparks(int w, const UserCmd& c) {
     const MoveState& m = net_.predicted();
     const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
@@ -7684,7 +7940,7 @@ void Game::localBoom(uint16_t id, int type, const Vec3& at) {
 
 // The nearest enemy (alive, as drawn) whose body or head (rayHitbox, as the server's projectiles) the segment a -> b
 // passes through: *t its fraction along it.
-bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
+bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t, int* who, bool* head) {
     const Vec3 d = b - a;
     const float len = length(d);
     if (len < 1e-4f) return false;
@@ -7694,11 +7950,176 @@ bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == net_.clientId() || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
-        const float tk = rayHitbox(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
-        if (tk >= 0 && tk < best) { best = tk; any = true; }
+        bool h = false;
+        const float tk = rayHitbox(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best, &h);
+        if (tk >= 0 && tk < best) { best = tk; any = true; if (who) *who = i; if (head) *head = h; }
     }
     if (any) *t = best / len;
     return any;
+}
+
+// ---- your hits, as you saw them (owner, 2026-10-28: "all damage should be client side also, so when you have high
+// ping and shoot a projectile it should not magically not do any damage"). The server counts them unless you're dead
+// there by the time they arrive. These mirror the server's own hit tests (Server::hitscan, explode, stepProjectile)
+// against the players as drawn (framePlayers).
+
+void Game::sendHits(int weapon, bool alt, const std::vector<HitReport>& hits) {
+    if (hits.empty() || net_.playback()) return;
+    std::string s = "hit " + std::to_string(weapon) + (alt ? " 1 " : " 0 ") + std::to_string(hits.size());
+    char buf[160];
+    for (const HitReport& h : hits) {
+        std::snprintf(buf, sizeof buf, " %d %.2f %d %d %.3f %.2f %.3f %.3f %.3f", h.victim, h.dmg, h.head ? 1 : 0, h.direct ? 1 : 0, h.splash,
+                      h.dist, h.knock.x, h.knock.y, h.knock.z);
+        s += buf;
+    }
+    net_.sendCommand(s);
+}
+
+void Game::reportShotHits(int w, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    const WeaponAlt& wa = weaponAlt();
+    const WeaponExtra& ex = weaponExtra(w);
+    const bool altDown = (c.buttons & BTN_ALTFIRE) != 0;
+    const float spread = (wd.scopedSpread >= 0 && altDown) ? wd.scopedSpread : wd.spread;
+    const bool pull = wd.beam && altDown, pierce = w == WPN_SNIPER;
+    const float dmg = wd.damage * (pull ? wa.pullDamage : 1.0f), headDmg = pull ? 0.0f : ex.headDamage;
+    const float grow = w == WPN_KNIFE ? wa.knifeGrow : 0.0f;
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    float dmgPer[kMaxPlayers] = {}, headPer[kMaxPlayers] = {}, distOf[kMaxPlayers] = {};
+    bool headHit[kMaxPlayers] = {};
+    for (int k = 0; k < wd.pellets; k++) {
+        const Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+        float bang, wall = net_.map().raycastBullet(eye, d, wd.range, &bang);
+        float best = wall >= 0 ? wall : wd.range;
+        const Vec3 inv = safeInv(d);
+        int hit = -1;
+        bool hitHead = false;
+        auto add = [&](int i, float t, bool inHead) {
+            float dd = dmg;
+            const bool head = headDmg > 0 && inHead;
+            if (head) { dd = std::max(dd, headDmg); headHit[i] = true; }
+            if (ex.falloff) dd *= weaponFalloff(ex, t);
+            if (bang >= 0 && t > bang) dd *= ex.wallbang;
+            distOf[i] = t;
+            dmgPer[i] += dd;
+            if (head) headPer[i] += dd;
+        };
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
+            bool inHead = false;
+            const float t = rayHitbox(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best, &inHead, grow);
+            if (pierce) { if (t >= 0) add(i, t, inHead); continue; }   // (sniper collateral: everyone up to the wall)
+            if (t >= 0 && t < best) { best = t; hit = i; hitHead = inHead; }
+        }
+        if (hit >= 0) add(hit, best, hitHead);
+    }
+    if (wd.pellets > 1)   // (a blast is a headshot when half its damage was to the head, as the server's F14)
+        for (int i = 0; i < kMaxPlayers; i++) headHit[i] = dmgPer[i] > 0 && headPer[i] * 2 >= dmgPer[i];
+    if (wd.beam) {   // the laser: added up, sent every 50 ms (and when it stops or the mode changes)
+        if (laserPending_ && laserAlt_ != pull) flushLaserHits(true);
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (dmgPer[i] <= 0) continue;
+            laserDmg_[i] += dmgPer[i];
+            laserKnock_[i] += aim * (ex.knock * wd.refire * (pull ? -wa.pullScale : 1.0f));
+            laserDist_[i] = distOf[i];
+            laserHead_[i] |= headHit[i];
+            if (!laserPending_) { laserPending_ = true; laserSince_ = time_; }
+            laserAlt_ = pull;
+        }
+        flushLaserHits(false);
+        return;
+    }
+    hitScratch_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (dmgPer[i] <= 0) continue;
+        const Vec3 knock = aim * (wd.pellets > 1 ? ex.knock * dmgPer[i] / wd.damage : ex.knock);
+        hitScratch_.push_back({i, dmgPer[i], headHit[i], false, 1.0f, distOf[i], knock});
+    }
+    sendHits(w, altDown, hitScratch_);
+}
+
+void Game::flushLaserHits(bool force) {
+    if (!laserPending_ || (!force && time_ - laserSince_ < 0.05)) return;
+    hitScratch_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (laserDmg_[i] > 0) hitScratch_.push_back({i, laserDmg_[i], laserHead_[i], false, 1.0f, laserDist_[i], laserKnock_[i]});
+        laserDmg_[i] = 0; laserHead_[i] = false; laserKnock_[i] = {};
+    }
+    laserPending_ = false;
+    sendHits(WPN_LASER, laserAlt_, hitScratch_);
+}
+
+// Your rocket's blast on the others as you see them (the server's explode; on you it's the server's own, so rocket
+// jumps feel as they did). direct: the player it flew into, -1 none.
+void Game::reportBlast(int type, bool alt, const Vec3& at, int direct) {
+    const WeaponDef& wd = weaponDef(type);
+    const WeaponExtra& ex = weaponExtra(type);
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    const MoveState& m = net_.predicted();
+    const float ownerDist = length(at - (m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0)));
+    const Map& map = net_.map();
+    hitScratch_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
+        const AABB b = playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale());
+        const Vec3 closest = hitboxClosest(b, at);
+        const float d = length(closest - at);
+        if (d > wd.splashRadius) continue;
+        const Vec3 c = b.center(), to = c - at;
+        const float dist = length(to);
+        if (dist > 0.01f) {
+            const float w = map.raycast(at, to / dist, dist);
+            if (w >= 0 && w < dist - 0.1f) {
+                auto clear = [&](const Vec3& pt) {
+                    const Vec3 v = pt - at;
+                    const float len = length(v);
+                    return len < 0.11f || !map.raycastAny(at, v / len, len - 0.1f);
+                };
+                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
+            }
+        }
+        const float frac = 1.0f - d / wd.splashRadius;
+        const Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
+        float dmg = wd.damage * frac;
+        if (i == direct && ex.directDamage > 0) dmg = std::max(dmg, ex.directDamage);
+        if (ex.falloff) dmg *= weaponFalloff(ex, ownerDist);
+        Vec3 knock = push * (ex.knock * frac);
+        knock.y *= 2.0f;
+        hitScratch_.push_back({i, dmg, false, i == direct, frac, ownerDist, knock});
+    }
+    sendHits(type, alt, hitScratch_);
+}
+
+// Your bolt in someone, as you see it (the server's stepProjectile: direct hits only).
+void Game::reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head) {
+    if (victim < 0) return;
+    const WeaponDef& wd = weaponDef(WPN_CROSSBOW);
+    const WeaponExtra& ex = weaponExtra(WPN_CROSSBOW);
+    float dmg = (float)wd.damage;
+    const float hd = headDamage(WPN_CROSSBOW);
+    head = head && hd > 0;
+    if (head) dmg = std::max(dmg, hd);
+    const MoveState& m = net_.predicted();
+    const float dist = length(at - (m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0)));
+    if (ex.falloff) dmg *= weaponFalloff(ex, dist);
+    hitScratch_.clear();
+    hitScratch_.push_back({victim, dmg, head, true, 1.0f, dist, dir * ex.knock});
+    sendHits(WPN_CROSSBOW, false, hitScratch_);
+}
+
+void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head) {
+    if (!net_.selfAlive()) return;   // (dead: the server's own hit, as it lands there)
+    if (type == WPN_ROCKET) reportBlast(type, alt, to, victim);
+    else if (type == WPN_CROSSBOW) {
+        const Vec3 d = to - from;
+        const float len = length(d);
+        reportBolt(to, len > 1e-4f ? d / len : Vec3(0, 0, -1), victim, head);
+    }
 }
 
 // A muzzle flash: a hot core in a bigger, fainter glow (two see-through boxes), fading over its life (a 0..1).
@@ -7849,8 +8270,8 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     {   // race practice: its checkpoint dings (the server sends a split only in the race itself; modecalls.h)
         const ModeState& ms = net_.mode();
         const PlayerSnap* mine = net_.findPlayer(me);
-        const auto& cps = net_.map().checkpoints;
-        if (ms.mode == MODE_RACE && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
+        const auto& cps = net_.map().raceCheckpoints;
+        if (isRaceMode(ms.mode) && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
             const int next = mine->checkpoint;
             const bool in = next < (int)cps.size() && playerBox(m).overlaps(cps[next]);
             if (int d = practiceDing_.step(next, in, (int)cps.size())) audio_.play(d == 2 ? SND_FINISH : SND_CHECKPOINT, 0.9f);

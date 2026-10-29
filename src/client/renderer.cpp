@@ -11,6 +11,7 @@
 #include "overrides.h"
 #include "fontatlas.h"
 #include "textfit.h"
+#include "surface_looks.h"
 #include <memory>
 
 namespace {
@@ -103,9 +104,101 @@ uniform float uBright;   // the brightness setting (exposure, before the filmic 
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
-uniform float uTime;     // seconds (wrapped every hour): acid's slow shimmer
+uniform float uTime;     // seconds (wrapped every hour): water, lava and acid flow
+uniform vec3 uSunDir;    // toward the sun: metals' highlights
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// value noise and three octaves of it (water, lava, acid flow; sand, grass, ice, rubber surfaces): no textures
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), f.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// Anti-aliased: noise finer than about 2 pixels on screen fades to its average (0.5), so a long strip seen from one end
+// (each pixel spanning metres of it) is a calm surface instead of shimmer (owner, 2026-10-28: lava "gets fucky because
+// of the angle"). The footprint is the longer of the pixel's two sides in noise cells: angle and distance alike.
+float noiseFade(float cells) { return 1.0 - smoothstep(0.25, 0.5, cells); }
+float footprint(vec2 p) { vec2 w = fwidth(p); return max(w.x, w.y); }
+float vnoiseAA(vec2 p) { return mix(0.5, vnoise(p), noiseFade(footprint(p))); }
+float fbm(vec2 p) {
+    float f = footprint(p);
+    return 0.5 * mix(0.5, vnoise(p), noiseFade(f)) + 0.3 * mix(0.5, vnoise(p * 2.03 + 17.1), noiseFade(f * 2.03))
+         + 0.2 * mix(0.5, vnoise(p * 4.01 + 41.7), noiseFade(f * 4.01));
+}
+vec3 lin(vec3 c) { return pow(c, vec3(2.2)) * 1.5; }   // a display colour as the palette is given to the shader
+vec2 hash22(vec2 p) { return vec2(hash2(p), hash2(p + 19.19)); }
+vec2 worley(vec2 p) {   // cells: the nearest and second-nearest feature points' distances (cobblestone, crystal)
+    vec2 i = floor(p), f = fract(p);
+    float d1 = 9.0, d2 = 9.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(x, y), r = o + hash22(i + o) - f;
+        float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    return sqrt(vec2(d1, d2));
+}
+// Cobblestone's cells: x the exact distance to the cell's border (the nearest point's cell against each neighbour's
+// bisector; F2 - F1 isn't a distance and smeared dark wedges out of every corner where three stones meet, which read as
+// gaps in the wall: owner, 2026-10-29), y a number per stone (its shade; it was per 1/3 m square, a checker on the stones)
+vec2 stones(vec2 p) {
+    vec2 i = floor(p), f = fract(p), mg = vec2(0.0), mr = vec2(0.0);
+    float md = 8.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 g = vec2(x, y), r = g + hash22(i + g) - f;
+        float d = dot(r, r);
+        if (d < md) { md = d; mr = r; mg = g; }
+    }
+    md = 8.0;
+    for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+        vec2 g = mg + vec2(x, y), r = g + hash22(i + g) - f, e = r - mr;
+        if (dot(e, e) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(e)));
+    }
+    return vec2(md, hash2(i + mg + 7.3));
+}
+// Pattern helpers for the block looks: a grid of cells (the distance to the nearest joint, the cell), the same with
+// rows offset by half (a running bond), hexagons (offset, centre distance, id) and Voronoi cells (nearest, second, id).
+float grid(vec2 p, vec2 s, out vec2 cell) { vec2 c = p / s; cell = floor(c); vec2 f = fract(c) * s; return min(min(f.x, s.x - f.x), min(f.y, s.y - f.y)); }
+float bond(vec2 p, vec2 s, out vec2 cell) { float row = floor(p.y / s.y); return grid(p + vec2(0.5 * s.x * mod(row, 2.0), 0.0), s, cell); }
+vec4 hexc(vec2 p) { vec2 s = vec2(1.0, 1.732); vec2 a = mod(p, s) - s * 0.5, b = mod(p - s * 0.5, s) - s * 0.5; vec2 g = dot(a, a) < dot(b, b) ? a : b; vec2 id = p - g; return vec4(g, max(abs(g.x) * 0.5 + abs(g.y) * 0.866, abs(g.x)), hash2(floor(id * 10.0 + 0.5))); }
+vec3 cells(vec2 p) { vec2 i = floor(p), f = fract(p); float d1 = 9.0, d2 = 9.0, id = 0.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) { vec2 o = vec2(x, y), r = o + hash22(i + o) - f; float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; id = hash2(i + o + 3.7); } else if (d < d2) d2 = d; }
+    return vec3(sqrt(d1), sqrt(d2), id); }
+float alpha = 1.0;   // (a see-through look sets it: kept only in the see-through pass, uAlphaPass)
+uniform float uAlphaPass;   // 1: the see-through looks (blended), 2: the breakable blocks; both: not baked, full sun and sky
+// @LOOKS@: Renderer::worldLooks puts blockLook() here, with the looks of the materials the map uses
+// Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
+// one breaks out isn't drawn. The same test as Map's holeTakes. Only the holes listed in the fragment's cell of a coarse
+// xz grid are tested (uHoleCells: start, count into uHoleList), so a pixel pays for the holes near it, not for every
+// hole blown on the map (owner, 2026-10-29: fps stayed at a tenth after a wall fell; GPU 0.3 -> 7.4 ms).
+uniform sampler2D uHoles, uHoleCells, uHoleList;
+uniform int uHoleCount, uHoleGridH;
+uniform vec4 uHoleGrid;   // x0 z0 1/cell W
+bool inHole() {
+    ivec2 gc = ivec2(floor((vPos.xz - uHoleGrid.xy) * uHoleGrid.z));
+    if (gc.x < 0 || gc.y < 0 || gc.x >= int(uHoleGrid.w) || gc.y >= uHoleGridH) return false;
+    vec2 sc = texelFetch(uHoleCells, gc, 0).rg;
+    int start = int(sc.x + 0.5), cnt = int(sc.y + 0.5);
+    for (int k = 0; k < cnt; k++) {
+        int j = start + k, i = int(texelFetch(uHoleList, ivec2(j & 255, j >> 8), 0).r + 0.5);
+        vec4 a = texelFetch(uHoles, ivec2(2 * i, 0), 0), b = texelFetch(uHoles, ivec2(2 * i + 1, 0), 0);
+        int ax = int(a.w + 0.5);
+        float pa = ax == 0 ? vPos.x : ax == 1 ? vPos.y : vPos.z;
+        if (pa < b.z - 0.01 || pa > b.w + 0.01) continue;
+        vec2 p = ax == 0 ? vPos.zy : ax == 1 ? vPos.xz : vPos.xy;
+        if (a.z < 0.0) { if (abs(p.x - a.x) <= b.x && abs(p.y - a.y) <= b.y) return true; continue; }   // (a whole wall that fell)
+        if (abs(p.x - a.x) > a.z * 1.2 || abs(p.y - a.y) > a.z * 1.2) continue;
+        int row = int(floor(p.y / b.y));
+        float off = 0.5 * float(row & 1);
+        int col = int(floor(p.x / b.x + off));
+        float x = ((float(col) + 0.5 - off) * b.x - a.x) / a.z, y = ((float(row) + 0.5) * b.y - a.y) / a.z;
+        float s = sqrt(sqrt(x * x * x * x + y * y * y * y));
+        uint k2 = uint(row) * 73856093u ^ uint(col) * 19349663u;
+        k2 ^= k2 >> 13; k2 *= 0x5bd1e995u; k2 ^= k2 >> 15;
+        if (s + (float(k2 & 255u) / 255.0 - 0.5) * 0.3 < 1.0) return true;
+    }
+    return false;
+}
 vec3 finish(vec3 c) {
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
@@ -114,38 +207,196 @@ vec3 finish(vec3 c) {
 }
 void main() {
     int mat = int(vMat + 0.5);
+    if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;   // (0.25 over: thin, breakable)
     if (uFull > 0.5) {
         float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 || mat == 11 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
         fragColor = vec4(uFullColor * g * ((mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
         return;
     }
     if ((mat >= 4 && mat < 8) || mat == 11) { // glow trim / far scenery / water / lava / acid: unlit, skip everything below
-        vec3 c = mat == 4 ? uGlow * 0.9
-               : mat == 11 ? mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0))      // acid: glowing toxic green, darker sides,
-                             * (0.85 + 0.15 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) // with a slow shimmer
-               : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
-               : mat == 7 ? vec3(1.6, 0.42, 0.08)                                                         // lava: glowing
-               : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
+        vec3 c;
+        if (mat == 6 || mat == 7 || mat == 11) {
+            // liquids: noise flowing across the surface (owner, 2026-10-28: "so you can tell its actually lava"), in the
+            // face's plane (tops xz, sides along their face, sliding down them)
+            vec3 an = abs(vN);
+            vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;
+            vec2 flow = an.y > 0.5 ? vec2(0.31, 0.19) : vec2(0.0, 0.6);
+            if (mat == 6) {   // water: deep blue, lighter at grazing faces; two layers of ripples drifting apart, bright crests
+                float r = fbm(q * 0.7 + flow * uTime) * 0.6 + fbm(q * 1.6 - flow.yx * uTime * 1.3) * 0.4;
+                c = mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - an.y * 0.6) * (0.75 + 0.5 * r) + vec3(0.10, 0.18, 0.22) * smoothstep(0.62, 0.72, r);
+            } else if (mat == 7) {   // lava: a dark crust broken by glowing veins that slowly flow and churn
+                float n = fbm(q * 0.35 + flow * uTime * 0.25 + vec2(fbm(q * 0.3 - uTime * 0.05)) * 1.5);
+                float r = 1.0 - abs(2.0 * n - 1.0), warm = smoothstep(0.4, 0.8, fbm(q * 0.8 + uTime * 0.03));
+                // (the veins are thin: once the pattern is too fine to draw they blend to how much of it they cover)
+                float vein = mix(0.12, smoothstep(0.86, 0.98, r), noiseFade(footprint(q * 0.35) * 4.0));
+                c = mix(vec3(0.16, 0.025, 0.01) + vec3(0.35, 0.06, 0.0) * warm, vec3(1.9, 0.55, 0.08), vein) + vec3(0.8, 0.5, 0.1) * pow(vein, 4.0);
+            } else {   // acid: glowing toxic green, darker sides, with drifting foam and a slow shimmer
+                float n = fbm(q * 0.9 + flow * uTime * 0.6);
+                c = mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0)) * (0.7 + 0.45 * n)
+                  * (0.9 + 0.1 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) + vec3(0.25, 0.5, 0.1) * smoothstep(0.66, 0.76, n);
+            }
+        } else c = mat == 4 ? uGlow * 1.6   // (owner, 2026-10-29: glowing things brighter; was 0.9)
+                 : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
         fragColor = vec4(finish(c), 1.0);
         return;
     }
-    vec2 lm = texture(uLightmap, vUV).rg;
+    vec2 lm = uAlphaPass > 0.5 ? vec2(1.0, 0.85) : texture(uLightmap, vUV).rg;   // (the see-through pass: not baked, full sun and sky)
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
     if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
-    vec2 pp = an.y > 0.5 ? vPos.xz * 0.25 : an.x > 0.5 ? vPos.zy * 0.5 : vPos.xy * 0.5;
-    if (mat == 3) pp = pp * vec2(2.0, 0.5);
-    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
-    float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
-    albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
+    vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;   // the face's plane, metres
+    // @LARGE@: Renderer::compileWorld puts the large patterns here (kLarge: their material's look, the plane scaled)
+    float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
+    vec3 emit = vec3(0.0);            // glowing parts (crystal edges, circuit traces), added after the light
+    if (mat < 12) {
+        vec2 pp = q * (an.y > 0.5 ? 0.25 : 0.5);
+        if (mat == 3) pp = pp * vec2(2.0, 0.5);
+        vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * max(1.5 * uPxScale, 1.0);   // (1.5 window pixels, at least 1 scene pixel)
+        float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
+        albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
+        if (mat == 3) {   // metal: brushed streaks along each panel and a soft sheen (owner, 2026-10-28: "not just black box")
+            albedo *= 1.15 + 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
+            spec = 0.35; gloss = 24.0;
+        }
+    } else if (mat == 12) {   // ice: pale blue, cloudy depths and fine white cracks, glossy
+        float n = fbm(q * 0.8), cr = abs(vnoiseAA(q * 3.0) - 0.5);
+        albedo = lin(mix(vec3(0.55, 0.72, 0.86), vec3(0.80, 0.90, 0.97), n)) * (1.0 + 0.6 * (1.0 - smoothstep(0.0, 0.03, cr)));
+        spec = 0.6; gloss = 64.0;
+    } else if (mat == 13) {   // sand: warm tan, fine grain, wind ripples on tops
+        float g = hash2(floor(q * 40.0)), rip = an.y > 0.5 ? sin(q.x * 3.0 + fbm(q * 0.5) * 6.0) : 0.0;
+        albedo = lin(vec3(0.78, 0.67, 0.46)) * (0.88 + 0.12 * g + 0.05 * rip) * (0.9 + 0.2 * fbm(q * 0.3));
+    } else if (mat == 14) {   // wood: planks 0.25 m wide along the face's long way, each its own shade, grain and rings
+        vec2 r = an.y > 0.5 ? q : vec2(q.y, q.x);
+        float plank = floor(r.y * 4.0), along = r.x + hash2(vec2(plank, 3.0)) * 7.0, across = fract(r.y * 4.0);
+        float grain = sin((along * 0.6 + vnoiseAA(vec2(along * 0.3, plank)) * 4.0 + across * 2.0) * 9.0) * 0.5 + 0.5;
+        float joint = min(smoothstep(0.0, 0.04, across), smoothstep(0.0, 0.04, 1.0 - across)) * smoothstep(0.0, 0.02, abs(fract(along / 2.4) - 0.5) * 2.0);
+        albedo = lin(mix(vec3(0.42, 0.26, 0.14), vec3(0.62, 0.42, 0.24), 0.5 * hash2(vec2(plank, 9.0)) + 0.3 * grain)) * mix(0.55, 1.0, joint);
+    } else if (mat == 15) {   // plastic: the map's accent colour, smooth and even, a tight shine
+        albedo = uAccentL * 1.1;
+        spec = 0.45; gloss = 80.0;
+    } else if (mat == 16) {   // grass: green blotches and blades on tops; sides earth with a grass fringe
+        float n = fbm(q * 0.6), blade = hash2(floor(q * 30.0));
+        vec3 green = lin(mix(vec3(0.20, 0.42, 0.12), vec3(0.36, 0.60, 0.20), n)) * (0.85 + 0.25 * blade);
+        if (an.y > 0.5) albedo = green;
+        else {   // sides: earth, green down the top 1/4 m (ragged) where the top is open (the bake says: no 0.25 in vMat)
+            float top = an.x > 0.5 ? vEdge.z - vEdge.x : vEdge.w - vEdge.y;   // (to the piece's top edge: the side's top)
+            float fringe = abs(vMat - float(mat)) < 0.1 ? 1.0 - smoothstep(0.2, 0.26, top + 0.05 * (vnoiseAA(q * vec2(9.0, 3.0)) - 0.5)) : 0.0;
+            albedo = mix(lin(vec3(0.36, 0.26, 0.17)) * (0.85 + 0.2 * fbm(q * 2.0)), green, fringe);
+        }
+    } else if (mat == 17) {   // rubber: near-black, matte, fine pebbled dots
+        vec2 d = fract(q * 12.0) - 0.5;
+        albedo = lin(vec3(0.13, 0.13, 0.14)) * (0.85 + 0.3 * smoothstep(0.32, 0.2, length(d)));
+        spec = 0.05; gloss = 8.0;
+    } else if (mat == 18) {   // steel: light grey, long brushed streaks, a bright sharp highlight
+        albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoiseAA(vec2(q.x * 0.5, q.y * 60.0)));
+        spec = 0.7; gloss = 48.0;
+    } else if (mat == 20) {   // brick: classic red, running bond (0.2 x 0.065 m bricks, 1 cm mortar), each brick its own shade
+        vec2 r = q;   // (the face's plane: a large brick's is scaled)
+        float row = floor(r.y / 0.075);
+        vec2 b = vec2(r.x / 0.21 + 0.5 * mod(row, 2.0), r.y / 0.075);
+        vec2 cell = floor(b), f = fract(b) * vec2(0.21, 0.075);
+        float mortar = min(min(f.x, 0.21 - f.x), min(f.y, 0.075 - f.y));
+        // (mortar lines thinner than a pixel fade to the share they cover: no moire rings across a wall far off / edge on)
+        float m = mix(0.85, smoothstep(0.004, 0.007, mortar), 1.0 - smoothstep(0.12, 0.3, footprint(r / 0.075)));
+        vec3 brick = mix(vec3(0.55, 0.20, 0.13), vec3(0.70, 0.30, 0.20), hash2(cell)) * (0.9 + 0.15 * vnoiseAA(r * 40.0));
+        albedo = lin(mix(vec3(0.62, 0.60, 0.55), brick, m));
+    } else if (mat == 22) {   // asphalt: near-black with light and dark aggregate
+        albedo = lin(vec3(0.20, 0.20, 0.21)) * (0.8 + 0.4 * hash2(floor(q * 60.0))) * (0.92 + 0.12 * fbm(q * 0.7));
+    } else if (mat == 23) {   // mud: wet brown, darker glossy puddles
+        float pud = smoothstep(0.55, 0.62, fbm(q * 0.8));
+        albedo = lin(mix(vec3(0.32, 0.22, 0.13), vec3(0.18, 0.12, 0.07), pud)) * (0.85 + 0.25 * fbm(q * 4.0));
+        spec = 0.7 * pud; gloss = 80.0;
+    } else if (mat == 24) {   // cobblestone: rounded grey stones in dark joints
+        vec2 w = stones(q * 3.0);
+        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x))) * (0.9 + 0.15 * fbm(q * 8.0));
+    } else if (mat == 25) {   // concrete: cast slabs 1.2 x 0.6 m with form-tie holes
+        vec2 c = fract(q / vec2(1.2, 0.6));
+        float seam = min(min(c.x, 1.0 - c.x) * 1.2, min(c.y, 1.0 - c.y) * 0.6), tie = length((fract(q / vec2(0.6, 0.3)) - 0.5) * vec2(0.6, 0.3));
+        albedo = lin(vec3(0.58, 0.58, 0.56)) * (0.85 + 0.2 * fbm(q * 3.0) + 0.06 * hash2(floor(q * 80.0))) * mix(0.7, 1.0, smoothstep(0.0, 0.01, seam)) * mix(0.5, 1.0, smoothstep(0.015, 0.025, tie));
+    } else if (mat == 26) {   // tile: glazed cream 0.25 m squares in grey grout, each its own shade, a soft bevel and shine
+        vec2 c = q / 0.25, f = fract(c);
+        float g = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)) * 0.25;
+        float bevel = mix(0.9, smoothstep(0.004, 0.012, g), 1.0 - smoothstep(0.05, 0.15, footprint(c)));
+        vec3 glaze = mix(vec3(0.86, 0.84, 0.78), vec3(0.93, 0.92, 0.88), hash2(floor(c))) * (0.97 + 0.03 * vnoiseAA(q * 12.0));
+        albedo = lin(mix(vec3(0.42, 0.42, 0.40), glaze * mix(0.85, 1.0, smoothstep(0.012, 0.03, g)), bevel));
+        spec = 0.5 * bevel; gloss = 70.0;
+    } else if (mat == 27) {   // marble: white with grey veins, polished
+        float v = abs(sin(q.x * 1.5 + q.y * 0.7 + fbm(q * 1.2) * 7.0));
+        albedo = lin(mix(vec3(0.35, 0.36, 0.40), vec3(0.93, 0.92, 0.90), smoothstep(0.0, 0.25, v))) * (0.95 + 0.05 * fbm(q * 6.0));
+        spec = 0.6; gloss = 90.0;
+    } else if (mat == 28) {   // corrugated metal: ribs, rust streaking down
+        float w = sin(q.x * 40.0) * 0.5 + 0.5, rust = smoothstep(0.55, 0.8, fbm(vec2(q.x * 4.0, q.y * 0.4)));
+        albedo = lin(mix(vec3(0.55, 0.57, 0.6), vec3(0.45, 0.22, 0.10), rust)) * (0.75 + 0.35 * w);
+        spec = 0.3 * (1.0 - rust); gloss = 30.0;
+    } else if (mat == 29) {   // hazard stripes: yellow and black diagonals
+        albedo = lin(mod(floor((q.x + q.y) / 0.3), 2.0) < 0.5 ? vec3(0.95, 0.75, 0.05) : vec3(0.08)) * (0.92 + 0.08 * fbm(q * 5.0));
+    } else if (mat == 30) {   // snow: soft white drifts, a few glints
+        albedo = lin(vec3(0.93, 0.95, 1.0)) * (0.9 + 0.1 * fbm(q * 1.5)) + vec3(1.5) * step(0.997, hash2(floor(q * 120.0)));
+    } else if (mat == 31) {   // stone blocks (ashlar): 0.8 x 0.4 m, rows offset, deep joints
+        float row = floor(q.y / 0.4);
+        vec2 b = vec2(q.x / 0.8 + 0.5 * mod(row, 2.0), q.y / 0.4), f = fract(b) * vec2(0.8, 0.4);
+        float j = min(min(f.x, 0.8 - f.x), min(f.y, 0.4 - f.y));
+        albedo = lin(vec3(0.6, 0.58, 0.54) * (0.8 + 0.25 * hash2(floor(b)))) * (0.85 + 0.2 * fbm(q * 5.0))
+               * mix(0.35, 1.0, mix(0.92, smoothstep(0.01, 0.03, j), 1.0 - smoothstep(0.05, 0.15, footprint(q / 0.4))));
+    } else if (mat == 32) {   // crystal: violet-blue facets with glowing edges
+        vec2 w = worley(q * 2.0);
+        albedo = lin(mix(vec3(0.35, 0.2, 0.6), vec3(0.2, 0.6, 0.8), hash2(floor(q * 2.0 + w.x)))) * (0.7 + 0.5 * w.x);
+        emit = vec3(0.9, 1.35, 2.1) * (1.0 - smoothstep(0.0, 0.06, w.y - w.x));
+        spec = 0.8; gloss = 120.0;
+    } else if (mat == 33) {   // circuit board: green, traces that pulse
+        vec2 c = q / 0.25, i = floor(c), f = fract(c);
+        float h = hash2(i), tr = h < 0.5 ? abs(f.y - 0.5) : abs(f.x - 0.5);
+        float pulse = 0.5 + 0.5 * sin((h < 0.5 ? c.x : c.y) * 3.0 - uTime * 4.0 + h * 20.0);
+        albedo = lin(vec3(0.05, 0.22, 0.12)) * (0.9 + 0.1 * vnoiseAA(q * 20.0));
+        emit = vec3(0.3, 2.1, 1.2) * (1.0 - smoothstep(0.03, 0.06, tr)) * (0.3 + 0.7 * pulse * pulse);
+    } else if (mat == 34) {   // rusted steel: bare steel eaten by rust patches
+        float rust = clamp(smoothstep(0.4, 0.75, fbm(q * 1.3)) + 0.3 * smoothstep(0.6, 0.9, fbm(q * 6.0)), 0.0, 1.0);
+        albedo = lin(mix(vec3(0.55, 0.57, 0.6), vec3(0.5, 0.24, 0.1) * (0.8 + 0.4 * vnoiseAA(q * 20.0)), rust));
+        spec = 0.5 * (1.0 - rust); gloss = 40.0;
+    } else if (mat == 35) {   // terracotta roof tiles: curved, overlapping rows
+        float row = floor(q.y / 0.25), x = q.x / 0.3 + 0.5 * mod(row, 2.0);
+        float curve = sin(fract(x) * 3.1416), f = fract(q.y / 0.25);
+        albedo = lin(vec3(0.75, 0.38, 0.2) * (0.85 + 0.2 * hash2(vec2(floor(x), row)))) * (0.55 + 0.5 * curve) * mix(0.5, 1.0, smoothstep(0.0, 0.15, f));
+    } else if (mat >= 39) {   // the surface looks (surface_looks.h)
+        blockLook(mat, q, albedo, spec, gloss, emit);
+    } else {   // diamond plate: grey metal with raised diamonds (lit on one side, shadowed on the other), in rows offset
+        vec2 r = vec2(q.x + q.y, q.x - q.y) * 2.5;
+        vec2 cell = floor(r), f = fract(r) - 0.5;
+        float lug = (mod(cell.x + cell.y, 2.0) < 0.5 ? f.x : f.y);
+        float bump = smoothstep(0.09, 0.05, abs(lug) + 0.35 * abs((mod(cell.x + cell.y, 2.0) < 0.5 ? f.y : f.x)));
+        albedo = lin(vec3(0.50, 0.52, 0.55)) * (0.9 + 0.1 * vnoiseAA(q * 9.0)) * (1.0 + 0.6 * bump * sign(lug + 0.0001));
+        spec = 0.55; gloss = 40.0;
+    }
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
     if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
-    vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
-    vec3 c = albedo * light * 0.62 * outline(vEdge, uOutlineW);
-    fragColor = vec4(finish(c), 1.0);
+    float sun = lm.r * shadowAt(vShadow);
+    vec3 light = uSkyColor * lm.g + uSunColor * sun;
+    vec3 c = albedo * light * 0.62;
+    if (spec > 0.0) {
+        vec3 v = normalize(uCamPos - vPos), h = normalize(v + uSunDir);
+        c += uSunColor * sun * spec * pow(max(dot(normalize(vN), h), 0.0), gloss);
+    }
+    c += emit;
+    c *= outline(vEdge, uOutlineW);
+    bool blended = uAlphaPass > 0.5 && uAlphaPass < 1.5;   // (2: the breakable blocks, opaque)
+    if (blended && alpha < 0.01) discard;
+    fragColor = vec4(finish(c), blended ? clamp(alpha, 0.0, 1.0) : 1.0);
 })";
+
+// The map editor's material swatches (Renderer::swatch): textured quads in window pixels over the 2D batch
+const char* kImgVS = R"(#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aUV;
+uniform vec2 uScreen;
+out vec2 vUV;
+void main() { vUV = aUV; gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0); })";
+const char* kImgFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uImg;
+out vec4 fragColor;
+void main() { fragColor = vec4(texture(uImg, vUV).rgb, 1.0); })";
 
 // Edge smoothing ("EDGES" anti-aliasing): FXAA-style. Low-contrast pixels (almost everything) pass straight
 // through after 5 taps; on high-contrast edges (the outlines) it blends along the edge direction.
@@ -399,6 +650,63 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks + kSemiCount + kBreakCount + kFeatCount, "a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones");
+// the material of kSurfaceLooks[k]: kMatBlocks.. up to the large ones, then kMatSemi.. (the breakable ones follow them)
+static int lookMat(int k) { return k < kMatLarge - kMatBlocks ? kMatBlocks + k : kMatSemi + (k - (kMatLarge - kMatBlocks)); }
+
+// The world shader's blockLook(), with only the looks of the materials marked in `used` (by material; null: all of
+// them, for the editor's swatches): a map uses a handful of the 400+, and a shader carrying all of them would cost
+// every pixel (registers, code size) and a long compile. Switches of at most 50 cases (one long chain loses cases on
+// some drivers); a material left out keeps the colour main() gave it.
+static std::string worldLooks(const std::vector<bool>* used) {
+    std::string s = "void blockLook(int k, vec2 q, inout vec3 albedo, inout float spec, inout float gloss, inout vec3 emit) {\n"
+                    "    float aa = 1.5 * footprint(q); vec3 an = abs(vN);\n";
+    std::vector<int> ks;
+    // (k: the material; ks: the looks wanted, in material order)
+    for (int k = 0; k < (int)(sizeof kSurfaceLooks / sizeof *kSurfaceLooks); k++) if (!used || (*used)[(size_t)lookMat(k)]) ks.push_back(k);
+    for (size_t i = 0; i < ks.size(); i += 50) {
+        const size_t end = std::min(ks.size(), i + 50);
+        s += std::string(i ? "    else if" : "    if") + " (k <= " + std::to_string(lookMat(ks[end - 1])) + ") switch (k) {\n";
+        for (size_t j = i; j < end; j++) s += "    case " + std::to_string(lookMat(ks[j])) + ": { " + kSurfaceLooks[ks[j]] + " } break;\n";
+        s += "    }\n";
+    }
+    return s + "}\n";
+}
+
+unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err) {
+    std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
+    const size_t at = fs.find("// @LOOKS@");
+    fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
+    // the large patterns: material kMatLarge + i draws kLarge[i].base's look with the face's plane divided by its scale
+    std::string lb, ls;
+    for (int i = 0; i < kLargeCount; i++) { lb += (i ? "," : "") + std::to_string(kLarge[i].base); ls += (i ? "," : "") + std::to_string(kLarge[i].scale) ; }
+    const std::string n = std::to_string(kLargeCount);
+    const size_t lat = fs.find("// @LARGE@");
+    fs.replace(lat, fs.find('\n', lat) - lat, "if (mat >= " + std::to_string(kMatLarge) + " && mat < " + std::to_string(kMatSemi) + ") { const int lb[" + n + "] = int[" + n + "](" + lb + "); const float ls[" + n + "] = float[" + n + "](" + ls +
+               "); int li = min(mat - " + std::to_string(kMatLarge) + ", " + std::to_string(kLargeCount - 1) + "); mat = lb[li]; q /= ls[li]; }");
+    return compile(kWorldVS, fs.c_str(), err);
+}
+
+// A new map's world: its world shader gets the looks of the materials in it (only when they changed: a compile is a
+// hitch, here while the map loads anyway)
+void Renderer::setWorldLooks(const BakedWorld& bw) {
+    std::vector<bool> used((size_t)kMapMaterials, false);
+    for (const WorldVertex& v : bw.verts) {
+        const int m = (int)(v.material + 0.5f);
+        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
+    }
+    for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) used[m] = true;
+    if (used == worldUsed_ && worldProg_) return;
+    QZONE("world shader");
+    std::string err;
+    const unsigned p = compileWorld(&used, &err);
+    if (!p) { fprintf(stderr, "world shader: %s\n", err.c_str()); return; }   // (keeps the last one: some looks missing)
+    glDeleteProgram(worldProg_);
+    worldProg_ = p;
+    worldUsed_ = used;
+    initWorldUniforms();
+    glUseProgram(0);
+}
 unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
     auto sh = [&](GLenum type, const char* src) -> unsigned {
         unsigned s = glCreateShader(type);
@@ -433,6 +741,36 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
     return p;
 }
 
+// The world program's uniform locations, and the values that never change (init; again after setWorldLooks builds a new
+// one: the per-frame ones are set again by the next frame, the holes' here)
+void Renderer::initWorldUniforms() {
+    glUseProgram(worldProg_);
+    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
+               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
+               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
+               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
+               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass")};
+    glUniform1f(uWorld_.alphaPass, 0.0f);
+    uHoleCount_ = U(worldProg_, "uHoleCount");
+    uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
+    glUniform1i(U(worldProg_, "uHoles"), 2);
+    glUniform1i(U(worldProg_, "uHoleCells"), 3);
+    glUniform1i(U(worldProg_, "uHoleList"), 4);
+    glUniform1i(uHoleCount_, 0);
+    glUniform1i(U(worldProg_, "uLightmap"), 0);
+    glUniform1i(U(worldProg_, "uShadow"), 1);
+    glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
+    setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
+    setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
+    glUniform1f(U(worldProg_, "uFogDensity"), 0.0035f);
+    glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
+    uWorldPx_ = U(worldProg_, "uPxScale");
+    glUniform1f(uWorldPx_, pxScale_);
+    glUniform1i(uHoleCount_, holeCount_);
+    glUniform4fv(uHoleGrid_, 1, holeGrid_);
+    glUniform1i(uHoleGridH_, holeGridH_);
+}
+
 bool Renderer::init(int shadowRes, std::string* err) {
     QGPUCONTEXT();
     {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13); the shadow map too (a size past it
@@ -442,9 +780,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
         if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
         if (maxTex > 0 && shadowRes > maxTex) shadowRes = (int)maxTex;
     }
-    std::string worldFS = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;
-    worldProg_ = compile(kWorldVS, worldFS.c_str(), err);
+    worldProg_ = compileWorld(&worldUsed_, err);   // (no looks yet: a map's world brings its own, setWorldLooks)
     dynProg_ = compile(kDynVS, dynFS.c_str(), err);
     flatProg_ = compile(kFlatVS, kFlatFS, err);
     shadowProg_ = compile(kShadowVS, kShadowFS, err);
@@ -534,19 +871,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     const Vec3 sunColor = {0.78f, 0.75f, 0.70f};
     const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
     const float fog = 0.0035f;
-    glUseProgram(worldProg_);
-    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
-               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
-               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
-               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime")};
-    glUniform1i(U(worldProg_, "uLightmap"), 0);
-    glUniform1i(U(worldProg_, "uShadow"), 1);
-    glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
-    setVec3(U(worldProg_, "uSunColor"), sunColor);
-    setVec3(U(worldProg_, "uSkyColor"), skyLight);
-    glUniform1f(U(worldProg_, "uFogDensity"), fog);
-    glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
+    initWorldUniforms();
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
              U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
@@ -556,7 +881,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     setVec3(U(dynProg_, "uSkyColor"), skyLight);
     glUniform1f(U(dynProg_, "uFogDensity"), fog);
     glUniform1f(U(dynProg_, "uPxScale"), 1.0f);
-    uWorldPx_ = U(worldProg_, "uPxScale"); uDynPx_ = U(dynProg_, "uPxScale");
+    uDynPx_ = U(dynProg_, "uPxScale");
     pxScale_ = 1.0f;
     uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
@@ -637,9 +962,83 @@ void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::functio
     }
 }
 
+// The holes blown in thin brick / cobblestone (Map::holes): two RGBA32F texels each on texture unit 2, which nothing
+// else uses. Sent when they change (Map::destructSerial), not every frame.
+void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
+    const int n = (int)std::min<size_t>(holes.size(), kMaxHoles);
+    glUseProgram(worldProg_);
+    glUniform1i(uHoleCount_, n);
+    holeCount_ = n;
+    if (!n) { glUseProgram(0); return; }
+    auto tex = [](unsigned& t, int unit, GLint fmt, int w, int h) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        if (!t) {
+            glGenTextures(1, &t);
+            glBindTexture(GL_TEXTURE_2D, t);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexImage2D(GL_TEXTURE_2D, 0, fmt, w, h, 0, fmt == GL_RG32F ? GL_RG : fmt == GL_R32F ? GL_RED : GL_RGBA, GL_FLOAT, nullptr);
+        } else glBindTexture(GL_TEXTURE_2D, t);
+    };
+    tex(holeTex_, 2, GL_RGBA32F, 2 * kMaxHoles, 1);
+    std::vector<float> t((size_t)n * 8);
+    // each hole's footprint on the xz plane (what the shader's tests can reach), for the grid
+    std::vector<float> fx0(n), fx1(n), fz0(n), fz1(n);
+    float gx0 = 1e30f, gz0 = 1e30f, gx1 = -1e30f, gz1 = -1e30f;
+    for (int i = 0; i < n; i++) {
+        const Map::Hole& h = holes[i];
+        const float v[8] = {h.u, h.v, h.r, (float)h.axis, h.cw, h.ch, h.lo, h.hi};
+        std::copy(v, v + 8, t.begin() + (size_t)i * 8);
+        const float hu = h.r < 0 ? h.cw : h.r * 1.2f, hv = h.r < 0 ? h.ch : h.r * 1.2f, lo = h.lo - 0.01f, hi = h.hi + 0.01f;
+        if (h.axis == 0) { fx0[i] = lo; fx1[i] = hi; fz0[i] = h.u - hu; fz1[i] = h.u + hu; }        // (u = z, v = y)
+        else if (h.axis == 1) { fx0[i] = h.u - hu; fx1[i] = h.u + hu; fz0[i] = h.v - hv; fz1[i] = h.v + hv; }   // (u = x, v = z)
+        else { fx0[i] = h.u - hu; fx1[i] = h.u + hu; fz0[i] = lo; fz1[i] = hi; }                  // (u = x, v = y)
+        gx0 = std::min(gx0, fx0[i]); gx1 = std::max(gx1, fx1[i]); gz0 = std::min(gz0, fz0[i]); gz1 = std::max(gz1, fz1[i]);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2 * n, 1, GL_RGBA, GL_FLOAT, t.data());
+    // the grid: at most kHoleGrid x kHoleGrid cells of at least 1 m over the holes' footprints; each cell lists the holes
+    // touching it (at most kHoleListMax references, else one cell listing them all, as before)
+    constexpr int kHoleGrid = 64, kHoleListW = 256, kHoleListMax = kHoleListW * 64;
+    float cell = std::max(1.0f, std::max(gx1 - gx0, gz1 - gz0) / (float)kHoleGrid);
+    int W = std::clamp((int)std::ceil((gx1 - gx0) / cell), 1, kHoleGrid), H = std::clamp((int)std::ceil((gz1 - gz0) / cell), 1, kHoleGrid);
+    auto span = [&](float a0, float a1, float g0, int N, int& c0, int& c1) {
+        c0 = std::clamp((int)std::floor((a0 - g0) / cell), 0, N - 1); c1 = std::clamp((int)std::floor((a1 - g0) / cell), 0, N - 1);
+    };
+    std::vector<float> cells((size_t)W * H * 2, 0.0f);
+    std::vector<float> list;
+    size_t refs = 0;
+    for (int i = 0; i < n; i++) { int x0, x1, z0, z1; span(fx0[i], fx1[i], gx0, W, x0, x1); span(fz0[i], fz1[i], gz0, H, z0, z1); refs += (size_t)(x1 - x0 + 1) * (z1 - z0 + 1); }
+    if (refs > (size_t)kHoleListMax) { W = H = 1; cell = 1e9f; }
+    {
+        std::vector<std::vector<uint16_t>> in((size_t)W * H);
+        for (int i = 0; i < n; i++) {
+            int x0 = 0, x1 = 0, z0 = 0, z1 = 0;
+            if (W * H > 1) { span(fx0[i], fx1[i], gx0, W, x0, x1); span(fz0[i], fz1[i], gz0, H, z0, z1); }
+            for (int z = z0; z <= z1; z++) for (int x = x0; x <= x1; x++) in[(size_t)z * W + x].push_back((uint16_t)i);
+        }
+        for (size_t c = 0; c < in.size(); c++) {
+            cells[c * 2] = (float)list.size(); cells[c * 2 + 1] = (float)in[c].size();
+            for (uint16_t i : in[c]) list.push_back((float)i);
+        }
+    }
+    const int rows = std::max(1, (int)((list.size() + kHoleListW - 1) / kHoleListW));
+    list.resize((size_t)rows * kHoleListW, 0.0f);
+    tex(holeCellTex_, 3, GL_RG32F, kHoleGrid, kHoleGrid);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, W, H, GL_RG, GL_FLOAT, cells.data());
+    tex(holeListTex_, 4, GL_R32F, kHoleListW, kHoleListMax / kHoleListW);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kHoleListW, rows, GL_RED, GL_FLOAT, list.data());
+    holeGrid_[0] = gx0; holeGrid_[1] = gz0; holeGrid_[2] = 1.0f / cell; holeGrid_[3] = (float)W; holeGridH_ = H;
+    glUniform4fv(uHoleGrid_, 1, holeGrid_);
+    glUniform1i(uHoleGridH_, H);
+    glActiveTexture(GL_TEXTURE0);
+    glUseProgram(0);
+}
+
 void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     QZONE("world upload");
     BakedWorld& bw = w.bw;
+    uploadSeeThrough(map);   // (first: their looks go in the world shader too)
+    setWorldLooks(bw);
     chunks_.swap(w.chunks);
     drawFirst_.reserve(chunks_.size());
     drawCount_.reserve(chunks_.size());
@@ -670,6 +1069,66 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     warmup(map);
+}
+
+// A brush's box as 6 faces (both sides get drawn: the passes don't cull), with the face's own u, v for the outlines; the
+// material tells the shader its look. For the see-through looks and the breakable blocks, which aren't baked.
+static void boxFaces(const Brush& b, std::vector<WorldVertex>& vs) {
+    for (int axis = 0; axis < 3; axis++)
+        for (int side = 0; side < 2; side++) {
+            const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
+            const float w = b.box.mx[ua] - b.box.mn[ua], h = b.box.mx[va] - b.box.mn[va];
+            const float c[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
+            for (auto& p : c) {
+                WorldVertex v = {};
+                Vec3 pos;
+                pos[axis] = side ? b.box.mx[axis] : b.box.mn[axis];
+                pos[ua] = b.box.mn[ua] + w * p[0];
+                pos[va] = b.box.mn[va] + h * p[1];
+                v.pos[0] = pos.x; v.pos[1] = pos.y; v.pos[2] = pos.z;
+                v.normal[axis] = side ? 1.0f : -1.0f;
+                v.material = (float)b.material;
+                v.edge[0] = w * p[0]; v.edge[1] = h * p[1]; v.edge[2] = w; v.edge[3] = h;
+                vs.push_back(v);
+            }
+        }
+}
+
+static void uploadFaces(unsigned& vao, unsigned& vbo, const std::vector<WorldVertex>& vs) {
+    if (vs.empty()) return;
+    if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+    glBindVertexArray(0);
+}
+
+// The see-through looks and fields (drawn blended after the world) and, from the new map, the breakable blocks and crumble platforms (their looks go in
+// the world shader too: setWorldLooks, after this)
+void Renderer::uploadSeeThrough(const Map& map) {
+    std::vector<WorldVertex> vs;
+    seeUsed_.assign((size_t)kMapMaterials, false);
+    for (const Brush& b : map.brushes) {
+        if (blockDrawn(b.material)) seeUsed_[(size_t)b.material] = true;
+        if (!seeThroughDrawn(b.material) || b.gone) continue;
+        seeUsed_[(size_t)b.material] = true;
+        boxFaces(b, vs);
+    }
+    seeVerts_ = (int)vs.size();
+    uploadFaces(seeVao_, seeVbo_, vs);
+    uploadBlocks(map);
+}
+
+void Renderer::uploadBlocks(const Map& map) {
+    std::vector<WorldVertex> vs;
+    for (const auto* list : {&map.blocks, &map.crumbles}) for (uint32_t i : *list) if (!map.brushes[i].gone) boxFaces(map.brushes[i], vs);
+    blockVerts_ = (int)vs.size();
+    uploadFaces(blockVao_, blockVbo_, vs);
 }
 
 // Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
@@ -835,6 +1294,47 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
     Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
     if (visible) emitBox(dyn_, xf, half, color, sunVis);
     else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
+}
+
+void Renderer::slope(const Brush& b, const Vec3& color) {
+    std::vector<DynVertex>& out = buildingStatic_ ? staticVerts_ : dyn_;
+    const int first = (int)out.size();
+    slopePolygons(b, [&](const Vec3* pp, int npAll, const Vec3& n) {
+      // (a cut's face can have more corners: drawn as a fan of quads and triangles, the cuts between them unoutlined)
+      for (int s0 = 0; s0 + 2 < npAll; s0 += 2) {
+        const int ia = s0 + 1, ib = s0 + 2, ic = std::min(s0 + 3, npAll - 1);
+        const Vec3 p[4] = {pp[0], pp[ia], pp[ib], pp[ic]};
+        const int np = ic > ib ? 4 : 3;
+        const bool innerFirst = s0 > 0, innerLast = ic + 1 < npAll;   // (edge 0, and the edge back to corner 0)
+        // each edge's distance, a linear function over the face: outline = min(edge.xy, edge.zw - edge.xy)
+        const Vec3 cen = np == 3 ? (p[0] + p[1] + p[2]) * (1.0f / 3) : (p[0] + p[1] + p[2] + p[3]) * 0.25f;
+        auto dist = [&](int e, const Vec3& q) {
+            const Vec3 a = p[e], d = p[(e + 1) % np] - a;
+            const Vec3 inward = cross(n, d);   // (points into the face when the corners run counterclockwise seen from n)
+            const float l = length(inward);
+            if (l < 1e-6f || (e == 0 && innerFirst) || (e == np - 1 && innerLast)) return 1000.0f;
+            const float s = dot(cen - a, inward) >= 0 ? 1.0f : -1.0f;
+            return s * dot(q - a, inward) / l;
+        };
+        DynVertex v[4];
+        for (int k = 0; k < np; k++) {
+            memcpy(v[k].pos, &p[k].x, 12);
+            memcpy(v[k].normal, &n.x, 12);
+            const Vec3 col = n.y < -0.5f || n.x < -0.5f ? color * 0.92f : color;
+            v[k].color[0] = col.x; v[k].color[1] = col.y; v[k].color[2] = col.z; v[k].color[3] = 1.0f;
+            const float d0 = dist(0, p[k]), d1 = dist(1, p[k]), d2 = dist(2, p[k]), d3 = np > 3 ? dist(3, p[k]) : 1000.0f;
+            v[k].edge[0] = d0; v[k].edge[1] = d1; v[k].edge[2] = d0 + d2; v[k].edge[3] = d1 + d3;
+            memcpy(v[k].outline, &outlineColor.x, 12);
+            v[k].outline[3] = outlineWidth;
+        }
+        const bool ccw = dot(cross(p[1] - p[0], p[2] - p[0]), n) > 0;
+        const DynVertex &a = v[0], &b1 = ccw ? v[1] : v[2], &c1 = ccw ? v[2] : v[1];
+        if (np == 3) out.insert(out.end(), {a, b1, c1, a, c1, c1});
+        else if (ccw) out.insert(out.end(), {v[0], v[1], v[2], v[0], v[2], v[3]});
+        else out.insert(out.end(), {v[0], v[2], v[1], v[0], v[3], v[2]});
+      }
+    });
+    if (buildingStatic_) staticItems_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f, first, (int)out.size() - first});
 }
 
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
@@ -1063,6 +1563,7 @@ void Renderer::prepareScene(bool shadows) {
     setVec3(uWorld_.fullColor, fullbrightColor);
     glUniform1f(uWorld_.outlineW, worldOutline);
     glUniform1f(uWorld_.time, (float)std::fmod(timeNow(), 3600.0));
+    setVec3(uWorld_.sunDir, sunDir_);
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
     glUniform1f(uSky_.bright, brightness);
@@ -1112,6 +1613,14 @@ void Renderer::drawScene(bool shadows) {
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();
+        if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
+            glUniform1f(uWorld_.alphaPass, 2.0f);
+            glDisable(GL_CULL_FACE);
+            glBindVertexArray(blockVao_);
+            glDrawArrays(GL_TRIANGLES, 0, blockVerts_);
+            glEnable(GL_CULL_FACE);
+            glUniform1f(uWorld_.alphaPass, 0.0f);
+        }
         // sky after the world: depth LEQUAL at z = 1 only passes where nothing was drawn
         glUseProgram(skyProg_);
         setVec3(uSky_.fwd, camFwd_); setVec3(uSky_.right, camRight_); setVec3(uSky_.up, camUp_);
@@ -1161,6 +1670,22 @@ void Renderer::drawScene(bool shadows) {
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
     };
+    if (seeVerts_ && worldVerts_) {   // the see-through looks (kMatSemi), blended over the world, before the other see-through things
+        QZONE("see-through pass");
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        glDisable(GL_CULL_FACE);
+        glUseProgram(worldProg_);
+        setMat(uWorld_.viewProj, viewProj_);
+        glUniform1f(uWorld_.alphaPass, 1.0f);
+        glBindVertexArray(seeVao_);
+        glDrawArrays(GL_TRIANGLES, 0, seeVerts_);
+        glUniform1f(uWorld_.alphaPass, 0.0f);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glEnable(GL_CULL_FACE);
+    }
     if (nFlat) drawFlat(0, nFlat, viewProj_);
 
     if ((nView || nViewFlat) && viewOpacity > 0.005f) {   // (WEAPON MODEL OPACITY 0: not drawn at all)
@@ -1476,6 +2001,128 @@ void Renderer::prepare2D() {
     uiUploaded_ = ui_.size();
 }
 
+// The swatch atlas is a cache of slots (owner, 2026-10-29: the picker fills the screen, previews 200 across at 720p: 400 px
+// slots, sharp at 1440p), each holding one material, rendered when a frame first asks for it: a dozen or two show at
+// once, and an atlas of all 500 at that size would be 320 MB. The least recently drawn slot goes to the next one.
+constexpr int kSwatchPx = 400, kSwatchCols = 8, kSwatchRows = 5, kSwatchSlots = kSwatchCols * kSwatchRows;
+
+void Renderer::swatch(float x, float y, float w, float h, int material) {
+    if (!validMapMaterial(material)) return;
+    const float q[5] = {x, y, x + w, y + h, (float)material};
+    swatchQuads_.insert(swatchQuads_.end(), q, q + 5);
+}
+
+// Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
+// of full sun and sky, no shadows or holes, into its slot of the atlas: the ones this frame asks for that aren't there
+// yet (all again when the palette changes).
+void Renderer::buildSwatches() {
+    const float key[13] = {baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z, metalColor.x, metalColor.y,
+                           metalColor.z, glowColor.x, glowColor.y, glowColor.z, brightness};
+    if (!swatchTex_ || !std::equal(key, key + 13, swatchKey_)) {
+        std::copy(key, key + 13, swatchKey_);
+        swatchSlotOf_.assign(kMapMaterials, -1);
+        swatchSlotMat_.assign(kSwatchSlots, -1);
+        swatchSlotUsed_.assign(kSwatchSlots, 0);
+    }
+    swatchFrame_++;
+    std::vector<int> todo;   // (the materials this frame wants that have no slot: each gets the oldest slot not drawn this frame)
+    for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
+        const int m = (int)swatchQuads_[i + 4];
+        int& slot = swatchSlotOf_[m];
+        if (slot < 0) {
+            int best = -1;
+            for (int k = 0; k < kSwatchSlots; k++)
+                if (swatchSlotUsed_[k] != swatchFrame_ && (best < 0 || swatchSlotUsed_[k] < swatchSlotUsed_[best])) best = k;
+            if (best < 0) continue;   // (more on screen than slots: the rest wait)
+            if (swatchSlotMat_[best] >= 0) swatchSlotOf_[swatchSlotMat_[best]] = -1;
+            swatchSlotMat_[best] = m;
+            slot = best;
+            todo.push_back(m);
+        }
+        swatchSlotUsed_[slot] = swatchFrame_;
+    }
+    if (todo.empty()) return;
+    const int W = kSwatchPx * kSwatchCols, H = kSwatchPx * kSwatchRows;
+    if (!swatchTex_) {
+        glGenTextures(1, &swatchTex_);
+        glBindTexture(GL_TEXTURE_2D, swatchTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glGenFramebuffers(1, &swatchFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, swatchFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, swatchTex_, 0);
+        const uint8_t lm[2] = {255, 200};
+        glGenTextures(1, &swatchLm_);
+        glBindTexture(GL_TEXTURE_2D, swatchLm_);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, 1, 1, 0, GL_RG, GL_UNSIGNED_BYTE, lm);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        std::vector<WorldVertex> vs;
+        for (int m = 0; m < kMapMaterials; m++) {
+            const float c[6][2] = {{0, 0}, {2, 0}, {2, 2}, {0, 0}, {2, 2}, {0, 2}};
+            for (auto& p : c) {
+                WorldVertex v = {};
+                v.pos[0] = p[0]; v.pos[1] = 1 + p[1]; v.pos[2] = 0;
+                v.normal[2] = 1;
+                v.uv[0] = v.uv[1] = 0.5f;
+                v.material = (float)lookMaterial(m);
+                v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 2;
+                vs.push_back(v);
+            }
+        }
+        glGenVertexArrays(1, &swatchVao_); glGenBuffers(1, &swatchVbo_);
+        glBindVertexArray(swatchVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, swatchVbo_);
+        glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+    }
+    // (drawn by a world program with every look, built the first time: the map's own has only the map's looks; its
+    // uniform locations stand in for the map's while drawing, the map's program untouched)
+    const unsigned mapProg = worldProg_;
+    const auto mapU = uWorld_;
+    const GLint mapHoleCount = uHoleCount_, mapHoleGrid = uHoleGrid_, mapHoleGridH = uHoleGridH_, mapPx = uWorldPx_;
+    if (!swatchProg_) {
+        std::string err;
+        swatchProg_ = compileWorld(nullptr, &err);
+        if (!swatchProg_) { fprintf(stderr, "swatch shader: %s\n", err.c_str()); return; }
+    }
+    worldProg_ = swatchProg_;
+    initWorldUniforms();
+    glBindFramebuffer(GL_FRAMEBUFFER, swatchFbo_);
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+    glUseProgram(worldProg_);
+    auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
+    setVec3(uWorld_.baseL, lin(baseColor, 1.5f)); setVec3(uWorld_.accentL, lin(accentColor, 1.5f));
+    setVec3(uWorld_.wallbangL, lin(baseColor * 0.42f, 1.5f)); setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
+    setVec3(uWorld_.floorL, lin(metalColor, 2.0f)); setVec3(uWorld_.metal, metalColor); setVec3(uWorld_.glow, glowColor);
+    setVec3(uWorld_.sunDir, normalize(Vec3(0.35f, 0.6f, 0.72f)));
+    glUniform1f(uWorld_.bright, brightness);
+    glUniform1f(uWorld_.full, 0.0f);
+    glUniform1i(uWorld_.shadowOn, 0);
+    glUniform1i(uHoleCount_, 0);
+    setVec3(uWorld_.camPos, Vec3(1, 2, 3));
+    setMat(uWorld_.viewProj, Mat4::ortho(0, 2, 1, 3, -1, 1));
+    glUniform1f(uWorldPx_, 1.0f);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, swatchLm_);
+    glBindVertexArray(swatchVao_);
+    for (int m : todo) {
+        const int k = swatchSlotOf_[m];
+        glViewport((k % kSwatchCols) * kSwatchPx, (k / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
+        glDrawArrays(GL_TRIANGLES, m * 6, 6);
+    }
+    worldProg_ = mapProg; uWorld_ = mapU;
+    uHoleCount_ = mapHoleCount; uHoleGrid_ = mapHoleGrid; uHoleGridH_ = mapHoleGridH; uWorldPx_ = mapPx;
+    glUseProgram(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
@@ -1516,6 +2163,39 @@ void Renderer::flush2D() {
     glDrawElements(GL_TRIANGLES, (GLsizei)(ui_.size() / 4 * 6), GL_UNSIGNED_INT, nullptr);
     glDisable(GL_BLEND);
     ui_.clear();
+    if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
+        buildSwatches();
+        glViewport(0, 0, width_, height_);
+        if (!imgProg_) {
+            imgProg_ = compile(kImgVS, kImgFS, nullptr);
+            uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
+            glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
+            glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
+            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+        }
+        std::vector<float> v;
+        v.reserve(swatchQuads_.size() / 5 * 24);
+        for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
+            const float* r = &swatchQuads_[i];
+            const int k = swatchSlotOf_.empty() ? -1 : swatchSlotOf_[(int)r[4]];
+            if (k < 0) continue;
+            const float u0 = (float)(k % kSwatchCols) / kSwatchCols, v0 = (float)(k / kSwatchCols) / kSwatchRows;
+            const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
+            const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
+                                   {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
+            for (auto& c : t) v.insert(v.end(), c, c + 4);
+        }
+        glUseProgram(imgProg_);
+        glUniform2f(uImgScreen_, (float)width_, (float)height_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, swatchTex_);
+        glBindVertexArray(imgVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+        glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
+        swatchQuads_.clear();
+    }
 #ifdef QUARK_TRACY
     // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
     static double t0 = timeNow(); static int frames = 0; static size_t bytes = 0, ups = 0, dyn = 0, shadow = 0;

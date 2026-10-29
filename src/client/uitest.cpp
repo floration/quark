@@ -82,7 +82,7 @@ std::string Game::uiScreenPath() const {
         case Screen::BenchmarkResult: return "benchmarks/result";
         case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
-        case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
+        case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : edMatMenu_ ? "/materials" : "") + (chatting_ ? "/chat" : "");
         case Screen::InGame: {
             std::string p = "ingame";
             if (bake_) return p + "/loading";
@@ -140,6 +140,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "queue") { std::string o; for (auto& q : queued_) o += q + " "; return o; }
     if (w == "custom") return editRules_.toText();
     if (w == "multisel") { std::string o; for (bool v : multiSel_) o += v ? '1' : '0'; return o; }
+    if (w == "edmattab") return std::to_string(edMatTab_) + "|" + edMatSearch_;
     if (w == "hudsel") return std::to_string(hudSel_);
     if (w == "hudedsel") return std::to_string(hudEdSel_);
     if (w == "theme") return theme_.toText();
@@ -163,7 +164,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "fontscan") return std::to_string(fontScans_);
     if (w == "devscan") return std::to_string(devScans_);
     if (w == "scores") return b(showScores_);
-    if (w == "perf") return b(showPerf_);
+    if (w == "perf") return b(perfStage_ != 0);
+    if (w == "perfstage") return std::to_string(perfStage_);
     if (w == "perfmini") return b(perfMini_);
     if (w == "spec") return std::to_string(specTarget_);
     if (w == "consolelog") return std::to_string(consoleLog_.size()) + (consoleLog_.empty() ? "" : consoleLog_.back());
@@ -188,7 +190,7 @@ void Game::uiTestActions() {
         if (int k = bound(A_CHAT)) ui_.keyAction("CHAT", k, 0, UiExp::nav("ingame/chat"));
         ui_.keyAction("CONSOLE (`)", GLFW_KEY_GRAVE_ACCENT, 0, UiExp::nav("ingame/console"));
         ui_.keyAction("SCORES (HOLD)", 0, 0, UiExp::state("scores", "1"), A_SCORES);
-        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perf"));
+        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perfstage"));   // (F3 cycles 1, 2, 3, off: each press changes the stage)
         if (int k = bound(A_PERFMINI)) ui_.keyAction("LATENCY NUMBER", k, 0, UiExp::state("perfmini"));
         if (int k = bound(A_VOTEYES)) ui_.keyAction("VOTE YES", k, 0, UiExp::cmd("vote yes"));
         if (int k = bound(A_VOTENO)) ui_.keyAction("VOTE NO", k, 0, UiExp::cmd("vote no"));
@@ -233,6 +235,7 @@ void Game::uiTestActions() {
         bool point = kind == ED_SPAWN || kind == ED_LIGHT || kind == ED_PATH;
         bool mat = kind == ED_BRUSH || kind == ED_SPAWN || (kind == ED_GROUP && ed_.groups[edSel_.idx].type != Map::GROUP_CUSTOM);
         if (mat) ui_.keyAction("M (MATERIAL / TEAM)", GLFW_KEY_M, 0, UiExp::edit());
+        if (kind == ED_BRUSH) ui_.keyAction("N (SHAPE)", GLFW_KEY_N, 0, UiExp::edit());
         ui_.keyAction("ARROW (MOVE)", GLFW_KEY_UP, 0, UiExp::edit());
         ui_.keyAction("PAGE UP (MOVE UP)", GLFW_KEY_PAGE_UP, 0, UiExp::edit());
         if (!point || kind == ED_LIGHT) ui_.keyAction("SHIFT+ARROW (GROW)", GLFW_KEY_UP, GLFW_MOD_SHIFT, UiExp::edit());
@@ -258,7 +261,7 @@ void Game::uiTestActions() {
 }
 
 void Game::uiTestHandles() {
-    if (!edSelValid() || edGroupMenu_ || edExportAsk_ || chatting_ || edLook_ || edPrompt_) return;
+    if (!edSelValid() || edGroupMenu_ || edExportAsk_ || edMatMenu_ || chatting_ || edLook_ || edPrompt_) return;   // (the picker covers the window)
     const float s = r_.height() / 720.0f, vw = (float)r_.width(), vh = (float)r_.height();
     static const char* kScopes[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     ui_.where = edPath();
@@ -588,8 +591,9 @@ private:
         g.edPrompt_ = false;
         g.error_.clear();
         g.testHeld_ = 0;
-        g.showPerf_ = g.perfMini_ = false;
+        g.perfStage_ = 0; g.perfMini_ = false;
         g.edGroupMenu_ = g.edExportAsk_ = false;
+        g.edMatMenu_ = 0;
         g.edSel_ = Game::EdSel();
         g.edMulti_.clear();
         g.edResetArmed_ = g.edLeaveArmed_ = g.edMsgUntil_ = 0;

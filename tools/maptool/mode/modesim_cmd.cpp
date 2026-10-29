@@ -671,7 +671,7 @@ Json ModeMatch::frame(bool positions) const {
         if (positions) o.set("pos", qv(p.move.pos));
         o.set("score", p.score); o.set("kills", p.kills); o.set("deaths", p.deaths); o.set("objTime", r1(p.objTime));
         if (it) { o.set("it", p.it); o.set("out", p.out); if (ms.mode == MODE_HIDE) o.set("found", p.found); }
-        if (ms.mode == MODE_RACE) { o.set("checkpoint", p.checkpoint); o.set("finished", p.finished); }
+        if (isRaceMode(ms.mode)) { o.set("checkpoint", p.checkpoint); o.set("finished", p.finished); }
         pl.push(std::move(o));
     }
     f.set("players", std::move(pl));

@@ -2,6 +2,8 @@
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
 #include "governor.h"
+#include <array>
+#include <unordered_map>
 #include <cmath>
 #include <atomic>
 #include <cstdio>
@@ -155,6 +157,11 @@ struct ServerPlayer {
     double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
+    // The game reports its own hits (owner, 2026-10-28: "all damage should be client side ... high trust society game"):
+    // its hitscan shots and its rockets' and bolts' hits count as its screen showed them ("hit" commands); the server
+    // doesn't hit-test those itself. Set by the "clienthits" command (the game sends it; a bot or a bare test client
+    // doesn't, and keeps the server's hit tests).
+    bool clientHits = false;
     double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
     Vec3 locatedPos;            // the locator's last find (bots head there)
     double locatedAt = -1e9;
@@ -353,6 +360,35 @@ public:
     bool propsSent_ = false;   // a prop went out since the last clear
     void leaveProp(const Projectile& pr, int hitPlayer, const Vec3& at, const Vec3& dir, const AABB& hitBb);
     void clearProps();          // the match is over / restarts, or a new map: every prop goes
+    // ---- Glass and blown-open brick / cobblestone (glass.h): every break goes to everyone (EV_DESTRUCT); someone who
+    // joins is sent what's broken (holeLog_: the blasts that cut holes, in order). All of it comes back each round, at a
+    // new match, on a new map and before an edit (resetDestruction).
+    struct FlyingShard { Vec3 pos, vel; float size, damage; double until; int8_t by, spare; uint32_t pane; };   // by: who broke it; spare: who it can't hit
+    std::vector<FlyingShard> shards_;
+    std::unordered_map<uint32_t, std::array<float, kMaxPlayers>> paneTaken_;   // each pane's shards' damage so far, per player (kGlassPaneMaxDamage)
+    std::vector<Vec3> holeLog_;
+    double shardStepAt_ = 0;
+    uint32_t glassSeed_ = 0x2545F491u;
+    bool breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int by);   // false: no standing pane there
+    void blastBreaks(const Vec3& at, int weapon, int owner);   // a blast: panes in reach shatter; a rocket / sticky blows holes
+    void glassFromMove(int id);   // what this command's movement broke (MoveState::glassBrush)
+    void glassFromRay(const Vec3& o, const Vec3& dir, float t, int by);   // a shot that stopped t along: on a pane, it breaks
+    // the breakable blocks (map.h kBreaks): the damage each has taken (by brush, reset each round), when someone started
+    // standing on a BREAK_WEIGHT one
+    std::vector<float> blockDmg_;
+    std::vector<double> blockStood_;
+    // crumble platforms, per brush: when one was first stood on (-1: not), when a fallen one comes back (-1: not)
+    std::vector<double> crumbleFrom_, crumbleBack_;
+    void crumblesTouched(int id);
+    void tickCrumbles();
+    void damageBlock(int brush, float dmg, bool blast, const Vec3& at, const Vec3& dir, int by);
+    void breakBlock(int brush, bool blast, const Vec3& at, const Vec3& dir, int by);
+    void blockFromRay(const Vec3& o, const Vec3& dir, float t, float dmg, int by);   // a shot that stopped t along on a block
+    void blocksTouched(int id);   // BREAK_TOUCH / DASH / WEIGHT blocks this player is on or against
+    void tickShards();
+    void sendDestruction(int id);   // what's broken, to someone joining
+    void resetDestruction(bool tell = false);   // everything broken back; clients told if anything was (tell: always)
+    size_t shardsFlyingForTest() const { return shards_.size(); }
     void releaseBodyProps(int player);
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
@@ -396,6 +432,9 @@ public:
     float bestTime_[2] = {0, 0};   // payload / multi point: when (since the round went live) each attack reached its best (T17)
     float kothPoints_[2] = {0, 0};
     double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
+    Vec3 bombVel_;               // a dropped bomb still moving: over ice (sliding) or rubber (bouncing); zero once it rests
+    bool bombMoving_ = false;
+    Vec3 bombLastGround_;        // ...and where its carrier last stood (it goes back there from the void or lava)
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
     // the mode's rules (gamemodes.cpp)
     const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)
@@ -606,9 +645,19 @@ public:
     bool headHit_[kMaxPlayers] = {};   // this shot hit that player in the head (for the kill event)
     float hitDist_[kMaxPlayers] = {};  // ...and how far from the shooter's eye (hitscan; the weapon set logic's `dist`)
     WsTracker wsTrack_;                // the weapon set logic's streak / kills-this-life counts
+    // a shot or projectile whose damage the shooter's game reports (ServerPlayer::clientHits)
+    bool reportsHits(int owner, int weapon) const {
+        // (a shooter dead by now: its rocket or bolt still lands, the server's hit; your own blast on you: the server's
+        // too, so rocket jumps feel as they did)
+        return owner >= 0 && owner < kMaxPlayers && players_[owner].clientHits && players_[owner].alive &&
+               (weapon == WPN_ROCKET || weapon == WPN_CROSSBOW);
+    }
+    void clientHitReport(int id, const std::string& rest);
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
+    // a ruleset's weapons and rules apply (free for all on vanilla: as before, every weapon, the syringe too)
+    bool rulesetActive() const { return modeHasRuleset(ms_.mode) && (ms_.mode != MODE_FFA || ms_.arenaVariant != 0 || cfg_.ranked); }
     uint8_t arenaRules() const {
-        uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
+        uint8_t r = rulesetActive() ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
         const CustomRules& c = cfg_.custom;
         if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
         return r;

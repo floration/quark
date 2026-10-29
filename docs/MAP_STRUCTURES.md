@@ -71,6 +71,18 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Causeway blocks.** Cover beside the cart.
 - **Spawn screens.** A wall in front of each team's spawn row, at the causeway's end: the causeway was a 78 m sightline from one spawn to the other.
 
+## Cascade: surf. Setting: a frozen gorge.
+
+Surf (owner, 2026-10-28): race rules on a course you ride, not walk: no dash, no grapple, steep ramps you strafe along.
+
+- **Ridges, not single ramps.** Each ramp is two 52 degree wedges back to back (6 m rise over 4.7 m either side; owner 2026-10-28: 60 was too steep to hold, CS surf ramps run about 46-60): a face on each side, so a surfer can take either, and the ridge's glow strip shows the line from the air. Steeper than 45 degrees is what makes a face something you slide on, not stand on.
+- **Each ridge lower than the last.** Riding a face loses height; the next ridge starts lower and offset to the side, so you fly from one face onto the next one's near face.
+- **Clean ramps; the run is in the transfers** (owner 2026-10-28: no obstacles on a ramp). A ridge ends and the next starts across a gap, lower and to one side: you leave one face in the air and must land on the next one's. Further on the ridges get narrower and steeper (60 degrees, 3.5 m a side), harder to hold.
+- **Not only downhill.** Stage 2 turns through 90 degrees and ends on a kicker, a 50 degree face across the way that throws you up onto the ledge only if you arrive fast; stage 4 zig-zags (each short ridge offset to the other side of the last) into a second kicker up onto the finish.
+- **A ledge per stage, its checkpoint on it.** Four stages; a fall drops you into the void (back to your checkpoint), so each stage is its own try. The last ledge is the finish.
+- **Nothing below, walls far off.** The course hangs in the gorge: the void line kills a fall well below the last ledge; the gorge walls are scenery.
+- **Not offered for free for all.** The stages can't be walked between (no spawn reaches another), so the map offers surf only.
+
 ## Clockwork: duel. Setting: inside a giant clock.
 **Why it suits duel:**
 - Compact (1800 m², spawns 4.6 s apart) and point symmetric.

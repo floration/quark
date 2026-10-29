@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include "demo.h"
+#include "glass.h"
 #include "gamemodes.h"
 #include "customrules.h"
 #include "master.h"
@@ -74,6 +75,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     stringCmds_.clear();
     stringSeq_ = stringAcked_ = 0;
     interpSent_ = 0;
+    hitsSent_ = false;
     mapReady_ = false;
     dl_ = Download();
     for (auto& n : names_) n.clear();
@@ -225,6 +227,7 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
                 map_ = std::move(m);
                 mapReady_ = true;
                 mapGen_++;
+                replayDestruction();
                 std::vector<std::string> later;
                 later.swap(dl_.edits);
                 dl_ = Download();
@@ -326,6 +329,7 @@ bool NetClient::useMap(const std::string& name, const MapId& id) {
     map_ = std::move(m);
     mapReady_ = true;
     mapGen_++;
+    replayDestruction();
     return true;
 }
 
@@ -410,6 +414,12 @@ void NetClient::onSnapshot(Snapshot& s) {
         }
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         if (e.type == EV_PROP) { applyPropEvent(e); continue; }
+        if (e.type == EV_DESTRUCT) {
+            if (e.a == DESTRUCT_RESET) destructLog_.clear();
+            else if (destructLog_.size() < 8192) destructLog_.push_back(e);
+            applyDestructEvent(e, true);
+            continue;
+        }
         events_.push_back(std::move(e));   // (s.events is cleared next)
     }
     s.events.clear();
@@ -424,6 +434,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         stringAcked_++;
     }
 
+    if (!pendingGlass_.empty()) expireGlassPredictions(timeNow());
     reconcilePending_ = true;   // (once a poll, against its newest snapshot: reconcile)
 
     // everyone else's movement events, played as each is drawn there (an old server or demo sends none)
@@ -484,7 +495,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
     if (!(cmd.buttons & BTN_GRAPPLE) || (m.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (m.mods & MOVE_RUN_ONLY)) return false;
     if (!moveTuning().grapple || m.hookCooldown > cmd.msec * kMoveStep + 1e-4f || !hasSnapshot()) return false;
     const ModeState& ms = mode();
-    if (ms.mode == MODE_RACE || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
+    if (isRaceMode(ms.mode) || ms.phase == PHASE_ROUND_END || ms.phase == PHASE_MATCH_END || ms.phase == PHASE_FREEZE) return false;
     const PlayerSnap* me = findPlayer(clientId_);
     if (!me) return false;
     interpolatedPlayers(probePlayers_);
@@ -515,7 +526,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
             if (pr.hidden || pr.type != WPN_ROCKET || (pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) continue;
             const float g = projectileGravity(pr.type, (pr.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f);
             Vec3 pos = pr.pos, vel = pr.vel;
-            projectileExtrapolate(pos, vel, g, (float)(nowMs - (int64_t)s.timeMs) * 0.001f);
+            map_.flyProjectile(pos, vel, g, (float)(nowMs - (int64_t)s.timeMs) * 0.001f);
             const Vec3 d = pos - eye;
             if (dot(d, d) > reach * reach) continue;
             Vec3 at = pr.pos;
@@ -523,7 +534,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
             else {
                 Vec3 v = pr.vel;
                 const int64_t dt = seenMs - (int64_t)s.timeMs;
-                if (dt >= 0) projectileExtrapolate(at, v, g, (float)dt * 0.001f);
+                if (dt >= 0) map_.flyProjectile(at, v, g, (float)dt * 0.001f);
                 else projectileRewind(at, v, g, (float)-dt * 0.001f);
             }
             const int k = probe.nr++;
@@ -617,6 +628,7 @@ void NetClient::tick(UserCmd cmd) {
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
+    if (reportHits_ && !hitsSent_) { hitsSent_ = true; sendCommand("clienthits"); }
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
     if (selfAlive()) {
@@ -827,6 +839,65 @@ float NetClient::bodyScale() const {
     return m.mode == MODE_DUEL && m.phase != PHASE_WARMUP ? duelModDef(m.duelMod).size : 1.0f;
 }
 
+constexpr double kGlassPredictWait = 1.0;   // s: a predicted break the server hasn't confirmed by then comes back
+
+void NetClient::applyDestructEvent(const GameEvent& e, bool fx) {
+    if (!mapReady_) return;   // (logged: applied when the map is in)
+    if (e.a == DESTRUCT_RESET) { map_.resetDestruction(); pendingGlass_.clear(); return; }
+    if (e.a == DESTRUCT_GLASS_LIST || e.a == DESTRUCT_HOLE_LIST) {
+        std::vector<uint32_t> glass;
+        std::vector<Vec3> holes;
+        if (!readDestructList(e, &glass, &holes)) return;
+        for (uint32_t b : glass) map_.breakGlass(b);
+        for (const Vec3& h : holes) map_.punchHole(h);
+        return;
+    }
+    DestructEv d;
+    if (!readDestructEvent(e, &d)) return;
+    if (d.kind == DESTRUCT_HOLE) {
+        crumbled_.clear();
+        if (map_.punchHole(d.at, &crumbled_) > 0 && fx) {
+            glassFx_.push_back({AABB(), 0, d.at, {}, 0, true});
+            for (const AABB& w : crumbled_) glassFx_.push_back({w, 1, d.at, {}, 0, true});   // (a whole wall coming down)
+        }
+        return;
+    }
+    if (d.kind == DESTRUCT_RESTORE) { map_.restoreBrush(d.brush); return; }   // (a crumble platform back)
+    if (d.kind == DESTRUCT_SHAKE) {   // (a crumble platform about to fall: dust off it)
+        if (fx && d.brush < map_.brushes.size() && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, kGlassFxShake, d.at, {}, 0, false, map_.brushes[d.brush].material});
+        return;
+    }
+    for (size_t k = 0; k < pendingGlass_.size(); k++)   // our own, predicted: already broken and shown
+        if (pendingGlass_[k].brush == d.brush) { pendingGlass_.erase(pendingGlass_.begin() + (long)k); return; }
+    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material});
+}
+
+void NetClient::replayDestruction() {
+    pendingGlass_.clear();
+    for (const GameEvent& e : destructLog_) applyDestructEvent(e, false);
+}
+
+bool NetClient::predictGlass(int brush, int how, const Vec3& at, const Vec3& dir) {
+    if (play_.active || brush < 0 || !map_.breakGlass((size_t)brush)) return false;
+    pendingGlass_.push_back({(uint32_t)brush, timeNow()});
+    if (glassFx_.size() < 256) glassFx_.push_back({map_.brushes[(size_t)brush].box, (uint8_t)how, at, dir, glassRand(glassSeed_), false});
+    return true;
+}
+
+void NetClient::expireGlassPredictions(double now) {
+    for (size_t k = 0; k < pendingGlass_.size();) {
+        if (now - pendingGlass_[k].at < kGlassPredictWait) { k++; continue; }
+        const uint32_t b = pendingGlass_[k].brush;
+        pendingGlass_.erase(pendingGlass_.begin() + (long)k);
+        if (b < map_.brushes.size() && map_.brushes[b].gone) {   // the server didn't break it: back as it was
+            Brush br = map_.brushes[b];
+            br.gone = false;
+            map_.setBrush(b, br);
+            map_.destructSerial++;
+        }
+    }
+}
+
 void NetClient::applyPropEvent(const GameEvent& e) {
     if (e.a == PROP_CLEAR) {
         if (e.b == PROP_WORLD) { props_.clear(); propPlayers_ = 0; }
@@ -883,7 +954,7 @@ void NetClient::interpolatedProjectiles(std::vector<ProjectileSnap>& out) const 
         // on a player: glued to them as they're drawn (players are interpolated, projectiles extrapolated: the
         // newest snapshot's spot would run ahead of their model); not in sight: where the server last put it
         if (p.flags & PROJ_ON_PLAYER) { attachedPos(p, 1.0f, &p.pos); out.push_back(p); continue; }
-        if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
+        if (!(p.flags & PROJ_STUCK)) map_.flyProjectile(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
 }
@@ -1146,6 +1217,7 @@ void NetClient::pollPlayback() {
             map_ = std::move(m);
             mapReady_ = true;
             mapGen_++;
+            destructLog_.clear();   // (a demo's map: its own breaks follow)
             clientId_ = id;
             play_.havePrev = false;
             snaps_.clear();

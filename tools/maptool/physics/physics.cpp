@@ -51,10 +51,10 @@ struct ConstRef { const char* file; const char* name; float base; bool integer; 
 struct ParamConsts { int param; ConstRef c[3]; };
 // (-1 / -2 / -3: gravity, speed, jump)
 const ParamConsts kConsts[] = {
-    {-1, {{"src/game/pmove.cpp", "kGravity", 22.0f, false}}},
+    {-1, {{"src/game/pmove.cpp", "kGravity", 24.0f, false}}},
     {-2, {{"src/game/pmove.cpp", "kGroundSpeed", 9.5f, false}, {"src/game/pmove.cpp", "kAirControlFrom", 9.5f, false},
          }},   // (pmove: maxSpeed and the W-only air control knee x speed; the crouch speed too: listed under crouch_speed)
-    {-3, {{"src/game/pmove.cpp", "kJumpSpeed", 7.34f, false}}},
+    {-3, {{"src/game/pmove.cpp", "kJumpSpeed", 7.67f, false}}},
     {MV_CROUCH_SPEED, {{"src/game/pmove.cpp", "kCrouchSpeed", 4.0f, false}}},
     {MV_GROUND_ACCEL, {{"src/game/pmove.cpp", "kGroundAccel", 16.0f, false}}},
     {MV_FRICTION, {{"src/game/pmove.cpp", "kFriction", 7.0f, false}}},

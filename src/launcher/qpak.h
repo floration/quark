@@ -1,5 +1,8 @@
 // .qpak update packages (made by tools/pack.py): "QPAK1\n", then per file: u32 nameLen, name, u32 mode, u64 size,
 // bytes. Little endian. Read by the launcher (after the signature checks, docs/SIGNING.md) and fuzzed (tests/fuzz).
+// .qpakz (tools/qpakz.py, from the finished .qpak): "QPAK2\n", then per file: u32 nameLen, name, u32 mode, u64 size,
+// u64 stored size, the stored bytes: a zlib stream of the file, or the file as is when the two sizes are equal (it
+// didn't shrink). Same files, about half the download. read() and extract() take either.
 #pragma once
 #include <cstdint>
 #include <filesystem>
@@ -9,6 +12,8 @@
 #include <string>
 
 namespace qpak {
+
+constexpr uint64_t kMaxEntry = 1ull << 30;   // a .qpakz file's largest unpacked size (bounds the allocation)
 
 // A qpak entry name is safe when it is a plain relative path inside the install: no root name (C:, \\server), no
 // root directory (/ or \), no "..", no "." or empty part (it must name a file), no ':' or NUL.

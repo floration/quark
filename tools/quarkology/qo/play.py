@@ -122,9 +122,9 @@ NOT_GAME = ("quark_launcher", "quark_server", "quark_tests", "quark_sign", "quar
 FIELDS = (("did", "Did"), ("noticed", "Noticed"), ("change", "Wants changed"), ("other", "Also"))
 # The game's modes in its own order (modeName in src/game/gamedefs.h; tests/test_play.py checks they match): the mode
 # picker's order. A mode only a build's maps name (a newer game) is listed after these.
-GAME_MODES = ("vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points")
+GAME_MODES = ("vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points", "surf")
 GAME_MODE_TITLES = ("VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1",
-                    "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT")   # (modeTitle, same order)
+                    "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT", "SURF")   # (modeTitle, same order)
 MAP_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.qmap$")
 MAX_MAPS = 300                # (a maps folder with more is cut there: the picker is a list, not a file browser)
 

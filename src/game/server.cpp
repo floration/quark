@@ -2,6 +2,7 @@
 #include "../common/u8file.h"
 #include "../common/rng.h"
 #include "ranked.h"
+#include "glass.h"
 #include "../common/sha256.h"
 #include "../common/hex.h"
 #include <climits>
@@ -1188,6 +1189,7 @@ void Server::sendWelcome(int id) {
     for (int k = std::min(worldPropCount_, kPropReplay); k > 0; k--)
         sendEvent(id, propEvent(worldProps_[(worldPropNext_ - k + kMaxStuckProps) % kMaxStuckProps]));
     for (auto& bp : bodyProps_) bp.sentTo &= ~(1u << id);
+    sendDestruction(id);   // the glass broken and the holes blown this round
     if (!rated() && (cfg_.ranked || cfg_.timeTrial)) {   // a testing server: said up front (the HUD tags the match too)
         GameEvent e; e.type = EV_MESSAGE;
         e.text = std::string(kUnratedNotice) + ": ranked plays as usual here, but no rating or race time counts";
@@ -1450,6 +1452,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
         rulesRpsPick(*this, id, shape);
         return;
     }
+    if (cmd == "clienthits") { p.clientHits = true; return; }   // (this game reports its own hits: "hit")
+    if (cmd == "hit") { clientHitReport(id, rest); return; }
     if (cmd == "quip") { // a random quip (each listener's voice's set), heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
         p.quipAt = time() + 1.5f;
@@ -1709,10 +1713,10 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (cmd == "mode") newMode = modeFromName(arg.c_str());
         else { std::string m2; if (ss >> m2) newMode = modeFromName(m2.c_str()); }
         if (newMode < 0) { reply("unknown mode"); return; }
-        std::string v2; // optional 1v1 ruleset: map <name> 1v1 classic
+        std::string v2; // optional ruleset (1v1, tourney, free for all): map <name> 1v1 classic
         if (ss >> v2) {
             int v = arenaVariantFromName(v2.c_str());
-            if (v < 0) { reply("unknown 1v1 ruleset"); return; }
+            if (v < 0) { reply("unknown ruleset"); return; }
             if (cfg_.ranked && !arenaVariantRanked(v)) { reply("ranked: only vanilla, laser vampire or instagib"); return; }
             cfg_.arenaVariant = v;
         }
@@ -1862,8 +1866,8 @@ void Server::spawnPlayer(int id) {
     float yaw = 0;
     const float scale = bodyScale();
     bool crouch = false, fits = true;
-    if (ms_.mode == MODE_RACE && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
-        const AABB& c = map_.checkpoints[p.checkpoint - 1];
+    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
+        const AABB& c = map_.raceCheckpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
     } else {
@@ -1992,6 +1996,7 @@ void Server::spawnPlayer(int id) {
     if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
+    if (ms_.mode == MODE_SURF) p.move.mods |= MOVE_RUN_ONLY;   // (surf: strafe only, no dash or grapple)
     p.nextFire = cmdClockOf(p, time()) + kSpawnFireLock;   // (on the command clock, as refire)
     p.respawnAt = -1;
     GameEvent e;
@@ -2138,6 +2143,10 @@ bool Server::takeAcid(int id) {
     p.move.acidTaken = 0;
     if (share > 0) { if (p.acidSince < 0) p.acidSince = time(); }
     else if (p.move.acidOutMs >= kAcidRearmMs) p.acidSince = -1;   // (out long enough that the next touch is a new contact)
+    if (share < 0 && p.alive) {   // a healing liquid (hot spring): up to full health
+        p.health = std::min(lifeMaxHealth(), p.health - share * lifeMaxHealth());
+        return false;
+    }
     if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
     p.health -= share * lifeMaxHealth();
     p.lastDamagedAt = time();
@@ -2145,6 +2154,34 @@ bool Server::takeAcid(int id) {
     if (p.health > 0) return false;
     killPlayer(id, ringOutKiller(id, p.acidSince), kDamageAcid);   // (knocked in: the knocker's, however long it took)
     return true;
+}
+
+// "hit <weapon> <alt> <n> then n x <victim> <damage> <head> <direct> <splash> <dist> <knock x y z>": the hits one shot or
+// one blast of the reporter's made on its screen (Game::reportHits). They count unless the reporter is dead here by the
+// time it arrives (owner, 2026-10-28: "this would only happen if you die on the server before the server gets your
+// damage packet"). High trust (owner: "dont worry about cheats"): only what would break the game is refused.
+void Server::clientHitReport(int id, const std::string& rest) {
+    ServerPlayer& p = players_[id];
+    if (!p.clientHits || !p.alive || editing_) return;
+    std::istringstream in(rest);
+    int weapon = -1, alt = 0, n = 0;
+    if (!(in >> weapon >> alt >> n) || weapon < 0 || weapon >= WPN_COUNT || n < 0 || n > kMaxPlayers) return;
+    bool any = false;
+    for (int k = 0; k < n; k++) {
+        int v = -1, head = 0, direct = 0;
+        float dmg = 0, splash = 1, dist = 0;
+        Vec3 kb;
+        if (!(in >> v >> dmg >> head >> direct >> splash >> dist >> kb.x >> kb.y >> kb.z)) return;
+        if (v < 0 || v >= kMaxPlayers || v == id || !players_[v].connected || !players_[v].alive || !std::isfinite(dmg) || !std::isfinite(splash) ||
+            !std::isfinite(dist) || !std::isfinite(kb.x) || !std::isfinite(kb.y) || !std::isfinite(kb.z)) continue;
+        dmg = clampf(dmg, 0.0f, 1000.0f);
+        kb = {clampf(kb.x, -100, 100), clampf(kb.y, -100, 100), clampf(kb.z, -100, 100)};
+        headHit_[v] = head != 0;
+        weaponHit(v, id, dmg, kb, weapon, alt != 0, dist, direct != 0, clampf(splash, 0.0f, 1.0f));
+        headHit_[v] = false;
+        any = true;
+    }
+    if (any && shotHit(id)) p.shotsHit++;
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -2229,6 +2266,8 @@ void Server::simulate() {
         p.histMs = timeMs_;
     }
     { QZONE("projectiles"); tickProjectiles(); }
+    if (!shards_.empty()) { QZONE("glass shards"); tickShards(); }
+    if (!crumbleFrom_.empty()) tickCrumbles();
     tickRocketRides();   // grapples riding rockets: on the rocket where it flew, or let go
     tickVote();
     if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
@@ -2291,8 +2330,11 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (p.hookVictim >= 0) syncLatch(id);           // released / met / out of reach: let go; else the anchors follow
         if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
     }
+    if (p.move.glassBrush >= 0) { glassFromMove(id); if (!p.alive) return; }   // (dashed / pulled through a pane)
+    if (!map_.blocks.empty()) blocksTouched(id);
+    if (!map_.crumbles.empty()) crumblesTouched(id);
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
-    if ((p.move.acidTaken > 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
+    if ((p.move.acidTaken != 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
     // it's the only weapon this mode allows it stays in hand, unusable, until it's back.
@@ -2440,6 +2482,8 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     const WeaponExtra& ex = wex ? *wex : weaponExtra(players_[id].weapon);   // (falloff, wallbang: the weapon set's)
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
+    glassFromRay(eye, dir, wall, id);   // (a pane stops the shot, and breaks)
+    blockFromRay(eye, dir, wall, dmg, id);   // (a breakable block takes the shot's damage)
     float best = wall >= 0 ? wall : range;
     int hit = -1;
     bool hitHead = false;
@@ -2541,7 +2585,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
     // only when this command can fire the hook (held, not caught yet this press, the cooldown about done)
     if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY)) return;
     if (!moveTuning().grapple || p.move.hookCooldown > cmd.msec * kMoveStep + 1e-4f) return;
-    if (ms_.mode == MODE_RACE) return;
+    if (isRaceMode(ms_.mode)) return;
     uint64_t vt = 0;
     bool rewound = false;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -2867,14 +2911,16 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     if (wd.pellets > 1)
         for (int i = 0; i < kMaxPlayers; i++) headHit_[i] = dmgPer[i] > 0 && headPer[i] * 2 >= dmgPer[i];
     bool any = false;
-    for (int i = 0; i < kMaxPlayers; i++) {
+    const bool reported = p.clientHits && !bounce;   // (the game reports this shot's hits itself: a ricochet's stay the server's)
+    for (int i = 0; i < kMaxPlayers && !reported; i++) {
         if (dmgPer[i] <= 0) continue;
         Vec3 knock = aim * (wd.pellets > 1 ? ex.knock * dmgPer[i] / wd.damage : ex.knock);
         if (wd.beam) knock = aim * (ex.knock * wd.refire * (pull ? -wa.pullScale : 1.0f)); // same push per second at any fire rate
         weaponHit(i, id, dmgPer[i], knock, p.weapon, alt, hitDist_[i], false, 1.0f);
         any = true;
     }
-    if (shotHit(id)) p.shotsHit++;
+    if (reported) for (int i = 0; i < kMaxPlayers; i++) any |= dmgPer[i] > 0;   // (as the server sees it: the swing's end)
+    else if (shotHit(id)) p.shotsHit++;
     for (bool& h : headHit_) h = false;
     return any;
 }
@@ -2908,13 +2954,15 @@ void Server::tickProjectiles() {
 void Server::stepProjectile(Projectile& pr) {
     {
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * kMoveStep;
-        Vec3 step = pr.vel * kMoveStep;
+        const float h = kMoveStep * map_.projectileRate(pr.pos);   // (a slow-mo field: half a step)
+        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * h;
+        Vec3 step = pr.vel * h;
         float len = length(step);
         if (len < 1e-6f) return;
         Vec3 dir = step / len;
         Vec3 n;
-        float wall = map_.raycast(pr.pos, dir, len, &n);
+        int wallMat = -1;
+        float wall = map_.raycast(pr.pos, dir, len, &n, &wallMat);
         float best = wall >= 0 ? wall : len;
         int hitPlayer = -1;
         bool hitHead = false;
@@ -2930,6 +2978,43 @@ void Server::stepProjectile(Projectile& pr) {
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        // a teleporter: out of the next one with its link, 10 cm off its exit face, at its speed straight out of it
+        if (hitPlayer < 0 && wallMat == kMatTeleport) {
+            const Vec3 in = pr.pos + dir * (wall + 0.01f);
+            const int to = map_.teleportTarget(map_.teleporterAt({in - Vec3(0.02f, 0.02f, 0.02f), in + Vec3(0.02f, 0.02f, 0.02f)}));
+            if (to >= 0) {
+                Vec3 out;
+                pr.pos = map_.teleportExit(to, 0.1f, &out);
+                pr.vel = out * length(pr.vel);
+                return;
+            }
+        }
+        // glass: a bolt or a thrown knife breaks it and flies on (a bolt shatters it; owner, 2026-10-28)
+        if (hitPlayer < 0 && wallMat == kMatGlassBreak && (pr.type == WPN_CROSSBOW || pr.type == WPN_KNIFE)) {
+            const int pane = map_.glassAt(pr.pos + dir * (wall + 0.01f));
+            if (pane >= 0 && breakGlass(pane, pr.type == WPN_CROSSBOW ? GLASS_SHATTER : GLASS_SHOT, pr.pos + dir * wall, dir, pr.owner)) {
+                pr.pos = at;
+                return;
+            }
+        }
+        // Rubber and ice (owner, 2026-10-28): rockets and stickies bounce off rubber (kProjRubberBounce of what goes into
+        // it), stickies slide along ice and only stick once they've slowed down; anything else, as before
+        if (hitPlayer < 0 && (pr.type == WPN_ROCKET || wd.sticky)) {
+            const float vn = dot(pr.vel, n);
+            if (wallMat == kMatRubber && vn < 0) { pr.pos = at; pr.vel -= n * (vn * (1.0f + kProjRubberBounce)); return; }
+            if (wallMat == kMatIce && wd.sticky && vn < 0) {
+                pr.vel -= n * vn;
+                const float sp = length(pr.vel);
+                pr.vel = sp > 0 ? pr.vel * (std::max(0.0f, sp - kStickyIceFriction * kMoveStep) / sp) : pr.vel;
+                if (length(pr.vel) > kStickyIceRest) {   // on along the ice for what's left of the step (if nothing's in the way)
+                    pr.pos = at;
+                    const Vec3 rest = pr.vel * (kMoveStep * std::max(0.0f, 1.0f - best / len));
+                    const float rl = length(rest);
+                    if (rl > 1e-6f && map_.raycast(pr.pos, rest / rl, rl + 0.05f) < 0) pr.pos += rest;
+                    return;
+                }
+            }
+        }
         if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
             auto& o = players_[pr.owner];
             if (hitPlayer >= 0 && modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == o.team) {
@@ -2973,7 +3058,7 @@ void Server::stepProjectile(Projectile& pr) {
                 }
             }
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
-            if (hitPlayer >= 0) {
+            if (hitPlayer >= 0 && !reportsHits(pr.owner, pr.type)) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
                 if (head > 0 && hitHead) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
                 const WeaponExtra& ex = weaponExtra(pr.type);
@@ -3062,16 +3147,249 @@ void Server::clearProps() {
     bodyProps_.clear();
     if (propsSent_) broadcastEvent(propClearEvent(PROP_WORLD));
     propsSent_ = false;
+    resetDestruction(true);   // (broken glass and blown holes come back with them: a new match, a new map, an edit; said
+                              // always, so a client drops what it kept for the map before)
+}
+
+// ---- Glass and blown-open brick / cobblestone (owner, 2026-10-28; glass.h)
+
+constexpr double kShardLife = 3.0;   // a shard still flying after this is dropped (it would have landed)
+constexpr float kShardStep = 0.01f;  // shards fly in 10 ms steps (hundreds of them: cheap at any tick rate)
+constexpr size_t kMaxShards = 4000;
+
+bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int by) {
+    if (editing_ || brush < 0 || !map_.breakGlass((size_t)brush)) return false;
+    const AABB pane = map_.brushes[(size_t)brush].box;
+    DestructEv d;
+    d.kind = DESTRUCT_GLASS; d.how = (uint8_t)how; d.by = by; d.brush = (uint32_t)brush; d.at = at; d.dir = dir;
+    d.seed = glassRand(glassSeed_);
+    broadcastEvent(destructEvent(d));
+    static thread_local std::vector<GlassShard> sh;
+    glassShards(pane, how, at, dir, d.seed, sh);
+    const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
+    for (const GlassShard& g : sh)
+        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare, (uint32_t)brush});
+    AABB near = pane;   // stickies resting on it drop (as off a teammate)
+    near.mn -= Vec3(0.15f, 0.15f, 0.15f); near.mx += Vec3(0.15f, 0.15f, 0.15f);
+    for (auto& pr : projectiles_)
+        if (pr.active && pr.stuck && pr.onPlayer < 0 && !pr.onCart && near.contains(pr.pos)) { pr.stuck = false; pr.vel = {}; }
+    if (glassSparesBreaker(how) && by >= 0 && by < kMaxPlayers && players_[by].alive) damagePlayer(by, by, kGlassBreakDamage, kDamageGlass, {});
+    return true;
+}
+
+void Server::glassFromRay(const Vec3& o, const Vec3& dir, float t, int by) {
+    if (t < 0 || map_.glass.empty()) return;
+    const int pane = map_.glassAt(o + dir * (t + 0.01f));
+    if (pane >= 0) breakGlass(pane, GLASS_SHOT, o + dir * t, dir, by);
+}
+
+void Server::blockFromRay(const Vec3& o, const Vec3& dir, float t, float dmg, int by) {
+    if (t < 0 || map_.blocks.empty()) return;
+    const int b = map_.blockAt(o + dir * (t + 0.01f));
+    if (b >= 0) damageBlock(b, dmg, false, o + dir * t, dir, by);
+}
+
+void Server::damageBlock(int brush, float dmg, bool blast, const Vec3& at, const Vec3& dir, int by) {
+    if (editing_ || brush < 0 || (size_t)brush >= map_.brushes.size() || map_.brushes[(size_t)brush].gone) return;
+    const int m = map_.brushes[(size_t)brush].material;
+    if (!breakMaterial(m)) return;
+    const BreakDef& d = kBreaks[m - kMatBreak];
+    if (blockDmg_.size() < map_.brushes.size()) blockDmg_.resize(map_.brushes.size(), 0.0f);
+    blockDmg_[(size_t)brush] += dmg * (blast ? d.blast : d.bullet);
+    if (blockDmg_[(size_t)brush] >= d.hp) breakBlock(brush, blast, at, dir, by);
+}
+
+void Server::breakBlock(int brush, bool blast, const Vec3& at, const Vec3& dir, int by) {
+    if (editing_ || !map_.breakGlass((size_t)brush)) return;
+    DestructEv d;
+    d.kind = DESTRUCT_GLASS; d.how = (uint8_t)(blast ? GLASS_SHATTER : GLASS_SHOT); d.by = by; d.brush = (uint32_t)brush; d.at = at; d.dir = dir;
+    d.seed = glassRand(glassSeed_);
+    broadcastEvent(destructEvent(d));   // (the clients see a block's material: debris, no shards)
+    AABB near = map_.brushes[(size_t)brush].box;   // stickies on it drop
+    near.mn -= Vec3(0.15f, 0.15f, 0.15f); near.mx += Vec3(0.15f, 0.15f, 0.15f);
+    for (auto& pr : projectiles_)
+        if (pr.active && pr.stuck && pr.onPlayer < 0 && !pr.onCart && near.contains(pr.pos)) { pr.stuck = false; pr.vel = {}; }
+}
+
+void Server::blocksTouched(int id) {
+    const MoveState& m = players_[id].move;
+    const AABB me = playerBox(m);
+    AABB grown = me;
+    grown.mn -= Vec3(0.05f, 0.05f, 0.05f); grown.mx += Vec3(0.05f, 0.05f, 0.05f);
+    const std::vector<uint32_t> blocks = map_.blocks;
+    for (uint32_t i : blocks) {
+        const Brush& b = map_.brushes[i];
+        const int t = kBreaks[b.material - kMatBreak].touch;
+        if (b.gone || t == BREAK_HITS || !grown.overlaps(b.box)) continue;
+        const Vec3 at = vmax(b.box.mn, vmin(m.pos, b.box.mx));
+        if (t == BREAK_TOUCH || (t == BREAK_DASH && m.dashTimer > 0)) { breakBlock((int)i, false, at, normalize(m.vel + Vec3(0, 1e-3f, 0)), id); continue; }
+        if (t == BREAK_WEIGHT) {   // (standing on its top: it gives way kWeightBreakS later)
+            const bool on = (m.flags & MF_ONGROUND) && std::fabs(me.mn.y - b.box.mx.y) < 0.06f;
+            if (blockStood_.size() < map_.brushes.size()) blockStood_.resize(map_.brushes.size(), -1.0);
+            double& since = blockStood_[i];
+            if (!on) { since = -1; continue; }
+            if (since < 0) since = time();
+            else if (time() - since >= kWeightBreakS) breakBlock((int)i, false, at, {0, -1, 0}, id);
+        }
+    }
+}
+
+// Crumble platforms: standing on one's top starts it (EV_DESTRUCT DESTRUCT_SHAKE: the clients shake dust off it); it
+// falls kCrumbleS later and is back kCrumbleBackS after that (DESTRUCT_RESTORE), once nobody's in its way.
+void Server::crumblesTouched(int id) {
+    const MoveState& m = players_[id].move;
+    if (editing_ || !(m.flags & MF_ONGROUND)) return;
+    const AABB me = playerBox(m);
+    for (uint32_t i : map_.crumbles) {
+        const Brush& b = map_.brushes[i];
+        if (b.gone || std::fabs(me.mn.y - b.box.mx.y) > 0.06f || me.mn.x >= b.box.mx.x || me.mx.x <= b.box.mn.x || me.mn.z >= b.box.mx.z || me.mx.z <= b.box.mn.z) continue;
+        if (crumbleFrom_.size() < map_.brushes.size()) { crumbleFrom_.resize(map_.brushes.size(), -1.0); crumbleBack_.resize(map_.brushes.size(), -1.0); }
+        if (crumbleFrom_[i] >= 0) continue;
+        crumbleFrom_[i] = time();
+        DestructEv d;
+        d.kind = DESTRUCT_SHAKE; d.by = id; d.brush = i; d.at = b.box.center();
+        broadcastEvent(destructEvent(d));
+    }
+}
+
+void Server::tickCrumbles() {
+    for (size_t i = 0; i < crumbleFrom_.size() && i < map_.brushes.size(); i++) {
+        const Brush& b = map_.brushes[i];
+        if (crumbleFrom_[i] >= 0 && !b.gone && time() - crumbleFrom_[i] >= kCrumbleS) {
+            crumbleFrom_[i] = -1;
+            crumbleBack_[i] = time() + kCrumbleBackS;
+            breakBlock((int)i, false, b.box.center(), {0, -1, 0}, -1);
+        } else if (crumbleBack_[i] >= 0 && b.gone && time() >= crumbleBack_[i]) {
+            bool clear = true;
+            for (auto& p : players_) if (p.connected && p.alive && playerBox(p.move).overlaps(b.box)) clear = false;
+            if (!clear || editing_ || !map_.restoreBrush(i)) continue;
+            crumbleBack_[i] = -1;
+            DestructEv d;
+            d.kind = DESTRUCT_RESTORE; d.brush = (uint32_t)i; d.at = b.box.center();
+            broadcastEvent(destructEvent(d));
+        }
+    }
+}
+
+void Server::glassFromMove(int id) {
+    const MoveState& m = players_[id].move;
+    if (m.glassBrush >= 0) breakGlass(m.glassBrush, m.glassHow, m.glassAt, m.glassDir, id);
+}
+
+void Server::blastBreaks(const Vec3& at, int weapon, int owner) {
+    if (editing_ || weapon == WPN_BUBBLE) return;   // (owner: "bubble will not damage windows")
+    if (!map_.glass.empty()) {
+        const float reach = weaponDef(weapon).splashRadius;
+        const std::vector<uint32_t> panes = map_.glass;   // (breaking one changes the map)
+        for (uint32_t i : panes) {
+            const Brush& b = map_.brushes[i];
+            if (b.gone) continue;
+            const Vec3 c = vmax(b.box.mn, vmin(at, b.box.mx));
+            const Vec3 v = c - at;
+            const float len = length(v);
+            if (len > reach) continue;
+            if (len > 0.1f && map_.raycastAny(at, v / len, len - 0.05f)) continue;   // (behind a wall; other glass doesn't hide it)
+            breakGlass((int)i, GLASS_SHATTER, at, {}, owner);
+        }
+    }
+    if (!map_.blocks.empty()) {   // breakable blocks in reach take the blast's damage there (falling off to 0 at its edge)
+        const float reach = weaponDef(weapon).splashRadius, dmg = weaponDef(weapon).damage;
+        const std::vector<uint32_t> blocks = map_.blocks;
+        for (uint32_t i : blocks) {
+            const Brush& b = map_.brushes[i];
+            if (b.gone || reach <= 0) continue;
+            const Vec3 c = vmax(b.box.mn, vmin(at, b.box.mx));
+            const Vec3 v = c - at;
+            const float len = length(v);
+            if (len > reach) continue;
+            if (len > 0.1f && map_.raycastAny(at, v / len, len - 0.05f)) continue;   // (behind a wall)
+            damageBlock((int)i, dmg * (1.0f - len / reach), true, at, len > 1e-3f ? v / len : Vec3(0, 1, 0), owner);
+        }
+    }
+    // rockets and stickies only (owner: "bricks cannot be broken any other way besides sticky or rocket")
+    if ((weapon == WPN_ROCKET || weapon == WPN_STICKY) && map_.punchHole(at) > 0) {
+        holeLog_.push_back(at);
+        DestructEv d;
+        d.kind = DESTRUCT_HOLE; d.by = owner; d.at = at;
+        broadcastEvent(destructEvent(d));
+    }
+}
+
+void Server::tickShards() {
+    if (shards_.empty()) return;
+    const double now = time();
+    if (now < shardStepAt_) return;
+    shardStepAt_ = now + kShardStep;
+    AABB box[kMaxPlayers];
+    bool in[kMaxPlayers];
+    for (int i = 0; i < kMaxPlayers; i++) {
+        in[i] = players_[i].connected && players_[i].alive && players_[i].team != TEAM_SPECTATOR;
+        if (in[i]) box[i] = hitBox(players_[i].move.pos, players_[i].move.flags & MF_CROUCHED);
+    }
+    const bool credit = !isItMode(ms_.mode) && !isRaceMode(ms_.mode);   // (there a hit from someone else is a tag / not allowed)
+    size_t keep = 0;
+    for (size_t k = 0; k < shards_.size(); k++) {
+        FlyingShard s = shards_[k];
+        if (now > s.until) continue;
+        s.vel.y -= 22.0f * kShardStep;
+        const Vec3 step = s.vel * kShardStep;
+        const float len = length(step);
+        if (len < 1e-6f) continue;
+        const Vec3 d = step / len, inv = safeInv(d);
+        const float wall = map_.raycast(s.pos, d, len);
+        float best = wall >= 0 ? wall : len;
+        int hit = -1;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (!in[i] || i == s.spare) continue;
+            const Vec3 grow(s.size, s.size, s.size);   // (a big shard hits what it brushes)
+            const float t = rayAABB(s.pos, inv, {box[i].mn - grow, box[i].mx + grow}, best);
+            if (t >= 0 && t < best) { best = t; hit = i; }
+        }
+        if (hit >= 0) {   // (q: a shard 10, a shattered piece 1; one pane's at most kGlassPaneMaxDamage to each player)
+            auto it = paneTaken_.find(s.pane);
+            if (it == paneTaken_.end()) { it = paneTaken_.emplace(s.pane, std::array<float, kMaxPlayers>{}).first; }
+            float& taken = it->second[(size_t)hit];
+            const float dmg = std::min(s.damage, kGlassPaneMaxDamage - taken);
+            if (dmg <= 0) continue;   // (spent on them: it breaks on them harmlessly)
+            taken += dmg;
+            damagePlayer(hit, credit || s.by == hit ? s.by : -1, dmg, kDamageGlass, d * 0.3f);
+            in[hit] = players_[hit].alive;
+            continue;
+        }
+        if (wall >= 0) continue;   // landed: harmless from here on (the clients still draw it lying there)
+        s.pos += step;
+        shards_[keep++] = s;
+    }
+    shards_.resize(keep);
+}
+
+void Server::sendDestruction(int id) {
+    std::vector<uint32_t> gone;
+    for (uint32_t i : map_.glass) if (map_.brushes[i].gone) gone.push_back(i);
+    for (const auto* list : {&map_.blocks, &map_.crumbles}) for (uint32_t i : *list) if (map_.brushes[i].gone) gone.push_back(i);
+    if (gone.empty() && holeLog_.empty()) return;
+    for (const GameEvent& e : destructListEvents(gone, holeLog_)) sendEvent(id, e);
+}
+
+void Server::resetDestruction(bool tell) {
+    const bool any = tell || !map_.pristineBrushes.empty() || !map_.holes.empty() || !holeLog_.empty();
+    map_.resetDestruction();
+    blockDmg_.clear(); blockStood_.clear(); paneTaken_.clear(); crumbleFrom_.clear(); crumbleBack_.clear();
+    holeLog_.clear();
+    shards_.clear();
+    if (any) broadcastEvent(destructEvent(DestructEv()));
 }
 
 void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt) {
+    blastBreaks(at, weapon, owner);   // (first: the pieces and the hole are there for the blast's own rays)
     const WeaponDef& wd = weaponDef(weapon);
     const WeaponExtra& ex = weaponExtra(weapon);
     const bool wantDist = ex.falloff || activeWeaponLogic();   // (falloff and the logic's dist: only a weapon set needs it)
     const float ownerDist = wantDist && owner >= 0 && owner < kMaxPlayers ? length(at - shooterEye(owner)) : 0.0f;
+    const bool reported = reportsHits(owner, weapon);   // (the owner's game reports this blast's hits, as its screen had them)
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
-        if (!p.connected || !p.alive) continue;
+        if (!p.connected || !p.alive || (reported && i != owner)) continue;
         AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
         Vec3 closest = hitboxClosest(b, at);   // (the body or the head: a blast over the shoulders is as far as the head)
         float d = length(closest - at);
@@ -3106,7 +3424,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         weaponHit(i, owner, dmg, knock, weapon, alt, self ? 0.0f : ownerDist, i == direct, frac);
     }
-    if (owner >= 0 && weapon != WPN_BUBBLE && shotHit(owner)) players_[owner].shotsHit++;
+    if (owner >= 0 && weapon != WPN_BUBBLE && !reported && shotHit(owner)) players_[owner].shotsHit++;
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {
@@ -3605,7 +3923,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
-               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (arg == MODE_ARENA || arg == MODE_TOURNEY ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
@@ -3828,9 +4146,10 @@ void Server::useLocator(int id) {
 uint16_t Server::weaponMask() const {
     // hide and seek / tag: "it" has the knife and the locator; everyone else is unarmed (only "it" can fire)
     if (isItMode(ms_.mode)) return (uint16_t)((1u << WPN_KNIFE) | (1u << WPN_LOCATOR));
-    uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
+    uint16_t m = rulesetActive() ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
     uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
     uint16_t r = (c && m && (m & c)) ? m & c : c ? c : m;
+    if (ms_.mode == MODE_SURF && !c) return (uint16_t)(1u << WPN_KNIFE);   // (surf: the knife only, owner 2026-10-28; a custom mode's own list wins)
     // The syringe only exists in modes where the dead respawn (owner 5.2): in a round mode it out-heals the stalemate
     // drain. A custom mode that lists it in its weapons keeps it anyway.
     const uint16_t syringe = (uint16_t)(1u << WPN_SYRINGE);
@@ -3949,6 +4268,7 @@ bool Server::applyEdit(int from, const std::string& op) {
     if (op.size() > 220) return false;
     MapId before = map_.id();
     try {   // (applyMapEdit checks the result against the same limits a map file gets, and leaves map_ as it was if it fails)
+        resetDestruction();   // (edits name brushes by index: on the map as it was)
         if (!applyMapEdit(map_, op)) return false;   // (in place: the text is only made again when it's sent or saved)
     } catch (const std::exception& e) {   // (out of memory: refuse the edit, keep the server)
         log(std::string("edit refused: ") + e.what());

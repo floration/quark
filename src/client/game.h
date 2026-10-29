@@ -15,6 +15,7 @@
 #include "theme.h"
 #include "weaponpredict.h"
 #include "../game/netclient.h"
+#include "../game/glass.h"
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "audio.h"
@@ -139,6 +140,7 @@ private:
     void uiTestHandles();                   // the editor selection's handles, while the 3D view's camera is set
     const char* edPath() const { return edOnline_ ? "editor-online" : "editor"; }
     const char* edExportAskPath() const { return edOnline_ ? "editor-online/export-ask" : "editor/export-ask"; }
+    const char* edMatsPath() const { return edOnline_ ? "editor-online/materials" : "editor/materials"; }
     const char* edGroupsPath() const { return edOnline_ ? "editor-online/groups" : "editor/groups"; }
     const char* edKeepPath() const { return edOnline_ ? "editor-online/keep-edits" : "editor/keep-edits"; }
     bool edGroupTakesEveryBox() const;      // GROUP would leave the map without a box of its own (refused)
@@ -397,6 +399,15 @@ private:
     EdSel edSel_;
     std::vector<EdSel> edMulti_; // shift+click: more selected boxes / groups (for GROUP)
     int edGridIdx_ = 2, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)
+    // the material picker (owner, 2026-10-29: "a pick list with images ... a seperate list for materials already in the
+    // map, and the last 10 used surfaces"): 0 closed, 1 for new boxes (edMat_), 2 for what's selected
+    int edMatMenu_ = 0;
+    std::vector<int> edRecentMats_;   // (newest first, at most 10: edUseMaterial)
+    int edMatTab_ = 2, edMatScroll_ = 0;   // the picker's tab (BASIC first) and its first row shown (the wheel)
+    std::string edMatSearch_;             // the picker's SEARCH
+    void drawEditorMatMenu();
+    void edUseMaterial(int m);   // a material picked or cycled: the recent list
+    void edSetMaterial(int m);   // ...on everything selected (boxes, rooms / stairs), one undo step
     bool edGroupMenu_ = false, edExportAsk_ = false; // IMPORT GROUP's list of saved groups; EXPORT's "make it a group first?"
     std::vector<std::string> edGroupFiles_;
     float edSpeed_ = 12;
@@ -459,10 +470,18 @@ private:
     void edModify(const std::function<void(Map&)>& f, bool coalesce);
     void edDelete();
     void edDuplicate();
+    void edFix(bool gaps);   // FIX MAP (merge redundant boxes, drop hidden ones) / FIX GAPS (close gaps under 1/8 m): one undo step
+    void edCoat();   // K: a 1/8 m layer on the side of the selected box(es) you look at
+    static constexpr float kCoatThick = 0.125f;
     enum { ED_ROT_Y, ED_ROT_X, ED_ROT_Z, ED_MIR_X, ED_MIR_Y, ED_MIR_Z };
     void edTransform(int op);
     bool edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const;   // the map with the selection turned (false: nothing to turn)
     UiExp edTransformExp(int op);   // ROTATE / MIRROR's expectation: the map changes, or (it's symmetric that way) just the notice
+    enum { ED_SPLIT_X, ED_SPLIT_Y, ED_SPLIT_Z, ED_COMBINE, ED_SUBTRACT };
+    bool edBoxOpPlan(int op, std::vector<int>& gone, std::vector<Brush>& made, std::string& why) const;   // SPLIT / COMBINE / SUBTRACT on the selected boxes
+    UiExp edBoxOpExp(int op) const;
+    int edSplitOp() const;
+    void edBoxOp(int op);
     void edAdd(int kind, int variant);
     void edGroupSelection();            // GROUP: the selected boxes / groups become one custom group
     void edUngroup();                   // UNGROUP: the selected group's boxes become plain boxes
@@ -564,6 +583,31 @@ private:
     void drawMuzzleFlash(const Vec3& at, int w, const Vec3& beam, float a, float scale);
     double nextLocalSpark_ = 0;
     std::vector<Explosion> explosions_;
+    // Glass shards and brick / cobblestone chunks (glass.h): drawn falling, then lying where they land, until out of view
+    // (owner, 2026-10-28: "disappear from your screen once its no longer in your fov")
+    struct VisShard { Vec3 pos, vel; float size; Vec3 color; bool rest, glass; double born; int thin = -1; bool dust = false; };   // thin: a glass plate's thin axis (flat on the floor once it lies); dust: glitter (no collision, gone in 1.5 s)
+    std::vector<VisShard> visShards_;
+    std::vector<NetClient::GlassFx> glassFxScratch_;
+    std::vector<GlassShard> glassShardScratch_;
+    double shardsAt_ = -1;
+    uint32_t holeSerial_ = ~0u, holeMapRev_ = ~0u;
+    void predictShotGlass(int w, const UserCmd& c);   // your own shot / knife breaks a pane at once (the server confirms)
+    // Your hits, as your screen has them, are the ones that count (owner, 2026-10-28: "all damage should be client
+    // side"): each shot's / blast's go to the server as one "hit" command (Server::clientHitReport). The laser's
+    // 10 ms shots are added up and sent every 50 ms.
+    struct HitReport { int victim; float dmg; bool head, direct; float splash, dist; Vec3 knock; };
+    std::vector<HitReport> hitScratch_;
+    float laserDmg_[kMaxPlayers] = {}, laserDist_[kMaxPlayers] = {};
+    Vec3 laserKnock_[kMaxPlayers];
+    bool laserHead_[kMaxPlayers] = {}, laserAlt_ = false, laserPending_ = false;
+    double laserSince_ = 0;
+    void sendHits(int weapon, bool alt, const std::vector<HitReport>& hits);
+    void reportShotHits(int w, const UserCmd& c);
+    void flushLaserHits(bool force);
+    void reportBlast(int type, bool alt, const Vec3& at, int direct);
+    void reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head);
+    void reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head);   // a rocket or bolt landed
+    void updateDestruction(const Map& map);           // breaks to show, holes to send, shards to fly and draw
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
     std::vector<GameEvent> evScratch_;          // (handleEvents)
@@ -581,7 +625,7 @@ private:
     struct LocalBoom { uint16_t id; uint8_t type; Vec3 at; double t; };
     std::vector<LocalBoom> localBooms_;
     void localBoom(uint16_t id, int type, const Vec3& at);
-    bool enemyOnSegment(const Vec3& a, const Vec3& b, float* t);   // the first enemy box (as you see them) on a -> b
+    bool enemyOnSegment(const Vec3& a, const Vec3& b, float* t, int* who = nullptr, bool* head = nullptr);   // the first enemy box (as you see them) on a -> b
     std::string feedPart_;   // (drawFeedText)
     double frameDt_ = 0;     // this frame's dt (frame)
     bool polledEarly_ = false;   // preInput read the network this frame
@@ -590,7 +634,8 @@ private:
     int infoRowsTab_ = -1;
     float infoRowsW_ = 0, infoRowsTs_ = 0;
     int infoRowsFont_ = -1;
-    std::string perfTick_;   // (drawPerf: the version / server line, made with the numbers)
+    std::string perfTick_;
+    std::string perfPrio_;   // F3: PRIORITIZE GAME as Windows reports it (gamePriorityStatus; empty off Windows)   // (drawPerf: the version / server line, made with the numbers)
     struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
     JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
     Vec3 viewAnchor(const Settings::HudElem& e, const Vec3& base) const;   // a first-person model's pivot (camera space)
@@ -609,10 +654,12 @@ private:
     float edBarTop_ = 0;      // the top of the editor's key bar (the 3D view's status line + key help): its dialogs centre over it
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
-    bool showPerf_ = false;
+    // F3 cycles (owner 2026-10-29): 1 the FPS line, 2 + ping / 3D size / server, 3 everything with the pipeline graph, 0 off.
+    // Only 3 runs the graph's and input-to-frame measuring (GPU timestamps): 1 and 2 cost just their text.
+    int perfStage_ = 0;
     bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
-    bool perfOn() const { return showPerf_ || perfMini_; }   // (the pipeline graph's measuring runs)
+    bool perfOn() const { return perfStage_ == 3 || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
     std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
@@ -726,6 +773,8 @@ private:
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
     HudRect drawChatBox(float W, float H, float s, float ts, bool sample = false, bool draw = true);   // (the HUD's chat element)
+    void drawMenuChat(float W, float H, float s, float ts);
+    bool chatOverMenu_ = false;   // (drawChatBox over the settings menu: dark boxes)
     void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
     float drawVotePanel(float cx, float s, float ts, float y = -1);   // a running vote, its box from y (-1: 122 at 720p); returns where it ends
     void drawCrown(float x, float y, float w, int place, const char* letter = "");

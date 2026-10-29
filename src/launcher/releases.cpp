@@ -215,17 +215,20 @@ bool parse(const std::string& json, const std::string& platform, std::vector<Rel
         rel.prerelease = r.flag("prerelease");
         rel.draft = r.flag("draft");
         rel.asset = want.substr(1);
-        std::string shared, sharedSig, ownTxt, ownSig;
+        std::string shared, sharedSig, ownTxt, ownSig, zUrl, zSig;
         if (const Json* assets = r.get("assets"))
             for (const Json& a : assets->items) {
                 std::string u = a.str("browser_download_url");
                 if (endsWith(u, want)) rel.url = u;
                 else if (endsWith(u, want + ".sig")) rel.sigUrl = u;
+                else if (endsWith(u, want + "z")) zUrl = u;   // (the compressed package, tools/qpakz.py: preferred)
+                else if (endsWith(u, want + "z.sig")) zSig = u;
                 else if (endsWith(u, "/quark-release.txt")) shared = u;
                 else if (endsWith(u, "/quark-release.txt.sig")) sharedSig = u;
                 else if (endsWith(u, own)) ownTxt = u;
                 else if (endsWith(u, own + ".sig")) ownSig = u;
             }
+        if (!zUrl.empty() && !zSig.empty()) { rel.url = zUrl; rel.sigUrl = zSig; rel.asset = want.substr(1) + "z"; }
         if (!ownTxt.empty() && !ownSig.empty()) { rel.manifestUrl = ownTxt; rel.manifestSigUrl = ownSig; }
         else if (!shared.empty() && !sharedSig.empty()) { rel.manifestUrl = shared; rel.manifestSigUrl = sharedSig; }
         out->push_back(rel);

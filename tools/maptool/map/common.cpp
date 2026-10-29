@@ -26,6 +26,7 @@ double maptoolNow() { return std::chrono::duration<double>(std::chrono::steady_c
 
 Json jvec(const Vec3& v) { Json a = Json::array(); a.push(v.x); a.push(v.y); a.push(v.z); return a; }
 Json jbox(const AABB& b) { Json o = Json::object(); o.set("min", jvec(b.mn)); o.set("max", jvec(b.mx)); return o; }
+Json jcuts(const Brush& b) { Json a = Json::array(); for (int k = 0; k < b.ncut; k++) { Json p = Json::array(); for (int q = 0; q < 4; q++) p.push(b.cut[k][q]); a.push(std::move(p)); } return a; }
 Vec3 toVec(const Json& j, Vec3 def) { return j.isArr() && j.size() >= 3 ? Vec3(j[0].f(), j[1].f(), j[2].f()) : def; }
 AABB toBox(const Json& j) {
     Vec3 a = toVec(j["min"]), b = toVec(j["max"]);
@@ -52,8 +53,7 @@ int modeFromJson(const Json& j, int def) {
     return def;
 }
 
-static const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
-static_assert(sizeof kMatNames / sizeof *kMatNames == kMapMaterials, "a name per material (map.cpp's file keywords)");
+static const char* const* kMatNames = kMapMaterialWords;   // (map.cpp's file keywords)
 
 Json playerJson() {
     Json p = Json::object();
@@ -63,7 +63,7 @@ Json playerJson() {
     p.set("eye", kEyeHeight);
     p.set("crouchEye", kCrouchEyeHeight);
     p.set("stepUp", 0.55f);                 // pmove.cpp kStepHeight (file-local there)
-    p.set("jumpHeight", 1.22f);             // a standing jump: kJumpSpeed 7.34 m/s up, kGravity 22 m/s^2 (pmove.cpp)
+    p.set("jumpHeight", 1.22f);             // a standing jump: kJumpSpeed 7.67 m/s up, kGravity 24 m/s^2 (pmove.cpp)
     p.set("runSpeed", 9.5f);                // pmove.cpp kGroundSpeed
     p.set("headFraction", kHeadFraction);   // the head box: the top 20% of the hull's height...
     p.set("headWidthFraction", kHeadWidthFraction);   // ...and 45% of its width, centred (pmove.cpp headBox)
@@ -113,6 +113,9 @@ Json mapToJson(const Map& m) {
     for (auto& b : m.brushes) {
         Json o = Json::object();
         o.set("mat", b.material); o.set("min", jvec(b.box.mn)); o.set("max", jvec(b.box.mx));
+        if (b.shape == BRUSH_CUT) { o.set("shape", "cut"); o.set("cuts", jcuts(b)); }   // (a cut box: its planes, map.h)
+        else if (b.shape != BRUSH_BOX) { o.set("shape", slopeWord(b.shape)); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
+        if (b.material == kMatTeleport) { o.set("link", (int)b.link); o.set("exitFace", (int)b.exitFace); }   // (map format 10)
         (b.generated ? gen : br).push(std::move(o));
     }
     j.set("brushes", std::move(br));
@@ -124,7 +127,12 @@ Json mapToJson(const Map& m) {
         o.set("type", gt[std::clamp(g.type, 0, 2)]); o.set("mat", g.material); o.set("dir", g.dir);
         o.set("min", jvec(g.box.mn)); o.set("max", jvec(g.box.mx));
         Json parts = Json::array();
-        for (auto& p : g.parts) { Json q = Json::object(); q.set("mat", p.material); q.set("min", jvec(p.box.mn)); q.set("max", jvec(p.box.mx)); parts.push(std::move(q)); }
+        for (auto& p : g.parts) {   // (a slope part: shape, dir, up as a brush's)
+            Json q = Json::object(); q.set("mat", p.material); q.set("min", jvec(p.box.mn)); q.set("max", jvec(p.box.mx));
+            if (p.shape == BRUSH_CUT) { q.set("shape", "cut"); q.set("cuts", jcuts(p)); }
+            else if (p.shape != BRUSH_BOX) { q.set("shape", slopeWord(p.shape)); q.set("dir", (int)p.dir); if (p.up) q.set("up", (int)p.up); }
+            parts.push(std::move(q));
+        }
         o.set("parts", std::move(parts));
         gs.push(std::move(o));
     }
@@ -168,7 +176,7 @@ Json mapToJson(const Map& m) {
     j.set("lights", std::move(li));
     j.set("bounds", jbox(m.bounds));
     Json mats = Json::array();
-    for (auto* n : kMatNames) mats.push(n);
+    for (int k = 0; k < kMapMaterials; k++) mats.push(kMatNames[k]);
     j.set("materials", std::move(mats));
     Json w = Json::array();
     for (auto& s : m.warnings) w.push(s);
@@ -200,10 +208,41 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
     if (j["void"].isNum()) { m.hasVoid = true; m.voidY = j["void"].f(); }
     if (j["indoor"].isNum()) { m.indoor = true; m.ceilingY = j["indoor"].f(); }
     m.holdFire = j["holdfire"].f(0);
+    // a brush's or a group part's shape, dir and up (absent: a box)
+    auto readShape = [&](const Json& b, Brush& br, const char* what) {
+        const std::string shape = b["shape"].str("box");
+        if (shape == "cut") {   // "cuts": [[a, b, c, d], ...] (1..kMaxCuts planes over the box's fractions)
+            br.shape = BRUSH_CUT;
+            const auto& cs = b["cuts"].items();
+            if (cs.empty() || cs.size() > (size_t)kMaxCuts) { err = std::string(what) + " cut needs 1.." + std::to_string(kMaxCuts) + " planes"; return false; }
+            br.ncut = (uint8_t)cs.size();
+            for (size_t k = 0; k < cs.size(); k++) {
+                const auto& v = cs[k].items();
+                if (v.size() != 4) { err = std::string(what) + " cut plane isn't [a, b, c, d]"; return false; }
+                for (int q = 0; q < 4; q++) { br.cut[k][q] = v[q].f(); if (!std::isfinite(br.cut[k][q])) { err = std::string(what) + " cut plane isn't finite"; return false; } }
+                if (std::fabs(br.cut[k][0]) + std::fabs(br.cut[k][1]) + std::fabs(br.cut[k][2]) < 1e-9f) { err = std::string(what) + " cut plane has no direction"; return false; }
+            }
+            return true;
+        }
+        if (shape != "box" && shape != "wedge" && shape != "corner" && shape != "tetra") { err = std::string(what) + " shape '" + shape + "' isn't box, wedge, corner, tetra or cut"; return false; }
+        br.shape = (uint8_t)(shape == "box" ? (int)BRUSH_BOX : slopeFromWord(shape));
+        const int dir = b["dir"].i(0);
+        if (dir < 0 || dir > 3) { err = std::string(what) + " dir " + std::to_string(dir) + " isn't 0..3"; return false; }
+        const int up = b["up"].i(0);
+        if (up < 0 || up >= kSlopeUps) { err = std::string(what) + " up " + std::to_string(up) + " isn't 0..5"; return false; }
+        if (br.shape != BRUSH_BOX) { br.dir = (uint8_t)dir; br.up = (uint8_t)up; }
+        return true;
+    };
     for (auto& b : j["brushes"].items()) {
         int mat = b["mat"].i(0);
-        if (!validMapMaterial(mat)) { err = "brush material " + std::to_string(mat) + " isn't 0..9"; return false; }
+        if (!validMapMaterial(mat)) { err = "brush material " + std::to_string(mat) + " isn't 0.." + std::to_string(kMapMaterials - 1); return false; }
         Brush br; br.material = mat; br.box = toBox(b);
+        if (!readShape(b, br, "brush")) return false;
+        if (mat == kMatTeleport) {   // a teleporter's link (0..255, default 1) and exit face (0..5: +x -x +y -y +z -z, default 2)
+            const int link = b["link"].i(1), face = b["exitFace"].i(2);
+            if (link < 0 || link > 255 || face < 0 || face >= kFaces) { err = "teleporter link " + std::to_string(link) + " / exitFace " + std::to_string(face) + " isn't 0..255 / 0..5"; return false; }
+            br.link = (uint8_t)link; br.exitFace = (uint8_t)face;
+        }
         m.brushes.push_back(br);
     }
     for (auto& g : j["groups"].items()) {
@@ -211,7 +250,11 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
         std::string t = g["type"].str("custom");
         gr.type = t == "room" ? Map::GROUP_ROOM : t == "stairs" ? Map::GROUP_STAIRS : Map::GROUP_CUSTOM;
         gr.material = g["mat"].i(0); gr.dir = g["dir"].i(0); gr.box = toBox(g);
-        for (auto& p : g["parts"].items()) { Brush b; b.material = p["mat"].i(0); b.box = toBox(p); gr.parts.push_back(b); }
+        for (auto& p : g["parts"].items()) {
+            Brush b; b.material = p["mat"].i(0); b.box = toBox(p);
+            if (!readShape(p, b, "group part")) return false;
+            gr.parts.push_back(b);
+        }
         m.groups.push_back(std::move(gr));
     }
     for (auto& s : j["spawns"].items()) {

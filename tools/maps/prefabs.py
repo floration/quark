@@ -6,7 +6,7 @@ from collections import Counter
 OUT = None   # where save() writes (make_maps.py sets it)
 OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets", "overrides", "maps")
 MADE = []
-MAP_FORMAT = 4   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
+MAP_FORMAT = 10   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
 
 class M:
     def __init__(s, title, mode, sun=(0.45, 1.0, 0.3)):
@@ -122,7 +122,7 @@ class M:
     def scale_xz(s, f):
         """spread everything built so far out by f across the ground (heights unchanged): a map made roomier
         without moving every piece by hand. Boxes, stairs, ladders, spawns and lights; lights reach f as far."""
-        boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid", "ladder"}
+        boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid", "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick", "glass", "asphalt", "mud", "cobblestone", "concrete", "tile", "marble", "corrugated", "hazard", "snow", "stone", "crystal", "circuit", "rust", "terracotta", "breakablebrick", "breakableglass", "breakablecobblestone", "ladder"}
         g = lambda v: f"{float(v) * f:g}"
         def scaled(l):
             w = l.split()
@@ -888,11 +888,12 @@ class M:
             x += step
     def save(s, name, dress=True):
         MADE.append(name)
-        # each map plays the mode it's built for (plus any it lists in `also`), and free for all. Lodestone lists most modes.
+        # each map plays the mode it's built for (plus any it lists in `also`), and free for all (not a surf course: its
+        # stages are ridden, not walked between). Lodestone lists most modes.
         # (any map can still be started in any mode: the menus warn that it may not work)
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
-        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
+        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode in ("ffa", "surf") else ["ffa"])))
         s.name = name
         offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
         s.top_up_spawns(offered)
@@ -980,6 +981,7 @@ PALETTES = {
     "hamlet":    ((0.74, 0.68, 0.58), (0.46, 0.24, 0.17), (0.32, 0.28, 0.25), (1.00, 0.78, 0.42), (0.70, 0.78, 0.90)),  # plaster, clay roofs, lanterns
     "midtown":   ((0.60, 0.59, 0.57), (0.52, 0.25, 0.18), (0.30, 0.32, 0.36), (0.55, 0.85, 1.00), (0.62, 0.70, 0.82)),  # concrete, brick, glass blue, dusk sky
     "lodestone": ((0.46, 0.40, 0.34), (0.46, 0.28, 0.14), (0.28, 0.27, 0.28), (0.45, 0.90, 1.00), (0.24, 0.20, 0.17)),  # rock, pit timber, crystal cyan
+    "cascade":   ((0.78, 0.84, 0.90), (0.34, 0.46, 0.60), (0.40, 0.44, 0.50), (0.45, 0.85, 1.00), (0.70, 0.80, 0.92)),  # ice ridges, cyan lines
     "viaduct":   ((0.62, 0.58, 0.52), (0.30, 0.34, 0.40), (0.26, 0.27, 0.30), (1.00, 0.75, 0.30), (0.72, 0.76, 0.84)),  # stone viaduct, amber markers
     "hightown":  ((0.66, 0.66, 0.68), (0.22, 0.34, 0.50), (0.30, 0.32, 0.36), (0.80, 0.92, 1.00), (0.66, 0.76, 0.90)),  # office concrete, glass blue, cool strip lights (it had none: MAP-18)
 }

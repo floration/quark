@@ -90,6 +90,9 @@ typedef struct __GLsync* GLsync;
 #define GL_COLOR_ATTACHMENT0 0x8CE0
 #define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
 #define GL_RGBA8 0x8058
+#define GL_RGBA32F 0x8814
+#define GL_RG32F 0x8230
+#define GL_R32F 0x822E
 #define GL_DEPTH24_STENCIL8 0x88F0
 #define GL_MAX_SAMPLES 0x8D57
 #define GL_MAX_RENDERBUFFER_SIZE 0x84E8
@@ -155,6 +158,7 @@ typedef struct __GLsync* GLsync;
     X(void, glGetShaderiv, (GLuint, GLenum, GLint*)) \
     X(void, glGetShaderInfoLog, (GLuint, GLsizei, GLsizei*, GLchar*)) \
     X(GLuint, glCreateProgram, ()) \
+    X(void, glDeleteProgram, (GLuint)) \
     X(void, glAttachShader, (GLuint, GLuint)) \
     X(void, glBindAttribLocation, (GLuint, GLuint, const GLchar*)) \
     X(void, glLinkProgram, (GLuint)) \

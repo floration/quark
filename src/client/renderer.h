@@ -32,6 +32,7 @@ template <class T> struct NoInitAlloc : std::allocator<T> {
 using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
+constexpr Color kGlassTint = {0.86f, 0.90f, 0.93f, 0.26f};   // glass panes (map material 21): very light grey, see-through
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 
 class Renderer {
@@ -49,6 +50,7 @@ public:
     static void prepareWorld(const Map& map, PreparedWorld& out, const std::function<void(float)>& progress,
                              const std::atomic<bool>* cancel = nullptr);
     void uploadWorld(const Map& map, PreparedWorld& w);
+    void setHoles(const std::vector<Map::Hole>& holes);   // holes blown in thin brick / cobblestone (the world shader cuts them)
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
@@ -71,6 +73,7 @@ public:
 
     // Dynamic geometry (cleared every frame)
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
+    void slope(const Brush& b, const Vec3& color);   // a wedge / corner (map.h), like box(): into the static batch or the frame's
     void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow = true);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)
     void viewBoxXf(const Mat4& local, const Vec3& half, const Vec3& color);  // camera-relative, turned (local: camera space)
@@ -135,6 +138,10 @@ public:
     void setUiFont(std::unique_ptr<FontAtlas> font);
     static FontAtlasLayout uiFontLayout();   // font_ui.h's layout, sized to Rubik's capitals
     void flush2D();
+    // A material's swatch (the map editor's picker): a 2 m square of it drawn by the world shader in the current
+    // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). Each is rendered into a slot
+    // of an atlas the first frame it's asked for (again when the palette changes).
+    void swatch(float x, float y, float w, float h, int material);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -179,7 +186,7 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time; } uWorld_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass; } uWorld_ = {};
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -191,6 +198,35 @@ private:
     Vec3 camFwd_, camRight_, camUp_;
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
+    unsigned holeTex_ = 0, holeCellTex_ = 0, holeListTex_ = 0;   // (the holes, the grid's cells, the cells' lists: setHoles)
+    GLint uHoleCount_ = -1, uHoleGrid_ = -1, uHoleGridH_ = -1;
+    int holeCount_ = 0;
+    float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
+    int holeGridH_ = 0;
+    std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
+    unsigned compileWorld(const std::vector<bool>* used, std::string* err);
+    void setWorldLooks(const BakedWorld& bw);
+    void uploadSeeThrough(const Map& map);
+public:
+    void uploadBlocks(const Map& map);   // the breakable blocks still standing (again when one breaks / they're back)
+private:
+    unsigned blockVao_ = 0, blockVbo_ = 0;
+    int blockVerts_ = 0;
+    // the see-through looks (kMatSemi: Map's semiMaterial brushes), drawn blended after the world with their looks
+    unsigned seeVao_ = 0, seeVbo_ = 0;
+    int seeVerts_ = 0;
+    std::vector<bool> seeUsed_;   // (their materials: setWorldLooks puts their looks in the world shader too)
+    void initWorldUniforms();
+    // the material swatches (swatch): their atlas, its framebuffer, a one-texel lightmap, the quads, the 2D program
+    unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
+    unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
+    GLint uImgScreen_ = -1;
+    float swatchKey_[13] = {};
+    std::vector<float> swatchQuads_;   // (this frame's: x0 y0 x1 y1 material per quad)
+    std::vector<int> swatchSlotOf_, swatchSlotMat_;   // (the atlas slot each material is in, -1 none; the material in each slot)
+    std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
+    unsigned swatchFrame_ = 0;
+    void buildSwatches();
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

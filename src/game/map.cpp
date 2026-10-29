@@ -309,7 +309,75 @@ static void upgradeMap2to3(std::vector<std::string>&) {}
 // 3 -> 4: the acid material was added; a version 3 file has none, so nothing changes
 static void upgradeMap3to4(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4};
+// 4 -> 5: wedges and corners ("wedge" / "corner" lines) were added; a version 4 file has none, so nothing changes
+static void upgradeMap4to5(std::vector<std::string>&) {}
+
+// 5 -> 6: brick, cobblestone and glass never break now; the breakable ones are their own materials (owner, 2026-10-29).
+// So that every map plays as it did: all glass becomes breakable glass, and brick / cobblestone boxes (a box line, a
+// custom group's box part, a room whose walls come out that thin) no thicker than kBreakableThick become the breakable
+// kind (only those could be blown open). Thicker ones and slopes never broke and stay as they are.
+static void upgradeMap5to6(std::vector<std::string>& lines) {
+    auto thin = [](float a, float b, float c) { return std::min(a, std::min(b, c)) <= kBreakableThick + 1e-4f; };
+    auto breakable = [](int m) { return m == kMatGlass ? kMatGlassBreak : m == kMatBrick ? kMatBrickBreak : m == kMatCobble ? kMatCobbleBreak : m; };
+    // the line with its word k (0: the keyword) replaced, the words joined by single spaces (numbers kept as written)
+    auto setWord = [](const std::string& tail, const std::string& kw, size_t k, const std::string& w, const std::string& comment) {
+        std::istringstream s(tail);
+        std::vector<std::string> ws{kw};
+        for (std::string x; s >> x;) ws.push_back(x);
+        if (k < ws.size()) ws[k] = w;
+        std::string o;
+        for (auto& x : ws) { if (!o.empty()) o += ' '; o += x; }
+        return comment.empty() ? o : o + " " + comment;
+    };
+    Vec3 groupSize(0, 0, 0);   // (the custom group the next part lines belong to)
+    for (std::string& l : lines) {
+        size_t rest = 0;
+        const std::string kw = firstWord(l, &rest);
+        if (kw.empty()) continue;
+        std::string tail = l.substr(rest);
+        const size_t hash = tail.find('#');
+        const std::string comment = hash == std::string::npos ? "" : tail.substr(hash);
+        if (hash != std::string::npos) tail.erase(hash);
+        std::istringstream in(tail);
+        float v[6];
+        if (kw == "glass") { l = "breakableglass" + tail + comment; continue; }
+        if (kw == "brick" || kw == "cobblestone") {
+            if (in >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5] && thin(std::fabs(v[3] - v[0]), std::fabs(v[4] - v[1]), std::fabs(v[5] - v[2])))
+                l = "breakable" + kw + tail + comment;
+            continue;
+        }
+        int m = -1;
+        if (kw == "wedge" || kw == "corner" || kw == "tetra" || kw == "cut") {   // (slopes: only glass broke)
+            if (in >> m && m == kMatGlass) l = setWord(tail, kw, 1, std::to_string(kMatGlassBreak), comment);
+        } else if (kw == "group") {
+            std::string type; int dir = 0;
+            if (!(in >> type >> m >> dir >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5])) continue;
+            groupSize = {std::fabs(v[3] - v[0]), std::fabs(v[4] - v[1]), std::fabs(v[5] - v[2])};
+            const float wall = std::min(0.25f, std::min(groupSize.x, std::min(groupSize.y, groupSize.z)) * 0.25f);   // (Map::groupBoxes)
+            const bool brk = m == kMatGlass || (type == "room" && (m == kMatBrick || m == kMatCobble) && wall <= kBreakableThick + 1e-4f);
+            if (brk) l = setWord(tail, kw, 2, std::to_string(breakable(m)), comment);
+        } else if (kw == "part") {
+            if (!(in >> m >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5])) continue;
+            std::string shape;
+            const bool box = !(in >> shape);
+            const bool brk = m == kMatGlass || (box && (m == kMatBrick || m == kMatCobble) &&
+                                                thin(std::fabs(v[3] - v[0]) * groupSize.x, std::fabs(v[4] - v[1]) * groupSize.y, std::fabs(v[5] - v[2]) * groupSize.z));
+            if (brk) l = setWord(tail, kw, 1, std::to_string(breakable(m)), comment);
+        }
+    }
+}
+
+// 6 -> 7: the 333 new surface materials (139-471: new keywords only, so an older reader would fail on them; a format 6
+// map has none, nothing to change)
+static void upgradeMap6to7(std::vector<std::string>&) {}
+// 7 -> 8: the 25 liquids (472-496: new keywords only)
+static void upgradeMap7to8(std::vector<std::string>&) {}
+// 8 -> 9: the 25 see-through looks (537-561: new keywords only)
+static void upgradeMap8to9(std::vector<std::string>&) {}
+// 9 -> 10: the 24 breakable blocks and 10 feature blocks (562-595: new keywords, a teleporter's "tp" after its box)
+static void upgradeMap9to10(std::vector<std::string>&) {}
+
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -657,15 +725,34 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
         } else if (kw == "title") {
             ls.rest(title);
             ok = cleanMapTitle(title);   // (the same rule as the editor's title edit)
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip" || kw == "nograpple" || kw == "acid") {
+        } else if (materialKeyword(kw) >= 0) {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : kw == "nograpple" ? kMatNoGrapple : kw == "acid" ? kMatAcid : 0;
+            b.material = materialKeyword(kw);
+            { std::string w; if (ok && b.material == kMatTeleport && (ls >> w)) ok = w == "tp" && readTp(ls, b); }   // (a teleporter's link and face)
             hasWallbang |= b.material == 2;
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
                 brushes.push_back(b);
                 if (!solidMaterial(b.material)) continue; // far scenery / water / lava surfaces: not part of the playable bounds
+                bounds.mn = vmin(bounds.mn, b.box.mn);
+                bounds.mx = vmax(bounds.mx, b.box.mx);
+            }
+        } else if (kw == "wedge" || kw == "corner" || kw == "tetra" || kw == "cut") {   // "wedge|corner|tetra <material> <dir + 4 * up> x0 y0 z0 x1 y1 z1", "cut <material> <n> <n planes: a b c d> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
+            Brush b; int dir = -1;
+            b.shape = (uint8_t)slopeFromWord(kw);
+            if (b.shape == BRUSH_CUT) ok = (bool)(ls >> b.material) && validMapMaterial(b.material) && readCuts(ls, b) && readBox(ls, b.box);
+            else {
+                ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 * kSlopeUps && readBox(ls, b.box);
+                b.dir = (uint8_t)(std::max(0, dir) % 4);
+                b.up = (uint8_t)(std::max(0, dir) / 4);
+            }
+            { std::string w; if (ok && b.material == kMatTeleport && (ls >> w)) ok = w == "tp" && readTp(ls, b); }
+            if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
+            if (ok) {
+                hasWallbang |= b.material == 2;
+                brushes.push_back(b);
+                if (!solidMaterial(b.material)) continue;
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
@@ -702,8 +789,19 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
             if (ok) groups.push_back(g);
-        } else if (kw == "part") {
+        } else if (kw == "part") {   // "part <material> <6 fractions>", then "wedge|corner <dir + 4 * up>" for a slope (format 5)
             Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < kMaxGroupParts && (bool)(ls >> b.material) && validMapMaterial(b.material) && readBox(ls, b.box);
+            std::string shape;
+            if (ok && ls >> shape) {
+                int dir = -1;
+                if (shape == "cut") { b.shape = BRUSH_CUT; ok = readCuts(ls, b); }
+                else {
+                    ok = (shape == "wedge" || shape == "corner" || shape == "tetra") && (bool)(ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps;
+                    if (ok) b.shape = (uint8_t)slopeFromWord(shape);
+                    b.dir = (uint8_t)(std::max(0, dir) % 4);
+                    b.up = (uint8_t)(std::max(0, dir) / 4);
+                }
+            }
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b) && checkpoints.size() < kMaxMapCheckpoints; if (ok) checkpoints.push_back(b);
@@ -880,9 +978,28 @@ std::string Map::serialize() const {
         auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid"};
-    static_assert(sizeof matNames / sizeof *matNames == kMapMaterials, "a file keyword per material");
-    for (auto& br : brushes) if (!br.generated) box(matNames[br.material], br.box);
+    auto tp = [&](const Brush& br) {   // (a teleporter: its link and face at the end of its line)
+        if (br.material != kMatTeleport || o.empty() || o.back() != '\n') return;
+        o.pop_back();
+        o += " tp " + std::to_string((int)br.link) + " " + std::to_string((int)br.exitFace) + "\n";
+    };
+    for (auto& br : brushes) {
+        if (br.generated) continue;
+        if (br.shape == BRUSH_BOX) { box(kMapMaterialWords[br.material], br.box); tp(br); continue; }
+        if (br.shape == BRUSH_CUT) {   // (its planes can be long: built as a string)
+            o += "cut " + std::to_string(br.material) + cutText(br);
+            for (int k = 0; k < 6; k++) { o += ' '; o += exactNum(nb[k], 24, k < 3 ? br.box.mn[k] : br.box.mx[k - 3]); }
+            o += '\n';
+            tp(br);
+            continue;
+        }
+        const std::string cuts = " " + std::to_string((int)br.dir + 4 * br.up);
+        snprintf(b, sizeof b, "%s %d%s %s %s %s %s %s %s\n", slopeWord(br.shape), br.material, cuts.c_str(),
+                 exactNum(nb[0], 24, br.box.mn.x), exactNum(nb[1], 24, br.box.mn.y), exactNum(nb[2], 24, br.box.mn.z),
+                 exactNum(nb[3], 24, br.box.mx.x), exactNum(nb[4], 24, br.box.mx.y), exactNum(nb[5], 24, br.box.mx.z));
+        o += b;
+        tp(br);
+    }
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
@@ -907,7 +1024,12 @@ std::string Map::serialize() const {
         char kw[48];
         snprintf(kw, sizeof kw, "group %s %d %d", groupTypes[g.type], g.material, g.dir);
         box(kw, g.box);
-        for (auto& p : g.parts) { snprintf(kw, sizeof kw, "part %d", p.material); box(kw, p.box); }
+        for (auto& p : g.parts) {
+            snprintf(kw, sizeof kw, "part %d", p.material);
+            box(kw, p.box);
+            if (p.shape == BRUSH_CUT) { o.pop_back(); o += " cut" + cutText(p) + "\n"; }
+            else if (p.shape != BRUSH_BOX) { o.pop_back(); snprintf(kw, sizeof kw, " %s %d\n", slopeWord(p.shape), (int)p.dir + 4 * p.up); o += kw; }
+        }
     }
     for (auto& st : stairs) {   // (kept as they were: the editor doesn't move them with the boxes)
         snprintf(b, sizeof b, "stairs %s %s %s %s %s %s %c %s %d\n", exactNum(nb[0], 24, st.x0), exactNum(nb[1], 24, st.z0), exactNum(nb[2], 24, st.x1),
@@ -920,6 +1042,14 @@ std::string Map::serialize() const {
     return o;
 }
 
+std::string cutText(const Brush& b) {
+    std::string o = " " + std::to_string((int)b.ncut);
+    char nb[32];
+    for (int k = 0; k < b.ncut && k < kMaxCuts; k++)
+        for (int j = 0; j < 4; j++) { o += ' '; o += exactNum(nb, sizeof nb, b.cut[k][j]); }
+    return o;
+}
+
 static std::string fmtBox(const AABB& b) {
     char t[160];
     snprintf(t, sizeof t, "%.9g %.9g %.9g %.9g %.9g %.9g", b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
@@ -929,7 +1059,14 @@ static std::string fmtBox(const AABB& b) {
 std::string describeMapObject(const Map& m, char kind, const char* verb, int i) {
     char t[220];
     switch (kind) {
-        case 'b': snprintf(t, sizeof t, "b %s %d %d %s", verb, i, m.brushes[i].material, fmtBox(m.brushes[i].box).c_str()); break;
+        case 'b': {   // (a wedge or corner: its shape and dir + 4 * up after the box, "w 2" / "c 4")
+            const Brush& br = m.brushes[i];
+            snprintf(t, sizeof t, "b %s %d %d %s", verb, i, br.material, fmtBox(br.box).c_str());
+            const std::string tp = br.material == kMatTeleport ? " p " + std::to_string((int)br.link) + " " + std::to_string((int)br.exitFace) : "";
+            if (br.shape == BRUSH_CUT) return std::string(t) + " x" + cutText(br) + tp;
+            if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", slopeLetter(br.shape), (int)br.dir + 4 * br.up); }
+            return std::string(t) + tp;
+        }
         case 's': { auto& sp = m.spawns[i]; snprintf(t, sizeof t, "s %s %d %d %.9g %.9g %.9g %.9g", verb, i, sp.team, sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180.0f / PI); break; }
         case 'l': { auto& l = m.lights[i]; snprintf(t, sizeof t, "l %s %d %.9g %.9g %.9g %.9g %.9g", verb, i, l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); break; }
         case 'z': snprintf(t, sizeof t, "z %s %d %s", verb, i, fmtBox(m.bombSites[i]).c_str()); break;
@@ -945,6 +1082,7 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
 }
 
 bool applyMapEdit(Map& m, const std::string& op) {
+    m.resetDestruction();   // (edits name brushes by index: on the map as it was)
     std::istringstream in(op);
     std::string kind, verb;
     if (!(in >> kind)) return false;
@@ -984,6 +1122,21 @@ bool applyMapEdit(Map& m, const std::string& op) {
         b.mn = vmin(a, c); b.mx = vmax(a, c);
         return true;
     };
+    // after a brush's or a group part's box: nothing (a box), or "w <dir + 4 * up>" / "c <dir + 4 * up>" (a wedge /
+    // corner, map format 5)
+    auto readShape = [&](Brush& b) {   // (then "p <link> <face>": a teleporter's, map format 10)
+        std::string shape;
+        if (!(in >> shape)) return true;
+        if (shape == "p") return readTp(in, b);
+        auto tp = [&] { std::string w; return !(in >> w) || (w == "p" && readTp(in, b)); };
+        int dir = -1;
+        if (shape == "x") { b.shape = BRUSH_CUT; return readCuts(in, b) && tp(); }
+        if (!((shape == "w" || shape == "c" || shape == "t") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
+        b.shape = (uint8_t)slopeFromWord(shape);
+        b.dir = (uint8_t)(dir % 4);
+        b.up = (uint8_t)(dir / 4);
+        return tp();
+    };
     // generic ins / set / del on one of the lists
     auto edit = [&](auto& vec, auto read, size_t minSize, size_t maxSize) {
         using T = typename std::decay_t<decltype(vec)>::value_type;
@@ -1014,16 +1167,17 @@ bool applyMapEdit(Map& m, const std::string& op) {
         else {
             Brush b;
             if (!((bool)(in >> b.material) && validMapMaterial(b.material) && readBox(b.box))) return false;
+            if (!readShape(b)) return false;
             if (verb == "ins") ok = i >= 0 && (size_t)i <= n && n < kMaxMapBrushes && m.insertBrush((size_t)i, b);
             else ok = i >= 0 && (size_t)i < n && m.setBrush((size_t)i, b);
         }
         if (ok) m.sourceStale = true;
         return ok;
     }
-    if (kind == "g" && verb == "part") {
+    if (kind == "g" && verb == "part") {   // (a slope part: "w|c <dir + 4 * up>" after its box, as for a brush)
         Brush part;
         if (!(i >= 0 && (size_t)i < m.groups.size() && m.groups[i].type == Map::GROUP_CUSTOM && m.groups[i].parts.size() < kMaxGroupParts
-              && (bool)(in >> part.material) && validMapMaterial(part.material) && readBox(part.box)))
+              && (bool)(in >> part.material) && validMapMaterial(part.material) && readBox(part.box) && readShape(part)))
             return false;
         // its box in the world goes right after group i's others: the generated brushes are the ladders' rails and
         // rungs, then each group's boxes in order (genLadderBrushes)
@@ -1065,7 +1219,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return readVec(l.pos) && (bool)(in >> l.radius >> l.intensity) && validMapLight(l.radius, l.intensity);
     }, 0, kMaxMapLights);
     else if (kind == "z") ok = edit(m.bombSites, readBox, 0, kMaxMapSites);
-    else if (kind == "c") ok = edit(m.checkpoints, readBox, 0, kMaxMapCheckpoints);
+    else if (kind == "c") { ok = edit(m.checkpoints, readBox, 0, kMaxMapCheckpoints); m.buildRace(); }
     else if (kind == "p") ok = edit(m.payloadPath, readVec, 0, kMaxMapPath);
     else if (kind == "o") ok = edit(m.points, readBox, 0, kMaxMapPoints);
     else if (kind == "d") { // ladders: the volume and whether it draws its own rails / rungs (kept in step)
@@ -1131,9 +1285,11 @@ void Map::genLadderBrushes() {
         add(w1 - 0.08f, l.mn.y, w1, top, dc - 0.04f, dc + 0.04f);
         for (float y = l.mn.y + 0.35f; y < top; y += 0.4f) add(w0 + 0.08f, y, w1 - 0.08f, y + 0.06f, dc - 0.03f, dc + 0.03f);
     }
-    std::vector<Brush> parts;
-    for (auto& g : groups) groupBoxes(g, parts);
-    for (auto& b : parts) { b.generated = true; brushes.push_back(b); }
+    for (size_t gi = 0; gi < groups.size(); gi++) {
+        std::vector<Brush> parts;
+        groupBoxes(groups[gi], parts);
+        for (auto& b : parts) { b.generated = true; b.group = (int)gi; brushes.push_back(b); }
+    }
 }
 
 void Map::groupBoxes(const Group& g, std::vector<Brush>& out) {
@@ -1214,10 +1370,37 @@ static void gridShape(const AABB& bounds, float& gx0, float& gz0, int& gw, int& 
     gh = std::max(1, (int)std::min(4096.0f, std::ceil((bounds.mx.z - gz0) / Map::kCell)));
 }
 
+void Map::rebuildFluids() {
+    lava.clear(); acid.clear(); liquids.clear(); fields.clear(); hasSlow = false;
+    for (auto& b : brushes) {
+        if (b.gone) continue;
+        if (b.material == kMatLowGrav) fields.push_back({b.box, FIELD_LOWGRAV});
+        if (b.material == kMatSlowMo) { fields.push_back({b.box, FIELD_SLOW}); hasSlow = true; }
+        if (b.material == kMatGravFlip) fields.push_back({{{b.box.mn.x, b.box.mx.y, b.box.mn.z}, {b.box.mx.x, b.box.mx.y + kGravFlipHeight, b.box.mx.z}}, FIELD_FLIP});
+        if (lavaMaterial(b.material)) lava.push_back(b.box);
+        if (b.material == kMatAcid) acid.push_back(b.box);
+        if (liquidMaterial(b.material)) liquids.push_back({b.box, (uint16_t)(b.material - kMatLiquids)});
+    }
+}
+
 bool Map::buildGrid() {
-    lava.clear();   // (touch it and die)
-    acid.clear();   // (touch it and it hurts: pmove)
-    for (auto& b : brushes) if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
+    rebuildFluids();   // (lava: touch it and die; acid: touch it and it hurts; liquids: pmove)
+    hasIce = hasRubber = hasGripMats = false;
+    glass.clear(); windows.clear(); blocks.clear(); crumbles.clear(); teleporters.clear();
+    buildRace();
+    for (size_t i = 0; i < brushes.size(); i++) {
+        if (breakMaterial(brushes[i].material)) blocks.push_back((uint32_t)i);
+        if (brushes[i].material == kMatCrumble) crumbles.push_back((uint32_t)i);
+        if (brushes[i].material == kMatTeleport) teleporters.push_back((uint32_t)i);
+        if (brushes[i].material == kMatGlassBreak) glass.push_back((uint32_t)i);
+        else if (brushes[i].material == kMatGlass) windows.push_back((uint32_t)i);
+    }
+    for (auto& b : brushes) {
+        hasIce |= b.material == kMatIce;
+        hasRubber |= b.material == kMatRubber;
+        hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud ||
+                       b.material == kMatHealTile || b.material == kMatSpikes;
+    }
     gridShape(bounds, gridX0, gridZ0, gridW, gridH);
     size_t ncells = (size_t)gridW * gridH;
     // count per cell, then fill: one allocation, refused before it's made if it's too big
@@ -1319,13 +1502,24 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         buildGrid();
         return false;
     }
-    if (old.material == 7 || (op != 2 && b.material == 7)) {
-        lava.clear();
-        for (auto& x : brushes) if (x.material == 7) lava.push_back(x.box);
-    }
-    if (old.material == kMatAcid || (op != 2 && b.material == kMatAcid)) {
-        acid.clear();
-        for (auto& x : brushes) if (x.material == kMatAcid) acid.push_back(x.box);
+    auto fluid = [](int m) { return lavaMaterial(m) || m == kMatAcid || liquidMaterial(m) || m == kMatLowGrav || m == kMatSlowMo || m == kMatGravFlip; };
+    if (fluid(old.material) || (op != 2 && fluid(b.material))) rebuildFluids();
+    if (op != 2) {
+        hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber;
+        hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud ||
+                       b.material == kMatHealTile || b.material == kMatSpikes;
+    }   // (kept until a rebuild: only costs a probe)
+    if (op != 0 || old.material == kMatGate || b.material == kMatGate) buildRace();
+    if (op != 0 || glassMaterial(old.material) || glassMaterial(b.material) || blockDrawn(old.material) || blockDrawn(b.material) ||
+        old.material == kMatTeleport || b.material == kMatTeleport) {
+        glass.clear(); windows.clear(); blocks.clear(); crumbles.clear(); teleporters.clear();
+        for (size_t k = 0; k < brushes.size(); k++) {
+            if (breakMaterial(brushes[k].material)) blocks.push_back((uint32_t)k);
+            if (brushes[k].material == kMatCrumble) crumbles.push_back((uint32_t)k);
+            if (brushes[k].material == kMatTeleport) teleporters.push_back((uint32_t)k);
+            if (brushes[k].material == kMatGlassBreak) glass.push_back((uint32_t)k);
+            else if (brushes[k].material == kMatGlass) windows.push_back((uint32_t)k);
+        }
     }
     const uint16_t ix = (uint16_t)i;
     if (oldSolid)   // out of the cells it was in
@@ -1337,7 +1531,7 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
                 while (k < c.end && d[k] != ix) k++;
                 if (k < c.end) { memmove(d + k, d + k + 1, (c.end - k - 1) * sizeof *d); c.end--; }
             }
-    if (op != 0) {   // the brushes after i moved up or down one (the whole array, spare slots too: one vectorized pass)
+    if (op != 0 && !(op == 1 && i + 1 == brushes.size())) {   // the brushes after i moved up or down one (none after one added at the end) (the whole array, spare slots too: one vectorized pass)
         uint16_t* d = cellBrushes.data();
         size_t n = cellBrushes.size();
         if (op == 1) for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] + (d[k] >= ix));
@@ -1365,39 +1559,256 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
     for (int z = z0; z <= z1; z++)
         for (int x = x0; x <= x1; x++) {
             size_t c = (size_t)z * gridW + x;
-            for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) f(brushes[cellBrushes[k]]);
+            for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++)
+                if (stopsPlayers(brushes[cellBrushes[k]].material)) f(brushes[cellBrushes[k]]);   // (a laser barrier, smoke: walk through)
         }
 }
 
-float Map::sweepAxis(const AABB& box, int axis, float delta) const {
+bool Map::breakGlass(size_t i) {
+    if (i >= brushes.size() || (brushes[i].material != kMatGlassBreak && !blockDrawn(brushes[i].material)) || brushes[i].gone) return false;
+    if (pristineBrushes.empty()) pristineBrushes = brushes;
+    Brush b = brushes[i];
+    b.gone = true;
+    if (!setBrush(i, b)) return false;
+    destructSerial++;
+    return true;
+}
+
+bool Map::restoreBrush(size_t i) {
+    if (i >= brushes.size() || !brushes[i].gone) return false;
+    Brush b = brushes[i];
+    b.gone = false;
+    if (!setBrush(i, b)) return false;
+    destructSerial++;
+    return true;
+}
+
+int Map::crumbleAt(const Vec3& p, float eps) const {
+    for (uint32_t i : crumbles) {
+        const Brush& b = brushes[i];
+        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+    }
+    return -1;
+}
+
+int Map::teleporterAt(const AABB& box) const {
+    for (uint32_t i : teleporters) {
+        const AABB& t = brushes[i].box;
+        if (!brushes[i].gone && box.mn.x < t.mx.x && box.mx.x > t.mn.x && box.mn.y < t.mx.y && box.mx.y > t.mn.y && box.mn.z < t.mx.z && box.mx.z > t.mn.z) return (int)i;
+    }
+    return -1;
+}
+
+int Map::teleportTarget(int from) const {
+    if (from < 0 || (size_t)from >= brushes.size()) return -1;
+    const size_t n = teleporters.size();
+    size_t at = 0;
+    while (at < n && (int)teleporters[at] != from) at++;
+    for (size_t k = 1; k < n; k++) {
+        const uint32_t j = teleporters[(at + k) % n];
+        if ((int)j != from && !brushes[j].gone && brushes[j].link == brushes[from].link) return (int)j;
+    }
+    return -1;
+}
+
+Vec3 Map::teleportExit(int to, float out, Vec3* n) const {
+    const Brush& b = brushes[(size_t)to];
+    const int a = b.exitFace / 2;
+    const float sg = (b.exitFace & 1) ? -1.0f : 1.0f;   // (kFacePX, kFaceNX, kFacePY, ...: axis x y z, + then -)
+    Vec3 nn;
+    nn[a] = sg;
+    Vec3 c = b.box.center();
+    c[a] = (sg > 0 ? b.box.mx[a] : b.box.mn[a]) + sg * out;
+    if (n) *n = nn;
+    return c;
+}
+
+void Map::buildRace() {
+    raceCheckpoints = checkpoints;
+    for (const Brush& b : brushes)
+        if (b.material == kMatGate && !b.generated && raceCheckpoints.size() < kMaxMapCheckpoints) raceCheckpoints.push_back(b.box);
+}
+
+void Map::flyProjectile(Vec3& pos, Vec3& vel, float gravity, float t) const {
+    if (!hasSlow || t <= 0) { projectileExtrapolate(pos, vel, gravity, t); return; }
+    constexpr float kStep = 0.002f;
+    for (float left = t; left > 0; left -= kStep) {
+        const float h = std::min(kStep, left) * projectileRate(pos);
+        vel.y -= gravity * h;
+        pos += vel * h;
+    }
+}
+
+int Map::blockAt(const Vec3& p, float eps) const {
+    for (uint32_t i : blocks) {
+        const Brush& b = brushes[i];
+        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+    }
+    return -1;
+}
+
+int Map::glassAt(const Vec3& p, float eps) const {
+    for (uint32_t i : glass) {
+        const Brush& b = brushes[i];
+        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+    }
+    return -1;
+}
+
+int Map::punchHole(const Vec3& at, std::vector<AABB>* crumbled) {
+    std::vector<Brush> pieces;
+    std::vector<size_t> cut;
+    std::vector<Hole> made;
+    const size_t n = brushes.size();
+    for (size_t i = 0; i < n; i++) {
+        const Brush& b = brushes[i];
+        if (b.gone || b.shape != BRUSH_BOX || !holeMaterial(b.material)) continue;
+        const Vec3 ext = b.box.mx - b.box.mn;
+        const int a = ext.x <= ext.y && ext.x <= ext.z ? 0 : ext.y <= ext.z ? 1 : 2;
+        if (ext[a] > kBreakableThick + 1e-4f) continue;
+        const int ua = holeUAxis(a), va = holeVAxis(a);
+        // the distance to the wall's plane (a direct hit, the blast a few cm off the face, counts as on it)
+        const float d = std::max(0.0f, std::max(b.box.mn[a] - at[a], at[a] - b.box.mx[a]) - 0.1f);
+        const float r = 0.5f * (kHoleSize - d);
+        if (r < 0.1f) continue;
+        const float reach = r * 1.2f;   // (the nudge can take a cell a little past r)
+        const float u0 = b.box.mn[ua], u1 = b.box.mx[ua], v0 = b.box.mn[va], v1 = b.box.mx[va];
+        if (at[ua] + reach <= u0 || at[ua] - reach >= u1 || at[va] + reach <= v0 || at[va] - reach >= v1) continue;
+        Hole h{at[ua], at[va], r, 0, 0, a, b.box.mn[a], b.box.mx[a]};
+        holeCell(b.material, h.cw, h.ch);
+        // the box's rows through the hole, each cut where cells break out; the rows above and below it stay whole
+        std::vector<std::pair<Vec3, Vec3>> parts;   // (u0 v0 _, u1 v1 _) in the wall's own (u, v)
+        auto emit = [&](float pu0, float pu1, float pv0, float pv1) {
+            if (pu1 - pu0 > 1e-4f && pv1 - pv0 > 1e-4f) parts.push_back({{pu0, pv0, 0}, {pu1, pv1, 0}});
+        };
+        const int r0 = (int)std::floor(std::max(v0, h.v - reach) / h.ch), r1 = (int)std::floor((std::min(v1, h.v + reach) - 1e-5f) / h.ch);
+        bool any = false;
+        float whole = v0;   // rows from here up are whole so far (merged into one box when a cut row or the top ends them)
+        for (int row = r0; row <= r1; row++) {
+            const float rv0 = std::max(v0, row * h.ch), rv1 = std::min(v1, (row + 1) * h.ch);
+            if (rv1 - rv0 < 1e-5f) continue;
+            const float off = 0.5f * (float)(row & 1);
+            const int c0 = (int)std::floor(std::max(u0, h.u - reach) / h.cw + off), c1 = (int)std::floor(std::min(u1, h.u + reach) / h.cw + off);
+            std::vector<std::pair<float, float>> keep;
+            float cur = u0;
+            for (int c = c0; c <= c1; c++) {
+                if (!holeTakes(h.u, h.v, h.r, h.cw, h.ch, row, c)) continue;
+                const float cu0 = std::max(u0, (c - off) * h.cw), cu1 = std::min(u1, (c + 1 - off) * h.cw);
+                if (cu1 <= cu0) continue;
+                if (cu0 > cur) keep.push_back({cur, cu0});
+                cur = std::max(cur, cu1);
+            }
+            if (cur == u0) continue;   // nothing broken in this row: still whole
+            any = true;
+            emit(u0, u1, whole, rv0);
+            whole = rv1;
+            if (u1 > cur) keep.push_back({cur, u1});
+            for (auto& k : keep) emit(k.first, k.second, rv0, rv1);
+        }
+        if (!any) continue;
+        emit(u0, u1, whole, v1);
+        cut.push_back(i);
+        for (auto& pp : parts) {
+            Brush q = b;
+            q.generated = true;
+            q.origin = b.origin >= 0 ? b.origin : (int)i;
+            q.box.mn[ua] = pp.first.x; q.box.mx[ua] = pp.second.x;
+            q.box.mn[va] = pp.first.y; q.box.mx[va] = pp.second.y;
+            pieces.push_back(q);
+        }
+        bool dup = false;
+        for (const Hole& o : made) dup |= o.axis == h.axis && o.lo == h.lo && o.hi == h.hi && o.u == h.u && o.v == h.v && o.r == h.r && o.cw == h.cw;
+        if (!dup) made.push_back(h);
+    }
+    if (cut.empty() || n + pieces.size() > kMaxMapBrushes || holes.size() + made.size() > (size_t)kMaxHoles) return 0;
+    if (pristineBrushes.empty()) pristineBrushes = brushes;
+    const std::vector<Brush> before = brushes;
+    for (size_t i : cut) brushes[i].gone = true;
+    brushes.insert(brushes.end(), pieces.begin(), pieces.end());
+    if (!buildGrid()) { brushes = before; buildGrid(); return 0; }   // (over the grid's limit: as it was)
+    holes.insert(holes.end(), made.begin(), made.end());
+    // a wall mostly gone: the rest falls (what's left of its face, its pieces' faces, against the whole of it)
+    std::vector<int> walls;
+    for (size_t i : cut) {
+        const int o = brushes[i].origin >= 0 ? brushes[i].origin : (int)i;
+        if (std::find(walls.begin(), walls.end(), o) == walls.end()) walls.push_back(o);
+    }
+    bool fell = false;
+    for (int o : walls) {
+        const AABB& w = brushes[(size_t)o].box;
+        const Vec3 ext = w.mx - w.mn;
+        const int a = ext.x <= ext.y && ext.x <= ext.z ? 0 : ext.y <= ext.z ? 1 : 2;
+        const int ua = holeUAxis(a), va = holeVAxis(a);
+        const float whole = ext[ua] * ext[va];
+        float left = 0;
+        for (const Brush& q : brushes)
+            if (q.origin == o && !q.gone) left += (q.box.mx[ua] - q.box.mn[ua]) * (q.box.mx[va] - q.box.mn[va]);
+        if (whole <= 0 || left > whole * (1.0f - kCrumble)) continue;
+        for (Brush& q : brushes) if (q.origin == o) q.gone = true;
+        if (holes.size() < (size_t)kMaxHoles)
+            holes.push_back({0.5f * (w.mn[ua] + w.mx[ua]), 0.5f * (w.mn[va] + w.mx[va]), -1.0f, 0.5f * ext[ua] + 0.01f, 0.5f * ext[va] + 0.01f, a, w.mn[a], w.mx[a]});
+        if (crumbled) crumbled->push_back(w);
+        fell = true;
+    }
+    if (fell) buildGrid();
+    destructSerial++;
+    return (int)cut.size();
+}
+
+void Map::resetDestruction() {
+    if (pristineBrushes.empty() && holes.empty()) return;
+    if (!pristineBrushes.empty()) brushes.swap(pristineBrushes);
+    pristineBrushes.clear();
+    holes.clear();
+    buildGrid();
+    destructSerial++;
+}
+
+float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit, int* glassOut) const {
+    if (hit) *hit = nullptr;
+    if (glassOut) *glassOut = -1;
     if (delta == 0.0f) return 0.0f;
     const int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
     constexpr float eps = 0.001f;
     AABB q = box;
     if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
-    auto clip = [&](const AABB& b) {
+    float glassAt = delta;   // (how far the move got to the nearest pane it passes)
+    auto clip = [&](const AABB& b, const Brush* who) {
+        if (glassOut && who && who->material == kMatGlassBreak) {   // (passed through: only noted)
+            if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1] || box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
+            const float allowed = delta > 0 ? b.mn[axis] - box.mx[axis] - eps : b.mx[axis] - box.mn[axis] + eps;
+            const bool ahead = delta > 0 ? box.mx[axis] <= b.mn[axis] + eps : box.mn[axis] >= b.mx[axis] - eps;
+            if (ahead && (delta > 0 ? allowed < glassAt : allowed > glassAt)) { glassAt = allowed; *glassOut = (int)(who - brushes.data()); }
+            return;
+        }
         if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1]) return;
         if (box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
         if (delta > 0) {
             if (box.mx[axis] <= b.mn[axis] + eps) {
                 float allowed = b.mn[axis] - box.mx[axis] - eps;
-                if (allowed < delta) delta = std::max(allowed, 0.0f);
+                if (allowed < delta) { delta = std::max(allowed, 0.0f); if (hit) *hit = who; }
             }
         } else {
             if (box.mn[axis] >= b.mx[axis] - eps) {
                 float allowed = b.mx[axis] - box.mn[axis] + eps;
-                if (allowed > delta) delta = std::min(allowed, 0.0f);
+                if (allowed > delta) { delta = std::min(allowed, 0.0f); if (hit) *hit = who; }
             }
         }
     };
-    forBox(q, [&](const Brush& br) { clip(br.box); });
-    for (const AABB& b : dynSolids) clip(b);
+    forBox(q, [&](const Brush& br) {
+        // (a slope, map.h: the part of it in the way, a box)
+        clip(br.shape == BRUSH_BOX ? br.box : brushObstacle(br, box, axis, delta), &br);
+    });
+    for (const AABB& b : dynSolids) clip(b, nullptr);
     return delta;
 }
 
 bool Map::boxSolid(const AABB& box) const {
     bool hit = false;
-    forBox(box, [&](const Brush& b) { hit = hit || box.overlaps(b.box); });
+    forBox(box, [&](const Brush& b) { hit = hit || brushOverlaps(b, box); });
     for (const AABB& b : dynSolids) hit = hit || box.overlaps(b);
     return hit;
 }
@@ -1441,26 +1852,24 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
 float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, int* material) const {
     Vec3 inv = safeInv(dir);
     float best = -1.0f;
-    int bestAxis = -1, bestMat = -1;
+    int bestMat = -1;
+    Vec3 bestN;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
-            if (brushes[cellBrushes[k]].material == 9) continue;   // clip: players only
-            int axis;
-            float t = rayAABB(o, inv, brushes[cellBrushes[k]].box, best < 0 ? maxDist : best, &axis);
-            if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; bestMat = brushes[cellBrushes[k]].material; }
+            if (!stopsShots(brushes[cellBrushes[k]].material)) continue;   // clip: players only (a force field, a net too)
+            Vec3 n;
+            float t = rayBrush(o, dir, inv, brushes[cellBrushes[k]], best < 0 ? maxDist : best, &n);
+            if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = n; bestMat = brushes[cellBrushes[k]].material; }
         }
         return !(best >= 0 && best <= tExit); // nearest hit is inside this cell: done
     });
     for (const AABB& b : dynSolids) {
         int axis;
         float t = rayAABB(o, inv, b, best < 0 ? maxDist : best, &axis);
-        if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; bestMat = -1; }
+        if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = Vec3(); if (axis >= 0) bestN[axis] = dir[axis] > 0 ? -1.0f : 1.0f; bestMat = -1; }
     }
     if (material) *material = best >= 0 ? bestMat : -1;
-    if (best >= 0 && normal) {
-        *normal = Vec3(0, 0, 0);
-        if (bestAxis >= 0) (*normal)[bestAxis] = dir[bestAxis] > 0 ? -1.0f : 1.0f;
-    }
+    if (best >= 0 && normal) *normal = bestN;
     return best;
 }
 
@@ -1472,8 +1881,8 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
             const Brush& br = brushes[cellBrushes[k]];
-            if (br.material == 9) continue;   // clip: players only
-            float t = rayAABB(o, inv, br.box, best < 0 ? maxDist : best);
+            if (!stopsShots(br.material)) continue;   // clip: players only
+            float t = rayBrush(o, dir, inv, br, best < 0 ? maxDist : best);
             if (t < 0) continue;
             if (br.material == 2) { if (bang < 0 || t < bang) bang = t; }
             else if (best < 0 || t < best) best = t;
@@ -1490,14 +1899,15 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
 
 // raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
 // them being the same). Learn: note in *learn where the blocker was found.
-static bool skipsSight(const Brush& br, bool hitClip) { return br.material == 9 && !hitClip; }   // clip: players only (light, sight and shots pass)
+// clip: players only (light, sight and shots pass); glass: sight and light pass (shots break it: they use raycast)
+static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || (br.material != 9 && !stopsSight(br.material)); }
 template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
     walkCells(m, o, dir, maxDist, [&](size_t c, float) {
         for (uint32_t k = m.cells[c].start, e = m.cells[c].end; k < e && !hit; k++) {
             const Brush& br = m.brushes[m.cellBrushes[k]];
             if (skipsSight(br, hitClip)) continue;
-            hit = rayAABB(o, inv, br.box, maxDist) >= 0;
+            hit = rayBrush(o, dir, inv, br, maxDist) >= 0;
             if (Learn && hit) *learn = {(uint32_t)c, k, -1};
         }
         return !hit;
@@ -1518,7 +1928,7 @@ bool Map::raycastAnyHinted(const Vec3& o, const Vec3& dir, float maxDist, RayHin
         if ((size_t)hint.dyn < dynSolids.size() && rayAABB(o, inv, dynSolids[hint.dyn], maxDist) >= 0) return true;
     } else if (hint.cell < cells.size() && hint.ref >= cells[hint.cell].start && hint.ref < cells[hint.cell].end) {
         const Brush& br = brushes[cellBrushes[hint.ref]];
-        if (!skipsSight(br, hitClip) && rayAABB(o, inv, br.box, maxDist) >= 0) {
+        if (!skipsSight(br, hitClip) && rayBrush(o, dir, inv, br, maxDist) >= 0) {
             bool reached = false;
             walkCells(*this, o, dir, maxDist, [&](size_t c, float) { reached = c == hint.cell; return !reached; });
             if (reached) return true;
@@ -1541,7 +1951,7 @@ bool Map::canSupportMode(int mode) const {
         case MODE_ARENA: return teams;
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
-        case MODE_RACE: return has(SPAWN_RACE) && !checkpoints.empty();
+        case MODE_RACE: case MODE_SURF: return has(SPAWN_RACE) && !raceCheckpoints.empty();
         case MODE_KOTH: return teams && hasHill;
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD: return teams && payloadPath.size() >= 2;
@@ -1585,4 +1995,189 @@ float Map::cartTrack(int mode, int attackers, float progress) const {
     if (mode != MODE_PAYLOAD || attackers != TEAM_B) return progress;
     for (auto& sp : spawns) if (isStagedSpawn(sp.team)) return progress;   // (staged: the attackers always start at the start)
     return payloadLength() - progress;
+}
+
+// ---- editor clean-ups (see MapFix)
+static MapFix fixStart(const Map& m) {
+    MapFix f;
+    const size_t n = m.editableBrushes();
+    f.box.resize(n);
+    f.del.assign(n, false);
+    for (size_t i = 0; i < n; i++) f.box[i] = m.brushes[i].box;
+    return f;
+}
+
+// brushes by 4 m cells, for the clean-ups' neighbour lookups (Midtown's 11 000 boxes pair by pair took 2 s)
+struct FixGrid {
+    std::unordered_map<int64_t, std::vector<int>> cells;
+    std::vector<int> stamp;
+    int now = 0;
+    static int64_t key(int x, int y, int z) { return ((int64_t)(x & 0x1fffff) << 42) | ((int64_t)(y & 0x1fffff) << 21) | (int64_t)(z & 0x1fffff); }
+    template <class F> static void span(const AABB& b, F f) {
+        const int x0 = (int)std::floor(b.mn.x / 4), x1 = (int)std::floor(b.mx.x / 4), y0 = (int)std::floor(b.mn.y / 4),
+                  y1 = (int)std::floor(b.mx.y / 4), z0 = (int)std::floor(b.mn.z / 4), z1 = (int)std::floor(b.mx.z / 4);
+        if ((int64_t)(x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > 4096) { f(key(INT_MIN / 2, 0, 0)); return; }   // (a huge box: one shared list)
+        for (int x = x0; x <= x1; x++) for (int y = y0; y <= y1; y++) for (int z = z0; z <= z1; z++) f(key(x, y, z));
+    }
+    std::vector<int> huge;
+    void add(int i, const AABB& b) {
+        if (stamp.size() <= (size_t)i) stamp.resize(i + 1, 0);
+        span(b, [&](int64_t k) { if (k == key(INT_MIN / 2, 0, 0)) huge.push_back(i); else cells[k].push_back(i); });
+    }
+    template <class F> void near(const AABB& b, F f) {   // each brush listed in a cell b touches, once
+        now++;
+        auto one = [&](int i) { if (stamp[i] != now) { stamp[i] = now; f(i); } };
+        for (int i : huge) one(i);
+        span(b, [&](int64_t k) {
+            if (k == key(INT_MIN / 2, 0, 0)) { for (auto& c : cells) for (int i : c.second) one(i); return; }
+            auto it = cells.find(k);
+            if (it != cells.end()) for (int i : it->second) one(i);
+        });
+    }
+};
+
+static bool thinBreakable(const Brush& b) {
+    const Vec3 d = b.box.mx - b.box.mn;
+    return holeMaterial(b.material) && std::min(d.x, std::min(d.y, d.z)) <= kBreakableThick + 1e-4f;
+}
+
+MapFix mapFixRedundant(const Map& m) {
+    MapFix f = fixStart(m);
+    const size_t n = f.box.size();
+    constexpr float e = 1e-4f;
+    auto mergeable = [&](size_t i) {
+        const Brush& b = m.brushes[i];
+        return !f.del[i] && b.shape == BRUSH_BOX && !glassMaterial(b.material) && !holeMaterial(b.material);
+    };
+    auto same = [&](float a, float b) { return std::fabs(a - b) <= e; };
+    // 1. merges, until nothing more joins (a row of boxes joins one at a time)
+    FixGrid grid;
+    for (size_t i = 0; i < n; i++) grid.add((int)i, f.box[i]);
+    const Vec3 pad(2 * e, 2 * e, 2 * e);
+    for (bool again = true; again;) {
+        again = false;
+        for (size_t i = 0; i < n; i++) {
+            if (!mergeable(i)) continue;
+            std::vector<int> close;
+            grid.near({f.box[i].mn - pad, f.box[i].mx + pad}, [&](int j) { close.push_back(j); });
+            for (int jj : close) {
+                const size_t j = (size_t)jj;
+                if (j == i || !mergeable(j) || m.brushes[j].material != m.brushes[i].material) continue;
+                AABB& a = f.box[i];
+                const AABB& b = f.box[j];
+                bool inside = true;
+                for (int k = 0; k < 3; k++) inside &= b.mn[k] >= a.mn[k] - e && b.mx[k] <= a.mx[k] + e;
+                int equal = 0, along = -1;
+                for (int k = 0; k < 3; k++) {
+                    if (same(a.mn[k], b.mn[k]) && same(a.mx[k], b.mx[k])) equal++;
+                    else along = k;
+                }
+                const bool joins = equal == 2 && b.mn[along] <= a.mx[along] + e && b.mx[along] >= a.mn[along] - e;
+                if (!inside && !joins) continue;
+                if (joins) { a.mn = vmin(a.mn, b.mn); a.mx = vmax(a.mx, b.mx); grid.add((int)i, a); }
+                f.del[j] = true;
+                f.merged++;
+                again = true;
+            }
+        }
+    }
+    // 2. brushes wholly inside solid opaque boxes (any brush can hide one, generated ones too; one already gone can't)
+    auto hides = [&](size_t k) {
+        const Brush& b = m.brushes[k];
+        return (k >= n || !f.del[k]) && b.shape == BRUSH_BOX && !b.gone && solidMaterial(b.material) && b.material != 2 &&
+               !glassMaterial(b.material) && !thinBreakable(b);
+    };
+    FixGrid all;
+    for (size_t k = 0; k < m.brushes.size(); k++) all.add((int)k, k < n ? f.box[k] : m.brushes[k].box);
+    for (size_t i = 0; i < n; i++) {
+        if (f.del[i]) continue;
+        const AABB c = f.box[i];
+        std::vector<AABB> by;
+        float axis[3][64];
+        int cnt[3] = {0, 0, 0};
+        for (int k = 0; k < 3; k++) { axis[k][cnt[k]++] = c.mn[k]; axis[k][cnt[k]++] = c.mx[k]; }
+        bool tooMany = false;
+        std::vector<int> close;
+        all.near(c, [&](int k) { close.push_back(k); });
+        for (int kk : close) {
+            const size_t k = (size_t)kk;
+            if (tooMany) break;
+            if (k == i || !hides(k)) continue;
+            const AABB& b = k < n ? f.box[k] : m.brushes[k].box;
+            if (!b.overlaps(c)) continue;
+            by.push_back(b);
+            for (int a = 0; a < 3; a++)
+                for (float v : {b.mn[a], b.mx[a]})
+                    if (v > c.mn[a] && v < c.mx[a]) { if (cnt[a] == 64) { tooMany = true; break; } axis[a][cnt[a]++] = v; }
+        }
+        if (by.empty() || tooMany) continue;   // (too finely cut up to check: kept)
+        for (int a = 0; a < 3; a++) std::sort(axis[a], axis[a] + cnt[a]);
+        bool covered = true;
+        for (int x = 0; x + 1 < cnt[0] && covered; x++)
+            for (int y = 0; y + 1 < cnt[1] && covered; y++)
+                for (int z = 0; z + 1 < cnt[2] && covered; z++) {
+                    if (axis[0][x + 1] - axis[0][x] < e || axis[1][y + 1] - axis[1][y] < e || axis[2][z + 1] - axis[2][z] < e) continue;
+                    const Vec3 p((axis[0][x] + axis[0][x + 1]) * 0.5f, (axis[1][y] + axis[1][y + 1]) * 0.5f, (axis[2][z] + axis[2][z + 1]) * 0.5f);
+                    covered = std::any_of(by.begin(), by.end(), [&](const AABB& b) { return b.contains(p); });
+                }
+        if (covered) { f.del[i] = true; f.hidden++; }
+    }
+    return f;
+}
+
+MapFix mapFixGaps(const Map& m) {
+    MapFix f = fixStart(m);
+    const size_t n = f.box.size();
+    constexpr float g = 0.125f, e = 1e-4f;
+    auto onGrid = [&](float v) { return std::fabs(v / g - std::round(v / g)) * g <= e; };
+    auto plain = [&](size_t i) { return m.brushes[i].shape == BRUSH_BOX; };
+    FixGrid grid;
+    for (size_t k = 0; k < m.brushes.size(); k++) grid.add((int)k, k < n ? f.box[k] : m.brushes[k].box);
+    const Vec3 reach(g, g, g);
+    for (size_t i = 0; i < n; i++) {
+        if (!plain(i)) continue;
+        std::vector<int> close;
+        grid.near({f.box[i].mn - reach, f.box[i].mx + reach}, [&](int j) { close.push_back(j); });
+        for (int jj : close) {
+            const size_t j = (size_t)jj;
+            if (j == i || j >= n || !plain(j)) continue;
+            for (int a = 0; a < 3; a++) {
+                AABB& A = f.box[i];   // A's high side faces B's low side across the gap
+                AABB& B = f.box[j];
+                const float gap = B.mn[a] - A.mx[a];
+                if (gap <= e || gap >= g - e) continue;
+                bool facing = true;   // (they overlap across the other two axes)
+                for (int k = 0; k < 3; k++) if (k != a) facing &= A.mn[k] < B.mx[k] - e && B.mn[k] < A.mx[k] - e;
+                if (!facing) continue;
+                const bool ga = onGrid(A.mx[a]), gb = onGrid(B.mn[a]);
+                if (ga && gb) continue;
+                float na = A.mx[a], nb = B.mn[a];
+                if (ga) nb = na;
+                else if (gb) na = nb;
+                else {
+                    const float line = std::ceil(A.mx[a] / g) * g;
+                    if (line >= B.mn[a] - e) continue;   // (no grid line between them)
+                    na = nb = line;
+                }
+                // never into a third box: the strips the two sides grow over must be clear
+                auto clear = [&](const AABB& grow) {
+                    if (grow.mx[a] - grow.mn[a] <= e) return true;
+                    bool ok = true;
+                    grid.near(grow, [&](int kk) {
+                        const size_t k = (size_t)kk;
+                        if (k != i && k != j && !m.brushes[k].gone && (k < n ? f.box[k] : m.brushes[k].box).overlaps(grow)) ok = false;
+                    });
+                    return ok;
+                };
+                AABB sa = A, sb = B;
+                sa.mn[a] = A.mx[a]; sa.mx[a] = na;
+                sb.mx[a] = B.mn[a]; sb.mn[a] = nb;
+                if (!clear(sa) || !clear(sb)) continue;
+                A.mx[a] = na;
+                B.mn[a] = nb;
+                f.gaps++;
+            }
+        }
+    }
+    return f;
 }

@@ -70,6 +70,8 @@ struct EnvGuard { // points HOME / XDG at a temp folder, restores on exit
 #endif
 } // namespace
 
+static bool endsWithStr(const std::string& s, const std::string& w) { return s.size() >= w.size() && s.compare(s.size() - w.size(), w.size(), w) == 0; }
+
 static void testVersions() {
     using releases::versionCmp;
     LCHECK(versionCmp("1.16.0", "1.16.0") == 0);
@@ -130,6 +132,19 @@ static void testChannels() {
     LCHECK(!test.empty() && test[0].url == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak");
     LCHECK(!test.empty() && test[0].sigUrl == test[0].url + ".sig");
     LCHECK(!test.empty() && test[0].asset == "quark-linux.qpak");
+    {   // a release with the compressed package (and its .sig): that one is downloaded; without its .sig, the .qpak
+        auto page = [](bool zsig) {
+            const std::string u = "https://github.com/floration/quark/releases/download/test-1.19.1.2/";
+            auto a = [&](const char* n) { return "{\"name\": \"" + std::string(n) + "\", \"browser_download_url\": \"" + u + n + "\"}"; };
+            return "[{\"tag_name\": \"test-1.19.1.2\", \"name\": \"t\", \"prerelease\": true, \"assets\": [" + a("quark-linux.qpak") + ", " +
+                   a("quark-linux.qpak.sig") + ", " + a("quark-linux.qpakz") + (zsig ? ", " + a("quark-linux.qpakz.sig") : std::string()) + "]}]";
+        };
+        std::vector<releases::Release> z, noSig;
+        LCHECK(releases::parse(page(true), "linux", &z) && z.size() == 1 && z[0].asset == "quark-linux.qpakz" &&
+               endsWithStr(z[0].url, "/quark-linux.qpakz") && endsWithStr(z[0].sigUrl, "/quark-linux.qpakz.sig"));
+        LCHECK(releases::parse(page(false), "linux", &noSig) && noSig.size() == 1 && noSig[0].asset == "quark-linux.qpak" &&
+               endsWithStr(noSig[0].url, "/quark-linux.qpak") && endsWithStr(noSig[0].sigUrl, "/quark-linux.qpak.sig"));
+    }
     LCHECK(!test.empty() && test[0].manifestUrl == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release.txt" &&
            test[0].manifestSigUrl == test[0].manifestUrl + ".sig");
     LCHECK(test.size() == 2 && test[1].manifestUrl.empty());   // no manifest: a signed package alone is refused
@@ -337,7 +352,7 @@ static void testQpak() {
     std::string err, good = "QPAK1\n" + pakEntry("quark", "ELF") + pakEntry("maps/temple.qmap", "map text") + pakEntry("empty", "");
     LCHECK(readAll(good, &got, &err) && got.size() == 3 && got[1].first == "maps/temple.qmap" && got[1].second == "map text" && got[2].second.empty());
     LCHECK(readAll("QPAK1\n", &(got = {}), &err) && got.empty());   // an empty package
-    for (const std::string& bad : {std::string("QPAK2\n"), std::string("QPAK1"), "QPAK1\n" + pakEntry("../evil", "x"),
+    for (const std::string& bad : {std::string("QPAK3\n"), std::string("QPAK1"), "QPAK1\n" + pakEntry("../evil", "x"),
                                    "QPAK1\n" + pakEntry("/etc/passwd", "x"), "QPAK1\n" + pakEntry("a/../../b", "x"),
                                    "QPAK1\n" + pakEntry("C:/x", "x"), "QPAK1\n" + pakEntry("\\server\\x", "x"),
                                    "QPAK1\n" + pakEntry(std::string("a\0b", 3), "x"), "QPAK1\n" + pakEntry("", "x"),
@@ -345,6 +360,27 @@ static void testQpak() {
                                    "QPAK1\n" + pakEntry("short", "xy", 0644, 3),            // one byte missing
                                    good + "\x01\x00"})                                   // trailing junk
         LCHECK(!readAll(bad, &(got = {}), &err));   // (entries before a bad one may come out: the stage is thrown away)
+    {   // .qpakz (QPAK2, tools/qpakz.py): a zlib entry, a stored one (equal sizes), an empty one; lies refused
+        const std::string text = "hello hello hello hello hello hello";   // (35 bytes; zlib.compress level 9: 17)
+        const std::string z("\x78\xda\xcb\x48\xcd\xc9\xc9\x57\xc8\xc0\x47\x02\x00\xeb\x55\x0d\x19", 17);
+        auto zEntry = [&](const std::string& name, uint64_t size, const std::string& stored) {
+            std::string e = pakEntry(name, stored, 0644, (int64_t)size);   // (name, mode, size, then the stored bytes...)
+            std::string csz;
+            for (int i = 0; i < 8; i++) csz += (char)((uint64_t)stored.size() >> (8 * i));
+            return e.insert(4 + name.size() + 4 + 8, csz);                 // (...with the stored size before them)
+        };
+        const std::string pz = "QPAK2\n" + zEntry("a.txt", text.size(), z) + zEntry("b", 2, "hi") + zEntry("e", 0, "");
+        LCHECK(readAll(pz, &(got = {}), &err) && got.size() == 3 && got[0].second == text && got[1].second == "hi" && got[2].second.empty());
+        const std::string badZ = z.substr(0, 9);   // (cut short; stb doesn't check zlib's adler32: the signature covers the bytes)
+        for (const std::string& bad : {"QPAK2\n" + zEntry("a", text.size() + 1, z),      // the stream is shorter than claimed
+                                       "QPAK2\n" + zEntry("a", text.size() - 1, z),      // ...or longer
+                                       "QPAK2\n" + zEntry("a", text.size(), badZ),       // a broken (cut) stream
+                                       "QPAK2\n" + zEntry("a", 1ull << 40, z),          // a terabyte from 17 bytes
+                                       "QPAK2\n" + zEntry("a", 1, "xy"),                // stored bigger than the file
+                                       ("QPAK2\n" + zEntry("a", text.size(), z)).substr(0, 30),   // truncated
+                                       "QPAK2\n" + zEntry("../a", text.size(), z)})
+            LCHECK(!readAll(bad, &(got = {}), &err));
+    }
     // found by fuzz_qpak: "." (and "a/.", "a//b", "dir/") passed although it names the stage folder, not a file
     LCHECK(!qpak::safeEntryName(".") && !qpak::safeEntryName("a/.") && !qpak::safeEntryName("a/./b") && !qpak::safeEntryName("a//b") &&
            !qpak::safeEntryName("dir/") && qpak::safeEntryName("a/b.c") && qpak::safeEntryName(".hidden"));

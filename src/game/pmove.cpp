@@ -6,8 +6,8 @@
 namespace {
 // A custom mode's x on each constant (1 normally) is mt.m[MV_...], mt = moveTuning() fetched once per command: it is a
 // call into customrules.cpp plus a thread_local lookup, and a step used to fetch it about ten times.
-constexpr float kGravity = 22.0f;   // (1.14: +10%, less floaty)
-constexpr float kJumpSpeed = 7.34f;  // (with the heavier gravity: still a 1.22 m standing jump, maps rely on it)
+constexpr float kGravity = 24.0f;   // (1.14: +10%, less floaty; owner 2026-10-29: 22 -> 24)
+constexpr float kJumpSpeed = 7.67f;  // (with the heavier gravity: still a 1.22 m standing jump, maps rely on it: v^2 / 2g)
 constexpr float kGroundSpeed = 9.5f;   // (owner 1.17: 8 -> 9.5; VQ3 / CPMA 10.3, Warfork 9.0, Cocaine Diesel 11.25 for a 1.8 m player)
 constexpr float kCrouchSpeed = 4.0f;
 constexpr float kGroundAccel = 16.0f;  // (owner 1.17: 16.8 -> 16 with the faster run: still at full speed in ~80 ms)
@@ -42,8 +42,39 @@ constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DA
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 1.0f;       // ...and your old speed plus this, so dashes build momentum (owner 1.17: was 3)
 constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
-constexpr float kDashVerticalUp = 0.4f;    // looking straight up makes the dash this vertical (the sine: 40% of its speed
-                                           // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways)...
+constexpr float kDashAirGap = 0.35f;    // a dash in the air leaves with this share of the gap between your speed and
+                                        // kDashExitMax added (owner, 2026-10-28: "if you dash at 10 m/s it should let you
+                                        // keep a lot more than if you dash at 25"): 0 -> 11.2, 10 -> 17.7, 25 -> 27.5,
+                                        // 31 -> 31.35 (then kDashKeep's +1 is more); on the floor only kDashKeep, as before.
+                                        // A custom mode's dash keep multiplier scales it too
+// A/D strafing at speed (owner, 2026-10-29: "decrease the penalty on a/d strafing on high speeds, but keep the cap the
+// same, maybe a curve"; in surf "lessen the speed limit curve so you can go very fast"). Strafing adds the same v^2 each
+// tick whatever your speed, so speed grows as 1 / speed; above kStrafeEaseFrom the A/D acceleration is x (speed /
+// kStrafeEaseFrom)^power, so it falls off more gently (0.35: 1 / speed^0.65; surf's 0.75: 1 / speed^0.25). The cap
+// (the window of angles that gain) stays.
+constexpr float kStrafeEaseFrom = 15.0f, kStrafeEasePower = 0.35f, kStrafeEasePowerSurf = 0.75f;
+// A/D air control (owner, 2026-10-29: "increase ad strafing air control, but without increasing the velocity
+// acceleration"): a strafe key's push turns your momentum this much more (x 1 + this), with no more speed: the push's
+// part along your momentum (the speed it adds) is the same, only its sideways part turns you further
+constexpr float kAirControlAD = 0.5f;
+constexpr float kRampAirAccel = 2.0f;   // surf, touching a ramp's face: x air acceleration (owner 2026-10-28: "make it like 2x base", 8 was "insane")
+constexpr float kIceFriction = 0.08f;    // standing on ice: ground friction x this (owner, 2026-10-28: "ice is slippery")...
+constexpr float kIceDash = 0.25f;        // a dash off ice: this share of what it does elsewhere (owner, 2026-10-28)
+constexpr float kIceAccel = 0.2f;        // ...and ground acceleration x this (you push off it as badly as you stop on it)
+constexpr float kRubberBounce = 0.85f;   // hitting rubber (floor, wall or ceiling) faster than kRubberMin: you leave it at this
+constexpr float kRubberMin = 3.0f;       // share of the speed you hit it with, back the way you came (owner: "extra bouncy")
+constexpr float kRubberGrip = 1.6f;      // standing on rubber: ground friction and acceleration x this (owner: "more acceleration
+                                         // for ground movement and quicker breaking")
+constexpr float kGlassHookToward = 1.0f;   // grappling glass while moving toward it faster than this (m/s) latches on
+constexpr float kAsphaltSpeed = 1.15f;   // on asphalt (owner, 2026-10-28: "increase top ground speed, increase accel and breaking"):
+constexpr float kAsphaltGrip = 1.4f;     // run speed x this, ground friction and acceleration x this
+constexpr float kMudSpeed = 0.6f;        // in mud (owner: "sticky"): run speed x this, ground friction x kMudGrip (you stop
+constexpr float kMudGrip = 2.5f;         // dead), jumps x kMudJump
+constexpr float kMudJump = 0.75f;
+constexpr float kSlopeGravityBack = 0.5f;   // riding a ramp's face: this share of a step's gravity is given back (owner 2026-10-28)
+constexpr float kDashVerticalUp = 0.5f;    // looking straight up makes the dash this vertical (the sine: 50% of its speed
+                                           // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways;
+                                           // owner 2026-10-28: 40% -> 50% up)...
 constexpr float kDashVerticalDown = 0.9f;  // ...and looking straight down this (90% down); a custom mode's dash vertical
                                            // multiplier scales both
 // Dash jump and super dash (owner, after Celeste's super and hyper): jump during a dash on the floor and the dash
@@ -79,6 +110,8 @@ constexpr float kBounceMax = 8.0f;
 constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (adds to momentum)
 constexpr float kHookMaxSpeed = 24.0f;
 constexpr float kHookGravityScale = 0.5f;
+constexpr float kLiquidCurrentAccel = 60.0f;   // m/s2 a current (white rapids) pushes you toward its speed (against the floor's friction: about 2/3 of it standing still)
+constexpr float kLiquidBounce = 0.85f, kLiquidBounceFrom = 2.0f;   // pink slime: a fall faster than 2 m/s comes back at 85%
 constexpr float kHookRelease = 1.2f;    // auto-release this close to the anchor
 constexpr float kLadderSpeed = 6.75f;   // climbing speed (owner 1.17: 4.5 -> 6.75; Warfork 7.0, Cocaine Diesel 8.4)
 constexpr float kLadderSide = 4.5f;     // sideways speed on a ladder (owner 1.17: 3 -> 4.5)
@@ -94,7 +127,7 @@ AABB playerBox(const Vec3& f, bool crouched, float scale) {
 // A strafe key held (side != 0) pushes harder: x kStrafeAccelAD at every speed (owner 1.18), and at speed the
 // kStrafeBoost on top, ramping in from `cross` (where air control starts falling off) to 1.25x it, so above that
 // A/D strafing turns faster than W-only air control (owner 1.17). (The caller already raised the A/D wish cap.)
-static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt, int side, float cross) {
+static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt, int side, float cross, bool surf) {
     float cur = dot(vel, wishDir);
     float add = wishSpeed - cur;
     if (add <= 0) return;
@@ -102,14 +135,24 @@ static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, 
     if (side != 0) {
         float t = std::clamp((h - cross) / (0.25f * cross), 0.0f, 1.0f);
         accel *= kStrafeAccelAD * (1.0f + (kStrafeBoost * mt.m[MV_STRAFE_BOOST]) * t);
+        if (h > kStrafeEaseFrom) accel *= std::pow(h / kStrafeEaseFrom, surf ? kStrafeEasePowerSurf : kStrafeEasePower);   // (the gentler fall-off at speed)
     }
     Vec3 push = wishDir * std::min(accel * wishSpeed * dt, add);
+    float turn = 0;   // (A/D: the extra turn, radians)
     if (h > 1e-3f) {
         Vec3 along = {vel.x / h, 0, vel.z / h};
         float pa = dot(push, along);
         if (pa < 0) push = push - along * (pa * (1.0f - (kOverstrafeBrake * mt.m[MV_OVERSTRAFE])));
+        if (side != 0 && pa >= 0) {   // (not overstrafing: the sideways part of the push, as an angle at this speed, x kAirControlAD; signed by its side)
+            const float px = push.x - along.x * dot(push, along), pz = push.z - along.z * dot(push, along);
+            turn = kAirControlAD * mt.m[MV_AIR_CONTROL] / kAirControl * std::sqrt(px * px + pz * pz) / h * (along.x * pz - along.z * px > 0 ? 1.0f : -1.0f);
+        }
     }
     vel += push;
+    if (turn != 0) {   // (turned in place: the speed the push gave stays)
+        const float c = std::cos(turn), sn = std::sin(turn), x = vel.x, z = vel.z;
+        vel.x = x * c - z * sn; vel.z = x * sn + z * c;
+    }
 }
 
 static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt) {
@@ -120,15 +163,75 @@ static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float ac
     vel += wishDir * a;
 }
 
-// Moves the hull through the world one axis at a time. Returns which axes were blocked.
-static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouched) {
+// A slope's face that `box` touches, if it does (n its outward normal): the box's corner deepest toward the face's
+// plane lies on it, within a sweep's gap (a corner: the face of the two that the box is outside of).
+static bool slopeContact(const Brush* b, const AABB& box, Vec3& n) {
+    if (!b || b->shape == BRUSH_BOX) return false;
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+    const int np = slopePlanes(*b, pn, pd);
+    float best = -1e30f;
+    for (int k = 0; k < np; k++) {
+        const Vec3 c = {pn[k].x > 0 ? box.mn.x : box.mx.x, pn[k].y > 0 ? box.mn.y : box.mx.y, pn[k].z > 0 ? box.mn.z : box.mx.z};
+        const float dist = dot(pn[k], c) - pd[k];
+        if (dist > best) { best = dist; n = pn[k]; }
+    }
+    return std::fabs(best) < 0.01f;
+}
+// A face up to 45 degrees from flat is a floor (you walk and stand on it); a steeper one, one on its side or one
+// facing down is a wall: you can't walk or step up it, and you slide down it.
+static bool floorFace(const Vec3& n) { return n.y >= 0.70710678f - 1e-4f; }
+static bool steepUnder(const Brush* b, const AABB& feet) { Vec3 n; return slopeContact(b, feet, n) && !floorFace(n); }
+static AABB shifted(AABB b, int axis, float d) { b.mn[axis] += d; b.mx[axis] += d; return b; }
+// Touching a ramp: a slope's wall face that faces up, within 3 cm of the box (probed down and to the four sides with
+// the sweep, before this step moves), so the air move can know it (surf's ramp air acceleration)
+static bool onRampFace(const Map& map, const AABB& box) {
+    static const int ax[5] = {1, 0, 0, 2, 2};
+    static const float dd[5] = {-0.03f, -0.03f, 0.03f, -0.03f, 0.03f};
+    for (int k = 0; k < 5; k++) {
+        const Brush* hit = nullptr;
+        const float d = map.sweepAxis(box, ax[k], dd[k], &hit);
+        Vec3 n;
+        if (std::fabs(d - dd[k]) > 1e-5f && slopeContact(hit, shifted(box, ax[k], d), n) && !floorFace(n) && n.y > 0) return true;
+    }
+    return false;
+}
+
+// Moves the hull through the world one axis at a time. Returns which axes were blocked. A slope's wall face (steep,
+// on its side, or facing down) doesn't block: what it stops of the move goes on along it, on the axes still to come
+// (*wall: its outward normal, zero for none). Falling onto a steep face slides you off it: what it stops of the fall
+// goes sideways, downhill.
+static int slideMove(MoveState& s, const Map& map, Vec3 delta, bool crouched, Vec3* wall = nullptr) {
     int blocked = 0;
     const int order[3] = {1, 0, 2};
     const float scale = moveScale(s.mods);
-    for (int i : order) {
+    if (wall) *wall = Vec3();
+    for (int o = 0; o < 3; o++) {
+        const int i = order[o];
         AABB box = playerBox(s.pos, crouched, scale);
-        float d = map.sweepAxis(box, i, delta[i]);
-        if (std::fabs(d - delta[i]) > 1e-5f) blocked |= 1 << i;
+        const Brush* hit = nullptr;
+        // dashing goes through glass (it breaks: the server, from s.glassBrush)
+        int pane = -1;
+        float d = map.sweepAxis(box, i, delta[i], &hit, s.dashTimer > 0 && !map.glass.empty() ? &pane : nullptr);
+        if (pane >= 0 && s.glassBrush < 0) {
+            const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
+            s.glassBrush = pane; s.glassHow = GLASS_DASH;
+            s.glassAt = box.center(); s.glassDir = {s.dashDirX * hs, s.dashUp, s.dashDirZ * hs};
+        }
+        Vec3 n;
+        if (std::fabs(d - delta[i]) > 1e-5f) {
+            if (slopeContact(hit, shifted(box, i, d), n) && !floorFace(n)) {
+                if (wall) *wall = n;
+                const float rest = delta[i] - d;   // (what it stopped)
+                if (i == 1 && rest < 0 && n.y > 0) {   // a fall: on downhill, as far sideways as the face drops by it
+                    const float l = std::sqrt(n.x * n.x + n.z * n.z);
+                    delta.x -= n.x / l * rest * n.y / l; delta.z -= n.z / l * rest * n.y / l;
+                } else {   // along the face: what of it doesn't go into it, on the axes still to come
+                    Vec3 r; r[i] = rest;
+                    r -= n * dot(n, r);
+                    for (int k = o + 1; k < 3; k++) delta[order[k]] += r[order[k]];
+                }
+            } else blocked |= 1 << i;
+        }
         s.pos[i] += d;
     }
     return blocked;
@@ -186,11 +289,25 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if ((s.flags & MF_FROZEN) || (s.mods & MOVE_GRAPPLE_ONLY)) wish = {};
     float wishLen = length(wish);
     Vec3 wishDir = wishLen > 0 ? wish / wishLen : Vec3();
-    const float jumpSpeed = kJumpSpeed * mt.jump;
-    float maxSpeed = (crouched ? (kCrouchSpeed * mt.m[MV_CROUCH_SPEED]) : kGroundSpeed) * mt.speed;
+    bool onGround = (s.flags & MF_ONGROUND) != 0;
+    // what you stand on, asked only on a map with a floor material that moves you differently (ice, rubber, asphalt, mud)
+    int floorMat = -1;
+    if (onGround && map.hasGripMats) {
+        const Brush* fb = nullptr;
+        map.sweepAxis(playerBox(s.pos, crouched, scale), 1, -0.05f, &fb);
+        if (fb) floorMat = fb->material;
+    }
+    // the liquid you're in (map.h kLiquids), asked only on a map with liquids
+    const LiquidDef* liq = __builtin_expect(map.liquids.empty(), 1) ? nullptr : map.liquidAt(playerBox(s.pos, crouched, scale));
+    // the feature fields you're in (map.h FIELD_*: low gravity, the gravity flip's column), asked only on a map with any
+    const uint8_t fld = __builtin_expect(map.fields.empty(), 1) ? 0 : map.fieldsAt(playerBox(s.pos, crouched, scale));
+    const bool flipped = (fld & Map::FIELD_FLIP) != 0;   // (gravity upside down: you fall up and stand on the ceiling)
+    // mud (owner, 2026-10-28: "sticky"): slow to run through and to jump out of; asphalt: a faster run
+    const float jumpSpeed = kJumpSpeed * mt.jump * (floorMat == kMatMud ? kMudJump : 1.0f) * (liq ? liq->jump : 1.0f);
+    float maxSpeed = (crouched ? (kCrouchSpeed * mt.m[MV_CROUCH_SPEED]) : kGroundSpeed) * mt.speed
+                   * (floorMat == kMatAsphalt ? kAsphaltSpeed : floorMat == kMatMud ? kMudSpeed : 1.0f) * (liq ? liq->speed : 1.0f);
     float wishSpeed = std::min(wishLen, 1.0f) * maxSpeed;
 
-    bool onGround = (s.flags & MF_ONGROUND) != 0;
     const bool grappleOnly = (s.mods & MOVE_GRAPPLE_ONLY) != 0;
     bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0 && !grappleOnly;
     bool frozen = (s.flags & MF_FROZEN) != 0;
@@ -209,7 +326,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // hair early used to do nothing, and each 10 ms late cost ~1.4 m/s against holding jump.
     const bool tapped = !jumpHeld && s.jumpBuffer > 0 && !frozen && !grappleOnly;
     if (onGround && (jumpHeld || tapped) && !frozen && !dashActive) {
-        s.vel.y = jumpSpeed;
+        s.vel.y = flipped ? -jumpSpeed : jumpSpeed;
         onGround = false;
         s.events |= ME_JUMP;
         s.jumpGrace = jumpWindow;   // (a dash right after this jump is still a ground dash jump; T4: held-jump hops too,
@@ -257,15 +374,27 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // at +0.5 deg a jump made a plain 11 m/s dash, not the 24 m/s dash jump). jumpGrace is on the wire: no new state.
         if (grounded) s.jumpGrace = jumpWindow;
         s.dashFromSpeed = h;   // (a super dash adds to this)
-        s.dashExitSpeed = std::min((kDashExitMax * mt.m[MV_DASH_EXIT_MAX]), std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + (kDashKeep * mt.m[MV_DASH_KEEP])));
+        const float exitMax = kDashExitMax * mt.m[MV_DASH_EXIT_MAX];
+        float keep = kDashKeep * mt.m[MV_DASH_KEEP];   // (in the air: more the further below the top you dash)
+        if (!grounded) keep = std::max(keep, kDashAirGap * mt.m[MV_DASH_KEEP] * (exitMax - h));
+        s.dashExitSpeed = std::min(exitMax, std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + keep));
         s.dashUp = std::sin(cmd.pitch) * ((cmd.pitch > 0 ? kDashVerticalUp : kDashVerticalDown) * mt.m[MV_DASH_VERTICAL]);
         s.dashTimer = (kDashTime * mt.m[MV_DASH_TIME]);
         s.dashBounces = 0;
         s.dashCharges--;
         s.events |= ME_DASH;
         if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
+        if (grounded && floorMat == kMatIce) {
+            // on ice (owner, 2026-10-28: "it should only work 25% because its slippery"): no burst, only a quarter of the
+            // change it would make to your speed, toward what it leaves you with
+            const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
+            const Vec3 target = {s.dashDirX * s.dashExitSpeed * hs, s.vel.y, s.dashDirZ * s.dashExitSpeed * hs};
+            s.vel += (target - s.vel) * kIceDash;
+            s.dashTimer = 0;
+        }
     }
     bool dashing = s.dashTimer > 0;
+    float gravDv = 0;   // (this step's fall from gravity, m/s: a ramp's wall face takes half of it back)
     if (dashing && !frozen) {
         // Dash jump (Celeste's super): jump while a dash runs on the floor (it started there, or it's sliding along it)
         // and the dash ends at once, leaving with its full burst speed along its direction plus a normal jump; also a
@@ -286,9 +415,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (grounded && down) {
                 // the hyper: the speed carried into the dash + kSuperDashBoost (owner 1.18.7: "+5 of current"), at least
                 // what the dash leaves with on its own (11 from a standstill), at most kSuperDashMax
+                // (the floor dash's exit, not an air dash's kDashAirGap one: a hyper out of the air is the same as off the floor)
                 const float cap = kSuperDashMax * mt.m[MV_SUPER_DASH_MAX];
-                sp = std::min(std::max(s.dashExitSpeed, s.dashFromSpeed + kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST]),
-                              std::max(cap, s.dashExitSpeed));
+                const float own = std::min(kDashExitMax * mt.m[MV_DASH_EXIT_MAX],
+                                           std::max(kDashExitMin * mt.m[MV_DASH_EXIT_MIN], s.dashFromSpeed + kDashKeep * mt.m[MV_DASH_KEEP]));
+                sp = std::min(std::max(own, s.dashFromSpeed + kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST]), std::max(cap, own));
                 // the bounce: the dash's down share of that speed goes up (the further down it was aimed, the higher;
                 // owner 1.18: "the lower you look the higher you should bounce"), at most kSuperDashJump; the rest stays
                 // level, so the speed is the same whichever way it points
@@ -380,6 +511,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
             s.events |= ME_HOOK;
             grabbed = true;
+        } else if (t >= 0 && wallMat == kMatGlassBreak && dot(s.vel, dir) < kGlassHookToward) {
+            // glass, standing or moving off (owner, 2026-10-28): as if you'd shot it from the other side, shards come back
+            // at you; the hook catches nothing (one try a press, the cooldown as a let-go)
+            const int pane = map.glassAt(eye + dir * (t + 0.01f));
+            if (pane >= 0 && s.glassBrush < 0) { s.glassBrush = pane; s.glassHow = GLASS_HOOK_BACK; s.glassAt = eye + dir * t; s.glassDir = dir * -1.0f; }
+            s.flags |= MF_HOOKHELD;
+            grabbed = true;
         } else if (t >= 0 && wallMat != kMatNoGrapple) {   // (nograpple: the hook hits it and lets go)
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
@@ -410,6 +548,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f * scale, 0));
         float dist = length(to);
         if (dist < (kHookRelease * mt.m[MV_HOOK_RELEASE])) {
+            // pulled to a pane: it shatters on away from you as the grapple lets go
+            if (s.hookTarget == 0 && !map.glass.empty() && s.glassBrush < 0) {
+                const int pane = map.glassAt(s.hookPoint, 0.05f);
+                if (pane >= 0) { s.glassBrush = pane; s.glassHow = GLASS_HOOK_THROUGH; s.glassAt = s.hookPoint; s.glassDir = dist > 1e-4f ? to / dist : Vec3(0, 0, 1); }
+            }
             s.flags &= ~MF_HOOKED;
             hooked = false;
         } else if (!dashing) {
@@ -460,24 +603,35 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
         onGround = false;
     } else if (onGround) {
+        // the floor's grip: ice slippery (little friction, little push), rubber and asphalt grippy (more of both), mud
+        // sticky (it stops you hard)
+        float grip = 1.0f, push = 1.0f;
+        if (floorMat == kMatIce) { grip = kIceFriction; push = kIceAccel; }
+        else if (floorMat == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
+        else if (floorMat == kMatAsphalt) { grip = kAsphaltGrip; push = kAsphaltGrip; }
+        else if (floorMat == kMatMud) grip = kMudGrip;
+        if (liq && liq->grip < 1.0f) { grip *= liq->grip; push *= std::max(2.0f * liq->grip, 0.15f); }   // (oil: slippery)
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         if (sp > 0) {
-            float drop = std::max(sp, (kStopSpeed * mt.m[MV_STOP_SPEED])) * (kFriction * mt.m[MV_FRICTION]) * dt;
+            float drop = std::max(sp, (kStopSpeed * mt.m[MV_STOP_SPEED])) * (kFriction * mt.m[MV_FRICTION]) * grip * dt;
             float ns = std::max(sp - drop, 0.0f) / sp;
             s.vel.x *= ns;
             s.vel.z *= ns;
         }
-        accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * mt.m[MV_GROUND_ACCEL]), dt);
+        accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * mt.m[MV_GROUND_ACCEL]) * push, dt);
         s.vel.y = 0;
     } else {
         if (!dashing && !onLadder) {
-            const float airAccel = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f, airCap = kAirSpeedCap * mt.m[MV_AIR_CAP];
+            // surf: strafing into a ramp you touch holds you on it (kRampAirAccel: the wish-speed cap stays, so it's grip,
+            // not free speed)
+            const bool ramp = (s.mods & MOVE_RUN_ONLY) && onRampFace(map, playerBox(s.pos, crouched, scale));
+            const float airAccel = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f * (ramp ? kRampAirAccel : 1.0f), airCap = kAirSpeedCap * mt.m[MV_AIR_CAP];
             const float airControl = kAirControl * mt.m[MV_AIR_CONTROL];
             // 22 x 2.3 / 4 = 12.65 m/s: where the A/D boost ramp starts (the base cap and the unscaled air control, so
             // the 1.18 A/D cap and the slower W-only turn leave it where it was)
-            const float cross = airAccel * airCap / airControl;
+            const float cross = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f * airCap / airControl;   // (the ramp boost leaves it)
             const float strafeCap = cmd.side != 0 ? airCap * kStrafeCapAD : airCap;   // A/D: 2.53, W-only: 2.3
-            airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, strafeCap), airAccel, dt, cmd.side, cross);
+            airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, strafeCap), airAccel, dt, cmd.side, cross, (s.mods & MOVE_RUN_ONLY) != 0);
             // Drift: below run speed, held direction pushes you along it (kAirDriftAccel) up to run speed and never
             // past it, so a standing jump moves about like the run-up one would (owner 1.17; it was 2.3 m/s at most).
             const float runSpeed = kGroundSpeed * mt.speed;
@@ -502,19 +656,54 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            s.vel.y -= kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            gravDv = kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f)
+                   * (liq ? liq->gravity : 1.0f) * ((fld & Map::FIELD_LOWGRAV) ? kLowGravField : 1.0f) * (flipped ? -1.0f : 1.0f);
+            s.vel.y -= gravDv;
         }
     }
 
     Vec3 delta = s.vel * dt;
     MoveState before = s;
-    int blocked = slideMove(s, map, delta, crouched);
+    Vec3 wall;
+    int blocked = slideMove(s, map, delta, crouched, &wall);
+    const bool steep = wall.x != 0 || wall.y != 0 || wall.z != 0;
+    // against a slope's wall face: the velocity along it (what goes into it is gone), so you slide down it as you
+    // fall and along it as you run; it never lifts you off the floor (no climbing a steep slope by running at it; in
+    // the air it's a plain clip, so a ramp turns a fall along it: surfing). A dash does go
+    // up it (owner, 2026-10-28: "if you dash into a slope ... it should push you up it, even if the angle is >45";
+    // down a downward one too): its direction turns along the face, keeping its speed.
+    if (steep) {
+        const float vn = dot(s.vel, wall);
+        if (vn < 0) {
+            const float vy = s.vel.y, speed = length(s.vel);
+            s.vel -= wall * vn;
+            if (!dashing && grounded) s.vel.y = std::min(s.vel.y, std::max(vy, 0.0f));   // (off the floor it's a pure clip: surfing)
+            // riding a ramp's face (it faces up): gravity at half strength, so you slip down it and off it half as fast
+            // (owner, 2026-10-28: "the slopes are too slippery to make surf work ... half of what it currently is")
+            if (!dashing && !grounded && wall.y > 0) s.vel.y += kSlopeGravityBack * gravDv;
+            else {
+                const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
+                Vec3 d = {s.dashDirX * hs, s.dashUp, s.dashDirZ * hs};
+                const float dn = dot(d, wall);
+                if (dn < 0) {
+                    d -= wall * dn;
+                    const float l = length(d), h = std::sqrt(d.x * d.x + d.z * d.z);
+                    if (l > 1e-3f && h > 1e-4f) { s.dashUp = d.y / l; s.dashDirX = d.x / h; s.dashDirZ = d.z / h; }
+                    else if (l > 1e-3f) s.dashUp = d.y > 0 ? 1.0f : -1.0f;
+                    // (owner, 2026-10-28: "keep your velocity from the dash as if there was no block there"): its whole
+                    // speed, turned along the face, nothing lost to the hit
+                    if (l > 1e-3f) s.vel = d * (speed / l);
+                }
+            }
+        }
+    }
 
     // Step up small ledges when walking into them, and in the air too (jumping, falling, hooked, dashing):
     // running into a stair's riser carries you over its lip like walking does, keeping your speed, instead
-    // of stopping you dead. Only ledges up to a step's height qualify, so walls still block.
+    // of stopping you dead. Only ledges up to a step's height qualify, so walls still block. Walking up a slope is
+    // this too (each step's rise is a sliver); a steep one is a wall, never stepped up.
     bool airStep = !onGround;
-    if ((onGround || airStep) && (blocked & 0b101)) {
+    if ((onGround || airStep) && (blocked & 0b101) && !steep) {
         MoveState step = before;
         AABB b = playerBox(step.pos, crouched, scale);
         float up = map.sweepAxis(b, 1, (kStepHeight * mt.m[MV_STEP]));
@@ -553,6 +742,16 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.vel.z = s.dashDirZ * bounce * hs;
         }
     }
+    // Rubber walls and ceilings: a hit faster than kRubberMin bounces back (the floor: at landing, below)
+    if (map.hasRubber && (blocked & 0b111)) {
+        const AABB b = playerBox(s.pos, crouched, scale);
+        for (int a = 0; a < 3; a++) {
+            if (!(blocked & (1 << a)) || (a == 1 && delta.y <= 0) || std::fabs(s.vel[a]) < kRubberMin) continue;
+            const Brush* hb = nullptr;
+            map.sweepAxis(b, a, delta[a] > 0 ? 0.02f : -0.02f, &hb);
+            if (hb && hb->material == kMatRubber) { s.vel[a] = -s.vel[a] * kRubberBounce; blocked &= ~(1 << a); }
+        }
+    }
     if (blocked & 1) s.vel.x = 0;
     if (blocked & 4) s.vel.z = 0;
     if (blocked & 2) {
@@ -561,15 +760,24 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     // Ground check: probe slightly below.
     AABB feet = playerBox(s.pos, crouched, scale);
-    const bool canLand = s.vel.y <= 0.01f;   // (rising: no landing whatever the probe says, so don't sweep for it)
-    float probe = canLand ? map.sweepAxis(feet, 1, -0.05f) : 0.0f;
-    bool nowGround = canLand && probe > -0.049f;
+    const bool canLand = s.vel.y <= 0.01f && !flipped;   // (rising: no landing whatever the probe says, so don't sweep for it)
+    const Brush* under = nullptr;
+    float probe = canLand ? map.sweepAxis(feet, 1, -0.05f, &under) : 0.0f;
+    bool nowGround = canLand && probe > -0.049f && !steepUnder(under, shifted(feet, 1, probe));   // (a wall face is no floor: you slide)
     bool bounced = false;
     if (nowGround) {
         s.pos.y += probe; // settle onto the floor
         float impact = -before.vel.y;
         if (!grounded && !dashing && impact > kLandSoundSpeed) { s.events |= ME_LAND; s.landSpeed = std::max(s.landSpeed, impact); }
-        if ((jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
+        const bool hop = (jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing;
+        if (under && under->material == kMatRubber && impact > kRubberMin && !onLadder) {
+            // rubber: back up at kRubberBounce of the landing speed (a hop off it: whichever is higher)
+            s.vel.y = impact * kRubberBounce;
+            if (hop) s.vel.y = std::max(s.vel.y, jumpSpeed + std::min((impact - jumpSpeed) * (kBounceGain * mt.m[MV_BOUNCE_GAIN]), (kBounceMax * mt.m[MV_BOUNCE_MAX])));
+            nowGround = false;
+            bounced = true;
+            if (hop) { s.events |= ME_JUMP; if (tapped) s.jumpBuffer = 0; s.jumpGrace = jumpWindow; }
+        } else if ((jumpHeld || (tapped && s.jumpBuffer > 0)) && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly). Not off a dash's own push into the floor: that's a super dash
             // (next step, from the floor) or nothing.
@@ -580,9 +788,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (tapped) s.jumpBuffer = 0;
             s.jumpGrace = jumpWindow;   // (T4: a hop off a landing, like a jump off the floor)
         } else if (s.vel.y < 0) s.vel.y = 0;
+    } else if (flipped) {   // the gravity flip: the ceiling is your floor (no bhop bounce, no step down)
+        const float up = s.vel.y >= -0.01f ? map.sweepAxis(feet, 1, 0.05f, &under) : 1.0f;
+        if (up < 0.049f) { s.pos.y += up; nowGround = true; if (s.vel.y > 0) s.vel.y = 0; }
     } else if (onGround && s.vel.y <= 0) {
-        float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]));
-        if (down > -(kStepHeight * mt.m[MV_STEP]) + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
+        float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]), &under);
+        if (down > -(kStepHeight * mt.m[MV_STEP]) + 0.001f && !steepUnder(under, shifted(feet, 1, down))) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
     }
 
     // the dash cooldown starts when a dash ends (its timer ran out, or a dash jump / super dash ended it), this step
@@ -599,6 +810,35 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const bool hopping = jumpHeld && !frozen && !grappleOnly;
         if (bounced || (hopping && (s.flags & MF_ONGROUND))) refillCharges(s, maxCharges, 1);
         else if (s.flags & MF_ONGROUND) refillCharges(s, maxCharges, maxCharges);
+    }
+    if (liq) {   // thick ones hold you back, a current carries you, slime throws a fall back up; damage / healing like acid
+        if (liq->drag > 0) s.vel = s.vel * std::exp(-liq->drag * dt);
+        if (liq->current > 0 && s.vel.x < liq->current) s.vel.x = std::min(liq->current, s.vel.x + kLiquidCurrentAccel * dt);
+        if (liq->bounce && s.vel.y < -kLiquidBounceFrom) s.vel.y = -s.vel.y * kLiquidBounce;
+        s.acidTaken += (liq->dmg - liq->heal) * dt;
+    }
+    // the healing tile and the spike floor (as acid: the server takes it, prediction shows it)
+    if (floorMat == kMatHealTile) s.acidTaken -= kHealTilePerSec * dt;
+    else if (floorMat == kMatSpikes) s.acidTaken += kSpikePerSec * dt;
+    // a teleporter you touch: out of the next one with its link, just outside its exit face, at your speed along that
+    // face (unless something's in the way there)
+    if (__builtin_expect(!map.teleporters.empty(), 0)) {
+        AABB pb = playerBox(s.pos, crouched, scale);
+        const int from = map.teleporterAt({pb.mn - Vec3(0.03f, 0.03f, 0.03f), pb.mx + Vec3(0.03f, 0.03f, 0.03f)});
+        const int to = from >= 0 ? map.teleportTarget(from) : -1;
+        if (to >= 0) {
+            const int a = map.brushes[(size_t)to].exitFace / 2;
+            const Vec3 half = (pb.mx - pb.mn) * 0.5f, off = pb.center() - s.pos;
+            Vec3 n;
+            const Vec3 c = map.teleportExit(to, half[a] + 0.06f, &n);
+            const Vec3 at = c - off;
+            if (!map.boxSolid(playerBox(at, crouched, scale))) {
+                s.pos = at;
+                s.vel = n * length(s.vel);
+                s.flags &= ~MF_ONGROUND;
+                s.dashTimer = 0;
+            }
+        }
     }
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;
@@ -680,6 +920,7 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     const float sy = std::sin(cmd.yaw), cy = std::cos(cmd.yaw);
     s.events = 0;
     s.landSpeed = 0;
+    s.glassBrush = -1;
     const MoveTuning& mt = moveTuning();
     if (__builtin_expect(mt.expr != nullptr, 0)) { pmoveExpr(s, cmd, map, probe, mt, {-sy, 0, -cy}, {cy, 0, -sy}, n); return; }
     const CmdCtx cx{mt, {-sy, 0, -cy}, {cy, 0, -sy}};

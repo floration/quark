@@ -50,7 +50,7 @@ constexpr float kRunSpeed = 9.5f;   // pmove kGroundSpeed (1.17: 8 -> 9.5)
 constexpr float kLeadLo = -1.0f, kLeadHi = 1.0f;
 constexpr float kLoopTile = 4.0f;
 constexpr float kLoopsFull = 3.0f;  // loops per 1000 m2 of floor for full marks: rooms about 18 m across, each with four ways out (MAP_METRICS.md)
-constexpr float kJumpReach = 1.2f;     // a standing jump clears ~1.2 m (pmove: 7.34 m/s up, 22 m/s^2 gravity)
+constexpr float kJumpReach = 1.2f;     // a standing jump clears ~1.2 m (pmove: 7.67 m/s up, 24 m/s^2 gravity)
 constexpr float kEye = 1.6f;
 
 struct Rng { uint32_t s = 12345; float f() { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s & 0xFFFFFF) / 16777216.0f; } };
@@ -1255,7 +1255,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
                 }
             snprintf(buf, sizeof buf, "%s%zu spawns, closest pair %.0f m, %d%% of spawn pairs see each other", line.empty() ? "" : "; ", m.spawns.size(), minD, n ? seenPairs * 100 / n : 0);
             line += buf;
-        } else if (mode == MODE_RACE && !m.checkpoints.empty()) {
+        } else if (isRaceMode(mode) && !m.checkpoints.empty()) {
             Vec3 at = m.spawns.empty() ? Vec3() : m.spawns[0].pos;
             float total = 0;
             bool ok = true;
@@ -1347,7 +1347,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
             float seen = n ? (float)seenPairs / n : 1;
             fit = 3 * std::min(pool.size() / 12.0f, 1.0f) + 4 * (1 - std::min(seen / 0.3f, 1.0f)) + 3 * std::min(loopsPerK / kLoopsFull, 1.0f);
             snprintf(buf, sizeof buf, "ffa: %zu spawns (12+ ideal), %.0f%% of spawn pairs in sight (0 ideal, 30%% scores nothing), %.1f loops per 1000 m2", pool.size(), seen * 100, loopsPerK);
-        } else if (pm == MODE_RACE) {
+        } else if (isRaceMode(pm)) {
             fit = r.mTech;
             snprintf(buf, sizeof buf, "race: the race movement check (shortcut%s on the tech path, see movement)", m.preferredMode == MODE_RACE ? " and challenge" : "");
         } else if (pm == MODE_POINTS && m.points.size() >= 2) {

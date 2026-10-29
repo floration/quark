@@ -88,11 +88,18 @@ option(QUARK_LTO "Link-time optimization" ON)   # (1.19 laptop benchmark: o3 154
 #                   <harness>/; put a crash input there after fixing it, so the CI replay keeps checking it.
 option(QUARK_SANITIZE "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(QUARK_FUZZ "Build the libFuzzer harnesses (clang; implies QUARK_SANITIZE)" OFF)
-if(QUARK_LTO)
+# (not in the sanitizer / fuzz builds: they're for finding bugs, not speed, and clang's ThinLTO objects in libquark_core.a
+# failed to link into the fuzz harnesses with GNU ld: "Expected at most one ThinLTO module per bitcode file")
+if(QUARK_LTO AND NOT QUARK_SANITIZE AND NOT QUARK_FUZZ)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT QUARK_IPO_OK OUTPUT QUARK_IPO_ERR LANGUAGES C CXX)
   if(QUARK_IPO_OK)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+    # the link-time optimisation on every core: GCC otherwise runs its LTRANS jobs one after another ("using serial
+    # compilation of 85 LTRANS jobs" on the owner's PC); the same code comes out, only the link is faster
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      add_link_options(-flto=auto)
+    endif()
   else()
     message(WARNING "LTO not supported here: ${QUARK_IPO_ERR}")
   endif()
@@ -295,6 +302,7 @@ endif()
 # In the launcher, the game (it updates old launchers, docs/SIGNING.md) and the tests.
 add_library(quark_launcher_core STATIC
   src/launcher/qpak.cpp
+  src/launcher/inflate.c
   src/launcher/releases.cpp
   src/launcher/selfupdate.cpp
   src/launcher/install.cpp

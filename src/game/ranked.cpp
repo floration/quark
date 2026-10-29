@@ -271,7 +271,7 @@ bool rankedResultMatchesView(const std::string& text, const std::vector<SeenPlay
 
 std::vector<int> raceSplitFloorsMs(const Map& m) {
     std::vector<int> out;
-    if (m.checkpoints.empty() || m.spawns.empty()) return out;
+    if (m.raceCheckpoints.empty() || m.spawns.empty()) return out;
     auto gap = [](const Vec3& amn, const Vec3& amx, const Vec3& bmn, const Vec3& bmx) { // shortest distance between two boxes
         float lo[3] = {std::max(amn.x, bmn.x), std::max(amn.y, bmn.y), std::max(amn.z, bmn.z)};
         float hi[3] = {std::min(amx.x, bmx.x), std::min(amx.y, bmx.y), std::min(amx.z, bmx.z)};
@@ -279,14 +279,14 @@ std::vector<int> raceSplitFloorsMs(const Map& m) {
         for (int k = 0; k < 3; k++) if (lo[k] > hi[k]) d2 += (lo[k] - hi[k]) * (lo[k] - hi[k]);
         return std::sqrt(d2);
     };
-    const AABB& c0 = m.checkpoints[0];
+    const AABB& c0 = m.raceCheckpoints[0];
     float first = 1e30f;   // from the race spawns (a map's free-for-all spawns may stand further along the course)
     bool race = false;
     for (auto& sp : m.spawns) race |= sp.team == SPAWN_RACE;
     for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE || !race) first = std::min(first, gap(sp.pos, sp.pos, c0.mn, c0.mx));
     out.push_back((int)(first / kRaceSpeedCeiling * 1000.0f));
-    for (size_t i = 1; i < m.checkpoints.size(); i++) {
-        const AABB &a = m.checkpoints[i - 1], &b = m.checkpoints[i];
+    for (size_t i = 1; i < m.raceCheckpoints.size(); i++) {
+        const AABB &a = m.raceCheckpoints[i - 1], &b = m.raceCheckpoints[i];
         out.push_back((int)(gap(a.mn, a.mx, b.mn, b.mx) / kRaceSpeedCeiling * 1000.0f));
     }
     return out;
