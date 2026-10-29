@@ -477,23 +477,28 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     auto cellOf = [&](float x) { return (int)std::floor(std::max(-8192.0f, std::min(8192.0f, x)) / kBucket); };
     auto planeOf = [](float p) { return (int64_t)std::floor((double)p * 1000.0); };
     auto key = [](int axis, int sign, int material, int64_t plane, int cu, int cv) {
-        uint64_t k = (uint64_t)axis | (uint64_t)(sign > 0) << 2 | (uint64_t)(material & 63) << 3;
+        uint64_t k = (uint64_t)axis | (uint64_t)(sign > 0) << 2 | (uint64_t)(uint32_t)material << 3;
         k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)plane;
         k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)cu;
         k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)cv;
         return k;
     };
     const int kBig = 1 << 20; // cell coordinate of the per-plane "huge faces" list
+    // Each face is in its material's buckets and in kAnyMat's (every material: the passes that look for any material,
+    // one lookup instead of one per material, 470 of them)
+    const int kAnyMat = 1 << 20;
     std::unordered_map<uint64_t, std::vector<uint32_t>> buckets;
-    buckets.reserve(faces.size() * 2);
+    buckets.reserve(faces.size() * 4);
     for (size_t i = 0; i < faces.size(); i++) {
         const Face& f = faces[i];
         if (f.aAxis < 0) continue;   // (a sloped polygon: only other slopes share its plane, found below)
         int cu0 = cellOf(f.au0), cu1 = cellOf(f.au1), cv0 = cellOf(f.av0), cv1 = cellOf(f.av1);
         int64_t pl = planeOf(f.aPlane);
-        if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { buckets[key(f.aAxis, f.aSign, f.material, pl, kBig, kBig)].push_back((uint32_t)i); continue; }
-        for (int cv = cv0; cv <= cv1; cv++)
-            for (int cu = cu0; cu <= cu1; cu++) buckets[key(f.aAxis, f.aSign, f.material, pl, cu, cv)].push_back((uint32_t)i);
+        for (int m : {f.material, kAnyMat}) {
+            if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { buckets[key(f.aAxis, f.aSign, m, pl, kBig, kBig)].push_back((uint32_t)i); continue; }
+            for (int cv = cv0; cv <= cv1; cv++)
+                for (int cu = cu0; cu <= cu1; cu++) buckets[key(f.aAxis, f.aSign, m, pl, cu, cv)].push_back((uint32_t)i);
+        }
     }
     // calls fn(k) for faces that might share f's plane with this material near cell (cu, cv); fn returns true to stop
     auto near = [&](const Face& f, int material, int cu, int cv, auto fn) {
@@ -523,8 +528,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     auto nearJoin = [&](const Face& f, int cu, int cv, auto fn) {
         if (!byGroup) return near(f, f.material, cu, cv, fn);
         if (f.group < 0) return false;
-        for (int m = 0; m < kMapMaterials; m++) if (near(f, m, cu, cv, fn)) return true;
-        return false;
+        return near(f, kAnyMat, cu, cv, fn);
     };
     // p (on o's plane, within kFlush) strictly inside slope polygon o
     auto inPoly = [](const Face& o, const Vec3& p) {
@@ -653,13 +657,11 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
         };
         int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
         bool hit = false;
-        for (int mat = 0; mat < f.material && !hit; mat++) {
-            if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: just scan everything on its plane
-                for (size_t k = 0; k < faces.size() && !hit; k++) hit = overlaps((uint32_t)k);
-                break;
-            }
+        if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: just scan everything on its plane
+            for (size_t k = 0; k < faces.size() && !hit; k++) hit = overlaps((uint32_t)k);
+        } else {   // (any lower material: overlaps() checks it)
             for (int cv = cv0; cv <= cv1 && !hit; cv++)
-                for (int cu = cu0; cu <= cu1 && !hit; cu++) hit = near(f, mat, cu, cv, overlaps);
+                for (int cu = cu0; cu <= cu1 && !hit; cu++) hit = near(f, kAnyMat, cu, cv, overlaps);
         }
         needLift[i] = hit;
     });

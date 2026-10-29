@@ -958,8 +958,9 @@ void Game::edSetMaterial(int m) {
     if (!ops.empty()) edDo(ops, undo);
 }
 
-// The material picker: every material as a swatch drawn by the world shader (Renderer::swatch), in three lists: the
-// ones this map uses, the last 10 picked, all of them. A click picks it (for new boxes, or for what's selected).
+// The material picker: every material as a swatch drawn by the world shader (Renderer::swatch), a tab at a time (the
+// ones this map uses, the last 10 picked, each kind, all), or what SEARCH finds. A click picks it (for new boxes, or
+// for what's selected).
 // the editor's name for each material (the panel's button; the picker names one by it, less "MATERIAL: ")
 static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "MATERIAL: WALLBANG", "MATERIAL: METAL", "MATERIAL: GLOW", "MATERIAL: FAR",
                                         "MATERIAL: WATER (WADE IN IT)", "MATERIAL: LAVA (KILLS)", "MATERIAL: TRIM (NOT SOLID)", "MATERIAL: CLIP (INVISIBLE WALL)",
@@ -1070,13 +1071,356 @@ static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "M
                                         "MATERIAL: RIVER STONE WALL",
                                         "MATERIAL: GABBRO BLOCKS",
                                         "MATERIAL: TUFA BLOCKS",
-                                        "MATERIAL: MOSSY STONE BLOCKS"};
+                                        "MATERIAL: MOSSY STONE BLOCKS",
+                                        "MATERIAL: DIRT",
+                                        "MATERIAL: GRAVEL",
+                                        "MATERIAL: GRANITE ROCK",
+                                        "MATERIAL: SANDSTONE STRATA",
+                                        "MATERIAL: SLATE",
+                                        "MATERIAL: BASALT COLUMNS",
+                                        "MATERIAL: MOSSY STONE",
+                                        "MATERIAL: CRACKED EARTH",
+                                        "MATERIAL: RED CLAY",
+                                        "MATERIAL: OBSIDIAN",
+                                        "MATERIAL: RIVER PEBBLES",
+                                        "MATERIAL: TREE BARK",
+                                        "MATERIAL: HEDGE",
+                                        "MATERIAL: FOREST FLOOR",
+                                        "MATERIAL: CORAL",
+                                        "MATERIAL: LIMESTONE",
+                                        "MATERIAL: SALT FLAT",
+                                        "MATERIAL: SWAMP SLIME",
+                                        "MATERIAL: FROST",
+                                        "MATERIAL: TUNDRA",
+                                        "MATERIAL: LICHEN ROCK",
+                                        "MATERIAL: AMBER",
+                                        "MATERIAL: JADE",
+                                        "MATERIAL: BONE",
+                                        "MATERIAL: HONEYCOMB",
+                                        "MATERIAL: STUCCO",
+                                        "MATERIAL: STRIPED WALLPAPER",
+                                        "MATERIAL: PAINTED DRYWALL",
+                                        "MATERIAL: BASKET-WEAVE PARQUET",
+                                        "MATERIAL: WAINSCOT PANELLING",
+                                        "MATERIAL: TERRAZZO",
+                                        "MATERIAL: OFFICE CARPET TILES",
+                                        "MATERIAL: LINOLEUM",
+                                        "MATERIAL: PAINTED BRICK",
+                                        "MATERIAL: CINDER BLOCK",
+                                        "MATERIAL: ROOF SHINGLES",
+                                        "MATERIAL: STANDING SEAM ROOF",
+                                        "MATERIAL: THATCH",
+                                        "MATERIAL: LOG CABIN",
+                                        "MATERIAL: BAMBOO",
+                                        "MATERIAL: TATAMI",
+                                        "MATERIAL: SHOJI SCREEN",
+                                        "MATERIAL: HEX FLOOR TILES",
+                                        "MATERIAL: SIDEWALK SLABS",
+                                        "MATERIAL: POLISHED GRANITE",
+                                        "MATERIAL: CORK",
+                                        "MATERIAL: PERFORATED METAL",
+                                        "MATERIAL: RIVETED PLATES",
+                                        "MATERIAL: CHIPPED PAINT",
+                                        "MATERIAL: GALVANIZED STEEL",
+                                        "MATERIAL: COPPER AND PATINA",
+                                        "MATERIAL: BRASS",
+                                        "MATERIAL: GOLD",
+                                        "MATERIAL: CHROME",
+                                        "MATERIAL: ALUMINIUM TREAD PLATE",
+                                        "MATERIAL: CARBON FIBRE",
+                                        "MATERIAL: COIN RUBBER FLOOR",
+                                        "MATERIAL: SHIPPING CONTAINER",
+                                        "MATERIAL: OIL-STAINED CONCRETE",
+                                        "MATERIAL: CHAIN-LINK FENCE",
+                                        "MATERIAL: SCAFFOLD BOARDS",
+                                        "MATERIAL: NEON MAZE",
+                                        "MATERIAL: FORCE FIELD",
+                                        "MATERIAL: SERVER RACK",
+                                        "MATERIAL: DATA RAIN",
+                                        "MATERIAL: ALIEN BIOMASS",
+                                        "MATERIAL: STARFIELD",
+                                        "MATERIAL: SCI-FI PANELS",
+                                        "MATERIAL: HEAT VENTS",
+                                        "MATERIAL: POOL TABLE FELT",
+                                        "MATERIAL: QUILTED LEATHER",
+                                        "MATERIAL: SPORTS COURT",
+                                        "MATERIAL: ASTROTURF",
+                                        "MATERIAL: CARDBOARD",
+                                        "MATERIAL: NEWSPAPER",
+                                        "MATERIAL: CAMOUFLAGE",
+                                        "MATERIAL: COOLED MAGMA",
+                                        "MATERIAL: SHALE",
+                                        "MATERIAL: QUARTZITE",
+                                        "MATERIAL: TRAVERTINE",
+                                        "MATERIAL: PUMICE",
+                                        "MATERIAL: FLINT",
+                                        "MATERIAL: RED CANYON ROCK",
+                                        "MATERIAL: CHALK",
+                                        "MATERIAL: GNEISS",
+                                        "MATERIAL: MALACHITE",
+                                        "MATERIAL: GEODE",
+                                        "MATERIAL: WET CAVE ROCK",
+                                        "MATERIAL: BOULDER FIELD",
+                                        "MATERIAL: SCREE",
+                                        "MATERIAL: JASPER",
+                                        "MATERIAL: MICA SCHIST",
+                                        "MATERIAL: PETRIFIED WOOD",
+                                        "MATERIAL: DESERT VARNISH",
+                                        "MATERIAL: CONGLOMERATE",
+                                        "MATERIAL: GLACIER-POLISHED GRANITE",
+                                        "MATERIAL: OPAL",
+                                        "MATERIAL: ROOTY LOAM",
+                                        "MATERIAL: PEAT",
+                                        "MATERIAL: QUICKSAND",
+                                        "MATERIAL: RIVERBANK CLAY",
+                                        "MATERIAL: RUTTED DIRT ROAD",
+                                        "MATERIAL: VOLCANIC ASH",
+                                        "MATERIAL: MYCELIUM",
+                                        "MATERIAL: OCHRE EARTH",
+                                        "MATERIAL: RED DESERT SOIL",
+                                        "MATERIAL: TILLED FIELD",
+                                        "MATERIAL: TERMITE MOUND",
+                                        "MATERIAL: SEABIRD CLIFF",
+                                        "MATERIAL: FROZEN MUD",
+                                        "MATERIAL: AUTUMN LEAVES",
+                                        "MATERIAL: BLACK SAND",
+                                        "MATERIAL: CLOVER",
+                                        "MATERIAL: FLOWER MEADOW",
+                                        "MATERIAL: IVY ON BRICK",
+                                        "MATERIAL: MOSS CARPET",
+                                        "MATERIAL: FERNS",
+                                        "MATERIAL: PINE BARK",
+                                        "MATERIAL: BIRCH BARK",
+                                        "MATERIAL: PALM TRUNK",
+                                        "MATERIAL: LOG END GRAIN",
+                                        "MATERIAL: LILY PADS",
+                                        "MATERIAL: REEDS",
+                                        "MATERIAL: CACTUS",
+                                        "MATERIAL: HAY",
+                                        "MATERIAL: VINES ON STONE",
+                                        "MATERIAL: MUSHROOM GILLS",
+                                        "MATERIAL: TOADSTOOL",
+                                        "MATERIAL: KELP",
+                                        "MATERIAL: JUNGLE LEAVES",
+                                        "MATERIAL: WHEAT",
+                                        "MATERIAL: PINE BOUGHS",
+                                        "MATERIAL: GLACIER ICE",
+                                        "MATERIAL: WIND-PACKED SNOW",
+                                        "MATERIAL: ICICLES",
+                                        "MATERIAL: FROSTED PLANKS",
+                                        "MATERIAL: RAIN-WET PAVING",
+                                        "MATERIAL: LAKE ICE",
+                                        "MATERIAL: SEA FOAM",
+                                        "MATERIAL: WATERFALL",
+                                        "MATERIAL: PUDDLED GROUND",
+                                        "MATERIAL: HAIL",
+                                        "MATERIAL: DEWY GRASS",
+                                        "MATERIAL: SNOWFLAKE FROST",
+                                        "MATERIAL: TIDAL MUD FLATS",
+                                        "MATERIAL: CLOUD",
+                                        "MATERIAL: ICE CAVE",
+                                        "MATERIAL: RED DUNES",
+                                        "MATERIAL: DESERT PAVEMENT",
+                                        "MATERIAL: SULFUR CRUST",
+                                        "MATERIAL: ROPY LAVA ROCK",
+                                        "MATERIAL: SCORIA",
+                                        "MATERIAL: FUMAROLE CRUST",
+                                        "MATERIAL: ROCK SALT",
+                                        "MATERIAL: BADLANDS",
+                                        "MATERIAL: DESERT CRUST",
+                                        "MATERIAL: BANDED IRON",
+                                        "MATERIAL: TUFF",
+                                        "MATERIAL: SHELL BEACH",
+                                        "MATERIAL: HARDPAN",
+                                        "MATERIAL: EMBER BED",
+                                        "MATERIAL: CROSS-BEDDED SANDSTONE",
+                                        "MATERIAL: BARNACLES",
+                                        "MATERIAL: MUSSEL BED",
+                                        "MATERIAL: MOTHER OF PEARL",
+                                        "MATERIAL: SEA GLASS",
+                                        "MATERIAL: FLOWSTONE",
+                                        "MATERIAL: GLOWWORM CAVE",
+                                        "MATERIAL: GLOWING ALGAE",
+                                        "MATERIAL: QUARTZ CRYSTALS",
+                                        "MATERIAL: COBWEBS",
+                                        "MATERIAL: BEETLE-CARVED WOOD",
+                                        "MATERIAL: SNAKE SKIN",
+                                        "MATERIAL: FUR",
+                                        "MATERIAL: TURTLE SHELL",
+                                        "MATERIAL: FEATHERS",
+                                        "MATERIAL: WASP NEST PAPER",
+                                        "MATERIAL: BLUED STEEL",
+                                        "MATERIAL: HEAT-TINTED TITANIUM",
+                                        "MATERIAL: CAST IRON",
+                                        "MATERIAL: WROUGHT IRON",
+                                        "MATERIAL: BRONZE",
+                                        "MATERIAL: PEWTER",
+                                        "MATERIAL: ZINC",
+                                        "MATERIAL: ANODIZED BLACK",
+                                        "MATERIAL: GUNMETAL",
+                                        "MATERIAL: HAMMERED COPPER",
+                                        "MATERIAL: ENGINE-TURNED STEEL",
+                                        "MATERIAL: MILL SCALE",
+                                        "MATERIAL: POWDER-COAT GREEN",
+                                        "MATERIAL: POWDER-COAT YELLOW",
+                                        "MATERIAL: ELECTROPLATED NICKEL",
+                                        "MATERIAL: TIN",
+                                        "MATERIAL: LEAD SHEET",
+                                        "MATERIAL: DAMASCUS STEEL",
+                                        "MATERIAL: QUILTED STAINLESS",
+                                        "MATERIAL: EXPANDED METAL",
+                                        "MATERIAL: BOLTED ACCESS PANELS",
+                                        "MATERIAL: DENTED STEEL",
+                                        "MATERIAL: WELDED PATCHWORK",
+                                        "MATERIAL: SHIP HULL PLATING",
+                                        "MATERIAL: BOILER PLATE",
+                                        "MATERIAL: LOCKER DOORS",
+                                        "MATERIAL: ROLLER SHUTTER",
+                                        "MATERIAL: SHEET PILING",
+                                        "MATERIAL: TRAPEZOID CLADDING",
+                                        "MATERIAL: INSULATED PANEL",
+                                        "MATERIAL: ELECTRICAL CABINET",
+                                        "MATERIAL: STEEL DOOR SKIN",
+                                        "MATERIAL: VAULT DOOR",
+                                        "MATERIAL: HEX BOLT GRID",
+                                        "MATERIAL: TANK ARMOUR",
+                                        "MATERIAL: AIRCRAFT SKIN",
+                                        "MATERIAL: STEEL GRID WALL",
+                                        "MATERIAL: PRESSED TIN CEILING",
+                                        "MATERIAL: BAR GRATING",
+                                        "MATERIAL: GALVANIZED GRATING",
+                                        "MATERIAL: FIBREGLASS GRATING",
+                                        "MATERIAL: EPOXY FLOOR",
+                                        "MATERIAL: STEEL CHECKER FLOOR",
+                                        "MATERIAL: INTERLOCKING RUBBER TILES",
+                                        "MATERIAL: RAISED ACCESS FLOOR",
+                                        "MATERIAL: LOADING DOCK FLOOR",
+                                        "MATERIAL: POLISHED CONCRETE",
+                                        "MATERIAL: STEEL DECK PLATE",
+                                        "MATERIAL: MESH CATWALK",
+                                        "MATERIAL: INDUSTRIAL TILES",
+                                        "MATERIAL: PEELING GREEN PAINT",
+                                        "MATERIAL: RUST STREAKS",
+                                        "MATERIAL: HEAVY SCALE RUST",
+                                        "MATERIAL: OXIDIZED STEEL",
+                                        "MATERIAL: SOOTY STEEL",
+                                        "MATERIAL: GREASE-STAINED METAL",
+                                        "MATERIAL: SANDBLASTED STEEL",
+                                        "MATERIAL: WATER-STAINED CONCRETE",
+                                        "MATERIAL: SPALLED CONCRETE",
+                                        "MATERIAL: BATTERED YELLOW PAINT",
+                                        "MATERIAL: GRAFFITI-BUFFED WALL",
+                                        "MATERIAL: BIRD-SPOTTED ROOF",
+                                        "MATERIAL: SALT-CRUSTED STEEL",
+                                        "MATERIAL: RADIATION WARNING",
+                                        "MATERIAL: VENTILATION DUCT",
+                                        "MATERIAL: RADIATOR FINS",
+                                        "MATERIAL: CONTROL PANEL",
+                                        "MATERIAL: GAUGE CLUSTER",
+                                        "MATERIAL: FURNACE GLOW",
+                                        "MATERIAL: MOLTEN SLAG",
+                                        "MATERIAL: WARNING LIGHTS",
+                                        "MATERIAL: RAILWAY SLEEPERS",
+                                        "MATERIAL: RAIL TRACK",
+                                        "MATERIAL: MANHOLE COVERS",
+                                        "MATERIAL: STORM DRAIN GRATE",
+                                        "MATERIAL: ROAD MARKINGS",
+                                        "MATERIAL: ZEBRA CROSSING",
+                                        "MATERIAL: PARKING BAY LINES",
+                                        "MATERIAL: TACTILE PAVING",
+                                        "MATERIAL: KERB STONES",
+                                        "MATERIAL: PRECAST CONCRETE",
+                                        "MATERIAL: BOARD-FORMED CONCRETE",
+                                        "MATERIAL: GABION WALL",
+                                        "MATERIAL: RETAINING WALL BLOCKS",
+                                        "MATERIAL: TUNNEL LINING",
+                                        "MATERIAL: BRIDGE GIRDER",
+                                        "MATERIAL: RUBBLE PILE",
+                                        "MATERIAL: CRACKED SLAB",
+                                        "MATERIAL: WEEDS THROUGH CONCRETE",
+                                        "MATERIAL: SHATTERED TILES",
+                                        "MATERIAL: EXPOSED REBAR",
+                                        "MATERIAL: BULLET-POCKED WALL",
+                                        "MATERIAL: COLLAPSED BRICK",
+                                        "MATERIAL: BURNT-OUT RUIN WALL",
+                                        "MATERIAL: TOPPLED COLUMN",
+                                        "MATERIAL: RUINED PARQUET",
+                                        "MATERIAL: CRUMBLING PLASTER",
+                                        "MATERIAL: SANDBAG WALL",
+                                        "MATERIAL: TANK TRAP FIELD",
+                                        "MATERIAL: DUSTY LINOLEUM",
+                                        "MATERIAL: CHARRED TIMBER",
+                                        "MATERIAL: SCRAP HEAP",
+                                        "MATERIAL: PALLET STACK",
+                                        "MATERIAL: GUTTED MACHINERY",
+                                        "MATERIAL: AIRCRAFT WRECKAGE",
+                                        "MATERIAL: FRIDGE GRAVEYARD",
+                                        "MATERIAL: RUSTED SHEET FENCE",
+                                        "MATERIAL: ENGINE BLOCK",
+                                        "MATERIAL: CHAIN HEAP",
+                                        "MATERIAL: BENT REBAR BUNDLE",
+                                        "MATERIAL: DUST STORM HAZE",
+                                        "MATERIAL: SALT FLAT (WASTELAND)",
+                                        "MATERIAL: BLEACHED BONES",
+                                        "MATERIAL: SUN-BAKED HARDPAN",
+                                        "MATERIAL: RIPPLE SAND",
+                                        "MATERIAL: DRIED RIVERBED",
+                                        "MATERIAL: SANDBLASTED SIGN",
+                                        "MATERIAL: RUST DUNES",
+                                        "MATERIAL: DUSTY GLASS",
+                                        "MATERIAL: TUMBLEWEED BRUSH",
+                                        "MATERIAL: DRIED BLOOD EARTH",
+                                        "MATERIAL: SAND-BURIED ROAD",
+                                        "MATERIAL: CALICHE",
+                                        "MATERIAL: WIND-SCOURED ROCK",
+                                        "MATERIAL: ASH DUNES",
+                                        "MATERIAL: RADIOACTIVE PUDDLES",
+                                        "MATERIAL: MUTANT GROWTH",
+                                        "MATERIAL: ACID-ETCHED METAL",
+                                        "MATERIAL: HAZMAT TARP",
+                                        "MATERIAL: GLOWING FISSURES",
+                                        "MATERIAL: OILY WATER",
+                                        "MATERIAL: SULFUR PIT CRUST",
+                                        "MATERIAL: CONTAMINATED SOIL",
+                                        "MATERIAL: BUBBLING TAR",
+                                        "MATERIAL: WARNING TAPE MESH",
+                                        "MATERIAL: IRRADIATED GLASS",
+                                        "MATERIAL: BIO-SLUDGE DRAIN",
+                                        "MATERIAL: SCRAP METAL PLATING",
+                                        "MATERIAL: CRATE WOOD",
+                                        "MATERIAL: MUD AND STRAW DAUB",
+                                        "MATERIAL: LEAN-TO CANVAS",
+                                        "MATERIAL: FIRE-CRACKED EARTH",
+                                        "MATERIAL: SMOULDERING ASH",
+                                        "MATERIAL: BLISTERED PAINT",
+                                        "MATERIAL: MELTED PLASTIC",
+                                        "MATERIAL: ROTTING WOOD",
+                                        "MATERIAL: MOULD BLOOM",
+                                        "MATERIAL: CORRODED COPPER ROOF",
+                                        "MATERIAL: PEELING WALLPAPER",
+                                        "MATERIAL: TERMITE-EATEN BEAM",
+                                        "MATERIAL: CHARCOAL FLOOR",
+                                        "MATERIAL: LICHEN-CRUSTED STONE",
+                                        "MATERIAL: DEAD FOREST FLOOR",
+                                        "MATERIAL: WITHERED VINES",
+                                        "MATERIAL: BONE-DRY WOOD",
+                                        "MATERIAL: SCORCHED TILES"};
 static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
 
+// the picker's tabs: the ones this map uses, the last 10 picked, then by kind, then all of them. kMatTabs: the kinds,
+// each a run of materials (the look rounds' categories)
+static const char* const kMatTabNames[] = {"IN THIS MAP", "RECENT", "BASIC", "BRICK", "CONCRETE", "TILE", "STONE", "BUILDINGS",
+                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "ALL"};
+constexpr int kMatTabCount = (int)(sizeof kMatTabNames / sizeof *kMatTabNames), kMatTabAll = kMatTabCount - 1;
+static const struct { int tab, first, last; } kMatTabs[] = {
+    {2, 0, kMatBlocks - 1}, {3, 39, 68}, {4, 69, 88}, {5, 89, 113}, {6, 114, 138}, {8, 139, 163}, {7, 164, 184}, {9, 185, 199},
+    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}};
+static_assert(kMapMaterials == 472, "a picker tab for every material (kMatTabs)");
+
 void Game::drawEditorMatMenu() {
-    const float s = ui_.s(), pad = 16 * s, gap = 6 * s, bh = 36 * s;
+    const float s = ui_.s(), pad = 16 * s, gap = 8 * s, bh = 36 * s, th = 30 * s;
     const float barTop = edBarTop_ > 0 ? edBarTop_ : (float)r_.height();
-    const float pw = std::min(edPanelX_ - 16 * s, 1400 * s);
+    const float pw = std::min(edPanelX_ - 16 * s, 1600 * s);
     static bool loaded = false;
     if (!loaded) {   // (the last session's recent list)
         loaded = true;
@@ -1087,69 +1431,92 @@ void Game::drawEditorMatMenu() {
             fclose(f);
         }
     }
-    std::vector<int> used;
-    {
+    // the list: what SEARCH matches (every word in the name), else the tab's
+    std::vector<int> list;
+    std::string find = edMatSearch_;
+    for (auto& c : find) c = (char)toupper((unsigned char)c);
+    if (!find.empty()) {
+        std::vector<std::string> words;
+        for (size_t a = 0, b; a < find.size(); a = b + 1) {
+            b = find.find(' ', a);
+            if (b == std::string::npos) b = find.size();
+            if (b > a) words.push_back(find.substr(a, b - a));
+        }
+        for (int m = 0; m < kMapMaterials; m++) {
+            const std::string name = matLabels[m] + 10;
+            bool all = true;
+            for (auto& w : words) all = all && name.find(w) != std::string::npos;
+            if (all) list.push_back(m);
+        }
+    } else if (edMatTab_ == 0) {
         bool in[kMapMaterials] = {};
         for (size_t i = 0; i < ed_.editableBrushes(); i++) if (validMapMaterial(ed_.brushes[i].material)) in[ed_.brushes[i].material] = true;
         for (auto& g : ed_.groups) {
             if (g.type != Map::GROUP_CUSTOM && validMapMaterial(g.material)) in[g.material] = true;
             for (auto& p : g.parts) if (validMapMaterial(p.material)) in[p.material] = true;
         }
-        for (int m = 0; m < kMapMaterials; m++) if (in[m]) used.push_back(m);
-    }
-    std::vector<int> all(kMapMaterials);
-    for (int m = 0; m < kMapMaterials; m++) all[m] = m;
-    // as many columns as it takes to fit above the bar (139 materials: a grid of ~20 across); names under the swatches
-    // while they're big enough to read, else the one under the mouse is named by CLOSE
-    int cols = 12;
-    float sw = 0, cell = 0, ph = 0;
-    bool names = true;
-    auto rows = [&](size_t n) { return (int)((n + (size_t)cols - 1) / (size_t)cols); };
-    for (; cols <= 32; cols++) {
-        sw = std::floor((pw - 2 * pad - (cols - 1) * gap) / cols);
-        names = sw >= 72 * s;
-        cell = sw + (names ? 14 * s : 0) + gap;
-        ph = pad + (rows(used.size()) + rows(edRecentMats_.size()) + rows(all.size())) * cell + 3 * (20 * s) + (used.empty() ? 20 * s : 0) + (edRecentMats_.empty() ? 20 * s : 0) + bh + pad + 8 * s;
-        if (ph <= barTop - 16 * s) break;
-    }
-    int hovered = -1;
+        for (int m = 0; m < kMapMaterials; m++) if (in[m]) list.push_back(m);
+    } else if (edMatTab_ == 1) list = edRecentMats_;
+    else for (auto& t : kMatTabs)
+        if (t.tab == edMatTab_ || edMatTab_ == kMatTabAll)
+            for (int m = t.first; m <= t.last; m++) list.push_back(m);
+    // swatches 100 across (owner, 2026-10-29: "100x100 pixels each, so I can see details"), named under; as many
+    // columns as fit, as many rows as fit above the bar: the wheel scrolls the rest (edMatScroll_, in rows)
+    const float sw = 100 * s, cell = sw + 18 * s + gap;
+    const int cols = std::max(1, (int)((pw - 2 * pad + gap) / (sw + gap)));
+    const int tabCols = std::min(kMatTabCount, std::max(1, (int)((pw - 2 * pad + gap) / (118 * s + gap))));
+    const int tabRows = (kMatTabCount + tabCols - 1) / tabCols;
+    const float maxH = barTop - 16 * s, head = pad + bh + gap + tabRows * (th + gap) + 4 * s, foot = gap + bh + pad;
+    const int rowsAll = std::max(1, (int)((list.size() + (size_t)cols - 1) / (size_t)cols));
+    const int fitRows = std::max(1, (int)((maxH - head - foot) / cell));
+    const int rows = std::min(rowsAll, fitRows);
+    edMatScroll_ = std::clamp(edMatScroll_, 0, rowsAll - rows);
+    const float ph = head + rows * cell + foot;
     float px, py;
-    edDialogPanel(ui_, edPanelX_, barTop, pw, std::min(ph, barTop - 16 * s), px, py);
+    edDialogPanel(ui_, edPanelX_, barTop, pw, ph, px, py);
     const int cur = edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_BRUSH ? ed_.brushes[edSel_.idx].material
                   : edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_GROUP ? ed_.groups[edSel_.idx].material : edMat_;
-    float y = py + pad;
-    int picked = -1;
-    auto list = [&](const char* title, const std::vector<int>& ms) {
-        ui_.label(px + pad, y, title, kGrey, 0.8f);
-        y += 20 * s;
-        if (ms.empty()) { ui_.hint(px + pad, y, "NONE YET", kGrey, pw - 2 * pad); y += 20 * s; return; }
-        for (size_t k = 0; k < ms.size(); k++) {
-            const int m = ms[k];
-            const float x = px + pad + (float)(k % cols) * (sw + gap), yy = y + (float)(k / cols) * cell;
-            std::string word = kMapMaterialWords[m];
-            for (auto& c : word) c = (char)toupper((unsigned char)c);
-            // (the button is the frame round the swatch: its hover and the current one's ring show past the swatch's edge)
-            static std::string ids[3][kMapMaterials];   // (UiExp keeps the id's pointer)
-            std::string& id = ids[title[0] == 'I' ? 0 : title[0] == 'R' ? 1 : 2][m];
-            if (id.empty()) id = std::string(title) + " " + word;
-            const UiExp e = edMatMenu_ == 1 || m == cur ? UiExp::nav(edPath()) : UiExp::edit();   // (new ones: the menu closes, edMat_ set)
-            if (ui_.button(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, "", e.withId(id.c_str()))) picked = m;
-            if (m == cur) r_.rect(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, kPick);
-            r_.swatch(x, yy, sw, sw, m);
-            if (names) ui_.hint(x, yy + sw + 2 * s, word, m == cur ? kPick : kWhite, sw + gap);
-            if (ui_.over(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s)) hovered = m;
+    // SEARCH, then the tabs
+    const float iw = pw - 2 * pad;
+    ui_.label(px + pad, py + pad + bh * 0.5f - 9 * s, "SEARCH", kGrey, 0.9f);
+    if (ui_.textField(44, px + pad + 90 * s, py + pad, std::min(iw - 90 * s, 480 * s), bh, edMatSearch_, 32, UiExp::local().withId("SEARCH MATERIALS")))
+        edMatScroll_ = 0;
+    const float tw = (iw - (tabCols - 1) * gap) / tabCols;
+    for (int t = 0; t < kMatTabCount; t++) {
+        const float x = px + pad + (float)(t % tabCols) * (tw + gap), y = py + pad + bh + gap + (float)(t / tabCols) * (th + gap);
+        if (ui_.tab(x, y, tw, th, kMatTabNames[t], find.empty() && t == edMatTab_, UiExp::local().withId(kMatTabNames[t]), true)) {
+            edMatTab_ = t; edMatScroll_ = 0; edMatSearch_.clear();
         }
-        y += rows(ms.size()) * cell;
-    };
-    list("IN THIS MAP", used);
-    list("RECENT", edRecentMats_);
-    list("ALL", all);
-    const float closeY = py + std::min(ph, barTop - 16 * s) - pad - bh;
-    if (ui_.button(px + pad, closeY, 160 * s, bh, "CLOSE", UiExp::nav(edPath()))) edMatMenu_ = 0;
-    if (!names && (hovered >= 0 || cur >= 0)) {
-        const std::string word = matLabels[hovered >= 0 ? hovered : cur] + 10;   // (less "MATERIAL: ")
-        ui_.label(px + pad + 176 * s, closeY + bh * 0.5f - 9 * s, word, hovered >= 0 ? kWhite : kPick, 0.9f);
     }
+    float y = py + head;
+    int hovered = -1, picked = -1;
+    if (list.empty()) ui_.hint(px + pad, y, find.empty() ? "NONE YET" : "NO MATERIAL NAMED THAT", kGrey, iw);
+    const size_t first = (size_t)edMatScroll_ * (size_t)cols, end = std::min(list.size(), first + (size_t)rows * (size_t)cols);
+    for (size_t k = first; k < end; k++) {
+        const int m = list[k];
+        const float x = px + pad + (float)((k - first) % cols) * (sw + gap), yy = y + (float)((k - first) / cols) * cell;
+        // (the button is the frame round the swatch: its hover and the current one's ring show past the swatch's edge)
+        static std::string ids[kMapMaterials];   // (UiExp keeps the id's pointer)
+        std::string& id = ids[m];
+        if (id.empty()) id = std::string("MATERIAL ") + kMapMaterialWords[m];
+        const UiExp e = edMatMenu_ == 1 || m == cur ? UiExp::nav(edPath()) : UiExp::edit();   // (new ones: the menu closes, edMat_ set)
+        if (ui_.button(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, "", e.withId(id.c_str()))) picked = m;
+        if (m == cur) r_.rect(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, kPick);
+        r_.swatch(x, yy, sw, sw, m);
+        ui_.hint(x, yy + sw + 3 * s, matLabels[m] + 10, m == cur ? kPick : kWhite, sw + gap);
+        if (ui_.over(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s)) hovered = m;
+    }
+    // CLOSE; the scroll position; the name of the one under the mouse (the names under the swatches get cut)
+    const float closeY = py + ph - pad - bh;
+    if (ui_.button(px + pad, closeY, 160 * s, bh, "CLOSE", UiExp::nav(edPath()))) edMatMenu_ = 0;
+    float nx = px + pad + 176 * s;
+    if (rowsAll > rows) {
+        char b[64];
+        snprintf(b, sizeof b, "ROWS %d-%d OF %d (WHEEL)", edMatScroll_ + 1, edMatScroll_ + rows, rowsAll);
+        ui_.label(nx, closeY + bh * 0.5f - 9 * s, b, kGrey, 0.8f);
+        nx += 300 * s;
+    }
+    if (hovered >= 0 || cur >= 0) ui_.label(nx, closeY + bh * 0.5f - 9 * s, matLabels[hovered >= 0 ? hovered : cur] + 10, hovered >= 0 ? kWhite : kPick, 0.9f);
     if (picked >= 0) {
         if (edMatMenu_ == 1) edMat_ = picked;
         else { edMat_ = picked; edSetMaterial(picked); }
@@ -1863,10 +2230,343 @@ void Game::editorFrame(double dt) {
                                          {0.54f, 0.52f, 0.51f},
                                          {0.15f, 0.17f, 0.16f},
                                          {0.73f, 0.69f, 0.54f},
-                                         {0.46f, 0.50f, 0.41f}};
+                                         {0.46f, 0.50f, 0.41f},
+                                         {0.38f, 0.29f, 0.24f},
+                                         {0.47f, 0.44f, 0.40f},
+                                         {0.49f, 0.49f, 0.48f},
+                                         {0.74f, 0.58f, 0.40f},
+                                         {0.26f, 0.29f, 0.33f},
+                                         {0.22f, 0.23f, 0.24f},
+                                         {0.52f, 0.51f, 0.49f},
+                                         {0.65f, 0.56f, 0.43f},
+                                         {0.63f, 0.35f, 0.26f},
+                                         {0.20f, 0.18f, 0.22f},
+                                         {0.43f, 0.41f, 0.40f},
+                                         {0.36f, 0.29f, 0.24f},
+                                         {0.22f, 0.37f, 0.21f},
+                                         {0.35f, 0.26f, 0.21f},
+                                         {0.82f, 0.56f, 0.44f},
+                                         {0.76f, 0.74f, 0.67f},
+                                         {0.80f, 0.79f, 0.78f},
+                                         {0.22f, 0.29f, 0.20f},
+                                         {0.73f, 0.77f, 0.81f},
+                                         {0.47f, 0.43f, 0.40f},
+                                         {0.52f, 0.51f, 0.49f},
+                                         {0.80f, 0.56f, 0.20f},
+                                         {0.35f, 0.60f, 0.46f},
+                                         {0.76f, 0.74f, 0.68f},
+                                         {0.69f, 0.52f, 0.25f},
+                                         {0.78f, 0.77f, 0.74f},
+                                         {0.64f, 0.69f, 0.62f},
+                                         {0.75f, 0.74f, 0.71f},
+                                         {0.56f, 0.38f, 0.26f},
+                                         {0.67f, 0.63f, 0.57f},
+                                         {0.76f, 0.75f, 0.73f},
+                                         {0.32f, 0.35f, 0.44f},
+                                         {0.63f, 0.71f, 0.65f},
+                                         {0.76f, 0.74f, 0.73f},
+                                         {0.54f, 0.54f, 0.55f},
+                                         {0.27f, 0.26f, 0.28f},
+                                         {0.23f, 0.35f, 0.32f},
+                                         {0.60f, 0.50f, 0.29f},
+                                         {0.48f, 0.33f, 0.24f},
+                                         {0.60f, 0.63f, 0.33f},
+                                         {0.61f, 0.60f, 0.41f},
+                                         {0.77f, 0.75f, 0.72f},
+                                         {0.73f, 0.73f, 0.73f},
+                                         {0.62f, 0.62f, 0.61f},
+                                         {0.40f, 0.36f, 0.38f},
+                                         {0.65f, 0.49f, 0.34f},
+                                         {0.51f, 0.52f, 0.55f},
+                                         {0.43f, 0.46f, 0.51f},
+                                         {0.30f, 0.39f, 0.59f},
+                                         {0.62f, 0.64f, 0.67f},
+                                         {0.47f, 0.55f, 0.45f},
+                                         {0.75f, 0.64f, 0.30f},
+                                         {0.84f, 0.73f, 0.26f},
+                                         {0.26f, 0.27f, 0.30f},
+                                         {0.68f, 0.70f, 0.73f},
+                                         {0.19f, 0.19f, 0.21f},
+                                         {0.20f, 0.21f, 0.23f},
+                                         {0.69f, 0.31f, 0.20f},
+                                         {0.56f, 0.56f, 0.56f},
+                                         {0.36f, 0.37f, 0.39f},
+                                         {0.62f, 0.54f, 0.41f},
+                                         {0.22f, 0.28f, 0.29f},
+                                         {0.49f, 0.44f, 0.75f},
+                                         {0.20f, 0.21f, 0.21f},
+                                         {0.20f, 0.27f, 0.24f},
+                                         {0.51f, 0.25f, 0.42f},
+                                         {0.20f, 0.20f, 0.25f},
+                                         {0.75f, 0.76f, 0.78f},
+                                         {0.66f, 0.57f, 0.35f},
+                                         {0.18f, 0.43f, 0.25f},
+                                         {0.33f, 0.20f, 0.20f},
+                                         {0.77f, 0.64f, 0.43f},
+                                         {0.25f, 0.62f, 0.24f},
+                                         {0.63f, 0.49f, 0.33f},
+                                         {0.75f, 0.75f, 0.73f},
+                                         {0.30f, 0.31f, 0.24f},
+                                         {0.30f, 0.25f, 0.22f},
+                                         {0.32f, 0.33f, 0.36f},
+                                         {0.80f, 0.78f, 0.78f},
+                                         {0.69f, 0.65f, 0.56f},
+                                         {0.67f, 0.67f, 0.65f},
+                                         {0.31f, 0.30f, 0.30f},
+                                         {0.70f, 0.40f, 0.26f},
+                                         {0.81f, 0.80f, 0.80f},
+                                         {0.45f, 0.45f, 0.45f},
+                                         {0.22f, 0.54f, 0.36f},
+                                         {0.59f, 0.52f, 0.63f},
+                                         {0.31f, 0.29f, 0.29f},
+                                         {0.46f, 0.42f, 0.40f},
+                                         {0.47f, 0.46f, 0.45f},
+                                         {0.66f, 0.36f, 0.25f},
+                                         {0.49f, 0.48f, 0.47f},
+                                         {0.64f, 0.48f, 0.40f},
+                                         {0.67f, 0.44f, 0.28f},
+                                         {0.65f, 0.58f, 0.46f},
+                                         {0.54f, 0.53f, 0.53f},
+                                         {0.80f, 0.80f, 0.84f},
+                                         {0.27f, 0.23f, 0.21f},
+                                         {0.22f, 0.20f, 0.20f},
+                                         {0.69f, 0.61f, 0.45f},
+                                         {0.46f, 0.49f, 0.52f},
+                                         {0.46f, 0.37f, 0.29f},
+                                         {0.45f, 0.44f, 0.44f},
+                                         {0.51f, 0.49f, 0.46f},
+                                         {0.72f, 0.53f, 0.25f},
+                                         {0.64f, 0.32f, 0.24f},
+                                         {0.31f, 0.25f, 0.22f},
+                                         {0.66f, 0.42f, 0.27f},
+                                         {0.45f, 0.45f, 0.45f},
+                                         {0.40f, 0.40f, 0.42f},
+                                         {0.65f, 0.38f, 0.21f},
+                                         {0.20f, 0.21f, 0.22f},
+                                         {0.24f, 0.43f, 0.22f},
+                                         {0.33f, 0.56f, 0.25f},
+                                         {0.24f, 0.35f, 0.21f},
+                                         {0.34f, 0.54f, 0.21f},
+                                         {0.20f, 0.35f, 0.21f},
+                                         {0.53f, 0.33f, 0.25f},
+                                         {0.77f, 0.76f, 0.75f},
+                                         {0.46f, 0.36f, 0.26f},
+                                         {0.58f, 0.46f, 0.33f},
+                                         {0.21f, 0.33f, 0.24f},
+                                         {0.42f, 0.40f, 0.24f},
+                                         {0.24f, 0.44f, 0.26f},
+                                         {0.71f, 0.63f, 0.36f},
+                                         {0.51f, 0.51f, 0.49f},
+                                         {0.71f, 0.65f, 0.57f},
+                                         {0.72f, 0.22f, 0.23f},
+                                         {0.28f, 0.28f, 0.20f},
+                                         {0.19f, 0.37f, 0.22f},
+                                         {0.73f, 0.65f, 0.37f},
+                                         {0.19f, 0.27f, 0.21f},
+                                         {0.56f, 0.78f, 0.85f},
+                                         {0.78f, 0.80f, 0.82f},
+                                         {0.55f, 0.60f, 0.67f},
+                                         {0.71f, 0.67f, 0.66f},
+                                         {0.33f, 0.33f, 0.36f},
+                                         {0.26f, 0.31f, 0.38f},
+                                         {0.57f, 0.67f, 0.69f},
+                                         {0.56f, 0.69f, 0.78f},
+                                         {0.44f, 0.37f, 0.32f},
+                                         {0.37f, 0.37f, 0.40f},
+                                         {0.26f, 0.51f, 0.23f},
+                                         {0.58f, 0.71f, 0.80f},
+                                         {0.37f, 0.32f, 0.29f},
+                                         {0.83f, 0.84f, 0.87f},
+                                         {0.43f, 0.76f, 0.87f},
+                                         {0.73f, 0.46f, 0.27f},
+                                         {0.45f, 0.35f, 0.29f},
+                                         {0.79f, 0.76f, 0.33f},
+                                         {0.21f, 0.21f, 0.22f},
+                                         {0.28f, 0.20f, 0.20f},
+                                         {0.80f, 0.75f, 0.55f},
+                                         {0.85f, 0.73f, 0.71f},
+                                         {0.64f, 0.58f, 0.58f},
+                                         {0.66f, 0.60f, 0.47f},
+                                         {0.47f, 0.33f, 0.34f},
+                                         {0.72f, 0.66f, 0.61f},
+                                         {0.79f, 0.75f, 0.65f},
+                                         {0.77f, 0.75f, 0.70f},
+                                         {0.26f, 0.22f, 0.20f},
+                                         {0.78f, 0.64f, 0.45f},
+                                         {0.36f, 0.37f, 0.38f},
+                                         {0.20f, 0.21f, 0.27f},
+                                         {0.73f, 0.73f, 0.75f},
+                                         {0.76f, 0.74f, 0.64f},
+                                         {0.71f, 0.64f, 0.52f},
+                                         {0.20f, 0.20f, 0.22f},
+                                         {0.19f, 0.26f, 0.29f},
+                                         {0.80f, 0.82f, 0.84f},
+                                         {0.33f, 0.33f, 0.33f},
+                                         {0.63f, 0.50f, 0.36f},
+                                         {0.44f, 0.40f, 0.25f},
+                                         {0.45f, 0.35f, 0.26f},
+                                         {0.49f, 0.41f, 0.24f},
+                                         {0.32f, 0.38f, 0.54f},
+                                         {0.58f, 0.56f, 0.52f},
+                                         {0.16f, 0.15f, 0.30f},
+                                         {0.41f, 0.62f, 0.78f},
+                                         {0.28f, 0.29f, 0.31f},
+                                         {0.16f, 0.16f, 0.18f},
+                                         {0.55f, 0.34f, 0.16f},
+                                         {0.50f, 0.51f, 0.54f},
+                                         {0.61f, 0.65f, 0.69f},
+                                         {0.11f, 0.11f, 0.12f},
+                                         {0.16f, 0.17f, 0.21f},
+                                         {0.74f, 0.39f, 0.20f},
+                                         {0.62f, 0.63f, 0.67f},
+                                         {0.23f, 0.24f, 0.27f},
+                                         {0.18f, 0.35f, 0.23f},
+                                         {0.81f, 0.67f, 0.12f},
+                                         {0.70f, 0.67f, 0.62f},
+                                         {0.72f, 0.73f, 0.75f},
+                                         {0.30f, 0.31f, 0.35f},
+                                         {0.45f, 0.46f, 0.49f},
+                                         {0.64f, 0.65f, 0.69f},
+                                         {0.38f, 0.39f, 0.43f},
+                                         {0.37f, 0.40f, 0.44f},
+                                         {0.52f, 0.53f, 0.57f},
+                                         {0.39f, 0.40f, 0.44f},
+                                         {0.23f, 0.26f, 0.32f},
+                                         {0.18f, 0.17f, 0.17f},
+                                         {0.41f, 0.48f, 0.54f},
+                                         {0.52f, 0.53f, 0.57f},
+                                         {0.26f, 0.24f, 0.22f},
+                                         {0.31f, 0.41f, 0.50f},
+                                         {0.82f, 0.82f, 0.83f},
+                                         {0.64f, 0.65f, 0.62f},
+                                         {0.27f, 0.32f, 0.35f},
+                                         {0.57f, 0.58f, 0.62f},
+                                         {0.38f, 0.40f, 0.44f},
+                                         {0.26f, 0.29f, 0.19f},
+                                         {0.67f, 0.69f, 0.71f},
+                                         {0.22f, 0.23f, 0.25f},
+                                         {0.75f, 0.73f, 0.71f},
+                                         {0.20f, 0.20f, 0.22f},
+                                         {0.34f, 0.35f, 0.37f},
+                                         {0.14f, 0.30f, 0.17f},
+                                         {0.48f, 0.51f, 0.55f},
+                                         {0.51f, 0.53f, 0.58f},
+                                         {0.12f, 0.13f, 0.14f},
+                                         {0.62f, 0.63f, 0.64f},
+                                         {0.48f, 0.47f, 0.47f},
+                                         {0.56f, 0.55f, 0.54f},
+                                         {0.34f, 0.35f, 0.39f},
+                                         {0.40f, 0.42f, 0.45f},
+                                         {0.51f, 0.17f, 0.14f},
+                                         {0.29f, 0.29f, 0.21f},
+                                         {0.61f, 0.58f, 0.58f},
+                                         {0.42f, 0.19f, 0.13f},
+                                         {0.35f, 0.16f, 0.13f},
+                                         {0.33f, 0.34f, 0.36f},
+                                         {0.47f, 0.49f, 0.53f},
+                                         {0.57f, 0.58f, 0.61f},
+                                         {0.56f, 0.56f, 0.55f},
+                                         {0.58f, 0.57f, 0.56f},
+                                         {0.78f, 0.65f, 0.15f},
+                                         {0.56f, 0.56f, 0.58f},
+                                         {0.44f, 0.47f, 0.51f},
+                                         {0.45f, 0.42f, 0.41f},
+                                         {0.77f, 0.69f, 0.12f},
+                                         {0.58f, 0.61f, 0.64f},
+                                         {0.26f, 0.28f, 0.31f},
+                                         {0.18f, 0.20f, 0.18f},
+                                         {0.41f, 0.41f, 0.41f},
+                                         {0.53f, 0.47f, 0.26f},
+                                         {0.20f, 0.17f, 0.14f},
+                                         {0.39f, 0.39f, 0.39f},
+                                         {0.34f, 0.30f, 0.28f},
+                                         {0.38f, 0.35f, 0.33f},
+                                         {0.16f, 0.16f, 0.17f},
+                                         {0.45f, 0.45f, 0.45f},
+                                         {0.16f, 0.17f, 0.18f},
+                                         {0.44f, 0.44f, 0.45f},
+                                         {0.16f, 0.16f, 0.16f},
+                                         {0.78f, 0.67f, 0.13f},
+                                         {0.51f, 0.51f, 0.53f},
+                                         {0.67f, 0.66f, 0.65f},
+                                         {0.60f, 0.59f, 0.59f},
+                                         {0.48f, 0.47f, 0.46f},
+                                         {0.58f, 0.54f, 0.49f},
+                                         {0.49f, 0.49f, 0.49f},
+                                         {0.18f, 0.34f, 0.39f},
+                                         {0.39f, 0.38f, 0.36f},
+                                         {0.53f, 0.53f, 0.51f},
+                                         {0.54f, 0.54f, 0.51f},
+                                         {0.63f, 0.59f, 0.55f},
+                                         {0.43f, 0.40f, 0.38f},
+                                         {0.70f, 0.67f, 0.62f},
+                                         {0.50f, 0.19f, 0.15f},
+                                         {0.25f, 0.14f, 0.13f},
+                                         {0.69f, 0.66f, 0.60f},
+                                         {0.26f, 0.18f, 0.14f},
+                                         {0.70f, 0.62f, 0.57f},
+                                         {0.50f, 0.43f, 0.30f},
+                                         {0.42f, 0.35f, 0.31f},
+                                         {0.66f, 0.49f, 0.43f},
+                                         {0.13f, 0.13f, 0.13f},
+                                         {0.38f, 0.31f, 0.26f},
+                                         {0.40f, 0.37f, 0.31f},
+                                         {0.29f, 0.23f, 0.19f},
+                                         {0.54f, 0.55f, 0.58f},
+                                         {0.75f, 0.73f, 0.70f},
+                                         {0.45f, 0.44f, 0.45f},
+                                         {0.19f, 0.19f, 0.19f},
+                                         {0.14f, 0.12f, 0.12f},
+                                         {0.27f, 0.15f, 0.12f},
+                                         {0.69f, 0.56f, 0.36f},
+                                         {0.81f, 0.80f, 0.79f},
+                                         {0.74f, 0.63f, 0.43f},
+                                         {0.74f, 0.56f, 0.36f},
+                                         {0.75f, 0.67f, 0.49f},
+                                         {0.50f, 0.43f, 0.35f},
+                                         {0.65f, 0.58f, 0.37f},
+                                         {0.56f, 0.23f, 0.15f},
+                                         {0.58f, 0.53f, 0.45f},
+                                         {0.64f, 0.55f, 0.39f},
+                                         {0.29f, 0.13f, 0.13f},
+                                         {0.75f, 0.67f, 0.49f},
+                                         {0.69f, 0.49f, 0.40f},
+                                         {0.62f, 0.47f, 0.32f},
+                                         {0.37f, 0.36f, 0.36f},
+                                         {0.38f, 0.56f, 0.28f},
+                                         {0.36f, 0.31f, 0.33f},
+                                         {0.50f, 0.52f, 0.54f},
+                                         {0.78f, 0.68f, 0.13f},
+                                         {0.13f, 0.17f, 0.15f},
+                                         {0.31f, 0.25f, 0.29f},
+                                         {0.82f, 0.78f, 0.26f},
+                                         {0.36f, 0.40f, 0.26f},
+                                         {0.10f, 0.11f, 0.12f},
+                                         {0.21f, 0.21f, 0.20f},
+                                         {0.46f, 0.81f, 0.38f},
+                                         {0.40f, 0.48f, 0.33f},
+                                         {0.46f, 0.44f, 0.46f},
+                                         {0.60f, 0.48f, 0.30f},
+                                         {0.50f, 0.39f, 0.25f},
+                                         {0.61f, 0.56f, 0.45f},
+                                         {0.22f, 0.13f, 0.12f},
+                                         {0.32f, 0.29f, 0.27f},
+                                         {0.37f, 0.13f, 0.13f},
+                                         {0.25f, 0.29f, 0.31f},
+                                         {0.28f, 0.24f, 0.20f},
+                                         {0.58f, 0.59f, 0.53f},
+                                         {0.40f, 0.41f, 0.32f},
+                                         {0.60f, 0.55f, 0.44f},
+                                         {0.52f, 0.38f, 0.25f},
+                                         {0.13f, 0.13f, 0.13f},
+                                         {0.58f, 0.49f, 0.40f},
+                                         {0.49f, 0.44f, 0.37f},
+                                         {0.52f, 0.51f, 0.48f},
+                                         {0.60f, 0.58f, 0.55f},
+                                         {0.28f, 0.29f, 0.29f}};
     // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
     // crystal, circuit, rust, terracotta, then breakable brick, glass and cobblestone (their plain ones' colours), then
-    // the 100 block looks (each one's mean colour in its preview render)
+    // the 100 block looks and the 333 picks of the earlier rounds (each one's mean colour in its preview render)
     static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)

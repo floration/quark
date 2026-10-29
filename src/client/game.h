@@ -403,6 +403,8 @@ private:
     // map, and the last 10 used surfaces"): 0 closed, 1 for new boxes (edMat_), 2 for what's selected
     int edMatMenu_ = 0;
     std::vector<int> edRecentMats_;   // (newest first, at most 10: edUseMaterial)
+    int edMatTab_ = 2, edMatScroll_ = 0;   // the picker's tab (BASIC first) and its first row shown (the wheel)
+    std::string edMatSearch_;             // the picker's SEARCH
     void drawEditorMatMenu();
     void edUseMaterial(int m);   // a material picked or cycled: the recent list
     void edSetMaterial(int m);   // ...on everything selected (boxes, rooms / stairs), one undo step

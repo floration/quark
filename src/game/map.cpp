@@ -367,7 +367,11 @@ static void upgradeMap5to6(std::vector<std::string>& lines) {
     }
 }
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6};
+// 6 -> 7: the 333 new surface materials (139-471: new keywords only, so an older reader would fail on them; a format 6
+// map has none, nothing to change)
+static void upgradeMap6to7(std::vector<std::string>&) {}
+
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 

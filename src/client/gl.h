@@ -158,6 +158,7 @@ typedef struct __GLsync* GLsync;
     X(void, glGetShaderiv, (GLuint, GLenum, GLint*)) \
     X(void, glGetShaderInfoLog, (GLuint, GLsizei, GLsizei*, GLchar*)) \
     X(GLuint, glCreateProgram, ()) \
+    X(void, glDeleteProgram, (GLuint)) \
     X(void, glAttachShader, (GLuint, GLuint)) \
     X(void, glBindAttribLocation, (GLuint, GLuint, const GLchar*)) \
     X(void, glLinkProgram, (GLuint)) \

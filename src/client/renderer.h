@@ -201,7 +201,14 @@ private:
     unsigned holeTex_ = 0, holeCellTex_ = 0, holeListTex_ = 0;   // (the holes, the grid's cells, the cells' lists: setHoles)
     GLint uHoleCount_ = -1, uHoleGrid_ = -1, uHoleGridH_ = -1;
     int holeCount_ = 0;
+    float holeGrid_[4] = {};   // (the hole grid's uniforms as last set: a new world program gets them too)
+    int holeGridH_ = 0;
+    std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
+    unsigned compileWorld(const std::vector<bool>* used, std::string* err);
+    void setWorldLooks(const BakedWorld& bw);
+    void initWorldUniforms();
     // the material swatches (swatch): their atlas, its framebuffer, a one-texel lightmap, the quads, the 2D program
+    unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};

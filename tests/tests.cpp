@@ -4955,6 +4955,15 @@ static void testMaterials() {
 // cobblestone get a hole from a blast (2.5 m less the distance to the wall), thick ones don't; everything comes back.
 static void testDestruction(uint16_t port) {
     printf("destruction: glass breaks, thin brick blows open, all of it comes back\n");
+    {   // format 7: materials 139-471 by keyword (the first and the last), solid and plain; a format 6 file converts unchanged
+        Map m;
+        CHECK(m.parse("version 7\nbox -20 -1 -20 20 0 20\ndirt 0 0 5 2 3 7\n" + std::string(kMapMaterialWords[kMapMaterials - 1]) + " 4 0 5 6 3 7\nspawn any 0 0 0\n"));
+        CHECK(m.brushes.size() == 3 && m.brushes[1].material == 139 && m.brushes[2].material == kMapMaterials - 1 && kMapMaterials == 472);
+        CHECK(m.warnings.empty() && solidMaterial(139) && !holeMaterial(139) && m.glass.empty());
+        CHECK(m.raycastAny({1, 1.5f, 0}, {0, 0, 1}, 6.0f));
+        std::string o;
+        CHECK(upgradeMapText("version 6\nbox 0 0 0 1 1 1\n", &o) && o == "version 7\nbox 0 0 0 1 1 1\n");
+    }
     {   // format 6 (owner, 2026-10-29): plain brick, cobblestone and glass never break; the breakable ones do
         Map m;
         CHECK(m.parse("version 6\nbox -20 -1 -20 20 0 20\nglass -2 0 5 2 3 5.05\nbrick -3 0 10 3 3 10.1\ncobblestone -3 0 20 3 3 20.12\n"
