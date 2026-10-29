@@ -88,7 +88,7 @@ struct PointGrid {
             for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) ids[fill[(size_t)z * w + x]++] = (uint32_t)i;
         }
     }
-    bool inside(const Brush& b, const Vec3& p) const { return b.material != kMatGlass && brushContains(b, p); }   // (glass: see-through)
+    bool inside(const Brush& b, const Vec3& p) const { return !glassMaterial(b.material) && brushContains(b, p); }   // (glass: see-through)
     // A face's rectangle (on plane `plane` of `axis`, lifted `off` along its normal) completely inside the union of
     // occluding brushes, exactly: the brushes that hold that lifted plane, their rectangles clipped to the face, then
     // every cell between their edges tested once. (A 9 x 9 sample grid missed visible strips thinner than a ninth of
@@ -733,7 +733,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 memcpy(wv.normal, &n.x, 12);
                 wv.uv[0] = (f.rx + 1 + (f.pu[k] - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;
                 wv.uv[1] = (f.ry + 1 + (f.pv[k] - f.v0) / (f.v1 - f.v0) * f.wv) / (float)H;
-                wv.material = (float)f.material;
+                wv.material = (float)lookMaterial(f.material);
                 // outline distance = min(edge.xy, edge.zw - edge.xy): edges 0, 1 in xy, 2, 3 as zw less them
                 const float d0 = dist(0, f.pu[k], f.pv[k]), d1 = dist(1, f.pu[k], f.pv[k]), d2 = dist(2, f.pu[k], f.pv[k]);
                 const float d3 = f.np > 3 ? dist(3, f.pu[k], f.pv[k]) : B;
@@ -757,7 +757,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 // grass: green down the top 1/4 m of a side (the shader), only on a piece at the side's top with nothing
                 // standing on the block or flush above it there (owner, 2026-10-28); else the material's fraction says
                 // "no fringe" (0.25 over: the shader rounds it away)
-                float matTag = (float)f.material;
+                float matTag = (float)lookMaterial(f.material);
                 if (f.material == kMatGrass && f.axis != 1) {
                     const bool topU = f.axis == 0;   // (x faces: u is y; z faces: v is y)
                     bool open = topU ? pu1 >= f.u1 - 1e-4f : pv1 >= f.v1 - 1e-4f;

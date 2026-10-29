@@ -6,7 +6,7 @@ from collections import Counter
 OUT = None   # where save() writes (make_maps.py sets it)
 OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets", "overrides", "maps")
 MADE = []
-MAP_FORMAT = 5   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
+MAP_FORMAT = 6   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
 
 class M:
     def __init__(s, title, mode, sun=(0.45, 1.0, 0.3)):
@@ -122,7 +122,7 @@ class M:
     def scale_xz(s, f):
         """spread everything built so far out by f across the ground (heights unchanged): a map made roomier
         without moving every piece by hand. Boxes, stairs, ladders, spawns and lights; lights reach f as far."""
-        boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid", "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick", "glass", "asphalt", "mud", "cobblestone", "concrete", "tile", "marble", "corrugated", "hazard", "snow", "stone", "crystal", "circuit", "rust", "terracotta", "ladder"}
+        boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid", "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick", "glass", "asphalt", "mud", "cobblestone", "concrete", "tile", "marble", "corrugated", "hazard", "snow", "stone", "crystal", "circuit", "rust", "terracotta", "breakablebrick", "breakableglass", "breakablecobblestone", "ladder"}
         g = lambda v: f"{float(v) * f:g}"
         def scaled(l):
             w = l.split()

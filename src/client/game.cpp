@@ -7755,6 +7755,7 @@ void Game::updateDestruction(const Map& map) {
     }
     // the panes still standing: see-through (the bake leaves glass out)
     for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBox(map.brushes[i].box, kGlassTint);
+    for (uint32_t i : map.windows) r_.translucentBox(map.brushes[i].box, kGlassTint);   // (plain glass: never breaks)
     // shards fly, land and lie; one out of view is gone
     const float dt = shardsAt_ < 0 ? 0.0f : (float)std::min(0.05, time_ - shardsAt_);
     shardsAt_ = time_;

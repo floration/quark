@@ -960,11 +960,123 @@ void Game::edSetMaterial(int m) {
 
 // The material picker: every material as a swatch drawn by the world shader (Renderer::swatch), in three lists: the
 // ones this map uses, the last 10 picked, all of them. A click picks it (for new boxes, or for what's selected).
+// the editor's name for each material (the panel's button; the picker names one by it, less "MATERIAL: ")
+static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "MATERIAL: WALLBANG", "MATERIAL: METAL", "MATERIAL: GLOW", "MATERIAL: FAR",
+                                        "MATERIAL: WATER (WADE IN IT)", "MATERIAL: LAVA (KILLS)", "MATERIAL: TRIM (NOT SOLID)", "MATERIAL: CLIP (INVISIBLE WALL)",
+                                        "MATERIAL: NOGRAPPLE (NO GRAPPLE)", "MATERIAL: ACID (HURTS)", "MATERIAL: ICE (SLIPPERY)", "MATERIAL: SAND",
+                                        "MATERIAL: WOOD", "MATERIAL: PLASTIC", "MATERIAL: GRASS", "MATERIAL: RUBBER (BOUNCY)", "MATERIAL: STEEL",
+                                        "MATERIAL: DIAMOND PLATE", "MATERIAL: BRICK",
+                                        "MATERIAL: GLASS", "MATERIAL: ASPHALT (FAST)", "MATERIAL: MUD (STICKY)",
+                                        "MATERIAL: COBBLESTONE", "MATERIAL: CONCRETE", "MATERIAL: TILE", "MATERIAL: MARBLE",
+                                        "MATERIAL: CORRUGATED METAL", "MATERIAL: HAZARD STRIPES", "MATERIAL: SNOW", "MATERIAL: STONE BLOCKS",
+                                        "MATERIAL: CRYSTAL", "MATERIAL: CIRCUIT", "MATERIAL: RUST", "MATERIAL: TERRACOTTA",
+                                        "MATERIAL: BREAKABLE BRICK (THIN: BLOWS OPEN)", "MATERIAL: BREAKABLE GLASS", "MATERIAL: BREAKABLE COBBLESTONE (THIN: BLOWS OPEN)",
+                                        "MATERIAL: LONDON STOCK",
+                                        "MATERIAL: RED ENGINEERING BRICK",
+                                        "MATERIAL: BLUE ENGINEERING BRICK",
+                                        "MATERIAL: ORANGE WIRE-CUT",
+                                        "MATERIAL: CLINKER BRICK",
+                                        "MATERIAL: WHITEWASHED BRICK",
+                                        "MATERIAL: BLACK BRICK",
+                                        "MATERIAL: CREAM BRICK",
+                                        "MATERIAL: FLEMISH BOND",
+                                        "MATERIAL: ENGLISH BOND",
+                                        "MATERIAL: STACK BOND",
+                                        "MATERIAL: SOLDIER COURSE",
+                                        "MATERIAL: HERRINGBONE BRICK",
+                                        "MATERIAL: BASKET-WEAVE BRICK",
+                                        "MATERIAL: ROMAN BRICK",
+                                        "MATERIAL: TUDOR BRICK",
+                                        "MATERIAL: GLAZED BRICK",
+                                        "MATERIAL: WHITE GLAZED BRICK",
+                                        "MATERIAL: MOSSY BRICK",
+                                        "MATERIAL: EFFLORESCENT BRICK",
+                                        "MATERIAL: RECLAIMED BRICK",
+                                        "MATERIAL: BROWN RUSTIC BRICK",
+                                        "MATERIAL: PINK BRICK",
+                                        "MATERIAL: RECESSED JOINTS",
+                                        "MATERIAL: FLUSH POINTED BRICK",
+                                        "MATERIAL: BURNT BRICK",
+                                        "MATERIAL: POLYCHROME BRICK",
+                                        "MATERIAL: DIAPER BRICK",
+                                        "MATERIAL: PAINTED RED BRICK",
+                                        "MATERIAL: FIRE BRICK",
+                                        "MATERIAL: FRESH GREY CONCRETE",
+                                        "MATERIAL: DARK CONCRETE",
+                                        "MATERIAL: WHITE CONCRETE",
+                                        "MATERIAL: TINTED RED CONCRETE",
+                                        "MATERIAL: EXPOSED AGGREGATE",
+                                        "MATERIAL: BROOM-FINISHED",
+                                        "MATERIAL: STAMPED STONE PATTERN",
+                                        "MATERIAL: CONCRETE PAVERS",
+                                        "MATERIAL: GRID-SCORED SLAB",
+                                        "MATERIAL: RIBBED CONCRETE",
+                                        "MATERIAL: BUSH-HAMMERED",
+                                        "MATERIAL: FIBRE CEMENT BOARD",
+                                        "MATERIAL: CAST-IN-PLACE WALLS",
+                                        "MATERIAL: WEATHERED CONCRETE",
+                                        "MATERIAL: BREEZE-BLOCK SCREEN",
+                                        "MATERIAL: SPLIT-FACE BLOCK",
+                                        "MATERIAL: GROUND-FACE BLOCK",
+                                        "MATERIAL: CONCRETE ROOF TILES",
+                                        "MATERIAL: LIGHTWEIGHT FOAM BLOCK",
+                                        "MATERIAL: PAINTED CONCRETE STRIPES",
+                                        "MATERIAL: WHITE SQUARE TILE",
+                                        "MATERIAL: BLACK SQUARE TILE",
+                                        "MATERIAL: CHECKERBOARD TILE",
+                                        "MATERIAL: SUBWAY TILE",
+                                        "MATERIAL: GREEN SUBWAY TILE",
+                                        "MATERIAL: LARGE FORMAT PORCELAIN",
+                                        "MATERIAL: HEX TILE WHITE",
+                                        "MATERIAL: HEX TILE TERRACOTTA",
+                                        "MATERIAL: DIAGONAL TILE",
+                                        "MATERIAL: HERRINGBONE TILE",
+                                        "MATERIAL: FISH-SCALE TILE",
+                                        "MATERIAL: PENNY ROUND TILE",
+                                        "MATERIAL: BLUE POOL TILE",
+                                        "MATERIAL: MOROCCAN ZELLIGE",
+                                        "MATERIAL: ENCAUSTIC TILE",
+                                        "MATERIAL: QUARRY TILE",
+                                        "MATERIAL: SLATE TILE",
+                                        "MATERIAL: TRAVERTINE TILE",
+                                        "MATERIAL: MOSAIC SPECKLE",
+                                        "MATERIAL: BATHROOM MINT",
+                                        "MATERIAL: GYM RUBBER TILE",
+                                        "MATERIAL: HOSPITAL TILE",
+                                        "MATERIAL: VICTORIAN BORDER",
+                                        "MATERIAL: CRACKLE GLAZE TILE",
+                                        "MATERIAL: MIRROR TILE",
+                                        "MATERIAL: LIMESTONE ASHLAR",
+                                        "MATERIAL: SANDSTONE ASHLAR",
+                                        "MATERIAL: RED SANDSTONE",
+                                        "MATERIAL: GRANITE BLOCKS",
+                                        "MATERIAL: PINK GRANITE",
+                                        "MATERIAL: BLACK BASALT BLOCKS",
+                                        "MATERIAL: RANDOM ASHLAR",
+                                        "MATERIAL: RUSTIC RANDOM ASHLAR",
+                                        "MATERIAL: RUBBLE WALL",
+                                        "MATERIAL: DRY-STONE WALL",
+                                        "MATERIAL: FLINT AND BRICK",
+                                        "MATERIAL: RUSTICATED BLOCKS",
+                                        "MATERIAL: VERMICULATED STONE",
+                                        "MATERIAL: CASTLE STONE",
+                                        "MATERIAL: TEMPLE STONE",
+                                        "MATERIAL: MARBLE BLOCKS",
+                                        "MATERIAL: POLYGONAL STONE",
+                                        "MATERIAL: COBBLED SETTS",
+                                        "MATERIAL: DIAGONAL SETTS",
+                                        "MATERIAL: FLAGSTONE PAVING",
+                                        "MATERIAL: SLATE CLADDING",
+                                        "MATERIAL: RIVER STONE WALL",
+                                        "MATERIAL: GABBRO BLOCKS",
+                                        "MATERIAL: TUFA BLOCKS",
+                                        "MATERIAL: MOSSY STONE BLOCKS"};
+static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
+
 void Game::drawEditorMatMenu() {
     const float s = ui_.s(), pad = 16 * s, gap = 6 * s, bh = 36 * s;
     const float barTop = edBarTop_ > 0 ? edBarTop_ : (float)r_.height();
-    const int cols = 12;
-    const float pw = std::min(edPanelX_ - 16 * s, 820 * s), sw = std::floor((pw - 2 * pad - (cols - 1) * gap) / cols), lh = 14 * s, cell = sw + lh + gap;
+    const float pw = std::min(edPanelX_ - 16 * s, 1400 * s);
     static bool loaded = false;
     if (!loaded) {   // (the last session's recent list)
         loaded = true;
@@ -987,8 +1099,20 @@ void Game::drawEditorMatMenu() {
     }
     std::vector<int> all(kMapMaterials);
     for (int m = 0; m < kMapMaterials; m++) all[m] = m;
-    auto rows = [&](size_t n) { return (int)((n + cols - 1) / cols); };
-    const float ph = pad + (rows(used.size()) + rows(edRecentMats_.size()) + rows(all.size())) * cell + 3 * (20 * s) + (used.empty() ? 20 * s : 0) + (edRecentMats_.empty() ? 20 * s : 0) + bh + pad + 8 * s;
+    // as many columns as it takes to fit above the bar (139 materials: a grid of ~20 across); names under the swatches
+    // while they're big enough to read, else the one under the mouse is named by CLOSE
+    int cols = 12;
+    float sw = 0, cell = 0, ph = 0;
+    bool names = true;
+    auto rows = [&](size_t n) { return (int)((n + (size_t)cols - 1) / (size_t)cols); };
+    for (; cols <= 32; cols++) {
+        sw = std::floor((pw - 2 * pad - (cols - 1) * gap) / cols);
+        names = sw >= 72 * s;
+        cell = sw + (names ? 14 * s : 0) + gap;
+        ph = pad + (rows(used.size()) + rows(edRecentMats_.size()) + rows(all.size())) * cell + 3 * (20 * s) + (used.empty() ? 20 * s : 0) + (edRecentMats_.empty() ? 20 * s : 0) + bh + pad + 8 * s;
+        if (ph <= barTop - 16 * s) break;
+    }
+    int hovered = -1;
     float px, py;
     edDialogPanel(ui_, edPanelX_, barTop, pw, std::min(ph, barTop - 16 * s), px, py);
     const int cur = edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_BRUSH ? ed_.brushes[edSel_.idx].material
@@ -1012,14 +1136,20 @@ void Game::drawEditorMatMenu() {
             if (ui_.button(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, "", e.withId(id.c_str()))) picked = m;
             if (m == cur) r_.rect(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, kPick);
             r_.swatch(x, yy, sw, sw, m);
-            ui_.hint(x, yy + sw + 2 * s, word, m == cur ? kPick : kWhite, sw + gap);
+            if (names) ui_.hint(x, yy + sw + 2 * s, word, m == cur ? kPick : kWhite, sw + gap);
+            if (ui_.over(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s)) hovered = m;
         }
         y += rows(ms.size()) * cell;
     };
     list("IN THIS MAP", used);
     list("RECENT", edRecentMats_);
     list("ALL", all);
-    if (ui_.button(px + pad, py + std::min(ph, barTop - 16 * s) - pad - bh, 160 * s, bh, "CLOSE", UiExp::nav(edPath()))) edMatMenu_ = 0;
+    const float closeY = py + std::min(ph, barTop - 16 * s) - pad - bh;
+    if (ui_.button(px + pad, closeY, 160 * s, bh, "CLOSE", UiExp::nav(edPath()))) edMatMenu_ = 0;
+    if (!names && (hovered >= 0 || cur >= 0)) {
+        const std::string word = matLabels[hovered >= 0 ? hovered : cur] + 10;   // (less "MATERIAL: ")
+        ui_.label(px + pad + 176 * s, closeY + bh * 0.5f - 9 * s, word, hovered >= 0 ? kWhite : kPick, 0.9f);
+    }
     if (picked >= 0) {
         if (edMatMenu_ == 1) edMat_ = picked;
         else { edMat_ = picked; edSetMaterial(picked); }
@@ -1632,9 +1762,111 @@ void Game::editorFrame(double dt) {
                                          {0.30f, 0.58f, 0.20f}, {0.12f, 0.12f, 0.13f}, {0.62f, 0.64f, 0.68f}, {0.50f, 0.52f, 0.55f}, {0.62f, 0.24f, 0.17f},
                                          {0.85f, 0.90f, 0.92f}, {0.20f, 0.20f, 0.21f}, {0.32f, 0.22f, 0.13f}, {0.50f, 0.48f, 0.45f}, {0.58f, 0.58f, 0.56f},
                                          {0.88f, 0.86f, 0.80f}, {0.88f, 0.87f, 0.85f}, {0.55f, 0.55f, 0.58f}, {0.90f, 0.72f, 0.08f}, {0.93f, 0.95f, 1.00f},
-                                         {0.60f, 0.58f, 0.54f}, {0.35f, 0.40f, 0.75f}, {0.08f, 0.30f, 0.16f}, {0.52f, 0.33f, 0.20f}, {0.75f, 0.38f, 0.20f}};
+                                         {0.60f, 0.58f, 0.54f}, {0.35f, 0.40f, 0.75f}, {0.08f, 0.30f, 0.16f}, {0.52f, 0.33f, 0.20f}, {0.75f, 0.38f, 0.20f},
+                                         {0.62f, 0.24f, 0.17f}, {0.85f, 0.90f, 0.92f}, {0.50f, 0.48f, 0.45f},
+                                         {0.67f, 0.60f, 0.42f},
+                                         {0.43f, 0.13f, 0.11f},
+                                         {0.18f, 0.20f, 0.24f},
+                                         {0.75f, 0.44f, 0.27f},
+                                         {0.35f, 0.22f, 0.23f},
+                                         {0.73f, 0.66f, 0.64f},
+                                         {0.18f, 0.19f, 0.20f},
+                                         {0.73f, 0.69f, 0.57f},
+                                         {0.56f, 0.26f, 0.21f},
+                                         {0.59f, 0.29f, 0.22f},
+                                         {0.60f, 0.30f, 0.23f},
+                                         {0.54f, 0.25f, 0.20f},
+                                         {0.56f, 0.27f, 0.20f},
+                                         {0.58f, 0.29f, 0.21f},
+                                         {0.68f, 0.52f, 0.40f},
+                                         {0.58f, 0.31f, 0.23f},
+                                         {0.25f, 0.44f, 0.34f},
+                                         {0.77f, 0.77f, 0.77f},
+                                         {0.45f, 0.24f, 0.14f},
+                                         {0.56f, 0.29f, 0.24f},
+                                         {0.55f, 0.36f, 0.29f},
+                                         {0.38f, 0.25f, 0.21f},
+                                         {0.76f, 0.57f, 0.53f},
+                                         {0.50f, 0.20f, 0.14f},
+                                         {0.63f, 0.45f, 0.39f},
+                                         {0.33f, 0.20f, 0.18f},
+                                         {0.55f, 0.31f, 0.23f},
+                                         {0.53f, 0.27f, 0.21f},
+                                         {0.48f, 0.11f, 0.11f},
+                                         {0.75f, 0.66f, 0.49f},
+                                         {0.61f, 0.61f, 0.60f},
+                                         {0.25f, 0.25f, 0.27f},
+                                         {0.77f, 0.77f, 0.76f},
+                                         {0.53f, 0.25f, 0.22f},
+                                         {0.53f, 0.50f, 0.46f},
+                                         {0.58f, 0.57f, 0.55f},
+                                         {0.55f, 0.49f, 0.42f},
+                                         {0.55f, 0.55f, 0.54f},
+                                         {0.60f, 0.59f, 0.58f},
+                                         {0.58f, 0.56f, 0.55f},
+                                         {0.61f, 0.60f, 0.57f},
+                                         {0.52f, 0.53f, 0.56f},
+                                         {0.53f, 0.52f, 0.51f},
+                                         {0.57f, 0.56f, 0.55f},
+                                         {0.68f, 0.67f, 0.65f},
+                                         {0.60f, 0.57f, 0.53f},
+                                         {0.58f, 0.57f, 0.55f},
+                                         {0.38f, 0.38f, 0.40f},
+                                         {0.76f, 0.76f, 0.74f},
+                                         {0.52f, 0.55f, 0.59f},
+                                         {0.79f, 0.80f, 0.80f},
+                                         {0.13f, 0.13f, 0.14f},
+                                         {0.46f, 0.46f, 0.47f},
+                                         {0.77f, 0.77f, 0.77f},
+                                         {0.43f, 0.59f, 0.48f},
+                                         {0.68f, 0.67f, 0.67f},
+                                         {0.78f, 0.78f, 0.78f},
+                                         {0.67f, 0.36f, 0.20f},
+                                         {0.76f, 0.74f, 0.71f},
+                                         {0.61f, 0.44f, 0.29f},
+                                         {0.33f, 0.61f, 0.67f},
+                                         {0.55f, 0.55f, 0.56f},
+                                         {0.22f, 0.45f, 0.70f},
+                                         {0.16f, 0.43f, 0.41f},
+                                         {0.67f, 0.67f, 0.68f},
+                                         {0.58f, 0.22f, 0.15f},
+                                         {0.20f, 0.22f, 0.26f},
+                                         {0.69f, 0.64f, 0.55f},
+                                         {0.56f, 0.49f, 0.42f},
+                                         {0.61f, 0.71f, 0.67f},
+                                         {0.12f, 0.11f, 0.12f},
+                                         {0.71f, 0.78f, 0.78f},
+                                         {0.55f, 0.46f, 0.44f},
+                                         {0.78f, 0.76f, 0.69f},
+                                         {0.68f, 0.70f, 0.73f},
+                                         {0.75f, 0.71f, 0.63f},
+                                         {0.68f, 0.54f, 0.37f},
+                                         {0.58f, 0.27f, 0.20f},
+                                         {0.52f, 0.51f, 0.52f},
+                                         {0.67f, 0.49f, 0.46f},
+                                         {0.15f, 0.16f, 0.17f},
+                                         {0.58f, 0.57f, 0.55f},
+                                         {0.67f, 0.61f, 0.51f},
+                                         {0.55f, 0.52f, 0.49f},
+                                         {0.47f, 0.45f, 0.44f},
+                                         {0.30f, 0.29f, 0.30f},
+                                         {0.65f, 0.62f, 0.57f},
+                                         {0.57f, 0.53f, 0.47f},
+                                         {0.52f, 0.51f, 0.49f},
+                                         {0.74f, 0.64f, 0.41f},
+                                         {0.79f, 0.79f, 0.79f},
+                                         {0.59f, 0.58f, 0.54f},
+                                         {0.44f, 0.43f, 0.43f},
+                                         {0.44f, 0.42f, 0.41f},
+                                         {0.50f, 0.47f, 0.44f},
+                                         {0.19f, 0.21f, 0.25f},
+                                         {0.54f, 0.52f, 0.51f},
+                                         {0.15f, 0.17f, 0.16f},
+                                         {0.73f, 0.69f, 0.54f},
+                                         {0.46f, 0.50f, 0.41f}};
     // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
-    // crystal, circuit, rust, terracotta
+    // crystal, circuit, rust, terracotta, then breakable brick, glass and cobblestone (their plain ones' colours), then
+    // the 100 block looks (each one's mean colour in its preview render)
     static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
@@ -1656,7 +1888,7 @@ void Game::editorFrame(double dt) {
         r_.useStaticBoxes();
     }
     mapCache();
-    if (edBaked_) for (auto& b : ed_.brushes) if (b.material == kMatGlass) r_.translucentBox(b.box, kGlassTint);   // (the bake leaves glass out)
+    if (edBaked_) for (auto& b : ed_.brushes) if (glassMaterial(b.material)) r_.translucentBox(b.box, kGlassTint);   // (the bake leaves glass out)
     for (auto& b : edClipBoxes_) r_.translucentBox(b, kClipColor);   // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
     for (auto& sp : ed_.spawns) {
         Vec3 c = kTeamColors[sp.team & 3];
@@ -1857,16 +2089,6 @@ void Game::editorFrame(double dt) {
     }
     y += 4 * s;
     header("ADD (AT THE SCREEN CENTER)");
-    static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "MATERIAL: WALLBANG", "MATERIAL: METAL", "MATERIAL: GLOW", "MATERIAL: FAR",
-                                            "MATERIAL: WATER (WADE IN IT)", "MATERIAL: LAVA (KILLS)", "MATERIAL: TRIM (NOT SOLID)", "MATERIAL: CLIP (INVISIBLE WALL)",
-                                            "MATERIAL: NOGRAPPLE (NO GRAPPLE)", "MATERIAL: ACID (HURTS)", "MATERIAL: ICE (SLIPPERY)", "MATERIAL: SAND",
-                                            "MATERIAL: WOOD", "MATERIAL: PLASTIC", "MATERIAL: GRASS", "MATERIAL: RUBBER (BOUNCY)", "MATERIAL: STEEL",
-                                            "MATERIAL: DIAMOND PLATE", "MATERIAL: BRICK (THIN: BLOWS OPEN)",
-                                            "MATERIAL: GLASS (BREAKS)", "MATERIAL: ASPHALT (FAST)", "MATERIAL: MUD (STICKY)",
-                                            "MATERIAL: COBBLESTONE (THIN: BLOWS OPEN)", "MATERIAL: CONCRETE", "MATERIAL: TILE", "MATERIAL: MARBLE",
-                                            "MATERIAL: CORRUGATED METAL", "MATERIAL: HAZARD STRIPES", "MATERIAL: SNOW", "MATERIAL: STONE BLOCKS",
-                                            "MATERIAL: CRYSTAL", "MATERIAL: CIRCUIT", "MATERIAL: RUST", "MATERIAL: TERRACOTTA"};
-    static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
     static const std::vector<std::string> mats(std::begin(matLabels), std::end(matLabels));
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)
         if (ui_.button(x, y, w4, h, "BOX", UiExp::edit())) edAdd(ED_BRUSH, 0);

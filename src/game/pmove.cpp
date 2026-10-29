@@ -484,7 +484,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
             s.events |= ME_HOOK;
             grabbed = true;
-        } else if (t >= 0 && wallMat == kMatGlass && dot(s.vel, dir) < kGlassHookToward) {
+        } else if (t >= 0 && wallMat == kMatGlassBreak && dot(s.vel, dir) < kGlassHookToward) {
             // glass, standing or moving off (owner, 2026-10-28): as if you'd shot it from the other side, shards come back
             // at you; the hook catches nothing (one try a press, the cooldown as a let-go)
             const int pane = map.glassAt(eye + dir * (t + 0.01f));
