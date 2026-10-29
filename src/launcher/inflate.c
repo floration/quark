@@ -14,5 +14,8 @@
 #include "inflate.h"
 
 int qpakInflate(const char* in, int inLen, char* out, int outLen) {
+    // (an entry claiming 0 compressed bytes for a non-empty file: no stream at all, and an empty std::vector's data()
+    // is null, which stb would offset: undefined behaviour, found by fuzz_qpak)
+    if (!in || inLen <= 0 || !out || outLen <= 0) return -1;
     return stbi_zlib_decode_buffer(out, outLen, in, inLen);
 }
