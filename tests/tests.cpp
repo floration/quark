@@ -3102,6 +3102,59 @@ static void testRocketSelfDamage(uint16_t port) {
     s.stop();
 }
 
+// Shooter-side damage (owner, 2026-10-28: "all damage should be client side ... this would only happen if you die on
+// the server before the server gets your damage packet"): a game's "hit" report counts unless the shooter is dead
+// there; its own hitscan and rocket hits on others aren't the server's any more (its blast on itself still is).
+static void testClientHits() {
+    printf("client hits: reports count, a dead shooter's don't, the server leaves the reporter's hits to it\n");
+    auto fresh = [](Server& s, bool reports) {
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_WARMUP;
+        s.timeMs_ = 10000;
+        for (int i = 0; i < 2; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = 100; p.team = TEAM_A; p.joinId = 100 + i;
+            p.move.flags = MF_ONGROUND;
+        }
+        s.players_[1].move.pos = {0, 0, -5};
+        if (reports) s.handleStringCmdForTest(0, "clienthits");
+        CHECK(s.players_[0].clientHits == reports);
+    };
+    const std::string rifle = "hit " + std::to_string(WPN_RIFLE) + " 0 1 1 30 0 0 1 5 0 0 0";
+    {   // a report counts, with its damage
+        Server s; fresh(s, true);
+        s.handleStringCmdForTest(0, rifle);
+        CHECK(std::fabs(s.players_[1].health - 70) < 0.01f && s.players_[0].shotsHit == 1);
+    }
+    {   // the shooter dead on the server by the time it comes: nothing
+        Server s; fresh(s, true);
+        s.players_[0].alive = false;
+        s.handleStringCmdForTest(0, rifle);
+        CHECK(s.players_[1].health == 100);
+    }
+    {   // a client that doesn't report (a bot, an old game): its reports are ignored, the server's hits are its
+        Server s; fresh(s, false);
+        s.handleStringCmdForTest(0, rifle);
+        CHECK(s.players_[1].health == 100);
+    }
+    {   // nonsense is dropped: yourself, a bad id, too many
+        Server s; fresh(s, true);
+        s.handleStringCmdForTest(0, "hit " + std::to_string(WPN_RIFLE) + " 0 1 0 30 0 0 1 5 0 0 0");
+        s.handleStringCmdForTest(0, "hit " + std::to_string(WPN_RIFLE) + " 0 1 9 30 0 0 1 5 0 0 0");
+        s.handleStringCmdForTest(0, "hit " + std::to_string(WPN_RIFLE) + " 0 99 1 30 0 0 1 5 0 0 0");
+        CHECK(s.players_[0].health == 100 && s.players_[1].health == 100);
+    }
+    for (int reports = 0; reports < 2; reports++) {   // a rocket at both: the other's damage is the report's, your own the server's
+        Server s; fresh(s, reports != 0);
+        s.players_[1].move.pos = {1.5f, 0, 0};
+        s.explodeForTest({0.75f, 0.5f, 0}, 0, WPN_ROCKET);
+        CHECK(s.players_[0].health < 100);
+        CHECK((s.players_[1].health < 100) == !reports);
+    }
+}
+
 // The 2026-10 feel review's server fixes, on a server that isn't started (no network: the players are set up by hand
 // and the server's own functions are called): the hit before the kill (F13), shotgun headshots (F14), the bubble
 // stream's count (F15), splash round cover (F16), the killer cam (F11), lag compensation between records (F21), refire
@@ -8822,7 +8875,7 @@ int main(int argc, char** argv) {
         {"slopes", [] { testSlopes(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
-        {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); }},
+        {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); testClientHits(); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

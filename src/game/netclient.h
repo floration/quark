@@ -37,6 +37,7 @@ public:
     void setInputBatch(int n) { inputBatch_ = n < 1 ? 1 : n; }
     void flushInput() { if (unsentCmds_ > 0) sendInput(); }   // after a frame's ticks: what's not sent yet
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
+    void setReportHits(bool on) { reportHits_ = on; }   // the game: its shots' hits are its own (Server::clientHitReport)
     // The client's UI test sees every command (and keeps it from the server when the hook returns false). Null in play.
     bool (*commandHook)(void* ctx, const std::string& cmd) = nullptr;
     void* commandHookCtx = nullptr;
@@ -276,6 +277,7 @@ private:
     uint16_t nameColors_[kMaxPlayers] = {};
     float interpFixed_ = -1;
     int interpSent_ = 0;          // the fixed delay (ms) last reported to the server ("interp"; 0 = adaptive)
+    bool reportHits_ = false, hitsSent_ = false;   // this game reports its own hits ("clienthits", once a connection)
     std::vector<std::string> rankIds_ = std::vector<std::string>(kMaxPlayers);
 
     std::deque<std::string> stringCmds_;

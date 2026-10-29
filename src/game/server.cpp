@@ -1452,6 +1452,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
         rulesRpsPick(*this, id, shape);
         return;
     }
+    if (cmd == "clienthits") { p.clientHits = true; return; }   // (this game reports its own hits: "hit")
+    if (cmd == "hit") { clientHitReport(id, rest); return; }
     if (cmd == "quip") { // a random quip (each listener's voice's set), heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
         p.quipAt = time() + 1.5f;
@@ -2148,6 +2150,34 @@ bool Server::takeAcid(int id) {
     if (p.health > 0) return false;
     killPlayer(id, ringOutKiller(id, p.acidSince), kDamageAcid);   // (knocked in: the knocker's, however long it took)
     return true;
+}
+
+// "hit <weapon> <alt> <n> then n x <victim> <damage> <head> <direct> <splash> <dist> <knock x y z>": the hits one shot or
+// one blast of the reporter's made on its screen (Game::reportHits). They count unless the reporter is dead here by the
+// time it arrives (owner, 2026-10-28: "this would only happen if you die on the server before the server gets your
+// damage packet"). High trust (owner: "dont worry about cheats"): only what would break the game is refused.
+void Server::clientHitReport(int id, const std::string& rest) {
+    ServerPlayer& p = players_[id];
+    if (!p.clientHits || !p.alive || editing_) return;
+    std::istringstream in(rest);
+    int weapon = -1, alt = 0, n = 0;
+    if (!(in >> weapon >> alt >> n) || weapon < 0 || weapon >= WPN_COUNT || n < 0 || n > kMaxPlayers) return;
+    bool any = false;
+    for (int k = 0; k < n; k++) {
+        int v = -1, head = 0, direct = 0;
+        float dmg = 0, splash = 1, dist = 0;
+        Vec3 kb;
+        if (!(in >> v >> dmg >> head >> direct >> splash >> dist >> kb.x >> kb.y >> kb.z)) return;
+        if (v < 0 || v >= kMaxPlayers || v == id || !players_[v].connected || !players_[v].alive || !std::isfinite(dmg) || !std::isfinite(splash) ||
+            !std::isfinite(dist) || !std::isfinite(kb.x) || !std::isfinite(kb.y) || !std::isfinite(kb.z)) continue;
+        dmg = clampf(dmg, 0.0f, 1000.0f);
+        kb = {clampf(kb.x, -100, 100), clampf(kb.y, -100, 100), clampf(kb.z, -100, 100)};
+        headHit_[v] = head != 0;
+        weaponHit(v, id, dmg, kb, weapon, alt != 0, dist, direct != 0, clampf(splash, 0.0f, 1.0f));
+        headHit_[v] = false;
+        any = true;
+    }
+    if (any && shotHit(id)) p.shotsHit++;
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -2873,14 +2903,16 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     if (wd.pellets > 1)
         for (int i = 0; i < kMaxPlayers; i++) headHit_[i] = dmgPer[i] > 0 && headPer[i] * 2 >= dmgPer[i];
     bool any = false;
-    for (int i = 0; i < kMaxPlayers; i++) {
+    const bool reported = p.clientHits && !bounce;   // (the game reports this shot's hits itself: a ricochet's stay the server's)
+    for (int i = 0; i < kMaxPlayers && !reported; i++) {
         if (dmgPer[i] <= 0) continue;
         Vec3 knock = aim * (wd.pellets > 1 ? ex.knock * dmgPer[i] / wd.damage : ex.knock);
         if (wd.beam) knock = aim * (ex.knock * wd.refire * (pull ? -wa.pullScale : 1.0f)); // same push per second at any fire rate
         weaponHit(i, id, dmgPer[i], knock, p.weapon, alt, hitDist_[i], false, 1.0f);
         any = true;
     }
-    if (shotHit(id)) p.shotsHit++;
+    if (reported) for (int i = 0; i < kMaxPlayers; i++) any |= dmgPer[i] > 0;   // (as the server sees it: the swing's end)
+    else if (shotHit(id)) p.shotsHit++;
     for (bool& h : headHit_) h = false;
     return any;
 }
@@ -3006,7 +3038,7 @@ void Server::stepProjectile(Projectile& pr) {
                 }
             }
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
-            if (hitPlayer >= 0) {
+            if (hitPlayer >= 0 && !reportsHits(pr.owner, pr.type)) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
                 if (head > 0 && hitHead) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
                 const WeaponExtra& ex = weaponExtra(pr.type);
@@ -3224,9 +3256,10 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
     const WeaponExtra& ex = weaponExtra(weapon);
     const bool wantDist = ex.falloff || activeWeaponLogic();   // (falloff and the logic's dist: only a weapon set needs it)
     const float ownerDist = wantDist && owner >= 0 && owner < kMaxPlayers ? length(at - shooterEye(owner)) : 0.0f;
+    const bool reported = reportsHits(owner, weapon);   // (the owner's game reports this blast's hits, as its screen had them)
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
-        if (!p.connected || !p.alive) continue;
+        if (!p.connected || !p.alive || (reported && i != owner)) continue;
         AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
         Vec3 closest = hitboxClosest(b, at);   // (the body or the head: a blast over the shoulders is as far as the head)
         float d = length(closest - at);
@@ -3261,7 +3294,7 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct, bool alt
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         weaponHit(i, owner, dmg, knock, weapon, alt, self ? 0.0f : ownerDist, i == direct, frac);
     }
-    if (owner >= 0 && weapon != WPN_BUBBLE && shotHit(owner)) players_[owner].shotsHit++;
+    if (owner >= 0 && weapon != WPN_BUBBLE && !reported && shotHit(owner)) players_[owner].shotsHit++;
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {

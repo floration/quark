@@ -1468,6 +1468,7 @@ void Game::frame(double dt) {
     // input packets: one every tick (latency first, and each command rides in 4 packets against loss); batching
     // them per frame saved sendto calls but cut that redundancy to 2 and delayed commands by up to a tick
     net_.setInputBatch(1);
+    net_.setReportHits(true);   // (your hits are yours: Server::clientHitReport)
     net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
@@ -1614,6 +1615,8 @@ void Game::frame(double dt) {
                 if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt) &&
                     !net_.map().glass.empty())
                     predictShotGlass(w, c);
+                if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt))
+                    reportShotHits(w, c);   // (your hits count as you saw them; a ricochet's stay the server's)
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
                 else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
@@ -1670,6 +1673,7 @@ void Game::frame(double dt) {
         tickYaw_ = yaw_;   // (the last tick's: now's)
         if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
         heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
+        flushLaserHits(false);   // (the laser's last 50 ms of hits)
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
         net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
         pipeMark(PM_TICKS);
@@ -1697,6 +1701,19 @@ void Game::frame(double dt) {
                     }
                 }
                 if (shown) continue;
+                bool mine = false;   // (one that blew up on your screen far from here: its hits went from there)
+                for (auto& st : projStarts_) mine |= st.id == old.id && st.boomed;
+                if (!mine && (old.type == WPN_ROCKET || old.type == WPN_CROSSBOW)) {
+                    // the server's copy landed before yours did on your screen: its hits as you see them, from where it was
+                    const float sp = length(old.vel);
+                    const Vec3 dir = sp > 0.01f ? old.vel / sp : Vec3(0, 0, -1);
+                    float et;
+                    int victim = -1;
+                    bool vHead = false;
+                    const Vec3 from = old.pos - dir * 0.5f, to = old.pos + dir * 0.5f;
+                    if (!enemyOnSegment(from, to, &et, &victim, &vHead)) victim = -1;
+                    reportImpact(old.type, (old.flags & PROJ_LOB) != 0, from, victim >= 0 ? from + (to - from) * et : old.pos, victim, vHead);
+                }
             }
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
@@ -2337,7 +2354,10 @@ void Game::drawWorld(float alpha) {
         Vec3 hn;
         int hm = -1;
         float hit = len > 1e-4f ? map.raycast(q.pos, d / len, len, &hn, &hm) : -1.0f, et;
-        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+        int victim = -1;
+        bool vHead = false;
+        if (q.type != WPN_KNIFE && len > 1e-4f && enemyOnSegment(q.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
+        else victim = -1;
         if (hit >= 0 && hm == kMatRubber && q.type == WPN_ROCKET && dot(v, hn) < 0) {   // (off rubber: on from there, as the server's does)
             q.pos0 = q.pos + d / len * std::max(0.0f, hit - 0.05f);
             q.vel0 = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
@@ -2347,7 +2367,10 @@ void Game::drawWorld(float alpha) {
         }
         if (hit >= 0) {   // (hidden; the server's copy still takes over from it, and isn't drawn once this one blew up)
             q.atWall = true;
-            if (q.type != WPN_KNIFE) { localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true; }
+            if (q.type != WPN_KNIFE) {
+                localBoom(0xFFFF, q.type, q.pos + d / len * hit); q.boomed = true;
+                reportImpact(q.type, q.lob, q.pos, q.pos + d / len * hit, victim, vHead);
+            }
             continue;
         }
         q.pos = p;
@@ -2439,8 +2462,14 @@ void Game::drawWorld(float alpha) {
                 const float len = length(d);
                 float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f, et;
                 const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
-                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et) && (hit < 0 || et * len < hit)) hit = et * len;
-                if (blows && hit >= 0) { localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true; }   // where it lands, as you see it
+                int victim = -1;
+                bool vHead = false;
+                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) hit = et * len;
+                else victim = -1;
+                if (blows && hit >= 0) {   // where it lands, as you see it (and its hits: yours)
+                    localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true;
+                    reportImpact(pr.type, (pr.flags & PROJ_LOB) != 0, pr.pos, pr.pos + d / len * hit, victim, vHead);
+                }
                 pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
                 pr.vel = v;
             }
@@ -7793,7 +7822,7 @@ void Game::localBoom(uint16_t id, int type, const Vec3& at) {
 
 // The nearest enemy (alive, as drawn) whose body or head (rayHitbox, as the server's projectiles) the segment a -> b
 // passes through: *t its fraction along it.
-bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
+bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t, int* who, bool* head) {
     const Vec3 d = b - a;
     const float len = length(d);
     if (len < 1e-4f) return false;
@@ -7803,11 +7832,176 @@ bool Game::enemyOnSegment(const Vec3& a, const Vec3& b, float* t) {
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == net_.clientId() || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
-        const float tk = rayHitbox(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
-        if (tk >= 0 && tk < best) { best = tk; any = true; }
+        bool h = false;
+        const float tk = rayHitbox(a, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best, &h);
+        if (tk >= 0 && tk < best) { best = tk; any = true; if (who) *who = i; if (head) *head = h; }
     }
     if (any) *t = best / len;
     return any;
+}
+
+// ---- your hits, as you saw them (owner, 2026-10-28: "all damage should be client side also, so when you have high
+// ping and shoot a projectile it should not magically not do any damage"). The server counts them unless you're dead
+// there by the time they arrive. These mirror the server's own hit tests (Server::hitscan, explode, stepProjectile)
+// against the players as drawn (framePlayers).
+
+void Game::sendHits(int weapon, bool alt, const std::vector<HitReport>& hits) {
+    if (hits.empty() || net_.playback()) return;
+    std::string s = "hit " + std::to_string(weapon) + (alt ? " 1 " : " 0 ") + std::to_string(hits.size());
+    char buf[160];
+    for (const HitReport& h : hits) {
+        std::snprintf(buf, sizeof buf, " %d %.2f %d %d %.3f %.2f %.3f %.3f %.3f", h.victim, h.dmg, h.head ? 1 : 0, h.direct ? 1 : 0, h.splash,
+                      h.dist, h.knock.x, h.knock.y, h.knock.z);
+        s += buf;
+    }
+    net_.sendCommand(s);
+}
+
+void Game::reportShotHits(int w, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    const WeaponAlt& wa = weaponAlt();
+    const WeaponExtra& ex = weaponExtra(w);
+    const bool altDown = (c.buttons & BTN_ALTFIRE) != 0;
+    const float spread = (wd.scopedSpread >= 0 && altDown) ? wd.scopedSpread : wd.spread;
+    const bool pull = wd.beam && altDown, pierce = w == WPN_SNIPER;
+    const float dmg = wd.damage * (pull ? wa.pullDamage : 1.0f), headDmg = pull ? 0.0f : ex.headDamage;
+    const float grow = w == WPN_KNIFE ? wa.knifeGrow : 0.0f;
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    float dmgPer[kMaxPlayers] = {}, headPer[kMaxPlayers] = {}, distOf[kMaxPlayers] = {};
+    bool headHit[kMaxPlayers] = {};
+    for (int k = 0; k < wd.pellets; k++) {
+        const Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+        float bang, wall = net_.map().raycastBullet(eye, d, wd.range, &bang);
+        float best = wall >= 0 ? wall : wd.range;
+        const Vec3 inv = safeInv(d);
+        int hit = -1;
+        bool hitHead = false;
+        auto add = [&](int i, float t, bool inHead) {
+            float dd = dmg;
+            const bool head = headDmg > 0 && inHead;
+            if (head) { dd = std::max(dd, headDmg); headHit[i] = true; }
+            if (ex.falloff) dd *= weaponFalloff(ex, t);
+            if (bang >= 0 && t > bang) dd *= ex.wallbang;
+            distOf[i] = t;
+            dmgPer[i] += dd;
+            if (head) headPer[i] += dd;
+        };
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
+            bool inHead = false;
+            const float t = rayHitbox(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best, &inHead, grow);
+            if (pierce) { if (t >= 0) add(i, t, inHead); continue; }   // (sniper collateral: everyone up to the wall)
+            if (t >= 0 && t < best) { best = t; hit = i; hitHead = inHead; }
+        }
+        if (hit >= 0) add(hit, best, hitHead);
+    }
+    if (wd.pellets > 1)   // (a blast is a headshot when half its damage was to the head, as the server's F14)
+        for (int i = 0; i < kMaxPlayers; i++) headHit[i] = dmgPer[i] > 0 && headPer[i] * 2 >= dmgPer[i];
+    if (wd.beam) {   // the laser: added up, sent every 50 ms (and when it stops or the mode changes)
+        if (laserPending_ && laserAlt_ != pull) flushLaserHits(true);
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (dmgPer[i] <= 0) continue;
+            laserDmg_[i] += dmgPer[i];
+            laserKnock_[i] += aim * (ex.knock * wd.refire * (pull ? -wa.pullScale : 1.0f));
+            laserDist_[i] = distOf[i];
+            laserHead_[i] |= headHit[i];
+            if (!laserPending_) { laserPending_ = true; laserSince_ = time_; }
+            laserAlt_ = pull;
+        }
+        flushLaserHits(false);
+        return;
+    }
+    hitScratch_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (dmgPer[i] <= 0) continue;
+        const Vec3 knock = aim * (wd.pellets > 1 ? ex.knock * dmgPer[i] / wd.damage : ex.knock);
+        hitScratch_.push_back({i, dmgPer[i], headHit[i], false, 1.0f, distOf[i], knock});
+    }
+    sendHits(w, altDown, hitScratch_);
+}
+
+void Game::flushLaserHits(bool force) {
+    if (!laserPending_ || (!force && time_ - laserSince_ < 0.05)) return;
+    hitScratch_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (laserDmg_[i] > 0) hitScratch_.push_back({i, laserDmg_[i], laserHead_[i], false, 1.0f, laserDist_[i], laserKnock_[i]});
+        laserDmg_[i] = 0; laserHead_[i] = false; laserKnock_[i] = {};
+    }
+    laserPending_ = false;
+    sendHits(WPN_LASER, laserAlt_, hitScratch_);
+}
+
+// Your rocket's blast on the others as you see them (the server's explode; on you it's the server's own, so rocket
+// jumps feel as they did). direct: the player it flew into, -1 none.
+void Game::reportBlast(int type, bool alt, const Vec3& at, int direct) {
+    const WeaponDef& wd = weaponDef(type);
+    const WeaponExtra& ex = weaponExtra(type);
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    const MoveState& m = net_.predicted();
+    const float ownerDist = length(at - (m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0)));
+    const Map& map = net_.map();
+    hitScratch_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR)) continue;
+        const AABB b = playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale());
+        const Vec3 closest = hitboxClosest(b, at);
+        const float d = length(closest - at);
+        if (d > wd.splashRadius) continue;
+        const Vec3 c = b.center(), to = c - at;
+        const float dist = length(to);
+        if (dist > 0.01f) {
+            const float w = map.raycast(at, to / dist, dist);
+            if (w >= 0 && w < dist - 0.1f) {
+                auto clear = [&](const Vec3& pt) {
+                    const Vec3 v = pt - at;
+                    const float len = length(v);
+                    return len < 0.11f || !map.raycastAny(at, v / len, len - 0.1f);
+                };
+                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
+            }
+        }
+        const float frac = 1.0f - d / wd.splashRadius;
+        const Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
+        float dmg = wd.damage * frac;
+        if (i == direct && ex.directDamage > 0) dmg = std::max(dmg, ex.directDamage);
+        if (ex.falloff) dmg *= weaponFalloff(ex, ownerDist);
+        Vec3 knock = push * (ex.knock * frac);
+        knock.y *= 2.0f;
+        hitScratch_.push_back({i, dmg, false, i == direct, frac, ownerDist, knock});
+    }
+    sendHits(type, alt, hitScratch_);
+}
+
+// Your bolt in someone, as you see it (the server's stepProjectile: direct hits only).
+void Game::reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head) {
+    if (victim < 0) return;
+    const WeaponDef& wd = weaponDef(WPN_CROSSBOW);
+    const WeaponExtra& ex = weaponExtra(WPN_CROSSBOW);
+    float dmg = (float)wd.damage;
+    const float hd = headDamage(WPN_CROSSBOW);
+    head = head && hd > 0;
+    if (head) dmg = std::max(dmg, hd);
+    const MoveState& m = net_.predicted();
+    const float dist = length(at - (m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0)));
+    if (ex.falloff) dmg *= weaponFalloff(ex, dist);
+    hitScratch_.clear();
+    hitScratch_.push_back({victim, dmg, head, true, 1.0f, dist, dir * ex.knock});
+    sendHits(WPN_CROSSBOW, false, hitScratch_);
+}
+
+void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head) {
+    if (!net_.selfAlive()) return;   // (dead: the server's own hit, as it lands there)
+    if (type == WPN_ROCKET) reportBlast(type, alt, to, victim);
+    else if (type == WPN_CROSSBOW) {
+        const Vec3 d = to - from;
+        const float len = length(d);
+        reportBolt(to, len > 1e-4f ? d / len : Vec3(0, 0, -1), victim, head);
+    }
 }
 
 // A muzzle flash: a hot core in a bigger, fainter glow (two see-through boxes), fading over its life (a 0..1).

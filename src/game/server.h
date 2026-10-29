@@ -155,6 +155,11 @@ struct ServerPlayer {
     double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
+    // The game reports its own hits (owner, 2026-10-28: "all damage should be client side ... high trust society game"):
+    // its hitscan shots and its rockets' and bolts' hits count as its screen showed them ("hit" commands); the server
+    // doesn't hit-test those itself. Set by the "clienthits" command (the game sends it; a bot or a bare test client
+    // doesn't, and keeps the server's hit tests).
+    bool clientHits = false;
     double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
     Vec3 locatedPos;            // the locator's last find (bots head there)
     double locatedAt = -1e9;
@@ -625,6 +630,14 @@ public:
     bool headHit_[kMaxPlayers] = {};   // this shot hit that player in the head (for the kill event)
     float hitDist_[kMaxPlayers] = {};  // ...and how far from the shooter's eye (hitscan; the weapon set logic's `dist`)
     WsTracker wsTrack_;                // the weapon set logic's streak / kills-this-life counts
+    // a shot or projectile whose damage the shooter's game reports (ServerPlayer::clientHits)
+    bool reportsHits(int owner, int weapon) const {
+        // (a shooter dead by now: its rocket or bolt still lands, the server's hit; your own blast on you: the server's
+        // too, so rocket jumps feel as they did)
+        return owner >= 0 && owner < kMaxPlayers && players_[owner].clientHits && players_[owner].alive &&
+               (weapon == WPN_ROCKET || weapon == WPN_CROSSBOW);
+    }
+    void clientHitReport(int id, const std::string& rest);
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
     uint8_t arenaRules() const {
         uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
