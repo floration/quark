@@ -27,46 +27,49 @@ bool readDestructEvent(const GameEvent& e, DestructEv* d);   // the single ones 
 std::vector<GameEvent> destructListEvents(const std::vector<uint32_t>& glass, const std::vector<Vec3>& holes);
 bool readDestructList(const GameEvent& e, std::vector<uint32_t>* glass, std::vector<Vec3>* holes);   // (appends)
 
-struct GlassShard { Vec3 pos, vel; };
+struct GlassShard { Vec3 pos, vel; float size; };   // size: half its width (the server hits with it, the clients draw it)
 inline uint32_t glassRand(uint32_t& s) { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return s; }
 inline float glassRandF(uint32_t& s) { return (float)(glassRand(s) & 0xFFFFFFu) / (float)0x1000000; }
 inline bool glassCrater(int how) { return how == GLASS_SHOT || how == GLASS_HOOK_BACK; }
-inline float glassShardDamage(int how) { return glassCrater(how) ? kGlassShardDamage : kGlassPieceDamage; }
 // whoever broke it doesn't get its shards: the dasher and the grappler pulled through take kGlassBreakDamage instead
 inline bool glassSparesBreaker(int how) { return how == GLASS_DASH || how == GLASS_HOOK_THROUGH; }
 inline int glassThinAxis(const AABB& b) {
     const Vec3 e = b.mx - b.mn;
     return e.x <= e.y && e.x <= e.z ? 0 : e.y <= e.z ? 1 : 2;
 }
-// The shards of a pane broken `how` at `at` toward `dir`: a shot's crater 10-20 shards on along the shot (or, grappled,
-// back at you); a blast, a dash or a pull the whole pane in hundreds of pieces (about 120 a square metre, 100-300),
-// away from the blast's side / along the dash.
+// How much further a break's shards fly, by what broke it (q, 2026-10-29: explosions 3x, a dash 2x, the rest 1.5x):
+// their sideways speed (the fall is the same, so they land that much further out).
+inline float glassThrow(int how) { return how == GLASS_SHATTER ? 3.0f : how == GLASS_DASH ? 2.0f : 1.5f; }
+// The shards of a pane broken `how` at `at` toward `dir` (q, 2026-10-29: "10 damage per piece, but the pieces need to be
+// bigger and less frequent"): a shot breaks the whole pane into 10-20 big shards, those near the crater flying on along
+// the shot (or, grappled, back at you), the rest falling; a blast, a dash or a pull into 12-40 (about 3 a square metre),
+// away from the blast's side / along the dash. Each is sized to its share of the pane.
 inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& dir, uint32_t seed, std::vector<GlassShard>& out) {
     out.clear();
     uint32_t s = seed | 1u;
     const int a = glassThinAxis(pane);
     const Vec3 ext = pane.mx - pane.mn;
     auto rnd3 = [&] { return Vec3(glassRandF(s) * 2 - 1, glassRandF(s) * 2 - 1, glassRandF(s) * 2 - 1); };
-    if (glassCrater(how)) {
-        const int n = 10 + (int)(seed % 11);
-        for (int i = 0; i < n; i++) {
-            Vec3 p = at + rnd3() * 0.2f;
-            p[a] = std::clamp(at[a], pane.mn[a], pane.mx[a]);
-            Vec3 v = dir + rnd3() * 0.45f;
-            const float l = length(v);
-            out.push_back({p, (l > 1e-4f ? v / l : dir) * (5.0f + 5.0f * glassRandF(s))});
-        }
-        return;
-    }
     const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
-    const int n = std::clamp((int)(area * 120.0f), 100, 300);
+    const bool crater = glassCrater(how);
+    const int n = crater ? 10 + (int)(seed % 11) : std::clamp((int)(area * 3.0f), 12, 40);
+    const float piece = std::clamp(0.5f * std::sqrt(area / (float)n), 0.05f, 0.3f);
+    const float k = glassThrow(how);
     Vec3 away;
     if (how == GLASS_SHATTER) away[a] = at[a] < pane.center()[a] ? 1.0f : -1.0f;
     else away = dir;
     for (int i = 0; i < n; i++) {
         const Vec3 p = {pane.mn.x + ext.x * glassRandF(s), pane.mn.y + ext.y * glassRandF(s), pane.mn.z + ext.z * glassRandF(s)};
-        Vec3 v = away * (3.0f + 7.0f * glassRandF(s)) + rnd3() * 1.5f;
-        if (how == GLASS_SHATTER) { Vec3 r = p - at; r[a] = 0; v += r * 1.5f; }   // (and out from under the blast)
-        out.push_back({p, v});
+        Vec3 v;
+        if (crater) {   // (the crater's: fast along the shot; further out they mostly drop)
+            Vec3 r = p - at; r[a] = 0;
+            const float w = std::exp(-length(r));
+            v = dir * (1.5f + 7.0f * w) * (0.7f + 0.3f * glassRandF(s)) + rnd3() * 0.6f;
+        } else {
+            v = away * (3.0f + 7.0f * glassRandF(s)) + rnd3() * 1.5f;
+            if (how == GLASS_SHATTER) { Vec3 r = p - at; r[a] = 0; v += r * 1.5f; }   // (and out from under the blast)
+        }
+        v.x *= k; v.z *= k;
+        out.push_back({p, v, piece * (0.6f + 0.4f * glassRandF(s))});
     }
 }

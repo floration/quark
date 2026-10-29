@@ -569,7 +569,7 @@ private:
     std::vector<Explosion> explosions_;
     // Glass shards and brick / cobblestone chunks (glass.h): drawn falling, then lying where they land, until out of view
     // (owner, 2026-10-28: "disappear from your screen once its no longer in your fov")
-    struct VisShard { Vec3 pos, vel; float size; Vec3 color; bool rest, glass; double born; };
+    struct VisShard { Vec3 pos, vel; float size; Vec3 color; bool rest, glass; double born; int thin = -1; };   // thin: a glass plate's thin axis (flat on the floor once it lies)
     std::vector<VisShard> visShards_;
     std::vector<NetClient::GlassFx> glassFxScratch_;
     std::vector<GlassShard> glassShardScratch_;
