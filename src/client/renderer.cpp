@@ -11,6 +11,7 @@
 #include "overrides.h"
 #include "fontatlas.h"
 #include "textfit.h"
+#include "surface_looks.h"
 #include <memory>
 
 namespace {
@@ -163,116 +164,7 @@ vec3 cells(vec2 p) { vec2 i = floor(p), f = fract(p); float d1 = 9.0, d2 = 9.0, 
     for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) { vec2 o = vec2(x, y), r = o + hash22(i + o) - f; float d = dot(r, r);
         if (d < d1) { d2 = d1; d1 = d; id = hash2(i + o + 3.7); } else if (d < d2) d2 = d; }
     return vec3(sqrt(d1), sqrt(d2), id); }
-// The 100 brick / concrete / tile / stone block looks (owner, 2026-10-29: "yes to everything", materials 39-138, in
-// the picks page's order): k = material - 39, q the face's plane in metres. Two switches of 50 (one
-// long chain loses cases on some drivers). aa: a pixel's width in metres: a joint thinner than that
-// blurs to a pixel wide around the same middle, so it keeps its share of the wall and doesn't shimmer.
-void blockLook(int k, vec2 q, inout vec3 albedo, inout float spec, inout float gloss) {
-    float aa = 1.5 * footprint(q);
-    if (k < 50) switch (k) {
-    case 0: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.72,0.62,0.42)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo*=1.0-0.35*smoothstep(0.55,0.8,fbm(q*1.5)); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // London stock
-    case 1: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.52,0.16,0.10)*(0.9+0.2*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.15,0.14,0.13))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); spec=0.3; gloss=40.0; } break;   // Red engineering brick
-    case 2: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.20,0.22,0.27)*(0.9+0.2*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.35,0.35,0.35))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); spec=0.45; gloss=50.0; } break;   // Blue engineering brick
-    case 3: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.80,0.42,0.22)*(0.94+0.12*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.85,0.82,0.76))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Orange wire-cut
-    case 4: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.35,0.18,0.20)*(0.75+0.5*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo*=0.8+0.4*vnoise(q*20.0); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); spec=0.35; gloss=50.0; } break;   // Clinker brick
-    case 5: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.55,0.28,0.18)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo=mix(albedo,lin(vec3(0.9,0.89,0.85)),smoothstep(0.35,0.5,fbm(q*5.0))); albedo=mix(lin(vec3(0.88,0.87,0.83))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Whitewashed brick
-    case 6: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.12,0.12,0.13)*(0.875+0.25*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.62,0.60))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Black brick
-    case 7: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.86,0.78,0.60)*(0.875+0.25*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.55,0.52,0.47))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Cream brick
-    case 8: { float row=floor(q.y/0.075); float u=q.x+mod(row,2.0)*0.18; float k=floor(u/0.36); float x2=mod(u,0.36); float hl=0.12; float inb=step(hl,x2); vec2 c=vec2(k*2.0+inb,row); float lx=inb>0.5?x2-hl:x2; float lw=inb>0.5?0.36-hl:hl; float g=min(min(lx,lw-lx),min(fract(q.y/0.075)*0.075,(1.0-fract(q.y/0.075))*0.075)); vec3 bc=vec3(0.58,0.25,0.16)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Flemish bond
-    case 9: { float row=floor(q.y/0.075); vec2 sz=mod(row,2.0)<0.5?vec2(0.24,0.075):vec2(0.12,0.075); vec2 c; float g=bond(q+vec2(0.0,0.0),sz,c); c+=row*31.0; vec3 bc=vec3(0.60,0.28,0.18)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // English bond
-    case 10: { vec2 c; float g=grid(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.62,0.30,0.20)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Stack bond
-    case 11: { vec2 c; float g=grid(q,vec2(0.075,0.24),c); vec3 bc=vec3(0.55,0.24,0.15)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Soldier course
-    case 12: { vec2 r=vec2(q.x+q.y,q.y-q.x)*0.7071; float b=floor(r.x/0.2); vec2 rr=mod(b,2.0)<0.5?r:r.yx; vec2 c; float g=bond(rr,vec2(0.2,0.1),c); c+=b*17.0; vec3 bc=vec3(0.58,0.27,0.17)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Herringbone brick
-    case 13: { vec2 B=floor(q/0.3); vec2 f=fract(q/0.3)*0.3; bool v=mod(B.x+B.y,2.0)<0.5; vec2 ff=v?f:f.yx; float n=floor(ff.y/0.1); vec2 c=B*7.0+n; float g=min(min(ff.x,0.3-ff.x),min(mod(ff.y,0.1),0.1-mod(ff.y,0.1))); vec3 bc=vec3(0.60,0.30,0.20)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Basket-weave brick
-    case 14: { vec2 c; float g=bond(q,vec2(0.4,0.05),c); vec3 bc=vec3(0.68,0.45,0.30)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.85,0.82,0.75))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Roman brick
-    case 15: { vec2 c; float g=bond(q,vec2(0.2,0.06),c); vec3 bc=vec3(0.62,0.30,0.18)*(0.7+0.6*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo*=0.85+0.3*fbm(q*4.0); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Tudor brick
-    case 16: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.20,0.42,0.30)*(0.95+0.1*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.80,0.80,0.78))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); spec=0.8; gloss=110.0; } break;   // Glazed brick
-    case 17: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.90,0.90,0.88)*(0.975+0.05*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.55,0.55,0.55))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); spec=0.8; gloss=110.0; } break;   // White glazed brick
-    case 18: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.55,0.25,0.16)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo=mix(albedo,lin(vec3(0.25,0.4,0.12)),0.6*smoothstep(0.55,0.75,fbm(q*2.0))); albedo=mix(lin(vec3(0.25,0.38,0.15))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Mossy brick
-    case 19: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.58,0.26,0.16)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo=mix(albedo,lin(vec3(0.9,0.9,0.88)),0.7*smoothstep(0.55,0.8,fbm(vec2(q.x*3.0,q.y*1.0)))); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Efflorescent brick
-    case 20: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.55,0.32,0.22)*(0.6+0.8*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo=mix(albedo,lin(vec3(0.7,0.68,0.62)),0.6*step(0.75,vnoise(q*25.0))); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Reclaimed brick
-    case 21: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.40,0.25,0.17)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo*=0.85+0.25*vnoise(q*40.0); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Brown rustic brick
-    case 22: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.82,0.55,0.50)*(0.925+0.15*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.88,0.85,0.80))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Pink brick
-    case 23: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.62,0.27,0.17)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.08,0.07,0.07))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.007-0.5*max(0.014,aa),0.007+0.5*max(0.014,aa),g)); } break;   // Recessed joints
-    case 24: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.62,0.30,0.20)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.70,0.66,0.60))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.015-0.5*max(0.03,aa),0.015+0.5*max(0.03,aa),g)); } break;   // Flush pointed brick
-    case 25: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.55,0.25,0.15)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo=mix(albedo,lin(vec3(0.05)),clamp(fract(vPos.y/3.0)*1.2-0.3+0.3*fbm(q*2.0),0.0,1.0)); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Burnt brick
-    case 26: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.60,0.25,0.15)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); float bnd=mod(floor(q.y/0.075),8.0); albedo=bnd<1.0?lin(vec3(0.85,0.75,0.45))*(0.9+0.1*hash2(c)):bnd>6.0?lin(vec3(0.12,0.12,0.13)):albedo; albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Polychrome brick
-    case 27: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.60,0.27,0.17)*(0.85+0.3*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); vec2 dd=abs(fract(q/vec2(1.2,0.9))-0.5); albedo=mix(albedo,lin(vec3(0.18,0.12,0.12)),step(abs(dd.x/1.2*0.9+dd.y-0.25),0.04)); albedo=mix(lin(vec3(0.62,0.60,0.56))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Diaper brick
-    case 28: { vec2 c; float g=bond(q,vec2(0.24,0.075),c); vec3 bc=vec3(0.55,0.12,0.10)*(0.96+0.08*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c)); albedo=mix(albedo,lin(vec3(0.6,0.3,0.2)),step(0.78,fbm(q*5.0))); albedo=mix(lin(vec3(0.30,0.07,0.06))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Painted red brick
-    case 29: { vec2 c; float g=bond(q,vec2(0.23,0.115),c); vec3 bc=vec3(0.85,0.72,0.52)*(0.9+0.2*hash2(c)); albedo=lin(bc)*(0.9+0.12*fbm(q*6.0+c));  albedo=mix(lin(vec3(0.45,0.40,0.33))*(0.85+0.15*hash2(floor(q*90.0))),albedo,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Fire brick
-    case 30: { albedo=lin(vec3(0.64,0.63,0.61))*(0.88+0.08*fbm(q*2.5)+0.05*hash2(floor(q*90.0)));  } break;   // Fresh grey concrete
-    case 31: { albedo=lin(vec3(0.30,0.30,0.30))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0)));  } break;   // Dark concrete
-    case 32: { albedo=lin(vec3(0.86,0.85,0.82))*(0.88+0.06*fbm(q*2.5)+0.05*hash2(floor(q*90.0)));  } break;   // White concrete
-    case 33: { albedo=lin(vec3(0.55,0.30,0.25))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0)));  } break;   // Tinted red concrete
-    case 34: { albedo=lin(vec3(0.55,0.52,0.47))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec3 w=cells(q*14.0); albedo=mix(albedo,lin(mix(vec3(0.3,0.28,0.25),vec3(0.8,0.75,0.68),w.z)),smoothstep(0.38,0.33,w.x)); } break;   // Exposed aggregate
-    case 35: { albedo=lin(vec3(0.62,0.61,0.58))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); albedo*=0.9+0.12*vnoise(vec2(q.x*2.0,q.y*40.0))*0.0+0.25*vnoise(vec2(q.x*1.5,q.y*30.0))-0.12; } break;   // Broom-finished
-    case 36: { albedo=lin(vec3(0.58,0.52,0.45))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec3 w=cells(q*1.5); albedo*=mix(0.55,1.0,smoothstep(0.0,0.04,w.y-w.x))*(0.9+0.15*w.z); } break;   // Stamped stone pattern
-    case 37: { albedo=lin(vec3(0.58,0.57,0.55))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec2 c; float g=grid(q,vec2(0.4,0.4),c); albedo*=(0.92+0.1*hash2(c))*mix(0.5,1.0,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Concrete pavers
-    case 38: { albedo=lin(vec3(0.62,0.61,0.58))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec2 c; float g=grid(q,vec2(1.0,1.0),c); albedo*=mix(0.25,1.0,smoothstep(0.0075-0.5*max(0.015,aa),0.0075+0.5*max(0.015,aa),g)); } break;   // Grid-scored slab
-    case 39: { albedo=lin(vec3(0.62,0.60,0.57))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); float f=fract(q.x/0.12); albedo*=mix(0.7+0.3*hash2(floor(q*80.0)),1.0,step(0.5,f))*(0.85+0.2*sin(f*3.14)); } break;   // Ribbed concrete
-    case 40: { albedo=lin(vec3(0.66,0.64,0.60))*(0.88+0.1*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); albedo*=0.75+0.35*hash2(floor(q*120.0)); } break;   // Bush-hammered
-    case 41: { albedo=lin(vec3(0.55,0.56,0.57))*(0.88+0.06*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec2 c; float g=grid(q,vec2(1.2,0.6),c); vec2 f=fract(q/vec2(0.3,0.3))-0.5; albedo*=mix(0.4,1.0,smoothstep(0.003-0.5*max(0.006,aa),0.003+0.5*max(0.006,aa),g))*(1.0-0.4*step(length(f),0.03)); } break;   // Fibre cement board
-    case 42: { albedo=lin(vec3(0.60,0.59,0.56))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); albedo*=(1.0-0.45*smoothstep(0.02,0.0,abs(fract(q.y/1.2)-0.5)-0.47))*(0.85+0.25*smoothstep(0.3,0.7,fbm(vec2(q.x*0.6,q.y*4.0)))); } break;   // Cast-in-place walls
-    case 43: { albedo=lin(vec3(0.60,0.59,0.56))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); albedo*=1.0-0.35*smoothstep(0.5,0.8,fbm(vec2(q.x*5.0,q.y*0.4))); } break;   // Weathered concrete
-    case 44: { albedo=lin(vec3(0.78,0.76,0.72))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec2 f=fract(q/0.4)-0.5; float h=step(abs(abs(f.x)+abs(f.y)-0.22),0.06); albedo*=1.0-0.85*h; } break;   // Breeze-block screen
-    case 45: { albedo=lin(vec3(0.66,0.62,0.56))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec2 c; float g=bond(q,vec2(0.4,0.2),c); albedo*=(0.75+0.35*fbm(q*10.0+c))*mix(0.4,1.0,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Split-face block
-    case 46: { albedo=lin(vec3(0.62,0.60,0.56))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec2 c; float g=bond(q,vec2(0.4,0.2),c); vec3 w=cells(q*20.0); albedo=mix(albedo,lin(vec3(0.3,0.28,0.26)+0.5*w.z),0.4*smoothstep(0.4,0.3,w.x))*mix(0.4,1.0,smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); spec=0.4; gloss=60.0; } break;   // Ground-face block
-    case 47: { albedo=lin(vec3(0.45,0.45,0.46))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); float row=floor(q.y/0.3); float x=q.x/0.33+0.5*mod(row,2.0); float f=fract(q.y/0.3); albedo*=(0.55+0.5*sin(fract(x)*3.14))*mix(0.5,1.0,smoothstep(0.0,0.15,f)); } break;   // Concrete roof tiles
-    case 48: { albedo=lin(vec3(0.86,0.85,0.80))*(0.88+0.04*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); vec3 w=cells(q*40.0); albedo*=1.0-0.25*smoothstep(0.2,0.05,w.x); vec2 c; float g=bond(q,vec2(0.6,0.25),c); albedo*=mix(0.45,1.0,smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Lightweight foam block
-    case 49: { albedo=lin(vec3(0.60,0.59,0.56))*(0.88+0.15*fbm(q*2.5)+0.05*hash2(floor(q*90.0))); float b=step(0.5,fract(q.y/1.5)); albedo=mix(albedo,lin(mix(vec3(0.25,0.4,0.6),vec3(0.85),b))*(0.9+0.1*fbm(q*4.0)),0.85*step(0.6,fract(q.y/1.5*2.0))); } break;   // Painted concrete stripes
-    } else switch (k) {
-    case 50: { vec2 c; float g=grid(q,vec2(0.2,0.2),c); vec3 tc=vec3(0.92,0.92,0.90)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.40,0.40,0.40)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.003-0.5*max(0.006,aa),0.003+0.5*max(0.006,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // White square tile
-    case 51: { vec2 c; float g=grid(q,vec2(0.2,0.2),c); vec3 tc=vec3(0.06,0.06,0.07)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.85,0.85,0.83)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Black square tile
-    case 52: { vec2 c; float g=grid(q,vec2(0.3,0.3),c); vec3 tc=vec3(0.90,0.90,0.88)*(0.96+0.08*hash2(c)); tc=mod(c.x+c.y,2.0)<0.5?vec3(0.08):tc; albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Checkerboard tile
-    case 53: { vec2 c; float g=bond(q,vec2(0.15,0.075),c); vec3 tc=vec3(0.92,0.92,0.90)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.35,0.35,0.35)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.003-0.5*max(0.006,aa),0.003+0.5*max(0.006,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Subway tile
-    case 54: { vec2 c; float g=bond(q,vec2(0.15,0.075),c); vec3 tc=vec3(0.45,0.60,0.48)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Green subway tile
-    case 55: { vec2 c; float g=grid(q,vec2(1.2,0.6),c); vec3 tc=vec3(0.72,0.71,0.69)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.30,0.30,0.30)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.003-0.5*max(0.006,aa),0.003+0.5*max(0.006,aa),g)); spec=0.4*step(0.0,g); gloss=70; } break;   // Large format porcelain
-    case 56: { vec4 h=hexc(q/0.06); vec2 c=vec2(h.w*97.0,0.0); float g=(0.5-h.z)*0.06; vec3 tc=vec3(0.90,0.90,0.88)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.30,0.30,0.30)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.001-0.5*max(0.002,aa),0.001+0.5*max(0.002,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Hex tile, white
-    case 57: { vec4 h=hexc(q/0.25); vec2 c=vec2(h.w*97.0,0.0); float g=(0.5-h.z)*0.25; vec3 tc=vec3(0.70,0.38,0.22)*(0.875+0.25*hash2(c));  albedo=mix(lin(vec3(0.60,0.55,0.48)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.1*step(0.0,g); gloss=20; } break;   // Hex tile, terracotta
-    case 58: { vec2 r=vec2(q.x+q.y,q.x-q.y)*0.7071; vec2 c; float g=grid(r,vec2(0.25,0.25),c); vec3 tc=vec3(0.85,0.82,0.75)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.40,0.37,0.32)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Diagonal tile
-    case 59: { vec2 r=vec2(q.x+q.y,q.y-q.x)*0.7071; float b=floor(r.x/0.4); vec2 rr=mod(b,2.0)<0.5?r:r.yx; vec2 c; float g=bond(rr,vec2(0.4,0.1),c); c+=b*17.0; vec3 tc=vec3(0.62,0.45,0.30)*(0.85+0.3*hash2(c));  albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.3*step(0.0,g); gloss=40; } break;   // Herringbone tile
-    case 60: { float row=floor(q.y/0.12); vec2 p=q; p.x+=0.5*0.12*mod(row,2.0); vec2 f=vec2(fract(p.x/0.12)-0.5,fract(q.y/0.12)); float d=length(vec2(f.x,f.y-1.0)); vec2 c=vec2(floor(p.x/0.12),row); float g=min(abs(d-0.5)*0.12,f.y*0.12); vec3 tc=vec3(0.35,0.62,0.68)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Fish-scale tile
-    case 61: { vec2 f=fract(q/0.025)-0.5; vec2 c=floor(q/0.025); float g=(0.45-length(f))*0.025; vec3 tc=vec3(0.85,0.85,0.83)*(0.96+0.08*hash2(c));  albedo=mix(lin(vec3(0.35,0.35,0.35)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.0015-0.5*max(0.003,aa),0.0015+0.5*max(0.003,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Penny round tile
-    case 62: { vec2 c; float g=grid(q,vec2(0.05,0.05),c); vec3 tc=vec3(0.20,0.45,0.75)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Blue pool tile
-    case 63: { vec2 c; float g=grid(q,vec2(0.1,0.1),c); vec3 tc=vec3(0.15,0.45,0.42)*(0.75+0.5*hash2(c)); tc*=0.85+0.3*fbm(q*15.0); albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.9*step(0.0,g); gloss=120; } break;   // Moroccan zellige
-    case 64: { vec2 c; float g=grid(q,vec2(0.2,0.2),c); vec3 tc=vec3(0.85,0.82,0.74)*(0.96+0.08*hash2(c)); vec2 lf=abs(fract(q/0.2)-0.5); tc=mix(tc,vec3(0.2,0.3,0.5),step(abs(lf.x+lf.y-0.3),0.06)+step(max(lf.x,lf.y),0.08)); albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.1*step(0.0,g); gloss=20; } break;   // Encaustic tile
-    case 65: { vec2 c; float g=grid(q,vec2(0.15,0.15),c); vec3 tc=vec3(0.60,0.25,0.15)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.45,0.42,0.38)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.1*step(0.0,g); gloss=15; } break;   // Quarry tile
-    case 66: { vec2 c; float g=grid(q,vec2(0.3,0.3),c); vec3 tc=vec3(0.25,0.27,0.30)*(0.85+0.3*hash2(c)); tc*=0.85+0.25*vnoise(q*vec2(5.0,30.0)); albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.3*step(0.0,g); gloss=30; } break;   // Slate tile
-    case 67: { vec2 c; float g=grid(q,vec2(0.4,0.4),c); vec3 tc=vec3(0.84,0.76,0.62)*(0.925+0.15*hash2(c)); tc*=1.0-0.4*smoothstep(0.62,0.7,vnoise(vec2(q.x*8.0,q.y*25.0))); albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.2*step(0.0,g); gloss=30; } break;   // Travertine tile
-    case 68: { vec2 c; float g=grid(q,vec2(0.03,0.03),c); vec3 tc=vec3(0.60,0.50,0.40)*(0.55+0.9*hash2(c));  albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Mosaic speckle
-    case 69: { vec2 c; float g=grid(q,vec2(0.15,0.15),c); vec3 tc=vec3(0.70,0.88,0.78)*(0.96+0.08*hash2(c)); tc=abs(fract(q.y/1.2)-0.5)<0.06?vec3(0.05):tc; albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Bathroom mint
-    case 70: { vec2 c; float g=grid(q,vec2(0.5,0.5),c); vec3 tc=vec3(0.10,0.10,0.11)*(0.95+0.1*hash2(c)); tc=mix(tc,vec3(0.8,0.2,0.2),step(0.97,hash2(floor(q*120.0)))); albedo=mix(lin(vec3(0.03,0.03,0.03)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.05*step(0.0,g); gloss=10; } break;   // Gym rubber tile
-    case 71: { vec2 c; float g=grid(q,vec2(0.2,0.2),c); vec3 tc=vec3(0.75,0.85,0.85)*(0.985+0.03*hash2(c));  albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Hospital tile
-    case 72: { vec2 c; float g=grid(q,vec2(0.1,0.1),c); vec3 tc=vec3(0.85,0.83,0.78)*(0.96+0.08*hash2(c)); float k=mod(c.x+c.y*2.0,4.0); tc=k<1.0?vec3(0.08):k<2.0?vec3(0.6,0.2,0.15):tc; albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.3*step(0.0,g); gloss=40; } break;   // Victorian border
-    case 73: { vec2 c; float g=grid(q,vec2(0.15,0.15),c); vec3 tc=vec3(0.88,0.84,0.72)*(0.96+0.08*hash2(c)); vec3 cw=cells(q*30.0); tc*=1.0-0.4*(1.0-smoothstep(0.0,0.02,cw.y-cw.x)); albedo=mix(lin(vec3(0.55,0.55,0.53)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=0.6*step(0.0,g); gloss=90; } break;   // Crackle glaze tile
-    case 74: { vec2 c; float g=grid(q,vec2(0.1,0.1),c); vec3 tc=vec3(0.75,0.77,0.80)*(0.975+0.05*hash2(c));  albedo=mix(lin(vec3(0.20,0.20,0.20)),lin(tc)*(0.97+0.03*vnoise(q*20.0)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); spec=1*step(0.0,g); gloss=200; } break;   // Mirror tile
-    case 75: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.82,0.76,0.64)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.003-0.5*max(0.006,aa),0.003+0.5*max(0.006,aa),g)); } break;   // Limestone ashlar
-    case 76: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.78,0.60,0.42)*(0.9+0.2*hash2(c)); sc*=0.92+0.1*sin(q.y*40.0+fbm(q*2.0)*4.0); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Sandstone ashlar
-    case 77: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.60,0.30,0.22)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Red sandstone
-    case 78: { vec2 c; float g=bond(q,vec2(0.9,0.45),c); vec3 sc=vec3(0.55,0.54,0.53)*(0.9+0.2*hash2(c)); sc*=0.8+0.35*hash2(floor(q*90.0)); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Granite blocks
-    case 79: { vec2 c; float g=bond(q,vec2(0.9,0.45),c); vec3 sc=vec3(0.72,0.52,0.48)*(0.9+0.2*hash2(c)); sc*=0.8+0.35*hash2(floor(q*90.0)); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Pink granite
-    case 80: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.18,0.18,0.19)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); } break;   // Black basalt blocks
-    case 81: { float rh=0.3; float row=floor(q.y/rh); float bh=rh*(0.5+0.5*step(0.5,hash2(vec2(row,1.0)))); float y0=row*rh; float sub=floor((q.y-y0)/bh); float L=0.6*(0.6+0.8*hash2(vec2(row,sub+3.0))); float u=q.x+hash2(vec2(row,sub))*L; vec2 c=vec2(floor(u/L),row*3.0+sub); float fy=mod(q.y-y0,bh); float g=min(min(mod(u,L),L-mod(u,L)),min(fy,bh-fy)); vec3 sc=vec3(0.62,0.60,0.56)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Random ashlar
-    case 82: { float rh=0.3; float row=floor(q.y/rh); float bh=rh*(0.5+0.5*step(0.5,hash2(vec2(row,1.0)))); float y0=row*rh; float sub=floor((q.y-y0)/bh); float L=0.6*(0.6+0.8*hash2(vec2(row,sub+3.0))); float u=q.x+hash2(vec2(row,sub))*L; vec2 c=vec2(floor(u/L),row*3.0+sub); float fy=mod(q.y-y0,bh); float g=min(min(mod(u,L),L-mod(u,L)),min(fy,bh-fy)); vec3 sc=vec3(0.70,0.62,0.50)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.35*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Rustic random ashlar
-    case 83: { vec3 w=cells(q/0.35); vec2 c=vec2(w.z*91.0,0.0); float g=(w.y-w.x)*0.35*0.5; vec3 sc=vec3(0.55,0.52,0.48)*(0.75+0.5*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.01-0.5*max(0.02,aa),0.01+0.5*max(0.02,aa),g)); } break;   // Rubble wall
-    case 84: { vec2 c; float g=bond(q,vec2(0.45,0.1),c); vec3 sc=vec3(0.55,0.53,0.50)*(0.75+0.5*hash2(c)); sc*=0.8+0.3*fbm(q*vec2(2.0,8.0)); albedo=mix(lin(vec3(0.06,0.06,0.06))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.004-0.5*max(0.008,aa),0.004+0.5*max(0.008,aa),g)); } break;   // Dry-stone wall
-    case 85: { vec3 w=cells(q/0.12); vec2 c=vec2(w.z*91.0,0.0); float g=(w.y-w.x)*0.12*0.5; vec3 sc=vec3(0.15,0.15,0.17)*(0.75+0.5*hash2(c)); sc=fract(q.x/3.0)<0.15?vec3(0.6,0.28,0.18):sc; albedo=mix(lin(vec3(0.80,0.78,0.72))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Flint and brick
-    case 86: { vec2 c; float g=bond(q,vec2(1,0.5),c); vec3 sc=vec3(0.75,0.70,0.62)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.18,0.17,0.16))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.025-0.5*max(0.05,aa),0.025+0.5*max(0.05,aa),g)); } break;   // Rusticated blocks
-    case 87: { vec2 c; float g=bond(q,vec2(0.8,0.4),c); vec3 sc=vec3(0.75,0.70,0.60)*(0.9+0.2*hash2(c)); sc*=1.0-0.4*smoothstep(0.03,0.0,abs(fract(vnoise(q*6.0)*4.0)-0.5)-0.2); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Vermiculated stone
-    case 88: { vec2 c; float g=bond(q,vec2(1.2,0.6),c); vec3 sc=vec3(0.52,0.51,0.49)*(0.9+0.2*hash2(c)); sc=mix(sc,vec3(0.75,0.6,0.25),0.5*step(0.98,hash2(floor(q*14.0)))); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.3*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Castle stone
-    case 89: { vec2 c; float g=bond(q,vec2(1,0.5),c); vec3 sc=vec3(0.80,0.66,0.42)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.01-0.5*max(0.02,aa),0.01+0.5*max(0.02,aa),g)); } break;   // Temple stone
-    case 90: { vec2 c; float g=bond(q,vec2(0.8,0.4),c); vec3 sc=vec3(0.90,0.89,0.87)*(0.9+0.2*hash2(c)); sc*=1.0-0.25*smoothstep(0.02,0.0,abs(fbm(q*1.5+c)-0.5)); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.002-0.5*max(0.004,aa),0.002+0.5*max(0.004,aa),g)); } break;   // Marble blocks
-    case 91: { vec3 w=cells(q/0.5); vec2 c=vec2(w.z*91.0,0.0); float g=(w.y-w.x)*0.5*0.5; vec3 sc=vec3(0.62,0.60,0.55)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.15,0.15,0.15))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Polygonal stone
-    case 92: { vec2 c; float g=bond(q,vec2(0.15,0.12),c); vec3 sc=vec3(0.50,0.49,0.48)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.30,0.28,0.25))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Cobbled setts
-    case 93: { vec2 c; float g=grid(vec2(q.x+q.y,q.x-q.y)*0.7071,vec2(0.1,0.1),c); vec3 sc=vec3(0.52,0.50,0.48)*(0.9+0.2*hash2(c));  albedo=mix(lin(vec3(0.25,0.23,0.20))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.006-0.5*max(0.012,aa),0.006+0.5*max(0.012,aa),g)); } break;   // Diagonal setts
-    case 94: { vec3 w=cells(q/0.9); vec2 c=vec2(w.z*91.0,0.0); float g=(w.y-w.x)*0.9*0.5; vec3 sc=vec3(0.58,0.55,0.50)*(0.85+0.3*hash2(c));  albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.0075-0.5*max(0.015,aa),0.0075+0.5*max(0.015,aa),g)); } break;   // Flagstone paving
-    case 95: { vec2 c; float g=bond(q,vec2(0.5,0.06),c); vec3 sc=vec3(0.25,0.27,0.30)*(0.9+0.2*hash2(c)); sc*=0.85+0.25*vnoise(q*vec2(4.0,30.0)); albedo=mix(lin(vec3(0.08,0.08,0.09))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.0015-0.5*max(0.003,aa),0.0015+0.5*max(0.003,aa),g)); } break;   // Slate cladding
-    case 96: { vec3 w=cells(q/0.18); vec2 c=vec2(w.z*91.0,0.0); float g=(w.y-w.x)*0.18*0.5; vec3 sc=vec3(0.55,0.53,0.50)*(0.7+0.6*hash2(c)); sc*=1.1-0.6*(1.0-smoothstep(0.0,0.3,g/0.09)); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.015-0.5*max(0.03,aa),0.015+0.5*max(0.03,aa),g)); } break;   // River stone wall
-    case 97: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.18,0.22,0.20)*(0.9+0.2*hash2(c)); sc*=0.8+0.5*step(0.97,hash2(floor(q*90.0))); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Gabbro blocks
-    case 98: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.80,0.74,0.55)*(0.9+0.2*hash2(c)); vec3 tw=cells(q*25.0); sc*=1.0-0.35*smoothstep(0.2,0.05,tw.x); albedo=mix(lin(vec3(0.55,0.53,0.50))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.005-0.5*max(0.01,aa),0.005+0.5*max(0.01,aa),g)); } break;   // Tufa blocks
-    case 99: { vec2 c; float g=bond(q,vec2(0.6,0.3),c); vec3 sc=vec3(0.55,0.54,0.50)*(0.9+0.2*hash2(c)); sc=mix(sc,vec3(0.25,0.4,0.12),0.6*smoothstep(0.55,0.75,fbm(q*2.0))); albedo=mix(lin(vec3(0.25,0.38,0.15))*(0.8+0.3*hash2(floor(q*70.0))),lin(sc)*(0.85+0.2*fbm(q*4.0+c)),smoothstep(0.01-0.5*max(0.02,aa),0.01+0.5*max(0.02,aa),g)); } break;   // Mossy stone blocks
-    }
-}
+// @LOOKS@: Renderer::worldLooks puts blockLook() here, with the looks of the materials the map uses
 // Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
 // one breaks out isn't drawn. The same test as Map's holeTakes. Only the holes listed in the fragment's cell of a coarse
 // xz grid are tested (uHoleCells: start, count into uHoleList), so a pixel pays for the holes near it, not for every
@@ -464,8 +356,8 @@ void main() {
         float row = floor(q.y / 0.25), x = q.x / 0.3 + 0.5 * mod(row, 2.0);
         float curve = sin(fract(x) * 3.1416), f = fract(q.y / 0.25);
         albedo = lin(vec3(0.75, 0.38, 0.2) * (0.85 + 0.2 * hash2(vec2(floor(x), row)))) * (0.55 + 0.5 * curve) * mix(0.5, 1.0, smoothstep(0.0, 0.15, f));
-    } else if (mat >= 39) {   // the 100 brick / concrete / tile / stone looks
-        blockLook(mat - 39, q, albedo, spec, gloss);
+    } else if (mat >= 39) {   // the surface looks (surface_looks.h)
+        blockLook(mat - 39, q, albedo, spec, gloss, emit);
     } else {   // diamond plate: grey metal with raised diamonds (lit on one side, shadowed on the other), in rows offset
         vec2 r = vec2(q.x + q.y, q.x - q.y) * 2.5;
         vec2 cell = floor(r), f = fract(r) - 0.5;
@@ -753,6 +645,52 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMapMaterials - kMatBlocks, "a look per material from kMatBlocks on");
+
+// The world shader's blockLook(), with only the looks of the materials marked in `used` (by material; null: all of
+// them, for the editor's swatches): a map uses a handful of the 400+, and a shader carrying all of them would cost
+// every pixel (registers, code size) and a long compile. Switches of at most 50 cases (one long chain loses cases on
+// some drivers); a material left out keeps the colour main() gave it.
+static std::string worldLooks(const std::vector<bool>* used) {
+    std::string s = "void blockLook(int k, vec2 q, inout vec3 albedo, inout float spec, inout float gloss, inout vec3 emit) {\n"
+                    "    float aa = 1.5 * footprint(q); vec3 an = abs(vN);\n";
+    std::vector<int> ks;
+    for (int k = 0; k < kMapMaterials - kMatBlocks; k++) if (!used || (*used)[(size_t)(kMatBlocks + k)]) ks.push_back(k);
+    for (size_t i = 0; i < ks.size(); i += 50) {
+        const size_t end = std::min(ks.size(), i + 50);
+        s += std::string(i ? "    else if" : "    if") + " (k <= " + std::to_string(ks[end - 1]) + ") switch (k) {\n";
+        for (size_t j = i; j < end; j++) s += "    case " + std::to_string(ks[j]) + ": { " + kSurfaceLooks[ks[j]] + " } break;\n";
+        s += "    }\n";
+    }
+    return s + "}\n";
+}
+
+unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err) {
+    std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
+    const size_t at = fs.find("// @LOOKS@");
+    fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
+    return compile(kWorldVS, fs.c_str(), err);
+}
+
+// A new map's world: its world shader gets the looks of the materials in it (only when they changed: a compile is a
+// hitch, here while the map loads anyway)
+void Renderer::setWorldLooks(const BakedWorld& bw) {
+    std::vector<bool> used((size_t)kMapMaterials, false);
+    for (const WorldVertex& v : bw.verts) {
+        const int m = (int)(v.material + 0.5f);
+        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)m] = true;
+    }
+    if (used == worldUsed_ && worldProg_) return;
+    QZONE("world shader");
+    std::string err;
+    const unsigned p = compileWorld(&used, &err);
+    if (!p) { fprintf(stderr, "world shader: %s\n", err.c_str()); return; }   // (keeps the last one: some looks missing)
+    glDeleteProgram(worldProg_);
+    worldProg_ = p;
+    worldUsed_ = used;
+    initWorldUniforms();
+    glUseProgram(0);
+}
 unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
     auto sh = [&](GLenum type, const char* src) -> unsigned {
         unsigned s = glCreateShader(type);
@@ -787,6 +725,35 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
     return p;
 }
 
+// The world program's uniform locations, and the values that never change (init; again after setWorldLooks builds a new
+// one: the per-frame ones are set again by the next frame, the holes' here)
+void Renderer::initWorldUniforms() {
+    glUseProgram(worldProg_);
+    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
+               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
+               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
+               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
+               U(worldProg_, "uTime"), U(worldProg_, "uSunDir")};
+    uHoleCount_ = U(worldProg_, "uHoleCount");
+    uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
+    glUniform1i(U(worldProg_, "uHoles"), 2);
+    glUniform1i(U(worldProg_, "uHoleCells"), 3);
+    glUniform1i(U(worldProg_, "uHoleList"), 4);
+    glUniform1i(uHoleCount_, 0);
+    glUniform1i(U(worldProg_, "uLightmap"), 0);
+    glUniform1i(U(worldProg_, "uShadow"), 1);
+    glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
+    setVec3(U(worldProg_, "uSunColor"), Vec3(0.78f, 0.75f, 0.70f));
+    setVec3(U(worldProg_, "uSkyColor"), Vec3(0.42f, 0.45f, 0.52f));
+    glUniform1f(U(worldProg_, "uFogDensity"), 0.0035f);
+    glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
+    uWorldPx_ = U(worldProg_, "uPxScale");
+    glUniform1f(uWorldPx_, pxScale_);
+    glUniform1i(uHoleCount_, holeCount_);
+    glUniform4fv(uHoleGrid_, 1, holeGrid_);
+    glUniform1i(uHoleGridH_, holeGridH_);
+}
+
 bool Renderer::init(int shadowRes, std::string* err) {
     QGPUCONTEXT();
     {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13); the shadow map too (a size past it
@@ -796,9 +763,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
         if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
         if (maxTex > 0 && shadowRes > maxTex) shadowRes = (int)maxTex;
     }
-    std::string worldFS = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;
-    worldProg_ = compile(kWorldVS, worldFS.c_str(), err);
+    worldProg_ = compileWorld(&worldUsed_, err);   // (no looks yet: a map's world brings its own, setWorldLooks)
     dynProg_ = compile(kDynVS, dynFS.c_str(), err);
     flatProg_ = compile(kFlatVS, kFlatFS, err);
     shadowProg_ = compile(kShadowVS, kShadowFS, err);
@@ -888,25 +854,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     const Vec3 sunColor = {0.78f, 0.75f, 0.70f};
     const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
     const float fog = 0.0035f;
-    glUseProgram(worldProg_);
-    uWorld_ = {U(worldProg_, "uViewProj"), U(worldProg_, "uShadowMat"), U(worldProg_, "uShadowOn"), U(worldProg_, "uCasterRect"),
-               U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
-               U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
-               U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime"), U(worldProg_, "uSunDir")};
-    uHoleCount_ = U(worldProg_, "uHoleCount");
-    uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
-    glUniform1i(U(worldProg_, "uHoles"), 2);
-    glUniform1i(U(worldProg_, "uHoleCells"), 3);
-    glUniform1i(U(worldProg_, "uHoleList"), 4);
-    glUniform1i(uHoleCount_, 0);
-    glUniform1i(U(worldProg_, "uLightmap"), 0);
-    glUniform1i(U(worldProg_, "uShadow"), 1);
-    glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
-    setVec3(U(worldProg_, "uSunColor"), sunColor);
-    setVec3(U(worldProg_, "uSkyColor"), skyLight);
-    glUniform1f(U(worldProg_, "uFogDensity"), fog);
-    glUniform1f(U(worldProg_, "uPxScale"), 1.0f);
+    initWorldUniforms();
     glUseProgram(dynProg_);
     uDyn_ = {U(dynProg_, "uViewProj"), U(dynProg_, "uShadowMat"), U(dynProg_, "uShadowOn"), U(dynProg_, "uCasterRect"),
              U(dynProg_, "uCamPos"), U(dynProg_, "uFogColor"), U(dynProg_, "uBright"), U(dynProg_, "uReceiveShadow"), U(dynProg_, "uSunDir")};
@@ -916,7 +864,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     setVec3(U(dynProg_, "uSkyColor"), skyLight);
     glUniform1f(U(dynProg_, "uFogDensity"), fog);
     glUniform1f(U(dynProg_, "uPxScale"), 1.0f);
-    uWorldPx_ = U(worldProg_, "uPxScale"); uDynPx_ = U(dynProg_, "uPxScale");
+    uDynPx_ = U(dynProg_, "uPxScale");
     pxScale_ = 1.0f;
     uSky_ = {U(skyProg_, "uFwd"), U(skyProg_, "uRight"), U(skyProg_, "uUp"), U(skyProg_, "uTan"), U(skyProg_, "uSky"),
              U(skyProg_, "uSunDir"), U(skyProg_, "uBright")};
@@ -1062,7 +1010,8 @@ void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, W, H, GL_RG, GL_FLOAT, cells.data());
     tex(holeListTex_, 4, GL_R32F, kHoleListW, kHoleListMax / kHoleListW);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kHoleListW, rows, GL_RED, GL_FLOAT, list.data());
-    glUniform4f(uHoleGrid_, gx0, gz0, 1.0f / cell, (float)W);
+    holeGrid_[0] = gx0; holeGrid_[1] = gz0; holeGrid_[2] = 1.0f / cell; holeGrid_[3] = (float)W; holeGridH_ = H;
+    glUniform4fv(uHoleGrid_, 1, holeGrid_);
     glUniform1i(uHoleGridH_, H);
     glActiveTexture(GL_TEXTURE0);
     glUseProgram(0);
@@ -1071,6 +1020,7 @@ void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
 void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     QZONE("world upload");
     BakedWorld& bw = w.bw;
+    setWorldLooks(bw);
     chunks_.swap(w.chunks);
     drawFirst_.reserve(chunks_.size());
     drawCount_.reserve(chunks_.size());
@@ -1949,7 +1899,7 @@ void Renderer::prepare2D() {
     uiUploaded_ = ui_.size();
 }
 
-constexpr int kSwatchPx = 96, kSwatchCols = 8, kSwatchRows = (kMapMaterials + kSwatchCols - 1) / kSwatchCols;
+constexpr int kSwatchPx = 128, kSwatchCols = 16, kSwatchRows = (kMapMaterials + kSwatchCols - 1) / kSwatchCols;
 
 void Renderer::swatch(float x, float y, float w, float h, int material) {
     if (!validMapMaterial(material)) return;
@@ -2005,6 +1955,18 @@ void Renderer::buildSwatches() {
         glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
         glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
     }
+    // (drawn by a world program with every look, built the first time: the map's own has only the map's looks; its
+    // uniform locations stand in for the map's while drawing, the map's program untouched)
+    const unsigned mapProg = worldProg_;
+    const auto mapU = uWorld_;
+    const GLint mapHoleCount = uHoleCount_, mapHoleGrid = uHoleGrid_, mapHoleGridH = uHoleGridH_, mapPx = uWorldPx_;
+    if (!swatchProg_) {
+        std::string err;
+        swatchProg_ = compileWorld(nullptr, &err);
+        if (!swatchProg_) { fprintf(stderr, "swatch shader: %s\n", err.c_str()); return; }
+    }
+    worldProg_ = swatchProg_;
+    initWorldUniforms();
     glBindFramebuffer(GL_FRAMEBUFFER, swatchFbo_);
     glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
     glUseProgram(worldProg_);
@@ -2027,10 +1989,9 @@ void Renderer::buildSwatches() {
         glViewport((m % kSwatchCols) * kSwatchPx, (m / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
         glDrawArrays(GL_TRIANGLES, m * 6, 6);
     }
-    // (put back what this frame's scene set: prepareScene sets the rest again next frame)
-    glUniform1i(uHoleCount_, holeCount_);
-    glUniform1f(uWorldPx_, pxScale_);
-    setVec3(uWorld_.sunDir, sunDir_);
+    worldProg_ = mapProg; uWorld_ = mapU;
+    uHoleCount_ = mapHoleCount; uHoleGrid_ = mapHoleGrid; uHoleGridH_ = mapHoleGridH; uWorldPx_ = mapPx;
+    glUseProgram(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 

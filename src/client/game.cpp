@@ -895,6 +895,7 @@ void Game::onResize(int w, int h) { r_.resize(w, h); mouseHeld_ = false; vmStale
 void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
+    if (screen_ == Screen::Editor && edMatMenu_) { edMatScroll_ = std::max(0, edMatScroll_ - (dy > 0 ? 1 : -1)); return; }   // (a row a notch; clamped when drawn)
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
     if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
