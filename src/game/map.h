@@ -36,6 +36,7 @@ struct Brush {
     // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
     // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
     bool gone = false;
+    int origin = -1;   // in play only: a hole's piece, the wall it was cut from (its index; -1 not a piece)
 };
 enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2, BRUSH_TETRA = 3 };
 constexpr int kSlopeUps = 6;
@@ -382,6 +383,7 @@ constexpr int kMatGlass = 21, kMatAsphalt = 22, kMatMud = 23, kMatCobble = 24, k
 // brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
 constexpr float kBreakableThick = 0.125f;
 inline bool holeMaterial(int m) { return m == kMatBrick || m == kMatCobble; }
+constexpr float kCrumble = 0.8f;   // blown away past this share of its face: the rest of the wall falls too
 constexpr int kMaxHoles = 512;     // per map at once (the world shader's table); past it, blasts leave walls as they are
 constexpr float kHoleSize = 2.5f;   // a direct hit's hole, metres across (owner, 2026-10-28)
 // a hole's cells (u along the wall, v up it; a floor: x and z): the world shader's bricks and stones, rows offset half a cell
@@ -593,6 +595,7 @@ struct Map {
     // resetDestruction undoes it all (each round, a map restart, an edit). Never saved: a map's text stays the map's.
     // A hole: its centre (u, v) on the wall and half size r, the wall's thin axis and its extent along it, and the cells
     // (bricks, stones) it breaks out (holeTakes; the world shader draws the same).
+    // r < 0: the whole wall crumbled (kCrumble): a rectangle, half sizes cw x ch round (u, v).
     struct Hole { float u, v, r, cw, ch; int axis; float lo, hi; };
     std::vector<Hole> holes;
     std::vector<uint32_t> glass;          // the glass brushes (drawn see-through each frame; a gone one isn't)
@@ -602,8 +605,9 @@ struct Map {
     int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose box (grown by eps) holds p, -1 none
     // Blows a hole in every thin (kBreakableThick) brick / cobblestone box near `at`: kHoleSize across where it meets the
     // wall, less the distance from it to the wall's plane (owner: "if a sticky blows up 1m away ... a 1.5m hole").
-    // Returns how many boxes it cut.
-    int punchHole(const Vec3& at);
+    // Returns how many boxes it cut. A wall with less than 1 - kCrumble of it left comes down whole (owner, 2026-10-29:
+    // "when 80% of a destructable wall gets broken the whole thing should disapear"); *crumbled gets those walls' boxes.
+    int punchHole(const Vec3& at, std::vector<AABB>* crumbled = nullptr);
     void resetDestruction();
 
     bool supportsMode(int mode) const;  // allowed and has what the mode needs

@@ -855,7 +855,11 @@ void NetClient::applyDestructEvent(const GameEvent& e, bool fx) {
     DestructEv d;
     if (!readDestructEvent(e, &d)) return;
     if (d.kind == DESTRUCT_HOLE) {
-        if (map_.punchHole(d.at) > 0 && fx) glassFx_.push_back({AABB(), 0, d.at, {}, 0, true});
+        crumbled_.clear();
+        if (map_.punchHole(d.at, &crumbled_) > 0 && fx) {
+            glassFx_.push_back({AABB(), 0, d.at, {}, 0, true});
+            for (const AABB& w : crumbled_) glassFx_.push_back({w, 1, d.at, {}, 0, true});   // (a whole wall coming down)
+        }
         return;
     }
     for (size_t k = 0; k < pendingGlass_.size(); k++)   // our own, predicted: already broken and shown

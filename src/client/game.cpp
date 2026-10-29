@@ -7714,6 +7714,22 @@ void Game::updateDestruction(const Map& map) {
     // what broke since the last frame: shards, chunks, a sound
     net_.takeGlassFx(glassFxScratch_);
     for (const NetClient::GlassFx& fx : glassFxScratch_) {
+        if (fx.hole && fx.how == 1) {   // a whole wall coming down: chunks all over it, dropping
+            uint32_t sd = ((uint32_t)(fx.pane.mn.x * 97.0f) * 2654435761u ^ (uint32_t)(fx.pane.mn.z * 53.0f)) | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
+            const int n = std::clamp((int)(area * 25.0f), 40, 400);
+            for (int i = 0; i < n && visShards_.size() < 3000; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                Vec3 v = p - fx.at;
+                const float l = length(v);
+                v = (l > 1e-3f ? v / l : Vec3(0, 1, 0)) * (1.0f + 2.0f * glassRandF(sd)) + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd), glassRandF(sd) - 0.5f);
+                const float sh = 0.8f + 0.3f * glassRandF(sd);
+                visShards_.push_back({p, v, 0.04f + 0.05f * glassRandF(sd), Vec3(0.55f, 0.22f, 0.15f) * sh, false, false, time_});
+            }
+            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.6f, 0.6f);
+            continue;
+        }
         if (fx.hole) {   // a hole: brick-red chunks thrown out of it
             uint32_t sd = ((uint32_t)(fx.at.x * 131.0f) * 2654435761u ^ (uint32_t)(fx.at.z * 71.0f)) | 1u;
             for (int i = 0; i < 40 && visShards_.size() < 3000; i++) {
