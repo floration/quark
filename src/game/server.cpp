@@ -2143,6 +2143,10 @@ bool Server::takeAcid(int id) {
     p.move.acidTaken = 0;
     if (share > 0) { if (p.acidSince < 0) p.acidSince = time(); }
     else if (p.move.acidOutMs >= kAcidRearmMs) p.acidSince = -1;   // (out long enough that the next touch is a new contact)
+    if (share < 0 && p.alive) {   // a healing liquid (hot spring): up to full health
+        p.health = std::min(lifeMaxHealth(), p.health - share * lifeMaxHealth());
+        return false;
+    }
     if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
     p.health -= share * lifeMaxHealth();
     p.lastDamagedAt = time();
@@ -2327,7 +2331,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     }
     if (p.move.glassBrush >= 0) { glassFromMove(id); if (!p.alive) return; }   // (dashed / pulled through a pane)
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
-    if ((p.move.acidTaken > 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
+    if ((p.move.acidTaken != 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
     // it's the only weapon this mode allows it stays in hand, unusable, until it's back.

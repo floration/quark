@@ -6,7 +6,7 @@ from collections import Counter
 OUT = None   # where save() writes (make_maps.py sets it)
 OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets", "overrides", "maps")
 MADE = []
-MAP_FORMAT = 7   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
+MAP_FORMAT = 8   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
 
 class M:
     def __init__(s, title, mode, sun=(0.45, 1.0, 0.3)):

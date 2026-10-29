@@ -370,8 +370,10 @@ static void upgradeMap5to6(std::vector<std::string>& lines) {
 // 6 -> 7: the 333 new surface materials (139-471: new keywords only, so an older reader would fail on them; a format 6
 // map has none, nothing to change)
 static void upgradeMap6to7(std::vector<std::string>&) {}
+// 7 -> 8: the 25 liquids (472-496: new keywords only)
+static void upgradeMap7to8(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -1352,9 +1354,18 @@ static void gridShape(const AABB& bounds, float& gx0, float& gz0, int& gw, int& 
     gh = std::max(1, (int)std::min(4096.0f, std::ceil((bounds.mx.z - gz0) / Map::kCell)));
 }
 
+void Map::rebuildFluids() {
+    lava.clear(); acid.clear(); liquids.clear();
+    for (auto& b : brushes) {
+        if (b.gone) continue;
+        if (lavaMaterial(b.material)) lava.push_back(b.box);
+        if (b.material == kMatAcid) acid.push_back(b.box);
+        if (liquidMaterial(b.material)) liquids.push_back({b.box, (uint16_t)(b.material - kMatLiquids)});
+    }
+}
+
 bool Map::buildGrid() {
-    lava.clear();   // (touch it and die)
-    acid.clear();   // (touch it and it hurts: pmove)
+    rebuildFluids();   // (lava: touch it and die; acid: touch it and it hurts; liquids: pmove)
     hasIce = hasRubber = hasGripMats = false;
     glass.clear(); windows.clear();
     for (size_t i = 0; i < brushes.size(); i++) {
@@ -1362,7 +1373,6 @@ bool Map::buildGrid() {
         else if (brushes[i].material == kMatGlass) windows.push_back((uint32_t)i);
     }
     for (auto& b : brushes) {
-        if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
         hasIce |= b.material == kMatIce;
         hasRubber |= b.material == kMatRubber;
         hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud;
@@ -1468,14 +1478,8 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         buildGrid();
         return false;
     }
-    if (old.material == 7 || (op != 2 && b.material == 7)) {
-        lava.clear();
-        for (auto& x : brushes) if (x.material == 7) lava.push_back(x.box);
-    }
-    if (old.material == kMatAcid || (op != 2 && b.material == kMatAcid)) {
-        acid.clear();
-        for (auto& x : brushes) if (x.material == kMatAcid) acid.push_back(x.box);
-    }
+    auto fluid = [](int m) { return lavaMaterial(m) || m == kMatAcid || liquidMaterial(m); };
+    if (fluid(old.material) || (op != 2 && fluid(b.material))) rebuildFluids();
     if (op != 2) {
         hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber;
         hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud;

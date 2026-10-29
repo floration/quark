@@ -1899,22 +1899,47 @@ void Renderer::prepare2D() {
     uiUploaded_ = ui_.size();
 }
 
-constexpr int kSwatchPx = 128, kSwatchCols = 16, kSwatchRows = (kMapMaterials + kSwatchCols - 1) / kSwatchCols;
+// The swatch atlas is a cache of slots (owner, 2026-10-29: the picker fills the screen, previews 200 across at 720p: 400 px
+// slots, sharp at 1440p), each holding one material, rendered when a frame first asks for it: a dozen or two show at
+// once, and an atlas of all 500 at that size would be 320 MB. The least recently drawn slot goes to the next one.
+constexpr int kSwatchPx = 400, kSwatchCols = 8, kSwatchRows = 5, kSwatchSlots = kSwatchCols * kSwatchRows;
 
 void Renderer::swatch(float x, float y, float w, float h, int material) {
     if (!validMapMaterial(material)) return;
-    const float u0 = (float)(material % kSwatchCols) / kSwatchCols, v0 = (float)(material / kSwatchCols) / kSwatchRows;
-    const float q[8] = {x, y, x + w, y + h, u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
-    swatchQuads_.insert(swatchQuads_.end(), q, q + 8);
+    const float q[5] = {x, y, x + w, y + h, (float)material};
+    swatchQuads_.insert(swatchQuads_.end(), q, q + 5);
 }
 
 // Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
-// of full sun and sky, no shadows or holes, into its cell of the atlas. Again only when the palette changes.
+// of full sun and sky, no shadows or holes, into its slot of the atlas: the ones this frame asks for that aren't there
+// yet (all again when the palette changes).
 void Renderer::buildSwatches() {
     const float key[13] = {baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z, metalColor.x, metalColor.y,
                            metalColor.z, glowColor.x, glowColor.y, glowColor.z, brightness};
-    if (swatchTex_ && std::equal(key, key + 13, swatchKey_)) return;
-    std::copy(key, key + 13, swatchKey_);
+    if (!swatchTex_ || !std::equal(key, key + 13, swatchKey_)) {
+        std::copy(key, key + 13, swatchKey_);
+        swatchSlotOf_.assign(kMapMaterials, -1);
+        swatchSlotMat_.assign(kSwatchSlots, -1);
+        swatchSlotUsed_.assign(kSwatchSlots, 0);
+    }
+    swatchFrame_++;
+    std::vector<int> todo;   // (the materials this frame wants that have no slot: each gets the oldest slot not drawn this frame)
+    for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
+        const int m = (int)swatchQuads_[i + 4];
+        int& slot = swatchSlotOf_[m];
+        if (slot < 0) {
+            int best = -1;
+            for (int k = 0; k < kSwatchSlots; k++)
+                if (swatchSlotUsed_[k] != swatchFrame_ && (best < 0 || swatchSlotUsed_[k] < swatchSlotUsed_[best])) best = k;
+            if (best < 0) continue;   // (more on screen than slots: the rest wait)
+            if (swatchSlotMat_[best] >= 0) swatchSlotOf_[swatchSlotMat_[best]] = -1;
+            swatchSlotMat_[best] = m;
+            slot = best;
+            todo.push_back(m);
+        }
+        swatchSlotUsed_[slot] = swatchFrame_;
+    }
+    if (todo.empty()) return;
     const int W = kSwatchPx * kSwatchCols, H = kSwatchPx * kSwatchRows;
     if (!swatchTex_) {
         glGenTextures(1, &swatchTex_);
@@ -1985,8 +2010,9 @@ void Renderer::buildSwatches() {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, swatchLm_);
     glBindVertexArray(swatchVao_);
-    for (int m = 0; m < kMapMaterials; m++) {
-        glViewport((m % kSwatchCols) * kSwatchPx, (m / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
+    for (int m : todo) {
+        const int k = swatchSlotOf_[m];
+        glViewport((k % kSwatchCols) * kSwatchPx, (k / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
         glDrawArrays(GL_TRIANGLES, m * 6, 6);
     }
     worldProg_ = mapProg; uWorld_ = mapU;
@@ -2047,9 +2073,13 @@ void Renderer::flush2D() {
             glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
         }
         std::vector<float> v;
-        v.reserve(swatchQuads_.size() / 8 * 24);
-        for (size_t i = 0; i + 8 <= swatchQuads_.size(); i += 8) {
-            const float* q = &swatchQuads_[i];
+        v.reserve(swatchQuads_.size() / 5 * 24);
+        for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
+            const float* r = &swatchQuads_[i];
+            const int k = swatchSlotOf_.empty() ? -1 : swatchSlotOf_[(int)r[4]];
+            if (k < 0) continue;
+            const float u0 = (float)(k % kSwatchCols) / kSwatchCols, v0 = (float)(k / kSwatchCols) / kSwatchRows;
+            const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
             const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
                                    {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
             for (auto& c : t) v.insert(v.end(), c, c + 4);

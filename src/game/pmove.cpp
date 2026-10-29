@@ -100,6 +100,8 @@ constexpr float kBounceMax = 8.0f;
 constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (adds to momentum)
 constexpr float kHookMaxSpeed = 24.0f;
 constexpr float kHookGravityScale = 0.5f;
+constexpr float kLiquidCurrentAccel = 60.0f;   // m/s2 a current (white rapids) pushes you toward its speed (against the floor's friction: about 2/3 of it standing still)
+constexpr float kLiquidBounce = 0.85f, kLiquidBounceFrom = 2.0f;   // pink slime: a fall faster than 2 m/s comes back at 85%
 constexpr float kHookRelease = 1.2f;    // auto-release this close to the anchor
 constexpr float kLadderSpeed = 6.75f;   // climbing speed (owner 1.17: 4.5 -> 6.75; Warfork 7.0, Cocaine Diesel 8.4)
 constexpr float kLadderSide = 4.5f;     // sideways speed on a ladder (owner 1.17: 3 -> 4.5)
@@ -275,10 +277,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         map.sweepAxis(playerBox(s.pos, crouched, scale), 1, -0.05f, &fb);
         if (fb) floorMat = fb->material;
     }
+    // the liquid you're in (map.h kLiquids), asked only on a map with liquids
+    const LiquidDef* liq = __builtin_expect(map.liquids.empty(), 1) ? nullptr : map.liquidAt(playerBox(s.pos, crouched, scale));
     // mud (owner, 2026-10-28: "sticky"): slow to run through and to jump out of; asphalt: a faster run
-    const float jumpSpeed = kJumpSpeed * mt.jump * (floorMat == kMatMud ? kMudJump : 1.0f);
+    const float jumpSpeed = kJumpSpeed * mt.jump * (floorMat == kMatMud ? kMudJump : 1.0f) * (liq ? liq->jump : 1.0f);
     float maxSpeed = (crouched ? (kCrouchSpeed * mt.m[MV_CROUCH_SPEED]) : kGroundSpeed) * mt.speed
-                   * (floorMat == kMatAsphalt ? kAsphaltSpeed : floorMat == kMatMud ? kMudSpeed : 1.0f);
+                   * (floorMat == kMatAsphalt ? kAsphaltSpeed : floorMat == kMatMud ? kMudSpeed : 1.0f) * (liq ? liq->speed : 1.0f);
     float wishSpeed = std::min(wishLen, 1.0f) * maxSpeed;
 
     const bool grappleOnly = (s.mods & MOVE_GRAPPLE_ONLY) != 0;
@@ -583,6 +587,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         else if (floorMat == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
         else if (floorMat == kMatAsphalt) { grip = kAsphaltGrip; push = kAsphaltGrip; }
         else if (floorMat == kMatMud) grip = kMudGrip;
+        if (liq && liq->grip < 1.0f) { grip *= liq->grip; push *= std::max(2.0f * liq->grip, 0.15f); }   // (oil: slippery)
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         if (sp > 0) {
             float drop = std::max(sp, (kStopSpeed * mt.m[MV_STOP_SPEED])) * (kFriction * mt.m[MV_FRICTION]) * grip * dt;
@@ -628,7 +633,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            gravDv = kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            gravDv = kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f)
+                   * (liq ? liq->gravity : 1.0f);
             s.vel.y -= gravDv;
         }
     }
@@ -778,6 +784,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const bool hopping = jumpHeld && !frozen && !grappleOnly;
         if (bounced || (hopping && (s.flags & MF_ONGROUND))) refillCharges(s, maxCharges, 1);
         else if (s.flags & MF_ONGROUND) refillCharges(s, maxCharges, maxCharges);
+    }
+    if (liq) {   // thick ones hold you back, a current carries you, slime throws a fall back up; damage / healing like acid
+        if (liq->drag > 0) s.vel = s.vel * std::exp(-liq->drag * dt);
+        if (liq->current > 0 && s.vel.x < liq->current) s.vel.x = std::min(liq->current, s.vel.x + kLiquidCurrentAccel * dt);
+        if (liq->bounce && s.vel.y < -kLiquidBounceFrom) s.vel.y = -s.vel.y * kLiquidBounce;
+        s.acidTaken += (liq->dmg - liq->heal) * dt;
     }
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;

@@ -477,6 +477,11 @@ private:
     void edTransform(int op);
     bool edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const;   // the map with the selection turned (false: nothing to turn)
     UiExp edTransformExp(int op);   // ROTATE / MIRROR's expectation: the map changes, or (it's symmetric that way) just the notice
+    enum { ED_SPLIT_X, ED_SPLIT_Y, ED_SPLIT_Z, ED_COMBINE, ED_SUBTRACT };
+    bool edBoxOpPlan(int op, std::vector<int>& gone, std::vector<Brush>& made, std::string& why) const;   // SPLIT / COMBINE / SUBTRACT on the selected boxes
+    UiExp edBoxOpExp(int op) const;
+    int edSplitOp() const;
+    void edBoxOp(int op);
     void edAdd(int kind, int variant);
     void edGroupSelection();            // GROUP: the selected boxes / groups become one custom group
     void edUngroup();                   // UNGROUP: the selected group's boxes become plain boxes

@@ -139,8 +139,8 @@ public:
     static FontAtlasLayout uiFontLayout();   // font_ui.h's layout, sized to Rubik's capitals
     void flush2D();
     // A material's swatch (the map editor's picker): a 2 m square of it drawn by the world shader in the current
-    // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). The swatches are rendered
-    // once into an atlas, again when the palette changes.
+    // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). Each is rendered into a slot
+    // of an atlas the first frame it's asked for (again when the palette changes).
     void swatch(float x, float y, float w, float h, int material);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
@@ -212,7 +212,10 @@ private:
     unsigned swatchTex_ = 0, swatchFbo_ = 0, swatchLm_ = 0, swatchVao_ = 0, swatchVbo_ = 0, imgProg_ = 0, imgVao_ = 0, imgVbo_ = 0;
     GLint uImgScreen_ = -1;
     float swatchKey_[13] = {};
-    std::vector<float> swatchQuads_;   // (this frame's: x0 y0 x1 y1 u0 v0 u1 v1 per quad)
+    std::vector<float> swatchQuads_;   // (this frame's: x0 y0 x1 y1 material per quad)
+    std::vector<int> swatchSlotOf_, swatchSlotMat_;   // (the atlas slot each material is in, -1 none; the material in each slot)
+    std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
+    unsigned swatchFrame_ = 0;
     void buildSwatches();
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;

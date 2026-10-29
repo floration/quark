@@ -660,6 +660,42 @@ static void testGrappleAgainstWall() {
     }
 }
 
+// Liquids (472-496, owner 2026-10-29): not solid; each moves you its own way in pmove's 1 ms steps (kLiquids), damage
+// and healing counted like acid, the killing ones are lava.
+static void testLiquids() {
+    printf("liquids: slower / slippery / current / bounce / heal / hurt / kill, walk-through\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -40 -1 -40 40 0 40\nhoney -30 0 -3 -20 1 3\noilslick -10 0 -3 0 1 3\nwhiterapids 10 0 -3 30 1 3\n"
+                  "pinkslime -30 0 10 -20 3 20\nhotspring 0 0 10 5 1 15\nplasmapool 10 0 10 15 1 15\nmoltengold 20 0 10 25 1 15\nspawn any 0 0 -20\n", &err));
+    CHECK(m.liquids.size() == 7 && m.lava.size() == 1 && !solidMaterial(kMatLiquids) && solidMaterial(kMatLiquids - 1));
+    CHECK(!m.boxSolid({{-26, 0.1f, -1}, {-24, 1.5f, 1}}));   // (you wade in)
+    auto run = [&](Vec3 at, int ms, int forward) {
+        MoveState s; s.flags = MF_ONGROUND; s.pos = at;
+        UserCmd c; c.msec = 8; c.forward = (int8_t)forward; c.yaw = 1.5708f;   // (yaw 90 deg: forward is -x)
+        for (int t = 0; t < ms; t += 8) pmove(s, c, m);
+        return s;
+    };
+    const MoveState dry = run({0, 0, -30}, 1000, 127), honey = run({-22, 0, 0}, 1000, 127);
+    printf("  run 1 s: dry %.2f m/s, honey %.2f m/s\n", length(dry.vel), length(honey.vel));
+    CHECK(length(honey.vel) < 0.6f * length(dry.vel));
+    {   // oil: let go at speed, you keep sliding far longer than on the floor
+        MoveState a = run({-1, 0, 0}, 500, 127), b = run({-1, 0, -30}, 500, 127);
+        a = [&] { MoveState s = a; UserCmd c; c.msec = 8; for (int t = 0; t < 300; t += 8) pmove(s, c, m); return s; }();
+        b = [&] { MoveState s = b; UserCmd c; c.msec = 8; for (int t = 0; t < 300; t += 8) pmove(s, c, m); return s; }();
+        CHECK(length(a.vel) > 2.0f * length(b.vel) + 0.5f);
+    }
+    { const MoveState r = run({12, 0, 0}, 1000, 0); printf("  rapids: x %.2f vx %.2f\n", r.pos.x, r.vel.x); CHECK(r.pos.x > 15.0f); }   // the rapids carry you along +x
+    {   // slime: a fall into it comes back up
+        MoveState s; s.pos = {-25, 2.9f, 15}; s.vel = {0, -8, 0};
+        UserCmd c; c.msec = 1; pmove(s, c, m);
+        CHECK(s.vel.y > 5.0f);
+    }
+    CHECK(run({2, 0, 12}, 1000, 0).acidTaken < -0.04f);   // hot spring: 5% healed a second
+    CHECK(std::fabs(run({12, 0, 12}, 1000, 0).acidTaken - 0.2f) < 0.01f);   // plasma: 20% a second
+    CHECK(m.inLava({{21, 0.1f, 11}, {22, 1, 12}}));   // molten gold kills
+}
+
 // Acid (map material 11): 10% of max health on contact, then 10% a second while touching it, counted in pmove's 1 ms
 // steps (the same at every tick rate, and the same on the client's prediction as on the server); a new contact only
 // after kAcidRearmMs fully out; on the wire while it runs (protocol 45); the server takes the health, pauses regen,
@@ -4880,7 +4916,7 @@ static void testMaterials() {
         std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
-        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k));
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k) == !liquidMaterial(k));   // (the liquids: you wade in)
         const std::string out = m.serialize();
         CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
@@ -4957,12 +4993,12 @@ static void testDestruction(uint16_t port) {
     printf("destruction: glass breaks, thin brick blows open, all of it comes back\n");
     {   // format 7: materials 139-471 by keyword (the first and the last), solid and plain; a format 6 file converts unchanged
         Map m;
-        CHECK(m.parse("version 7\nbox -20 -1 -20 20 0 20\ndirt 0 0 5 2 3 7\n" + std::string(kMapMaterialWords[kMapMaterials - 1]) + " 4 0 5 6 3 7\nspawn any 0 0 0\n"));
-        CHECK(m.brushes.size() == 3 && m.brushes[1].material == 139 && m.brushes[2].material == kMapMaterials - 1 && kMapMaterials == 472);
+        CHECK(m.parse("version 7\nbox -20 -1 -20 20 0 20\ndirt 0 0 5 2 3 7\n" + std::string(kMapMaterialWords[kMatLiquids - 1]) + " 4 0 5 6 3 7\nspawn any 0 0 0\n"));
+        CHECK(m.brushes.size() == 3 && m.brushes[1].material == 139 && m.brushes[2].material == kMatLiquids - 1 && kMatLiquids == 472);
         CHECK(m.warnings.empty() && solidMaterial(139) && !holeMaterial(139) && m.glass.empty());
         CHECK(m.raycastAny({1, 1.5f, 0}, {0, 0, 1}, 6.0f));
         std::string o;
-        CHECK(upgradeMapText("version 6\nbox 0 0 0 1 1 1\n", &o) && o == "version 7\nbox 0 0 0 1 1 1\n");
+        CHECK(upgradeMapText("version 6\nbox 0 0 0 1 1 1\n", &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nbox 0 0 0 1 1 1\n");
     }
     {   // format 6 (owner, 2026-10-29): plain brick, cobblestone and glass never break; the breakable ones do
         Map m;
@@ -9062,7 +9098,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
