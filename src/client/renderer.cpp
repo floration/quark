@@ -136,6 +136,24 @@ vec2 worley(vec2 p) {   // cells: the nearest and second-nearest feature points'
     }
     return sqrt(vec2(d1, d2));
 }
+// Cobblestone's cells: x the exact distance to the cell's border (the nearest point's cell against each neighbour's
+// bisector; F2 - F1 isn't a distance and smeared dark wedges out of every corner where three stones meet, which read as
+// gaps in the wall: owner, 2026-10-29), y a number per stone (its shade; it was per 1/3 m square, a checker on the stones)
+vec2 stones(vec2 p) {
+    vec2 i = floor(p), f = fract(p), mg = vec2(0.0), mr = vec2(0.0);
+    float md = 8.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 g = vec2(x, y), r = g + hash22(i + g) - f;
+        float d = dot(r, r);
+        if (d < md) { md = d; mr = r; mg = g; }
+    }
+    md = 8.0;
+    for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+        vec2 g = mg + vec2(x, y), r = g + hash22(i + g) - f, e = r - mr;
+        if (dot(e, e) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(e)));
+    }
+    return vec2(md, hash2(i + mg + 7.3));
+}
 // Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
 // one breaks out isn't drawn. The same test as Map's holeTakes. Only the holes listed in the fragment's cell of a coarse
 // xz grid are tested (uHoleCells: start, count into uHoleList), so a pixel pays for the holes near it, not for every
@@ -277,9 +295,8 @@ void main() {
         albedo = lin(mix(vec3(0.32, 0.22, 0.13), vec3(0.18, 0.12, 0.07), pud)) * (0.85 + 0.25 * fbm(q * 4.0));
         spec = 0.7 * pud; gloss = 80.0;
     } else if (mat == 24) {   // cobblestone: rounded grey stones in dark joints
-        vec2 w = worley(q * 3.0);
-        float edge = w.y - w.x;
-        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * hash2(floor(q * 3.0))), smoothstep(0.03, 0.12, edge))) * (0.9 + 0.15 * fbm(q * 8.0));
+        vec2 w = stones(q * 3.0);
+        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * w.y), smoothstep(0.015, 0.06, w.x))) * (0.9 + 0.15 * fbm(q * 8.0));
     } else if (mat == 25) {   // concrete: cast slabs 1.2 x 0.6 m with form-tie holes
         vec2 c = fract(q / vec2(1.2, 0.6));
         float seam = min(min(c.x, 1.0 - c.x) * 1.2, min(c.y, 1.0 - c.y) * 0.6), tie = length((fract(q / vec2(0.6, 0.3)) - 0.5) * vec2(0.6, 0.3));
