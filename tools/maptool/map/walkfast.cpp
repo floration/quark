@@ -208,7 +208,7 @@ void buildWalkGrid(WalkGrid& w, const Map& m, Json* laps) {
             int last = -1;
             bool had[2] = {false, false};
             for (float sd = kCol; sd <= kGap + 1e-3f; sd += kCol * 0.5f) {
-                float t = sd / kRun, arc = 7.34f * t - 11.0f * t * t;
+                float t = sd / kRun, arc = 7.67f * t - 12.0f * t * t;
                 float x = pa.x + dx * sd, z = pa.z + dz * sd, lo = pa.y + arc;
                 if (!w.clearAt(x, z, lo, lo + kHull)) break;
                 int i = (int)std::floor((x - x0) / kCol), k = (int)std::floor((z - z0) / kCol);

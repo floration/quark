@@ -654,10 +654,12 @@ private:
     float edBarTop_ = 0;      // the top of the editor's key bar (the 3D view's status line + key help): its dialogs centre over it
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
-    bool showPerf_ = false;
+    // F3 cycles (owner 2026-10-29): 1 the FPS line, 2 + ping / 3D size / server, 3 everything with the pipeline graph, 0 off.
+    // Only 3 runs the graph's and input-to-frame measuring (GPU timestamps): 1 and 2 cost just their text.
+    int perfStage_ = 0;
     bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
-    bool perfOn() const { return showPerf_ || perfMini_; }   // (the pipeline graph's measuring runs)
+    bool perfOn() const { return perfStage_ == 3 || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;
     std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
@@ -771,6 +773,8 @@ private:
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
     HudRect drawChatBox(float W, float H, float s, float ts, bool sample = false, bool draw = true);   // (the HUD's chat element)
+    void drawMenuChat(float W, float H, float s, float ts);
+    bool chatOverMenu_ = false;   // (drawChatBox over the settings menu: dark boxes)
     void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
     float drawVotePanel(float cx, float s, float ts, float y = -1);   // a running vote, its box from y (-1: 122 at 720p); returns where it ends
     void drawCrown(float x, float y, float w, int place, const char* letter = "");

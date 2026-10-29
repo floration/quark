@@ -164,7 +164,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "fontscan") return std::to_string(fontScans_);
     if (w == "devscan") return std::to_string(devScans_);
     if (w == "scores") return b(showScores_);
-    if (w == "perf") return b(showPerf_);
+    if (w == "perf") return b(perfStage_ != 0);
+    if (w == "perfstage") return std::to_string(perfStage_);
     if (w == "perfmini") return b(perfMini_);
     if (w == "spec") return std::to_string(specTarget_);
     if (w == "consolelog") return std::to_string(consoleLog_.size()) + (consoleLog_.empty() ? "" : consoleLog_.back());
@@ -189,7 +190,7 @@ void Game::uiTestActions() {
         if (int k = bound(A_CHAT)) ui_.keyAction("CHAT", k, 0, UiExp::nav("ingame/chat"));
         ui_.keyAction("CONSOLE (`)", GLFW_KEY_GRAVE_ACCENT, 0, UiExp::nav("ingame/console"));
         ui_.keyAction("SCORES (HOLD)", 0, 0, UiExp::state("scores", "1"), A_SCORES);
-        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perf"));
+        if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perfstage"));   // (F3 cycles 1, 2, 3, off: each press changes the stage)
         if (int k = bound(A_PERFMINI)) ui_.keyAction("LATENCY NUMBER", k, 0, UiExp::state("perfmini"));
         if (int k = bound(A_VOTEYES)) ui_.keyAction("VOTE YES", k, 0, UiExp::cmd("vote yes"));
         if (int k = bound(A_VOTENO)) ui_.keyAction("VOTE NO", k, 0, UiExp::cmd("vote no"));
@@ -590,7 +591,7 @@ private:
         g.edPrompt_ = false;
         g.error_.clear();
         g.testHeld_ = 0;
-        g.showPerf_ = g.perfMini_ = false;
+        g.perfStage_ = 0; g.perfMini_ = false;
         g.edGroupMenu_ = g.edExportAsk_ = false;
         g.edMatMenu_ = 0;
         g.edSel_ = Game::EdSel();

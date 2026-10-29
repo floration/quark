@@ -876,7 +876,7 @@ static void bombMove(Server& s, float dt) {
     constexpr float kBombIceFriction = 0.56f, kBombBounce = 0.85f, kBombRest = 0.3f;   // (per s; x the landing speed; m/s)
     for (float left = dt; left > 1e-6f && s.bombMoving_; left -= 0.001f) {
         const float h = std::min(left, 0.001f);
-        s.bombVel_.y -= 22.0f * h;   // (pmove's gravity)
+        s.bombVel_.y -= moveBaseGravity() * h;   // (pmove's gravity)
         Vec3 step = s.bombVel_ * h;
         for (int bounce = 0; bounce < 3; bounce++) {
             const float len = length(step);

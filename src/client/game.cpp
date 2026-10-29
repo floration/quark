@@ -594,7 +594,7 @@ bool Game::pressInput(int code) {
         return true;
     }
     const Binds& b = binds();
-    if (b.has(A_PERF, code)) { const bool was = perfOn(); showPerf_ = !showPerf_; if (!was) pipeReset(); return true; }
+    if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 4; if (!was && perfOn()) pipeReset(); return true; }
     if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
     if (b.has(A_SCREENSHOT, code)) {   // screenshots/<date>_<time>.png in your data folder (was screenshot_<n>.png in
         // the working directory with n from 0 each launch: the first one of every session overwrote the last session's)
@@ -616,14 +616,15 @@ bool Game::pressInput(int code) {
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
     if (b.has(A_QUIP, code) && !paused_) { net_.sendCommand("quip"); return true; }
-    if (paused_) return false;
-    if (b.has(A_CHAT, code)) {
+    if (paused_ && !settingsInGame_) return false;
+    if (b.has(A_CHAT, code)) {   // (in game, and over the settings menu: owner 2026-10-29)
         chatting_ = true;
         chatText_.clear();
         uiIn_.chars.clear();
         captureMouse(false);
         return true;
     }
+    if (paused_) return false;
     if (rpsPicking())   // the hide and seek tiebreak: slot keys 1 / 2 / 3 throw rock / paper / scissors
         for (int k = 0; k < 3; k++)
             if (b.has(slotAction(k), code)) {
@@ -718,7 +719,7 @@ void Game::onKey(int key, int action, int mods) {
         editorKey(key, mods); // presses and key repeat (hold an arrow to keep nudging)
         return;
     }
-    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_)) && !ui_.typing() &&
+    if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_)) && !ui_.typing() &&
         !ui_.popupOpen() && key != GLFW_KEY_ESCAPE && hudEditKey(key, action, mods)) return;   // (the on-screen HUD editor's keys)
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
@@ -901,7 +902,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
-    if (hudEdit_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
+    if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
         for (int k = 0; k < 3; k++) {
@@ -1436,7 +1437,7 @@ void Game::frame(double dt) {
         opts_.chatShot.clear(); opts_.consoleShot.clear();
     }
     if (opts_.textHeavy && screen_ == Screen::InGame) {
-        showPerf_ = true;
+        perfStage_ = 3;
         while (chatFeed_.size() < 8) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
     }
     if (opts_.feedShot && screen_ == Screen::InGame && killFeed_.empty()) {   // (kill feed and chat lines that stay)
@@ -1445,7 +1446,7 @@ void Game::frame(double dt) {
         addChat({"wraith: nice shot", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
         addChat({"ember: gg", Color{1, 1, 1, 1}, time_ + 1e9, 0, true});
     }
-    if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+    if (opts_.debugPerf) { perfStage_ = 3; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) {
         paused_ = true; settingsInGame_ = true;
@@ -1797,7 +1798,7 @@ void Game::frame(double dt) {
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (!hudBuilt_) {
-        if (showPerf_) drawPerf();
+        if (perfStage_) drawPerf();
         else if (perfMini_) drawPerfMini();
     }
     hudBuilt_ = false;
@@ -2687,7 +2688,7 @@ void Game::drawWorld(float alpha) {
     // aim from before the read, a sliver of a turn behind, like the name tags above (owner: the UI may lag the aim).
     if (bench_.phase != BenchRun::OFF) drawBenchOverlay((float)r_.width(), (float)r_.height(), r_.height() / 720.0f);   // (a camera: no HUD)
     else drawHud();
-    if (showPerf_) drawPerf();
+    if (perfStage_) drawPerf();
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
     hudBuilt_ = true;
@@ -3320,6 +3321,15 @@ Game::HudRect Game::drawHudKillFeed(float W, float H, float s, float top, bool s
 }
 
 // Chat (bottom left): the recent lines (typing: the whole recent history, on a dark box), the SAY line under them.
+// Settings in game: the chat over the menu (owner 2026-10-29: "show chat / allow chatting while in settings"), its
+// recent lines and the SAY line on dark boxes; Enter (the chat key) opens it there as in play.
+void Game::drawMenuChat(float W, float H, float s, float ts) {
+    if (!chatting_ && chatFeed_.empty()) return;
+    chatOverMenu_ = true;
+    drawChatBox(W, H, s, ts);
+    chatOverMenu_ = false;
+}
+
 Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sample, bool draw) {
     const int el = Settings::HUD_CHAT;
     const Settings::HudElem& e = cfg_.hud[el];
@@ -3351,7 +3361,9 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
     if (!draw) return {r.x, r.y, r.w, r.h};
     {
         AlphaScope a(r_, hudOpacity(el));
-        if (n > 0 && (chatting_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER))) hudBoxDraw(el, r, k, chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
+        // (over the settings menu: always on a dark box, the menu's text would show through)
+        if (n > 0 && (chatting_ || chatOverMenu_ || st.has(HudStyle::BACKGROUND) || st.has(HudStyle::BORDER)))
+            hudBoxDraw(el, r, k, chatOverMenu_ ? Color{0, 0, 0, 0.8f} : chatting_ ? Color{0, 0, 0, 0.4f} : Color{0, 0, 0, 0});
         for (int i = 0; i < n && i + 1 < L.count(); i++) {
             const Feed& c = *lines[i];
             const lay::Rect& q = L.rect(i + 1);
@@ -3367,6 +3379,7 @@ Game::HudRect Game::drawChatBox(float W, float H, float s, float ts0, bool sampl
         chatEdit(120, false);
         float lts = std::max(1.0f, std::round(ui_.textScale()));
         const float x = r.x + (st.has(HudStyle::PADDING) ? st.pad[0] * k : defPad[0]), y = r.y + r.h + 10 * k;
+        if (chatOverMenu_) r_.rect(r.x, y - 4 * k, std::max(r.w, r_.textWidth("SAY: " + chatText_, lts) + 16 * k), r_.textHeight(lts) + 8 * k, {0, 0, 0, 0.8f});
         ui_.label(x, y, "SAY: " + chatText_, kWhite);
         drawCaret(x, y, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
     }
@@ -3560,6 +3573,7 @@ void Game::drawHud() {
         }
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
+        drawMenuChat(W, H, s, ts);
         if (ui_.probing()) uiTestActions();
         return;
     }
@@ -3569,6 +3583,7 @@ void Game::drawHud() {
         r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, hudEdit_ ? 0.2f : 0.55f});   // (EDIT ON SCREEN: the world only lightly dimmed)
         drawNotices(12 * s, ts, s);
         drawPauseMenu(W * 0.5f, 96 * s);
+        drawMenuChat(W, H, s, ts);
         if (ui_.probing()) uiTestActions();
         return;
     }
@@ -6829,8 +6844,9 @@ void Game::drawPerf() {
     // ran under it): a line too long for it is closed up / shrunk to fit (Ui::label, cached), not cut
     const float s = r_.height() / 720.0f;
     float ts = std::max(1.0f, std::round(s * 2.0f));
-    const std::string* lines[5] = {&perfText_, &perfText2_, &latText_, &perfTick_, &perfPrio_};
-    const int nl = perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows only)
+    // (stage 1: the FPS line; 2: + worst frame / ping / 3D size and version / server; 3: all, the graph under them)
+    const std::string* lines[5] = {&perfText_, &perfText2_, &perfTick_, &latText_, &perfPrio_};
+    const int nl = perfStage_ == 1 ? 1 : perfStage_ == 2 ? 3 : perfPrio_.empty() ? 4 : 5;   // (the priority line: Windows only)
     const float lh = r_.textHeight(ts) + 4 * s, x = 24 * s, y = 8 * s, maxW = 372 * s - 16 * s;
     float lw[5], w = 0;
     for (int i = 0; i < nl; i++) w = std::max(w, lw[i] = r_.textWidth(*lines[i], ts));
@@ -6841,7 +6857,7 @@ void Game::drawPerf() {
         if (lw[i] <= maxW) r_.text(x + 8 * s, y + 4 * s + lh * i, ts, *lines[i], yc);
         else ui_.label(x + 8 * s, y + 4 * s + lh * i, *lines[i], yc, ts / ui_.textScale(), maxW);
     }
-    if (screen_ == Screen::InGame) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
+    if (perfStage_ == 3 && screen_ == Screen::InGame) drawPipeline(x, y + lh * nl + 16 * s, std::max(1.0f, ts * 0.85f));
 }
 
 // F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
@@ -7342,7 +7358,7 @@ void Game::afterSwap() {
         gpuCalibAt_ = now;
     }
     pipeCollect();
-    if (!showPerf_) return;   // (F4: the graph's marks only (and the clocks above); F3's input to frame latency below)
+    if (perfStage_ != 3) return;   // (F4 / F3's shorter stages: the graph's marks only (and the clocks above); F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.
