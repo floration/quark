@@ -741,6 +741,37 @@ static void testFeatureBlocks() {
     }
 }
 
+// A/D strafing at speed (owner, 2026-10-29): a perfect strafer (each ms the yaw that gains most) from 15 m/s, in the
+// air: the acceleration's fall-off is gentler above kStrafeEaseFrom, more so in surf (MOVE_RUN_ONLY)
+static void testStrafeEase() {
+    printf("strafe ease: a perfect A/D strafer's speed, normal and surf\n");
+    Map open;
+    std::string err;
+    CHECK(open.parse("box -4000 -1 -4000 4000 0 4000\nspawn any 0 0 0\n", &err));
+    auto run = [&](uint8_t mods, float secs) {
+        MoveState s; s.pos = {0, 3000, 0}; s.vel = {0, 0, -15.0f}; s.mods = mods;
+        UserCmd c; c.msec = 1; c.side = 127;
+        float yaw = 0;
+        for (int t = 0; t < (int)(secs * 1000); t++) {
+            float best = -1, by = yaw;
+            for (int k = 0; k <= 40; k++) {   // (around the velocity's own heading: the best of 41 yaws)
+                const float y = std::atan2(-s.vel.x, -s.vel.z) + (float)(k - 20) * 0.004f;
+                MoveState q = s; UserCmd u = c; u.yaw = y;
+                pmove(q, u, open);
+                const float h = std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z);
+                if (h > best) { best = h; by = y; }
+            }
+            yaw = by; c.yaw = yaw;
+            pmove(s, c, open);
+            s.pos = {0, 3000, 0}; s.vel.y = 0;   // (stays in the air, in the map)
+        }
+        return std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+    };
+    const float n5 = run(0, 5), n15 = run(0, 15), s5 = run(MOVE_RUN_ONLY, 5), s15 = run(MOVE_RUN_ONLY, 15);
+    printf("  from 15 m/s: normal %.1f m/s after 5 s, %.1f after 15 s; surf %.1f, %.1f\n", n5, n15, s5, s15);
+    CHECK(n15 > n5 && s5 > n5 && s15 > n15 * 1.2f);
+}
+
 static void testLiquids() {
     printf("liquids: slower / slippery / current / bounce / heal / hurt / kill, walk-through\n");
     Map m;
@@ -1121,10 +1152,13 @@ static void testMovementTuning() {
             MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -v};
             UserCmd c; c.side = 127;   // (yaw 0: right is +x, square to the momentum)
             step(q, c, open);
-            float gain = q.vel.x / (22.0f * 2.3f * 0.001f);
-            float cross = 22.0f * 2.3f / 4.0f, want = 1.15f * 1.1f * (1 + 0.1f * std::clamp((v - cross) / (0.25f * cross), 0.0f, 1.0f));
+            // (the push square to the momentum: |v'|^2 = v^2 + push^2, the A/D turn on top only turns it; above 15 m/s the
+            // ease, 2026-10-29: x (v / 15)^0.35)
+            float gain = std::sqrt(std::max(0.0f, q.vel.x * q.vel.x + q.vel.z * q.vel.z - v * v)) / (22.0f * 2.3f * 0.001f);
+            float cross = 22.0f * 2.3f / 4.0f, want = 1.15f * 1.1f * (1 + 0.1f * std::clamp((v - cross) / (0.25f * cross), 0.0f, 1.0f)) *
+                                                      (v > 15.0f ? std::pow(v / 15.0f, 0.35f) : 1.0f);
             printf("  strafe push at %.0f m/s: x%.4f (want %.4f)\n", v, gain, want);
-            CHECK(std::fabs(gain - want) < 1e-3f);
+            CHECK(std::fabs(gain - want) < 5e-3f);
             // the turn it makes, against W-only air control's (0.9 x min(4, 38 / v) rad/s): A/D ahead from 9.5 m/s (owner)
             float strafeTurn = q.vel.x / v * 1000, control = 0.9f * std::min(4.0f, 4.0f * 9.5f / v);
             printf("    turning: strafe %.0f deg/s, W-only air control %.0f deg/s\n", strafeTurn * 180 / PI, control * 180 / PI);
@@ -9247,7 +9281,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
