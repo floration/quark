@@ -47,6 +47,16 @@ constexpr float kDashAirGap = 0.35f;    // a dash in the air leaves with this sh
                                         // keep a lot more than if you dash at 25"): 0 -> 11.2, 10 -> 17.7, 25 -> 27.5,
                                         // 31 -> 31.35 (then kDashKeep's +1 is more); on the floor only kDashKeep, as before.
                                         // A custom mode's dash keep multiplier scales it too
+// A/D strafing at speed (owner, 2026-10-29: "decrease the penalty on a/d strafing on high speeds, but keep the cap the
+// same, maybe a curve"; in surf "lessen the speed limit curve so you can go very fast"). Strafing adds the same v^2 each
+// tick whatever your speed, so speed grows as 1 / speed; above kStrafeEaseFrom the A/D acceleration is x (speed /
+// kStrafeEaseFrom)^power, so it falls off more gently (0.35: 1 / speed^0.65; surf's 0.75: 1 / speed^0.25). The cap
+// (the window of angles that gain) stays.
+constexpr float kStrafeEaseFrom = 15.0f, kStrafeEasePower = 0.35f, kStrafeEasePowerSurf = 0.75f;
+// A/D air control (owner, 2026-10-29: "increase ad strafing air control, but without increasing the velocity
+// acceleration"): a strafe key's push turns your momentum this much more (x 1 + this), with no more speed: the push's
+// part along your momentum (the speed it adds) is the same, only its sideways part turns you further
+constexpr float kAirControlAD = 0.5f;
 constexpr float kRampAirAccel = 2.0f;   // surf, touching a ramp's face: x air acceleration (owner 2026-10-28: "make it like 2x base", 8 was "insane")
 constexpr float kIceFriction = 0.08f;    // standing on ice: ground friction x this (owner, 2026-10-28: "ice is slippery")...
 constexpr float kIceDash = 0.25f;        // a dash off ice: this share of what it does elsewhere (owner, 2026-10-28)
@@ -117,7 +127,7 @@ AABB playerBox(const Vec3& f, bool crouched, float scale) {
 // A strafe key held (side != 0) pushes harder: x kStrafeAccelAD at every speed (owner 1.18), and at speed the
 // kStrafeBoost on top, ramping in from `cross` (where air control starts falling off) to 1.25x it, so above that
 // A/D strafing turns faster than W-only air control (owner 1.17). (The caller already raised the A/D wish cap.)
-static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt, int side, float cross) {
+static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt, int side, float cross, bool surf) {
     float cur = dot(vel, wishDir);
     float add = wishSpeed - cur;
     if (add <= 0) return;
@@ -125,14 +135,24 @@ static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, 
     if (side != 0) {
         float t = std::clamp((h - cross) / (0.25f * cross), 0.0f, 1.0f);
         accel *= kStrafeAccelAD * (1.0f + (kStrafeBoost * mt.m[MV_STRAFE_BOOST]) * t);
+        if (h > kStrafeEaseFrom) accel *= std::pow(h / kStrafeEaseFrom, surf ? kStrafeEasePowerSurf : kStrafeEasePower);   // (the gentler fall-off at speed)
     }
     Vec3 push = wishDir * std::min(accel * wishSpeed * dt, add);
+    float turn = 0;   // (A/D: the extra turn, radians)
     if (h > 1e-3f) {
         Vec3 along = {vel.x / h, 0, vel.z / h};
         float pa = dot(push, along);
         if (pa < 0) push = push - along * (pa * (1.0f - (kOverstrafeBrake * mt.m[MV_OVERSTRAFE])));
+        if (side != 0 && pa >= 0) {   // (not overstrafing: the sideways part of the push, as an angle at this speed, x kAirControlAD; signed by its side)
+            const float px = push.x - along.x * dot(push, along), pz = push.z - along.z * dot(push, along);
+            turn = kAirControlAD * mt.m[MV_AIR_CONTROL] / kAirControl * std::sqrt(px * px + pz * pz) / h * (along.x * pz - along.z * px > 0 ? 1.0f : -1.0f);
+        }
     }
     vel += push;
+    if (turn != 0) {   // (turned in place: the speed the push gave stays)
+        const float c = std::cos(turn), sn = std::sin(turn), x = vel.x, z = vel.z;
+        vel.x = x * c - z * sn; vel.z = x * sn + z * c;
+    }
 }
 
 static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt) {
@@ -611,7 +631,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             // the 1.18 A/D cap and the slower W-only turn leave it where it was)
             const float cross = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f * airCap / airControl;   // (the ramp boost leaves it)
             const float strafeCap = cmd.side != 0 ? airCap * kStrafeCapAD : airCap;   // A/D: 2.53, W-only: 2.3
-            airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, strafeCap), airAccel, dt, cmd.side, cross);
+            airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, strafeCap), airAccel, dt, cmd.side, cross, (s.mods & MOVE_RUN_ONLY) != 0);
             // Drift: below run speed, held direction pushes you along it (kAirDriftAccel) up to run speed and never
             // past it, so a standing jump moves about like the run-up one would (owner 1.17; it was 2.3 m/s at most).
             const float runSpeed = kGroundSpeed * mt.speed;
