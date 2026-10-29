@@ -32,6 +32,7 @@ template <class T> struct NoInitAlloc : std::allocator<T> {
 using Vertex2DList = std::vector<Vertex2D, NoInitAlloc<Vertex2D>>;
 
 struct Color { float r, g, b, a; };
+constexpr Color kGlassTint = {0.86f, 0.90f, 0.93f, 0.26f};   // glass panes (map material 21): very light grey, see-through
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
 
 class Renderer {
@@ -49,6 +50,7 @@ public:
     static void prepareWorld(const Map& map, PreparedWorld& out, const std::function<void(float)>& progress,
                              const std::atomic<bool>* cancel = nullptr);
     void uploadWorld(const Map& map, PreparedWorld& w);
+    void setHoles(const std::vector<Map::Hole>& holes);   // holes blown in thin brick / cobblestone (the world shader cuts them)
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
@@ -192,6 +194,8 @@ private:
     Vec3 camFwd_, camRight_, camUp_;
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
+    unsigned holeTex_ = 0;
+    GLint uHoleCount_ = -1;
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

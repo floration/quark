@@ -1457,7 +1457,12 @@ void Game::editorFrame(double dt) {
 
     // ---- 3D view
     static const Vec3 kNewMatColors[] = {{0.70f, 0.85f, 0.95f}, {0.80f, 0.70f, 0.48f}, {0.55f, 0.36f, 0.20f}, {0.85f, 0.85f, 0.88f},
-                                         {0.30f, 0.58f, 0.20f}, {0.12f, 0.12f, 0.13f}, {0.62f, 0.64f, 0.68f}, {0.50f, 0.52f, 0.55f}, {0.62f, 0.24f, 0.17f}};   // ice .. diamond plate, brick
+                                         {0.30f, 0.58f, 0.20f}, {0.12f, 0.12f, 0.13f}, {0.62f, 0.64f, 0.68f}, {0.50f, 0.52f, 0.55f}, {0.62f, 0.24f, 0.17f},
+                                         {0.85f, 0.90f, 0.92f}, {0.20f, 0.20f, 0.21f}, {0.32f, 0.22f, 0.13f}, {0.50f, 0.48f, 0.45f}, {0.58f, 0.58f, 0.56f},
+                                         {0.88f, 0.86f, 0.80f}, {0.88f, 0.87f, 0.85f}, {0.55f, 0.55f, 0.58f}, {0.90f, 0.72f, 0.08f}, {0.93f, 0.95f, 1.00f},
+                                         {0.60f, 0.58f, 0.54f}, {0.35f, 0.40f, 0.75f}, {0.08f, 0.30f, 0.16f}, {0.52f, 0.33f, 0.20f}, {0.75f, 0.38f, 0.20f}};
+    // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
+    // crystal, circuit, rust, terracotta
     static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
@@ -1479,6 +1484,7 @@ void Game::editorFrame(double dt) {
         r_.useStaticBoxes();
     }
     mapCache();
+    if (edBaked_) for (auto& b : ed_.brushes) if (b.material == kMatGlass) r_.translucentBox(b.box, kGlassTint);   // (the bake leaves glass out)
     for (auto& b : edClipBoxes_) r_.translucentBox(b, kClipColor);   // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
     for (auto& sp : ed_.spawns) {
         Vec3 c = kTeamColors[sp.team & 3];
@@ -1683,7 +1689,11 @@ void Game::editorFrame(double dt) {
                                             "MATERIAL: WATER (WADE IN IT)", "MATERIAL: LAVA (KILLS)", "MATERIAL: TRIM (NOT SOLID)", "MATERIAL: CLIP (INVISIBLE WALL)",
                                             "MATERIAL: NOGRAPPLE (NO GRAPPLE)", "MATERIAL: ACID (HURTS)", "MATERIAL: ICE (SLIPPERY)", "MATERIAL: SAND",
                                             "MATERIAL: WOOD", "MATERIAL: PLASTIC", "MATERIAL: GRASS", "MATERIAL: RUBBER (BOUNCY)", "MATERIAL: STEEL",
-                                            "MATERIAL: DIAMOND PLATE", "MATERIAL: BRICK"};
+                                            "MATERIAL: DIAMOND PLATE", "MATERIAL: BRICK (THIN: BLOWS OPEN)",
+                                            "MATERIAL: GLASS (BREAKS)", "MATERIAL: ASPHALT (FAST)", "MATERIAL: MUD (STICKY)",
+                                            "MATERIAL: COBBLESTONE (THIN: BLOWS OPEN)", "MATERIAL: CONCRETE", "MATERIAL: TILE", "MATERIAL: MARBLE",
+                                            "MATERIAL: CORRUGATED METAL", "MATERIAL: HAZARD STRIPES", "MATERIAL: SNOW", "MATERIAL: STONE BLOCKS",
+                                            "MATERIAL: CRYSTAL", "MATERIAL: CIRCUIT", "MATERIAL: RUST", "MATERIAL: TERRACOTTA"};
     static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
     static const std::vector<std::string> mats(std::begin(matLabels), std::end(matLabels));
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)

@@ -31,6 +31,9 @@ struct Brush {
     uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER
     uint8_t dir = 0;
     uint8_t up = 0;
+    // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
+    // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
+    bool gone = false;
 };
 enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2 };
 constexpr int kSlopeUps = 6;
@@ -297,19 +300,46 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
 // 12-19 (owner, 2026-10-28): solid like base, each its own look made in the world shader (no textures); ice is slippery
 // underfoot, rubber bounces you off it.
-constexpr int kMapMaterials = 21;
+// 21 glass (see-through, breakable: Map::breakGlass) and 22-35 (owner, 2026-10-28, from the surface ideas): solid, own
+// looks; asphalt grips (faster, quicker to brake), mud holds you back, cobblestone breaks open like brick.
+constexpr int kMapMaterials = 36;
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
 constexpr int kMatIce = 12, kMatSand = 13, kMatWood = 14, kMatPlastic = 15, kMatGrass = 16, kMatRubber = 17, kMatSteel = 18, kMatDiamond = 19;
 constexpr int kMatBrick = 20;   // classic red brick (owner, 2026-10-28)
+constexpr int kMatGlass = 21, kMatAsphalt = 22, kMatMud = 23, kMatCobble = 24, kMatConcrete = 25, kMatTile = 26, kMatMarble = 27,
+              kMatCorrugated = 28, kMatHazard = 29, kMatSnow = 30, kMatStone = 31, kMatCrystal = 32, kMatCircuit = 33, kMatRust = 34,
+              kMatTerracotta = 35;
+// brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
+constexpr float kBreakableThick = 0.125f;
+inline bool holeMaterial(int m) { return m == kMatBrick || m == kMatCobble; }
+constexpr int kMaxHoles = 512;     // per map at once (the world shader's table); past it, blasts leave walls as they are
+constexpr float kHoleSize = 2.5f;   // a direct hit's hole, metres across (owner, 2026-10-28)
+// a hole's cells (u along the wall, v up it; a floor: x and z): the world shader's bricks and stones, rows offset half a cell
+inline void holeCell(int m, float& w, float& h) { if (m == kMatCobble) { w = 0.16f; h = 0.14f; } else { w = 0.21f; h = 0.075f; } }
+inline int holeUAxis(int axis) { return axis == 0 ? 2 : 0; }
+inline int holeVAxis(int axis) { return axis == 1 ? 2 : 1; }
+// whether a hole of half size r centred (u, v) breaks out cell (row, col): a squarish circle (|x|^4 + |y|^4 < 1) with
+// each cell's own nudge, so its edge is broken bricks. The world shader (renderer.cpp) computes the same.
+inline bool holeTakes(float u, float v, float r, float cw, float ch, int row, int col) {
+    const float x = ((col + 0.5f - 0.5f * (float)(row & 1)) * cw - u) / r, y = ((row + 0.5f) * ch - v) / r;
+    const float s = std::sqrt(std::sqrt(x * x * x * x + y * y * y * y));
+    uint32_t k = (uint32_t)row * 73856093u ^ (uint32_t)col * 19349663u;
+    k ^= k >> 13; k *= 0x5bd1e995u; k ^= k >> 15;
+    return s + ((float)(k & 255u) / 255.0f - 0.5f) * 0.3f < 1.0f;
+}
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid; clip is solid to players only)
-inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatBrick); }
-// lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip isn't drawn)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m <= kMatBrick); }
+inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials); }
+// lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
+// drawn see-through each frame, so a broken pane can go)
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && m != kMatGlass); }
+inline bool bakedMaterial(int m) { return m != 9 && m != kMatGlass; }   // in the static world mesh
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
 // a box line's keyword per material in map files ("box" is base)
 inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid",
-                                                    "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick"};
+                                                    "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick",
+                                                    "glass", "asphalt", "mud", "cobblestone", "concrete", "tile", "marble", "corrugated", "hazard",
+                                                    "snow", "stone", "crystal", "circuit", "rust", "terracotta"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -459,7 +489,8 @@ struct Map {
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
     // *hit (when given): the brush that stopped it, nullptr for none or a moving solid (pmove: a steep slope is a wall).
-    float sweepAxis(const AABB& box, int axis, float delta, const Brush** hit = nullptr) const;
+    // *glass (not null): glass doesn't stop the move; the index of the first pane it would have is put there (else -1)
+    float sweepAxis(const AABB& box, int axis, float delta, const Brush** hit = nullptr, int* glass = nullptr) const;
     bool boxSolid(const AABB& box) const;
     bool inLava(const AABB& box) const { for (auto& l : lava) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
@@ -486,6 +517,25 @@ struct Map {
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
     bool hasWallbang = false;
     bool hasIce = false, hasRubber = false;   // (pmove asks what's underfoot / hit only on maps with them)
+    bool hasGripMats = false;                 // ice, rubber, asphalt or mud: pmove asks what's underfoot
+
+    // ---- Destruction in play (owner, 2026-10-28): glass breaks, thin brick and cobblestone get holes blown in them.
+    // The server and every client make the same calls in the same order (EV_DESTRUCT), so all of them collide alike;
+    // resetDestruction undoes it all (each round, a map restart, an edit). Never saved: a map's text stays the map's.
+    // A hole: its centre (u, v) on the wall and half size r, the wall's thin axis and its extent along it, and the cells
+    // (bricks, stones) it breaks out (holeTakes; the world shader draws the same).
+    struct Hole { float u, v, r, cw, ch; int axis; float lo, hi; };
+    std::vector<Hole> holes;
+    std::vector<uint32_t> glass;          // the glass brushes (drawn see-through each frame; a gone one isn't)
+    std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)
+    uint32_t destructSerial = 0;          // counts every change (the renderer sends the holes again)
+    bool breakGlass(size_t i);            // false: not a standing pane
+    int glassAt(const Vec3& p, float eps = 0.03f) const;   // a standing pane whose box (grown by eps) holds p, -1 none
+    // Blows a hole in every thin (kBreakableThick) brick / cobblestone box near `at`: kHoleSize across where it meets the
+    // wall, less the distance from it to the wall's plane (owner: "if a sticky blows up 1m away ... a 1.5m hole").
+    // Returns how many boxes it cut.
+    int punchHole(const Vec3& at);
+    void resetDestruction();
 
     bool supportsMode(int mode) const;  // allowed and has what the mode needs
     bool canSupportMode(int mode) const; // has what the mode needs (ignores allowedModes)
@@ -504,7 +554,7 @@ struct Map {
     // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
     float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
-    static bool gridSolid(const Brush& b) { return solidMaterial(b.material) || b.material == 9; } // in the grid: far scenery, water, lava aren't
+    static bool gridSolid(const Brush& b) { return !b.gone && (solidMaterial(b.material) || b.material == 9); } // in the grid: far scenery, water, lava aren't
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and

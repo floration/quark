@@ -984,6 +984,7 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
 }
 
 bool applyMapEdit(Map& m, const std::string& op) {
+    m.resetDestruction();   // (edits name brushes by index: on the map as it was)
     std::istringstream in(op);
     std::string kind, verb;
     if (!(in >> kind)) return false;
@@ -1271,11 +1272,14 @@ static void gridShape(const AABB& bounds, float& gx0, float& gz0, int& gw, int& 
 bool Map::buildGrid() {
     lava.clear();   // (touch it and die)
     acid.clear();   // (touch it and it hurts: pmove)
-    hasIce = hasRubber = false;
+    hasIce = hasRubber = hasGripMats = false;
+    glass.clear();
+    for (size_t i = 0; i < brushes.size(); i++) if (brushes[i].material == kMatGlass) glass.push_back((uint32_t)i);
     for (auto& b : brushes) {
         if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
         hasIce |= b.material == kMatIce;
         hasRubber |= b.material == kMatRubber;
+        hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud;
     }
     gridShape(bounds, gridX0, gridZ0, gridW, gridH);
     size_t ncells = (size_t)gridW * gridH;
@@ -1386,7 +1390,14 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         acid.clear();
         for (auto& x : brushes) if (x.material == kMatAcid) acid.push_back(x.box);
     }
-    if (op != 2) { hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber; }   // (kept until a rebuild: only costs a probe)
+    if (op != 2) {
+        hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber;
+        hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud;
+    }   // (kept until a rebuild: only costs a probe)
+    if (op != 0 || (old.material == kMatGlass) != (b.material == kMatGlass)) {
+        glass.clear();
+        for (size_t k = 0; k < brushes.size(); k++) if (brushes[k].material == kMatGlass) glass.push_back((uint32_t)k);
+    }
     const uint16_t ix = (uint16_t)i;
     if (oldSolid)   // out of the cells it was in
         for (int z = so.z0; z <= so.z1; z++)
@@ -1397,7 +1408,7 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
                 while (k < c.end && d[k] != ix) k++;
                 if (k < c.end) { memmove(d + k, d + k + 1, (c.end - k - 1) * sizeof *d); c.end--; }
             }
-    if (op != 0) {   // the brushes after i moved up or down one (the whole array, spare slots too: one vectorized pass)
+    if (op != 0 && !(op == 1 && i + 1 == brushes.size())) {   // the brushes after i moved up or down one (none after one added at the end) (the whole array, spare slots too: one vectorized pass)
         uint16_t* d = cellBrushes.data();
         size_t n = cellBrushes.size();
         if (op == 1) for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] + (d[k] >= ix));
@@ -1429,14 +1440,126 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
         }
 }
 
-float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit) const {
+bool Map::breakGlass(size_t i) {
+    if (i >= brushes.size() || brushes[i].material != kMatGlass || brushes[i].gone) return false;
+    if (pristineBrushes.empty()) pristineBrushes = brushes;
+    Brush b = brushes[i];
+    b.gone = true;
+    if (!setBrush(i, b)) return false;
+    destructSerial++;
+    return true;
+}
+
+int Map::glassAt(const Vec3& p, float eps) const {
+    for (uint32_t i : glass) {
+        const Brush& b = brushes[i];
+        if (!b.gone && p.x >= b.box.mn.x - eps && p.y >= b.box.mn.y - eps && p.z >= b.box.mn.z - eps &&
+            p.x <= b.box.mx.x + eps && p.y <= b.box.mx.y + eps && p.z <= b.box.mx.z + eps) return (int)i;
+    }
+    return -1;
+}
+
+int Map::punchHole(const Vec3& at) {
+    std::vector<Brush> pieces;
+    std::vector<size_t> cut;
+    std::vector<Hole> made;
+    const size_t n = brushes.size();
+    for (size_t i = 0; i < n; i++) {
+        const Brush& b = brushes[i];
+        if (b.gone || b.shape != BRUSH_BOX || !holeMaterial(b.material)) continue;
+        const Vec3 ext = b.box.mx - b.box.mn;
+        const int a = ext.x <= ext.y && ext.x <= ext.z ? 0 : ext.y <= ext.z ? 1 : 2;
+        if (ext[a] > kBreakableThick + 1e-4f) continue;
+        const int ua = holeUAxis(a), va = holeVAxis(a);
+        // the distance to the wall's plane (a direct hit, the blast a few cm off the face, counts as on it)
+        const float d = std::max(0.0f, std::max(b.box.mn[a] - at[a], at[a] - b.box.mx[a]) - 0.1f);
+        const float r = 0.5f * (kHoleSize - d);
+        if (r < 0.1f) continue;
+        const float reach = r * 1.2f;   // (the nudge can take a cell a little past r)
+        const float u0 = b.box.mn[ua], u1 = b.box.mx[ua], v0 = b.box.mn[va], v1 = b.box.mx[va];
+        if (at[ua] + reach <= u0 || at[ua] - reach >= u1 || at[va] + reach <= v0 || at[va] - reach >= v1) continue;
+        Hole h{at[ua], at[va], r, 0, 0, a, b.box.mn[a], b.box.mx[a]};
+        holeCell(b.material, h.cw, h.ch);
+        // the box's rows through the hole, each cut where cells break out; the rows above and below it stay whole
+        std::vector<std::pair<Vec3, Vec3>> parts;   // (u0 v0 _, u1 v1 _) in the wall's own (u, v)
+        auto emit = [&](float pu0, float pu1, float pv0, float pv1) {
+            if (pu1 - pu0 > 1e-4f && pv1 - pv0 > 1e-4f) parts.push_back({{pu0, pv0, 0}, {pu1, pv1, 0}});
+        };
+        const int r0 = (int)std::floor(std::max(v0, h.v - reach) / h.ch), r1 = (int)std::floor((std::min(v1, h.v + reach) - 1e-5f) / h.ch);
+        bool any = false;
+        float whole = v0;   // rows from here up are whole so far (merged into one box when a cut row or the top ends them)
+        for (int row = r0; row <= r1; row++) {
+            const float rv0 = std::max(v0, row * h.ch), rv1 = std::min(v1, (row + 1) * h.ch);
+            if (rv1 - rv0 < 1e-5f) continue;
+            const float off = 0.5f * (float)(row & 1);
+            const int c0 = (int)std::floor(std::max(u0, h.u - reach) / h.cw + off), c1 = (int)std::floor(std::min(u1, h.u + reach) / h.cw + off);
+            std::vector<std::pair<float, float>> keep;
+            float cur = u0;
+            for (int c = c0; c <= c1; c++) {
+                if (!holeTakes(h.u, h.v, h.r, h.cw, h.ch, row, c)) continue;
+                const float cu0 = std::max(u0, (c - off) * h.cw), cu1 = std::min(u1, (c + 1 - off) * h.cw);
+                if (cu1 <= cu0) continue;
+                if (cu0 > cur) keep.push_back({cur, cu0});
+                cur = std::max(cur, cu1);
+            }
+            if (cur == u0) continue;   // nothing broken in this row: still whole
+            any = true;
+            emit(u0, u1, whole, rv0);
+            whole = rv1;
+            if (u1 > cur) keep.push_back({cur, u1});
+            for (auto& k : keep) emit(k.first, k.second, rv0, rv1);
+        }
+        if (!any) continue;
+        emit(u0, u1, whole, v1);
+        cut.push_back(i);
+        for (auto& pp : parts) {
+            Brush q = b;
+            q.generated = true;
+            q.box.mn[ua] = pp.first.x; q.box.mx[ua] = pp.second.x;
+            q.box.mn[va] = pp.first.y; q.box.mx[va] = pp.second.y;
+            pieces.push_back(q);
+        }
+        bool dup = false;
+        for (const Hole& o : made) dup |= o.axis == h.axis && o.lo == h.lo && o.hi == h.hi && o.u == h.u && o.v == h.v && o.r == h.r && o.cw == h.cw;
+        if (!dup) made.push_back(h);
+    }
+    if (cut.empty() || n + pieces.size() > kMaxMapBrushes || holes.size() + made.size() > (size_t)kMaxHoles) return 0;
+    if (pristineBrushes.empty()) pristineBrushes = brushes;
+    const std::vector<Brush> before = brushes;
+    for (size_t i : cut) brushes[i].gone = true;
+    brushes.insert(brushes.end(), pieces.begin(), pieces.end());
+    if (!buildGrid()) { brushes = before; buildGrid(); return 0; }   // (over the grid's limit: as it was)
+    holes.insert(holes.end(), made.begin(), made.end());
+    destructSerial++;
+    return (int)cut.size();
+}
+
+void Map::resetDestruction() {
+    if (pristineBrushes.empty() && holes.empty()) return;
+    if (!pristineBrushes.empty()) brushes.swap(pristineBrushes);
+    pristineBrushes.clear();
+    holes.clear();
+    buildGrid();
+    destructSerial++;
+}
+
+float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit, int* glassOut) const {
     if (hit) *hit = nullptr;
+    if (glassOut) *glassOut = -1;
     if (delta == 0.0f) return 0.0f;
     const int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
     constexpr float eps = 0.001f;
     AABB q = box;
     if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
+    float glassAt = delta;   // (how far the move got to the nearest pane it passes)
     auto clip = [&](const AABB& b, const Brush* who) {
+        if (glassOut && who && who->material == kMatGlass) {   // (passed through: only noted)
+            if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1] || box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
+            const float allowed = delta > 0 ? b.mn[axis] - box.mx[axis] - eps : b.mx[axis] - box.mn[axis] + eps;
+            const bool ahead = delta > 0 ? box.mx[axis] <= b.mn[axis] + eps : box.mn[axis] >= b.mx[axis] - eps;
+            if (ahead && (delta > 0 ? allowed < glassAt : allowed > glassAt)) { glassAt = allowed; *glassOut = (int)(who - brushes.data()); }
+            return;
+        }
         if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1]) return;
         if (box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
         if (delta > 0) {
@@ -1552,7 +1675,8 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
 
 // raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
 // them being the same). Learn: note in *learn where the blocker was found.
-static bool skipsSight(const Brush& br, bool hitClip) { return br.material == 9 && !hitClip; }   // clip: players only (light, sight and shots pass)
+// clip: players only (light, sight and shots pass); glass: sight and light pass (shots break it: they use raycast)
+static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || br.material == kMatGlass; }
 template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
     walkCells(m, o, dir, maxDist, [&](size_t c, float) {

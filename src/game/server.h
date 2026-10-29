@@ -353,6 +353,22 @@ public:
     bool propsSent_ = false;   // a prop went out since the last clear
     void leaveProp(const Projectile& pr, int hitPlayer, const Vec3& at, const Vec3& dir, const AABB& hitBb);
     void clearProps();          // the match is over / restarts, or a new map: every prop goes
+    // ---- Glass and blown-open brick / cobblestone (glass.h): every break goes to everyone (EV_DESTRUCT); someone who
+    // joins is sent what's broken (holeLog_: the blasts that cut holes, in order). All of it comes back each round, at a
+    // new match, on a new map and before an edit (resetDestruction).
+    struct FlyingShard { Vec3 pos, vel; float dmg; double until; int8_t by, spare; };   // by: who broke it; spare: who it can't hit
+    std::vector<FlyingShard> shards_;
+    std::vector<Vec3> holeLog_;
+    double shardStepAt_ = 0;
+    uint32_t glassSeed_ = 0x2545F491u;
+    bool breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int by);   // false: no standing pane there
+    void blastBreaks(const Vec3& at, int weapon, int owner);   // a blast: panes in reach shatter; a rocket / sticky blows holes
+    void glassFromMove(int id);   // what this command's movement broke (MoveState::glassBrush)
+    void glassFromRay(const Vec3& o, const Vec3& dir, float t, int by);   // a shot that stopped t along: on a pane, it breaks
+    void tickShards();
+    void sendDestruction(int id);   // what's broken, to someone joining
+    void resetDestruction(bool tell = false);   // everything broken back; clients told if anything was (tell: always)
+    size_t shardsFlyingForTest() const { return shards_.size(); }
     void releaseBodyProps(int player);
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot

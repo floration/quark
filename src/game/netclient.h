@@ -103,6 +103,11 @@ public:
     // Knives / bolts / syringes stuck in the world or in players (EV_PROP, cosmetic), oldest first: the newest
     // kMaxStuckProps. One in a player (player != PROP_WORLD) goes when that player dies, respawns or leaves.
     const std::vector<StuckProp>& stuckProps() const { return props_; }
+    // Glass and blown holes (glass.h): each break the server sent, or one this client predicted (its own shot, dash or
+    // grapple), as something to show: shards, a sound. takeGlassFx hands over what came since the last call.
+    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; };
+    void takeGlassFx(std::vector<GlassFx>& out) { out.swap(glassFx_); glassFx_.clear(); }
+    bool predictGlass(int brush, int how, const Vec3& at, const Vec3& dir);   // false: no standing pane
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
     const std::string& nameRef(int id) const;   // playerName without the copy (valid until the next poll / playback)
@@ -257,6 +262,14 @@ private:
     std::vector<StuckProp> props_;
     uint32_t propPlayers_ = 0;   // players with a prop in them
     void applyPropEvent(const GameEvent& e);
+    std::vector<GameEvent> destructLog_;   // this round's breaks, kept to apply again when the map is (re)loaded
+    std::vector<GlassFx> glassFx_;
+    struct PendingGlass { uint32_t brush; double at; };
+    std::vector<PendingGlass> pendingGlass_;   // predicted, not confirmed yet: back after kGlassPredictWait without the server's word
+    uint32_t glassSeed_ = 0x6C078965u;
+    void applyDestructEvent(const GameEvent& e, bool fx);
+    void replayDestruction();   // the logged breaks on a freshly loaded map
+    void expireGlassPredictions(double now);
     void dropProps(uint32_t players);   // every prop in these players
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
     uint8_t models_[kMaxPlayers] = {}, packs_[kMaxPlayers] = {};

@@ -56,6 +56,7 @@ const ModelPalette kNoSlots;   // (props with no colour slots: the arms, the bom
 const char* weaponName(int w) {
     if (w == kDamageGrapple) return "grapple";
     if (w == kDamageAcid) return "dissolved";
+    if (w == kDamageGlass) return "glass";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";
@@ -1610,6 +1611,9 @@ void Game::frame(double dt) {
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
                     (w != WPN_LASER || time_ >= nextLocalSpark_) && cfg_.impactSparks)
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
+                if (!weaponDef(w).projectile && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) && !isThrow(w, alt) &&
+                    !net_.map().glass.empty())
+                    predictShotGlass(w, c);
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
                 else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
@@ -1657,6 +1661,10 @@ void Game::frame(double dt) {
             }
             net_.tick(c);
             if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
+            if (net_.predicted().glassBrush >= 0) {   // (dashed or grappled through a pane: broken now, as the server will)
+                const MoveState& pm = net_.predicted();
+                net_.predictGlass(pm.glassBrush, pm.glassHow, pm.glassAt, pm.glassDir);
+            }
             tickAcc_ -= period;
         }
         tickYaw_ = yaw_;   // (the last tick's: now's)
@@ -2470,6 +2478,7 @@ void Game::drawWorld(float alpha) {
         i++;
     }
 
+    updateDestruction(map);   // (glass, shards, holes)
     // objectives
     Vec3 friendly = cfg_.colorFriendly, enemy = cfg_.colorEnemy;
     const PlayerSnap* mep = net_.findPlayer(me);
@@ -7640,6 +7649,84 @@ void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
 // X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
 // the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
 // in sight, once a shot (the laser: at most 20 a second). Players are their body and head (rayHitbox), as the server's.
+void Game::predictShotGlass(int w, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+    for (int k = 0; k < wd.pellets; k++) {
+        const Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+        float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
+        if (t < 0) continue;
+        const int pane = net_.map().glassAt(eye + d * (t + 0.01f));
+        if (pane >= 0) net_.predictGlass(pane, GLASS_SHOT, eye + d * t, d);
+    }
+}
+
+void Game::updateDestruction(const Map& map) {
+    // the holes, when they change (and a new map's: none)
+    if (map.destructSerial != holeSerial_ || net_.mapRevision() != holeMapRev_) {
+        holeSerial_ = map.destructSerial; holeMapRev_ = net_.mapRevision();
+        r_.setHoles(map.holes);
+    }
+    // what broke since the last frame: shards, chunks, a sound
+    net_.takeGlassFx(glassFxScratch_);
+    for (const NetClient::GlassFx& fx : glassFxScratch_) {
+        if (fx.hole) {   // a hole: brick-red chunks thrown out of it
+            uint32_t sd = (uint32_t)(fx.at.x * 131.0f) * 2654435761u ^ (uint32_t)(fx.at.z * 71.0f) | 1u;
+            for (int i = 0; i < 40 && visShards_.size() < 3000; i++) {
+                const Vec3 v = {glassRandF(sd) * 8 - 4, glassRandF(sd) * 6 - 1, glassRandF(sd) * 8 - 4};
+                const float sh = 0.8f + 0.3f * glassRandF(sd);
+                visShards_.push_back({fx.at + v * 0.08f, v, 0.03f + 0.04f * glassRandF(sd), Vec3(0.55f, 0.22f, 0.15f) * sh, false, false, time_});
+            }
+            continue;
+        }
+        glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_);
+        uint32_t sd = fx.seed ^ 0x9E3779B9u;
+        for (const GlassShard& g : glassShardScratch_) {
+            if (visShards_.size() >= 3000) break;
+            const float sz = glassCrater(fx.how) ? 0.02f + 0.03f * glassRandF(sd) : 0.01f + 0.025f * glassRandF(sd);
+            visShards_.push_back({g.pos, g.vel, sz, {0.86f, 0.90f, 0.93f}, false, true, time_});
+        }
+        audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
+    }
+    // the panes still standing: see-through (the bake leaves glass out)
+    for (uint32_t i : map.glass) if (!map.brushes[i].gone) r_.translucentBox(map.brushes[i].box, kGlassTint);
+    // shards fly, land and lie; one out of view is gone
+    const float dt = shardsAt_ < 0 ? 0.0f : (float)std::min(0.05, time_ - shardsAt_);
+    shardsAt_ = time_;
+    if (visShards_.empty()) return;
+    const float W = (float)r_.width(), H = (float)r_.height();
+    size_t keep = 0;
+    for (size_t k = 0; k < visShards_.size(); k++) {
+        VisShard v = visShards_[k];
+        if (time_ - v.born > 30.0) continue;
+        if (!v.rest && dt > 0) {
+            v.vel.y -= 22.0f * dt;
+            const Vec3 step = v.vel * dt;
+            const float len = length(step);
+            if (len > 1e-6f) {
+                Vec3 n;
+                const float t = map.raycast(v.pos, step / len, len, &n);
+                if (t < 0) v.pos += step;
+                else {
+                    v.pos += step / len * std::max(0.0f, t - 0.005f);
+                    if (n.y > 0.5f) v.rest = true;   // (on a floor: it lies there)
+                    else v.vel = (v.vel - n * (2.0f * dot(v.vel, n))) * 0.25f;   // (off a wall, falling on)
+                }
+            }
+        }
+        float sx, sy;
+        if (time_ - v.born > 0.05 && (!r_.project(v.pos, sx, sy) || sx < -20 || sy < -20 || sx > W + 20 || sy > H + 20)) continue;
+        const Vec3 h(v.size, v.rest ? v.size * 0.3f : v.size, v.size);
+        if (v.glass) r_.translucentBox({v.pos - h, v.pos + h}, {v.color.x, v.color.y, v.color.z, 0.55f});
+        else r_.box(v.pos, h, (float)k, v.color, 1.0f, false);
+        visShards_[keep++] = v;
+    }
+    visShards_.resize(keep);
+}
+
 void Game::localImpactSparks(int w, const UserCmd& c) {
     const MoveState& m = net_.predicted();
     const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);

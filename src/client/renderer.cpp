@@ -113,8 +113,52 @@ float vnoise(vec2 p) {
     f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), f.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), f.x), f.y);
 }
-float fbm(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 17.1) + 0.2 * vnoise(p * 4.01 + 41.7); }
+// Anti-aliased: noise finer than about 2 pixels on screen fades to its average (0.5), so a long strip seen from one end
+// (each pixel spanning metres of it) is a calm surface instead of shimmer (owner, 2026-10-28: lava "gets fucky because
+// of the angle"). The footprint is the longer of the pixel's two sides in noise cells: angle and distance alike.
+float noiseFade(float cells) { return 1.0 - smoothstep(0.25, 0.5, cells); }
+float footprint(vec2 p) { vec2 w = fwidth(p); return max(w.x, w.y); }
+float vnoiseAA(vec2 p) { return mix(0.5, vnoise(p), noiseFade(footprint(p))); }
+float fbm(vec2 p) {
+    float f = footprint(p);
+    return 0.5 * mix(0.5, vnoise(p), noiseFade(f)) + 0.3 * mix(0.5, vnoise(p * 2.03 + 17.1), noiseFade(f * 2.03))
+         + 0.2 * mix(0.5, vnoise(p * 4.01 + 41.7), noiseFade(f * 4.01));
+}
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)) * 1.5; }   // a display colour as the palette is given to the shader
+vec2 hash22(vec2 p) { return vec2(hash2(p), hash2(p + 19.19)); }
+vec2 worley(vec2 p) {   // cells: the nearest and second-nearest feature points' distances (cobblestone, crystal)
+    vec2 i = floor(p), f = fract(p);
+    float d1 = 9.0, d2 = 9.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(x, y), r = o + hash22(i + o) - f;
+        float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    return sqrt(vec2(d1, d2));
+}
+// Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
+// one breaks out isn't drawn. The same test as Map's holeTakes.
+uniform sampler2D uHoles;
+uniform int uHoleCount;
+bool inHole() {
+    for (int i = 0; i < uHoleCount; i++) {
+        vec4 a = texelFetch(uHoles, ivec2(2 * i, 0), 0), b = texelFetch(uHoles, ivec2(2 * i + 1, 0), 0);
+        int ax = int(a.w + 0.5);
+        float pa = ax == 0 ? vPos.x : ax == 1 ? vPos.y : vPos.z;
+        if (pa < b.z - 0.01 || pa > b.w + 0.01) continue;
+        vec2 p = ax == 0 ? vPos.zy : ax == 1 ? vPos.xz : vPos.xy;
+        if (abs(p.x - a.x) > a.z * 1.2 || abs(p.y - a.y) > a.z * 1.2) continue;
+        int row = int(floor(p.y / b.y));
+        float off = 0.5 * float(row & 1);
+        int col = int(floor(p.x / b.x + off));
+        float x = ((float(col) + 0.5 - off) * b.x - a.x) / a.z, y = ((float(row) + 0.5) * b.y - a.y) / a.z;
+        float s = sqrt(sqrt(x * x * x * x + y * y * y * y));
+        uint k = uint(row) * 73856093u ^ uint(col) * 19349663u;
+        k ^= k >> 13; k *= 0x5bd1e995u; k ^= k >> 15;
+        if (s + (float(k & 255u) / 255.0 - 0.5) * 0.3 < 1.0) return true;
+    }
+    return false;
+}
 vec3 finish(vec3 c) {
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
@@ -123,6 +167,7 @@ vec3 finish(vec3 c) {
 }
 void main() {
     int mat = int(vMat + 0.5);
+    if (uHoleCount > 0 && (mat == 20 || mat == 24) && vMat - float(mat) > 0.1 && inHole()) discard;   // (0.25 over: thin, breakable)
     if (uFull > 0.5) {
         float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 || mat == 11 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
         fragColor = vec4(uFullColor * g * ((mat >= 4 && mat < 8) || mat == 11 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
@@ -141,7 +186,9 @@ void main() {
                 c = mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - an.y * 0.6) * (0.75 + 0.5 * r) + vec3(0.10, 0.18, 0.22) * smoothstep(0.62, 0.72, r);
             } else if (mat == 7) {   // lava: a dark crust broken by glowing veins that slowly flow and churn
                 float n = fbm(q * 0.35 + flow * uTime * 0.25 + vec2(fbm(q * 0.3 - uTime * 0.05)) * 1.5);
-                float r = 1.0 - abs(2.0 * n - 1.0), vein = smoothstep(0.86, 0.98, r), warm = smoothstep(0.4, 0.8, fbm(q * 0.8 + uTime * 0.03));
+                float r = 1.0 - abs(2.0 * n - 1.0), warm = smoothstep(0.4, 0.8, fbm(q * 0.8 + uTime * 0.03));
+                // (the veins are thin: once the pattern is too fine to draw they blend to how much of it they cover)
+                float vein = mix(0.12, smoothstep(0.86, 0.98, r), noiseFade(footprint(q * 0.35) * 4.0));
                 c = mix(vec3(0.16, 0.025, 0.01) + vec3(0.35, 0.06, 0.0) * warm, vec3(1.9, 0.55, 0.08), vein) + vec3(0.8, 0.5, 0.1) * pow(vein, 4.0);
             } else {   // acid: glowing toxic green, darker sides, with drifting foam and a slow shimmer
                 float n = fbm(q * 0.9 + flow * uTime * 0.6);
@@ -161,6 +208,7 @@ void main() {
     vec3 an = abs(vN);
     vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;   // the face's plane, metres
     float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
+    vec3 emit = vec3(0.0);            // glowing parts (crystal edges, circuit traces), added after the light
     if (mat < 12) {
         vec2 pp = q * (an.y > 0.5 ? 0.25 : 0.5);
         if (mat == 3) pp = pp * vec2(2.0, 0.5);
@@ -168,11 +216,11 @@ void main() {
         float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
         albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
         if (mat == 3) {   // metal: brushed streaks along each panel and a soft sheen (owner, 2026-10-28: "not just black box")
-            albedo *= 1.15 + 0.12 * (vnoise(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
+            albedo *= 1.15 + 0.12 * (vnoiseAA(vec2(q.x * 0.6, q.y * 40.0)) - 0.5);
             spec = 0.35; gloss = 24.0;
         }
     } else if (mat == 12) {   // ice: pale blue, cloudy depths and fine white cracks, glossy
-        float n = fbm(q * 0.8), cr = abs(vnoise(q * 3.0) - 0.5);
+        float n = fbm(q * 0.8), cr = abs(vnoiseAA(q * 3.0) - 0.5);
         albedo = lin(mix(vec3(0.55, 0.72, 0.86), vec3(0.80, 0.90, 0.97), n)) * (1.0 + 0.6 * (1.0 - smoothstep(0.0, 0.03, cr)));
         spec = 0.6; gloss = 64.0;
     } else if (mat == 13) {   // sand: warm tan, fine grain, wind ripples on tops
@@ -181,7 +229,7 @@ void main() {
     } else if (mat == 14) {   // wood: planks 0.25 m wide along the face's long way, each its own shade, grain and rings
         vec2 r = an.y > 0.5 ? q : vec2(q.y, q.x);
         float plank = floor(r.y * 4.0), along = r.x + hash2(vec2(plank, 3.0)) * 7.0, across = fract(r.y * 4.0);
-        float grain = sin((along * 0.6 + vnoise(vec2(along * 0.3, plank)) * 4.0 + across * 2.0) * 9.0) * 0.5 + 0.5;
+        float grain = sin((along * 0.6 + vnoiseAA(vec2(along * 0.3, plank)) * 4.0 + across * 2.0) * 9.0) * 0.5 + 0.5;
         float joint = min(smoothstep(0.0, 0.04, across), smoothstep(0.0, 0.04, 1.0 - across)) * smoothstep(0.0, 0.02, abs(fract(along / 2.4) - 0.5) * 2.0);
         albedo = lin(mix(vec3(0.42, 0.26, 0.14), vec3(0.62, 0.42, 0.24), 0.5 * hash2(vec2(plank, 9.0)) + 0.3 * grain)) * mix(0.55, 1.0, joint);
     } else if (mat == 15) {   // plastic: the map's accent colour, smooth and even, a tight shine
@@ -193,7 +241,7 @@ void main() {
         if (an.y > 0.5) albedo = green;
         else {   // sides: earth, green down the top 1/4 m (ragged) where the top is open (the bake says: no 0.25 in vMat)
             float top = an.x > 0.5 ? vEdge.z - vEdge.x : vEdge.w - vEdge.y;   // (to the piece's top edge: the side's top)
-            float fringe = abs(vMat - float(mat)) < 0.1 ? 1.0 - smoothstep(0.2, 0.26, top + 0.05 * (vnoise(q * vec2(9.0, 3.0)) - 0.5)) : 0.0;
+            float fringe = abs(vMat - float(mat)) < 0.1 ? 1.0 - smoothstep(0.2, 0.26, top + 0.05 * (vnoiseAA(q * vec2(9.0, 3.0)) - 0.5)) : 0.0;
             albedo = mix(lin(vec3(0.36, 0.26, 0.17)) * (0.85 + 0.2 * fbm(q * 2.0)), green, fringe);
         }
     } else if (mat == 17) {   // rubber: near-black, matte, fine pebbled dots
@@ -201,7 +249,7 @@ void main() {
         albedo = lin(vec3(0.13, 0.13, 0.14)) * (0.85 + 0.3 * smoothstep(0.32, 0.2, length(d)));
         spec = 0.05; gloss = 8.0;
     } else if (mat == 18) {   // steel: light grey, long brushed streaks, a bright sharp highlight
-        albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoise(vec2(q.x * 0.5, q.y * 60.0)));
+        albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoiseAA(vec2(q.x * 0.5, q.y * 60.0)));
         spec = 0.7; gloss = 48.0;
     } else if (mat == 20) {   // brick: classic red, running bond (0.2 x 0.065 m bricks, 1 cm mortar), each brick its own shade
         vec2 r = an.y > 0.5 ? q : (an.x > 0.5 ? vec2(vPos.z, vPos.y) : vec2(vPos.x, vPos.y));
@@ -209,15 +257,74 @@ void main() {
         vec2 b = vec2(r.x / 0.21 + 0.5 * mod(row, 2.0), r.y / 0.075);
         vec2 cell = floor(b), f = fract(b) * vec2(0.21, 0.075);
         float mortar = min(min(f.x, 0.21 - f.x), min(f.y, 0.075 - f.y));
-        float m = smoothstep(0.004, 0.007, mortar);
-        vec3 brick = mix(vec3(0.55, 0.20, 0.13), vec3(0.70, 0.30, 0.20), hash2(cell)) * (0.9 + 0.15 * vnoise(r * 40.0));
+        // (mortar lines thinner than a pixel fade to the share they cover: no moire rings across a wall far off / edge on)
+        float m = mix(0.85, smoothstep(0.004, 0.007, mortar), 1.0 - smoothstep(0.12, 0.3, footprint(r / 0.075)));
+        vec3 brick = mix(vec3(0.55, 0.20, 0.13), vec3(0.70, 0.30, 0.20), hash2(cell)) * (0.9 + 0.15 * vnoiseAA(r * 40.0));
         albedo = lin(mix(vec3(0.62, 0.60, 0.55), brick, m));
+    } else if (mat == 22) {   // asphalt: near-black with light and dark aggregate
+        albedo = lin(vec3(0.20, 0.20, 0.21)) * (0.8 + 0.4 * hash2(floor(q * 60.0))) * (0.92 + 0.12 * fbm(q * 0.7));
+    } else if (mat == 23) {   // mud: wet brown, darker glossy puddles
+        float pud = smoothstep(0.55, 0.62, fbm(q * 0.8));
+        albedo = lin(mix(vec3(0.32, 0.22, 0.13), vec3(0.18, 0.12, 0.07), pud)) * (0.85 + 0.25 * fbm(q * 4.0));
+        spec = 0.7 * pud; gloss = 80.0;
+    } else if (mat == 24) {   // cobblestone: rounded grey stones in dark joints
+        vec2 w = worley(q * 3.0);
+        float edge = w.y - w.x;
+        albedo = lin(mix(vec3(0.25, 0.24, 0.22), vec3(0.55, 0.53, 0.5) * (0.8 + 0.3 * hash2(floor(q * 3.0))), smoothstep(0.03, 0.12, edge))) * (0.9 + 0.15 * fbm(q * 8.0));
+    } else if (mat == 25) {   // concrete: cast slabs 1.2 x 0.6 m with form-tie holes
+        vec2 c = fract(q / vec2(1.2, 0.6));
+        float seam = min(min(c.x, 1.0 - c.x) * 1.2, min(c.y, 1.0 - c.y) * 0.6), tie = length((fract(q / vec2(0.6, 0.3)) - 0.5) * vec2(0.6, 0.3));
+        albedo = lin(vec3(0.58, 0.58, 0.56)) * (0.85 + 0.2 * fbm(q * 3.0) + 0.06 * hash2(floor(q * 80.0))) * mix(0.7, 1.0, smoothstep(0.0, 0.01, seam)) * mix(0.5, 1.0, smoothstep(0.015, 0.025, tie));
+    } else if (mat == 26) {   // tile: glazed cream 0.25 m squares in grey grout, each its own shade, a soft bevel and shine
+        vec2 c = q / 0.25, f = fract(c);
+        float g = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)) * 0.25;
+        float bevel = mix(0.9, smoothstep(0.004, 0.012, g), 1.0 - smoothstep(0.05, 0.15, footprint(c)));
+        vec3 glaze = mix(vec3(0.86, 0.84, 0.78), vec3(0.93, 0.92, 0.88), hash2(floor(c))) * (0.97 + 0.03 * vnoiseAA(q * 12.0));
+        albedo = lin(mix(vec3(0.42, 0.42, 0.40), glaze * mix(0.85, 1.0, smoothstep(0.012, 0.03, g)), bevel));
+        spec = 0.5 * bevel; gloss = 70.0;
+    } else if (mat == 27) {   // marble: white with grey veins, polished
+        float v = abs(sin(q.x * 1.5 + q.y * 0.7 + fbm(q * 1.2) * 7.0));
+        albedo = lin(mix(vec3(0.35, 0.36, 0.40), vec3(0.93, 0.92, 0.90), smoothstep(0.0, 0.25, v))) * (0.95 + 0.05 * fbm(q * 6.0));
+        spec = 0.6; gloss = 90.0;
+    } else if (mat == 28) {   // corrugated metal: ribs, rust streaking down
+        float w = sin(q.x * 40.0) * 0.5 + 0.5, rust = smoothstep(0.55, 0.8, fbm(vec2(q.x * 4.0, q.y * 0.4)));
+        albedo = lin(mix(vec3(0.55, 0.57, 0.6), vec3(0.45, 0.22, 0.10), rust)) * (0.75 + 0.35 * w);
+        spec = 0.3 * (1.0 - rust); gloss = 30.0;
+    } else if (mat == 29) {   // hazard stripes: yellow and black diagonals
+        albedo = lin(mod(floor((q.x + q.y) / 0.3), 2.0) < 0.5 ? vec3(0.95, 0.75, 0.05) : vec3(0.08)) * (0.92 + 0.08 * fbm(q * 5.0));
+    } else if (mat == 30) {   // snow: soft white drifts, a few glints
+        albedo = lin(vec3(0.93, 0.95, 1.0)) * (0.9 + 0.1 * fbm(q * 1.5)) + vec3(1.5) * step(0.997, hash2(floor(q * 120.0)));
+    } else if (mat == 31) {   // stone blocks (ashlar): 0.8 x 0.4 m, rows offset, deep joints
+        float row = floor(q.y / 0.4);
+        vec2 b = vec2(q.x / 0.8 + 0.5 * mod(row, 2.0), q.y / 0.4), f = fract(b) * vec2(0.8, 0.4);
+        float j = min(min(f.x, 0.8 - f.x), min(f.y, 0.4 - f.y));
+        albedo = lin(vec3(0.6, 0.58, 0.54) * (0.8 + 0.25 * hash2(floor(b)))) * (0.85 + 0.2 * fbm(q * 5.0))
+               * mix(0.35, 1.0, mix(0.92, smoothstep(0.01, 0.03, j), 1.0 - smoothstep(0.05, 0.15, footprint(q / 0.4))));
+    } else if (mat == 32) {   // crystal: violet-blue facets with glowing edges
+        vec2 w = worley(q * 2.0);
+        albedo = lin(mix(vec3(0.35, 0.2, 0.6), vec3(0.2, 0.6, 0.8), hash2(floor(q * 2.0 + w.x)))) * (0.7 + 0.5 * w.x);
+        emit = vec3(0.6, 0.9, 1.4) * (1.0 - smoothstep(0.0, 0.06, w.y - w.x));
+        spec = 0.8; gloss = 120.0;
+    } else if (mat == 33) {   // circuit board: green, traces that pulse
+        vec2 c = q / 0.25, i = floor(c), f = fract(c);
+        float h = hash2(i), tr = h < 0.5 ? abs(f.y - 0.5) : abs(f.x - 0.5);
+        float pulse = 0.5 + 0.5 * sin((h < 0.5 ? c.x : c.y) * 3.0 - uTime * 4.0 + h * 20.0);
+        albedo = lin(vec3(0.05, 0.22, 0.12)) * (0.9 + 0.1 * vnoiseAA(q * 20.0));
+        emit = vec3(0.2, 1.4, 0.8) * (1.0 - smoothstep(0.03, 0.06, tr)) * (0.3 + 0.7 * pulse * pulse);
+    } else if (mat == 34) {   // rusted steel: bare steel eaten by rust patches
+        float rust = clamp(smoothstep(0.4, 0.75, fbm(q * 1.3)) + 0.3 * smoothstep(0.6, 0.9, fbm(q * 6.0)), 0.0, 1.0);
+        albedo = lin(mix(vec3(0.55, 0.57, 0.6), vec3(0.5, 0.24, 0.1) * (0.8 + 0.4 * vnoiseAA(q * 20.0)), rust));
+        spec = 0.5 * (1.0 - rust); gloss = 40.0;
+    } else if (mat == 35) {   // terracotta roof tiles: curved, overlapping rows
+        float row = floor(q.y / 0.25), x = q.x / 0.3 + 0.5 * mod(row, 2.0);
+        float curve = sin(fract(x) * 3.1416), f = fract(q.y / 0.25);
+        albedo = lin(vec3(0.75, 0.38, 0.2) * (0.85 + 0.2 * hash2(vec2(floor(x), row)))) * (0.55 + 0.5 * curve) * mix(0.5, 1.0, smoothstep(0.0, 0.15, f));
     } else {   // diamond plate: grey metal with raised diamonds (lit on one side, shadowed on the other), in rows offset
         vec2 r = vec2(q.x + q.y, q.x - q.y) * 2.5;
         vec2 cell = floor(r), f = fract(r) - 0.5;
         float lug = (mod(cell.x + cell.y, 2.0) < 0.5 ? f.x : f.y);
         float bump = smoothstep(0.09, 0.05, abs(lug) + 0.35 * abs((mod(cell.x + cell.y, 2.0) < 0.5 ? f.y : f.x)));
-        albedo = lin(vec3(0.50, 0.52, 0.55)) * (0.9 + 0.1 * vnoise(q * 9.0)) * (1.0 + 0.6 * bump * sign(lug + 0.0001));
+        albedo = lin(vec3(0.50, 0.52, 0.55)) * (0.9 + 0.1 * vnoiseAA(q * 9.0)) * (1.0 + 0.6 * bump * sign(lug + 0.0001));
         spec = 0.55; gloss = 40.0;
     }
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
@@ -229,6 +336,7 @@ void main() {
         vec3 v = normalize(uCamPos - vPos), h = normalize(v + uSunDir);
         c += uSunColor * sun * spec * pow(max(dot(normalize(vN), h), 0.0), gloss);
     }
+    c += emit;
     c *= outline(vEdge, uOutlineW);
     fragColor = vec4(finish(c), 1.0);
 })";
@@ -626,6 +734,9 @@ bool Renderer::init(int shadowRes, std::string* err) {
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
                U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
                U(worldProg_, "uTime"), U(worldProg_, "uSunDir")};
+    uHoleCount_ = U(worldProg_, "uHoleCount");
+    glUniform1i(U(worldProg_, "uHoles"), 2);
+    glUniform1i(uHoleCount_, 0);
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
     glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
@@ -721,6 +832,35 @@ void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::functio
         }
         bw.verts.swap(sorted);
     }
+}
+
+// The holes blown in thin brick / cobblestone (Map::holes): two RGBA32F texels each on texture unit 2, which nothing
+// else uses. Sent when they change (Map::destructSerial), not every frame.
+void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
+    const int n = (int)std::min<size_t>(holes.size(), kMaxHoles);
+    glUseProgram(worldProg_);
+    glUniform1i(uHoleCount_, n);
+    glUseProgram(0);
+    if (!n) return;
+    if (!holeTex_) {
+        glGenTextures(1, &holeTex_);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, holeTex_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 2 * kMaxHoles, 1, 0, GL_RGBA, GL_FLOAT, nullptr);
+    } else {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, holeTex_);
+    }
+    std::vector<float> t((size_t)n * 8);
+    for (int i = 0; i < n; i++) {
+        const Map::Hole& h = holes[i];
+        const float v[8] = {h.u, h.v, h.r, (float)h.axis, h.cw, h.ch, h.lo, h.hi};
+        std::copy(v, v + 8, t.begin() + (size_t)i * 8);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2 * n, 1, GL_RGBA, GL_FLOAT, t.data());
+    glActiveTexture(GL_TEXTURE0);
 }
 
 void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {

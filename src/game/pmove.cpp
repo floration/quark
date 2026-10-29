@@ -49,11 +49,18 @@ constexpr float kDashAirGap = 0.35f;    // a dash in the air leaves with this sh
                                         // A custom mode's dash keep multiplier scales it too
 constexpr float kRampAirAccel = 2.0f;   // surf, touching a ramp's face: x air acceleration (owner 2026-10-28: "make it like 2x base", 8 was "insane")
 constexpr float kIceFriction = 0.08f;    // standing on ice: ground friction x this (owner, 2026-10-28: "ice is slippery")...
+constexpr float kIceDash = 0.25f;        // a dash off ice: this share of what it does elsewhere (owner, 2026-10-28)
 constexpr float kIceAccel = 0.2f;        // ...and ground acceleration x this (you push off it as badly as you stop on it)
 constexpr float kRubberBounce = 0.85f;   // hitting rubber (floor, wall or ceiling) faster than kRubberMin: you leave it at this
 constexpr float kRubberMin = 3.0f;       // share of the speed you hit it with, back the way you came (owner: "extra bouncy")
 constexpr float kRubberGrip = 1.6f;      // standing on rubber: ground friction and acceleration x this (owner: "more acceleration
                                          // for ground movement and quicker breaking")
+constexpr float kGlassHookToward = 1.0f;   // grappling glass while moving toward it faster than this (m/s) latches on
+constexpr float kAsphaltSpeed = 1.15f;   // on asphalt (owner, 2026-10-28: "increase top ground speed, increase accel and breaking"):
+constexpr float kAsphaltGrip = 1.4f;     // run speed x this, ground friction and acceleration x this
+constexpr float kMudSpeed = 0.6f;        // in mud (owner: "sticky"): run speed x this, ground friction x kMudGrip (you stop
+constexpr float kMudGrip = 2.5f;         // dead), jumps x kMudJump
+constexpr float kMudJump = 0.75f;
 constexpr float kSlopeGravityBack = 0.5f;   // riding a ramp's face: this share of a step's gravity is given back (owner 2026-10-28)
 constexpr float kDashVerticalUp = 0.5f;    // looking straight up makes the dash this vertical (the sine: 50% of its speed
                                            // goes up; owner 1.18.31: "40% up and 90% down", it was 0.6375 both ways;
@@ -180,7 +187,14 @@ static int slideMove(MoveState& s, const Map& map, Vec3 delta, bool crouched, Ve
         const int i = order[o];
         AABB box = playerBox(s.pos, crouched, scale);
         const Brush* hit = nullptr;
-        float d = map.sweepAxis(box, i, delta[i], &hit);
+        // dashing goes through glass (it breaks: the server, from s.glassBrush)
+        int pane = -1;
+        float d = map.sweepAxis(box, i, delta[i], &hit, s.dashTimer > 0 && !map.glass.empty() ? &pane : nullptr);
+        if (pane >= 0 && s.glassBrush < 0) {
+            const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
+            s.glassBrush = pane; s.glassHow = GLASS_DASH;
+            s.glassAt = box.center(); s.glassDir = {s.dashDirX * hs, s.dashUp, s.dashDirZ * hs};
+        }
         Vec3 n;
         if (std::fabs(d - delta[i]) > 1e-5f) {
             if (slopeContact(hit, shifted(box, i, d), n) && !floorFace(n)) {
@@ -253,11 +267,20 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if ((s.flags & MF_FROZEN) || (s.mods & MOVE_GRAPPLE_ONLY)) wish = {};
     float wishLen = length(wish);
     Vec3 wishDir = wishLen > 0 ? wish / wishLen : Vec3();
-    const float jumpSpeed = kJumpSpeed * mt.jump;
-    float maxSpeed = (crouched ? (kCrouchSpeed * mt.m[MV_CROUCH_SPEED]) : kGroundSpeed) * mt.speed;
+    bool onGround = (s.flags & MF_ONGROUND) != 0;
+    // what you stand on, asked only on a map with a floor material that moves you differently (ice, rubber, asphalt, mud)
+    int floorMat = -1;
+    if (onGround && map.hasGripMats) {
+        const Brush* fb = nullptr;
+        map.sweepAxis(playerBox(s.pos, crouched, scale), 1, -0.05f, &fb);
+        if (fb) floorMat = fb->material;
+    }
+    // mud (owner, 2026-10-28: "sticky"): slow to run through and to jump out of; asphalt: a faster run
+    const float jumpSpeed = kJumpSpeed * mt.jump * (floorMat == kMatMud ? kMudJump : 1.0f);
+    float maxSpeed = (crouched ? (kCrouchSpeed * mt.m[MV_CROUCH_SPEED]) : kGroundSpeed) * mt.speed
+                   * (floorMat == kMatAsphalt ? kAsphaltSpeed : floorMat == kMatMud ? kMudSpeed : 1.0f);
     float wishSpeed = std::min(wishLen, 1.0f) * maxSpeed;
 
-    bool onGround = (s.flags & MF_ONGROUND) != 0;
     const bool grappleOnly = (s.mods & MOVE_GRAPPLE_ONLY) != 0;
     bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0 && !grappleOnly;
     bool frozen = (s.flags & MF_FROZEN) != 0;
@@ -334,6 +357,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashCharges--;
         s.events |= ME_DASH;
         if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
+        if (grounded && floorMat == kMatIce) {
+            // on ice (owner, 2026-10-28: "it should only work 25% because its slippery"): no burst, only a quarter of the
+            // change it would make to your speed, toward what it leaves you with
+            const float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp));
+            const Vec3 target = {s.dashDirX * s.dashExitSpeed * hs, s.vel.y, s.dashDirZ * s.dashExitSpeed * hs};
+            s.vel += (target - s.vel) * kIceDash;
+            s.dashTimer = 0;
+        }
     }
     bool dashing = s.dashTimer > 0;
     float gravDv = 0;   // (this step's fall from gravity, m/s: a ramp's wall face takes half of it back)
@@ -453,6 +484,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
             s.events |= ME_HOOK;
             grabbed = true;
+        } else if (t >= 0 && wallMat == kMatGlass && dot(s.vel, dir) < kGlassHookToward) {
+            // glass, standing or moving off (owner, 2026-10-28): as if you'd shot it from the other side, shards come back
+            // at you; the hook catches nothing (one try a press, the cooldown as a let-go)
+            const int pane = map.glassAt(eye + dir * (t + 0.01f));
+            if (pane >= 0 && s.glassBrush < 0) { s.glassBrush = pane; s.glassHow = GLASS_HOOK_BACK; s.glassAt = eye + dir * t; s.glassDir = dir * -1.0f; }
+            s.flags |= MF_HOOKHELD;
+            grabbed = true;
         } else if (t >= 0 && wallMat != kMatNoGrapple) {   // (nograpple: the hook hits it and lets go)
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
@@ -483,6 +521,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f * scale, 0));
         float dist = length(to);
         if (dist < (kHookRelease * mt.m[MV_HOOK_RELEASE])) {
+            // pulled to a pane: it shatters on away from you as the grapple lets go
+            if (s.hookTarget == 0 && !map.glass.empty() && s.glassBrush < 0) {
+                const int pane = map.glassAt(s.hookPoint, 0.05f);
+                if (pane >= 0) { s.glassBrush = pane; s.glassHow = GLASS_HOOK_THROUGH; s.glassAt = s.hookPoint; s.glassDir = dist > 1e-4f ? to / dist : Vec3(0, 0, 1); }
+            }
             s.flags &= ~MF_HOOKED;
             hooked = false;
         } else if (!dashing) {
@@ -533,15 +576,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
         onGround = false;
     } else if (onGround) {
-        // the floor's grip: ice slippery (little friction, little push), rubber grippy (more of both); asked only on a
-        // map with either
+        // the floor's grip: ice slippery (little friction, little push), rubber and asphalt grippy (more of both), mud
+        // sticky (it stops you hard)
         float grip = 1.0f, push = 1.0f;
-        if (map.hasIce || map.hasRubber) {
-            const Brush* fb = nullptr;
-            map.sweepAxis(playerBox(s.pos, crouched, scale), 1, -0.05f, &fb);
-            if (fb && fb->material == kMatIce) { grip = kIceFriction; push = kIceAccel; }
-            else if (fb && fb->material == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
-        }
+        if (floorMat == kMatIce) { grip = kIceFriction; push = kIceAccel; }
+        else if (floorMat == kMatRubber) { grip = kRubberGrip; push = kRubberGrip; }
+        else if (floorMat == kMatAsphalt) { grip = kAsphaltGrip; push = kAsphaltGrip; }
+        else if (floorMat == kMatMud) grip = kMudGrip;
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         if (sp > 0) {
             float drop = std::max(sp, (kStopSpeed * mt.m[MV_STOP_SPEED])) * (kFriction * mt.m[MV_FRICTION]) * grip * dt;
@@ -818,6 +859,7 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     const float sy = std::sin(cmd.yaw), cy = std::cos(cmd.yaw);
     s.events = 0;
     s.landSpeed = 0;
+    s.glassBrush = -1;
     const MoveTuning& mt = moveTuning();
     if (__builtin_expect(mt.expr != nullptr, 0)) { pmoveExpr(s, cmd, map, probe, mt, {-sy, 0, -cy}, {cy, 0, -sy}, n); return; }
     const CmdCtx cx{mt, {-sy, 0, -cy}, {cy, 0, -sy}};

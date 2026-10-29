@@ -15,6 +15,7 @@
 #include "theme.h"
 #include "weaponpredict.h"
 #include "../game/netclient.h"
+#include "../game/glass.h"
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "audio.h"
@@ -564,6 +565,16 @@ private:
     void drawMuzzleFlash(const Vec3& at, int w, const Vec3& beam, float a, float scale);
     double nextLocalSpark_ = 0;
     std::vector<Explosion> explosions_;
+    // Glass shards and brick / cobblestone chunks (glass.h): drawn falling, then lying where they land, until out of view
+    // (owner, 2026-10-28: "disappear from your screen once its no longer in your fov")
+    struct VisShard { Vec3 pos, vel; float size; Vec3 color; bool rest, glass; double born; };
+    std::vector<VisShard> visShards_;
+    std::vector<NetClient::GlassFx> glassFxScratch_;
+    std::vector<GlassShard> glassShardScratch_;
+    double shardsAt_ = -1;
+    uint32_t holeSerial_ = ~0u, holeMapRev_ = ~0u;
+    void predictShotGlass(int w, const UserCmd& c);   // your own shot / knife breaks a pane at once (the server confirms)
+    void updateDestruction(const Map& map);           // breaks to show, holes to send, shards to fly and draw
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
     std::vector<GameEvent> evScratch_;          // (handleEvents)

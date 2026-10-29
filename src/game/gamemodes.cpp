@@ -69,6 +69,7 @@ void setPhase(Server& s, Phase p, float duration) {
     const int old = s.ms_.phase;
     // the match is over, or a new one starts (out of warmup or the end screen): stuck knives / bolts / syringes go
     if (p != old && (p == PHASE_WARMUP || p == PHASE_MATCH_END || old == PHASE_WARMUP || old == PHASE_MATCH_END)) s.clearProps();
+    else if (p != old && (p == PHASE_FREEZE || (p == PHASE_LIVE && old == PHASE_ROUND_END))) s.resetDestruction();   // a new round: broken glass and blown holes come back
     s.ms_.phase = p;
     s.phaseSerial_++;   // (a slot that ended the round or the match: its caller stops, as after a native endRound)
     s.phaseEnd_ = duration > 0 ? s.time() + duration : 0;

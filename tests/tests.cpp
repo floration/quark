@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include "common/profile.h"
 #include "game/demo.h"
+#include "game/glass.h"
 #include "../src/client/complete.h"
 #include "../src/client/lightmap.h"
 #include "../src/client/hudclock.h"
@@ -3510,7 +3511,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 21 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatBrick) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, brick, base
+    CHECK(seen.size() == 36 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatBrick) == kMatGlass && nextMapMaterial(kMatTerracotta) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, brick, glass .. terracotta, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -4501,7 +4502,7 @@ static void testSlopes() {
         Map b;
         CHECK(b.parse(t) && b.serialize() == t);
         Map bad;
-        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 21 0 0 0 0 1 1 1\n" + base));
+        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 36 0 0 0 0 1 1 1\n" + base));
     }
     Map m;
     // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
@@ -4711,6 +4712,20 @@ static void testMaterials() {
         for (int t = 0; t < 62; t++) pmove(s, c, m);
         return std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
     };
+    {   // a dash off ice does a quarter of what it does off base (owner, 2026-10-28)
+        auto dash = [](const char* floor) {
+            Map m;
+            CHECK(m.parse(std::string(floor) + " -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+            MoveState s; s.pos = {0, 0, 0}; s.flags = MF_ONGROUND;
+            UserCmd c; c.msec = 8; c.buttons = BTN_DASH; c.forward = 127;
+            pmove(s, c, m); c.buttons = 0;
+            for (int t = 0; t < 20; t++) pmove(s, c, m);
+            return -s.pos.z;
+        };
+        const float b = dash("box"), i = dash("ice");
+        printf("    a dash from standing, 0.17 s later: base %.2f m, ice %.2f m\n", b, i);
+        CHECK(i > 0.1f && i < b * 0.5f);
+    }
     const float onBase = slide("box"), onIce = slide("ice");
     printf("    let go at 8 m/s, 0.5 s later: base %.2f, ice %.2f m/s\n", onBase, onIce);
     CHECK(onBase < 0.5f && onIce > 5.0f);
@@ -4756,6 +4771,88 @@ static void testMaterials() {
 
 // Rockets and stickies on rubber and ice (owner, 2026-10-28): a rocket bounces off rubber (no blast), a sticky bounces off
 // it too, a sticky thrown along ice slides before it sticks.
+// Glass and blown holes (owner, 2026-10-28): a pane breaks and lets shots, players and sight through; thin brick and
+// cobblestone get a hole from a blast (2.5 m less the distance to the wall), thick ones don't; everything comes back.
+static void testDestruction(uint16_t port) {
+    printf("destruction: glass breaks, thin brick blows open, all of it comes back\n");
+    {
+        Map m;
+        CHECK(m.parse("box -20 -1 -20 20 0 20\nglass -2 0 5 2 3 5.05\nbrick -3 0 10 3 3 10.1\nbrick -3 0 15 3 3 15.5\n"
+                      "cobblestone -3 0 20 3 3 20.12\nspawn any 0 0 0\n"));
+        CHECK(m.glass.size() == 1 && m.glass[0] == 1);
+        const Vec3 eye = {0, 1.5f, 0}, fwd = {0, 0, 1};
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);
+        CHECK(!m.raycastAny(eye, fwd, 4.99f) && m.glassAt({0, 1.5f, 5.0f}) == 1);   // (sight passes glass)
+        CHECK(m.breakGlass(1) && !m.breakGlass(1) && m.glassAt({0, 1.5f, 5.0f}) < 0);
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 10.0f) < 0.01f);                     // through the gap to the thin brick
+        // a direct hit on the thin brick: a hole about 2.5 m across; the edge of the wall stays
+        const size_t before = m.brushes.size();
+        CHECK(m.punchHole({0, 1.5f, 9.95f}) == 1 && m.brushes[2].gone && m.brushes.size() > before && m.holes.size() == 1);
+        printf("    hole: %zu pieces, r %.2f\n", m.brushes.size() - before, m.holes.empty() ? 0.0f : m.holes[0].r);
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 15.0f) < 0.01f);                     // through the hole to the thick one
+        CHECK(std::fabs(m.raycast({2.8f, 1.5f, 0}, fwd, 50) - 10.0f) < 0.01f);         // the wall's end: still there
+        CHECK(std::fabs(m.raycast({0, 2.97f, 0}, fwd, 50) - 10.0f) < 0.01f || std::fabs(m.raycast({0, 0.03f, 0}, fwd, 50) - 10.0f) > -1);
+        CHECK(m.punchHole({0, 1.5f, 15.0f - 0.05f}) == 0);                                // too thick: nothing
+        CHECK(m.punchHole({0, 1.5f, 20.0f - 1.6f}) == 1 && m.holes.size() == 2 && m.holes[1].r < 0.7f);   // 1.5 m off: a smaller one
+        m.resetDestruction();
+        CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone);
+        CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);
+        // dashing through a pane: the move isn't stopped, and the pane is named for the server to break
+        MoveState st; st.pos = {0, 0, 3.2f}; st.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 8; c.buttons = BTN_DASH; c.forward = 127; c.yaw = (float)M_PI;   // (yaw pi: facing +z)
+        int pane = -1;
+        for (int t = 0; t < 30 && pane < 0; t++) { pmove(st, c, m); if (st.glassBrush >= 0) pane = st.glassBrush; c.buttons = 0; }
+        printf("    dash: at z %.2f, pane %d\n", st.pos.z, pane);
+        CHECK(pane == 1 && st.pos.z > 4.4f);
+    }
+    {   // the event round trip
+        DestructEv d, r;
+        d.kind = DESTRUCT_GLASS; d.how = GLASS_DASH; d.by = 3; d.brush = 77; d.at = {1, 2, 3}; d.dir = {0, 0, 1}; d.seed = 1234;
+        CHECK(readDestructEvent(destructEvent(d), &r) && r.brush == 77 && r.how == GLASS_DASH && r.by == 3 && r.seed == 1234 && r.at.y == 2);
+        std::vector<uint32_t> g, g2; std::vector<Vec3> h, h2;
+        for (uint32_t k = 0; k < 130; k++) g.push_back(k);
+        for (int k = 0; k < 25; k++) h.push_back({(float)k, 0, 0});
+        auto evs = destructListEvents(g, h);
+        for (auto& e : evs) CHECK(e.text.size() <= 255 && readDestructList(e, &g2, &h2));
+        CHECK(evs.size() == 5 && g2 == g && h2.size() == 25 && h2[24].x == 24);
+        std::vector<GlassShard> a, b;
+        glassShards({{-1, 0, 0}, {1, 2, 0.05f}}, GLASS_SHOT, {0, 1, 0}, {0, 0, 1}, 99, a);
+        glassShards({{-1, 0, 0}, {1, 2, 0.05f}}, GLASS_SHATTER, {0, 1, -1}, {}, 99, b);
+        CHECK(a.size() >= 10 && a.size() <= 20 && b.size() >= 100 && b.size() <= 300);
+        bool on = true; for (auto& x : a) on = on && x.vel.z > 0; for (auto& x : b) on = on && x.vel.z > 0;
+        CHECK(on);   // (along the shot; away from the blast's side)
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::vector<NetClient*> none;
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, none, 0.1, idle);
+    CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nglass -2 0 5 2 3 5.05\nglass -2 0 -5 2 3 -4.95\nbrick -3 0 10 3 3 10.1\nspawn any 0 0 0\n"));
+    s.map_.name = "bastion";
+    int v = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(v >= 0);
+    if (v < 0) { s.stop(); return; }
+    auto& p = s.players_[v];
+    p.alive = true; p.health = 100; p.move.pos = {0, 0, 6.0f}; p.move.vel = {};
+    // a shot's shards fly on through the pane into whoever stands behind it: 10 each
+    CHECK(s.breakGlass(1, GLASS_SHOT, {0, 1.0f, 5.0f}, {0, 0, 1}, -1) && s.shardsFlyingForTest() >= 10);
+    for (int k = 0; k < 20; k++) { p.move.pos = {0, 0, 6.0f}; p.move.vel = {}; s.tickShards(); s.shardStepAt_ = 0; s.timeMs_ += 10; }
+    printf("    shot shards: health 100 -> %.0f\n", p.health);
+    CHECK(p.health < 100 && std::fmod(100 - p.health, 10.0f) < 0.01f);
+    // a rocket next to the other pane and the brick: both break
+    p.health = 100;
+    s.explodeForTest({0, 1.0f, -5.5f}, -1, WPN_ROCKET);
+    CHECK(s.map_.brushes[2].gone);
+    s.explodeForTest({0, 1.5f, 9.95f}, -1, WPN_ROCKET);
+    CHECK(s.map_.brushes[3].gone && s.map_.holes.size() == 1);
+    s.resetDestruction();
+    CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[2].gone && !s.map_.brushes[3].gone && s.map_.holes.empty() && s.shardsFlyingForTest() == 0);
+    s.stop();
+}
+
 static void testProjectileMaterials(uint16_t port) {
     printf("projectiles: rubber bounces, ice slides\n");
     Server s;
@@ -8725,7 +8822,7 @@ int main(int argc, char** argv) {
         {"slopes", [] { testSlopes(); }},
         {"surf", [] { testSurf(); }},
         {"groupslopes", [] { testGroupSlopes(); }},
-        {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); }},
+        {"materials", [] { testMaterials(); testProjectileMaterials(TP(28931)); testDestruction(TP(28932)); }},
         {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
         {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
