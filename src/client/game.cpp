@@ -2460,7 +2460,18 @@ void Game::drawWorld(float alpha) {
                 projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 const Vec3 d = p - pr.pos;
                 const float len = length(d);
-                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f, et;
+                Vec3 hn;
+                int hm = -1;
+                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len, &hn, &hm) : -1.0f, et;
+                if (hit >= 0 && hm == kMatRubber && (pr.type == WPN_ROCKET || pr.type == WPN_STICKY) && dot(v, hn) < 0) {
+                    // (off rubber, as the server's and the predicted copy do: on from the bounce for the rest of the lead;
+                    //  it was drawn as blown up there, so the rocket vanished on screen while the server's flew on)
+                    const float rest = st.lead * (1.0f - hit / len);
+                    Vec3 q = pr.pos + d / len * std::max(0.0f, hit - 0.05f), w = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
+                    projectileExtrapolate(q, w, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), rest);
+                    pr.pos = q; pr.vel = w;
+                    continue;
+                }
                 const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
                 int victim = -1;
                 bool vHead = false;
