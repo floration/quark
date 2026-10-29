@@ -568,6 +568,17 @@ inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= k
 // drawn see-through each frame, so a broken pane can go)
 inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && m != kMatGlass); }
 inline bool bakedMaterial(int m) { return m != 9 && m != kMatGlass; }   // in the static world mesh
+// Editor clean-ups (owner, 2026-10-29), on the editable brushes (generated ones only hide others). box[i] is brush i's
+// box after the fix, del[i] whether it goes. FIX MAP: same-material plain boxes that together make one box become one
+// (and one inside another of its material goes), then a brush wholly inside solid opaque boxes goes (glass, water, clip,
+// wallbang, trim and thin breakable brick / cobblestone don't hide anything: you see through them, shoot through them
+// or blow them open). Glass and breakable brick are never merged (a bigger pane or wall breaks differently).
+// FIX GAPS: a gap under 1/8 m between two plain boxes facing each other is closed by stretching the side that's off the
+// 1/8 m grid to the one on it (both off: both to the grid line between them, if there is one); on-grid gaps are meant.
+struct MapFix { std::vector<AABB> box; std::vector<bool> del; int merged = 0, hidden = 0, gaps = 0; };
+struct Map;
+MapFix mapFixRedundant(const Map& m);
+MapFix mapFixGaps(const Map& m);
 inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
 // a box line's keyword per material in map files ("box" is base)
 inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid",

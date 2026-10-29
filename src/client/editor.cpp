@@ -650,6 +650,36 @@ void Game::edCoat() {
              " with " + std::string(kMapMaterialWords[edMat_]));
 }
 
+// FIX MAP / FIX GAPS (owner, 2026-10-29: "combine redundant shapes, also delete any object that you can never see"; "if
+// there is a gap less than 1/8 between 2 object, expand whichever one is not on grid"): the changed boxes' sets, then
+// the deletes from the last one down, in one step; undo puts them back in the reverse order.
+void Game::edFix(bool gaps) {
+    const MapFix f = gaps ? mapFixGaps(ed_) : mapFixRedundant(ed_);
+    const size_t n = f.box.size();
+    std::vector<bool> del = f.del;
+    if (n && std::all_of(del.begin(), del.end(), [](bool d) { return d; })) del[0] = false;   // (a map keeps a box)
+    Map after = copyNoSource(ed_);
+    std::string ops, undo;
+    auto add = [](std::string& to, const std::string& o) { to += (to.empty() ? "" : "\n") + o; };
+    std::vector<std::string> sets, unsets;
+    for (size_t i = 0; i < n; i++) {
+        if (del[i] || sameBox(f.box[i], ed_.brushes[i].box)) continue;
+        after.brushes[i].box = f.box[i];
+        sets.push_back(describeMapObject(after, 'b', "set", (int)i));
+        unsets.push_back(describeMapObject(ed_, 'b', "set", (int)i));
+    }
+    for (auto& o : sets) add(ops, o);
+    for (size_t i = n; i-- > 0;) if (del[i]) add(ops, "b del " + std::to_string(i));
+    for (size_t i = 0; i < n; i++) if (del[i]) add(undo, insertOps(ed_, 'b', (int)i));
+    for (size_t k = unsets.size(); k-- > 0;) add(undo, unsets[k]);
+    if (ops.empty()) { edNotify(gaps ? "no small gaps to close" : "nothing to fix"); return; }
+    edSel_ = EdSel();
+    edMulti_.clear();
+    edDo(ops, undo);
+    if (gaps) edNotify("closed " + std::to_string(f.gaps) + (f.gaps == 1 ? " gap" : " gaps"));
+    else edNotify("merged " + std::to_string(f.merged) + (f.merged == 1 ? " box" : " boxes") + " into others, removed " + std::to_string(f.hidden) + " hidden");
+}
+
 // New object at the spot under the screen center (on top of whatever you're looking at), snapped to the grid.
 void Game::edAdd(int kind, int variant) {
     const float g = kGrids[edGridIdx_];
@@ -1771,6 +1801,12 @@ void Game::editorFrame(double dt) {
     {
         static const std::vector<std::string> grids = {"GRID: 1/8 M", "GRID: 1/4 M", "GRID: 1/2 M", "GRID: 1 M", "GRID: 2 M", "GRID: 4 M"};
         ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, kGridCount, grids, UiExp::local());
+        row();
+    }
+    {   // clean-ups over the whole map (one undo step each; see MapFix)
+        const float hw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, hw, h, "FIX MAP", UiExp::state("ednotice"))) edFix(false);
+        if (ui_.button(x + hw + gap, y, hw, h, "FIX GAPS", UiExp::state("ednotice"))) edFix(true);
         row();
     }
     y += 4 * s;

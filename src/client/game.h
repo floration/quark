@@ -460,6 +460,7 @@ private:
     void edModify(const std::function<void(Map&)>& f, bool coalesce);
     void edDelete();
     void edDuplicate();
+    void edFix(bool gaps);   // FIX MAP (merge redundant boxes, drop hidden ones) / FIX GAPS (close gaps under 1/8 m): one undo step
     void edCoat();   // K: a 1/8 m layer on the side of the selected box(es) you look at
     static constexpr float kCoatThick = 0.125f;
     enum { ED_ROT_Y, ED_ROT_X, ED_ROT_Z, ED_MIR_X, ED_MIR_Y, ED_MIR_Z };

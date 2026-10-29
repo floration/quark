@@ -1821,3 +1821,188 @@ float Map::cartTrack(int mode, int attackers, float progress) const {
     for (auto& sp : spawns) if (isStagedSpawn(sp.team)) return progress;   // (staged: the attackers always start at the start)
     return payloadLength() - progress;
 }
+
+// ---- editor clean-ups (see MapFix)
+static MapFix fixStart(const Map& m) {
+    MapFix f;
+    const size_t n = m.editableBrushes();
+    f.box.resize(n);
+    f.del.assign(n, false);
+    for (size_t i = 0; i < n; i++) f.box[i] = m.brushes[i].box;
+    return f;
+}
+
+// brushes by 4 m cells, for the clean-ups' neighbour lookups (Midtown's 11 000 boxes pair by pair took 2 s)
+struct FixGrid {
+    std::unordered_map<int64_t, std::vector<int>> cells;
+    std::vector<int> stamp;
+    int now = 0;
+    static int64_t key(int x, int y, int z) { return ((int64_t)(x & 0x1fffff) << 42) | ((int64_t)(y & 0x1fffff) << 21) | (int64_t)(z & 0x1fffff); }
+    template <class F> static void span(const AABB& b, F f) {
+        const int x0 = (int)std::floor(b.mn.x / 4), x1 = (int)std::floor(b.mx.x / 4), y0 = (int)std::floor(b.mn.y / 4),
+                  y1 = (int)std::floor(b.mx.y / 4), z0 = (int)std::floor(b.mn.z / 4), z1 = (int)std::floor(b.mx.z / 4);
+        if ((int64_t)(x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > 4096) { f(key(INT_MIN / 2, 0, 0)); return; }   // (a huge box: one shared list)
+        for (int x = x0; x <= x1; x++) for (int y = y0; y <= y1; y++) for (int z = z0; z <= z1; z++) f(key(x, y, z));
+    }
+    std::vector<int> huge;
+    void add(int i, const AABB& b) {
+        if (stamp.size() <= (size_t)i) stamp.resize(i + 1, 0);
+        span(b, [&](int64_t k) { if (k == key(INT_MIN / 2, 0, 0)) huge.push_back(i); else cells[k].push_back(i); });
+    }
+    template <class F> void near(const AABB& b, F f) {   // each brush listed in a cell b touches, once
+        now++;
+        auto one = [&](int i) { if (stamp[i] != now) { stamp[i] = now; f(i); } };
+        for (int i : huge) one(i);
+        span(b, [&](int64_t k) {
+            if (k == key(INT_MIN / 2, 0, 0)) { for (auto& c : cells) for (int i : c.second) one(i); return; }
+            auto it = cells.find(k);
+            if (it != cells.end()) for (int i : it->second) one(i);
+        });
+    }
+};
+
+static bool thinBreakable(const Brush& b) {
+    const Vec3 d = b.box.mx - b.box.mn;
+    return holeMaterial(b.material) && std::min(d.x, std::min(d.y, d.z)) <= kBreakableThick + 1e-4f;
+}
+
+MapFix mapFixRedundant(const Map& m) {
+    MapFix f = fixStart(m);
+    const size_t n = f.box.size();
+    constexpr float e = 1e-4f;
+    auto mergeable = [&](size_t i) {
+        const Brush& b = m.brushes[i];
+        return !f.del[i] && b.shape == BRUSH_BOX && b.material != kMatGlass && !holeMaterial(b.material);
+    };
+    auto same = [&](float a, float b) { return std::fabs(a - b) <= e; };
+    // 1. merges, until nothing more joins (a row of boxes joins one at a time)
+    FixGrid grid;
+    for (size_t i = 0; i < n; i++) grid.add((int)i, f.box[i]);
+    const Vec3 pad(2 * e, 2 * e, 2 * e);
+    for (bool again = true; again;) {
+        again = false;
+        for (size_t i = 0; i < n; i++) {
+            if (!mergeable(i)) continue;
+            std::vector<int> close;
+            grid.near({f.box[i].mn - pad, f.box[i].mx + pad}, [&](int j) { close.push_back(j); });
+            for (int jj : close) {
+                const size_t j = (size_t)jj;
+                if (j == i || !mergeable(j) || m.brushes[j].material != m.brushes[i].material) continue;
+                AABB& a = f.box[i];
+                const AABB& b = f.box[j];
+                bool inside = true;
+                for (int k = 0; k < 3; k++) inside &= b.mn[k] >= a.mn[k] - e && b.mx[k] <= a.mx[k] + e;
+                int equal = 0, along = -1;
+                for (int k = 0; k < 3; k++) {
+                    if (same(a.mn[k], b.mn[k]) && same(a.mx[k], b.mx[k])) equal++;
+                    else along = k;
+                }
+                const bool joins = equal == 2 && b.mn[along] <= a.mx[along] + e && b.mx[along] >= a.mn[along] - e;
+                if (!inside && !joins) continue;
+                if (joins) { a.mn = vmin(a.mn, b.mn); a.mx = vmax(a.mx, b.mx); grid.add((int)i, a); }
+                f.del[j] = true;
+                f.merged++;
+                again = true;
+            }
+        }
+    }
+    // 2. brushes wholly inside solid opaque boxes (any brush can hide one, generated ones too; one already gone can't)
+    auto hides = [&](size_t k) {
+        const Brush& b = m.brushes[k];
+        return (k >= n || !f.del[k]) && b.shape == BRUSH_BOX && !b.gone && solidMaterial(b.material) && b.material != 2 &&
+               b.material != kMatGlass && !thinBreakable(b);
+    };
+    FixGrid all;
+    for (size_t k = 0; k < m.brushes.size(); k++) all.add((int)k, k < n ? f.box[k] : m.brushes[k].box);
+    for (size_t i = 0; i < n; i++) {
+        if (f.del[i]) continue;
+        const AABB c = f.box[i];
+        std::vector<AABB> by;
+        float axis[3][64];
+        int cnt[3] = {0, 0, 0};
+        for (int k = 0; k < 3; k++) { axis[k][cnt[k]++] = c.mn[k]; axis[k][cnt[k]++] = c.mx[k]; }
+        bool tooMany = false;
+        std::vector<int> close;
+        all.near(c, [&](int k) { close.push_back(k); });
+        for (int kk : close) {
+            const size_t k = (size_t)kk;
+            if (tooMany) break;
+            if (k == i || !hides(k)) continue;
+            const AABB& b = k < n ? f.box[k] : m.brushes[k].box;
+            if (!b.overlaps(c)) continue;
+            by.push_back(b);
+            for (int a = 0; a < 3; a++)
+                for (float v : {b.mn[a], b.mx[a]})
+                    if (v > c.mn[a] && v < c.mx[a]) { if (cnt[a] == 64) { tooMany = true; break; } axis[a][cnt[a]++] = v; }
+        }
+        if (by.empty() || tooMany) continue;   // (too finely cut up to check: kept)
+        for (int a = 0; a < 3; a++) std::sort(axis[a], axis[a] + cnt[a]);
+        bool covered = true;
+        for (int x = 0; x + 1 < cnt[0] && covered; x++)
+            for (int y = 0; y + 1 < cnt[1] && covered; y++)
+                for (int z = 0; z + 1 < cnt[2] && covered; z++) {
+                    if (axis[0][x + 1] - axis[0][x] < e || axis[1][y + 1] - axis[1][y] < e || axis[2][z + 1] - axis[2][z] < e) continue;
+                    const Vec3 p((axis[0][x] + axis[0][x + 1]) * 0.5f, (axis[1][y] + axis[1][y + 1]) * 0.5f, (axis[2][z] + axis[2][z + 1]) * 0.5f);
+                    covered = std::any_of(by.begin(), by.end(), [&](const AABB& b) { return b.contains(p); });
+                }
+        if (covered) { f.del[i] = true; f.hidden++; }
+    }
+    return f;
+}
+
+MapFix mapFixGaps(const Map& m) {
+    MapFix f = fixStart(m);
+    const size_t n = f.box.size();
+    constexpr float g = 0.125f, e = 1e-4f;
+    auto onGrid = [&](float v) { return std::fabs(v / g - std::round(v / g)) * g <= e; };
+    auto plain = [&](size_t i) { return m.brushes[i].shape == BRUSH_BOX; };
+    FixGrid grid;
+    for (size_t k = 0; k < m.brushes.size(); k++) grid.add((int)k, k < n ? f.box[k] : m.brushes[k].box);
+    const Vec3 reach(g, g, g);
+    for (size_t i = 0; i < n; i++) {
+        if (!plain(i)) continue;
+        std::vector<int> close;
+        grid.near({f.box[i].mn - reach, f.box[i].mx + reach}, [&](int j) { close.push_back(j); });
+        for (int jj : close) {
+            const size_t j = (size_t)jj;
+            if (j == i || j >= n || !plain(j)) continue;
+            for (int a = 0; a < 3; a++) {
+                AABB& A = f.box[i];   // A's high side faces B's low side across the gap
+                AABB& B = f.box[j];
+                const float gap = B.mn[a] - A.mx[a];
+                if (gap <= e || gap >= g - e) continue;
+                bool facing = true;   // (they overlap across the other two axes)
+                for (int k = 0; k < 3; k++) if (k != a) facing &= A.mn[k] < B.mx[k] - e && B.mn[k] < A.mx[k] - e;
+                if (!facing) continue;
+                const bool ga = onGrid(A.mx[a]), gb = onGrid(B.mn[a]);
+                if (ga && gb) continue;
+                float na = A.mx[a], nb = B.mn[a];
+                if (ga) nb = na;
+                else if (gb) na = nb;
+                else {
+                    const float line = std::ceil(A.mx[a] / g) * g;
+                    if (line >= B.mn[a] - e) continue;   // (no grid line between them)
+                    na = nb = line;
+                }
+                // never into a third box: the strips the two sides grow over must be clear
+                auto clear = [&](const AABB& grow) {
+                    if (grow.mx[a] - grow.mn[a] <= e) return true;
+                    bool ok = true;
+                    grid.near(grow, [&](int kk) {
+                        const size_t k = (size_t)kk;
+                        if (k != i && k != j && !m.brushes[k].gone && (k < n ? f.box[k] : m.brushes[k].box).overlaps(grow)) ok = false;
+                    });
+                    return ok;
+                };
+                AABB sa = A, sb = B;
+                sa.mn[a] = A.mx[a]; sa.mx[a] = na;
+                sb.mx[a] = B.mn[a]; sb.mn[a] = nb;
+                if (!clear(sa) || !clear(sb)) continue;
+                A.mx[a] = na;
+                B.mn[a] = nb;
+                f.gaps++;
+            }
+        }
+    }
+    return f;
+}
