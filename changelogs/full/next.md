@@ -61,6 +61,10 @@ Every change on `testing` since production 1.19.1, with what changed and why. Th
 
 - `PointGrid::buried` (lightmap.cpp) culled a face wholly inside other baked boxes, thin brick / cobblestone (thinnest side <= kBreakableThick) included. Why it's wrong: a rocket or sticky can blow that brick open (Map::punchHole, or the whole wall falls at 80%), and the face behind it was gone, so the hole showed the sky through the wall (owner, 2026-10-29: "in game there are gaps in walls that dont exist in editor"; the editor draws every box whole, so it never showed this). What: thin breakable boxes no longer hide faces. Cost: a few more faces where brick is laid flush on a wall (a coat), drawn only where the brick is gone or behind it (depth-tested). The face behind keeps the bake's shadow from the brick (it's dark until lit by the hole), as it would be inside a wall.
 
+## Maps: cobblestone joints
+
+- Owner, 2026-10-29: "in game there are gaps in walls that dont exist in editor" ... "cobblestone". The joints came from F2 - F1 of a 3 x 3 Worley search, which isn't a distance to the stone's edge: it stays small in long wedges out of every corner where three stones meet, so dark smears ran across the stones and read as cracks through the wall; and the stone shade was `hash2(floor(q * 3))`, a 1/3 m checker over the stones. What: `stones()` in kWorldFS finds the nearest stone (3 x 3), then the exact distance to its border against each neighbour's bisector (5 x 5 around it), and returns that stone's own number for its shade. Joints use smoothstep(0.015, 0.06) of that distance (about the old width). Cost: 34 hash lookups a cobblestone pixel instead of 9; only cobblestone pays it. The editor's plain unbaked view never showed the pattern, which is why the gaps were only in game.
+
 ## Weapons
 
 All four are the owner's numbers (2026-10-28, right after 1.19.1), in `src/game/gamedefs.h`'s standard table; custom modes scale them as before (`weaponset.cpp` reads the same constants). No protocol change: like earlier tuning (rifle 4.95 -> 5.0, sniper 40), only the numbers moved, and testing servers and games update together.
