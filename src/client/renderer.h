@@ -194,8 +194,8 @@ private:
     Vec3 camFwd_, camRight_, camUp_;
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
-    unsigned holeTex_ = 0;
-    GLint uHoleCount_ = -1;
+    unsigned holeTex_ = 0, holeCellTex_ = 0, holeListTex_ = 0;   // (the holes, the grid's cells, the cells' lists: setHoles)
+    GLint uHoleCount_ = -1, uHoleGrid_ = -1, uHoleGridH_ = -1;
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

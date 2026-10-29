@@ -137,11 +137,19 @@ vec2 worley(vec2 p) {   // cells: the nearest and second-nearest feature points'
     return sqrt(vec2(d1, d2));
 }
 // Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
-// one breaks out isn't drawn. The same test as Map's holeTakes.
-uniform sampler2D uHoles;
-uniform int uHoleCount;
+// one breaks out isn't drawn. The same test as Map's holeTakes. Only the holes listed in the fragment's cell of a coarse
+// xz grid are tested (uHoleCells: start, count into uHoleList), so a pixel pays for the holes near it, not for every
+// hole blown on the map (owner, 2026-10-29: fps stayed at a tenth after a wall fell; GPU 0.3 -> 7.4 ms).
+uniform sampler2D uHoles, uHoleCells, uHoleList;
+uniform int uHoleCount, uHoleGridH;
+uniform vec4 uHoleGrid;   // x0 z0 1/cell W
 bool inHole() {
-    for (int i = 0; i < uHoleCount; i++) {
+    ivec2 gc = ivec2(floor((vPos.xz - uHoleGrid.xy) * uHoleGrid.z));
+    if (gc.x < 0 || gc.y < 0 || gc.x >= int(uHoleGrid.w) || gc.y >= uHoleGridH) return false;
+    vec2 sc = texelFetch(uHoleCells, gc, 0).rg;
+    int start = int(sc.x + 0.5), cnt = int(sc.y + 0.5);
+    for (int k = 0; k < cnt; k++) {
+        int j = start + k, i = int(texelFetch(uHoleList, ivec2(j & 255, j >> 8), 0).r + 0.5);
         vec4 a = texelFetch(uHoles, ivec2(2 * i, 0), 0), b = texelFetch(uHoles, ivec2(2 * i + 1, 0), 0);
         int ax = int(a.w + 0.5);
         float pa = ax == 0 ? vPos.x : ax == 1 ? vPos.y : vPos.z;
@@ -154,9 +162,9 @@ bool inHole() {
         int col = int(floor(p.x / b.x + off));
         float x = ((float(col) + 0.5 - off) * b.x - a.x) / a.z, y = ((float(row) + 0.5) * b.y - a.y) / a.z;
         float s = sqrt(sqrt(x * x * x * x + y * y * y * y));
-        uint k = uint(row) * 73856093u ^ uint(col) * 19349663u;
-        k ^= k >> 13; k *= 0x5bd1e995u; k ^= k >> 15;
-        if (s + (float(k & 255u) / 255.0 - 0.5) * 0.3 < 1.0) return true;
+        uint k2 = uint(row) * 73856093u ^ uint(col) * 19349663u;
+        k2 ^= k2 >> 13; k2 *= 0x5bd1e995u; k2 ^= k2 >> 15;
+        if (s + (float(k2 & 255u) / 255.0 - 0.5) * 0.3 < 1.0) return true;
     }
     return false;
 }
@@ -736,7 +744,10 @@ bool Renderer::init(int shadowRes, std::string* err) {
                U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
                U(worldProg_, "uTime"), U(worldProg_, "uSunDir")};
     uHoleCount_ = U(worldProg_, "uHoleCount");
+    uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
     glUniform1i(U(worldProg_, "uHoles"), 2);
+    glUniform1i(U(worldProg_, "uHoleCells"), 3);
+    glUniform1i(U(worldProg_, "uHoleList"), 4);
     glUniform1i(uHoleCount_, 0);
     glUniform1i(U(worldProg_, "uLightmap"), 0);
     glUniform1i(U(worldProg_, "uShadow"), 1);
@@ -841,27 +852,68 @@ void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
     const int n = (int)std::min<size_t>(holes.size(), kMaxHoles);
     glUseProgram(worldProg_);
     glUniform1i(uHoleCount_, n);
-    glUseProgram(0);
-    if (!n) return;
-    if (!holeTex_) {
-        glGenTextures(1, &holeTex_);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, holeTex_);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 2 * kMaxHoles, 1, 0, GL_RGBA, GL_FLOAT, nullptr);
-    } else {
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, holeTex_);
-    }
+    if (!n) { glUseProgram(0); return; }
+    auto tex = [](unsigned& t, int unit, GLint fmt, int w, int h) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        if (!t) {
+            glGenTextures(1, &t);
+            glBindTexture(GL_TEXTURE_2D, t);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexImage2D(GL_TEXTURE_2D, 0, fmt, w, h, 0, fmt == GL_RG32F ? GL_RG : fmt == GL_R32F ? GL_RED : GL_RGBA, GL_FLOAT, nullptr);
+        } else glBindTexture(GL_TEXTURE_2D, t);
+    };
+    tex(holeTex_, 2, GL_RGBA32F, 2 * kMaxHoles, 1);
     std::vector<float> t((size_t)n * 8);
+    // each hole's footprint on the xz plane (what the shader's tests can reach), for the grid
+    std::vector<float> fx0(n), fx1(n), fz0(n), fz1(n);
+    float gx0 = 1e30f, gz0 = 1e30f, gx1 = -1e30f, gz1 = -1e30f;
     for (int i = 0; i < n; i++) {
         const Map::Hole& h = holes[i];
         const float v[8] = {h.u, h.v, h.r, (float)h.axis, h.cw, h.ch, h.lo, h.hi};
         std::copy(v, v + 8, t.begin() + (size_t)i * 8);
+        const float hu = h.r < 0 ? h.cw : h.r * 1.2f, hv = h.r < 0 ? h.ch : h.r * 1.2f, lo = h.lo - 0.01f, hi = h.hi + 0.01f;
+        if (h.axis == 0) { fx0[i] = lo; fx1[i] = hi; fz0[i] = h.u - hu; fz1[i] = h.u + hu; }        // (u = z, v = y)
+        else if (h.axis == 1) { fx0[i] = h.u - hu; fx1[i] = h.u + hu; fz0[i] = h.v - hv; fz1[i] = h.v + hv; }   // (u = x, v = z)
+        else { fx0[i] = h.u - hu; fx1[i] = h.u + hu; fz0[i] = lo; fz1[i] = hi; }                  // (u = x, v = y)
+        gx0 = std::min(gx0, fx0[i]); gx1 = std::max(gx1, fx1[i]); gz0 = std::min(gz0, fz0[i]); gz1 = std::max(gz1, fz1[i]);
     }
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2 * n, 1, GL_RGBA, GL_FLOAT, t.data());
+    // the grid: at most kHoleGrid x kHoleGrid cells of at least 1 m over the holes' footprints; each cell lists the holes
+    // touching it (at most kHoleListMax references, else one cell listing them all, as before)
+    constexpr int kHoleGrid = 64, kHoleListW = 256, kHoleListMax = kHoleListW * 64;
+    float cell = std::max(1.0f, std::max(gx1 - gx0, gz1 - gz0) / (float)kHoleGrid);
+    int W = std::clamp((int)std::ceil((gx1 - gx0) / cell), 1, kHoleGrid), H = std::clamp((int)std::ceil((gz1 - gz0) / cell), 1, kHoleGrid);
+    auto span = [&](float a0, float a1, float g0, int N, int& c0, int& c1) {
+        c0 = std::clamp((int)std::floor((a0 - g0) / cell), 0, N - 1); c1 = std::clamp((int)std::floor((a1 - g0) / cell), 0, N - 1);
+    };
+    std::vector<float> cells((size_t)W * H * 2, 0.0f);
+    std::vector<float> list;
+    size_t refs = 0;
+    for (int i = 0; i < n; i++) { int x0, x1, z0, z1; span(fx0[i], fx1[i], gx0, W, x0, x1); span(fz0[i], fz1[i], gz0, H, z0, z1); refs += (size_t)(x1 - x0 + 1) * (z1 - z0 + 1); }
+    if (refs > (size_t)kHoleListMax) { W = H = 1; cell = 1e9f; }
+    {
+        std::vector<std::vector<uint16_t>> in((size_t)W * H);
+        for (int i = 0; i < n; i++) {
+            int x0 = 0, x1 = 0, z0 = 0, z1 = 0;
+            if (W * H > 1) { span(fx0[i], fx1[i], gx0, W, x0, x1); span(fz0[i], fz1[i], gz0, H, z0, z1); }
+            for (int z = z0; z <= z1; z++) for (int x = x0; x <= x1; x++) in[(size_t)z * W + x].push_back((uint16_t)i);
+        }
+        for (size_t c = 0; c < in.size(); c++) {
+            cells[c * 2] = (float)list.size(); cells[c * 2 + 1] = (float)in[c].size();
+            for (uint16_t i : in[c]) list.push_back((float)i);
+        }
+    }
+    const int rows = std::max(1, (int)((list.size() + kHoleListW - 1) / kHoleListW));
+    list.resize((size_t)rows * kHoleListW, 0.0f);
+    tex(holeCellTex_, 3, GL_RG32F, kHoleGrid, kHoleGrid);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, W, H, GL_RG, GL_FLOAT, cells.data());
+    tex(holeListTex_, 4, GL_R32F, kHoleListW, kHoleListMax / kHoleListW);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kHoleListW, rows, GL_RED, GL_FLOAT, list.data());
+    glUniform4f(uHoleGrid_, gx0, gz0, 1.0f / cell, (float)W);
+    glUniform1i(uHoleGridH_, H);
     glActiveTexture(GL_TEXTURE0);
+    glUseProgram(0);
 }
 
 void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
