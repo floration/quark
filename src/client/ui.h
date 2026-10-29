@@ -171,6 +171,7 @@ public:
         while (cols < maxCols && (float)((n + cols - 1) / cols) * rowH > availH) cols++;
         return cols;
     }
+    bool over(float x, float y, float w, float h) const { return hover(x, y, w, h); }   // the mouse is over it (and takes input)
     bool typing() const { return focus_ >= 0; }
     // Text the focused field wants on the clipboard (Ctrl+C); empty if none.
     std::string takeCopy() { std::string c; c.swap(copied_); return c; }

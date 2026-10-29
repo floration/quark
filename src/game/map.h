@@ -533,9 +533,16 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 // Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
 // 12-19 (owner, 2026-10-28): solid like base, each its own look made in the world shader (no textures); ice is slippery
 // underfoot, rubber bounces you off it.
-// 21 glass (see-through, breakable: Map::breakGlass) and 22-35 (owner, 2026-10-28, from the surface ideas): solid, own
-// looks; asphalt grips (faster, quicker to brake), mud holds you back, cobblestone breaks open like brick.
-constexpr int kMapMaterials = 36;
+// 21 glass (see-through) and 22-35 (owner, 2026-10-28, from the surface ideas): solid, own looks; asphalt grips (faster,
+// quicker to brake), mud holds you back.
+// 36-38 (owner, 2026-10-29: "separate destructible vs non destructible glass, brick, cobblestone, etc so it doesn't cost
+// nearly as much"): breakable brick and cobblestone (thin ones blow open: Map::punchHole) and breakable glass
+// (Map::breakGlass). They look like 20, 24 and 21 (lookMaterial), which never break: a plain wall pays for no hole test
+// in the shader, no faces kept behind it in the bake, no pane scans per shot, and FIX MAP can merge it and hide behind it.
+// 39-138 (owner, 2026-10-29: "yes to everything" on the 100 brick / concrete / tile / stone looks): solid, each its own
+// look (Renderer's blockLook): 30 bricks, 20 concretes, 25 tiles, 25 stone walls; plain, never break.
+constexpr int kMapMaterials = 139;
+constexpr int kMatBlocks = 39;   // the first of the 100
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
 constexpr int kMatIce = 12, kMatSand = 13, kMatWood = 14, kMatPlastic = 15, kMatGrass = 16, kMatRubber = 17, kMatSteel = 18, kMatDiamond = 19;
@@ -543,14 +550,18 @@ constexpr int kMatBrick = 20;   // classic red brick (owner, 2026-10-28)
 constexpr int kMatGlass = 21, kMatAsphalt = 22, kMatMud = 23, kMatCobble = 24, kMatConcrete = 25, kMatTile = 26, kMatMarble = 27,
               kMatCorrugated = 28, kMatHazard = 29, kMatSnow = 30, kMatStone = 31, kMatCrystal = 32, kMatCircuit = 33, kMatRust = 34,
               kMatTerracotta = 35;
+constexpr int kMatBrickBreak = 36, kMatGlassBreak = 37, kMatCobbleBreak = 38;
+// the look (the world shader's material, the editor's colour) of a material: a breakable one looks like its plain one
+inline int lookMaterial(int m) { return m == kMatBrickBreak ? kMatBrick : m == kMatGlassBreak ? kMatGlass : m == kMatCobbleBreak ? kMatCobble : m; }
+inline bool glassMaterial(int m) { return m == kMatGlass || m == kMatGlassBreak; }   // see-through, plain or breakable
 // brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
 constexpr float kBreakableThick = 0.125f;
-inline bool holeMaterial(int m) { return m == kMatBrick || m == kMatCobble; }
+inline bool holeMaterial(int m) { return m == kMatBrickBreak || m == kMatCobbleBreak; }
 constexpr float kCrumble = 0.8f;   // blown away past this share of its face: the rest of the wall falls too
 constexpr int kMaxHoles = 512;     // per map at once (the world shader's table); past it, blasts leave walls as they are
 constexpr float kHoleSize = 2.5f;   // a direct hit's hole, metres across (owner, 2026-10-28)
 // a hole's cells (u along the wall, v up it; a floor: x and z): the world shader's bricks and stones, rows offset half a cell
-inline void holeCell(int m, float& w, float& h) { if (m == kMatCobble) { w = 0.16f; h = 0.14f; } else { w = 0.21f; h = 0.075f; } }
+inline void holeCell(int m, float& w, float& h) { if (lookMaterial(m) == kMatCobble) { w = 0.16f; h = 0.14f; } else { w = 0.21f; h = 0.075f; } }
 inline int holeUAxis(int axis) { return axis == 0 ? 2 : 0; }
 inline int holeVAxis(int axis) { return axis == 1 ? 2 : 1; }
 // whether a hole of half size r centred (u, v) breaks out cell (row, col): a squarish circle (|x|^4 + |y|^4 < 1) with
@@ -566,8 +577,8 @@ inline bool holeTakes(float u, float v, float r, float cw, float ch, int row, in
 inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && m != kMatGlass); }
-inline bool bakedMaterial(int m) { return m != 9 && m != kMatGlass; }   // in the static world mesh
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m)); }
+inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m); }   // in the static world mesh
 // Editor clean-ups (owner, 2026-10-29), on the editable brushes (generated ones only hide others). box[i] is brush i's
 // box after the fix, del[i] whether it goes. FIX MAP: same-material plain boxes that together make one box become one
 // (and one inside another of its material goes), then a brush wholly inside solid opaque boxes goes (glass, water, clip,
@@ -584,7 +595,108 @@ inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
 inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "nograpple", "acid",
                                                     "ice", "sand", "wood", "plastic", "grass", "rubber", "steel", "diamondplate", "brick",
                                                     "glass", "asphalt", "mud", "cobblestone", "concrete", "tile", "marble", "corrugated", "hazard",
-                                                    "snow", "stone", "crystal", "circuit", "rust", "terracotta"};
+                                                    "snow", "stone", "crystal", "circuit", "rust", "terracotta",
+                                                    "breakablebrick", "breakableglass", "breakablecobblestone",
+                                                    "londonstock",
+                                                    "redengineeringbrick",
+                                                    "blueengineeringbrick",
+                                                    "orangewirecut",
+                                                    "clinkerbrick",
+                                                    "whitewashedbrick",
+                                                    "blackbrick",
+                                                    "creambrick",
+                                                    "flemishbond",
+                                                    "englishbond",
+                                                    "stackbond",
+                                                    "soldiercourse",
+                                                    "herringbonebrick",
+                                                    "basketweavebrick",
+                                                    "romanbrick",
+                                                    "tudorbrick",
+                                                    "glazedbrick",
+                                                    "whiteglazedbrick",
+                                                    "mossybrick",
+                                                    "efflorescentbrick",
+                                                    "reclaimedbrick",
+                                                    "brownrusticbrick",
+                                                    "pinkbrick",
+                                                    "recessedjoints",
+                                                    "flushpointedbrick",
+                                                    "burntbrick",
+                                                    "polychromebrick",
+                                                    "diaperbrick",
+                                                    "paintedredbrick",
+                                                    "firebrick",
+                                                    "freshgreyconcrete",
+                                                    "darkconcrete",
+                                                    "whiteconcrete",
+                                                    "tintedredconcrete",
+                                                    "exposedaggregate",
+                                                    "broomfinished",
+                                                    "stampedstonepattern",
+                                                    "concretepavers",
+                                                    "gridscoredslab",
+                                                    "ribbedconcrete",
+                                                    "bushhammered",
+                                                    "fibrecementboard",
+                                                    "castinplacewalls",
+                                                    "weatheredconcrete",
+                                                    "breezeblockscreen",
+                                                    "splitfaceblock",
+                                                    "groundfaceblock",
+                                                    "concreterooftiles",
+                                                    "lightweightfoamblock",
+                                                    "paintedconcretestripes",
+                                                    "whitesquaretile",
+                                                    "blacksquaretile",
+                                                    "checkerboardtile",
+                                                    "subwaytile",
+                                                    "greensubwaytile",
+                                                    "largeformatporcelain",
+                                                    "hextilewhite",
+                                                    "hextileterracotta",
+                                                    "diagonaltile",
+                                                    "herringbonetile",
+                                                    "fishscaletile",
+                                                    "pennyroundtile",
+                                                    "bluepooltile",
+                                                    "moroccanzellige",
+                                                    "encaustictile",
+                                                    "quarrytile",
+                                                    "slatetile",
+                                                    "travertinetile",
+                                                    "mosaicspeckle",
+                                                    "bathroommint",
+                                                    "gymrubbertile",
+                                                    "hospitaltile",
+                                                    "victorianborder",
+                                                    "crackleglazetile",
+                                                    "mirrortile",
+                                                    "limestoneashlar",
+                                                    "sandstoneashlar",
+                                                    "redsandstone",
+                                                    "graniteblocks",
+                                                    "pinkgranite",
+                                                    "blackbasaltblocks",
+                                                    "randomashlar",
+                                                    "rusticrandomashlar",
+                                                    "rubblewall",
+                                                    "drystonewall",
+                                                    "flintandbrick",
+                                                    "rusticatedblocks",
+                                                    "vermiculatedstone",
+                                                    "castlestone",
+                                                    "templestone",
+                                                    "marbleblocks",
+                                                    "polygonalstone",
+                                                    "cobbledsetts",
+                                                    "diagonalsetts",
+                                                    "flagstonepaving",
+                                                    "slatecladding",
+                                                    "riverstonewall",
+                                                    "gabbroblocks",
+                                                    "tufablocks",
+                                                    "mossystoneblocks"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -636,7 +748,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 5;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners
+constexpr int kMapFormatVersion = 6;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials)
 
 struct Map {
     std::string name;
@@ -772,7 +884,8 @@ struct Map {
     // r < 0: the whole wall crumbled (kCrumble): a rectangle, half sizes cw x ch round (u, v).
     struct Hole { float u, v, r, cw, ch; int axis; float lo, hi; };
     std::vector<Hole> holes;
-    std::vector<uint32_t> glass;          // the glass brushes (drawn see-through each frame; a gone one isn't)
+    std::vector<uint32_t> glass;          // the breakable glass brushes (drawn see-through each frame; a gone one isn't)
+    std::vector<uint32_t> windows;        // the plain glass brushes (never break: drawn see-through each frame, nothing else)
     std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)
     uint32_t destructSerial = 0;          // counts every change (the renderer sends the holes again)
     bool breakGlass(size_t i);            // false: not a standing pane

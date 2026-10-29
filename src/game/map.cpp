@@ -312,7 +312,62 @@ static void upgradeMap3to4(std::vector<std::string>&) {}
 // 4 -> 5: wedges and corners ("wedge" / "corner" lines) were added; a version 4 file has none, so nothing changes
 static void upgradeMap4to5(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5};
+// 5 -> 6: brick, cobblestone and glass never break now; the breakable ones are their own materials (owner, 2026-10-29).
+// So that every map plays as it did: all glass becomes breakable glass, and brick / cobblestone boxes (a box line, a
+// custom group's box part, a room whose walls come out that thin) no thicker than kBreakableThick become the breakable
+// kind (only those could be blown open). Thicker ones and slopes never broke and stay as they are.
+static void upgradeMap5to6(std::vector<std::string>& lines) {
+    auto thin = [](float a, float b, float c) { return std::min(a, std::min(b, c)) <= kBreakableThick + 1e-4f; };
+    auto breakable = [](int m) { return m == kMatGlass ? kMatGlassBreak : m == kMatBrick ? kMatBrickBreak : m == kMatCobble ? kMatCobbleBreak : m; };
+    // the line with its word k (0: the keyword) replaced, the words joined by single spaces (numbers kept as written)
+    auto setWord = [](const std::string& tail, const std::string& kw, size_t k, const std::string& w, const std::string& comment) {
+        std::istringstream s(tail);
+        std::vector<std::string> ws{kw};
+        for (std::string x; s >> x;) ws.push_back(x);
+        if (k < ws.size()) ws[k] = w;
+        std::string o;
+        for (auto& x : ws) { if (!o.empty()) o += ' '; o += x; }
+        return comment.empty() ? o : o + " " + comment;
+    };
+    Vec3 groupSize(0, 0, 0);   // (the custom group the next part lines belong to)
+    for (std::string& l : lines) {
+        size_t rest = 0;
+        const std::string kw = firstWord(l, &rest);
+        if (kw.empty()) continue;
+        std::string tail = l.substr(rest);
+        const size_t hash = tail.find('#');
+        const std::string comment = hash == std::string::npos ? "" : tail.substr(hash);
+        if (hash != std::string::npos) tail.erase(hash);
+        std::istringstream in(tail);
+        float v[6];
+        if (kw == "glass") { l = "breakableglass" + tail + comment; continue; }
+        if (kw == "brick" || kw == "cobblestone") {
+            if (in >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5] && thin(std::fabs(v[3] - v[0]), std::fabs(v[4] - v[1]), std::fabs(v[5] - v[2])))
+                l = "breakable" + kw + tail + comment;
+            continue;
+        }
+        int m = -1;
+        if (kw == "wedge" || kw == "corner" || kw == "tetra" || kw == "cut") {   // (slopes: only glass broke)
+            if (in >> m && m == kMatGlass) l = setWord(tail, kw, 1, std::to_string(kMatGlassBreak), comment);
+        } else if (kw == "group") {
+            std::string type; int dir = 0;
+            if (!(in >> type >> m >> dir >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5])) continue;
+            groupSize = {std::fabs(v[3] - v[0]), std::fabs(v[4] - v[1]), std::fabs(v[5] - v[2])};
+            const float wall = std::min(0.25f, std::min(groupSize.x, std::min(groupSize.y, groupSize.z)) * 0.25f);   // (Map::groupBoxes)
+            const bool brk = m == kMatGlass || (type == "room" && (m == kMatBrick || m == kMatCobble) && wall <= kBreakableThick + 1e-4f);
+            if (brk) l = setWord(tail, kw, 2, std::to_string(breakable(m)), comment);
+        } else if (kw == "part") {
+            if (!(in >> m >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5])) continue;
+            std::string shape;
+            const bool box = !(in >> shape);
+            const bool brk = m == kMatGlass || (box && (m == kMatBrick || m == kMatCobble) &&
+                                                thin(std::fabs(v[3] - v[0]) * groupSize.x, std::fabs(v[4] - v[1]) * groupSize.y, std::fabs(v[5] - v[2]) * groupSize.z));
+            if (brk) l = setWord(tail, kw, 1, std::to_string(breakable(m)), comment);
+        }
+    }
+}
+
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -1297,8 +1352,11 @@ bool Map::buildGrid() {
     lava.clear();   // (touch it and die)
     acid.clear();   // (touch it and it hurts: pmove)
     hasIce = hasRubber = hasGripMats = false;
-    glass.clear();
-    for (size_t i = 0; i < brushes.size(); i++) if (brushes[i].material == kMatGlass) glass.push_back((uint32_t)i);
+    glass.clear(); windows.clear();
+    for (size_t i = 0; i < brushes.size(); i++) {
+        if (brushes[i].material == kMatGlassBreak) glass.push_back((uint32_t)i);
+        else if (brushes[i].material == kMatGlass) windows.push_back((uint32_t)i);
+    }
     for (auto& b : brushes) {
         if (b.material == 7) lava.push_back(b.box); else if (b.material == kMatAcid) acid.push_back(b.box);
         hasIce |= b.material == kMatIce;
@@ -1418,9 +1476,12 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         hasIce |= b.material == kMatIce; hasRubber |= b.material == kMatRubber;
         hasGripMats |= b.material == kMatIce || b.material == kMatRubber || b.material == kMatAsphalt || b.material == kMatMud;
     }   // (kept until a rebuild: only costs a probe)
-    if (op != 0 || (old.material == kMatGlass) != (b.material == kMatGlass)) {
-        glass.clear();
-        for (size_t k = 0; k < brushes.size(); k++) if (brushes[k].material == kMatGlass) glass.push_back((uint32_t)k);
+    if (op != 0 || glassMaterial(old.material) || glassMaterial(b.material)) {
+        glass.clear(); windows.clear();
+        for (size_t k = 0; k < brushes.size(); k++) {
+            if (brushes[k].material == kMatGlassBreak) glass.push_back((uint32_t)k);
+            else if (brushes[k].material == kMatGlass) windows.push_back((uint32_t)k);
+        }
     }
     const uint16_t ix = (uint16_t)i;
     if (oldSolid)   // out of the cells it was in
@@ -1465,7 +1526,7 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
 }
 
 bool Map::breakGlass(size_t i) {
-    if (i >= brushes.size() || brushes[i].material != kMatGlass || brushes[i].gone) return false;
+    if (i >= brushes.size() || brushes[i].material != kMatGlassBreak || brushes[i].gone) return false;
     if (pristineBrushes.empty()) pristineBrushes = brushes;
     Brush b = brushes[i];
     b.gone = true;
@@ -1602,7 +1663,7 @@ float Map::sweepAxis(const AABB& box, int axis, float delta, const Brush** hit, 
     if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
     float glassAt = delta;   // (how far the move got to the nearest pane it passes)
     auto clip = [&](const AABB& b, const Brush* who) {
-        if (glassOut && who && who->material == kMatGlass) {   // (passed through: only noted)
+        if (glassOut && who && who->material == kMatGlassBreak) {   // (passed through: only noted)
             if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1] || box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
             const float allowed = delta > 0 ? b.mn[axis] - box.mx[axis] - eps : b.mx[axis] - box.mn[axis] + eps;
             const bool ahead = delta > 0 ? box.mx[axis] <= b.mn[axis] + eps : box.mn[axis] >= b.mx[axis] - eps;
@@ -1725,7 +1786,7 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
 // raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
 // them being the same). Learn: note in *learn where the blocker was found.
 // clip: players only (light, sight and shots pass); glass: sight and light pass (shots break it: they use raycast)
-static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || br.material == kMatGlass; }
+static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || glassMaterial(br.material); }
 template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
     walkCells(m, o, dir, maxDist, [&](size_t c, float) {
@@ -1872,7 +1933,7 @@ MapFix mapFixRedundant(const Map& m) {
     constexpr float e = 1e-4f;
     auto mergeable = [&](size_t i) {
         const Brush& b = m.brushes[i];
-        return !f.del[i] && b.shape == BRUSH_BOX && b.material != kMatGlass && !holeMaterial(b.material);
+        return !f.del[i] && b.shape == BRUSH_BOX && !glassMaterial(b.material) && !holeMaterial(b.material);
     };
     auto same = [&](float a, float b) { return std::fabs(a - b) <= e; };
     // 1. merges, until nothing more joins (a row of boxes joins one at a time)
@@ -1910,7 +1971,7 @@ MapFix mapFixRedundant(const Map& m) {
     auto hides = [&](size_t k) {
         const Brush& b = m.brushes[k];
         return (k >= n || !f.del[k]) && b.shape == BRUSH_BOX && !b.gone && solidMaterial(b.material) && b.material != 2 &&
-               b.material != kMatGlass && !thinBreakable(b);
+               !glassMaterial(b.material) && !thinBreakable(b);
     };
     FixGrid all;
     for (size_t k = 0; k < m.brushes.size(); k++) all.add((int)k, k < n ? f.box[k] : m.brushes[k].box);

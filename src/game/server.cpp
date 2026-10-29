@@ -2970,7 +2970,7 @@ void Server::stepProjectile(Projectile& pr) {
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
         // glass: a bolt or a thrown knife breaks it and flies on (a bolt shatters it; owner, 2026-10-28)
-        if (hitPlayer < 0 && wallMat == kMatGlass && (pr.type == WPN_CROSSBOW || pr.type == WPN_KNIFE)) {
+        if (hitPlayer < 0 && wallMat == kMatGlassBreak && (pr.type == WPN_CROSSBOW || pr.type == WPN_KNIFE)) {
             const int pane = map_.glassAt(pr.pos + dir * (wall + 0.01f));
             if (pane >= 0 && breakGlass(pane, pr.type == WPN_CROSSBOW ? GLASS_SHATTER : GLASS_SHOT, pr.pos + dir * wall, dir, pr.owner)) {
                 pr.pos = at;

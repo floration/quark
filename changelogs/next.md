@@ -19,6 +19,10 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 
 - **Material picker in the map editor**: clicking a material (for new boxes, or for what's selected) opens a grid of swatches, each drawn in the game's own look and the map's colours. It has three lists: the materials this map already uses, the last 10 you picked (kept between sessions) and all of them. M still cycles. FIX MAP / FIX GAPS now show only when nothing is selected, so the selection's buttons fit on screen.
 
+- **100 new brick, concrete, tile and stone materials** (all of the picks): 30 bricks (colours plus Flemish, English, stack, soldier, herringbone and basket bonds), 20 concretes, 25 tiles and 25 stone walls, each drawn by the game with no textures. The map editor's material picker now fits all of them in one grid, with the name of the one under the mouse shown by CLOSE.
+
+- **Breakable and plain brick, cobblestone and glass are now separate materials**: plain brick, cobblestone and glass never break, so a plain wall costs nothing extra (no hole checks, nothing kept behind it, and FIX MAP can merge it and hide what's behind it). BREAKABLE BRICK, BREAKABLE COBBLESTONE (thin ones blow open) and BREAKABLE GLASS work as before. Maps made before this convert by themselves: their glass and their thin brick and cobblestone become the breakable kind, so they play the same. Older game versions can't join servers running this one (protocol 49).
+
 ## Weapons
 - **Rifle: +1 damage a shot**: 6 body (was 5), 8.5 head (was 7.5). A kill takes 17 body shots in 2.4 s (was 20 in 2.9 s), or 12 headshots in 1.7 s.
 - **Bubble gun fires 20% faster**: 6 bubbles a second (was 5), so 10 pops kill in 1.5 s (was 1.8 s).

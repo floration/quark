@@ -3586,7 +3586,7 @@ static void testTrimClipEdits() {
     printf("trim and clip boxes: set / ins / del and their undo\n");
     std::vector<int> seen;
     for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
-    CHECK(seen.size() == 36 && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatBrick) == kMatGlass && nextMapMaterial(kMatTerracotta) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, brick, glass .. terracotta, base
+    CHECK(seen.size() == (size_t)kMapMaterials && seen[8] == 8 && seen[9] == 9 && seen[10] == kMatNoGrapple && seen[11] == kMatAcid && nextMapMaterial(kMatAcid) == kMatIce && nextMapMaterial(kMatBrick) == kMatGlass && nextMapMaterial(kMatTerracotta) == kMatBrickBreak && nextMapMaterial(kMatCobbleBreak) == kMatBlocks && nextMapMaterial(kMapMaterials - 1) == 0);   // M: ..., lava, trim, clip, nograpple, acid, ice .. diamond plate, brick, glass .. terracotta, breakable brick, glass, cobblestone, the 100 block looks, base
     for (const char* name : {"bastion", "orbital"}) {
         Map m;
         CHECK(m.load(name));
@@ -4568,7 +4568,7 @@ static void testSlopes() {
     const std::string base = "box -20 -1 -20 20 0 20\nspawn any -10 0 -10\n";
     {   // version 4 converts (nothing to change); a version 5 file round-trips; an older build would skip the lines
         std::string o;
-        CHECK(upgradeMapText("version 4\n" + base, &o) && mapTextVersion(o) == 5);
+        CHECK(upgradeMapText("version 4\n" + base, &o) && mapTextVersion(o) == kMapFormatVersion);
         Map m;
         CHECK(m.parse("version 5\nwedge 3 1 0 0 0 4 2 2\ncorner 0 2 5 0 5 9 3 9\n" + base) && m.warnings.empty());
         CHECK(m.brushes.size() == 3 && m.brushes[0].shape == BRUSH_WEDGE && m.brushes[0].dir == 1 && m.brushes[0].material == 3 && m.brushes[1].shape == BRUSH_CORNER);
@@ -4577,7 +4577,7 @@ static void testSlopes() {
         Map b;
         CHECK(b.parse(t) && b.serialize() == t);
         Map bad;
-        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner 36 0 0 0 0 1 1 1\n" + base));
+        CHECK(!bad.parse("wedge 0 24 0 0 0 1 1 1\n" + base) && !bad.parse("corner " + std::to_string(kMapMaterials) + " 0 0 0 0 1 1 1\n" + base));
     }
     Map m;
     // gentle: 4 m run, 2 m rise toward +x (27 degrees); steep: 1 m run, 4 m rise toward -z (76); a corner, high at +x+z
@@ -4877,7 +4877,7 @@ static void testMaterials() {
     printf("materials: ice, rubber, the new keywords\n");
     {
         Map m;
-        std::string t = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+        std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
         for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k));
@@ -4955,6 +4955,29 @@ static void testMaterials() {
 // cobblestone get a hole from a blast (2.5 m less the distance to the wall), thick ones don't; everything comes back.
 static void testDestruction(uint16_t port) {
     printf("destruction: glass breaks, thin brick blows open, all of it comes back\n");
+    {   // format 6 (owner, 2026-10-29): plain brick, cobblestone and glass never break; the breakable ones do
+        Map m;
+        CHECK(m.parse("version 6\nbox -20 -1 -20 20 0 20\nglass -2 0 5 2 3 5.05\nbrick -3 0 10 3 3 10.1\ncobblestone -3 0 20 3 3 20.12\n"
+                      "breakableglass -2 0 -5 2 3 -4.95\nbreakablebrick -3 0 -10 3 3 -9.9\nspawn any 0 0 0\n"));
+        CHECK(m.glass.size() == 1 && m.glass[0] == 4 && m.windows.size() == 1 && m.windows[0] == 1);
+        CHECK(!m.breakGlass(1) && m.breakGlass(4));
+        CHECK(!m.raycastAny({0, 1.5f, 0}, {0, 0, 1}, 4.99f));   // (sight passes plain glass too)
+        CHECK(m.punchHole({0, 1.5f, 9.95f}) == 0 && m.punchHole({0, 1.5f, 19.95f}) == 0 && m.punchHole({0, 1.5f, -9.85f}) == 1);
+        // a version 5 file: all glass and thin brick / cobblestone (boxes, box parts, a room with walls that thin) turn breakable
+        std::string o;
+        CHECK(upgradeMapText("version 5\nglass 0 0 0 1 1 0.05\nbrick 0 0 0 4 3 0.1 # thin\nbrick 0 0 0 4 3 1\ncobblestone 0 0 0 4 0.12 4\n"
+                             "wedge 21 0 0 0 0 1 1 1\nwedge 20 0 0 0 0 1 1 0.1\ngroup room 20 0 0 0 0 0.4 3 3\ngroup room 24 0 10 0 0 14 3 4\n"
+                             "group custom 0 0 0 0 0 4 2 1\npart 20 0 0 0 1 1 0.1\npart 20 0 0 0 1 1 0.5\npart 21 0 0 0 1 1 1 wedge 0\n", &o));
+        CHECK(o.find("breakableglass 0 0 0 1 1 0.05\n") != std::string::npos && o.find("breakablebrick 0 0 0 4 3 0.1 # thin\n") != std::string::npos);
+        CHECK(o.find("\nbrick 0 0 0 4 3 1\n") != std::string::npos && o.find("breakablecobblestone 0 0 0 4 0.12 4\n") != std::string::npos);
+        CHECK(o.find("wedge 37 0 0 0 0 1 1 1\n") != std::string::npos && o.find("wedge 20 0 0 0 0 1 1 0.1\n") != std::string::npos);
+        CHECK(o.find("group room 36 0 0 0 0 0.4 3 3\n") != std::string::npos && o.find("group room 24 0 10 0 0 14 3 4\n") != std::string::npos);
+        CHECK(o.find("part 36 0 0 0 1 1 0.1\n") != std::string::npos && o.find("part 20 0 0 0 1 1 0.5\n") != std::string::npos && o.find("part 37 0 0 0 1 1 1 wedge 0\n") != std::string::npos);
+        Map c;
+        std::string perr;
+        CHECK(c.parse(o + "spawn any 2 3 2\n", &perr) && c.warnings.empty());
+        if (!perr.empty()) printf("    ERR %s\n", perr.c_str());
+    }
     {
         Map m;
         CHECK(m.parse("box -20 -1 -20 20 0 20\nglass -2 0 5 2 3 5.05\nbrick -3 0 10 3 3 10.1\nbrick -3 0 15 3 3 15.5\n"
