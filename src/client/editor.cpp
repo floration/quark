@@ -3180,7 +3180,14 @@ void Game::editorFrame(double dt) {
         row();
     }
     y += 4 * s;
-    {   // which modes this map is offered for: click to allow / disallow (dim = missing pieces, e.g. team spawns). Chips 20
+    if (edSelValid()) {   // (a selection's rows, down to SPLIT / COMBINE / SUBTRACT, need the room: the chips' four rows fold
+                          // into one line, back with nothing selected; the panel ran off the bottom at every size)
+        const uint32_t on = ed_.allowedModes ? ed_.allowedModes : (1u << MODE_COUNT) - 1;
+        int n = 0;
+        for (int m = 0; m < MODE_COUNT; m++) n += on >> m & 1;
+        ui_.hint(x, y, "MODES: " + std::to_string(n) + " OF " + std::to_string((int)MODE_COUNT) + " (CLEAR THE SELECTION TO CHANGE)", kGrey, w);
+        y += 20 * s;
+    } else {   // which modes this map is offered for: click to allow / disallow (dim = missing pieces, e.g. team spawns). Chips 20
         // tall in rows of four, each as wide as its name plus an even share of the row (the last row: a quarter each)
         header("MODES (CLICK: ALLOW / BLOCK)");
         static std::string names[MODE_COUNT];
