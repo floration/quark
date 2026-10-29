@@ -165,7 +165,7 @@ vec3 cells(vec2 p) { vec2 i = floor(p), f = fract(p); float d1 = 9.0, d2 = 9.0, 
         if (d < d1) { d2 = d1; d1 = d; id = hash2(i + o + 3.7); } else if (d < d2) d2 = d; }
     return vec3(sqrt(d1), sqrt(d2), id); }
 float alpha = 1.0;   // (a see-through look sets it: kept only in the see-through pass, uAlphaPass)
-uniform float uAlphaPass;
+uniform float uAlphaPass;   // 1: the see-through looks (blended), 2: the breakable blocks; both: not baked, full sun and sky
 // @LOOKS@: Renderer::worldLooks puts blockLook() here, with the looks of the materials the map uses
 // Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
 // one breaks out isn't drawn. The same test as Map's holeTakes. Only the holes listed in the fragment's cell of a coarse
@@ -380,8 +380,9 @@ void main() {
     }
     c += emit;
     c *= outline(vEdge, uOutlineW);
-    if (uAlphaPass > 0.5 && alpha < 0.01) discard;
-    fragColor = vec4(finish(c), uAlphaPass > 0.5 ? clamp(alpha, 0.0, 1.0) : 1.0);
+    bool blended = uAlphaPass > 0.5 && uAlphaPass < 1.5;   // (2: the breakable blocks, opaque)
+    if (blended && alpha < 0.01) discard;
+    fragColor = vec4(finish(c), blended ? clamp(alpha, 0.0, 1.0) : 1.0);
 })";
 
 // The map editor's material swatches (Renderer::swatch): textured quads in window pixels over the 2D batch
@@ -649,8 +650,8 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
-static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks + kSemiCount, "a look per material from kMatBlocks on (the large ones: their base's), then the see-through ones");
-// the material of kSurfaceLooks[k]: kMatBlocks.. up to the large ones, then kMatSemi..
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks + kSemiCount + kBreakCount + kFeatCount, "a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones");
+// the material of kSurfaceLooks[k]: kMatBlocks.. up to the large ones, then kMatSemi.. (the breakable ones follow them)
 static int lookMat(int k) { return k < kMatLarge - kMatBlocks ? kMatBlocks + k : kMatSemi + (k - (kMatLarge - kMatBlocks)); }
 
 // The world shader's blockLook(), with only the looks of the materials marked in `used` (by material; null: all of
@@ -1070,38 +1071,34 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     warmup(map);
 }
 
-// The see-through looks' faces (each semiMaterial brush's box: 6 faces, both sides drawn), with the face's own u, v for
-// the outlines; the material tells the shader its look.
-void Renderer::uploadSeeThrough(const Map& map) {
-    std::vector<WorldVertex> vs;
-    seeUsed_.assign((size_t)kMapMaterials, false);
-    for (const Brush& b : map.brushes) {
-        if (!semiMaterial(b.material) || b.gone) continue;
-        seeUsed_[(size_t)b.material] = true;
-        for (int axis = 0; axis < 3; axis++)
-            for (int side = 0; side < 2; side++) {
-                const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
-                const float w = b.box.mx[ua] - b.box.mn[ua], h = b.box.mx[va] - b.box.mn[va];
-                const float c[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
-                for (auto& p : c) {
-                    WorldVertex v = {};
-                    Vec3 pos;
-                    pos[axis] = side ? b.box.mx[axis] : b.box.mn[axis];
-                    pos[ua] = b.box.mn[ua] + w * p[0];
-                    pos[va] = b.box.mn[va] + h * p[1];
-                    v.pos[0] = pos.x; v.pos[1] = pos.y; v.pos[2] = pos.z;
-                    v.normal[axis] = side ? 1.0f : -1.0f;
-                    v.material = (float)b.material;
-                    v.edge[0] = w * p[0]; v.edge[1] = h * p[1]; v.edge[2] = w; v.edge[3] = h;
-                    vs.push_back(v);
-                }
+// A brush's box as 6 faces (both sides get drawn: the passes don't cull), with the face's own u, v for the outlines; the
+// material tells the shader its look. For the see-through looks and the breakable blocks, which aren't baked.
+static void boxFaces(const Brush& b, std::vector<WorldVertex>& vs) {
+    for (int axis = 0; axis < 3; axis++)
+        for (int side = 0; side < 2; side++) {
+            const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
+            const float w = b.box.mx[ua] - b.box.mn[ua], h = b.box.mx[va] - b.box.mn[va];
+            const float c[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
+            for (auto& p : c) {
+                WorldVertex v = {};
+                Vec3 pos;
+                pos[axis] = side ? b.box.mx[axis] : b.box.mn[axis];
+                pos[ua] = b.box.mn[ua] + w * p[0];
+                pos[va] = b.box.mn[va] + h * p[1];
+                v.pos[0] = pos.x; v.pos[1] = pos.y; v.pos[2] = pos.z;
+                v.normal[axis] = side ? 1.0f : -1.0f;
+                v.material = (float)b.material;
+                v.edge[0] = w * p[0]; v.edge[1] = h * p[1]; v.edge[2] = w; v.edge[3] = h;
+                vs.push_back(v);
             }
-    }
-    seeVerts_ = (int)vs.size();
+        }
+}
+
+static void uploadFaces(unsigned& vao, unsigned& vbo, const std::vector<WorldVertex>& vs) {
     if (vs.empty()) return;
-    if (!seeVao_) { glGenVertexArrays(1, &seeVao_); glGenBuffers(1, &seeVbo_); }
-    glBindVertexArray(seeVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, seeVbo_);
+    if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
@@ -1109,6 +1106,29 @@ void Renderer::uploadSeeThrough(const Map& map) {
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
     glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
     glBindVertexArray(0);
+}
+
+// The see-through looks and fields (drawn blended after the world) and, from the new map, the breakable blocks and crumble platforms (their looks go in
+// the world shader too: setWorldLooks, after this)
+void Renderer::uploadSeeThrough(const Map& map) {
+    std::vector<WorldVertex> vs;
+    seeUsed_.assign((size_t)kMapMaterials, false);
+    for (const Brush& b : map.brushes) {
+        if (blockDrawn(b.material)) seeUsed_[(size_t)b.material] = true;
+        if (!seeThroughDrawn(b.material) || b.gone) continue;
+        seeUsed_[(size_t)b.material] = true;
+        boxFaces(b, vs);
+    }
+    seeVerts_ = (int)vs.size();
+    uploadFaces(seeVao_, seeVbo_, vs);
+    uploadBlocks(map);
+}
+
+void Renderer::uploadBlocks(const Map& map) {
+    std::vector<WorldVertex> vs;
+    for (const auto* list : {&map.blocks, &map.crumbles}) for (uint32_t i : *list) if (!map.brushes[i].gone) boxFaces(map.brushes[i], vs);
+    blockVerts_ = (int)vs.size();
+    uploadFaces(blockVao_, blockVbo_, vs);
 }
 
 // Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
@@ -1593,6 +1613,14 @@ void Renderer::drawScene(bool shadows) {
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();
+        if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
+            glUniform1f(uWorld_.alphaPass, 2.0f);
+            glDisable(GL_CULL_FACE);
+            glBindVertexArray(blockVao_);
+            glDrawArrays(GL_TRIANGLES, 0, blockVerts_);
+            glEnable(GL_CULL_FACE);
+            glUniform1f(uWorld_.alphaPass, 0.0f);
+        }
         // sky after the world: depth LEQUAL at z = 1 only passes where nothing was drawn
         glUseProgram(skyProg_);
         setVec3(uSky_.fwd, camFwd_); setVec3(uSky_.right, camRight_); setVec3(uSky_.up, camUp_);

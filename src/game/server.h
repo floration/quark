@@ -370,6 +370,18 @@ public:
     void blastBreaks(const Vec3& at, int weapon, int owner);   // a blast: panes in reach shatter; a rocket / sticky blows holes
     void glassFromMove(int id);   // what this command's movement broke (MoveState::glassBrush)
     void glassFromRay(const Vec3& o, const Vec3& dir, float t, int by);   // a shot that stopped t along: on a pane, it breaks
+    // the breakable blocks (map.h kBreaks): the damage each has taken (by brush, reset each round), when someone started
+    // standing on a BREAK_WEIGHT one
+    std::vector<float> blockDmg_;
+    std::vector<double> blockStood_;
+    // crumble platforms, per brush: when one was first stood on (-1: not), when a fallen one comes back (-1: not)
+    std::vector<double> crumbleFrom_, crumbleBack_;
+    void crumblesTouched(int id);
+    void tickCrumbles();
+    void damageBlock(int brush, float dmg, bool blast, const Vec3& at, const Vec3& dir, int by);
+    void breakBlock(int brush, bool blast, const Vec3& at, const Vec3& dir, int by);
+    void blockFromRay(const Vec3& o, const Vec3& dir, float t, float dmg, int by);   // a shot that stopped t along on a block
+    void blocksTouched(int id);   // BREAK_TOUCH / DASH / WEIGHT blocks this player is on or against
     void tickShards();
     void sendDestruction(int id);   // what's broken, to someone joining
     void resetDestruction(bool tell = false);   // everything broken back; clients told if anything was (tell: always)

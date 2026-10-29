@@ -106,7 +106,8 @@ public:
     const std::vector<StuckProp>& stuckProps() const { return props_; }
     // Glass and blown holes (glass.h): each break the server sent, or one this client predicted (its own shot, dash or
     // grapple), as something to show: shards, a sound. takeGlassFx hands over what came since the last call.
-    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; };   // (hole with how 1: a wall that fell, pane its box)
+    static constexpr uint8_t kGlassFxShake = 250;   // (how: a crumble platform shaking, about to fall)
+    struct GlassFx { AABB pane; uint8_t how; Vec3 at, dir; uint32_t seed; bool hole; int material = -1; };   // (hole with how 1: a wall that fell, pane its box)
     std::vector<AABB> crumbled_;
     void takeGlassFx(std::vector<GlassFx>& out) { out.swap(glassFx_); glassFx_.clear(); }
     bool predictGlass(int brush, int how, const Vec3& at, const Vec3& dir);   // false: no standing pane

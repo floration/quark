@@ -442,7 +442,7 @@ void Game::loadMapIfNeeded() {
     }
     if (gen == loadedMapGen_) return;
     // a race map: your past runs now, behind the loading screen (it used to be read on the first checkpoint, mid-run)
-    if (!raceRunsLoaded_ && !net_.map().checkpoints.empty()) loadRaceRuns();
+    if (!raceRunsLoaded_ && !net_.map().raceCheckpoints.empty()) loadRaceRuns();
     bake_ = std::make_unique<BakeJob>();
     bake_->map = net_.map();
     bake_->map.dynSolids.clear();   // (the payload cart's box where it was at join time: no shadow of it in the cached light)
@@ -1658,7 +1658,7 @@ void Game::frame(double dt) {
                         if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
                             const float g = projectileGravity(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
                             Vec3 p = q.pos0, v = q.vel0;
-                            projectileExtrapolate(p, v, g, (float)(time_ - q.born));
+                            net_.map().flyProjectile(p, v, g, (float)(time_ - q.born));
                             rc[n++] = {p, v, g};
                         }
                 net_.setRocketCopies(rc, n);
@@ -2349,7 +2349,7 @@ void Game::drawWorld(float alpha) {
         if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
         if (q.atWall) continue;
         Vec3 p = q.pos0, v = q.vel0;
-        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
+        net_.map().flyProjectile(p, v, projGravity(q.type, q.lob), (float)age);
         const Vec3 d = p - q.pos;
         const float len = length(d);
         Vec3 hn;
@@ -2392,7 +2392,7 @@ void Game::drawWorld(float alpha) {
                 const float sp = length(pr.vel);
                 if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
                 Vec3 p = pr.pos, v = pr.vel;
-                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                net_.map().flyProjectile(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
                 if (length(st.offset) > 3.0f) st.offset = {};
                 if (copy->boomed) {   // it blew up on your screen before the server's copy came: that one is it
@@ -2458,7 +2458,7 @@ void Game::drawWorld(float alpha) {
         for (auto& st : projStarts_)
             if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)) && !st.boomed) {   // (X5: as far along as its copy was, short of the wall)
                 Vec3 p = pr.pos, v = pr.vel;
-                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                net_.map().flyProjectile(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 const Vec3 d = p - pr.pos;
                 const float len = length(d);
                 Vec3 hn;
@@ -2494,7 +2494,7 @@ void Game::drawWorld(float alpha) {
         ProjectileSnap pr;
         pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
         Vec3 v = q.vel0, p = q.pos0;
-        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
+        net_.map().flyProjectile(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
         pr.vel = v;
         float f = 1.0f - (float)(time_ - q.born) / 0.2f;   // (from the muzzle, like the server's copy did)
         pr.pos = q.pos + (f > 0 ? q.offset * f : Vec3());
@@ -2597,14 +2597,14 @@ void Game::drawWorld(float alpha) {
         drawProp(PROP_CART, cpal, cart, yaw, {cy, 0, -syw}, {syw, 0, cy}, yaw, sv);
     } else if (isRaceMode(ms.mode)) {
         int next = mep ? mep->checkpoint : 0;
-        for (size_t i = 0; i < map.checkpoints.size(); i++) {
+        for (size_t i = 0; i < map.raceCheckpoints.size(); i++) {
             bool isNext = (int)i == next;
-            bool finish = i + 1 == map.checkpoints.size();
+            bool finish = i + 1 == map.raceCheckpoints.size();
             Color c = isNext ? rgba(friendly, 0.2f) : rgba({1, 1, 1}, (int)i < next ? 0.03f : 0.07f);
-            r_.translucentBox(map.checkpoints[i], c);
+            r_.translucentBox(map.raceCheckpoints[i], c);
             if (isNext) {
-                Vec3 cc = map.checkpoints[i].center();
-                labelAt({cc.x, map.checkpoints[i].mx.y + 0.3f, cc.z}, finish ? "FINISH" : "CHECKPOINT " + std::to_string(i + 1), rgba(friendly));
+                Vec3 cc = map.raceCheckpoints[i].center();
+                labelAt({cc.x, map.raceCheckpoints[i].mx.y + 0.3f, cc.z}, finish ? "FINISH" : "CHECKPOINT " + std::to_string(i + 1), rgba(friendly));
             }
         }
     }
@@ -3726,7 +3726,7 @@ void Game::drawHud() {
         obj = (ms.flags & MS_CONTESTED) ? "PAYLOAD CONTESTED" : ms.hillOwner == 255 ? "PUSH THE PAYLOAD TO THE ENEMY END"
               : ms.hillOwner == myTeam ? "YOUR TEAM IS PUSHING" : "ENEMY IS PUSHING";
     } else if (isRaceMode(ms.mode) && mep) {
-        obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
+        obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().raceCheckpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
         obj = "LAST TEAM STANDING WINS";
     } else if (ms.mode == MODE_ARENA) {
@@ -4518,16 +4518,34 @@ const Game::RaceRun* Game::bestRun(const std::string& map, bool trial) const {
     return b;
 }
 
+// (shards, pieces and glitter on screen at once: a shattered 2 x 3 m pane is up to 600 pieces and 1000 glitter)
+constexpr size_t kMaxVisShards = 6000;
+
 void Game::onRaceSplit(int cp, int ms) {
     if (!raceRunsLoaded_) loadRaceRuns();
+    {   // a checkpoint gate flashes when you take it: green sparks all through it
+        const Map& m = net_.map();
+        if (cp >= 1 && (size_t)cp > m.checkpoints.size() && (size_t)cp <= m.raceCheckpoints.size()) {
+            const AABB& g = m.raceCheckpoints[(size_t)cp - 1];
+            const Vec3 ext = g.mx - g.mn;
+            uint32_t sd = (uint32_t)cp * 2654435761u | 1u;
+            for (int i = 0; i < 160 && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {g.mn.x + ext.x * glassRandF(sd), g.mn.y + ext.y * glassRandF(sd), g.mn.z + ext.z * glassRandF(sd)};
+                const Vec3 v = Vec3(glassRandF(sd) - 0.5f, glassRandF(sd) * 1.5f, glassRandF(sd) - 0.5f) * 2.0f;
+                VisShard sh{p, v, 0.04f, Vec3(0.4f, 1.6f, 0.6f), false, false, time_};
+                sh.dust = true;
+                visShards_.push_back(sh);
+            }
+        }
+    }
     if (cp == 1) raceSplits_.clear();
-    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().checkpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
+    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().raceCheckpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
     // a time trial run counts (and is compared) only on the shipped Viaduct, unchanged (the server says so too)
     bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0 && map == "viaduct" && isOfficialMap(net_.map());
     const RaceRun* best = bestRun(map, trial);
-    int total = (int)net_.map().checkpoints.size();
+    int total = (int)net_.map().raceCheckpoints.size();
     audio_.play(cp == total ? SND_FINISH : SND_CHECKPOINT, 0.9f);
     // the split, and how it compares with the same checkpoint on your best run (green = ahead)
     splitText_ = (cp == total ? "FINISH " : "CHECKPOINT " + std::to_string(cp) + "  ") + fmtRace(ms);
@@ -7706,18 +7724,51 @@ void Game::predictShotGlass(int w, const UserCmd& c) {
     }
 }
 
-// (shards, pieces and glitter on screen at once: a shattered 2 x 3 m pane is up to 600 pieces and 1000 glitter)
-constexpr size_t kMaxVisShards = 6000;
 
 void Game::updateDestruction(const Map& map) {
     // the holes, when they change (and a new map's: none)
     if (map.destructSerial != holeSerial_ || net_.mapRevision() != holeMapRev_) {
         holeSerial_ = map.destructSerial; holeMapRev_ = net_.mapRevision();
         r_.setHoles(map.holes);
+        r_.uploadBlocks(map);   // (the breakable blocks still standing)
     }
     // what broke since the last frame: shards, chunks, a sound
     net_.takeGlassFx(glassFxScratch_);
     for (const NetClient::GlassFx& fx : glassFxScratch_) {
+        if (fx.material == kMatCrumble) {   // a crumble platform: dust off its underside as it shakes, then it drops in pieces
+            uint32_t sd = (uint32_t)(fx.pane.mn.x * 131.0f + fx.pane.mn.z * 71.0f) * 2654435761u | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const bool shake = fx.how == NetClient::kGlassFxShake;
+            const int n = shake ? 60 : std::clamp((int)(ext.x * ext.y * ext.z * 120.0f), 30, 300);
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), shake ? fx.pane.mn.y : fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                const Vec3 v = Vec3(glassRandF(sd) - 0.5f, -glassRandF(sd), glassRandF(sd) - 0.5f) * (shake ? 0.6f : 1.5f);
+                const float c = 0.75f + 0.4f * glassRandF(sd);
+                VisShard sh{p, v, shake ? 0.02f : 0.04f + 0.08f * glassRandF(sd), Vec3(0.62f, 0.55f, 0.45f) * c, false, false, time_};
+                sh.dust = shake;
+                visShards_.push_back(sh);
+            }
+            audio_.play3D(shake ? SND_LAND : SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, shake ? 0.6f : 0.35f, shake ? 0.6f : 0.8f);
+            continue;
+        }
+        if (breakMaterial(fx.material)) {   // a breakable block: chunks in its colour, out from the hit (a blast: more, faster)
+            const BreakDef& d = kBreaks[fx.material - kMatBreak];
+            uint32_t sd = fx.seed | 1u;
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const float vol = std::max(0.05f, ext.x * ext.y * ext.z);
+            const int n = std::clamp((int)(vol * 120.0f), 30, 300);
+            const float k = fx.how == GLASS_SHATTER ? 2.0f : 1.0f;
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                Vec3 v = p - fx.at;
+                const float l = length(v);
+                v = ((l > 1e-3f ? v / l : Vec3(0, 1, 0)) * (1.0f + 3.0f * glassRandF(sd)) + fx.dir * 2.0f) * k + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd), glassRandF(sd) - 0.5f) * 2.0f;
+                const float sh = 0.75f + 0.4f * glassRandF(sd);
+                visShards_.push_back({p, v, 0.03f + 0.06f * glassRandF(sd), Vec3(d.r, d.g, d.b) * sh, false, false, time_});
+            }
+            audio_.play3D(SND_EXPLOSION, (fx.pane.mn + fx.pane.mx) * 0.5f, 0.45f, 0.9f);
+            continue;
+        }
         if (fx.hole && fx.how == 1) {   // a whole wall coming down: chunks all over it, dropping
             uint32_t sd = ((uint32_t)(fx.pane.mn.x * 97.0f) * 2654435761u ^ (uint32_t)(fx.pane.mn.z * 53.0f)) | 1u;
             const Vec3 ext = fx.pane.mx - fx.pane.mn;
@@ -8203,7 +8254,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     {   // race practice: its checkpoint dings (the server sends a split only in the race itself; modecalls.h)
         const ModeState& ms = net_.mode();
         const PlayerSnap* mine = net_.findPlayer(me);
-        const auto& cps = net_.map().checkpoints;
+        const auto& cps = net_.map().raceCheckpoints;
         if (isRaceMode(ms.mode) && ms.phase == PHASE_WARMUP && alive && mine && !cps.empty()) {
             const int next = mine->checkpoint;
             const bool in = next < (int)cps.size() && playerBox(m).overlaps(cps[next]);

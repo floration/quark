@@ -279,6 +279,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
     // the liquid you're in (map.h kLiquids), asked only on a map with liquids
     const LiquidDef* liq = __builtin_expect(map.liquids.empty(), 1) ? nullptr : map.liquidAt(playerBox(s.pos, crouched, scale));
+    // the feature fields you're in (map.h FIELD_*: low gravity, the gravity flip's column), asked only on a map with any
+    const uint8_t fld = __builtin_expect(map.fields.empty(), 1) ? 0 : map.fieldsAt(playerBox(s.pos, crouched, scale));
+    const bool flipped = (fld & Map::FIELD_FLIP) != 0;   // (gravity upside down: you fall up and stand on the ceiling)
     // mud (owner, 2026-10-28: "sticky"): slow to run through and to jump out of; asphalt: a faster run
     const float jumpSpeed = kJumpSpeed * mt.jump * (floorMat == kMatMud ? kMudJump : 1.0f) * (liq ? liq->jump : 1.0f);
     float maxSpeed = (crouched ? (kCrouchSpeed * mt.m[MV_CROUCH_SPEED]) : kGroundSpeed) * mt.speed
@@ -303,7 +306,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // hair early used to do nothing, and each 10 ms late cost ~1.4 m/s against holding jump.
     const bool tapped = !jumpHeld && s.jumpBuffer > 0 && !frozen && !grappleOnly;
     if (onGround && (jumpHeld || tapped) && !frozen && !dashActive) {
-        s.vel.y = jumpSpeed;
+        s.vel.y = flipped ? -jumpSpeed : jumpSpeed;
         onGround = false;
         s.events |= ME_JUMP;
         s.jumpGrace = jumpWindow;   // (a dash right after this jump is still a ground dash jump; T4: held-jump hops too,
@@ -634,7 +637,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
             gravDv = kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * mt.m[MV_HOOK_GRAVITY]) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f)
-                   * (liq ? liq->gravity : 1.0f);
+                   * (liq ? liq->gravity : 1.0f) * ((fld & Map::FIELD_LOWGRAV) ? kLowGravField : 1.0f) * (flipped ? -1.0f : 1.0f);
             s.vel.y -= gravDv;
         }
     }
@@ -737,7 +740,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     // Ground check: probe slightly below.
     AABB feet = playerBox(s.pos, crouched, scale);
-    const bool canLand = s.vel.y <= 0.01f;   // (rising: no landing whatever the probe says, so don't sweep for it)
+    const bool canLand = s.vel.y <= 0.01f && !flipped;   // (rising: no landing whatever the probe says, so don't sweep for it)
     const Brush* under = nullptr;
     float probe = canLand ? map.sweepAxis(feet, 1, -0.05f, &under) : 0.0f;
     bool nowGround = canLand && probe > -0.049f && !steepUnder(under, shifted(feet, 1, probe));   // (a wall face is no floor: you slide)
@@ -765,6 +768,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (tapped) s.jumpBuffer = 0;
             s.jumpGrace = jumpWindow;   // (T4: a hop off a landing, like a jump off the floor)
         } else if (s.vel.y < 0) s.vel.y = 0;
+    } else if (flipped) {   // the gravity flip: the ceiling is your floor (no bhop bounce, no step down)
+        const float up = s.vel.y >= -0.01f ? map.sweepAxis(feet, 1, 0.05f, &under) : 1.0f;
+        if (up < 0.049f) { s.pos.y += up; nowGround = true; if (s.vel.y > 0) s.vel.y = 0; }
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]), &under);
         if (down > -(kStepHeight * mt.m[MV_STEP]) + 0.001f && !steepUnder(under, shifted(feet, 1, down))) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
@@ -790,6 +796,29 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (liq->current > 0 && s.vel.x < liq->current) s.vel.x = std::min(liq->current, s.vel.x + kLiquidCurrentAccel * dt);
         if (liq->bounce && s.vel.y < -kLiquidBounceFrom) s.vel.y = -s.vel.y * kLiquidBounce;
         s.acidTaken += (liq->dmg - liq->heal) * dt;
+    }
+    // the healing tile and the spike floor (as acid: the server takes it, prediction shows it)
+    if (floorMat == kMatHealTile) s.acidTaken -= kHealTilePerSec * dt;
+    else if (floorMat == kMatSpikes) s.acidTaken += kSpikePerSec * dt;
+    // a teleporter you touch: out of the next one with its link, just outside its exit face, at your speed along that
+    // face (unless something's in the way there)
+    if (__builtin_expect(!map.teleporters.empty(), 0)) {
+        AABB pb = playerBox(s.pos, crouched, scale);
+        const int from = map.teleporterAt({pb.mn - Vec3(0.03f, 0.03f, 0.03f), pb.mx + Vec3(0.03f, 0.03f, 0.03f)});
+        const int to = from >= 0 ? map.teleportTarget(from) : -1;
+        if (to >= 0) {
+            const int a = map.brushes[(size_t)to].exitFace / 2;
+            const Vec3 half = (pb.mx - pb.mn) * 0.5f, off = pb.center() - s.pos;
+            Vec3 n;
+            const Vec3 c = map.teleportExit(to, half[a] + 0.06f, &n);
+            const Vec3 at = c - off;
+            if (!map.boxSolid(playerBox(at, crouched, scale))) {
+                s.pos = at;
+                s.vel = n * length(s.vel);
+                s.flags &= ~MF_ONGROUND;
+                s.dashTimer = 0;
+            }
+        }
     }
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;

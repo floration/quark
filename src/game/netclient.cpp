@@ -526,7 +526,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
             if (pr.hidden || pr.type != WPN_ROCKET || (pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) continue;
             const float g = projectileGravity(pr.type, (pr.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f);
             Vec3 pos = pr.pos, vel = pr.vel;
-            projectileExtrapolate(pos, vel, g, (float)(nowMs - (int64_t)s.timeMs) * 0.001f);
+            map_.flyProjectile(pos, vel, g, (float)(nowMs - (int64_t)s.timeMs) * 0.001f);
             const Vec3 d = pos - eye;
             if (dot(d, d) > reach * reach) continue;
             Vec3 at = pr.pos;
@@ -534,7 +534,7 @@ bool NetClient::hookProbe(const UserCmd& cmd, HookProbe& probe) {
             else {
                 Vec3 v = pr.vel;
                 const int64_t dt = seenMs - (int64_t)s.timeMs;
-                if (dt >= 0) projectileExtrapolate(at, v, g, (float)dt * 0.001f);
+                if (dt >= 0) map_.flyProjectile(at, v, g, (float)dt * 0.001f);
                 else projectileRewind(at, v, g, (float)-dt * 0.001f);
             }
             const int k = probe.nr++;
@@ -862,9 +862,14 @@ void NetClient::applyDestructEvent(const GameEvent& e, bool fx) {
         }
         return;
     }
+    if (d.kind == DESTRUCT_RESTORE) { map_.restoreBrush(d.brush); return; }   // (a crumble platform back)
+    if (d.kind == DESTRUCT_SHAKE) {   // (a crumble platform about to fall: dust off it)
+        if (fx && d.brush < map_.brushes.size() && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, kGlassFxShake, d.at, {}, 0, false, map_.brushes[d.brush].material});
+        return;
+    }
     for (size_t k = 0; k < pendingGlass_.size(); k++)   // our own, predicted: already broken and shown
         if (pendingGlass_[k].brush == d.brush) { pendingGlass_.erase(pendingGlass_.begin() + (long)k); return; }
-    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false});
+    if (map_.breakGlass(d.brush) && fx && glassFx_.size() < 256) glassFx_.push_back({map_.brushes[d.brush].box, d.how, d.at, d.dir, d.seed, false, map_.brushes[d.brush].material});
 }
 
 void NetClient::replayDestruction() {
@@ -949,7 +954,7 @@ void NetClient::interpolatedProjectiles(std::vector<ProjectileSnap>& out) const 
         // on a player: glued to them as they're drawn (players are interpolated, projectiles extrapolated: the
         // newest snapshot's spot would run ahead of their model); not in sight: where the server last put it
         if (p.flags & PROJ_ON_PLAYER) { attachedPos(p, 1.0f, &p.pos); out.push_back(p); continue; }
-        if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
+        if (!(p.flags & PROJ_STUCK)) map_.flyProjectile(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
 }

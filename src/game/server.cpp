@@ -1866,8 +1866,8 @@ void Server::spawnPlayer(int id) {
     float yaw = 0;
     const float scale = bodyScale();
     bool crouch = false, fits = true;
-    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
-        const AABB& c = map_.checkpoints[p.checkpoint - 1];
+    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
+        const AABB& c = map_.raceCheckpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
     } else {
@@ -2267,6 +2267,7 @@ void Server::simulate() {
     }
     { QZONE("projectiles"); tickProjectiles(); }
     if (!shards_.empty()) { QZONE("glass shards"); tickShards(); }
+    if (!crumbleFrom_.empty()) tickCrumbles();
     tickRocketRides();   // grapples riding rockets: on the rocket where it flew, or let go
     tickVote();
     if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
@@ -2330,6 +2331,8 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
     }
     if (p.move.glassBrush >= 0) { glassFromMove(id); if (!p.alive) return; }   // (dashed / pulled through a pane)
+    if (!map_.blocks.empty()) blocksTouched(id);
+    if (!map_.crumbles.empty()) crumblesTouched(id);
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
     if ((p.move.acidTaken != 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
@@ -2480,6 +2483,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     glassFromRay(eye, dir, wall, id);   // (a pane stops the shot, and breaks)
+    blockFromRay(eye, dir, wall, dmg, id);   // (a breakable block takes the shot's damage)
     float best = wall >= 0 ? wall : range;
     int hit = -1;
     bool hitHead = false;
@@ -2950,8 +2954,9 @@ void Server::tickProjectiles() {
 void Server::stepProjectile(Projectile& pr) {
     {
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * kMoveStep;
-        Vec3 step = pr.vel * kMoveStep;
+        const float h = kMoveStep * map_.projectileRate(pr.pos);   // (a slow-mo field: half a step)
+        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * h;
+        Vec3 step = pr.vel * h;
         float len = length(step);
         if (len < 1e-6f) return;
         Vec3 dir = step / len;
@@ -2973,6 +2978,17 @@ void Server::stepProjectile(Projectile& pr) {
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        // a teleporter: out of the next one with its link, 10 cm off its exit face, at its speed straight out of it
+        if (hitPlayer < 0 && wallMat == kMatTeleport) {
+            const Vec3 in = pr.pos + dir * (wall + 0.01f);
+            const int to = map_.teleportTarget(map_.teleporterAt({in - Vec3(0.02f, 0.02f, 0.02f), in + Vec3(0.02f, 0.02f, 0.02f)}));
+            if (to >= 0) {
+                Vec3 out;
+                pr.pos = map_.teleportExit(to, 0.1f, &out);
+                pr.vel = out * length(pr.vel);
+                return;
+            }
+        }
         // glass: a bolt or a thrown knife breaks it and flies on (a bolt shatters it; owner, 2026-10-28)
         if (hitPlayer < 0 && wallMat == kMatGlassBreak && (pr.type == WPN_CROSSBOW || pr.type == WPN_KNIFE)) {
             const int pane = map_.glassAt(pr.pos + dir * (wall + 0.01f));
@@ -3167,6 +3183,94 @@ void Server::glassFromRay(const Vec3& o, const Vec3& dir, float t, int by) {
     if (pane >= 0) breakGlass(pane, GLASS_SHOT, o + dir * t, dir, by);
 }
 
+void Server::blockFromRay(const Vec3& o, const Vec3& dir, float t, float dmg, int by) {
+    if (t < 0 || map_.blocks.empty()) return;
+    const int b = map_.blockAt(o + dir * (t + 0.01f));
+    if (b >= 0) damageBlock(b, dmg, false, o + dir * t, dir, by);
+}
+
+void Server::damageBlock(int brush, float dmg, bool blast, const Vec3& at, const Vec3& dir, int by) {
+    if (editing_ || brush < 0 || (size_t)brush >= map_.brushes.size() || map_.brushes[(size_t)brush].gone) return;
+    const int m = map_.brushes[(size_t)brush].material;
+    if (!breakMaterial(m)) return;
+    const BreakDef& d = kBreaks[m - kMatBreak];
+    if (blockDmg_.size() < map_.brushes.size()) blockDmg_.resize(map_.brushes.size(), 0.0f);
+    blockDmg_[(size_t)brush] += dmg * (blast ? d.blast : d.bullet);
+    if (blockDmg_[(size_t)brush] >= d.hp) breakBlock(brush, blast, at, dir, by);
+}
+
+void Server::breakBlock(int brush, bool blast, const Vec3& at, const Vec3& dir, int by) {
+    if (editing_ || !map_.breakGlass((size_t)brush)) return;
+    DestructEv d;
+    d.kind = DESTRUCT_GLASS; d.how = (uint8_t)(blast ? GLASS_SHATTER : GLASS_SHOT); d.by = by; d.brush = (uint32_t)brush; d.at = at; d.dir = dir;
+    d.seed = glassRand(glassSeed_);
+    broadcastEvent(destructEvent(d));   // (the clients see a block's material: debris, no shards)
+    AABB near = map_.brushes[(size_t)brush].box;   // stickies on it drop
+    near.mn -= Vec3(0.15f, 0.15f, 0.15f); near.mx += Vec3(0.15f, 0.15f, 0.15f);
+    for (auto& pr : projectiles_)
+        if (pr.active && pr.stuck && pr.onPlayer < 0 && !pr.onCart && near.contains(pr.pos)) { pr.stuck = false; pr.vel = {}; }
+}
+
+void Server::blocksTouched(int id) {
+    const MoveState& m = players_[id].move;
+    const AABB me = playerBox(m);
+    AABB grown = me;
+    grown.mn -= Vec3(0.05f, 0.05f, 0.05f); grown.mx += Vec3(0.05f, 0.05f, 0.05f);
+    const std::vector<uint32_t> blocks = map_.blocks;
+    for (uint32_t i : blocks) {
+        const Brush& b = map_.brushes[i];
+        const int t = kBreaks[b.material - kMatBreak].touch;
+        if (b.gone || t == BREAK_HITS || !grown.overlaps(b.box)) continue;
+        const Vec3 at = vmax(b.box.mn, vmin(m.pos, b.box.mx));
+        if (t == BREAK_TOUCH || (t == BREAK_DASH && m.dashTimer > 0)) { breakBlock((int)i, false, at, normalize(m.vel + Vec3(0, 1e-3f, 0)), id); continue; }
+        if (t == BREAK_WEIGHT) {   // (standing on its top: it gives way kWeightBreakS later)
+            const bool on = (m.flags & MF_ONGROUND) && std::fabs(me.mn.y - b.box.mx.y) < 0.06f;
+            if (blockStood_.size() < map_.brushes.size()) blockStood_.resize(map_.brushes.size(), -1.0);
+            double& since = blockStood_[i];
+            if (!on) { since = -1; continue; }
+            if (since < 0) since = time();
+            else if (time() - since >= kWeightBreakS) breakBlock((int)i, false, at, {0, -1, 0}, id);
+        }
+    }
+}
+
+// Crumble platforms: standing on one's top starts it (EV_DESTRUCT DESTRUCT_SHAKE: the clients shake dust off it); it
+// falls kCrumbleS later and is back kCrumbleBackS after that (DESTRUCT_RESTORE), once nobody's in its way.
+void Server::crumblesTouched(int id) {
+    const MoveState& m = players_[id].move;
+    if (editing_ || !(m.flags & MF_ONGROUND)) return;
+    const AABB me = playerBox(m);
+    for (uint32_t i : map_.crumbles) {
+        const Brush& b = map_.brushes[i];
+        if (b.gone || std::fabs(me.mn.y - b.box.mx.y) > 0.06f || me.mn.x >= b.box.mx.x || me.mx.x <= b.box.mn.x || me.mn.z >= b.box.mx.z || me.mx.z <= b.box.mn.z) continue;
+        if (crumbleFrom_.size() < map_.brushes.size()) { crumbleFrom_.resize(map_.brushes.size(), -1.0); crumbleBack_.resize(map_.brushes.size(), -1.0); }
+        if (crumbleFrom_[i] >= 0) continue;
+        crumbleFrom_[i] = time();
+        DestructEv d;
+        d.kind = DESTRUCT_SHAKE; d.by = id; d.brush = i; d.at = b.box.center();
+        broadcastEvent(destructEvent(d));
+    }
+}
+
+void Server::tickCrumbles() {
+    for (size_t i = 0; i < crumbleFrom_.size() && i < map_.brushes.size(); i++) {
+        const Brush& b = map_.brushes[i];
+        if (crumbleFrom_[i] >= 0 && !b.gone && time() - crumbleFrom_[i] >= kCrumbleS) {
+            crumbleFrom_[i] = -1;
+            crumbleBack_[i] = time() + kCrumbleBackS;
+            breakBlock((int)i, false, b.box.center(), {0, -1, 0}, -1);
+        } else if (crumbleBack_[i] >= 0 && b.gone && time() >= crumbleBack_[i]) {
+            bool clear = true;
+            for (auto& p : players_) if (p.connected && p.alive && playerBox(p.move).overlaps(b.box)) clear = false;
+            if (!clear || editing_ || !map_.restoreBrush(i)) continue;
+            crumbleBack_[i] = -1;
+            DestructEv d;
+            d.kind = DESTRUCT_RESTORE; d.brush = (uint32_t)i; d.at = b.box.center();
+            broadcastEvent(destructEvent(d));
+        }
+    }
+}
+
 void Server::glassFromMove(int id) {
     const MoveState& m = players_[id].move;
     if (m.glassBrush >= 0) breakGlass(m.glassBrush, m.glassHow, m.glassAt, m.glassDir, id);
@@ -3186,6 +3290,20 @@ void Server::blastBreaks(const Vec3& at, int weapon, int owner) {
             if (len > reach) continue;
             if (len > 0.1f && map_.raycastAny(at, v / len, len - 0.05f)) continue;   // (behind a wall; other glass doesn't hide it)
             breakGlass((int)i, GLASS_SHATTER, at, {}, owner);
+        }
+    }
+    if (!map_.blocks.empty()) {   // breakable blocks in reach take the blast's damage there (falling off to 0 at its edge)
+        const float reach = weaponDef(weapon).splashRadius, dmg = weaponDef(weapon).damage;
+        const std::vector<uint32_t> blocks = map_.blocks;
+        for (uint32_t i : blocks) {
+            const Brush& b = map_.brushes[i];
+            if (b.gone || reach <= 0) continue;
+            const Vec3 c = vmax(b.box.mn, vmin(at, b.box.mx));
+            const Vec3 v = c - at;
+            const float len = length(v);
+            if (len > reach) continue;
+            if (len > 0.1f && map_.raycastAny(at, v / len, len - 0.05f)) continue;   // (behind a wall)
+            damageBlock((int)i, dmg * (1.0f - len / reach), true, at, len > 1e-3f ? v / len : Vec3(0, 1, 0), owner);
         }
     }
     // rockets and stickies only (owner: "bricks cannot be broken any other way besides sticky or rocket")
@@ -3242,6 +3360,7 @@ void Server::tickShards() {
 void Server::sendDestruction(int id) {
     std::vector<uint32_t> gone;
     for (uint32_t i : map_.glass) if (map_.brushes[i].gone) gone.push_back(i);
+    for (const auto* list : {&map_.blocks, &map_.crumbles}) for (uint32_t i : *list) if (map_.brushes[i].gone) gone.push_back(i);
     if (gone.empty() && holeLog_.empty()) return;
     for (const GameEvent& e : destructListEvents(gone, holeLog_)) sendEvent(id, e);
 }
@@ -3249,6 +3368,7 @@ void Server::sendDestruction(int id) {
 void Server::resetDestruction(bool tell) {
     const bool any = tell || !map_.pristineBrushes.empty() || !map_.holes.empty() || !holeLog_.empty();
     map_.resetDestruction();
+    blockDmg_.clear(); blockStood_.clear(); crumbleFrom_.clear(); crumbleBack_.clear();
     holeLog_.clear();
     shards_.clear();
     if (any) broadcastEvent(destructEvent(DestructEv()));

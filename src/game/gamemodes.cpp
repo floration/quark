@@ -1021,7 +1021,7 @@ void tickBomb(Server& s) {
 
 // ---- the race object: checkpoints in order, splits, time trial runs. Raises checkpoint / finish.
 void raceStep(Server& s) {
-    const auto& cps = s.map_.checkpoints;
+    const auto& cps = s.map_.raceCheckpoints;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive || p.finished) continue;
@@ -1055,7 +1055,7 @@ void tickRace(Server& s) {
 // Race practice (warmup): run the course, checkpoints in order (a fall puts you back at the last one), no clock,
 // nothing recorded. The finish sends you round again.
 void tickRacePractice(Server& s) {
-    const auto& cps = s.map_.checkpoints;
+    const auto& cps = s.map_.raceCheckpoints;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive || p.checkpoint >= (int)cps.size() || !feetIn(s, i, cps[p.checkpoint])) continue;
@@ -1760,7 +1760,7 @@ public:
             case MF_HAS_CART: return s.map_.payloadPath.size() >= 2;
             case MF_SITE_COUNT: return (double)s.map_.bombSites.size();
             case MF_POINT_COUNT: return (double)s.map_.points.size();
-            case MF_CHECKPOINT_COUNT: return (double)s.map_.checkpoints.size();
+            case MF_CHECKPOINT_COUNT: return (double)s.map_.raceCheckpoints.size();
             case MF_ATTACKERS: return m.attackers;
             case MF_HUD_CLOCK: return m.timeLeft;
             case MF_HUD_OVERTIME: return (m.flags & MS_OVERTIME) != 0;
@@ -1822,7 +1822,7 @@ public:
                     case MZ_SITES: for (auto& z : mp.bombSites) if (feetIn(s, a, z)) return 1; return 0;
                     case MZ_SITE: return k < (int)mp.bombSites.size() && feetIn(s, a, mp.bombSites[k]);
                     case MZ_POINT: return k < (int)mp.points.size() && feetIn(s, a, mp.points[k]);
-                    case MZ_CHECKPOINT: return k < (int)mp.checkpoints.size() && feetIn(s, a, mp.checkpoints[k]);
+                    case MZ_CHECKPOINT: return k < (int)mp.raceCheckpoints.size() && feetIn(s, a, mp.raceCheckpoints[k]);
                 }
                 return 0;
             }

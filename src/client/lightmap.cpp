@@ -16,7 +16,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x324D4C51; // "QLM2": named by the map's sha256 (QLM1: by its name, with its CRC)
-constexpr uint32_t kBakeVersion = 12;   // 12: no payload cart shadow (bakes took its box from the join) // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
+constexpr uint32_t kBakeVersion = 13;   // 13: light blocks light the room // 12: no payload cart shadow (bakes took its box from the join) // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -88,7 +88,7 @@ struct PointGrid {
             for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) ids[fill[(size_t)z * w + x]++] = (uint32_t)i;
         }
     }
-    bool inside(const Brush& b, const Vec3& p) const { return !glassMaterial(b.material) && !semiMaterial(b.material) && brushContains(b, p); }   // (glass, the see-through looks)
+    bool inside(const Brush& b, const Vec3& p) const { return !glassMaterial(b.material) && !seeThroughDrawn(b.material) && brushContains(b, p); }   // (glass, the see-through looks)
     // A face's rectangle (on plane `plane` of `axis`, lifted `off` along its normal) completely inside the union of
     // occluding brushes, exactly: the brushes that hold that lifted plane, their rectangles clipped to the face, then
     // every cell between their edges tested once. (A 9 x 9 sample grid missed visible strips thinner than a ninth of
@@ -303,6 +303,8 @@ float sunVisibility(const Map& map, const Vec3& p) {
 static void bake(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel,
                  const std::string* file) {
     out = BakedWorld();
+    std::vector<const Brush*> lightBlocks;   // (the light blocks: lights of their own in step 3)
+    for (const Brush& b : map.brushes) if (b.material == kMatLightBlock && !b.gone) lightBlocks.push_back(&b);
     // 1. Collect visible faces.
     std::vector<Face> faces;
     const PointGrid solidAt(map);
@@ -863,6 +865,23 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                         if (ndl <= 0 || anyHit(map, p, dir, dist - 0.05f)) continue;
                         float fall = 1.0f - dist / L.radius;
                         g += L.intensity * 1.1f * ndl * fall * fall;   // (10% up: indoor rooms read a little dark)
+                    }
+                    // light blocks: a light at the middle of each, reaching 8 m + twice its size, shadowed by the world
+                    // up to the block's own surface
+                    for (const Brush* lbp : lightBlocks) {
+                        const Brush& lb = *lbp;
+                        const Vec3 ext = lb.box.mx - lb.box.mn;
+                        const float radius = 8.0f + 2.0f * std::max(ext.x, std::max(ext.y, ext.z));
+                        Vec3 to = lb.box.center() - p;
+                        float dist = length(to);
+                        if (dist >= radius || dist < 1e-3f || brushContains(lb, p + n * 0.02f)) continue;
+                        Vec3 dir = to / dist;
+                        float ndl = dot(n, dir);
+                        if (ndl <= 0) continue;
+                        const float entry = rayAABB(p, safeInv(dir), lb.box, dist);
+                        if (entry < 0 || (entry > 0.06f && anyHit(map, p, dir, entry - 0.05f))) continue;
+                        float fall = 1.0f - dist / radius;
+                        g += 1.2f * ndl * fall * fall;
                     }
                     size_t idx = ((size_t)(f.ry + 1 + j) * W + (f.rx + 1 + i)) * 2;
                     out.texels[idx] = (uint8_t)(clampf(direct, 0, 1) * 255.0f + 0.5f);
