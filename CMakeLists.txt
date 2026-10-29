@@ -88,7 +88,9 @@ option(QUARK_LTO "Link-time optimization" ON)   # (1.19 laptop benchmark: o3 154
 #                   <harness>/; put a crash input there after fixing it, so the CI replay keeps checking it.
 option(QUARK_SANITIZE "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(QUARK_FUZZ "Build the libFuzzer harnesses (clang; implies QUARK_SANITIZE)" OFF)
-if(QUARK_LTO)
+# (not in the sanitizer / fuzz builds: they're for finding bugs, not speed, and clang's ThinLTO objects in libquark_core.a
+# failed to link into the fuzz harnesses with GNU ld: "Expected at most one ThinLTO module per bitcode file")
+if(QUARK_LTO AND NOT QUARK_SANITIZE AND NOT QUARK_FUZZ)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT QUARK_IPO_OK OUTPUT QUARK_IPO_ERR LANGUAGES C CXX)
   if(QUARK_IPO_OK)
