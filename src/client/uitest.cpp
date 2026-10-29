@@ -260,7 +260,7 @@ void Game::uiTestActions() {
 }
 
 void Game::uiTestHandles() {
-    if (!edSelValid() || edGroupMenu_ || edExportAsk_ || chatting_ || edLook_ || edPrompt_) return;
+    if (!edSelValid() || edGroupMenu_ || edExportAsk_ || edMatMenu_ || chatting_ || edLook_ || edPrompt_) return;   // (the picker covers the window)
     const float s = r_.height() / 720.0f, vw = (float)r_.width(), vh = (float)r_.height();
     static const char* kScopes[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     ui_.where = edPath();
