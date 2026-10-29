@@ -13,6 +13,8 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 
 - **FIX MAP and FIX GAPS in the map editor**: FIX MAP joins same-material boxes that together make one box and removes boxes you can never see (wholly inside solid walls; anything behind glass, water or breakable brick stays). FIX GAPS closes gaps under 1/8 m by stretching the box that's off the grid to the one on it. Each is one undo step.
 
+- **No more holes into the sky behind blown-open brick**: a wall face covered by a thin brick or cobblestone layer was left out of the world, so blowing the brick open showed through to nothing. Those faces are kept now.
+
 ## Weapons
 - **Rifle: +1 damage a shot**: 6 body (was 5), 8.5 head (was 7.5). A kill takes 17 body shots in 2.4 s (was 20 in 2.9 s), or 12 headshots in 1.7 s.
 - **Bubble gun fires 20% faster**: 6 bubbles a second (was 5), so 10 pops kill in 1.5 s (was 1.8 s).

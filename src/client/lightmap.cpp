@@ -111,6 +111,10 @@ struct PointGrid {
         for (uint32_t i : cand) {
             const Brush& b = m->brushes[i];
             if (!bakedMaterial(b.material) || b.shape != BRUSH_BOX || !(plane > b.box.mn[axis] && plane < b.box.mx[axis])) continue;   // (a slope hides nothing whole: never culls)
+            if (holeMaterial(b.material)) {   // thin brick / cobblestone can be blown open: what's behind it must be there
+                const Vec3 ext = b.box.mx - b.box.mn;
+                if (std::min(ext.x, std::min(ext.y, ext.z)) <= kBreakableThick + 1e-4f) continue;
+            }
             R r{std::max(u0, b.box.mn[ua]), std::min(u1, b.box.mx[ua]), std::max(v0, b.box.mn[va]), std::min(v1, b.box.mx[va])};
             if (r.u1 <= r.u0 || r.v1 <= r.v0) continue;
             rs.push_back(r); us.push_back(r.u0); us.push_back(r.u1); vs.push_back(r.v0); vs.push_back(r.v1);
