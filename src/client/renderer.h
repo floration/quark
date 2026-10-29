@@ -186,7 +186,7 @@ private:
     // Uniform locations, looked up once after linking (init): no lookups in the frame loop. Values that never change are
     // set there too, the per-frame ones that don't depend on the aim in prepareScene, the rest in drawScene (GL keeps
     // each program's values).
-    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir; } uWorld_ = {};
+    struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, baseL, accentL, wallbangL, metalL, floorL, metal, glow, full, fullColor, outlineW, time, sunDir, alphaPass; } uWorld_ = {};
     struct { GLint viewProj, shadowMat, shadowOn, casterRect, camPos, fogColor, bright, receive, sunDir; } uDyn_ = {};
     struct { GLint fwd, right, up, tan, sky, sunDir, bright; } uSky_ = {};
     GLint uDynFade_ = -1, uFlatFade_ = -1;   // (the view pass's see-through amount: WEAPON MODEL OPACITY)
@@ -206,6 +206,11 @@ private:
     std::vector<bool> worldUsed_ = std::vector<bool>((size_t)kMapMaterials, false);   // the looks in worldProg_ (setWorldLooks)
     unsigned compileWorld(const std::vector<bool>* used, std::string* err);
     void setWorldLooks(const BakedWorld& bw);
+    void uploadSeeThrough(const Map& map);
+    // the see-through looks (kMatSemi: Map's semiMaterial brushes), drawn blended after the world with their looks
+    unsigned seeVao_ = 0, seeVbo_ = 0;
+    int seeVerts_ = 0;
+    std::vector<bool> seeUsed_;   // (their materials: setWorldLooks puts their looks in the world shader too)
     void initWorldUniforms();
     // the material swatches (swatch): their atlas, its framebuffer, a one-texel lightmap, the quads, the 2D program
     unsigned swatchProg_ = 0;   // (the world program with every look: compileWorld(nullptr))

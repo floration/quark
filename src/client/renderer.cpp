@@ -164,6 +164,8 @@ vec3 cells(vec2 p) { vec2 i = floor(p), f = fract(p); float d1 = 9.0, d2 = 9.0, 
     for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) { vec2 o = vec2(x, y), r = o + hash22(i + o) - f; float d = dot(r, r);
         if (d < d1) { d2 = d1; d1 = d; id = hash2(i + o + 3.7); } else if (d < d2) d2 = d; }
     return vec3(sqrt(d1), sqrt(d2), id); }
+float alpha = 1.0;   // (a see-through look sets it: kept only in the see-through pass, uAlphaPass)
+uniform float uAlphaPass;
 // @LOOKS@: Renderer::worldLooks puts blockLook() here, with the looks of the materials the map uses
 // Holes blown in thin brick / cobblestone (Map::holes, two texels each: u v r axis, cw ch lo hi): a fragment of a cell
 // one breaks out isn't drawn. The same test as Map's holeTakes. Only the holes listed in the fragment's cell of a coarse
@@ -238,7 +240,7 @@ void main() {
         fragColor = vec4(finish(c), 1.0);
         return;
     }
-    vec2 lm = texture(uLightmap, vUV).rg;
+    vec2 lm = uAlphaPass > 0.5 ? vec2(1.0, 0.85) : texture(uLightmap, vUV).rg;   // (the see-through pass: not baked, full sun and sky)
     vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
     if (mat == 10) albedo = vec3(0.30, 0.33, 0.42) * (0.8 + 0.2 * step(0.5, fract((vPos.x + vPos.y + vPos.z) * 1.5))); // nograpple: slate blue with diagonal stripes
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
@@ -358,7 +360,7 @@ void main() {
         float curve = sin(fract(x) * 3.1416), f = fract(q.y / 0.25);
         albedo = lin(vec3(0.75, 0.38, 0.2) * (0.85 + 0.2 * hash2(vec2(floor(x), row)))) * (0.55 + 0.5 * curve) * mix(0.5, 1.0, smoothstep(0.0, 0.15, f));
     } else if (mat >= 39) {   // the surface looks (surface_looks.h)
-        blockLook(mat - 39, q, albedo, spec, gloss, emit);
+        blockLook(mat, q, albedo, spec, gloss, emit);
     } else {   // diamond plate: grey metal with raised diamonds (lit on one side, shadowed on the other), in rows offset
         vec2 r = vec2(q.x + q.y, q.x - q.y) * 2.5;
         vec2 cell = floor(r), f = fract(r) - 0.5;
@@ -378,7 +380,8 @@ void main() {
     }
     c += emit;
     c *= outline(vEdge, uOutlineW);
-    fragColor = vec4(finish(c), 1.0);
+    if (uAlphaPass > 0.5 && alpha < 0.01) discard;
+    fragColor = vec4(finish(c), uAlphaPass > 0.5 ? clamp(alpha, 0.0, 1.0) : 1.0);
 })";
 
 // The map editor's material swatches (Renderer::swatch): textured quads in window pixels over the 2D batch
@@ -646,7 +649,9 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
-static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks, "a look per material from kMatBlocks on (the large ones: their base's)");
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks + kSemiCount, "a look per material from kMatBlocks on (the large ones: their base's), then the see-through ones");
+// the material of kSurfaceLooks[k]: kMatBlocks.. up to the large ones, then kMatSemi..
+static int lookMat(int k) { return k < kMatLarge - kMatBlocks ? kMatBlocks + k : kMatSemi + (k - (kMatLarge - kMatBlocks)); }
 
 // The world shader's blockLook(), with only the looks of the materials marked in `used` (by material; null: all of
 // them, for the editor's swatches): a map uses a handful of the 400+, and a shader carrying all of them would cost
@@ -656,11 +661,12 @@ static std::string worldLooks(const std::vector<bool>* used) {
     std::string s = "void blockLook(int k, vec2 q, inout vec3 albedo, inout float spec, inout float gloss, inout vec3 emit) {\n"
                     "    float aa = 1.5 * footprint(q); vec3 an = abs(vN);\n";
     std::vector<int> ks;
-    for (int k = 0; k < kMatLarge - kMatBlocks; k++) if (!used || (*used)[(size_t)(kMatBlocks + k)]) ks.push_back(k);
+    // (k: the material; ks: the looks wanted, in material order)
+    for (int k = 0; k < (int)(sizeof kSurfaceLooks / sizeof *kSurfaceLooks); k++) if (!used || (*used)[(size_t)lookMat(k)]) ks.push_back(k);
     for (size_t i = 0; i < ks.size(); i += 50) {
         const size_t end = std::min(ks.size(), i + 50);
-        s += std::string(i ? "    else if" : "    if") + " (k <= " + std::to_string(ks[end - 1]) + ") switch (k) {\n";
-        for (size_t j = i; j < end; j++) s += "    case " + std::to_string(ks[j]) + ": { " + kSurfaceLooks[ks[j]] + " } break;\n";
+        s += std::string(i ? "    else if" : "    if") + " (k <= " + std::to_string(lookMat(ks[end - 1])) + ") switch (k) {\n";
+        for (size_t j = i; j < end; j++) s += "    case " + std::to_string(lookMat(ks[j])) + ": { " + kSurfaceLooks[ks[j]] + " } break;\n";
         s += "    }\n";
     }
     return s + "}\n";
@@ -675,7 +681,7 @@ unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err)
     for (int i = 0; i < kLargeCount; i++) { lb += (i ? "," : "") + std::to_string(kLarge[i].base); ls += (i ? "," : "") + std::to_string(kLarge[i].scale) ; }
     const std::string n = std::to_string(kLargeCount);
     const size_t lat = fs.find("// @LARGE@");
-    fs.replace(lat, fs.find('\n', lat) - lat, "if (mat >= " + std::to_string(kMatLarge) + ") { const int lb[" + n + "] = int[" + n + "](" + lb + "); const float ls[" + n + "] = float[" + n + "](" + ls +
+    fs.replace(lat, fs.find('\n', lat) - lat, "if (mat >= " + std::to_string(kMatLarge) + " && mat < " + std::to_string(kMatSemi) + ") { const int lb[" + n + "] = int[" + n + "](" + lb + "); const float ls[" + n + "] = float[" + n + "](" + ls +
                "); int li = min(mat - " + std::to_string(kMatLarge) + ", " + std::to_string(kLargeCount - 1) + "); mat = lb[li]; q /= ls[li]; }");
     return compile(kWorldVS, fs.c_str(), err);
 }
@@ -686,8 +692,9 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
     std::vector<bool> used((size_t)kMapMaterials, false);
     for (const WorldVertex& v : bw.verts) {
         const int m = (int)(v.material + 0.5f);
-        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge ? kLarge[m - kMatLarge].base : m)] = true;
+        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge && m < kMatSemi ? kLarge[m - kMatLarge].base : m)] = true;
     }
+    for (size_t m = 0; m < seeUsed_.size(); m++) if (seeUsed_[m]) used[m] = true;
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
     std::string err;
@@ -741,7 +748,8 @@ void Renderer::initWorldUniforms() {
                U(worldProg_, "uCamPos"), U(worldProg_, "uFogColor"), U(worldProg_, "uBright"), U(worldProg_, "uBaseL"),
                U(worldProg_, "uAccentL"), U(worldProg_, "uWallbangL"), U(worldProg_, "uMetalL"), U(worldProg_, "uFloorL"),
                U(worldProg_, "uMetal"), U(worldProg_, "uGlow"), U(worldProg_, "uFull"), U(worldProg_, "uFullColor"), U(worldProg_, "uOutlineW"),
-               U(worldProg_, "uTime"), U(worldProg_, "uSunDir")};
+               U(worldProg_, "uTime"), U(worldProg_, "uSunDir"), U(worldProg_, "uAlphaPass")};
+    glUniform1f(uWorld_.alphaPass, 0.0f);
     uHoleCount_ = U(worldProg_, "uHoleCount");
     uHoleGrid_ = U(worldProg_, "uHoleGrid"); uHoleGridH_ = U(worldProg_, "uHoleGridH");
     glUniform1i(U(worldProg_, "uHoles"), 2);
@@ -1028,6 +1036,7 @@ void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
 void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     QZONE("world upload");
     BakedWorld& bw = w.bw;
+    uploadSeeThrough(map);   // (first: their looks go in the world shader too)
     setWorldLooks(bw);
     chunks_.swap(w.chunks);
     drawFirst_.reserve(chunks_.size());
@@ -1059,6 +1068,47 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     warmup(map);
+}
+
+// The see-through looks' faces (each semiMaterial brush's box: 6 faces, both sides drawn), with the face's own u, v for
+// the outlines; the material tells the shader its look.
+void Renderer::uploadSeeThrough(const Map& map) {
+    std::vector<WorldVertex> vs;
+    seeUsed_.assign((size_t)kMapMaterials, false);
+    for (const Brush& b : map.brushes) {
+        if (!semiMaterial(b.material) || b.gone) continue;
+        seeUsed_[(size_t)b.material] = true;
+        for (int axis = 0; axis < 3; axis++)
+            for (int side = 0; side < 2; side++) {
+                const int ua = (axis + 1) % 3, va = (axis + 2) % 3;
+                const float w = b.box.mx[ua] - b.box.mn[ua], h = b.box.mx[va] - b.box.mn[va];
+                const float c[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
+                for (auto& p : c) {
+                    WorldVertex v = {};
+                    Vec3 pos;
+                    pos[axis] = side ? b.box.mx[axis] : b.box.mn[axis];
+                    pos[ua] = b.box.mn[ua] + w * p[0];
+                    pos[va] = b.box.mn[va] + h * p[1];
+                    v.pos[0] = pos.x; v.pos[1] = pos.y; v.pos[2] = pos.z;
+                    v.normal[axis] = side ? 1.0f : -1.0f;
+                    v.material = (float)b.material;
+                    v.edge[0] = w * p[0]; v.edge[1] = h * p[1]; v.edge[2] = w; v.edge[3] = h;
+                    vs.push_back(v);
+                }
+            }
+    }
+    seeVerts_ = (int)vs.size();
+    if (vs.empty()) return;
+    if (!seeVao_) { glGenVertexArrays(1, &seeVao_); glGenBuffers(1, &seeVbo_); }
+    glBindVertexArray(seeVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, seeVbo_);
+    glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+    glBindVertexArray(0);
 }
 
 // Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
@@ -1592,6 +1642,22 @@ void Renderer::drawScene(bool shadows) {
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
     };
+    if (seeVerts_ && worldVerts_) {   // the see-through looks (kMatSemi), blended over the world, before the other see-through things
+        QZONE("see-through pass");
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        glDisable(GL_CULL_FACE);
+        glUseProgram(worldProg_);
+        setMat(uWorld_.viewProj, viewProj_);
+        glUniform1f(uWorld_.alphaPass, 1.0f);
+        glBindVertexArray(seeVao_);
+        glDrawArrays(GL_TRIANGLES, 0, seeVerts_);
+        glUniform1f(uWorld_.alphaPass, 0.0f);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glEnable(GL_CULL_FACE);
+    }
     if (nFlat) drawFlat(0, nFlat, viewProj_);
 
     if ((nView || nViewFlat) && viewOpacity > 0.005f) {   // (WEAPON MODEL OPACITY 0: not drawn at all)

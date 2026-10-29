@@ -1608,18 +1608,43 @@ static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "M
                                         "MATERIAL: LARGE FROSTED PLANKS",
                                         "MATERIAL: LARGE CRATE WOOD",
                                         "MATERIAL: LARGE TEMPLE STONE",
-                                        "MATERIAL: LARGE KERB STONES"};
+                                        "MATERIAL: LARGE KERB STONES",
+                                        "MATERIAL: BLUE TINTED GLASS",
+                                        "MATERIAL: SMOKED GLASS",
+                                        "MATERIAL: AMBER GLASS",
+                                        "MATERIAL: FROSTED GLASS",
+                                        "MATERIAL: REEDED GLASS",
+                                        "MATERIAL: STAINED GLASS",
+                                        "MATERIAL: GLASS BLOCK",
+                                        "MATERIAL: SCRATCHED PLEXIGLASS",
+                                        "MATERIAL: ICE WALL",
+                                        "MATERIAL: QUARTZ CRYSTAL",
+                                        "MATERIAL: GREEN GEL",
+                                        "MATERIAL: HEX FORCE FIELD",
+                                        "MATERIAL: RED LASER BARRIER",
+                                        "MATERIAL: HOLOGRAM PANEL",
+                                        "MATERIAL: CHAIN-LINK MESH",
+                                        "MATERIAL: CARGO NET",
+                                        "MATERIAL: SOAP FILM",
+                                        "MATERIAL: WATER CURTAIN",
+                                        "MATERIAL: SMOKE WALL",
+                                        "MATERIAL: RAIN WINDOW",
+                                        "MATERIAL: PRISM GLASS",
+                                        "MATERIAL: JELLY CUBE",
+                                        "MATERIAL: GHOST GLASS",
+                                        "MATERIAL: SCANNER BEAM",
+                                        "MATERIAL: BOTTLE GREEN GLASS"};
 static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
 
 // the picker's tabs: the ones this map uses, the last 10 picked, then by kind, then all of them. kMatTabs: the kinds,
 // each a run of materials (the look rounds' categories)
 static const char* const kMatTabNames[] = {"IN THIS MAP", "RECENT", "BASIC", "BRICK", "CONCRETE", "TILE", "STONE", "BUILDINGS",
-                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "LIQUIDS", "LARGE", "ALL"};
+                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "LIQUIDS", "LARGE", "SEE-THROUGH", "ALL"};
 constexpr int kMatTabCount = (int)(sizeof kMatTabNames / sizeof *kMatTabNames), kMatTabAll = kMatTabCount - 1;
 static const struct { int tab, first, last; } kMatTabs[] = {
     {2, 0, kMatBlocks - 1}, {3, 39, 68}, {4, 69, 88}, {5, 89, 113}, {6, 114, 138}, {8, 139, 163}, {7, 164, 184}, {9, 185, 199},
-    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}, {12, kMatLiquids, kMatLiquids + kLiquidCount - 1}, {13, kMatLarge, kMapMaterials - 1}};
-static_assert(kMapMaterials == kMatLarge + kLargeCount && kMatLarge == kMatLiquids + kLiquidCount, "a picker tab for every material (kMatTabs)");
+    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}, {12, kMatLiquids, kMatLiquids + kLiquidCount - 1}, {13, kMatLarge, kMatSemi - 1}, {14, kMatSemi, kMatSemi + kSemiCount - 1}};
+static_assert(kMapMaterials == kMatSemi + kSemiCount && kMatSemi == kMatLarge + kLargeCount && kMatLarge == kMatLiquids + kLiquidCount, "a picker tab for every material (kMatTabs)");
 
 void Game::drawEditorMatMenu() {
     const float s = ui_.s(), pad = 16 * s, gap = 8 * s, bh = 36 * s, th = 30 * s;
@@ -2792,11 +2817,36 @@ void Game::editorFrame(double dt) {
                                          {0.09f, 0.11f, 0.22f},
                                          {0.55f, 0.25f, 0.12f},
                                          {0.28f, 0.09f, 0.40f},
-                                         {0.29f, 0.19f, 0.13f}};
+                                         {0.29f, 0.19f, 0.13f},
+                                         {0.32f, 0.41f, 0.53f},
+                                         {0.17f, 0.18f, 0.20f},
+                                         {0.54f, 0.41f, 0.26f},
+                                         {0.71f, 0.71f, 0.74f},
+                                         {0.56f, 0.60f, 0.63f},
+                                         {0.44f, 0.43f, 0.49f},
+                                         {0.51f, 0.56f, 0.59f},
+                                         {0.42f, 0.44f, 0.47f},
+                                         {0.52f, 0.62f, 0.68f},
+                                         {0.50f, 0.50f, 0.55f},
+                                         {0.29f, 0.58f, 0.35f},
+                                         {0.36f, 0.43f, 0.51f},
+                                         {0.55f, 0.39f, 0.42f},
+                                         {0.37f, 0.48f, 0.51f},
+                                         {0.39f, 0.41f, 0.44f},
+                                         {0.36f, 0.35f, 0.36f},
+                                         {0.36f, 0.34f, 0.44f},
+                                         {0.36f, 0.49f, 0.59f},
+                                         {0.52f, 0.52f, 0.55f},
+                                         {0.44f, 0.46f, 0.49f},
+                                         {0.44f, 0.45f, 0.47f},
+                                         {0.64f, 0.47f, 0.23f},
+                                         {0.45f, 0.48f, 0.51f},
+                                         {0.38f, 0.50f, 0.44f},
+                                         {0.20f, 0.38f, 0.26f}};
     // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
     // crystal, circuit, rust, terracotta, then breakable brick, glass and cobblestone (their plain ones' colours), then
     // the 100 block looks and the 333 picks of the earlier rounds (each one's mean colour in its preview render)
-    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMatLarge - kMatIce, "a colour per material from ice on (a large one: its base's)");
+    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMatLarge - kMatIce + kSemiCount, "a colour per material from ice on (a large one: its base's), then the see-through ones");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
     if (!edBaked_) {   // the map's boxes: one static batch, rebuilt only when they change (it was streamed every frame)
@@ -2805,7 +2855,7 @@ void Game::editorFrame(double dt) {
             r_.setStaticBoxes([&] {
                 for (auto& b : ed_.brushes) { // (water, lava, trim, nograpple, acid past the table: blue, orange, accent, slate, green; clip below)
                     if (b.material == 9) continue;
-                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[(b.material >= kMatLarge ? kLarge[b.material - kMatLarge].base : b.material) - kMatIce] : r_.accentColor;
+                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[b.material >= kMatSemi ? kMatLarge - kMatIce + (b.material - kMatSemi) : (b.material >= kMatLarge ? kLarge[b.material - kMatLarge].base : b.material) - kMatIce] : r_.accentColor;
                     if (b.shape != BRUSH_BOX) r_.slope(b, c);
                     else r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
                 }
