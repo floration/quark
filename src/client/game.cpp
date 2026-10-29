@@ -7743,17 +7743,12 @@ void Game::updateDestruction(const Map& map) {
         uint32_t sd = fx.seed ^ 0x9E3779B9u;
         for (const GlassShard& g : glassShardScratch_) {
             if (visShards_.size() >= 3000) break;
-            const float sz = glassCrater(fx.how) ? 0.03f + 0.04f * glassRandF(sd) : 0.01f + 0.025f * glassRandF(sd);
-            visShards_.push_back({g.pos, g.vel, sz, {0.86f, 0.90f, 0.93f}, false, true, time_});
+            visShards_.push_back({g.pos, g.vel, g.size, {0.86f, 0.90f, 0.93f}, false, true, time_, glassThinAxis(fx.pane)});
         }
-        if (glassCrater(fx.how)) {   // (the rest of the pane comes down too: pieces that only show, no damage)
-            const Vec3 ext = fx.pane.mx - fx.pane.mn;
-            const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
-            const int n = std::clamp((int)(area * 60.0f), 40, 160);
-            for (int i = 0; i < n && visShards_.size() < 3000; i++) {
-                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
-                const Vec3 v = fx.dir * (0.5f + 1.5f * glassRandF(sd)) + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd) * 0.5f, glassRandF(sd) - 0.5f) * 1.5f;
-                visShards_.push_back({p, v, 0.02f + 0.035f * glassRandF(sd), {0.86f, 0.90f, 0.93f}, false, true, time_});
+        if (glassCrater(fx.how)) {   // (the crater: a puff of glitter where it was hit, only drawn)
+            for (int i = 0; i < 12 && visShards_.size() < 3000; i++) {
+                const Vec3 v = fx.dir * (1.0f + 3.0f * glassRandF(sd)) + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd) - 0.3f, glassRandF(sd) - 0.5f) * 3.0f;
+                visShards_.push_back({fx.at, v, 0.008f + 0.012f * glassRandF(sd), {0.86f, 0.90f, 0.93f}, false, true, time_});
             }
         }
         audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
@@ -7786,7 +7781,8 @@ void Game::updateDestruction(const Map& map) {
         }
         float sx, sy;
         if (time_ - v.born > 0.05 && (!r_.project(v.pos, sx, sy) || sx < -20 || sy < -20 || sx > W + 20 || sy > H + 20)) continue;
-        const Vec3 h(v.size, v.rest ? v.size * 0.3f : v.size, v.size);
+        Vec3 h(v.size, v.rest ? v.size * 0.3f : v.size, v.size);
+        if (v.thin >= 0) { h = Vec3(v.size, v.size, v.size); h[v.rest ? 1 : v.thin] = 0.015f; }   // (a plate of glass)
         if (v.glass) r_.translucentBox({v.pos - h, v.pos + h}, {v.color.x, v.color.y, v.color.z, 0.55f});
         else r_.box(v.pos, h, (float)k, v.color, 1.0f, false);
         visShards_[keep++] = v;

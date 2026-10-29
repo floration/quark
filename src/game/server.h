@@ -361,7 +361,7 @@ public:
     // ---- Glass and blown-open brick / cobblestone (glass.h): every break goes to everyone (EV_DESTRUCT); someone who
     // joins is sent what's broken (holeLog_: the blasts that cut holes, in order). All of it comes back each round, at a
     // new match, on a new map and before an edit (resetDestruction).
-    struct FlyingShard { Vec3 pos, vel; float dmg; double until; int8_t by, spare; };   // by: who broke it; spare: who it can't hit
+    struct FlyingShard { Vec3 pos, vel; float size; double until; int8_t by, spare; };   // by: who broke it; spare: who it can't hit
     std::vector<FlyingShard> shards_;
     std::vector<Vec3> holeLog_;
     double shardStepAt_ = 0;

@@ -196,7 +196,7 @@ void main() {
                 c = mix(vec3(0.02, 0.22, 0.01), vec3(0.12, 0.85, 0.04), max(vN.y, 0.0)) * (0.7 + 0.45 * n)
                   * (0.9 + 0.1 * sin(vPos.x * 1.9 + uTime * 1.7) * sin(vPos.z * 1.6 - uTime * 1.3)) + vec3(0.25, 0.5, 0.1) * smoothstep(0.66, 0.76, n);
             }
-        } else c = mat == 4 ? uGlow * 0.9
+        } else c = mat == 4 ? uGlow * 1.6   // (owner, 2026-10-29: glowing things brighter; was 0.9)
                  : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
         fragColor = vec4(finish(c), 1.0);
         return;
@@ -304,14 +304,14 @@ void main() {
     } else if (mat == 32) {   // crystal: violet-blue facets with glowing edges
         vec2 w = worley(q * 2.0);
         albedo = lin(mix(vec3(0.35, 0.2, 0.6), vec3(0.2, 0.6, 0.8), hash2(floor(q * 2.0 + w.x)))) * (0.7 + 0.5 * w.x);
-        emit = vec3(0.6, 0.9, 1.4) * (1.0 - smoothstep(0.0, 0.06, w.y - w.x));
+        emit = vec3(0.9, 1.35, 2.1) * (1.0 - smoothstep(0.0, 0.06, w.y - w.x));
         spec = 0.8; gloss = 120.0;
     } else if (mat == 33) {   // circuit board: green, traces that pulse
         vec2 c = q / 0.25, i = floor(c), f = fract(c);
         float h = hash2(i), tr = h < 0.5 ? abs(f.y - 0.5) : abs(f.x - 0.5);
         float pulse = 0.5 + 0.5 * sin((h < 0.5 ? c.x : c.y) * 3.0 - uTime * 4.0 + h * 20.0);
         albedo = lin(vec3(0.05, 0.22, 0.12)) * (0.9 + 0.1 * vnoiseAA(q * 20.0));
-        emit = vec3(0.2, 1.4, 0.8) * (1.0 - smoothstep(0.03, 0.06, tr)) * (0.3 + 0.7 * pulse * pulse);
+        emit = vec3(0.3, 2.1, 1.2) * (1.0 - smoothstep(0.03, 0.06, tr)) * (0.3 + 0.7 * pulse * pulse);
     } else if (mat == 34) {   // rusted steel: bare steel eaten by rust patches
         float rust = clamp(smoothstep(0.4, 0.75, fbm(q * 1.3)) + 0.3 * smoothstep(0.6, 0.9, fbm(q * 6.0)), 0.0, 1.0);
         albedo = lin(mix(vec3(0.55, 0.57, 0.6), vec3(0.5, 0.24, 0.1) * (0.8 + 0.4 * vnoiseAA(q * 20.0)), rust));
