@@ -4885,6 +4885,20 @@ static void testDestruction(uint16_t port) {
         CHECK(std::fabs(m.raycast({0, 2.97f, 0}, fwd, 50) - 10.0f) < 0.01f || std::fabs(m.raycast({0, 0.03f, 0}, fwd, 50) - 10.0f) > -1);
         CHECK(m.punchHole({0, 1.5f, 15.0f - 0.05f}) == 0);                                // too thick: nothing
         CHECK(m.punchHole({0, 1.5f, 20.0f - 1.6f}) == 1 && m.holes.size() == 2 && m.holes[1].r < 0.7f);   // 1.5 m off: a smaller one
+        {   // blown away past 80%: the rest of the wall comes down too (owner, 2026-10-29)
+            Map c;
+            CHECK(c.parse("box -20 -1 -20 20 0 20\nbrick -3 0 10 3 3 10.1\nspawn any 0 0 0\n"));
+            std::vector<AABB> fell;
+            int blasts = 0;
+            for (float x : {-2.0f, 0.0f, 2.0f, -2.0f, 0.0f, 2.0f})
+                if (fell.empty()) { c.punchHole({x, blasts < 3 ? 0.9f : 2.1f, 9.95f}, &fell); blasts++; }
+            printf("    crumble: after %d blasts\n", blasts);
+            CHECK(fell.size() == 1 && blasts >= 2 && c.brushes[1].gone && c.holes.back().r < 0);
+            for (const Brush& q : c.brushes) CHECK(q.origin != 1 || q.gone);
+            CHECK(c.raycast({2.8f, 1.5f, 0}, {0, 0, 1}, 50) < 0);   // (its end too: gone)
+            c.resetDestruction();
+            CHECK(!c.brushes[1].gone && c.holes.empty());
+        }
         m.resetDestruction();
         CHECK(m.holes.empty() && m.brushes.size() == before && !m.brushes[1].gone && !m.brushes[2].gone);
         CHECK(std::fabs(m.raycast(eye, fwd, 50) - 5.0f) < 0.01f);

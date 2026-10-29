@@ -147,6 +147,7 @@ bool inHole() {
         float pa = ax == 0 ? vPos.x : ax == 1 ? vPos.y : vPos.z;
         if (pa < b.z - 0.01 || pa > b.w + 0.01) continue;
         vec2 p = ax == 0 ? vPos.zy : ax == 1 ? vPos.xz : vPos.xy;
+        if (a.z < 0.0) { if (abs(p.x - a.x) <= b.x && abs(p.y - a.y) <= b.y) return true; continue; }   // (a whole wall that fell)
         if (abs(p.x - a.x) > a.z * 1.2 || abs(p.y - a.y) > a.z * 1.2) continue;
         int row = int(floor(p.y / b.y));
         float off = 0.5 * float(row & 1);

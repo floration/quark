@@ -1459,7 +1459,7 @@ int Map::glassAt(const Vec3& p, float eps) const {
     return -1;
 }
 
-int Map::punchHole(const Vec3& at) {
+int Map::punchHole(const Vec3& at, std::vector<AABB>* crumbled) {
     std::vector<Brush> pieces;
     std::vector<size_t> cut;
     std::vector<Hole> made;
@@ -1515,6 +1515,7 @@ int Map::punchHole(const Vec3& at) {
         for (auto& pp : parts) {
             Brush q = b;
             q.generated = true;
+            q.origin = b.origin >= 0 ? b.origin : (int)i;
             q.box.mn[ua] = pp.first.x; q.box.mx[ua] = pp.second.x;
             q.box.mn[va] = pp.first.y; q.box.mx[va] = pp.second.y;
             pieces.push_back(q);
@@ -1530,6 +1531,30 @@ int Map::punchHole(const Vec3& at) {
     brushes.insert(brushes.end(), pieces.begin(), pieces.end());
     if (!buildGrid()) { brushes = before; buildGrid(); return 0; }   // (over the grid's limit: as it was)
     holes.insert(holes.end(), made.begin(), made.end());
+    // a wall mostly gone: the rest falls (what's left of its face, its pieces' faces, against the whole of it)
+    std::vector<int> walls;
+    for (size_t i : cut) {
+        const int o = brushes[i].origin >= 0 ? brushes[i].origin : (int)i;
+        if (std::find(walls.begin(), walls.end(), o) == walls.end()) walls.push_back(o);
+    }
+    bool fell = false;
+    for (int o : walls) {
+        const AABB& w = brushes[(size_t)o].box;
+        const Vec3 ext = w.mx - w.mn;
+        const int a = ext.x <= ext.y && ext.x <= ext.z ? 0 : ext.y <= ext.z ? 1 : 2;
+        const int ua = holeUAxis(a), va = holeVAxis(a);
+        const float whole = ext[ua] * ext[va];
+        float left = 0;
+        for (const Brush& q : brushes)
+            if (q.origin == o && !q.gone) left += (q.box.mx[ua] - q.box.mn[ua]) * (q.box.mx[va] - q.box.mn[va]);
+        if (whole <= 0 || left > whole * (1.0f - kCrumble)) continue;
+        for (Brush& q : brushes) if (q.origin == o) q.gone = true;
+        if (holes.size() < (size_t)kMaxHoles)
+            holes.push_back({0.5f * (w.mn[ua] + w.mx[ua]), 0.5f * (w.mn[va] + w.mx[va]), -1.0f, 0.5f * ext[ua] + 0.01f, 0.5f * ext[va] + 0.01f, a, w.mn[a], w.mx[a]});
+        if (crumbled) crumbled->push_back(w);
+        fell = true;
+    }
+    if (fell) buildGrid();
     destructSerial++;
     return (int)cut.size();
 }
