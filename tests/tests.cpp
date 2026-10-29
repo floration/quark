@@ -662,6 +662,24 @@ static void testGrappleAgainstWall() {
 
 // Liquids (472-496, owner 2026-10-29): not solid; each moves you its own way in pmove's 1 ms steps (kLiquids), damage
 // and healing counted like acid, the killing ones are lava.
+// The see-through looks (537-561, owner 2026-10-29): each stops what kSemi says. Glass stops players and shots, not sight;
+// a force field players only, a laser barrier shots only, smoke sight only, a water curtain nothing.
+static void testSeeThrough() {
+    printf("see-through: glass, force field, laser barrier, smoke, water curtain\n");
+    Map m;
+    CHECK(m.parse("box -40 -1 -40 40 0 40\nbluetintedglass -1 0 -10 1 3 -9.9\nhexforcefield -1 0 -5 1 3 -4.9\nredlaserbarrier -1 0 0 1 3 0.1\n"
+                  "smokewall -1 0 5 1 3 5.1\nwatercurtain -1 0 10 1 3 10.1\nspawn any 0 0 -20\n"));
+    auto blocksPlayer = [&](float z) { return m.boxSolid({{-0.3f, 0.5f, z - 0.3f}, {0.3f, 1.5f, z + 0.3f}}); };
+    auto blocksShot = [&](float z) { return m.raycast({0, 1, z - 1}, {0, 0, 1}, 2) >= 0; };
+    auto blocksSight = [&](float z) { return m.raycastAny({0, 1, z - 1}, {0, 0, 1}, 2); };
+    CHECK(blocksPlayer(-9.95f) && blocksShot(-9.95f) && !blocksSight(-9.95f));   // glass
+    CHECK(blocksPlayer(-4.95f) && !blocksShot(-4.95f) && !blocksSight(-4.95f));   // force field
+    CHECK(!blocksPlayer(0.05f) && blocksShot(0.05f) && !blocksSight(0.05f));      // laser barrier
+    CHECK(!blocksPlayer(5.05f) && !blocksShot(5.05f) && blocksSight(5.05f));      // smoke
+    CHECK(!blocksPlayer(10.05f) && !blocksShot(10.05f) && !blocksSight(10.05f));  // water curtain
+    CHECK(!litMaterial(kMatSemi) && !bakedMaterial(kMatSemi) && semiMaterial(kMapMaterials - 1));
+}
+
 static void testLiquids() {
     printf("liquids: slower / slippery / current / bounce / heal / hurt / kill, walk-through\n");
     Map m;
@@ -2029,8 +2047,8 @@ static void testMapFormat() {
     }
     {   // unknown optional parts: warned about and skipped (an older build still loads a newer map)
         Map m;
-        CHECK(m.parse("version 9\nfog 0.1 0.2 0.3\n" + base + "modes ffa teleball\nranked vanilla chess\nfor teleball\npalette base 1 1 1 rim 1 0 0\n"));
-        CHECK(m.formatVersion == 9 && m.warnings.size() == 6 && m.allowedModes == 1u << MODE_FFA && m.rankedLadders == 1 && m.preferredMode == -1);
+        CHECK(m.parse("version " + std::to_string(kMapFormatVersion + 1) + "\nfog 0.1 0.2 0.3\n" + base + "modes ffa teleball\nranked vanilla chess\nfor teleball\npalette base 1 1 1 rim 1 0 0\n"));
+        CHECK(m.formatVersion == kMapFormatVersion + 1 && m.warnings.size() == 6 && m.allowedModes == 1u << MODE_FFA && m.rankedLadders == 1 && m.preferredMode == -1);
         CHECK(m.parse(base + "weather rain\n") && m.warnings.size() == 1 && m.warnings[0].find("weather") != std::string::npos);
     }
     {   // gameplay parts stay strict
@@ -4916,7 +4934,7 @@ static void testMaterials() {
         std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
-        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && solidMaterial(k) == !liquidMaterial(k));   // (the liquids: you wade in)
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || solidMaterial(k) == !liquidMaterial(k)));   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
         const std::string out = m.serialize();
         CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
@@ -4999,6 +5017,8 @@ static void testDestruction(uint16_t port) {
         CHECK(m.raycastAny({1, 1.5f, 0}, {0, 0, 1}, 6.0f));
         std::string o;
         CHECK(upgradeMapText("version 6\nbox 0 0 0 1 1 1\n", &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nbox 0 0 0 1 1 1\n");
+        // format 8 (liquids, large patterns) converts unchanged to 9 (the see-through looks)
+        CHECK(upgradeMapText("version 8\nhoney 0 0 0 1 1 1\n", &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nhoney 0 0 0 1 1 1\n");
     }
     {   // format 6 (owner, 2026-10-29): plain brick, cobblestone and glass never break; the breakable ones do
         Map m;
@@ -9100,7 +9120,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},

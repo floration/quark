@@ -50,7 +50,7 @@ template <class F> void brushesNear(const Map& m, float x0, float z0, float x1, 
     for (int z = cz0; z <= cz1; z++)
         for (int x = cx0; x <= cx1; x++) {
             const Map::GridCell& c = m.cells[(size_t)z * m.gridW + x];
-            for (uint32_t k = c.start; k < c.end; k++) f((int)m.cellBrushes[k]);
+            for (uint32_t k = c.start; k < c.end; k++) if (stopsPlayers(m.brushes[m.cellBrushes[k]].material)) f((int)m.cellBrushes[k]);   // (not a laser barrier or smoke: they walk through)
         }
 }
 bool blocksAt(const AABB& b, float y) { return b.mn.y < y + kNavHead && b.mx.y > y + kNavStep; }
@@ -314,7 +314,7 @@ void NavGraph::build(const Map& m, NavKind k) {
     };
     for (size_t bi = 0; bi < m.brushes.size(); bi++) {
         const Brush& b = m.brushes[bi];
-        if (!solidMaterial(b.material)) continue; // far scenery, water / lava
+        if (!solidMaterial(b.material) || !stopsPlayers(b.material)) continue; // far scenery, water / lava, a laser barrier or smoke
         if (b.shape == BRUSH_BOX || b.up == 1) { surface(bi, b.box, b.box.mx.y); continue; }   // (upside down: its base on top)
         if (b.up != 0 || slopeSteepness(b) > 1.0f + 1e-4f) continue;   // (on its side, or steep: no floor to walk)
         const AABB& a = b.box;

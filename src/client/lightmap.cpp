@@ -88,7 +88,7 @@ struct PointGrid {
             for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) ids[fill[(size_t)z * w + x]++] = (uint32_t)i;
         }
     }
-    bool inside(const Brush& b, const Vec3& p) const { return !glassMaterial(b.material) && brushContains(b, p); }   // (glass: see-through)
+    bool inside(const Brush& b, const Vec3& p) const { return !glassMaterial(b.material) && !semiMaterial(b.material) && brushContains(b, p); }   // (glass, the see-through looks)
     // A face's rectangle (on plane `plane` of `axis`, lifted `off` along its normal) completely inside the union of
     // occluding brushes, exactly: the brushes that hold that lifted plane, their rectangles clipped to the face, then
     // every cell between their edges tested once. (A 9 x 9 sample grid missed visible strips thinner than a ninth of

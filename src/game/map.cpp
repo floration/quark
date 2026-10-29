@@ -372,8 +372,10 @@ static void upgradeMap5to6(std::vector<std::string>& lines) {
 static void upgradeMap6to7(std::vector<std::string>&) {}
 // 7 -> 8: the 25 liquids (472-496: new keywords only)
 static void upgradeMap7to8(std::vector<std::string>&) {}
+// 8 -> 9: the 25 see-through looks (537-561: new keywords only)
+static void upgradeMap8to9(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -1529,7 +1531,8 @@ template <class F> void Map::forBox(const AABB& b, F f) const {
     for (int z = z0; z <= z1; z++)
         for (int x = x0; x <= x1; x++) {
             size_t c = (size_t)z * gridW + x;
-            for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) f(brushes[cellBrushes[k]]);
+            for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++)
+                if (stopsPlayers(brushes[cellBrushes[k]].material)) f(brushes[cellBrushes[k]]);   // (a laser barrier, smoke: walk through)
         }
 }
 
@@ -1750,7 +1753,7 @@ float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, 
     Vec3 bestN;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
-            if (brushes[cellBrushes[k]].material == 9) continue;   // clip: players only
+            if (!stopsShots(brushes[cellBrushes[k]].material)) continue;   // clip: players only (a force field, a net too)
             Vec3 n;
             float t = rayBrush(o, dir, inv, brushes[cellBrushes[k]], best < 0 ? maxDist : best, &n);
             if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = n; bestMat = brushes[cellBrushes[k]].material; }
@@ -1775,7 +1778,7 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
             const Brush& br = brushes[cellBrushes[k]];
-            if (br.material == 9) continue;   // clip: players only
+            if (!stopsShots(br.material)) continue;   // clip: players only
             float t = rayBrush(o, dir, inv, br, best < 0 ? maxDist : best);
             if (t < 0) continue;
             if (br.material == 2) { if (bang < 0 || t < bang) bang = t; }
@@ -1794,7 +1797,7 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
 // raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
 // them being the same). Learn: note in *learn where the blocker was found.
 // clip: players only (light, sight and shots pass); glass: sight and light pass (shots break it: they use raycast)
-static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || glassMaterial(br.material); }
+static bool skipsSight(const Brush& br, bool hitClip) { return (br.material == 9 && !hitClip) || (br.material != 9 && !stopsSight(br.material)); }
 template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
     walkCells(m, o, dir, maxDist, [&](size_t c, float) {

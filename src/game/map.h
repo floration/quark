@@ -551,7 +551,41 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 // the face's plane by the scale); solid and plain like the one it scales.
 constexpr int kMatLiquids = 472, kLiquidCount = 25;
 constexpr int kMatLarge = 497, kLargeCount = 40;
-constexpr int kMapMaterials = kMatLarge + kLargeCount;
+// 537-561 (owner, 2026-10-29, the special blocks round: all 25 semi-transparent): see-through, drawn blended with their
+// looks after the world (their look sets alpha). kSemi says what each stops: players, shots (hitscan, projectiles, the
+// grapple), sight (bots, who's sent to whom). The glass ones stop players and shots like plain glass; a force field only
+// players, a laser barrier only shots, a smoke wall only sight; a water curtain, a hologram, soap film and the scanner
+// beam nothing. Not lit by the bake (flat sun and sky) and cast no shadow.
+constexpr int kMatSemi = kMatLarge + kLargeCount, kSemiCount = 25;
+struct SemiDef { bool players, shots, sight; };
+inline constexpr SemiDef kSemi[kSemiCount] = {
+    {true, true, false},    // blue tinted glass
+    {true, true, false},    // smoked glass (shapes, not detail: bots still see through)
+    {true, true, false},    // amber glass
+    {true, true, true},     // frosted glass: light through, no view
+    {true, true, false},    // reeded glass
+    {true, true, false},    // stained glass
+    {true, true, false},    // glass block
+    {true, true, false},    // scratched plexiglass
+    {true, true, false},    // ice wall
+    {true, true, false},    // quartz crystal
+    {true, true, false},    // green gel
+    {true, false, false},   // hex force field: players only
+    {false, true, false},   // red laser barrier: shots only
+    {false, false, false},  // hologram panel
+    {true, false, false},   // chain-link mesh: shots through the holes
+    {true, false, false},   // cargo net
+    {false, false, false},  // soap film
+    {false, false, false},  // water curtain: step through
+    {false, false, true},   // smoke wall: sight only
+    {true, true, false},    // rain window
+    {true, true, false},    // prism glass
+    {true, true, false},    // jelly cube
+    {true, true, false},    // ghost glass
+    {false, false, false},  // scanner beam
+    {true, true, false},    // bottle green glass
+};
+constexpr int kMapMaterials = kMatSemi + kSemiCount;
 constexpr int kMatBlocks = 39;   // the first of the 100
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
@@ -564,6 +598,7 @@ constexpr int kMatBrickBreak = 36, kMatGlassBreak = 37, kMatCobbleBreak = 38;
 // the look (the world shader's material, the editor's colour) of a material: a breakable one looks like its plain one
 inline int lookMaterial(int m) { return m == kMatBrickBreak ? kMatBrick : m == kMatGlassBreak ? kMatGlass : m == kMatCobbleBreak ? kMatCobble : m; }
 inline bool glassMaterial(int m) { return m == kMatGlass || m == kMatGlassBreak; }   // see-through, plain or breakable
+inline bool semiMaterial(int m) { return m >= kMatSemi && m < kMatSemi + kSemiCount; }   // the see-through looks (kSemi)
 // brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
 constexpr float kBreakableThick = 0.125f;
 inline bool holeMaterial(int m) { return m == kMatBrickBreak || m == kMatCobbleBreak; }
@@ -662,11 +697,18 @@ inline constexpr LargeDef kLarge[kLargeCount] = {
 };
 inline bool lavaMaterial(int m) { return m == 7 || (liquidMaterial(m) && kLiquids[m - kMatLiquids].kills); }   // touch it and die
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid, the liquids; clip is solid to players only)
-inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m)); }
+inline bool solidMaterial(int m) {   // in the collision grid (a see-through one: when it stops anything)
+    if (semiMaterial(m)) { const SemiDef& d = kSemi[m - kMatSemi]; return d.players || d.shots || d.sight; }
+    return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m));
+}
+// what a brush in the grid stops: players (collision), shots (raycast: hitscan, projectiles, the grapple), sight
+inline bool stopsPlayers(int m) { return !semiMaterial(m) || kSemi[m - kMatSemi].players; }
+inline bool stopsShots(int m) { return m != 9 && (!semiMaterial(m) || kSemi[m - kMatSemi].shots); }
+inline bool stopsSight(int m) { return m != 9 && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m)); }
-inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m); }   // in the static world mesh
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !semiMaterial(m)); }
+inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m) && !semiMaterial(m); }   // in the static world mesh (see-through: their own pass)
 // Editor clean-ups (owner, 2026-10-29), on the editable brushes (generated ones only hide others). box[i] is brush i's
 // box after the fix, del[i] whether it goes. FIX MAP: same-material plain boxes that together make one box become one
 // (and one inside another of its material goes), then a brush wholly inside solid opaque boxes goes (glass, water, clip,
@@ -1182,7 +1224,32 @@ inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang",
                                                     "largefrostedplanks",
                                                     "largecratewood",
                                                     "largetemplestone",
-                                                    "largekerbstones"};
+                                                    "largekerbstones",
+                                                    "bluetintedglass",
+                                                    "smokedglass",
+                                                    "amberglass",
+                                                    "frostedglass",
+                                                    "reededglass",
+                                                    "stainedglass",
+                                                    "glassblock",
+                                                    "scratchedplexiglass",
+                                                    "icewall",
+                                                    "quartzcrystal",
+                                                    "greengel",
+                                                    "hexforcefield",
+                                                    "redlaserbarrier",
+                                                    "hologrampanel",
+                                                    "chainlinkmesh",
+                                                    "cargonet",
+                                                    "soapfilm",
+                                                    "watercurtain",
+                                                    "smokewall",
+                                                    "rainwindow",
+                                                    "prismglass",
+                                                    "jellycube",
+                                                    "ghostglass",
+                                                    "scannerbeam",
+                                                    "bottlegreenglass"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -1234,7 +1301,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 8;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496
+constexpr int kMapFormatVersion = 9;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561
 
 struct Map {
     std::string name;
