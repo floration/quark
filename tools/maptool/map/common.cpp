@@ -26,6 +26,7 @@ double maptoolNow() { return std::chrono::duration<double>(std::chrono::steady_c
 
 Json jvec(const Vec3& v) { Json a = Json::array(); a.push(v.x); a.push(v.y); a.push(v.z); return a; }
 Json jbox(const AABB& b) { Json o = Json::object(); o.set("min", jvec(b.mn)); o.set("max", jvec(b.mx)); return o; }
+Json jcuts(const Brush& b) { Json a = Json::array(); for (int k = 0; k < b.ncut; k++) { Json p = Json::array(); for (int q = 0; q < 4; q++) p.push(b.cut[k][q]); a.push(std::move(p)); } return a; }
 Vec3 toVec(const Json& j, Vec3 def) { return j.isArr() && j.size() >= 3 ? Vec3(j[0].f(), j[1].f(), j[2].f()) : def; }
 AABB toBox(const Json& j) {
     Vec3 a = toVec(j["min"]), b = toVec(j["max"]);
@@ -112,7 +113,8 @@ Json mapToJson(const Map& m) {
     for (auto& b : m.brushes) {
         Json o = Json::object();
         o.set("mat", b.material); o.set("min", jvec(b.box.mn)); o.set("max", jvec(b.box.mx));
-        if (b.shape != BRUSH_BOX) { o.set("shape", slopeWord(b.shape)); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
+        if (b.shape == BRUSH_CUT) { o.set("shape", "cut"); o.set("cuts", jcuts(b)); }   // (a cut box: its planes, map.h)
+        else if (b.shape != BRUSH_BOX) { o.set("shape", slopeWord(b.shape)); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
         (b.generated ? gen : br).push(std::move(o));
     }
     j.set("brushes", std::move(br));
@@ -126,7 +128,8 @@ Json mapToJson(const Map& m) {
         Json parts = Json::array();
         for (auto& p : g.parts) {   // (a slope part: shape, dir, up as a brush's)
             Json q = Json::object(); q.set("mat", p.material); q.set("min", jvec(p.box.mn)); q.set("max", jvec(p.box.mx));
-            if (p.shape != BRUSH_BOX) { q.set("shape", slopeWord(p.shape)); q.set("dir", (int)p.dir); if (p.up) q.set("up", (int)p.up); }
+            if (p.shape == BRUSH_CUT) { q.set("shape", "cut"); q.set("cuts", jcuts(p)); }
+            else if (p.shape != BRUSH_BOX) { q.set("shape", slopeWord(p.shape)); q.set("dir", (int)p.dir); if (p.up) q.set("up", (int)p.up); }
             parts.push(std::move(q));
         }
         o.set("parts", std::move(parts));
@@ -207,7 +210,20 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
     // a brush's or a group part's shape, dir and up (absent: a box)
     auto readShape = [&](const Json& b, Brush& br, const char* what) {
         const std::string shape = b["shape"].str("box");
-        if (shape != "box" && shape != "wedge" && shape != "corner" && shape != "tetra") { err = std::string(what) + " shape '" + shape + "' isn't box, wedge, corner or tetra"; return false; }
+        if (shape == "cut") {   // "cuts": [[a, b, c, d], ...] (1..kMaxCuts planes over the box's fractions)
+            br.shape = BRUSH_CUT;
+            const auto& cs = b["cuts"].items();
+            if (cs.empty() || cs.size() > (size_t)kMaxCuts) { err = std::string(what) + " cut needs 1.." + std::to_string(kMaxCuts) + " planes"; return false; }
+            br.ncut = (uint8_t)cs.size();
+            for (size_t k = 0; k < cs.size(); k++) {
+                const auto& v = cs[k].items();
+                if (v.size() != 4) { err = std::string(what) + " cut plane isn't [a, b, c, d]"; return false; }
+                for (int q = 0; q < 4; q++) { br.cut[k][q] = v[q].f(); if (!std::isfinite(br.cut[k][q])) { err = std::string(what) + " cut plane isn't finite"; return false; } }
+                if (std::fabs(br.cut[k][0]) + std::fabs(br.cut[k][1]) + std::fabs(br.cut[k][2]) < 1e-9f) { err = std::string(what) + " cut plane has no direction"; return false; }
+            }
+            return true;
+        }
+        if (shape != "box" && shape != "wedge" && shape != "corner" && shape != "tetra") { err = std::string(what) + " shape '" + shape + "' isn't box, wedge, corner, tetra or cut"; return false; }
         br.shape = (uint8_t)(shape == "box" ? (int)BRUSH_BOX : slopeFromWord(shape));
         const int dir = b["dir"].i(0);
         if (dir < 0 || dir > 3) { err = std::string(what) + " dir " + std::to_string(dir) + " isn't 0..3"; return false; }

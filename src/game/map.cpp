@@ -672,12 +672,15 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
-        } else if (kw == "wedge" || kw == "corner" || kw == "tetra") {   // "wedge|corner|tetra <material> <dir + 4 * up> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
+        } else if (kw == "wedge" || kw == "corner" || kw == "tetra" || kw == "cut") {   // "wedge|corner|tetra <material> <dir + 4 * up> x0 y0 z0 x1 y1 z1", "cut <material> <n> <n planes: a b c d> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
             Brush b; int dir = -1;
-            ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 * kSlopeUps && readBox(ls, b.box);
             b.shape = (uint8_t)slopeFromWord(kw);
-            b.dir = (uint8_t)(std::max(0, dir) % 4);
-            b.up = (uint8_t)(std::max(0, dir) / 4);
+            if (b.shape == BRUSH_CUT) ok = (bool)(ls >> b.material) && validMapMaterial(b.material) && readCuts(ls, b) && readBox(ls, b.box);
+            else {
+                ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 * kSlopeUps && readBox(ls, b.box);
+                b.dir = (uint8_t)(std::max(0, dir) % 4);
+                b.up = (uint8_t)(std::max(0, dir) / 4);
+            }
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
                 hasWallbang |= b.material == 2;
@@ -724,10 +727,13 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             std::string shape;
             if (ok && ls >> shape) {
                 int dir = -1;
-                ok = (shape == "wedge" || shape == "corner" || shape == "tetra") && (bool)(ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps;
-                if (ok) b.shape = (uint8_t)slopeFromWord(shape);
-                b.dir = (uint8_t)(std::max(0, dir) % 4);
-                b.up = (uint8_t)(std::max(0, dir) / 4);
+                if (shape == "cut") { b.shape = BRUSH_CUT; ok = readCuts(ls, b); }
+                else {
+                    ok = (shape == "wedge" || shape == "corner" || shape == "tetra") && (bool)(ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps;
+                    if (ok) b.shape = (uint8_t)slopeFromWord(shape);
+                    b.dir = (uint8_t)(std::max(0, dir) % 4);
+                    b.up = (uint8_t)(std::max(0, dir) / 4);
+                }
             }
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
@@ -908,7 +914,14 @@ std::string Map::serialize() const {
     for (auto& br : brushes) {
         if (br.generated) continue;
         if (br.shape == BRUSH_BOX) { box(kMapMaterialWords[br.material], br.box); continue; }
-        snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", slopeWord(br.shape), br.material, (int)br.dir + 4 * br.up,
+        if (br.shape == BRUSH_CUT) {   // (its planes can be long: built as a string)
+            o += "cut " + std::to_string(br.material) + cutText(br);
+            for (int k = 0; k < 6; k++) { o += ' '; o += exactNum(nb[k], 24, k < 3 ? br.box.mn[k] : br.box.mx[k - 3]); }
+            o += '\n';
+            continue;
+        }
+        const std::string cuts = " " + std::to_string((int)br.dir + 4 * br.up);
+        snprintf(b, sizeof b, "%s %d%s %s %s %s %s %s %s\n", slopeWord(br.shape), br.material, cuts.c_str(),
                  exactNum(nb[0], 24, br.box.mn.x), exactNum(nb[1], 24, br.box.mn.y), exactNum(nb[2], 24, br.box.mn.z),
                  exactNum(nb[3], 24, br.box.mx.x), exactNum(nb[4], 24, br.box.mx.y), exactNum(nb[5], 24, br.box.mx.z));
         o += b;
@@ -940,7 +953,8 @@ std::string Map::serialize() const {
         for (auto& p : g.parts) {
             snprintf(kw, sizeof kw, "part %d", p.material);
             box(kw, p.box);
-            if (p.shape != BRUSH_BOX) { o.pop_back(); snprintf(kw, sizeof kw, " %s %d\n", slopeWord(p.shape), (int)p.dir + 4 * p.up); o += kw; }
+            if (p.shape == BRUSH_CUT) { o.pop_back(); o += " cut" + cutText(p) + "\n"; }
+            else if (p.shape != BRUSH_BOX) { o.pop_back(); snprintf(kw, sizeof kw, " %s %d\n", slopeWord(p.shape), (int)p.dir + 4 * p.up); o += kw; }
         }
     }
     for (auto& st : stairs) {   // (kept as they were: the editor doesn't move them with the boxes)
@@ -951,6 +965,14 @@ std::string Map::serialize() const {
     for (auto& a : checkpoints) box("checkpoint", a);
     for (auto& p : payloadPath) { float v[3] = {p.x, p.y, p.z}; o += "path"; nums(3, v); o += "\n"; }
     for (auto& l : lights) { float v[5] = {l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity}; o += "light"; nums(5, v); o += "\n"; }
+    return o;
+}
+
+std::string cutText(const Brush& b) {
+    std::string o = " " + std::to_string((int)b.ncut);
+    char nb[32];
+    for (int k = 0; k < b.ncut && k < kMaxCuts; k++)
+        for (int j = 0; j < 4; j++) { o += ' '; o += exactNum(nb, sizeof nb, b.cut[k][j]); }
     return o;
 }
 
@@ -966,6 +988,7 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
         case 'b': {   // (a wedge or corner: its shape and dir + 4 * up after the box, "w 2" / "c 4")
             const Brush& br = m.brushes[i];
             snprintf(t, sizeof t, "b %s %d %d %s", verb, i, br.material, fmtBox(br.box).c_str());
+            if (br.shape == BRUSH_CUT) return std::string(t) + " x" + cutText(br);
             if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", slopeLetter(br.shape), (int)br.dir + 4 * br.up); }
             break;
         }
@@ -1030,6 +1053,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         std::string shape;
         if (!(in >> shape)) return true;
         int dir = -1;
+        if (shape == "x") { b.shape = BRUSH_CUT; return readCuts(in, b); }
         if (!((shape == "w" || shape == "c" || shape == "t") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
         b.shape = (uint8_t)slopeFromWord(shape);
         b.dir = (uint8_t)(dir % 4);

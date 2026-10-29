@@ -308,6 +308,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
     // the mesh and the cache they key) are the same as a serial loop's.
     std::vector<Face> slots(map.brushes.size() * 7);   // (six box faces; a slope: up to four sides, its bottom, two sloped faces)
     std::vector<uint8_t> keep(slots.size(), 0);
+    std::vector<std::vector<Face>> cutSlots(map.brushes.size());   // (a cut box's faces: any number)
     bool ran = parallelFor(map.brushes.size(), stopped, [&](size_t bi) {
         const Brush& br = map.brushes[bi];
         if (!bakedMaterial(br.material)) return;   // clip: invisible; glass: drawn see-through each frame
@@ -328,6 +329,31 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) return;
             slots[bi * 7 + slot] = f; keep[bi * 7 + slot] = 1;
         };
+        if (br.shape == BRUSH_CUT) {   // its faces (map.h cutFaces), each split into pieces of up to 4 corners (a fan: the
+            // cuts between them drawn without an outline), into the brush's own list
+            slopePolygons(br, [&](const Vec3* p, int np, const Vec3& n) {
+                for (int s0 = 0; s0 + 2 < np; s0 += 2) {
+                    const int a = s0 + 1, b = s0 + 2, c = std::min(s0 + 3, np - 1);
+                    Face f;
+                    f.axis = 3; f.sign = 1; f.plane = 0; f.material = br.material; f.group = br.group; f.gen = true;
+                    const Vec3 P[4] = {p[0], p[a], p[b], p[c]};
+                    f.np = c > b ? 4 : 3;
+                    f.N = n; f.org = P[0];
+                    f.U = normalize(P[1] - P[0]);
+                    f.V = cross(n, f.U);
+                    f.u0 = f.v0 = 1e30f; f.u1 = f.v1 = -1e30f;
+                    for (int k = 0; k < f.np; k++) {
+                        f.pu[k] = dot(P[k] - f.org, f.U); f.pv[k] = dot(P[k] - f.org, f.V);
+                        f.u0 = std::min(f.u0, f.pu[k]); f.u1 = std::max(f.u1, f.pu[k]); f.v0 = std::min(f.v0, f.pv[k]); f.v1 = std::max(f.v1, f.pv[k]);
+                    }
+                    if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) continue;
+                    if (s0 > 0) f.genOff |= 1;                       // (corner 0 to 1: the cut from the piece before)
+                    if (c + 1 < np) f.genOff |= (uint8_t)(1 << (f.np - 1));   // (the last corner back to 0: the cut to the next)
+                    cutSlots[bi].push_back(f);
+                }
+            });
+            return;
+        }
         if (br.shape != BRUSH_BOX) {
             // built in the slope's own frame (map.h: standing on its base), each face then turned into the world
             const SlopeFrame fr = slopeFrame(br);
@@ -372,7 +398,7 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 else if (low1) lface(k, {b0, b1, q0}, n);
                 else lface(k, {b0, b1, q1, q0}, n);
             }
-            Vec3 pn[2]; float pd[2];
+            Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
             slopePlanes(lb, pn, pd);
             if (lb.shape == BRUSH_TETRA) {   // the base: the triangle at the apex corner; the top: one triangle over it
                 const int hi = lb.dir, a1 = (hi + 1) % 4, a3 = (hi + 3) % 4;
@@ -418,7 +444,10 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
             }
     });
     if (!ran) { out.cancelled = true; return; }
-    for (size_t s = 0; s < slots.size(); s++) if (keep[s]) faces.push_back(slots[s]);
+    for (size_t s = 0; s < slots.size(); s++) {
+        if (keep[s]) faces.push_back(slots[s]);
+        if (s % 7 == 6) for (const Face& f : cutSlots[s / 7]) faces.push_back(f);   // (in brush order, as the rest)
+    }
     for (Face& f : faces) {
         if (!f.gen) { f.aAxis = f.axis; f.aSign = f.sign; f.aPlane = f.plane; f.au0 = f.u0; f.au1 = f.u1; f.av0 = f.v0; f.av1 = f.v1; continue; }
         for (int a = 0; a < 3; a++) {

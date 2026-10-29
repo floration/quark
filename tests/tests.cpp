@@ -4656,6 +4656,73 @@ static void testSlopes() {
         }
         CHECK(hiGentle > 1.7f && hiSteep < 0);
     }
+    {   // cut box (owner, 2026-10-29: "cut box (any angle)"): a box less what lies past up to 6 planes over its fractions
+        Map t;
+        // a ramp (the plane fy <= fx: up 2 m over 4 m along x) and, at x 10..14, a ramp with its +x +z corner cut off
+        // upright along the diagonal (fx + fz <= 1.5)
+        CHECK(t.parse("cut 0 1 -1 1 0 0 0 0 0 4 2 4\ncut 3 2 -1 1 0 0 1 0 1 1.5 10 0 0 14 2 4\n" + base) && t.warnings.empty());
+        const Brush &a = t.brushes[0], &c2 = t.brushes[1];
+        CHECK(a.shape == BRUSH_CUT && a.ncut == 1 && c2.ncut == 2 && c2.material == 3);
+        CHECK(t.serialize().find("cut 0 1 -1 1 0 0 0 0 0 4 2 4\n") != std::string::npos);
+        Map r;
+        CHECK(r.parse(t.serialize()) && r.serialize() == t.serialize());
+        CHECK(std::fabs(brushTopAt(a, 2, 1) - 1.0f) < 1e-5f && std::fabs(brushTopAt(a, 4, 1) - 2.0f) < 1e-5f && brushTopAt(a, 0, 1) == 0.0f);
+        CHECK(brushContains(a, {2, 0.9f, 1}) && !brushContains(a, {2, 1.1f, 1}));
+        CHECK(!brushContains(c2, {13.8f, 0.1f, 3.8f}) && brushContains(c2, {13.8f, 1.8f, 0.2f}));   // (the cut-off corner; under the ramp's top)
+        CHECK(std::fabs(t.raycast({2, 5, 1}, {0, -1, 0}, 10) - 4.0f) < 1e-3f);
+        Vec3 n;
+        CHECK(std::fabs(t.raycast({2, 5, 1}, {0, -1, 0}, 10, &n) - 4.0f) < 1e-3f && n.y > 0.85f && n.x < -0.4f);
+        CHECK(!t.boxSolid(playerBox({13.6f, 1.0f, 3.6f}, false)) && t.boxSolid(playerBox({13.6f, 1.0f, 0.5f}, false)));
+        // the faces: corners on the box, normals out; the ramp has 5 (no side at its low edge, none on top), the other 6
+        for (const Brush* b : {&a, &c2}) {
+            int faces = 0;
+            slopePolygons(*b, [&](const Vec3* p, int np, const Vec3& nn) {
+                Vec3 c;
+                for (int k = 0; k < np; k++) c += p[k] * (1.0f / np);
+                CHECK(!brushContains(*b, c + nn * 0.01f) && brushContains(*b, c - nn * 0.01f));
+                faces++;
+            });
+            CHECK(faces == (b == &a ? 5 : 6));
+        }
+        // standing on it: dropped onto the ramp at x 2, you land on the highest of it under your feet (x 2.4: 1.2 m)
+        MoveState ms; ms.pos = {2, 3, 2};
+        for (int k = 0; k < 200; k++) { UserCmd idle; idle.msec = 8; pmove(ms, idle, t); }
+        CHECK(ms.pos.y > 1.1f && ms.pos.y < 1.3f);
+        // walking into the cut-off corner's diagonal wall: stopped by the face, not by the box (z 4 would be)
+        MoveState mw; mw.pos = {13.5f, 0.02f, 7};
+        for (int k = 0; k < 30; k++) { UserCmd idle; idle.msec = 8; pmove(mw, idle, t); }
+        for (int k = 0; k < 200; k++) { UserCmd cmd; cmd.yaw = 0; cmd.forward = 127; cmd.msec = 8; pmove(mw, cmd, t); }
+        CHECK(mw.pos.z < 4.0f - 0.05f || mw.pos.x < 13.0f);   // (slid along it, or got past its edge into the corner's space)
+        // turned and mirrored (the editor's keys): the same solid moved
+        auto mirX = [](const Vec3& p) { return Vec3(24 - p.x, p.y, p.z); };
+        auto rotY = [](const Vec3& p) { return Vec3(p.z, p.y, -p.x); };
+        Brush m1 = c2; m1.box = {{10, 0, 0}, {14, 2, 4}}; m1.box = {vmin(mirX(c2.box.mn), mirX(c2.box.mx)), vmax(mirX(c2.box.mn), mirX(c2.box.mx))};
+        cutTurned(c2, m1, mirX);
+        Brush m2 = c2; m2.box = {vmin(rotY(c2.box.mn), rotY(c2.box.mx)), vmax(rotY(c2.box.mn), rotY(c2.box.mx))};
+        cutTurned(c2, m2, rotY);
+        int same = 0;
+        for (int i = 0; i < 200; i++) {
+            const Vec3 p = {10.03f + 0.0197f * i, 0.013f + 0.0099f * ((i * 13) % 200), 0.021f + 0.0198f * ((i * 7) % 200)};
+            same += brushContains(c2, p) == brushContains(m1, mirX(p)) && brushContains(c2, p) == brushContains(m2, rotY(p));
+        }
+        CHECK(same == 200);
+        // a group's part (fractions of the group's box; it scales with it) and the edit line
+        Map g;
+        CHECK(g.parse("group custom 0 0 20 0 0 24 2 4\npart 0 0 0 0 1 1 1 cut 1 -1 1 0 0\n" + base));
+        bool found = false;
+        for (const Brush& b : g.brushes) if (b.generated && b.shape == BRUSH_CUT) found = std::fabs(brushTopAt(b, 22, 1) - 1.0f) < 1e-4f;
+        CHECK(found);
+        Map g2;
+        CHECK(g2.parse(g.serialize()) && g2.serialize() == g.serialize());
+        CHECK(describeMapObject(t, 'b', "set", 1).find(" x 2 -1 1 0 0 1 0 1 1.5") != std::string::npos);
+        Map e = t;
+        CHECK(applyMapEdit(e, describeMapObject(t, 'b', "set", 1)) && e.serialize() == t.serialize());
+        NavGraph ng;
+        ng.build(t, NavKind::Bots);
+        bool onRamp = false;
+        for (auto& nd : ng.nodes) onRamp |= nd.x0 >= -1e-3f && nd.x1 <= 4 + 1e-3f && nd.y > 0.5f;
+        CHECK(onRamp);
+    }
     {   // upside down and on its side (up, map.h): the solid, the file, turning one (the editor's rotate / mirror)
         Map o;
         CHECK(o.parse("wedge 0 4 0 0 0 4 2 2\nwedge 0 8 10 0 0 14 2 2\ncorner 1 22 20 0 0 24 2 2\n" + base));
