@@ -1067,14 +1067,20 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
 void Renderer::slope(const Brush& b, const Vec3& color) {
     std::vector<DynVertex>& out = buildingStatic_ ? staticVerts_ : dyn_;
     const int first = (int)out.size();
-    slopePolygons(b, [&](const Vec3* p, int np, const Vec3& n) {
+    slopePolygons(b, [&](const Vec3* pp, int npAll, const Vec3& n) {
+      // (a cut's face can have more corners: drawn as a fan of quads and triangles, the cuts between them unoutlined)
+      for (int s0 = 0; s0 + 2 < npAll; s0 += 2) {
+        const int ia = s0 + 1, ib = s0 + 2, ic = std::min(s0 + 3, npAll - 1);
+        const Vec3 p[4] = {pp[0], pp[ia], pp[ib], pp[ic]};
+        const int np = ic > ib ? 4 : 3;
+        const bool innerFirst = s0 > 0, innerLast = ic + 1 < npAll;   // (edge 0, and the edge back to corner 0)
         // each edge's distance, a linear function over the face: outline = min(edge.xy, edge.zw - edge.xy)
         const Vec3 cen = np == 3 ? (p[0] + p[1] + p[2]) * (1.0f / 3) : (p[0] + p[1] + p[2] + p[3]) * 0.25f;
         auto dist = [&](int e, const Vec3& q) {
             const Vec3 a = p[e], d = p[(e + 1) % np] - a;
             const Vec3 inward = cross(n, d);   // (points into the face when the corners run counterclockwise seen from n)
             const float l = length(inward);
-            if (l < 1e-6f) return 1000.0f;
+            if (l < 1e-6f || (e == 0 && innerFirst) || (e == np - 1 && innerLast)) return 1000.0f;
             const float s = dot(cen - a, inward) >= 0 ? 1.0f : -1.0f;
             return s * dot(q - a, inward) / l;
         };
@@ -1094,6 +1100,7 @@ void Renderer::slope(const Brush& b, const Vec3& color) {
         if (np == 3) out.insert(out.end(), {a, b1, c1, a, c1, c1});
         else if (ccw) out.insert(out.end(), {v[0], v[1], v[2], v[0], v[2], v[3]});
         else out.insert(out.end(), {v[0], v[2], v[1], v[0], v[3], v[2]});
+      }
     });
     if (buildingStatic_) staticItems_.push_back({b.box.center(), length(b.box.mx - b.box.mn) * 0.5f, first, (int)out.size() - first});
 }

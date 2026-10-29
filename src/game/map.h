@@ -15,6 +15,8 @@ inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED; }
 inline int spawnStage(int team) { return (team - SPAWN_STAGED) / 2; }
 inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
 
+constexpr int kMaxCuts = 6;   // a cut box's planes
+
 struct Brush {
     AABB box;
     int material = 0; // (12-19: ice, sand, wood, plastic, grass, rubber, steel, diamond plate: solid, see kMatIce) 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map), 10 = nograpple (solid like base, but the grapple can't latch onto it: it hits it and lets go), 11 = acid (glowing green pools: not solid, you wade in; touching it costs 10% of your max health, then 10% a second while you stay in)
@@ -30,21 +32,44 @@ struct Brush {
     // up turns that frame: 0 standing on the floor (u x, h y, v z: the default), 1 hanging from the ceiling (the same,
     // mirrored upside down), 2 / 3 on its side rising toward +x / -x (u y, h x, v z), 4 / 5 rising toward +z / -z (u x,
     // h z, v y); an odd one is the even one mirrored along h.
-    uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER, BRUSH_TETRA
+    // cut (owner, 2026-10-29: "cut box (any angle)"): the box less what lies past up to kMaxCuts planes at any angle, each
+    // a x + b y + c z <= d over the box's own 0..1 fractions (x = (world x - box.mn.x) / its width, ...), so it scales
+    // with its box like the others; dir and up stay 0. Wedges, corners and tetras are cut boxes of one or two planes;
+    // with several, any convex piece fits a box (a dome's face: its sloped top and the cuts along its ridges).
+    uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER, BRUSH_TETRA, BRUSH_CUT
     uint8_t dir = 0;
     uint8_t up = 0;
+    uint8_t ncut = 0;       // a cut box's planes
+    float cut[kMaxCuts][4] = {};
     // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
     // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
     bool gone = false;
     int origin = -1;   // in play only: a hole's piece, the wall it was cut from (its index; -1 not a piece)
 };
-enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2, BRUSH_TETRA = 3 };
+enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2, BRUSH_TETRA = 3, BRUSH_CUT = 4 };
 constexpr int kSlopeUps = 6;
-// A slope's name in files ("wedge", "corner", "tetra") and its letter in edit ops and group files ('w', 'c', 't').
-inline const char* slopeWord(int shape) { return shape == BRUSH_WEDGE ? "wedge" : shape == BRUSH_TETRA ? "tetra" : "corner"; }
-inline char slopeLetter(int shape) { return shape == BRUSH_WEDGE ? 'w' : shape == BRUSH_TETRA ? 't' : 'c'; }
+// A slope's name in files ("wedge", "corner", "tetra", "cut") and its letter in edit ops and group files ('w', 'c', 't',
+// 'x'). A cut's planes follow its count in place of dir + 4 * up: "cut 2 a b c d a b c d" (cutText / readCuts).
+inline const char* slopeWord(int shape) { return shape == BRUSH_WEDGE ? "wedge" : shape == BRUSH_TETRA ? "tetra" : shape == BRUSH_CUT ? "cut" : "corner"; }
+inline char slopeLetter(int shape) { return shape == BRUSH_WEDGE ? 'w' : shape == BRUSH_TETRA ? 't' : shape == BRUSH_CUT ? 'x' : 'c'; }
 inline int slopeFromWord(const std::string& w) {   // -1: not a slope's
-    return w == "wedge" || w == "w" ? BRUSH_WEDGE : w == "corner" || w == "c" ? BRUSH_CORNER : w == "tetra" || w == "t" ? BRUSH_TETRA : -1;
+    return w == "wedge" || w == "w" ? BRUSH_WEDGE : w == "corner" || w == "c" ? BRUSH_CORNER : w == "tetra" || w == "t" ? BRUSH_TETRA
+         : w == "cut" || w == "x" ? BRUSH_CUT : -1;
+}
+// A cut's count and planes as written after its word or letter: " n a b c d ..." (shortest exact numbers)
+std::string cutText(const Brush& b);
+// Reads a cut's count and planes (after its word or letter) into b; false on a bad count, number or a plane that cuts
+// nothing in any direction (a = b = c = 0).
+template <class S> bool readCuts(S& in, Brush& b) {
+    int n = -1;
+    if (!(in >> n) || n < 1 || n > kMaxCuts) return false;
+    b.ncut = (uint8_t)n;
+    for (int k = 0; k < n; k++) {
+        for (int j = 0; j < 4; j++) if (!(in >> b.cut[k][j]) || !std::isfinite(b.cut[k][j]) || std::fabs(b.cut[k][j]) > 1e6f) return false;
+        if (std::fabs(b.cut[k][0]) + std::fabs(b.cut[k][1]) + std::fabs(b.cut[k][2]) < 1e-9f) return false;
+    }
+    b.dir = b.up = 0;
+    return true;
 }
 // A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
 struct SlopeFrame { int u, h, v; bool flip; };
@@ -84,6 +109,95 @@ inline Brush slopeLocal(const Brush& b) {
     return l;
 }
 
+// ---- cut boxes (world space: a cut's dir and up are 0)
+// A cut's planes in the world: n . p <= d inside (n unit, pointing out of it); returns how many.
+inline int cutPlanes(const Brush& b, Vec3* n, float* d) {
+    const Vec3 sz = b.box.mx - b.box.mn;
+    int k = 0;
+    for (int i = 0; i < b.ncut && i < kMaxCuts; i++) {
+        const float* c = b.cut[i];
+        Vec3 nn(c[0] / std::max(sz.x, 1e-6f), c[1] / std::max(sz.y, 1e-6f), c[2] / std::max(sz.z, 1e-6f));
+        const float dd = c[3] + dot(nn, b.box.mn);
+        const float len = std::sqrt(dot(nn, nn));
+        if (len < 1e-12f) continue;
+        n[k] = nn * (1.0f / len); d[k] = dd / len; k++;
+    }
+    return k;
+}
+// Clips convex polygon p (np corners, at most 24 after) to n . x <= d; returns the corners left.
+inline int clipPolygon(Vec3* p, int np, const Vec3& n, float d) {
+    Vec3 o[24]; int no = 0;
+    for (int k = 0; k < np && no < 22; k++) {
+        const Vec3 &a = p[k], &b = p[(k + 1) % np];
+        const float da = dot(n, a) - d, db = dot(n, b) - d;
+        if (da <= 0) o[no++] = a;
+        if ((da <= 0) != (db <= 0)) o[no++] = a + (b - a) * (da / (da - db));
+    }
+    int m = 0;   // (corners closer than 1e-6 to the one before are one corner)
+    for (int k = 0; k < no; k++) {
+        const Vec3 e = o[k] - (m ? p[m - 1] : o[no - 1]);
+        if (m == 0 || dot(e, e) > 1e-12f) p[m++] = o[k];
+    }
+    if (m > 1) { const Vec3 e = p[m - 1] - p[0]; if (dot(e, e) <= 1e-12f) m--; }
+    return m;
+}
+// The faces of a cut box clipped to `clip` (a box): fn(pts, np, n) for each convex polygon (corners in order round it,
+// n its outward normal; up to 6 box faces and a face per plane). Faces narrower than 1e-5 are left out.
+template <class F> void cutFaces(const Brush& b, const AABB& clip, F fn) {
+    const AABB a{vmax(b.box.mn, clip.mn), vmin(b.box.mx, clip.mx)};
+    if (a.mn.x > a.mx.x || a.mn.y > a.mx.y || a.mn.z > a.mx.z) return;
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+    const int np = cutPlanes(b, pn, pd);
+    auto area = [](const Vec3* p, int n) { Vec3 s; for (int k = 1; k + 1 < n; k++) s += cross(p[k] - p[0], p[k + 1] - p[0]); return length(s) * 0.5f; };
+    for (int axis = 0; axis < 3; axis++)
+        for (int side = 0; side < 2; side++) {   // the box's faces, each cut by every plane
+            const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+            const float w = side ? a.mx[axis] : a.mn[axis];
+            Vec3 p[24];
+            const float us[4] = {a.mn[u], a.mx[u], a.mx[u], a.mn[u]}, vs[4] = {a.mn[v], a.mn[v], a.mx[v], a.mx[v]};
+            for (int k = 0; k < 4; k++) { p[k][axis] = w; p[k][u] = us[side ? k : 3 - k]; p[k][v] = vs[side ? k : 3 - k]; }
+            int n = 4;
+            for (int j = 0; j < np && n >= 3; j++) n = clipPolygon(p, n, pn[j], pd[j]);
+            Vec3 nn; nn[axis] = side ? 1.0f : -1.0f;
+            if (n >= 3 && area(p, n) > 1e-10f) fn(p, n, nn);
+        }
+    const float big = length(a.mx - a.mn) + 1.0f;
+    for (int i = 0; i < np; i++) {   // each plane's face: a square on it round the box, cut to the box and the other planes
+        const Vec3 c = (a.mn + a.mx) * 0.5f;
+        const Vec3 o = c - pn[i] * (dot(pn[i], c) - pd[i]);
+        const Vec3 t1 = normalize(std::fabs(pn[i].y) < 0.9f ? cross(pn[i], Vec3(0, 1, 0)) : cross(pn[i], Vec3(1, 0, 0))), t2 = cross(pn[i], t1);
+        Vec3 p[24] = {o - t1 * big - t2 * big, o + t1 * big - t2 * big, o + t1 * big + t2 * big, o - t1 * big + t2 * big};
+        if (dot(cross(p[1] - p[0], p[2] - p[0]), pn[i]) < 0) std::swap(p[1], p[3]);
+        int n = 4;
+        for (int axis = 0; axis < 3 && n >= 3; axis++) {
+            Vec3 e; e[axis] = 1; n = clipPolygon(p, n, e, a.mx[axis]);
+            if (n >= 3) n = clipPolygon(p, n, e * -1.0f, -a.mn[axis]);
+        }
+        for (int j = 0; j < np && n >= 3; j++) if (j != i) n = clipPolygon(p, n, pn[j], pd[j]);
+        if (n >= 3 && area(p, n) > 1e-10f) fn(p, n, pn[i]);
+    }
+}
+// The bounds of a cut box's solid inside `clip`; empty (mn > mx) when nothing of it is, or only a sliver thinner than
+// 1e-5 along some axis (touching isn't overlapping).
+inline AABB cutBounds(const Brush& b, const AABB& clip) {
+    AABB r{Vec3(1e30f, 1e30f, 1e30f), Vec3(-1e30f, -1e30f, -1e30f)};
+    cutFaces(b, clip, [&](const Vec3* p, int n, const Vec3&) { for (int k = 0; k < n; k++) { r.mn = vmin(r.mn, p[k]); r.mx = vmax(r.mx, p[k]); } });
+    if (r.mx.x - r.mn.x < 1e-5f || r.mx.y - r.mn.y < 1e-5f || r.mx.z - r.mn.z < 1e-5f) return AABB{Vec3(1e30f, 1e30f, 1e30f), Vec3(-1e30f, -1e30f, -1e30f)};
+    return r;
+}
+// The solid's top over the column at (x, z) (box.mn.y when the column has none of it)
+inline float cutTopAt(const Brush& b, float x, float z) {
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+    const int np = cutPlanes(b, pn, pd);
+    float lo = b.box.mn.y, hi = b.box.mx.y;
+    for (int k = 0; k < np; k++) {
+        const float r = pd[k] - pn[k].x * x - pn[k].z * z;
+        if (std::fabs(pn[k].y) < 1e-7f) { if (r < 0) return b.box.mn.y; continue; }
+        if (pn[k].y > 0) hi = std::min(hi, r / pn[k].y); else lo = std::max(lo, r / pn[k].y);
+    }
+    return hi > lo ? hi : b.box.mn.y;
+}
+
 // In the brush's own frame (the world for up 0; slopeLocal for the rest): x u, y h, z v.
 // A slope's 0..1 fractions toward its high side along x and z (1 where it's high; a wedge rising along x ignores z: 1).
 inline void slopeFractions(const Brush& b, float x, float z, float& gx, float& gz) {
@@ -100,6 +214,7 @@ inline void slopeFractions(const Brush& b, float x, float z, float& gx, float& g
 // Own frame: the solid's top at (x, z), inside the box's footprint.
 inline float brushTopAt(const Brush& b, float x, float z) {
     if (b.shape == BRUSH_BOX) return b.box.mx.y;
+    if (b.shape == BRUSH_CUT) return cutTopAt(b, x, z);
     float gx, gz;
     slopeFractions(b, x, z, gx, gz);
     const float h = std::min(1.0f, std::max(0.0f, b.shape == BRUSH_TETRA ? gx + gz - 1.0f : std::min(gx, gz)));
@@ -131,6 +246,7 @@ inline void slopeFractionsMax(const Brush& b, float x0, float x1, float z0, floa
 // collision functions below cut it to what a box's footprint actually meets).
 inline AABB slopeSolidAbove(const Brush& b, float y) {
     if (b.shape == BRUSH_BOX) return b.box;
+    if (b.shape == BRUSH_CUT) { AABB c = b.box; c.mn.y = std::max(c.mn.y, y); return cutBounds(b, c); }
     AABB r = b.box;
     const float h = b.box.mx.y - b.box.mn.y;
     float f = h > 1e-6f ? (y - b.box.mn.y) / h : 1.0f;
@@ -148,6 +264,10 @@ inline AABB slopeSolidAbove(const Brush& b, float y) {
 // Own frame: the highest the solid reaches over the part of rectangle [x0, x1] x [z0, z1] inside its footprint.
 inline float brushTopOver(const Brush& b, float x0, float x1, float z0, float z1) {
     if (b.shape == BRUSH_BOX) return b.box.mx.y;
+    if (b.shape == BRUSH_CUT) {
+        const AABB r = cutBounds(b, AABB{Vec3(x0, b.box.mn.y, z0), Vec3(x1, b.box.mx.y, z1)});
+        return r.mn.y > r.mx.y ? b.box.mn.y : r.mx.y;
+    }
     x0 = std::max(x0, b.box.mn.x); x1 = std::min(x1, b.box.mx.x); z0 = std::max(z0, b.box.mn.z); z1 = std::min(z1, b.box.mx.z);
     const bool wedge = b.shape == BRUSH_WEDGE;
     const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3);
@@ -159,6 +279,13 @@ inline float slopeSteepness(const Brush& b) {
     const Vec3 sz = b.box.mx - b.box.mn;
     if (b.shape == BRUSH_WEDGE) return sz.y / std::max(b.dir < 2 ? sz.x : sz.z, 1e-6f);
     if (b.shape == BRUSH_TETRA) return sz.y * std::sqrt(1.0f / std::max(sz.x * sz.x, 1e-12f) + 1.0f / std::max(sz.z * sz.z, 1e-12f));
+    if (b.shape == BRUSH_CUT) {   // (its planes facing up; a plane facing sideways or down is a wall, not a floor)
+        Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+        const int np = cutPlanes(b, pn, pd);
+        float s = 0;
+        for (int k = 0; k < np; k++) if (pn[k].y > 1e-6f) s = std::max(s, std::sqrt(pn[k].x * pn[k].x + pn[k].z * pn[k].z) / pn[k].y);
+        return s;
+    }
     return sz.y / std::max(std::min(sz.x, sz.z), 1e-6f);
 }
 
@@ -175,6 +302,12 @@ inline AABB brushSolidAbove(const Brush& b, float y) {
 // box, onto its top the top under the box's footprint (the slope's highest point there: a box's faces are flat).
 inline AABB brushObstacle(const Brush& b, const AABB& box, int axis, float delta) {
     if (b.shape == BRUSH_BOX) return b.box;
+    if (b.shape == BRUSH_CUT) {   // (exact: what of the solid lies in the box's slab across the move; it's convex)
+        AABB c = box;
+        c.mn[axis] = b.box.mn[axis]; c.mx[axis] = b.box.mx[axis];
+        (void)delta;
+        return cutBounds(b, c);
+    }
     const SlopeFrame f = slopeFrame(b);
     const Brush l = slopeLocal(b);
     const AABB lb = slopeBoxToLocal(b, f, box);
@@ -206,6 +339,7 @@ inline AABB brushObstacle(const Brush& b, const AABB& box, int axis, float delta
 inline bool brushOverlaps(const Brush& b, const AABB& box) {
     if (!box.overlaps(b.box)) return false;
     if (b.shape == BRUSH_BOX) return true;
+    if (b.shape == BRUSH_CUT) { const AABB r = cutBounds(b, box); return r.mn.x <= r.mx.x; }
     const SlopeFrame f = slopeFrame(b);
     const AABB lb = slopeBoxToLocal(b, f, box);
     const Brush l = slopeLocal(b);
@@ -219,13 +353,21 @@ inline bool brushOverlaps(const Brush& b, const AABB& box) {
 inline bool brushContains(const Brush& b, const Vec3& p) {   // strictly inside
     if (!(p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)) return false;
     if (b.shape == BRUSH_BOX) return true;
+    if (b.shape == BRUSH_CUT) {
+        Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+        const int np = cutPlanes(b, pn, pd);
+        for (int k = 0; k < np; k++) if (dot(pn[k], p) >= pd[k]) return false;
+        return true;
+    }
     const SlopeFrame f = slopeFrame(b);
     const Vec3 l = slopeToLocal(b, f, p);
     return l.y < brushTopAt(slopeLocal(b), l.x, l.z);
 }
-// World: a slope's sloped planes (n . p <= d inside; n points out of it), 1 for a wedge, 2 for a corner; returns how many.
-inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
+// World: a slope's sloped planes (n . p <= d inside; n points out of it), 1 for a wedge or a tetra, 2 for a corner, a
+// cut's own (up to kMaxCuts); returns how many. (n and d hold kMaxCuts.)
+inline int slopePlanes(const Brush& b, Vec3* n, float* d) {
     if (b.shape == BRUSH_BOX) return 0;
+    if (b.shape == BRUSH_CUT) return cutPlanes(b, n, d);
     const SlopeFrame fr = slopeFrame(b);
     const Brush l = slopeLocal(b);
     const Vec3 sz = l.box.mx - l.box.mn;
@@ -260,17 +402,19 @@ inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
 }
 // World: the sloped plane at p (a corner's: the one whose height is the lower there, the top being the min of the two).
 inline int slopePlaneAt(const Brush& b, const Vec3& p, Vec3& n, float& d) {
-    Vec3 pn[2]; float pd[2];
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
     const int np = slopePlanes(b, pn, pd);
     if (np == 0) return 0;
-    const int k = np == 2 && dot(pn[1], p) - pd[1] > dot(pn[0], p) - pd[0] ? 1 : 0;
+    int k = 0;
+    for (int j = 1; j < np; j++) if (dot(pn[j], p) - pd[j] > dot(pn[k], p) - pd[k]) k = j;
     n = pn[k]; d = pd[k];
     return 1;
 }
-// World: a slope's faces as convex polygons (corners in order round each, 3 or 4), each with its outward normal:
-// fn(pts, n, normal). Sides that are whole rectangles come out as polygons too; the low edge has none. (The light
-// bake builds its own.)
+// World: a slope's faces as convex polygons (corners in order round each, 3 or 4; a cut's, up to 24), each with its
+// outward normal: fn(pts, n, normal). Sides that are whole rectangles come out as polygons too; the low edge has none.
+// (The light bake builds its own.)
 template <class F> void slopePolygons(const Brush& world, F fn) {
+    if (world.shape == BRUSH_CUT) { cutFaces(world, world.box, fn); return; }
     const SlopeFrame fr = slopeFrame(world);
     const bool rev = slopeFrameMirrors(fr);
     const Brush br = slopeLocal(world);
@@ -296,7 +440,7 @@ template <class F> void slopePolygons(const Brush& world, F fn) {
     if (br.shape == BRUSH_TETRA) {   // its base: the triangle at the apex corner; its top: the one sloped face over it
         const int hi = br.dir, a1 = (hi + 1) % 4, a3 = (hi + 3) % 4;
         { const Vec3 p[3] = {c[hi], c[a3], c[a1]}; out(p, 3, Vec3(0, -1, 0)); }
-        Vec3 pn[2]; float pd[2];
+        Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
         slopePlanes(br, pn, pd);
         const Vec3 p[3] = {t[hi], t[a1], t[a3]};
         out(p, 3, pn[0]);
@@ -304,7 +448,7 @@ template <class F> void slopePolygons(const Brush& world, F fn) {
     }
     { const Vec3 p[4] = {c[0], c[3], c[2], c[1]}; out(p, 4, Vec3(0, -1, 0)); }
     if (br.shape == BRUSH_WEDGE) {
-        Vec3 pn[2]; float pd[2];
+        Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
         slopePlanes(br, pn, pd);
         out(t, 4, pn[0]);
     } else {
@@ -334,6 +478,25 @@ template <class P> bool slopeTurned(const Brush& from, Brush& to, P pt) {
         }
     return false;
 }
+// A cut box turned or mirrored: `to` (its box already the turned box) gets the planes whose solid is `from`'s moved by pt
+// (any affine map: each plane's three points and a point inside it are moved, and the plane put back through them).
+template <class P> void cutTurned(const Brush& from, Brush& to, P pt) {
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
+    const int np = cutPlanes(from, pn, pd);
+    const Vec3 sz = to.box.mx - to.box.mn;
+    auto frac = [&](const Vec3& w) { return Vec3((w.x - to.box.mn.x) / std::max(sz.x, 1e-6f), (w.y - to.box.mn.y) / std::max(sz.y, 1e-6f), (w.z - to.box.mn.z) / std::max(sz.z, 1e-6f)); };
+    to.ncut = (uint8_t)np;
+    for (int k = 0; k < np; k++) {
+        const Vec3 o = pn[k] * pd[k];
+        const Vec3 t1 = normalize(std::fabs(pn[k].y) < 0.9f ? cross(pn[k], Vec3(0, 1, 0)) : cross(pn[k], Vec3(1, 0, 0))), t2 = cross(pn[k], t1);
+        const Vec3 a = frac(pt(o)), b = frac(pt(o + t1)), c = frac(pt(o + t2)), in = frac(pt(o - pn[k]));
+        Vec3 n = cross(b - a, c - a);
+        float d = dot(n, a);
+        if (dot(n, in) > d) { n = n * -1.0f; d = -d; }
+        const float s = 1.0f / std::max(std::max(std::fabs(n.x), std::fabs(n.y)), std::max(std::fabs(n.z), 1e-12f));
+        to.cut[k][0] = n.x * s; to.cut[k][1] = n.y * s; to.cut[k][2] = n.z * s; to.cut[k][3] = d * s;
+    }
+}
 // Ray vs a brush's solid: entry distance in [0, maxT] or -1; *normal the face it enters (axis faces as rayAABB's axis).
 inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const Brush& b, float maxT, Vec3* normal = nullptr) {
     int axis = -1;
@@ -353,7 +516,7 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
         if (t1 > tmin) { tmin = t1; nIn = Vec3(); nIn[i] = s; }
         if (t2 < tmax) tmax = t2;
     }
-    Vec3 pn[2]; float pd[2];
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
     const int np = slopePlanes(b, pn, pd);
     for (int k = 0; k < np; k++) {
         const float den = dot(pn[k], dir), num = pd[k] - dot(pn[k], o);

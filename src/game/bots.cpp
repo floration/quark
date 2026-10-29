@@ -319,7 +319,7 @@ void NavGraph::build(const Map& m, NavKind k) {
         if (b.up != 0 || slopeSteepness(b) > 1.0f + 1e-4f) continue;   // (on its side, or steep: no floor to walk)
         const AABB& a = b.box;
         const bool alongX = b.shape == BRUSH_WEDGE && b.dir < 2;
-        const bool cells = b.shape == BRUSH_CORNER || b.shape == BRUSH_TETRA;
+        const bool cells = b.shape == BRUSH_CORNER || b.shape == BRUSH_TETRA || b.shape == BRUSH_CUT;
         const float run = cells ? std::min(a.mx.x - a.mn.x, a.mx.z - a.mn.z) : alongX ? a.mx.x - a.mn.x : a.mx.z - a.mn.z;
         const int n = std::min(64, std::max(1, std::min((int)std::ceil((a.mx.y - a.mn.y) / kSlopeRise), (int)(run / 0.4f))));
         for (int i = 0; i < n; i++)
@@ -331,7 +331,7 @@ void NavGraph::build(const Map& m, NavKind k) {
                     c.mn.z = lerpf(a.mn.z, a.mx.z, (float)k / n); c.mx.z = lerpf(a.mn.z, a.mx.z, (float)(k + 1) / n);
                 }
                 const float top = brushTopOver(b, c.mn.x, c.mx.x, c.mn.z, c.mx.z);
-                if (b.shape == BRUSH_TETRA && top <= a.mn.y + 1e-4f) continue;   // (the cells past its diagonal: nothing there)
+                if ((b.shape == BRUSH_TETRA || b.shape == BRUSH_CUT) && top <= a.mn.y + 1e-4f) continue;   // (the cells past its diagonal or cut away: nothing there)
                 surface(bi, c, top);
             }
     }

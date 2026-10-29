@@ -140,6 +140,7 @@ template <class H> void handlesOf(const AABB& b, bool point, std::vector<H>& hs)
 
 // After a box in an edit op or a group file: "" for a box, " w <dir + 4 * up>" / " c ..." for a wedge / corner.
 static std::string shapeSuffix(const Brush& b) {
+    if (b.shape == BRUSH_CUT) return " x" + cutText(b);
     return b.shape == BRUSH_BOX ? "" : (std::string(" ") + slopeLetter(b.shape) + " ") + std::to_string((int)b.dir + 4 * b.up);
 }
 
@@ -206,6 +207,7 @@ bool parseGroupText(const std::string& text, Map::Group& g) {
         std::string shape;
         if (ls >> shape) {
             int dir = -1;
+            if (shape == "x") { part.shape = BRUSH_CUT; if (!readCuts(ls, part)) return false; g.parts.push_back(part); continue; }
             if (!((shape == "w" || shape == "c" || shape == "t") && (ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
             part.shape = (uint8_t)slopeFromWord(shape);
             part.dir = (uint8_t)(dir % 4);
@@ -494,7 +496,8 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
                 Brush& b = tmp.brushes[e.idx];
                 b.box = box(m.brushes[e.idx].box, c);
                 // a wedge / corner: the dir and up that make it the same shape turned (on its side, upside down: any)
-                if (b.shape != BRUSH_BOX && !slopeTurned(m.brushes[e.idx], b, [&](const Vec3& p) { return pt(p, c); })) return false;
+                if (b.shape == BRUSH_CUT) cutTurned(m.brushes[e.idx], b, [&](const Vec3& p) { return pt(p, c); });
+                else if (b.shape != BRUSH_BOX && !slopeTurned(m.brushes[e.idx], b, [&](const Vec3& p) { return pt(p, c); })) return false;
                 break;
             }
             case ED_LADDER: tmp.ladders[e.idx] = box(m.ladders[e.idx], c); break;
@@ -519,7 +522,8 @@ bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
                     const Vec3 mid(0.5f, 0.5f, 0.5f);
                     Brush& p = g.parts[k];
                     p.box = box(p.box, mid);
-                    if (p.shape != BRUSH_BOX && !slopeTurned(m.groups[e.idx].parts[k], p, [&](const Vec3& q) { return pt(q, mid); })) return false;
+                    if (p.shape == BRUSH_CUT) cutTurned(m.groups[e.idx].parts[k], p, [&](const Vec3& q) { return pt(q, mid); });
+                    else if (p.shape != BRUSH_BOX && !slopeTurned(m.groups[e.idx].parts[k], p, [&](const Vec3& q) { return pt(q, mid); })) return false;
                 }
                 break;
             }
@@ -1147,7 +1151,8 @@ void Game::editorKey(int key, int mods) {
     if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +u / -u / +v / -v, corner high at each corner, tetra at each corner, box (up kept: turn it with the rotate / mirror keys)
         edModify([&](Map& m) {
             Brush& b = m.brushes[i];
-            const int k = (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : b.shape == BRUSH_CORNER ? 5 + b.dir : 9 + b.dir) + 1;
+            const int k = b.shape == BRUSH_CUT ? 13 : (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : b.shape == BRUSH_CORNER ? 5 + b.dir : 9 + b.dir) + 1;   // (a cut: back to a box)
+            b.ncut = 0;
             b.shape = k == 13 ? BRUSH_BOX : k <= 4 ? BRUSH_WEDGE : k <= 8 ? BRUSH_CORNER : BRUSH_TETRA;
             b.dir = (uint8_t)(k == 13 ? 0 : (k - 1) % 4);
         }, false);

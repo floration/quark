@@ -145,7 +145,7 @@ static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float ac
 // plane lies on it, within a sweep's gap (a corner: the face of the two that the box is outside of).
 static bool slopeContact(const Brush* b, const AABB& box, Vec3& n) {
     if (!b || b->shape == BRUSH_BOX) return false;
-    Vec3 pn[2]; float pd[2];
+    Vec3 pn[kMaxCuts]; float pd[kMaxCuts];
     const int np = slopePlanes(*b, pn, pd);
     float best = -1e30f;
     for (int k = 0; k < np; k++) {
