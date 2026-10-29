@@ -140,7 +140,7 @@ template <class H> void handlesOf(const AABB& b, bool point, std::vector<H>& hs)
 
 // After a box in an edit op or a group file: "" for a box, " w <dir + 4 * up>" / " c ..." for a wedge / corner.
 static std::string shapeSuffix(const Brush& b) {
-    return b.shape == BRUSH_BOX ? "" : std::string(b.shape == BRUSH_WEDGE ? " w " : " c ") + std::to_string((int)b.dir + 4 * b.up);
+    return b.shape == BRUSH_BOX ? "" : (std::string(" ") + slopeLetter(b.shape) + " ") + std::to_string((int)b.dir + 4 * b.up);
 }
 
 // The "ins" op for object i, plus (a custom group) the ops that add its parts back.
@@ -206,8 +206,8 @@ bool parseGroupText(const std::string& text, Map::Group& g) {
         std::string shape;
         if (ls >> shape) {
             int dir = -1;
-            if (!((shape == "w" || shape == "c") && (ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
-            part.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
+            if (!((shape == "w" || shape == "c" || shape == "t") && (ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
+            part.shape = (uint8_t)slopeFromWord(shape);
             part.dir = (uint8_t)(dir % 4);
             part.up = (uint8_t)(dir / 4);
         }
@@ -611,6 +611,41 @@ void Game::edDuplicate() {
     edSel_.idx = addFrom(tmp, ed_, edSel_.kind, [&](const std::string& op, const std::string& inv) { edDo(op, inv); });
 }
 
+// Coat (owner, 2026-10-28: "select faces of blocks and then it will build a 1/8m surface against the sides you picked"):
+// K lays a 1/8 m layer of the current material (M) on the side of the selected box you're looking at; with more boxes
+// selected (shift+click), on that same side of each of them. Each layer is a box of its own (undo takes them back one
+// at a time). Slopes are left out: their sides aren't whole rectangles.
+void Game::edCoat() {
+    if (!edSelValid() || edSel_.kind != ED_BRUSH) { edNotify("select a box, look at one of its sides and press K"); return; }
+    const Vec3 dir = angleForward(yaw_, pitch_);
+    const Brush& b = ed_.brushes[edSel_.idx];
+    Vec3 n;
+    const float t = b.shape == BRUSH_BOX ? rayBrush(edCam_, dir, safeInv(dir), b, 500, &n) : -1.0f;
+    int axis = -1;
+    for (int a = 0; a < 3; a++) if (std::fabs(n[a]) > 0.99f) axis = a;
+    if (t < 0 || axis < 0) { edNotify(b.shape != BRUSH_BOX ? "slopes can't be coated: pick a box" : "look at a side of the selected box"); return; }
+    const bool plus = n[axis] > 0;
+    std::vector<AABB> coats;
+    auto coat = [&](int i) {
+        if (i < 0 || i >= ed_.editableBrushes() || ed_.brushes[i].shape != BRUSH_BOX) return;
+        const AABB& a = ed_.brushes[i].box;
+        AABB c = a;
+        if (plus) { c.mn[axis] = a.mx[axis]; c.mx[axis] = a.mx[axis] + kCoatThick; }
+        else { c.mx[axis] = a.mn[axis]; c.mn[axis] = a.mn[axis] - kCoatThick; }
+        coats.push_back(c);
+    };
+    coat(edSel_.idx);
+    for (const EdSel& s : edMulti_) if (s.kind == ED_BRUSH && s.idx != edSel_.idx) coat(s.idx);
+    for (const AABB& c : coats) {
+        Map tmp = copyNoSource(ed_);
+        tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{c, edMat_});
+        addFrom(tmp, ed_, ED_BRUSH, [&](const std::string& op, const std::string& inv) { edDo(op, inv); });
+    }
+    static const char* sides[6] = {"-X", "+X", "-Y (under)", "+Y (top)", "-Z", "+Z"};
+    edNotify("coated " + std::to_string(coats.size()) + (coats.size() == 1 ? " side " : " sides ") + sides[axis * 2 + (plus ? 1 : 0)] +
+             " with " + std::string(kMapMaterialWords[edMat_]));
+}
+
 // New object at the spot under the screen center (on top of whatever you're looking at), snapped to the grid.
 void Game::edAdd(int kind, int variant) {
     const float g = kGrids[edGridIdx_];
@@ -825,7 +860,7 @@ static const std::vector<std::string>& edHelpLines(const Renderer& r, float maxW
         "RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED",
         "CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)",
         "ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
-        "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM",
+        "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM    N: SHAPE    K: COAT THE SIDE YOU LOOK AT",
         "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
         "R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)",
     };
@@ -1108,12 +1143,13 @@ void Game::editorKey(int key, int mods) {
         }, false);
         return;
     }
-    if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +u / -u / +v / -v, corner high at each corner, box (up kept: turn it with the rotate / mirror keys)
+    if (key == GLFW_KEY_K) { edCoat(); return; }
+    if (key == GLFW_KEY_N && kind == ED_BRUSH) {   // shape: box, wedge rising +u / -u / +v / -v, corner high at each corner, tetra at each corner, box (up kept: turn it with the rotate / mirror keys)
         edModify([&](Map& m) {
             Brush& b = m.brushes[i];
-            const int k = (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : 5 + b.dir) + 1;
-            b.shape = k == 9 ? BRUSH_BOX : k <= 4 ? BRUSH_WEDGE : BRUSH_CORNER;
-            b.dir = (uint8_t)(k == 9 ? 0 : k <= 4 ? k - 1 : k - 5);
+            const int k = (b.shape == BRUSH_BOX ? 0 : b.shape == BRUSH_WEDGE ? 1 + b.dir : b.shape == BRUSH_CORNER ? 5 + b.dir : 9 + b.dir) + 1;
+            b.shape = k == 13 ? BRUSH_BOX : k <= 4 ? BRUSH_WEDGE : k <= 8 ? BRUSH_CORNER : BRUSH_TETRA;
+            b.dir = (uint8_t)(k == 13 ? 0 : (k - 1) % 4);
         }, false);
         const Brush& b = ed_.brushes[i];
         const SlopeFrame f = slopeFrame(b);
@@ -1123,7 +1159,7 @@ void Game::editorKey(int key, int mods) {
         const bool cu = b.dir == 1 || b.dir == 2, cv = b.dir >= 2;
         edNotify(b.shape == BRUSH_BOX ? std::string("box")
                  : b.shape == BRUSH_WEDGE ? "wedge rising toward " + side(b.dir < 2 ? f.u : f.v, b.dir % 2 == 0) + ups[b.up]
-                 : "corner high at " + side(f.u, cu) + " " + side(f.v, cv) + ups[b.up]);
+                 : std::string(b.shape == BRUSH_TETRA ? "tetra" : "corner") + " high at " + side(f.u, cu) + " " + side(f.v, cv) + ups[b.up]);
         return;
     }
     if ((key == GLFW_KEY_Q || key == GLFW_KEY_E) && kind == ED_SPAWN && !edLook_) {

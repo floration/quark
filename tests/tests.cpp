@@ -4542,7 +4542,7 @@ static void testCustomMode(uint16_t port) {
 // Wedges and corners (map format 5): read and written, collision, rays, walking up a gentle one, sliding off a steep
 // one, and bots' floor on the gentle one.
 static void testSlopes() {
-    printf("slopes: wedges and corners\n");
+    printf("slopes: wedges, corners and tetras\n");
     const std::string base = "box -20 -1 -20 20 0 20\nspawn any -10 0 -10\n";
     {   // version 4 converts (nothing to change); a version 5 file round-trips; an older build would skip the lines
         std::string o;
@@ -4580,6 +4580,44 @@ static void testSlopes() {
             pmove(ms, cmd, m);
         }
     };
+    {   // tetra (owner, 2026-10-28: "1 0 0 0 / 1 1 1 0"): three base corners, the apex over one, one sloped face
+        Map t;
+        CHECK(t.parse("tetra 0 0 0 0 0 4 2 4\ntetra 0 2 10 0 10 12 6 12\n" + base) && t.warnings.empty());
+        const Brush& a = t.brushes[0];
+        CHECK(a.shape == BRUSH_TETRA && t.serialize().find("tetra 0 0 0 0 0 4 2 4\n") != std::string::npos);
+        Map r;
+        CHECK(r.parse(t.serialize()) && r.serialize() == t.serialize());
+        CHECK(std::fabs(brushTopAt(a, 1, 1) - 1.0f) < 1e-5f && brushTopAt(a, 3, 3) == 0.0f && std::fabs(brushTopAt(a, 0, 0) - 2.0f) < 1e-5f);
+        CHECK(brushContains(a, {1, 0.9f, 1}) && !brushContains(a, {1, 1.1f, 1}) && !brushContains(a, {3, 0.1f, 3}));
+        CHECK(!t.boxSolid(playerBox({3.3f, 0.05f, 3.3f}, false)) && t.boxSolid(playerBox({1, 0.05f, 1}, false)));
+        CHECK(std::fabs(t.raycast({1, 5, 1}, {0, -1, 0}, 10) - 4.0f) < 1e-3f);
+        Vec3 n;
+        const float h = t.raycast({5, 0.5f, 1}, {-1, 0, 0}, 10, &n);   // level, toward -x: the face reaches 0.5 m at x 2
+        CHECK(std::fabs(h - 3.0f) < 1e-3f && n.x > 0.3f && n.y > 0.3f && n.z > 0.3f);
+        int faces = 0;
+        slopePolygons(a, [&](const Vec3*, int np, const Vec3&) { faces++; CHECK(np == 3); });
+        CHECK(faces == 4);
+        Brush m2 = a;
+        CHECK(slopeTurned(a, m2, [](const Vec3& p) { return Vec3(4 - p.x, p.y, p.z); }) && m2.dir == 1);
+        // walking into the steep one's open (diagonal) side: stopped by the face, not by its box (x 9.6 would be)
+        MoveState ms; ms.pos = {7, 0.02f, 10.5f};
+        float touch = -1;   // (where it first turns you aside: the diagonal face slides you along it)
+        for (int k = 0; k < 250 && touch < 0; k++) {
+            UserCmd cmd; cmd.yaw = -PI * 0.5f; cmd.forward = 127; cmd.msec = 8;
+            pmove(ms, cmd, t);
+            if (std::fabs(ms.pos.z - 10.5f) > 0.02f) touch = ms.pos.x;
+        }
+        if (getenv("SLOPE_TRACE")) printf("    tetra wall: touched at x %.2f (%.2f %.2f %.2f)\n", touch, ms.pos.x, ms.pos.y, ms.pos.z);
+        CHECK(touch > 10.2f && touch < 11.1f && ms.pos.y < 0.6f);
+        NavGraph g;
+        g.build(t, NavKind::Bots);
+        bool onIt = false, past = false;
+        for (auto& nd : g.nodes) {
+            if (nd.x1 <= 4 + 1e-3f && nd.z1 <= 4 + 1e-3f && nd.x0 >= -1e-3f && nd.z0 >= -1e-3f && nd.y > 0.5f) onIt = true;
+            if (nd.x0 >= 2.5f && nd.z0 >= 2.5f && nd.x1 <= 4 + 1e-3f && nd.z1 <= 4 + 1e-3f && nd.y > 1e-3f) past = true;
+        }
+        CHECK(onIt && !past);
+    }
     {   // walking up the gentle one, onto its top, on the floor all the way up
         MoveState ms; ms.pos = {-1, 0.02f, 0};
         int air = 0;

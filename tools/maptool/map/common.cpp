@@ -112,7 +112,7 @@ Json mapToJson(const Map& m) {
     for (auto& b : m.brushes) {
         Json o = Json::object();
         o.set("mat", b.material); o.set("min", jvec(b.box.mn)); o.set("max", jvec(b.box.mx));
-        if (b.shape != BRUSH_BOX) { o.set("shape", b.shape == BRUSH_WEDGE ? "wedge" : "corner"); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
+        if (b.shape != BRUSH_BOX) { o.set("shape", slopeWord(b.shape)); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
         (b.generated ? gen : br).push(std::move(o));
     }
     j.set("brushes", std::move(br));
@@ -126,7 +126,7 @@ Json mapToJson(const Map& m) {
         Json parts = Json::array();
         for (auto& p : g.parts) {   // (a slope part: shape, dir, up as a brush's)
             Json q = Json::object(); q.set("mat", p.material); q.set("min", jvec(p.box.mn)); q.set("max", jvec(p.box.mx));
-            if (p.shape != BRUSH_BOX) { q.set("shape", p.shape == BRUSH_WEDGE ? "wedge" : "corner"); q.set("dir", (int)p.dir); if (p.up) q.set("up", (int)p.up); }
+            if (p.shape != BRUSH_BOX) { q.set("shape", slopeWord(p.shape)); q.set("dir", (int)p.dir); if (p.up) q.set("up", (int)p.up); }
             parts.push(std::move(q));
         }
         o.set("parts", std::move(parts));
@@ -207,8 +207,8 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
     // a brush's or a group part's shape, dir and up (absent: a box)
     auto readShape = [&](const Json& b, Brush& br, const char* what) {
         const std::string shape = b["shape"].str("box");
-        if (shape != "box" && shape != "wedge" && shape != "corner") { err = std::string(what) + " shape '" + shape + "' isn't box, wedge or corner"; return false; }
-        br.shape = shape == "wedge" ? BRUSH_WEDGE : shape == "corner" ? BRUSH_CORNER : BRUSH_BOX;
+        if (shape != "box" && shape != "wedge" && shape != "corner" && shape != "tetra") { err = std::string(what) + " shape '" + shape + "' isn't box, wedge, corner or tetra"; return false; }
+        br.shape = (uint8_t)(shape == "box" ? (int)BRUSH_BOX : slopeFromWord(shape));
         const int dir = b["dir"].i(0);
         if (dir < 0 || dir > 3) { err = std::string(what) + " dir " + std::to_string(dir) + " isn't 0..3"; return false; }
         const int up = b["up"].i(0);

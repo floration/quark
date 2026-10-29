@@ -24,19 +24,27 @@ struct Brush {
     // In the brush's own frame (u, h, v: see slopeFrame) the shape stands on its base, the box's low-h face:
     //   wedge: one top edge kept; it rises from the base to the far face toward dir (0 +u, 1 -u, 2 +v, 3 -v, as stairs).
     //   corner: one top corner kept, a pyramid over the base with its apex above corner dir (0 -u-v, 1 +u-v, 2 +u+v, 3 -u+v).
+    //   tetra: a corner with only three base corners (owner, 2026-10-28: "1 0 0 0 / 1 1 1 0"): a three-sided pyramid on
+    //   the base's triangle at corner dir, its apex above that corner; one sloped face, over the base's diagonal.
     // Both are heightfields there: solid where 0 <= h < height * shapeHeight(u, v) (0..1).
     // up turns that frame: 0 standing on the floor (u x, h y, v z: the default), 1 hanging from the ceiling (the same,
     // mirrored upside down), 2 / 3 on its side rising toward +x / -x (u y, h x, v z), 4 / 5 rising toward +z / -z (u x,
     // h z, v y); an odd one is the even one mirrored along h.
-    uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER
+    uint8_t shape = 0;      // BRUSH_BOX, BRUSH_WEDGE, BRUSH_CORNER, BRUSH_TETRA
     uint8_t dir = 0;
     uint8_t up = 0;
     // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
     // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
     bool gone = false;
 };
-enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2 };
+enum { BRUSH_BOX = 0, BRUSH_WEDGE = 1, BRUSH_CORNER = 2, BRUSH_TETRA = 3 };
 constexpr int kSlopeUps = 6;
+// A slope's name in files ("wedge", "corner", "tetra") and its letter in edit ops and group files ('w', 'c', 't').
+inline const char* slopeWord(int shape) { return shape == BRUSH_WEDGE ? "wedge" : shape == BRUSH_TETRA ? "tetra" : "corner"; }
+inline char slopeLetter(int shape) { return shape == BRUSH_WEDGE ? 'w' : shape == BRUSH_TETRA ? 't' : 'c'; }
+inline int slopeFromWord(const std::string& w) {   // -1: not a slope's
+    return w == "wedge" || w == "w" ? BRUSH_WEDGE : w == "corner" || w == "c" ? BRUSH_CORNER : w == "tetra" || w == "t" ? BRUSH_TETRA : -1;
+}
 // A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
 struct SlopeFrame { int u, h, v; bool flip; };
 inline SlopeFrame slopeFrame(const Brush& b) {
@@ -93,13 +101,33 @@ inline float brushTopAt(const Brush& b, float x, float z) {
     if (b.shape == BRUSH_BOX) return b.box.mx.y;
     float gx, gz;
     slopeFractions(b, x, z, gx, gz);
-    const float h = std::min(1.0f, std::max(0.0f, std::min(gx, gz)));
+    const float h = std::min(1.0f, std::max(0.0f, b.shape == BRUSH_TETRA ? gx + gz - 1.0f : std::min(gx, gz)));
     return b.box.mn.y + (b.box.mx.y - b.box.mn.y) * h;
+}
+// Own frame: the slope's box less what's below fractions fx along x and fz along z (gx > fx, gz > fz: slopeFractions).
+inline AABB slopeTrim(const Brush& b, float fx, float fz) {
+    AABB r = b.box;
+    const float sx = b.box.mx.x - b.box.mn.x, sz = b.box.mx.z - b.box.mn.z;
+    const bool wedge = b.shape == BRUSH_WEDGE;
+    const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), loX = wedge ? b.dir == 1 : !(b.dir == 1 || b.dir == 2);
+    const bool hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3), loZ = wedge ? b.dir == 3 : !(b.dir == 2 || b.dir == 3);
+    if (hiX) r.mn.x = b.box.mn.x + fx * sx; else if (loX) r.mx.x = b.box.mx.x - fx * sx;
+    if (hiZ) r.mn.z = b.box.mn.z + fz * sz; else if (loZ) r.mx.z = b.box.mx.z - fz * sz;
+    return r;
+}
+// Own frame: the highest fractions toward the high side (slopeFractions) anywhere in rectangle [x0, x1] x [z0, z1]
+// (clamped to the footprint): the ends nearest the high corner.
+inline void slopeFractionsMax(const Brush& b, float x0, float x1, float z0, float z1, float& gx, float& gz) {
+    const bool wedge = b.shape == BRUSH_WEDGE;
+    const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), hiZ = wedge ? b.dir == 2 : (b.dir == 2 || b.dir == 3);
+    const float x = std::min(std::max(hiX ? x1 : x0, b.box.mn.x), b.box.mx.x), z = std::min(std::max(hiZ ? z1 : z0, b.box.mn.z), b.box.mx.z);
+    slopeFractions(b, x, z, gx, gz);
 }
 // Own frame: what of a brush is solid above height y: for a slope, the part of its box where the top is above y, which
 // is a box too (the heightfield falls away from the high side along x and z), up to box.mx.y. Empty (mn > mx) when
 // nothing is. A box is itself. Collision against a player's box uses this at the box's feet: every point of the
-// player's footprint over that part has solid above its feet.
+// player's footprint over that part has solid above its feet. A tetra's is a triangle: this is its bounding box (the
+// collision functions below cut it to what a box's footprint actually meets).
 inline AABB slopeSolidAbove(const Brush& b, float y) {
     if (b.shape == BRUSH_BOX) return b.box;
     AABB r = b.box;
@@ -107,6 +135,7 @@ inline AABB slopeSolidAbove(const Brush& b, float y) {
     float f = h > 1e-6f ? (y - b.box.mn.y) / h : 1.0f;
     if (f >= 1.0f) { r.mn.y = r.mx.y + 1; return r; }   // (empty)
     f = std::max(0.0f, f);
+    if (b.shape == BRUSH_TETRA) return slopeTrim(b, f, f);
     const float sx = b.box.mx.x - b.box.mn.x, sz = b.box.mx.z - b.box.mn.z;
     const bool wedge = b.shape == BRUSH_WEDGE;
     const bool hiX = wedge ? b.dir == 0 : (b.dir == 1 || b.dir == 2), loX = wedge ? b.dir == 1 : !(b.dir == 1 || b.dir == 2);
@@ -128,6 +157,7 @@ inline float slopeSteepness(const Brush& b) {
     if (b.shape == BRUSH_BOX) return 0;
     const Vec3 sz = b.box.mx - b.box.mn;
     if (b.shape == BRUSH_WEDGE) return sz.y / std::max(b.dir < 2 ? sz.x : sz.z, 1e-6f);
+    if (b.shape == BRUSH_TETRA) return sz.y * std::sqrt(1.0f / std::max(sz.x * sz.x, 1e-12f) + 1.0f / std::max(sz.z * sz.z, 1e-12f));
     return sz.y / std::max(std::min(sz.x, sz.z), 1e-6f);
 }
 
@@ -148,6 +178,20 @@ inline AABB brushObstacle(const Brush& b, const AABB& box, int axis, float delta
     const Brush l = slopeLocal(b);
     const AABB lb = slopeBoxToLocal(b, f, box);
     AABB r;
+    if (l.shape == BRUSH_TETRA) {   // (its solid over the box's footprint: how far the triangle reaches along the other axis)
+        float gx, gz;
+        slopeFractionsMax(l, lb.mn.x, lb.mx.x, lb.mn.z, lb.mx.z, gx, gz);
+        const bool over = lb.mx.x > l.box.mn.x && lb.mn.x < l.box.mx.x && lb.mx.z > l.box.mn.z && lb.mn.z < l.box.mx.z;
+        const float hh = l.box.mx.y - l.box.mn.y;
+        const float fy = hh > 1e-6f ? std::max(0.0f, (lb.mn.y - l.box.mn.y) / hh) : 1.0f;   // (the box's feet, as a fraction)
+        r = l.box;
+        // sideways: nothing above its feet anywhere along the other axis's span, empty; otherwise the triangle's reach
+        if (axis == f.u) r = fy >= 1.0f || gz <= fy ? AABB{l.box.mx, l.box.mn} : slopeTrim(l, std::max(0.0f, 1.0f + fy - gz), fy);
+        else if (axis == f.v) r = fy >= 1.0f || gx <= fy ? AABB{l.box.mx, l.box.mn} : slopeTrim(l, fy, std::max(0.0f, 1.0f + fy - gx));
+        else if (!over || gx + gz <= 1.0f) r = AABB{l.box.mx, l.box.mn};   // (not over the triangle: empty)
+        else if ((delta > 0) == f.flip) r.mx.y = brushTopOver(l, lb.mn.x, lb.mx.x, lb.mn.z, lb.mx.z);
+        return slopeBoxToWorld(b, f, r);
+    }
     if (axis != f.h) r = slopeSolidAbove(l, lb.mn.y);
     else if ((delta > 0) != f.flip) r = l.box;   // (toward its base: the flat face)
     else {
@@ -163,7 +207,13 @@ inline bool brushOverlaps(const Brush& b, const AABB& box) {
     if (b.shape == BRUSH_BOX) return true;
     const SlopeFrame f = slopeFrame(b);
     const AABB lb = slopeBoxToLocal(b, f, box);
-    return lb.overlaps(slopeSolidAbove(slopeLocal(b), lb.mn.y));
+    const Brush l = slopeLocal(b);
+    if (l.shape == BRUSH_TETRA) {   // (the footprint's point nearest the apex: solid above the box's feet there?)
+        float gx, gz;
+        slopeFractionsMax(l, lb.mn.x, lb.mx.x, lb.mn.z, lb.mx.z, gx, gz);
+        return lb.mn.y < l.box.mn.y + (l.box.mx.y - l.box.mn.y) * (gx + gz - 1.0f);
+    }
+    return lb.overlaps(slopeSolidAbove(l, lb.mn.y));
 }
 inline bool brushContains(const Brush& b, const Vec3& p) {   // strictly inside
     if (!(p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)) return false;
@@ -194,7 +244,17 @@ inline int slopePlanes(const Brush& b, Vec3 n[2], float d[2]) {
         k++;
     };
     if (b.shape == BRUSH_WEDGE) plane(b.dir < 2 ? 0 : 2, b.dir == 0 || b.dir == 2);
-    else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
+    else if (b.shape == BRUSH_TETRA) {   // top = mn.y + h * (gx + gz - 1): one plane across both axes
+        const float sx = std::max(sz.x, 1e-6f), sv = std::max(sz.z, 1e-6f);
+        const bool px = b.dir == 1 || b.dir == 2, pz = b.dir == 2 || b.dir == 3;
+        // gx = px ? (x - mn.x) / sx : (mx.x - x) / sx, the same for z; y - h * gx - h * gz <= mn.y - h
+        Vec3 nn(px ? -h / sx : h / sx, 1, pz ? -h / sv : h / sv);
+        float dd = l.box.mn.y - h + h * (px ? -l.box.mn.x / sx : l.box.mx.x / sx) + h * (pz ? -l.box.mn.z / sv : l.box.mx.z / sv);
+        const float len = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
+        n[0] = slopeDirToWorld(fr, nn * (1.0f / len));
+        d[0] = (dd - (fr.flip ? nn.y * (b.box.mn[fr.h] + b.box.mx[fr.h]) : 0.0f)) / len;
+        k = 1;
+    } else { plane(0, b.dir == 1 || b.dir == 2); plane(2, b.dir == 2 || b.dir == 3); }
     return k;
 }
 // World: the sloped plane at p (a corner's: the one whose height is the lower there, the top being the min of the two).
@@ -231,6 +291,15 @@ template <class F> void slopePolygons(const Brush& world, F fn) {
         if (low0) { const Vec3 p[3] = {c[k], c[k1], t[k1]}; out(p, 3, n); }
         else if (low1) { const Vec3 p[3] = {c[k], c[k1], t[k]}; out(p, 3, n); }
         else { const Vec3 p[4] = {c[k], c[k1], t[k1], t[k]}; out(p, 4, n); }
+    }
+    if (br.shape == BRUSH_TETRA) {   // its base: the triangle at the apex corner; its top: the one sloped face over it
+        const int hi = br.dir, a1 = (hi + 1) % 4, a3 = (hi + 3) % 4;
+        { const Vec3 p[3] = {c[hi], c[a3], c[a1]}; out(p, 3, Vec3(0, -1, 0)); }
+        Vec3 pn[2]; float pd[2];
+        slopePlanes(br, pn, pd);
+        const Vec3 p[3] = {t[hi], t[a1], t[a3]};
+        out(p, 3, pn[0]);
+        return;
     }
     { const Vec3 p[4] = {c[0], c[3], c[2], c[1]}; out(p, 4, Vec3(0, -1, 0)); }
     if (br.shape == BRUSH_WEDGE) {
