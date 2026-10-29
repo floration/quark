@@ -1866,8 +1866,8 @@ void Server::spawnPlayer(int id) {
     float yaw = 0;
     const float scale = bodyScale();
     bool crouch = false, fits = true;
-    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
-        const AABB& c = map_.checkpoints[p.checkpoint - 1];
+    if (isRaceMode(ms_.mode) && p.checkpoint > 0 && p.checkpoint <= (int)map_.raceCheckpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
+        const AABB& c = map_.raceCheckpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
     } else {
@@ -2267,6 +2267,7 @@ void Server::simulate() {
     }
     { QZONE("projectiles"); tickProjectiles(); }
     if (!shards_.empty()) { QZONE("glass shards"); tickShards(); }
+    if (!crumbleFrom_.empty()) tickCrumbles();
     tickRocketRides();   // grapples riding rockets: on the rocket where it flew, or let go
     tickVote();
     if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
@@ -2331,6 +2332,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     }
     if (p.move.glassBrush >= 0) { glassFromMove(id); if (!p.alive) return; }   // (dashed / pulled through a pane)
     if (!map_.blocks.empty()) blocksTouched(id);
+    if (!map_.crumbles.empty()) crumblesTouched(id);
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
     if ((p.move.acidTaken != 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
@@ -2952,8 +2954,9 @@ void Server::tickProjectiles() {
 void Server::stepProjectile(Projectile& pr) {
     {
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * kMoveStep;
-        Vec3 step = pr.vel * kMoveStep;
+        const float h = kMoveStep * map_.projectileRate(pr.pos);   // (a slow-mo field: half a step)
+        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * h;
+        Vec3 step = pr.vel * h;
         float len = length(step);
         if (len < 1e-6f) return;
         Vec3 dir = step / len;
@@ -2975,6 +2978,17 @@ void Server::stepProjectile(Projectile& pr) {
         if (hitPlayer >= 0) hitBb = hitHead ? headBox(hitBb) : bodyBox(hitBb);
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        // a teleporter: out of the next one with its link, 10 cm off its exit face, at its speed straight out of it
+        if (hitPlayer < 0 && wallMat == kMatTeleport) {
+            const Vec3 in = pr.pos + dir * (wall + 0.01f);
+            const int to = map_.teleportTarget(map_.teleporterAt({in - Vec3(0.02f, 0.02f, 0.02f), in + Vec3(0.02f, 0.02f, 0.02f)}));
+            if (to >= 0) {
+                Vec3 out;
+                pr.pos = map_.teleportExit(to, 0.1f, &out);
+                pr.vel = out * length(pr.vel);
+                return;
+            }
+        }
         // glass: a bolt or a thrown knife breaks it and flies on (a bolt shatters it; owner, 2026-10-28)
         if (hitPlayer < 0 && wallMat == kMatGlassBreak && (pr.type == WPN_CROSSBOW || pr.type == WPN_KNIFE)) {
             const int pane = map_.glassAt(pr.pos + dir * (wall + 0.01f));
@@ -3220,6 +3234,43 @@ void Server::blocksTouched(int id) {
     }
 }
 
+// Crumble platforms: standing on one's top starts it (EV_DESTRUCT DESTRUCT_SHAKE: the clients shake dust off it); it
+// falls kCrumbleS later and is back kCrumbleBackS after that (DESTRUCT_RESTORE), once nobody's in its way.
+void Server::crumblesTouched(int id) {
+    const MoveState& m = players_[id].move;
+    if (editing_ || !(m.flags & MF_ONGROUND)) return;
+    const AABB me = playerBox(m);
+    for (uint32_t i : map_.crumbles) {
+        const Brush& b = map_.brushes[i];
+        if (b.gone || std::fabs(me.mn.y - b.box.mx.y) > 0.06f || me.mn.x >= b.box.mx.x || me.mx.x <= b.box.mn.x || me.mn.z >= b.box.mx.z || me.mx.z <= b.box.mn.z) continue;
+        if (crumbleFrom_.size() < map_.brushes.size()) { crumbleFrom_.resize(map_.brushes.size(), -1.0); crumbleBack_.resize(map_.brushes.size(), -1.0); }
+        if (crumbleFrom_[i] >= 0) continue;
+        crumbleFrom_[i] = time();
+        DestructEv d;
+        d.kind = DESTRUCT_SHAKE; d.by = id; d.brush = i; d.at = b.box.center();
+        broadcastEvent(destructEvent(d));
+    }
+}
+
+void Server::tickCrumbles() {
+    for (size_t i = 0; i < crumbleFrom_.size() && i < map_.brushes.size(); i++) {
+        const Brush& b = map_.brushes[i];
+        if (crumbleFrom_[i] >= 0 && !b.gone && time() - crumbleFrom_[i] >= kCrumbleS) {
+            crumbleFrom_[i] = -1;
+            crumbleBack_[i] = time() + kCrumbleBackS;
+            breakBlock((int)i, false, b.box.center(), {0, -1, 0}, -1);
+        } else if (crumbleBack_[i] >= 0 && b.gone && time() >= crumbleBack_[i]) {
+            bool clear = true;
+            for (auto& p : players_) if (p.connected && p.alive && playerBox(p.move).overlaps(b.box)) clear = false;
+            if (!clear || editing_ || !map_.restoreBrush(i)) continue;
+            crumbleBack_[i] = -1;
+            DestructEv d;
+            d.kind = DESTRUCT_RESTORE; d.brush = (uint32_t)i; d.at = b.box.center();
+            broadcastEvent(destructEvent(d));
+        }
+    }
+}
+
 void Server::glassFromMove(int id) {
     const MoveState& m = players_[id].move;
     if (m.glassBrush >= 0) breakGlass(m.glassBrush, m.glassHow, m.glassAt, m.glassDir, id);
@@ -3309,7 +3360,7 @@ void Server::tickShards() {
 void Server::sendDestruction(int id) {
     std::vector<uint32_t> gone;
     for (uint32_t i : map_.glass) if (map_.brushes[i].gone) gone.push_back(i);
-    for (uint32_t i : map_.blocks) if (map_.brushes[i].gone) gone.push_back(i);
+    for (const auto* list : {&map_.blocks, &map_.crumbles}) for (uint32_t i : *list) if (map_.brushes[i].gone) gone.push_back(i);
     if (gone.empty() && holeLog_.empty()) return;
     for (const GameEvent& e : destructListEvents(gone, holeLog_)) sendEvent(id, e);
 }
@@ -3317,7 +3368,7 @@ void Server::sendDestruction(int id) {
 void Server::resetDestruction(bool tell) {
     const bool any = tell || !map_.pristineBrushes.empty() || !map_.holes.empty() || !holeLog_.empty();
     map_.resetDestruction();
-    blockDmg_.clear(); blockStood_.clear();
+    blockDmg_.clear(); blockStood_.clear(); crumbleFrom_.clear(); crumbleBack_.clear();
     holeLog_.clear();
     shards_.clear();
     if (any) broadcastEvent(destructEvent(DestructEv()));

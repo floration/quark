@@ -40,6 +40,9 @@ struct Brush {
     uint8_t dir = 0;
     uint8_t up = 0;
     uint8_t ncut = 0;       // a cut box's planes
+    // a teleporter's (map format 10: "tp <link> <face>" after the box, written only for one): the link (teleporters with
+    // the same one are linked) and the face it lets players and projectiles out of (kFace*)
+    uint8_t link = 1, exitFace = 2;
     float cut[kMaxCuts][4] = {};
     // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
     // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
@@ -69,6 +72,13 @@ template <class S> bool readCuts(S& in, Brush& b) {
         if (std::fabs(b.cut[k][0]) + std::fabs(b.cut[k][1]) + std::fabs(b.cut[k][2]) < 1e-9f) return false;
     }
     b.dir = b.up = 0;
+    return true;
+}
+// A teleporter's link and exit face after its box ("tp <link 0-255> <face 0-5>"; the word itself already read)
+template <class S> bool readTp(S& in, Brush& b) {
+    int l = -1, f = -1;
+    if (!(in >> l >> f) || l < 0 || l > 255 || f < 0 || f > 5) return false;
+    b.link = (uint8_t)l; b.exitFace = (uint8_t)f;
     return true;
 }
 // A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
@@ -621,7 +631,26 @@ inline constexpr BreakDef kBreaks[kBreakCount] = {
     {10, 1, 2, BREAK_HITS, 0.49f, 0.49f, 0.36f},   // glass bottles
 };
 constexpr float kWeightBreakS = 0.3f;
-constexpr int kMapMaterials = kMatBreak + kBreakCount;
+// 586-594 (owner, 2026-10-29, the special blocks round: 9 feature blocks). Floors: the healing tile gives back
+// kHealTilePerSec of your max health a second while you stand on it, the spike floor takes kSpikePerSec (as acid: pmove
+// counts it, the server takes it). Fields you pass through (not solid, drawn see-through): low gravity (x
+// kLowGravField), slow-mo (projectiles in it fly at kSlowMoRate), the checkpoint gate (race: one more checkpoint after
+// the map's own, in brush order: Map::raceCheckpoints). The gravity flip tile turns gravity upside down above it
+// (kGravFlipHeight up from its top): you fall up and stand on the ceiling. The light block glows and lights the room
+// round it in the bake (Map::lightBlocks). The shield wall stops shots, rockets and grapples, not players or sight.
+// The crumble platform shakes when you stand on it and falls kCrumbleS later, back kCrumbleBackS after that (server).
+// The teleporter (owner, 2026-10-29: "a value where if 2 objects have the same value they are linked ... a set face for
+// where it places the player/projectiles"): solid; a player or projectile that touches it comes out of the next
+// teleporter with the same link (Brush::link, in brush order, round to the first) on that one's exit face
+// (Brush::exitFace, kFace*), just outside it, at the same speed, all of it out along that face.
+constexpr int kMatFeat = kMatBreak + kBreakCount, kFeatCount = 10;
+constexpr int kMatHealTile = kMatFeat, kMatSpikes = kMatFeat + 1, kMatLowGrav = kMatFeat + 2, kMatSlowMo = kMatFeat + 3,
+              kMatGravFlip = kMatFeat + 4, kMatGate = kMatFeat + 5, kMatLightBlock = kMatFeat + 6, kMatShield = kMatFeat + 7,
+              kMatCrumble = kMatFeat + 8, kMatTeleport = kMatFeat + 9;
+enum : uint8_t { kFacePX = 0, kFaceNX, kFacePY, kFaceNY, kFacePZ, kFaceNZ, kFaces };
+constexpr float kHealTilePerSec = 0.10f, kSpikePerSec = 0.20f, kLowGravField = 0.5f, kSlowMoRate = 0.5f, kGravFlipHeight = 64.0f;
+constexpr float kCrumbleS = 1.0f, kCrumbleBackS = 5.0f;
+constexpr int kMapMaterials = kMatFeat + kFeatCount;
 constexpr int kMatBlocks = 39;   // the first of the 100
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
@@ -636,6 +665,11 @@ inline int lookMaterial(int m) { return m == kMatBrickBreak ? kMatBrick : m == k
 inline bool glassMaterial(int m) { return m == kMatGlass || m == kMatGlassBreak; }   // see-through, plain or breakable
 inline bool semiMaterial(int m) { return m >= kMatSemi && m < kMatSemi + kSemiCount; }   // the see-through looks (kSemi)
 inline bool breakMaterial(int m) { return m >= kMatBreak && m < kMatBreak + kBreakCount; }   // the breakable blocks (kBreaks)
+inline bool fieldMaterial(int m) { return m == kMatLowGrav || m == kMatSlowMo || m == kMatGate; }   // feature volumes you pass through
+// drawn in the see-through pass (their looks have alpha): the see-through looks, the fields and the shield wall
+inline bool seeThroughDrawn(int m) { return semiMaterial(m) || fieldMaterial(m) || m == kMatShield; }
+// drawn from the blocks' own mesh (they can go in play without a rebake): the breakable blocks and the crumble platform
+inline bool blockDrawn(int m) { return breakMaterial(m) || m == kMatCrumble; }
 // brick and cobblestone no thicker than this (its thinnest side) can be blown open by a rocket or a sticky (Map::punchHole)
 constexpr float kBreakableThick = 0.125f;
 inline bool holeMaterial(int m) { return m == kMatBrickBreak || m == kMatCobbleBreak; }
@@ -736,16 +770,16 @@ inline bool lavaMaterial(int m) { return m == 7 || (liquidMaterial(m) && kLiquid
 // solid to players, shots and sight (not far scenery, water, lava, trim, acid, the liquids; clip is solid to players only)
 inline bool solidMaterial(int m) {   // in the collision grid (a see-through one: when it stops anything)
     if (semiMaterial(m)) { const SemiDef& d = kSemi[m - kMatSemi]; return d.players || d.shots || d.sight; }
-    return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m));
+    return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m) && !fieldMaterial(m));
 }
 // what a brush in the grid stops: players (collision), shots (raycast: hitscan, projectiles, the grapple), sight
-inline bool stopsPlayers(int m) { return !semiMaterial(m) || kSemi[m - kMatSemi].players; }
+inline bool stopsPlayers(int m) { return m != kMatShield && (!semiMaterial(m) || kSemi[m - kMatSemi].players); }
 inline bool stopsShots(int m) { return m != 9 && (!semiMaterial(m) || kSemi[m - kMatSemi].shots); }
-inline bool stopsSight(int m) { return m != 9 && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
+inline bool stopsSight(int m) { return m != 9 && m != kMatShield && !glassMaterial(m) && (!semiMaterial(m) || kSemi[m - kMatSemi].sight); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
-inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !semiMaterial(m) && !breakMaterial(m)); }
-inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m) && !semiMaterial(m) && !breakMaterial(m); }   // in the static world mesh (see-through, breakable: meshes of their own)
+inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m) && !seeThroughDrawn(m) && !blockDrawn(m)); }
+inline bool bakedMaterial(int m) { return m != 9 && !glassMaterial(m) && !seeThroughDrawn(m) && !blockDrawn(m); }   // in the static world mesh (see-through, breakable: meshes of their own)
 // Editor clean-ups (owner, 2026-10-29), on the editable brushes (generated ones only hide others). box[i] is brush i's
 // box after the fix, del[i] whether it goes. FIX MAP: same-material plain boxes that together make one box become one
 // (and one inside another of its material goes), then a brush wholly inside solid opaque boxes goes (glass, water, clip,
@@ -1310,7 +1344,17 @@ inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang",
                                                     "stainedglasswindow",
                                                     "tyrestack",
                                                     "lathandplaster",
-                                                    "glassbottles"};
+                                                    "glassbottles",
+                                                    "healingtile",
+                                                    "spikefloor",
+                                                    "lowgravityfield",
+                                                    "slowmofield",
+                                                    "gravityflip",
+                                                    "checkpointgate",
+                                                    "lightblock",
+                                                    "shieldwall",
+                                                    "crumbleplatform",
+                                                    "teleporter"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -1362,7 +1406,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 10;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585
+constexpr int kMapFormatVersion = 10;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>")
 
 struct Map {
     std::string name;
@@ -1406,6 +1450,10 @@ struct Map {
         return n;
     }
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
+    // what race plays: the checkpoints, then the checkpoint gate brushes in brush order (the last one is the finish),
+    // remade with the grid (buildRace)
+    std::vector<AABB> raceCheckpoints;
+    void buildRace();
     std::vector<Vec3> payloadPath;    // ordered waypoints
     std::vector<float> cartChecks;    // payload checkpoints, as fractions of the track ("cartcheck 0.33"), ascending
     std::vector<AABB> points;         // multi point: the capture zones, in the order they're attacked ("point x0 y0 z0 x1 y1 z1")
@@ -1467,6 +1515,26 @@ struct Map {
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     bool inAcid(const AABB& box) const { for (auto& l : acid) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> acid;   // acid brushes (pmove counts the damage while you touch one), from rebuild()
+    // the feature fields (FIELD_*): low gravity and slow-mo boxes, the gravity flip tiles' columns (kGravFlipHeight up
+    // from the top), from rebuild(); pmove and the projectiles ask them only when there are any
+    enum : uint8_t { FIELD_LOWGRAV = 1, FIELD_SLOW = 2, FIELD_FLIP = 4 };
+    struct Field { AABB box; uint8_t kind; };
+    std::vector<Field> fields;
+    bool hasSlow = false;
+    uint8_t fieldsAt(const AABB& box) const {   // the kinds the box touches
+        uint8_t k = 0;
+        for (auto& f : fields)
+            if (box.mn.x < f.box.mx.x && box.mx.x > f.box.mn.x && box.mn.y < f.box.mx.y && box.mx.y > f.box.mn.y && box.mn.z < f.box.mx.z && box.mx.z > f.box.mn.z) k |= f.kind;
+        return k;
+    }
+    float projectileRate(const Vec3& p) const {   // kSlowMoRate inside a slow-mo field, else 1
+        if (!hasSlow) return 1.0f;
+        for (auto& f : fields)
+            if ((f.kind & FIELD_SLOW) && p.x >= f.box.mn.x && p.x <= f.box.mx.x && p.y >= f.box.mn.y && p.y <= f.box.mx.y && p.z >= f.box.mn.z && p.z <= f.box.mx.z) return kSlowMoRate;
+        return 1.0f;
+    }
+    // projectileExtrapolate through the slow-mo fields (in 2 ms steps there; the closed form when there are none)
+    void flyProjectile(Vec3& pos, Vec3& vel, float gravity, float t) const;
     struct Liquid { AABB box; uint16_t kind; };   // kind: kLiquids' index
     std::vector<Liquid> liquids;   // the liquid brushes (kMatLiquids..: pmove moves you differently in them), from rebuild()
     const LiquidDef* liquidAt(const AABB& box) const {   // the first one the box touches (none: null)
@@ -1508,6 +1576,14 @@ struct Map {
     struct Hole { float u, v, r, cw, ch; int axis; float lo, hi; };
     std::vector<Hole> holes;
     std::vector<uint32_t> blocks;         // the breakable blocks (kBreaks: breakGlass takes them too)
+    std::vector<uint32_t> crumbles;       // the crumble platforms (breakGlass and restoreBrush take them)
+    std::vector<uint32_t> teleporters;    // the teleporters, in brush order
+    int teleporterAt(const AABB& box) const;   // the first one the box touches (-1: none)
+    int teleportTarget(int from) const;        // the next one with from's link after it (round to the first; -1: none)
+    // where something leaving teleporter `to` goes: the middle of its exit face, out by `out` (*n: the face's normal)
+    Vec3 teleportExit(int to, float out, Vec3* n) const;
+    bool restoreBrush(size_t i);          // a gone one back (a crumble platform after kCrumbleBackS; false: it wasn't gone)
+    int crumbleAt(const Vec3& p, float eps = 0.01f) const;
     std::vector<uint32_t> glass;          // the breakable glass brushes (drawn see-through each frame; a gone one isn't)
     std::vector<uint32_t> windows;        // the plain glass brushes (never break: drawn see-through each frame, nothing else)
     std::vector<Brush> pristineBrushes;   // the brushes as they were before the first break (empty: none yet)

@@ -12,7 +12,9 @@
 
 // DESTRUCT_GLASS_LIST / DESTRUCT_HOLE_LIST: what a player joining finds already broken (no shards): text = up to 60
 // u32 brushes / up to 20 hole blasts (3 x f32), the holes in the order they were blown (each cuts what the last left).
-enum : uint8_t { DESTRUCT_RESET = 0, DESTRUCT_GLASS = 1, DESTRUCT_HOLE = 2, DESTRUCT_GLASS_LIST = 3, DESTRUCT_HOLE_LIST = 4 };
+// (DESTRUCT_SHAKE: a crumble platform was stepped on, it falls kCrumbleS later as a DESTRUCT_GLASS; DESTRUCT_RESTORE: a
+// gone brush is back: a fallen crumble platform)
+enum : uint8_t { DESTRUCT_RESET = 0, DESTRUCT_GLASS = 1, DESTRUCT_HOLE = 2, DESTRUCT_GLASS_LIST = 3, DESTRUCT_HOLE_LIST = 4, DESTRUCT_SHAKE = 5, DESTRUCT_RESTORE = 6 };
 constexpr int kGlassListMax = 60, kHoleListMax = 20;
 // EV_DESTRUCT: a = the kind, b = the GlassHow, c = who broke it (-1: nobody), text = the u32 brush, at and dir (3 x f32
 // each) and the u32 seed. A hole sends only at (where the blast was: Map::punchHole works the rest out).

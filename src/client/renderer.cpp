@@ -650,7 +650,7 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
-static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks + kSemiCount + kBreakCount, "a look per material from kMatBlocks on (the large ones: their base's), then the see-through and breakable ones");
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks + kSemiCount + kBreakCount + kFeatCount, "a look per material from kMatBlocks on (the large ones: their base's), then the see-through, breakable and feature ones");
 // the material of kSurfaceLooks[k]: kMatBlocks.. up to the large ones, then kMatSemi.. (the breakable ones follow them)
 static int lookMat(int k) { return k < kMatLarge - kMatBlocks ? kMatBlocks + k : kMatSemi + (k - (kMatLarge - kMatBlocks)); }
 
@@ -1108,14 +1108,14 @@ static void uploadFaces(unsigned& vao, unsigned& vbo, const std::vector<WorldVer
     glBindVertexArray(0);
 }
 
-// The see-through looks (drawn blended after the world) and, from the new map, the breakable blocks (their looks go in
+// The see-through looks and fields (drawn blended after the world) and, from the new map, the breakable blocks and crumble platforms (their looks go in
 // the world shader too: setWorldLooks, after this)
 void Renderer::uploadSeeThrough(const Map& map) {
     std::vector<WorldVertex> vs;
     seeUsed_.assign((size_t)kMapMaterials, false);
     for (const Brush& b : map.brushes) {
-        if (breakMaterial(b.material)) seeUsed_[(size_t)b.material] = true;
-        if (!semiMaterial(b.material) || b.gone) continue;
+        if (blockDrawn(b.material)) seeUsed_[(size_t)b.material] = true;
+        if (!seeThroughDrawn(b.material) || b.gone) continue;
         seeUsed_[(size_t)b.material] = true;
         boxFaces(b, vs);
     }
@@ -1126,7 +1126,7 @@ void Renderer::uploadSeeThrough(const Map& map) {
 
 void Renderer::uploadBlocks(const Map& map) {
     std::vector<WorldVertex> vs;
-    for (uint32_t i : map.blocks) if (!map.brushes[i].gone) boxFaces(map.brushes[i], vs);
+    for (const auto* list : {&map.blocks, &map.crumbles}) for (uint32_t i : *list) if (!map.brushes[i].gone) boxFaces(map.brushes[i], vs);
     blockVerts_ = (int)vs.size();
     uploadFaces(blockVao_, blockVbo_, vs);
 }

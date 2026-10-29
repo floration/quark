@@ -374,6 +374,10 @@ public:
     // standing on a BREAK_WEIGHT one
     std::vector<float> blockDmg_;
     std::vector<double> blockStood_;
+    // crumble platforms, per brush: when one was first stood on (-1: not), when a fallen one comes back (-1: not)
+    std::vector<double> crumbleFrom_, crumbleBack_;
+    void crumblesTouched(int id);
+    void tickCrumbles();
     void damageBlock(int brush, float dmg, bool blast, const Vec3& at, const Vec3& dir, int by);
     void breakBlock(int brush, bool blast, const Vec3& at, const Vec3& dir, int by);
     void blockFromRay(const Vec3& o, const Vec3& dir, float t, float dmg, int by);   // a shot that stopped t along on a block

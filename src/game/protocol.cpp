@@ -403,7 +403,7 @@ GameEvent destructEvent(const DestructEv& d) {
 }
 
 bool readDestructEvent(const GameEvent& e, DestructEv* d) {
-    if (e.type != EV_DESTRUCT || e.a > DESTRUCT_HOLE) return false;
+    if (e.type != EV_DESTRUCT || (e.a > DESTRUCT_HOLE && e.a != DESTRUCT_SHAKE && e.a != DESTRUCT_RESTORE)) return false;
     d->kind = e.a; d->how = e.b; d->by = e.c;
     if (d->kind == DESTRUCT_RESET) return true;
     if (e.text.size() != 32u || d->how >= GLASS_HOWS) return false;

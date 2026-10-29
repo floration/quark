@@ -680,6 +680,67 @@ static void testSeeThrough() {
     CHECK(!litMaterial(kMatSemi) && !bakedMaterial(kMatSemi) && semiMaterial(kMatSemi + kSemiCount - 1) && !semiMaterial(kMatBreak));
 }
 
+// The 10 feature blocks (586-595, owner 2026-10-29): healing / spikes underfoot, low gravity, the gravity flip, the
+// shield wall, the checkpoint gate, slow-mo projectiles and the teleporter (players; its link and face in the file)
+static void testFeatureBlocks() {
+    printf("feature blocks: heal, spikes, low gravity, gravity flip, shield, gate, slow-mo, teleporter\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -60 -1 -60 60 0 60\nhealingtile -30 0 -3 -20 0.1 3\nspikefloor -10 0 -3 0 0.1 3\nlowgravityfield 10 0 -3 20 20 3\n"
+                  "gravityflip 25 0 -3 35 0.1 3\nbox 25 5 -3 35 6 3\nshieldwall -1 0 20 1 3 21\ncheckpointgate -5 0 40 5 4 41\n"
+                  "slowmofield -50 0 -50 -40 10 -40\nteleporter -30 0 30 -29 3 32 tp 7 0\nteleporter 40 0 30 42 1 32 tp 7 2\n"
+                  "spawn any 0 0 -20\nspawn race 0 0 -20\n", &err));
+    auto stand = [&](Vec3 at, int ms) {
+        MoveState s; s.flags = MF_ONGROUND; s.pos = at;
+        UserCmd c; c.msec = 8;
+        for (int t = 0; t < ms; t += 8) pmove(s, c, m);
+        return s;
+    };
+    CHECK(std::fabs(stand({-25, 0.1f, 0}, 1000).acidTaken + kHealTilePerSec) < 0.01f);
+    CHECK(std::fabs(stand({-5, 0.1f, 0}, 1000).acidTaken - kSpikePerSec) < 0.01f);
+    auto peak = [&](Vec3 at) {
+        MoveState s; s.flags = MF_ONGROUND; s.pos = at;
+        UserCmd c; c.msec = 4; c.buttons = BTN_JUMP;
+        float top = at.y;
+        for (int t = 0; t < 2000; t += 4) { pmove(s, c, m); c.buttons = 0; top = std::max(top, s.pos.y); }
+        return top - at.y;
+    };
+    const float hiLow = peak({15, 0, 0}), hi = peak({0, 0, -40});
+    printf("  jump: %.2f m, in low gravity %.2f m\n", hi, hiLow);
+    CHECK(hiLow > 1.8f * hi);
+    {   // the flip: up to the ceiling over it and standing there
+        const MoveState s = stand({30, 0.1f, 0}, 1500);
+        const AABB b = playerBox(s.pos, false, 1.0f);
+        printf("  gravity flip: top of the hull %.2f (ceiling 5), on it %d\n", b.mx.y, (int)((s.flags & MF_ONGROUND) != 0));
+        CHECK(std::fabs(b.mx.y - 5.0f) < 0.06f && (s.flags & MF_ONGROUND));
+    }
+    CHECK(solidMaterial(kMatShield) && !stopsPlayers(kMatShield) && stopsShots(kMatShield) && !stopsSight(kMatShield));
+    CHECK(!m.boxSolid({{-0.5f, 0.1f, 20.2f}, {0.5f, 1.5f, 20.8f}}));
+    { const float t = m.raycast({0, 1, 15}, {0, 0, 1}, 10.0f); CHECK(t > 4.9f && t < 5.1f); }
+    CHECK(!solidMaterial(kMatGate) && m.raceCheckpoints.size() == 1 && m.checkpoints.empty() && m.supportsMode(MODE_RACE));
+    CHECK(m.projectileRate({-45, 5, -45}) == kSlowMoRate && m.projectileRate({0, 5, 0}) == 1.0f);
+    {   // flyProjectile: through the slow-mo field half as far
+        Vec3 a = {-49, 5, -45}, va = {4, 0, 0}, b = {-49, 5, 0}, vb = {4, 0, 0};
+        m.flyProjectile(a, va, 0, 1.0f); m.flyProjectile(b, vb, 0, 1.0f);
+        CHECK(std::fabs(a.x + 47) < 0.05f && std::fabs(b.x + 45) < 0.05f);
+    }
+    {   // a teleporter: walk into it, out of the other one's top going up
+        MoveState s; s.flags = MF_ONGROUND; s.pos = {-31, 0, 31}; s.vel = {8, 0, 0};
+        UserCmd c; c.msec = 8; c.forward = 127; c.yaw = -1.5708f;
+        for (int t = 0; t < 400 && s.pos.x < 0; t += 8) pmove(s, c, m);
+        printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y);
+        CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f);
+    }
+    {   // its link and face in the file, and in an edit
+        Map r;
+        CHECK(r.parse(m.serialize(), &err) && r.brushes[10].link == 7 && r.brushes[10].exitFace == 2 && r.brushes[9].exitFace == 0);
+        const std::string d = describeMapObject(m, 'b', "set", 10);
+        CHECK(d.find(" p 7 2") != std::string::npos);
+        Map bad;
+        CHECK(!bad.parse("box 0 0 0 1 1 1\nteleporter 0 0 0 1 1 1 tp 7 6\nspawn any 0 0 0\n", &err));   // (no face 6)
+    }
+}
+
 static void testLiquids() {
     printf("liquids: slower / slippery / current / bounce / heal / hurt / kill, walk-through\n");
     Map m;
@@ -4934,7 +4995,7 @@ static void testMaterials() {
         std::string t = "version " + std::to_string(kMapFormatVersion) + "\nbox -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
         for (int k = 12; k < kMapMaterials; k++) { char b[96]; snprintf(b, sizeof b, "%s %d 0 30 %d 1 31\n", kMapMaterialWords[k], k * 2, k * 2 + 1); t += b; }
         CHECK(m.parse(t) && m.brushes.size() == 1 + (size_t)(kMapMaterials - 12));
-        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || solidMaterial(k) == !liquidMaterial(k)));   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
+        for (int k = 12; k < kMapMaterials; k++) CHECK(m.brushes[k - 11].material == k && (semiMaterial(k) || solidMaterial(k) == !(liquidMaterial(k) || fieldMaterial(k))));   // (a see-through one: when it stops anything, testSeeThrough)   // (the liquids: you wade in)
         const std::string out = m.serialize();
         CHECK(out.find("brick 40 0 30 41 1 31") != std::string::npos && out.find("diamondplate 38 0 30 39 1 31") != std::string::npos && out.find("ice 24 0 30 25 1 31") != std::string::npos);
     }
@@ -5167,6 +5228,25 @@ static void testDestruction(uint16_t port) {
         s.resetDestruction();
         CHECK(!s.map_.brushes[1].gone && !s.map_.brushes[4].gone && s.blockDmg_.empty());
     }
+    {   // the crumble platform: stood on, it falls kCrumbleS later, and is back kCrumbleBackS after that
+        CHECK(s.map_.parse("box -40 -1 -40 40 0 40\ncrumbleplatform -10 0 10 -6 0.5 14\nspawn any 0 0 0\n"));
+        CHECK(s.map_.crumbles.size() == 1 && solidMaterial(kMatCrumble) && !bakedMaterial(kMatCrumble));
+        p.move.pos = {-8, 0.5f, 12}; p.move.vel = {}; p.move.flags = MF_ONGROUND;
+        s.crumblesTouched(v);
+        s.tickCrumbles();
+        CHECK(!s.map_.brushes[1].gone);
+        s.timeMs_ += 1100;
+        s.tickCrumbles();
+        CHECK(s.map_.brushes[1].gone && !s.map_.boxSolid({{-9, 0.1f, 11}, {-7, 0.4f, 13}}));
+        s.timeMs_ += 3000;
+        s.tickCrumbles();
+        CHECK(s.map_.brushes[1].gone);
+        p.move.pos = {0, 0, 0};
+        s.timeMs_ += 2100;
+        s.tickCrumbles();
+        CHECK(!s.map_.brushes[1].gone && s.map_.boxSolid({{-9, 0.1f, 11}, {-7, 0.4f, 13}}));
+        s.resetDestruction();
+    }
     s.stop();
 }
 
@@ -5208,6 +5288,20 @@ static void testProjectileMaterials(uint16_t port) {
         CHECK(st.active && st.pos.x < x0 - 1.0f && st.pos.y > 0.4f);
         pump(s, none, 6.0, idle);
         CHECK(st.stuck);
+    }
+    {   // feature blocks: a rocket into a teleporter comes out of its pair's top; in a slow-mo field it flies at half speed
+        CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nteleporter 10 0 -2 11 4 2 tp 3 0\nteleporter 20 0 20 22 1 22 tp 3 2\n"
+                           "slowmofield -30 0 -30 -10 10 -10\nspawn any 0 0 0\n"));
+        Projectile& r = fire(WPN_ROCKET, {0, 2, 0}, {20, 0, 0});
+        pump(s, none, 0.6, idle);
+        printf("    rocket through a teleporter: %.2f %.2f %.2f, vel %.2f %.2f %.2f\n", r.pos.x, r.pos.y, r.pos.z, r.vel.x, r.vel.y, r.vel.z);
+        CHECK(r.active && r.pos.x > 20 && r.pos.x < 22 && r.pos.y > 1.5f && r.vel.y > 15);
+        r.active = false;
+        Projectile& q = fire(WPN_ROCKET, {-28, 5, -20}, {10, 0, 0});
+        pump(s, none, 0.5, idle);
+        printf("    rocket in slow-mo: %.2f m in 0.5 s at 10 m/s\n", q.pos.x + 28);
+        CHECK(q.active && q.pos.x + 28 > 2.0f && q.pos.x + 28 < 3.2f);
+        q.active = false;
     }
     s.stop();
 }
@@ -9153,7 +9247,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},

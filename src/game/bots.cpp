@@ -864,7 +864,7 @@ void objectiveSensors(const Server& s, int id, BrainCall& c) {
     const ServerPlayer& me = s.players_[id];
     const Map& map = s.map_;
     double* in = c.in;
-    in[S_CHECKPOINTSLEFT] = me.checkpoint < (int)map.checkpoints.size();
+    in[S_CHECKPOINTSLEFT] = me.checkpoint < (int)map.raceCheckpoints.size();
     in[S_HASHILL] = map.hasHill;
     in[S_HASCART] = map.payloadPath.size() >= 2;
     in[S_POINTACTIVE] = m.point < map.points.size();
@@ -1031,7 +1031,7 @@ Vec3 brainPoint(const Server& s, int id, int pt, int arg) {
     const ServerPlayer& me = s.players_[id];
     const Map& map = s.map_;
     switch (pt) {
-        case PT_CHECKPOINT: if (me.checkpoint >= 0 && me.checkpoint < (int)map.checkpoints.size()) return map.checkpoints[me.checkpoint].center(); break;
+        case PT_CHECKPOINT: if (me.checkpoint >= 0 && me.checkpoint < (int)map.raceCheckpoints.size()) return map.raceCheckpoints[me.checkpoint].center(); break;
         case PT_HILL: if (map.hasHill) return {map.hill.center().x, map.hill.mn.y, map.hill.center().z}; break;
         case PT_CART: if (map.payloadPath.size() >= 2) return map.cartPoint(m.mode, m.attackers, m.payloadDist); break;
         case PT_POINT: if (m.point < map.points.size()) { const AABB& p = map.points[m.point]; return {p.center().x, p.mn.y, p.center().z}; } break;
@@ -1065,7 +1065,7 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
     }
     switch (m.mode) {
         case MODE_RACE: case MODE_SURF:
-            if (me.checkpoint < (int)map.checkpoints.size()) return map.checkpoints[me.checkpoint].center();
+            if (me.checkpoint < (int)map.raceCheckpoints.size()) return map.raceCheckpoints[me.checkpoint].center();
             break;
         case MODE_KOTH:
             if (map.hasHill) return {map.hill.center().x, map.hill.mn.y, map.hill.center().z}; // the hill's floor
