@@ -672,10 +672,10 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
-        } else if (kw == "wedge" || kw == "corner") {   // "wedge|corner <material> <dir + 4 * up> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
+        } else if (kw == "wedge" || kw == "corner" || kw == "tetra") {   // "wedge|corner|tetra <material> <dir + 4 * up> x0 y0 z0 x1 y1 z1" (format 5; map.h's Brush)
             Brush b; int dir = -1;
             ok = (bool)(ls >> b.material >> dir) && validMapMaterial(b.material) && dir >= 0 && dir < 4 * kSlopeUps && readBox(ls, b.box);
-            b.shape = kw == "wedge" ? BRUSH_WEDGE : BRUSH_CORNER;
+            b.shape = (uint8_t)slopeFromWord(kw);
             b.dir = (uint8_t)(std::max(0, dir) % 4);
             b.up = (uint8_t)(std::max(0, dir) / 4);
             if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
@@ -724,8 +724,8 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             std::string shape;
             if (ok && ls >> shape) {
                 int dir = -1;
-                ok = (shape == "wedge" || shape == "corner") && (bool)(ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps;
-                b.shape = shape == "wedge" ? BRUSH_WEDGE : BRUSH_CORNER;
+                ok = (shape == "wedge" || shape == "corner" || shape == "tetra") && (bool)(ls >> dir) && dir >= 0 && dir < 4 * kSlopeUps;
+                if (ok) b.shape = (uint8_t)slopeFromWord(shape);
                 b.dir = (uint8_t)(std::max(0, dir) % 4);
                 b.up = (uint8_t)(std::max(0, dir) / 4);
             }
@@ -908,7 +908,7 @@ std::string Map::serialize() const {
     for (auto& br : brushes) {
         if (br.generated) continue;
         if (br.shape == BRUSH_BOX) { box(kMapMaterialWords[br.material], br.box); continue; }
-        snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", br.shape == BRUSH_WEDGE ? "wedge" : "corner", br.material, (int)br.dir + 4 * br.up,
+        snprintf(b, sizeof b, "%s %d %d %s %s %s %s %s %s\n", slopeWord(br.shape), br.material, (int)br.dir + 4 * br.up,
                  exactNum(nb[0], 24, br.box.mn.x), exactNum(nb[1], 24, br.box.mn.y), exactNum(nb[2], 24, br.box.mn.z),
                  exactNum(nb[3], 24, br.box.mx.x), exactNum(nb[4], 24, br.box.mx.y), exactNum(nb[5], 24, br.box.mx.z));
         o += b;
@@ -940,7 +940,7 @@ std::string Map::serialize() const {
         for (auto& p : g.parts) {
             snprintf(kw, sizeof kw, "part %d", p.material);
             box(kw, p.box);
-            if (p.shape != BRUSH_BOX) { o.pop_back(); snprintf(kw, sizeof kw, " %s %d\n", p.shape == BRUSH_WEDGE ? "wedge" : "corner", (int)p.dir + 4 * p.up); o += kw; }
+            if (p.shape != BRUSH_BOX) { o.pop_back(); snprintf(kw, sizeof kw, " %s %d\n", slopeWord(p.shape), (int)p.dir + 4 * p.up); o += kw; }
         }
     }
     for (auto& st : stairs) {   // (kept as they were: the editor doesn't move them with the boxes)
@@ -966,7 +966,7 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
         case 'b': {   // (a wedge or corner: its shape and dir + 4 * up after the box, "w 2" / "c 4")
             const Brush& br = m.brushes[i];
             snprintf(t, sizeof t, "b %s %d %d %s", verb, i, br.material, fmtBox(br.box).c_str());
-            if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", br.shape == BRUSH_WEDGE ? 'w' : 'c', (int)br.dir + 4 * br.up); }
+            if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", slopeLetter(br.shape), (int)br.dir + 4 * br.up); }
             break;
         }
         case 's': { auto& sp = m.spawns[i]; snprintf(t, sizeof t, "s %s %d %d %.9g %.9g %.9g %.9g", verb, i, sp.team, sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180.0f / PI); break; }
@@ -1030,8 +1030,8 @@ bool applyMapEdit(Map& m, const std::string& op) {
         std::string shape;
         if (!(in >> shape)) return true;
         int dir = -1;
-        if (!((shape == "w" || shape == "c") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
-        b.shape = shape == "w" ? BRUSH_WEDGE : BRUSH_CORNER;
+        if (!((shape == "w" || shape == "c" || shape == "t") && (bool)(in >> dir) && dir >= 0 && dir < 4 * kSlopeUps)) return false;
+        b.shape = (uint8_t)slopeFromWord(shape);
         b.dir = (uint8_t)(dir % 4);
         b.up = (uint8_t)(dir / 4);
         return true;

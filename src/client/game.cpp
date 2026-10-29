@@ -7703,7 +7703,7 @@ void Game::updateDestruction(const Map& map) {
     net_.takeGlassFx(glassFxScratch_);
     for (const NetClient::GlassFx& fx : glassFxScratch_) {
         if (fx.hole) {   // a hole: brick-red chunks thrown out of it
-            uint32_t sd = (uint32_t)(fx.at.x * 131.0f) * 2654435761u ^ (uint32_t)(fx.at.z * 71.0f) | 1u;
+            uint32_t sd = ((uint32_t)(fx.at.x * 131.0f) * 2654435761u ^ (uint32_t)(fx.at.z * 71.0f)) | 1u;
             for (int i = 0; i < 40 && visShards_.size() < 3000; i++) {
                 const Vec3 v = {glassRandF(sd) * 8 - 4, glassRandF(sd) * 6 - 1, glassRandF(sd) * 8 - 4};
                 const float sh = 0.8f + 0.3f * glassRandF(sd);

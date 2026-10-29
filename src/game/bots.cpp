@@ -319,17 +319,20 @@ void NavGraph::build(const Map& m, NavKind k) {
         if (b.up != 0 || slopeSteepness(b) > 1.0f + 1e-4f) continue;   // (on its side, or steep: no floor to walk)
         const AABB& a = b.box;
         const bool alongX = b.shape == BRUSH_WEDGE && b.dir < 2;
-        const float run = b.shape == BRUSH_CORNER ? std::min(a.mx.x - a.mn.x, a.mx.z - a.mn.z) : alongX ? a.mx.x - a.mn.x : a.mx.z - a.mn.z;
+        const bool cells = b.shape == BRUSH_CORNER || b.shape == BRUSH_TETRA;
+        const float run = cells ? std::min(a.mx.x - a.mn.x, a.mx.z - a.mn.z) : alongX ? a.mx.x - a.mn.x : a.mx.z - a.mn.z;
         const int n = std::min(64, std::max(1, std::min((int)std::ceil((a.mx.y - a.mn.y) / kSlopeRise), (int)(run / 0.4f))));
         for (int i = 0; i < n; i++)
-            for (int j = 0; j < (b.shape == BRUSH_CORNER ? n : 1); j++) {
+            for (int j = 0; j < (cells ? n : 1); j++) {
                 AABB c = a;
-                if (b.shape == BRUSH_CORNER || alongX) { c.mn.x = lerpf(a.mn.x, a.mx.x, (float)i / n); c.mx.x = lerpf(a.mn.x, a.mx.x, (float)(i + 1) / n); }
-                if (b.shape == BRUSH_CORNER || !alongX) {
-                    const int k = b.shape == BRUSH_CORNER ? j : i;
+                if (cells || alongX) { c.mn.x = lerpf(a.mn.x, a.mx.x, (float)i / n); c.mx.x = lerpf(a.mn.x, a.mx.x, (float)(i + 1) / n); }
+                if (cells || !alongX) {
+                    const int k = cells ? j : i;
                     c.mn.z = lerpf(a.mn.z, a.mx.z, (float)k / n); c.mx.z = lerpf(a.mn.z, a.mx.z, (float)(k + 1) / n);
                 }
-                surface(bi, c, brushTopOver(b, c.mn.x, c.mx.x, c.mn.z, c.mx.z));
+                const float top = brushTopOver(b, c.mn.x, c.mx.x, c.mn.z, c.mx.z);
+                if (b.shape == BRUSH_TETRA && top <= a.mn.y + 1e-4f) continue;   // (the cells past its diagonal: nothing there)
+                surface(bi, c, top);
             }
     }
     const int n = (int)nodes.size();

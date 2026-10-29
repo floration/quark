@@ -372,9 +372,16 @@ static void bake(const Map& map, BakedWorld& out, const std::function<void(float
                 else if (low1) lface(k, {b0, b1, q0}, n);
                 else lface(k, {b0, b1, q1, q0}, n);
             }
-            rect(4, 1, -1);   // the base: a whole rectangle
             Vec3 pn[2]; float pd[2];
             slopePlanes(lb, pn, pd);
+            if (lb.shape == BRUSH_TETRA) {   // the base: the triangle at the apex corner; the top: one triangle over it
+                const int hi = lb.dir, a1 = (hi + 1) % 4, a3 = (hi + 3) % 4;
+                const Vec3 b0 = {c[hi].x, y0, c[hi].z}, b1 = {c[a1].x, y0, c[a1].z}, b3 = {c[a3].x, y0, c[a3].z};
+                lface(4, {b0, b3, b1}, Vec3(0, -1, 0));
+                lface(5, {t[hi], t[a1], t[a3]}, pn[0]);
+                return;
+            }
+            rect(4, 1, -1);   // the base: a whole rectangle
             if (lb.shape == BRUSH_WEDGE) lface(5, {t[0], t[1], t[2], t[3]}, pn[0]);
             else {   // a corner: two triangles from the corner opposite the high one, over the diagonal to it
                 const int hi = lb.dir, lo = (hi + 2) % 4;

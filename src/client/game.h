@@ -460,6 +460,8 @@ private:
     void edModify(const std::function<void(Map&)>& f, bool coalesce);
     void edDelete();
     void edDuplicate();
+    void edCoat();   // K: a 1/8 m layer on the side of the selected box(es) you look at
+    static constexpr float kCoatThick = 0.125f;
     enum { ED_ROT_Y, ED_ROT_X, ED_ROT_Z, ED_MIR_X, ED_MIR_Y, ED_MIR_Z };
     void edTransform(int op);
     bool edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const;   // the map with the selection turned (false: nothing to turn)
