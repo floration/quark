@@ -6,8 +6,8 @@
 namespace {
 // A custom mode's x on each constant (1 normally) is mt.m[MV_...], mt = moveTuning() fetched once per command: it is a
 // call into customrules.cpp plus a thread_local lookup, and a step used to fetch it about ten times.
-constexpr float kGravity = 22.0f;   // (1.14: +10%, less floaty)
-constexpr float kJumpSpeed = 7.34f;  // (with the heavier gravity: still a 1.22 m standing jump, maps rely on it)
+constexpr float kGravity = 24.0f;   // (1.14: +10%, less floaty; owner 2026-10-29: 22 -> 24)
+constexpr float kJumpSpeed = 7.67f;  // (with the heavier gravity: still a 1.22 m standing jump, maps rely on it: v^2 / 2g)
 constexpr float kGroundSpeed = 9.5f;   // (owner 1.17: 8 -> 9.5; VQ3 / CPMA 10.3, Warfork 9.0, Cocaine Diesel 11.25 for a 1.8 m player)
 constexpr float kCrouchSpeed = 4.0f;
 constexpr float kGroundAccel = 16.0f;  // (owner 1.17: 16.8 -> 16 with the faster run: still at full speed in ~80 ms)

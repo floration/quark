@@ -787,7 +787,7 @@ bool safeHook(const Server& s, const ServerPlayer& me, const Vec3& anchor) {
     if (!s.map_.hasVoid && s.map_.lava.empty()) return true;
     MoveTuning scratch;   // (the values pmove plays for the bot's state now: movement equations; moveTuning() without)
     const auto& mt = stepTuning(me.move, &s.map_, scratch).m;
-    const float accel = 38.0f * mt[MV_HOOK_ACCEL], top = 24.0f * mt[MV_HOOK_MAX], fall = 22.0f * 0.5f * mt[MV_HOOK_GRAVITY]; // (pmove.cpp)
+    const float accel = 38.0f * mt[MV_HOOK_ACCEL], top = 24.0f * mt[MV_HOOK_MAX], fall = moveBaseGravity() * 0.5f * mt[MV_HOOK_GRAVITY]; // (pmove.cpp)
     Vec3 p = me.move.pos, v = me.move.vel;
     const bool level = anchor.y < p.y + 1.0f;
     // a long pull strays metres off any line (one across a whole map: into whatever pit is near it)
@@ -1778,7 +1778,7 @@ UserCmd botThinkDirect(Server& s, int id) {
             bool landing = !ground && onGround && ml > 1e-3f && hs < 10.0f && dot(hv, moveDir) >= 0.5f * hs &&
                            s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true) && safeDrop(s, far);
             if (!onGround && !ground) { // mid-jump over a gap: fine if the arc comes down on safe ground (braking now drops us in)
-                float vy = me.move.vel.y, g = 22.0f;   // (kGravity)
+                float vy = me.move.vel.y, g = moveBaseGravity();   // (kGravity)
                 float tl = (vy + std::sqrt(std::max(0.0f, vy * vy + 2 * g * 0.5f))) / g;   // back down to about this height
                 Vec3 at = me.move.pos + hv * tl + Vec3(0, 0.6f, 0);
                 landing = s.map_.raycastAny(at, {0, -1, 0}, 2.0f, true) && safeDrop(s, at) &&

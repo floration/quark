@@ -1713,10 +1713,10 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (cmd == "mode") newMode = modeFromName(arg.c_str());
         else { std::string m2; if (ss >> m2) newMode = modeFromName(m2.c_str()); }
         if (newMode < 0) { reply("unknown mode"); return; }
-        std::string v2; // optional 1v1 ruleset: map <name> 1v1 classic
+        std::string v2; // optional ruleset (1v1, tourney, free for all): map <name> 1v1 classic
         if (ss >> v2) {
             int v = arenaVariantFromName(v2.c_str());
-            if (v < 0) { reply("unknown 1v1 ruleset"); return; }
+            if (v < 0) { reply("unknown ruleset"); return; }
             if (cfg_.ranked && !arenaVariantRanked(v)) { reply("ranked: only vanilla, laser vampire or instagib"); return; }
             cfg_.arenaVariant = v;
         }
@@ -3168,7 +3168,7 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     glassShards(pane, how, at, dir, d.seed, sh);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
-        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare});
+        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare, (uint32_t)brush});
     AABB near = pane;   // stickies resting on it drop (as off a teammate)
     near.mn -= Vec3(0.15f, 0.15f, 0.15f); near.mx += Vec3(0.15f, 0.15f, 0.15f);
     for (auto& pr : projectiles_)
@@ -3345,8 +3345,14 @@ void Server::tickShards() {
             const float t = rayAABB(s.pos, inv, {box[i].mn - grow, box[i].mx + grow}, best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
-        if (hit >= 0) {   // (q: a shard 10, a shattered piece 1)
-            damagePlayer(hit, credit || s.by == hit ? s.by : -1, s.damage, kDamageGlass, d * 0.3f);
+        if (hit >= 0) {   // (q: a shard 10, a shattered piece 1; one pane's at most kGlassPaneMaxDamage to each player)
+            auto it = paneTaken_.find(s.pane);
+            if (it == paneTaken_.end()) { it = paneTaken_.emplace(s.pane, std::array<float, kMaxPlayers>{}).first; }
+            float& taken = it->second[(size_t)hit];
+            const float dmg = std::min(s.damage, kGlassPaneMaxDamage - taken);
+            if (dmg <= 0) continue;   // (spent on them: it breaks on them harmlessly)
+            taken += dmg;
+            damagePlayer(hit, credit || s.by == hit ? s.by : -1, dmg, kDamageGlass, d * 0.3f);
             in[hit] = players_[hit].alive;
             continue;
         }
@@ -3368,7 +3374,7 @@ void Server::sendDestruction(int id) {
 void Server::resetDestruction(bool tell) {
     const bool any = tell || !map_.pristineBrushes.empty() || !map_.holes.empty() || !holeLog_.empty();
     map_.resetDestruction();
-    blockDmg_.clear(); blockStood_.clear(); crumbleFrom_.clear(); crumbleBack_.clear();
+    blockDmg_.clear(); blockStood_.clear(); paneTaken_.clear(); crumbleFrom_.clear(); crumbleBack_.clear();
     holeLog_.clear();
     shards_.clear();
     if (any) broadcastEvent(destructEvent(DestructEv()));
@@ -3917,7 +3923,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
-               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (arg == MODE_ARENA || arg == MODE_TOURNEY ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
@@ -4140,7 +4146,7 @@ void Server::useLocator(int id) {
 uint16_t Server::weaponMask() const {
     // hide and seek / tag: "it" has the knife and the locator; everyone else is unarmed (only "it" can fire)
     if (isItMode(ms_.mode)) return (uint16_t)((1u << WPN_KNIFE) | (1u << WPN_LOCATOR));
-    uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
+    uint16_t m = rulesetActive() ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
     uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
     uint16_t r = (c && m && (m & c)) ? m & c : c ? c : m;
     if (ms_.mode == MODE_SURF && !c) return (uint16_t)(1u << WPN_KNIFE);   // (surf: the knife only, owner 2026-10-28; a custom mode's own list wins)

@@ -63,7 +63,7 @@ Json playerJson() {
     p.set("eye", kEyeHeight);
     p.set("crouchEye", kCrouchEyeHeight);
     p.set("stepUp", 0.55f);                 // pmove.cpp kStepHeight (file-local there)
-    p.set("jumpHeight", 1.22f);             // a standing jump: kJumpSpeed 7.34 m/s up, kGravity 22 m/s^2 (pmove.cpp)
+    p.set("jumpHeight", 1.22f);             // a standing jump: kJumpSpeed 7.67 m/s up, kGravity 24 m/s^2 (pmove.cpp)
     p.set("runSpeed", 9.5f);                // pmove.cpp kGroundSpeed
     p.set("headFraction", kHeadFraction);   // the head box: the top 20% of the hull's height...
     p.set("headWidthFraction", kHeadWidthFraction);   // ...and 45% of its width, centred (pmove.cpp headBox)

@@ -50,7 +50,7 @@ constexpr float kRunSpeed = 9.5f;   // pmove kGroundSpeed (1.17: 8 -> 9.5)
 constexpr float kLeadLo = -1.0f, kLeadHi = 1.0f;
 constexpr float kLoopTile = 4.0f;
 constexpr float kLoopsFull = 3.0f;  // loops per 1000 m2 of floor for full marks: rooms about 18 m across, each with four ways out (MAP_METRICS.md)
-constexpr float kJumpReach = 1.2f;     // a standing jump clears ~1.2 m (pmove: 7.34 m/s up, 22 m/s^2 gravity)
+constexpr float kJumpReach = 1.2f;     // a standing jump clears ~1.2 m (pmove: 7.67 m/s up, 24 m/s^2 gravity)
 constexpr float kEye = 1.6f;
 
 struct Rng { uint32_t s = 12345; float f() { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s & 0xFFFFFF) / 16777216.0f; } };

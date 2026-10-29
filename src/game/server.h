@@ -2,6 +2,8 @@
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
 #include "governor.h"
+#include <array>
+#include <unordered_map>
 #include <cmath>
 #include <atomic>
 #include <cstdio>
@@ -361,8 +363,9 @@ public:
     // ---- Glass and blown-open brick / cobblestone (glass.h): every break goes to everyone (EV_DESTRUCT); someone who
     // joins is sent what's broken (holeLog_: the blasts that cut holes, in order). All of it comes back each round, at a
     // new match, on a new map and before an edit (resetDestruction).
-    struct FlyingShard { Vec3 pos, vel; float size, damage; double until; int8_t by, spare; };   // by: who broke it; spare: who it can't hit
+    struct FlyingShard { Vec3 pos, vel; float size, damage; double until; int8_t by, spare; uint32_t pane; };   // by: who broke it; spare: who it can't hit
     std::vector<FlyingShard> shards_;
+    std::unordered_map<uint32_t, std::array<float, kMaxPlayers>> paneTaken_;   // each pane's shards' damage so far, per player (kGlassPaneMaxDamage)
     std::vector<Vec3> holeLog_;
     double shardStepAt_ = 0;
     uint32_t glassSeed_ = 0x2545F491u;
@@ -651,8 +654,10 @@ public:
     }
     void clientHitReport(int id, const std::string& rest);
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
+    // a ruleset's weapons and rules apply (free for all on vanilla: as before, every weapon, the syringe too)
+    bool rulesetActive() const { return modeHasRuleset(ms_.mode) && (ms_.mode != MODE_FFA || ms_.arenaVariant != 0 || cfg_.ranked); }
     uint8_t arenaRules() const {
-        uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
+        uint8_t r = rulesetActive() ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
         const CustomRules& c = cfg_.custom;
         if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
         return r;

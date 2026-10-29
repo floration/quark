@@ -147,6 +147,7 @@ enum GlassHow : uint8_t {
 // grapple pulled back shards it, a blast, a dash or a pull through shatters it (glassShards, glass.h).
 constexpr float kGlassShardDamage = 10.0f;     // a SHARD mode piece in flight
 constexpr float kGlassShatterDamage = 1.0f;    // a SHATTER mode piece in flight
+constexpr float kGlassPaneMaxDamage = 50.0f;   // one pane's shards hurt a player this much at most (owner, 2026-10-29: "limit damage per broken glass, 50 per glass")
 constexpr float kGlassBreakDamage = 10.0f;   // dashing through / being pulled through (q: "make you take 10 damage")
 constexpr int kDamageGlass = 249;            // kill cause: glass
 #define WB(w) (1u << (w))
@@ -158,6 +159,9 @@ constexpr uint8_t AR_REGEN = 32;   // (duel) 10 hp/s back after 3 s without taki
 inline const DuelModDef& duelModDef(int m);
 struct ArenaVariant { const char* name; const char* title; const char* desc; uint16_t weapons; uint8_t rules; };
 constexpr int kArenaVariants = 9;
+// the modes played with a 1v1 ruleset (its weapons and AR_* rules): 1v1, tourney and free for all (owner, 2026-10-29:
+// "FFA should have rulesets like 1v1s"; before, only ranked free for all used one)
+inline constexpr bool modeHasRuleset(int mode) { return mode == MODE_ARENA || mode == MODE_TOURNEY || mode == MODE_FFA; }
 inline const ArenaVariant& arenaVariant(int v) {
     // weapon ids: 0 rifle 1 rocket 2 knife 3 sniper 4 laser 5 shotgun 6 sticky 7 crossbow
     static const ArenaVariant vs[kArenaVariants] = {

@@ -178,6 +178,16 @@ static void testSyringeModes() {
         if (!isItMode(mode)) CHECK(s.weaponAllowed(WPN_ROCKET) || mode == MODE_ARENA || mode == MODE_TOURNEY || mode == MODE_SURF);
         if (mode == MODE_SURF) CHECK(s.weaponMask() == (1u << WPN_KNIFE));
     }
+    {   // free for all with a ruleset (owner, 2026-10-29): its weapons and rules; vanilla as before (every weapon, the syringe)
+        Server f;
+        f.ms_.mode = MODE_FFA; f.cfg_.mode = MODE_FFA;
+        f.ms_.arenaVariant = 0;
+        CHECK(f.weaponAllowed(WPN_SYRINGE) && f.weaponAllowed(WPN_ROCKET) && f.arenaRules() == 0);
+        f.ms_.arenaVariant = 2;   // classic: rocket, laser, knife
+        CHECK(f.weaponAllowed(WPN_ROCKET) && f.weaponAllowed(WPN_LASER) && f.weaponAllowed(WPN_KNIFE) && !f.weaponAllowed(WPN_RIFLE));
+        f.ms_.arenaVariant = 8;   // moon shotgun: shotguns in low gravity
+        CHECK(f.weaponAllowed(WPN_SHOTGUN) && !f.weaponAllowed(WPN_ROCKET) && (f.arenaRules() & AR_LOW_GRAVITY));
+    }
     Server s;   // a duel life with every weapon: still no syringe
     s.ms_.mode = MODE_DUEL; s.cfg_.mode = MODE_DUEL; s.ms_.duelMod = 4;   // DOUBLE SIZE (all weapons)
     CHECK(!s.weaponAllowed(WPN_SYRINGE) && s.weaponAllowed(WPN_ROCKET) && s.weaponAllowed(WPN_KNIFE));
