@@ -2460,12 +2460,24 @@ void Game::drawWorld(float alpha) {
                 projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
                 const Vec3 d = p - pr.pos;
                 const float len = length(d);
-                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f, et;
+                Vec3 hn;
+                int hm = -1;
+                float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len, &hn, &hm) : -1.0f, et;
                 const bool blows = pr.type == WPN_ROCKET || pr.type == WPN_CROSSBOW;   // (stickies stick; knives: the server's word)
                 int victim = -1;
                 bool vHead = false;
-                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) hit = et * len;
+                if (blows && len > 1e-4f && enemyOnSegment(pr.pos, p, &et, &victim, &vHead) && (hit < 0 || et * len < hit)) { hit = et * len; hm = -1; }
                 else victim = -1;
+                if (hit >= 0 && hm == kMatRubber && pr.type == WPN_ROCKET && dot(v, hn) < 0) {
+                    // off rubber (as the server's does): drawn on along the bounce, not blown up there (it vanished)
+                    const Vec3 at = pr.pos + d / len * std::max(0.0f, hit - 0.05f);
+                    const Vec3 rv = v - hn * (dot(v, hn) * (1.0f + kProjRubberBounce));
+                    const float rs = length(rv), rest = std::max(0.0f, len - hit);
+                    pr.pos = at;
+                    if (rs > 1e-4f && map.raycast(at, rv / rs, rest) < 0) pr.pos = at + rv / rs * rest;
+                    pr.vel = rv;
+                    continue;   // (the loop over projStarts_: this one's done)
+                }
                 if (blows && hit >= 0) {   // where it lands, as you see it (and its hits: yours)
                     localBoom(pr.id, pr.type, pr.pos + d / len * hit); st.boomed = true;
                     reportImpact(pr.type, (pr.flags & PROJ_LOB) != 0, pr.pos, pr.pos + d / len * hit, victim, vHead);
@@ -7715,8 +7727,18 @@ void Game::updateDestruction(const Map& map) {
         uint32_t sd = fx.seed ^ 0x9E3779B9u;
         for (const GlassShard& g : glassShardScratch_) {
             if (visShards_.size() >= 3000) break;
-            const float sz = glassCrater(fx.how) ? 0.02f + 0.03f * glassRandF(sd) : 0.01f + 0.025f * glassRandF(sd);
+            const float sz = glassCrater(fx.how) ? 0.03f + 0.04f * glassRandF(sd) : 0.01f + 0.025f * glassRandF(sd);
             visShards_.push_back({g.pos, g.vel, sz, {0.86f, 0.90f, 0.93f}, false, true, time_});
+        }
+        if (glassCrater(fx.how)) {   // (the rest of the pane comes down too: pieces that only show, no damage)
+            const Vec3 ext = fx.pane.mx - fx.pane.mn;
+            const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
+            const int n = std::clamp((int)(area * 60.0f), 40, 160);
+            for (int i = 0; i < n && visShards_.size() < 3000; i++) {
+                const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
+                const Vec3 v = fx.dir * (0.5f + 1.5f * glassRandF(sd)) + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd) * 0.5f, glassRandF(sd) - 0.5f) * 1.5f;
+                visShards_.push_back({p, v, 0.02f + 0.035f * glassRandF(sd), {0.86f, 0.90f, 0.93f}, false, true, time_});
+            }
         }
         audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
     }
