@@ -82,7 +82,7 @@ std::string Game::uiScreenPath() const {
         case Screen::BenchmarkResult: return "benchmarks/result";
         case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
-        case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
+        case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : edMatMenu_ ? "/materials" : "") + (chatting_ ? "/chat" : "");
         case Screen::InGame: {
             std::string p = "ingame";
             if (bake_) return p + "/loading";
@@ -591,6 +591,7 @@ private:
         g.testHeld_ = 0;
         g.showPerf_ = g.perfMini_ = false;
         g.edGroupMenu_ = g.edExportAsk_ = false;
+        g.edMatMenu_ = 0;
         g.edSel_ = Game::EdSel();
         g.edMulti_.clear();
         g.edResetArmed_ = g.edLeaveArmed_ = g.edMsgUntil_ = 0;

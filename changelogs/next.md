@@ -17,6 +17,8 @@ What's on `testing` since production 1.19.1. The release PR renames this file to
 
 - **Cobblestone looks solid**: dark streaks ran out of every corner where three stones met, which looked like gaps in the wall, and each stone was shaded in squares. The joints are now an even width and each stone has one shade.
 
+- **Material picker in the map editor**: clicking a material (for new boxes, or for what's selected) opens a grid of swatches, each drawn in the game's own look and the map's colours. It has three lists: the materials this map already uses, the last 10 you picked (kept between sessions) and all of them. M still cycles. FIX MAP / FIX GAPS now show only when nothing is selected, so the selection's buttons fit on screen.
+
 ## Weapons
 - **Rifle: +1 damage a shot**: 6 body (was 5), 8.5 head (was 7.5). A kill takes 17 body shots in 2.4 s (was 20 in 2.9 s), or 12 headshots in 1.7 s.
 - **Bubble gun fires 20% faster**: 6 bubbles a second (was 5), so 10 pops kill in 1.5 s (was 1.8 s).

@@ -367,6 +367,19 @@ void main() {
     fragColor = vec4(finish(c), 1.0);
 })";
 
+// The map editor's material swatches (Renderer::swatch): textured quads in window pixels over the 2D batch
+const char* kImgVS = R"(#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aUV;
+uniform vec2 uScreen;
+out vec2 vUV;
+void main() { vUV = aUV; gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0); })";
+const char* kImgFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uImg;
+out vec4 fragColor;
+void main() { fragColor = vec4(texture(uImg, vUV).rgb, 1.0); })";
+
 // Edge smoothing ("EDGES" anti-aliasing): FXAA-style. Low-contrast pixels (almost everything) pass straight
 // through after 5 taps; on high-contrast edges (the outlines) it blends along the edge direction.
 const char* kEdgeVS = R"(#version 330 core
@@ -869,6 +882,7 @@ void Renderer::setHoles(const std::vector<Map::Hole>& holes) {
     const int n = (int)std::min<size_t>(holes.size(), kMaxHoles);
     glUseProgram(worldProg_);
     glUniform1i(uHoleCount_, n);
+    holeCount_ = n;
     if (!n) { glUseProgram(0); return; }
     auto tex = [](unsigned& t, int unit, GLint fmt, int w, int h) {
         glActiveTexture(GL_TEXTURE0 + unit);
@@ -1814,6 +1828,91 @@ void Renderer::prepare2D() {
     uiUploaded_ = ui_.size();
 }
 
+constexpr int kSwatchPx = 96, kSwatchCols = 8, kSwatchRows = (kMapMaterials + kSwatchCols - 1) / kSwatchCols;
+
+void Renderer::swatch(float x, float y, float w, float h, int material) {
+    if (!validMapMaterial(material)) return;
+    const float u0 = (float)(material % kSwatchCols) / kSwatchCols, v0 = (float)(material / kSwatchCols) / kSwatchRows;
+    const float q[8] = {x, y, x + w, y + h, u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
+    swatchQuads_.insert(swatchQuads_.end(), q, q + 8);
+}
+
+// Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
+// of full sun and sky, no shadows or holes, into its cell of the atlas. Again only when the palette changes.
+void Renderer::buildSwatches() {
+    const float key[13] = {baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z, metalColor.x, metalColor.y,
+                           metalColor.z, glowColor.x, glowColor.y, glowColor.z, brightness};
+    if (swatchTex_ && std::equal(key, key + 13, swatchKey_)) return;
+    std::copy(key, key + 13, swatchKey_);
+    const int W = kSwatchPx * kSwatchCols, H = kSwatchPx * kSwatchRows;
+    if (!swatchTex_) {
+        glGenTextures(1, &swatchTex_);
+        glBindTexture(GL_TEXTURE_2D, swatchTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glGenFramebuffers(1, &swatchFbo_);
+        glBindFramebuffer(GL_FRAMEBUFFER, swatchFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, swatchTex_, 0);
+        const uint8_t lm[2] = {255, 200};
+        glGenTextures(1, &swatchLm_);
+        glBindTexture(GL_TEXTURE_2D, swatchLm_);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, 1, 1, 0, GL_RG, GL_UNSIGNED_BYTE, lm);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        std::vector<WorldVertex> vs;
+        for (int m = 0; m < kMapMaterials; m++) {
+            const float c[6][2] = {{0, 0}, {2, 0}, {2, 2}, {0, 0}, {2, 2}, {0, 2}};
+            for (auto& p : c) {
+                WorldVertex v = {};
+                v.pos[0] = p[0]; v.pos[1] = 1 + p[1]; v.pos[2] = 0;
+                v.normal[2] = 1;
+                v.uv[0] = v.uv[1] = 0.5f;
+                v.material = (float)m;
+                v.edge[0] = p[0]; v.edge[1] = p[1]; v.edge[2] = v.edge[3] = 2;
+                vs.push_back(v);
+            }
+        }
+        glGenVertexArrays(1, &swatchVao_); glGenBuffers(1, &swatchVbo_);
+        glBindVertexArray(swatchVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, swatchVbo_);
+        glBufferData(GL_ARRAY_BUFFER, vs.size() * sizeof(WorldVertex), vs.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)12);
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)24);
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)32);
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(WorldVertex), (void*)36);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, swatchFbo_);
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+    glUseProgram(worldProg_);
+    auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
+    setVec3(uWorld_.baseL, lin(baseColor, 1.5f)); setVec3(uWorld_.accentL, lin(accentColor, 1.5f));
+    setVec3(uWorld_.wallbangL, lin(baseColor * 0.42f, 1.5f)); setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
+    setVec3(uWorld_.floorL, lin(metalColor, 2.0f)); setVec3(uWorld_.metal, metalColor); setVec3(uWorld_.glow, glowColor);
+    setVec3(uWorld_.sunDir, normalize(Vec3(0.35f, 0.6f, 0.72f)));
+    glUniform1f(uWorld_.bright, brightness);
+    glUniform1f(uWorld_.full, 0.0f);
+    glUniform1i(uWorld_.shadowOn, 0);
+    glUniform1i(uHoleCount_, 0);
+    setVec3(uWorld_.camPos, Vec3(1, 2, 3));
+    setMat(uWorld_.viewProj, Mat4::ortho(0, 2, 1, 3, -1, 1));
+    glUniform1f(uWorldPx_, 1.0f);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, swatchLm_);
+    glBindVertexArray(swatchVao_);
+    for (int m = 0; m < kMapMaterials; m++) {
+        glViewport((m % kSwatchCols) * kSwatchPx, (m / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
+        glDrawArrays(GL_TRIANGLES, m * 6, 6);
+    }
+    // (put back what this frame's scene set: prepareScene sets the rest again next frame)
+    glUniform1i(uHoleCount_, holeCount_);
+    glUniform1f(uWorldPx_, pxScale_);
+    setVec3(uWorld_.sunDir, sunDir_);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void Renderer::flush2D() {
     if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
@@ -1854,6 +1953,35 @@ void Renderer::flush2D() {
     glDrawElements(GL_TRIANGLES, (GLsizei)(ui_.size() / 4 * 6), GL_UNSIGNED_INT, nullptr);
     glDisable(GL_BLEND);
     ui_.clear();
+    if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
+        buildSwatches();
+        glViewport(0, 0, width_, height_);
+        if (!imgProg_) {
+            imgProg_ = compile(kImgVS, kImgFS, nullptr);
+            uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
+            glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
+            glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
+            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+        }
+        std::vector<float> v;
+        v.reserve(swatchQuads_.size() / 8 * 24);
+        for (size_t i = 0; i + 8 <= swatchQuads_.size(); i += 8) {
+            const float* q = &swatchQuads_[i];
+            const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
+                                   {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
+            for (auto& c : t) v.insert(v.end(), c, c + 4);
+        }
+        glUseProgram(imgProg_);
+        glUniform2f(uImgScreen_, (float)width_, (float)height_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, swatchTex_);
+        glBindVertexArray(imgVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+        glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
+        swatchQuads_.clear();
+    }
 #ifdef QUARK_TRACY
     // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
     static double t0 = timeNow(); static int frames = 0; static size_t bytes = 0, ups = 0, dyn = 0, shadow = 0;

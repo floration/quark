@@ -24,6 +24,7 @@ namespace {
 constexpr float kNewLightRadius = 10, kNewLightIntensity = 1;   // a new light (and where RADIUS / BRIGHTNESS go back to on a right-click)
 const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
+const Color kPick = {0.24f, 0.76f, 0.92f, 1};   // (the material picker's current one)
 const Color kRed = {1, 0.35f, 0.3f, 1};
 const Color kClipColor = {0.75f, 0.35f, 1.0f, 0.22f};   // clip boxes (invisible in play) in the editor
 const float kGrids[] = {0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f};   // (1/8 m up to 4 m: [ and ] step through them)
@@ -928,6 +929,105 @@ static void edDialogPanel(Ui& ui, float viewW, float barTop, float pw, float ph,
     ui.panel(px, py, pw, ph, 0.94f);
 }
 
+void Game::edUseMaterial(int m) {
+    edRecentMats_.erase(std::remove(edRecentMats_.begin(), edRecentMats_.end(), m), edRecentMats_.end());
+    edRecentMats_.insert(edRecentMats_.begin(), m);
+    if (edRecentMats_.size() > 10) edRecentMats_.resize(10);
+    if (FILE* f = fopen(userDataPath("editor-recent-materials.txt").c_str(), "w")) {   // (kept for the next session)
+        for (int r : edRecentMats_) fprintf(f, "%d\n", r);
+        fclose(f);
+    }
+}
+
+void Game::edSetMaterial(int m) {
+    std::vector<EdSel> sel;
+    if (edSelValid()) sel.push_back(edSel_);
+    for (const EdSel& e : edMulti_) if (!(e.kind == edSel_.kind && e.idx == edSel_.idx)) sel.push_back(e);
+    Map tmp = copyNoSource(ed_);
+    std::string ops, undo;
+    for (const EdSel& e : sel) {
+        if (e.kind == ED_BRUSH && (size_t)e.idx < ed_.editableBrushes()) tmp.brushes[e.idx].material = m;
+        else if (e.kind == ED_GROUP && (size_t)e.idx < ed_.groups.size() && ed_.groups[e.idx].type != Map::GROUP_CUSTOM) tmp.groups[e.idx].material = m;
+        else continue;
+        const char k = kKindChar[e.kind];
+        const std::string o = describeMapObject(tmp, k, "set", e.idx), u = describeMapObject(ed_, k, "set", e.idx);
+        if (o == u) continue;
+        ops += (ops.empty() ? "" : "\n") + o;
+        undo = u + (undo.empty() ? "" : "\n") + undo;
+    }
+    if (!ops.empty()) edDo(ops, undo);
+}
+
+// The material picker: every material as a swatch drawn by the world shader (Renderer::swatch), in three lists: the
+// ones this map uses, the last 10 picked, all of them. A click picks it (for new boxes, or for what's selected).
+void Game::drawEditorMatMenu() {
+    const float s = ui_.s(), pad = 16 * s, gap = 6 * s, bh = 36 * s;
+    const float barTop = edBarTop_ > 0 ? edBarTop_ : (float)r_.height();
+    const int cols = 12;
+    const float pw = std::min(edPanelX_ - 16 * s, 820 * s), sw = std::floor((pw - 2 * pad - (cols - 1) * gap) / cols), lh = 14 * s, cell = sw + lh + gap;
+    static bool loaded = false;
+    if (!loaded) {   // (the last session's recent list)
+        loaded = true;
+        if (FILE* f = fopen(userDataPath("editor-recent-materials.txt").c_str(), "r")) {
+            int r;
+            while (edRecentMats_.size() < 10 && fscanf(f, "%d", &r) == 1)
+                if (validMapMaterial(r) && std::find(edRecentMats_.begin(), edRecentMats_.end(), r) == edRecentMats_.end()) edRecentMats_.push_back(r);
+            fclose(f);
+        }
+    }
+    std::vector<int> used;
+    {
+        bool in[kMapMaterials] = {};
+        for (size_t i = 0; i < ed_.editableBrushes(); i++) if (validMapMaterial(ed_.brushes[i].material)) in[ed_.brushes[i].material] = true;
+        for (auto& g : ed_.groups) {
+            if (g.type != Map::GROUP_CUSTOM && validMapMaterial(g.material)) in[g.material] = true;
+            for (auto& p : g.parts) if (validMapMaterial(p.material)) in[p.material] = true;
+        }
+        for (int m = 0; m < kMapMaterials; m++) if (in[m]) used.push_back(m);
+    }
+    std::vector<int> all(kMapMaterials);
+    for (int m = 0; m < kMapMaterials; m++) all[m] = m;
+    auto rows = [&](size_t n) { return (int)((n + cols - 1) / cols); };
+    const float ph = pad + (rows(used.size()) + rows(edRecentMats_.size()) + rows(all.size())) * cell + 3 * (20 * s) + (used.empty() ? 20 * s : 0) + (edRecentMats_.empty() ? 20 * s : 0) + bh + pad + 8 * s;
+    float px, py;
+    edDialogPanel(ui_, edPanelX_, barTop, pw, std::min(ph, barTop - 16 * s), px, py);
+    const int cur = edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_BRUSH ? ed_.brushes[edSel_.idx].material
+                  : edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_GROUP ? ed_.groups[edSel_.idx].material : edMat_;
+    float y = py + pad;
+    int picked = -1;
+    auto list = [&](const char* title, const std::vector<int>& ms) {
+        ui_.label(px + pad, y, title, kGrey, 0.8f);
+        y += 20 * s;
+        if (ms.empty()) { ui_.hint(px + pad, y, "NONE YET", kGrey, pw - 2 * pad); y += 20 * s; return; }
+        for (size_t k = 0; k < ms.size(); k++) {
+            const int m = ms[k];
+            const float x = px + pad + (float)(k % cols) * (sw + gap), yy = y + (float)(k / cols) * cell;
+            std::string word = kMapMaterialWords[m];
+            for (auto& c : word) c = (char)toupper((unsigned char)c);
+            // (the button is the frame round the swatch: its hover and the current one's ring show past the swatch's edge)
+            static std::string ids[3][kMapMaterials];   // (UiExp keeps the id's pointer)
+            std::string& id = ids[title[0] == 'I' ? 0 : title[0] == 'R' ? 1 : 2][m];
+            if (id.empty()) id = std::string(title) + " " + word;
+            const UiExp e = edMatMenu_ == 1 || m == cur ? UiExp::nav(edPath()) : UiExp::edit();   // (new ones: the menu closes, edMat_ set)
+            if (ui_.button(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, "", e.withId(id.c_str()))) picked = m;
+            if (m == cur) r_.rect(x - 3 * s, yy - 3 * s, sw + 6 * s, sw + 6 * s, kPick);
+            r_.swatch(x, yy, sw, sw, m);
+            ui_.hint(x, yy + sw + 2 * s, word, m == cur ? kPick : kWhite, sw + gap);
+        }
+        y += rows(ms.size()) * cell;
+    };
+    list("IN THIS MAP", used);
+    list("RECENT", edRecentMats_);
+    list("ALL", all);
+    if (ui_.button(px + pad, py + std::min(ph, barTop - 16 * s) - pad - bh, 160 * s, bh, "CLOSE", UiExp::nav(edPath()))) edMatMenu_ = 0;
+    if (picked >= 0) {
+        if (edMatMenu_ == 1) edMat_ = picked;
+        else { edMat_ = picked; edSetMaterial(picked); }
+        edUseMaterial(picked);
+        edMatMenu_ = 0;
+    }
+}
+
 // IMPORT's list (newest first, click one to place it) / EXPORT's question, over the 3D view
 void Game::drawEditorGroupMenu() {
     const float s = ui_.s(), pad = 16 * s, bh = 36 * s, gap = 8 * s;
@@ -1146,6 +1246,7 @@ void Game::editorKey(int key, int mods) {
     if (key == GLFW_KEY_ESCAPE) {
         if (edLook_) { edLook_ = false; captureMouse(false); return; }
         if (edGroupMenu_ || edExportAsk_) { edGroupMenu_ = edExportAsk_ = false; return; }
+        if (edMatMenu_) { edMatMenu_ = 0; return; }
         if (edSel_.valid()) { edSel_ = EdSel(); edMulti_.clear(); return; }
         if (!edOnline_ && edDirty_ && edOfficial()) { edAskKeep(ED_THEN_LEAVE); return; }   // (B3)
         if (!edOnline_ && edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - press ESC again to leave"); return; }
@@ -1428,7 +1529,7 @@ void Game::editorFrame(double dt) {
         }
     };
     // ---- click: grab a handle of the selection, else select what's under the mouse
-    if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_ && !edPrompt_) {
+    if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_ && !edPrompt_ && !edMatMenu_) {
         ui_.clearFocus();
         bool shiftHeld = glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
         // the spot the last selecting click was on, same view: this click steps along the ray (below), even where
@@ -1773,8 +1874,7 @@ void Game::editorFrame(double dt) {
         if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "STAIRS", UiExp::edit())) edAdd(ED_GROUP, Map::GROUP_STAIRS);
         if (ui_.button(x + 3 * (w4 + gap), y, w4, h, "LADDER", UiExp::edit())) edAdd(ED_LADDER, 0);
         row();
-        static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR", "NEW ONES: WATER", "NEW ONES: LAVA", "NEW ONES: TRIM", "NEW ONES: CLIP"};
-        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, kMapMaterials, newMats, UiExp::local());
+        if (ui_.button(x, y, w, h, "NEW ONES: " + std::string(mats[edMat_]).substr(10), UiExp::nav(edMatsPath()).withId("MATERIAL"))) edMatMenu_ = 1;
         row();
     }
     if (ui_.button(x, y, w3, h, "SPAWN", UiExp::edit())) edAdd(ED_SPAWN, SPAWN_ANY);
@@ -1803,7 +1903,8 @@ void Game::editorFrame(double dt) {
         ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, kGridCount, grids, UiExp::local());
         row();
     }
-    {   // clean-ups over the whole map (one undo step each; see MapFix)
+    if (!edSelValid()) {   // clean-ups over the whole map (one undo step each; see MapFix). Only with nothing selected:
+                           // a selection's rows (down to MIRROR) need the room, and these work on the whole map anyway
         const float hw = (w - gap) * 0.5f;
         if (ui_.button(x, y, hw, h, "FIX MAP", UiExp::state("ednotice"))) edFix(false);
         if (ui_.button(x + hw + gap, y, hw, h, "FIX GAPS", UiExp::state("ednotice"))) edFix(true);
@@ -1872,7 +1973,7 @@ void Game::editorFrame(double dt) {
         y += 16 * s;
         if (kind == ED_BRUSH) {
             int m = ed_.brushes[i].material;
-            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats, UiExp::edit())) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
+            if (ui_.button(x, y, w, h, mats[m] + "  (M)", UiExp::nav(edMatsPath()).withId("MATERIAL (M)"))) edMatMenu_ = 2;
             row();
         } else if (kind == ED_GROUP) {
             auto& gr = ed_.groups[i];
@@ -1881,7 +1982,7 @@ void Game::editorFrame(double dt) {
                 y += (nl * 14 + 4) * s;
             } else {
                 int m = gr.material;
-                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats, UiExp::edit())) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
+                if (ui_.button(x, y, w, h, mats[m] + "  (M)", UiExp::nav(edMatsPath()).withId("MATERIAL (M)"))) edMatMenu_ = 2;
                 row();
             }
             if (gr.type == Map::GROUP_STAIRS) {
@@ -1986,6 +2087,7 @@ void Game::editorFrame(double dt) {
     }
     ui_.where = nullptr;
     if (edGroupMenu_ || edExportAsk_) drawEditorGroupMenu();
+    else if (edMatMenu_) drawEditorMatMenu();
     if (time_ < edMsgUntil_) ui_.labelCentered(panelX * 0.5f, 20 * s, edMsg_, kWhite, 1.0f, panelX - 32 * s);
     if (edOnline_) {   // editing together: the chat (Enter) over the key bar, and any running vote (F1 / F2)
         float ts = std::max(2.0f, std::round(H / 360.0f));

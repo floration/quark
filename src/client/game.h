@@ -140,6 +140,7 @@ private:
     void uiTestHandles();                   // the editor selection's handles, while the 3D view's camera is set
     const char* edPath() const { return edOnline_ ? "editor-online" : "editor"; }
     const char* edExportAskPath() const { return edOnline_ ? "editor-online/export-ask" : "editor/export-ask"; }
+    const char* edMatsPath() const { return edOnline_ ? "editor-online/materials" : "editor/materials"; }
     const char* edGroupsPath() const { return edOnline_ ? "editor-online/groups" : "editor/groups"; }
     const char* edKeepPath() const { return edOnline_ ? "editor-online/keep-edits" : "editor/keep-edits"; }
     bool edGroupTakesEveryBox() const;      // GROUP would leave the map without a box of its own (refused)
@@ -398,6 +399,13 @@ private:
     EdSel edSel_;
     std::vector<EdSel> edMulti_; // shift+click: more selected boxes / groups (for GROUP)
     int edGridIdx_ = 2, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)
+    // the material picker (owner, 2026-10-29: "a pick list with images ... a seperate list for materials already in the
+    // map, and the last 10 used surfaces"): 0 closed, 1 for new boxes (edMat_), 2 for what's selected
+    int edMatMenu_ = 0;
+    std::vector<int> edRecentMats_;   // (newest first, at most 10: edUseMaterial)
+    void drawEditorMatMenu();
+    void edUseMaterial(int m);   // a material picked or cycled: the recent list
+    void edSetMaterial(int m);   // ...on everything selected (boxes, rooms / stairs), one undo step
     bool edGroupMenu_ = false, edExportAsk_ = false; // IMPORT GROUP's list of saved groups; EXPORT's "make it a group first?"
     std::vector<std::string> edGroupFiles_;
     float edSpeed_ = 12;
