@@ -2,6 +2,8 @@
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
 #include "governor.h"
+#include <array>
+#include <unordered_map>
 #include <cmath>
 #include <atomic>
 #include <cstdio>
@@ -361,8 +363,9 @@ public:
     // ---- Glass and blown-open brick / cobblestone (glass.h): every break goes to everyone (EV_DESTRUCT); someone who
     // joins is sent what's broken (holeLog_: the blasts that cut holes, in order). All of it comes back each round, at a
     // new match, on a new map and before an edit (resetDestruction).
-    struct FlyingShard { Vec3 pos, vel; float size, damage; double until; int8_t by, spare; };   // by: who broke it; spare: who it can't hit
+    struct FlyingShard { Vec3 pos, vel; float size, damage; double until; int8_t by, spare; uint32_t pane; };   // by: who broke it; spare: who it can't hit
     std::vector<FlyingShard> shards_;
+    std::unordered_map<uint32_t, std::array<float, kMaxPlayers>> paneTaken_;   // each pane's shards' damage so far, per player (kGlassPaneMaxDamage)
     std::vector<Vec3> holeLog_;
     double shardStepAt_ = 0;
     uint32_t glassSeed_ = 0x2545F491u;

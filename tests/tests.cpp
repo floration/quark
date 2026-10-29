@@ -5222,6 +5222,16 @@ static void testDestruction(uint16_t port) {
     for (int k = 0; k < 20; k++) { p.move.pos = {0, 0, 6.0f}; p.move.vel = {}; s.tickShards(); s.shardStepAt_ = 0; s.timeMs_ += 10; }
     printf("    shot shards: health 100 -> %.0f\n", p.health);
     CHECK(p.health < 100 && std::fmod(100 - p.health, 10.0f) < 0.01f);
+    {   // one pane's shards hurt a player kGlassPaneMaxDamage (50) at most (owner, 2026-10-29): 8 more of pane 1's 10s
+        p.health = 1000;
+        const float before = p.health;
+        for (int k = 0; k < 8; k++) s.shards_.push_back({{0, 1.0f, 5.5f}, {0, 0, 30}, 0.05f, kGlassShardDamage, s.time() + 3, -1, -1, 1u});
+        for (int k = 0; k < 10; k++) { p.move.pos = {0, 0, 6.0f}; p.move.vel = {}; s.tickShards(); s.shardStepAt_ = 0; s.timeMs_ += 10; }
+        float total = 0; for (float t : s.paneTaken_[1u]) total += t;
+        printf("    pane 1's shards on one player: %.0f in all (before these %.0f)\n", s.paneTaken_[1u][(size_t)v], s.paneTaken_[1u][(size_t)v] - (before - p.health));
+        CHECK(s.paneTaken_[1u][(size_t)v] <= kGlassPaneMaxDamage + 1e-3f && s.paneTaken_[1u][(size_t)v] > kGlassPaneMaxDamage - 1e-3f);
+        p.health = 100;
+    }
     // a rocket next to the other pane and the brick: both break
     p.health = 100;
     s.explodeForTest({0, 1.0f, -5.5f}, -1, WPN_ROCKET);

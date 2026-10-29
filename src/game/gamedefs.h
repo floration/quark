@@ -147,6 +147,7 @@ enum GlassHow : uint8_t {
 // grapple pulled back shards it, a blast, a dash or a pull through shatters it (glassShards, glass.h).
 constexpr float kGlassShardDamage = 10.0f;     // a SHARD mode piece in flight
 constexpr float kGlassShatterDamage = 1.0f;    // a SHATTER mode piece in flight
+constexpr float kGlassPaneMaxDamage = 50.0f;   // one pane's shards hurt a player this much at most (owner, 2026-10-29: "limit damage per broken glass, 50 per glass")
 constexpr float kGlassBreakDamage = 10.0f;   // dashing through / being pulled through (q: "make you take 10 damage")
 constexpr int kDamageGlass = 249;            // kill cause: glass
 #define WB(w) (1u << (w))
