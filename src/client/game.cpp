@@ -3234,7 +3234,7 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     char b[160];
     if (ms.flags & MS_TIMETRIAL) t.title = "TIME TRIAL - VIADUCT";
     else if (ms.flags & MS_RANKED) { snprintf(b, sizeof b, "%s - %s", rankedKind(ms.arenaVariant), arenaVariant(ms.arenaVariant).title); t.title = b; }
-    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP)) {
+    else if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP) || (ms.mode == MODE_FFA && ms.arenaVariant != 0)) {   // (free for all: a ruleset other than vanilla)
         snprintf(b, sizeof b, "%s - %s", modeTitle(ms.mode), arenaVariant(ms.arenaVariant).title); t.title = b;
     } else t.title = modeTitle(ms.mode);
     b[0] = 0;
@@ -6219,7 +6219,7 @@ void Game::drawHost(const SetLayout& L) {
             static const int ladders[3] = {0, 1, 5};
             int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
             if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + rankedKind(ladders[k]) + " - " + arenaVariant(ladders[k]).title + "  >", UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
-        } else if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >",
+        } else if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(hostModeIdx_) + (modeHasRuleset(hostModeIdx_) ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >",
                               UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
         y += 48;
         if (extra == 1) {
@@ -6302,7 +6302,7 @@ void Game::drawVsBots(const SetLayout& L) {
     const float kH = 48 * rows + 52;   // the rows, 20 px, BACK / START
     float y = bandTop(kH);
     ui_.panel(L.X(kMX - 16), L.Y(y - 16), L.L(kMW + 32), L.L(kH + 32));
-    if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(cfg_.botMode) + (cfg_.botMode == MODE_ARENA ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >",
+    if (ui_.button(x, L.Y(y), w, h, std::string("MODE: ") + modeTitle(cfg_.botMode) + (modeHasRuleset(cfg_.botMode) ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >",
                    UiExp::nav("vsbots/picker:modes").withId("MODE"))) picker_ = PICK_BOT_MODE;
     y += 48;
     if (haveMaps) {
@@ -7408,7 +7408,7 @@ void Game::drawPicker(float cx, float y) {
         picker_ = PICK_NONE;
         if (live) {
             std::string cmd = (livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode);
-            if (mode == MODE_ARENA || mode == MODE_TOURNEY) cmd += std::string(" ") + arenaVariant(variant).name;
+            if (modeHasRuleset(mode)) cmd += std::string(" ") + arenaVariant(variant).name;
             net_.sendCommand(cmd);
             voteMenu_ = false;
             paused_ = false;
@@ -7455,7 +7455,7 @@ void Game::drawPicker(float cx, float y) {
               : ladders ? UiExp::nav("host")
               : variants ? (live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : modes && i == MODE_COUNT ? UiExp::nav(live ? "ingame/pause/picker:ladders" : "host/picker:ladders")
-              : modes ? (i == MODE_ARENA || i == MODE_TOURNEY ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
+              : modes ? (modeHasRuleset(i) ? UiExp::nav(live ? "ingame/pause/picker:variants" : host ? "host/picker:variants" : "vsbots/picker:variants")
                          : live ? UiExp::nav("ingame/pause/picker:livemap") : UiExp::nav(done))
               : live ? UiExp::cmd(livePickVote_ ? "callvote map" : "map") : UiExp::nav(done);
         return it;
@@ -7480,7 +7480,7 @@ void Game::drawPicker(float cx, float y) {
             if (live && serverRanked && !livePickVote_) net_.sendCommand("ranked off"); // host leaves ranked for another mode
             mode = i;
             if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
-            if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
+            if (modeHasRuleset(i)) { // second step: which ruleset (1v1, tourney, free for all)
                 variantCtx_ = live ? 2 : host ? 0 : 1;
                 picker_ = PICK_VARIANT;
             } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)

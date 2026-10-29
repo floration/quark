@@ -1713,10 +1713,10 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (cmd == "mode") newMode = modeFromName(arg.c_str());
         else { std::string m2; if (ss >> m2) newMode = modeFromName(m2.c_str()); }
         if (newMode < 0) { reply("unknown mode"); return; }
-        std::string v2; // optional 1v1 ruleset: map <name> 1v1 classic
+        std::string v2; // optional ruleset (1v1, tourney, free for all): map <name> 1v1 classic
         if (ss >> v2) {
             int v = arenaVariantFromName(v2.c_str());
-            if (v < 0) { reply("unknown 1v1 ruleset"); return; }
+            if (v < 0) { reply("unknown ruleset"); return; }
             if (cfg_.ranked && !arenaVariantRanked(v)) { reply("ranked: only vanilla, laser vampire or instagib"); return; }
             cfg_.arenaVariant = v;
         }
@@ -3923,7 +3923,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
-               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (arg == MODE_ARENA || arg == MODE_TOURNEY ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (modeHasRuleset(arg) ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
@@ -4146,7 +4146,7 @@ void Server::useLocator(int id) {
 uint16_t Server::weaponMask() const {
     // hide and seek / tag: "it" has the knife and the locator; everyone else is unarmed (only "it" can fire)
     if (isItMode(ms_.mode)) return (uint16_t)((1u << WPN_KNIFE) | (1u << WPN_LOCATOR));
-    uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
+    uint16_t m = rulesetActive() ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
     uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
     uint16_t r = (c && m && (m & c)) ? m & c : c ? c : m;
     if (ms_.mode == MODE_SURF && !c) return (uint16_t)(1u << WPN_KNIFE);   // (surf: the knife only, owner 2026-10-28; a custom mode's own list wins)

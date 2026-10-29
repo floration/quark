@@ -654,8 +654,10 @@ public:
     }
     void clientHitReport(int id, const std::string& rest);
     bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
+    // a ruleset's weapons and rules apply (free for all on vanilla: as before, every weapon, the syringe too)
+    bool rulesetActive() const { return modeHasRuleset(ms_.mode) && (ms_.mode != MODE_FFA || ms_.arenaVariant != 0 || cfg_.ranked); }
     uint8_t arenaRules() const {
-        uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
+        uint8_t r = rulesetActive() ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
         const CustomRules& c = cfg_.custom;
         if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
         return r;
