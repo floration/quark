@@ -5080,7 +5080,9 @@ static void testDestruction(uint16_t port) {
         std::vector<GlassShard> a, b;
         glassShards({{-1, 0, 0}, {1, 2, 0.05f}}, GLASS_SHOT, {0, 1, 0}, {0, 0, 1}, 99, a);
         glassShards({{-1, 0, 0}, {1, 2, 0.05f}}, GLASS_SHATTER, {0, 1, -1}, {}, 99, b);
-        CHECK(a.size() >= 10 && a.size() <= 20 && b.size() >= 12 && b.size() <= 40);
+        // (a 4 m2 pane: SHARD 2-5 a m2 at 10 damage, SHATTER 25-100 a m2 at 1; q, 2026-10-29)
+        CHECK(a.size() >= 8 && a.size() <= 20 && b.size() >= 100 && b.size() <= 400);
+        CHECK(a[0].damage == kGlassShardDamage && b[0].damage == kGlassShatterDamage);
         bool on = true; for (auto& x : a) on = on && x.vel.z > 0; for (auto& x : b) on = on && x.vel.z > 0;
         CHECK(on);   // (along the shot; away from the blast's side)
     }

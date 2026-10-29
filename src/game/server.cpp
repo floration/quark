@@ -3152,7 +3152,7 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     glassShards(pane, how, at, dir, d.seed, sh);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
-        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, time() + kShardLife, (int8_t)by, spare});
+        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare});
     AABB near = pane;   // stickies resting on it drop (as off a teammate)
     near.mn -= Vec3(0.15f, 0.15f, 0.15f); near.mx += Vec3(0.15f, 0.15f, 0.15f);
     for (auto& pr : projectiles_)
@@ -3227,8 +3227,8 @@ void Server::tickShards() {
             const float t = rayAABB(s.pos, inv, {box[i].mn - grow, box[i].mx + grow}, best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
-        if (hit >= 0) {   // (q: 10 damage a shard in flight)
-            damagePlayer(hit, credit || s.by == hit ? s.by : -1, kGlassShardDamage, kDamageGlass, d * 0.3f);
+        if (hit >= 0) {   // (q: a shard 10, a shattered piece 1)
+            damagePlayer(hit, credit || s.by == hit ? s.by : -1, s.damage, kDamageGlass, d * 0.3f);
             in[hit] = players_[hit].alive;
             continue;
         }

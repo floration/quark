@@ -135,14 +135,18 @@ constexpr int kAcidRearmMs = 500;
 constexpr int kDamageAcid = 250;
 // Glass (map material 21; owner, 2026-10-28): what broke a pane, which decides its shards (glassShards, glass.h).
 enum GlassHow : uint8_t {
-    GLASS_SHOT = 0,       // a shot, the knife, a bolt: a crater there, the pane in 10-20 big shards, the near ones on along the shot
-    GLASS_SHATTER,        // a blast: the whole pane in 12-40 pieces, outward away from it
+    GLASS_SHOT = 0,       // a shot, the knife, a bolt: SHARD mode (a few big shards, glitter at the hit)
+    GLASS_SHATTER,        // a blast: SHATTER mode (many small pieces and a cloud of glitter), outward away from it
     GLASS_DASH,           // dashed through: shattered along the dash; the dasher takes kGlassBreakDamage flat, no shards
-    GLASS_HOOK_BACK,      // grappled standing / moving away: as a shot from the other side, 10-20 shards toward you
+    GLASS_HOOK_BACK,      // grappled standing / moving away: as a shot from the other side, its shards toward you
     GLASS_HOOK_THROUGH,   // pulled to it by the grapple: shatters away from you when it lets go; kGlassBreakDamage flat
     GLASS_HOWS
 };
-constexpr float kGlassShardDamage = 10.0f;   // any shard in flight, a blast's too (q, 2026-10-29: "shard does 10 damage per piece")
+// The two ways a pane breaks (q, 2026-10-29: "shatter = 25-100 pieces per sqm 1 damage each add 250-1000 particles that do
+// 0 damage; shard = 2-5 pieces per sqm 10 damage each add 100-250 particles at impact site that do 0 damage"): a shot or a
+// grapple pulled back shards it, a blast, a dash or a pull through shatters it (glassShards, glass.h).
+constexpr float kGlassShardDamage = 10.0f;     // a SHARD mode piece in flight
+constexpr float kGlassShatterDamage = 1.0f;    // a SHATTER mode piece in flight
 constexpr float kGlassBreakDamage = 10.0f;   // dashing through / being pulled through (q: "make you take 10 damage")
 constexpr int kDamageGlass = 249;            // kill cause: glass
 #define WB(w) (1u << (w))
