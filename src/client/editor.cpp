@@ -284,6 +284,8 @@ void Game::edScriptStep() {
     else if (cmd == "enter") uiIn_.enter = true;
     else if (cmd == "bs") { int n = 0; in >> n; uiIn_.backspace = true; if (n > 1) edScript_.insert(edScript_.begin(), "bs " + std::to_string(n - 1)); }
     else if (cmd == "sel") { int k = 0, i = 0; in >> k >> i; edSel_ = {k, i}; }
+    else if (cmd == "add") { int k = 0, i = 0; in >> k >> i; if (edSelValid()) edMulti_.push_back(edSel_); edSel_ = {k, i}; }   // (shift+click)
+    else if (cmd == "boxop") { int op = 0; in >> op; edBoxOp(op); }   // SPLIT X / Y / Z, COMBINE, SUBTRACT (0-4)
     else if (cmd == "do") { std::string t; std::getline(in >> std::ws, t); for (auto& c : t) if (c == '|') c = '\n'; edDo(t, "", false, false); } // an edit step ('|' between ops)
     else if (cmd == "key") { int k = 0, mods = 0; in >> k >> mods; editorKey(k, mods); }   // a key press (GLFW key code), as the editor gets it
     else if (cmd == "cam") { in >> edCam_.x >> edCam_.y >> edCam_.z >> yaw_ >> pitch_; yaw_ = deg2rad(yaw_); pitch_ = deg2rad(pitch_); }
@@ -824,6 +826,143 @@ void Game::edUngroup() {
     edMulti_.clear();
     for (size_t k = 0; k < parts.size(); k++) (k ? edMulti_.push_back({ED_BRUSH, n + (int)k}) : (void)(edSel_ = {ED_BRUSH, n}));
     edNotify("ungrouped into " + std::to_string(parts.size()) + " boxes");
+}
+
+// SPLIT / COMBINE / SUBTRACT (owner, 2026-10-29: "split, combine, and subtract buttons"), on the selected boxes, one undo
+// step each. The selection in click order is edMulti_ then edSel_ (shift+click puts the newest in edSel_).
+//   split X / Y / Z (the button: the longest side, edSplitOp): each plain box the plane crosses becomes two; the plane
+//   is the selection's middle on that axis, on the grid.
+//   combine: boxes of one material that fill exactly one box (no gaps, no overlap) become that box; anything else
+//   is grouped (GROUP's MAKE), so it moves and stretches as one.
+//   subtract: the first box selected is the cutter: its volume is carved out of the others (each leaves up to 6
+//   boxes round the hole), then the cutter goes.
+// Slopes and cut boxes are left out of split and subtract (their pieces wouldn't be boxes).
+bool Game::edBoxOpPlan(int op, std::vector<int>& gone, std::vector<Brush>& made, std::string& why) const {
+    gone.clear(); made.clear(); why.clear();
+    std::vector<int> sel;
+    auto add = [&](const EdSel& e) {
+        if (e.kind != ED_BRUSH || e.idx < 0 || (size_t)e.idx >= ed_.editableBrushes()) return;
+        if (std::find(sel.begin(), sel.end(), e.idx) == sel.end()) sel.push_back(e.idx);
+    };
+    for (auto& e : edMulti_) add(e);
+    if (edSelValid()) add(edSel_);
+    if (sel.empty()) { why = "select boxes first"; return false; }
+    auto vol = [](const AABB& b) { return std::max(0.0f, b.mx.x - b.mn.x) * std::max(0.0f, b.mx.y - b.mn.y) * std::max(0.0f, b.mx.z - b.mn.z); };
+    auto overlap = [](const AABB& a, const AABB& b) { return AABB{vmax(a.mn, b.mn), vmin(a.mx, b.mx)}; };
+    constexpr float eps = 1e-4f;
+    if (op <= ED_SPLIT_Z) {
+        const int a = op - ED_SPLIT_X;
+        float lo = 1e9f, hi = -1e9f;
+        for (int i : sel) { lo = std::min(lo, ed_.brushes[i].box.mn[a]); hi = std::max(hi, ed_.brushes[i].box.mx[a]); }
+        const float g = kGrids[edGridIdx_];
+        float c = std::round((lo + hi) * 0.5f / g) * g;
+        bool slopes = false;
+        for (int pass = 0; pass < 2 && made.empty(); pass++) {   // (on the grid it can land on an edge: then the exact middle)
+            if (pass) c = (lo + hi) * 0.5f;
+            for (int i : sel) {
+                const Brush& b = ed_.brushes[i];
+                if (b.box.mn[a] >= c - eps || b.box.mx[a] <= c + eps) continue;
+                if (b.shape != BRUSH_BOX) { slopes = true; continue; }
+                Brush p = b, q = b;
+                p.box.mx[a] = c; q.box.mn[a] = c;
+                gone.push_back(i); made.push_back(p); made.push_back(q);
+            }
+        }
+        if (made.empty()) why = slopes ? "slopes can't be split: pick plain boxes" : "nothing to split there";
+        return !made.empty();
+    }
+    if (op == ED_COMBINE) {
+        if (sel.size() < 2) { why = "select two or more boxes (shift+click) to combine"; return false; }
+        AABB all = ed_.brushes[sel[0]].box;
+        float sum = 0;
+        bool box = true;
+        for (size_t k = 0; k < sel.size(); k++) {
+            const Brush& b = ed_.brushes[sel[k]];
+            box &= b.shape == BRUSH_BOX && b.material == ed_.brushes[sel[0]].material;   // (mixed materials: a group, as Quarkology's)
+            all.mn = vmin(all.mn, b.box.mn); all.mx = vmax(all.mx, b.box.mx);
+            sum += vol(b.box);
+            for (size_t j = 0; j < k; j++) box &= vol(overlap(b.box, ed_.brushes[sel[j]].box)) <= eps * std::max(1.0f, vol(b.box));
+        }
+        if (!box || std::fabs(sum - vol(all)) > eps * std::max(1.0f, vol(all))) { why = "group"; return false; }
+        Brush b = ed_.brushes[sel[0]];
+        b.box = all;
+        gone = sel;
+        made.push_back(b);
+        return true;
+    }
+    // ED_SUBTRACT
+    if (sel.size() < 2) { why = "select the cutter first, then shift+click the boxes to cut"; return false; }
+    const Brush& cut = ed_.brushes[sel[0]];
+    if (cut.shape != BRUSH_BOX) { why = "the cutter (the first box selected) has to be a plain box"; return false; }
+    const AABB& c = cut.box;
+    bool slopes = false;
+    for (size_t k = 1; k < sel.size(); k++) {
+        const Brush& t = ed_.brushes[sel[k]];
+        if (vol(overlap(t.box, c)) <= eps) continue;
+        if (t.shape != BRUSH_BOX) { slopes = true; continue; }
+        AABB r = t.box;
+        for (int a = 0; a < 3; a++) {
+            if (r.mn[a] < c.mn[a] - eps) { Brush p = t; p.box = r; p.box.mx[a] = c.mn[a]; made.push_back(p); r.mn[a] = c.mn[a]; }
+            if (r.mx[a] > c.mx[a] + eps) { Brush p = t; p.box = r; p.box.mn[a] = c.mx[a]; made.push_back(p); r.mx[a] = c.mx[a]; }
+        }
+        gone.push_back(sel[k]);
+    }
+    if (gone.empty()) { why = slopes ? "slopes can't be cut: pick plain boxes" : "the cutter (the first box selected) doesn't touch the others"; return false; }
+    gone.push_back(sel[0]);
+    if (ed_.editableBrushes() - gone.size() + made.size() < 1) { why = "a map needs at least one box"; return false; }
+    return true;
+}
+
+// SPLIT's axis: the selected boxes' longest side (a wall splits along its length, a pillar across its height)
+int Game::edSplitOp() const {
+    AABB all = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
+    auto add = [&](const EdSel& e) {
+        if (e.kind == ED_BRUSH && e.idx >= 0 && (size_t)e.idx < ed_.editableBrushes()) { all.mn = vmin(all.mn, ed_.brushes[e.idx].box.mn); all.mx = vmax(all.mx, ed_.brushes[e.idx].box.mx); }
+    };
+    for (auto& e : edMulti_) add(e);
+    if (edSelValid()) add(edSel_);
+    const Vec3 d = all.mx - all.mn;
+    return d.y > d.x && d.y > d.z ? ED_SPLIT_Y : d.z > d.x ? ED_SPLIT_Z : ED_SPLIT_X;
+}
+
+UiExp Game::edBoxOpExp(int op) const {
+    if (!ui_.probing()) return UiExp::edit();
+    std::vector<int> gone;
+    std::vector<Brush> made;
+    std::string why;
+    return edBoxOpPlan(op, gone, made, why) || (why == "group" && !edGroupTakesEveryBox()) ? UiExp::edit() : UiExp::state("ednotice");
+}
+
+void Game::edBoxOp(int op) {
+    std::vector<int> gone;
+    std::vector<Brush> made;
+    std::string why;
+    if (!edBoxOpPlan(op, gone, made, why)) {
+        if (why == "group") { edGroupSelection(); return; }
+        edNotify(why);
+        return;
+    }
+    // take the old ones away (highest index first), then add the new ones after the other boxes
+    std::sort(gone.begin(), gone.end(), std::greater<int>());
+    std::vector<std::string> ops, inv;
+    for (int i : gone) { ops.push_back("b del " + std::to_string(i)); inv.push_back(insertOps(ed_, 'b', i)); }
+    const int n = (int)ed_.editableBrushes() - (int)gone.size();
+    for (size_t k = 0; k < made.size(); k++) {
+        char t[220];
+        const AABB& b = made[k].box;
+        snprintf(t, sizeof t, "b ins %d %d %.9g %.9g %.9g %.9g %.9g %.9g", n + (int)k, made[k].material, b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
+        ops.push_back(t + shapeSuffix(made[k]));
+        inv.push_back("b del " + std::to_string(n + (int)k));
+    }
+    std::string o, undo;
+    for (size_t k = 0; k < ops.size(); k++) { o += (k ? "\n" : "") + ops[k]; undo += (k ? "\n" : "") + inv[inv.size() - 1 - k]; }
+    edDo(o, undo);
+    edSel_ = EdSel();
+    edMulti_.clear();
+    for (size_t k = 0; k < made.size(); k++) (k + 1 < made.size() ? edMulti_.push_back({ED_BRUSH, n + (int)k}) : (void)(edSel_ = {ED_BRUSH, n + (int)k}));
+    edNotify(op == ED_COMBINE ? "combined " + std::to_string(gone.size()) + " boxes into one"
+             : op == ED_SUBTRACT ? "cut " + std::to_string(gone.size() - 1) + " boxes into " + std::to_string(made.size())
+             : "split " + std::to_string(gone.size()) + (gone.size() == 1 ? " box" : " boxes"));
 }
 
 bool Game::edPlaceGroup(const std::string& text) {
@@ -1404,23 +1543,87 @@ static const char* const matLabels[] = {"MATERIAL: BASE", "MATERIAL: ACCENT", "M
                                         "MATERIAL: DEAD FOREST FLOOR",
                                         "MATERIAL: WITHERED VINES",
                                         "MATERIAL: BONE-DRY WOOD",
-                                        "MATERIAL: SCORCHED TILES"};
+                                        "MATERIAL: SCORCHED TILES",
+                                        "MATERIAL: CLEAR LAGOON",
+                                        "MATERIAL: SWAMP WATER",
+                                        "MATERIAL: OIL SLICK",
+                                        "MATERIAL: TAR PIT",
+                                        "MATERIAL: HONEY",
+                                        "MATERIAL: MERCURY",
+                                        "MATERIAL: MOLTEN GOLD",
+                                        "MATERIAL: MAGMA RIVER",
+                                        "MATERIAL: TOXIC SLUDGE",
+                                        "MATERIAL: BLOOD POOL",
+                                        "MATERIAL: HOT SPRING",
+                                        "MATERIAL: QUICKSAND (LIQUIDS)",
+                                        "MATERIAL: ICE SLUSH",
+                                        "MATERIAL: PLASMA POOL",
+                                        "MATERIAL: INK",
+                                        "MATERIAL: GLOWING TIDE",
+                                        "MATERIAL: SEWAGE",
+                                        "MATERIAL: WET CEMENT",
+                                        "MATERIAL: PINK SLIME",
+                                        "MATERIAL: COOLANT",
+                                        "MATERIAL: WHITE RAPIDS",
+                                        "MATERIAL: DEEP OCEAN",
+                                        "MATERIAL: FIZZING SODA",
+                                        "MATERIAL: LIQUID VOID",
+                                        "MATERIAL: MUD BATH",
+                                        "MATERIAL: WIDE PLANKS",
+                                        "MATERIAL: HUGE PLANKS",
+                                        "MATERIAL: LARGE BRICK",
+                                        "MATERIAL: HUGE BRICK",
+                                        "MATERIAL: LARGE COBBLES",
+                                        "MATERIAL: HUGE COBBLES",
+                                        "MATERIAL: LARGE TILE",
+                                        "MATERIAL: HUGE TILE",
+                                        "MATERIAL: LARGE STONE",
+                                        "MATERIAL: HUGE STONE",
+                                        "MATERIAL: LARGE LONDON STOCK",
+                                        "MATERIAL: LARGE RED ENGINEERING BRICK",
+                                        "MATERIAL: LARGE HERRINGBONE BRICK",
+                                        "MATERIAL: LARGE BASKET-WEAVE BRICK",
+                                        "MATERIAL: LARGE WHITE SQUARE TILE",
+                                        "MATERIAL: LARGE CHECKERBOARD TILE",
+                                        "MATERIAL: LARGE SUBWAY TILE",
+                                        "MATERIAL: LARGE HEX TILE, TERRACOTTA",
+                                        "MATERIAL: LARGE HERRINGBONE TILE",
+                                        "MATERIAL: LARGE SLATE TILE",
+                                        "MATERIAL: LARGE TRAVERTINE TILE",
+                                        "MATERIAL: LARGE LIMESTONE ASHLAR",
+                                        "MATERIAL: LARGE SANDSTONE ASHLAR",
+                                        "MATERIAL: LARGE GRANITE BLOCKS",
+                                        "MATERIAL: LARGE RANDOM ASHLAR",
+                                        "MATERIAL: LARGE DRY-STONE WALL",
+                                        "MATERIAL: LARGE CASTLE STONE",
+                                        "MATERIAL: LARGE POLYGONAL STONE",
+                                        "MATERIAL: LARGE COBBLED SETTS",
+                                        "MATERIAL: LARGE DIAGONAL SETTS",
+                                        "MATERIAL: LARGE FLAGSTONE PAVING",
+                                        "MATERIAL: LARGE RIVER STONE WALL",
+                                        "MATERIAL: LARGE MOSSY STONE BLOCKS",
+                                        "MATERIAL: LARGE BASKET-WEAVE PARQUET",
+                                        "MATERIAL: LARGE LOG CABIN",
+                                        "MATERIAL: LARGE SCAFFOLD BOARDS",
+                                        "MATERIAL: LARGE FROSTED PLANKS",
+                                        "MATERIAL: LARGE CRATE WOOD",
+                                        "MATERIAL: LARGE TEMPLE STONE",
+                                        "MATERIAL: LARGE KERB STONES"};
 static_assert(sizeof matLabels / sizeof *matLabels == kMapMaterials, "a label per material (the cycles below index it by material)");
 
 // the picker's tabs: the ones this map uses, the last 10 picked, then by kind, then all of them. kMatTabs: the kinds,
 // each a run of materials (the look rounds' categories)
 static const char* const kMatTabNames[] = {"IN THIS MAP", "RECENT", "BASIC", "BRICK", "CONCRETE", "TILE", "STONE", "BUILDINGS",
-                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "ALL"};
+                                           "NATURE", "INDUSTRIAL", "SCI-FI / DECOR", "WASTELAND", "LIQUIDS", "LARGE", "ALL"};
 constexpr int kMatTabCount = (int)(sizeof kMatTabNames / sizeof *kMatTabNames), kMatTabAll = kMatTabCount - 1;
 static const struct { int tab, first, last; } kMatTabs[] = {
     {2, 0, kMatBlocks - 1}, {3, 39, 68}, {4, 69, 88}, {5, 89, 113}, {6, 114, 138}, {8, 139, 163}, {7, 164, 184}, {9, 185, 199},
-    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}};
-static_assert(kMapMaterials == 472, "a picker tab for every material (kMatTabs)");
+    {10, 200, 215}, {8, 216, 315}, {9, 316, 401}, {11, 402, 471}, {12, kMatLiquids, kMatLiquids + kLiquidCount - 1}, {13, kMatLarge, kMapMaterials - 1}};
+static_assert(kMapMaterials == kMatLarge + kLargeCount && kMatLarge == kMatLiquids + kLiquidCount, "a picker tab for every material (kMatTabs)");
 
 void Game::drawEditorMatMenu() {
     const float s = ui_.s(), pad = 16 * s, gap = 8 * s, bh = 36 * s, th = 30 * s;
-    const float barTop = edBarTop_ > 0 ? edBarTop_ : (float)r_.height();
-    const float pw = std::min(edPanelX_ - 16 * s, 1600 * s);
+    const float pw = (float)r_.width() - 16 * s;   // (the whole window, owner 2026-10-29: "take up the entire screen")
     static bool loaded = false;
     if (!loaded) {   // (the last session's recent list)
         loaded = true;
@@ -1460,20 +1663,19 @@ void Game::drawEditorMatMenu() {
     else for (auto& t : kMatTabs)
         if (t.tab == edMatTab_ || edMatTab_ == kMatTabAll)
             for (int m = t.first; m <= t.last; m++) list.push_back(m);
-    // swatches 100 across (owner, 2026-10-29: "100x100 pixels each, so I can see details"), named under; as many
-    // columns as fit, as many rows as fit above the bar: the wheel scrolls the rest (edMatScroll_, in rows)
-    const float sw = 100 * s, cell = sw + 18 * s + gap;
+    // swatches 200 across (owner, 2026-10-29: "100x100 pixels each, so I can see details", then "twice as big"), named
+    // under; as many columns and rows as fit the window: the wheel scrolls the rest (edMatScroll_, in rows)
+    const float sw = 200 * s, cell = sw + 18 * s + gap;
     const int cols = std::max(1, (int)((pw - 2 * pad + gap) / (sw + gap)));
     const int tabCols = std::min(kMatTabCount, std::max(1, (int)((pw - 2 * pad + gap) / (118 * s + gap))));
     const int tabRows = (kMatTabCount + tabCols - 1) / tabCols;
-    const float maxH = barTop - 16 * s, head = pad + bh + gap + tabRows * (th + gap) + 4 * s, foot = gap + bh + pad;
+    const float maxH = (float)r_.height() - 16 * s, head = pad + bh + gap + tabRows * (th + gap) + 4 * s, foot = gap + bh + pad;
     const int rowsAll = std::max(1, (int)((list.size() + (size_t)cols - 1) / (size_t)cols));
     const int fitRows = std::max(1, (int)((maxH - head - foot) / cell));
     const int rows = std::min(rowsAll, fitRows);
     edMatScroll_ = std::clamp(edMatScroll_, 0, rowsAll - rows);
-    const float ph = head + rows * cell + foot;
-    float px, py;
-    edDialogPanel(ui_, edPanelX_, barTop, pw, ph, px, py);
+    const float ph = maxH, px = 8 * s, py = 8 * s;
+    ui_.panel(px, py, pw, ph, 1.0f);
     const int cur = edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_BRUSH ? ed_.brushes[edSel_.idx].material
                   : edMatMenu_ == 2 && edSelValid() && edSel_.kind == ED_GROUP ? ed_.groups[edSel_.idx].material : edMat_;
     // SEARCH, then the tabs
@@ -1965,9 +2167,11 @@ void Game::editorFrame(double dt) {
             edNextCam_ = time_ + 0.15;
         }
     }
-    // the save question, when it's up, is the only thing the mouse and typing reach (drawn last, over everything)
-    const bool modal = edPrompt_;
-    UiInput realIn;   // (copied only when the question is up: it holds the typed text)
+    // the save question, or the material picker (it fills the window), when it's up, is the only thing the mouse and
+    // typing reach (drawn last, over everything)
+    const bool matModal = edMatMenu_ && !edGroupMenu_ && !edExportAsk_;
+    const bool modal = edPrompt_ || matModal;
+    UiInput realIn;   // (copied only when one is up: it holds the typed text)
     if (modal) { realIn = uiIn_; uiIn_.pressed = uiIn_.rpressed = uiIn_.down = false; uiIn_.chars.clear(); uiIn_.backspace = uiIn_.enter = uiIn_.tab = false; }
     // ---- fly camera (right mouse held to look; WASD, Space up, C down, Shift fast, wheel = speed)
     if (!ui_.typing()) {
@@ -2563,11 +2767,36 @@ void Game::editorFrame(double dt) {
                                          {0.49f, 0.44f, 0.37f},
                                          {0.52f, 0.51f, 0.48f},
                                          {0.60f, 0.58f, 0.55f},
-                                         {0.28f, 0.29f, 0.29f}};
+                                         {0.28f, 0.29f, 0.29f},
+                                         {0.49f, 0.74f, 0.71f},
+                                         {0.19f, 0.22f, 0.12f},
+                                         {0.13f, 0.13f, 0.15f},
+                                         {0.09f, 0.09f, 0.10f},
+                                         {0.82f, 0.62f, 0.12f},
+                                         {0.59f, 0.61f, 0.64f},
+                                         {0.98f, 0.95f, 0.55f},
+                                         {0.89f, 0.81f, 0.37f},
+                                         {0.46f, 0.73f, 0.18f},
+                                         {0.29f, 0.09f, 0.09f},
+                                         {0.19f, 0.62f, 0.67f},
+                                         {0.64f, 0.53f, 0.33f},
+                                         {0.51f, 0.57f, 0.64f},
+                                         {0.82f, 0.54f, 0.93f},
+                                         {0.09f, 0.09f, 0.11f},
+                                         {0.09f, 0.10f, 0.16f},
+                                         {0.24f, 0.20f, 0.14f},
+                                         {0.50f, 0.50f, 0.50f},
+                                         {0.84f, 0.44f, 0.71f},
+                                         {0.32f, 0.90f, 0.93f},
+                                         {0.38f, 0.53f, 0.69f},
+                                         {0.09f, 0.11f, 0.22f},
+                                         {0.55f, 0.25f, 0.12f},
+                                         {0.28f, 0.09f, 0.40f},
+                                         {0.29f, 0.19f, 0.13f}};
     // ice .. diamond plate, brick, glass, asphalt, mud, cobblestone, concrete, tile, marble, corrugated, hazard, snow, stone,
     // crystal, circuit, rust, terracotta, then breakable brick, glass and cobblestone (their plain ones' colours), then
     // the 100 block looks and the 333 picks of the earlier rounds (each one's mean colour in its preview render)
-    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMapMaterials - kMatIce, "a colour per material from ice on");
+    static_assert(sizeof kNewMatColors / sizeof *kNewMatColors == kMatLarge - kMatIce, "a colour per material from ice on (a large one: its base's)");
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
     if (!edBaked_) {   // the map's boxes: one static batch, rebuilt only when they change (it was streamed every frame)
@@ -2576,7 +2805,7 @@ void Game::editorFrame(double dt) {
             r_.setStaticBoxes([&] {
                 for (auto& b : ed_.brushes) { // (water, lava, trim, nograpple, acid past the table: blue, orange, accent, slate, green; clip below)
                     if (b.material == 9) continue;
-                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[b.material - kMatIce] : r_.accentColor;
+                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : b.material == kMatNoGrapple ? Vec3(0.3f, 0.33f, 0.42f) : b.material == kMatAcid ? Vec3(0.36f, 1.0f, 0.23f) : b.material >= kMatIce ? kNewMatColors[(b.material >= kMatLarge ? kLarge[b.material - kMatLarge].base : b.material) - kMatIce] : r_.accentColor;
                     if (b.shape != BRUSH_BOX) r_.slope(b, c);
                     else r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
                 }
@@ -2673,7 +2902,7 @@ void Game::editorFrame(double dt) {
     // of 23 + 4 (with a spawn, light or stairs selected the panel ends at 695: ROTATE / MIRROR stay on screen at 720p).
     ui_.begin(&r_, uiIn_, s);
     if (ui_.probing()) ui_.where = edPath();   // (the UI test: the panel is the editor's, whatever is open over the view)
-    ui_.muted = modal;   // (under the save question nothing in the panel takes a click)
+    ui_.muted = modal;   // (under the save question / the picker nothing in the panel takes a click)
     ui_.panel(panelX, 0, panelW, H, 0.85f);
     float x = panelX + 12 * s, w = panelW - 24 * s, y = 12 * s, h = 23 * s, gap = 4 * s;
     const float w2 = (w - gap) * 0.5f, w3 = (w - 2 * gap) / 3, w4 = (w - 3 * gap) / 4;
@@ -2948,6 +3177,14 @@ void Game::editorFrame(double dt) {
             caption("MIRROR");
             for (int k = 0; k < 3; k++) if (ui_.button(x + capW + k * (bw3 + gap), y, bw3, h, mir[k], edTransformExp(mirOp[k]).withId(mirId[k]))) edTransform(mirOp[k]);
             row();
+            if (kind == ED_BRUSH) {   // SPLIT (along the selection's longest side), COMBINE, SUBTRACT (edBoxOpPlan); one row, so
+                // the panel still ends on screen at 720p
+                const int sop = edSplitOp();
+                if (ui_.button(x, y, w3, h, "SPLIT", edBoxOpExp(sop))) edBoxOp(sop);
+                if (ui_.button(x + w3 + gap, y, w3, h, "COMBINE", edBoxOpExp(ED_COMBINE))) edBoxOp(ED_COMBINE);
+                if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "SUBTRACT", edBoxOpExp(ED_SUBTRACT))) edBoxOp(ED_SUBTRACT);
+                row();
+            }
         }
     } else {
         header("NOTHING SELECTED");
@@ -3009,8 +3246,7 @@ void Game::editorFrame(double dt) {
     }
     ui_.where = nullptr;
     if (edGroupMenu_ || edExportAsk_) drawEditorGroupMenu();
-    else if (edMatMenu_) drawEditorMatMenu();
-    if (time_ < edMsgUntil_) ui_.labelCentered(panelX * 0.5f, 20 * s, edMsg_, kWhite, 1.0f, panelX - 32 * s);
+    if (time_ < edMsgUntil_ && !matModal) ui_.labelCentered(panelX * 0.5f, 20 * s, edMsg_, kWhite, 1.0f, panelX - 32 * s);
     if (edOnline_) {   // editing together: the chat (Enter) over the key bar, and any running vote (F1 / F2)
         float ts = std::max(2.0f, std::round(H / 360.0f));
         drawChatBox(panelX, edBarTop_ + 76 * s, s, ts);   // (its SAY line sits 100 above the bottom it's given: 24 over the bar)
@@ -3021,5 +3257,6 @@ void Game::editorFrame(double dt) {
         uiIn_ = std::move(realIn);
         ui_.begin(&r_, uiIn_, s);   // (and the UI test sees the question's widgets again: begin() unmutes)
         if (edPrompt_) drawEditorSavePrompt();
+        else if (matModal) drawEditorMatMenu();
     }
 }

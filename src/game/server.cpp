@@ -2143,6 +2143,10 @@ bool Server::takeAcid(int id) {
     p.move.acidTaken = 0;
     if (share > 0) { if (p.acidSince < 0) p.acidSince = time(); }
     else if (p.move.acidOutMs >= kAcidRearmMs) p.acidSince = -1;   // (out long enough that the next touch is a new contact)
+    if (share < 0 && p.alive) {   // a healing liquid (hot spring): up to full health
+        p.health = std::min(lifeMaxHealth(), p.health - share * lifeMaxHealth());
+        return false;
+    }
     if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
     p.health -= share * lifeMaxHealth();
     p.lastDamagedAt = time();
@@ -2327,7 +2331,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     }
     if (p.move.glassBrush >= 0) { glassFromMove(id); if (!p.alive) return; }   // (dashed / pulled through a pane)
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
-    if ((p.move.acidTaken > 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
+    if ((p.move.acidTaken != 0 || p.acidSince >= 0) && takeAcid(id)) return;   // (dissolved)
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
     // it's the only weapon this mode allows it stays in hand, unusable, until it's back.
@@ -3148,7 +3152,7 @@ bool Server::breakGlass(int brush, int how, const Vec3& at, const Vec3& dir, int
     glassShards(pane, how, at, dir, d.seed, sh);
     const int8_t spare = glassSparesBreaker(how) ? (int8_t)by : (int8_t)-1;
     for (const GlassShard& g : sh)
-        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, time() + kShardLife, (int8_t)by, spare});
+        if (shards_.size() < kMaxShards) shards_.push_back({g.pos, g.vel, g.size, g.damage, time() + kShardLife, (int8_t)by, spare});
     AABB near = pane;   // stickies resting on it drop (as off a teammate)
     near.mn -= Vec3(0.15f, 0.15f, 0.15f); near.mx += Vec3(0.15f, 0.15f, 0.15f);
     for (auto& pr : projectiles_)
@@ -3223,8 +3227,8 @@ void Server::tickShards() {
             const float t = rayAABB(s.pos, inv, {box[i].mn - grow, box[i].mx + grow}, best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
-        if (hit >= 0) {   // (q: 10 damage a shard in flight)
-            damagePlayer(hit, credit || s.by == hit ? s.by : -1, kGlassShardDamage, kDamageGlass, d * 0.3f);
+        if (hit >= 0) {   // (q: a shard 10, a shattered piece 1)
+            damagePlayer(hit, credit || s.by == hit ? s.by : -1, s.damage, kDamageGlass, d * 0.3f);
             in[hit] = players_[hit].alive;
             continue;
         }

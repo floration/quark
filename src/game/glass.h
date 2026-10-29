@@ -1,7 +1,7 @@
 #pragma once
 // Breakable glass and blown-open brick (owner, 2026-10-28): the event that tells every client, and the shards a broken
 // pane throws. The server and the clients make the same shards from the event's seed: the server's hurt players
-// (kGlassShardDamage / kGlassPieceDamage while they fly), the clients' are drawn.
+// (kGlassShardDamage / kGlassShatterDamage while they fly), the clients' are drawn, with glitter that hurts nobody.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -27,7 +27,7 @@ bool readDestructEvent(const GameEvent& e, DestructEv* d);   // the single ones 
 std::vector<GameEvent> destructListEvents(const std::vector<uint32_t>& glass, const std::vector<Vec3>& holes);
 bool readDestructList(const GameEvent& e, std::vector<uint32_t>* glass, std::vector<Vec3>* holes);   // (appends)
 
-struct GlassShard { Vec3 pos, vel; float size; };   // size: half its width (the server hits with it, the clients draw it)
+struct GlassShard { Vec3 pos, vel; float size, damage; };   // size: half its width (the server hits with it, the clients draw it)
 inline uint32_t glassRand(uint32_t& s) { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return s; }
 inline float glassRandF(uint32_t& s) { return (float)(glassRand(s) & 0xFFFFFFu) / (float)0x1000000; }
 inline bool glassCrater(int how) { return how == GLASS_SHOT || how == GLASS_HOOK_BACK; }
@@ -40,10 +40,12 @@ inline int glassThinAxis(const AABB& b) {
 // How much further a break's shards fly, by what broke it (q, 2026-10-29: explosions 3x, a dash 2x, the rest 1.5x):
 // their sideways speed (the fall is the same, so they land that much further out).
 inline float glassThrow(int how) { return how == GLASS_SHATTER ? 3.0f : how == GLASS_DASH ? 2.0f : 1.5f; }
-// The shards of a pane broken `how` at `at` toward `dir` (q, 2026-10-29: "10 damage per piece, but the pieces need to be
-// bigger and less frequent"): a shot breaks the whole pane into 10-20 big shards, those near the crater flying on along
-// the shot (or, grappled, back at you), the rest falling; a blast, a dash or a pull into 12-40 (about 3 a square metre),
-// away from the blast's side / along the dash. Each is sized to its share of the pane.
+// The shards of a pane broken `how` at `at` toward `dir`, in the two modes (gamedefs.h): SHARD (a shot, a grapple pulled
+// back) breaks the whole pane into 2-5 big shards a square metre, 10 damage each, those near the crater flying on along
+// the shot (or back at you), the rest falling; SHATTER (a blast, a dash, a pull through) into 25-100 small pieces a
+// square metre, 1 damage each, away from the blast's side / along the dash. Each is sized to its share of the pane; the
+// counts come from the seed (the server and every client agree), capped for a huge pane (kGlassMaxPieces).
+constexpr int kGlassMaxPieces = 600;
 inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& dir, uint32_t seed, std::vector<GlassShard>& out) {
     out.clear();
     uint32_t s = seed | 1u;
@@ -52,8 +54,10 @@ inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& d
     auto rnd3 = [&] { return Vec3(glassRandF(s) * 2 - 1, glassRandF(s) * 2 - 1, glassRandF(s) * 2 - 1); };
     const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
     const bool crater = glassCrater(how);
-    const int n = crater ? 10 + (int)(seed % 11) : std::clamp((int)(area * 3.0f), 12, 40);
-    const float piece = std::clamp(0.5f * std::sqrt(area / (float)n), 0.05f, 0.3f);
+    const float rate = crater ? 2.0f + 3.0f * glassRandF(s) : 25.0f + 75.0f * glassRandF(s);   // (a square metre)
+    const int n = std::clamp((int)std::lround(area * rate), crater ? 2 : 8, kGlassMaxPieces);
+    const float piece = std::clamp(0.5f * std::sqrt(area / (float)n), 0.02f, 0.45f);
+    const float dmg = crater ? kGlassShardDamage : kGlassShatterDamage;
     const float k = glassThrow(how);
     Vec3 away;
     if (how == GLASS_SHATTER) away[a] = at[a] < pane.center()[a] ? 1.0f : -1.0f;
@@ -70,6 +74,6 @@ inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& d
             if (how == GLASS_SHATTER) { Vec3 r = p - at; r[a] = 0; v += r * 1.5f; }   // (and out from under the blast)
         }
         v.x *= k; v.z *= k;
-        out.push_back({p, v, piece * (0.6f + 0.4f * glassRandF(s))});
+        out.push_back({p, v, piece * (0.6f + 0.4f * glassRandF(s)), dmg});
     }
 }

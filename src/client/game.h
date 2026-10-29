@@ -477,6 +477,11 @@ private:
     void edTransform(int op);
     bool edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const;   // the map with the selection turned (false: nothing to turn)
     UiExp edTransformExp(int op);   // ROTATE / MIRROR's expectation: the map changes, or (it's symmetric that way) just the notice
+    enum { ED_SPLIT_X, ED_SPLIT_Y, ED_SPLIT_Z, ED_COMBINE, ED_SUBTRACT };
+    bool edBoxOpPlan(int op, std::vector<int>& gone, std::vector<Brush>& made, std::string& why) const;   // SPLIT / COMBINE / SUBTRACT on the selected boxes
+    UiExp edBoxOpExp(int op) const;
+    int edSplitOp() const;
+    void edBoxOp(int op);
     void edAdd(int kind, int variant);
     void edGroupSelection();            // GROUP: the selected boxes / groups become one custom group
     void edUngroup();                   // UNGROUP: the selected group's boxes become plain boxes
@@ -580,7 +585,7 @@ private:
     std::vector<Explosion> explosions_;
     // Glass shards and brick / cobblestone chunks (glass.h): drawn falling, then lying where they land, until out of view
     // (owner, 2026-10-28: "disappear from your screen once its no longer in your fov")
-    struct VisShard { Vec3 pos, vel; float size; Vec3 color; bool rest, glass; double born; int thin = -1; };   // thin: a glass plate's thin axis (flat on the floor once it lies)
+    struct VisShard { Vec3 pos, vel; float size; Vec3 color; bool rest, glass; double born; int thin = -1; bool dust = false; };   // thin: a glass plate's thin axis (flat on the floor once it lies); dust: glitter (no collision, gone in 1.5 s)
     std::vector<VisShard> visShards_;
     std::vector<NetClient::GlassFx> glassFxScratch_;
     std::vector<GlassShard> glassShardScratch_;

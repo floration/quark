@@ -544,7 +544,14 @@ inline float rayBrush(const Vec3& o, const Vec3& dir, const Vec3& invDir, const 
 // 139-471 (owner, 2026-10-29: "where's the other several hundred materials"): the picks of the four earlier rounds,
 // in their order: 77 of the first 100 (nature, buildings, industrial, sci-fi, decor), 100 nature, 86 industrial,
 // 70 wasteland. Solid, plain, each its own look (client/surface_looks.h has every look from 39 on).
-constexpr int kMapMaterials = 472;
+// 472-496 (owner, 2026-10-29, the special blocks round: all 25 liquids): not solid, you wade through like water; each
+// changes how you move in it or hurts / heals / kills (kLiquids). Looks: surface_looks.h, flowing (uTime).
+// 497-536 (owner, 2026-10-29: "add some LARGE patterns 2-4x current size per piece of the surface, especially stone
+// bricks, cobbles, wood"): another material's look with its pieces 2-4 times as big (kLarge: the world shader divides
+// the face's plane by the scale); solid and plain like the one it scales.
+constexpr int kMatLiquids = 472, kLiquidCount = 25;
+constexpr int kMatLarge = 497, kLargeCount = 40;
+constexpr int kMapMaterials = kMatLarge + kLargeCount;
 constexpr int kMatBlocks = 39;   // the first of the 100
 constexpr int kMatNoGrapple = 10;
 constexpr int kMatAcid = 11;
@@ -576,8 +583,86 @@ inline bool holeTakes(float u, float v, float r, float cw, float ch, int row, in
     k ^= k >> 13; k *= 0x5bd1e995u; k ^= k >> 15;
     return s + ((float)(k & 255u) / 255.0f - 0.5f) * 0.3f < 1.0f;
 }
-// solid to players, shots and sight (not far scenery, water, lava, trim, acid; clip is solid to players only)
-inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials); }
+inline bool liquidMaterial(int m) { return m >= kMatLiquids && m < kMatLiquids + kLiquidCount; }
+// How each liquid moves you while your hull touches it (pmove, every 1 ms step, so prediction matches the server).
+// speed / jump: the run and jump; grip: the floor's friction under it (and the push you get from it); gravity: its
+// share in the liquid (sink fast > 1, float < 1); drag: per second, all of your velocity (thick ones); current: m/s the
+// flow carries you along +x; dmg / heal: share of max health a second (counted like acid, taken by the server);
+// kills: like lava; bounce: a fall into it springs you back up.
+struct LiquidDef { float speed, jump, grip, gravity, drag, current, dmg, heal; bool kills, bounce; };
+inline constexpr LiquidDef kLiquids[kLiquidCount] = {
+    {0.90f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // clear lagoon
+    {0.70f, 0.8f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, false, false},    // swamp water: slow
+    {1.00f, 1.0f, 0.08f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},   // oil slick: no grip
+    {0.35f, 0.4f, 1.0f, 1.0f, 4.0f, 0.0f, 0.0f, 0.0f, false, false},    // tar pit: very slow, a weak jump
+    {0.50f, 0.6f, 1.0f, 1.0f, 2.0f, 0.0f, 0.0f, 0.0f, false, false},    // honey: sticky
+    {0.80f, 1.0f, 1.0f, 1.6f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // mercury: heavy, you sink fast
+    {1.00f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, true, false},     // molten gold: kills
+    {1.00f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, true, false},     // magma river: kills
+    {0.85f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.05f, 0.0f, false, false},   // toxic sludge: 5% a second
+    {0.90f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // blood pool
+    {0.85f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.05f, false, false},   // hot spring: heals 5% a second
+    {0.30f, 0.3f, 1.0f, 0.5f, 5.0f, 0.0f, 0.0f, 0.0f, false, false},    // quicksand: you barely move, sink slowly
+    {0.70f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // ice slush: cold, slow
+    {0.90f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.20f, 0.0f, false, false},   // plasma pool: 20% a second
+    {0.85f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // ink (hides you: you're under its surface)
+    {0.90f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // glowing tide
+    {0.85f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // sewage
+    {0.40f, 0.5f, 1.0f, 1.0f, 3.0f, 0.0f, 0.0f, 0.0f, false, false},    // wet cement: very slow
+    {0.90f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, true},     // pink slime: bouncy
+    {1.30f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // coolant: faster
+    {0.90f, 1.0f, 1.0f, 1.0f, 0.0f, 12.0f, 0.0f, 0.0f, false, false},   // white rapids: the current carries you
+    {0.85f, 1.0f, 1.0f, 0.6f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // deep ocean: floaty
+    {1.00f, 1.8f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // fizzing soda: big jumps out
+    {1.00f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, true, false},     // liquid void: kills
+    {0.60f, 0.7f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false},    // mud bath: slow
+};
+struct LargeDef { int base; float scale; };
+inline constexpr LargeDef kLarge[kLargeCount] = {
+    {14, 2},   // wide planks
+    {14, 4},   // huge planks
+    {20, 2},   // large brick
+    {20, 4},   // huge brick
+    {24, 2},   // large cobbles
+    {24, 4},   // huge cobbles
+    {26, 2},   // large tile
+    {26, 4},   // huge tile
+    {31, 2},   // large stone
+    {31, 4},   // huge stone
+    {39, 3},   // large london stock
+    {40, 3},   // large red engineering brick
+    {51, 3},   // large herringbone brick
+    {52, 2},   // large basket-weave brick
+    {89, 3},   // large white square tile
+    {91, 3},   // large checkerboard tile
+    {92, 3},   // large subway tile
+    {96, 3},   // large hex tile, terracotta
+    {98, 3},   // large herringbone tile
+    {105, 2},   // large slate tile
+    {106, 2},   // large travertine tile
+    {114, 2},   // large limestone ashlar
+    {115, 2},   // large sandstone ashlar
+    {117, 2},   // large granite blocks
+    {120, 2},   // large random ashlar
+    {123, 3},   // large dry-stone wall
+    {127, 2},   // large castle stone
+    {130, 2},   // large polygonal stone
+    {131, 3},   // large cobbled setts
+    {132, 3},   // large diagonal setts
+    {133, 2},   // large flagstone paving
+    {135, 3},   // large river stone wall
+    {138, 2},   // large mossy stone blocks
+    {167, 2},   // large basket-weave parquet
+    {177, 2},   // large log cabin
+    {199, 2},   // large scaffold boards
+    {274, 2},   // large frosted planks
+    {454, 2},   // large crate wood
+    {128, 2},   // large temple stone
+    {395, 2},   // large kerb stones
+};
+inline bool lavaMaterial(int m) { return m == 7 || (liquidMaterial(m) && kLiquids[m - kMatLiquids].kills); }   // touch it and die
+// solid to players, shots and sight (not far scenery, water, lava, trim, acid, the liquids; clip is solid to players only)
+inline bool solidMaterial(int m) { return m < 5 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !liquidMaterial(m)); }
 // lit by the bake (the shader skips the lightmap for glow, far, water, lava, acid; clip and glass aren't baked: glass is
 // drawn see-through each frame, so a broken pane can go)
 inline bool litMaterial(int m) { return m < 4 || m == 8 || m == kMatNoGrapple || (m >= kMatIce && m < kMapMaterials && !glassMaterial(m)); }
@@ -1032,7 +1117,72 @@ inline constexpr const char* kMapMaterialWords[] = {"box", "accent", "wallbang",
                                                     "deadforestfloor",
                                                     "witheredvines",
                                                     "bonedrywood",
-                                                    "scorchedtiles"};
+                                                    "scorchedtiles",
+                                                    "clearlagoon",
+                                                    "swampwater",
+                                                    "oilslick",
+                                                    "tarpit",
+                                                    "honey",
+                                                    "mercury",
+                                                    "moltengold",
+                                                    "magmariver",
+                                                    "toxicsludge",
+                                                    "bloodpool",
+                                                    "hotspring",
+                                                    "quicksandliquids",
+                                                    "iceslush",
+                                                    "plasmapool",
+                                                    "ink",
+                                                    "glowingtide",
+                                                    "sewage",
+                                                    "wetcement",
+                                                    "pinkslime",
+                                                    "coolant",
+                                                    "whiterapids",
+                                                    "deepocean",
+                                                    "fizzingsoda",
+                                                    "liquidvoid",
+                                                    "mudbath",
+                                                    "wideplanks",
+                                                    "hugeplanks",
+                                                    "largebrick",
+                                                    "hugebrick",
+                                                    "largecobbles",
+                                                    "hugecobbles",
+                                                    "largetile",
+                                                    "hugetile",
+                                                    "largestone",
+                                                    "hugestone",
+                                                    "largelondonstock",
+                                                    "largeredengineeringbrick",
+                                                    "largeherringbonebrick",
+                                                    "largebasketweavebrick",
+                                                    "largewhitesquaretile",
+                                                    "largecheckerboardtile",
+                                                    "largesubwaytile",
+                                                    "largehextileterracotta",
+                                                    "largeherringbonetile",
+                                                    "largeslatetile",
+                                                    "largetravertinetile",
+                                                    "largelimestoneashlar",
+                                                    "largesandstoneashlar",
+                                                    "largegraniteblocks",
+                                                    "largerandomashlar",
+                                                    "largedrystonewall",
+                                                    "largecastlestone",
+                                                    "largepolygonalstone",
+                                                    "largecobbledsetts",
+                                                    "largediagonalsetts",
+                                                    "largeflagstonepaving",
+                                                    "largeriverstonewall",
+                                                    "largemossystoneblocks",
+                                                    "largebasketweaveparquet",
+                                                    "largelogcabin",
+                                                    "largescaffoldboards",
+                                                    "largefrostedplanks",
+                                                    "largecratewood",
+                                                    "largetemplestone",
+                                                    "largekerbstones"};
 static_assert(sizeof kMapMaterialWords / sizeof *kMapMaterialWords == kMapMaterials, "a file keyword per material");
 inline int materialKeyword(const std::string& w) {
     for (int m = 0; m < kMapMaterials; m++) if (w == kMapMaterialWords[m]) return m;
@@ -1084,7 +1234,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 7;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471
+constexpr int kMapFormatVersion = 8;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496
 
 struct Map {
     std::string name;
@@ -1189,6 +1339,15 @@ struct Map {
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     bool inAcid(const AABB& box) const { for (auto& l : acid) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
     std::vector<AABB> acid;   // acid brushes (pmove counts the damage while you touch one), from rebuild()
+    struct Liquid { AABB box; uint16_t kind; };   // kind: kLiquids' index
+    std::vector<Liquid> liquids;   // the liquid brushes (kMatLiquids..: pmove moves you differently in them), from rebuild()
+    const LiquidDef* liquidAt(const AABB& box) const {   // the first one the box touches (none: null)
+        for (auto& l : liquids)
+            if (box.mn.x < l.box.mx.x && box.mx.x > l.box.mn.x && box.mn.y < l.box.mx.y && box.mx.y > l.box.mn.y && box.mn.z < l.box.mx.z && box.mx.z > l.box.mn.z)
+                return &kLiquids[l.kind];
+        return nullptr;
+    }
+    void rebuildFluids();   // lava, acid and liquids from the brushes
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr) const;   // *material: the hit brush's (-1: a moving solid)
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless

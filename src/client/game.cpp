@@ -7706,6 +7706,9 @@ void Game::predictShotGlass(int w, const UserCmd& c) {
     }
 }
 
+// (shards, pieces and glitter on screen at once: a shattered 2 x 3 m pane is up to 600 pieces and 1000 glitter)
+constexpr size_t kMaxVisShards = 6000;
+
 void Game::updateDestruction(const Map& map) {
     // the holes, when they change (and a new map's: none)
     if (map.destructSerial != holeSerial_ || net_.mapRevision() != holeMapRev_) {
@@ -7720,7 +7723,7 @@ void Game::updateDestruction(const Map& map) {
             const Vec3 ext = fx.pane.mx - fx.pane.mn;
             const float area = std::max(ext.x * ext.y, std::max(ext.y * ext.z, ext.x * ext.z));
             const int n = std::clamp((int)(area * 25.0f), 40, 400);
-            for (int i = 0; i < n && visShards_.size() < 3000; i++) {
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
                 const Vec3 p = {fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd)};
                 Vec3 v = p - fx.at;
                 const float l = length(v);
@@ -7733,7 +7736,7 @@ void Game::updateDestruction(const Map& map) {
         }
         if (fx.hole) {   // a hole: brick-red chunks thrown out of it
             uint32_t sd = ((uint32_t)(fx.at.x * 131.0f) * 2654435761u ^ (uint32_t)(fx.at.z * 71.0f)) | 1u;
-            for (int i = 0; i < 40 && visShards_.size() < 3000; i++) {
+            for (int i = 0; i < 40 && visShards_.size() < kMaxVisShards; i++) {
                 const Vec3 v = {glassRandF(sd) * 8 - 4, glassRandF(sd) * 6 - 1, glassRandF(sd) * 8 - 4};
                 const float sh = 0.8f + 0.3f * glassRandF(sd);
                 visShards_.push_back({fx.at + v * 0.08f, v, 0.03f + 0.04f * glassRandF(sd), Vec3(0.55f, 0.22f, 0.15f) * sh, false, false, time_});
@@ -7743,13 +7746,21 @@ void Game::updateDestruction(const Map& map) {
         glassShards(fx.pane, fx.how, fx.at, fx.dir, fx.seed, glassShardScratch_);
         uint32_t sd = fx.seed ^ 0x9E3779B9u;
         for (const GlassShard& g : glassShardScratch_) {
-            if (visShards_.size() >= 3000) break;
+            if (visShards_.size() >= kMaxVisShards) break;
             visShards_.push_back({g.pos, g.vel, g.size, {0.86f, 0.90f, 0.93f}, false, true, time_, glassThinAxis(fx.pane)});
         }
-        if (glassCrater(fx.how)) {   // (the crater: a puff of glitter where it was hit, only drawn)
-            for (int i = 0; i < 12 && visShards_.size() < 3000; i++) {
-                const Vec3 v = fx.dir * (1.0f + 3.0f * glassRandF(sd)) + Vec3(glassRandF(sd) - 0.5f, glassRandF(sd) - 0.3f, glassRandF(sd) - 0.5f) * 3.0f;
-                visShards_.push_back({fx.at, v, 0.008f + 0.012f * glassRandF(sd), {0.86f, 0.90f, 0.93f}, false, true, time_});
+        {   // glitter, only drawn (q: "shard ... 100-250 particles at impact site", "shatter ... 250-1000 particles"): a shot's
+            // sprays from the hit along the shot, a shatter's flies off the whole pane with its pieces
+            const bool crater = glassCrater(fx.how);
+            const int n = crater ? 100 + (int)(glassRandF(sd) * 151) : 250 + (int)(glassRandF(sd) * 751);
+            const Vec3 ext = fx.pane.mx - fx.pane.mn, away = glassShardScratch_.empty() ? fx.dir : normalize(glassShardScratch_[0].vel + Vec3(0, 1e-3f, 0));
+            for (int i = 0; i < n && visShards_.size() < kMaxVisShards; i++) {
+                const Vec3 r(glassRandF(sd) - 0.5f, glassRandF(sd) - 0.4f, glassRandF(sd) - 0.5f);
+                const Vec3 p = crater ? fx.at : Vec3(fx.pane.mn.x + ext.x * glassRandF(sd), fx.pane.mn.y + ext.y * glassRandF(sd), fx.pane.mn.z + ext.z * glassRandF(sd));
+                const Vec3 v = (crater ? fx.dir : away) * (1.0f + 5.0f * glassRandF(sd)) + r * 4.0f;
+                VisShard d = {p, v, 0.004f + 0.008f * glassRandF(sd), Vec3(0.9f, 0.94f, 0.97f) * (0.85f + 0.3f * glassRandF(sd)), false, false, time_};
+                d.dust = true;
+                visShards_.push_back(d);
             }
         }
         audio_.play3D(SND_BOLT_HIT, fx.at, glassCrater(fx.how) ? 0.8f : 1.0f, glassCrater(fx.how) ? 1.8f : 1.5f);
@@ -7765,8 +7776,12 @@ void Game::updateDestruction(const Map& map) {
     size_t keep = 0;
     for (size_t k = 0; k < visShards_.size(); k++) {
         VisShard v = visShards_[k];
-        if (time_ - v.born > 30.0) continue;
-        if (!v.rest && dt > 0) {
+        if (time_ - v.born > (v.dust ? 1.5 : 30.0)) continue;
+        if (v.dust) {   // (glitter: falls through everything, no raycast: a thousand of it costs next to nothing)
+            v.vel.y -= 9.0f * dt;
+            v.vel *= 1.0f - std::min(1.0f, 1.5f * dt);
+            v.pos += v.vel * dt;
+        } else if (!v.rest && dt > 0) {
             v.vel.y -= 22.0f * dt;
             const Vec3 step = v.vel * dt;
             const float len = length(step);

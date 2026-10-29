@@ -245,6 +245,7 @@ void main() {
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
     vec2 q = an.y > 0.5 ? vPos.xz : an.x > 0.5 ? vPos.zy : vPos.xy;   // the face's plane, metres
+    // @LARGE@: Renderer::compileWorld puts the large patterns here (kLarge: their material's look, the plane scaled)
     float spec = 0.0, gloss = 32.0;   // a highlight from the sun (metals, ice, plastic)
     vec3 emit = vec3(0.0);            // glowing parts (crystal edges, circuit traces), added after the light
     if (mat < 12) {
@@ -290,7 +291,7 @@ void main() {
         albedo = lin(vec3(0.60, 0.62, 0.66)) * (0.92 + 0.16 * vnoiseAA(vec2(q.x * 0.5, q.y * 60.0)));
         spec = 0.7; gloss = 48.0;
     } else if (mat == 20) {   // brick: classic red, running bond (0.2 x 0.065 m bricks, 1 cm mortar), each brick its own shade
-        vec2 r = an.y > 0.5 ? q : (an.x > 0.5 ? vec2(vPos.z, vPos.y) : vec2(vPos.x, vPos.y));
+        vec2 r = q;   // (the face's plane: a large brick's is scaled)
         float row = floor(r.y / 0.075);
         vec2 b = vec2(r.x / 0.21 + 0.5 * mod(row, 2.0), r.y / 0.075);
         vec2 cell = floor(b), f = fract(b) * vec2(0.21, 0.075);
@@ -645,7 +646,7 @@ void chunk(std::vector<uint8_t>& out, const char* type, const std::vector<uint8_
 }
 } // namespace
 
-static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMapMaterials - kMatBlocks, "a look per material from kMatBlocks on");
+static_assert(sizeof kSurfaceLooks / sizeof *kSurfaceLooks == kMatLarge - kMatBlocks, "a look per material from kMatBlocks on (the large ones: their base's)");
 
 // The world shader's blockLook(), with only the looks of the materials marked in `used` (by material; null: all of
 // them, for the editor's swatches): a map uses a handful of the 400+, and a shader carrying all of them would cost
@@ -655,7 +656,7 @@ static std::string worldLooks(const std::vector<bool>* used) {
     std::string s = "void blockLook(int k, vec2 q, inout vec3 albedo, inout float spec, inout float gloss, inout vec3 emit) {\n"
                     "    float aa = 1.5 * footprint(q); vec3 an = abs(vN);\n";
     std::vector<int> ks;
-    for (int k = 0; k < kMapMaterials - kMatBlocks; k++) if (!used || (*used)[(size_t)(kMatBlocks + k)]) ks.push_back(k);
+    for (int k = 0; k < kMatLarge - kMatBlocks; k++) if (!used || (*used)[(size_t)(kMatBlocks + k)]) ks.push_back(k);
     for (size_t i = 0; i < ks.size(); i += 50) {
         const size_t end = std::min(ks.size(), i + 50);
         s += std::string(i ? "    else if" : "    if") + " (k <= " + std::to_string(ks[end - 1]) + ") switch (k) {\n";
@@ -669,6 +670,13 @@ unsigned Renderer::compileWorld(const std::vector<bool>* used, std::string* err)
     std::string fs = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     const size_t at = fs.find("// @LOOKS@");
     fs.replace(at, fs.find('\n', at) - at, worldLooks(used));
+    // the large patterns: material kMatLarge + i draws kLarge[i].base's look with the face's plane divided by its scale
+    std::string lb, ls;
+    for (int i = 0; i < kLargeCount; i++) { lb += (i ? "," : "") + std::to_string(kLarge[i].base); ls += (i ? "," : "") + std::to_string(kLarge[i].scale) ; }
+    const std::string n = std::to_string(kLargeCount);
+    const size_t lat = fs.find("// @LARGE@");
+    fs.replace(lat, fs.find('\n', lat) - lat, "if (mat >= " + std::to_string(kMatLarge) + ") { const int lb[" + n + "] = int[" + n + "](" + lb + "); const float ls[" + n + "] = float[" + n + "](" + ls +
+               "); int li = min(mat - " + std::to_string(kMatLarge) + ", " + std::to_string(kLargeCount - 1) + "); mat = lb[li]; q /= ls[li]; }");
     return compile(kWorldVS, fs.c_str(), err);
 }
 
@@ -678,7 +686,7 @@ void Renderer::setWorldLooks(const BakedWorld& bw) {
     std::vector<bool> used((size_t)kMapMaterials, false);
     for (const WorldVertex& v : bw.verts) {
         const int m = (int)(v.material + 0.5f);
-        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)m] = true;
+        if (m >= kMatBlocks && m < kMapMaterials) used[(size_t)(m >= kMatLarge ? kLarge[m - kMatLarge].base : m)] = true;
     }
     if (used == worldUsed_ && worldProg_) return;
     QZONE("world shader");
@@ -1899,22 +1907,47 @@ void Renderer::prepare2D() {
     uiUploaded_ = ui_.size();
 }
 
-constexpr int kSwatchPx = 128, kSwatchCols = 16, kSwatchRows = (kMapMaterials + kSwatchCols - 1) / kSwatchCols;
+// The swatch atlas is a cache of slots (owner, 2026-10-29: the picker fills the screen, previews 200 across at 720p: 400 px
+// slots, sharp at 1440p), each holding one material, rendered when a frame first asks for it: a dozen or two show at
+// once, and an atlas of all 500 at that size would be 320 MB. The least recently drawn slot goes to the next one.
+constexpr int kSwatchPx = 400, kSwatchCols = 8, kSwatchRows = 5, kSwatchSlots = kSwatchCols * kSwatchRows;
 
 void Renderer::swatch(float x, float y, float w, float h, int material) {
     if (!validMapMaterial(material)) return;
-    const float u0 = (float)(material % kSwatchCols) / kSwatchCols, v0 = (float)(material / kSwatchCols) / kSwatchRows;
-    const float q[8] = {x, y, x + w, y + h, u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
-    swatchQuads_.insert(swatchQuads_.end(), q, q + 8);
+    const float q[5] = {x, y, x + w, y + h, (float)material};
+    swatchQuads_.insert(swatchQuads_.end(), q, q + 5);
 }
 
 // Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
-// of full sun and sky, no shadows or holes, into its cell of the atlas. Again only when the palette changes.
+// of full sun and sky, no shadows or holes, into its slot of the atlas: the ones this frame asks for that aren't there
+// yet (all again when the palette changes).
 void Renderer::buildSwatches() {
     const float key[13] = {baseColor.x, baseColor.y, baseColor.z, accentColor.x, accentColor.y, accentColor.z, metalColor.x, metalColor.y,
                            metalColor.z, glowColor.x, glowColor.y, glowColor.z, brightness};
-    if (swatchTex_ && std::equal(key, key + 13, swatchKey_)) return;
-    std::copy(key, key + 13, swatchKey_);
+    if (!swatchTex_ || !std::equal(key, key + 13, swatchKey_)) {
+        std::copy(key, key + 13, swatchKey_);
+        swatchSlotOf_.assign(kMapMaterials, -1);
+        swatchSlotMat_.assign(kSwatchSlots, -1);
+        swatchSlotUsed_.assign(kSwatchSlots, 0);
+    }
+    swatchFrame_++;
+    std::vector<int> todo;   // (the materials this frame wants that have no slot: each gets the oldest slot not drawn this frame)
+    for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
+        const int m = (int)swatchQuads_[i + 4];
+        int& slot = swatchSlotOf_[m];
+        if (slot < 0) {
+            int best = -1;
+            for (int k = 0; k < kSwatchSlots; k++)
+                if (swatchSlotUsed_[k] != swatchFrame_ && (best < 0 || swatchSlotUsed_[k] < swatchSlotUsed_[best])) best = k;
+            if (best < 0) continue;   // (more on screen than slots: the rest wait)
+            if (swatchSlotMat_[best] >= 0) swatchSlotOf_[swatchSlotMat_[best]] = -1;
+            swatchSlotMat_[best] = m;
+            slot = best;
+            todo.push_back(m);
+        }
+        swatchSlotUsed_[slot] = swatchFrame_;
+    }
+    if (todo.empty()) return;
     const int W = kSwatchPx * kSwatchCols, H = kSwatchPx * kSwatchRows;
     if (!swatchTex_) {
         glGenTextures(1, &swatchTex_);
@@ -1985,8 +2018,9 @@ void Renderer::buildSwatches() {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, swatchLm_);
     glBindVertexArray(swatchVao_);
-    for (int m = 0; m < kMapMaterials; m++) {
-        glViewport((m % kSwatchCols) * kSwatchPx, (m / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
+    for (int m : todo) {
+        const int k = swatchSlotOf_[m];
+        glViewport((k % kSwatchCols) * kSwatchPx, (k / kSwatchCols) * kSwatchPx, kSwatchPx, kSwatchPx);
         glDrawArrays(GL_TRIANGLES, m * 6, 6);
     }
     worldProg_ = mapProg; uWorld_ = mapU;
@@ -2047,9 +2081,13 @@ void Renderer::flush2D() {
             glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
         }
         std::vector<float> v;
-        v.reserve(swatchQuads_.size() / 8 * 24);
-        for (size_t i = 0; i + 8 <= swatchQuads_.size(); i += 8) {
-            const float* q = &swatchQuads_[i];
+        v.reserve(swatchQuads_.size() / 5 * 24);
+        for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
+            const float* r = &swatchQuads_[i];
+            const int k = swatchSlotOf_.empty() ? -1 : swatchSlotOf_[(int)r[4]];
+            if (k < 0) continue;
+            const float u0 = (float)(k % kSwatchCols) / kSwatchCols, v0 = (float)(k / kSwatchCols) / kSwatchRows;
+            const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
             const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
                                    {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
             for (auto& c : t) v.insert(v.end(), c, c + 4);
