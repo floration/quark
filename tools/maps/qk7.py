@@ -6,7 +6,7 @@ reached where each helix ends. The helices are ramps (12 degrees: bhop up them),
 pocket under it), and every landing has a 45 degree wall across its outer corner to carve or dash-bounce the turn on.
 The court round them is broken into thirds on each side by 2.6 m walls from the outer wall, with a tower in every
 corner. Team spawns in the corners at the foot of each helix (about 100 m apart); the free-for-all ones on the court and
-on the drum's ground floor. The drum's windows are slits (1 m: lines, not doors)."""
+one on a helix landing (15 m). The drum's windows are slits (1 m: lines, not doors)."""
 from .prefabs import M, minus
 from .m2kit import B, light, mirror_all, ramp, wedge, prism
 
@@ -53,7 +53,7 @@ def build():
         B(m, "box", x0, 0, z0, x1, h, z1)
     # ---- spawns: the foot of helix A (team a; b at the foot of helix B), free-for-all pairs
     for (x, z) in ((-39, 27), (-39, 20), (-29, 39), (-21, 38)): m.spawn("a", x, 0, z, -45)
-    for (x, y, z, yaw) in ((-26, 0, -26, 180), (36, 0, 8, 90), (0, 0, 2, 90), (24, 0, -38, 0)):
+    for (x, y, z, yaw) in ((-26, 0, -26, 180), (36, 0, 8, 90), (-14, 15, -14, 180), (24, 0, -38, 0)):
         m.spawn("any", x, y, z, yaw)
     # ---- lights
     for (x, y, z, r) in ((0, 6, 0, 12), (0, 16, 0, 12), (0, 26, 0, 12), (16, 9, 16, 12), (16, 19, -16, 12), (-16, 29, -16, 12), (-30, 7, 30, 16), (30, 7, 30, 16)):
