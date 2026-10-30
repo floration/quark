@@ -163,15 +163,15 @@ def page(title, body, depth, head="", lede=""):
 def main():
     versions = []
     for name in os.listdir(CHANGELOGS):
-        m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)\.md", name)
-        if m: versions.append(tuple(map(int, m.groups())))
+        m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?\.md", name)   # (x.y.z, or x.y.z.n: a hotfix, 1.19.3.1)
+        if m: versions.append(tuple(int(g) for g in m.groups() if g is not None))
     versions.sort(reverse=True)
     missing = []
     if os.path.isdir(OUT): shutil.rmtree(OUT)
     os.makedirs(OUT)
     entries = []
     for i, v in enumerate(versions):
-        vs = "%d.%d.%d" % v
+        vs = ".".join(map(str, v))
         short = open(os.path.join(CHANGELOGS, vs + ".md"), encoding="utf-8").read()
         full_path = os.path.join(CHANGELOGS, "full", vs + ".md")
         has_full = os.path.isfile(full_path)
@@ -180,8 +180,8 @@ def main():
         d = os.path.join(OUT, vs)
         os.makedirs(d)
         note = "" if has_full else "<p class=\"note\">The full notes for this version are its short notes: that was all that was written then.</p>\n"
-        newer = "%d.%d.%d" % versions[i - 1] if i > 0 else None
-        older = "%d.%d.%d" % versions[i + 1] if i + 1 < len(versions) else None
+        newer = ".".join(map(str, versions[i - 1])) if i > 0 else None
+        older = ".".join(map(str, versions[i + 1])) if i + 1 < len(versions) else None
         pager = "<nav class=\"pager\" aria-label=\"Other versions\"><span>%s</span><span>%s</span></nav>" % (
             "<a href=\"../%s/\">&larr; %s</a>" % (older, older) if older else "",
             "<a href=\"../%s/\">%s &rarr;</a>" % (newer, newer) if newer else "<a href=\"../\">All updates &rarr;</a>")
@@ -196,7 +196,7 @@ def main():
                        % (vs, vs, vs, "<span class=\"badge cyan latest\">Latest</span>" if i == 0 else "", md(short), vs, vs))
     majors = []   # quick links: the newest release of each minor version line, newest first (x.y)
     for v in versions:
-        if not majors or majors[-1][0] != v[:2]: majors.append((v[:2], "%d.%d.%d" % v))
+        if not majors or majors[-1][0] != v[:2]: majors.append((v[:2], ".".join(map(str, v))))
     toc = "<ul class=\"toc\" aria-label=\"Jump to a version\">%s</ul>\n" % "".join(
         "<li><a href=\"#v%s\">%d.%d</a></li>" % (vs, mv[0], mv[1]) for mv, vs in majors)
     with open(os.path.join(OUT, "index.html"), "w", encoding="utf-8") as f:

@@ -149,6 +149,28 @@ inline Vec3 hitboxClosest(const AABB& hitbox, const Vec3& p) {
     const Vec3 a = vmax(body.mn, vmin(p, body.mx)), b = vmax(hd.mn, vmin(p, hd.mx));
     return dot(a - p, a - p) <= dot(b - p, b - p) ? a : b;
 }
+// Where a projectile that met a wall, the floor or a player `hit` metres along its step from `from` (unit `dir`) goes
+// off: 5 cm short of the surface, so a blast's cover rays (Server::explode, Game::reportBlast) don't start on the
+// surface they then hit at t = 0 (every splash victim "behind cover"). The server's stepProjectile and the shooter's
+// game (reportImpact) both use it, so a reported blast is where the server's would be.
+constexpr float kBlastBackoff = 0.05f;
+inline Vec3 blastPoint(const Vec3& from, const Vec3& dir, float hit) { return from + dir * (hit > kBlastBackoff ? hit - kBlastBackoff : 0.0f); }
+// A blast at `at` reaches the player in `hitbox` (Server::explode and the shooter's Game::reportBlast, the same test):
+// the ray to the box's centre is clear, or, the centre behind cover, a half-peeking player still takes it if the blast
+// reaches the box's nearest point or the head (F16). At most three rays.
+inline bool blastReaches(const Map& map, const Vec3& at, const AABB& hitbox) {
+    const Vec3 c = hitbox.center(), to = c - at;
+    const float dist = length(to);
+    if (dist <= 0.01f) return true;
+    const float w = map.raycast(at, to / dist, dist);
+    if (w < 0 || w >= dist - 0.1f) return true;
+    auto clear = [&](const Vec3& pt) {
+        const Vec3 v = pt - at;
+        const float len = length(v);
+        return len < 0.11f || !map.raycastAny(at, v / len, len - 0.1f);
+    };
+    return clear(hitboxClosest(hitbox, at)) || clear(Vec3(c.x, hitbox.mx.y - 0.15f * (hitbox.mx.y - hitbox.mn.y), c.z));
+}
 // the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);

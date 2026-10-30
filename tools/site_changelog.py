@@ -17,9 +17,9 @@ def arith(text):
 root = sys.argv[1] if len(sys.argv) > 1 else "."
 entries = []
 for name in os.listdir(os.path.join(root, "changelogs")):
-    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)\.md", name)
+    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?\.md", name)   # (x.y.z, or x.y.z.n: a hotfix)
     if m:
-        entries.append((tuple(map(int, m.groups())), open(os.path.join(root, "changelogs", name), encoding="utf-8").read()))
+        entries.append((tuple(int(g) for g in m.groups() if g is not None), open(os.path.join(root, "changelogs", name), encoding="utf-8").read()))
 entries.sort(reverse=True)
 json.dump([{"version": ".".join(map(str, v)), "notes": t} for v, t in entries],
           open(os.path.join(root, "site", "changelog.json"), "w", encoding="utf-8"), indent=1)
