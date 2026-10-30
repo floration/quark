@@ -8921,18 +8921,42 @@ static void playtestMaps(uint16_t port, double seconds) {
 }
 
 // Bots keep off the edges (they used to fall a lot here: grapple pulls over the moat, bunny hops and fight jumps
-// off the island, knockback at the rim): a minute and a half of experts on Dojo (a platform in a lava moat) and of
-// expert tag runners on Foundry (lava trenches), with a couple of falls allowed for blasts and laser pushes.
+// off the island, knockback at the rim): a minute and a half of experts in 1v1 on a platform in a lava moat (the old
+// Dojo's layout, built here: the shipped Dojo is a hall now, with no lava) and of expert tag runners on Foundry (lava
+// trenches), with a couple of falls allowed for blasts and laser pushes.
+static std::string lavaMoatMap() {
+    // a 24 m platform, a 4.5 m lava moat round it (its bed 1.4 m down), a ring path at the platform's height outside
+    // (a jump or a hook across), walls round it all; one spawn each side of the platform, facing in
+    return "version " + std::to_string(kMapFormatVersion) + "\ntitle Lava moat\nfor 1v1\n"
+           "box -12 -1.4 -12 12 0 12\n"                                                   // the platform
+           "box -24 -3 -24 24 -1.4 24\n"                                                   // the moat's bed
+           "lava -16.5 -1.4 -16.5 16.5 -1.2 16.5\n"
+           "box -24 -1.4 -24 24 0 -16.5\nbox -24 -1.4 16.5 24 0 24\nbox -24 -1.4 -16.5 -16.5 0 16.5\nbox 16.5 -1.4 -16.5 24 0 16.5\n"   // the ring
+           "box -25 -3 -25 25 8 -24\nbox -25 -3 24 25 8 25\nbox -25 -3 -24 -24 8 24\nbox 24 -3 -24 25 8 24\n"                       // walls
+           "clip -25 8 -25 25 9 25\n"
+           "spawn a -8 0 0 90\nspawn b 8 0 0 -90\nlight 0 6 0 30 1\n";
+}
 static void testBotFalls(uint16_t port) {
     printf("bots keep off the edges\n");
-    const std::pair<const char*, int> cases[] = {{"dojo", MODE_ARENA}, {"foundry", MODE_TAG}};
+    const std::string moat = "zz_lavamoat", path = userMapsDir() + "/" + moat + ".qmap";
+    CHECK(saveMapFile(path, lavaMoatMap()));
+    {   // (the map is what it says: lava all round the platform, nothing else between it and the ring)
+        Map m;
+        std::string err;
+        CHECK(m.parse(lavaMoatMap(), &err) && m.lava.size() == 1 && m.supportsMode(MODE_ARENA));
+        if (!err.empty()) printf("  %s\n", err.c_str());
+        for (const Vec3& p : {Vec3(0, -1.4f, 14), Vec3(14, -1.4f, 0), Vec3(-14, -1.4f, -14)}) CHECK(m.inLava(playerBox(p, false)));
+        CHECK(!m.inLava(playerBox({0, 0, 0}, false)) && !m.inLava(playerBox({20, 0, 20}, false)));
+    }
+    const std::pair<std::string, int> cases[] = {{moat, MODE_ARENA}, {"foundry", MODE_TAG}};
     for (auto& [map, mode] : cases) {
         BotMatch r;
         bool ok = playBots(map, mode, BOT_EXPERT, port, 90, false, r);
         CHECK(ok);
-        printf("  %s: %d falls (%d pushed), %d self-kills, %d deaths\n", map, r.falls, r.pushed, r.self, r.deaths);
+        printf("  %s: %d falls (%d pushed), %d self-kills, %d deaths\n", map == moat ? "lava moat" : map.c_str(), r.falls, r.pushed, r.self, r.deaths);
         CHECK(r.falls <= 2 && r.self <= 1);
     }
+    std::remove(path.c_str());
 }
 
 // Bomb: the attacking bots go for every site in turn (site round + rank: they used to take the first one every round,
