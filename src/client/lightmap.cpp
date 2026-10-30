@@ -174,7 +174,8 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
 // Light caches are keyed by the map's content (cache/<sha256>.qlm): the same map under any name shares one, an
 // edited map never picks up the bake of the version before, and there's nothing to invalidate.
 std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + lightCacheName(m); }
-constexpr size_t kMaxCaches = 32;   // bakes kept (an editor's BAKE LIGHT after each change makes a new one): oldest go
+std::atomic<int> g_maxCaches{32};   // bakes kept (an editor's BAKE LIGHT after each change makes a new one): oldest go (VIDEO + AUDIO > MORE 6)
+std::atomic<int> g_bakeThreads{0};  // (MORE 6: BAKE THREADS; 0: all but one core)
 uint32_t idWord(const Map& m) { const uint8_t* b = m.contentId().b; return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24; }
 std::string g_shippedDir;   // (setShippedLightCacheDir: tests)
 
@@ -253,9 +254,10 @@ void saveCache(const Map& m, const BakedWorld& w) {
     std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> all;
     for (auto& e : std::filesystem::directory_iterator(userDataPath("cache"), ec))
         if (e.path().extension() == ".qlm") all.push_back({e.last_write_time(ec), e.path()});
-    if (all.size() <= kMaxCaches) return;
+    const size_t keep = (size_t)std::max(1, g_maxCaches.load());
+    if (all.size() <= keep) return;
     std::sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.first > b.first; });
-    for (size_t i = kMaxCaches; i < all.size(); i++) std::filesystem::remove(all[i].second, ec);
+    for (size_t i = keep; i < all.size(); i++) std::filesystem::remove(all[i].second, ec);
 }
 
 // one core left for the game (the loading screen, a hosted server's thread, software GL's own threads); quark
@@ -263,6 +265,7 @@ void saveCache(const Map& m, const BakedWorld& w) {
 std::atomic<bool> g_allCores{false};
 unsigned bakeThreads() {
     unsigned hc = std::thread::hardware_concurrency();
+    if (!g_allCores && g_bakeThreads > 0) return (unsigned)g_bakeThreads.load();
     return g_allCores ? std::max(1u, hc) : std::max(1u, hc > 2 ? hc - 1 : hc);
 }
 
@@ -290,6 +293,25 @@ template <class S, class F> bool parallelFor(size_t n, const S& stopped, const F
     return !halted;
 }
 } // namespace
+
+void setLightCacheLimit(int n) { g_maxCaches = std::max(1, n); }
+void setBakeThreads(int n) { g_bakeThreads = std::max(0, n); }
+int lightCacheStats(uint64_t* bytes) {
+    std::error_code ec;
+    int n = 0;
+    uint64_t b = 0;
+    for (auto& e : std::filesystem::directory_iterator(utf8Path(userDataPath("cache")), ec))
+        if (e.path().extension() == ".qlm") { n++; b += e.file_size(ec); }
+    if (bytes) *bytes = b;
+    return n;
+}
+int clearLightCache() {
+    std::error_code ec;
+    int n = 0;
+    for (auto& e : std::filesystem::directory_iterator(utf8Path(userDataPath("cache")), ec))
+        if (e.path().extension() == ".qlm" && std::filesystem::remove(e.path(), ec)) n++;
+    return n;
+}
 
 static std::atomic<int> g_maxTex{4096};
 void setLightmapMaxTextureSize(int px) { g_maxTex = std::max(1024, px); }

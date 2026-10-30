@@ -35,6 +35,10 @@ public:
     // out every `batch` ticks (setInputBatch; 1 = every tick) and at flushInput().
     void tick(UserCmd cmd);
     void setInputBatch(int n) { inputBatch_ = n < 1 ? 1 : n; }
+    // the newest commands each input packet carries (2 - 8; the server reads up to 16): more ride out more packet loss
+    void setCmdsPerPacket(int n) { cmdsPerPacket_ = n < 1 ? 1 : n > 16 ? 16 : n; }
+    // a server's map that isn't on disk is downloaded (off: the connection ends with an error instead)
+    void setAllowDownloads(bool on) { allowDownloads_ = on; }
     void flushInput() { if (unsentCmds_ > 0) sendInput(); }   // after a frame's ticks: what's not sent yet
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
     void setReportHits(bool on) { reportHits_ = on; }   // the game: its shots' hits are its own (Server::clientHitReport)
@@ -184,6 +188,8 @@ private:
     bool havePendingOffset_ = false, reconcilePending_ = false;
     void sendInput();
     int inputBatch_ = 1, unsentCmds_ = 0;
+    int cmdsPerPacket_ = 0;   // (0: kCmdsPerPacket)
+    bool allowDownloads_ = true;
     bool useMap(const std::string& name, const MapId& id); // load name (own copy, else a downloaded one) if it's that map
     void pumpDownload(double now);
 

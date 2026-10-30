@@ -47,7 +47,7 @@ public:
     int height() const { return height_; }
     // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
     // the view frustum: one glMultiDrawArrays over the visible ranges.
-    struct WorldChunk { Vec3 mn, mx; int first, count; };
+    struct WorldChunk { Vec3 mn, mx; int first, count; bool far = false; };   // (far: distant scenery's own chunks)
     // A map's world, built and lit but not on the GPU yet: prepareWorld needs no GL context (any thread, on its
     // own copy of the map), uploadWorld puts it on the GPU (the GL thread). loadWorld = both, here and now.
     struct PreparedWorld { BakedWorld bw; std::vector<WorldChunk> chunks; };
@@ -176,8 +176,28 @@ public:
     Vec3 fullbrightColor = {1, 1, 1};   // ...that colour instead of white (VISUALS > FULLBRIGHT COLOUR)
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
     float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
+    // VIDEO + AUDIO > MORE 2 / 4 (1.19.4): the look's shader switches (setLook: uniforms, only when they change)
+    struct Look {
+        bool tone = true, dither = false, clean = false, flatLight = false, simpleSky = false;
+        int pcf = 1;            // the shadow edge: 0 hard, 1 soft, 2 softer
+        float emit = 0.3f;      // models' own light share
+        float outlineA = 1.0f;  // players' outline opacity
+        bool operator==(const Look& o) const {
+            return tone == o.tone && dither == o.dither && clean == o.clean && flatLight == o.flatLight && simpleSky == o.simpleSky &&
+                   pcf == o.pcf && emit == o.emit && outlineA == o.outlineA;
+        }
+    };
+    void setLook(const Look& l);
+    bool farScenery = true;     // distant scenery's chunks drawn
+    float farPlane = 400.0f;    // DRAW DISTANCE: metres to the far plane (the next setCamera)
+    float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
+    bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
+    int maxSamples();           // the driver's most MSAA samples (asked once)
+    int outputBits();           // the window's bits per colour (asked once): 10 with 10-BIT OUTPUT where it's given
 
 private:
+    Look look_;
+    void lookUniforms(unsigned prog);
     float fogMul_ = 1.0f;
     Vec3 grade_ = {1, 1, 1};
     unsigned compile(const char* vs, const char* fs, std::string* err);

@@ -597,7 +597,7 @@ private:
     bool stepGround_ = false;
     float localRefire_ = 0;    // the refire localNextFire_ counts down (the last shot's, alt-fire's own; the spawn lock's)
     float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
-    struct Tracer { Vec3 a, b; double until; };
+    struct Tracer { Vec3 a, b; double until; Vec3 col = {1.0f, 0.95f, 0.7f}; };   // (col: TRACER COLOR, tracerColorFor)
     std::vector<Tracer> tracers_;
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; bool spark = false; bool wall = false; float life = 0.35f; };   // kill: a red burst where someone died (X6); spark: a hitscan hit on a player (X4); wall: on a wall
     void localImpactSparks(int w, const UserCmd& c);
@@ -731,11 +731,31 @@ private:
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
     double raceResetAt_ = -1;          // (RACE RESET's last press: a second one soon after goes to the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 3 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
+    int morePages() const { return setTab_ == TAB_VIDEO ? 6 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
     bool hudHidden_ = false;           // the HIDE HUD key
+    // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
+    float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes
+    Vec3 tracerColorFor(int shooter) const;   // TRACER COLOR
+    int soundPackOf(int id) const { return cfg_.forcePack ? -1 : net_.playerSoundPack(id); }   // FORCE MY SOUND PACK
+    float masterGain() const;                 // VOLUME as a gain (PERCEPTUAL: squared; unfocused: x BACKGROUND VOLUME)
+    void applyLive();                         // the batch's settings into the renderer / mixer / net (each frame: a few compares)
+    void drawNetGraph(float W, float H, float s);
+    void drawSoundViz(float cx, float cy, float s);
+    void pruneMapDownloads();                 // MAP CACHE: the oldest downloaded maps past the limit deleted
+    void applyCursor();                       // MENU CURSOR: the system's, or ours at a size and colour
+    void applyCompositor();                   // BYPASS COMPOSITOR (Linux, X11)
+    bool useOn_ = false;                      // USE: TOGGLE's state
+    float netPing_[120] = {}; int netPingN_ = 0; double netSampleAt_ = 0;   // NET GRAPH: ping, 10 a second
+    float netLoss_[120] = {};
+    struct HeardMark { int id; Vec3 at; double until; };
+    std::vector<HeardMark> heardMarks_;       // VISUALIZE SOUNDS
+    void* cursor_ = nullptr; int cursorKey_ = 0;   // (a GLFWcursor; the size / colour it was made for)
+    int compositorSet_ = -1;
+    bool dlWas_ = false;                      // (a map download was running last frame)
+    std::string lookMsg_; double lookMsgUntil_ = 0;   // (MORE 4 / 6 buttons' answers)
     double reconnectAt_ = 0; int reconnectTries_ = 0;   // AUTO RECONNECT: the next try, and how many so far
     // a key bound here that another action had: who lost it (UNDO puts it back there, and this slot as it was)
     int bindTakenA_ = -1, bindTakenK_ = 0, bindTakenCode_ = 0, bindTakenTo_ = -1, bindTakenSlot_ = 0, bindTakenWas_ = 0; double bindTakenUntil_ = 0;

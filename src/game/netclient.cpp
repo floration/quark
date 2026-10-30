@@ -185,6 +185,11 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             clientId_ = id;
             if (!mapReady_ || map_.name != mapName || map_.id() != mapId) {
                 if (useMap(mapName, mapId)) dl_ = Download();
+                else if (!allowDownloads_) {   // (MAP DOWNLOADS off: not fetched)
+                    error_ = "the server's map " + mapName + " isn't on this PC (map downloads are off in settings)";
+                    disconnect();
+                    return;
+                }
                 else if (!dl_.active || !dl_.idKnown || dl_.id != mapId) startDownload(mapName, &mapId); // not on disk (or ours differs): fetch the server's
             }
             state_ = ConnState::Connected;
@@ -662,7 +667,8 @@ void NetClient::sendInput() {
     w.u32(hasSnapshot() ? (uint32_t)latest().timeMs : 0);
     w.u32(lastEventId_);
     w.u8(lossOverride_ >= 0 ? (uint8_t)lossOverride_ : lossPct_);
-    uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
+    const uint32_t per = (uint32_t)(cmdsPerPacket_ > 0 ? cmdsPerPacket_ : kCmdsPerPacket);   // (PACKET LOSS PROTECTION: 2 / 4 / 8)
+    uint32_t first = nextSeq_ > per ? nextSeq_ - per : 1;
     w.u8((uint8_t)(nextSeq_ - first));
     for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % kCmdRing]);
     // every unacknowledged string command that fits (resent until the server acks it), so a burst of

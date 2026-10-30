@@ -106,6 +106,73 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "kill_bursts") killBursts = iv != 0;
         else if (k == "tracers") tracers = iv != 0;
         else if (k == "view_recoil") viewRecoil = iv != 0;
+        else if (k == "tone_curve") toneCurve = iv != 0;
+        else if (k == "dither") dither = iv != 0;
+        else if (k == "out10") out10 = iv != 0;
+        else if (k == "clean_surfaces") cleanSurfaces = iv != 0;
+        else if (k == "flat_light") flatLight = iv != 0;
+        else if (k == "simple_sky") simpleSky = iv != 0;
+        else if (k == "far_scenery") farScenery = iv != 0;
+        else if (k == "draw_dist") drawDist = iv <= 150 ? 150 : iv <= 250 ? 250 : 400;
+        else if (k == "shadow_filter") shadowFilter = std::min(std::max(iv, 0), 2);
+        else if (k == "shadow_dist") shadowDist = iv <= 16 ? 16 : iv <= 32 ? 32 : 64;
+        else if (k == "shadow_world") shadowWorld = iv != 0;
+        else if (k == "shadow_players") shadowPlayers = iv != 0;
+        else if (k == "own_shadow") ownShadow = iv != 0;
+        else if (k == "player_emit") { if (std::isfinite(fv)) playerEmit = clampf(fv, 0, 1); }
+        else if (k == "players_lit") playersLit = iv != 0;
+        else if (k == "outline_friendly_color") outlineFriendlyColor = parseColor(v, outlineFriendlyColor);
+        else if (k == "outline_enemy_color") outlineEnemyColor = parseColor(v, outlineEnemyColor);
+        else if (k == "outline_alpha") { if (std::isfinite(fv)) outlineAlpha = clampf(fv, 0, 1); }
+        else if (k == "outline_team_width") { if (std::isfinite(fv)) outlineTeamW = fv < 0 ? -1 : clampf(fv, 0, 6); }
+        else if (k == "outline_enemy_width") { if (std::isfinite(fv)) outlineEnemyW = fv < 0 ? -1 : clampf(fv, 0, 6); }
+        else if (k == "fixed_teams") fixedTeams = iv != 0;
+        else if (k == "team_a_color") teamAColor = parseColor(v, teamAColor);
+        else if (k == "team_b_color") teamBColor = parseColor(v, teamBColor);
+        else if (k == "tracer_mode") tracerMode = std::min(std::max(iv, 0), 2);
+        else if (k == "tracer_color") tracerColor = parseColor(v, tracerColor);
+        else if (k == "rope_color") ropeColor = parseColor(v, ropeColor);
+        else if (k == "trails") trails = std::min(std::max(iv, 0), 2);
+        else if (k == "trail_opacity") { if (std::isfinite(fv)) trailOpacity = clampf(fv, 0, 1); }
+        else if (k == "reduce_flash") reduceFlash = iv != 0;
+        else if (k == "safe_colors") safeColors = iv != 0;
+        else if (k == "it_palette") itPalette = iv != 0;
+        else if (k == "split_palette") splitPalette = iv != 0;
+        else if (k == "split_words") splitWords = iv != 0;
+        else if (k.rfind("color_preset_", 0) == 0) { const int i = atoi(k.c_str() + 13) - 1; if (i >= 0 && i < 3) colorPreset[i] = v.substr(0, 400); }
+        else if (k == "fov_mode") fovMode = std::min(std::max(iv, 0), 2);
+        else if (k == "channels") channels = std::min(std::max(iv, 0), 2);
+        else if (k == "bg_volume") { if (std::isfinite(fv)) bgVolume = clampf(fv, 0, 1); }
+        else if (k == "stereo_width") { if (std::isfinite(fv)) stereoWidth = clampf(fv, 0, 1); }
+        else if (k == "behind_muffle") { if (std::isfinite(fv)) behindMuffle = clampf(fv, 0, 1); }
+        else if (k == "hear_range") { if (std::isfinite(fv)) hearRange = clampf(fv, 30, 150); }
+        else if (k == "occlusion") occlusion = iv != 0;
+        else if (k == "dyn_range") dynRange = std::min(std::max(iv, 0), 2);
+        else if (k == "vol_db") volDb = iv != 0;
+        else if (k == "vol_perceptual") volPerceptual = iv != 0;
+        else if (k == "audio_latency") audioLatency = std::min(std::max(iv, 0), 2);
+        else if (k == "force_pack") forcePack = iv != 0;
+        else if (k == "streak_calls") streakCalls = std::min(std::max(iv, 0), 2);
+        else if (k == "time_warn") timeWarn = std::min(std::max(iv, 0), 2);
+        else if (k == "time_warn_text") timeWarnText = iv != 0;
+        else if (k == "cue_mute") cueMute = iv;
+        else if (k == "ann_mute") annMute = atoll(v.c_str());
+        else if (k == "sound_viz") soundViz = iv != 0;
+        else if (k == "net_graph") netGraph = iv != 0;
+        else if (k == "cmd_redundancy") cmdRedundancy = iv <= 2 ? 2 : iv <= 4 ? 4 : 8;
+        else if (k == "map_downloads") mapDownloads = iv != 0;
+        else if (k == "map_cache_max") mapCacheMax = std::min(std::max(iv, 1), 1000);
+        else if (k == "light_cache_max") lightCacheMax = std::min(std::max(iv, 4), 500);
+        else if (k == "bake_threads") bakeThreads = std::min(std::max(iv, 0), 256);
+        else if (k == "latent_safety_us") latentSafetyUs = std::min(std::max(iv, 0), 3000);
+        else if (k == "latent_slow") latentSlow = iv != 0;
+        else if (k == "bypass_compositor") bypassCompositor = std::min(std::max(iv, 0), 2);
+        else if (k == "cursor_size") cursorSize = std::min(std::max(iv, 0), 3);
+        else if (k == "cursor_color") cursorColor = std::min(std::max(iv, 0), 3);
+        else if (k == "use_toggle") useToggle = iv != 0;
+        else if (k == "ch_spread") chSpread = iv != 0;
+        else if (k == "ch_cooldown") chCooldown = iv != 0;
+        else if (k == "ch_pixels") chPixels = iv != 0;
         else if (k == "ch_dot") { if (std::isfinite(fv)) chDot = clampf(std::round(fv), 0, 12); }
         else if (k == "ch_opacity") { if (std::isfinite(fv)) chOpacity = clampf(fv, 0.1f, 1); }
         else if (k == "ch_outline_w") { if (std::isfinite(fv)) chOutlineW = clampf(fv, 0.5f, 3); }
@@ -143,10 +210,10 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "hud_widgets") hudWidgets = iv != 0;
         else if (k.rfind("mode_hud_", 0) == 0) { int m = modeFromName(k.c_str() + 9); if (m >= 0 && (v.empty() || plainFileName(v))) modeHud[m] = v; }   // (a file in huds/)
         else if (k.rfind("mode_controls_", 0) == 0) { int m = modeFromName(k.c_str() + 14); if (m >= 0 && (v.empty() || plainFileName(v))) modeCtl[m] = v; }
-        else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
+        else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4 || iv == 8) ? iv : 0;
         else if (k == "render_scale") renderScale = std::max(25, std::min(400, iv));
         else if (k == "render_sharpen") renderSharpen = iv != 0;
-        else if (k == "volume") volume = clampf(fv, 0, 1);
+        else if (k == "volume") { if (std::isfinite(fv)) volume = clampf(fv, 0, 1.5f); }   // (up to 150%: 1.19.4)
         else if (k == "volume_effects") { if (std::isfinite(fv)) volumeEffects = clampf(fv, 0, 1); }
         else if (k == "volume_announcer") { if (std::isfinite(fv)) volumeAnnouncer = clampf(fv, 0, 1); }
         else if (k == "volume_quips") { if (std::isfinite(fv)) volumeQuips = clampf(fv, 0, 1); }
@@ -286,6 +353,17 @@ std::string Settings::toText() const {
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nsens_y=" << sensY << "\ninvert_y=" << invertY << "\nzoom_sens=" << zoomSens << "\nscore_toggle=" << scoreToggle << "\nhit_volume=" << hitVolume << "\nhit_pack=" << hitPack << "\nheadshot_sound=" << headshotSound << "\nkill_sound=" << killSound << "\nhud_size=" << hudSize << "\nfeed_time=" << feedTime << "\nfeed_lines=" << feedLines << "\nfeed_mine=" << feedMine << "\nchat_time=" << chatTime << "\nchat_lines=" << chatLines << "\nchat_opacity=" << chatOpacity
       << "\nshow_fps=" << showFps << "\nshow_ping=" << showPing << "\nhide_hud_crosshair=" << hideHudCrosshair << "\nfog=" << fog << "\ngamma=" << gamma << "\ncontrast=" << contrast << "\nsaturation=" << saturation << "\ncpu_priority=" << cpuPriority << "\nscroll_wrap=" << scrollWrap << "\nscroll_skip=" << scrollSkip
       << "\nauto_iconify=" << autoIconify << "\nremember_tab=" << rememberTab << "\nlast_tab=" << lastTab << "\nconfirm_leave=" << confirmLeave << "\nvrr=" << vrr << "\ncaptions=" << captions << "\nhp_scaled=" << hpScaled << "\nvol_steps=" << volSteps << "\nvol_others_steps=" << volOthersSteps << "\nvol_weapons=" << volWeapons << "\nvol_objective=" << volObjective << "\nenemy_model=" << enemyModel << "\ngrapple_toggle=" << grappleToggle << "\nleft_handed=" << leftHanded << "\nauto_reconnect=" << autoReconnect << "\nqueue_flash=" << queueFlash << "\nghost=" << ghost << "\nteam_panel=" << teamPanel << "\nmatch_summary=" << matchSummary;
+    f << "\ntone_curve=" << toneCurve << "\ndither=" << dither << "\nout10=" << out10 << "\nclean_surfaces=" << cleanSurfaces << "\nflat_light=" << flatLight << "\nsimple_sky=" << simpleSky << "\nfar_scenery=" << farScenery << "\ndraw_dist=" << drawDist
+      << "\nshadow_filter=" << shadowFilter << "\nshadow_dist=" << shadowDist << "\nshadow_world=" << shadowWorld << "\nshadow_players=" << shadowPlayers << "\nown_shadow=" << ownShadow << "\nplayer_emit=" << playerEmit << "\nplayers_lit=" << playersLit
+      << "\noutline_friendly_color=" << colorHex(outlineFriendlyColor) << "\noutline_enemy_color=" << colorHex(outlineEnemyColor) << "\noutline_alpha=" << outlineAlpha << "\noutline_team_width=" << outlineTeamW << "\noutline_enemy_width=" << outlineEnemyW
+      << "\nfixed_teams=" << fixedTeams << "\nteam_a_color=" << colorHex(teamAColor) << "\nteam_b_color=" << colorHex(teamBColor) << "\ntracer_mode=" << tracerMode << "\ntracer_color=" << colorHex(tracerColor) << "\nrope_color=" << colorHex(ropeColor)
+      << "\ntrails=" << trails << "\ntrail_opacity=" << trailOpacity << "\nreduce_flash=" << reduceFlash << "\nsafe_colors=" << safeColors << "\nit_palette=" << itPalette << "\nsplit_palette=" << splitPalette << "\nsplit_words=" << splitWords
+      << "\nfov_mode=" << fovMode << "\nchannels=" << channels << "\nbg_volume=" << bgVolume << "\nstereo_width=" << stereoWidth << "\nbehind_muffle=" << behindMuffle << "\nhear_range=" << hearRange << "\nocclusion=" << occlusion << "\ndyn_range=" << dynRange
+      << "\nvol_db=" << volDb << "\nvol_perceptual=" << volPerceptual << "\naudio_latency=" << audioLatency << "\nforce_pack=" << forcePack << "\nstreak_calls=" << streakCalls << "\ntime_warn=" << timeWarn << "\ntime_warn_text=" << timeWarnText
+      << "\ncue_mute=" << cueMute << "\nann_mute=" << annMute << "\nsound_viz=" << soundViz << "\nnet_graph=" << netGraph << "\ncmd_redundancy=" << cmdRedundancy << "\nmap_downloads=" << mapDownloads << "\nmap_cache_max=" << mapCacheMax
+      << "\nlight_cache_max=" << lightCacheMax << "\nbake_threads=" << bakeThreads << "\nlatent_safety_us=" << latentSafetyUs << "\nlatent_slow=" << latentSlow << "\nbypass_compositor=" << bypassCompositor << "\ncursor_size=" << cursorSize
+      << "\ncursor_color=" << cursorColor << "\nuse_toggle=" << useToggle << "\nch_spread=" << chSpread << "\nch_cooldown=" << chCooldown << "\nch_pixels=" << chPixels;
+    for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
     f << "\nfs_width=" << fsWidth << "\nfs_height=" << fsHeight << "\nauto_record=" << autoRecord << "\ndemo_keep=" << demoKeep << "\ndemo_sort=" << demoSort << "\nvideo_preset=" << videoPreset << "\nfx_opacity=" << fxOpacity << "\nkill_bursts=" << killBursts << "\ntracers=" << tracers << "\nview_recoil=" << viewRecoil
@@ -346,3 +424,38 @@ bool Settings::crosshairFromCode(const std::string& code) {
     return n > 0;
 }
 
+
+
+// VIDEO + AUDIO > MORE 4: COPY / PASTE COLORS and the preset slots: every colour setting as one line, like the
+// crosshair's code ("quark-colors:" then key=value pairs, ';'-separated). Only these keys are read back.
+static const char* const kColorKeys[] = {"color_friendly", "color_enemy", "outline_friendly", "outline_enemy", "outline_friendly_color",
+                                         "outline_enemy_color", "outline_alpha", "team_a_color", "team_b_color", "tracer_mode", "tracer_color",
+                                         "rope_color", "fullbright_color", "ch_team_color", "ch_color", "ch_hit_color", "ch_head_color", "name_color"};
+std::string Settings::colorCode() const {
+    std::istringstream in(toText());
+    std::string line, out = "quark-colors:";
+    bool first = true;
+    while (std::getline(in, line)) {
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string k = line.substr(0, eq);
+        for (const char* c : kColorKeys) if (k == c) { out += (first ? "" : ";") + line; first = false; }
+    }
+    return out;
+}
+
+bool Settings::colorFromCode(const std::string& code) {
+    const size_t at = code.find("quark-colors:");
+    if (at == std::string::npos) return false;
+    std::istringstream in(code.substr(at + 13));
+    std::string item;
+    int n = 0;
+    while (std::getline(in, item, ';')) {
+        while (!item.empty() && (item.back() == '\r' || item.back() == '\n' || item.back() == ' ')) item.pop_back();
+        const size_t eq = item.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string k = item.substr(0, eq);
+        for (const char* c : kColorKeys) if (k == c) { set(k, item.substr(eq + 1)); n++; }
+    }
+    return n > 0;
+}
