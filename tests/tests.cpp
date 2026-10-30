@@ -3324,6 +3324,31 @@ static void testClientHits() {
         CHECK(s.players_[0].health < 100);
         CHECK((s.players_[1].health < 100) == !reports);
     }
+    {   // q, 2026-10-30, 1.19.3: "explosions aren't registering" - only direct rocket hits did damage online. The game
+        // reported its blast exactly ON the floor / wall it met, so every cover ray started on that surface, hit it at
+        // t = 0 and called each splash victim "behind cover". The blast goes off 5 cm short, as the server's does.
+        Map m;
+        CHECK(m.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+        const Vec3 from(0, 1.6f, -10), aim = normalize(Vec3(1.2f, 0, 9.97f) - from);
+        const float hit = m.raycast(from, aim, 100.0f);
+        CHECK(hit > 0);
+        const Vec3 onFloor = from + aim * hit, at = blastPoint(from, aim, hit);
+        const AABB victim = playerBox(Vec3(0, 0, 10), false);   // 0.8 m from the blast: splash, not a direct hit
+        CHECK(length(hitboxClosest(victim, at) - at) < weaponDef(WPN_ROCKET).splashRadius);
+        // (the bug: a point on the surface - as rounding leaves it, exactly on or a hair inside - sees nobody)
+        CHECK(!blastReaches(m, Vec3(onFloor.x, 0.0f, onFloor.z), victim));
+        CHECK(!blastReaches(m, Vec3(onFloor.x, -1e-5f, onFloor.z), victim));
+        CHECK(blastReaches(m, blastPoint(from, aim, length(Vec3(onFloor.x, -1e-5f, onFloor.z) - from)), victim));
+        CHECK(blastReaches(m, at, victim));
+        CHECK(std::fabs(length(at - onFloor) - kBlastBackoff) < 1e-4f && at.y > 0);
+        CHECK(!blastReaches(m, at, playerBox(Vec3(0, -3, 10), false)));   // (under the floor: still behind cover)
+        // and the server's own blast from the same spot (a game that doesn't report) still hurts both, as before
+        Server s; fresh(s, false);
+        s.players_[0].move.pos = {0, 0, -10};
+        s.players_[1].move.pos = {0, 0, 10};
+        s.explodeForTest(at, 0, WPN_ROCKET);
+        CHECK(s.players_[1].health < 100);
+    }
 }
 
 // The 2026-10 feel review's server fixes, on a server that isn't started (no network: the players are set up by hand
