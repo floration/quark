@@ -128,6 +128,7 @@ uniform float uFlatLight;   // ...FLAT LIGHTING (1): no lightmap, full sun and s
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
+uniform vec3 uWorldEdge; // VIDEO + AUDIO > MORE 4: WORLD OUTLINE COLOR, linear (black, the default, is the old darkening)
 uniform float uTime;     // seconds (wrapped every hour): water, lava and acid flow
 uniform vec3 uSunDir;    // toward the sun: metals' highlights
 out vec4 fragColor;
@@ -403,7 +404,7 @@ void main() {
         c += uSunColor * sun * spec * pow(max(dot(normalize(vN), h), 0.0), gloss);
     }
     c += emit;
-    c *= outline(vEdge, uOutlineW);
+    c = mix(uWorldEdge, c, outline(vEdge, uOutlineW));
     bool blended = uAlphaPass > 0.5 && uAlphaPass < 1.5;   // (2: the breakable blocks, opaque)
     if (blended && alpha < 0.01) discard;
     fragColor = vec4(finish(c), blended ? clamp(alpha, 0.0, 1.0) : 1.0);
@@ -434,6 +435,7 @@ const char* kEdgeFS = R"(#version 330 core
 in vec2 vUV;
 uniform sampler2D uScene;
 uniform vec2 uRcp;
+uniform float uEdgeOff;   // VIDEO + AUDIO > MORE 2: SMOOTH STRENGTH's 1 - strength (0: the full blend, as before)
 out vec4 fragColor;
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 void main() {
@@ -449,7 +451,7 @@ void main() {
     vec3 a = 0.5 * (texture(uScene, vUV + dir * (1.0 / 3.0 - 0.5)).rgb + texture(uScene, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
     vec3 b = a * 0.5 + 0.25 * (texture(uScene, vUV - dir * 0.5).rgb + texture(uScene, vUV + dir * 0.5).rgb);
     float lB = luma(b);
-    fragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
+    fragColor = vec4(mix((lB < lMin || lB > lMax) ? a : b, m, uEdgeOff), 1.0);
 })";
 
 // RENDER SCALE below 100%: the scene stretched to the window with a light contrast-adaptive sharpen (CAS-style, the
@@ -1136,8 +1138,9 @@ void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_2D, lightmapTex_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, bw.atlasW, bw.atlasH, 0, GL_RG, GL_UNSIGNED_BYTE, bw.texels.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    lmFilterSet_ = lightmapNearest;   // (MORE 2: LIGHTMAP FILTER: smooth, or nearest's blocky light)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     warmup(map);
@@ -1615,15 +1618,20 @@ void Renderer::prepareScene(bool shadows) {
     prepN_[0] = nShadow; prepN_[1] = nDyn; prepN_[2] = nNoCast; prepN_[3] = nView; prepN_[4] = nFlat; prepN_[5] = nViewFlat;
 
     // The per-frame uniforms that don't depend on the aim (the view's matrices and the sky's vectors: drawScene)
+    // (MORE 4: SKY / GLOW COLOR overrides and HIGH CONTRAST in place of the map's palette, for this frame's uniforms)
+    const Vec3 skyColor = skyOverride.x >= 0 ? skyOverride : this->skyColor;
+    const Vec3 glowColor = (glowOverride.x >= 0 ? glowOverride : this->glowColor) * glowMul;
+    const float hiBase = highContrast ? 1.45f : 1.5f, hiAccent = highContrast ? 0.75f : 1.5f;
     clear_[0] = std::pow(skyColor.x, 1 / 2.2f); clear_[1] = std::pow(skyColor.y, 1 / 2.2f); clear_[2] = std::pow(skyColor.z, 1 / 2.2f);
     glUseProgram(worldProg_);
     setMat(uWorld_.shadowMat, shadowMat);
     glUniform1i(uWorld_.shadowOn, useShadows && shadowWorld ? 1 : 0);
     glUniform4fv(uWorld_.casterRect, 1, casterRect_);
     auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
-    setVec3(uWorld_.baseL, lin(baseColor, 1.5f));
-    setVec3(uWorld_.accentL, lin(accentColor, 1.5f));
-    setVec3(uWorld_.wallbangL, lin(baseColor * 0.42f, 1.5f));
+    setVec3(uWorld_.baseL, highContrast ? lin(vmin(baseColor * 1.3f + Vec3(0.12f, 0.12f, 0.12f), Vec3(1, 1, 1)), hiBase) : lin(baseColor, 1.5f));
+    setVec3(uWorld_.accentL, lin(accentColor, hiAccent));
+    setVec3(uWorld_.wallbangL, wallbangTint.x >= 0 ? lin(wallbangTint, 1.5f) : lin(baseColor * 0.42f, 1.5f));   // (MORE 4: WALLBANG TINT)
+    setVec3(U(worldProg_, "uWorldEdge"), lin(worldEdge, 1.0f));
     setVec3(uWorld_.metalL, lin(metalColor, 1.5f));
     setVec3(uWorld_.floorL, lin(metalColor, 2.0f));
     setVec3(uWorld_.metal, metalColor);
@@ -1634,7 +1642,7 @@ void Renderer::prepareScene(bool shadows) {
     glUniform1f(uWorld_.full, fullbright ? 1.0f : 0.0f);
     setVec3(uWorld_.fullColor, fullbrightColor);
     glUniform1f(uWorld_.outlineW, worldOutline);
-    glUniform1f(uWorld_.time, (float)std::fmod(timeNow(), 3600.0));
+    glUniform1f(uWorld_.time, liquidFlow ? (float)std::fmod(timeNow(), 3600.0) : 0.0f);   // (MORE 2: LIQUIDS STILL: time stands)
     setVec3(uWorld_.sunDir, sunDir_);
     glUseProgram(skyProg_);
     setVec3(uSky_.sky, skyColor); setVec3(uSky_.sunDir, sunDir_);
@@ -1683,6 +1691,11 @@ void Renderer::drawScene(bool shadows) {
         glUseProgram(worldProg_);
         setMat(uWorld_.viewProj, viewProj_);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
+        if (lightmapNearest != lmFilterSet_) {   // (changed in the settings: once)
+            lmFilterSet_ = lightmapNearest;
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, lightmapNearest ? GL_NEAREST : GL_LINEAR);
+        }
         glBindVertexArray(worldVao_);
         drawWorldChunks();
         if (blockVerts_) {   // the breakable blocks: their looks, lit by full sun and sky (uAlphaPass 2: opaque)
@@ -1817,6 +1830,7 @@ void Renderer::drawScene(bool shadows) {
             const float rx = 1.0f / sceneW_, ry = 1.0f / sceneH_;
             float* last = edges ? edgeRcp_ : sharpRcp_;
             if (rx != last[0] || ry != last[1]) { glUniform2f(edges ? uEdgeRcp_ : uSharpRcp_, rx, ry); last[0] = rx; last[1] = ry; }   // (only when the size changes)
+            if (edges && smoothAmt != edgeAmtSet_) { edgeAmtSet_ = smoothAmt; glUniform1f(U(edgeProg_, "uEdgeOff"), 1.0f - clampf(smoothAmt, 0, 1)); }
             glBindVertexArray(fsVao_);
             glDrawArrays(GL_TRIANGLES, 0, 3);
             glEnable(GL_DEPTH_TEST);
@@ -2369,6 +2383,14 @@ bool Renderer::screenshot(const std::string& path) {
     std::vector<uint8_t> px((size_t)width_ * height_ * 3);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width_, height_, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+    if (path.size() > 4 && path.compare(path.size() - 4, 4, ".tga") == 0) {   // (SCREENSHOT FORMAT: TGA: 24-bit, bottom-up, as read)
+        uint8_t hdr[18] = {0, 0, 2};
+        hdr[12] = width_ & 255; hdr[13] = (width_ >> 8) & 255; hdr[14] = height_ & 255; hdr[15] = (height_ >> 8) & 255; hdr[16] = 24;
+        for (size_t i = 0; i + 2 < px.size(); i += 3) std::swap(px[i], px[i + 2]);   // (BGR)
+        std::string data((const char*)hdr, 18);
+        data.append((const char*)px.data(), px.size());
+        return writeFileAtomic(path, data);
+    }
     std::vector<uint8_t> raw;
     raw.reserve((size_t)(width_ * 3 + 1) * height_);
     for (int y = height_ - 1; y >= 0; y--) {

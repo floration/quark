@@ -735,7 +735,7 @@ private:
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
     double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 6 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
+    int morePages() const { return setTab_ == TAB_VIDEO ? 8 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
@@ -760,6 +760,13 @@ private:
     int compositorSet_ = -1;
     bool dlWas_ = false;                      // (a map download was running last frame)
     std::string lookMsg_; double lookMsgUntil_ = 0;   // (MORE 4 / 6 buttons' answers)
+    // batch 4
+    std::string shotPending_;                 // SCREENSHOT: HIDE HUD: saved after the 3D view, before the HUD
+    std::string shotDir() const;
+    int onTopSet_ = 0;
+    bool captionQuip_ = false;                // (the caption showing is a quip's: QUIP CAPTIONS)
+    Color hbLowC() const { return length(cfg_.hbLowColor - Vec3(1, 0.35f, 0.3f)) < 0.01f ? kRedNow() : rgba(cfg_.hbLowColor); }
+    static Color kRedNow();
     double reconnectAt_ = 0; int reconnectTries_ = 0;   // AUTO RECONNECT: the next try, and how many so far
     // a key bound here that another action had: who lost it (UNDO puts it back there, and this slot as it was)
     int bindTakenA_ = -1, bindTakenK_ = 0, bindTakenCode_ = 0, bindTakenTo_ = -1, bindTakenSlot_ = 0, bindTakenWas_ = 0; double bindTakenUntil_ = 0;

@@ -197,10 +197,19 @@ public:
     float shadowRange = 32.0f;  // SHADOW DISTANCE: the shadow map's half-width around its focus (metres)
     bool shadowWorld = true, shadowPlayers = true;   // dynamic shadows onto the map / onto players
     int maxSamples();           // the driver's most MSAA samples (asked once)
+    // 1.19.4 batch 4 (VIDEO + AUDIO > MORE 2 / 4): x < 0 = the map's own
+    Vec3 skyOverride = {-1, -1, -1}, glowOverride = {-1, -1, -1}, wallbangTint = {-1, -1, -1};
+    Vec3 worldEdge = {0, 0, 0}; // the world's outline colour (black: as before)
+    float glowMul = 1.0f;       // GLOW STRENGTH
+    bool liquidFlow = true;     // water / lava / acid flowing
+    bool highContrast = false;  // HIGH CONTRAST MAP: lighter base, darker accent
+    bool lightmapNearest = false;   // LIGHTMAP FILTER: nearest
+    float smoothAmt = 1.0f;     // SMOOTH (the edge pass) strength, 0.25 - 1
     int outputBits();           // the window's bits per colour (asked once): 10 with 10-BIT OUTPUT where it's given
 
 private:
     Look look_;
+    bool lmFilterSet_ = false; float edgeAmtSet_ = 1.0f;
     void lookUniforms(unsigned prog);
     float fogMul_ = 1.0f;
     Vec3 grade_ = {1, 1, 1};
