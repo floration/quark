@@ -2055,6 +2055,54 @@ void Renderer::swatch(float x, float y, float w, float h, int material) {
     swatchQuads_.insert(swatchQuads_.end(), q, q + 5);
 }
 
+void Renderer::setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h) {
+    previewImgs_ = std::move(images);
+    previewW_ = w; previewH_ = h;
+    previewDirty_ = true;
+}
+
+void Renderer::preview(float x, float y, float w, float h, int slot) {
+    if (slot < 0 || slot >= (int)previewImgs_.size()) return;
+    const float q[5] = {x, y, x + w, y + h, (float)slot};
+    previewQuads_.insert(previewQuads_.end(), q, q + 5);
+}
+
+// Textured quads in window pixels (x0 y0 x1 y1 slot each) from an atlas of cols x rows slots, over the 2D batch; slotOf
+// maps a quad's number to its slot (-1: not drawn), or the number is the slot. The quads are cleared.
+void Renderer::drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf) {
+    glViewport(0, 0, width_, height_);
+    if (!imgProg_) {
+        imgProg_ = compile(kImgVS, kImgFS, nullptr);
+        uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
+        glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
+        glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+    }
+    std::vector<float> v;
+    v.reserve(quads.size() / 5 * 24);
+    for (size_t i = 0; i + 5 <= quads.size(); i += 5) {
+        const float* r = &quads[i];
+        const int k = !slotOf ? (int)r[4] : slotOf->empty() ? -1 : (*slotOf)[(int)r[4]];
+        if (k < 0) continue;
+        const float u0 = (float)(k % cols) / cols, v0 = (float)(k / cols) / rows;
+        const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / rows, u0 + 1.0f / cols, v0};   // (the atlas is upside down)
+        const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
+                               {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
+        for (auto& c : t) v.insert(v.end(), c, c + 4);
+    }
+    quads.clear();
+    if (v.empty()) return;
+    glUseProgram(imgProg_);
+    glUniform2f(uImgScreen_, (float)width_, (float)height_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(imgVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
+    glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
+}
+
 // Each material on a 2 m square (x 0-2, y 1-3, facing +z: the shader's q is its x, y), lit by a one-texel lightmap
 // of full sun and sky, no shadows or holes, into its slot of the atlas: the ones this frame asks for that aren't there
 // yet (all again when the palette changes).
@@ -2208,36 +2256,29 @@ void Renderer::flush2D() {
     ui_.clear();
     if (!swatchQuads_.empty()) {   // (the editor's material picker: over the batch)
         buildSwatches();
-        glViewport(0, 0, width_, height_);
-        if (!imgProg_) {
-            imgProg_ = compile(kImgVS, kImgFS, nullptr);
-            uImgScreen_ = glGetUniformLocation(imgProg_, "uScreen");
-            glGenVertexArrays(1, &imgVao_); glGenBuffers(1, &imgVbo_);
-            glBindVertexArray(imgVao_); glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
-            glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
-            glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+        drawImageQuads(swatchQuads_, swatchTex_, kSwatchCols, kSwatchRows, &swatchSlotOf_);
+    }
+    if (!previewQuads_.empty()) {   // (the map picker's previews: over the batch)
+        if (previewDirty_ && previewW_ > 0) {
+            previewDirty_ = false;
+            const int n = (int)previewImgs_.size();
+            previewCols_ = 8;
+            previewRows_ = std::max(1, (n + previewCols_ - 1) / previewCols_);
+            if (!previewTex_) glGenTextures(1, &previewTex_);
+            glBindTexture(GL_TEXTURE_2D, previewTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, previewW_ * previewCols_, previewH_ * previewRows_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            for (int i = 0; i < n; i++)
+                if ((int)previewImgs_[i].size() == previewW_ * previewH_ * 4)   // (rows bottom-up in the atlas, like the swatches': flipped by the quad)
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, (i % previewCols_) * previewW_, (i / previewCols_) * previewH_, previewW_, previewH_, GL_RGBA, GL_UNSIGNED_BYTE, previewImgs_[i].data());
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         }
-        std::vector<float> v;
-        v.reserve(swatchQuads_.size() / 5 * 24);
-        for (size_t i = 0; i + 5 <= swatchQuads_.size(); i += 5) {
-            const float* r = &swatchQuads_[i];
-            const int k = swatchSlotOf_.empty() ? -1 : swatchSlotOf_[(int)r[4]];
-            if (k < 0) continue;
-            const float u0 = (float)(k % kSwatchCols) / kSwatchCols, v0 = (float)(k / kSwatchCols) / kSwatchRows;
-            const float q[8] = {r[0], r[1], r[2], r[3], u0, v0 + 1.0f / kSwatchRows, u0 + 1.0f / kSwatchCols, v0};   // (the atlas is upside down)
-            const float t[6][4] = {{q[0], q[1], q[4], q[5]}, {q[2], q[1], q[6], q[5]}, {q[2], q[3], q[6], q[7]},
-                                   {q[0], q[1], q[4], q[5]}, {q[2], q[3], q[6], q[7]}, {q[0], q[3], q[4], q[7]}};
-            for (auto& c : t) v.insert(v.end(), c, c + 4);
-        }
-        glUseProgram(imgProg_);
-        glUniform2f(uImgScreen_, (float)width_, (float)height_);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, swatchTex_);
-        glBindVertexArray(imgVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, imgVbo_);
-        glBufferData(GL_ARRAY_BUFFER, v.size() * sizeof(float), v.data(), GL_STREAM_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 4));
-        swatchQuads_.clear();
+        if (previewTex_) drawImageQuads(previewQuads_, previewTex_, previewCols_, previewRows_, nullptr);
+        previewQuads_.clear();
     }
 #ifdef QUARK_TRACY
     // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)

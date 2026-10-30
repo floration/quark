@@ -139,6 +139,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "allset") return allMsg_ + "@" + std::to_string(allMsgUntil_) + "@" + std::to_string(resetAllArmed_);
     if (w == "demos") return listDir(userDataPath("demos"));
     if (w == "demodel") return demoDelArmed_ + "@" + std::to_string(demoDelUntil_);
+    if (w == "demoren") return demoRename_;
     if (w == "confirm") return confirmArmed(confirmWhat_) ? confirmWhat_ : "";
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));

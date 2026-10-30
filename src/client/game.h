@@ -355,6 +355,7 @@ private:
     std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
     std::vector<uintmax_t> demoSizes_;     // ...its size in bytes
     std::string demoDelArmed_; double demoDelUntil_ = 0;   // DELETE: the demo armed by a first click (a second deletes it)
+    std::string demoRename_, demoRenameText_;   // RENAME: the demo being renamed, and the name typed so far
     void applySettings();                  // after many settings changed at once (console, IMPORT, RESET ALL): the ones not read every frame
     std::string allMsg_; double allMsgUntil_ = 0, resetAllArmed_ = 0;   // GAMEPLAY > MORE: ALL SETTINGS' answer; RESET ALL armed
     void pruneDemos();                     // KEEP: delete all but the newest cfg_.demoKeep
@@ -363,7 +364,10 @@ private:
     int infoScroll_ = 0;                    // the info page's first line shown (mouse wheel: 3 lines a notch)
     int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
-    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
+    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; std::vector<uint8_t> preview; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode // preview: the picker's image (kPreviewW x kPreviewH RGBA, rows bottom-up)
+    static constexpr int kPreviewW = 192, kPreviewH = 108;
+    int pickScroll_ = 0;        // the map picker's first row shown (the wheel)
+    std::string previewSig_;    // (the maps the renderer's previews are of: names, file times and sizes)
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
     int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
@@ -729,7 +733,7 @@ private:
     bool focused_ = true, iconified_ = false, bgCap_ = false;   // (the window in the background / minimized: WHEN UNFOCUSED)
     void applyBackground();            // bgCap_ and the background mute from focused_ / iconified_
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
-    double raceResetAt_ = -1;          // (RACE RESET's last press: a second one soon after goes to the start)
+    double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
     int morePages() const { return setTab_ == TAB_VIDEO ? 3 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)

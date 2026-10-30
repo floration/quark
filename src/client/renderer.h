@@ -146,6 +146,10 @@ public:
     // palette, on top of this frame's 2D batch (drawn after it: put nothing over a swatch). Each is rendered into a slot
     // of an atlas the first frame it's asked for (again when the palette changes).
     void swatch(float x, float y, float w, float h, int material);
+    // Map previews (the map picker): small RGBA images (w x h each, all the same size), kept in one atlas uploaded the
+    // next frame after they change; preview() draws image `slot` like a swatch (over this frame's 2D batch).
+    void setPreviews(std::vector<std::vector<uint8_t>> images, int w, int h);
+    void preview(float x, float y, float w, float h, int slot);
     // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
     void prepare2D();
 
@@ -236,6 +240,12 @@ private:
     std::vector<unsigned> swatchSlotUsed_;            // (the frame each slot was last drawn)
     unsigned swatchFrame_ = 0;
     void buildSwatches();
+    std::vector<std::vector<uint8_t>> previewImgs_;   // (setPreviews': uploaded into previewTex_ when previewDirty_)
+    int previewW_ = 0, previewH_ = 0, previewCols_ = 1, previewRows_ = 1;
+    bool previewDirty_ = false;
+    unsigned previewTex_ = 0;
+    std::vector<float> previewQuads_;   // (this frame's: x0 y0 x1 y1 slot per quad)
+    void drawImageQuads(std::vector<float>& quads, unsigned tex, int cols, int rows, const std::vector<int>* slotOf);
     int worldVerts_ = 0;
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;

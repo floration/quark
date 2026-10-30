@@ -13,7 +13,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Crosshair:** dot size, opacity, outline thickness and opacity, a style per weapon (e.g. a dot on the sniper), and COPY / PASTE CODE to share a crosshair in one line.
 - **Hitsounds:** their own volume, any sound pack's hitsound, a headshot ding, and the kill sound on its own switch.
 - **Server list:** sort by ping / players / name, hide full / empty, a ping limit, favourites (right-click a server; listed first) and a RECENT button for the servers you joined last.
-- **Race and surf:** R takes you back to your last checkpoint; press it twice quickly to go back to the start. Rebindable (CONTROLS > MOVE + WEAPON KEYS).
+- **Race and surf:** tap R to go back to your last checkpoint, or hold it a quarter of a second to restart from the start. FULL RESTART can also go on a key of its own (CONTROLS > MORE KEYS). Both can be rebound.
 
 ## Settings (batch 2, first half)
 - **More MORE pages:** GAMEPLAY gets one, and VIDEO + AUDIO now has three. CONTROLS has a third keys page, MORE KEYS.
@@ -49,6 +49,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Team panel and match summary:** an optional panel with your teammates' health, and a summary of your match (shots, hits, accuracy, damage, best streak) under the end-of-match scoreboard.
 
 ## Maps
+- **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
 - **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.
 
 ## Servers

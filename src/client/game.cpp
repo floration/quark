@@ -526,6 +526,76 @@ void Game::drawBakeScreen(const std::string& name, float p) {
     r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
 }
 
+// A map's preview for the picker: seen from above, each column of the map the colour of its highest surface (the roof
+// of an indoor map and anything covering most of it left out, so the rooms show), lit by its height and a light from
+// the top left, edges where the height steps. Rows bottom-up (the renderer's atlas). About a millisecond a map, once
+// per map file (cached with its info).
+static std::vector<uint8_t> makeMapPreview(const Map& m, const int W, const int H) {
+    std::vector<uint8_t> img((size_t)W * H * 4);
+    std::vector<float> top((size_t)W * H, -1e9f);
+    std::vector<Vec3> col((size_t)W * H, Vec3(0.07f, 0.08f, 0.1f));
+    const AABB& b = m.bounds;
+    const float sx = b.mx.x - b.mn.x, sz = b.mx.z - b.mn.z;
+    if (sx <= 0 || sz <= 0) return img;
+    const float scale = std::min((W - 8) / sx, (H - 8) / sz), ox = (W - sx * scale) * 0.5f, oz = (H - sz * scale) * 0.5f;
+    const Vec3 base = m.hasPalette ? m.palBase : Vec3(0.62f, 0.62f, 0.64f), accent = m.hasPalette ? m.palAccent : Vec3(0.40f, 0.40f, 0.43f),
+               metal = m.hasPalette ? m.palMetal : Vec3(0.30f, 0.33f, 0.37f), glow = m.hasPalette ? m.palGlow : Vec3(1.0f, 0.55f, 0.15f);
+    auto matColor = [&](int mat) -> Vec3 {
+        switch (mat) {
+            case 1: case 8: return accent;
+            case 2: return Vec3(0.25f, 0.25f, 0.27f);
+            case 3: case kMatSteel: case kMatDiamond: case kMatCorrugated: return metal;
+            case 4: case kMatCrystal: return glow;
+            case 6: return Vec3(0.15f, 0.35f, 0.6f);
+            case 7: return Vec3(1.0f, 0.35f, 0.05f);
+            case kMatAcid: return Vec3(0.35f, 0.9f, 0.2f);
+            case kMatIce: case kMatSnow: return Vec3(0.8f, 0.88f, 0.95f);
+            case kMatSand: return Vec3(0.78f, 0.68f, 0.45f);
+            case kMatWood: return Vec3(0.55f, 0.38f, 0.22f);
+            case kMatGrass: return Vec3(0.3f, 0.55f, 0.22f);
+            case kMatBrick: case kMatBrickBreak: case kMatTerracotta: return Vec3(0.6f, 0.28f, 0.2f);
+            case kMatGlass: case kMatGlassBreak: return Vec3(0.6f, 0.75f, 0.8f);
+            case kMatAsphalt: return Vec3(0.2f, 0.2f, 0.22f);
+            case kMatMud: return Vec3(0.35f, 0.27f, 0.18f);
+            case kMatRust: return Vec3(0.5f, 0.27f, 0.15f);
+            case kMatHazard: return Vec3(0.85f, 0.7f, 0.1f);
+            default: return base;
+        }
+    };
+    const float area = sx * sz;
+    for (const Brush& br : m.brushes) {
+        if (br.material == 9 || br.material == 5) continue;   // (clip: invisible; far: scenery outside the walls)
+        const AABB& a = br.box;
+        if (m.indoor && a.mn.y >= m.ceilingY - 0.5f) continue;
+        if ((a.mx.x - a.mn.x) * (a.mx.z - a.mn.z) > area * 0.5f && a.mn.y > b.mn.y + 2.0f) continue;   // (a roof over most of it)
+        const int x0 = std::max(0, (int)std::floor(ox + (a.mn.x - b.mn.x) * scale)), x1 = std::min(W - 1, (int)std::ceil(ox + (a.mx.x - b.mn.x) * scale) - 1);
+        const int z0 = std::max(0, (int)std::floor(oz + (a.mn.z - b.mn.z) * scale)), z1 = std::min(H - 1, (int)std::ceil(oz + (a.mx.z - b.mn.z) * scale) - 1);
+        const Vec3 c = matColor(br.material);
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++) {
+                const size_t k = (size_t)z * W + x;
+                if (a.mx.y > top[k]) { top[k] = a.mx.y; col[k] = c; }
+            }
+    }
+    const float lo = b.mn.y, span = std::max(1.0f, b.mx.y - b.mn.y);
+    for (int z = 0; z < H; z++)
+        for (int x = 0; x < W; x++) {
+            const size_t k = (size_t)z * W + x;
+            Vec3 c = col[k];
+            if (top[k] > -1e8f) {
+                const float h = top[k];
+                const float hl = x > 0 && top[k - 1] > -1e8f ? top[k - 1] : h, hu = z > 0 && top[k - W] > -1e8f ? top[k - W] : h;
+                float lit = 0.55f + 0.45f * clampf((h - lo) / span, 0, 1);
+                lit += clampf((h - hl + h - hu) * 0.08f, -0.25f, 0.25f);   // (the light from the top left)
+                if (std::fabs(h - hl) > 0.6f || std::fabs(h - hu) > 0.6f) lit *= 0.6f;   // (a step: an edge)
+                c = c * lit;
+            }
+            uint8_t* p = &img[((size_t)(H - 1 - z) * W + x) * 4];
+            p[0] = (uint8_t)(clampf(c.x, 0, 1) * 255); p[1] = (uint8_t)(clampf(c.y, 0, 1) * 255); p[2] = (uint8_t)(clampf(c.z, 0, 1) * 255); p[3] = 255;
+        }
+    return img;
+}
+
 // The map behind the main menu (lighting is baked once, then cached like any map).
 void Game::rescanMaps() {
     std::string hostName = maps_.empty() ? cfg_.hostMap : maps_[hostMapIdx_ % maps_.size()];
@@ -554,6 +624,7 @@ void Game::rescanMaps() {
             mi.preferredMode = m.preferredMode;
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
             for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
+            mi.preview = makeMapPreview(m, kPreviewW, kPreviewH);
         }
         mapInfoCache_[path] = {mtime, size, mi};
         mapInfo_.push_back(mi);
@@ -565,6 +636,18 @@ void Game::rescanMaps() {
     // (a map that's gone: back to the first; the pickers index mapInfo_ with these unguarded)
     if (hostMapIdx_ < 0 || hostMapIdx_ >= (int)maps_.size()) hostMapIdx_ = 0;
     if (botMapIdx_ < 0 || botMapIdx_ >= (int)maps_.size()) botMapIdx_ = 0;
+    // the picker's previews, to the renderer when the list or a file changed (not on every rescan: a texture upload)
+    std::string sig;
+    for (size_t i = 0; i < maps_.size(); i++) {
+        auto it = mapInfoCache_.find(mapFilePath(maps_[i]));
+        sig += maps_[i] + (it != mapInfoCache_.end() ? ":" + std::to_string(it->second.mtime) + ":" + std::to_string(it->second.size) : "") + ";";
+    }
+    if (sig != previewSig_) {
+        previewSig_ = sig;
+        std::vector<std::vector<uint8_t>> imgs;
+        for (const MapInfo& mi : mapInfo_) imgs.push_back(mi.preview);
+        r_.setPreviews(std::move(imgs), kPreviewW, kPreviewH);
+    }
 }
 
 void Game::loadMenuBackdrop() {
@@ -678,13 +761,12 @@ bool Game::pressInput(int code) {
         return true;
     }
     if (b.has(A_PERF, code)) { const bool was = perfOn(); perfStage_ = (perfStage_ + 1) % 4; if (!was && perfOn()) pipeReset(); return true; }
-    if (b.has(A_RACERESET, code) && screen_ == Screen::InGame && !paused_ && !chatting_ && isRaceMode(net_.mode().mode) && net_.state() == ConnState::Connected) {
-        // back to the last checkpoint; a second press within half a second: the start (the server respawns you there)
-        const bool full = time_ - raceResetAt_ < 0.5;
-        raceResetAt_ = full ? -1 : time_;
-        net_.sendCommand(full ? "racereset full" : "racereset");
+    const bool racing = screen_ == Screen::InGame && !paused_ && !chatting_ && isRaceMode(net_.mode().mode) && net_.state() == ConnState::Connected;
+    if (b.has(A_RACERESET, code) && racing) {   // (a tap: the last checkpoint when it's let go; held 250 ms: the start, in raceResetHold)
+        raceResetAt_ = time_;
         return true;
     }
+    if (b.has(A_RACERESTART, code) && racing) { net_.sendCommand("racereset full"); return true; }
     if (b.has(A_PERFMINI, code)) { const bool was = perfOn(); perfMini_ = !perfMini_; if (!was) pipeReset(); return true; }
     if (b.has(A_SCREENSHOT, code)) {   // screenshots/<date>_<time>.png in your data folder (was screenshot_<n>.png in
         // the working directory with n from 0 each launch: the first one of every session overwrote the last session's)
@@ -1025,6 +1107,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ = std::max(0, infoScroll_ - (dy > 0 ? 3 : -3)); return; }   // (3 lines a notch; clamped when drawn)
     if (screen_ == Screen::Benchmarks) { benchScroll_ = std::max(0, benchScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
+    if (picker_ != PICK_NONE) { pickScroll_ = std::max(0, pickScroll_ - (dy > 0 ? 1 : -1)); return; }   // (the map picker's rows; clamped when drawn)
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (hudEdit_ && !chatting_ && setTab_ == TAB_HUD && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { hudEdWheel_ += dy; return; }
@@ -2712,6 +2795,11 @@ void Game::drawWorld(float alpha) {
         i++;
     }
     updateGhost();   // (race / surf: the best run's ghost, among the see-through effects)
+    if (raceResetAt_ >= 0) {   // RACE RESET held: 250 ms is the start (the server respawns you there); let go sooner, the last checkpoint
+        if (!isRaceMode(net_.mode().mode) || net_.state() != ConnState::Connected) raceResetAt_ = -1;
+        else if (!isDown(A_RACERESET)) { net_.sendCommand("racereset"); raceResetAt_ = -1; }
+        else if (time_ - raceResetAt_ >= 0.25) { net_.sendCommand("racereset full"); raceResetAt_ = -1; }
+    }
     for (size_t i = 0; i < tracers_.size();) {
         if (time_ > tracers_[i].until) { tracers_.erase(tracers_.begin() + i); continue; }
         float life = (float)std::min(1.0, (tracers_[i].until - time_) / 0.25); // fade out over the last quarter second
@@ -5320,7 +5408,7 @@ bool Game::drawSettingsSearch(const SetLayout& L) {
         if (std::string(e.label).find(q) != std::string::npos && hits.size() < 14) hits.push_back({e.label, e.tab, e.more, e.sub});
     for (int a = 0; a < A_COUNT && hits.size() < 14; a++)   // (a key: its keys page)
         if (std::string(actionName(a)).find(q) != std::string::npos && a != A_CROUCH) {
-            const int sub = a >= A_TEAMCHAT && a <= A_HIDEHUD ? 2 : (a <= A_WEAPON8 || a == A_NEXTWEAPON || a == A_PREVWEAPON || a == A_WEAPON9 || a == A_WEAPON10 || a == A_RACERESET) ? 1 : 0;
+            const int sub = a >= A_TEAMCHAT && a <= A_RACERESTART ? 2 : (a <= A_WEAPON8 || a == A_NEXTWEAPON || a == A_PREVWEAPON || a == A_WEAPON9 || a == A_WEAPON10 || a == A_RACERESET) ? 1 : 0;
             hits.push_back({std::string(actionName(a)) + " (KEY)", TAB_CONTROLS, 0, sub});
         }
     static const char* const tabNames[] = {"PLAYER", "GAMEPLAY", "CONTROLS", "VIDEO + AUDIO", "CROSSHAIR", "HUD"};
@@ -6669,7 +6757,7 @@ void Game::drawControls(const SetLayout& L) {
     };
     if (controlsSub_ == 2) {   // (1.19.4: the keys that didn't fit the other two pages)
         keyRows(kColL, keyRows(kColL, keyRows(kColL, 154, "WEAPONS", {A_LASTWEAPON}), "CHAT", {A_TEAMCHAT}), "PRACTICE", {A_SAVEPOS, A_LOADPOS});
-        keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD});
+        keyRows(kColR, keyRows(kColR, keyRows(kColR, 154, "SPECTATING", {A_SPECNEXT, A_SPECPREV}), "SCREEN", {A_HIDEHUD}), "RACE", {A_RACERESTART});
     } else if (controlsSub_ == 1) {
         float y = keyRows(kColL, 154, "MOVEMENT", {A_FORWARD, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_DASH, A_GRAPPLE, A_USE});
         keyRows(kColL, y, "ATTACK + RACE", {A_FIRE, A_ALTFIRE, A_RACERESET});
@@ -7825,7 +7913,7 @@ void Game::drawDemos(const SetLayout& L) {
             demoNotes_.push_back(note);
         }
     }
-    const int kRows = 8;
+    const int kRows = 6;   // (the page fits the band at 720p with SORT, AUTO RECORD and KEEP under the list)
     const int nd = (int)demoFiles_.size();
     demoScroll_ = std::min(demoScroll_, std::max(0, nd - kRows));
     const int rows = std::min(nd - demoScroll_, kRows);
@@ -7856,7 +7944,23 @@ void Game::drawDemos(const SetLayout& L) {
             name += sz;
         }
         const float dw = L.L(72);
-        if (ui_.button(lx, L.Y(y + 36 * k), lw - dw - L.L(4), L.L(32), name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
+        if (demoRename_ == demoFiles_[i]) {   // RENAME: its name in a field; Enter renames the file, Esc or a click away keeps it
+            ui_.textField(63, lx, L.Y(y + 36 * k), lw - 2 * dw - L.L(8), L.L(32), demoRenameText_, 60, UiExp::state("demos").withId("NEW NAME"));
+            if (uiIn_.enter) {
+                std::string n;
+                for (char c : demoRenameText_) n += std::isalnum((unsigned char)c) || c == '-' ? (char)std::tolower((unsigned char)c) : '_';   // (a file name on every system)
+                std::error_code ec;
+                const std::filesystem::path to = std::filesystem::path(demoFiles_[i]).parent_path() / (n + ".qdemo");
+                if (!n.empty() && !std::filesystem::exists(to, ec)) std::filesystem::rename(demoFiles_[i], to, ec);
+                demoRename_.clear();
+                demoListAt_ = 0;
+            } else if (!ui_.focused(63)) demoRename_.clear();
+        } else if (ui_.button(lx, L.Y(y + 36 * k), lw - 2 * dw - L.L(8), L.L(32), name, UiExp::state("demo", "1").withId("DEMO").clipOk())) { playDemo(demoFiles_[i]); return; }
+        if (ui_.button(lx + lw - 2 * dw - L.L(4), L.Y(y + 36 * k), dw, L.L(32), "RENAME", UiExp::state("demoren").withId("RENAME"))) {
+            demoRename_ = demoFiles_[i];
+            demoRenameText_ = std::filesystem::path(demoFiles_[i]).stem().string();
+            ui_.focus(63);
+        }
         // DELETE: arms on the first click (SURE?), deletes on a second within 3 s
         const bool armed = demoDelArmed_ == demoFiles_[i] && time_ < demoDelUntil_;
         if (ui_.button(lx + lw - dw, L.Y(y + 36 * k), dw, L.L(32), armed ? "SURE?" : "DELETE", (armed ? UiExp::state("demos") : UiExp::state("demodel")).withId("DELETE"))) {
@@ -8573,6 +8677,19 @@ void Game::drawPicker(float cx, float y) {
     bool rankedTile = picker_ == PICK_HOST_MODE || picker_ == PICK_LIVE_MODE; // RANKED is one more choice, holding the ladders
     bool rankedNow = live ? serverRanked : host && cfg_.hostRanked; // vs bots is never ranked
     int n = ladders ? 3 : variants ? kArenaVariants : modes ? MODE_COUNT + (rankedTile ? 1 : 0) : (int)maps_.size();
+    // a map list: only the maps built for the mode (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the
+    // playable gamemode for the map"; a tourney list: built for tourney; ranked: its ladder's maps), vis[i] is card i's map
+    static std::vector<int> vis;
+    vis.clear();
+    const bool mapList = !ladders && !variants && !modes;
+    const int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
+    static int scrollOf = PICK_NONE;   // (a picker just opened: scrolled to the current map's row, when drawn)
+    if (picker_ != scrollOf) { scrollOf = picker_; pickScroll_ = -1; }
+    if (mapList) {
+        for (int i = 0; i < (int)maps_.size() && i < (int)mapInfo_.size(); i++)
+            if ((mapInfo_[i].modes >> (multi ? MODE_TOURNEY : mode) & 1) && (!rankedNow || (mapInfo_[i].ranked >> ladderNow & 1))) vis.push_back(i);
+        n = (int)vis.size();
+    }
     // where a choice / BACK leaves you (the UI test checks it): the host / vs bots menu, or the pause menu (or its votes)
     const char* done = host ? "host" : "vsbots";
     const char* back = screen_ == Screen::InGame ? (voteMenu_ ? "ingame/pause/vote" : "ingame/pause") : done;
@@ -8621,16 +8738,11 @@ void Game::drawPicker(float cx, float y) {
             if (i == MODE_ARENA) it.sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
-            const MapInfo& mi = mapInfo_[i];
-            it.label = upper(maps_[i]);
-            it.cur = multi ? multiSel_[i] : i == mapIdx;
-            it.built = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
-            int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
-            bool rankedOnly = rankedNow && !(mi.ranked >> ladderNow & 1);
-            // any map can be picked for any mode; one not built for it says so (it may be missing what the mode needs)
-            it.sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !it.built ? "WARNING: NOT BUILT FOR THIS MODE - MAY NOT WORK" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
-            it.ok = !rankedOnly;
-            it.warn = !it.built && !rankedOnly;
+            const MapInfo& mi = mapInfo_[vis[i]];
+            it.label = upper(maps_[vis[i]]);
+            it.cur = multi ? multiSel_[i] : vis[i] == mapIdx;
+            it.built = true;
+            it.sub = mi.preferredMode >= 0 ? std::string("FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
         }
         it.pe = multi ? UiExp::state("multisel")
               : ladders && live ? UiExp::cmd(livePickVote_ ? "callvote ranked on" : "ranked on")
@@ -8667,14 +8779,66 @@ void Game::drawPicker(float cx, float y) {
                 picker_ = PICK_VARIANT;
             } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)
             else finish();
-        } else { mapIdx = i; finish(); }
+        } else { mapIdx = vis[i]; finish(); }
     };
 
     {
         const bool inGame = screen_ == Screen::InGame;
         const SetLayout L = inGame ? ingameLayout(960) : menuLayout(960);
         const float bandH = inGame ? kIgH : kBandH;
-        const bool mapList = !ladders && !variants && !modes;
+        if (mapList) {   // MAPS: 7 across, each card its preview over its name and the mode it's for; the wheel scrolls the rows
+            constexpr int cols = 7;
+            const float gx = 12, gy = 10, cw = (928 - gx * (cols - 1)) / cols, imgH = std::round(cw * 9 / 16), nameH = 26;
+            const float cardH = imgH + nameH, rowH = cardH + 4 + 14, headH = 24 + 16;
+            const int rowsAll = std::max(1, (n + cols - 1) / cols);
+            const int rowsFit = std::max(1, (int)((bandH - headH - 92 - 18 + gy) / (rowH + gy)));
+            const int rows = std::min(rowsAll, rowsFit);
+            if (pickScroll_ < 0) {   // (just opened: the current map's row in view)
+                pickScroll_ = 0;
+                for (int i = 0; i < n; i++) if (vis[i] == mapIdx) pickScroll_ = i / cols - rows / 2;
+            }
+            pickScroll_ = std::clamp(pickScroll_, 0, rowsAll - rows);
+            const bool scrolls = rowsAll > rows;
+            const float kH = headH + rows * rowH + (rows - 1) * gy + 20 + 40 + (scrolls ? 18 : 0);
+            const float top = inGame ? ingameTop(L, kH) : bandTop(kH);
+            ui_.panel(L.X(160), L.Y(top - 16), L.L(960), L.L(kH + 32), inGame ? 0.95f : 0.75f);
+            ui_.labelCentered(L.X(640), L.Y(top), title, kWhite, 1.5f, L.L(928));
+            float ry = top + headH;
+            if (n == 0) ui_.labelCentered(L.X(640), L.Y(ry + 20), "NO MAP IS BUILT FOR THIS MODE YET", kGrey, 1.0f, L.L(928));
+            for (int r = 0; r < rows; r++, ry += rowH + gy)
+                for (int c = 0; c < cols; c++) {
+                    const int i = (pickScroll_ + r) * cols + c;
+                    if (i >= n) break;
+                    const Item it = item(i);
+                    const float bx = 176 + c * (cw + gx);
+                    if (it.cur) tabFrame(r_, ui_, L.X(bx), L.Y(ry), L.L(cw), L.L(cardH));
+                    r_.preview(L.X(bx), L.Y(ry), L.L(cw), L.L(imgH), vis[i]);
+                    if (uiIn_.pressed && ui_.over(L.X(bx), L.Y(ry), L.L(cw), L.L(imgH))) { choose(i); return; }   // (the picture picks it too)
+                    if (ui_.button(L.X(bx), L.Y(ry + imgH), L.L(cw), L.L(nameH), it.label, it.pe.clipOk())) { choose(i); return; }
+                    ui_.hint(L.X(bx + 2), L.Y(ry + cardH + 4), it.sub, it.cur ? ui_.accent : kGrey, L.L(cw - 4));
+                }
+            ry += 20 - gy;
+            if (scrolls) {
+                char more[64];
+                snprintf(more, sizeof more, "ROWS %d-%d OF %d - WHEEL TO SCROLL", pickScroll_ + 1, pickScroll_ + rows, rowsAll);
+                ui_.hintCentered(L.X(640), L.Y(ry - 6), more, kGrey, L.L(928));
+                ry += 18;
+            }
+            const float fw = 176;
+            if (multi) {   // a tourney rotation list: the picked ones go to one vote
+                int count = 0;
+                std::string list;
+                for (int i = 0; i < n; i++)
+                    if (multiSel_[i]) list += (count++ ? "," : "") + maps_[vis[i]];
+                if (ui_.button(L.X(1104 - fw), L.Y(ry), L.L(fw), L.L(40), "CALL VOTE", UiExp::cmd("callvote tmaps"), count > 0)) {
+                    net_.sendCommand("callvote tmaps " + list);
+                    picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
+                    return;
+                }
+            }
+            if (ui_.button(L.X(176), L.Y(ry), L.L(fw), L.L(40), "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
+            return;
+        }
         // every card once a frame (labels, tags: what it shows; the buffers are reused)
         static std::vector<Item> items;
         static std::vector<std::string> descs;
@@ -8733,7 +8897,7 @@ void Game::drawPicker(float cx, float y) {
             int count = 0;
             std::string list;
             for (int i = 0; i < n; i++)
-                if (multiSel_[i]) { list += (count++ ? "," : "") + std::string(variants ? arenaVariant(i).name : maps_[i]); }
+                if (multiSel_[i]) { list += (count++ ? "," : "") + std::string(variants ? arenaVariant(i).name : maps_[vis[i]]); }
             if (ui_.button(L.X(1104 - fw), L.Y(ry), L.L(fw), L.L(40), "CALL VOTE", UiExp::cmd(picker_ == PICK_TMAPS ? "callvote tmaps" : "callvote tmodes"), count > 0)) {
                 net_.sendCommand(std::string("callvote ") + (picker_ == PICK_TMAPS ? "tmaps " : "tmodes ") + list);
                 picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;

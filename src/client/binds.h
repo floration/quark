@@ -12,12 +12,13 @@ enum Action {
     A_QUIP,     // say a random quip (never a call-out), out loud where you stand (G); Settings QUIPS / QUIPS VOLUME
     A_TOGGLECHAT, // hide / show other players' chat (Settings::chatOff); unbound by default
     A_PERFMINI, // F4: only the F3 graph's mouse to photon number (to see what F3's text and graph cost)
-    A_RACERESET, // race / surf (R): back to your last checkpoint; twice quickly: the start (1.19.4, owner)
+    A_RACERESET, // race / surf (R): a tap goes back to your last checkpoint; held 250 ms: the start (1.19.4, owner)
     A_TEAMCHAT,  // chat to your team only (unbound by default)
     A_LASTWEAPON, // back to the weapon held before this one (unbound by default)
     A_SPECNEXT, A_SPECPREV,   // spectating / dead: the next / previous player to watch (a click still does next)
     A_SAVEPOS, A_LOADPOS,   // practice (the host alone with bots): save your spot / go back to it (unbound by default)
     A_HIDEHUD,   // hide / show the HUD (a clean screen; the crosshair kept unless HIDE HUD KEEPS CROSSHAIR is off); unbound
+    A_RACERESTART, // race / surf: straight back to the start (owner, 2026-10-30: "a separate full-restart key"); unbound
     A_COUNT
 };
 static_assert(A_COUNT <= 64, "Game::testHeld_ holds a bit per action");
