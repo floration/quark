@@ -23,9 +23,15 @@ Json Analysis::objectives(int mode, Json& routes, bool withPaths) {
     const Map& m = a.m;
     const NavGraph& g = a.navOpen();
     std::vector<int> spA, spB, race;
+    // (the mode's own spawn set's sides where the map has them: "spawn koth-a", as modeSpawnType starts them)
+    int tA = SPAWN_A, tB = SPAWN_B;
+    for (auto& sp : m.spawns) {
+        if (modeSetAllowed(mode) && sp.team == modeSpawn(mode, SPAWN_A)) tA = sp.team;
+        if (modeSetAllowed(mode) && sp.team == modeSpawn(mode, SPAWN_B)) tB = sp.team;
+    }
     for (int i = 0; i < (int)m.spawns.size(); i++) {
-        if (m.spawns[i].team == SPAWN_A) spA.push_back(i);
-        if (m.spawns[i].team == SPAWN_B) spB.push_back(i);
+        if (m.spawns[i].team == tA) spA.push_back(i);
+        if (m.spawns[i].team == tB) spB.push_back(i);
         if (m.spawns[i].team == SPAWN_RACE) race.push_back(i);
     }
     Json objs = Json::array();

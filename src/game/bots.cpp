@@ -879,6 +879,7 @@ void objectiveSensors(const Server& s, int id, BrainCall& c) {
     in[S_IT] = me.it;
     in[S_SITECOUNT] = (double)map.bombSites.size();
     in[S_TEAMRANK] = teamRank(s, id);
+    in[S_ROUNDNO] = m.round;
 }
 
 // ---- perception: look (view cone + line of sight) and listen, at 20 Hz of game time
@@ -1082,9 +1083,12 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
             if (m.bombState == BOMB_PLANTED) return m.bombPos;
             if (m.bombState == BOMB_DROPPED && att) return m.bombPos;
             if (!map.bombSites.empty()) {
-                // carrier (and attackers) head for the nearest site; defenders guard a site each, dealt out by their
-                // rank in the team (by slot id they could all draw the same site: every defender bot had odd ids - F10)
-                const AABB& site = map.bombSites[(att ? 0 : teamRank(s, id)) % map.bombSites.size()];
+                // defenders guard a site each, dealt out by their rank in the team (by slot id they could all draw the
+                // same site: every defender bot had odd ids - F10); the carrier (and the other attackers, until
+                // someone has the bomb) goes for site round + rank: every site in turn, round by round (always the
+                // first one, they never went to Datacenter's B, 8 m further)
+                const int rank = teamRank(s, id);
+                const AABB& site = map.bombSites[(size_t)(att ? m.round + rank : rank) % map.bombSites.size()];
                 if (att && m.bombState == BOMB_CARRIED && m.bombCarrier != id) {
                     const auto& c = s.players_[m.bombCarrier];
                     if (c.connected && c.alive) return c.move.pos; // escort (a teammate: shown on the HUD)
@@ -1656,8 +1660,9 @@ UserCmd botThinkDirect(Server& s, int id) {
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
-                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_));
-                    if (t >= 0 && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
+                    int hm = -1;
+                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_), nullptr, &hm, true);
+                    if (t >= 0 && hm != 9 && hm != kMatNoGrapple && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
                         b.hookAnchor = eye + d * t;
                         b.hookUntil = now + 1.6;
                         b.hookChecked = false;

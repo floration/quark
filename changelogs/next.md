@@ -80,6 +80,10 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Menus and bots (PLAYER > MORE):** FIXED LOGO COLORS keeps the title cyan / red; your server's bots can all wear the standard model, and take names from `bots/names.txt`.
 - **Editor:** CLIP BOX COLOR (CONTROLS > MORE 2). **Race:** SPLITS: PALETTE also colours your best run and the leaderboard's #1.
 
+## Movement fixes
+- Wall teleporters keep your speed. Going in fast used to throw you out at a crawl about half the time (surfy too).
+- The grapple can't hook clip any more: it hits it and lets go, like nograpple. No more invisible hook points on map lids.
+
 ## Maps
 - **Thin walls are shoot-through:** any surface 1/8 m thick or less (coats, panels, thin trim) now lets hitscan through at wallbang damage, like the dark grey wallbang walls.
 - **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
@@ -90,3 +94,12 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Modes
 - **New mode: POWER.** Each team shares one health pool, 2500 for every player on it, and nobody dies. An enemy's hits come off your team's pool instead of your health. When a team's pool runs out it loses; when the 10 minutes are up, the fuller pool wins. Your own rockets and the world (lava, acid, falls) take nothing from the pool; falling out of the map still respawns you. Someone who joins mid-match adds their 2500. The score box shows both pools, and the bar under it shows yours. Played on Bastion, Orbital and Lodestone. **The network protocol is now 54**, so games and servers update together.
+
+## Map checks
+- **The walk check sees ramps.** The map tests' "can players get from every spawn to every objective" check now walks up wedges, corners and cut slopes up to 45 degrees (the steepest you can walk). Before, every slope counted as a solid block, so routes up a ramp (Mine's haul road and lava ramp, QK7's helix ramps) were reported missing or found only the long way round.
+
+## Bots
+- **Bomb bots use every site.** The attackers went for the first bomb site every round, so a site further away (Datacenter's B) never saw them. They now take the sites in turn, round by round. The defenders still guard one site each.
+
+## Map format 11: spawns for one mode
+- **A map can give a mode its own spawns**, e.g. a koth hill in a bomb map: `spawn koth-a` / `spawn koth-b` spawns are used only in king of the hill (and koth starts on them when the map has them), never in other modes. Any mode but race and multi point can have a set (`ffa-any`, `bomb-a`, ...). The map editor sets it on a spawn (MODE SET; a white cap marks one). **Maps are now format 11**: older maps convert by themselves, but an older game can't open a map that uses the new spawns.

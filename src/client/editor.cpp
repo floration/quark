@@ -2110,7 +2110,10 @@ void Game::editorKey(int key, int mods) {
         edModify([&](Map& m) {
             if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = nextMapMaterial(m.brushes[i].material);
             else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = nextMapMaterial(m.groups[i].material);
-            else if (kind == ED_SPAWN) m.spawns[i].team = (m.spawns[i].team + 1) % 4;
+            else if (kind == ED_SPAWN) {   // (a mode set's spawn: its side, a b any; the rest: a b any race)
+                int& t = m.spawns[i].team;
+                t = isModeSpawn(t) ? modeSpawn(spawnSetMode(t), (spawnSide(t) + 1) % 3) : (t + 1) % 4;
+            }
         }, false);
         return;
     }
@@ -3032,8 +3035,9 @@ void Game::editorFrame(double dt) {
     for (auto& b : edClipBoxes_) r_.translucentBox(b, {cfg_.clipColor.x, cfg_.clipColor.y, cfg_.clipColor.z, kClipColor.a});   // (CONTROLS > MORE 2: CLIP BOX COLOR)
     // (clip: invisible in play, the baked world leaves it out too; see-through here so it can be found and edited)
     for (auto& sp : ed_.spawns) {
-        Vec3 c = kTeamColors[sp.team & 3];
+        Vec3 c = kTeamColors[spawnSide(sp.team) & 3];
         r_.box(sp.pos + Vec3(0, 0.9f, 0), {0.3f, 0.9f, 0.3f}, sp.yaw, c, 1.0f, false);
+        if (isModeSpawn(sp.team)) r_.box(sp.pos + Vec3(0, 2.0f, 0), {0.18f, 0.18f, 0.18f}, sp.yaw, {1, 1, 1}, 1.0f, false);   // (a mode set's: a white cap)
         r_.line(sp.pos + Vec3(0, 1.5f, 0), sp.pos + Vec3(0, 1.5f, 0) + angleForward(sp.yaw, 0) * 1.2f, 0.06f, rgba(c));
     }
     for (auto& l : ed_.lights) r_.box(l.pos, {0.2f, 0.2f, 0.2f}, 0, {1.0f, 0.9f, 0.4f}, 1.0f, false);
@@ -3380,8 +3384,28 @@ void Game::editorFrame(double dt) {
             }
         } else if (kind == ED_SPAWN) {
             static const std::vector<std::string> teams = {"TEAM: TEAM A", "TEAM: TEAM B", "TEAM: ANY TEAM", "TEAM: RACE"};
-            int t = ed_.spawns[i].team;
-            if (ui_.cycle(x, y, w, h, "TEAM (M)", t, 4, teams, UiExp::edit())) edModify([&](Map& mm) { mm.spawns[i].team = t; }, false);
+            const int team = ed_.spawns[i].team;
+            const int setMode = isModeSpawn(team) ? spawnSetMode(team) : -1;
+            int t = spawnSide(team);
+            if (ui_.cycle(x, y, w, h, "TEAM (M)", t, setMode >= 0 ? 3 : 4, teams, UiExp::edit()))
+                edModify([&](Map& mm) { mm.spawns[i].team = setMode >= 0 ? modeSpawn(setMode, t) : t; }, false);
+            row();
+            // which modes use it: every mode (as its team says), or only one mode's own set ("spawn koth-a": Mine's
+            // hill spawns apart from its bomb ones). Race and multi point have their own spawns already.
+            static std::vector<int> setModes;
+            static std::vector<std::string> setNames;
+            if (setNames.empty()) {
+                setModes.push_back(-1); setNames.push_back("USED BY: EVERY MODE");
+                for (int md = 0; md < MODE_COUNT; md++) if (modeSetAllowed(md)) { setModes.push_back(md); setNames.push_back(std::string("USED BY: ONLY ") + modeTitle(md)); }
+            }
+            int pick = 0;
+            for (size_t k = 0; k < setModes.size(); k++) if (setModes[k] == setMode) pick = (int)k;
+            if (ui_.cycle(x, y, w, h, "MODE SET", pick, (int)setNames.size(), setNames, UiExp::edit()))
+                edModify([&](Map& mm) {
+                    int side = spawnSide(mm.spawns[i].team);
+                    if (setModes[pick] < 0) mm.spawns[i].team = side;
+                    else mm.spawns[i].team = modeSpawn(setModes[pick], side == SPAWN_RACE || isStagedSpawn(side) ? SPAWN_ANY : side);
+                }, false);
             row();
             float deg = std::remainder(ed_.spawns[i].yaw * 180.0f / PI, 360.0f);
             if (ui_.slider(x, y, w, h, "FACING (Q E)", deg, -180, 180, "%.0f", UiExp::edit(), 0))
