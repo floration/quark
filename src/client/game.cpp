@@ -9159,6 +9159,7 @@ void Game::drawJoin(const SetLayout& L) {
     }
     std::stable_sort(shown.begin(), shown.end(), [&](int a, int b) {
         auto& x = browser_.servers()[a]; auto& y = browser_.servers()[b];
+        if (x.official != y.official) return x.official;   // the official servers first (then your favourites)
         const bool fx = isFav(x.addr.toString()), fy = isFav(y.addr.toString());
         if (fx != fy) return fx;
         if (x.noReply != y.noReply) return !x.noReply;
@@ -9192,9 +9193,22 @@ void Game::drawJoin(const SetLayout& L) {
             snprintf(b, sizeof b, "%dMS", (int)sv.ping);
             r_.text(L.X(colX[3]), ty, ts, b, kWhite);
         }
+        // an official server (by its address: isOfficialServer, master.h): a gold OFFICIAL chip before its name
+        float nameX = L.X(colX[0]), avail = L.L(colEnd[0] - colX[0]);
+        if (sv.official) {
+            static const std::string kTag = "OFFICIAL";   // (static: no allocation a frame)
+            // the ranked gold: gold text (outlined like all text) on a dark gold chip with a gold border
+            static const Color kGold = {1.0f, 0.78f, 0.25f, 1}, kChipFill = {0.30f, 0.22f, 0.05f, 0.95f};
+            const float pad = L.L(5), cw = r_.textWidth(kTag, hs) + 2 * pad, th = r_.textHeight(hs), ch = th + L.L(8);
+            const float cy = ry + (rh - ch) * 0.5f;
+            r_.roundRect(nameX, cy, cw, ch, L.L(3), kChipFill);
+            r_.roundRect(nameX, cy, cw, ch, L.L(3), kGold, std::max(1.0f, L.L(1.5f)));
+            r_.text(nameX + pad, ry + (rh - th) * 0.5f, hs, kTag, kGold);
+            nameX += cw + L.L(6);
+            avail -= cw + L.L(6);
+        }
         // the name: a long one scrolls back and forth so all of it can be read
         std::string name = (isFav(sv.addr.toString()) ? "* " : "") + upper(sv.name);
-        const float avail = L.L(colEnd[0] - colX[0]);
         int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
         while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
         if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
@@ -9203,7 +9217,7 @@ void Game::drawJoin(const SetLayout& L) {
             name = name.substr((size_t)std::clamp((int)pos, 0, extra));
             name.resize(r_.textFit(name, ts, avail));
         }
-        r_.text(L.X(colX[0]), ty, ts, name, kWhite);
+        r_.text(nameX, ty, ts, name, kWhite);
     }
     if (browser_.servers().empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES FOUND", kGrey, 1.0f, L.L(536));
     else if (shown.empty()) ui_.label(L.X(372), L.Y(310), "NO GAMES MATCH THE FILTERS", kGrey, 1.0f, L.L(536));
