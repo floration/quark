@@ -48,7 +48,10 @@ inline float glassThrow(int how) { return how == GLASS_SHATTER ? 3.0f : how == G
 // square metre, 1 damage each, away from the blast's side / along the dash. Each is sized to its share of the pane; the
 // counts come from the seed (the server and every client agree), capped for a huge pane (kGlassMaxPieces).
 constexpr int kGlassMaxPieces = 600;
-inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& dir, uint32_t seed, std::vector<GlassShard>& out) {
+// shape: the pane's brush, for a sloped one (on a wedge, corner, tetra or cut): its shards start inside its shape, not
+// anywhere in its box (a dome face's box is mostly air). A box draws exactly as before; server and clients pass the same.
+inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& dir, uint32_t seed, std::vector<GlassShard>& out,
+                        const Brush* shape = nullptr) {
     out.clear();
     uint32_t s = seed | 1u;
     const int a = glassThinAxis(pane);
@@ -65,7 +68,10 @@ inline void glassShards(const AABB& pane, int how, const Vec3& at, const Vec3& d
     if (how == GLASS_SHATTER) away[a] = at[a] < pane.center()[a] ? 1.0f : -1.0f;
     else away = dir;
     for (int i = 0; i < n; i++) {
-        const Vec3 p = {pane.mn.x + ext.x * glassRandF(s), pane.mn.y + ext.y * glassRandF(s), pane.mn.z + ext.z * glassRandF(s)};
+        Vec3 p = {pane.mn.x + ext.x * glassRandF(s), pane.mn.y + ext.y * glassRandF(s), pane.mn.z + ext.z * glassRandF(s)};
+        if (shape && shape->shape != BRUSH_BOX)   // (a few more draws until it's in the shape; none in it: the last one)
+            for (int tries = 0; tries < 12 && !brushNear(*shape, p, 0.0f); tries++)
+                p = {pane.mn.x + ext.x * glassRandF(s), pane.mn.y + ext.y * glassRandF(s), pane.mn.z + ext.z * glassRandF(s)};
         Vec3 v;
         if (crater) {   // (the crater's: fast along the shot; further out they mostly drop)
             Vec3 r = p - at; r[a] = 0;
