@@ -15,11 +15,12 @@ roof:
   boiler      (north) a brick corridor 3 m wide and 4.5 m tall joining both wings behind the palm house (the flank loop,
               stairs down into the fern house), the boiler room in its middle.
 Every main route is at least 4 m tall and 2.5 m wide (DOUBLE SIZE makes players 3.6 m tall). Outside the glass: a
-lawn, a hedge, trees and a garden wall (out of reach); a clip lid at 20 m over everything.
+lawn, a hedge, trees and a garden wall (all of it clip to 20 m, 3 m clear of the walls: out of reach); a clip lid at
+20 m over everything and clip from every roof up to it.
 
 Fix round (1.19.6 review, q's answers): glass and iron walls instead of concrete (palm house and wings), real
 planting (moss beds, a pebble path, palms in the wing corners), the hot spring replaced by a small plain pool (no
-healing in one-life rounds), the wings trimmed 4 m each (x +-26: 2,011 m2 of floor, was 2,792), the any spawns
+healing in one-life rounds), the wings trimmed 4 m each (x +-26: 1,869 m2 of floor, was 2,792), the any spawns
 facing walls and doors (the palm floor's two behind the beds), the stairs closed under their low half (no head
 snags), the wing roofs solid but for a lantern (was 827 m2 of glass), the clip lid, a smaller basin. Walk times
 (slowest spawn, 9.5 m/s): basin A 3.6 / B 3.4 s, boiler room A 5.2 / B 5.1 s, bridges A 6.4 / B 6.1 s, spawn to
@@ -38,7 +39,7 @@ ROOF = 9.5                        # the wings' ceiling
 CORR = (-24.0, -18.0, 24.0, -15.0)  # the boiler corridor
 DOOR_H = 4.0
 ANY = [(-9.0, 0, 0.0, -13, 0), (9.0, 0, 0.0, 13, 0), (-12.0, 0, -16.5, -24, -16.5), (12.0, 0, -16.5, 24, -16.5),
-       (-3.0, WALK_Y, 11.2, -8, 8.5), (3.0, WALK_Y, -11.2, 8, -8.5), (-17, 0, -2, -26, -2), (18, FERN_Y, 2, 26, 2)]
+       (-1.5, WALK_Y, 11.3, -8, 8.5), (1.5, WALK_Y, -11.3, 8, -8.5), (-17, 0, -2, -26, -2), (17, FERN_Y, 5.5, 26, 5.5)]
 BASIN = 2.5                       # the basin's half width (5 x 5 m: a smaller slow patch on the cross lines)
 
 
@@ -97,8 +98,8 @@ def planting(k):
     """real planting, kept off the door-to-door lines: moss and fern beds along the palm house's solid segments,
     a pebble path round the basin, palms in the wings' outer corners, a bed along each wing's south wall"""
     k.ring("riverpebbles", 0, 0, BASIN + 0.2, BASIN + 1.4, 0, 0.02, n=12, a0=-15)
-    for i in (2, 4, 8, 10):   # (beds 0.45 m tall against the wall: under the step height, so a runner just steps up)
-        k.ring("mosscarpet", 0, 0, 10.4, R_IN, 0, 0.45, n=12, a0=-15, only=[i])
+    for i in (2, 8):          # (beds 0.45 m tall against the wall under the stairs' high ends: a runner just steps up)
+        k.ring("mosscarpet", 0, 0, 11.2, R_IN, 0, 0.45, n=12, a0=-15, only=[i])
     for (x, z) in ((-24.8, 8.2), (24.8, 6.4)):
         y = 0 if x < 0 else FERN_Y
         k.disc("palmtrunk", x, z, 0.3, y, y + 6.5, n=6)
@@ -109,21 +110,41 @@ def planting(k):
 
 
 def outside(k):
-    """what the glass looks out on: a lawn with gravel walks, a hedge and trees round the house, a garden wall; a clip
-    lid at 20 m over the whole footprint (nobody gets onto the wing roofs or the crown with moon gravity)"""
-    holes = [(-12.5, -12.5, 12.5, 12.5), (8.5, -9.5, 26.5, 9.5), (20.5, -15.5, 24.5, -9.0)]
-    for t in minus((-34.0, -30.0, 34.0, 22.0), holes):
+    """what the glass looks out on: a lawn with a gravel walk, a hedge and trees round the house, a garden wall; a clip
+    lid at 20 m over the whole footprint (nobody gets onto the wing roofs or the crown with moon gravity). The lawn
+    never runs under a floor and stops 3 m short of every outer wall (a sunken drain between, in far scenery): the
+    nav model links tops by gap and height alone (2.6 m), and must not join an inside floor to the lawn"""
+    holes = [(-12.5, -12.5, 12.5, 12.5), (WEST[0] - 0.5, -9.5, -8.5, 9.5), (8.5, -9.5, EAST[2] + 0.5, 9.5),
+             (CORR[0] - 0.5, CORR[1] - 0.5, CORR[2] + 0.5, CORR[3] + 0.5), (-24.5, CORR[3] + 0.5, -20.5, -9.5),
+             (20.5, CORR[3] + 0.5, 24.5, -9.5), (-5.5, -24.5, 5.5, CORR[1] - 0.5)]
+    G = 3.0
+    big = [(a - G, b - G, c + G, d + G) for (a, b, c, d) in holes]
+    X0, Z0, X1, Z1 = -38.0, -34.0, 38.0, 26.0
+    for t in minus((X0, Z0, X1, Z1), big):
         k.box("grass", t[0], -1.2, t[1], t[2], -0.1, t[3])
-    k.box("gravel", -34, -0.1, 14.0, 34, -0.08, 16.0)
-    k.box("hedge", -34, -0.1, 18.5, 34, 1.6, 19.5)
-    k.box("londonstock", -34.5, -1.2, 22.0, 34.5, 3.0, 22.5); k.box("londonstock", -34.5, -1.2, -30.5, 34.5, 3.0, -30.0)
-    k.box("londonstock", -34.5, -1.2, -30.0, -34.0, 3.0, 22.0); k.box("londonstock", 34.0, -1.2, -30.0, 34.5, 3.0, 22.0)
-    for (x, z) in ((-20, 15.0), (0, 17.0), (20, 15.0), (-30, -4), (30, 4), (-14, -12.5), (14, -12.5)):
+    for t in minus((X0, Z0, X1, Z1), holes):
+        k.box("far", t[0], -2.4, t[1], t[2], -1.3, t[3])
+        k.box("clip", t[0], -1.3, t[1], t[2], 20.0, t[3])      # (the whole outside is clip to the lid: nobody stands there)
+    k.box("gravel", X0, -0.1, 16.5, X1, -0.08, 18.0)
+    k.box("hedge", X0, -0.1, 23.0, X1, 1.6, 24.0)
+    k.box("londonstock", X0 - 0.5, -2.4, Z1, X1 + 0.5, 3.0, Z1 + 0.5); k.box("londonstock", X0 - 0.5, -2.4, Z0 - 0.5, X1 + 0.5, 3.0, Z0)
+    k.box("londonstock", X0 - 0.5, -2.4, Z0, X0, 3.0, Z1); k.box("londonstock", X1, -2.4, Z0, X1 + 0.5, 3.0, Z1)
+    for (x, z) in ((-20, 20.5), (0, 21.0), (20, 20.5), (-33, -4), (33, 4), (-32, -24), (32, -24)):
         k.disc("treebark", x, z, 0.35, -0.1, 7.0, n=6)
         k.disc("jungleleaves" if abs(x) < 25 else "pineboughs", x, z, 2.2, 5.0, 8.0, n=8)
-    k.box("clip", -35, 20.0, -31, 35, 21.0, 23)
-
-
+    k.box("clip", X0 - 1, 20.0, Z0 - 1, X1 + 1, 21.0, Z1 + 1)
+    # clip from every roof up to the lid (the wings, the boiler house and its spurs, the crown's tiers), so no roof
+    # is a floor even for a grappler who finds a way out
+    for (x0, x1) in ((WEST[0] - 0.5, -8.5), (8.5, EAST[2] + 0.5)):
+        k.box("clip", x0, ROOF + 0.25, WEST[1] - 0.5, x1, 20.0, WEST[3] + 0.5)
+    k.box("clip", CORR[0] - 0.5, 4.9, CORR[1] - 0.5, CORR[2] + 0.5, 20.0, CORR[3] + 0.5)
+    for sx in (-1, 1):
+        a, b = sorted((sx * 20.5, sx * 24.5))
+        k.box("clip", a, 4.9, CORR[3] + 0.5, b, 20.0, -9.5)
+    k.box("clip", -5.5, 6.4, -24.5, 5.5, 20.0, CORR[1] - 0.5)
+    k.ring("clip", 0, 0, 9.0, R_OUT, 14.5, 20.0, n=12, a0=-15)
+    k.ring("clip", 0, 0, 6.0, 9.5, 15.5, 20.0, n=12, a0=-15)
+    k.disc("clip", 0, 0, 6.2, 16.3, 20.0, n=8)
 def build():
     m = M("Greenhouse", "1v1", sun=(0.2, 1.0, 0.15))
     m.also = ["duel", "vs", "tourney"]
@@ -260,7 +281,7 @@ def build():
     for (x, z) in ((23.5, -2.5), (23.5, 1), (23.5, 4.5), (21.5, 1)):
         k.spawn("b", x, FERN_Y, z, yaw_to(x, z, 0, 0))
     k.box("frostedglass", -19.625, 0, 0, -19.5, 2.6, 8)
-    k.box("frostedglass", 19.5, FERN_Y, -3, 19.625, FERN_Y + 2.6, 4)
+    k.box("frostedglass", 19.0, FERN_Y, -3, 19.125, FERN_Y + 2.6, 4)
     # free for all / warm-up: facing walls or doors, the palm floor's two behind the beds
     for (x, y, z, tx, tz) in ANY:
         k.spawn("any", x, y, z, yaw_to(x, z, tx, tz))
