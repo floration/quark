@@ -1682,7 +1682,8 @@ int rulesSpawnType(const Server& s, int id) {
 int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
     // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
     // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
-    if (isRaceMode(mode) && m.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (isRaceMode(mode) && m.canSupportMode(MODE_RACE))
+        for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE) return SPAWN_RACE;   // (none: its "any" spawns, below)
     if (mode == MODE_TOURNEY && tourneyMatch && m.canSupportMode(MODE_VS))
         return team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;

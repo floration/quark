@@ -1830,6 +1830,7 @@ static void testSpawnPools() {
     for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
+        HumanMadeGrace grace(name, m);
         int maxStage = 0;
         for (auto& sp : m.spawns) if (isStagedSpawn(sp.team)) maxStage = std::max(maxStage, spawnStage(sp.team));
         int worst = 1 << 30, pools = 0;
@@ -2065,6 +2066,7 @@ static void testMapSaveExact() {
     for (auto& name : testedMaps()) {
         Map a, b;
         if (!a.load(name)) continue;
+        HumanMadeGrace grace(name, a);   // (editor-made pieces may carry float noise)
         std::string t = a.serialize();
         if (!b.parse(t) || !same(a, b) || b.serialize() != t) { printf("  %s: save -> load changed the map\n", name.c_str()); g_fail++; }
         if (t.find("00000") != std::string::npos) { printf("  %s: saved with float noise\n", name.c_str()); g_fail++; }
@@ -5354,6 +5356,11 @@ static void testSurf() {
     printf("surf: ride a ramp end to end\n");
     Map m;
     CHECK(m.load("cascade") && m.preferredMode == MODE_SURF && m.supportsMode(MODE_SURF) && m.checkpoints.size() == 4 && !m.supportsMode(MODE_FFA));
+    {   // q's hand-made maps ship (owner, 2026-10-30); surfy is surf's default map (Game::bestMapFor)
+        Map hs, hc;
+        CHECK(hs.load("surfy") && hs.preferredMode == MODE_SURF && hs.supportsMode(MODE_SURF));
+        CHECK(hc.load("cobblestone") && !hc.brushes.empty());
+    }
     // the first ridge: x -4.7..4.7 along z 44..88, faces from y 34 to 40; ride its east face toward -z
     MoveState ms; ms.pos = {2.2f, 39.5f, 86}; ms.vel = {0, 0, -18}; ms.mods = MOVE_RUN_ONLY;
     float lowest = 1e9f, minX = 1e9f, maxX = -1e9f;

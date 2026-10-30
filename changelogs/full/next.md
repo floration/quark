@@ -2,6 +2,14 @@
 
 Every change on `testing` since production 1.19.3, with what changed and why. The release PR renames this file to `changelogs/full/<VERSION>.md`.
 
+## Maps: q's Surfy and Cobblestone ship (owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map, use latest version; also surfy map is default surf gamemode map")
+
+- **Shipped as hand-made maps.** `maps/surfy.qmap` (58 brushes, `for surf`, saved 2026-10-29 18:46) and `maps/cobblestone.qmap` (885 brushes, no `for` line, saved 2026-10-29 15:59) are the newest copies from q's maps folder, byte for byte (sha256 20620ee2... and 31fbb542...). `.gitignore` un-ignores both, so CMake embeds and copies them into every build like the generated maps. As `handmade` maps they run every map check but never fail `quark_tests`.
+- **Surfy is surf's default.** `Game::bestMapFor` took the first map built for a mode, alphabetically, which is Cascade. A small per-mode default (`defaultMapName`: surf -> surfy) now comes first when that map is there and offers the mode. The mode picker's "MAP:" line now names the map `bestMapFor` would start on, instead of the last map built for the mode, so the line and the start agree (it also fixes koth and hide naming a different map than the one you got).
+- **Race and surf on a map with no race spawn.** Surfy starts players on an `any` spawn, but race and surf asked for a `race` one, so the game didn't count Surfy as a surf map at all and would have kept Cascade as the default. Now a map with race checkpoints and no race spawn offers race and surf, and `modeSpawnType` starts racers on its `any` spawns. Maps with race spawns behave as before.
+- **Hand-made maps don't fail the test run,** as CLAUDE.md says: the spawn-pool check (Surfy has 1 spawn for 8 racers, Cobblestone 4 for 8 in FFA) and the save round trip's float-noise check (Quarkology's cut pieces write numbers like 1.0000048) now report a hand-made map's misses as HUMAN-MADE, like the other map checks.
+- **Why Cobblestone ships:** it's q's test map for the cobblestone look's frame-time lows (0.1% low 800 vs 2800 fps on the older looks, parked to fix later), so every build carries the same benchmark.
+
 ## Servers: testing-only install (owner, 2026-10-30: "default is both, you should have the option")
 
 - **`install.sh --testing-only`** sets up only the testing instance (user `quark-testing`, `/opt/quark-testing`, `/var/lib/quark-testing`) on the production port (`--port`, default 27500; `--testing-port` overrides). No `quark` user or production clone is made; an existing production server is stopped and disabled with its data kept. The testing instance builds this checkout itself (there's no production build to copy) and runs its first update check during the install, as production does.
