@@ -136,4 +136,5 @@ def build():
     for side in (-1, 1):
         for x in (-20, -10, 10, 20): m.light(x, 3.2, side * (W - 0.8), 7, 0.7, fixture=False); m.light(side * (W - 0.8), 3.2, x, 7, 0.7, fixture=False)
     m.raw("setting castle")
+    m.also = ["power"]   # (power: team vs with team health pools, the same two bases)
     m.save("bastion")

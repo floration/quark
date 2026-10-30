@@ -2237,6 +2237,44 @@ static void testPointsNoPoints(uint16_t port) {
     s.stop();
 }
 
+// Power (owner, 2026-10-30): each team's pool is poolPerPlayer x its players; an enemy's hit comes off the victim's
+// team pool, never their health (nobody dies of it); your own hits take nothing; a third player brings their share; a
+// pool at 0 loses the round, and with one round that's the match.
+static void testPower(uint16_t port) {
+    printf("power: team health pools, nobody dies\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_POWER; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    const int a = rulesTeamPlayer(s, TEAM_A), b = rulesTeamPlayer(s, TEAM_B);
+    CHECK(a >= 0 && b >= 0);
+    if (a < 0 || b < 0) { s.stop(); return; }
+    const ModeState& m = s.ms_;
+    CHECK(powerPoolMax(m, TEAM_A) == 2500 && powerPool(m, TEAM_A) == 2500 && powerPoolMax(m, TEAM_B) == 2500 && powerPool(m, TEAM_B) == 2500);
+    s.damagePlayer(b, a, 80, WPN_ROCKET, Vec3());
+    CHECK(s.players_[b].alive && s.players_[b].health == kMaxHealth && powerPool(m, TEAM_B) == 2420 && powerPool(m, TEAM_A) == 2500);
+    s.damagePlayer(a, a, 50, WPN_ROCKET, Vec3());   // (your own rocket)
+    CHECK(s.players_[a].health == kMaxHealth && powerPool(m, TEAM_A) == 2500);
+    c[2].connect("127.0.0.1:" + std::to_string(cfg.port), "p2");
+    cls.push_back(&c[2]);
+    pump(s, cls, 0.6, idle);
+    int third = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != a && i != b) third = i;
+    CHECK(third >= 0);
+    if (third >= 0) {
+        const int t = s.players_[third].team;
+        printf("  joined team %d: pool %.0f of %.0f\n", t, powerPool(m, t), powerPoolMax(m, t));
+        CHECK((t == TEAM_A || t == TEAM_B) && powerPoolMax(m, t) == 5000 && powerPool(m, t) == (t == TEAM_A ? 5000 : 4920));
+    }
+    for (int k = 0; k < 100 && m.phase == PHASE_LIVE && powerPool(m, TEAM_B) > 0; k++) { s.damagePlayer(b, a, 100, WPN_ROCKET, Vec3()); CHECK(s.players_[b].alive); }
+    pump(s, cls, 0.1, idle);
+    printf("  team B's pool empty: phase %d, score %d-%d\n", m.phase, m.scoreA, m.scoreB);
+    CHECK(powerPool(m, TEAM_B) == 0 && m.scoreA == 1 && m.scoreB == 0 && (m.phase == PHASE_ROUND_END || m.phase == PHASE_MATCH_END));
+    s.stop();
+}
+
 // Phase 1a of the mode editor: a .qmode keeps what this build doesn't read. A save from Host > Custom modes
 // (load, edit the known keys, toText) must keep another editor's unknown keys and the logic block verbatim, and the
 // network text (EV_RULES) carries neither.
@@ -2797,6 +2835,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
         {"customkeep", 2, [] { testCustomRulesKeep(); }},
         {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
+        {"power", 1, [] { testPower(TP(29314)); }},
     };
     for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {

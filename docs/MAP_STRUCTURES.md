@@ -40,6 +40,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - A big map (7700 m²) for two teams. Spawns are 7.1 s apart, each team inside its own gatehouse.
 - Three heights to fight on: the courtyard, the wall-walk and hoarding at 7 m, and the tower roofs at 12 m.
 - There are loops everywhere: around the keep, along the walls and through the gates. A losing fight can always be broken off.
+- **Also offered for power** (team health pools, nobody dies): the same two gatehouses and loops; with no deaths, the long walls and drawbridges become where a team's pool is worn down.
 
 **Structures:**
 - **Curtain wall with a walk on top, and merlons.** The high ring. The merlons give cover from the fields side.
@@ -309,6 +310,7 @@ It's offered in every mode but four and was graded in each one it offers (decisi
 ## Orbital: team vs. Setting: a space station.
 **Why it suits team vs:**
 - Each team starts in its own docking bay (fairness 1.00, spawns 5.4 s apart).
+- **Also offered for power** (team health pools, nobody dies): fair bays and three lanes, so neither pool is easier to reach.
 - There are three ways across:
   - the cargo hall in the middle;
   - a corridor along each side, with glass you can shoot through;

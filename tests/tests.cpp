@@ -8565,8 +8565,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade"};
-    static_assert(MODE_COUNT == 14, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone", "cascade", "bastion"};
+    static_assert(MODE_COUNT == 15, "add the new mode's map here");
     SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         qsrand(0x5EED0100u + mode);
