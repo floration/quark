@@ -7,7 +7,29 @@ tower beside the shaft (west) links every ring too: two walkable routes up besid
 shaft every 18 m), and a dash down the middle is the fast way down. Sludge falls pour from broken pipes at 54 and 72;
 a healing balcony hangs on the wall at 45 m, reachable only by grapple or a drop from the ring above.
 Teams (power, vs, duel, 1v1): A spawns in the N (0) and W (54) chambers, B in the E (18) and S (36) ones: the same
-mean height and the same trunk to the shaft for both."""
+mean height and the same trunk to the shaft for both.
+
+Second review round (2026-10-30):
+- Sight lines down the trunks: each trunk has a cast-iron valve gate across its middle (u 33.6..34.4) with a 4 m gap
+  on the side away from its chamber's spawns, and the team spawns sit in the chamber's far corner (v +-6), so no ring
+  sees a chamber spawn (spawn exposure from the rings: 0 grid points). The two ring spawns moved onto the stair
+  tower's landings (behind its wall). The spawning chambers of E and W also screen the door the other team's feeder
+  comes in by (v +-4..4.4, u 42.5..52): a rusher turns a corner first.
+- The sludge falls have solid cast-iron downpipes (r 0.85) inside them, so they block shots and bots' sight; the hung
+  pipes moved to +-9.5, clear of the falls.
+- Ring cover: per ring two valve housings against the wall (1.8 m) and a parapet stub on the inner edge (1.2 m),
+  rotated by level, so the 7 m running lane stays clear.
+- Looks: each chamber has its own wall material (stained concrete, mossy brick, green subway tile, crackle glaze),
+  a sewage channel down its floor and a ceiling manhole with a lit grating; each feeder has a pipe run along its wall
+  and a sluice frame at its landing.
+- Feeders as flank routes: each feeder landing has a wall teleporter (lit) into an enclosed lookout in the shaft
+  wall at L+9 with a firing slit over the ring below (the feeders are too far from the shaft for a real window).
+- The rotten planks now cover a sewage pool 2.2 m deep (stairs out on the +-x sides): a real drop.
+- Maintenance ladders on cast-iron posts link each ring to the next (18 m at 6.75 m/s); the stair tower's lights are
+  brighter.
+- Measured (quark_maptool metrics, vs, nearest enemy spawn): A 11.07 s / B 10.23 s, a 0.83 s gap inside the 1 s
+  band: the bottom chamber's nearest enemy is a climb away (123 m) while the others drop (84-110 m). Check passes,
+  out of bounds included. 1300 brushes, 60 lights."""
 import math
 from .prefabs import M
 from .bigkit import Kit, num, yaw_to, clip_poly
@@ -87,20 +109,25 @@ def build():
     # ---- the walkway rings, the pool at the bottom (sewage: slows you), rotten planks across it
     for L in LEVELS:
         k.ring(RING if L else "waterstainedconcrete", 0, 0, RING_IN, R_IN, (L - 0.6) if L else -3, L, n=N_SEG)
-    k.ring("mouldbloom", 0, 0, 0, RING_IN - 1, -3, -1.0, n=N_SEG)
+    # (the pool is 1.6 m deep under the planks: when they give way you drop 2 m into it and wade out by the steps east
+    # and west, which costs you the fight up top)
+    k.ring("mouldbloom", 0, 0, 0, RING_IN - 1, -3, -2.2, n=N_SEG)
     k.ring("waterstainedconcrete", 0, 0, RING_IN - 1, RING_IN, -3, -0.5, n=N_SEG)
-    k.ring("sewage", 0, 0, 0, RING_IN, -1.0, -0.3, n=N_SEG)
+    k.ring("sewage", 0, 0, 0, RING_IN - 1, -2.2, -0.6, n=N_SEG)
+    for sx in (-1, 1):
+        k.stairs("waterstainedconcrete", min(7.2 * sx, 9.8 * sx), -1.5, max(7.2 * sx, 9.8 * sx), 1.5, -0.5, "x", sx, base=-2.2)
     k.box("rottenplanks", -1.0, -0.3, -11.2, 1.0, 0, 11.2)
     # catwalks across the top (72) and pipes hung across the shaft between the rings: grapple anchors every 18 m
     k.box("meshcatwalk", -11.5, 71.6, -1.2, 11.5, 72, 1.2)
     k.box("meshcatwalk", -1.2, 71.6, -11.5, 1.2, 72, -1.2); k.box("meshcatwalk", -1.2, 71.6, 1.2, 1.2, 72, 11.5)
-    k.tube_x("castiron", -18.5, 18.5, 9, 6, 0.6)
-    k.tube_z("castiron", -18.5, 18.5, -6, 27, 0.6)
-    k.tube_x("castiron", -18.5, 18.5, 45, -6, 0.6)
-    k.tube_z("castiron", -18.5, 18.5, 6, 63, 0.6)
+    # (clear of the sludge falls)
+    k.tube_x("castiron", -18.5, 18.5, 9, 9.5, 0.6)
+    k.tube_z("castiron", -18.5, 18.5, -9.5, 27, 0.6)
+    k.tube_x("castiron", -18.5, 18.5, 45, -9.5, 0.6)
+    k.tube_z("castiron", -18.5, 18.5, 9.5, 63, 0.6)
 
     # ---- trunks (21 m, 12 m across) and junction chambers (16 x 16 x 10)
-    def trunk(f, L):
+    def trunk(f, L, gap):
         # floor (2 cm under the ring's: no fighting) either side of a sewage channel down the middle (0.4 m down)
         f.box(PIPE, 16.5, 38, L - 1, L - 0.02, -8, -1.5); f.box(PIPE, 16.5, 38, L - 1, L - 0.02, 1.5, 8)
         f.box("waterstainedconcrete", 16.5, 38, L - 1, L - 0.42, -1.5, 1.5)
@@ -116,10 +143,30 @@ def build():
                 f.cut(PIPE, 17, 38, L, L + 1.5, -6, -4.5, [(0, 1, 1, L - 4.5)])
         f.box(PIPE, 17, 38, L + 10, L + 11, -8, 8)
         f.light(27, L + 7.5, 0, 16, 0.8)
-    def chamber(f, L, fin, fout):
-        f.box(ROOM, 37, 55, L - 1, L, -9, 9)
-        f.box(ROOM, 37, 55, L + 10, L + 11, -9, 9)
+        # the valve gate across its chamber end (a 4 m gap at one side): no line runs from the shaft into the chamber's
+        # spawn corner
+        g0, g1 = (-6, 2) if gap > 0 else (-2, 6)
+        f.box("castiron", 33.6, 34.4, L - 0.42, L + 10, g0, g1)
+        f.box("ruststreaks", 33.2, 34.8, L + 7.6, L + 8.2, g0, g1)                       # (its rack and wheel housing)
+        f.box("lightblock", 33.5, 33.6, L + 6.0, L + 6.4, (g0 + g1) / 2 - 1, (g0 + g1) / 2 + 1)
+    def chamber(f, L, fin, fout, ROOM=ROOM, screen=0):
+        # the floor either side of the sewage channel (the trunk's, carried through to the far wall)
+        f.box("waterstainedconcrete", 37, 55, L - 1, L, -9, -1.5); f.box("waterstainedconcrete", 37, 55, L - 1, L, 1.5, 9)
+        f.box("waterstainedconcrete", 37, 54, L - 1, L - 0.42, -1.5, 1.5); f.box("sewage", 37, 54, L - 0.42, L - 0.14, -1.5, 1.5)
+        # the ceiling, a manhole in it: a short shaft up to a lit grating (daylight's stand-in)
+        for (a, b, c, d) in ((37, 45, -9, 9), (47, 55, -9, 9), (45, 47, -9, -1), (45, 47, 1, 9)):
+            f.box(ROOM, a, b, L + 10, L + 11, c, d)
+        for (a, b, c, d) in ((44.6, 45, -1.4, 1.4), (47, 47.4, -1.4, 1.4), (45, 47, -1.4, -1), (45, 47, 1, 1.4)):
+            f.box(ROOM, a, b, L + 11, L + 13.5, c, d)
+        f.box("stormdraingrate", 45, 47, L + 13.3, L + 13.5, -1, 1); f.box("glow", 45, 47, L + 13.5, L + 13.6, -1, 1)
+        f.light(46, L + 11, 0, 9, 0.7)
+        # (clip on the roof's top, round the manhole: the movement-tech check found a way onto it)
+        for (a, b, c, d) in ((37, 44.6, -9, 9), (47.4, 55, -9, 9), (44.6, 47.4, -9, -1.4), (44.6, 47.4, 1.4, 9)):
+            f.box("clip", a, b, L + 11, L + 11.6, c, d)
         f.box(ROOM, 54, 55, L, L + 10, -8, 8)
+        if screen:   # a short wall just inside the feeder door from the other team's chamber: rushers turn a corner
+            a, b = sorted((4 * screen, 4.4 * screen))
+            f.box(ROOM, 42.5, 52, L, L + 4.5, a, b)
         for sv, door in ((1, fout), (-1, fin)):
             a, b = sorted((8 * sv, 9 * sv))
             if door:
@@ -153,12 +200,44 @@ def build():
             f.cut(TUNNEL, u0, u1, L + 15 + q * (44 - u1), L + 15.8 + q * (44 - u0), 44, 52, [(-q, -1, 0, -(L + 15 + 44 * q)), (q, 1, 0, L + 15.8 + 44 * q)])
         f.box(TUNNEL, 9, 44, L + 8, L + 25, 43, 44); f.box(TUNNEL, 9, 43, L + 8, L + 25, 52, 53)
         for (u, v, y) in ((48, 26, L + 9.5), (48, 48, L + 13), (26, 48, L + 18.5)): f.light(u, y, v, 14, 0.7)
+        # a pipe run along each leg's outer wall, up under the ceiling (one sloped brush a leg, against the wall)
+        f.cut("castiron", 51.4, 52, L + 5.0, L + 5.6 + 36 * q, 8, 44, [(0, -1, q, -(L + 5.0 - 8 * q)), (0, 1, -q, L + 5.6 - 8 * q)])
+        f.cut("castiron", 8, 44, L + 14.0, L + 14.6 + 36 * q, 51.4, 52, [(-q, -1, 0, -(L + 14.0 + 44 * q)), (q, 1, 0, L + 14.6 + 44 * q)])
+        # the landing: a sluice gate's frame on its corner, and the wall teleporter straight ahead of leg 1 (a flank:
+        # out onto a balcony in the shaft wall, 9 m over the ring below, and back)
+        f.box("ruststreaks", 52, 52.6, L + 9, L + 15, 44, 44.6); f.box("ruststreaks", 52, 52.6, L + 14.2, L + 15, 44.6, 51.4)
+        f.box("castiron", 52.2, 52.6, L + 10.5, L + 13, 45.2, 51)                       # (the gate, wound up)
+        x0, z0 = f.xz(47, 51.5); x1, z1 = f.xz(51, 52.5)
+        nx, nz = f.xz(0, -1)
+        face = (0 if nx > 0 else 1) if nx else (4 if nz > 0 else 5)
+        k.line(f"teleporter {num(min(x0, x1))} {num(L + 9)} {num(min(z0, z1))} {num(max(x0, x1))} {num(L + 12.5)} {num(max(z0, z1))} tp {f.f + 1} {face}")
+    def balcony(side, L):
+        """the shaft end of a feeder's teleporter: a lookout in the shaft wall at L + 9 (a box with a firing slit, 1 m
+        tall, toward the middle of the shaft): only the teleporter reaches it, nobody drops in or out"""
+        seg = (4 * side + 14) % 16                       # (the quadrant's diagonal: N 14, E 2, S 6, W 10)
+        k.ring(RING, 0, 0, 14.5, R_IN, L + 8.6, L + 9, n=N_SEG, only=[seg])
+        LW = "castinplacewalls"
+        k.ring(LW, 0, 0, 14.5, 14.9, L + 9, L + 10.2, n=N_SEG, only=[seg])
+        k.ring(LW, 0, 0, 14.5, 14.9, L + 11.2, L + 17.4, n=N_SEG, only=[seg])      # (up to the ring over it: no roof to drop onto)
+        for (t, sgn) in ((math.radians(22.5 * seg), 1), (math.radians(22.5 * (seg + 1)), -1)):   # its two side walls
+            c, s_ = math.cos(t), math.sin(t); tx, tz = -s_ * sgn * 0.3, c * sgn * 0.3
+            k.prism(LW, [(14.5 * c, 14.5 * s_), (R_IN * c, R_IN * s_), (R_IN * c + tx, R_IN * s_ + tz), (14.5 * c + tx, 14.5 * s_ + tz)], L + 8.6, L + 17.4)
+        t = math.radians(22.5 * (seg + 0.5)); cx, cz = R_IN * math.cos(t), R_IN * math.sin(t)
+        dx, dz = -math.cos(t), -math.sin(t)
+        face = (0 if dx > 0 else 1) if abs(dx) >= abs(dz) else (4 if dz > 0 else 5)
+        k.line(f"teleporter {num(cx - 0.7)} {num(L + 9)} {num(cz - 0.7)} {num(cx + 0.7)} {num(L + 12.5)} {num(cz + 0.7)} tp {side + 1} {face}")
+        k.light(16 * math.cos(t), L + 13.5, 16 * math.sin(t), 7, 0.6)
+    # (each chamber: its own accent; the spawning chambers screen the door the other team's feeder comes in by, and
+    # their trunks' gates leave the gap on the side away from the spawns)
+    looks = {0: "waterstainedconcrete", 1: "mossybrick", 2: "greensubwaytile", 3: "crackleglazetile"}
+    gaps = {0: -1, 1: -1, 2: -1, 3: -1}          # (the side of each trunk gate's gap: away from the spawn corner)
+    screens = {0: 0, 1: -1, 2: 0, 3: -1}         # (E18 and W54: the doors a climbing rusher comes in by)
     for side in range(4):
         f = F(k, side)
         L = 18 * side
-        trunk(f, L); chamber(f, L, side > 0, True); feeder(f, L)
+        trunk(f, L, gaps[side]); chamber(f, L, side > 0, True, looks[side], screens[side]); feeder(f, L); balcony(side, L)
     top = F(k, 0)
-    trunk(top, 72); chamber(top, 72, True, False)     # the pump room (N, at 72): the last feeder comes in, none goes on
+    trunk(top, 72, 1); chamber(top, 72, True, False)     # the pump room (N, at 72): the last feeder comes in, none goes on
 
     # ---- the stair tower (x -38..-20, z -19..-8.5), its corridors to each ring through segment 9
     TW = "castinplacewalls"
@@ -183,18 +262,43 @@ def build():
             k.stairs("bargrating", -35, -13.5, -23, -8.5, L + 9, "x", -1, base=L, solid=False)
             k.box("bargrating", -38, L + 8.4, -19, -35, L + 9, -8.5)                          # far landing
             k.stairs("bargrating", -35, -19, -23, -14, L + 18, "x", 1, base=L + 9, solid=False)
-            k.light(-29, L + 6, -11, 10, 0.6); k.light(-29, L + 15, -16.5, 10, 0.6)
+            k.light(-29, L + 6, -11, 13, 0.9); k.light(-29, L + 15, -16.5, 13, 0.9)
+            k.box("lightblock", -37.9, L + 6, -12, -37.8, L + 6.4, -10); k.box("lightblock", -37.9, L + 15, -17.5, -37.8, L + 15.4, -15.5)
         else:
             k.box("bargrating", -23, L - 0.6, -19, -20, L, -8.5)
 
-    # ---- the sludge falls (5% a second: they cut the sightlines across the shaft) from broken pipes at 54 and 72
+    # ---- the sludge falls (5% a second) from broken pipes at 54 and 72, each pouring round a broken cast-iron
+    # downpipe (1.6 m: the solid core that really cuts the sightlines across the shaft)
     k.box("toxicsludge", -7.5, -0.3, 4.5, -4.5, 53.4, 7.5)
     k.box("toxicsludge", 4.5, -0.3, -7.5, 7.5, 71.4, -4.5)
+    k.disc("castiron", -6, 6, 0.85, -1, 53.4, n=8)
+    k.disc("castiron", 6, -6, 0.85, -1, 71.4, n=8)
     # ---- the healing balcony on the wall at 45 m (south-east): grapple up, or drop from the ring at 54
     k.prism("healingtile", [(14.5 * math.cos(math.radians(a)), 14.5 * math.sin(math.radians(a))) for a in (36, 54)] +
             [(R_IN * math.cos(math.radians(a)), R_IN * math.sin(math.radians(a))) for a in (54, 36)], 44.4, 45)
     # ---- the acid drain in the bottom chamber's corner (10% on contact, 10% a second)
     F(k, 0).box("acid", 50, 54, 0, 0.08, -8, -5)
+
+    # ---- maintenance ladders up the shaft from each ring to the next, on a pipe just inside the ring's inner edge, round
+    # from that ring's trunk mouth (a walker's quickest way up one level: 18 m at 6.75 m/s)
+    for (L, px, pz, face) in ((0, 6, -8.5, "n"), (18, 10.37, 3, "e"), (36, -3, 10.37, "s"), (54, -10.37, -3, "w")):
+        k.box("castiron", px - 0.3, L - 1 if L else -3, pz - 0.3, px + 0.3, L + 17.4, pz + 0.3)
+        d = {"n": (0, 0.42), "s": (0, -0.42), "e": (-0.42, 0), "w": (0.42, 0)}[face]
+        k.ladder(px + d[0], pz + d[1], L, L + 18, face)
+
+    # ---- cover on the rings: per ring a valve housing or two against the wall (1.8 m) and a parapet stub on the inner
+    # edge (1.2 m), placed differently on every level and clear of the trunk mouths, the corridors and the catwalks
+    COVER = {0: ((170, "h"), (30, "p"), (340, "h")), 18: ((70, "h"), (160, "p"), (290, "h")),
+             36: ((20, "h"), (250, "p"), (160, "h")), 54: ((100, "h"), (300, "p"), (250, "h")),
+             72: ((200, "h"), (125, "p"), (30, "h"))}
+    for L, items in COVER.items():
+        for (a, kind) in items:
+            j = int(a / 11.25)
+            if kind == "h":
+                k.ring("castiron", 0, 0, 16.4, R_IN, L, L + 1.8, n=32, only=[j])
+                k.ring("ruststreaks", 0, 0, 16.6, R_IN, L + 1.8, L + 2.1, n=32, only=[j])
+            else:
+                k.ring("castinplacewalls", 0, 0, RING_IN, RING_IN + 0.4, L, L + 1.2, n=32, only=[j, j + 1])
 
     # ---- lights round each ring
     for L in LEVELS:
@@ -203,14 +307,18 @@ def build():
     k.light(0, 1.5, 0, 16, 0.7)
 
     # ---- spawns: A in the N (0) and W (54) chambers, B in E (18) and S (36); free for all spread over every level
+    # (in the chamber's far corner on the side away from the other team's feeder door and the trunk gate's gap: out
+    # of every line down the trunk)
     for side, team in ((0, "a"), (3, "a"), (1, "b"), (2, "b")):
-        f = F(k, side); L = 18 * side
-        f.spawn(team, 50, L, -3, 30, -3); f.spawn(team, 50, L, 3, 30, 3)
-        f.spawn("any", 42, L, 5 if side % 2 else -5, 20, 0)
-    top.spawn("any", 46, 72, -4, 20, 0); top.spawn("any", 46, 72, 4, 20, 0)
-    for (a, L) in ((112, 18), (292, 54)):
-        x, z = 15 * math.cos(math.radians(a)), 15 * math.sin(math.radians(a))
-        k.spawn("any", x, L, z, yaw_to(x, z, 0, 0))
+        f = F(k, side); L = 18 * side; sv = -6 * gaps[side]
+        # (N0's pair nearer its trunk: the bottom chamber's nearest enemy is a climb away; W54's at the chamber's mouth,
+        # behind the gate, which evens the teams' routes to the nearest enemy spawn)
+        u0 = {0: 44.5, 3: 39.5}.get(side, 49.5)
+        f.spawn(team, u0, L, sv, 30, 0 if side != 3 else sv); f.spawn(team, u0 + 3, L, sv, 30, 0 if side != 3 else sv)
+        f.spawn("any", 42, L, sv * 0.8, 30, 0)
+    top.spawn("any", 44, 72, -5, 30, 0); top.spawn("any", 47.5, 72, -5, 30, 0)
+    for L in (18, 54):   # (two more on the stair tower's landings, behind its wall)
+        k.spawn("any", -21.5, L, -17, yaw_to(-21.5, -17, -21.5, 0))
 
     decorate(k, m)
     m.raw("setting giant sewer pipes")
