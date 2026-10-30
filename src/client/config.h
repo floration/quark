@@ -183,8 +183,9 @@ struct Settings {
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
     // (keys, then the grapple launcher: after the weapon model, so saved layouts keep their indices; then the score box,
     // kill feed and chat, which could only be themed and moved from 1.19.0.testing on)
+    // (1.19.4: the objective line, the notices and the scoreboard, appended so older hud_<n> lines keep their meaning)
     enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_GRAPPLE, HUD_SCORE, HUD_KILLFEED, HUD_CHAT,
-           HUD_COUNT };
+           HUD_OBJECTIVE, HUD_NOTICES, HUD_SCOREBOARD, HUD_COUNT };
     // x / y / scale move and size an element (720p units); hidden removes it. For the two first-person models (the
     // weapon, the grapple launcher), x / y / depth move it in front of the camera (depth: z, + = further away), pitch /
     // yaw / roll tilt it about its pivot (degrees) and colour tints its accent parts (the launcher: its stripe).

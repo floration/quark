@@ -113,6 +113,13 @@ public:
     // Every 2D colour's alpha times a (a HUD element's theme opacity, set around its drawing); 1: as given.
     void setAlpha(float a) { alpha_ = a; }
     float alpha() const { return alpha_; }
+    // Moving a group of 2D draws after the fact (HUD elements drawn by fixed code, moved and sized by the HUD settings):
+    // uiMark() before them, then uiTransform scales what was drawn since about (px, py) by k and moves it by (dx, dy).
+    // Callers skip it at offset 0 / size 1, so the default HUD costs nothing; else one pass over those vertices.
+    size_t uiMark() const { return ui_.size(); }
+    // one solid quad with free corners (xy: 4 points, clockwise or not; convex): the PLAYER tab's model preview's faces
+    void quad2D(const float xy[8], const Color& c);
+    void uiTransform(size_t from, float px, float py, float k, float dx, float dy);
     // The QUARK title (the menus'): centred on cx, its line top at y (as text() takes it), at text scale ts (fractional
     // is fine); the Q split along a slanted line with a black seam: its left and UARK in `friendly`, its right in
     // `enemy` (the player's team colours); friendly's alpha fades all of it. In Rubik: the baked logo

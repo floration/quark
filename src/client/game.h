@@ -192,6 +192,7 @@ private:
     void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
+    void drawScoreboardAt();   // (drawScoreboard: this, moved / sized by HUD > SCOREBOARD)
     // where the scoreboard goes this frame (its panel; under the notice list) and its rows' text scale / height
     struct ScoreboardBox { float x, y, w, h, ts, rowH; };
     ScoreboardBox scoreboardBox(size_t players) const;
@@ -776,6 +777,15 @@ private:
     void drawGameplayMore4(const SetLayout& L);
     void drawControlsMore2(const SetLayout& L);
     void drawPlayerMore(const SetLayout& L);
+    // PLAYER: your model in your team colour, turning (drag to turn it): its boxes projected into the 2D batch, only
+    // while the tab is open (a few hundred quads)
+    void drawModelPreview(float x, float y, float w, float h);
+    float previewYaw_ = 0.6f;
+    bool previewDrag_ = false;
+    float previewLastX_ = 0;
+    ModelParts previewParts_;
+    struct PreviewFace { float xy[8]; float z; Color c; };
+    std::vector<PreviewFace> previewFaces_;
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
@@ -1080,7 +1090,8 @@ private:
     // one per element, each re-solving only when its own content changes (held here, not on the heap: a frame's HUD
     // touches as few cache lines as it can; capacities: the weapon list's slots, the kill feed's and chat's lines)
     lay::Layout hudLay_[Settings::HUD_COUNT] = {lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(24), lay::Layout(4),
-                                                lay::Layout(4), lay::Layout(4), lay::Layout(8), lay::Layout(56), lay::Layout(64)};
+                                                lay::Layout(4), lay::Layout(4), lay::Layout(8), lay::Layout(56), lay::Layout(64),
+                                                lay::Layout(1), lay::Layout(1), lay::Layout(1)};   // (the last three: drawn by fixed code, moved by hudMove)
     HudWidth hudCapW_[8];                             // (captions: the bars' WEAPON / DASH / HOOK, the speed meter's, the weapon name)
     struct SlotLabels { char t[WPN_COUNT][32]; float w[WPN_COUNT]; int away[WPN_COUNT]; float ts = -1; int gen = -1; };   // (away: the seconds in t; INT_MIN: not made)
     SlotLabels hudSlotW_ = {};                        // (the weapon list's labels and widths, measured when one changes)
@@ -1108,6 +1119,11 @@ private:
     bool hudEdUndo(bool redo);
     const HudStyle& hudStyle(int el) const;
     float hudOpacity(int el) const;
+    // The objective line, the notices and the scoreboard: drawn where they always were, then moved and sized as a group
+    // by their HUD element (offset, size; the theme's margin and opacity). Nothing at the defaults.
+    struct HudMove { size_t mark = 0; float px = 0, py = 0, k = 1, dx = 0, dy = 0, oldAlpha = 1; bool on = false; };
+    HudMove hudMoveBegin(int el, float px, float py);
+    void hudMoveEnd(const HudMove& m);
     Color hudTint(int el, Color c) const;             // the element's colour: its HUD COLOR, else the theme's, else c
     float hudFont(int el) const;                      // its text size: SIZE x the theme's font-size
     bool hudSame(int el, float W, float H, const float* v, int n);

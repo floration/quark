@@ -3238,7 +3238,8 @@ void Game::drawRps(float W, float H, float s, float top) {
 
 namespace {
 const char* const kHudElemLabels[Settings::HUD_COUNT] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
-                                                        "WEAPON MODEL", "KEY OVERLAY", "GRAPPLE MODEL", "SCORE BOX", "KILL FEED", "CHAT"};
+                                                        "WEAPON MODEL", "KEY OVERLAY", "GRAPPLE MODEL", "SCORE BOX", "KILL FEED", "CHAT",
+                                                        "OBJECTIVE", "NOTICES", "SCOREBOARD"};
 // a HUD element's theme opacity, for the draws of one scope (Renderer::setAlpha)
 struct AlphaScope {
     Renderer& r; float old;
@@ -3268,6 +3269,25 @@ float Game::hudOpacity(int el) const {
     const HudStyle& st = hudStyle(el);
     const float a = st.has(HudStyle::OPACITY) ? st.opacity : 1.0f;
     return rankedPlayer() ? std::max(a, kRankedMinOpacity) : a;   // (ranked: a theme can dim the HUD, not hide it)
+}
+
+Game::HudMove Game::hudMoveBegin(int el, float px, float py) {
+    HudMove m;
+    m.oldAlpha = r_.alpha();
+    if (rankedPlayer()) return m;   // (ranked: the default HUD)
+    const Settings::HudElem& e = cfg_.hud[el];
+    const HudStyle& st = hudStyle(el);
+    const float s = (float)r_.height() / 720.0f;
+    m.px = px; m.py = py; m.k = e.scale; m.dx = e.x * s; m.dy = e.y * s;
+    if (st.has(HudStyle::MARGIN)) { m.dx += (st.margin[0] - st.margin[2]) * s; m.dy += (st.margin[1] - st.margin[3]) * s; }
+    m.on = m.k != 1 || m.dx != 0 || m.dy != 0;
+    if (st.has(HudStyle::OPACITY)) r_.setAlpha(m.oldAlpha * st.opacity);
+    m.mark = r_.uiMark();
+    return m;
+}
+void Game::hudMoveEnd(const HudMove& m) {
+    if (m.on) r_.uiTransform(m.mark, m.px, m.py, m.k, m.dx, m.dy);
+    r_.setAlpha(m.oldAlpha);
 }
 
 // The element's colour: its own HUD COLOR when that's on, else the theme's, else the built-in one (c; its alpha kept)
@@ -4228,8 +4248,13 @@ void Game::drawHud() {
         r_.text(cx - r_.textWidth(t, bts) * 0.5f, ny, bts, t, it ? kRed : kWhite);
         ny += r_.textHeight(bts) + 4 * s;
     }
-    if (!obj.empty()) { ui_.labelCentered(cx, ny, obj, kWhite); ny += th + 4 * s; }
-    const bool tug = ms.mode == MODE_NPAYLOAD && ms.payloadLen > 0;
+    // OBJECTIVE (a HUD element: moved / sized as a group; hidden: none of it; moved: the notices under it close up)
+    const bool objShown = !cfg_.hud[Settings::HUD_OBJECTIVE].hidden || rankedPlayer();
+    const float objY0 = ny;
+    const HudMove objMv = hudMoveBegin(Settings::HUD_OBJECTIVE, cx, ny);
+    if (!objShown) { obj.clear(); progress = -1; }
+    if (!obj.empty()) { ui_.labelCentered(cx, ny, obj, hudTint(Settings::HUD_OBJECTIVE, kWhite)); ny += th + 4 * s; }
+    const bool tug = objShown && ms.mode == MODE_NPAYLOAD && ms.payloadLen > 0;
     if (progress >= 0 || tug) {   // the objective's bar (8 high; the payload's marks stick out 4 each side)
         const float bw = 300 * s, by = ny + 4 * s;
         if (tug) {   // tug-of-war bar: your side's end on the left
@@ -4246,10 +4271,12 @@ void Game::drawHud() {
         }
         ny = by + 12 * s + 4 * s;
     }
-    if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE) {
+    if (objShown && ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE) {
         ui_.labelCentered(cx, ny, fmtTime(ms.bombTimer), kRed, 1.5f);
         ny += r_.textHeight(std::max(1.0f, std::round(ts * 1.5f))) + 4 * s;
     }
+    hudMoveEnd(objMv);
+    if (objMv.on) ny = objY0;
     if (rankedGame && (ms.phase == PHASE_WARMUP || ms.phase == PHASE_FREEZE)) {   // (under the ruleset line it explains)
         ui_.hintCentered(cx, ny, "RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS", gold, W - 32 * s);
         ny += hh + 4 * s;
@@ -4346,9 +4373,13 @@ void Game::drawHud() {
     // chat (bottom left)
     drawChatBox(W, H, s, ts);
     // notices
-    drawNotices(H * 0.3f, ts, s);
-    // the round's message (hide and seek: who won) in the centre slot over the tiebreak, not while the scoreboard is held
-    if (time_ < centerUntil_ && !showScores_) ui_.labelCentered(cx, 256 * s, centerText_, kWhite, 1.5f, W - 32 * s);
+    if (!cfg_.hud[Settings::HUD_NOTICES].hidden || rankedPlayer()) {   // NOTICES (a HUD element): the notices and the round's message
+        const HudMove nm = hudMoveBegin(Settings::HUD_NOTICES, cx, H * 0.3f);
+        drawNotices(H * 0.3f, ts, s);
+        // the round's message (hide and seek: who won) in the centre slot over the tiebreak, not while the scoreboard is held
+        if (time_ < centerUntil_ && !showScores_) ui_.labelCentered(cx, 256 * s, centerText_, hudTint(Settings::HUD_NOTICES, kWhite), 1.5f, W - 32 * s);
+        hudMoveEnd(nm);
+    }
     ny = drawVotePanel(cx, s, ts, ny);   // (a running vote: in the notice list)
 
     // host info, in the notice list under the rest (pause menu; the settings and the map / mode lists fill the screen)
@@ -4414,12 +4445,14 @@ void Game::drawHud() {
     else if (board) drawScoreboard();
     if (board && ms.phase == PHASE_MATCH_END && cfg_.matchSummary && !opts_.textHeavy) {   // MATCH SUMMARY: under the scoreboard
         const ScoreboardBox b = scoreboardBox(net_.latest().players.size());
+        const HudMove sm = hudMoveBegin(Settings::HUD_SCOREBOARD, b.x + b.w * 0.5f, b.y);   // (it goes with the scoreboard)
         char t[160];
         snprintf(t, sizeof t, "YOUR MATCH:  %d SHOTS  %d HITS  %d%% ACCURACY  %.0f DAMAGE  BEST STREAK %d", matchShots_, matchHits_,
                  matchShots_ ? (int)std::lround(100.0 * std::min(matchHits_, matchShots_) / matchShots_) : 0, matchDmg_, matchBestStreak_);
         const float y0 = std::min(b.y + b.h + 12 * s, H - 40 * s);
         r_.rect(b.x, y0, b.w, 28 * s, {0, 0, 0, 0.7f});
         ui_.labelCentered(b.x + b.w * 0.5f, y0 + 6 * s, t, kWhite, 1.0f, b.w - 16 * s);
+        hudMoveEnd(sm);
     }
     if (paused_) {
         // dim the game behind the menu so HUD text doesn't show through its panels; not on the pages
@@ -5477,7 +5510,15 @@ Game::ScoreboardBox Game::scoreboardBox(size_t players) const {
     return b;
 }
 
+// SCOREBOARD (a HUD element): drawn where it always is, then moved / sized about its top centre; hidden: not drawn
 void Game::drawScoreboard() {
+    if (cfg_.hud[Settings::HUD_SCOREBOARD].hidden && !rankedPlayer()) return;
+    const ScoreboardBox b = scoreboardBox(net_.latest().players.size());
+    const HudMove m = hudMoveBegin(Settings::HUD_SCOREBOARD, b.x + b.w * 0.5f, b.y);
+    drawScoreboardAt();
+    hudMoveEnd(m);
+}
+void Game::drawScoreboardAt() {
     const float H = (float)r_.height(), s = H / 720.0f;
     const ModeState& ms = net_.mode();
     std::vector<PlayerSnap> ps = net_.latest().players;
@@ -6125,6 +6166,10 @@ void Game::drawPlayerSettings(const SetLayout& L) {
         f.next();
         f.hint("WIDTH 0 = NO OUTLINE");
     }
+    {   // your model, turning (drag it to turn it): under the outlines, down to the footer
+        const float top = f.top() + L.L(8), bot = L.Y(628);
+        if (bot - top > L.L(80)) drawModelPreview(f.x(), top, w, bot - top);
+    }
 
     // --- right: LOOK, TEAM COLORS, INTERFACE
     SetFlow g{ui_, L, kColR, 90};
@@ -6178,6 +6223,65 @@ void Game::drawPlayerSettings(const SetLayout& L) {
                    UiExp::nav("~settings/fonts").withId("FONT"))) { fontsOpen_ = true; fontListed_ = false; fontScroll_ = 0; ui_.closePopup(); }
     g.next();
     g.hint("THE FONT OF THE MENUS AND THE HUD");
+}
+
+// The PLAYER tab's model preview: the chosen model's boxes (playerModelParts, or a box override) in your team colour,
+// turned by previewYaw_ and seen a little from above, projected flat (orthographic) into the 2D batch: each box's
+// faces toward the camera, lit by one light, far faces first. A mesh override has no boxes: a line says so.
+void Game::drawModelPreview(float x, float y, float w, float h) {
+    r_.rect(x, y, w, h, {0, 0, 0, 0.25f});
+    const int pm = std::min(std::max(cfg_.model, 0), kPlayerModels - 1);
+    if (modelOverride(MODEL_PLAYER, pm)) {
+        ui_.hintCentered(x + w * 0.5f, y + h * 0.5f - 6, "YOUR OWN MODEL FILE: NO PREVIEW HERE", kGrey, w - 16);
+        return;
+    }
+    // turning: slowly by itself, or with the mouse while dragged (pressed over the box, held)
+    if (uiIn_.pressed && ui_.over(x, y, w, h)) { previewDrag_ = true; previewLastX_ = uiIn_.mx; }
+    if (!uiIn_.down) previewDrag_ = false;
+    if (previewDrag_) { previewYaw_ += (uiIn_.mx - previewLastX_) * 0.012f; previewLastX_ = uiIn_.mx; }
+    else previewYaw_ += (float)frameDt_ * 0.6f;
+    previewYaw_ = std::fmod(previewYaw_, 6.2831853f);
+    ModelPalette pal;
+    pal.c[TINT_TEAM] = cfg_.colorFriendly;
+    if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, 1.0f, previewParts_);
+    else playerModelParts(pm, 1.0f, pal, previewParts_);
+    const float cy = std::cos(previewYaw_), sy = std::sin(previewYaw_);
+    const float cp = std::cos(0.25f), sp = std::sin(0.25f);   // (seen 14 degrees from above)
+    const float k = std::min(h * 0.88f / 2.25f, w * 0.4f), ox = x + w * 0.5f, oy = y + h * 0.5f + 1.0f * k * cp;   // (2 m tall, centred)
+    // model space -> view (x right, y up, z toward the camera)
+    auto view = [&](Vec3 p) {
+        const Vec3 r = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
+        return Vec3{r.x, cp * r.y - sp * r.z, sp * r.y + cp * r.z};
+    };
+    const Vec3 light = normalize(Vec3{-0.4f, 0.7f, 0.6f});
+    previewFaces_.clear();
+    static const int kFace[6][4] = {{1, 3, 7, 5}, {0, 4, 6, 2}, {2, 6, 7, 3}, {0, 1, 5, 4}, {4, 5, 7, 6}, {0, 2, 3, 1}};   // +x -x +y -y +z -z
+    static const Vec3 kN[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    for (const ModelPart& q : previewParts_) {
+        Vec3 v[8];
+        for (int i = 0; i < 8; i++) {
+            const Vec3 c = {q.c.x + (i & 1 ? q.h.x : -q.h.x), q.c.y + (i & 2 ? q.h.y : -q.h.y), q.c.z + (i & 4 ? q.h.z : -q.h.z)};
+            v[i] = view(c);
+        }
+        for (int f = 0; f < 6; f++) {
+            const Vec3 n = view(kN[f]);
+            if (n.z <= 0.001f) continue;   // (facing away)
+            const float lit = 0.5f + 0.5f * std::max(0.0f, dot(n, light));
+            auto disp = [&](float c) { return clampf(c * lit, 0, 1); };   // (the parts' colours are as the 3D pass takes them)
+            PreviewFace pf;
+            pf.z = 0;
+            for (int i = 0; i < 4; i++) {
+                const Vec3& p = v[kFace[f][i]];
+                pf.xy[2 * i] = ox + p.x * k; pf.xy[2 * i + 1] = oy - p.y * k;
+                pf.z += p.z;
+            }
+            pf.c = {disp(q.color.x), disp(q.color.y), disp(q.color.z), clampf(q.alpha, 0, 1)};
+            previewFaces_.push_back(pf);
+        }
+    }
+    std::sort(previewFaces_.begin(), previewFaces_.end(), [](const PreviewFace& a, const PreviewFace& b) { return a.z < b.z; });
+    for (const PreviewFace& pf : previewFaces_) r_.quad2D(pf.xy, pf.c);
+    ui_.hint(x + 6, y + 4, "DRAG TO TURN", kGrey);
 }
 
 void Game::drawGameplaySettings(const SetLayout& L) {
@@ -7665,9 +7769,10 @@ void Game::drawHudSettings(const SetLayout& L) {
     const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW), x2 = L.X(kColL + 184);
     // the element: one dropdown (the weapon and grapple models, 3D models and not HUD elements, are its first entries)
     static const int order[] = {Settings::HUD_VIEWMODEL, Settings::HUD_GRAPPLE, Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS,
-                                Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS, Settings::HUD_SCORE, Settings::HUD_KILLFEED, Settings::HUD_CHAT};
+                                Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS, Settings::HUD_SCORE, Settings::HUD_KILLFEED, Settings::HUD_CHAT,
+                                Settings::HUD_OBJECTIVE, Settings::HUD_NOTICES, Settings::HUD_SCOREBOARD};
     static const std::vector<std::string> names = {"WEAPON MODEL", "GRAPPLE MODEL", "HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST",
-                                                   "KEY OVERLAY (VERBOSE)", "SCORE BOX", "KILL FEED", "CHAT"};
+                                                   "KEY OVERLAY (VERBOSE)", "SCORE BOX", "KILL FEED", "CHAT", "OBJECTIVE", "NOTICES", "SCOREBOARD"};
     static_assert(sizeof(order) / sizeof(order[0]) == Settings::HUD_COUNT, "every HUD element in the dropdown");
     SetFlow f{ui_, L, kColL, 90};
     f.header("ELEMENT");
@@ -7703,11 +7808,13 @@ void Game::drawHudSettings(const SetLayout& L) {
     };
     if (ui_.button(f.x(), f.top(), w, h, "RESET ELEMENT", he, !isDefault(e))) e = Settings::HudElem{};
     f.next();
-    f.section("ELEMENT COLOR");
-    ui_.toggle(f.x(), f.top(), w, h, vm ? "CUSTOM ACCENT COLOR" : "CUSTOM COLOR", e.custom, he);
-    f.next();
-    ui_.colorPicker(f.x(), f.top(), w, h, vm ? "ACCENT COLOR" : "COLOR", e.color, he, de.color);
-    f.next();
+    if (hudSel_ != Settings::HUD_SCOREBOARD) {   // (the scoreboard keeps its team colours)
+        f.section("ELEMENT COLOR");
+        ui_.toggle(f.x(), f.top(), w, h, vm ? "CUSTOM ACCENT COLOR" : "CUSTOM COLOR", e.custom, he);
+        f.next();
+        ui_.colorPicker(f.x(), f.top(), w, h, vm ? "ACCENT COLOR" : "COLOR", e.color, he, de.color);
+        f.next();
+    }
 
     SetFlow g{ui_, L, kColR, 90};
     g.header("WHOLE HUD");
@@ -7775,7 +7882,8 @@ void Game::drawFontSettings(const SetLayout& L) {
 
 void Game::drawNotices(float y, float ts, float s) {
     while (!notices_.empty() && notices_.front().until < time_) notices_.pop_front();
-    for (auto& n : notices_) { ui_.labelCentered(r_.width() * 0.5f, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
+    const bool tint = screen_ == Screen::InGame && cfg_.hud[Settings::HUD_NOTICES].custom && !rankedPlayer();   // (HUD > NOTICES: CUSTOM COLOR)
+    for (auto& n : notices_) { ui_.labelCentered(r_.width() * 0.5f, y, n.text, tint ? hudTint(Settings::HUD_NOTICES, n.color) : n.color); y += r_.textHeight(ts) + 6 * s; }
 }
 
 // ---- Menus: the main menu and the pages under it ------------------------------------------------------------------

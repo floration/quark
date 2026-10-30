@@ -1859,6 +1859,33 @@ static void uiQuad(Vertex2DList& out, float x0, float y0, float x1, float y1, ui
     uiQuadAt(out.data() + n, x0, y0, x1, y1, U0, V0, U1, V1, c, scaleInt, scaleFrac);
 }
 
+void Renderer::uiTransform(size_t from, float px, float py, float k, float dx, float dy) {
+    if (from >= ui_.size() || (k == 1 && dx == 0 && dy == 0)) return;
+    auto cl16 = [](float v) { return (int16_t)std::max(-32768.0f, std::min(32767.0f, std::round(v))); };
+    for (size_t i = from; i < ui_.size(); i++) {
+        Vertex2D& v = ui_[i];
+        v.pos[0] = cl16(px + (v.pos[0] - px) * k + dx);
+        v.pos[1] = cl16(py + (v.pos[1] - py) * k + dy);
+        if (k == 1) continue;
+        if (v.pad[1] == 1) {   // a rounded rect: its size (uv x4), radius and ring
+            v.uv[0] = (uint16_t)std::min(65535.0f, std::round(v.uv[0] * k)); v.uv[1] = (uint16_t)std::min(65535.0f, std::round(v.uv[1] * k));
+            v.scaleInt = (uint8_t)std::min(255.0f, std::round(v.scaleInt * k)); v.scaleFrac = (uint8_t)std::min(255.0f, std::round(v.scaleFrac * k));
+        } else if (v.scaleInt || v.scaleFrac) {   // a glyph: its text scale (the outline's width follows it)
+            const float sc = clampf((v.scaleInt + v.scaleFrac / 256.0f) * k, 1.0f / 256, 255);
+            v.scaleInt = (uint8_t)sc;
+            v.scaleFrac = (uint8_t)std::min(255L, std::lround((sc - (float)v.scaleInt) * 256));
+        }
+    }
+}
+
+void Renderer::quad2D(const float xy[8], const Color& c) {
+    constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+    const size_t n = ui_.size();
+    ui_.resize(n + 4);
+    uiQuadAt(ui_.data() + n, 0, 0, 0, 0, u, v, u, v, rgba8(c, alpha_), 0, 0);
+    for (int i = 0; i < 4; i++) { ui_[n + i].pos[0] = px(xy[2 * i]); ui_[n + i].pos[1] = px(xy[2 * i + 1]); }
+}
+
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
     // a texel inside the solid block (cell 0.5, 6.5), as stored: (texel + 1) * 32
     constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
