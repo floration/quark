@@ -1,7 +1,11 @@
 """QK6 CROSSROADS: ranked 1v1 (vanilla) and ranked instagib free for all, box and accent only, point-symmetric.
 A plus-shaped plan 128 x 128 m: four arms 12 m wide, each two corridors high (0 and 10 m), meet in a central atrium
-36 x 36 m and 32 m tall with a cluster of blocks hanging at 16-24 m (grapple anchors and cover in the air; its top block,
-24 m, is the power spot: it sees everything and everything sees it). Stairs at each arm's end join its two corridors,
+36 x 36 m and 32 m tall round a 12 x 12 m column (floor to 18 m: no line down an arm through the atrium, on either
+level) with a cluster of blocks hanging at 16-26 m (grapple anchors and cover in the air; its top block, 26 m, is the
+power spot: it sees everything and everything sees it). Each arm is broken once on each level by staggered 2.2 m cover;
+the W/E arms carry a low accent band, the N/S arms a high one, and the team's own corner rooms (NW, SE) a floor band and
+the shared ones (NE, SW) a ceiling band, so you know where you are. Every corner room has dash-bounce corners (45 degree
+walls) on both floors. Stairs at each arm's end join its two corridors,
 a hole near the atrium drops from the upper to the lower; a corner room between each pair of arms joins them on both
 levels, so there are loops that never touch the atrium. A ring balcony at 10 m runs round the atrium. Spawns: two at
 each arm's end."""
@@ -38,16 +42,18 @@ def build():
     R.slab_wall("box", -AR, -1, -AR - 1, AR, AH + 1, -AR)
     B(m, "box", -AR, -1, -AR, AR, 0, AR); B(m, "box", -AR - 1, AH, -AR - 1, AR + 1, AH + 1, AR + 1)
     B(m, "accent", -AR, UF - 0.6, -AR, -AR + 3, UF, AR); B(m, "accent", -AR + 3, UF - 0.6, -AR, AR - 3, UF, -AR + 3)
-    # the block in the middle of its floor (no line down an arm through the atrium), the hanging cluster
-    B(m, "box", -4, 0, -4, 4, 6, 4)
-    B(m, "accent", -3, 20, -3, 3, 24, 3); B(m, "accent", -0.25, 24, -0.25, 0.25, AH, 0.25)
+    # the column in the middle (the full door width, through the balcony level: no line down an arm through the atrium),
+    # the hanging cluster
+    B(m, "box", -AW, 0, -AW, AW, 18, AW); B(m, "accent", -AW - 0.3, 17.6, -AW - 0.3, AW + 0.3, 18, AW + 0.3)
+    B(m, "accent", -3, 22, -3, 3, 26, 3); B(m, "accent", -0.25, 26, -0.25, 0.25, AH, 0.25)
     for (x, z, y0, y1, r) in ((-9, 0, 16, 18, 1.5), (0, -9, 17, 19.5, 1.25), (-7, -7, 21, 22.5, 1.0)):
         B(m, "accent", x - r, y0, z - r, x + r, y1, z + r); B(m, "accent", x - 0.15, y1, z - 0.15, x + 0.15, AH, z + 0.15)
     # ---- the W arm and the N arm (E and S are their mirror): two corridors, stairs at the end, a hole near the atrium
     R.room(-E, -AW, -AR - 1, AW, 0, CH, walls="nsw")
     R.room(-AW, -E, AW, -AR - 1, 0, CH, walls="new")
-    for (rect, hole, st) in (((-E, -AW, -AR - 1, AW), (-28, -3, -22, 3), (-E, -AW, -E + 20, -AW + 4, "x")),
-                             ((-AW, -E, AW, -AR - 1), (-3, -28, 3, -22), (-AW, -E, -AW + 4, -E + 20, "z"))):
+    # (the drop hole against one wall: the fast line down the middle stays clear)
+    for (rect, hole, st) in (((-E, -AW, -AR - 1, AW), (-28, -AW, -22, 0), (-E, -AW, -E + 20, -AW + 4, "x")),
+                             ((-AW, -E, AW, -AR - 1), (0, -28, AW, -22), (-AW, -E, -AW + 4, -E + 20, "z"))):
         for r in minus(rect, [hole, st[:4]]): B(m, "accent", r[0], UF - 1, r[1], r[2], UF, r[3])
         m.stairs(st[0], st[1], st[2], st[3], UF, st[4], 1)
     # ---- the NW and NE corner rooms (their mirrors are SE and SW), two floors each, and their passages
@@ -64,20 +70,34 @@ def build():
         R.room(x0, z0, x1, z1, 0, CH, walls="nsew")
         for r in [(x0, z0, x1, z1)]: B(m, "accent", r[0], UF - 1, r[1], r[2], UF, r[3])
     R.build()
-    # cover in the arms
-    B(m, "box", -48, 0, 2, -46, 1.4, 5); B(m, "box", -2, UF, -50, 1, UF + 1.2, -48)
+    # cover in the arms (2.2 m: a standing player fits behind), staggered: one piece per level, on opposite sides
+    B(m, "box", -48, 0, -5, -46, 2.2, -2); B(m, "box", -30, 0, 2, -28, 2.2, 5.5); B(m, "box", -40, UF, 2, -38, UF + 2.2, 5.5)          # W arm
+    B(m, "box", 2, 0, -48, 5.5, 2.2, -46); B(m, "box", -5.5, 0, -30, -2, 2.2, -28); B(m, "box", -5.5, UF, -40, -2, UF + 2.2, -38)       # N arm
+    B(m, "box", -43, UF, -5.5, -41, UF + 2.2, -2); B(m, "box", 2, UF, -52, 5.5, UF + 2.2, -50)   # (upper: the drop hole's side too)
+    # landmarks: an accent band low in the W arm, high in the N arm (their twins E and S the same)
+    for zz in (-AW, AW - 0.1):
+        B(m, "accent", -E, 3, zz, -AR - 1, 3.6, zz + 0.1); B(m, "accent", zz, UF + 5, -E, zz + 0.1, UF + 5.6, -AR - 1)
+    # the corner rooms: 45 degree walls across their outer corners on both floors (dash-bounce corners); the team's own
+    # room (NW) a floor band, the shared one (NE) a ceiling band
+    from .m2kit import prism
+    for (cx, cz, sx, sz, own) in ((-42, -24, 1, -1, True), (42, -24, -1, -1, False)):   # (the corner away from the stairs)
+        tri = [(cx, cz), (cx + sx * 5, cz), (cx, cz + sz * 5)]
+        for (y0, y1) in ((0, UF - 1), (UF, CH)): prism(m, "accent" if own else "box", tri, y0, y1)
+        x0, x1 = sorted((cx, cx + sx * 18)); z0, z1 = sorted((cz, cz + sz * 18))
+        if own: B(m, "accent", x0, 0, z1 - 0.6, x1, 0.05, z1); B(m, "accent", x0, UF, z1 - 0.6, x1, UF + 0.05, z1)
+        else: B(m, "accent", x0, UF - 1.6, z1 - 0.6, x1, UF - 1, z1); B(m, "accent", x0, CH - 0.6, z1 - 0.6, x1, CH, z1)
     # ---- spawns: two at the W arm's end and two at the N arm's end (team a; b is the mirror), free-for-all pairs
     for z in (1.0, 4.5): m.spawn("a", -59, 0, z, -90)
     for x in (1.0, 4.5): m.spawn("a", x, 0, -59, 180)
-    for (x, y, z, yaw) in ((-30, 0, -36, 135), (-38, UF, -28, 180), (33, 0, -33, -135), (-40, UF, 3, -90)):
+    for (x, y, z, yaw) in ((-30, 0, -36, 135), (-33, UF, -26.5, 180), (33, 0, -33, -135), (-35, UF, 3, -90)):
         m.spawn("any", x, y, z, yaw)
     # ---- lights
-    for x in (-56, -40, -26):
-        light(m, x, 6.5, 0, 12, 0.8); light(m, x, UF + 6.5, 0, 12, 0.7)
-    for z in (-56, -40, -26):
-        light(m, 0, 6.5, z, 12, 0.8); light(m, 0, UF + 6.5, z, 12, 0.7)
-    for (x, z) in ((-33, -33), (33, -33)): light(m, x, 6.5, z, 14, 0.8); light(m, x, UF + 6.5, z, 14, 0.7)
-    light(m, -10, 8, -10, 18, 0.8); light(m, 10, 28, -10, 20, 0.8)
+    for x in (-58, -46, -34, -24):
+        light(m, x, 6.5, 0, 16, 1.0); light(m, x, UF + 5.5, 0, 16, 1.0)
+    for z in (-58, -46, -34, -24):
+        light(m, 0, 6.5, z, 16, 1.0); light(m, 0, UF + 5.5, z, 16, 1.0)
+    for (x, z) in ((-33, -33), (33, -33)): light(m, x, 6.5, z, 16, 1.0); light(m, x, UF + 5.5, z, 16, 1.0)
+    light(m, -12, 8, -12, 18, 1.0); light(m, 12, 8, -12, 18, 1.0); light(m, 10, 28, -10, 20, 0.9)
     mirror_all(m, start)
     m.raw("palette base 0.66 0.66 0.7 accent 0.6 0.3 0.12 metal 0.3 0.3 0.32 glow 1 0.6 0.3 sky 0.5 0.55 0.62")
     m.raw("setting crossroads of halls")
