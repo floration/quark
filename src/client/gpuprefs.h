@@ -29,6 +29,10 @@ private:
 // On: the setting in this executable's driver profile (made if there's none). Off: the setting removed from it
 // (the driver's default again). The driver reads it when the game starts. msg: what happened, for a notice.
 bool nvMaxClocks(bool on, std::string* msg);
+// VIDEO + AUDIO > MORE 6 (1.19.4): in the same profile, NVIDIA's OpenGL "Threaded optimization: Off" and "Vulkan/OpenGL
+// present method: Prefer layered on DXGI swapchain"; off removes each (the driver's default). Read at the next start.
+bool nvThreadedOff(bool on, std::string* msg);
+bool nvDxgiPresent(bool on, std::string* msg);
 
 // high: GPU scheduling class HIGH (ABOVE_NORMAL if Windows refuses it) and CPU class ABOVE_NORMAL; else both NORMAL.
 // Cheap and idempotent (only a change calls Windows): called on focus changes. REALTIME (admin only) is never asked for.

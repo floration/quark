@@ -56,6 +56,34 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **New VIDEO + AUDIO > MORE 6:** a NET GRAPH (apart from F3), packet loss protection 2 / 4 / 8, map downloads on / off with a cache limit and CLEAR, the light bake cache (size, bake threads, CLEAR), FOV as horizontal / vertical / 4:3, bypass compositor (Linux), latent sync safety and late-frame behaviour (Windows), a bigger or coloured menu cursor, and USE as hold or toggle.
 - **Crosshair:** a spread circle, a cooldown ring, and sizes in exact pixels instead of scaled with the resolution.
 
+## Settings (batch 3: HUD, social, controls, menus, host, editor, launcher)
+- **Hit feedback (GAMEPLAY > MORE 2):** damage number colour, stacking and time; damage direction arcs (colour, size, time); kill mark time and colour; a KILLED <NAME> line; hit flash time; low health warning (threshold, colour, pulse, beep); green +N heal numbers; weapon kick amount; and per weapon: show its model, and move it (x, y, depth).
+- **HUD info (GAMEPLAY > MORE 3):** speed in m/s, km/h or ups with a scale and ticks; bar captions; a 12 h clock, the round clock counting up and tenths in the last 10 s; pick the verbose info lines; auto-hide health, weapon list and bars; objective marker size, opacity, distance and edge arrow; scope size and reticle colour / width; network warnings (ping, loss, stall); a minimal spectator HUD; a headshot mark in the kill feed; a stalemate warning before the drain.
+- **Social (GAMEPLAY > MORE 4):** team chat only, a word filter, one chat colour, timestamps, your name highlighted with a ping, system messages all / important / off, a chat box with its own opacity, scoreboard sort and columns, others' name colours on or off, streamer mode (hides addresses, codes and names), alerts when the game is in the background, and what to do on joining (play, spectate, ask). Death camera: on the killer, your body or a teammate, for 0 to 3 s; spectator FOV and third person.
+- **Controls (CONTROLS > MORE 2):** per-weapon sensitivity, alt-fire toggle and swapped fire buttons; mouse acceleration and raw input; auto-hop off; a console key of your choice and the console in menus; alt-fire toggles allowed in ranked. New binds: volume up / down / mute, record demo, join team, spectate. Mode profiles can now set sensitivity, FOV and zoom FOV.
+- **Menus (PLAYER > MORE):** menu theme (dark or high contrast), your own accent, text brightness, panel darkness; the menu background as clockwork, a map you pick or a plain colour; the data folder with OPEN; your quip; mods (use your overrides, open the folders); remember your ranked queues; hide ratings. PLAYER shows your model turning in your colours (drag to turn it).
+- **HUD:** the objective line, the notices and the scoreboard can now be moved, sized, coloured or hidden on the HUD tab like the other elements. Custom widgets get 8 more values (snapshot rate, accuracy, damage, streak, round, vertical speed, height, weapon).
+- **Players and votes:** pause > PLAYERS is open to everyone: block one player's quips. New votes: restart, 5 more minutes, shuffle teams, kick a player.
+- **Hosting:** tick rate, snapshot rate and upload cap; auto start; balance bot skill; vs bots up to 15 a side.
+- **Editor:** fly keys follow your binds, fast-fly multiplier, a custom grid, a rotation step, the fly speed, grid and last light are remembered; test play picks the mode, bots, starts at the camera and can skip warmup.
+- **Race:** splits against your best, the previous segment or your last run, with a display time; the race stats page picks the map and the date format.
+- **Launcher:** OPTIONS: start the game automatically, keep the launcher open, launch options, and updates automatic / ask / at next launch.
+
+## Settings (batch 4: colours, screenshots, sound extras, latency)
+- **New VIDEO + AUDIO > MORE 7 (colours):** the world's outline colour, a wallbang tint, a high-contrast map palette, your own sky and glow colours on every map, objectives in your palette, zone pulse and opacity, a colour per FFA opponent, your own colour for your shots / laser / rope, gun colour (map / team / custom), health bar low threshold and colours, name tag colour / opacity / size, explosion colours (their own / your team / custom) and a colourblind palette for F3.
+- **New VIDEO + AUDIO > MORE 8:** screenshots as PNG or TGA, saved in the game's folder or Pictures/Quark, with or without the HUD, and an OPEN FOLDER button; demo rate (also here, not only on DEMOS); always on top; dash buffer (off / 0.05 / 0.1 / 0.15 s); ultra low-latency safety margin; NVIDIA threaded optimization off and DXGI present (Windows); hitsound tiers on / off, typing sounds on / off, quip captions and announcer ducking.
+- **MORE 2:** liquids flowing or still, glow strength, SMOOTH strength and the lightmap filter (smooth / nearest).
+
+## Settings (batch 4: HUD, menus, social, editor, practice)
+- **New HUD > MORE:** your own colours for recharging bars, the speed meter (slow to fast), weapons you can't use, the sticky counter at its most, warning and info lines, and headshot / big-hit damage numbers; the text outline's width (none to thick); how many notices show and for how long; a compass and a radar (teammates and objectives only, not in ranked); hide the REC indicator; tourney's TAB shows the bracket or the scoreboard.
+- **Gameplay:** STAIR SMOOTHING off steps the view up stairs at once (GAMEPLAY > MORE 3). SHOW I'M TYPING off hides your "..." from others, and the tiebreak's rock-paper-scissors cards can be clicked (GAMEPLAY > MORE 4).
+- **Menus and bots (PLAYER > MORE):** FIXED LOGO COLORS keeps the title cyan / red; your server's bots can all wear the standard model, and take names from `bots/names.txt`.
+- **Editor:** CLIP BOX COLOR (CONTROLS > MORE 2). **Race:** SPLITS: PALETTE also colours your best run and the leaderboard's #1.
+
+## Movement fixes
+- Wall teleporters keep your speed. Going in fast used to throw you out at a crawl about half the time (surfy too).
+- The grapple can't hook clip any more: it hits it and lets go, like nograpple. No more invisible hook points on map lids.
+
 ## Maps
 - **Thin walls are shoot-through:** any surface 1/8 m thick or less (coats, panels, thin trim) now lets hitscan through at wallbang damage, like the dark grey wallbang walls.
 - **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
@@ -66,3 +94,12 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Modes
 - **New mode: POWER.** Each team shares one health pool, 2500 for every player on it, and nobody dies. An enemy's hits come off your team's pool instead of your health. When a team's pool runs out it loses; when the 10 minutes are up, the fuller pool wins. Your own rockets and the world (lava, acid, falls) take nothing from the pool; falling out of the map still respawns you. Someone who joins mid-match adds their 2500. The score box shows both pools, and the bar under it shows yours. Played on Bastion, Orbital and Lodestone. **The network protocol is now 54**, so games and servers update together.
+
+## Map checks
+- **The walk check sees ramps.** The map tests' "can players get from every spawn to every objective" check now walks up wedges, corners and cut slopes up to 45 degrees (the steepest you can walk). Before, every slope counted as a solid block, so routes up a ramp (Mine's haul road and lava ramp, QK7's helix ramps) were reported missing or found only the long way round.
+
+## Bots
+- **Bomb bots use every site.** The attackers went for the first bomb site every round, so a site further away (Datacenter's B) never saw them. They now take the sites in turn, round by round. The defenders still guard one site each.
+
+## Map format 11: spawns for one mode
+- **A map can give a mode its own spawns**, e.g. a koth hill in a bomb map: `spawn koth-a` / `spawn koth-b` spawns are used only in king of the hill (and koth starts on them when the map has them), never in other modes. Any mode but race and multi point can have a set (`ffa-any`, `bomb-a`, ...). The map editor sets it on a spawn (MODE SET; a white cap marks one). **Maps are now format 11**: older maps convert by themselves, but an older game can't open a map that uses the new spawns.

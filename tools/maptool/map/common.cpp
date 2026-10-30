@@ -34,19 +34,10 @@ AABB toBox(const Json& j) {
 }
 
 const char* spawnTeamName(int t, char* buf) {
-    static const char* teams[] = {"a", "b", "any", "race"};
-    if (isStagedSpawn(t)) { snprintf(buf, 16, "%s%d", spawnDefends(t) ? "def" : "att", spawnStage(t) % 10); return buf; }
-    return t >= 0 && t < 4 ? teams[t] : "any";
+    snprintf(buf, 16, "%s", spawnTeamWord(t).c_str());   // (map.cpp's words: a, b, any, race, att0, def1, koth-a ...)
+    return buf;
 }
-int spawnTeamFromName(const std::string& s) {
-    if (s == "a") return SPAWN_A;
-    if (s == "b") return SPAWN_B;
-    if (s == "any") return SPAWN_ANY;
-    if (s == "race") return SPAWN_RACE;
-    if (s.size() == 4 && (s.compare(0, 3, "att") == 0 || s.compare(0, 3, "def") == 0) && s[3] >= '0' && s[3] <= '0' + kMaxSpawnStage)
-        return stagedSpawn(s[3] - '0', s[0] == 'd');
-    return -1;
-}
+int spawnTeamFromName(const std::string& s) { return spawnTeamFromWord(s); }
 int modeFromJson(const Json& j, int def) {
     if (j.isNum()) { int v = j.i(); return v >= 0 && v < MODE_COUNT ? v : def; }
     if (j.isStr()) { int v = modeFromName(j.str().c_str()); return v >= 0 ? v : def; }

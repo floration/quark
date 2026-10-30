@@ -287,7 +287,7 @@ constexpr float kTapBuffer = 0.1f;
 inline bool tapBuffered(int w) { return w == WPN_SNIPER || w == WPN_CROSSBOW || w == WPN_ROCKET; }
 constexpr float kSelfRampLow = 0.3f, kSelfRampHigh = 1.2f;   // own splash: 10% at or below feet + low, full at feet + high (linear between)
 constexpr float kMuffledRange = 60.0f;   // X9: gunfire out of sight is heard muffled this far (bots hear 45-75 m)
-constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
+constexpr float kKillCamTime = 3.0f;    // dead in a team mode: the killer's view at most this long, then teammates only (the client's KILL CAM TIME picks 0 - 3 s, 1.5 by default; was 1.5 for everyone until 1.19.4)
 constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)

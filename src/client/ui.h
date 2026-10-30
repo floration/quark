@@ -158,6 +158,13 @@ public:
     void clearFocus() { focus_ = -1; }
     void focus(int id) { focus_ = id; }  // (screenshot runs: --edfocus)
     bool steadyCaret = false;            // carets don't blink (screenshot runs)
+    bool maskText = false;
+    // PLAYER > MORE (menu theme): text brightness (x, labels and widget text), panels' opacity (x), high contrast
+    // (black panels and buttons, outlined buttons, full-white text)
+    float textMul = 1.0f, panelDark = 1.0f;
+    bool contrast = false;
+    Color textC() const { const float v = contrast ? 1.0f : std::min(1.0f, textMul); return {v, v, v, 1}; }
+    Color btnC() const { return contrast ? Color{0, 0, 0, 1} : Color{0.14f, 0.16f, 0.2f, 0.9f}; }               // text fields drawn as '*' (STREAMER MODE, set around an address / code field)
     UiProbe* probe = nullptr;            // the UI test (null in normal play)
     // While probing, set around a group of widgets: `where` - the screen they belong to, when they're drawn on others
     // too (the editor's panel under its menus); `scope` - what they act on (the editor's selection kind). Cleared by begin().

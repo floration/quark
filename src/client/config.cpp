@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <vector>
 #include "../game/map.h"
 
 static std::string cfgPath() { return userDataPath("quark.cfg"); }
@@ -38,6 +39,7 @@ void Settings::load() {
 
 // One setting from text (the config file's key=value, or the console's "key value").
 void Settings::set(const std::string& k, const std::string& v) {
+    if (setBatch3(k, v)) return;
     {
         float fv = (float)atof(v.c_str());
         int iv = atoi(v.c_str());
@@ -106,6 +108,48 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "kill_bursts") killBursts = iv != 0;
         else if (k == "tracers") tracers = iv != 0;
         else if (k == "view_recoil") viewRecoil = iv != 0;
+        else if (k == "shot_format") shotFormat = iv == 1 ? 1 : 0;
+        else if (k == "shot_folder") shotFolder = iv == 1 ? 1 : 0;
+        else if (k == "shot_hide_hud") shotHideHud = iv != 0;
+        else if (k == "liquid_flow") liquidFlow = iv != 0;
+        else if (k == "glow_strength") { if (std::isfinite(fv)) glowStrength = clampf(fv, 0, 2); }
+        else if (k == "world_edge_color") worldEdgeColor = parseColor(v, worldEdgeColor);
+        else if (k == "hit_tiers") hitTiers = iv != 0;
+        else if (k == "ffa_colors") ffaColors = iv != 0;
+        else if (k == "own_fx") ownFx = iv != 0;
+        else if (k == "own_fx_color") ownFxColor = parseColor(v, ownFxColor);
+        else if (k == "hb_low") hbLow = std::min(std::max(iv, 0), 100);
+        else if (k == "hb_low_color") hbLowColor = parseColor(v, hbLowColor);
+        else if (k == "hb_custom") hbCustom = iv != 0;
+        else if (k == "hb_color") hbColor = parseColor(v, hbColor);
+        else if (k == "tag_color") tagColor = std::min(std::max(iv, 0), 2);
+        else if (k == "tag_custom") tagCustom = parseColor(v, tagCustom);
+        else if (k == "tag_alpha") { if (std::isfinite(fv)) tagAlpha = clampf(fv, 0.1f, 1); }
+        else if (k == "tag_size") { if (std::isfinite(fv)) tagSize = clampf(fv, 0.5f, 3); }
+        else if (k == "fx_color_mode") fxColorMode = std::min(std::max(iv, 0), 2);
+        else if (k == "fx_color") fxColor = parseColor(v, fxColor);
+        else if (k == "obj_palette") objPalette = iv != 0;
+        else if (k == "sky_override") skyOverride = iv != 0;
+        else if (k == "glow_override") glowOverride = iv != 0;
+        else if (k == "sky_color") skyColor = parseColor(v, skyColor);
+        else if (k == "glow_color") glowColor = parseColor(v, glowColor);
+        else if (k == "high_contrast") highContrast = iv != 0;
+        else if (k == "f3_safe") f3Safe = iv != 0;
+        else if (k == "on_top") onTop = iv != 0;
+        else if (k == "gun_color") gunColor = std::min(std::max(iv, 0), 2);
+        else if (k == "gun_custom") gunCustom = parseColor(v, gunCustom);
+        else if (k == "obj_opacity") { if (std::isfinite(fv)) objOpacity = clampf(fv, 0, 2); }
+        else if (k == "obj_pulse") objPulse = iv != 0;
+        else if (k == "dash_buffer") { if (std::isfinite(fv)) dashBuffer = fv < 0.025f ? 0.0f : fv < 0.075f ? 0.05f : fv < 0.125f ? 0.1f : 0.15f; }
+        else if (k == "smooth_amt") { if (std::isfinite(fv)) smoothAmt = clampf(fv, 0.25f, 1); }
+        else if (k == "lightmap_nearest") lightmapNearest = iv != 0;
+        else if (k == "wallbang_tint") wallbangTint = iv != 0;
+        else if (k == "wallbang_color") wallbangColor = parseColor(v, wallbangColor);
+        else if (k == "ultra_margin_us") ultraMarginUs = std::min(std::max(iv, 0), 2000);
+        else if (k == "nv_threaded") nvThreaded = iv != 0;
+        else if (k == "nv_dxgi") nvDxgi = iv != 0;
+        else if (k == "quip_captions") quipCaptions = iv != 0;
+        else if (k == "ann_duck") { if (std::isfinite(fv)) annDuck = clampf(fv, 0, 1); }
         else if (k == "tone_curve") toneCurve = iv != 0;
         else if (k == "dither") dither = iv != 0;
         else if (k == "out10") out10 = iv != 0;
@@ -291,8 +335,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "host_duel_size") hostDuelSize = iv == 2 ? 2 : 1;
         else if (k == "host_log") hostLog = std::min(std::max(iv, 0), 3);
         else if (k == "bot_skill") botSkill = std::min(std::max(iv, 0), 3);
-        else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
-        else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
+        else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 15);   // (1.19.4: up to 15 / 15)
+        else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 15);
         else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), MODE_COUNT - 1);   // (the vs-bots picker offers every mode)
         else if (k.rfind("hud_", 0) == 0) {
             int i = atoi(k.c_str() + 4), c = 0, hid = 0; HudElem e;
@@ -363,6 +407,14 @@ std::string Settings::toText() const {
       << "\ncue_mute=" << cueMute << "\nann_mute=" << annMute << "\nsound_viz=" << soundViz << "\nnet_graph=" << netGraph << "\ncmd_redundancy=" << cmdRedundancy << "\nmap_downloads=" << mapDownloads << "\nmap_cache_max=" << mapCacheMax
       << "\nlight_cache_max=" << lightCacheMax << "\nbake_threads=" << bakeThreads << "\nlatent_safety_us=" << latentSafetyUs << "\nlatent_slow=" << latentSlow << "\nbypass_compositor=" << bypassCompositor << "\ncursor_size=" << cursorSize
       << "\ncursor_color=" << cursorColor << "\nuse_toggle=" << useToggle << "\nch_spread=" << chSpread << "\nch_cooldown=" << chCooldown << "\nch_pixels=" << chPixels;
+    f << "\nshot_format=" << shotFormat << "\nshot_folder=" << shotFolder << "\nshot_hide_hud=" << shotHideHud << "\nliquid_flow=" << liquidFlow << "\nglow_strength=" << glowStrength << "\nworld_edge_color=" << colorHex(worldEdgeColor)
+      << "\nhit_tiers=" << hitTiers << "\nffa_colors=" << ffaColors << "\nown_fx=" << ownFx << "\nown_fx_color=" << colorHex(ownFxColor) << "\nhb_low=" << hbLow << "\nhb_low_color=" << colorHex(hbLowColor)
+      << "\nhb_custom=" << hbCustom << "\nhb_color=" << colorHex(hbColor) << "\ntag_color=" << tagColor << "\ntag_custom=" << colorHex(tagCustom) << "\ntag_alpha=" << tagAlpha << "\ntag_size=" << tagSize
+      << "\nfx_color_mode=" << fxColorMode << "\nfx_color=" << colorHex(fxColor) << "\nobj_palette=" << objPalette << "\nsky_override=" << skyOverride << "\nglow_override=" << glowOverride
+      << "\nsky_color=" << colorHex(skyColor) << "\nglow_color=" << colorHex(glowColor) << "\nhigh_contrast=" << highContrast << "\nf3_safe=" << f3Safe << "\non_top=" << onTop << "\ngun_color=" << gunColor
+      << "\ngun_custom=" << colorHex(gunCustom) << "\nobj_opacity=" << objOpacity << "\nobj_pulse=" << objPulse << "\ndash_buffer=" << dashBuffer << "\nsmooth_amt=" << smoothAmt << "\nlightmap_nearest=" << lightmapNearest
+      << "\nwallbang_tint=" << wallbangTint << "\nwallbang_color=" << colorHex(wallbangColor) << "\nultra_margin_us=" << ultraMarginUs << "\nnv_threaded=" << nvThreaded << "\nnv_dxgi=" << nvDxgi
+      << "\nquip_captions=" << quipCaptions << "\nann_duck=" << annDuck;
     for (int i = 0; i < 3; i++) if (!colorPreset[i].empty()) f << "\ncolor_preset_" << i + 1 << "=" << colorPreset[i];
     for (auto& b : cmdBinds) f << "\ncbind_" << b.first << "=" << b.second;
     for (auto& a : aliases) f << "\nalias_" << a.first << "=" << a.second;
@@ -391,6 +443,7 @@ std::string Settings::toText() const {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
+    f << batch3Text();
     f << "bind_version=4\n";
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "," << binds.code[a][2] << "\n";   // (older games read the first two)
     return f.str();
@@ -425,12 +478,126 @@ bool Settings::crosshairFromCode(const std::string& code) {
 }
 
 
+// ---- batch 3 (1.19.4, the 2s): one table of keys, read and written together (each value clamped to its range)
+namespace {
+struct B3 {
+    enum T { B, I, F, C, S } t;
+    const char* key;
+    void* p;
+    float lo, hi;
+};
+}
+static std::vector<B3> b3Keys(Settings& s) {
+    using T = B3;
+    std::vector<B3> v = {
+        {T::C, "dmg_num_color", &s.dmgNumColor, 0, 0}, {T::I, "dmg_num_stack", &s.dmgNumStack, 0, 2}, {T::F, "dmg_num_time", &s.dmgNumTime, 0.3f, 3},
+        {T::B, "dmg_arcs", &s.dmgArcs, 0, 1}, {T::C, "dmg_arc_color", &s.dmgArcColor, 0, 0}, {T::F, "dmg_arc_size", &s.dmgArcSize, 0.5f, 2},
+        {T::F, "dmg_arc_time", &s.dmgArcTime, 0.3f, 3}, {T::B, "kill_mark", &s.killMark, 0, 1}, {T::F, "kill_mark_time", &s.killMarkTime, 0.2f, 2},
+        {T::C, "kill_mark_color", &s.killMarkColor, 0, 0}, {T::F, "hit_flash_time", &s.hitFlashTime, 0.05f, 1}, {T::B, "kill_text", &s.killText, 0, 1},
+        {T::B, "heal_nums", &s.healNums, 0, 1}, {T::F, "low_hp", &s.lowHp, 0, 0.9f}, {T::C, "low_hp_color", &s.lowHpColor, 0, 0},
+        {T::B, "low_hp_pulse", &s.lowHpPulse, 0, 1}, {T::B, "low_hp_sound", &s.lowHpSound, 0, 1},
+        {T::I, "speed_unit", &s.speedUnit, 0, 2}, {T::F, "speed_scale", &s.speedScale, 0.25f, 4}, {T::B, "speed_ticks", &s.speedTicks, 0, 1},
+        {T::I, "bar_caps", &s.barCaps, 0, 15}, {T::B, "clock_12h", &s.clock12, 0, 1}, {T::I, "clock_mode", &s.clockMode, 0, 1},
+        {T::B, "clock_tenths", &s.clockTenths, 0, 1}, {T::I, "verbose_lines", &s.verboseLines, 0, 0x3FFF}, {T::B, "net_icons", &s.netIcons, 0, 1}, {T::B, "drain_warn", &s.drainWarn, 0, 1},
+        {T::I, "autohide_health", &s.autoHideHealth, 0, 2}, {T::I, "autohide_slots", &s.autoHideSlots, 0, 1}, {T::I, "autohide_bars", &s.autoHideBars, 0, 1},
+        {T::F, "obj_size", &s.objSize, 0.5f, 2}, {T::F, "obj_mark_opacity", &s.objMarkOpacity, 0.1f, 1}, {T::B, "obj_distance", &s.objDistance, 0, 1},
+        {T::B, "obj_arrow", &s.objArrow, 0, 1}, {T::F, "scope_size", &s.scopeSize, 0.5f, 1.2f}, {T::C, "scope_color", &s.scopeColor, 0, 0},
+        {T::F, "scope_line", &s.scopeLine, 1, 4}, {T::I, "spec_hud", &s.specHud, 0, 1}, {T::B, "feed_headshot", &s.feedHeadshot, 0, 1},
+        {T::I, "score_sort", &s.scoreSort, 0, 4}, {T::I, "score_cols", &s.scoreCols, 0, 0xFF},
+        {T::B, "chat_one_color", &s.chatOneColor, 0, 1}, {T::C, "chat_color", &s.chatColor, 0, 0}, {T::C, "sys_color", &s.sysColor, 0, 0},
+        {T::B, "chat_box", &s.chatBox, 0, 1}, {T::F, "chat_box_opacity", &s.chatBoxOpacity, 0.1f, 1}, {T::B, "chat_stamps", &s.chatStamps, 0, 1},
+        {T::B, "mention_hl", &s.mentionHl, 0, 1}, {T::B, "mention_sound", &s.mentionSound, 0, 1}, {T::B, "chat_filter", &s.chatFilter, 0, 1},
+        {T::B, "team_chat_only", &s.teamChatOnly, 0, 1}, {T::B, "other_name_colors", &s.otherNameColors, 0, 1}, {T::B, "streamer", &s.streamer, 0, 1},
+        {T::I, "sys_msgs", &s.sysMsgs, 0, 2}, {T::I, "alerts", &s.alerts, 0, 15}, {T::I, "on_join", &s.onJoin, 0, 2},
+        {T::I, "death_cam", &s.deathCam, 0, 2}, {T::F, "kill_cam_time", &s.killCamTime, 0, kKillCamTime}, {T::F, "recoil_amount", &s.recoilAmount, 0, 2},
+        {T::F, "spec_fov", &s.specFov, 0, 140}, {T::B, "spec_third", &s.specThird, 0, 1}, {T::S, "quip_block", &s.quipBlock, 0, 0},
+        {T::I, "quip_pick", &s.quipPick, -1, 255}, {T::B, "use_overrides", &s.useOverrides, 0, 1},
+        {T::F, "mouse_accel", &s.mouseAccel, 0, 1}, {T::B, "raw_input", &s.rawInput, 0, 1}, {T::I, "alt_toggle_weapons", &s.altToggleWpns, -1, 0xFFFF},
+        {T::I, "swap_fire", &s.swapFire, 0, 0xFFFF}, {T::B, "auto_hop", &s.autoHop, 0, 1}, {T::I, "console_key", &s.consoleKey, 0, 999},
+        {T::B, "console_menus", &s.consoleMenus, 0, 1}, {T::B, "ranked_alt_toggle", &s.rankedAltToggle, 0, 1},
+        {T::I, "menu_bg", &s.menuBg, 0, 2}, {T::S, "menu_bg_map", &s.menuBgMap, 0, 0}, {T::C, "menu_bg_color", &s.menuBgColor, 0, 0},
+        {T::I, "menu_theme", &s.menuTheme, 0, 1}, {T::F, "panel_dark", &s.panelDark, 0.5f, 1.5f}, {T::F, "text_bright", &s.textBright, 0.5f, 1},
+        {T::B, "menu_accent_on", &s.menuAccentOn, 0, 1}, {T::C, "menu_accent", &s.menuAccent, 0, 0},
+        {T::B, "hide_ratings", &s.hideRatings, 0, 1}, {T::B, "remember_queues", &s.rememberQueues, 0, 1}, {T::S, "last_queues", &s.lastQueues, 0, 0},
+        {T::F, "ed_fly_speed", &s.edFlySpeed, 1, 100}, {T::F, "ed_fast_mul", &s.edFastMul, 1, 10}, {T::F, "ed_grid_custom", &s.edGridCustom, 0, 16},
+        {T::F, "ed_rot_step", &s.edRotStep, 1, 90}, {T::I, "ed_grid", &s.edGridIdx, 0, 6}, {T::B, "ed_fly_binds", &s.edFlyBinds, 0, 1},
+        {T::S, "ed_light", &s.edLight, 0, 0}, {T::I, "race_split_vs", &s.raceSplitVs, 0, 2}, {T::F, "race_split_time", &s.raceSplitTime, 0.5f, 10},
+        {T::I, "race_date", &s.raceDate, 0, 2}, {T::I, "host_tick", &s.hostTick, 0, 3}, {T::I, "host_snap", &s.hostSnap, 0, 4},
+        {T::I, "host_upload", &s.hostUpload, 0, 100000}, {T::B, "host_auto_start", &s.hostAutoStart, 0, 1}, {T::I, "host_bot_skill", &s.hostBotSkill, 0, 3}, {T::I, "ed_test_mode", &s.edTestMode, -1, MODE_COUNT - 1}, {T::I, "ed_test_bots", &s.edTestBots, 0, 7},
+        {T::B, "ed_test_at_cam", &s.edTestAtCam, 0, 1}, {T::B, "ed_test_no_warmup", &s.edTestNoWarmup, 0, 1},
+        // batch 4b (the 1s)
+        {T::C, "bar_recharge_color", &s.barRechargeColor, 0, 0}, {T::C, "speed_low_color", &s.speedLowColor, 0, 0},
+        {T::C, "speed_high_color", &s.speedHighColor, 0, 0}, {T::C, "slot_off_color", &s.slotOffColor, 0, 0},
+        {T::C, "sticky_full_color", &s.stickyFullColor, 0, 0}, {T::C, "warn_color", &s.warnColor, 0, 0}, {T::C, "info_color", &s.infoColor, 0, 0},
+        {T::C, "dmg_head_color", &s.dmgHeadColor, 0, 0}, {T::C, "dmg_big_color", &s.dmgBigColor, 0, 0},
+        {T::F, "text_outline", &s.textOutline, 0, 1.5f}, {T::I, "notice_lines", &s.noticeLines, 1, 8}, {T::F, "notice_time", &s.noticeTime, 0.5f, 3},
+        {T::B, "compass", &s.compass, 0, 1}, {T::B, "radar", &s.radar, 0, 1}, {T::F, "radar_range", &s.radarRange, 10, 120},
+        {T::B, "hide_rec", &s.hideRec, 0, 1}, {T::I, "tourney_tab", &s.tourneyTab, 0, 1}, {T::B, "step_smooth", &s.stepSmooth, 0, 1},
+        {T::B, "send_typing", &s.sendTyping, 0, 1}, {T::B, "rps_click", &s.rpsClick, 0, 1}, {T::B, "fixed_logo", &s.fixedLogo, 0, 1},
+        {T::I, "bot_looks", &s.botLooks, 0, 1}, {T::C, "clip_color", &s.clipColor, 0, 0},
+    };
+    return v;
+}
+
+bool Settings::setBatch3(const std::string& k, const std::string& v) {
+    if (k.rfind("wpn_sens_", 0) == 0) {   // wpn_sens_<weapon number>
+        const int w = atoi(k.c_str() + 9);
+        const float f = (float)atof(v.c_str());
+        if (w >= 0 && w < WPN_COUNT && std::isfinite(f)) wpnSens[w] = clampf(f, 0.1f, 5);
+        return true;
+    }
+    if (k.rfind("wpn_vm_", 0) == 0) {   // wpn_vm_<weapon number>=<shown 0/1>,<x>,<y>,<depth>
+        const int w = atoi(k.c_str() + 7);
+        int sh = 1;
+        float o[3] = {0, 0, 0};
+        if (w >= 0 && w < WPN_COUNT && sscanf(v.c_str(), "%d,%f,%f,%f", &sh, &o[0], &o[1], &o[2]) >= 1) {
+            wpnVmHide[w] = sh == 0;
+            for (int i = 0; i < 3; i++) wpnVmOff[w][i] = std::isfinite(o[i]) ? clampf(o[i], -200, 200) : 0;
+        }
+        return true;
+    }
+    if (k.size() < 4) return false;
+    for (const B3& e : b3Keys(*this)) {
+        if (k != e.key) continue;
+        const float f = (float)atof(v.c_str());
+        const int i = atoi(v.c_str());
+        switch (e.t) {
+            case B3::B: *(bool*)e.p = i != 0; break;
+            case B3::I: *(int*)e.p = std::min(std::max(i, (int)e.lo), (int)e.hi); break;
+            case B3::F: if (std::isfinite(f)) *(float*)e.p = clampf(f, e.lo, e.hi); break;
+            case B3::C: *(Vec3*)e.p = parseColor(v, *(Vec3*)e.p); break;
+            case B3::S: *(std::string*)e.p = v.substr(0, 400); break;
+        }
+        return true;
+    }
+    return false;
+}
+
+std::string Settings::batch3Text() const {
+    std::ostringstream f;
+    for (const B3& e : b3Keys(const_cast<Settings&>(*this))) {
+        f << e.key << "=";
+        switch (e.t) {
+            case B3::B: f << *(const bool*)e.p; break;
+            case B3::I: f << *(const int*)e.p; break;
+            case B3::F: f << *(const float*)e.p; break;
+            case B3::C: f << colorHex(*(const Vec3*)e.p); break;
+            case B3::S: f << *(const std::string*)e.p; break;
+        }
+        f << "\n";
+    }
+    for (int w = 0; w < WPN_COUNT; w++) if (wpnSens[w] != 1.0f) f << "wpn_sens_" << w << "=" << wpnSens[w] << "\n";
+    for (int w = 0; w < WPN_COUNT; w++)
+        if (wpnVmHide[w] || wpnVmOff[w][0] != 0 || wpnVmOff[w][1] != 0 || wpnVmOff[w][2] != 0)
+            f << "wpn_vm_" << w << "=" << (wpnVmHide[w] ? 0 : 1) << "," << wpnVmOff[w][0] << "," << wpnVmOff[w][1] << "," << wpnVmOff[w][2] << "\n";
+    return f.str();
+}
 
 // VIDEO + AUDIO > MORE 4: COPY / PASTE COLORS and the preset slots: every colour setting as one line, like the
 // crosshair's code ("quark-colors:" then key=value pairs, ';'-separated). Only these keys are read back.
 static const char* const kColorKeys[] = {"color_friendly", "color_enemy", "outline_friendly", "outline_enemy", "outline_friendly_color",
                                          "outline_enemy_color", "outline_alpha", "team_a_color", "team_b_color", "tracer_mode", "tracer_color",
-                                         "rope_color", "fullbright_color", "ch_team_color", "ch_color", "ch_hit_color", "ch_head_color", "name_color"};
+                                         "rope_color", "fullbright_color", "world_edge_color", "own_fx_color", "hb_low_color", "hb_color", "tag_custom", "fx_color", "sky_color", "glow_color", "gun_custom", "wallbang_color", "ch_team_color", "ch_color", "ch_hit_color", "ch_head_color", "name_color"};
 std::string Settings::colorCode() const {
     std::istringstream in(toText());
     std::string line, out = "quark-colors:";

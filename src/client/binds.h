@@ -19,6 +19,8 @@ enum Action {
     A_SAVEPOS, A_LOADPOS,   // practice (the host alone with bots): save your spot / go back to it (unbound by default)
     A_HIDEHUD,   // hide / show the HUD (a clean screen; the crosshair kept unless HIDE HUD KEEPS CROSSHAIR is off); unbound
     A_RACERESTART, // race / surf: straight back to the start (owner, 2026-10-30: "a separate full-restart key"); unbound
+    A_VOLUP, A_VOLDOWN, A_MUTE,           // master volume up / down 5%, mute / unmute (1.19.4 batch 3; unbound)
+    A_RECORD, A_JOINTEAM, A_SPECTATE,     // start / stop a demo, play (team modes: the other team), spectate (unbound)
     A_COUNT
 };
 static_assert(A_COUNT <= 64, "Game::testHeld_ holds a bit per action");
