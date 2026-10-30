@@ -23,7 +23,15 @@ stands 25-45 m past the point they just took (for pace; the plan had them behind
 metric (`quark_maptool metrics`, the bots' nav routes, attackers minus defenders): A -0.4 s, B +0.3 s, C -0.2 s,
 D +0.1 s, E +0.4 s; on the walk grid (slowest spawn, 9.5 m/s) every stage is within 1.0 s.
 Everything but the spoil slopes and the fallen facades' faces is axis-aligned boxes (the walk grid sees a brush as
-its box). No fall damage: you only die below the void line."""
+its box). No fall damage: you only die below the void line.
+Bomb (also offered): two sites in the trench line, each round one of its dugouts (south: z -50..-30, north: z 30..50;
+x 58..80, glow posts at the corners). Their own spawn set (bomb-a / bomb-b, five a side; the staged points spawns
+are untouched): team A at the crater field's east end behind a sandbag barricade, team B on the road west of the
+village beside one. Both are about 5 s from either site at 24 m/s (nav: A 111-114 m, B 117 m; diff -0.3 / -0.7 s at
+the metric's 9.5 m/s): equal on purpose, not the plan's "CT 1 s later", because a team keeps its spawns when the
+sides switch at halftime (attackers come from bomb-b in the second half), so a CT head start would favour team A in
+both halves (with A at 115 m and B at 144 m, 8 expert bots won 7 matches of 8 for team A). Equal: 24 seeds, rounds
+attackers 143 / defenders 108, team A 134 / team B 117, matches 13-11, plants south 105 / north 99."""
 import random
 from .prefabs import M, minus, tiles
 from .bigkit import Kit, num, yaw_to
@@ -82,7 +90,10 @@ def bays():
 
 
 DUGOUTS = [(LEGS[i][2][0] - 6, (LEGS[i][0] + LEGS[i][1]) / 2 + 0.5, LEGS[i][2][0], (LEGS[i][0] + LEGS[i][1]) / 2 + 5) for i in (2, 7)]
-HQ = (-182, -13, -148, 13)        # the bunker's footprint
+HQ = (-182, -13, -148, 13)
+BOMB_SITES = [(-50, -30), (30, 50)]                                  # (z ranges; x 58..80 over the trench)
+BOMB_A = [(177, 4.5), (177, 7), (180, 4.5), (180, 7), (174, 5.75)]   # (the crater field, behind a sandbag barricade east of point A, facing west)
+BOMB_B = [(-38, -2), (-38, -4), (-41, -2), (-41, -4), (-44, -3)]   # (on the road west of the village, beside a sandbag barricade, facing east)
 
 
 def union(rects):
@@ -167,6 +178,7 @@ def shelter(k, xw, side, zc, style):
 
 def build():
     m = M("War", "points", sun=(-1.0, 0.32, 0.35))
+    m.also = ["bomb"]
     k = Kit(m)
     R = random.Random("war")
     m.raw("palette base 0.52 0.48 0.44 accent 0.40 0.30 0.22 metal 0.26 0.25 0.24 glow 1.00 0.55 0.20 sky 0.50 0.42 0.36")
@@ -561,6 +573,18 @@ def build():
                 k.spawn(key, x, 0, zc + zo * 4 + j, 0 if zo > 0 else 180)   # (facing the open side: yaw 0 faces -z)
     for (x, z) in ((182, 62), (128, -66), (82, 44), (40, -50), (-24, 54), (-62, -52), (-120, -58), (-196, 44)):
         k.spawn("any", x, 0, z, yaw_to(x, z, x * 0.6, 0))
+
+    # ---- bomb: two sites in the trench line, each round a dugout (south: the leg at z -48..-32, north: z 32..48);
+    # the attackers (bomb-a) come from the crater field's east end, the defenders (bomb-b) from the village's west
+    # edge, both on the road (their own spawn set: the staged points spawns stay as they are)
+    for (z0, z1) in BOMB_SITES:
+        m.raw(f"site 58 {num(TRENCH_Y)} {num(z0)} 80 3 {num(z1)}")
+        for x in (58, 79.6):   # (glow posts at its corners, on the ground beside the trench)
+            for z in (z0, z1 - 0.4): k.box("glow", x, 0, z, x + 0.4, 1.6, z + 0.4)
+    for (x, z) in BOMB_A:
+        k.spawn("bomb-a", x, 0, z, 90)
+    for (x, z) in BOMB_B:
+        k.spawn("bomb-b", x, 0, z, 270)
 
     decorate(k, R)
     m.raw("setting active warzone")
