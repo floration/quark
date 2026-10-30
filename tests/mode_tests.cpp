@@ -137,7 +137,7 @@ std::string firstDiff(const std::string& a, const std::string& b) {
     }
 }
 
-const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf"};
+const char* const kModeFiles[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power"};
 
 void testFormat() {
     printf("  format: every default canonical, numbers, the JSON AST\n");
@@ -796,6 +796,7 @@ const LockCase kLockCases[] = {
     {MODE_HIDE, "hamlet", 4, "param roundTime f32 = 12\nparam hideTime f32 = 3\nparam rpsPickTime f32 = 2\nparam rpsRevealTime f32 = 1\n"},
     {MODE_TAG, "foundry", 5, "param roundTime f32 = 8\nparam tagFreeze f32 = 1\n"},
     {MODE_POINTS, "midtown", 8, "param roundTime f32 = 25\nparam captureTime f32 = 3\nparam pointBonus f32 = 5\n"},
+    {MODE_POWER, "bastion", 6, "param rounds int = 2\nparam roundTime f32 = 20\nparam poolPerPlayer f32 = 150\n"},
 };
 const char* const kCommonFast = "param freezeTime f32 = 1\nparam roundEndTime f32 = 1\nparam matchEndTime f32 = 1.5\nparam warmupCountdown f32 = 1\n";
 

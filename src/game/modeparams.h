@@ -25,6 +25,8 @@
     X(matchTime,       float, "f32", "s",    1,    3600, 600.0f, "free for all: the match clock when the host sets no time limit") \
     X(rankedTime,      float, "f32", "s",    1,    3600, kRankedFfaTime, "ranked free for all (instagib): the match clock") \
     X(target,          int,   "int", "",     1,    10000, 100,  "king of the hill: points to win when the host sets no score limit") \
+    /* power */ \
+    X(poolPerPlayer,   float, "f32", "hp",   1,    10000, kPowerPoolPerPlayer, "power: each team's health pool, per player on it") \
     /* drain (vs, duel, 1v1, tourney) */ \
     X(stalemate,       float, "f32", "s",    1,    600,  30.0f, "no damage dealt this long: health starts draining") \
     X(drainRate,       float, "f32", "hp/s", 0,    100,  5.0f,  "the stalemate drain") \
@@ -77,6 +79,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
         case MODE_NPAYLOAD: p.roundTime = 300.0f; break;
         case MODE_HIDE: p.roundTime = kHideRoundTime; break;
         case MODE_TAG: p.roundTime = kTagRoundTime; break;
+        case MODE_POWER: p.roundTime = 600.0f; break;                // one round: a pool at 0, or the clock (the fuller pool wins)
         default: break;                                              // koth (target), ffa (matchTime): no round clock
     }
     return p;
@@ -85,7 +88,7 @@ constexpr ModeParams builtinModeParamsFor(int mode) {
 inline constexpr ModeParams kBuiltinModeParams[MODE_COUNT] = {
     builtinModeParamsFor(0), builtinModeParamsFor(1), builtinModeParamsFor(2), builtinModeParamsFor(3), builtinModeParamsFor(4),
     builtinModeParamsFor(5), builtinModeParamsFor(6), builtinModeParamsFor(7), builtinModeParamsFor(8), builtinModeParamsFor(9),
-    builtinModeParamsFor(10), builtinModeParamsFor(11), builtinModeParamsFor(12), builtinModeParamsFor(13),
+    builtinModeParamsFor(10), builtinModeParamsFor(11), builtinModeParamsFor(12), builtinModeParamsFor(13), builtinModeParamsFor(14),
 };
-static_assert(MODE_COUNT == 14, "a new mode needs its row in kBuiltinModeParams");
+static_assert(MODE_COUNT == 15, "a new mode needs its row in kBuiltinModeParams");
 inline const ModeParams& builtinModeParams(int mode) { return kBuiltinModeParams[mode >= 0 && mode < MODE_COUNT ? mode : MODE_FFA]; }

@@ -1948,7 +1948,8 @@ bool Map::canSupportMode(int mode) const {
     switch (mode) {
         case MODE_VS:
         case MODE_DUEL:
-        case MODE_ARENA: return teams;
+        case MODE_ARENA:
+        case MODE_POWER: return teams;
         case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
         case MODE_RACE: case MODE_SURF: return has(SPAWN_RACE) && !raceCheckpoints.empty();

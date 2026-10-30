@@ -560,7 +560,8 @@ int Game::bestMapFor(int mode) const {
             if (!m.load(maps_[i]) || !m.supportsMode(mode)) continue;
             preferred = m.preferredMode;
         }
-        if (preferred == mode || (mode == MODE_TAG && preferred == MODE_HIDE)) return (int)i; // tag plays on the hide and seek map
+        // tag plays on the hide and seek map, power on the team vs one
+        if (preferred == mode || (mode == MODE_TAG && preferred == MODE_HIDE) || (mode == MODE_POWER && preferred == MODE_VS)) return (int)i;
         if (fallback < 0) fallback = (int)i;
     }
     return fallback < 0 ? 0 : fallback;
@@ -3269,7 +3270,10 @@ void Game::scoreText(ScoreText& t, bool sample) const {
     t.ranked = (ms.flags & MS_RANKED) != 0;
     t.unrated = unratedServer_;
     t.scoreA.clear(); t.scoreB.clear();
-    if (modeIsTeamBased(ms.mode)) {
+    if (ms.mode == MODE_POWER && ms.phase != PHASE_WARMUP) {   // (power: the pools, yours first)
+        snprintf(b, sizeof b, "%d", (int)std::ceil(powerPool(ms, myTeam))); t.scoreA = b;
+        snprintf(b, sizeof b, "%d", (int)std::ceil(powerPool(ms, myTeam == TEAM_A ? TEAM_B : TEAM_A))); t.scoreB = b;
+    } else if (modeIsTeamBased(ms.mode)) {
         snprintf(b, sizeof b, "%d", myTeam == TEAM_A ? ms.scoreA : ms.scoreB); t.scoreA = b;
         snprintf(b, sizeof b, "%d", myTeam == TEAM_A ? ms.scoreB : ms.scoreA); t.scoreB = b;
     } else if (mep) {
@@ -3744,6 +3748,16 @@ void Game::drawHud() {
         obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().raceCheckpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
         obj = "LAST TEAM STANDING WINS";
+    } else if (ms.mode == MODE_POWER && ms.phase != PHASE_WARMUP) {   // your pool's bar; the enemy's in the line
+        const int enemy = myTeam == TEAM_A ? TEAM_B : TEAM_A;
+        const float mine = powerPoolMax(ms, myTeam), theirs = powerPoolMax(ms, enemy);
+        char pb[96];
+        snprintf(pb, sizeof pb, "TEAM POOL %d / %d  -  ENEMY %d / %d", (int)std::ceil(powerPool(ms, myTeam)), (int)mine,
+                 (int)std::ceil(powerPool(ms, enemy)), (int)theirs);
+        obj = pb;
+        if (mine > 0) progress = powerPool(ms, myTeam) / mine;
+    } else if (ms.mode == MODE_POWER) {
+        obj = "POWER - NOBODY DIES: HITS DRAIN THE TEAM POOL";
     } else if (ms.mode == MODE_ARENA) {
         obj = arenaVariant(ms.arenaVariant).desc;
     } else if (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP && !bracket_.empty() && bracketRound_ < (int)bracket_.size()) {
@@ -6570,6 +6584,7 @@ static const char* const kInfoPages[][48] = {
         "KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.",
         "PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.",
         "NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.",
+        "POWER - each team shares one health pool, 2500 for every player on it. Nobody dies: an enemy's hits come off your team's pool. A team whose pool runs out loses; when the 10 minutes are up, the fuller pool wins.",
         "MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.",
         "# DUELS",
         "DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.",
@@ -7452,6 +7467,7 @@ void Game::drawPicker(float cx, float y) {
             it.cur = i == mode && !rankedNow;
             for (auto& mi : mapInfo_) if (mi.preferredMode == i) it.sub = "MAP: " + upper(mi.title);
             if (it.sub.empty() && i == MODE_TAG) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_HIDE) it.sub = "MAP: " + upper(mi.title);
+            if (it.sub.empty() && i == MODE_POWER) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_VS) it.sub = "MAP: " + upper(mi.title);
             if (i == MODE_ARENA) it.sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) it.sub = "BRACKET OF 1V1S - RULESETS >";
         } else {

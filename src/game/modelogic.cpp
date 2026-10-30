@@ -22,7 +22,7 @@
 
 static_assert(sizeof(ModeInsn) == 8, "an instruction is 8 bytes");
 static_assert(kModeRegs <= 255 && kModeTextParts <= 255, "register numbers are bytes");
-static_assert(MODE_COUNT == 14, "a .qlogic default per mode (tools/modes)");
+static_assert(MODE_COUNT == 15, "a .qlogic default per mode (tools/modes)");
 static_assert(PHASE_WARMUP == 0 && PHASE_FREEZE == 1 && PHASE_LIVE == 2 && PHASE_ROUND_END == 3 && PHASE_MATCH_END == 4, "phase constants");
 static_assert(BOMB_NONE == 0 && BOMB_CARRIED == 1 && BOMB_DROPPED == 2 && BOMB_PLANTED == 3 && BOMB_EXPLODED == 4 && BOMB_DEFUSED == 5, "bomb state constants");
 static_assert(TEAM_A == 0 && TEAM_B == 1 && TEAM_SPECTATOR == 2, "team constants");
@@ -46,7 +46,7 @@ bool isNumeric(int t) { return t == T_INT || t == T_F32 || t == T_F64; }
 bool isNullable(int t) { return t == T_TEAM || t == T_PLAYER || t == T_WEAPON || t == T_BOMBSTATE; }
 
 const char* const kWeaponNames[WPN_COUNT] = {"rifle", "rocket", "knife", "sniper", "laser", "shotgun", "sticky", "crossbow", "bubble", "syringe", "locator"};
-const char* const kBaseNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf"};
+const char* const kBaseNames[MODE_COUNT] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power"};
 bool teamBased(int mode) { return mode != MODE_FFA && !isRaceMode(mode) && mode != MODE_TOURNEY && mode != MODE_HIDE && mode != MODE_TAG; }
 
 struct ArgInfo { const char* name; uint8_t type; const char* doc; };
@@ -152,6 +152,8 @@ const ArrayInfo kArrays[] = {
     {"cart.best", T_TEAM, T_F32, MF_CART_BEST, true, "", "payload: the farthest the team pushed the cart (m); multi point: points taken + capture"},
     {"cart.completed", T_TEAM, T_F32, MF_CART_COMPLETED, true, "s", "payload / multi point: how long the team's attack took to finish (0: it didn't)"},
     {"cart.near", T_TEAM, T_INT, MF_CART_NEAR, false, "", "players of the team alive at the cart at the last cart step"},
+    {"pool", T_TEAM, T_F32, MF_TEAM_POOL, true, "hp", "power: the team's health pool (enemy hits come off it; nobody dies of damage)"},
+    {"poolMax", T_TEAM, T_F32, MF_TEAM_POOL_MAX, false, "hp", "power: the pool's size, poolPerPlayer x the players it counts"},
     {"cart.bestTime", T_TEAM, T_F32, MF_CART_BEST_TIME, false, "s", "payload / multi point: when (since its round went live) the team's attack reached cart.best (a level attack: the sooner wins)"},
 };
 constexpr int kNumArrays = (int)(sizeof kArrays / sizeof kArrays[0]);
@@ -243,6 +245,8 @@ const ActionInfo kActions[] = {
     {"tourneyAdvance", {{"winner", T_TEAM, "the side that won the match"}}, T_VOID, false, MO_BRACKET, MA_TOURNEY_ADVANCE, AS_HOST, true, 0,
         "the match's winner advances: the next match is set up, or the tourney ends"},
     {"pickDuelModifier", {}, T_VOID, false, MO_DUELMODS, MA_PICK_DUEL_MODIFIER, AS_HOST, true, 1, "duel: a random modifier for this life, never one played this match (one draw)"},
+    {"poolStep", {}, T_VOID, false, MO_POOL, MA_POOL_STEP, AS_HOST, true, 0,
+        "power this tick: a player who joined a team adds poolPerPlayer to its pool, one who left takes it off the size (the pool shrinks to fit)"},
 };
 constexpr int kNumActions = (int)(sizeof kActions / sizeof kActions[0]);
 const ActionInfo* actionByName(const std::string& n) { for (auto& a : kActions) if (n == a.name) return &a; return nullptr; }
@@ -263,6 +267,7 @@ const ObjectInfo kObjects[MO_COUNT] = {
     {"tiebreak", "rock paper scissors for a shared first place (the engine runs it in round end)", {"startTiebreak"}, {}, {"rpsPickTime", "rpsRevealTime"}, MB(MODE_HIDE), 0},
     {"bracket", "the tourney's single-elimination bracket", {"tourneyBegin", "tourneyWalkover", "tourneyAdvance"}, {}, {}, MB(MODE_TOURNEY), 0},
     {"duelmods", "duel: a random modifier each life", {"pickDuelModifier"}, {}, {}, MB(MODE_DUEL), 0},
+    {"pool", "power: each team's health pool takes the enemy's hits (the round sets it up); nobody dies of damage", {"poolStep"}, {}, {"poolPerPlayer"}, MB(MODE_POWER), 0},
 };
 #undef MB
 int objectByName(const std::string& n) { for (int i = 0; i < MO_COUNT; i++) if (n == kObjects[i].name) return i; return -1; }
@@ -304,6 +309,7 @@ const ParamInfo kParams[] = {
     {"tagFreeze", T_F32, "s", 0, 30, MO_IT, 2, "a newly tagged player stands still this long (no instant tag-back)"},
     {"rpsPickTime", T_F32, "s", 1, 60, MO_TIEBREAK, 6, "to choose rock, paper or scissors"},
     {"rpsRevealTime", T_F32, "s", 0, 60, MO_TIEBREAK, 3, "each throw is shown this long"},
+    {"poolPerPlayer", T_F32, "hp", 1, 10000, MO_POOL, kPowerPoolPerPlayer, "power: each team's health pool, per player on it"},
 };
 constexpr int kNumParams = (int)(sizeof kParams / sizeof kParams[0]);
 const ParamInfo* paramInfo(const std::string& n) { for (auto& p : kParams) if (n == p.name) return &p; return nullptr; }
@@ -1467,7 +1473,7 @@ struct Curve { uint8_t kind = 0, n = 0; float base = 0; float x[16] = {}, y[16] 
 
 const char* originFile(int origin, int base) {
     static const char* const files[MODE_COUNT] = {"vs.qlogic", "bomb.qlogic", "race.qlogic", "koth.qlogic", "payload.qlogic", "ffa.qlogic", "npayload.qlogic",
-                                                  "duel.qlogic", "arena.qlogic", "tourney.qlogic", "hide.qlogic", "tag.qlogic", "points.qlogic", "surf.qlogic"};
+                                                  "duel.qlogic", "arena.qlogic", "tourney.qlogic", "hide.qlogic", "tag.qlogic", "points.qlogic", "surf.qlogic", "power.qlogic"};
     if (origin == 2) return "common.qlogic";
     return base >= 0 && base < MODE_COUNT ? files[base] : "the default";
 }
@@ -2421,7 +2427,7 @@ const ModeLogicUpgrade kModeLogicUpgrades[] = {nullptr};
 constexpr int kNumModeLogicUpgrades = 0;
 static_assert(kNumModeLogicUpgrades == kModeLogicVersion - 1, "every older logic version needs a converter in kModeLogicUpgrades");
 
-const char* const kDefaultNames[MODE_COUNT + 1] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "common"};
+const char* const kDefaultNames[MODE_COUNT + 1] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "arena", "tourney", "hide", "tag", "points", "surf", "power", "common"};
 const char* defaultText(int mode) {   // (-1: common)
     const char* want = mode < 0 || mode >= MODE_COUNT ? "common" : kDefaultNames[mode];
     for (auto& d : kDefaultModeTexts) if (strcmp(d.name, want) == 0) return d.text;

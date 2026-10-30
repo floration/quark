@@ -238,8 +238,8 @@ bomb.state bomb.carrier bomb.acting bomb.timer cart.dist cart.length cart.checkp
 Writable: `attackers hud.clock hud.overtime hud.contested hud.drain hud.target hud.owner`.
 
 Arrays (`a[i]`): per player `score objTime it out found sought` (writable), `kills deaths freezeUntil
-race.checkpoint race.finished` (read-only); per team `teamScore cart.best cart.completed` (writable), `cart.near
-cart.bestTime` (read-only). An index out of range reads 0 and writes nothing.
+race.checkpoint race.finished` (read-only); per team `teamScore cart.best cart.completed pool` (writable), `cart.near
+cart.bestTime poolMax` (read-only). An index out of range reads 0 and writes nothing.
 
 Actions: `addScore(p, n)`, `addTeamScore(t, n)`, `endRound(winner, text...)`, `endRoundNoScore(winner, text...)`,
 `endRoundText(text...)`, `endMatch(winner, text...)`, `announce(text...)` (at most 4 a second: past that dropped,
@@ -265,6 +265,7 @@ player; race `<player> wins the race` / `nobody finished`; no winner: `round dra
 | tiebreak | `startTiebreak()` -> bool | | rpsPickTime 6, rpsRevealTime 3 | hide |
 | bracket | `tourneyBegin()` -> bool, `tourneyWalkover()` -> bool, `tourneyAdvance(t)` | | | tourney |
 | duelmods | `pickDuelModifier()` | | | duel |
+| pool | `poolStep()` | | poolPerPlayer 2500 | power |
 
 An object's step without its `use` is a compile error; a `use` of an object the base mode doesn't use natively is
 warned about (the HUD won't show it and bots won't play it). An object's params nobody declares are there at their

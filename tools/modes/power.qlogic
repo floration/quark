@@ -1,0 +1,21 @@
+logic 1
+base power
+# Power: team vs with one health pool a team, poolPerPlayer x the players on it (each round starts it full). An
+# enemy's hit comes off the victim's team pool, never the player's own health: nobody dies of damage (a fall out of the
+# map respawns you). A team whose pool is empty loses the round; when the clock runs out, the fuller pool (its share
+# of its size) takes it. One round.
+use pool
+
+param roundTime f32 = 600
+param respawnTime f32 = 2
+
+slot tick:
+  poolStep()
+  if pool[A] <= 0 or pool[B] <= 0: endRound(pool[A] > 0 ? A : pool[B] > 0 ? B : none, "pool empty")
+  if phaseEnd > 0 and now >= phaseEnd:
+    fa = poolMax[A] > 0 ? pool[A] / poolMax[A] : 0.0f
+    fb = poolMax[B] > 0 ? pool[B] / poolMax[B] : 0.0f
+    endRound(fa > fb ? A : fb > fa ? B : none, "time")
+
+slot roundOver:
+  firstToRounds()

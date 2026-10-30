@@ -2068,8 +2068,15 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (attacker >= 0 && attacker != victim) dmg *= duelModDef(duelMod()).damageMul; // glass cannons / double damage
     if (attacker >= 0 && attacker != victim && (rules & AR_INSTAGIB)) dmg = std::max(dmg, v.health + 1);
     if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].hitSinceShot = true;
-    if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
-    v.health -= dmg;
+    // Power: nobody dies of damage. An enemy's hit comes off the victim's team pool (while the round is live), never
+    // their own health; your own and the world's hits take nothing (the knockback above still lands).
+    const bool power = ms_.mode == MODE_POWER;
+    if (power && (attacker < 0 || attacker == victim || friendly)) return;
+    if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += power ? dmg : std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
+    if (power) {
+        float& pool = v.team == TEAM_A ? ms_.payloadDist : ms_.payloadLen;
+        if (ms_.phase == PHASE_LIVE && (v.team == TEAM_A || v.team == TEAM_B)) pool = std::max(0.0f, pool - dmg);
+    } else v.health -= dmg;
     v.lastDamagedAt = time();
     if (attacker >= 0 && attacker != victim) {
         lastProgress_ = time();
@@ -2147,7 +2154,7 @@ bool Server::takeAcid(int id) {
         p.health = std::min(lifeMaxHealth(), p.health - share * lifeMaxHealth());
         return false;
     }
-    if (share <= 0 || !p.alive || !acidHurts(ms_.phase)) return false;
+    if (share <= 0 || !p.alive || !acidHurts(ms_.phase) || ms_.mode == MODE_POWER) return false;   // (power: the world takes nothing)
     p.health -= share * lifeMaxHealth();
     p.lastDamagedAt = time();
     glog(LOG_VERBOSE, "acid victim=%d dmg=%.3f health=%.2f", id, share * lifeMaxHealth(), p.health);

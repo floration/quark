@@ -419,6 +419,12 @@ void objectsRoundReset(Server& s) {
     } else if (m.mode == MODE_NPAYLOAD) {
         m.payloadLen = s.map_.payloadLength();
         m.payloadDist = m.payloadLen * 0.5f; // starts in the middle; team A pushes to the end, B to the start
+    } else if (m.mode == MODE_POWER) {   // each team's pool full: poolPerPlayer x the players on it (powerPool, protocol.h)
+        m.target = (int16_t)clampf(std::round(P(s).poolPerPlayer), 1, 10000);
+        m.point = (uint8_t)s.teamCount(TEAM_A);
+        m.pointCount = (uint8_t)s.teamCount(TEAM_B);
+        m.payloadDist = powerPoolMax(m, TEAM_A);
+        m.payloadLen = powerPoolMax(m, TEAM_B);
     }
 }
 
@@ -743,6 +749,7 @@ bool nativeRoundOver(Server& s) {
         case MODE_DUEL:
         case MODE_ARENA:
         case MODE_BOMB:
+        case MODE_POWER:
             if (m.scoreA >= rtw || m.scoreB >= rtw) {
                 int w = m.scoreA >= rtw ? TEAM_A : TEAM_B;
                 enterMatchEnd(s, sideName(s, w) + " wins the match", w);
@@ -854,6 +861,34 @@ void stalemateDrain(Server& s) {
             p.health -= 1.0f;
             if (p.health <= 0) s.killPlayer(i, -1, 254);
         }
+    }
+}
+
+// ---- the pool object (power): a player who joined a team mid-round brings their share (the pool and its size grow by
+// poolPerPlayer); one who left takes theirs off the size, and the pool shrinks to fit it. The hits come off it in
+// Server::damagePlayer.
+void poolStep(Server& s) {
+    ModeState& m = s.ms_;
+    for (int t : {TEAM_A, TEAM_B}) {
+        uint8_t& counted = t == TEAM_A ? m.point : m.pointCount;
+        float& pool = t == TEAM_A ? m.payloadDist : m.payloadLen;
+        const int n = s.teamCount(t);
+        if (n > counted) pool += float(n - counted) * (float)m.target;
+        counted = (uint8_t)n;
+        pool = std::min(pool, powerPoolMax(m, t));
+    }
+}
+
+// Power: a pool at 0 loses the round; when the clock runs out, the fuller pool (its share of its size) wins it.
+void tickPower(Server& s) {
+    const ModeState& m = s.ms_;
+    poolStep(s);
+    const float a = powerPool(m, TEAM_A), b = powerPool(m, TEAM_B);
+    if (a <= 0 || b <= 0) { endRound(s, a > 0 ? TEAM_A : b > 0 ? TEAM_B : -1, "pool empty"); return; }
+    if (s.phaseEnd_ > 0 && s.time() >= s.phaseEnd_) {
+        const float ma = powerPoolMax(m, TEAM_A), mb = powerPoolMax(m, TEAM_B);
+        const float fa = ma > 0 ? a / ma : 0.0f, fb = mb > 0 ? b / mb : 0.0f;
+        endRound(s, fa > fb ? TEAM_A : fb > fa ? TEAM_B : -1, "time");
     }
 }
 
@@ -1306,6 +1341,7 @@ void nativeTick(Server& s) {
         case MODE_HIDE: tickHide(s); break;
         case MODE_TAG: tickTag(s); break;
         case MODE_POINTS: tickPoints(s); break;
+        case MODE_POWER: tickPower(s); break;
     }
 }
 
@@ -1788,6 +1824,8 @@ public:
             case MF_CART_COMPLETED: return team(a) ? s.completeTime_[a] : 0;
             case MF_CART_NEAR: return team(a) ? s.cartNear_[a] : 0;
             case MF_CART_BEST_TIME: return team(a) ? s.bestTime_[a] : 0;
+            case MF_TEAM_POOL: return powerPool(m, a);
+            case MF_TEAM_POOL_MAX: return powerPoolMax(m, a);
             default: break;
         }
         // per player (out of range: 0; team: none)
@@ -1848,6 +1886,7 @@ public:
             case MF_TEAM_SCORE: if (team(a)) (a == TEAM_A ? m.scoreA : m.scoreB) = i16(v); return;
             case MF_CART_BEST: if (team(a)) s.bestProgress_[a] = (float)v; return;
             case MF_CART_COMPLETED: if (team(a)) s.completeTime_[a] = (float)v; return;
+            case MF_TEAM_POOL: if (team(a)) (a == TEAM_A ? m.payloadDist : m.payloadLen) = (float)v; return;
             default: break;
         }
         if ((unsigned)a >= (unsigned)kMaxPlayers) return;
@@ -1931,6 +1970,7 @@ public:
             case MA_TOURNEY_WALKOVER: return tourneyWalkover(s);
             case MA_TOURNEY_ADVANCE: { int t = (int)arg(0); if (t == TEAM_A || t == TEAM_B) tourneyMatchWon(s, t); return 0; }
             case MA_PICK_DUEL_MODIFIER: pickDuelModifier(s); return 0;
+            case MA_POOL_STEP: poolStep(s); return 0;
             default: return 0;
         }
     }
