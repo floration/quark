@@ -1344,6 +1344,54 @@ static void testBalanceBotDefer(uint16_t port) {
     s.stop();
 }
 
+// Bomb spawns go by role (q, 2026-10-30): the attackers start on the map's a spawns and the defenders on its b spawns
+// in both halves, so after halftime team B attacks from a. (By team, a map built to q's timing gave team A the short
+// way in both halves: War, team A won 7 of 8.)
+static void testBombSpawnRoles(uint16_t port) {
+    printf("bomb: attackers spawn on the attack's spawns in both halves\n");
+    Map d;
+    CHECK(d.load("depot"));
+    CHECK(modeSpawnType(d, MODE_BOMB, TEAM_A, TEAM_A, false) == SPAWN_A && modeSpawnType(d, MODE_BOMB, TEAM_B, TEAM_A, false) == SPAWN_B);
+    CHECK(modeSpawnType(d, MODE_BOMB, TEAM_B, TEAM_B, false) == SPAWN_A && modeSpawnType(d, MODE_BOMB, TEAM_A, TEAM_B, false) == SPAWN_B);
+    CHECK(modeSpawnType(d, MODE_VS, TEAM_A, TEAM_B, false) == SPAWN_A);   // (other modes: by team, as before)
+    {   // a bomb set ("spawn bomb-a"): by role too
+        Map m;
+        CHECK(m.parse("box -40 -1 -40 40 0 40\nsite 20 0 -2 24 3 2\nspawn a -30 0 0\nspawn b 30 0 0\nspawn bomb-a -20 0 0\nspawn bomb-b 10 0 0\n"));
+        CHECK(modeSpawnType(m, MODE_BOMB, TEAM_B, TEAM_B, false) == modeSpawn(MODE_BOMB, SPAWN_A) && modeSpawnType(m, MODE_BOMB, TEAM_A, TEAM_B, false) == modeSpawn(MODE_BOMB, SPAWN_B));
+    }
+    // a real match, halftime after round 1: in each round's freeze everyone stands on their role's spawns
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false; cfg.roundsToWin = 2;
+    NetClient cl[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, cl, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    auto onSet = [&](int id, int want) {
+        float best = 1e9f; int team = -1;
+        for (auto& sp : s.map_.spawns) { float dd = length(sp.pos - s.players_[id].move.pos); if (dd < best) { best = dd; team = sp.team; } }
+        return best < 1.5f && team == want;
+    };
+    for (int round = 1; round <= 2; round++) {
+        for (int k = 0; k < 100 && !(s.ms_.round == round && s.ms_.phase == PHASE_FREEZE); k++) { if (s.ms_.phase != PHASE_LIVE || s.ms_.round < round) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == round && s.ms_.phase == PHASE_FREEZE);
+        const int att = s.ms_.attackers;
+        CHECK(att == (round == 1 ? TEAM_A : TEAM_B));
+        int a = rulesTeamPlayer(s, att), b = rulesTeamPlayer(s, att == TEAM_A ? TEAM_B : TEAM_A);
+        CHECK(a >= 0 && b >= 0);
+        if (a < 0 || b < 0) break;
+        printf("  round %d: team %s attacks from %s, team %s defends from %s\n", round, att == TEAM_A ? "A" : "B", onSet(a, SPAWN_A) ? "a" : "?",
+               att == TEAM_A ? "B" : "A", onSet(b, SPAWN_B) ? "b" : "?");
+        CHECK(onSet(a, SPAWN_A) && onSet(b, SPAWN_B));
+        if (round == 1) {   // round 1 to the attack
+            for (int k = 0; k < 40 && s.ms_.phase == PHASE_FREEZE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+            s.killPlayer(b, -1, 252);
+            pump(s, cls, 0.3, idle);
+        }
+    }
+    s.stop();
+}
+
 // MAP-7: the spawn type depends on whether the map has those spawns (canSupportMode), not on its "modes" line:
 // Colosseum (tourney, doesn't offer vs) uses its a/b spawns for tourney matches.
 static void testSpawnTypes(uint16_t port) {
@@ -2825,7 +2873,7 @@ static void testGameRules(const std::string& only, int half = 0) {
         {"bomb", 2, [] { testBombDrop(TP(29249)); }},
         {"cartbox", 2, [] { testCartBoxPlace(TP(29275)); }},
         {"botdefer", 1, [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
+        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testBombSpawnRoles(TP(29262)); testFfaSpawnChoice(); }},
         {"seeds", 2, [] { testRandomSeeds(); }},
         {"heal", 2, [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", 2, [] { testScoreboardValue(); }},

@@ -1706,6 +1706,11 @@ int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyM
     if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, team != attackers);
     if (mode == MODE_POINTS && m.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, team != attackers);
+    // bomb: by role, not by team (q, 2026-10-30): the attack always starts on the a spawns (team A attacks the first
+    // half, bomb.qlogic), the defence on the b ones, so after halftime team B attacks from a. By team, a map built to
+    // q's timing (attackers ~5 s from a site, defenders ~6 s) handed team A the short way in both halves: War, 115 m
+    // vs 144 m, team A won 7 of 8.
+    if (mode == MODE_BOMB) return own(team == attackers ? SPAWN_A : SPAWN_B);
     return own(team == TEAM_B ? SPAWN_B : SPAWN_A);
 }
 
