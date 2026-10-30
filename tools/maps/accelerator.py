@@ -639,10 +639,27 @@ def build():
     for c in cps:
         m.raw("checkpoint " + " ".join(num(v) for v in c))
     m.raw("setting particle physics lab")
-    m.top_up_spawns = lambda offered: None   # (race only: no free for all pool)
+    # bomb (q, 2026-10-30: "playable in bomb too"): the cryogenics yard is the arena. Attackers climb out of the shaft
+    # head's stairwell (one flight) and in at its west door; defenders come along the skybridge onto the cold box and
+    # down its stairs. The two sites are the yard's west corners (north and south of the cold box),
+    # each beside a tank: attackers reach the north one in 99 m and the south one in 118 m (4.1 / 4.9 s at 24 m/s),
+    # defenders either in 109 m (maptool metrics). Defenders any further back lost about two rounds in three to 8
+    # expert bots (seeds 1-6); from here the rounds split 43-38 with plants on both sites. The race spawns and checkpoints are untouched; nothing was built for it but the sites' flush markings.
+    m.also = ["bomb"]
+    LAND = -CAV_Y / 13               # (the stairwell's first landing, 6.9 m down: the attackers climb one flight out)
+    BA = [(283.8, 14.2), (285.2, 15.9), (283.8, 17.6), (285.2, 18.6), (285.2, 13.6)]
+    BD = [(150, -1.5), (150, 1.5), (153, -1.5), (153, 1.5), (156, 0)]
+    for (x, z) in BA: m.raw(f"spawn bomb-a {x:g} {-LAND:.3f} {z:g} 90")
+    for (x, z) in BD: m.raw(f"spawn bomb-b {x} 12 {z} -90")
+    SITES = [(198, 0, 20, 208, 3, 31), (198, 0, -31, 208, 3, -20)]
+    for st in SITES:
+        m.raw("site " + " ".join(f"{v:g}" for v in st))
+        for (z0, z1) in ((st[2], st[2] + 0.4), (st[5] - 0.4, st[5])):
+            k.box("hazard", st[0], -0.01, z0, st[3], 0.004, z1)
+    m.top_up_spawns = lambda offered: None   # (race and bomb: their own spawns; no free for all pool)
     m.save("accelerator", dress=False)
     import os
     from . import prefabs
     path = os.path.join(prefabs.OUT, "accelerator.qmap")
-    text = open(path).read().replace("modes race ffa\n", "modes race\n")
+    text = open(path).read().replace("modes race bomb ffa\n", "modes race bomb\n")
     open(path, "w", newline="\n").write(text)
