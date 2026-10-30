@@ -185,6 +185,8 @@ def build():
         B(m, "hologrampanel", AX - w, y0, AZ - rr, AX + w, y1, AZ - w)
         B(m, "hologrampanel", AX - w, y0, AZ + w, AX + w, y1, AZ + rr)
     B(m, "clip", AX - 3.4, 6.8, AZ - 3.4, AX + 3.4, A_H, AZ + 3.4)
+    # (the plan's optional slow-mo ring is left out: a slowmofield draws as a see-through cube round the orb, the box
+    # look the orb replaced. To try it: B(m, "slowmofield", AX - 6, 4, AZ - 6, AX + 6, 16, AZ + 6))
     L.append(f"site {AX - 4:g} 0 {AZ - 8:g} {AX + 12:g} 4 {AZ + 8:g}")   # (east of the plinth: its middle on open floor)
 
     # ================= site B: the UPS hall (two storeys tall, a catwalk on each long side) =================
@@ -294,6 +296,8 @@ def build():
     # battery room: rows of battery racks
     for xc in (48, 58, 68, 78):
         B(m, "lockerdoors", xc - 0.6, 0, -40, xc + 0.6, 2.4, -30); B(m, "lockerdoors", xc - 0.6, 0, -24, xc + 0.6, 2.4, -16)
+    # security: its signature, a wall of screens on each side wall (0.2 m: not a thin panel)
+    B(m, "controlpanel", -96, 1.0, -33, -95.8, 5.0, -14); B(m, "controlpanel", -40.2, 1.0, -24, -40, 5.0, -13)
     # security: desks
     B(m, "electricalcabinet", -84, 0, -30, -76, 1.1, -27); B(m, "electricalcabinet", -66, 0, -22, -58, 1.1, -19)
     # lobby: the reception desk
