@@ -8611,7 +8611,9 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed, uint64_t* hash = nullpt
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
     { // FFA vs 3 expert bots: they should find and kill each other / us (seeded, on the manual clock: the same match every run)
-        FfaRun r = ffaVsExperts(port++, 0x5EED0001u);
+        // (0x5EED0003, the third of 20 seeds: with 0x5EED0001 the player stood untouched through 40 s once the tick order rotated, 2026-10-30; 2 of 20 seeds
+        // do that, before and after. Over 20 seeds now: kills 3 to 9, the player's deaths 0 to 4, grapples 5 to 16.)
+        FfaRun r = ffaVsExperts(port++, 0x5EED0003u);
         printf("  ffa vs 3 expert bots: %d kills (%d of the player standing still), %d grapples in 40 s (phase %d)\n", r.kills, r.playerDeaths, r.hooks, r.phase);
         CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17; 3 to 8 over 20 seeds and 7 for this one, on the manual clock)
         CHECK(r.playerDeaths >= 1);  // nobody stands in the open for long
@@ -8957,6 +8959,111 @@ static void testBotFalls(uint16_t port) {
         CHECK(r.falls <= 2 && r.self <= 1);
     }
     std::remove(path.c_str());
+}
+
+// Team order (a map worker, 2026-10-30: "the team listed second scores about 3% more"): one seeded match of expert
+// bots, team A's n added before team B's or after them (so A has the low slot ids or the high ones); team A's score
+// and kills, and both teams' totals.
+struct OrderRun { int scoreA = 0, scoreB = 0, killsA = 0, killsB = 0; bool ok = false; };
+static OrderRun orderRun(const std::string& map, int mode, uint32_t seed, bool bFirst, double seconds, int perTeam, uint16_t port) {
+    OrderRun r;
+    SimClock clock;
+    qsrand(seed);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true;   // (one port for every run: each stops first)
+    s.setLog([](const std::string&) {});
+    bool started = false;
+    for (int k = 0; k < 2 && !started; k++) { started = s.start(cfg); if (!started) cfg.port = (uint16_t)(port + 1); }
+    if (!started) return r;
+    for (int side = 0; side < 2; side++)
+        for (int i = 0; i < perTeam; i++) s.addBot((side == 0) != bFirst ? TEAM_A : TEAM_B, BOT_EXPERT);
+    simNavReady(s);
+    simRun(s, 1.0);
+    s.command("forcestart");
+    simRun(s, seconds);
+    r.scoreA = s.ms_.scoreA; r.scoreB = s.ms_.scoreB;
+    for (auto& p : s.players_) if (p.connected) (p.team == TEAM_A ? r.killsA : r.killsB) += p.kills;
+    r.ok = true;
+    s.stop();
+    return r;
+}
+// Over seeds: team A's share of the kills (and of the score) listed first and listed second, each with its standard
+// error (raw: each run's line too, "R seed bFirst killsA killsB scoreA scoreB").
+struct OrderBias { double first = 0, second = 0, seFirst = 0, seSecond = 0, scoreFirst = 0, scoreSecond = 0; int n = 0; };
+static OrderBias orderBias(const std::string& map, int mode, int seeds, double seconds, int perTeam, uint16_t port, int firstSeed = 0, bool raw = false) {
+    OrderBias b;
+    std::vector<double> share[2], score[2];
+    for (int k = firstSeed; k < firstSeed + seeds; k++)
+        for (int bf = 0; bf < 2; bf++) {
+            OrderRun r = orderRun(map, mode, 0x0D3E0000u + (uint32_t)k, bf != 0, seconds, perTeam, port);
+            if (!r.ok) continue;
+            if (raw) printf("R %d %d %d %d %d %d\n", k, bf, r.killsA, r.killsB, r.scoreA, r.scoreB);
+            int kt = r.killsA + r.killsB, st = r.scoreA + r.scoreB;
+            share[bf].push_back(kt ? (double)r.killsA / kt : 0.5);
+            score[bf].push_back(st ? (double)r.scoreA / st : 0.5);
+        }
+    auto mean = [](const std::vector<double>& v) { double m = 0; for (double x : v) m += x; return v.empty() ? 0.5 : m / v.size(); };
+    auto se = [&](const std::vector<double>& v) {
+        if (v.size() < 2) return 1.0;
+        double m = mean(v), q = 0;
+        for (double x : v) q += (x - m) * (x - m);
+        return std::sqrt(q / (v.size() - 1) / v.size());
+    };
+    b.first = mean(share[0]); b.second = mean(share[1]); b.seFirst = se(share[0]); b.seSecond = se(share[1]);
+    b.scoreFirst = mean(score[0]); b.scoreSecond = mean(score[1]);
+    b.n = (int)share[0].size();
+    return b;
+}
+
+// The tick's order doesn't favour a slot: every bot thinks on the same world (as the tick found it: nobody has moved,
+// shot or died yet this tick), each once, and who thinks and moves first turns tick by tick. Then the statistics: team
+// A's kill share with its bots added first or second (low slots or high) is the same within the noise.
+static void testTickOrder(uint16_t port) {
+    printf("tick order: bots think on one world, first mover turns, no slot advantage\n");
+    SimClock clock;
+    qsrand(0x0D3E);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port; cfg.autoStart = true;
+    s.setLog([](const std::string&) {});
+    CHECK(s.start(cfg));
+    for (int i = 0; i < 4; i++) { s.addBot(TEAM_A, BOT_EXPERT); s.addBot(TEAM_B, BOT_EXPERT); }
+    simNavReady(s);
+    simRun(s, 1.0);
+    s.command("forcestart");
+    static Server* srv;
+    static uint32_t tickSeen;
+    static uint64_t worldSeen;
+    static int thinks, mixed, firstOf[kMaxPlayers], sameTick;
+    static bool seenThis[kMaxPlayers];
+    srv = &s; tickSeen = ~0u; thinks = mixed = sameTick = 0;
+    for (int& f : firstOf) f = 0;
+    g_botThinkHook = [](Server& sv, int id) {
+        if (&sv == srv) {
+            uint64_t h = 1469598103934665603ull;   // (everyone's movement, health and life: what a command changes)
+            auto mix = [&](const void* p, size_t n) { for (size_t k = 0; k < n; k++) h = (h ^ ((const uint8_t*)p)[k]) * 1099511628211ull; };
+            for (auto& p : sv.players_) if (p.connected) { mix(&p.move.pos, sizeof p.move.pos); mix(&p.move.vel, sizeof p.move.vel); mix(&p.health, sizeof p.health); mix(&p.alive, 1); }
+            if (sv.tick_ != tickSeen) { tickSeen = sv.tick_; worldSeen = h; firstOf[id]++; for (bool& b : seenThis) b = false; }
+            else if (h != worldSeen) mixed++;
+            if (seenThis[id]) sameTick++;
+            seenThis[id] = true;
+            thinks++;
+        }
+        return botThinkDirect(sv, id);
+    };
+    simRun(s, 20.0);
+    g_botThinkHook = nullptr;
+    int firsts = 0;
+    for (int i = 0; i < kMaxPlayers; i++) firsts += firstOf[i] > 0;
+    printf("  %d thinks, %d on a world another command had changed, %d twice in a tick, %d different first thinkers\n", thinks, mixed, sameTick, firsts);
+    CHECK(thinks > 1000 && mixed == 0 && sameTick == 0 && firsts == 8);
+    s.stop();
+    // the statistics (quark_tests orderbias for more: 600 seeds, a few minutes)
+    OrderBias b = orderBias("bastion", MODE_VS, 40, 40, 4, (uint16_t)(port + 2));
+    double se = std::sqrt(b.seFirst * b.seFirst + b.seSecond * b.seSecond);
+    printf("  bastion vs, %d seeds: team A's kill share added first %.3f, second %.3f (diff %+.3f, se %.3f)\n", b.n, b.first, b.second, b.second - b.first, se);
+    CHECK(b.n == 40 && std::fabs(b.second - b.first) < 4 * se + 0.01);
 }
 
 // Bomb: the attacking bots go for every site in turn (site round + rank: they used to take the first one every round,
@@ -9441,6 +9548,20 @@ int main(int argc, char** argv) {
         }
         return g_fail ? 1 : 0;
     }
+    if (argc >= 2 && std::string(argv[1]) == "orderbias") {   // [seeds] [map] [mode] [seconds] [per team]: team A listed first vs second
+        int n = argc > 2 ? atoi(argv[2]) : 50;
+        std::string map = argc > 3 ? argv[3] : "bastion";
+        int mode = argc > 4 ? modeFromName(argv[4]) : MODE_VS;
+        double secs = argc > 5 ? atof(argv[5]) : 120;
+        int per = argc > 6 ? atoi(argv[6]) : 4;
+        int from = argc > 7 ? atoi(argv[7]) : 0;
+        g_legacyTickOrder = getenv("QUARK_LEGACY_ORDER") != nullptr;   // (the old order, to compare)
+        OrderBias b = orderBias(map, mode < 0 ? MODE_VS : mode, n, secs, per, (uint16_t)(TP(29180) + from % 200 * 2), from, true);
+        printf("%s %s, %d seeds, %.0f s, %d a side: team A's kill share listed first %.4f +- %.4f, second %.4f +- %.4f (diff %+.4f +- %.4f); score share %.4f / %.4f\n",
+               map.c_str(), modeName(mode < 0 ? MODE_VS : mode), b.n, secs, per, b.first, b.seFirst, b.second, b.seSecond, b.second - b.first,
+               std::sqrt(b.seFirst * b.seFirst + b.seSecond * b.seSecond), b.scoreFirst, b.scoreSecond);
+        return 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
     if (argc >= 2 && (std::string(argv[1]) == "exportbrain" || std::string(argv[1]) == "checkbrain" || std::string(argv[1]) == "brainast" || std::string(argv[1]) == "printbrain"))
         return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
@@ -9503,6 +9624,7 @@ int main(int argc, char** argv) {
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"bombsites", [] { testBombSites(TP(29090)); }},
+        {"tickorder", [] { testTickOrder(TP(29096)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},

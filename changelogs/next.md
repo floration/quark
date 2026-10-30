@@ -103,3 +103,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Map format 11: spawns for one mode
 - **A map can give a mode its own spawns**, e.g. a koth hill in a bomb map: `spawn koth-a` / `spawn koth-b` spawns are used only in king of the hill (and koth starts on them when the map has them), never in other modes. Any mode but race and multi point can have a set (`ffa-any`, `bomb-a`, ...). The map editor sets it on a spawn (MODE SET; a white cap marks one). **Maps are now format 11**: older maps convert by themselves, but an older game can't open a map that uses the new spawns.
+
+## Bots
+- **Team order no longer matters:** every bot now decides what to do on the same picture of the world each tick, and who moves first rotates every tick, so it doesn't matter which team or player joined first. At round start, both teams' spawns are picked without either team dodging the other's fresh spawns.
+

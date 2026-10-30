@@ -477,12 +477,19 @@ void startRound(Server& s) {
     }
     objectsRoundReset(s);
     if (!hookEvent(s, MSLOT_ROUND_SETUP)) nativeRoundSetup(s);
+    // (everyone at once: nobody's spot from last round counts, and in a team mode nor do the enemies spawned before you
+    // in this loop, so the spawns don't depend on who has the lower slots)
+    for (auto& p : s.players_) if (p.connected) p.alive = false;
+    s.spawnBatch_ = true;
+    s.batchSpawned_ = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected) continue;
         if (p.team == TEAM_SPECTATOR || (m.mode == MODE_TAG && p.out)) { p.alive = false; continue; }
         s.spawnPlayer(i);
+        s.batchSpawned_ |= 1u << i;
     }
+    s.spawnBatch_ = false;
     // Remove leftover projectiles between rounds.
     for (auto& pr : s.projectiles_) pr.active = false;
     float freeze = freezeLength(s);

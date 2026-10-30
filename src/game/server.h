@@ -40,6 +40,8 @@ constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
+// Tests only (orderbias): the old tick order, each bot thinking just before its own command, in slot order
+extern bool g_legacyTickOrder;
 struct GameEvent;
 class Server;
 struct ModeHooks;
@@ -425,6 +427,11 @@ public:
     GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
+    // a round's start spawns everyone, one after another in slot order: in a team mode the enemies spawned in the same
+    // batch don't count for where you spawn (the team that spawned second used to pick its spawns away from the
+    // first's, and the first saw last round's survivors where they stood)
+    bool spawnBatch_ = false;
+    uint32_t batchSpawned_ = 0;
     // not ranked: a match that had both sides and lost one (or everyone) is on hold (short_), since shortSince_ (F5)
     bool short_ = false;
     double shortSince_ = 0;
