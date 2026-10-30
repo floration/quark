@@ -11509,19 +11509,9 @@ void Game::reportBlast(int type, bool alt, const Vec3& at, int direct) {
         const Vec3 closest = hitboxClosest(b, at);
         const float d = length(closest - at);
         if (d > wd.splashRadius) continue;
+        if (!blastReaches(map, at, b)) continue;   // (the server's cover test)
         const Vec3 c = b.center(), to = c - at;
         const float dist = length(to);
-        if (dist > 0.01f) {
-            const float w = map.raycast(at, to / dist, dist);
-            if (w >= 0 && w < dist - 0.1f) {
-                auto clear = [&](const Vec3& pt) {
-                    const Vec3 v = pt - at;
-                    const float len = length(v);
-                    return len < 0.11f || !map.raycastAny(at, v / len, len - 0.1f);
-                };
-                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
-            }
-        }
         const float frac = 1.0f - d / wd.splashRadius;
         const Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         float dmg = wd.damage * frac;
@@ -11553,7 +11543,11 @@ void Game::reportBolt(const Vec3& at, const Vec3& dir, int victim, bool head) {
 
 void Game::reportImpact(int type, bool alt, const Vec3& from, const Vec3& to, int victim, bool head) {
     if (!net_.selfAlive()) return;   // (dead: the server's own hit, as it lands there)
-    if (type == WPN_ROCKET) reportBlast(type, alt, to, victim);
+    if (type == WPN_ROCKET) {   // (off where it met the surface, 5 cm back along its flight, as the server's goes off)
+        const Vec3 d = to - from;
+        const float len = length(d);
+        reportBlast(type, alt, len > 1e-4f ? blastPoint(from, d / len, len) : to, victim);
+    }
     else if (type == WPN_CROSSBOW) {
         const Vec3 d = to - from;
         const float len = length(d);
