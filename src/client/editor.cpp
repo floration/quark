@@ -3365,6 +3365,12 @@ void Game::editorFrame(double dt) {
                 int f = ed_.brushes[i].exitFace;
                 if (ui_.cycle(x, y, w, h, "EXIT FACE", f, kFaces, faces, UiExp::edit())) edModify([&](Map& mm) { mm.brushes[i].exitFace = (uint8_t)f; }, false);
                 row();
+                // (owner, 2026-10-30: "toggle for carry all speed or max at walking velocity"; map format 12: whoever
+                // goes INTO this one comes out of its pair at all their speed, or at no more than the run speed)
+                static const std::vector<std::string> speeds = {"SPEED: CARRY", "SPEED: WALK"};
+                int sp = ed_.brushes[i].tpWalk ? 1 : 0;
+                if (ui_.cycle(x, y, w, h, "SPEED", sp, 2, speeds, UiExp::edit())) edModify([&](Map& mm) { mm.brushes[i].tpWalk = sp == 1; }, false);
+                row();
             }
         } else if (kind == ED_GROUP) {
             auto& gr = ed_.groups[i];

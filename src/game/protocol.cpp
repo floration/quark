@@ -42,7 +42,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     if (opt & 8) w.f32(m.hookCooldown);
     if (opt & 16) {   // (38: the grapple latched onto a player, and the one it holds; 47: or riding a rocket, which follows)
         w.u8(m.hookTarget);
-        if (m.hookTarget == kHookRocket) { w.u16(m.hookProj); w.vec(m.hookVel); w.f32(m.hookGrav); }
+        if (m.hookTarget == kHookRocket) { w.u16(m.hookProj); w.vec(m.hookVel); w.f32(m.hookGrav); w.f32(m.hookAccel); }   // (55: + its thrust)
     }
     if (opt & 32) w.vec(m.pullPoint);
     if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
@@ -91,6 +91,10 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
         m.hookProj = r.u16(); m.hookVel = r.vec();
         const float g = r.f32();
         m.hookGrav = g >= -100.0f && g <= 100.0f ? g : 0.0f;   // (a hostile value, NaN too: none)
+        if (proto >= kSnapRocketThrustSince) {   // (older demos: rockets had no thrust)
+            const float a = r.f32();
+            m.hookAccel = a >= 0.0f && a <= 100.0f ? a : 0.0f;   // (the weapon set field's range; hostile / NaN: none)
+        }
     } else if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
     if (opt & 32) m.pullPoint = r.vec();
     if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }

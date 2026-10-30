@@ -67,7 +67,7 @@ WeaponValues makeStandard() {
     v.ex[WPN_ROCKET].directDamage = kRocketDirectDamage;
     WeaponAlt& a = v.alt;
     a.scopedRefire = kRifleScopedRefire;
-    a.lobSpeed = kRocketLobSpeed; a.lobGravity = kRocketLobGravity;
+    a.lobSpeed = kRocketLobSpeed; a.lobGravity = kRocketLobGravity; a.rocketAccel = kRocketAccel;
     a.knifeThrowSpeed = kKnifeThrowSpeed; a.knifeThrowGravity = kKnifeThrowGravity; a.knifeThrowLife = kKnifeThrowLife;
     a.knifeAway = kKnifeAway; a.knifeGrow = kKnifeGrow;
     a.bounces = kShotgunBounces; a.bounceDamage = kShotgunBounceDamage;
@@ -121,6 +121,7 @@ const AltSpec kAlts[] = {
     ALT_F(WPN_RIFLE, "scopedRefire", scopedRefire, WF_F32, "x", 0.1, 10, "x refire while scoped"),
     ALT_F(WPN_ROCKET, "lobSpeed", lobSpeed, WF_F32, "x", 0.05, 5, "the lob (alt-fire): x the rocket's speed"),
     ALT_F(WPN_ROCKET, "lobGravity", lobGravity, WF_F32, "m/s2", 0, 100, "the lob's drop"),
+    ALT_F(WPN_ROCKET, "accel", rocketAccel, WF_F32, "m/s2", 0, 100, "the primary rocket speeds up this much a second along its flight (no cap; the lob doesn't)"),
     ALT_F(WPN_KNIFE, "throwSpeed", knifeThrowSpeed, WF_F32, "m/s", 1, 200, "the thrown knife's speed"),
     ALT_F(WPN_KNIFE, "throwGravity", knifeThrowGravity, WF_F32, "m/s2", -50, 100, "the thrown knife's drop"),
     ALT_F(WPN_KNIFE, "throwLife", knifeThrowLife, WF_F32, "s", 0.05, 30, "the thrown knife's lifetime"),
@@ -1795,7 +1796,7 @@ std::vector<WeaponStats> computeWeaponStats(const WeaponValues& v, float health)
         if (w == WPN_LOCATOR) continue;
         const WeaponDef& d = v.def[w];
         const WeaponExtra& e = v.ex[w];
-        auto make = [&](bool alt, const char* mode, float body, float head, float refire, float speed) {
+        auto make = [&](bool alt, const char* mode, float body, float head, float refire, float speed, float accel = 0) {
             WeaponStats s;
             s.weapon = w; s.alt = alt; s.mode = mode;
             s.dmgBody = body; s.dmgHead = head; s.refire = refire;
@@ -1809,7 +1810,7 @@ std::vector<WeaponStats> computeWeaponStats(const WeaponValues& v, float health)
             s.projSpeed = speed; s.splash = d.splashRadius;
             static const float at[3] = {10, 20, 40};
             for (int k = 0; k < 3; k++) {
-                s.travel[k] = speed > 0 ? at[k] / speed : 0;
+                s.travel[k] = speed > 0 ? projectileFlightTime(at[k], speed, accel) : 0;   // (the primary rocket's thrust: accel)
                 s.falloff[k] = weaponFalloff(e, at[k]);
             }
             if (w == WPN_SYRINGE) { s.shotsBody = s.shotsHead = 0; s.ttkBody = s.ttkHead = 0; s.dpsBody = s.dpsHead = 0; s.range = 0; }
@@ -1821,7 +1822,7 @@ std::vector<WeaponStats> computeWeaponStats(const WeaponValues& v, float health)
         if (d.projectile && d.splashRadius > 0) head = body;   // (blasts: no headshots)
         float speed = d.projectile ? d.projSpeed : 0;
         if (w == WPN_SYRINGE) { make(false, "heal", d.damage, d.damage, d.refire, 0); make(true, "throw", a.syringeHeal, a.syringeHeal, d.refire, a.syringeThrowSpeed); continue; }
-        make(false, "primary", body, head, d.refire, speed);
+        make(false, "primary", body, head, d.refire, speed, w == WPN_ROCKET ? a.rocketAccel : 0.0f);
         switch (w) {
             case WPN_RIFLE: make(true, "scoped", body, head, d.refire * a.scopedRefire, 0); break;
             case WPN_ROCKET: make(true, "lob", body, head, d.refire, d.projSpeed * a.lobSpeed); break;

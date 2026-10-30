@@ -70,7 +70,7 @@ public:
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     // Rocket riding: your own rockets the server hasn't sent yet (the client's predicted copies, X5), where they are as
     // the next tick() starts, so a grapple can catch one at once. Set before each tick (n = 0: none).
-    struct RocketCopy { Vec3 pos, vel; float grav = 0; };
+    struct RocketCopy { Vec3 pos, vel; float grav = 0, accel = 0; };
     void setRocketCopies(const RocketCopy* c, int n) { nCopies_ = std::min(std::max(n, 0), (int)HookProbe::kRockets); for (int k = 0; k < nCopies_; k++) copies_[k] = c[k]; }
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
@@ -256,7 +256,7 @@ private:
     RocketCopy copies_[HookProbe::kRockets];
     int nCopies_ = 0;
     // the last predicted catch, for replays: a player (box, id) or a rocket (rocket: at, pos, vel, grav, rid as the probe had them)
-    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0; uint16_t rid = 0; } hookCatch_;
+    struct HookCatch { uint32_t seq = 0; AABB box; uint8_t id = 0; bool rocket = false; Vec3 at, pos, vel; float grav = 0, accel = 0; uint16_t rid = 0; } hookCatch_;
     uint8_t moveEv_ = 0;
     float moveLand_ = 0;
     static constexpr uint32_t kRemoteEvRing = 128;   // (a power of two: the counters wrap cleanly)

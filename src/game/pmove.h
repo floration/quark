@@ -53,6 +53,7 @@ struct MoveState {
     uint16_t hookProj = 0;
     Vec3 hookVel;
     float hookGrav = 0;
+    float hookAccel = 0;   // ...and its thrust (m/s2 along its velocity: the primary rocket's, projectileAccel; protocol 55)
     Vec3 pullPoint;    // while MF_PULLED: the body of the player whose grapple holds you (set by the server every tick)
     // What the last pmove call did (ME_*; each call clears it), for sounds: a frame or a snapshot can hold several 1 ms
     // steps, and comparing states across it missed a jump and a landing in the same step (a bhop) or a dash and its dash
@@ -193,7 +194,7 @@ struct HookProbe {
     static constexpr int kRockets = 6;
     int nr = 0;
     Vec3 at[kRockets], pos[kRockets], vel[kRockets];
-    float grav[kRockets] = {};
+    float grav[kRockets] = {}, accel[kRockets] = {};   // (accel: its thrust, projectileAccel)
     uint16_t rid[kRockets] = {};   // the rocket's id (0: your own predicted copy, not named by the server yet)
     int hitRocket = -1;   // out: index of the rocket the hook caught (-1: none)
 };

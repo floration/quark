@@ -754,6 +754,46 @@ static void testFeatureBlocks() {
         printf("  teleporter at 60 m/s: %d of 8 kept their speed (slowest %.2f)\n", kept, worst);
         CHECK(kept == 8);
     }
+    {   // a walk teleporter (map format 12, owner 2026-10-30): the same run into it at 60 m/s comes out at the run speed,
+        // along the exit face; walked into at less, out at no more than you went in
+        Map w;
+        std::string src = m.serialize();
+        const size_t at = src.find("tp 7 0\n");
+        CHECK(at != std::string::npos);
+        src.insert(at + 6, " walk");
+        CHECK(w.parse(src, &err) && w.brushes[9].tpWalk && !w.brushes[10].tpWalk);
+        const float run = moveBaseSpeed();
+        int capped = 0;
+        float lo = 1e9f, hi = 0;
+        for (int k = 0; k < 8; k++) {
+            MoveState s; s.pos = {-32.0f + k * 0.0075f, 0.5f, 31}; s.vel = {60, 0, 0};
+            UserCmd c; c.msec = 1;
+            bool out = false;
+            for (int t = 0; t < 60 && !out; t++) { pmove(s, c, w); out = s.pos.x > 30; }
+            const float v = out ? length(s.vel) : 0.0f;
+            capped += out && std::fabs(v - run) < 0.3f && s.vel.y > 0.9f * v;
+            lo = std::min(lo, v); hi = std::max(hi, v);
+        }
+        printf("  walk teleporter at 60 m/s: %d of 8 out at the run speed %.2f (%.2f..%.2f)\n", capped, run, lo, hi);
+        CHECK(capped == 8);
+        {   // slower than the run speed: kept (never faster than you went in)
+            MoveState s; s.pos = {-31.2f, 0.5f, 31}; s.vel = {4, 0, 0};
+            UserCmd c; c.msec = 1;
+            bool out = false;
+            float in = 0;   // (the speed going in: 4 m/s and what the fall added)
+            for (int t = 0; t < 400 && !out; t++) { in = length(s.vel); pmove(s, c, w); out = s.pos.x > 30; }
+            printf("  walk teleporter at 4 m/s: out %d at %.2f (in at %.2f)\n", (int)out, length(s.vel), in);
+            CHECK(out && in < moveBaseSpeed() && length(s.vel) < in + 0.05f);
+        }
+        Map r;   // written back with the word; an edit carries it
+        CHECK(w.serialize().find("tp 7 0 walk\n") != std::string::npos && r.parse(w.serialize(), &err) && r.brushes[9].tpWalk);
+        CHECK(describeMapObject(w, 'b', "set", 9).find(" p 7 0 walk") != std::string::npos);
+        Map e = m;
+        CHECK(applyMapEdit(e, describeMapObject(w, 'b', "set", 9)) && e.brushes[9].tpWalk);
+        CHECK(applyMapEdit(e, describeMapObject(m, 'b', "set", 9)) && !e.brushes[9].tpWalk);
+        Map bad;
+        CHECK(!bad.parse("box 0 0 0 1 1 1\nteleporter 0 0 0 1 1 1 tp 7 2 run\nspawn any 0 0 0\n", &err));   // (only "walk")
+    }
     {   // its link and face in the file, and in an edit
         Map r;
         CHECK(r.parse(m.serialize(), &err) && r.brushes[10].link == 7 && r.brushes[10].exitFace == 2 && r.brushes[9].exitFace == 0);
@@ -2266,6 +2306,14 @@ static void testMapConverter() {
         CHECK(c.parse("version 4\nacid -2 0 -2 2 0.3 2\n" + base) && c.warnings.empty() && c.brushes[0].material == kMatAcid && c.acid.size() == 1);
         CHECK(c.serialize().find("acid -2 0 -2 2 0.3 2\n") != std::string::npos && !c.boxSolid(playerBox({0, 0, 0}, false)) && c.inAcid(playerBox({0, 0, 0}, false)));
         CHECK(c.bounds.mx.y == 0 && c.raycast({0, 2, 0}, {0, -1, 0}, 10) > 1.99f);   // (shots and sight go through it to the floor)
+    }
+    {   // version 11 (before a teleporter's speed): only the version line changes; its teleporters carry all speed
+        const std::string v11 = "version 11\nteleporter -3 0 -3 -2 2 3 tp 4 0\nteleporter 2 0 -3 3 2 3 tp 4 1\n" + base;
+        std::string o;
+        CHECK(upgradeMapText(v11, &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nteleporter -3 0 -3 -2 2 3 tp 4 0\nteleporter 2 0 -3 3 2 3 tp 4 1\n" + base);
+        Map a, b;
+        CHECK(a.parse(v11) && b.parse(o) && a.formatVersion == 11 && a.warnings.empty() && a.brushes.size() == b.brushes.size());
+        CHECK(a.brushes[0].material == kMatTeleport && !a.brushes[0].tpWalk && !b.brushes[1].tpWalk && b.brushes[1].link == 4 && a.serialize() == b.serialize());
     }
     for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
         std::string o;
@@ -5811,6 +5859,70 @@ static void testRocketLob(uint16_t port) {
     s.stop();
 }
 
+// The primary rocket speeds up kRocketAccel (4 m/s2) along its flight (owner, 2026-10-30); the lob doesn't. The server's
+// 1 ms steps, the client's closed form (projectileExtrapolate) and its inverse (projectileRewind) agree.
+static void testRocketThrust(uint16_t port) {
+    printf("rocket thrust: the primary speeds up 4 m/s2, the lob unchanged\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    CHECK(s.map_.parse("box -100 -1 -100 100 0 100\nspawn any 0 0 0\n"));   // (open: nothing in the way for 1 s)
+    CHECK(kRocketAccel == 4.0f && weaponAlt().rocketAccel == kRocketAccel && projectileAccel(WPN_ROCKET, 1) == kRocketAccel);
+    CHECK(projectileAccel(WPN_ROCKET, kRocketLobGravity) == 0 && projectileAccel(WPN_STICKY, 1) == 0 && projectileAccel(WPN_CROSSBOW, 1) == 0);
+    const float sp0 = weaponDef(WPN_ROCKET).projSpeed;
+    auto fly = [&](Vec3 pos, Vec3 vel, float gravMul, int ms) {
+        for (auto& pr : s.projectiles_) pr.active = false;
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = 1; pr.type = WPN_ROCKET; pr.owner = kMaxPlayers - 1; pr.pos = pos; pr.vel = vel; pr.gravMul = gravMul;
+        pr.dieAt = s.time() + 10;
+        const uint64_t end = s.timeMs_ + (uint64_t)ms;
+        while (s.timeMs_ < end && pr.active) { s.tickProjectilesForTest(); s.timeMs_ += 1000 / s.tickRate(); }
+        return pr;
+    };
+    const Vec3 from(-60, 10, -5), dir = normalize(Vec3(1, 0.15f, 0.2f));
+    {   // the primary: 52 m/s after 1 s, along the same line, where the closed form puts it
+        const Projectile pr = fly(from, dir * sp0, 1, 1000);
+        Vec3 cp = from, cv = dir * sp0;
+        projectileExtrapolate(cp, cv, projectileFlight(WPN_ROCKET, 1), 1.0f);
+        printf("    primary after 1 s: %.4f m/s (closed form %.4f), %.4f m along, %.3f mm from the closed form\n", length(pr.vel), length(cv),
+               dot(pr.pos - from, dir), length(pr.pos - cp) * 1000);
+        CHECK(pr.active && std::fabs(length(pr.vel) - 52.0f) < 0.01f && std::fabs(length(cv) - 52.0f) < 0.01f);
+        CHECK(length(normalize(pr.vel) - dir) < 1e-4f && length(pr.pos - cp) < 0.002f);
+        CHECK(std::fabs(dot(pr.pos - from, dir) - (sp0 + 0.5f * kRocketAccel * 1.001f)) < 0.01f);   // (48 + 4 x 1000 x 1001 / 2 ms2)
+        // run back: projectileRewind undoes it (whole steps and a part of one)
+        for (float t : {1.0f, 0.2345f}) {
+            Vec3 p = from, v = dir * sp0;
+            projectileExtrapolate(p, v, projectileFlight(WPN_ROCKET, 1), t);
+            projectileRewind(p, v, projectileFlight(WPN_ROCKET, 1), t);
+            CHECK(length(p - from) < 0.001f && length(v - dir * sp0) < 0.001f);
+        }
+    }
+    {   // the lob: no thrust, its usual drop
+        const Vec3 v0 = dir * (sp0 * kRocketLobSpeed);
+        const Projectile pr = fly(from, v0, kRocketLobGravity, 1000);
+        Vec3 cp = from, cv = v0;
+        projectileExtrapolate(cp, cv, projectileFlight(WPN_ROCKET, kRocketLobGravity), 1.0f);
+        CHECK(pr.active && std::fabs(pr.vel.x - v0.x) < 1e-3f && std::fabs(pr.vel.z - v0.z) < 1e-3f && std::fabs(pr.vel.y - (v0.y - kRocketLobGravity)) < 0.01f);
+        CHECK(length(pr.pos - cp) < 0.002f);
+    }
+    {   // a weapon set giving the primary a drop as well: the stepped path, and its rewind
+        const ProjFlight f(9.0f, kRocketAccel);
+        Vec3 sp = from, sv = dir * sp0, p = from, v = dir * sp0;
+        const float t = 0.7f;
+        const int n = (int)(t / kMoveStep);   // (as projectileExtrapolate counts the whole steps; the rest in a line)
+        for (int k = 0; k < n; k++) { projectileStepVel(sv, f, kMoveStep); sp += sv * kMoveStep; }
+        sp += sv * (t - n * kMoveStep);
+        projectileExtrapolate(p, v, f, t);
+        CHECK(length(p - sp) < 1e-3f && length(v - sv) < 1e-3f);
+        projectileRewind(p, v, f, t);
+        CHECK(length(p - from) < 0.002f && length(v - dir * sp0) < 0.002f);
+    }
+    s.stop();
+}
+
 // C8: projectiles fly in fixed 1 ms steps, like movement, so an arc lands on the same spot at every server tick
 // rate (125 / 250 / 500 / 1000 Hz). Also measures what the projectile tick costs at each rate.
 static void testProjectileTickRates(uint16_t port) {
@@ -5863,8 +5975,8 @@ static void testProjectileTickRates(uint16_t port) {
         for (int level = 1; level < kTickRateLevels; level++) CHECK(landed[level] == landed[0]);
         // the client draws it on the same arc: its extrapolation (up to 0.2 s, in closed form) vs the server's steps
         Vec3 sp = from, sv = vel, cp = from, cv = vel;
-        float g = projectileGravity(sh.type, sh.gravMul);
-        for (int k = 0; k < 200; k++) { sv.y -= g * kMoveStep; sp += sv * kMoveStep; }
+        const ProjFlight g = projectileFlight(sh.type, sh.gravMul);   // (the primary rocket: its thrust)
+        for (int k = 0; k < 200; k++) { projectileStepVel(sv, g, kMoveStep); sp += sv * kMoveStep; }
         projectileExtrapolate(cp, cv, g, 0.2f);
         CHECK(length(cp - sp) < 0.001f && std::fabs(cv.y - sv.y) < 0.01f);
     }
@@ -8007,14 +8119,24 @@ static void testDemoUpgrade() {
         CHECK(m46a.hookTarget == 5 && (m46a.flags & MF_HOOKED) && m46a.hookPoint.y == 2 && m46b.hookTarget == 0 && (m46b.flags & MF_HOOKED));
         // and today's: riding a rocket round-trips the rocket's id, velocity and gravity
         Snapshot sr;
-        sr.self.flags = MF_HOOKED; sr.self.hookTarget = kHookRocket; sr.self.hookProj = 777; sr.self.hookVel = {48, -1, 2}; sr.self.hookGrav = 13.5f;
+        sr.self.flags = MF_HOOKED; sr.self.hookTarget = kHookRocket; sr.self.hookProj = 777; sr.self.hookVel = {48, -1, 2}; sr.self.hookGrav = 13.5f; sr.self.hookAccel = kRocketAccel;
         uint8_t rb[256];
         Writer wr(rb, sizeof rb);
         writeSnapshotClient(wr, sr);
         Reader rr(rb, wr.size());
         Snapshot back;
         CHECK(readSnapshotClient(rr, back) && back.self.hookTarget == kHookRocket && back.self.hookProj == 777 && back.self.hookVel.x == 48 &&
-              back.self.hookGrav == 13.5f && rr.remaining() == 0);
+              back.self.hookGrav == 13.5f && back.self.hookAccel == kRocketAccel && rr.remaining() == 0);
+        // protocol 54 (no thrust after the gravity) reads as no thrust, and nothing is left over
+        uint8_t ob[256];
+        Writer wo(ob, sizeof ob);
+        writeSnapshotClient(wo, sr);
+        const int cut = wo.size() - 4 - 4 - 4;   // (the f32 thrust sits before the 4 header bytes and the u32 baseTick)
+        std::vector<uint8_t> old(ob, ob + cut);
+        old.insert(old.end(), ob + cut + 4, ob + wo.size());
+        Reader ro(old.data(), (int)old.size());
+        Snapshot back54;
+        CHECK(readSnapshotClient(ro, back54, 54) && back54.self.hookAccel == 0 && back54.self.hookGrav == 13.5f && ro.remaining() == 0);
     }
     // a second conversion of the same name keeps both originals
     put("old.qdemo", fixture, -1);
@@ -8690,6 +8812,7 @@ static void testBots(uint16_t& port) {
         pump(s, cls, 3.3, idle);
         for (int i = 0; i < 15 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.2, idle);   // (a slow host's clock lags)
         CHECK(s.ms_.phase == PHASE_LIVE);
+        CHECK(std::fabs(s.liveLength_ - 240.0f) < 0.01f);   // the round clock: 2 min a player on the teams (owner, 2026-10-30)
         float mid = s.ms_.payloadLen * 0.5f;
         CHECK(std::fabs(s.ms_.payloadDist - mid) < 0.5f);
         int ia = s.players_[a.clientId()].team == TEAM_A ? a.clientId() : b.clientId();
@@ -9487,7 +9610,7 @@ int main(int argc, char** argv) {
         //  testGovernorPolicy and testRankedNotRated run in "server")
         {"governor", [] { testGovernorTwoServers(TP(28714)); }},
         {"rules2", [] { testGameRules("", 2); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testRocketThrust(TP(28501)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
         // (nothing reachable out of bounds, tests/mapbounds.cpp: every other map each; `quark_tests bounds` runs them all)
         {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},

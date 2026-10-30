@@ -41,7 +41,7 @@ answer carries:
 - `humanMade`: a `handmade` line, or a map not written by make_maps.py;
 - each `brushes` entry: `mat`, `min`, `max`, and for a wedge or corner (map format 5) `shape` (`"wedge"` / `"corner"`)
   and `dir` (0-3; a box has neither), plus `up` (1-5) when it isn't standing on the floor (map.h's Brush: 1 upside
-  down, 2 / 3 on its side rising toward +x / -x, 4 / 5 toward +z / -z; dir is then in the slope's own frame). A teleporter (material 595, map format 10) also has `link` (0-255, default 1) and `exitFace` (0-5: +x, -x, +y, -y, +z, -z; default 2). `serialize` reads them back the same way and writes `wedge` / `corner` lines;
+  down, 2 / 3 on its side rising toward +x / -x, 4 / 5 toward +z / -z; dir is then in the slope's own frame). A teleporter (material 595, map format 10) also has `link` (0-255, default 1) and `exitFace` (0-5: +x, -x, +y, -y, +z, -z; default 2), and from map format 12 `speed` (`"carry"`, the default and left out, or `"walk"`: whoever goes in it comes out of its pair at no more than the run speed, 9.5 m/s; the file's `tp <link> <face> walk`). `serialize` reads them back the same way and writes `wedge` / `corner` lines;
 - `modesSupported` and `modesPossible` (gamemodes.h);
 - `killY` and `payloadLength`;
 - `bounds`, `warnings` and `ms`;

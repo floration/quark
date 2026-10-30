@@ -497,6 +497,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.hookPoint = hp->pos[rocket];
             s.hookVel = hp->vel[rocket];
             s.hookGrav = hp->grav[rocket];
+            s.hookAccel = hp->accel[rocket];
             s.hookProj = hp->rid[rocket];
             s.hookTarget = kHookRocket;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
@@ -529,7 +530,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
     if (hp)   // (the rockets a held grapple could still catch fly on with this step, as the server's do)
         for (int k = 0; k < hp->nr && k < HookProbe::kRockets; k++) {
-            hp->vel[k].y -= hp->grav[k] * kMoveStep; hp->pos[k] += hp->vel[k] * kMoveStep;
+            projectileStepVel(hp->vel[k], {hp->grav[k], hp->accel[k]}, kMoveStep); hp->pos[k] += hp->vel[k] * kMoveStep;
             hp->at[k] += hp->vel[k] * kMoveStep;   // (where it's seen moves on at the same speed)
         }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -537,7 +538,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // riding a rocket: the anchor flies its step the way Server::stepProjectile does (the same arithmetic, so the
         // two agree), and lets go where the rocket meets a wall (it explodes there). A player it hits is the server's
         // word: it lets go a snapshot later.
-        s.hookVel.y -= s.hookGrav * kMoveStep;
+        projectileStepVel(s.hookVel, {s.hookGrav, s.hookAccel}, kMoveStep);
         const Vec3 step = s.hookVel * kMoveStep;
         const float len = length(step);
         if (len >= 1e-6f && map.raycast(s.hookPoint, step / len, len) >= 0) s.flags &= ~MF_HOOKED;
@@ -834,8 +835,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             const Vec3 at = c - off;
             if (!map.boxSolid(playerBox(at, crouched, scale))) {
                 s.pos = at;
-                s.vel = n * std::max(length(s.vel), length(before.vel));   // (a wall teleporter is solid: the slide clipped
-                                                                             // the speed into it this step, so keep the speed you came in with)
+                // (a wall teleporter is solid: the slide clipped the speed into it this step, so keep the speed you
+                // came in with). A walk teleporter (the one you went INTO: Brush::tpWalk, map format 12) lets you out at
+                // no more than the run speed, never faster than you came in.
+                float sp = std::max(length(s.vel), length(before.vel));
+                if (map.brushes[(size_t)from].tpWalk) sp = std::min(sp, kGroundSpeed * mt.speed);
+                s.vel = n * sp;
                 s.flags &= ~MF_ONGROUND;
                 s.dashTimer = 0;
             }
