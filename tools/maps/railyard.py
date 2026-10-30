@@ -13,7 +13,16 @@ from .bigkit import Kit, num, MAT
 
 HX, HZ = 62, 130          # the yard (local coordinates, before the 1 m shift)
 WALL_H = 7.0
-SIDINGS = (6, 12, 18)     # x of the sidings on the +x side (mirrored to -x)
+DOOR_H = 3.0             # the spawn rooms' openings
+SIDINGS = (6, 12, 18)
+# the parked trains on the +x sidings (Sym mirrors them onto the -x ones): (siding x, first car's z, [(kind, length,
+# gap after)]); boxn: a boxcar with its ladder at the north end
+TRAINS = [(6, -86, [("box", 14, 3), ("tank", 12, 3), ("boxn", 14, 0)]),
+          (6, -10, [("flat", 14, 3), ("box", 14, 3), ("tank", 12, 0)]),
+          (12, -60, [("tank", 12, 3), ("tank", 12, 3), ("empty", 12, 0)]),
+          (12, 14, [("box", 14, 3), ("flat", 14, 0)]),
+          (18, -90, [("flat", 14, 3), ("boxn", 14, 0)]),
+          (18, -20, [("box", 14, 4), ("box", 14, 3), ("empty", 12, 0)])]     # x of the sidings on the +x side (mirrored to -x)
 
 
 class Sym:
@@ -139,12 +148,7 @@ def build():
             elif kind == "flat": flatcar(x, z, z + length)
             elif kind == "empty": flatcar(x, z, z + length, load=False)
             z += length + gap
-    train(6, -86, [("box", 14, 3), ("tank", 12, 3), ("boxn", 14, 0)])
-    train(6, -10, [("flat", 14, 3), ("box", 14, 3), ("tank", 12, 0)])
-    train(12, -60, [("tank", 12, 3), ("tank", 12, 3), ("empty", 12, 0)])
-    train(12, 14, [("box", 14, 3), ("flat", 14, 0)])
-    train(18, -90, [("flat", 14, 3), ("boxn", 14, 0)])
-    train(18, -20, [("box", 14, 4), ("box", 14, 3), ("empty", 12, 0)])
+    for (x, z, cars) in TRAINS: train(x, z, cars)
     for sx in SIDINGS:   # buffer stops at the sidings' ends
         S.box("powdercoatyellow", sx - 1.2, 0, 55.4, sx + 1.2, 1.2, 56.2)
         S.box("powdercoatyellow", sx - 1.2, 0, -90.2, sx + 1.2, 1.2, -89.4)
@@ -155,7 +159,11 @@ def build():
             for dz in (-4.0, 3.0):
                 k.box("powdercoatyellow", lx - 0.5, 0, cz + dz, lx + 0.5, 14.4, cz + dz + 1.0)
             k.box("powdercoatyellow", lx - 0.5, 12.6, cz - 3.0, lx + 0.5, 14.4, cz + 3.0)    # the leg frame's head
-        k.box("bridgegirder", -27.5, 14.4, cz - 4.5, 27.5, 15.0, cz + 4.5)                    # the deck
+        k.box("bridgegirder", -27.5, 14.4, cz - 4.5, 27.5, 14.85, cz + 4.5)                   # the deck's girders
+        k.box("steeldeckplate", -27.5, 14.85, cz - 4.5, 27.5, 15.0, cz + 4.5)                  # (its top: steel plate)
+        for ez in (cz - 4.5, cz + 4.2):   # half-height railings along both edges (cover on the 80 m deck-to-deck
+            for (a, b) in ((-26.5, -16), (-12, -2), (2, 12), (16, 26.5)):   # duel), gaps every 14 m to drop off
+                k.box("steel", a, 15.0, ez, b, 16.0, ez + 0.3)
         k.box("powdercoatyellow", tx - 3, 15.0, cz - 2.5, tx + 3, 17.4, cz + 2.5)             # the trolley
         for dx in (-1.0, 1.0):
             k.box("steel", tx + dx - 0.07, 11.0, cz - 0.07, tx + dx + 0.07, 14.4, cz + 0.07)   # cables
@@ -194,12 +202,13 @@ def build():
     S.box("powdercoatgreen", 33.5, 0, -90, 35.5, 1.4, -86)                                  # the pump island
     S.box("oilslick", 31, 0, -92, 39, 0.05, -84)
     # the repair shed (x 36..58, z -70..-40): doors on the road and at both ends, a wagon on blocks inside, a
-    # mezzanine along the back wall (stairs up) with a door onto the roof of the next block
+    # mezzanine along the back wall (stairs up) with an opening in the back wall to drop out of
     W2 = "trapezoidcladding"
     for (z0, z1) in ((-70, -60), (-50, -40)):
         S.box(W2, 36, 0, z0, 36.4, 8, z1)                                                    # road side, a 10 m door
     S.box(W2, 36, 5, -60, 36.4, 8, -50)
-    S.box(W2, 57.6, 0, -70, 58, 8, -40)
+    S.box(W2, 57.6, 0, -70, 58, 8, -58); S.box(W2, 57.6, 0, -52, 58, 8, -40)       # the back wall: an opening off
+    S.box(W2, 57.6, 0, -58, 58, 4.0, -52); S.box(W2, 57.6, 7.6, -58, 58, 8, -52)   # the mezzanine (drop out behind)
     for zz in (-70.4, -40):
         S.box(W2, 36, 0, zz, 41, 8, zz + 0.4); S.box(W2, 49, 0, zz, 58, 8, zz + 0.4); S.box(W2, 41, 5, zz, 49, 8, zz + 0.4)
     S.box("corrugated", 35.6, 8, -70.8, 58.4, 8.4, -39.6)
@@ -257,8 +266,11 @@ def build():
             B(wallmat, wx0, 0, -127.6, wx1, H, -116); B(wallmat, wx0, 4.0, -116, wx1, H, -111); B(wallmat, wx0, 0, -111, wx1, H, -100.4)
         B(roofmat, x0 - 0.5, H, -128.5, x1 + 0.5, H + 0.5, -99.5)
         xs = x0 + 0.4
-        for (a, b) in ((-31, -27), (-14, -10), (8, 12)):                    # the spawn room's wall
-            B(wallmat, xs, 0, -120.4, a, H, -120); B(wallmat, a, 3.0, -120.4, b, H, -120); xs = b
+        # the spawn room's wall: two openings, between the front doors' lines (not in line with any door, nor on
+        # the axis through both track doors), each with a baffle behind it: no line from the yard into the room
+        for (a, b) in ((-23, -19), (-3, 1)):
+            B(wallmat, xs, 0, -120.4, a, H, -120); B(wallmat, a, DOOR_H, -120.4, b, H, -120); xs = b
+            B(wallmat, a - 3, 0, -123.0, b + 3, 3.4, -122.6)
         B(wallmat, xs, 0, -120.4, x1 - 0.4, H, -120)
         for lx in (-24, -4, 8):
             for lz in (-124, -110):
@@ -272,18 +284,18 @@ def build():
         k.box(mat, x - 1.5, 1.2, z0, x + 1.5, 4.4, z0 + 4)     # the cab
     loco(0, -118, -104, "boilerplate"); loco(-24, -118, -104, "powdercoatgreen")
     # inside the goods shed: a loading platform beside the track and a stack of crates (the same cover, other shapes)
-    k.box("precastconcrete", -4, 0, 104, 3, 1.1, 118)
-    k.stairs("precastconcrete", -4, 102, 3, 104, 1.1, "z", 1)
+    k.box("greasestainedmetal", -1.2, 0, 104.6, 1.2, 1.0, 117.4)       # a boxcar being loaded (as tall as the loco)
+    k.box("corrugated", -1.5, 1.0, 104, 1.5, 4.0, 118)
     k.box("precastconcrete", 21.6, 0, 104, 26.4, 4.4, 118)
-    k.box("cratewood", -2.5, 1.1, 108, 0.5, 3.6, 112)
+    k.box("cratewood", 3.5, 0, 108, 6.5, 2.5, 112)
 
     # ---- decoration (off the lanes: on the wagons' sides and roofs, the walls, above head height, past the walls)
     decorate(k, S, bend)
 
     # ---- spawns: four a side in the spawn rooms; free for all over the yard
-    for x in (-28, -20, 2, 6):
+    for x in (-30, -15, 8, 11):
         S.spawn("a", x, 0, -124, 180)
-    for (x, z) in ((-9, -30), (27, 10), (-26, 60), (45, -20)):
+    for (x, z) in ((-9, -30), (40, -14), (-26, 60), (45, -20)):
         S.spawn("any", x, 0, z, round(math.degrees(math.atan2(x, z))))   # (toward the middle)
 
     m.raw("setting freight rail yard")
@@ -318,16 +330,10 @@ def decorate(k, S, bend):
             for sx in (-1, 1):
                 a = x + w if sx > 0 else x - w - 0.1
                 S.box("sootysteel", a, 0, zc - 0.45, a + 0.1, 0.9, zc + 0.45)
-    cars = []   # (kind, x, z0, z1): the same trains as build() (kept in step by hand)
-    def train(x, z, spec):
+    cars = []   # (kind, x, z0, z1), from the same table build() parks
+    for (x, z, spec) in TRAINS:
         for (kind, length, gap) in spec:
-            cars.append((kind, x, z, z + length)); z += length + gap
-    train(6, -86, [("box", 14, 3), ("tank", 12, 3), ("box", 14, 0)])
-    train(6, -10, [("flat", 14, 3), ("box", 14, 3), ("tank", 12, 0)])
-    train(12, -60, [("tank", 12, 3), ("tank", 12, 3), ("empty", 12, 0)])
-    train(12, 14, [("box", 14, 3), ("flat", 14, 0)])
-    train(18, -90, [("flat", 14, 3), ("box", 14, 0)])
-    train(18, -20, [("box", 14, 4), ("box", 14, 3), ("empty", 12, 0)])
+            cars.append(("box" if kind == "boxn" else kind, x, z, z + length)); z += length + gap
     for (kind, x, z0, z1) in cars:
         if kind == "box":
             wheels(x, z0, z1)
@@ -342,13 +348,16 @@ def decorate(k, S, bend):
             S.k.disc("chrome", x, zm, 0.7, 3.9, 4.5, n=8); S.k.disc("chrome", -x, -zm, 0.7, 3.9, 4.5, n=8)
             for zz in (z0 + 0.4, z1 - 0.8):   # the end platforms' handrails (above the frame, off the gaps)
                 S.box("powdercoatyellow", x - 1.3, 1.1, zz, x - 1.2, 2.1, zz + 0.4); S.box("powdercoatyellow", x + 1.2, 1.1, zz, x + 1.3, 2.1, zz + 0.4)
-        elif kind in ("flat", "empty"):
-            if kind == "empty":   # stakes along the deck's edges
-                for zz in range(int(z0) + 1, int(z1), 3):
-                    for sx in (-1, 1): S.box("charredtimber", x + sx * 1.3 - 0.06, 1.1, zz - 0.06, x + sx * 1.3 + 0.06, 1.7, zz + 0.06)
-    # oil spilt beside the tank cars (no grip: fast through, no stopping) in the alleys
-    S.box("oilslick", 13.7, 0, -58, 16.3, 0.05, -51)
-    S.box("oilslick", 7.7, 0, -66, 10.3, 0.05, -60)
+    # oil spilt beside a tank car (no grip: fast through, no stopping), on the open main-line side
+    S.box("oilslick", 2.4, 0, -67, 4.3, 0.05, -59)
+    # low cover beside the main line (out of the cart's sweep), staggered: relay cabinets and a pallet stack
+    for (x, z, mat, h) in ((3.0, -45, "electricalcabinet", 1.6), (-3.0, -20, "electricalcabinet", 1.6), (3.0, -6, "palletstack", 1.2)):
+        S.box(mat, x - 0.8, 0, z - 1.2, x + 0.8, h, z + 1.2)
+    # parked lorries on the roads (go round them: 4.5 m clear beside each), one every 50-60 m
+    for (x0, z0) in ((22.4, -80), (27.0, -25), (22.4, 30)):
+        S.box("powdercoatgreen", x0, 0, z0, x0 + 2.6, 3.4, z0 + 2.8)              # the cab
+        S.box("trapezoidcladding", x0, 0.8, z0 + 3.0, x0 + 2.6, 4.0, z0 + 13)     # the box trailer
+        S.box("sootysteel", x0 + 0.2, 0, z0 + 3.0, x0 + 2.4, 0.8, z0 + 13)
     # sleepers under the rails at the bends
     from math import hypot
     for i in range(len(bend) - 1):
