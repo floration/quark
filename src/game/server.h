@@ -469,7 +469,8 @@ public:
     // Votes (bots on/off, bot difficulty): majority of human players decides.
     // VOTE_SPEC: move a player (arg; arg2 = their joinId) to spectator until the next map. Never a kick: kicking stays
     // with the dedicated server's console and the host (isAdmin), and isn't votable (OWNER_DECISIONS_2 B10).
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC };
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC,
+                    VOTE_RESTART, VOTE_EXTEND, VOTE_SHUFFLE, VOTE_KICK };   // (1.19.4: restart, +5 minutes, shuffle teams, kick)
     static constexpr int kSpecVoteMinPlayers = 3;   // connected human players a spectate vote needs (so never in a 1v1)
     struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);

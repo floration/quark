@@ -220,6 +220,7 @@ struct Settings {
     int clockMode = 0;                 // the round clock: 0 time left, 1 time played
     bool clockTenths = false;          // ...tenths in its last 10 s
     int verboseLines = 0x3FFF;         // the verbose info block's lines (bit per line, kVerboseNames in game.cpp)
+    bool drainWarn = true;             // vs / duel / 1v1 / tourney: "HEALTH DRAINS IN N" over the last 10 s, a beep at 10 and 5
     bool netIcons = true;              // warnings for high ping / packet loss / a stalled connection
     int autoHideHealth = 0;            // 0 always, 1 for 3 s after it changes (and while low), 2 only while low
     int autoHideSlots = 0;             // the weapon list: 0 always, 1 for 3 s after a switch
@@ -258,6 +259,8 @@ struct Settings {
     bool useOverrides = true;          // PLAYER > MORE: MODS: your overrides folder used (next start)             // players whose quips you don't hear (names, ';'-separated)
     // CONTROLS > MORE 2
     float wpnSens[WPN_COUNT];          // per weapon: x SENSITIVITY (1 = the same)
+    bool wpnVmHide[WPN_COUNT] = {};    // per weapon: its model hidden (GAMEPLAY > MORE 2: WEAPON MODEL)
+    float wpnVmOff[WPN_COUNT][3] = {}; // per weapon: added to the WEAPON MODEL element's x / y (720p units) / depth (mm)
     float mouseAccel = 0;              // sensitivity x (1 + accel x counts per ms), at most x4 (0 = off)
     bool rawInput = true;              // raw mouse input (off: the OS's pointer motion, with its acceleration)
     int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
@@ -277,11 +280,26 @@ struct Settings {
     bool hideRatings = false;          // ranked: ratings hidden on the scoreboard
     bool rememberQueues = false;       // the ranked queues you're in, joined again at the next start
     std::string lastQueues;            // (those queues, ','-separated)
+    // race: splits compared with your best run, your best segments or your last run; how long a split shows; the
+    // race stats page's date format (0 month-day, 1 day-month, 2 year-month-day)
+    int raceSplitVs = 0;
+    float raceSplitTime = 2.5f;
+    int raceDate = 0;
+    // HOST > ADVANCED: the tick rate (0 1000, 1 500, 2 250, 3 125 Hz; the highest: it still steps down if the PC can't
+    // keep up), the snapshot rate (0 as the tick rate, 1 500, 2 250, 3 125, 4 62.5), an upload cap (kbit/s, 0 none),
+    // the match starting by itself once both sides have players, balance bots' skill
+    int hostTick = 0, hostSnap = 0, hostUpload = 0;
+    bool hostAutoStart = false;
+    int hostBotSkill = 1;
     // EDITOR
-    float edFlySpeed = 12.0f, edFastMul = 3.0f, edGridCustom = 0, edRotStep = 90.0f;
+    float edFlySpeed = 12.0f, edFastMul = 3.0f, edGridCustom = 0, edRotStep = 45.0f;   // (ROTATION STEP: Q / E on a spawn; its slider drags in 15 or less)
     int edGridIdx = 2;
     bool edFlyBinds = false;           // the fly camera's keys follow your FORWARD / BACK / LEFT / RIGHT / JUMP / CROUCH binds
-    std::string edLight;               // the last light's values, "" = the default
+    std::string edLight;               // the last light's values ("radius intensity"), "" = the default
+    int edTestMode = -1;               // TEST PLAY: the mode (-1: the map's own)
+    int edTestBots = 0;                // ...enemy bots
+    bool edTestAtCam = false;          // ...start where the editor's camera is
+    bool edTestNoWarmup = false;       // ...the match starts at once
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;

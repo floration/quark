@@ -1584,8 +1584,18 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 if (k >= 0) callVote(id, VOTE_BOTSKILL, k);
             }
         } }
-        else if (what == "spec") { // callvote spec <name|id>: move a player to spectator until the next map
-            std::string who = rest.substr(std::min(rest.size(), rest.find("spec") + 4));   // (names can have spaces)
+        else if (what == "restart") callVote(id, VOTE_RESTART, 0);   // (1.19.4: restart the match, back to warmup)
+        else if (what == "extend") {   // +5 minutes on a timed round
+            if (ms_.phase != PHASE_LIVE || phaseEnd_ <= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = "only a timed round can be extended"; sendEvent(id, e); }
+            else callVote(id, VOTE_EXTEND, 300);
+        }
+        else if (what == "shuffle") {   // shuffle the teams and restart
+            if (!modeIsTeamBased(cfg_.mode)) { GameEvent e; e.type = EV_MESSAGE; e.text = "not a team mode"; sendEvent(id, e); }
+            else callVote(id, VOTE_SHUFFLE, 0);
+        }
+        else if (what == "spec" || what == "kick") { // callvote spec|kick <name|id>: move a player to spectator until the next map, or kick them
+            const bool kick = what == "kick";
+            std::string who = rest.substr(std::min(rest.size(), rest.find(what) + what.size()));   // (names can have spaces)
             size_t a = who.find_first_not_of(" \t"), b = who.find_last_not_of(" \t\r\n");
             who = a == std::string::npos ? std::string() : who.substr(a, b - a + 1);
             auto refuse = [&](const std::string& t) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(id, e); };
@@ -1598,11 +1608,12 @@ void Server::handleStringCmd(int id, const std::string& s) {
             else if (target < 0) refuse(err);
             else if (target == id) refuse("to watch, join the spectators yourself (team spec)");
             else if (players_[target].isBot) refuse("that's a bot - vote bots off instead");
-            else if (players_[target].team == TEAM_SPECTATOR) refuse(players_[target].name + " is already spectating");
+            else if (!kick && players_[target].team == TEAM_SPECTATOR) refuse(players_[target].name + " is already spectating");
             else if (p.specVoted >> target & 1) refuse("you already called a vote on " + players_[target].name + " this map");
             else {
-                callVote(id, VOTE_SPEC, target, "", (int)players_[target].joinId);
-                if (vote_.kind == VOTE_SPEC && vote_.caller == id && vote_.arg == target) p.specVoted |= 1u << target;   // (once per map, pass or fail)
+                const int kind = kick ? VOTE_KICK : VOTE_SPEC;
+                callVote(id, kind, target, "", (int)players_[target].joinId);
+                if (vote_.kind == kind && vote_.caller == id && vote_.arg == target) p.specVoted |= 1u << target;   // (once per map, pass or fail)
             }
         }
         else if (what == "start") {
@@ -1707,10 +1718,16 @@ void Server::command(const std::string& line, int fromPlayer) {
             GameEvent e;   // (EV_SPAWN: the client's prediction starts again from here, facing the saved way)
             e.type = EV_SPAWN; e.a = (uint8_t)fromPlayer; e.c = (int16_t)std::lround(std::remainder(p.yaw, 2 * PI) * 1000.0f);
             sendEvent(fromPlayer, e);
+        } else if (arg == "setpos") {   // (1.19.4: the editor's TEST PLAY: START AT CAMERA: "practice setpos x y z yaw pitch", then loadpos)
+            float x, y, z, yw = 0, pt = 0;
+            if (!(ss >> x >> y >> z) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) { reply("practice setpos x y z [yaw pitch]"); return; }
+            ss >> yw >> pt;
+            p.practiceSaved = true; p.practicePos = vmax(vmin(Vec3(x, y, z), Vec3(4096, 4096, 4096)), Vec3(-4096, -4096, -4096)); p.practiceVel = Vec3(); p.practiceYaw = std::isfinite(yw) ? yw : 0; p.practicePitch = std::isfinite(pt) ? clampf(pt, -1.5f, 1.5f) : 0;
+            reply("practice: position saved");
         } else if (arg == "god") { p.practiceGod = !p.practiceGod; reply(p.practiceGod ? "practice: you take no damage" : "practice: you take damage again"); }
         else if (arg == "passive") { practicePassive_ = !practicePassive_; reply(practicePassive_ ? "practice: bots won't fire" : "practice: bots fire again"); }
         else if (arg == "reset") { p.practiceGod = false; practicePassive_ = false; p.practiceSaved = false; reply("practice: all off"); }
-        else reply("practice savepos | loadpos | god | passive | reset");
+        else reply("practice savepos | loadpos | setpos | god | passive | reset");
         return;
     }
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
@@ -3972,6 +3989,10 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
                : kind == VOTE_LETIN       ? "LET " + players_[arg].name + " IN (TEAMS GO UNEVEN)"
                : kind == VOTE_SPEC        ? "MOVE " + players_[arg].name + " TO SPECTATOR (UNTIL THE NEXT MAP)"
+               : kind == VOTE_KICK        ? "KICK " + players_[arg].name
+               : kind == VOTE_RESTART     ? std::string("RESTART THE MATCH")
+               : kind == VOTE_EXTEND      ? std::string("5 MORE MINUTES")
+               : kind == VOTE_SHUFFLE     ? std::string("SHUFFLE THE TEAMS (THE MATCH RESTARTS)")
                : kind == VOTE_RANKED      ? (arg < 0 ? std::string("RANKED OFF") : std::string("RANKED ON - ") + arenaVariant(arg).title + " 1V1")
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
@@ -3982,7 +4003,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
 
 void Server::castVote(int id, bool yes) {
     if (vote_.kind == VOTE_NONE || players_[id].isBot) return;
-    if (vote_.kind == VOTE_SPEC && id == vote_.arg) return;   // the player a spectate vote is about has no say in it
+    if ((vote_.kind == VOTE_SPEC || vote_.kind == VOTE_KICK) && id == vote_.arg) return;   // the player a spectate / kick vote is about has no say in it
     uint32_t bit = 1u << id;
     vote_.yes &= ~bit;
     vote_.no &= ~bit;
@@ -3996,7 +4017,7 @@ void Server::tickVote() {
     int humans = 0, y = 0, n = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || players_[i].isBot || players_[i].awayUntil > 0) continue;   // (away: can't vote)
-        if (vote_.kind == VOTE_SPEC && i == vote_.arg) continue;   // (nor does the player a spectate vote is about)
+        if ((vote_.kind == VOTE_SPEC || vote_.kind == VOTE_KICK) && i == vote_.arg) continue;   // (nor does the player a spectate vote is about)
         humans++;
         y += (vote_.yes >> i) & 1;
         n += (vote_.no >> i) & 1;
@@ -4068,6 +4089,35 @@ void Server::tickVote() {
                 specOut_.push_back({q.rankId, q.name});
                 message(q.name + " was moved to spectator until the next map");
             }
+            return;
+        }
+        if (vote_.kind == VOTE_KICK) {
+            int who = vote_.arg;
+            uint32_t join = (uint32_t)vote_.arg2;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            if (players_[who].connected && players_[who].joinId == join) dropPlayer(who, "kicked by a vote", true);
+            return;
+        }
+        if (vote_.kind == VOTE_RESTART || vote_.kind == VOTE_SHUFFLE) {
+            const bool shuffle = vote_.kind == VOTE_SHUFFLE;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            if (shuffle) {   // the humans in play dealt out alternately in a random order (bots rebalance after)
+                std::vector<int> ids;
+                for (int i = 0; i < kMaxPlayers; i++)
+                    if (players_[i].connected && !players_[i].isBot && (players_[i].team == TEAM_A || players_[i].team == TEAM_B)) ids.push_back(i);
+                for (size_t i = ids.size(); i > 1; i--) std::swap(ids[i - 1], ids[qrand() % i]);
+                for (size_t i = 0; i < ids.size(); i++) players_[ids[i]].team = i % 2 ? TEAM_B : TEAM_A;
+                updateBalanceBots();
+            }
+            command("restart");
+            return;
+        }
+        if (vote_.kind == VOTE_EXTEND) {
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            if (ms_.phase == PHASE_LIVE && phaseEnd_ > 0) phaseEnd_ += 300;
             return;
         }
         if (vote_.kind == VOTE_RANKED) {

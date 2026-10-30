@@ -226,8 +226,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "host_duel_size") hostDuelSize = iv == 2 ? 2 : 1;
         else if (k == "host_log") hostLog = std::min(std::max(iv, 0), 3);
         else if (k == "bot_skill") botSkill = std::min(std::max(iv, 0), 3);
-        else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
-        else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
+        else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 15);   // (1.19.4: up to 15 / 15)
+        else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 15);
         else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), MODE_COUNT - 1);   // (the vs-bots picker offers every mode)
         else if (k.rfind("hud_", 0) == 0) {
             int i = atoi(k.c_str() + 4), c = 0, hid = 0; HudElem e;
@@ -370,7 +370,7 @@ static std::vector<B3> b3Keys(Settings& s) {
         {T::B, "low_hp_pulse", &s.lowHpPulse, 0, 1}, {T::B, "low_hp_sound", &s.lowHpSound, 0, 1},
         {T::I, "speed_unit", &s.speedUnit, 0, 2}, {T::F, "speed_scale", &s.speedScale, 0.25f, 4}, {T::B, "speed_ticks", &s.speedTicks, 0, 1},
         {T::I, "bar_caps", &s.barCaps, 0, 15}, {T::B, "clock_12h", &s.clock12, 0, 1}, {T::I, "clock_mode", &s.clockMode, 0, 1},
-        {T::B, "clock_tenths", &s.clockTenths, 0, 1}, {T::I, "verbose_lines", &s.verboseLines, 0, 0x3FFF}, {T::B, "net_icons", &s.netIcons, 0, 1},
+        {T::B, "clock_tenths", &s.clockTenths, 0, 1}, {T::I, "verbose_lines", &s.verboseLines, 0, 0x3FFF}, {T::B, "net_icons", &s.netIcons, 0, 1}, {T::B, "drain_warn", &s.drainWarn, 0, 1},
         {T::I, "autohide_health", &s.autoHideHealth, 0, 2}, {T::I, "autohide_slots", &s.autoHideSlots, 0, 1}, {T::I, "autohide_bars", &s.autoHideBars, 0, 1},
         {T::F, "obj_size", &s.objSize, 0.5f, 2}, {T::F, "obj_opacity", &s.objOpacity, 0.1f, 1}, {T::B, "obj_distance", &s.objDistance, 0, 1},
         {T::B, "obj_arrow", &s.objArrow, 0, 1}, {T::F, "scope_size", &s.scopeSize, 0.5f, 1.2f}, {T::C, "scope_color", &s.scopeColor, 0, 0},
@@ -393,7 +393,10 @@ static std::vector<B3> b3Keys(Settings& s) {
         {T::B, "hide_ratings", &s.hideRatings, 0, 1}, {T::B, "remember_queues", &s.rememberQueues, 0, 1}, {T::S, "last_queues", &s.lastQueues, 0, 0},
         {T::F, "ed_fly_speed", &s.edFlySpeed, 1, 100}, {T::F, "ed_fast_mul", &s.edFastMul, 1, 10}, {T::F, "ed_grid_custom", &s.edGridCustom, 0, 16},
         {T::F, "ed_rot_step", &s.edRotStep, 1, 90}, {T::I, "ed_grid", &s.edGridIdx, 0, 6}, {T::B, "ed_fly_binds", &s.edFlyBinds, 0, 1},
-        {T::S, "ed_light", &s.edLight, 0, 0},
+        {T::S, "ed_light", &s.edLight, 0, 0}, {T::I, "race_split_vs", &s.raceSplitVs, 0, 2}, {T::F, "race_split_time", &s.raceSplitTime, 0.5f, 10},
+        {T::I, "race_date", &s.raceDate, 0, 2}, {T::I, "host_tick", &s.hostTick, 0, 3}, {T::I, "host_snap", &s.hostSnap, 0, 4},
+        {T::I, "host_upload", &s.hostUpload, 0, 100000}, {T::B, "host_auto_start", &s.hostAutoStart, 0, 1}, {T::I, "host_bot_skill", &s.hostBotSkill, 0, 3}, {T::I, "ed_test_mode", &s.edTestMode, -1, MODE_COUNT - 1}, {T::I, "ed_test_bots", &s.edTestBots, 0, 7},
+        {T::B, "ed_test_at_cam", &s.edTestAtCam, 0, 1}, {T::B, "ed_test_no_warmup", &s.edTestNoWarmup, 0, 1},
     };
     return v;
 }
@@ -403,6 +406,16 @@ bool Settings::setBatch3(const std::string& k, const std::string& v) {
         const int w = atoi(k.c_str() + 9);
         const float f = (float)atof(v.c_str());
         if (w >= 0 && w < WPN_COUNT && std::isfinite(f)) wpnSens[w] = clampf(f, 0.1f, 5);
+        return true;
+    }
+    if (k.rfind("wpn_vm_", 0) == 0) {   // wpn_vm_<weapon number>=<shown 0/1>,<x>,<y>,<depth>
+        const int w = atoi(k.c_str() + 7);
+        int sh = 1;
+        float o[3] = {0, 0, 0};
+        if (w >= 0 && w < WPN_COUNT && sscanf(v.c_str(), "%d,%f,%f,%f", &sh, &o[0], &o[1], &o[2]) >= 1) {
+            wpnVmHide[w] = sh == 0;
+            for (int i = 0; i < 3; i++) wpnVmOff[w][i] = std::isfinite(o[i]) ? clampf(o[i], -200, 200) : 0;
+        }
         return true;
     }
     if (k.size() < 4) return false;
@@ -436,5 +449,8 @@ std::string Settings::batch3Text() const {
         f << "\n";
     }
     for (int w = 0; w < WPN_COUNT; w++) if (wpnSens[w] != 1.0f) f << "wpn_sens_" << w << "=" << wpnSens[w] << "\n";
+    for (int w = 0; w < WPN_COUNT; w++)
+        if (wpnVmHide[w] || wpnVmOff[w][0] != 0 || wpnVmOff[w][1] != 0 || wpnVmOff[w][2] != 0)
+            f << "wpn_vm_" << w << "=" << (wpnVmHide[w] ? 0 : 1) << "," << wpnVmOff[w][0] << "," << wpnVmOff[w][1] << "," << wpnVmOff[w][2] << "\n";
     return f.str();
 }

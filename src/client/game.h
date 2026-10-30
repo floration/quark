@@ -424,6 +424,10 @@ private:
     bool edGroupMenu_ = false, edExportAsk_ = false; // IMPORT GROUP's list of saved groups; EXPORT's "make it a group first?"
     std::vector<std::string> edGroupFiles_;
     float edSpeed_ = 12;
+    Vec3 edTestCam_;                // TEST PLAY: START AT CAMERA: where the camera was
+    float edTestYaw_ = 0, edTestPitch_ = 0;
+    float edGrid() const;
+    std::string edLastLight_;       // the light values last set this session (cfg's edLight on close)           // the grid step (the CUSTOM GRID after the built-in steps)
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
     bool edMeshDirty_ = true;      // the map's boxes changed: rebuild the renderer's static batch (PERF-12)
@@ -588,11 +592,14 @@ private:
     void applyMenuTheme();
     bool queuesRestored_ = false;
     void saveQueues();
+    bool quipBlocked(const std::string& name) const;
     bool muted_ = false;
     float modeSens_ = 0, modeFov_ = 0, modeZoom_[2] = {0, 0};   // a mode's controls profile's own aim (0: yours)
     float baseFov() const { return modeFov_ > 0 ? modeFov_ : cfg_.fov; }   // the MUTE key (the master volume at 0 until pressed again or the volume changes)
     bool deathBody_ = false;
-    bool joinHandled_ = false;   // ON JOIN done for this connection   // DEATH CAMERA: YOUR BODY (till you respawn or pick someone to watch)
+    bool joinHandled_ = false;
+    int drainBeep_ = -1;
+    bool kickPick_ = false;   // the vote menu's player list: KICK (else MOVE TO SPECTATOR)   // STALEMATE WARNING: the second last beeped   // ON JOIN done for this connection   // DEATH CAMERA: YOUR BODY (till you respawn or pick someone to watch)
     int alertPhase_ = -1, alertPlayers_ = 0;
     bool alertVote_ = false;
     std::string chatStamp() const;
@@ -700,7 +707,8 @@ private:
     int matchShots_ = 0, matchHits_ = 0, matchBestStreak_ = 0; float matchDmg_ = 0;   // MATCH SUMMARY: this match's, from when it began
     void updateGhost();                  // record this run; draw the best one
     Vec3 viewAnchor(const Settings::HudElem& e, const Vec3& base) const;   // a first-person model's pivot (camera space)
-    Mat4 weaponFrame(float kick) const;    // the weapon model: its space (x its size) -> camera space (HUD layout)
+    Mat4 weaponFrame(float kick, int weapon = -1) const;
+    bool vmHidden(int weapon) const;     // the WEAPON MODEL element hidden, or that weapon's own model (wpn_vm_<n>)    // the weapon model: its space (x its size) -> camera space (HUD layout)
     Vec3 muzzlePoint(int weapon, const Vec3& eye) const;   // world point of the weapon model's barrel tip (HUD layout)
     double shotAt_ = -1;
     bool scoped_ = false;
@@ -1010,6 +1018,7 @@ private:
     std::string splitText_;
     Color splitColor_ = {1, 1, 1, 1};
     double splitUntil_ = 0;
+    int raceStatsMap_ = 0;   // MY RACE STATS: which raced map
     void loadRaceRuns();
     const RaceRun* bestRun(const std::string& map, bool trial) const;
     void onRaceSplit(int checkpoint, int ms);
