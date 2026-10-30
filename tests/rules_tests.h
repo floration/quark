@@ -2745,6 +2745,9 @@ static void testRocketRide(uint16_t port) {
     CHECK(mine != nullptr);
     if (!mine) { s.stop(); return; }
     const uint16_t mineId = mine->id;
+    // (hooked once it's past the release distance, where the hook takes it at once: inside it the hook waits, and
+    // the command that crosses it is a real-time race between the two sides at the 24 m/s launch, owner 2026-10-30)
+    for (int k = 0; k < 100 && rocketOf(ia) && length(rocketOf(ia)->pos - (A0 + Vec3(0, 1, 0))) < 2.2f; k++) pump(s, cls, 0.001, in);
     btn = BTN_GRAPPLE;
     bool predictedFirst = false;   // the client had it hooked while the server's word still said not
     for (int k = 0; k < 200 && sa.move.hookTarget != kHookRocket; k++) {

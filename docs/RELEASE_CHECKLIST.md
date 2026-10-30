@@ -125,7 +125,7 @@ Use HOST GAME → FFA (bots off or beginner) and the changelog's numbers.
 
 | ✓ | Check |
 |---|---|
-| ☐ | Each weapon fires, sounds right, shows its own projectile model, and does the damage the changelog / INFO says (rifle 5.0 body / 7.5 head; crossbow 50 body / 75 head; shotgun 2.6 a head pellet; laser 24 m range; sniper 40 body / 50 head; rockets fly straight with no drop and speed up as they go (4 m/s², 48 m/s at launch: a long shot arrives a little sooner), the alt-fire lob drops at 13.5 m/s² and doesn't speed up). |
+| ☐ | Each weapon fires, sounds right, shows its own projectile model, and does the damage the changelog / INFO says (rifle 5.0 body / 7.5 head; crossbow 50 body / 75 head; shotgun 2.6 a head pellet; laser 24 m range; sniper 40 body / 50 head; rockets fly straight with no drop and speed up as they go (16 m/s², 48 m/s at launch: 80 m/s after 2 s, 128 m/s by the end of its 5 s), the alt-fire lob leaves at 33.6 m/s, drops at 13.5 m/s² and doesn't speed up). |
 | ☐ | Alt-fires: rifle scope, shotgun bounce, rocket lob, knife throw, bubble stream. |
 | ☐ | Knife throw: the knife is **disabled for 4 s** (greyed with a timer), and nothing can be used for the knife's normal swing cooldown. |
 | ☐ | Syringe: self-use heals **10 HP** with a **1 s** cooldown; a throw heals a teammate, disables the syringe for 4 s, with a 1 s cooldown. It only exists in modes where you respawn. |
