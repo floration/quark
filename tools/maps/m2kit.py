@@ -210,3 +210,112 @@ def sphere(m, mat, cx, cy, cz, r, bands=6, sectors=8):
             if n[0] * cx + n[1] * ((ya + yb) / 2) + n[2] * cz > d: n = [-x for x in n]; d = -d
             planes.append((n[0], n[1], n[2], d))
             cut3d(m, mat, planes, box)
+
+
+# ---- point symmetry (ranked maps: every solid, spawn, light and ladder has a twin through the centre) ----
+_BOXLIKE = set(WORDS) | {"ladder", "site", "hill", "point", "checkpoint"}
+
+
+def _mirror_line(l):
+    w = l.split()
+    if not w: return None
+    k = w[0]
+    try:
+        if k in ("wedge", "corner", "tetra"):
+            d = int(w[2]); dr, up = d % 4, d // 4
+            assert up in (0, 1), "mirror_all: only floor / ceiling slopes"
+            dr = ({0: 1, 1: 0, 2: 3, 3: 2} if k == "wedge" else {0: 2, 2: 0, 1: 3, 3: 1})[dr] if k != "tetra" else {0: 2, 2: 0, 1: 3, 3: 1}[dr]
+            x0, y0, z0, x1, y1, z1 = map(float, w[3:9])
+            return f"{k} {w[1]} {dr + 4 * up} {f(-x1)} {f(y0)} {f(-z1)} {f(-x0)} {f(y1)} {f(-z0)}"
+        if k == "cut":
+            n = int(w[2]); pl = [list(map(float, w[3 + 4 * i:7 + 4 * i])) for i in range(n)]
+            x0, y0, z0, x1, y1, z1 = map(float, w[3 + 4 * n:9 + 4 * n])
+            txt = " ".join("%s %s %s %s" % tuple("%.6g" % (0.0 if abs(c) < 1e-9 else c) for c in (-a, b, -c, d - a - c)) for (a, b, c, d) in pl)
+            return f"cut {w[1]} {n} {txt} {f(-x1)} {f(y0)} {f(-z1)} {f(-x0)} {f(y1)} {f(-z0)}"
+        if k == "spawn":
+            t = {"a": "b", "b": "a"}.get(w[1], w[1])
+            yaw = (float(w[5]) if len(w) > 5 else 0.0) + 180
+            yaw = (yaw + 180) % 360 - 180
+            return f"spawn {t} {f(-float(w[2]))} {w[3]} {f(-float(w[4]))} {f(yaw)}"
+        if k == "light":
+            return f"light {f(-float(w[1]))} {w[2]} {f(-float(w[3]))} " + " ".join(w[4:])
+        if k == "stairs":
+            x0, z0, x1, z1 = map(float, w[1:5])
+            return f"stairs {f(-x1)} {f(-z1)} {f(-x0)} {f(-z0)} {w[5]} {w[6]} {w[7]} {f(-float(w[8]))} {w[9]}"
+        if k in _BOXLIKE and len(w) >= 7:
+            x0, y0, z0, x1, y1, z1 = map(float, w[1:7])
+            return " ".join([k, f(-x1), f(y0), f(-z1), f(-x0), f(y1), f(-z0)] + w[7:])
+    except ValueError:
+        return None
+    return None
+
+
+def mirror_all(m, since):
+    """append the point mirror (x, z) -> (-x, -z) of every line from index since on (a twin that's already there,
+    a self-symmetric piece, is not added again)"""
+    have = set(m.lines)
+    for l in list(m.lines[since:]):
+        t = _mirror_line(l)
+        if t and t not in have:
+            m.lines.append(t); have.add(t)
+
+
+def cutbox(m, mat, planes, box):
+    """cut3d (world planes) under its old name for the qk maps"""
+    cut3d(m, mat, planes, box)
+
+
+def ramp(m, mat, x0, z0, x1, z1, axis, ya, yb, thick=0.8):
+    """a sloped slab thick metres deep from ya (at the low-axis end) to yb (at the high end), along axis 'x' or 'z'"""
+    u0, u1 = (x0, x1) if axis == "x" else (z0, z1)
+    s = (yb - ya) / (u1 - u0)
+    ax, az = (1.0, 0.0) if axis == "x" else (0.0, 1.0)
+    top = (-s * ax, 1.0, -s * az, ya - s * u0)                 # y <= ya + s (u - u0)
+    bot = (s * ax, -1.0, s * az, -(ya - thick) + s * u0)       # y >= ya - thick + s (u - u0)
+    cut3d(m, mat, [top, bot], (x0, min(ya, yb) - thick, z0, x1, max(ya, yb), z1))
+
+
+def island(m, cx, cz, w, d, y, depth=None, top="box", under="accent"):
+    """a floating platform w x d with its top at y: a 1.2 m slab and a pointed rock under it"""
+    hx, hz = w / 2, d / 2
+    B(m, top, cx - hx, y - 1.2, cz - hz, cx + hx, y, cz + hz)
+    h = depth if depth is not None else min(w, d) * 0.6
+    yb = y - 1.2 - h
+    kx, kz = hx / h, hz / h
+    planes = [(1, -kx, 0, cx + hx - kx * (y - 1.2)), (-1, -kx, 0, -cx + hx - kx * (y - 1.2)),
+              (0, -kz, 1, cz + hz - kz * (y - 1.2)), (0, -kz, -1, -cz + hz - kz * (y - 1.2))]
+    cut3d(m, under, planes, (cx - hx, yb, cz - hz, cx + hx, y - 1.2, cz + hz))
+
+
+class Rooms:
+    """rooms (floor, ceiling, four walls 1 m thick outside the interior) and door volumes: every wall a door volume
+    crosses is opened there. Rooms meant to connect leave a 1 m gap (the wall) between them."""
+    def __init__(s, m): s.m, s.doors, s.rooms = m, [], []
+    def door(s, x0, y0, z0, x1, y1, z1): s.doors.append((min(x0, x1), min(y0, y1), min(z0, z1), max(x0, x1), max(y0, y1), max(z0, z1)))
+    def room(s, x0, z0, x1, z1, yf, yc, floor="box", wall="box", ceil="box", fholes=(), choles=(), nofloor=False, noceil=False, walls="nsew"):
+        s.rooms.append(dict(r=(x0, z0, x1, z1), yf=yf, yc=yc, floor=floor, wall=wall, ceil=ceil, fholes=list(fholes), choles=list(choles), nofloor=nofloor, noceil=noceil, walls=walls))
+    def slab_wall(s, mat, x0, y0, z0, x1, y1, z1):
+        along_x = (x1 - x0) >= (z1 - z0)
+        hs = [((d[0], d[3], d[1], d[4]) if along_x else (d[2], d[5], d[1], d[4])) for d in s.doors
+              if d[0] < x1 and d[3] > x0 and d[2] < z1 and d[5] > z0 and d[1] < y1 and d[4] > y0]
+        a0, a1 = (x0, x1) if along_x else (z0, z1)
+        cuts = sorted({a0, a1} | {min(max(v, a0), a1) for h in hs for v in h[:2]})
+        for (p, q) in zip(cuts, cuts[1:]):
+            if q - p < 1e-4: continue
+            mid = (p + q) / 2
+            for (ya, yb) in solid_spans(y0, y1, [(h[2], h[3]) for h in hs if h[0] < mid < h[1]]):
+                if along_x: B(s.m, mat, p, ya, z0, q, yb, z1)
+                else: B(s.m, mat, x0, ya, p, x1, yb, q)
+    def build(s, tile=16):
+        from .prefabs import minus, tiles
+        for R in s.rooms:
+            x0, z0, x1, z1 = R["r"]; yf, yc = R["yf"], R["yc"]
+            if not R["nofloor"]:
+                for t in tiles(minus((x0 - 0.5, z0 - 0.5, x1 + 0.5, z1 + 0.5), R["fholes"]), tile): B(s.m, R["floor"], t[0], yf - 1, t[1], t[2], yf, t[3])
+            if not R["noceil"]:
+                for t in tiles(minus((x0 - 0.5, z0 - 0.5, x1 + 0.5, z1 + 0.5), R["choles"]), tile): B(s.m, R["ceil"], t[0], yc, t[1], t[2], yc + 1, t[3])
+            w, yb, yt = R["wall"], yf - 1, yc + (0 if R["noceil"] else 1)
+            if "n" in R["walls"]: s.slab_wall(w, x0 - 1, yb, z0 - 1, x1 + 1, yt, z0)
+            if "s" in R["walls"]: s.slab_wall(w, x0 - 1, yb, z1, x1 + 1, yt, z1 + 1)
+            if "w" in R["walls"]: s.slab_wall(w, x0 - 1, yb, z0, x0, yt, z1)
+            if "e" in R["walls"]: s.slab_wall(w, x1, yb, z0, x1 + 1, yt, z1)
