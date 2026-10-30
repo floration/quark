@@ -3618,6 +3618,17 @@ static void testWallbang() {
     CHECK(std::fabs(t - 9) < 0.01f);      // stopped by the solid box at x=4
     CHECK(std::fabs(m.raycast({-5, 1.5f, 0}, {1, 0, 0}, 50) - 4) < 0.01f); // normal rays (sight, splash) stop
     CHECK(m.boxSolid(playerBox({0, 0, 0}, false)));                        // and you can't walk through it
+    // any brush 1/8 m thin is wallbang too (owner, 2026-10-30), whatever its material; a thicker one isn't
+    Map t2;
+    CHECK(t2.parse("box -10 -1 -10 10 0 10\nbox -1 0 -5 -0.875 3 5\nbox 4 0 -5 5 3 5\nspawn any -5 0 0\n"));
+    bang = -2;
+    t = t2.raycastBullet({-5, 1.5f, 0}, {1, 0, 0}, 50, &bang);
+    CHECK(std::fabs(bang - 4) < 0.01f && std::fabs(t - 9) < 0.01f);
+    Map t3;
+    CHECK(t3.parse("box -10 -1 -10 10 0 10\nbox -1 0 -5 -0.75 3 5\nspawn any -5 0 0\n"));
+    bang = -2;
+    t = t3.raycastBullet({-5, 1.5f, 0}, {1, 0, 0}, 50, &bang);
+    CHECK(bang < 0 && std::fabs(t - 4) < 0.01f);
 }
 
 // Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
@@ -6305,7 +6316,7 @@ static void testHandshake(uint16_t port) {
 // leaving and coming back either), and each caller gets one vote per player per map. Kicking stays admin-only: a
 // player's "kick" does nothing and there's no kick vote.
 static void testSpecVote(uint16_t port) {
-    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick never votable\n");
+    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick votes (1.19.4)\n");
     Server s;
     s.voteCooldown_ = 0;   // (a failed vote's cooldown isn't what this checks)
     ServerConfig cfg;
@@ -6329,8 +6340,7 @@ static void testSpecVote(uint16_t port) {
     a.sendCommand("callvote spec anna");                         // not yourself
     a.sendCommand("callvote spec " + std::to_string(bot));       // not a bot
     a.sendCommand("callvote spec nobody");
-    a.sendCommand("kick carl");                                  // a player can't kick...
-    a.sendCommand("callvote kick carl");                         // ...or vote to
+    a.sendCommand("kick carl");                                  // a player can't kick (callvote kick: tested at the end)
     pump(s, cls, 0.4, idle);
     CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ic].connected);
     a.sendCommand("callvote spec carl");
@@ -6380,6 +6390,33 @@ static void testSpecVote(uint16_t port) {
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
     CHECK(s.players_[ia].connected && s.players_[ib].connected);
+    c2.sendCommand("vote no");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // 1.19.4: a vote to kick (not a bot, not yourself; the player it's about has no say), and 5 more minutes
+    a.sendCommand("callvote kick " + std::to_string(bot));
+    a.sendCommand("callvote kick anna");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    a.sendCommand("callvote kick carl");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_KICK && s.vote_.arg == ic2 && s.ms_.voteVoters == 2);
+    c2.sendCommand("vote no");
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && !s.players_[ic2].connected);
+    cls = {&a, &b};
+    const float before = s.ms_.timeLeft;
+    const bool timed = s.ms_.phase == PHASE_LIVE && s.phaseEnd_ > 0;
+    a.sendCommand("callvote extend");
+    pump(s, cls, 0.3, idle);
+    if (!timed) CHECK(s.vote_.kind == Server::VOTE_NONE);   // (only a timed live round)
+    else {
+        CHECK(s.vote_.kind == Server::VOTE_EXTEND);
+        b.sendCommand("vote yes");
+        pump(s, cls, 0.4, idle);
+        CHECK(s.vote_.kind == Server::VOTE_NONE && s.ms_.timeLeft > before + 250);
+    }
     s.stop();
 }
 

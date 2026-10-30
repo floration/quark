@@ -51,13 +51,188 @@ Every change on `testing` since production 1.19.3, with what changed and why. Th
 - **Race ghost (#179).** Your position every 50 ms on race maps; a finished run faster than the saved one is written to `ghosts/<map>.txt` and drawn as a see-through player along the run, by the time since your start. Capped at 20 minutes of points. Client only.
 - **Team panel (#17).** `team_panel`: teammates' names and health bars on the left edge in team modes, and a square per enemy, lit while they're alive (off by default).
 - **Match summary (#180).** `match_summary`: your shots, hits, accuracy, damage dealt and best streak for the match under the end-of-match scoreboard, counted on the client.
-- **Not in this batch** (still 3s, next): a turning 3D model preview (#128), moving the objective / notice / scoreboard boxes (#21), renaming demos (#139). Viewmodel FOV: see Controls above.
+- **Demo rename (#139).** RENAME beside DELETE turns the row into a field; Enter renames the file (letters, digits and - kept, the rest _), Esc or a click away leaves it. **Not in this batch** (still 3s): a turning 3D model preview (#128) and moving the objective / notice / scoreboard boxes (#21), which come with batch 3. Viewmodel FOV: see Controls above.
+
+## Thin surfaces are wallbang (owner, 2026-10-30: "any 1/8m surface should have the wallbang property on it")
+
+- `wallbangBrush(b)` (map.h): the wallbang material, or any shot-stopping brush whose thinnest side is 1/8 m or less (0.126 with a rounding margin), whatever its material: a Coat (K) layer, a thin panel, trim. `raycastBullet` (server hit checks and every client prediction of them) and the map's `hasWallbang` flag use it, so a map with only thin brushes still takes the wallbang path. Movement, sight, splash and grapple rays are unchanged: a thin wall still blocks players and explosions. A bullet passes one or more wallbang brushes and takes the weapon's wallbang damage once, as before. Test: `testWallbang` (a 1/8 m box passes, a 1/4 m one stops).
 
 ## Map picker (owner, 2026-10-30: "you shouldnt get to pick maps that are not under the playable gamemode for the map, also map previews should exist in the picker in game; list should be scrollable and 7 wide")
 
 - **Only the mode's maps.** The host, vs bots and in-game pickers list a map only if its `modes` include the chosen mode (a tourney rotation list: tourney; ranked: maps ranked for that ladder). The "NOT FOR THIS MODE" tag, its legend and the ranked-but-greyed cards are gone with them. A console `map` command can still start any map in any mode.
 - **Previews.** Each map gets a 192x108 picture from above, made on the CPU when its info is read (once per map file, cached with its title and modes; about a millisecond): each column the colour of its highest surface by material and the map's palette, lit by height and a light from the top left, darker where the height steps. An indoor map's roof and any slab over most of the map are left out so the rooms show; clip and far-scenery brushes too. All previews go to the GPU as one atlas, only when the map list or a file changes, and draw through the swatch image program over the 2D batch (`Renderer::preview`; the swatch code now shares `drawImageQuads`). Why not a 3D render: the renderer holds one world (the menu backdrop or the match), so rendering 25 other maps would mean loading each one.
 - **7 wide, scrolling.** Cards are 122 px wide (picture over the name, the mode it's for under it); as many rows as fit the band, the wheel scrolls the rest, and it opens scrolled to the current map. Clicking the picture picks the map too.
+
+## Settings: batch 3, the 2s (video, visuals, audio, performance, latency, network, crosshair, accessibility)
+
+Everything lives on VIDEO + AUDIO > MORE 2 (added to), MORE 4, MORE 5 and MORE 6 (new pages), the main VIDEO + AUDIO page and CROSSHAIR. Every renderer switch is a shader uniform that is 0 at its default (so the swatch program, which never gets them, draws as before) and is only set when it changes (`Renderer::setLook` compares); `Game::applyLive` pushes the batch into the renderer, mixer and connection once a frame as compares and atomic stores. Nothing costs anything per frame at its default.
+
+- **Tone curve (#44).** `tone_curve`: off swaps the ACES-style filmic curve for a straight clamp (world, sky). The dynamic shader never had the curve, so players are unchanged.
+- **Shadows (#45, #213).** `shadow_filter`: HARD (1 tap), SOFT (the 4 taps as before), SOFTER (16 taps, a texel apart: inside the caster rect's 2 texel margin, so no rect change). `shadow_dist`: the shadow map's half-width, 16 / 32 (as before) / 64 m: wider reaches farther but each texel covers more (blurrier). `shadow_world` / `shadow_players`: where dynamic shadows land (the world's / dynamic shader's `uShadowOn`); with neither on, the shadow pass isn't drawn at all. `own_shadow` off skips your first-person body entirely (it is drawn only as a shadow caster), so no shadow-pass geometry either.
+- **Clean surfaces (#46).** `clean_surfaces` drops the palette materials' 2 m panel seams and per-panel shade noise (materials below 12). The newer textured materials are their look, so they stay.
+- **Lighting (#47).** `flat_light`: the world shader ignores the lightmap (full sun and sky everywhere, as the see-through pass already does). The bake resolution and bounce count were **not** made settings: a bake is keyed and cached by map content and the official maps ship baked; another quality would bake every map again (minutes each) and need its own cache key. q's call.
+- **Sky and far scenery (#48).** `simple_sky`: the sky shader returns the flat sky colour (no sun glare, no stars). `far_scenery` off skips the far-scenery chunks (they were already their own chunks; `WorldChunk::far` marks them).
+- **Draw distance (#209).** `draw_dist` 150 / 250 / 400 m is the projection's far plane (was a fixed 400). The frustum's far plane already culls world chunks and dynamic objects, so a shorter distance also draws less.
+- **Player brightness (#50) and always lit (#210).** `player_emit`: the dynamic shader's own-light share (0.3 as before; 1 = full colour in any shade). `players_lit`: players get sun visibility 1 and the per-player sun ray (the costliest thing per player) is skipped.
+- **MSAA 8x (#53).** The cycle offers 8x; `msaa=8` loads. The renderer already clamped to `GL_MAX_SAMPLES`.
+- **Show when not supported (#219).** MSAA levels above the GPU's maximum are labelled N/A with the maximum; 10-BIT OUTPUT says what the window got; BYPASS COMPOSITOR says Linux only elsewhere; the latent sync settings say Windows only, or to pick latent sync first; AUDIO LATENCY says LOW = NORMAL on Windows.
+- **FOV mode (#74).** `fov_mode`: FOV read as horizontal on this screen (as before), vertical, or horizontal at 4:3 (Hor+). `Game::hfov()` turns it into the horizontal degrees every camera / zoom / sensitivity use takes (at most 170).
+- **Outlines (#86, #211, #212).** A ninth outline preset, CUSTOM, takes `outline_friendly_color` / `outline_enemy_color` (MORE 4's pickers; the PLAYER tab's cycles list it automatically through `kOutlineColors`). `outline_alpha` mixes the outline toward the body colour (a uniform in the dynamic shader). `outline_team_width` / `outline_enemy_width` (-1 = PLAYER OUTLINE WIDTH). glTF player models have no edge data, so a real outline would need an inverted-hull pass per model (a cost): a hint says so instead.
+- **Fixed team colours (#87).** `fixed_teams` with `team_a_color` / `team_b_color`: while spectating or playing a demo, team modes draw team A and B in these instead of "yours / the enemy" (which made team A always your friendly colour).
+- **Tracers (#101), rope (#103), trails (#215).** `tracer_mode` classic pale yellow / the shooter's team / `tracer_color` (each tracer carries its colour, so no lookups when drawn). `rope_color` (was a fixed near-black). `trails` off / short (40%) / full and `trail_opacity` for the rocket, bolt, knife, syringe and orb streaks.
+- **Colour presets (#111).** COPY / PASTE COLORS: every colour setting (team, outlines, crosshair, tracer, rope, fullbright, name) as one `quark-colors:` line, only those keys read back. Three slots (`color_preset_1..3`) SAVE and LOAD it.
+- **Deband and 10-bit (#204).** `dither`: plus or minus half an 8-bit step of interleaved gradient noise on the world, players and sky (no bands in sky and fog). `out10`: asks GLFW for a 10-bit window at the next start (falls back to 8 if none); when granted, the scene targets (MSAA / render scale) are RGB10_A2 too so the bits reach the window.
+- **Accessibility (#58, #59, #61, #108).** `it_palette`: tag's "it" in your enemy colour and the rest in your team's (was fixed red / blue), and the IT banner too. `split_palette` / `split_words`: race splits in your team / enemy colours, and AHEAD / BEHIND after the time. `reduce_flash`: no muzzle flashes, the bomb and stuck stickies stop blinking, explosions at 40% opacity, the damage flash at most 0.3. `safe_colors`: the OK / error colours (`kGreenOk` / `kRed`, no longer const) become blue and orange, told apart under every common colour blindness.
+- **Audio output (#34, #140, #231, #232).** `channels` stereo / mono / swapped, mixed after the voices. `stereo_width` (the pan factor, 0.8 before), `behind_muffle` (scales the X8 behind-you dip and low-pass), `hear_range` (the 90 m cut-off, 30 - 150 m). `occlusion`: one map ray from your ears as each 3D sound starts; a wall between makes it about 7 dB quieter and low-passed (~1 kHz); off by default because it changes what you hear. `dyn_range`: CLEAN (the soft limiter at 0.08 instead of 0.3), NORMAL (as before), NIGHT (a 5 ms / 300 ms level follower pulling loud passages down about 4:1 over -20 dB, then +6 dB). HRTF was **not** done: it needs an HRTF data set and a convolution per voice (a real mixer cost and an asset choice). Sound when unfocused: `bg_volume`, next to the existing MUTE IN BACKGROUND.
+- **Volume (#234).** VOLUME goes to 150% (`volume` up to 1.5, shown in %); `vol_db` shows every volume as its gain in dB; `vol_perceptual` makes the gain the slider's square.
+- **Audio latency (#116).** `audio_latency`: ALSA 10 / 20 (as before) / 40 ms; CoreAudio 2 / 3 / 6 buffers; WASAPI SAFE keeps twice the queue (LOW is NORMAL there: the owner found anything under one engine period worse). The output is reopened when it changes.
+- **Sound pack, callouts and cues (#63, #65, #154, #172, #173).** `force_pack`: everyone's sounds in your pack (`Game::soundPackOf`). `streak_calls` all / mine / off. `time_warn` off / 60 + 30 (as before) / also a count of the last 10 s (ticks, then THREE TWO ONE), `time_warn_text` as notices too. `cue_mute` / `ann_mute`: a bit per sound id; `Audio::setMuted` drops them at `play` / `play3D` with one bit test; muted announcer lines also skip their caption.
+- **Visualize sounds (#228).** `sound_viz`: the mixer keeps the 3D sounds started (game thread, only while on) and they're drawn as STEPS / SHOT / BOOM / HOOK / HURT / DASH round the crosshair toward where they came from, fading over 0.8 s.
+- **Net graph and packet loss protection (#17, #115).** `net_graph`: ping and loss over 12 s, snapshots in, input packets out and how many commands each carries, and the interpolation delay, at the right edge (F3 unchanged). The command rate itself stays one packet per tick (fewer would add latency). `cmd_redundancy` 2 / 4 (as before) / 8 commands per input packet (`NetClient::setCmdsPerPacket`; the server already reads up to 16).
+- **Downloaded maps (#194).** `map_downloads` off: a server's map you don't have ends the connection with a message instead of downloading. `map_cache_max` keeps the newest N in maps/downloads (pruned after each download and when lowered); the page shows the count and size, CLEAR DOWNLOADED MAPS empties it.
+- **Light cache (#117).** `light_cache_max` (was a fixed 32 bakes), `bake_threads` (0 = all but one core, as before), the cache's bakes and size, CLEAR LIGHT BAKES (shipped bakes stay). A prebake of every map was **not** added: the official maps ship baked, and baking your own maps at once would hold every core for minutes.
+- **Latent sync (#114).** `latent_safety_us`: the spare time before the blank (the fixed 100 us before). `latent_slow`: a frame that misses its blank flips now (a tear, as before) or WAITs for the next one (no tear, a refresh later). Windows only, like latent sync.
+- **Bypass compositor (#223).** `bypass_compositor`: Linux on X11, `_NET_WM_BYPASS_COMPOSITOR` on the window: GLFW's (fullscreen only), ALWAYS (a window unredirected too) or NEVER. The X11 calls are declared by hand so Xlib's macros stay out of game.cpp.
+- **Menu cursor (#230).** `cursor_size` system / x1 / x1.5 / x2 and `cursor_color` white / black / yellow / team: an arrow made with `glfwCreateCursor` (again only when they change).
+- **USE toggle (#149).** `use_toggle`: a press holds USE (plant / defuse) until the next press, like GRAPPLE TOGGLE; dying lets go. On VIDEO + AUDIO > MORE 6 (CONTROLS is another branch's this batch).
+- **Crosshair (#145, #217).** `ch_spread`: a ring of dots at the held weapon's spread (its tangent over the view's), shown when it's wider than the crosshair. `ch_cooldown`: 32 dots round the crosshair that fill as the refire runs out (hidden when ready). `ch_pixels`: the crosshair's sizes as exact pixels, not scaled from 720p. All three ride in the crosshair code.
+
+## Settings: batch 3, the 2s (HUD, social, controls, menus, host, editor, launcher)
+
+Worker 2's half of the 2-scored items. Batch-3 keys are table-driven (`b3Keys` in config.cpp: type, bounds, default), parsed by `setBatch3` before the old keys and written by `batch3Text`, so each new key is one line and always clamped. Three MORE pages are new (GAMEPLAY > MORE 2 / 3 / 4, CONTROLS > MORE 2, PLAYER > MORE), each with its screen path for the UI test and its page function in `tools/settings_index.py` so the settings search finds every label. Nothing new runs per frame at the defaults: every feature sits behind its setting's check (a compare), and the three that track state from frame to frame (health, alerts, auto-hide) are a few compares each.
+
+**Feedback (GAMEPLAY > MORE 2)**
+- **Damage numbers (#16).** `dmg_num_color` (a normal hit; headshots stay red and big hits gold so the meaning stays), `dmg_num_stack` (quick hits add up / a number a hit / one running total a target until it fades) and `dmg_num_time` (0.3 to 3 s, 0.9 as before).
+- **Damage arcs (#23).** `dmg_arcs`, `dmg_arc_color`, `dmg_arc_size` (x0.5 to x2) and `dmg_arc_time`: the arc pointing where a hit you took came from.
+- **Kill mark and hit flash (#24).** `kill_mark`, `kill_mark_time`, `kill_mark_color`; `hit_flash_time` (its colours stay on the CROSSHAIR tab, which is the other worker's).
+- **Kill text (#153).** `kill_text`: "KILLED <NAME>" over the crosshair for 1.5 s.
+- **Low health (#62, #92).** `low_hp` (the share of the mode's max health, so vampire and instagib work too), `low_hp_color`, `low_hp_pulse` and `low_hp_sound` (one beep on crossing the threshold, from `trackHealth`, never repeated while you stay low).
+- **Heal numbers (#177).** `heal_nums`: a green +N over your health when it rises (vampire, regen, the syringe); heals within a second add up.
+- **Weapon kick (#55).** `recoil_amount` x0 to x2 multiplies the view model's kick (and the muzzle point that follows it); FOV and hand were #5.
+- **Per-weapon model (#144).** `wpn_vm_<n>=<shown>,<x>,<y>,<depth>` (written only when not the default): a weapon's model hidden, or moved on top of the HUD tab's WEAPON MODEL element (same units: 720p pixels and mm, -200 to 200). `weaponFrame` takes the weapon, so the muzzle (tracers, beams, your projectiles' start) follows the moved model; hiding one weapon's model also hides its muzzle flash and, with YOUR SHOTS: WITH WEAPON MODEL, its tracers, as the whole-model switch does.
+
+**HUD info (GAMEPLAY > MORE 3)**
+- **Speed meter (#69, #200, #199).** `speed_unit` (m/s, the game's own; km/h; ups at 39.37 a metre, as Quake counts), `speed_scale` (the bar's full scale) and `speed_ticks`; `bar_caps` turns each bar's caption on or off.
+- **Clock (#69, #158).** `clock_12h` for the verbose TIME line; `clock_mode` (time left / elapsed) and `clock_tenths` (tenths in the last 10 s) for the round clock, drawn after the live line so hudclock.h stays as it is.
+- **Verbose lines (#27).** `verbose_lines`: a bit per line of the verbose info block.
+- **Auto-hide (#159).** `autohide_health` always / after a change (3 s) and when low / only when low; `autohide_slots` always / after a switch; `autohide_bars` always / while one is recharging.
+- **Objective markers (#68).** `obj_size`, `obj_mark_opacity` (not `obj_opacity`, which is the objective zones' opacity on VIDEO + AUDIO > MORE 7), `obj_distance` (the distance under the label) and `obj_arrow` (an arrow at the screen edge when the objective is off screen).
+- **Scope (#200).** `scope_size`, `scope_color`, `scope_line` (the reticle's width).
+- **Network warnings (#71).** `net_icons`: STALLED (nothing received for 0.3 s), LOSS (3% snapshot loss or more) and PING (150 ms or more) badges. `NetClient::lastRecvTime()` was added for the stall; not on your own server or in a demo.
+- **Spectator HUD and feed (#202).** `spec_hud` full / minimal; `feed_headshot` adds (HS) to headshot kills in the feed.
+- **Stalemate warning (#175).** `drain_warn`: the round modes' last 10 s before health starts draining, over the crosshair, with a beep at 10 and 5.
+
+**Social (GAMEPLAY > MORE 4)**
+- **Chat (#36, #98, #168).** `team_chat_only`, `chat_filter` (a built-in word list, matched case-blind at a word's start, the rest of the word starred), `chat_one_color` + `chat_color`, `sys_color`, `chat_box` + `chat_box_opacity` (a box behind the chat lines), `chat_stamps` (the local time before each line), `mention_hl` (a line naming you in gold) and `mention_sound`.
+- **System messages (#242).** `sys_msgs` all / important (votes, kicks, ranked, errors) / off.
+- **Name colours (#70).** `other_name_colors` off draws everyone else's name white.
+- **Streamer mode (#79).** `streamer`: server addresses, invite codes and the Discord code shown as stars, other players' names as PLAYER 1, 2..., the data folder path hidden.
+- **Scoreboard (#185).** `score_sort` (score, kills, deaths, ping, name; within each team) and `score_cols` (a bit per column).
+- **Alerts (#241).** `alerts`: with the window in the background the taskbar button flashes on a match start, a round start, a vote called or a player joining (`glfwRequestWindowAttention`).
+- **On join (#243).** `on_join` play / spectate / ask, applied once when a match's first snapshot arrives.
+- **Quips (#80, #130).** Pause > PLAYERS is now open to every player (KICK, bots and restart stay the host's). QUIPS ON / OFF per player writes `quip_block` (names), and their quips are not played. `quip_pick` (PLAYER > MORE: MY QUIP) sends `quip <n>` to the server, which plays that one instead of a random one. No wheel: a picker only.
+- **Hide ratings, remember queues (#171).** `hide_ratings` drops the RATING column from the ranked scoreboard; `remember_queues` saves your ranked queues (`last_queues`) and queues them again at the next start (not in the UI test). Not done: fill notify / join, Discord presence and showing Discord names (each needs the Discord bot or Worker side).
+
+**Spectating and the death camera**
+- **Death camera (#75, #155).** `death_cam` the killer / my body / a teammate, for `kill_cam_time` 0 to 3 s (the client default stays 1.5; the server's limit `kKillCamTime` was raised from 1.5 to 3 so a longer camera isn't cut off).
+- **Spectating (#32).** `spec_fov` and `spec_third` (third person behind the watched player, pulled in by a ray against the map so it never goes through a wall). Free camera already existed. Demo speed and seek are not done: playback runs through the snapshot clock, so a speed needs the interpolation clock scaled with it, and seeking back needs a replay from the start with events muted; more than a setting.
+
+**Controls (CONTROLS > MORE 2, binds)**
+- **Per weapon (#40, #142, #143).** `wpn_sens_<n>` (x0.1 to x5, written only when not 1), `alt_toggle_weapons` (a bit per weapon; -1 = the old rule, the scopes only) and `swap_fire` (a bit per weapon: fire and alt-fire swapped while it's held).
+- **Mouse (#40).** `mouse_accel` 0 to 1 (faster moves turn further, at most x4) and `raw_input` (GLFW raw mouse motion where supported; off: the OS's pointer motion).
+- **Auto-hop (#146).** `auto_hop` off: holding jump jumps once; let go and press again.
+- **Console (#123).** `console_key` (` F1 F10 F11 INSERT HOME \ '; one no action is bound to) and `console_menus` (open it from the menus too).
+- **Ranked (#150).** `ranked_alt_toggle`: the alt-fire (scope) toggle allowed in ranked; the other control scripts stay off there.
+- **New binds (#235, #237).** VOL UP / VOL DOWN / MUTE, RECORD (start / stop a demo), JOIN TEAM, SPECTATE, appended to the action list so older binds keep their slots.
+- **Mode profiles (#126).** A controls profile can now hold `sensitivity`, `fov` (taken through FOV MODE like the main FOV), `zoom_fov_sniper` and `zoom_fov_rifle`, applied while that mode is played; EXPORT writes them. Crosshair per mode is not done: the crosshair is the other worker's tab.
+
+**Menus (PLAYER > MORE, #52, #107, #118, #131)**
+- `menu_theme` dark / high contrast (buttons outlined, brighter text), `menu_accent_on` + `menu_accent` (not the team colour), `text_bright`, `panel_dark`. No light theme: the menus are drawn over the 3D backdrop and every hint colour assumes a dark panel; it needs a design pass.
+- `menu_bg` clockwork / a map you pick (`menu_bg_map`) / a plain colour (`menu_bg_color`).
+- The data folder's path with OPEN (MOVE not done: moving a running game's data folder needs a restart and a copy step).
+- Mods: `use_overrides` (your own asset overrides on or off, applied at start), buttons for the overrides and mods folders, and how many overrides you have. No live reload: assets are loaded once at start.
+
+**HUD elements and preview (#21, #128, #26)**
+- **Objective, notices and scoreboard as HUD elements (#21).** `HUD_OBJECTIVE`, `HUD_NOTICES`, `HUD_SCOREBOARD` are appended (hud_11 to hud_13), so older configs' hud_<n> keep their meaning, and theme.cfg gets `objective`, `notices` and `scoreboard`. They keep their own drawing code (the stacked notice column and the scoreboard's table); `Renderer::uiTransform` moves and sizes what they drew, as a group, about their anchor (the objective line's top centre, the notices' top centre, the scoreboard's top centre), plus the theme's margin and opacity. At the defaults nothing runs (one compare). The objective's colour tints its line; NOTICES tints the notices and the round message; the scoreboard keeps its team colours, so it has no colour row. Hidden: the objective line, its bar and the bomb timer go; the scoreboard isn't drawn on its key. Ranked keeps the default HUD. They're on Settings > HUD's ELEMENT list; the on-screen editor doesn't list them yet (it needs each element's box, which a fixed-code draw doesn't give).
+- **Model preview (#128).** PLAYER shows the chosen model in your team colour under the outlines, turning slowly; drag to turn it. Its boxes (`playerModelParts`, or a box override) are projected flat into the 2D batch (back faces culled, far faces first, one light): no render target, no extra pass, about 150 quads, and only while the tab is open. A mesh override shows a line instead.
+- **Widget values (#26).** hud.cfg widgets can show `snaprate`, `accuracy`, `damage`, `streak`, `round`, `vspeed`, `height` and `weapon` (appended to the value list). Per-mode widgets already work through the HUD profiles (HUD > PER MODE).
+
+**Host and votes**
+- **Votes (#187).** callvote `restart`, `extend` (5 more minutes), `shuffle` (the humans dealt to the teams alternately, then a restart) and `kick <player>` (the same checks as moving one to spectator; the target can't vote). Text commands and vote text, so no protocol change.
+- **Host advanced (#188, #189).** `host_tick` and `host_snap` (cycles), `host_upload` (an upload cap), `host_auto_start`, `host_bot_skill` (balance bot skill): passed to the server config at host start. Tourney rotation not done: it needs the bracket to carry over between matches on the server.
+- **Vs bots (#192).** Up to 15 enemies and 15 teammates (was 7 / 7).
+- **Not done:** a mode rules tab from the param table (#190) and the custom mode editor's extras (#191: weapon set, movement, logic file, duplicate, share code). Both change the custom mode format and the host flow; they need q's call on the share code format.
+
+**Editor (#81, #82, #197, #198)**
+- `ed_fly_binds` (fly keys follow your movement binds), `ed_fast_mul` (was a fixed x3), `ed_fly_speed` and `ed_grid` remembered, `ed_grid_custom` (a grid step after the built-in ones, reached with [ and ]), `ed_rot_step` (Q / E on a spawn; 45 as before), `ed_light` (new lights take the last light's values). Saved when the editor closes or test play starts, never from the widgets themselves.
+- Test play: `ed_test_mode` (the map's or any mode), `ed_test_bots` (0 to 7), `ed_test_at_cam` (`practice setpos`, host alone, clamped to the map's range), `ed_test_no_warmup`.
+
+**Race (#182, #183)**
+- `race_split_vs` best run / best segments / last run and `race_split_time`; the race stats page's map picker and `race_date` format. No split against #1: the leaderboard has times, not splits.
+
+**Launcher (#83, #203)**
+- OPTIONS (in place of the changelog panel; the bottom row is now UNINSTALL | CHANNEL | OPTIONS): `auto_start` (start the game when it's up to date), `keep_open` (PLAY doesn't close the launcher), `args` (launch options, passed to the game on every platform) and `updates` automatic / ask first / at next launch (an update is held back, and the next launch installs it; never for a first install or a pinned version). Asset names unchanged. Install location picker (#84) not done: it needs native folder dialogs on three platforms and moving an install.
+
+**Skipped, with why**
+- #76 pause offline games when unfocused: the server's pause resets the match state and the snapshot stream; needs a server-side pause first.
+- #133 practice speed: needs a timescale through prediction and the server tick.
+- #170 UTF-8 chat: the font atlas is 8-bit and the server sanitises to ASCII.
+- #184 leaderboard paging / around me: needs new Worker API endpoints.
+- #238 instant replay buffer: needs an always-on in-memory recorder; left for a performance review.
+- #127 player accent colour: other players would need it, which is a protocol change.
+- #162 right-click reset on every control: sliders and colour pickers already do; toggles and cycles have no default argument, so it means changing every call site.
+- #164 keyboard menu navigation: needs a focus order for every widget on every page.
+
+## Settings: batch 4, the 1s (video, visuals, audio, latency, accessibility, cosmetics, modes, movement)
+
+Everything is on VIDEO + AUDIO > MORE 2 (added to) and two new pages, MORE 7 (colours) and MORE 8 (screenshots, demos, the window, latency, sound). As in batch 3, every renderer switch is a uniform at its old value by default and set only when it changes, and `Game::applyLive` pushes the lot once a frame as compares and stores; nothing costs anything per frame at its default.
+
+- **Liquids and glow (#51).** `liquid_flow` off gives the world shader `uTime` 0, so water and lava stand still (no animation, same cost). `glow_strength` 0 to 2 scales the map's glow colour (1 as before).
+- **World outline colour (#57).** `world_edge_color`: the world shader's panel outline now mixes towards `uWorldEdge` (black by default, which is what it was) instead of a constant.
+- **Typing sounds (#64).** TYPING SOUNDS flips the SND_TYPING bit in batch 3's `cue_mute`, the same bit as its CUE row.
+- **Hitsound tiers (#66).** `hit_tiers` off plays the medium hitsound for every hit, whatever the damage.
+- **FFA colours (#88).** `ffa_colors`: in modes without teams each other player gets one of 8 distinct colours by id (`teamColor`), so you can tell opponents apart; off as before (all enemy colour).
+- **Own effects colour (#89).** `own_fx` / `own_fx_color`: your projectiles, laser and rope in your colour (the `rope` lambda now knows whose rope it draws).
+- **Health bars (#90).** `hb_low` (0 to 100 HP, 30 as before) is where bars and the HUD health number turn to `hb_low_color` (the old red until you pick one); `hb_custom` / `hb_color` set the healthy bar's colour.
+- **Name tags (#91).** `tag_color` team / white / custom (`tag_custom`), `tag_alpha` 0.1 to 1, `tag_size` 0.5x to 3x.
+- **Effect colour (#102).** `fx_color_mode`: explosions in their own colour (as before), your team's (explosions don't record an owner, so "team" is your team's colour) or `fx_color`. Kill bursts keep theirs: they say whose kill it was.
+- **Objectives in your palette (#104).** `obj_palette`: the bomb's blink and payload checkpoints not yet reached use your enemy colour (from your colour scheme, so the batch 3 palettes apply). The other objectives were already team-coloured.
+- **Map colour overrides, high contrast (#105).** `sky_override` / `sky_color` and `glow_override` / `glow_color` replace every map's sky and glow (prepareScene builds them as locals; x < 0 means the map's own). `high_contrast` lightens wall base colours and darkens trim.
+- **F3 colourblind palette (#109).** `f3_safe`: the F3 pipeline bars use the Okabe-Ito colours (blue / orange / bluish green / vermilion ...), distinct in every common colour blindness.
+- **Always on top (#122).** `on_top`: `GLFW_FLOATING`, set when it changes. Confine cursor was **skipped**: GLFW 3.3 has no confine, in play the cursor is already captured, and the menus would need per-OS code that can't be tested here.
+- **Gun colour (#129).** `gun_color` map (as before) / team / custom (`gun_custom`): the viewmodel's metal tint.
+- **Objective zones (#136).** `obj_opacity` 0 to 2 scales points zones' and the KOTH hill's fill; `obj_pulse` off holds them steady.
+- **Dash buffer (#147).** `dash_buffer` off / 0.05 / 0.1 (as before) / 0.15 s: how long a dash pressed before it's ready is kept.
+- **Smooth strength (#206).** `smooth_amt` 0.25 to 1: the FXAA pass mixes its result with the unfiltered pixel (`uEdgeOff`, 1 = full as before), set only when it changes.
+- **Lightmap filter (#208).** `lightmap_nearest`: the lightmap texture's filter becomes GL_NEAREST (crisp texel blocks, the old-school look), switched only when it changes.
+- **Wallbang tint (#214).** `wallbang_tint` / `wallbang_color`: wallbang brushes in your colour instead of the dark grey.
+- **Ultra safety margin (#220).** `ultra_margin_us` 0 to 2000 µs (150 as before; the slider goes to 1000): how early low latency ULTRA starts each frame. More margin, fewer missed vblanks; less, a little lower latency.
+- **NVIDIA driver profile (#222).** `nv_threaded` (Threaded Optimization off, setting 0x20C1221E) and `nv_dxgi` (Vulkan/OpenGL present method: DXGI, 0x20D690F8) write the game's NVIDIA profile through NVAPI, the same path as GPU MAX CLOCKS (now a shared `nvProfileSetting`). Windows only; the setting IDs are from NvApiDriverSettings.h and could not be tested on an NVIDIA card here. A failure says why and turns the toggle back off.
+- **Quip captions (#229).** `quip_captions`: player quips get a caption even with CAPTIONS off.
+- **Announcer ducking (#233).** `ann_duck` 0 (off, as before) to 1: effects get that much quieter while an announcer line plays (the mixer checks its voices once a buffer).
+- **Demo rate in settings (#20).** DEMO RATE (`demo_full_rate`, 62.5 Hz or every snapshot) is on MORE 8 as well as on DEMOS.
+- **Screenshots (#38).** `shot_format` PNG / TGA, `shot_folder` the game's data folder / Pictures/Quark in your home folder, `shot_hide_hud` saves the 3D view right after it's drawn, before the HUD (one frame later, no extra pass). OPEN FOLDER opens it. JPG was **not** added: the tree has no JPG encoder and adding one is a new third-party file.
+- **Skipped:** #19 voice chat (there is none), #85 language (every string would first have to move into one table), #224 HDR (parked).
+
+## Settings: batch 4, the 1s (HUD, menus, social, editor, practice, gameplay)
+
+Worker 2's share of the 1-scored items, in the same batch-3 key table (`b3Keys`). Nothing runs per frame at the defaults beyond what ran before: the colours replace constants, the compass and radar draw only when on.
+
+- **HUD > MORE (new page; morePages / moreNav / search / uiScreenPath / settings_index know it).** The HUD tab's panel ends at Y 560 to leave the live HUD preview visible, so the HUD's MORE button sits in that footer; the MORE page itself is a normal full-height page without the preview.
+- **Colours (#93, #94, #95, #96, #99).** `bar_recharge_color` (a bar while it recharges, and the dash pips), `speed_low_color` / `speed_high_color` (the speed meter blends from one to the other as before from gold to red), `slot_off_color` (the weapon list: a weapon not usable now, at its old 35% opacity), `sticky_full_color`, `warn_color` (the ranked and unrated notes under the score box), `info_color` (the grey lines: JOIN A TEAM..., the host's port and listing lines), `dmg_head_color` / `dmg_big_color` (damage numbers, 40+ for big). Each defaults to the colour it replaces.
+- **Text outline (#216).** `text_outline` 0 to x1.5 scales the UI shader's outline band (a uniform set only when it changes). Capped at 1.5 and kept at least 0.12 distance-field units inside the glyph edge, because the distance field's spread runs out at small text and a thicker band blotted the letters together.
+- **Notices (#72).** `notice_lines` 1 to 8 (was a fixed 4) and `notice_time` x0.5 to x3 on each notice's time.
+- **Compass and radar (#160).** `compass`: a 180-degree strip at the bottom centre with N / NE / E... every 45 and ticks every 15. `radar`: a 60 px disc top left, up = where you look, `radar_range` 10 to 120 m (further ones sit on the rim): your teammates in team modes and the objective markers' positions (collected from the marker labels the world pass already draws). Never enemies, and off in ranked (the default HUD). No minimap: it needs a top-down render of each map.
+- **REC (#201).** `hide_rec` drops the blinking REC while recording; the demo playback bar stays (it's the playback control's progress).
+- **Tourney TAB (#179).** `tourney_tab` 0 the bracket (as before), 1 the scoreboard; the bracket still shows between rounds.
+- **HUD panel colour (#97).** Not a new setting: theme.cfg's `hud-panel` (background, border, opacity) already does it, and the on-screen editor edits it.
+- **Stair smoothing (#156).** `step_smooth` off skips the X7 camera ease on stair steps (the view jumps with your feet).
+- **Typing indicator (#169).** `send_typing` off: the client stops sending `typing` while you type, so nobody sees your "..." or hears your keys.
+- **Clickable tiebreak (#180).** `rps_click`: while you choose in the hide and seek tiebreak, the cursor is freed and a click on ROCK / PAPER / SCISSORS throws it (the slot keys still work).
+- **Fixed logo (#110).** `fixed_logo`: the title in the default cyan / red instead of your team colours.
+- **Bots (#135).** `bot_looks` 0 a mix of models (as before), 1 all STANDARD; `bots/names.txt` (BOT NAMES FILE makes one and opens the folder): one name a line, letters / digits / spaces / - _, up to 12 characters and 64 names, given to your server's bots as "BOT <NAME>" (ServerConfig `botNames`, `botLooks`; text in the config, no protocol change). Hosted games only; dedicated servers keep the built-in names.
+- **Clip box colour (#106).** `clip_color` for the editor's see-through clip boxes (their opacity unchanged).
+- **Race / leaderboard colours (#100).** Worker 1's SPLITS: PALETTE (`split_palette`) now also colours the race stats' BEST row and the leaderboard's #1 in your team colour instead of gold, rather than a second setting for the same thing.
 
 ## Maps: q's Surfy and Cobblestone ship (owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map, use latest version; also surfy map is default surf gamemode map")
 

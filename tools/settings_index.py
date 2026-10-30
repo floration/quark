@@ -15,6 +15,8 @@ PAGES = {   # function -> (tab, more page, controls sub-page)
     "drawPlayerSettings": (0, 0, 0), "drawGameplaySettings": (1, 0, 0), "drawControls": (2, 0, 0),
     "drawVideoSettings": (3, 0, 0), "drawCrosshairSettings": (4, 0, 0), "drawHudSettings": (5, 0, 0),
     "drawMoreSettings": (3, 1, 0),
+    "drawGameplayMore2": (1, 2, 0), "drawGameplayMore3": (1, 3, 0), "drawGameplayMore4": (1, 4, 0),
+    "drawControlsMore2": (2, 2, 0), "drawPlayerMore": (0, 1, 0), "drawHudMore": (5, 1, 0),
 }
 CALL = re.compile(r'ui_\.(toggle|slider|cycle|colorPicker|button)\((?:[^;"]*?),\s*"([A-Z0-9][A-Z0-9 /:+\'().,%-]*)"\s*,')
 SKIP = {"BACK", "RESET", "MORE  >", "PRESS...", "IMPORT", "EXPORT", "COPY CODE", "PASTE CODE", "UNDO", "USE IT", "KEEP", "REVERT"}
@@ -41,6 +43,11 @@ def main():
             elif "setTab_ == TAB_GAMEPLAY" in line: page = [1, 1, 0]
             elif "moreOpen_ == 2)" in line: page = [3, 2, 0]
             elif "moreOpen_ == 3)" in line: page = [3, 3, 0]
+            elif "moreOpen_ == 4)" in line: page = [3, 4, 0]
+            elif "moreOpen_ == 5)" in line: page = [3, 5, 0]
+            elif "moreOpen_ == 6)" in line: page = [3, 6, 0]
+            elif "moreOpen_ == 7)" in line: page = [3, 7, 0]
+            elif "moreOpen_ == 8)" in line: page = [3, 8, 0]
             elif "// VIDEO + AUDIO" in line and "MORE" not in line: page = [3, 1, 0]
         if func == "drawControls":
             if "controlsSub_ == 2)" in line: page = [2, 0, 2]

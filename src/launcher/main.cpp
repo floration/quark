@@ -145,10 +145,24 @@ std::string readFile(const fs::path& p) {
 // Starts the game: 0, or why not (Windows: the CreateProcess error, e.g. 225 ERROR_VIRUS_INFECTED when the antivirus
 // refuses to run it; elsewhere -1). Wide paths on Windows: a user name outside the ANSI code page still works.
 const int kErrVirusInfected = 225, kErrVirusDeleted = 226;
-int launchGame(const fs::path& dir) {
+// args: LAUNCH OPTIONS (launcher.cfg "args="), split at spaces, each passed to the game as its own argument
+static std::vector<std::string> splitArgs(const std::string& a) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (char c : a) {
+        if (c == ' ' || c == '\t') { if (!cur.empty()) out.push_back(cur); cur.clear(); }
+        else if (c != '"' && (unsigned char)c >= 32) cur += c;   // (no quotes: nothing can break out of an argument)
+    }
+    if (!cur.empty()) out.push_back(cur);
+    return out;
+}
+
+int launchGame(const fs::path& dir, const std::string& args) {
+    const std::vector<std::string> extra = splitArgs(args);
 #ifdef _WIN32
     fs::path exe = dir / kGameExe;
     std::wstring cmd = L"\"" + exe.wstring() + L"\"";
+    for (auto& a : extra) cmd += L" \"" + fs::u8path(a).wstring() + L"\"";
     STARTUPINFOW si{};
     si.cb = sizeof si;
     PROCESS_INFORMATION pi{};
@@ -158,9 +172,13 @@ int launchGame(const fs::path& dir) {
     CloseHandle(pi.hProcess);
     return 0;
 #elif defined(__APPLE__)
-    return procSpawnDetached({"open", (dir / kGameExe).string()}) ? 0 : -1;
+    std::vector<std::string> argv = {"open", (dir / kGameExe).string()};
+    if (!extra.empty()) { argv.push_back("--args"); argv.insert(argv.end(), extra.begin(), extra.end()); }
+    return procSpawnDetached(argv) ? 0 : -1;
 #else
-    return procSpawnDetached({"./" + std::string(kGameExe)}, dir.string()) ? 0 : -1;
+    std::vector<std::string> argv = {"./" + std::string(kGameExe)};
+    argv.insert(argv.end(), extra.begin(), extra.end());
+    return procSpawnDetached(argv, dir.string()) ? 0 : -1;
 #endif
 }
 
@@ -494,7 +512,13 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
         st->selected = plan.index;
         target = st->releases[plan.index];
         std::string ch = releases::channelName(st->cfg.channel);
-        if (plan.offer) {
+        if (plan.offer && !plan.pinned) {   // (OPTIONS > UPDATES: ASK, or AT NEXT LAUNCH: the newer version waits)
+            if (st->cfg.updates == 2) {
+                st->cfg.nextVersion = target.version;
+                saveCfg(st->cfg);
+                st->status = "update " + target.version + " found - it installs at the next launch (or press INSTALL)";
+            } else st->status = "update " + target.version + " available - press INSTALL (installed: " + installed + ")";
+        } else if (plan.offer) {
             st->awaitingInstall = true;
             st->status = "pinned version " + target.version + " (installed: " + installed + ") - press INSTALL to switch to it";
         } else if (installed == target.version) {
@@ -608,8 +632,16 @@ int main(int argc, char** argv) {
     });
     bool quit = false;
     double uninstallArmed = 0;
-    bool autoPlay = false;
+    bool autoPlay = st.cfg.autoStart;   // (OPTIONS > AUTO-START: as --play)
     for (int i = 1; i < argc; i++) autoPlay = autoPlay || std::string(argv[i]) == "--play";
+    bool optionsOpen = false;   // OPTIONS: in place of the changelog
+    glfwSetCharCallback(win, [](GLFWwindow*, unsigned cp) { if (cp >= 32 && cp < 127) g_in->chars += (char)cp; });
+    glfwSetKeyCallback(win, [](GLFWwindow*, int key, int, int action, int) {
+        if (action == GLFW_RELEASE) return;
+        if (key == GLFW_KEY_BACKSPACE) g_in->backspace = true;
+        if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) g_in->enter = true;
+        if (key == GLFW_KEY_ESCAPE) g_in->escape = true;
+    });
     while (!glfwWindowShouldClose(win) && !quit) {
         glfwPollEvents();
         int fw, fh, ww, wh;
@@ -726,7 +758,31 @@ int main(int argc, char** argv) {
             r.text(36 * s, y, ts, line, c);
             y += 10 * ts;
         };
-        std::istringstream ls(notice.title.empty() ? log : notice.body);
+        if (optionsOpen && notice.title.empty()) {   // OPTIONS (1.19.4): auto-start, keep open, updates, launch options
+            const float ox = 36 * s, ow = panelW - 24 * s, oh = 26 * s, ohw = (ow - 8 * s) * 0.5f;
+            float oy = 120 * s;
+            ui.label(ox, oy, "OPTIONS", ui.accent);
+            oy += 24 * s;
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> l(st.mu);
+                changed |= ui.toggle(ox, oy, ohw, oh, "AUTO-START GAME", st.cfg.autoStart, kLauncherUi);
+                changed |= ui.toggle(ox + ohw + 8 * s, oy, ohw, oh, "KEEP LAUNCHER OPEN", st.cfg.keepOpen, kLauncherUi);
+                oy += oh + 8 * s;
+                static const std::vector<std::string> un = {"UPDATES: AUTOMATIC", "UPDATES: ASK FIRST", "UPDATES: AT NEXT LAUNCH"};
+                changed |= ui.cycle(ox, oy, ow, oh, "UPDATES", st.cfg.updates, 3, un, kLauncherUi);
+                oy += oh + 14 * s;
+                ui.label(ox, oy, "LAUNCH OPTIONS (PASSED TO THE GAME)", {0.8f, 0.82f, 0.85f, 1}, 0.85f);
+                oy += 16 * s;
+                changed |= ui.textField(1, ox, oy, ow, oh, st.cfg.args, 200, kLauncherUi);
+                if (changed) saveCfg(st.cfg);
+            }
+            oy += oh + 8 * s;
+            ui.label(ox, oy, "AUTO-START: PLAYS ONCE UP TO DATE. AT NEXT LAUNCH:", {0.6f, 0.62f, 0.66f, 1}, 0.75f);
+            ui.label(ox, oy + 12 * s, "A NEW VERSION INSTALLS WHEN THE LAUNCHER NEXT STARTS.", {0.6f, 0.62f, 0.66f, 1}, 0.75f);
+            y = yMax;   // (no changelog under it)
+        }
+        std::istringstream ls(notice.title.empty() && !optionsOpen ? log : notice.body);
         std::string line;
         while (std::getline(ls, line) && y < yMax) {
             while (!line.empty() && (line[0] == '#' || line[0] == ' ')) line.erase(0, 1);
@@ -751,8 +807,9 @@ int main(int argc, char** argv) {
         // the desktop icon and start menu entry are made automatically (at startup). Here: the release channel
         // (switches the version list; installing from it is the player's click) and UNINSTALL (never the player's data)
         {
-            float bw = (fw - 56 * s) * 0.5f, bx = 24 * s, by = 344 * s, bh = 40 * s;
+            float bw = (fw - 64 * s) / 3, bx = 24 * s, by = 344 * s, bh = 40 * s;
             bool armed = timeNow() < uninstallArmed;
+            if (ui.button(bx + 2 * (bw + 8 * s), by, bw, bh, optionsOpen ? "CHANGELOG" : "OPTIONS", kLauncherUi)) optionsOpen = !optionsOpen;
             if (ui.button(bx + bw + 8 * s, by, bw, bh, channel == Channel::Testing ? "CHANNEL: TESTING" : "CHANNEL: PRODUCTION", kLauncherUi, !st.busy)) {
                 std::lock_guard<std::mutex> l(st.mu);
                 st.cfg.channel = channel == Channel::Testing ? Channel::Production : Channel::Testing;
@@ -789,8 +846,8 @@ int main(int argc, char** argv) {
             autoPlay = false;
             // never a start of a game that isn't there: checked (existence and size) before every start
             if (checkGame(&st, dir, false)) {
-                int e = launchGame(dir);
-                if (e == 0) quit = true;
+                int e = launchGame(dir, st.cfg.args);
+                if (e == 0) quit = !st.cfg.keepOpen;   // (OPTIONS > KEEP LAUNCHER OPEN)
                 else if (e == kErrVirusInfected || e == kErrVirusDeleted) {
                     std::lock_guard<std::mutex> l(st.mu);
                     st.notice = exeNotice({gamefiles::kGameExe, gamefiles::Problem::Blocked}, st.installed, dir);
@@ -814,6 +871,7 @@ int main(int argc, char** argv) {
         r.flush2D();
         glfwSwapBuffers(win);
         in.pressed = false;
+        in.chars.clear(); in.backspace = in.enter = in.escape = false;
     }
     if (st.busy) worker.detach(); // don't hang the window on a slow download
     else if (worker.joinable()) worker.join();

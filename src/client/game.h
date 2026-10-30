@@ -192,6 +192,7 @@ private:
     void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
+    void drawScoreboardAt();   // (drawScoreboard: this, moved / sized by HUD > SCOREBOARD)
     // where the scoreboard goes this frame (its panel; under the notice list) and its rows' text scale / height
     struct ScoreboardBox { float x, y, w, h, ts, rowH; };
     ScoreboardBox scoreboardBox(size_t players) const;
@@ -428,6 +429,10 @@ private:
     bool edGroupMenu_ = false, edExportAsk_ = false; // IMPORT GROUP's list of saved groups; EXPORT's "make it a group first?"
     std::vector<std::string> edGroupFiles_;
     float edSpeed_ = 12;
+    Vec3 edTestCam_;                // TEST PLAY: START AT CAMERA: where the camera was
+    float edTestYaw_ = 0, edTestPitch_ = 0;
+    float edGrid() const;
+    std::string edLastLight_;       // the light values last set this session (cfg's edLight on close)           // the grid step (the CUSTOM GRID after the built-in steps)
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
     bool edMeshDirty_ = true;      // the map's boxes changed: rebuild the renderer's static batch (PERF-12)
@@ -576,6 +581,39 @@ private:
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
     double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
+    // batch 3 (GAMEPLAY > MORE 2): KILL TEXT; HEAL NUMBERS / LOW HEALTH / auto-hide health (trackHealth)
+    double killTextUntil_ = 0, healUntil_ = 0, hpChangedAt_ = -10, slotChangedAt_ = -10;
+    std::string killTextName_;
+    int healAmt_ = 0, prevHp_ = -1, prevSlotWeapon_ = -1;
+    void trackHealth();
+    void trackAlerts();
+    bool jumpUsed_ = false, jumpGround_ = false;   // AUTO-HOP off
+    bool fireSwapped() const;
+    bool altKey() const;
+    int altToggleMask() const;
+    bool altToggleOn() const;
+    void applyRawInput();
+    void consoleKeyPress(int key);
+    void applyMenuTheme();
+    bool queuesRestored_ = false;
+    void saveQueues();
+    bool quipBlocked(const std::string& name) const;
+    bool muted_ = false;
+    float modeSens_ = 0, modeFov_ = 0, modeZoom_[2] = {0, 0};   // a mode's controls profile's own aim (0: yours)
+    float baseFov() const { return hfov(); }   // the MUTE key (the master volume at 0 until pressed again or the volume changes)
+    bool deathBody_ = false;
+    bool joinHandled_ = false;
+    int drainBeep_ = -1;
+    bool kickPick_ = false;   // the vote menu's player list: KICK (else MOVE TO SPECTATOR)   // STALEMATE WARNING: the second last beeped   // ON JOIN done for this connection   // DEATH CAMERA: YOUR BODY (till you respawn or pick someone to watch)
+    int alertPhase_ = -1, alertPlayers_ = 0;
+    bool alertVote_ = false;
+    std::string chatStamp() const;
+    bool mentionsMe(const std::string& text) const;
+    std::string filterChat(std::string t) const;
+    bool sysLineShown(const std::string& t) const;
+    mutable int clockRound_ = -1;
+    mutable float clockLen_ = 0;   // (TIME PLAYED: the longest time left seen this round = its length)
+    std::string shownName(int id) const;   // (STREAMER MODE: other players as "PLAYER <n>")
     bool hitHead_ = false;   // (the last hit a headshot: the crosshair flashes HEADSHOT's colour)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
     // the first-person grapple arm: how far it has turned toward the hook (camera space yaw / pitch, radians) and raised
@@ -601,7 +639,7 @@ private:
     bool stepGround_ = false;
     float localRefire_ = 0;    // the refire localNextFire_ counts down (the last shot's, alt-fire's own; the spawn lock's)
     float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
-    struct Tracer { Vec3 a, b; double until; };
+    struct Tracer { Vec3 a, b; double until; Vec3 col = {1.0f, 0.95f, 0.7f}; };   // (col: TRACER COLOR, tracerColorFor)
     std::vector<Tracer> tracers_;
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; bool spark = false; bool wall = false; float life = 0.35f; };   // kill: a red burst where someone died (X6); spark: a hitscan hit on a player (X4); wall: on a wall
     void localImpactSparks(int w, const UserCmd& c);
@@ -674,7 +712,8 @@ private:
     int matchShots_ = 0, matchHits_ = 0, matchBestStreak_ = 0; float matchDmg_ = 0;   // MATCH SUMMARY: this match's, from when it began
     void updateGhost();                  // record this run; draw the best one
     Vec3 viewAnchor(const Settings::HudElem& e, const Vec3& base) const;   // a first-person model's pivot (camera space)
-    Mat4 weaponFrame(float kick) const;    // the weapon model: its space (x its size) -> camera space (HUD layout)
+    Mat4 weaponFrame(float kick, int weapon = -1) const;
+    bool vmHidden(int weapon) const;     // the WEAPON MODEL element hidden, or that weapon's own model (wpn_vm_<n>)    // the weapon model: its space (x its size) -> camera space (HUD layout)
     Vec3 muzzlePoint(int weapon, const Vec3& eye) const;   // world point of the weapon model's barrel tip (HUD layout)
     double shotAt_ = -1;
     bool scoped_ = false;
@@ -735,11 +774,56 @@ private:
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
     double raceResetAt_ = -1;          // (RACE RESET pressed and not yet acted on: let go, the checkpoint; held 250 ms, the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 3 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
+    int morePages() const { return setTab_ == TAB_VIDEO ? 8 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER || setTab_ == TAB_HUD ? 1 : 0; }
+    // batch 3 (1.19.4): GAMEPLAY > MORE 2 (feedback), MORE 3 (HUD info), MORE 4 (social, spectating); CONTROLS > MORE 2; PLAYER > MORE
+    void drawGameplayMore2(const SetLayout& L);
+    void drawGameplayMore3(const SetLayout& L);
+    void drawGameplayMore4(const SetLayout& L);
+    void drawControlsMore2(const SetLayout& L);
+    void drawPlayerMore(const SetLayout& L);
+    // PLAYER: your model in your team colour, turning (drag to turn it): its boxes projected into the 2D batch, only
+    // while the tab is open (a few hundred quads)
+    void drawModelPreview(float x, float y, float w, float h);
+    void drawCompassRadar(float W, float H, float s);   // HUD > MORE: COMPASS, RADAR
+    std::vector<std::pair<Vec3, Color>> radarObj_;     // (the objectives' markers this frame, for the RADAR)
+    void drawHudMore(const SetLayout& L);               // HUD > MORE (batch 4b)
+    float previewYaw_ = 0.6f;
+    bool previewDrag_ = false;
+    float previewLastX_ = 0;
+    ModelParts previewParts_;
+    struct PreviewFace { float xy[8]; float z; Color c; };
+    std::vector<PreviewFace> previewFaces_;
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;
     bool hudHidden_ = false;           // the HIDE HUD key
+    // 1.19.4 settings, batch 3 (VIDEO + AUDIO > MORE 2 / 4 / 5 / 6, CROSSHAIR)
+    float hfov() const;                       // FOV MODE: the horizontal degrees the camera takes
+    Vec3 tracerColorFor(int shooter) const;   // TRACER COLOR
+    int soundPackOf(int id) const { return cfg_.forcePack ? -1 : net_.playerSoundPack(id); }   // FORCE MY SOUND PACK
+    float masterGain() const;                 // VOLUME as a gain (PERCEPTUAL: squared; unfocused: x BACKGROUND VOLUME)
+    void applyLive();                         // the batch's settings into the renderer / mixer / net (each frame: a few compares)
+    void drawNetGraph(float W, float H, float s);
+    void drawSoundViz(float cx, float cy, float s);
+    void pruneMapDownloads();                 // MAP CACHE: the oldest downloaded maps past the limit deleted
+    void applyCursor();                       // MENU CURSOR: the system's, or ours at a size and colour
+    void applyCompositor();                   // BYPASS COMPOSITOR (Linux, X11)
+    bool useOn_ = false;                      // USE: TOGGLE's state
+    float netPing_[120] = {}; int netPingN_ = 0; double netSampleAt_ = 0;   // NET GRAPH: ping, 10 a second
+    float netLoss_[120] = {};
+    struct HeardMark { int id; Vec3 at; double until; };
+    std::vector<HeardMark> heardMarks_;       // VISUALIZE SOUNDS
+    void* cursor_ = nullptr; int cursorKey_ = 0;   // (a GLFWcursor; the size / colour it was made for)
+    int compositorSet_ = -1;
+    bool dlWas_ = false;                      // (a map download was running last frame)
+    std::string lookMsg_; double lookMsgUntil_ = 0;   // (MORE 4 / 6 buttons' answers)
+    // batch 4
+    std::string shotPending_;                 // SCREENSHOT: HIDE HUD: saved after the 3D view, before the HUD
+    std::string shotDir() const;
+    int onTopSet_ = 0;
+    bool captionQuip_ = false;                // (the caption showing is a quip's: QUIP CAPTIONS)
+    Color hbLowC() const { return length(cfg_.hbLowColor - Vec3(1, 0.35f, 0.3f)) < 0.01f ? kRedNow() : rgba(cfg_.hbLowColor); }
+    static Color kRedNow();
     double reconnectAt_ = 0; int reconnectTries_ = 0;   // AUTO RECONNECT: the next try, and how many so far
     // a key bound here that another action had: who lost it (UNDO puts it back there, and this slot as it was)
     int bindTakenA_ = -1, bindTakenK_ = 0, bindTakenCode_ = 0, bindTakenTo_ = -1, bindTakenSlot_ = 0, bindTakenWas_ = 0; double bindTakenUntil_ = 0;
@@ -978,6 +1062,7 @@ private:
     std::string splitText_;
     Color splitColor_ = {1, 1, 1, 1};
     double splitUntil_ = 0;
+    int raceStatsMap_ = 0;   // MY RACE STATS: which raced map
     void loadRaceRuns();
     const RaceRun* bestRun(const std::string& map, bool trial) const;
     void onRaceSplit(int checkpoint, int ms);
@@ -1039,7 +1124,8 @@ private:
     // one per element, each re-solving only when its own content changes (held here, not on the heap: a frame's HUD
     // touches as few cache lines as it can; capacities: the weapon list's slots, the kill feed's and chat's lines)
     lay::Layout hudLay_[Settings::HUD_COUNT] = {lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(4), lay::Layout(24), lay::Layout(4),
-                                                lay::Layout(4), lay::Layout(4), lay::Layout(8), lay::Layout(56), lay::Layout(64)};
+                                                lay::Layout(4), lay::Layout(4), lay::Layout(8), lay::Layout(56), lay::Layout(64),
+                                                lay::Layout(1), lay::Layout(1), lay::Layout(1)};   // (the last three: drawn by fixed code, moved by hudMove)
     HudWidth hudCapW_[8];                             // (captions: the bars' WEAPON / DASH / HOOK, the speed meter's, the weapon name)
     struct SlotLabels { char t[WPN_COUNT][32]; float w[WPN_COUNT]; int away[WPN_COUNT]; float ts = -1; int gen = -1; };   // (away: the seconds in t; INT_MIN: not made)
     SlotLabels hudSlotW_ = {};                        // (the weapon list's labels and widths, measured when one changes)
@@ -1067,6 +1153,11 @@ private:
     bool hudEdUndo(bool redo);
     const HudStyle& hudStyle(int el) const;
     float hudOpacity(int el) const;
+    // The objective line, the notices and the scoreboard: drawn where they always were, then moved and sized as a group
+    // by their HUD element (offset, size; the theme's margin and opacity). Nothing at the defaults.
+    struct HudMove { size_t mark = 0; float px = 0, py = 0, k = 1, dx = 0, dy = 0, oldAlpha = 1; bool on = false; };
+    HudMove hudMoveBegin(int el, float px, float py);
+    void hudMoveEnd(const HudMove& m);
     Color hudTint(int el, Color c) const;             // the element's colour: its HUD COLOR, else the theme's, else c
     float hudFont(int el) const;                      // its text size: SIZE x the theme's font-size
     bool hudSame(int el, float W, float H, const float* v, int n);
@@ -1078,7 +1169,7 @@ private:
     lay::Rect hudClose(int el);                       // closes the root, solves (cached), keeps and returns its rect
     void hudBoxDraw(int el, const lay::Rect& r, float k, Color def);   // its background (def: the built-in one) and border
     // Settings > HUD's live preview: the tab is showing (not the widget editor, FONT or DEVICES)
-    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !widgetEdit_ && !hudEdit_ && !fontsOpen_ && !devicesOpen_; }
+    bool hudPreviewOn() const { return setTab_ == TAB_HUD && !moreOpen_ && !widgetEdit_ && !hudEdit_ && !fontsOpen_ && !devicesOpen_; }
     void drawHudLive(const ModeState& ms, const PlayerSnap* mep, float W, float H, float s, bool preview);   // (alive)
     HudRect drawHudElement(int el, float W, float H, float s, bool sample, bool draw = true);   // one element (the overlay)
     void drawHudSample(float W, float H, float s);   // every element with made-up values (the main menu's settings)

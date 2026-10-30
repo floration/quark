@@ -64,7 +64,7 @@ struct HudStyle {
 
 class HudTheme {
 public:
-    static constexpr int kElems = 11;   // Settings::HUD_COUNT (theme.cpp checks)
+    static constexpr int kElems = 14;   // Settings::HUD_COUNT (theme.cpp checks)
     // what a rule can select: every element, a class, or one element (kSelElem + Settings::HUD_*)
     enum { SEL_HUD, SEL_PANEL, SEL_KILLFEED, SEL_CHAT, SEL_ELEM0, kSelectors = SEL_ELEM0 + kElems };
     static const char* elementName(int el);         // "health", ...: hud.<name> in the file

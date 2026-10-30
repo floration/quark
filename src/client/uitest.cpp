@@ -42,13 +42,15 @@ namespace fs = std::filesystem;
 std::string Game::uiScreenPath() const {
     auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
         switch (setTab_) {
-            case TAB_GAMEPLAY: return moreOpen_ ? "/gameplay/more" : "/gameplay";
-            case TAB_CONTROLS: return moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
-            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
+            case TAB_PLAYER: if (moreOpen_) return "/player/more"; break;
+            case TAB_GAMEPLAY: return moreOpen_ >= 4 ? "/gameplay/more4" : moreOpen_ == 3 ? "/gameplay/more3" : moreOpen_ == 2 ? "/gameplay/more2" : moreOpen_ ? "/gameplay/more" : "/gameplay";
+            case TAB_CONTROLS: return moreOpen_ >= 2 ? "/controls/more2" : moreOpen_ ? "/controls/more" : filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : controlsSub_ == 2 ? "/controls/keys2" : "/controls";
+            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : moreOpen_ == 8 ? "/video/more8" : moreOpen_ == 7 ? "/video/more7" : moreOpen_ == 6 ? "/video/more6" : moreOpen_ == 5 ? "/video/more5" : moreOpen_ == 4 ? "/video/more4" : moreOpen_ == 3 ? "/video/more3" : moreOpen_ == 2 ? "/video/more2" : moreOpen_ ? "/video/more" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
             case TAB_HUD:
                 if (hudEdit_) return "/hud/edit";
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
+                if (moreOpen_) return "/hud/more";
                 return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
         }
         return fontsOpen_ ? "/fonts" : "";
@@ -141,6 +143,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "demodel") return demoDelArmed_ + "@" + std::to_string(demoDelUntil_);
     if (w == "demoren") return demoRename_;
     if (w == "confirm") return confirmArmed(confirmWhat_) ? confirmWhat_ : "";
+    if (w == "lookmsg") return cfg_.toText() + "|" + lookMsg_ + "@" + std::to_string(lookMsgUntil_);
     if (w == "chcode") return cfg_.toText() + "|" + chCodeMsg_ + "@" + std::to_string(chCodeUntil_);
     if (w == "groups") return listDir(userDataPath("groups"));
     if (w == "bench") return listDir(userDataPath("benchmarks")) + "|" + listDir(userDataPath("benchmarks/exports"));
@@ -631,7 +634,7 @@ private:
         c.save();
         g.joinAddr_ = c.lastAddress;
         g.hostPortStr_ = std::to_string(c.hostPort);
-        g.ui_.accent = rgba(c.colorFriendly);
+        g.applyMenuTheme();   // (the accent and the menu theme)
         g.audio_.setMasterVolume(c.volume);
         g.audio_.setEffectsVolume(c.volumeEffects);
         g.audio_.setAnnouncerVolume(c.volumeAnnouncer);

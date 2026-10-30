@@ -385,13 +385,19 @@ Config parseConfig(const std::string& text) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line.rfind("pin=", 0) == 0) c.pin = line.substr(4).empty() ? "latest" : line.substr(4);
         else if (line.rfind("channel=", 0) == 0) c.channel = channelFromName(line.substr(8));
+        else if (line.rfind("auto_start=", 0) == 0) c.autoStart = line.substr(11) == "1";
+        else if (line.rfind("keep_open=", 0) == 0) c.keepOpen = line.substr(10) == "1";
+        else if (line.rfind("args=", 0) == 0) c.args = line.substr(5, 200);
+        else if (line.rfind("updates=", 0) == 0) c.updates = std::min(std::max(atoi(line.c_str() + 8), 0), 2);
+        else if (line.rfind("next_version=", 0) == 0) c.nextVersion = line.substr(13, 64);
         i = j + 1;
     }
     return c;
 }
 
 std::string formatConfig(const Config& c) {
-    return std::string("channel=") + channelName(c.channel) + "\npin=" + (c.pin.empty() ? "latest" : c.pin) + "\n";
+    return std::string("channel=") + channelName(c.channel) + "\npin=" + (c.pin.empty() ? "latest" : c.pin) + "\nauto_start=" + (c.autoStart ? "1" : "0") +
+           "\nkeep_open=" + (c.keepOpen ? "1" : "0") + "\nargs=" + c.args + "\nupdates=" + std::to_string(c.updates) + "\nnext_version=" + c.nextVersion + "\n";
 }
 
 int selectIndex(const std::vector<Release>& list, const Config& c) {
@@ -414,6 +420,9 @@ Plan startupPlan(const std::vector<Release>& list, const Config& c, const std::s
         return p;
     }
     p.install = shouldAutoInstall(r.version, installed, p.pinned);
+    // UPDATES (1.19.4): ASK leaves a newer version to the player's INSTALL; AT NEXT LAUNCH installs it only once it was
+    // seen at an earlier start (nextVersion). A first install and a pinned version are never held back.
+    if (p.install && !installed.empty() && !p.pinned && (c.updates == 1 || (c.updates == 2 && c.nextVersion != r.version))) { p.install = false; p.offer = true; }
     return p;
 }
 
