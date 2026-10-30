@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <vector>
 #include "../game/map.h"
 
 static std::string cfgPath() { return userDataPath("quark.cfg"); }
@@ -38,6 +39,7 @@ void Settings::load() {
 
 // One setting from text (the config file's key=value, or the console's "key value").
 void Settings::set(const std::string& k, const std::string& v) {
+    if (setBatch3(k, v)) return;
     {
         float fv = (float)atof(v.c_str());
         int iv = atoi(v.c_str());
@@ -313,6 +315,7 @@ std::string Settings::toText() const {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
+    f << batch3Text();
     f << "bind_version=4\n";
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "," << binds.code[a][2] << "\n";   // (older games read the first two)
     return f.str();
@@ -346,3 +349,92 @@ bool Settings::crosshairFromCode(const std::string& code) {
     return n > 0;
 }
 
+
+// ---- batch 3 (1.19.4, the 2s): one table of keys, read and written together (each value clamped to its range)
+namespace {
+struct B3 {
+    enum T { B, I, F, C, S } t;
+    const char* key;
+    void* p;
+    float lo, hi;
+};
+}
+static std::vector<B3> b3Keys(Settings& s) {
+    using T = B3;
+    std::vector<B3> v = {
+        {T::C, "dmg_num_color", &s.dmgNumColor, 0, 0}, {T::I, "dmg_num_stack", &s.dmgNumStack, 0, 2}, {T::F, "dmg_num_time", &s.dmgNumTime, 0.3f, 3},
+        {T::B, "dmg_arcs", &s.dmgArcs, 0, 1}, {T::C, "dmg_arc_color", &s.dmgArcColor, 0, 0}, {T::F, "dmg_arc_size", &s.dmgArcSize, 0.5f, 2},
+        {T::F, "dmg_arc_time", &s.dmgArcTime, 0.3f, 3}, {T::B, "kill_mark", &s.killMark, 0, 1}, {T::F, "kill_mark_time", &s.killMarkTime, 0.2f, 2},
+        {T::C, "kill_mark_color", &s.killMarkColor, 0, 0}, {T::F, "hit_flash_time", &s.hitFlashTime, 0.05f, 1}, {T::B, "kill_text", &s.killText, 0, 1},
+        {T::B, "heal_nums", &s.healNums, 0, 1}, {T::F, "low_hp", &s.lowHp, 0, 0.9f}, {T::C, "low_hp_color", &s.lowHpColor, 0, 0},
+        {T::B, "low_hp_pulse", &s.lowHpPulse, 0, 1}, {T::B, "low_hp_sound", &s.lowHpSound, 0, 1},
+        {T::I, "speed_unit", &s.speedUnit, 0, 2}, {T::F, "speed_scale", &s.speedScale, 0.25f, 4}, {T::B, "speed_ticks", &s.speedTicks, 0, 1},
+        {T::I, "bar_caps", &s.barCaps, 0, 15}, {T::B, "clock_12h", &s.clock12, 0, 1}, {T::I, "clock_mode", &s.clockMode, 0, 1},
+        {T::B, "clock_tenths", &s.clockTenths, 0, 1}, {T::I, "verbose_lines", &s.verboseLines, 0, 0x3FFF}, {T::B, "net_icons", &s.netIcons, 0, 1},
+        {T::I, "autohide_health", &s.autoHideHealth, 0, 2}, {T::I, "autohide_slots", &s.autoHideSlots, 0, 1}, {T::I, "autohide_bars", &s.autoHideBars, 0, 1},
+        {T::F, "obj_size", &s.objSize, 0.5f, 2}, {T::F, "obj_opacity", &s.objOpacity, 0.1f, 1}, {T::B, "obj_distance", &s.objDistance, 0, 1},
+        {T::B, "obj_arrow", &s.objArrow, 0, 1}, {T::F, "scope_size", &s.scopeSize, 0.5f, 1.2f}, {T::C, "scope_color", &s.scopeColor, 0, 0},
+        {T::F, "scope_line", &s.scopeLine, 1, 4}, {T::I, "spec_hud", &s.specHud, 0, 1}, {T::B, "feed_headshot", &s.feedHeadshot, 0, 1},
+        {T::I, "score_sort", &s.scoreSort, 0, 4}, {T::I, "score_cols", &s.scoreCols, 0, 0xFF},
+        {T::B, "chat_one_color", &s.chatOneColor, 0, 1}, {T::C, "chat_color", &s.chatColor, 0, 0}, {T::C, "sys_color", &s.sysColor, 0, 0},
+        {T::B, "chat_box", &s.chatBox, 0, 1}, {T::F, "chat_box_opacity", &s.chatBoxOpacity, 0.1f, 1}, {T::B, "chat_stamps", &s.chatStamps, 0, 1},
+        {T::B, "mention_hl", &s.mentionHl, 0, 1}, {T::B, "mention_sound", &s.mentionSound, 0, 1}, {T::B, "chat_filter", &s.chatFilter, 0, 1},
+        {T::B, "team_chat_only", &s.teamChatOnly, 0, 1}, {T::B, "other_name_colors", &s.otherNameColors, 0, 1}, {T::B, "streamer", &s.streamer, 0, 1},
+        {T::I, "sys_msgs", &s.sysMsgs, 0, 2}, {T::I, "alerts", &s.alerts, 0, 15}, {T::I, "on_join", &s.onJoin, 0, 2},
+        {T::I, "death_cam", &s.deathCam, 0, 2}, {T::F, "kill_cam_time", &s.killCamTime, 0, kKillCamTime}, {T::F, "recoil_amount", &s.recoilAmount, 0, 2},
+        {T::F, "spec_fov", &s.specFov, 0, 140}, {T::B, "spec_third", &s.specThird, 0, 1}, {T::S, "quip_block", &s.quipBlock, 0, 0},
+        {T::I, "quip_pick", &s.quipPick, -1, 255}, {T::B, "use_overrides", &s.useOverrides, 0, 1},
+        {T::F, "mouse_accel", &s.mouseAccel, 0, 1}, {T::B, "raw_input", &s.rawInput, 0, 1}, {T::I, "alt_toggle_weapons", &s.altToggleWpns, -1, 0xFFFF},
+        {T::I, "swap_fire", &s.swapFire, 0, 0xFFFF}, {T::B, "auto_hop", &s.autoHop, 0, 1}, {T::I, "console_key", &s.consoleKey, 0, 999},
+        {T::B, "console_menus", &s.consoleMenus, 0, 1}, {T::B, "ranked_alt_toggle", &s.rankedAltToggle, 0, 1},
+        {T::I, "menu_bg", &s.menuBg, 0, 2}, {T::S, "menu_bg_map", &s.menuBgMap, 0, 0}, {T::C, "menu_bg_color", &s.menuBgColor, 0, 0},
+        {T::I, "menu_theme", &s.menuTheme, 0, 1}, {T::F, "panel_dark", &s.panelDark, 0.5f, 1.5f}, {T::F, "text_bright", &s.textBright, 0.5f, 1},
+        {T::B, "menu_accent_on", &s.menuAccentOn, 0, 1}, {T::C, "menu_accent", &s.menuAccent, 0, 0},
+        {T::B, "hide_ratings", &s.hideRatings, 0, 1}, {T::B, "remember_queues", &s.rememberQueues, 0, 1}, {T::S, "last_queues", &s.lastQueues, 0, 0},
+        {T::F, "ed_fly_speed", &s.edFlySpeed, 1, 100}, {T::F, "ed_fast_mul", &s.edFastMul, 1, 10}, {T::F, "ed_grid_custom", &s.edGridCustom, 0, 16},
+        {T::F, "ed_rot_step", &s.edRotStep, 1, 90}, {T::I, "ed_grid", &s.edGridIdx, 0, 6}, {T::B, "ed_fly_binds", &s.edFlyBinds, 0, 1},
+        {T::S, "ed_light", &s.edLight, 0, 0},
+    };
+    return v;
+}
+
+bool Settings::setBatch3(const std::string& k, const std::string& v) {
+    if (k.rfind("wpn_sens_", 0) == 0) {   // wpn_sens_<weapon number>
+        const int w = atoi(k.c_str() + 9);
+        const float f = (float)atof(v.c_str());
+        if (w >= 0 && w < WPN_COUNT && std::isfinite(f)) wpnSens[w] = clampf(f, 0.1f, 5);
+        return true;
+    }
+    if (k.size() < 4) return false;
+    for (const B3& e : b3Keys(*this)) {
+        if (k != e.key) continue;
+        const float f = (float)atof(v.c_str());
+        const int i = atoi(v.c_str());
+        switch (e.t) {
+            case B3::B: *(bool*)e.p = i != 0; break;
+            case B3::I: *(int*)e.p = std::min(std::max(i, (int)e.lo), (int)e.hi); break;
+            case B3::F: if (std::isfinite(f)) *(float*)e.p = clampf(f, e.lo, e.hi); break;
+            case B3::C: *(Vec3*)e.p = parseColor(v, *(Vec3*)e.p); break;
+            case B3::S: *(std::string*)e.p = v.substr(0, 400); break;
+        }
+        return true;
+    }
+    return false;
+}
+
+std::string Settings::batch3Text() const {
+    std::ostringstream f;
+    for (const B3& e : b3Keys(const_cast<Settings&>(*this))) {
+        f << e.key << "=";
+        switch (e.t) {
+            case B3::B: f << *(const bool*)e.p; break;
+            case B3::I: f << *(const int*)e.p; break;
+            case B3::F: f << *(const float*)e.p; break;
+            case B3::C: f << colorHex(*(const Vec3*)e.p); break;
+            case B3::S: f << *(const std::string*)e.p; break;
+        }
+        f << "\n";
+    }
+    for (int w = 0; w < WPN_COUNT; w++) if (wpnSens[w] != 1.0f) f << "wpn_sens_" << w << "=" << wpnSens[w] << "\n";
+    return f.str();
+}

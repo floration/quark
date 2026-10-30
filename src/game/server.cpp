@@ -1457,7 +1457,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
     if (cmd == "quip") { // a random quip (each listener's voice's set), heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
         p.quipAt = time() + 1.5f;
-        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(qrand() & 255);
+        // ("quip <n>", 1.19.4: the sender picked one, PLAYER > MORE: MY QUIP; each listener still plays n modulo their set)
+        const int pick = rest.empty() ? -1 : atoi(rest.c_str());
+        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(pick >= 0 && pick < 256 ? pick : (int)(qrand() & 255));
         broadcastEvent(e);
         return;
     }

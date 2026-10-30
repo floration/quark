@@ -572,6 +572,36 @@ private:
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while ((int)chatFeed_.size() > cfg_.chatLines) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
     double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
+    // batch 3 (GAMEPLAY > MORE 2): KILL TEXT; HEAL NUMBERS / LOW HEALTH / auto-hide health (trackHealth)
+    double killTextUntil_ = 0, healUntil_ = 0, hpChangedAt_ = -10, slotChangedAt_ = -10;
+    std::string killTextName_;
+    int healAmt_ = 0, prevHp_ = -1, prevSlotWeapon_ = -1;
+    void trackHealth();
+    void trackAlerts();
+    bool jumpUsed_ = false, jumpGround_ = false;   // AUTO-HOP off
+    bool fireSwapped() const;
+    bool altKey() const;
+    int altToggleMask() const;
+    bool altToggleOn() const;
+    void applyRawInput();
+    void consoleKeyPress(int key);
+    void applyMenuTheme();
+    bool queuesRestored_ = false;
+    void saveQueues();
+    bool muted_ = false;
+    float modeSens_ = 0, modeFov_ = 0, modeZoom_[2] = {0, 0};   // a mode's controls profile's own aim (0: yours)
+    float baseFov() const { return modeFov_ > 0 ? modeFov_ : cfg_.fov; }   // the MUTE key (the master volume at 0 until pressed again or the volume changes)
+    bool deathBody_ = false;
+    bool joinHandled_ = false;   // ON JOIN done for this connection   // DEATH CAMERA: YOUR BODY (till you respawn or pick someone to watch)
+    int alertPhase_ = -1, alertPlayers_ = 0;
+    bool alertVote_ = false;
+    std::string chatStamp() const;
+    bool mentionsMe(const std::string& text) const;
+    std::string filterChat(std::string t) const;
+    bool sysLineShown(const std::string& t) const;
+    mutable int clockRound_ = -1;
+    mutable float clockLen_ = 0;   // (TIME PLAYED: the longest time left seen this round = its length)
+    std::string shownName(int id) const;   // (STREAMER MODE: other players as "PLAYER <n>")
     bool hitHead_ = false;   // (the last hit a headshot: the crosshair flashes HEADSHOT's colour)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
     // the first-person grapple arm: how far it has turned toward the hook (camera space yaw / pitch, radians) and raised
@@ -731,7 +761,13 @@ private:
     bool scoresOn_ = false;            // the scoreboard shown (CONTROLS > MORE: SCOREBOARD TOGGLE)
     double raceResetAt_ = -1;          // (RACE RESET's last press: a second one soon after goes to the start)
     int moreOpen_ = 0;                 // settings: the tab's MORE page open (1, 2: which; 1.19.4, the settings that don't fit the tab)
-    int morePages() const { return setTab_ == TAB_VIDEO ? 3 : (setTab_ == TAB_CONTROLS || setTab_ == TAB_GAMEPLAY) ? 1 : 0; }
+    int morePages() const { return setTab_ == TAB_VIDEO ? 3 : setTab_ == TAB_GAMEPLAY ? 4 : setTab_ == TAB_CONTROLS ? 2 : setTab_ == TAB_PLAYER ? 1 : 0; }
+    // batch 3 (1.19.4): GAMEPLAY > MORE 2 (feedback), MORE 3 (HUD info), MORE 4 (social, spectating); CONTROLS > MORE 2; PLAYER > MORE
+    void drawGameplayMore2(const SetLayout& L);
+    void drawGameplayMore3(const SetLayout& L);
+    void drawGameplayMore4(const SetLayout& L);
+    void drawControlsMore2(const SetLayout& L);
+    void drawPlayerMore(const SetLayout& L);
     std::string chCodeMsg_; double chCodeUntil_ = 0;   // (CROSSHAIR > COPY / PASTE CODE's answer)
     void drawMoreSettings(const SetLayout& L);
     const char* moreNav(int n) const;

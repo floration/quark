@@ -199,6 +199,9 @@ private:
     std::string tokenAddr_;
     int clientId_ = -1;
     double lastSend_ = 0, lastRecv_ = 0, connectStart_ = 0;
+public:
+    double lastRecvTime() const { return lastRecv_; }   // (the HUD's STALL warning: when a packet last came in, timeNow())
+private:
     Map map_;
     bool mapReady_ = false;
     uint32_t mapGen_ = 0, editRev_ = 0;

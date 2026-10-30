@@ -194,6 +194,94 @@ struct Settings {
     };
     static bool isModelElem(int el) { return el == HUD_VIEWMODEL || el == HUD_GRAPPLE; }
     HudElem hud[HUD_COUNT];
+    // ---- 1.19.4 settings, batch 3 (the 2s): HUD, social, controls, editor, menus (setBatch3 / batch3Text in config.cpp)
+    // GAMEPLAY > MORE 2 (feedback): damage numbers, damage arcs, the kill mark, the hit flash, low health
+    Vec3 dmgNumColor = {1, 1, 1};      // a normal hit's number (headshots stay red, big hits gold)
+    int dmgNumStack = 0;               // 0 quick hits add up, 1 a number a hit, 2 one running total a target until it fades
+    float dmgNumTime = 0.9f;           // seconds a number shows
+    bool dmgArcs = true;               // the red arcs toward whoever hit you
+    Vec3 dmgArcColor = {1, 0.12f, 0.08f};
+    float dmgArcSize = 1.0f, dmgArcTime = 1.0f;
+    bool killMark = true;              // the X on the crosshair on your kill
+    float killMarkTime = 0.45f;
+    Vec3 killMarkColor = {1, 0.12f, 0.1f};
+    float hitFlashTime = 0.15f;        // the crosshair's hit flash
+    bool killText = false;             // "KILLED <NAME>" under the crosshair
+    bool healNums = true;              // green "+N" when you heal
+    float lowHp = 0.3f;                // low health below this share of the max: the number + bar in lowHpColor
+    Vec3 lowHpColor = {1, 0.35f, 0.3f};
+    bool lowHpPulse = false, lowHpSound = false;   // ...pulsing; a beep as you drop under it
+    // GAMEPLAY > MORE 3 (HUD info)
+    int speedUnit = 0;                 // the speed meter / verbose speed: 0 m/s, 1 km/h, 2 ups (Quake units, 39.37 a metre)
+    float speedScale = 1.0f;           // the speed meter's bar: x the speed it takes to fill
+    bool speedTicks = true;            // ...its tick marks
+    int barCaps = 15;                  // captions shown: bit 0 WEAPON, 1 DASH, 2 HOOK, 3 SPEED
+    bool clock12 = false;              // the verbose TIME as 12 h (am / pm)
+    int clockMode = 0;                 // the round clock: 0 time left, 1 time played
+    bool clockTenths = false;          // ...tenths in its last 10 s
+    int verboseLines = 0x3FFF;         // the verbose info block's lines (bit per line, kVerboseNames in game.cpp)
+    bool netIcons = true;              // warnings for high ping / packet loss / a stalled connection
+    int autoHideHealth = 0;            // 0 always, 1 for 3 s after it changes (and while low), 2 only while low
+    int autoHideSlots = 0;             // the weapon list: 0 always, 1 for 3 s after a switch
+    int autoHideBars = 0;              // the cooldown bars: 0 always, 1 only while one isn't ready
+    float objSize = 1.0f, objOpacity = 1.0f;   // objective markers (bomb, hill, cart, points)
+    bool objDistance = true, objArrow = true;  // ...their distance in metres; an arrow at the screen's edge when off screen
+    float scopeSize = 1.0f;            // the sniper scope's circle (x the default)
+    Vec3 scopeColor = {0, 0, 0};       // ...its reticle lines
+    float scopeLine = 1.0f;            // ...their thickness (px at 720p)
+    int specHud = 0;                   // spectating: 0 the full HUD, 1 minimal
+    bool feedHeadshot = true;          // the kill feed: a headshot marked "(HS)"
+    int scoreSort = 0;                 // the scoreboard: 0 score, 1 kills, 2 deaths, 3 ping, 4 name
+    int scoreCols = 0xFF;              // ...the columns shown (bit per column)
+    // GAMEPLAY > MORE 4 (social, death camera)
+    bool chatOneColor = false;         // chat lines in chatColor (not by team)
+    Vec3 chatColor = {1, 1, 1};
+    Vec3 sysColor = {0.7f, 0.72f, 0.75f};   // server / system lines
+    bool chatBox = false;              // a dark box behind chat (not only while typing)
+    float chatBoxOpacity = 0.4f;
+    bool chatStamps = false;           // [12:34] before each line
+    bool mentionHl = true, mentionSound = true;   // a line with your name: gold, and a ping
+    bool chatFilter = false;           // rude words starred out (a short list)
+    bool teamChatOnly = false;         // only your team's chat (and the server's lines)
+    bool otherNameColors = true;       // other players' custom name colours (off: the team colour)
+    bool streamer = false;             // hide addresses, codes and other players' names
+    int sysMsgs = 0;                   // server messages: 0 all, 1 important, 2 off
+    int alerts = 0;                    // unfocused: flash the taskbar on bit 0 match start, 1 round start, 2 a vote, 3 a join
+    int onJoin = 0;                    // joining a match: 0 play, 1 spectate, 2 ask
+    int deathCam = 0;                  // dead: 0 watch the killer, 1 your body, 2 a teammate
+    float killCamTime = 1.5f;          // team modes: how long the killer can be watched (0 - kKillCamTime)
+    float recoilAmount = 1.0f;         // the gun model's kick (x the default; 0 = none)
+    float specFov = 0;                 // spectating: the FOV (0 = yours)
+    bool specThird = false;            // spectating: behind the player, not their eyes
+    std::string quipBlock;
+    int quipPick = -1;                 // PLAYER > MORE: MY QUIP: the QUIP key says this one (-1: a random one)
+    bool useOverrides = true;          // PLAYER > MORE: MODS: your overrides folder used (next start)             // players whose quips you don't hear (names, ';'-separated)
+    // CONTROLS > MORE 2
+    float wpnSens[WPN_COUNT];          // per weapon: x SENSITIVITY (1 = the same)
+    float mouseAccel = 0;              // sensitivity x (1 + accel x counts per ms), at most x4 (0 = off)
+    bool rawInput = true;              // raw mouse input (off: the OS's pointer motion, with its acceleration)
+    int altToggleWpns = -1;            // ALT-FIRE: TOGGLE applies to these weapons (bits; -1: the ones that zoom)
+    int swapFire = 0;                  // these weapons swap FIRE and ALT FIRE (bits)
+    bool autoHop = true;               // holding jump jumps again on landing (off: a press a jump)
+    int consoleKey = 96;               // the console's key (GLFW code; ` by default)
+    bool consoleMenus = false;         // ...also opens in the menus
+    bool rankedAltToggle = true;       // ALT-FIRE: TOGGLE in ranked too
+    // PLAYER > MORE (menus, ranked)
+    int menuBg = 0;                    // the menu's background: 0 the last map, 1 a map picked (menuBgMap), 2 a plain colour
+    std::string menuBgMap;
+    Vec3 menuBgColor = {0.06f, 0.07f, 0.09f};
+    int menuTheme = 0;                 // 0 dark, 1 high contrast
+    bool menuAccentOn = false;         // the menus' accent: menuAccent (off: your team colour)
+    Vec3 menuAccent = {1.0f, 0.75f, 0.25f};
+    float panelDark = 1.0f, textBright = 1.0f;   // the panels' darkness, the menu text's brightness
+    bool hideRatings = false;          // ranked: ratings hidden on the scoreboard
+    bool rememberQueues = false;       // the ranked queues you're in, joined again at the next start
+    std::string lastQueues;            // (those queues, ','-separated)
+    // EDITOR
+    float edFlySpeed = 12.0f, edFastMul = 3.0f, edGridCustom = 0, edRotStep = 90.0f;
+    int edGridIdx = 2;
+    bool edFlyBinds = false;           // the fly camera's keys follow your FORWARD / BACK / LEFT / RIGHT / JUMP / CROUCH binds
+    std::string edLight;               // the last light's values, "" = the default
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;
@@ -206,7 +294,9 @@ struct Settings {
     // 3: F4 shows the mouse to photon number (LATENCY); VOTE START moved from F4 to F5.
     // 4: RACE RESET (R) added; unbound if R was taken.
     int bindVersion = 4;
-    Settings() { binds.setDefaults(); for (int& w : chWStyle) w = -1; }
+    Settings() { binds.setDefaults(); for (int& w : chWStyle) w = -1; for (float& s : wpnSens) s = 1.0f; }
+    bool setBatch3(const std::string& key, const std::string& value);   // (config.cpp: the batch 3 keys)
+    std::string batch3Text() const;
     void load();
     void save() const;
     void set(const std::string& key, const std::string& value); // one setting from text (file or console)
