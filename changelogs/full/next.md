@@ -53,6 +53,92 @@ Every change on `testing` since production 1.19.3, with what changed and why. Th
 - **Match summary (#180).** `match_summary`: your shots, hits, accuracy, damage dealt and best streak for the match under the end-of-match scoreboard, counted on the client.
 - **Not in this batch** (still 3s, next): a turning 3D model preview (#128), moving the objective / notice / scoreboard boxes (#21), renaming demos (#139). Viewmodel FOV: see Controls above.
 
+## Settings: batch 3, the 2s (HUD, social, controls, menus, host, editor, launcher)
+
+Worker 2's half of the 2-scored items. Batch-3 keys are table-driven (`b3Keys` in config.cpp: type, bounds, default), parsed by `setBatch3` before the old keys and written by `batch3Text`, so each new key is one line and always clamped. Three MORE pages are new (GAMEPLAY > MORE 2 / 3 / 4, CONTROLS > MORE 2, PLAYER > MORE), each with its screen path for the UI test and its page function in `tools/settings_index.py` so the settings search finds every label. Nothing new runs per frame at the defaults: every feature sits behind its setting's check (a compare), and the three that track state from frame to frame (health, alerts, auto-hide) are a few compares each.
+
+**Feedback (GAMEPLAY > MORE 2)**
+- **Damage numbers (#16).** `dmg_num_color` (a normal hit; headshots stay red and big hits gold so the meaning stays), `dmg_num_stack` (quick hits add up / a number a hit / one running total a target until it fades) and `dmg_num_time` (0.3 to 3 s, 0.9 as before).
+- **Damage arcs (#23).** `dmg_arcs`, `dmg_arc_color`, `dmg_arc_size` (x0.5 to x2) and `dmg_arc_time`: the arc pointing where a hit you took came from.
+- **Kill mark and hit flash (#24).** `kill_mark`, `kill_mark_time`, `kill_mark_color`; `hit_flash_time` (its colours stay on the CROSSHAIR tab, which is the other worker's).
+- **Kill text (#153).** `kill_text`: "KILLED <NAME>" over the crosshair for 1.5 s.
+- **Low health (#62, #92).** `low_hp` (the share of the mode's max health, so vampire and instagib work too), `low_hp_color`, `low_hp_pulse` and `low_hp_sound` (one beep on crossing the threshold, from `trackHealth`, never repeated while you stay low).
+- **Heal numbers (#177).** `heal_nums`: a green +N over your health when it rises (vampire, regen, the syringe); heals within a second add up.
+- **Weapon kick (#55).** `recoil_amount` x0 to x2 multiplies the view model's kick (and the muzzle point that follows it); FOV and hand were #5.
+- **Per-weapon model (#144).** `wpn_vm_<n>=<shown>,<x>,<y>,<depth>` (written only when not the default): a weapon's model hidden, or moved on top of the HUD tab's WEAPON MODEL element (same units: 720p pixels and mm, -200 to 200). `weaponFrame` takes the weapon, so the muzzle (tracers, beams, your projectiles' start) follows the moved model; hiding one weapon's model also hides its muzzle flash and, with YOUR SHOTS: WITH WEAPON MODEL, its tracers, as the whole-model switch does.
+
+**HUD info (GAMEPLAY > MORE 3)**
+- **Speed meter (#69, #200, #199).** `speed_unit` (m/s, the game's own; km/h; ups at 39.37 a metre, as Quake counts), `speed_scale` (the bar's full scale) and `speed_ticks`; `bar_caps` turns each bar's caption on or off.
+- **Clock (#69, #158).** `clock_12h` for the verbose TIME line; `clock_mode` (time left / elapsed) and `clock_tenths` (tenths in the last 10 s) for the round clock, drawn after the live line so hudclock.h stays as it is.
+- **Verbose lines (#27).** `verbose_lines`: a bit per line of the verbose info block.
+- **Auto-hide (#159).** `autohide_health` always / after a change (3 s) and when low / only when low; `autohide_slots` always / after a switch; `autohide_bars` always / while one is recharging.
+- **Objective markers (#68).** `obj_size`, `obj_opacity`, `obj_distance` (the distance under the label) and `obj_arrow` (an arrow at the screen edge when the objective is off screen).
+- **Scope (#200).** `scope_size`, `scope_color`, `scope_line` (the reticle's width).
+- **Network warnings (#71).** `net_icons`: STALLED (nothing received for 0.3 s), LOSS (3% snapshot loss or more) and PING (150 ms or more) badges. `NetClient::lastRecvTime()` was added for the stall; not on your own server or in a demo.
+- **Spectator HUD and feed (#202).** `spec_hud` full / minimal; `feed_headshot` adds (HS) to headshot kills in the feed.
+- **Stalemate warning (#175).** `drain_warn`: the round modes' last 10 s before health starts draining, over the crosshair, with a beep at 10 and 5.
+
+**Social (GAMEPLAY > MORE 4)**
+- **Chat (#36, #98, #168).** `team_chat_only`, `chat_filter` (a built-in word list, matched case-blind at a word's start, the rest of the word starred), `chat_one_color` + `chat_color`, `sys_color`, `chat_box` + `chat_box_opacity` (a box behind the chat lines), `chat_stamps` (the local time before each line), `mention_hl` (a line naming you in gold) and `mention_sound`.
+- **System messages (#242).** `sys_msgs` all / important (votes, kicks, ranked, errors) / off.
+- **Name colours (#70).** `other_name_colors` off draws everyone else's name white.
+- **Streamer mode (#79).** `streamer`: server addresses, invite codes and the Discord code shown as stars, other players' names as PLAYER 1, 2..., the data folder path hidden.
+- **Scoreboard (#185).** `score_sort` (score, kills, deaths, ping, name; within each team) and `score_cols` (a bit per column).
+- **Alerts (#241).** `alerts`: with the window in the background the taskbar button flashes on a match start, a round start, a vote called or a player joining (`glfwRequestWindowAttention`).
+- **On join (#243).** `on_join` play / spectate / ask, applied once when a match's first snapshot arrives.
+- **Quips (#80, #130).** Pause > PLAYERS is now open to every player (KICK, bots and restart stay the host's). QUIPS ON / OFF per player writes `quip_block` (names), and their quips are not played. `quip_pick` (PLAYER > MORE: MY QUIP) sends `quip <n>` to the server, which plays that one instead of a random one. No wheel: a picker only.
+- **Hide ratings, remember queues (#171).** `hide_ratings` drops the RATING column from the ranked scoreboard; `remember_queues` saves your ranked queues (`last_queues`) and queues them again at the next start (not in the UI test). Not done: fill notify / join, Discord presence and showing Discord names (each needs the Discord bot or Worker side).
+
+**Spectating and the death camera**
+- **Death camera (#75, #155).** `death_cam` the killer / my body / a teammate, for `kill_cam_time` 0 to 3 s (the client default stays 1.5; the server's limit `kKillCamTime` was raised from 1.5 to 3 so a longer camera isn't cut off).
+- **Spectating (#32).** `spec_fov` and `spec_third` (third person behind the watched player, pulled in by a ray against the map so it never goes through a wall). Free camera already existed. Demo speed and seek are not done: playback runs through the snapshot clock, so a speed needs the interpolation clock scaled with it, and seeking back needs a replay from the start with events muted; more than a setting.
+
+**Controls (CONTROLS > MORE 2, binds)**
+- **Per weapon (#40, #142, #143).** `wpn_sens_<n>` (x0.1 to x5, written only when not 1), `alt_toggle_weapons` (a bit per weapon; -1 = the old rule, the scopes only) and `swap_fire` (a bit per weapon: fire and alt-fire swapped while it's held).
+- **Mouse (#40).** `mouse_accel` 0 to 1 (faster moves turn further, at most x4) and `raw_input` (GLFW raw mouse motion where supported; off: the OS's pointer motion).
+- **Auto-hop (#146).** `auto_hop` off: holding jump jumps once; let go and press again.
+- **Console (#123).** `console_key` (` F1 F10 F11 INSERT HOME \ '; one no action is bound to) and `console_menus` (open it from the menus too).
+- **Ranked (#150).** `ranked_alt_toggle`: the alt-fire (scope) toggle allowed in ranked; the other control scripts stay off there.
+- **New binds (#235, #237).** VOL UP / VOL DOWN / MUTE, RECORD (start / stop a demo), JOIN TEAM, SPECTATE, appended to the action list so older binds keep their slots.
+- **Mode profiles (#126).** A controls profile can now hold `sensitivity`, `fov`, `zoom_fov_sniper` and `zoom_fov_rifle`, applied while that mode is played; EXPORT writes them. Crosshair per mode is not done: the crosshair is the other worker's tab.
+
+**Menus (PLAYER > MORE, #52, #107, #118, #131)**
+- `menu_theme` dark / high contrast (buttons outlined, brighter text), `menu_accent_on` + `menu_accent` (not the team colour), `text_bright`, `panel_dark`. No light theme: the menus are drawn over the 3D backdrop and every hint colour assumes a dark panel; it needs a design pass.
+- `menu_bg` clockwork / a map you pick (`menu_bg_map`) / a plain colour (`menu_bg_color`).
+- The data folder's path with OPEN (MOVE not done: moving a running game's data folder needs a restart and a copy step).
+- Mods: `use_overrides` (your own asset overrides on or off, applied at start), buttons for the overrides and mods folders, and how many overrides you have. No live reload: assets are loaded once at start.
+
+**HUD elements and preview (#21, #128, #26)**
+- **Objective, notices and scoreboard as HUD elements (#21).** `HUD_OBJECTIVE`, `HUD_NOTICES`, `HUD_SCOREBOARD` are appended (hud_11 to hud_13), so older configs' hud_<n> keep their meaning, and theme.cfg gets `objective`, `notices` and `scoreboard`. They keep their own drawing code (the stacked notice column and the scoreboard's table); `Renderer::uiTransform` moves and sizes what they drew, as a group, about their anchor (the objective line's top centre, the notices' top centre, the scoreboard's top centre), plus the theme's margin and opacity. At the defaults nothing runs (one compare). The objective's colour tints its line; NOTICES tints the notices and the round message; the scoreboard keeps its team colours, so it has no colour row. Hidden: the objective line, its bar and the bomb timer go; the scoreboard isn't drawn on its key. Ranked keeps the default HUD. They're on Settings > HUD's ELEMENT list; the on-screen editor doesn't list them yet (it needs each element's box, which a fixed-code draw doesn't give).
+- **Model preview (#128).** PLAYER shows the chosen model in your team colour under the outlines, turning slowly; drag to turn it. Its boxes (`playerModelParts`, or a box override) are projected flat into the 2D batch (back faces culled, far faces first, one light): no render target, no extra pass, about 150 quads, and only while the tab is open. A mesh override shows a line instead.
+- **Widget values (#26).** hud.cfg widgets can show `snaprate`, `accuracy`, `damage`, `streak`, `round`, `vspeed`, `height` and `weapon` (appended to the value list). Per-mode widgets already work through the HUD profiles (HUD > PER MODE).
+
+**Host and votes**
+- **Votes (#187).** callvote `restart`, `extend` (5 more minutes), `shuffle` (the humans dealt to the teams alternately, then a restart) and `kick <player>` (the same checks as moving one to spectator; the target can't vote). Text commands and vote text, so no protocol change.
+- **Host advanced (#188, #189).** `host_tick` and `host_snap` (cycles), `host_upload` (an upload cap), `host_auto_start`, `host_bot_skill` (balance bot skill): passed to the server config at host start. Tourney rotation not done: it needs the bracket to carry over between matches on the server.
+- **Vs bots (#192).** Up to 15 enemies and 15 teammates (was 7 / 7).
+- **Not done:** a mode rules tab from the param table (#190) and the custom mode editor's extras (#191: weapon set, movement, logic file, duplicate, share code). Both change the custom mode format and the host flow; they need q's call on the share code format.
+
+**Editor (#81, #82, #197, #198)**
+- `ed_fly_binds` (fly keys follow your movement binds), `ed_fast_mul` (was a fixed x3), `ed_fly_speed` and `ed_grid` remembered, `ed_grid_custom` (a grid step after the built-in ones, reached with [ and ]), `ed_rot_step` (Q / E on a spawn; 45 as before), `ed_light` (new lights take the last light's values). Saved when the editor closes or test play starts, never from the widgets themselves.
+- Test play: `ed_test_mode` (the map's or any mode), `ed_test_bots` (0 to 7), `ed_test_at_cam` (`practice setpos`, host alone, clamped to the map's range), `ed_test_no_warmup`.
+
+**Race (#182, #183)**
+- `race_split_vs` best run / best segments / last run and `race_split_time`; the race stats page's map picker and `race_date` format. No split against #1: the leaderboard has times, not splits.
+
+**Launcher (#83, #203)**
+- OPTIONS (in place of the changelog panel; the bottom row is now UNINSTALL | CHANNEL | OPTIONS): `auto_start` (start the game when it's up to date), `keep_open` (PLAY doesn't close the launcher), `args` (launch options, passed to the game on every platform) and `updates` automatic / ask first / at next launch (an update is held back, and the next launch installs it; never for a first install or a pinned version). Asset names unchanged. Install location picker (#84) not done: it needs native folder dialogs on three platforms and moving an install.
+
+**Skipped, with why**
+- #76 pause offline games when unfocused: the server's pause resets the match state and the snapshot stream; needs a server-side pause first.
+- #133 practice speed: needs a timescale through prediction and the server tick.
+- #170 UTF-8 chat: the font atlas is 8-bit and the server sanitises to ASCII.
+- #184 leaderboard paging / around me: needs new Worker API endpoints.
+- #238 instant replay buffer: needs an always-on in-memory recorder; left for a performance review.
+- #127 player accent colour: other players would need it, which is a protocol change.
+- #162 right-click reset on every control: sliders and colour pickers already do; toggles and cycles have no default argument, so it means changing every call site.
+- #164 keyboard menu navigation: needs a focus order for every widget on every page.
+
 ## Maps: q's Surfy and Cobblestone ship (owner, 2026-10-30: "make sure all future updates get cobblestone map and surfy map, use latest version; also surfy map is default surf gamemode map")
 
 - **Shipped as hand-made maps.** `maps/surfy.qmap` (58 brushes, `for surf`, saved 2026-10-29 18:46) and `maps/cobblestone.qmap` (885 brushes, no `for` line, saved 2026-10-29 15:59) are the newest copies from q's maps folder, byte for byte (sha256 20620ee2... and 31fbb542...). `.gitignore` un-ignores both, so CMake embeds and copies them into every build like the generated maps. As `handmade` maps they run every map check but never fail `quark_tests`.
