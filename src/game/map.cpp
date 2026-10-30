@@ -379,8 +379,11 @@ static void upgradeMap9to10(std::vector<std::string>&) {}
 // 10 -> 11: mode spawn sets ("spawn koth-a ...": new spawn team words, which an older reader refuses; a format 10 map
 // has none, nothing to change)
 static void upgradeMap10to11(std::vector<std::string>&) {}
+// 11 -> 12: a teleporter's speed ("tp <link> <face> walk", which an older reader refuses; a format 11 teleporter has
+// none and carries all speed, as it still does without the word: nothing to change)
+static void upgradeMap11to12(std::vector<std::string>&) {}
 
-static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11};
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2, upgradeMap2to3, upgradeMap3to4, upgradeMap4to5, upgradeMap5to6, upgradeMap6to7, upgradeMap7to8, upgradeMap8to9, upgradeMap9to10, upgradeMap10to11, upgradeMap11to12};
 static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
               "a map format change needs its converter step in kMapUpgrades (owner rule)");
 
@@ -1006,7 +1009,7 @@ std::string Map::serialize() const {
     auto tp = [&](const Brush& br) {   // (a teleporter: its link and face at the end of its line)
         if (br.material != kMatTeleport || o.empty() || o.back() != '\n') return;
         o.pop_back();
-        o += " tp " + std::to_string((int)br.link) + " " + std::to_string((int)br.exitFace) + "\n";
+        o += " tp " + std::to_string((int)br.link) + " " + std::to_string((int)br.exitFace) + tpSpeedText(br) + "\n";
     };
     for (auto& br : brushes) {
         if (br.generated) continue;
@@ -1086,7 +1089,7 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
         case 'b': {   // (a wedge or corner: its shape and dir + 4 * up after the box, "w 2" / "c 4")
             const Brush& br = m.brushes[i];
             snprintf(t, sizeof t, "b %s %d %d %s", verb, i, br.material, fmtBox(br.box).c_str());
-            const std::string tp = br.material == kMatTeleport ? " p " + std::to_string((int)br.link) + " " + std::to_string((int)br.exitFace) : "";
+            const std::string tp = br.material == kMatTeleport ? " p " + std::to_string((int)br.link) + " " + std::to_string((int)br.exitFace) + tpSpeedText(br) : "";
             if (br.shape == BRUSH_CUT) return std::string(t) + " x" + cutText(br) + tp;
             if (br.shape != BRUSH_BOX) { const size_t l = strlen(t); snprintf(t + l, sizeof t - l, " %c %d", slopeLetter(br.shape), (int)br.dir + 4 * br.up); }
             return std::string(t) + tp;
@@ -1148,7 +1151,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
     };
     // after a brush's or a group part's box: nothing (a box), or "w <dir + 4 * up>" / "c <dir + 4 * up>" (a wedge /
     // corner, map format 5)
-    auto readShape = [&](Brush& b) {   // (then "p <link> <face>": a teleporter's, map format 10)
+    auto readShape = [&](Brush& b) {   // (then "p <link> <face> [walk]": a teleporter's, map format 10 / 12)
         std::string shape;
         if (!(in >> shape)) return true;
         if (shape == "p") return readTp(in, b);
