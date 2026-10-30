@@ -102,6 +102,8 @@ public:
     void setLatency(int l) { if (latency_.exchange(l) != l) reopen_ = true; }
     // CUE SOUNDS / ANNOUNCER CALLS: these ids never start (a bit per id below 64)
     void setMuted(uint64_t mask) { muted_ = mask; }
+    // ANNOUNCER DUCKING (1.19.4 batch 4): while an announcer line plays, every sound effect x (1 - d)
+    void setDuck(float d) { duck_ = d; }
     // SOUND OCCLUSION: from (the listener) to (the sound) -> 0 clear .. 1 behind a wall, asked once as a 3D sound
     // starts (the game thread); empty: off
     std::function<float(const Vec3& from, const Vec3& to)> occluder;
@@ -225,6 +227,7 @@ private:
     std::atomic<bool> quipsOn_{true};
     std::atomic<int> channels_{0}, dynamics_{1}, latency_{1};
     std::atomic<uint64_t> muted_{0};
+    std::atomic<float> duck_{0.0f};
     float env_ = 0;   // (the mixer's: NIGHT's level follower)
     std::atomic<bool> running_{false}, quit_{false};
     std::atomic<bool> exclusive_{false}, reopen_{false};

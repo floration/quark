@@ -300,7 +300,7 @@ static void checkSpawnSanity(Analysis& a, Check& facing, Check& apart, Check& si
         float t = m.raycast(eye, angleForward(sp.yaw, 0), 2.0f);
         if (t >= 0) facing.fail(fmt("spawn %.1f %.1f %.1f faces a wall %.1f m away", sp.pos.x, sp.pos.y, sp.pos.z, t), &sp.pos);
     }
-    auto group = [](int t) { return t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };
+    auto group = [](int t) { return isModeSpawn(t) ? 4 + spawnSetMode(t) : t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };   // (a mode set: its own group)
     for (size_t i = 0; i < m.spawns.size(); i++)
         for (size_t j = i + 1; j < m.spawns.size(); j++) {
             auto &p = m.spawns[i], &q = m.spawns[j];
@@ -387,7 +387,7 @@ static void checkRankedMirror(Analysis& a, Check& c) {
         return false;
     };
     for (auto& sp : m.spawns) {
-        int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : sp.team;
+        int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : isModeSpawn(sp.team) && spawnSide(sp.team) != SPAWN_ANY ? modeSpawn(spawnSetMode(sp.team), 1 - spawnSide(sp.team)) : sp.team;
         bool found = false;
         for (auto& o : m.spawns)
             if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;

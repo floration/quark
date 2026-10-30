@@ -192,7 +192,7 @@ slot objective bomb:
   if bombDropped and attacker: goto bomb.pos
   if siteCount == 0: fallback
   if attacker and bombCarried and not carrierIsMe and carrierAlive: goto carrier.pos # escort
-  goto site(attacker ? 0 : teamRank) # the carrier to the first site; defenders guard one each, dealt out by rank
+  goto site(attacker ? roundNo + teamRank : teamRank) # the carrier to a site turned by the round; defenders guard one each, dealt out by rank
 
 slot objective hide:
   if not navReady: fallback

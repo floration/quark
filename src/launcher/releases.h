@@ -84,10 +84,16 @@ std::string asciiText(const std::string& utf8);
 // by the player, so it's installed whenever it differs. Nothing installed yet: always.
 bool shouldAutoInstall(const std::string& target, const std::string& installed, bool pinned);
 
-// launcher.cfg: "channel=testing\npin=latest\n". Older launchers wrote just "pin=<version|latest>".
+// launcher.cfg: "channel=testing\npin=latest\n". Older launchers wrote just "pin=<version|latest>" (and ignore the
+// lines below, added in 1.19.4: OPTIONS).
 struct Config {
     Channel channel = Channel::Production;
     std::string pin = "latest";
+    bool autoStart = false;   // AUTO-START: the game starts once the launcher is up to date (as --play)
+    bool keepOpen = false;    // KEEP OPEN: the launcher stays open after PLAY
+    std::string args;         // LAUNCH OPTIONS: passed to the game (e.g. --novsync), split at spaces
+    int updates = 0;          // UPDATES: 0 automatic, 1 ask (INSTALL), 2 at the next launch
+    std::string nextVersion;  // (UPDATES: AT NEXT LAUNCH: the version seen, installed when the launcher next starts)
     bool pinned() const { return !pin.empty() && pin != "latest"; }
 };
 Config parseConfig(const std::string& text);

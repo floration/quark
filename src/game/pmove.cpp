@@ -473,7 +473,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
         const float range = kGrappleRange * mt.m[MV_HOOK_RANGE];
         int wallMat = -1;
-        float t = map.raycast(eye, dir, range, nullptr, &wallMat);
+        float t = map.raycast(eye, dir, range, nullptr, &wallMat, true);   // (clip refuses it, owner 2026-10-30: it hits it and lets go)
         int caught = -1, rocket = -1;   // a player or a rocket in front of the wall (or in the open) catches it instead
         if (hp && (hp->n > 0 || hp->nr > 0)) {
             float best = t >= 0 ? t : range;
@@ -518,7 +518,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             if (pane >= 0 && s.glassBrush < 0) { s.glassBrush = pane; s.glassHow = GLASS_HOOK_BACK; s.glassAt = eye + dir * t; s.glassDir = dir * -1.0f; }
             s.flags |= MF_HOOKHELD;
             grabbed = true;
-        } else if (t >= 0 && wallMat != kMatNoGrapple) {   // (nograpple: the hook hits it and lets go)
+        } else if (t >= 0 && wallMat != kMatNoGrapple && wallMat != 9) {   // (nograpple and clip: the hook hits it and lets go)
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
@@ -834,7 +834,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             const Vec3 at = c - off;
             if (!map.boxSolid(playerBox(at, crouched, scale))) {
                 s.pos = at;
-                s.vel = n * length(s.vel);
+                s.vel = n * std::max(length(s.vel), length(before.vel));   // (a wall teleporter is solid: the slide clipped
+                                                                             // the speed into it this step, so keep the speed you came in with)
                 s.flags &= ~MF_ONGROUND;
                 s.dashTimer = 0;
             }

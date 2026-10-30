@@ -31,7 +31,7 @@ void buildWalkGrid(WalkGrid& w, const Map& m, Json* laps) {
     auto col = [&](int i, int k) { return k * nx + i; };
     // 1. raster (as the header)
     auto raster = [&](float half, std::vector<uint32_t>& outCol, std::vector<std::pair<float, float>>& out,
-                      std::vector<uint32_t>* rawCol, std::vector<float>* rawTops) {
+                      std::vector<uint32_t>* rawCol, std::vector<W::RawSpan>* raws, std::vector<float>* outSlack) {
         auto range = [&](float lo, float hi, float o, int n, int& a, int& b) {
             a = std::max(0, (int)std::floor((lo - half - o) / kCol - 0.5f));
             b = std::min(n - 1, (int)std::ceil((hi + half - o) / kCol - 0.5f));
@@ -39,43 +39,44 @@ void buildWalkGrid(WalkGrid& w, const Map& m, Json* laps) {
             while (b >= a && o + (b + 0.5f) * kCol >= hi + half) b--;
         };
         std::vector<uint32_t> count(C + 1, 0), fill;
-        std::vector<std::pair<float, float>> raw;
+        std::vector<W::RawSpan> raw;
         for (int pass = 0; pass < 2; pass++) {
             if (pass == 1) {
                 for (size_t c = 0; c < C; c++) count[c + 1] += count[c];
-                raw.assign(count[C], {0, 0});
+                raw.assign(count[C], {0, 0, 0});
                 fill.assign(count.begin(), count.end() - 1);
             }
             for (auto& b : m.brushes) {
                 if (!Map::gridSolid(b)) continue;
+                const bool ramp = W::walkableSlope(b);
+                const float steep = ramp ? slopeSteepness(b) : 0;
                 int i0, i1, k0, k1;
                 range(b.box.mn.x, b.box.mx.x, x0, nx, i0, i1);
                 range(b.box.mn.z, b.box.mx.z, z0, nz, k0, k1);
                 for (int k = k0; k <= k1; k++)
                     for (int i = i0; i <= i1; i++) {
+                        W::RawSpan r = {b.box.mn.y, b.box.mx.y, 0};
+                        if (ramp) { Vec3 cc = w.colCentre(i, k); if (!W::columnSpan(b, steep, cc.x, cc.z, half, r.lo, r.hi, r.slack)) continue; }
                         size_t c = (size_t)col(i, k);
                         if (pass == 0) count[c + 1]++;
-                        else raw[fill[c]++] = {b.box.mn.y, b.box.mx.y};
+                        else raw[fill[c]++] = r;
                     }
             }
         }
         // (sorting and merging each column: per column, so on every core; the merged lists joined in order after)
-        if (rawTops) rawTops->resize(raw.size());
         std::vector<std::vector<std::pair<float, float>>> rowOut(nz);
+        std::vector<std::vector<float>> rowSlack(nz);
         std::vector<std::vector<uint32_t>> rowCount(nz);   // merged spans per column of the row
         parallelFor(nz, [&](int k) {
             auto& ro = rowOut[k];
+            auto* rs = outSlack ? &rowSlack[k] : nullptr;
             auto& rc = rowCount[k];
             rc.assign(nx, 0);
             for (int i = 0; i < nx; i++) {
                 size_t c = (size_t)col(i, k);
                 size_t startSz = ro.size();
                 std::sort(raw.begin() + count[c], raw.begin() + count[c + 1]);
-                for (uint32_t t = count[c]; t < count[c + 1]; t++) {
-                    if (rawTops) (*rawTops)[t] = raw[t].second;
-                    if (ro.size() > startSz && raw[t].first <= ro.back().second) ro.back().second = std::max(ro.back().second, raw[t].second);
-                    else ro.push_back(raw[t]);
-                }
+                for (uint32_t t = count[c]; t < count[c + 1]; t++) W::mergeSpan(ro, rs, startSz, raw[t]);
                 rc[i] = (uint32_t)(ro.size() - startSz);
             }
         }, 2);
@@ -84,19 +85,23 @@ void buildWalkGrid(WalkGrid& w, const Map& m, Json* laps) {
         size_t total = 0;
         for (auto& r : rowOut) total += r.size();
         out.reserve(total);
+        if (outSlack) { outSlack->clear(); outSlack->reserve(total); }
         for (int k = 0; k < nz; k++) {
             uint32_t base = (uint32_t)out.size();
             for (int i = 0; i < nx; i++) { outCol[col(i, k)] = base; base += rowCount[k][i]; }
             out.insert(out.end(), rowOut[k].begin(), rowOut[k].end());
+            if (outSlack) outSlack->insert(outSlack->end(), rowSlack[k].begin(), rowSlack[k].end());
         }
         outCol[C] = (uint32_t)out.size();
         if (rawCol) *rawCol = std::move(count);
+        if (raws) *raws = std::move(raw);
     };
     std::vector<uint32_t> count, coreCol;
-    std::vector<float> tops;
+    std::vector<W::RawSpan> tops;
+    std::vector<float> slack;
     std::vector<std::pair<float, float>> core;
-    raster(kHalf, w.colSpan, w.spans, &count, &tops);
-    raster(kHalf - 0.12f, coreCol, core, nullptr, nullptr);
+    raster(kHalf, w.colSpan, w.spans, &count, &tops, &slack);
+    raster(kHalf - 0.12f, coreCol, core, nullptr, nullptr, nullptr);
     lap("raster");
     auto coreClear = [&](int c, float y0, float y1) {
         for (uint32_t s = coreCol[c]; s < coreCol[c + 1]; s++) {
@@ -121,12 +126,12 @@ void buildWalkGrid(WalkGrid& w, const Map& m, Json* laps) {
                 if (room < kCrouch || y < kill + 0.05f) continue;
                 Vec3 p = w.colCentre(i, k);
                 p.y = y;
-                if (!W::supported(m, p) || m.inLava(playerBox(p, room < kHull))) continue;
+                if (!W::supported(m, p, slack[s]) || m.inLava(playerBox(p, room < kHull))) continue;
                 nodes.push_back({p, room});
             }
             for (uint32_t t = count[c]; t < count[c + 1]; t++) {
-                float y = tops[t];
-                if (y < kill + 0.05f || (t > count[c] && tops[t - 1] == y)) continue;
+                float y = tops[t].hi;
+                if (y < kill + 0.05f || (t > count[c] && tops[t - 1].hi == y)) continue;
                 bool have = false;
                 for (size_t a = first; a < nodes.size() && !have; a++) have = std::fabs(nodes[a].p.y - y) < 0.06f;
                 if (have || !coreClear(c, y, y + kCrouch)) continue;
@@ -139,7 +144,7 @@ void buildWalkGrid(WalkGrid& w, const Map& m, Json* laps) {
                     else { sx = sh[(q - 8) % 4]; sz = sh[(q - 8) / 4]; }
                     Vec3 p = {base.x + sx, y, base.z + sz};
                     if (m.boxSolid(playerBox(p, true))) continue;
-                    if (!W::supported(m, p)) continue;
+                    if (!W::supported(m, p, tops[t].slack)) continue;
                     float room = m.boxSolid(playerBox(p, false)) ? kCrouch : kHull;
                     if (m.inLava(playerBox(p, room < kHull))) continue;
                     nodes.push_back({p, room, true});

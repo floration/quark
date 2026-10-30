@@ -658,6 +658,15 @@ static void testGrappleAgainstWall() {
         CHECK(q.pos.z > -1.0f + kPlayerHalfWidth - 0.01f);
         CHECK(n.raycast(Vec3(0, 1, 0), Vec3(0, 0, -1), 50) > 0.9f);   // shots and sight stop at it
     }
+    {   // clip refuses it too (owner, 2026-10-30): a clip wall in front of a grabbable one, the hook hits the clip and lets go
+        Map n;
+        CHECK(n.parse("box -10 -1 -10 10 0 10\nclip -10 0 -1.5 10 4 -1\nbox -10 0 -4 10 4 -3.5\nspawn any 0 0 0\n", &err) && n.brushes[1].material == 9);
+        MoveState q; q.flags = MF_ONGROUND;
+        int g = 0;
+        for (int t = 0; t < 1500; t++) { q.events = 0; pmove(q, c, n); g += (q.events & ME_HOOK) != 0; }
+        CHECK(g == 0 && !(q.flags & MF_HOOKED));
+        CHECK(n.raycast(Vec3(0, 1, 0), Vec3(0, 0, -1), 50) > 2.9f);   // (shots still go through it)
+    }
 }
 
 // Liquids (472-496, owner 2026-10-29): not solid; each moves you its own way in pmove's 1 ms steps (kLiquids), damage
@@ -730,6 +739,20 @@ static void testFeatureBlocks() {
         for (int t = 0; t < 400 && s.pos.x < 0; t += 8) pmove(s, c, m);
         printf("  teleporter: at %.2f %.2f %.2f, vel y %.2f\n", s.pos.x, s.pos.y, s.pos.z, s.vel.y);
         CHECK(s.pos.x > 40 && s.pos.x < 42 && s.pos.y >= 1.0f);
+    }
+    {   // into its wall at 60 m/s (in the air): out at 60, not the speed the slide left after clipping it (owner, 2026-10-30)
+        int kept = 0;
+        float worst = 1e9f;
+        for (int k = 0; k < 8; k++) {   // (from 8 starting points: whether a step ends just short of the wall or in it)
+            MoveState s; s.pos = {-32.0f + k * 0.0075f, 0.5f, 31}; s.vel = {60, 0, 0};
+            UserCmd c; c.msec = 1;
+            bool out = false;
+            for (int t = 0; t < 60 && !out; t++) { pmove(s, c, m); out = s.pos.x > 30; }
+            kept += out && length(s.vel) > 59.0f;
+            worst = std::min(worst, out ? length(s.vel) : 0.0f);
+        }
+        printf("  teleporter at 60 m/s: %d of 8 kept their speed (slowest %.2f)\n", kept, worst);
+        CHECK(kept == 8);
     }
     {   // its link and face in the file, and in an edit
         Map r;
@@ -1769,7 +1792,7 @@ static void testMaps() {
         };
         int odd = 0;
         for (auto& sp : m.spawns) {
-            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : sp.team;
+            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : isModeSpawn(sp.team) && spawnSide(sp.team) != SPAWN_ANY ? modeSpawn(spawnSetMode(sp.team), 1 - spawnSide(sp.team)) : sp.team;
             bool found = false;
             for (auto& o : m.spawns)
                 if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
@@ -1884,7 +1907,7 @@ static void testSpawnSanity() {
         // (spawns used together: a mode's two teams; the free-for-all pool; the race grid; a staged map's attackers and
         // defenders, but never one side's stages with each other. Lodestone's race grid may share a pad with a multi
         // point stage: no mode uses both.)
-        auto group = [](int t) { return t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };
+        auto group = [](int t) { return isModeSpawn(t) ? 4 + spawnSetMode(t) : t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };   // (a mode set: its own group)
         for (size_t i = 0; i < m.spawns.size(); i++)
             for (size_t j = i + 1; j < m.spawns.size(); j++) {
                 auto &p = m.spawns[i], &q = m.spawns[j];
@@ -1923,7 +1946,7 @@ static void testSpawnSanity() {
 
 // The collision-checked walk (WalkGrid, REVIEW MAP-3) on small maps: what a player can and can't get past.
 static void testWalkGrid() {
-    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava\n");
+    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava, ramps\n");
     const std::string F = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";   // a 40 m floor
     auto reaches = [](const std::string& text, Vec3 a, Vec3 b) {
         Map m;
@@ -1962,6 +1985,19 @@ static void testWalkGrid() {
     CHECK(reaches(slot(1.2f), W, E) == 1 && reaches(slot(1.2f) + "clip -0.2 0 3.07 0.2 4 4.27\n", W, E) == 0);
     // lava across the floor: 1 m is jumped over, 3 m isn't
     CHECK(reaches(F + "lava -0.5 0 -20 0.5 0.2 20\n", W, E) == 1 && reaches(F + "lava -1.5 0 -20 1.5 0.2 20\n", W, E) == 0);
+    // ramps up onto a 4 m platform (too high to jump): a wedge, a cut box and a corner up to 45 degrees are walked up
+    // (their surface is the floor, not their box); a 63 degree wedge is a wall; the way down a gentle one walks too
+    const std::string deck = "box 8 0 -3 14 4 3\n";
+    const Vec3 top(11, 4, 0);
+    CHECK(reaches(F + deck, W, top) == 0);
+    CHECK(reaches(F + deck + "wedge 0 0 0 0 -3 8 4 3\n", W, top) == 1 && reaches(F + deck + "wedge 0 0 0 0 -3 8 4 3\n", top, W) == 1);
+    CHECK(reaches(F + deck + "wedge 0 0 4 0 -3 8 4 3\n", W, top) == 1);                    // (45 degrees: the steepest floor)
+    CHECK(reaches(F + deck + "wedge 0 0 6 0 -3 8 4 3\n", W, top) == 0);                    // (63 degrees)
+    CHECK(reaches(F + deck + "cut 0 1 -1 1 0 0 0 0 -3 8 4 3\n", W, top) == 1);            // (y <= x over its box: 27 degrees)
+    CHECK(reaches(F + deck + "wedge 0 4 0 0 -3 8 4 3\n", W, top) == 0);                    // (hung from the ceiling: no floor)
+    // a 4 m wedge rising along z beside the deck, then a corner ramp (high at +x+z) into its corner
+    CHECK(reaches(F + "box 8 0 3 14 4 9\nwedge 0 2 8 0 -5 14 4 3\n", W, {11, 4, 6}) == 1);
+    CHECK(reaches(F + deck + "corner 0 2 0 0 -3 8 4 3\n", W, top) == 1);
 }
 
 // Every map: loads, supports the mode it was built for, no spawn inside a wall, players can get from every spawn to
@@ -2260,6 +2296,64 @@ static void testMapConverter() {
         CHECK(r.converted == 1 && rd(d / "old" / "v1" / "old-1.qmap") == v1);
         CHECK(upgradeMapDir((d / "nowhere").string()).log.empty());
         fs::remove_all(d, ec);
+    }
+}
+
+// Mode spawn sets (map format 11): "spawn koth-a ..." spawns only that mode uses (Mine's hill apart from its bomb
+// sides); the mode starts on them when the map has them, every other mode never does; the walk check routes them.
+static void testModeSpawnSets() {
+    printf("mode spawn sets: koth-a / koth-b, read and written, used only by their mode, walked\n");
+    const std::string base = "box -40 -1 -40 40 0 40\nhill -2 0 -2 2 3 2\nsite 20 0 -2 24 3 2\n"
+                             "spawn a -30 0 0 90\nspawn b 30 0 0 -90\n";
+    const std::string sets = "spawn koth-a -10 0 10 0\nspawn koth-b 10 0 -10 180\n";
+    Map m;
+    std::string err;
+    CHECK(m.parse(base + sets, &err) && m.spawns.size() == 4);
+    if (m.spawns.size() != 4) { printf("  %s\n", err.c_str()); return; }
+    CHECK(m.spawns[2].team == modeSpawn(MODE_KOTH, SPAWN_A) && m.spawns[3].team == modeSpawn(MODE_KOTH, SPAWN_B));
+    CHECK(isModeSpawn(m.spawns[2].team) && !isStagedSpawn(m.spawns[2].team) && spawnSide(m.spawns[3].team) == SPAWN_B && spawnSetMode(m.spawns[3].team) == MODE_KOTH);
+    const std::string text = m.serialize();
+    CHECK(text.find("spawn koth-a -10 0 10 0\n") != std::string::npos && text.find("spawn koth-b 10 0 -10 180\n") != std::string::npos);
+    { Map r; CHECK(r.parse(text) && r.serialize() == text); }
+    // koth starts on its own set; bomb and vs on the map's a / b; each pool holds only its own
+    CHECK(modeSpawnType(m, MODE_KOTH, TEAM_A, TEAM_A, false) == modeSpawn(MODE_KOTH, SPAWN_A));
+    CHECK(modeSpawnType(m, MODE_KOTH, TEAM_B, TEAM_A, false) == modeSpawn(MODE_KOTH, SPAWN_B));
+    CHECK(modeSpawnType(m, MODE_BOMB, TEAM_A, TEAM_A, false) == SPAWN_A && modeSpawnType(m, MODE_VS, TEAM_B, TEAM_A, false) == SPAWN_B);
+    { auto p = spawnPool(m, modeSpawnType(m, MODE_KOTH, TEAM_A, TEAM_A, false), 0); CHECK(p.size() == 1 && p[0] == &m.spawns[2]); }
+    { auto p = spawnPool(m, modeSpawnType(m, MODE_BOMB, TEAM_B, TEAM_A, false), 0); CHECK(p.size() == 1 && p[0] == &m.spawns[1]); }
+    // a map without the set: koth falls back to a / b (and one side's set alone: the other side falls back)
+    { Map n; CHECK(n.parse(base) && modeSpawnType(n, MODE_KOTH, TEAM_A, TEAM_A, false) == SPAWN_A); }
+    { Map n; CHECK(n.parse(base + "spawn koth-a -10 0 10 0\n") && modeSpawnType(n, MODE_KOTH, TEAM_A, TEAM_A, false) == modeSpawn(MODE_KOTH, SPAWN_A) &&
+                   modeSpawnType(n, MODE_KOTH, TEAM_B, TEAM_A, false) == SPAWN_B); }
+    // a mode's set makes the mode playable on its own: koth on a map with only koth spawns, but not vs
+    { Map n; CHECK(n.parse("box -40 -1 -40 40 0 40\nhill -2 0 -2 2 3 2\n" + sets) && n.canSupportMode(MODE_KOTH) && !n.canSupportMode(MODE_VS)); }
+    { Map n; CHECK(n.parse(base + "spawn ffa-any 5 0 5 0\n") && modeSpawnType(n, MODE_FFA, TEAM_A, TEAM_A, false) == modeSpawn(MODE_FFA, SPAWN_ANY)); }
+    // refused: an unknown mode or side, upper case, race and multi point (they have their own spawns)
+    for (const char* bad : {"koth-c", "kingofthehill-a", "KOTH-a", "race-a", "points-a", "koth-", "-a", "koth-race"}) {
+        Map n;
+        CHECK(!n.parse(base + "spawn " + bad + " 0 0 0\n"));
+    }
+    CHECK(spawnTeamFromWord("koth-b") == modeSpawn(MODE_KOTH, SPAWN_B) && spawnTeamWord(modeSpawn(MODE_BOMB, SPAWN_ANY)) == "bomb-any" && spawnTeamWord(stagedSpawn(2, true)) == "def2");
+    // an editor edit can set one (and only a valid one)
+    { Map n; CHECK(n.parse(base)); std::string op = "s set 0 " + std::to_string(modeSpawn(MODE_KOTH, SPAWN_A)) + " -30 0 0 90";
+      CHECK(applyMapEdit(n, op) && n.spawns[0].team == modeSpawn(MODE_KOTH, SPAWN_A));
+      CHECK(!applyMapEdit(n, "s set 0 " + std::to_string(modeSpawn(MODE_RACE, SPAWN_A)) + " -30 0 0 90") && !applyMapEdit(n, "s set 0 " + std::to_string(kMaxSpawnTeam + 1) + " -30 0 0 90")); }
+    // the walk check routes koth from the koth set: sealed in a box, the hill is out of reach (and only koth says so)
+    {
+        Map n;
+        CHECK(n.parse(base + "spawn koth-a -10 0 10 0\nspawn koth-b 10 0 -10 180\nbox -12 0 8 -8 4 8.4\nbox -12 0 11.6 -8 4 12\nbox -12 0 8.4 -11.6 4 11.6\nbox -8.4 0 8.4 -8 4 11.6\n"));
+        WalkGrid w;
+        w.build(n);
+        std::vector<std::string> miss = walkRoutesMissing(n, w);
+        bool hill = false, other = false;
+        for (auto& l : miss) (l.find("spawn -10.0 0.0 10.0 can't reach hill") != std::string::npos ? hill : other) = true;
+        if (!hill || other) for (auto& l : miss) printf("    %s\n", l.c_str());
+        CHECK(hill && !other);
+        Map open;
+        CHECK(open.parse(base + sets));
+        WalkGrid w2;
+        w2.build(open);
+        CHECK(walkRoutesMissing(open, w2).empty());
     }
 }
 
@@ -6325,7 +6419,7 @@ static void testHandshake(uint16_t port) {
 // leaving and coming back either), and each caller gets one vote per player per map. Kicking stays admin-only: a
 // player's "kick" does nothing and there's no kick vote.
 static void testSpecVote(uint16_t port) {
-    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick never votable\n");
+    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick votes (1.19.4)\n");
     Server s;
     s.voteCooldown_ = 0;   // (a failed vote's cooldown isn't what this checks)
     ServerConfig cfg;
@@ -6349,8 +6443,7 @@ static void testSpecVote(uint16_t port) {
     a.sendCommand("callvote spec anna");                         // not yourself
     a.sendCommand("callvote spec " + std::to_string(bot));       // not a bot
     a.sendCommand("callvote spec nobody");
-    a.sendCommand("kick carl");                                  // a player can't kick...
-    a.sendCommand("callvote kick carl");                         // ...or vote to
+    a.sendCommand("kick carl");                                  // a player can't kick (callvote kick: tested at the end)
     pump(s, cls, 0.4, idle);
     CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ic].connected);
     a.sendCommand("callvote spec carl");
@@ -6400,6 +6493,33 @@ static void testSpecVote(uint16_t port) {
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
     CHECK(s.players_[ia].connected && s.players_[ib].connected);
+    c2.sendCommand("vote no");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // 1.19.4: a vote to kick (not a bot, not yourself; the player it's about has no say), and 5 more minutes
+    a.sendCommand("callvote kick " + std::to_string(bot));
+    a.sendCommand("callvote kick anna");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    a.sendCommand("callvote kick carl");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_KICK && s.vote_.arg == ic2 && s.ms_.voteVoters == 2);
+    c2.sendCommand("vote no");
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && !s.players_[ic2].connected);
+    cls = {&a, &b};
+    const float before = s.ms_.timeLeft;
+    const bool timed = s.ms_.phase == PHASE_LIVE && s.phaseEnd_ > 0;
+    a.sendCommand("callvote extend");
+    pump(s, cls, 0.3, idle);
+    if (!timed) CHECK(s.vote_.kind == Server::VOTE_NONE);   // (only a timed live round)
+    else {
+        CHECK(s.vote_.kind == Server::VOTE_EXTEND);
+        b.sendCommand("vote yes");
+        pump(s, cls, 0.4, idle);
+        CHECK(s.vote_.kind == Server::VOTE_NONE && s.ms_.timeLeft > before + 250);
+    }
     s.stop();
 }
 
@@ -8810,18 +8930,88 @@ static void playtestMaps(uint16_t port, double seconds) {
 }
 
 // Bots keep off the edges (they used to fall a lot here: grapple pulls over the moat, bunny hops and fight jumps
-// off the island, knockback at the rim): a minute and a half of experts on Dojo (a platform in a lava moat) and of
-// expert tag runners on Foundry (lava trenches), with a couple of falls allowed for blasts and laser pushes.
+// off the island, knockback at the rim): a minute and a half of experts in 1v1 on a platform in a lava moat (the old
+// Dojo's layout, built here: the shipped Dojo is a hall now, with no lava) and of expert tag runners on Foundry (lava
+// trenches), with a couple of falls allowed for blasts and laser pushes.
+static std::string lavaMoatMap() {
+    // a 24 m platform, a 4.5 m lava moat round it (its bed 1.4 m down), a ring path at the platform's height outside
+    // (a jump or a hook across), walls round it all; one spawn each side of the platform, facing in
+    return "version " + std::to_string(kMapFormatVersion) + "\ntitle Lava moat\nfor 1v1\n"
+           "box -12 -1.4 -12 12 0 12\n"                                                   // the platform
+           "box -24 -3 -24 24 -1.4 24\n"                                                   // the moat's bed
+           "lava -16.5 -1.4 -16.5 16.5 -1.2 16.5\n"
+           "box -24 -1.4 -24 24 0 -16.5\nbox -24 -1.4 16.5 24 0 24\nbox -24 -1.4 -16.5 -16.5 0 16.5\nbox 16.5 -1.4 -16.5 24 0 16.5\n"   // the ring
+           "box -25 -3 -25 25 8 -24\nbox -25 -3 24 25 8 25\nbox -25 -3 -24 -24 8 24\nbox 24 -3 -24 25 8 24\n"                       // walls
+           "clip -25 8 -25 25 9 25\n"
+           "spawn a -8 0 0 90\nspawn b 8 0 0 -90\nlight 0 6 0 30 1\n";
+}
 static void testBotFalls(uint16_t port) {
     printf("bots keep off the edges\n");
-    const std::pair<const char*, int> cases[] = {{"dojo", MODE_ARENA}, {"foundry", MODE_TAG}};
+    const std::string moat = "zz_lavamoat", path = userMapsDir() + "/" + moat + ".qmap";
+    CHECK(saveMapFile(path, lavaMoatMap()));
+    {   // (the map is what it says: lava all round the platform, nothing else between it and the ring)
+        Map m;
+        std::string err;
+        CHECK(m.parse(lavaMoatMap(), &err) && m.lava.size() == 1 && m.supportsMode(MODE_ARENA));
+        if (!err.empty()) printf("  %s\n", err.c_str());
+        for (const Vec3& p : {Vec3(0, -1.4f, 14), Vec3(14, -1.4f, 0), Vec3(-14, -1.4f, -14)}) CHECK(m.inLava(playerBox(p, false)));
+        CHECK(!m.inLava(playerBox({0, 0, 0}, false)) && !m.inLava(playerBox({20, 0, 20}, false)));
+    }
+    const std::pair<std::string, int> cases[] = {{moat, MODE_ARENA}, {"foundry", MODE_TAG}};
     for (auto& [map, mode] : cases) {
         BotMatch r;
         bool ok = playBots(map, mode, BOT_EXPERT, port, 90, false, r);
         CHECK(ok);
-        printf("  %s: %d falls (%d pushed), %d self-kills, %d deaths\n", map, r.falls, r.pushed, r.self, r.deaths);
+        printf("  %s: %d falls (%d pushed), %d self-kills, %d deaths\n", map == moat ? "lava moat" : map.c_str(), r.falls, r.pushed, r.self, r.deaths);
         CHECK(r.falls <= 2 && r.self <= 1);
     }
+    std::remove(path.c_str());
+}
+
+// Bomb: the attacking bots go for every site in turn (site round + rank: they used to take the first one every round,
+// and Datacenter's B, 8 m further, never saw them). Rounds of expert bots on Depot (4 v 4, two sites): which site each
+// plant was in; both get some. The defenders guard one each (dealt out by rank), so a site isn't left open either.
+static void testBombSites(uint16_t port) {
+    printf("bomb: bots plant at every site, round by round\n");
+    SimClock clock;
+    qsrand(0xB0B5u);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.autoStart = true;
+    s.setLog([](const std::string&) {});
+    bool started = false;
+    for (int k = 0; k < 20 && !started; k++) { started = s.start(cfg); if (!started) cfg.port = ++port; }
+    CHECK(started);
+    if (!started) return;
+    for (int i = 0; i < 4; i++) { s.addBot(TEAM_A, BOT_EXPERT); s.addBot(TEAM_B, BOT_EXPERT); }
+    simNavReady(s);
+    simRun(s, 1.0);
+    s.command("forcestart");
+    const size_t n = s.map_.bombSites.size();
+    std::vector<int> plants(n, 0);
+    int lastRound = -1, rounds = 0, defended[2] = {0, 0};
+    bool was = false;
+    simRun(s, 600, [&] {
+        const ModeState& m = s.ms_;
+        if (m.round != lastRound && m.phase == PHASE_LIVE) {   // (each round once it's live: where the defenders are headed)
+            lastRound = m.round; rounds++;
+            int rank = 0;   // (teamRank: the defenders in slot order)
+            for (int i = 0; i < kMaxPlayers; i++)
+                if (s.players_[i].connected && s.players_[i].isBot && s.players_[i].team != m.attackers) defended[rank++ % n % 2]++;
+        }
+        const bool now = m.bombState == BOMB_PLANTED;
+        if (now && !was) {
+            size_t best = 0;
+            for (size_t k = 1; k < n; k++) if (length(s.map_.bombSites[k].center() - m.bombPos) < length(s.map_.bombSites[best].center() - m.bombPos)) best = k;
+            plants[best]++;
+        }
+        was = now;
+    });
+    printf("  depot: %d rounds, plants at A %d, B %d; defenders sent to A %d, B %d\n", rounds, plants[0], n > 1 ? plants[1] : 0, defended[0], defended[1]);
+    CHECK(n == 2);
+    for (size_t k = 0; k < n; k++) CHECK(plants[k] >= 1);
+    CHECK(defended[0] >= 1 && defended[1] >= 1);
+    s.stop();
 }
 
 // Maps and rules arrive from untrusted servers: junk must be refused (or clamped), never crash or blow up memory.
@@ -9318,9 +9508,10 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testGrappleAgainstWall(); testAcid(); testLiquids(); testFeatureBlocks(); testStrafeEase(); testSeeThrough(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testModeSpawnSets(); testMapFix(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"bombsites", [] { testBombSites(TP(29090)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},

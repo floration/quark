@@ -202,6 +202,13 @@ static void testChannels() {
     c.channel = releases::Channel::Testing;
     releases::Config back = releases::parseConfig(releases::formatConfig(c));
     LCHECK(back.channel == releases::Channel::Testing && !back.pinned());
+    {   // OPTIONS (1.19.4): auto-start, keep open, launch options, updates; round trip, and an old launcher's file
+        releases::Config o;
+        o.autoStart = true; o.keepOpen = true; o.args = "--novsync --fps 240"; o.updates = 2; o.nextVersion = "1.19.4";
+        releases::Config ob = releases::parseConfig(releases::formatConfig(o));
+        LCHECK(ob.autoStart && ob.keepOpen && ob.args == o.args && ob.updates == 2 && ob.nextVersion == "1.19.4");
+        LCHECK(!old.autoStart && !old.keepOpen && old.args.empty() && old.updates == 0);
+    }
     auto prod = releases::forChannel(all, releases::Channel::Production);
     LCHECK(releases::selectIndex(prod, old) == 1);
     LCHECK(releases::selectIndex(prod, releases::parseConfig("pin=1.2.3")) == 0); // gone: the newest
@@ -228,6 +235,20 @@ static void testUnsignedAndPins() {
     LCHECK(p.index == 0 && p.install && !p.offer && !p.pinned);
     p = releases::startupPlan(prod, follow, "1.17.0", true);
     LCHECK(p.index == 0 && !p.install && !p.offer);
+    {   // UPDATES (1.19.4): ASK waits for INSTALL; AT NEXT LAUNCH installs only a version seen at an earlier start; a
+        // first install is never held back
+        releases::Config ask = follow, next = follow;
+        ask.updates = 1; next.updates = 2;
+        p = releases::startupPlan(prod, ask, "1.16.0", true);
+        LCHECK(p.index == 0 && !p.install && p.offer);
+        p = releases::startupPlan(prod, ask, "", true);
+        LCHECK(p.install);
+        p = releases::startupPlan(prod, next, "1.16.0", true);
+        LCHECK(!p.install && p.offer);
+        next.nextVersion = "1.17.0";
+        p = releases::startupPlan(prod, next, "1.16.0", true);
+        LCHECK(p.install);
+    }
     // 1.5: an old launcher.cfg pinned to a pre-signing version keeps it - installed: nothing to do, the player plays it
     p = releases::startupPlan(prod, pinOld, "1.16.0", true);
     LCHECK(p.index == 2 && p.pinned && !p.install && !p.offer);
