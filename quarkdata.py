@@ -53,6 +53,12 @@ RACE_MAP = "viaduct"  # TIME TRIAL is the ranked race on Viaduct (game.cpp INFO 
 VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)((?:\.\d+|\.testing\.\d+|-test\.\d+)?)")
 
 
+def testing_version(tag: str) -> str:
+    """A testing release's tag -> the version its servers announce: test-1.19.3.14 -> 1.19.3.14
+    (also test-1.19.0.testing.5 -> 1.19.0.testing.5, test-1.18.0-test.3 -> 1.18.0-test.3)."""
+    return tag[len("test-"):] if tag.startswith("test-") else tag.lstrip("v")
+
+
 def changelog_lookup(version: str) -> tuple[str, str, str, bool]:
     """What a /changelog argument names: (version, release tag, changelog file's version, testing).
     Production: "1.2.3" / "v1.2.3" -> tag v1.2.3, changelogs/1.2.3.md. Testing builds are tagged test-<their version>
@@ -257,8 +263,16 @@ class QuarkAPI:
     async def server_addresses(self, version: str) -> list[str]:
         return parse_server_list(await self._text(f"{await self.master()}/list?v={version}", 6))
 
-    async def live_servers(self, version: str) -> list[ServerInfo]:
-        return await query_servers(await self.server_addresses(version))
+    async def live_servers(self, version: str, testing: str = "") -> list[ServerInfo]:
+        """The servers of this version, plus those of the newest testing build (`testing`: each server announces
+        its own build's version, so testing servers are only in that version's list)."""
+        addrs = await self.server_addresses(version)
+        if testing and testing != version:
+            try:
+                addrs += [a for a in await self.server_addresses(testing) if a not in addrs]
+            except Exception as e:   # (the production list still shows when the testing one fails)
+                print(f"testing server list ({testing}) unavailable: {type(e).__name__}")
+        return await query_servers(addrs)
 
     async def leaderboard(self, ladder: str, n: int = 10) -> list[LeaderRow]:
         return parse_leaderboard(await self._text(f"{await self.master()}/leaderboard?ladder={ladder}&n={n}"))

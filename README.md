@@ -24,7 +24,7 @@ below are in the game's branches. The protocol and mode constants in `quarkdata.
   built-in address (`MASTER_URL` in `quarkdata.py`, a copy of `kPinnedMasterUrl`). The bot never reads the website's
   `master.txt`: it sends BOT_KEY to that address, and only the game checks master.txt's signature. If the Worker
   moves, set `master_url` (https only). Then
-  `GET <master>/list?v=<version>` gives `ip:port` lines of servers on that version (`src/game/master.cpp`).
+  `GET <master>/list?v=<version>` gives `ip:port` lines of servers on that version (`src/game/master.cpp`). The bot asks for the production version and the newest testing build's version (`test-1.2.3.4` -> `1.2.3.4`), so testing servers show too.
   Each server is then asked directly over UDP: `u32 0x51524B31 "QRK1", u8 4` zero-padded to 160 bytes (PKT_INFO_REQUEST; servers ignore shorter requests), reply type 67
   with name, map, mode, players, max players, port (`src/game/protocol.h`, `server.cpp`, `netclient.cpp`).
   Only servers that answer are shown, like the in-game browser. The version is the latest GitHub release.

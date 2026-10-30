@@ -312,6 +312,7 @@ def run_bot(cfg: dict):
         api: qd.QuarkAPI
         guild: discord.Guild | None = None
         version: str = ""
+        testing_version: str = ""   # the newest testing build's version (1.2.3.4): the testing servers announce it
         first_server_pass = True
         missing: dict[str, int] = {}
         first_seen: dict[str, float] = {}
@@ -451,6 +452,8 @@ def run_bot(cfg: dict):
     async def testing_loop():
         """testing builds: GitHub prereleases (test-<VERSION>-test.N) go to #testing-updates and ping Testing Updates only"""
         rel = newest_testing(await bot.api.releases())
+        if rel:
+            bot.testing_version = qd.testing_version(rel["tag_name"])
         if not rel or state.d.get("last_test_tag") == rel["tag_name"]:
             return
         await announce(rel, "testing_channel", "testing_role", "Quark testing build {tag}",
@@ -531,7 +534,7 @@ def run_bot(cfg: dict):
     @guarded
     async def server_loop():
         version = bot.version or cfg["game_version"] or local_version()
-        infos = [i for i in await bot.api.live_servers(version) if i.replied]
+        infos = [i for i in await bot.api.live_servers(version, bot.testing_version) if i.replied]
         cat = await ensure_category(cfg["live_category"])
         role = await ensure_role()
         now = time.time()
@@ -950,7 +953,7 @@ def run_bot(cfg: dict):
     async def servers_cmd(it: discord.Interaction):
         await it.response.defer(ephemeral=True)
         try:
-            infos = [i for i in await bot.api.live_servers(bot.version or local_version()) if i.replied]
+            infos = [i for i in await bot.api.live_servers(bot.version or local_version(), bot.testing_version) if i.replied]
         except Exception as e:
             await it.followup.send(f"Server list unavailable ({type(e).__name__}).", ephemeral=True)
             return

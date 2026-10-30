@@ -114,6 +114,36 @@ class Parsing(unittest.TestCase):
         self.assertTrue(all(len(m) <= 2000 for m in bot.info_messages(pages)))
 
 
+class TestingServers(unittest.TestCase):
+    def test_testing_version(self):
+        self.assertEqual(qd.testing_version("test-1.19.3.14"), "1.19.3.14")
+        self.assertEqual(qd.testing_version("test-1.19.0.testing.5"), "1.19.0.testing.5")
+        self.assertEqual(qd.testing_version("v1.19.3"), "1.19.3")
+
+    def test_live_servers_adds_the_testing_list(self):
+        asked, lists = [], {"1.19.3": ["1.2.3.4:27500"], "1.19.3.14": ["1.2.3.4:27501", "1.2.3.4:27500"]}
+
+        class Api(qd.QuarkAPI):
+            async def server_addresses(self, version):
+                if version == "broken":
+                    raise OSError("down")
+                return list(lists.get(version, []))
+
+        async def fake_query(addrs, *a, **k):
+            asked.append(addrs)
+            return addrs
+
+        real, qd.query_servers = qd.query_servers, fake_query
+        try:
+            api = Api(None)
+            self.assertEqual(asyncio.run(api.live_servers("1.19.3", "1.19.3.14")), ["1.2.3.4:27500", "1.2.3.4:27501"])
+            self.assertEqual(asyncio.run(api.live_servers("1.19.3", "1.19.3")), ["1.2.3.4:27500"])
+            self.assertEqual(asyncio.run(api.live_servers("1.19.3")), ["1.2.3.4:27500"])
+            self.assertEqual(asyncio.run(api.live_servers("1.19.3", "broken")), ["1.2.3.4:27500"])
+        finally:
+            qd.query_servers = real
+
+
 class MasterQueues(unittest.TestCase):
     def test_link_code(self):
         self.assertEqual(qd.parse_link_code("code 012345\n"), "012345")
