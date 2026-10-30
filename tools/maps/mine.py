@@ -3,8 +3,9 @@ crystals and metal bars). A deep mine on four levels, 4v4: the pithead at the su
 yard, a), the haulage level (-15: minecart galleries, the loading station, the old stope), the powder magazine cavern
 and the ore store (-30: the site, the hill) and the deep workings (-45: lava channels and the crystal grotto; the
 defenders' refuge, b, behind its steel screen). Bomb: T reach the TNT pile in about 5 s at 24 m/s (~120 m walked), CT
-about 1 s later (~144 m). King of the hill has its own spawn set (koth-a / koth-b), and
-the hill is in the ore bay (west of the cavern), where both teams walk about the same distance; it has four doors, two per team.
+about 1 s later (~144 m). King of the hill has its own spawn set (koth-a / koth-b) and
+the hill is in the ore bay (west of the cavern), four doors, two per team: CT's two open on its north side, T's two are in
+the hill (its box runs into them), so T, nearer (~8 s to CT's ~12 s), holds from cover and CT walks into the open.
 Everything underground is closed: the rock between the rooms is solid (fill_solid), so no hollow, hidden top or open
 shaft is left for a player or the bots' nav graph.
 Routes to the site, T: the cage shaft (drop or ladder, 0 -> -15 -> -30, the shaft-bottom drift into the cavern); the
@@ -189,7 +190,9 @@ def build():
     HX, HZ = -38.0, -18.0
     for (x0, z0, x1, z1, h) in ((HX - 3.4, HZ + 0.4, HX - 0.6, HZ + 1.8, 1.4), (HX + 0.4, HZ - 2.0, HX + 3.2, HZ - 0.6, 1.8)):
         B(m, "castiron", x0, -30, z0, x1, -30 + h - 0.3, z1); B(m, "gold", x0 + 0.1, -30 + h - 0.3, z0 + 0.1, x1 - 0.1, -30 + h, z1 - 0.1)   # (bar stacks)
-    m.raw(f"hill {HX - 6:g} -30 {HZ - 4:g} -30.5 -26 {HZ + 4:g}")   # (east to the T door's mouth)
+    m.raw(f"hill {HX - 6:g} -30 {HZ - 4:g} -28.5 -26 {HZ + 5.5:g}")   # (south to the bay drift door, east into the shaft drift door: T holds the
+    # hill from its doors' mouths, CT only from the open north half; with the box 3 m short of both T doors the bots
+    # gave the CT side ~57%, with it to z -13 the T side ~45%, to -12.5 even)
 
     # ===================================== structures and decoration =====================================
     def crystal(x, z, y, h, r, mat="crystal"):
@@ -371,10 +374,10 @@ def build():
     # ---- spawns
     for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 54, 40)   # (facing the headframe and the cage shaft)
     for (x, z) in ((-64, -95), (-60, -95), (-56, -95), (-60, -91)): m.spawn("b", x, -45, z, 180)
-    # king of the hill's own spawn set (map format 11): both sides about 80-110 m (bot routes) from the ore bay's hill,
+    # king of the hill's own spawn set (map format 11): T 66-90 m, CT 110-120 m (bot routes) from the ore bay's hill,
     # away from the hill room (T: the haulage level's loading station and gallery; CT: the ore store and the deep
     # workings), so koth fights move through the cavern, the drifts and the adits, not only the hill room
-    for (x, y, z, yaw) in ((4, -15, 22, 90), (12, -15, 22, 90), (18, -15, 18.5, 90), (24, -15, 22, 90)):
+    for (x, y, z, yaw) in ((12, -15, 22, 90), (24, -15, 22, 90), (32, -15, 14, 90), (36, -15, 22, 90)):
         m.spawn("koth-a", x, y, z, yaw)
     for (x, y, z, yaw) in ((-60, -45, -95, 180), (-10, -45, -82, 90), (-4, -45, -62, 180), (-56, -45, -95, 180)):
         m.spawn("koth-b", x, y, z, yaw)
