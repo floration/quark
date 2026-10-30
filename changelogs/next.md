@@ -80,6 +80,10 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Menus and bots (PLAYER > MORE):** FIXED LOGO COLORS keeps the title cyan / red; your server's bots can all wear the standard model, and take names from `bots/names.txt`.
 - **Editor:** CLIP BOX COLOR (CONTROLS > MORE 2). **Race:** SPLITS: PALETTE also colours your best run and the leaderboard's #1.
 
+## Movement fixes
+- Wall teleporters keep your speed. Going in fast used to throw you out at a crawl about half the time (surfy too).
+- The grapple can't hook clip any more: it hits it and lets go, like nograpple. No more invisible hook points on map lids.
+
 ## Maps
 - **Thin walls are shoot-through:** any surface 1/8 m thick or less (coats, panels, thin trim) now lets hitscan through at wallbang damage, like the dark grey wallbang walls.
 - **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.

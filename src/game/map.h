@@ -1551,7 +1551,7 @@ struct Map {
     }
     void rebuildFluids();   // lava, acid and liquids from the brushes
     // Returns hit distance or -1. normal receives the face normal on hit.
-    float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr) const;   // *material: the hit brush's (-1: a moving solid)
+    float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr, int* material = nullptr, bool hitClip = false) const;   // *material: the hit brush's (-1: a moving solid); hitClip: clip (9) stops it too (the grapple)
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
     // hitClip (movement probes: clip blocks players).
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;

@@ -1849,14 +1849,14 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
     }
 }
 
-float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, int* material) const {
+float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal, int* material, bool hitClip) const {
     Vec3 inv = safeInv(dir);
     float best = -1.0f;
     int bestMat = -1;
     Vec3 bestN;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cells[c].start, e = cells[c].end; k < e; k++) {
-            if (!stopsShots(brushes[cellBrushes[k]].material)) continue;   // clip: players only (a force field, a net too)
+            if (!stopsShots(brushes[cellBrushes[k]].material) && !(hitClip && brushes[cellBrushes[k]].material == 9)) continue;   // clip: players only (a force field, a net too), and the grapple
             Vec3 n;
             float t = rayBrush(o, dir, inv, brushes[cellBrushes[k]], best < 0 ? maxDist : best, &n);
             if (t >= 0 && (best < 0 || t < best)) { best = t; bestN = n; bestMat = brushes[cellBrushes[k]].material; }
