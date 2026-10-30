@@ -427,22 +427,22 @@ class M:
                 for o in (-0.7, 0.7): s.box(x0, -0.05, az + o - 0.08, x1, 0, az + o + 0.08, mat="metal")
                 x = x0 + 0.4
                 while x < x1 - 0.3: s.box(x - 0.12, -0.06, az - 1.0, x + 0.12, -0.01, az + 1.0, accent=True); x += 1.4
-    def ladder(s, x, z, y0, y1, face, width=0.9):
+    def ladder(s, x, z, y0, y1, face, width=0.9, rail="metal"):
         """a climbable ladder 0.12 m off a wall at (x, z) from y0 to y1; face = direction the climber faces
         ('n' = -z, 's' = +z, 'w' = -x, 'e' = +x), i.e. toward the wall. Rails and rungs sit flush against the
         wall (nothing for the climber to snag on); the climb volume reaches a metre above y1 so you come out
-        over the top."""
+        over the top. rail: the rails' material (the qk maps, box and accent only, pass "accent")."""
         w = width / 2
         d = {"n": (0, -1), "s": (0, 1), "w": (-1, 0), "e": (1, 0)}[face]
         rx, rz = x + d[0] * 0.09, z + d[1] * 0.09   # centre of the rail / rung layer, against the wall
         if d[0] == 0:
-            for sx in (-w, w): s.metal(x + sx - 0.04, y0, rz - 0.03, x + sx + 0.04, y1, rz + 0.03)   # (flush with the top: nothing to trip on stepping off)
+            for sx in (-w, w): s.box(x + sx - 0.04, y0, rz - 0.03, x + sx + 0.04, y1, rz + 0.03, mat=rail)   # (flush with the top: nothing to trip on stepping off)
             y = y0 + 0.35
             while y < y1: s.box(x - w, y, rz - 0.03, x + w, y + 0.06, rz + 0.03, accent=True); y += 0.4
             z0, z1 = sorted((z, z - d[1] * 0.7))
             s.raw(f"ladder {x - w:g} {y0:g} {z0:g} {x + w:g} {y1 + 1.0:g} {z1:g}")
         else:
-            for sz in (-w, w): s.metal(rx - 0.03, y0, z + sz - 0.04, rx + 0.03, y1, z + sz + 0.04)
+            for sz in (-w, w): s.box(rx - 0.03, y0, z + sz - 0.04, rx + 0.03, y1, z + sz + 0.04, mat=rail)
             y = y0 + 0.35
             while y < y1: s.box(rx - 0.03, y, z - w, rx + 0.03, y + 0.06, z + w, accent=True); y += 0.4
             x0, x1 = sorted((x, x - d[0] * 0.7))
