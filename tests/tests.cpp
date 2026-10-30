@@ -1976,7 +1976,13 @@ static void testAllMaps() {
         HumanMadeGrace hg(name, m);
         if (m.preferredMode < 0) printf("  %s: not built for one mode (no \"for <mode>\" line)\n", name.c_str());
         CHECK(m.preferredMode >= 0 && m.supportsMode(m.preferredMode));   // (built for one mode, and it offers that one)
-        if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
+        if (name == "dojo") {   // (1.19.6) the centre mat flat and empty (q): nothing on it or over it up to a duel giant's 3.6 m, and the bow
+            const AABB mat = {{-9, 0.51f, -9}, {9, 0.5f + 3.6f, 9}};
+            int over = 0;
+            for (auto& b : m.brushes) over += b.box.overlaps(mat);
+            if (over) printf("  dojo: %d boxes on or over the mat\n", over);
+            CHECK(over == 0 && m.holdFire == 5);
+        }
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
         {   // walked with the player's hull against the map's collision: a route that isn't there fails
             double t0 = timeNow();
