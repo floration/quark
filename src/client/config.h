@@ -1,6 +1,6 @@
 // Client settings, persisted as key=value lines in quark.cfg.
 #pragma once
-constexpr int kOutlineColors = 8;
+constexpr int kOutlineColors = 9;   // (the last: CUSTOM, its colours on VIDEO + AUDIO > MORE 4)
 extern const char* const kOutlineNames[kOutlineColors];
 #include <cstdio>
 #include <map>
@@ -110,6 +110,68 @@ struct Settings {
     std::string monitor;           // fullscreen / borderless on this monitor (its name, "#2" for a second of the same); "" = primary
     int fsWidth = 0, fsHeight = 0;     // EXCLUSIVE FULLSCREEN's resolution (VIDEO > MORE 3); 0 = the monitor's desktop size
     int fullscreenHz = 0;          // EXCLUSIVE FULLSCREEN's refresh rate; 0 = the monitor's desktop rate
+    // 1.19.4 settings, batch 3 (the 2s): VIDEO + AUDIO > MORE 2 / 4 / 5 / 6 and CROSSHAIR
+    bool toneCurve = true;         // MORE 2: the filmic (ACES-style) curve on the lit scene; off: a straight clamp (flat / linear)
+    bool dither = false;           // ...a tiny noise before the 8-bit output: no banding in the sky and fog
+    bool out10 = false;            // ...a 10-bit window where the driver gives one (at the next start)
+    bool cleanSurfaces = false;    // ...the palette's walls and floors without panel seams or shade noise
+    bool flatLight = false;        // ...no baked light: every face at full sun and sky (no shadows, no bounce)
+    bool simpleSky = false;        // ...the sky one flat colour (no sun glow, no stars)
+    bool farScenery = true;        // ...the distant backdrop (far scenery) drawn
+    int drawDist = 400;            // ...metres to the far plane (150 / 250 / 400): past it nothing is drawn
+    int shadowFilter = 1;          // MORE 4: player shadows' edge: 0 hard (1 tap), 1 soft (4), 2 softer (16)
+    int shadowDist = 32;           // ...metres the shadow map reaches around you (16 / 32 / 64: farther = blurrier)
+    bool shadowWorld = true, shadowPlayers = true;   // ...cast onto the map, onto players
+    bool ownShadow = true;         // ...your own body's shadow (first person)
+    float playerEmit = 0.3f;       // ...models' own light (their colour's share that shadow and shade don't touch)
+    bool playersLit = false;       // ...players never darkened by the map's shade (full sun on them)
+    Vec3 outlineFriendlyColor = {0, 0, 0}, outlineEnemyColor = {0, 0, 0};   // ...the CUSTOM outline colours
+    float outlineAlpha = 1.0f;     // ...the player outline's opacity
+    float outlineTeamW = -1, outlineEnemyW = -1;   // ...widths for your team / enemies (-1: PLAYER OUTLINE WIDTH)
+    bool fixedTeams = false;       // ...spectating / demos: team A and B in their own fixed colours
+    Vec3 teamAColor = {0.3f, 0.55f, 1.0f}, teamBColor = {1.0f, 0.6f, 0.15f};
+    int tracerMode = 0;            // MORE 2: tracers' colour: 0 the classic pale yellow, 1 the shooter's team, 2 custom
+    Vec3 tracerColor = {1.0f, 0.95f, 0.7f};
+    Vec3 ropeColor = {0.1f, 0.1f, 0.1f};   // MORE 4: grapple ropes
+    int trails = 2;                // MORE 2: projectile trails: 0 off, 1 short, 2 full
+    float trailOpacity = 1.0f;
+    bool reduceFlash = false;      // MORE 4: no muzzle flashes or blinking, softer explosions and damage flash
+    bool safeColors = false;       // ...OK / error colours blue and orange (not green and red)
+    bool itPalette = false;        // ...tag / hide and seek: "it" in your enemy colour, the rest in your team's
+    bool splitPalette = false, splitWords = false;   // ...race splits in your palette; AHEAD / BEHIND spelled out
+    std::string colorPreset[3];    // ...your colour schemes (colorCode()), saved in slots 1 - 3
+    std::string colorCode() const;             // the colours as one line to share (MORE 4: COPY COLORS)
+    bool colorFromCode(const std::string& code);   // ...and back: false if it holds none
+    int fovMode = 0;               // MORE 6: FOV as 0 horizontal (this screen), 1 vertical, 2 horizontal at 4:3
+    int channels = 0;              // MORE 5: 0 stereo, 1 mono, 2 left / right swapped
+    float bgVolume = 1.0f;         // ...the volume while unfocused (x VOLUME; MUTE IN BACKGROUND still mutes)
+    float stereoWidth = 0.8f;      // ...how far a sound to one side pans (0: centred, 1: all the way)
+    float behindMuffle = 1.0f;     // ...the low-pass and dip on sounds behind you (x the default)
+    float hearRange = 90;          // ...metres past which a sound isn't heard
+    bool occlusion = false;        // ...sounds behind walls muffled (you hear less: it affects gameplay)
+    int dynRange = 1;              // ...0 clean (barely limited), 1 normal, 2 night (compressed: quiet sounds up, loud down)
+    bool volDb = false;            // ...volumes shown in dB
+    bool volPerceptual = false;    // ...VOLUME's slider on a perceptual curve (the gain is its square)
+    int audioLatency = 1;          // ...0 low, 1 normal, 2 safe (more queued: no crackle on a busy PC)
+    bool forcePack = false;        // ...everyone's sounds in your SOUND PACK
+    int streakCalls = 0;           // ...killstreaks: 0 everyone's, 1 only yours, 2 none
+    int timeWarn = 1;              // ...time left: 0 off, 1 one minute + 30 s, 2 also a count of the last 10 s
+    bool timeWarnText = false;     // ...and as text on screen
+    int cueMute = 0;               // ...cue sounds turned off (a bit per sound id below 32)
+    long long annMute = 0;         // ...announcer lines turned off (a bit per line, SND_VOICE_THREE = bit 0)
+    bool soundViz = false;         // ...nearby sounds shown as marks around the crosshair
+    bool netGraph = false;         // MORE 6: ping, loss and rates bottom right (apart from F3)
+    int cmdRedundancy = 4;         // ...each command in this many packets (2 / 4 / 8)
+    bool mapDownloads = true;      // ...a server's map you don't have is downloaded
+    int mapCacheMax = 50;          // ...downloaded maps kept (oldest go)
+    int lightCacheMax = 32;        // ...light bakes kept
+    int bakeThreads = 0;           // ...threads a bake uses (0: all but one core)
+    int latentSafetyUs = 100;      // ...latent sync: this much spare before the blank
+    int latentSlow = 0;            // ...a frame that misses its blank: 0 flips now (a tear), 1 waits for the next
+    int bypassCompositor = 0;      // ...Linux X11: 0 GLFW's (fullscreen only), 1 always, 2 never
+    int cursorSize = 0;            // ...the menu cursor: 0 the system's, 1 x1, 2 x1.5, 3 x2
+    int cursorColor = 0;           // ...0 white, 1 black, 2 yellow, 3 your team colour
+    bool useToggle = false;        // ...USE pressed once to hold, again to let go
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
@@ -178,6 +240,9 @@ struct Settings {
     float chOutlineW = 1;       // the outline's thickness in pixels (1 - 3)
     float chOutlineA = 0.9f;    // ...and its opacity
     int chWStyle[WPN_COUNT];    // per weapon: its own STYLE (-1 = the crosshair's STYLE)
+    bool chSpread = false;      // a circle showing the held weapon's spread (shotgun)
+    bool chCooldown = false;    // a ring filling as the held weapon's cooldown runs out
+    bool chPixels = false;      // sizes in exact screen pixels (off: scaled with the resolution, as at 720p)
     std::string crosshairCode() const;          // the ch_ settings as one line to share (CROSSHAIR > EXPORT)
     bool crosshairFromCode(const std::string& code);   // ...and back (IMPORT): false if it holds no crosshair setting
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override

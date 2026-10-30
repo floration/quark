@@ -358,20 +358,25 @@ Audio::Audio() {
 // the listener's right (yaw 0 looks down -Z, right = +X)
 static Vec3 rightOf(float yaw) { return {std::cos(yaw), 0, -std::sin(yaw)}; }
 
+// MORE 5's spatial settings (setSpatial): the pan's width, BEHIND YOU's strength, HEARING RANGE (read by both threads)
+static std::atomic<float> g_panWidth{0.8f}, g_behind{1.0f}, g_range{90.0f};
+void Audio::setSpatial(float width, float behind, float range) { g_panWidth = width; g_behind = behind; g_range = range; }
+
 void Audio::voiceGains(Voice& v, const Vec3& listener, const Vec3& right) {
     if (!v.spatial) { v.gainL = v.gainR = v.volume; return; }
     Vec3 d = v.at - listener;
     float dist = length(d);
     float g = v.volume / (1.0f + dist / 10.0f);
-    if (dist > 90.0f) g = 0;
+    if (dist > g_range.load(std::memory_order_relaxed)) g = 0;
     // pan: how far to the listener's right the sound is
     float pan = dist > 0.01f ? clampf(dot(d / dist, right), -1, 1) : 0;
     // X8: behind you, up to -3 dB and a soft low-pass (one pole, ~3 kHz straight behind), so front and back differ
-    const float back = dist > 0.01f ? clampf(dot(d / dist, Vec3(right.z, 0, -right.x)) * -1.0f, 0, 1) : 0;   // (forward = (-sin, 0, -cos))
-    g *= 1.0f - 0.29f * back;
-    v.lp = 1.0f - 0.6f * back;
-    v.gainL = g * std::sqrt(0.5f * (1 - pan * 0.8f));
-    v.gainR = g * std::sqrt(0.5f * (1 + pan * 0.8f));
+    const float back = (dist > 0.01f ? clampf(dot(d / dist, Vec3(right.z, 0, -right.x)) * -1.0f, 0, 1) : 0) * g_behind.load(std::memory_order_relaxed);   // (forward = (-sin, 0, -cos))
+    g *= (1.0f - 0.29f * back) * (1.0f - 0.55f * v.occl);   // (behind a wall: about -7 dB)
+    v.lp = std::min(1.0f - 0.6f * back, 1.0f - 0.85f * v.occl);   // (...and muffled: ~1 kHz)
+    const float pw = g_panWidth.load(std::memory_order_relaxed);
+    v.gainL = g * std::sqrt(0.5f * (1 - pan * pw));
+    v.gainR = g * std::sqrt(0.5f * (1 + pan * pw));
 }
 
 void Audio::setListener(const Vec3& pos, float yaw) {
@@ -390,7 +395,7 @@ void Audio::setListener(const Vec3& pos, float yaw) {
 static bool playable(int id, int quips, bool quipsOn) { return id >= 0 && (id < SND_COUNT || (quipsOn && id >= SND_QUIP && id - SND_QUIP < quips)); }
 
 void Audio::play(int id, float volume, float pitch, int pack) {
-    if (!running_ || !playable(id, quipCount(), quipsOn_)) return;
+    if (!running_ || !playable(id, quipCount(), quipsOn_) || (id < 64 && (muted_.load(std::memory_order_relaxed) >> id & 1))) return;
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, volume, volume, false, {}, volume};
     std::lock_guard<std::mutex> l(mu_);
     v.seq = ++voiceSeq_;
@@ -398,10 +403,12 @@ void Audio::play(int id, float volume, float pitch, int pack) {
 }
 
 void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
-    if (!running_ || !playable(id, quipCount(), quipsOn_)) return;
+    if (!running_ || !playable(id, quipCount(), quipsOn_) || (id < 64 && (muted_.load(std::memory_order_relaxed) >> id & 1))) return;
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, true, pos, volume};
     voiceGains(v, listener_, rightOf(listenerYaw_));
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
+    if (keepHeard && heard.size() < 64) heard.push_back({id, pos});
+    if (occluder) { v.occl = clampf(occluder(listener_, pos), 0, 1); if (v.occl > 0) voiceGains(v, listener_, rightOf(listenerYaw_)); }
     std::lock_guard<std::mutex> l(mu_);
     v.seq = ++voiceSeq_;
     addVoice(pending_, v, kMaxPending);
@@ -514,9 +521,26 @@ void Audio::render(float* buf, int n) {
         }
     }
     float m = master_;
-    for (int i = 0; i < n * 2; i++) {
-        float x = buf[i] * m;
-        buf[i] = x / (1.0f + std::fabs(x) * 0.3f); // soft limiter: many overlapping sounds never clip harshly
+    const int ch = channels_.load(std::memory_order_relaxed), dyn = dynamics_.load(std::memory_order_relaxed);
+    if (ch == 1) for (int i = 0; i < n; i++) buf[i * 2] = buf[i * 2 + 1] = (buf[i * 2] + buf[i * 2 + 1]) * 0.5f;   // MONO
+    else if (ch == 2) for (int i = 0; i < n; i++) std::swap(buf[i * 2], buf[i * 2 + 1]);                          // SWAPPED
+    if (dyn == 2) {   // NIGHT: a level follower (5 ms attack, 300 ms release) pulls loud passages down, then +6 dB
+        const float att = 1.0f - std::exp(-1.0f / (0.005f * R)), rel = 1.0f - std::exp(-1.0f / (0.3f * R));
+        float e = env_;
+        for (int i = 0; i < n; i++) {
+            const float l = buf[i * 2] * m, r = buf[i * 2 + 1] * m, a = std::max(std::fabs(l), std::fabs(r));
+            e += (a > e ? att : rel) * (a - e);
+            const float g = 2.0f / (1.0f + 4.0f * std::max(0.0f, e - 0.1f));   // (4:1-ish over -20 dB, then made up)
+            buf[i * 2] = l * g; buf[i * 2 + 1] = r * g;
+            for (int c = 0; c < 2; c++) { float& x = buf[i * 2 + c]; x = x / (1.0f + std::fabs(x) * 0.3f); }
+        }
+        env_ = e;
+    } else {
+        const float k = dyn == 0 ? 0.08f : 0.3f;   // CLEAN: the limiter barely touches a normal level (-0.3 dB at 0.5)
+        for (int i = 0; i < n * 2; i++) {
+            float x = buf[i] * m;
+            buf[i] = x / (1.0f + std::fabs(x) * k); // soft limiter: many overlapping sounds never clip harshly
+        }
     }
 }
 
@@ -796,6 +820,8 @@ void Audio::wasapiThread(std::atomic<int>* started) {
         }
         // (testing where a PC starts cutting out: QUARK_AUDIO_MS=<ms queued>, e.g. 10 / 12 / 13 / 15; shared, either
         // period, up to the buffer Windows gave)
+        // AUDIO LATENCY: SAFE keeps twice as much queued (up to the buffer); LOW and NORMAL the shortest that was clean
+        if (ok && latency_ == 2) target = std::min<UINT32>(frames, target * 2);
         if (ok && !excl)
             if (const char* e = getenv("QUARK_AUDIO_MS")) {
                 double ms = atof(e);
@@ -990,7 +1016,7 @@ bool Audio::openQueue() {
         missing = !there;
     }
     noteOutput(missing);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0, nb = latency_ == 0 ? 2 : latency_ == 2 ? 6 : 3; i < nb; i++) {   // (AUDIO LATENCY: 10 / 15 / 30 ms queued)
         AudioQueueBufferRef b;
         AudioQueueAllocateBuffer(q, kPeriod * 4, &b);
         aqCallback(this, q, b);
@@ -1030,11 +1056,12 @@ typedef char* (*p_gethint)(const void*, const char*);
 typedef int (*p_freehint)(void**);
 struct Alsa {
     void* lib; void* pcm; p_open open; p_set set; p_write write; p_recover recover; p_close close;
+    unsigned latencyUs = 20000;   // (AUDIO LATENCY: 10 / 20 / 40 ms)
     // 2 = S16_LE, 3 = RW_INTERLEAVED, 20 ms total latency
     bool openPcm(const char* name) {
         void* p = nullptr;
         if (open(&p, name, 0, 0) < 0) return false;
-        if (set(p, 2, 3, 2, R, 1, 20000) < 0) { close(p); return false; }
+        if (set(p, 2, 3, 2, R, 1, latencyUs) < 0) { close(p); return false; }
         pcm = p;
         return true;
     }
@@ -1080,6 +1107,7 @@ bool Audio::start() {
     if (!a.open || !a.set || !a.write || !a.recover || !a.close) { dlclose(lib); return false; }
     // the chosen device (Settings > DEVICES), else the default
     const std::string want = outputDevice();
+    a.latencyUs = latency_ == 0 ? 10000 : latency_ == 2 ? 40000 : 20000;
     const bool missing = !want.empty() && !a.openPcm(want.c_str());
     if (!a.pcm && !a.openPcm("default")) { dlclose(lib); return false; }
     noteOutput(missing);
@@ -1098,6 +1126,7 @@ void Audio::backendThread() {
             reopen_ = false;
             if (a->pcm) { a->close(a->pcm); a->pcm = nullptr; }
             const std::string want = outputDevice();
+            a->latencyUs = latency_ == 0 ? 10000 : latency_ == 2 ? 40000 : 20000;
             const bool missing = !want.empty() && !a->openPcm(want.c_str());
             if (!a->pcm && !a->openPcm("default")) { reopen_ = true; std::this_thread::sleep_for(std::chrono::milliseconds(500)); continue; }
             noteOutput(missing);

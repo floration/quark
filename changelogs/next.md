@@ -48,6 +48,14 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 - **Race ghost:** in race and surf, your best run on each map plays as a see-through ghost.
 - **Team panel and match summary:** an optional panel with your teammates' health, and a summary of your match (shots, hits, accuracy, damage, best streak) under the end-of-match scoreboard.
 
+## Settings (batch 3: video, audio, crosshair, network, accessibility)
+- **More picture options:** VIDEO + AUDIO > MORE 2 adds TONE CURVE, CLEAN SURFACES, FLAT LIGHTING, SIMPLE SKY, FAR SCENERY, DRAW DISTANCE (150 / 250 / 400 m), DEBAND and 10-BIT OUTPUT, plus tracer colour (classic, team or your own) and projectile TRAILS (off / short / full, with opacity).
+- **MSAA 8x**, and options your PC can't do now say "N/A" (MSAA levels, 10-bit, latent sync, bypass compositor).
+- **New VIDEO + AUDIO > MORE 4:** shadow edge, shadow distance, shadows on the map / on players, your own shadow, players always lit, player brightness, custom outline colours and opacity, separate team / enemy outline widths, rope colour, fixed team A / B colours when spectating or watching demos, colour scheme copy / paste and 3 save slots, and accessibility: REDUCE FLASHING, colourblind-safe OK / error colours, tag "it" and race splits in your palette, AHEAD / BEHIND on splits.
+- **New VIDEO + AUDIO > MORE 5 (sound):** mono / swapped channels, stereo width, behind-you muffle, hearing range, sound occlusion (walls muffle sounds), dynamic range (clean / normal / night), audio latency (low / normal / safe), volume in dB or on a perceptual curve and up to 150%, background volume, force your sound pack on everyone, streak callouts (all / mine / off), time warnings (off / 60 + 30 / countdown, and on screen), each cue sound and announcer line on or off, and VISUALIZE SOUNDS.
+- **New VIDEO + AUDIO > MORE 6:** a NET GRAPH (apart from F3), packet loss protection 2 / 4 / 8, map downloads on / off with a cache limit and CLEAR, the light bake cache (size, bake threads, CLEAR), FOV as horizontal / vertical / 4:3, bypass compositor (Linux), latent sync safety and late-frame behaviour (Windows), a bigger or coloured menu cursor, and USE as hold or toggle.
+- **Crosshair:** a spread circle, a cooldown ring, and sizes in exact pixels instead of scaled with the resolution.
+
 ## Maps
 - **Map picker:** lists only the maps made for the mode you picked (ranked: only that ladder's maps), 7 across, each with a picture of the map from above. The mouse wheel scrolls when there are more.
 - **Two new maps, made by q:** **Surfy** (surf), now the map surf mode starts on, and **Cobblestone**.

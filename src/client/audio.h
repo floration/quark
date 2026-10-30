@@ -4,6 +4,7 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -91,6 +92,23 @@ public:
     // (game thread: play3D's copy, plus one handed to the mixer, which re-pans every playing 3D sound with it each period)
     void setListener(const Vec3& pos, float yaw);
     void setMasterVolume(float v) { master_ = v; }
+    // VIDEO + AUDIO > MORE 5 (1.19.4). The output's channels (0 stereo, 1 mono, 2 left and right swapped); how wide a
+    // sound pans (0..1), how much sounds behind you are dipped and muffled (x the default), the distance past which
+    // nothing is heard; the limiter (0 clean, 1 normal, 2 night: a compressor). All read by the mixer each period.
+    void setChannels(int c) { channels_ = c; }
+    static void setSpatial(float width, float behind, float range);
+    void setDynamics(int d) { dynamics_ = d; }
+    // AUDIO LATENCY: 0 low, 1 normal, 2 safe (more queued); the output is opened again with it
+    void setLatency(int l) { if (latency_.exchange(l) != l) reopen_ = true; }
+    // CUE SOUNDS / ANNOUNCER CALLS: these ids never start (a bit per id below 64)
+    void setMuted(uint64_t mask) { muted_ = mask; }
+    // SOUND OCCLUSION: from (the listener) to (the sound) -> 0 clear .. 1 behind a wall, asked once as a 3D sound
+    // starts (the game thread); empty: off
+    std::function<float(const Vec3& from, const Vec3& to)> occluder;
+    // VISUALIZE SOUNDS: the 3D sounds started (game thread), kept while on; the game takes them each frame
+    struct Heard { int id; Vec3 at; };
+    bool keepHeard = false;
+    std::vector<Heard> heard;
     // Two more volumes on top of the master (Settings > SOUND, 0..1): every sound effect (the hitsound, weapons,
     // steps...) and the announcer's lines. Applied by the mixer each period, to sounds already playing too.
     void setEffectsVolume(float v) { fxVolume_ = v; }
@@ -157,7 +175,7 @@ private:
     // pos: where in the sound, 32.32 fixed point (exact over long clips, where a float's step went coarse past ~2.7 s);
     // step: the pitch; gainL / gainR: the gains the last period ended on (a 3D sound ramps from them to the new ones)
     struct Voice { int id, pack; uint64_t pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0;
-                   float lp = 1, lpY = 0; };   // (X8: behind you, a one-pole low-pass: its coefficient, 1 = off, and its state)
+                   float lp = 1, lpY = 0, occl = 0; };   // (occl: SOUND OCCLUSION's 0..1, fixed as it starts)   // (X8: behind you, a one-pole low-pass: its coefficient, 1 = off, and its state)
     // full: the oldest sound effect makes room (an announcer line only if all are)
     static void addVoice(std::vector<Voice>& list, const Voice& v, size_t cap);
     uint32_t voiceSeq_ = 0;    // (under mu_) start order: the mixer's swap-and-pop doesn't keep voices_ in it
@@ -205,6 +223,9 @@ private:
     std::atomic<float> master_{0.8f};
     std::atomic<float> fxVolume_{1.0f}, annVolume_{1.0f}, quipVolume_{1.0f};
     std::atomic<bool> quipsOn_{true};
+    std::atomic<int> channels_{0}, dynamics_{1}, latency_{1};
+    std::atomic<uint64_t> muted_{0};
+    float env_ = 0;   // (the mixer's: NIGHT's level follower)
     std::atomic<bool> running_{false}, quit_{false};
     std::atomic<bool> exclusive_{false}, reopen_{false};
     // the chosen output (under devMu_: the game thread sets it, the backend reads it when it opens a device)

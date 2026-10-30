@@ -161,7 +161,14 @@ int main(int argc, char** argv) {
     Settings pre;
     pre.load();
     // Created windowed; Game::init switches to the configured display mode.
+    if (pre.out10) {   // VIDEO + AUDIO > MORE 2: 10-BIT OUTPUT (the driver gives the nearest it has; VIDEO shows what it got)
+        glfwWindowHint(GLFW_RED_BITS, 10); glfwWindowHint(GLFW_GREEN_BITS, 10); glfwWindowHint(GLFW_BLUE_BITS, 10); glfwWindowHint(GLFW_ALPHA_BITS, 2);
+    }
     GLFWwindow* win = glfwCreateWindow(pre.width, pre.height, "quark", nullptr, nullptr);
+    if (!win && pre.out10) {   // (none at all with those bits: the usual 8)
+        glfwWindowHint(GLFW_RED_BITS, 8); glfwWindowHint(GLFW_GREEN_BITS, 8); glfwWindowHint(GLFW_BLUE_BITS, 8); glfwWindowHint(GLFW_ALPHA_BITS, 8);
+        win = glfwCreateWindow(pre.width, pre.height, "quark", nullptr, nullptr);
+    }
     if (!win) {
         fprintf(stderr, "could not create an OpenGL 3.3 window - update your graphics driver\n");
         glfwTerminate();
