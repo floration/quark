@@ -5,13 +5,24 @@ hatch ladders up through the deck, a stair down from each end's abutment), the v
   towers  two legs each (x +-80, z +-16.5), cross beams at 20 and 40 m; inside each leg a ladder through a hatch to
           each beam (the beams are walkable, a door from the leg onto each), the saddles at 60.
   cables  the main cables (z +-13.5) sag from the saddles to 4 m over the deck at mid-span, walkable from the middle
-          up until they pass 45 degrees (about 30 m up, x +-57: past there you slide); hangers every 10 m to hook.
+          out to x +-32 (about 13 m up); past there a clip ridge rides them (nograpple): you slide off; hangers
+          every 10 m to hook.
   ends    A (west): the city end, a toll plaza (six booths under a canopy, the toll office on two floors);
           B (east): the mountain end, a tunnel portal in the rock with a maintenance bay and a lay-by (a parked lorry).
 The traffic (cars, two buses with 1/8 m side panels: shoot-through, a lorry with a container, a car on its side) is
 placed point symmetrically round mid-span: different vehicles, the same footprints, a 3 m walk lane everywhere. Fog
 banks (smoke: sight only) across the deck at x +-20 and +-60 break the 160 m straight. Edge rails are 1.6 m: higher
-than a jump, so a fall off the bridge (death in vs, a 2 s trip home in power) is a choice, not an accident."""
+than a jump, so a fall off the bridge (death in vs, a 2 s trip home in power) is a choice, not an accident.
+Fix round (1.19.6 review, q's answers): the cables ridged with clip and nograpple past x +-32 (about 13 m), so nobody
+stands over the fog; each tower beam has a 1.2 m solid concrete parapet on its span side (its rails were 0.1 m,
+shoot-through); the fog banks are three staggered boxes each (the two middle ones up to 12-13.5 m) plus a thin haze
+sheet over the deck at x +-40; deck eye-height sight from the perches, old -> new: beams 19-41% -> 0% (no beam sees a
+spawn), cable at x 30 44% -> 19%, at x 57 64% -> 9%. The walkway has 1.6 m rails on both edges (gaps only at the
+gantries), the tower-door landings are railed, B's apron gets jersey barriers and two vans at x 104 (A's toll booths'
+mirror), height-limit bars on posts at x +-98, team vs its own spawns, 14 FFA spawns. Power over 40 seeds 21-19
+(damage per team within 3%). The tower ladders stay: the grapple is the way up (q), the climber is out of sight in the
+leg, and a 20 m stair doesn't fit a 3 x 4 m shaft. The palette has no fog density (fog is the player's setting), so
+the haze sheets stand in for thicker distance fog."""
 import math
 from .prefabs import M, minus, tiles
 from .bigkit import Kit, num, yaw_to
@@ -36,6 +47,17 @@ def slanted(k, mat, xa, ya, xb, yb, z0, z1, h):
     s = (yb - ya) / (xb - xa)
     c = ya - s * xa
     k.cut(mat, (xa, min(ya, yb) - h, z0, xb, max(ya, yb), z1), [(-s, 1, 0, c), (s, -1, 0, -(c - h))])
+
+
+def ridge(k, xa, ya, xb, yb, z0, z1, h=1.6):
+    """a clip ridge riding a cable's top from (xa, ya) to (xb, yb): its two faces about 70 degrees, so nobody stands
+    on the cable there"""
+    s = (yb - ya) / (xb - xa)
+    c = ya - s * xa
+    zm, w = (z0 + z1) / 2, (z1 - z0) / 2
+    g = h / w
+    planes = [(-s, 1, g, c + h + g * zm), (-s, 1, -g, c + h - g * zm), (s, -1, 0, -(c - 0.05))]
+    k.cut("clip", (xa, min(ya, yb) - 0.05, z0, xb, max(ya, yb) + h, z1), planes)
 
 
 def leg(k, x, sz):
@@ -165,7 +187,10 @@ def build():
         for (a, b) in ((-SPAN - 10, -SPAN - 2.2), (-SPAN + 2.2, SPAN - 2.2), (SPAN + 2.2, SPAN + 10)):
             k.box("galvanizedsteel", a, 0, z0, b, 1.6, z1)
         za, zb = sorted((sz * DECK_Z, sz * 14.0))
-        for x in (-SPAN, SPAN): k.box("steeldeckplate", x - 2.2, -1.2, za, x + 2.2, 0, zb)        # (the landing to the leg)
+        for x in (-SPAN, SPAN):
+            k.box("steeldeckplate", x - 2.2, -1.2, za, x + 2.2, 0, zb)                              # (the landing to the leg)
+            la, lb = sorted((sz * (DECK_Z + 0.3), sz * 14.0))
+            k.box("galvanizedsteel", x - 2.2, 0, la, x - 2.0, 1.6, lb); k.box("galvanizedsteel", x + 2.0, 0, la, x + 2.2, 1.6, lb)
         fz0, fz1 = sorted((sz * DECK_Z, sz * (DECK_Z + 0.3)))
         k.box("bridgegirder", -SPAN - 10, -2.6, fz0, SPAN + 10, -1.2, fz1)                          # (the edge girder)
     for x in range(-80, 81, 10):                                                                    # cross girders
@@ -175,8 +200,12 @@ def build():
     for sz in (-1, 1):
         za, zb = sorted((sz * 9.0, sz * 12.0))
         k.box("meshcatwalk", -90, WALK_Y - 0.3, za, 90, WALK_Y, zb)
-        ra, rb = sorted((sz * 11.9, sz * 12.0))
-        k.box("galvanizedsteel", -90, WALK_Y, ra, 90, WALK_Y + 1.1, rb)
+        ra, rb = sorted((sz * 11.8, sz * 12.0))
+        k.box("galvanizedsteel", -90, WALK_Y, ra, 90, WALK_Y + 1.6, rb)
+        # (the inner edge too: 1.6 m, open only onto the cross gantries; a fall to the void is a choice)
+        ia, ib = sorted((sz * 9.0, sz * 9.2))
+        for (a, b) in ((-90, -41.5), (-38.5, -1.5), (1.5, 38.5), (41.5, 90)):
+            k.box("galvanizedsteel", a, WALK_Y, ia, b, WALK_Y + 1.6, ib)
         for x in range(-80, 81, 20): k.box("galvanizedsteel", x - 0.15, WALK_Y + 0.3 - 0.3, ra, x + 0.15, -2.2, rb)   # (hangers)
         for x in (-65.0, -25.0, 25.0, 65.0):
             # a hatch through the deck (and the girder's lip) with a ladder up a post on its outer side
@@ -203,13 +232,22 @@ def build():
         for sz in (-1, 1): leg(k, x, sz)
         for (y0, y1) in ((18.5, 20.0), (38.5, 40.0)):
             k.box("precastconcrete", x - 1.6, y0, -14, x + 1.6, y1, 14)
-            k.box("galvanizedsteel", x - 1.6, y1, -14, x - 1.5, y1 + 1.1, 14); k.box("galvanizedsteel", x + 1.5, y1, -14, x + 1.6, y1 + 1.1, 14)
+            # (a solid 1.2 m parapet on the span side, 0.3 m: not wallbang; a 0.2 m rail on the back)
+            sx = 1 if x < 0 else -1
+            pa, pb = sorted((x + sx * 1.3, x + sx * 1.6))
+            k.box("precastconcrete", pa, y1, -14, pb, y1 + 1.2, 14)
+            ra, rb = sorted((x - sx * 1.4, x - sx * 1.6))
+            k.box("galvanizedsteel", ra, y1, -14, rb, y1 + 1.1, 14)
         k.box("precastconcrete", x - 1.6, 54, -14, x + 1.6, 58, 14)                 # (the top strut)
     for sz in (-1, 1):
         z0, z1 = sorted((sz * (CABLE_Z - 0.6), sz * (CABLE_Z + 0.6)))
         xs = [-80, -72, -64, -56, -48, -40, -32, -24, -16, -8, 0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80]
         for (xa, xb) in zip(xs, xs[1:]):
-            slanted(k, "galvanizedsteel", xa, cable_y(xa), xb, cable_y(xb), z0, z1, 1.0)
+            high = min(abs(xa), abs(xb)) >= 32
+            slanted(k, "nograpple" if high else "galvanizedsteel", xa, cable_y(xa), xb, cable_y(xb), z0, z1, 1.0)
+            if high: ridge(k, xa, cable_y(xa), xb, cable_y(xb), z0, z1)
+        # (from x +-32 out, 13 m up, the cable can't be hooked and a clip ridge on it is too steep to stand on: you
+        #  slide off. The walkable part stays below the fog banks' perches' reach)
         for x in range(-70, 71, 10):   # the hangers, deck to cable
             k.box("oxidizedsteel", x - 0.1, 0, sz * CABLE_Z - 0.1, x + 0.1, cable_y(x) - 1.0, sz * CABLE_Z + 0.1)
         for x in (-SPAN, SPAN): k.box("oxidizedsteel", x - 1.6, TOP - 2, z0 - 0.4, x + 1.6, TOP + 1, z1 + 0.4)      # (the saddle)
@@ -276,6 +314,21 @@ def build():
     k.box("galvanizedsteel", 98, 0, -23.5, 106, 2.2, -22.5)                      # (a workbench row on the back)
     lorry(k, 102, 18.5)
     for z in (-14, 14): k.light(103, 5, z, 10, 0.6)
+    # the apron: B's answer to A's booth row, the same footprint at x 104 (jersey barriers, two maintenance vans)
+    for z in (-15.75, -2.75, 2.75, 15.75):
+        k.box("precastconcrete", 103.7, 0, z - 1.5, 104.3, 1.1, z + 1.5)
+        k.box("precastconcrete", 103.4, 0, z - 1.5, 104.6, 0.35, z + 1.5)
+    for z in (-9.25, 9.25):
+        k.box("powdercoatyellow", 101.5, 0.4, z - 1.1, 106.5, 2.4, z + 1.1); k.box("powdercoatyellow", 101.5, 2.4, z - 1.0, 103.5, 3.0, z + 1.0)
+        for dx in (-1.6, 1.6): k.box("anodizedblack", 104 + dx - 0.4, 0, z - 1.12, 104 + dx + 0.4, 0.6, z + 1.12)
+        k.box("warninglights", 102.0, 3.0, z - 0.6, 102.6, 3.25, z + 0.6)
+    # height-limit bars across the road at x +-98 (2.3 m clear: run under them): from either tower's beams no line
+    # reaches a spawn behind them
+    for sx in (-1, 1):
+        X = sx * 98
+        k.box("sandblastedsign", X - 0.2, 2.3, -10, X + 0.2, 4.6, 10)
+        for z in (-10.4, 10.4): k.box("galvanizedsteel", X - 0.25, 0, z - 0.4, X + 0.25, 5.0, z + 0.4)
+        k.box("hazard", X - 0.22, 2.3, -10, X + 0.22, 2.6, 10)
 
     # ---- the traffic (point symmetric round mid-span)
     for (kind, x, z, mat) in TRAFFIC:
@@ -288,8 +341,17 @@ def build():
     # ---- fog banks across the deck (sight only)
     # (each leaves a lane 8 m wide on alternate sides, so no line along the deck misses all four, and the gaps are
     #  where the walk goes: bots and the walk checks take smoke as a wall)
-    for (x, z0, z1) in ((-60.0, -DECK_Z, 4.0), (-20.0, -4.0, DECK_Z), (20.0, -DECK_Z, 4.0), (60.0, -4.0, DECK_Z)):
-        k.box("smokewall", x - 1, 0, z0, x + 1, 6, z1)
+    # (each bank is three overlapping boxes of different heights and depths, so its top and ends stagger; the two
+    #  middle banks rise to 12 m; the lane gaps stay 8 m)
+    BANKS = [(-61, -59, -12, 4, 6.0), (-62.6, -60.6, -10, -1, 4.5), (-61.8, -59.8, -5, 3.5, 7.2),
+             (-21, -19, -4, 12, 12.0), (-22.6, -20.6, -1, 9, 9.0), (-20.2, -18.4, 2, 11.5, 13.5)]
+    for (x0, x1, z0, z1, h) in BANKS:      # (the half x < 0; the other half point symmetric)
+        k.box("smokewall", x0, 0, z0, x1, h, z1)
+        k.box("smokewall", -x1, 0, -z1, -x0, h, -z0)
+    # haze sheets high over the deck at x +-40 (sight only, from 7 m up): the far tower fades behind two of them, and
+    # nothing up on a cable or a tower beam sees down the whole span
+    for x in (-40.0, 40.0):
+        k.box("smokewall", x - 1.5, 7, -LAND_Z, x + 1.5, 62, LAND_Z)
 
     # ---- the bounds: clip walls round the whole bridge up to the lid, the lid 45 m over the towers' tops; the sea
     for (x0, z0, x1, z1) in ((-END - 2, -LAND_Z - 2, END + 2, -LAND_Z), (-END - 2, LAND_Z, END + 2, LAND_Z + 2),
@@ -308,9 +370,16 @@ def build():
     for (x, z) in ((-108, -3), (-108, 3), (-111, -1.5), (-111, 1.5)):
         k.spawn("a", x, 0, z, yaw_to(x, z, 0, z))
         k.spawn("b", -x, 0, -z, yaw_to(-x, -z, 0, -z))
-    for (x, z, y) in ((-50, 9, 0), (50, -9, 0), (-26, -9.5, 0), (26, 9.5, 0), (-70, 10.5, WALK_Y), (70, -10.5, WALK_Y),
-                      (-30, -10.5, WALK_Y), (30, 10.5, WALK_Y)):
-        k.spawn("any", x, y, z, yaw_to(x, z, 0, z))
+    # team vs: its own sets behind the buses at x +-56 (112 m apart, not 216: a vs round's walk)
+    for (x, z) in ((-55.6, 1.0), (-55.6, 2.8), (-55.6, 4.6), (-57.2, 2.8)):
+        k.spawn("vs-a", x, 0, z, yaw_to(x, z, x + 10, 10.5))
+        k.spawn("vs-b", -x, 0, -z, yaw_to(-x, -z, -x - 10, -10.5))
+    # free for all (14): the deck, the walkway, the tower legs, the toll office and the tunnel
+    for (x, z, y, tx, tz) in ((-50, 9, 0, -50, 0), (50, -9, 0, 50, 0), (-26, -9.5, 0, -26, 0), (26, 9.5, 0, 26, 0),
+                              (-70, 10.5, WALK_Y, -90, 10.5), (70, -10.5, WALK_Y, 90, -10.5), (-30, -10.5, WALK_Y, -50, -10.5),
+                              (30, 10.5, WALK_Y, 50, 10.5), (-118, -20, 4.0, -118, -16), (120, 0, 0, 100, 0),
+                              (-80, 16.5, 0, -80, 0), (80, -16.5, 0, 80, 0), (-6, 10.5, WALK_Y, 10, 10.5), (6, -10.5, WALK_Y, -10, -10.5)):
+        k.spawn("any", x, y, z, yaw_to(x, z, tx, tz))
 
     # ---- lamps along the deck every 20 m (the fog's depth cue), a few under it
     for x in range(-80, 81, 20):
