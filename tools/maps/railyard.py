@@ -6,7 +6,21 @@ along the yard with gaps every 15-25 m to cross, wagon roofs at 4 m the mid leve
 every track (deck at 15 m: the high ground, leg ladders), container stacks 1-3 high outside the roads are a maze layer
 with stairs up, and a signal box at each quarter mark looks down the yard.
 Built point-symmetric through the yard's centre (the two ends dressed differently), then shifted 1 m along x so the
-tracks sit on the rail-track look's 2 m grid (its rails are drawn on odd x)."""
+tracks sit on the rail-track look's 2 m grid (its rails are drawn on odd x).
+
+Second review round (2026-10-30; the spawn sightlines, the main line's and roads' cover, the goods shed's boxcar, the
+lane oil, the stakes, the crane deck's top, the one train table and the road FFA spawn were fixed in the first):
+- The outer belts are a flank: in each half the repair shed's mezzanine has a catwalk across the shed and a door in
+  its road wall onto a footbridge over the road to the outer siding's boxcar roofs (4 m, the mid level), and the
+  container block's 5.2 m stack has a short flight and a footbridge onto the boxcar roof opposite (walk 4.2 s and
+  2.6 s at 9.5 m/s). The bridges also break the roads' lines at 3.75 m.
+- Sidings at 6 / 12 / 20: the lane between the outer two is 5 m.
+- The roundhouse: the side doors' tracks fan out from the turntable, a ring rail in the pit, brick piers between the
+  front doors (angled bays).
+- Gravel ballast over the yard between the roads (concrete outside them); a clip ceiling at 60 m; cart checkpoints at
+  0.25 / 0.5 / 0.75; the last road FFA spawn moved into a lane.
+- Measured (quark_maptool metrics, neutral payload): A 129 m / B 136 m to the cart (-0.74 s, from the halls'
+  different insides; unchanged by this round). 1566 brushes, 26 lights; check passes, out of bounds included."""
 import math
 from .prefabs import M, minus, tiles
 from .bigkit import Kit, num, MAT
@@ -14,15 +28,15 @@ from .bigkit import Kit, num, MAT
 HX, HZ = 62, 130          # the yard (local coordinates, before the 1 m shift)
 WALL_H = 7.0
 DOOR_H = 3.0             # the spawn rooms' openings
-SIDINGS = (6, 12, 18)
+SIDINGS = (6, 12, 20)    # (6 m apart, then 8: the lane between the outer two is 5 m, wide enough to turn in)
 # the parked trains on the +x sidings (Sym mirrors them onto the -x ones): (siding x, first car's z, [(kind, length,
 # gap after)]); boxn: a boxcar with its ladder at the north end
 TRAINS = [(6, -86, [("box", 14, 3), ("tank", 12, 3), ("boxn", 14, 0)]),
           (6, -10, [("flat", 14, 3), ("box", 14, 3), ("tank", 12, 0)]),
           (12, -60, [("tank", 12, 3), ("tank", 12, 3), ("empty", 12, 0)]),
           (12, 14, [("box", 14, 3), ("flat", 14, 0)]),
-          (18, -90, [("flat", 14, 3), ("boxn", 14, 0)]),
-          (18, -20, [("box", 14, 4), ("box", 14, 3), ("empty", 12, 0)])]     # x of the sidings on the +x side (mirrored to -x)
+          (20, -90, [("flat", 14, 3), ("boxn", 14, 0)]),
+          (20, -20, [("box", 14, 4), ("box", 14, 3), ("empty", 12, 0)])]     # x of the sidings on the +x side (mirrored to -x)
 
 
 class Sym:
@@ -99,7 +113,7 @@ def build():
         for (a, b, c, d) in minus((x0, z0, x1, z1), pits + halls): k.box("railtrack", a, -1, b, c, 0, d)
     for (x0, z0, x1, z1) in tiles(yard, 32):
         inner = max(abs(x0), abs(x1)) <= 22
-        k.box("dirt" if inner else "concrete", x0, -1, z0, x1, 0, z1)
+        k.box("gravel" if inner else "concrete", x0, -1, z0, x1, 0, z1)      # (ballast over the yard, as planned)
     for r in roads:
         for t in tiles([r], 40): k.box("asphalt", t[0], -1, t[1], t[2], 0, t[3])
     for h in halls:   # (the track runs on into each hall: its strip cut out of the hall's floor)
@@ -127,6 +141,7 @@ def build():
     k.box("brick", -HX - 2, -1, -HZ - 2, -HX, WALL_H, HZ + 2); k.box("brick", HX, -1, -HZ - 2, HX + 2, WALL_H, HZ + 2)
     k.box("brick", -HX, -1, -HZ - 2, HX, WALL_H, -HZ); k.box("brick", -HX, -1, HZ, HX, WALL_H, HZ + 2)
     m.clip_walls(-HX, -HZ, HX, HZ, WALL_H)
+    k.box("clip", -HX, 60, -HZ, HX, 61, HZ)      # (a clip ceiling at 60 m, as planned: nothing above is play)
 
     # ---- the parked trains on the sidings (the +x side; Sym mirrors them onto the -x sidings)
     def boxcar(x, z0, z1, ladder_end=-1):
@@ -204,8 +219,8 @@ def build():
     # the repair shed (x 36..58, z -70..-40): doors on the road and at both ends, a wagon on blocks inside, a
     # mezzanine along the back wall (stairs up) with an opening in the back wall to drop out of
     W2 = "trapezoidcladding"
-    for (z0, z1) in ((-70, -60), (-50, -40)):
-        S.box(W2, 36, 0, z0, 36.4, 8, z1)                                                    # road side, a 10 m door
+    S.box(W2, 36, 0, -70, 36.4, 8, -66); S.box(W2, 36, 0, -66, 36.4, 4.0, -62); S.box(W2, 36, 0, -62, 36.4, 8, -60)
+    S.box(W2, 36, 0, -50, 36.4, 8, -40)                                                      # road side, a 10 m door
     S.box(W2, 36, 5, -60, 36.4, 8, -50)
     S.box(W2, 57.6, 0, -70, 58, 8, -58); S.box(W2, 57.6, 0, -52, 58, 8, -40)       # the back wall: an opening off
     S.box(W2, 57.6, 0, -58, 58, 4.0, -52); S.box(W2, 57.6, 7.6, -58, 58, 8, -52)   # the mezzanine (drop out behind)
@@ -217,6 +232,21 @@ def build():
     S.box("steeldeckplate", 53, 3.7, -70, 57.6, 4.0, -40)                                  # the mezzanine
     S.stairs("steeldeckplate", 49.4, -48, 53, -44, 4.0, "x", 1)
     for (lx, lz) in ((46, -64), (46, -46)): S.light(lx, 7, lz, 12, 0.9)
+    # the flank out of the belt: a catwalk from the mezzanine across the shed (4 m), out of a door in the road wall
+    # and over the road on a footbridge onto the boxcar roofs of the outer siding (the mid level, into the yard).
+    # The mirror does the same from the other half's shed.
+    S.box("steeldeckplate", 36.4, 3.75, -66, 53, 4.0, -62)
+    S.box("galvanizedgrating", 21.5, 3.75, -66, 36, 4.0, -62)
+    for ez in (-66, -62.2):   # waist-high rails over the road (out of reach of the deck's ends)
+        S.box("steel", 22.5, 4.0, ez, 35, 5.0, ez + 0.2)
+    S.box("bridgegirder", 21.5, 3.3, -66, 36, 3.75, -65.6); S.box("bridgegirder", 21.5, 3.3, -62.4, 36, 3.75, -62)
+    # the same out of the container block: from the 5.2 m stack (x 33..38, z 10.2..22.4) down a short flight and over
+    # the road onto the boxcar roof at z -2..12
+    S.stairs("galvanizedgrating", 31, 9.6, 33, 12, 5.2, "x", 1, base=4.0, solid=False)
+    S.box("galvanizedgrating", 21.5, 3.75, 9.6, 31, 4.0, 12)
+    for ez in (9.6, 11.8):
+        S.box("steel", 22.5, 4.0, ez, 30.5, 5.0, ez + 0.2)
+    S.box("bridgegirder", 21.5, 3.3, 9.6, 31, 3.75, 10.0); S.box("bridgegirder", 21.5, 3.3, 11.6, 31, 3.75, 12)
     # the transit shed (x 42..60, z 68..96): a roof on posts over pallet stacks, open on every side
     for px in (42, 59.4):
         for pz in (68, 77, 86, 95.4):
@@ -283,6 +313,21 @@ def build():
         k.tube_z(mat, z0 + 4, z1 - 0.5, x, 2.6, 1.4)
         k.box(mat, x - 1.5, 1.2, z0, x + 1.5, 4.4, z0 + 4)     # the cab
     loco(0, -118, -104, "boilerplate"); loco(-24, -118, -104, "powdercoatgreen")
+    # the roundhouse's look: the side doors' tracks fan out from the turntable (rails on the floor, 5 cm), a ring rail
+    # round the pit's floor for the bridge's wheels, and brick piers between the doors so the front reads as angled bays
+    for (dx, dz) in ((-27.5, -100.4), (5.5, -100.4)):
+        ax, az = -12 + (dx + 12) * 0.45, -91 + (dz + 91) * 0.75          # (from the pit's rim)
+        L = math.hypot(dx - ax, dz - az); nx, nz = -(dz - az) / L, (dx - ax) / L
+        for o in (-0.72, 0.72):
+            k.bar("steel", (ax + nx * o, az + nz * o), (dx + nx * o, dz + nz * o), 0.09, 0.03, 0.08)
+        n = int(L / 1.0)
+        for j in range(n):   # sleepers (3 cm: a step nobody feels)
+            f = (j + 0.5) / n; cx, cz = ax + (dx - ax) * f, az + (dz - az) * f
+            k.bar("railwaysleepers", (cx - nx * 1.25, cz - nz * 1.25), (cx + nx * 1.25, cz + nz * 1.25), 0.26, 0, 0.03)
+    k.ring("steel", -12, -91, 6.6, 6.8, -0.5, -0.45, n=16)
+    k.disc("sootysteel", -12, -91, 0.9, -0.5, -0.3, n=8)
+    for px in (-34, -21, -2, 14):
+        k.prism("londonstock", [(px - 1.4, -100), (px, -98.2), (px + 1.4, -100)], 0, 10.0)
     # inside the goods shed: a loading platform beside the track and a stack of crates (the same cover, other shapes)
     k.box("greasestainedmetal", -1.2, 0, 104.6, 1.2, 1.0, 117.4)       # a boxcar being loaded (as tall as the loco)
     k.box("corrugated", -1.5, 1.0, 104, 1.5, 4.0, 118)
@@ -295,11 +340,11 @@ def build():
     # ---- spawns: four a side in the spawn rooms; free for all over the yard
     for x in (-30, -15, 8, 11):
         S.spawn("a", x, 0, -124, 180)
-    for (x, z) in ((-9, -30), (40, -14), (-26, 60), (45, -20)):
+    for (x, z) in ((-9, -30), (40, -14), (-15.5, 66), (45, -20)):
         S.spawn("any", x, 0, z, round(math.degrees(math.atan2(x, z))))   # (toward the middle)
 
     m.raw("setting freight rail yard")
-    m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")   # (one-way payload: checkpoints; neutral payload ignores them)
+    m.raw("cartcheck 0.25"); m.raw("cartcheck 0.5"); m.raw("cartcheck 0.75")   # (one-way payload: checkpoints; neutral payload ignores them)
     shift_x(m, 1.0)
     m.save("railyard", dress=False)
 
