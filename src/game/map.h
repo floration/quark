@@ -59,8 +59,12 @@ struct Brush {
     uint8_t up = 0;
     uint8_t ncut = 0;       // a cut box's planes
     // a teleporter's (map format 10: "tp <link> <face>" after the box, written only for one): the link (teleporters with
-    // the same one are linked) and the face it lets players and projectiles out of (kFace*)
+    // the same one are linked) and the face it lets players and projectiles out of (kFace*). tpWalk (map format 12: a
+    // "walk" after the face; owner, 2026-10-30: "toggle for carry all speed or max at walking velocity"): a player who
+    // goes INTO this one comes out of its pair at no more than the run speed (kGroundSpeed x the mode's speed), never
+    // faster than they went in; off (the default), all of their speed carries
     uint8_t link = 1, exitFace = 2;
+    bool tpWalk = false;
     float cut[kMaxCuts][4] = {};
     // In play only (never saved): broken glass, or brick a hole was blown in (its pieces are new generated brushes after
     // it). Out of the grid: nothing collides with it or sees it. Map::resetDestruction brings it back.
@@ -92,13 +96,18 @@ template <class S> bool readCuts(S& in, Brush& b) {
     b.dir = b.up = 0;
     return true;
 }
-// A teleporter's link and exit face after its box ("tp <link 0-255> <face 0-5>"; the word itself already read)
+// A teleporter's link and exit face after its box ("tp <link 0-255> <face 0-5> [walk]"; the word itself already read;
+// the last thing on its line or edit op). "walk" (map format 12): Brush::tpWalk; absent: carry all speed.
 template <class S> bool readTp(S& in, Brush& b) {
     int l = -1, f = -1;
     if (!(in >> l >> f) || l < 0 || l > 255 || f < 0 || f > 5) return false;
     b.link = (uint8_t)l; b.exitFace = (uint8_t)f;
-    return true;
+    std::string w;
+    b.tpWalk = (bool)(in >> w) && w == "walk";
+    return w.empty() || b.tpWalk;
 }
+// A teleporter's speed word as written after its face (" walk", or nothing: carry)
+inline const char* tpSpeedText(const Brush& b) { return b.tpWalk ? " walk" : ""; }
 // A slope's own frame: the world axes of u, h, v, and whether h is mirrored (h = box.mn + box.mx - world).
 struct SlopeFrame { int u, h, v; bool flip; };
 inline SlopeFrame slopeFrame(const Brush& b) {
@@ -676,7 +685,8 @@ constexpr float kWeightBreakS = 0.3f;
 // The teleporter (owner, 2026-10-29: "a value where if 2 objects have the same value they are linked ... a set face for
 // where it places the player/projectiles"): solid; a player or projectile that touches it comes out of the next
 // teleporter with the same link (Brush::link, in brush order, round to the first) on that one's exit face
-// (Brush::exitFace, kFace*), just outside it, at the same speed, all of it out along that face.
+// (Brush::exitFace, kFace*), just outside it, at the same speed, all of it out along that face; or, through a walk
+// teleporter (Brush::tpWalk, map format 12: the one you go in decides), at no more than the run speed.
 constexpr int kMatFeat = kMatBreak + kBreakCount, kFeatCount = 10;
 constexpr int kMatHealTile = kMatFeat, kMatSpikes = kMatFeat + 1, kMatLowGrav = kMatFeat + 2, kMatSlowMo = kMatFeat + 3,
               kMatGravFlip = kMatFeat + 4, kMatGate = kMatFeat + 5, kMatLightBlock = kMatFeat + 6, kMatShield = kMatFeat + 7,
@@ -1446,7 +1456,7 @@ struct SpawnPoint {
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
 // 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
-constexpr int kMapFormatVersion = 11;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ...")
+constexpr int kMapFormatVersion = 12;   // 3: the nograpple material; 4: the acid material; 5: wedges and corners; 6: brick, cobblestone and glass never break (breakable ones are their own materials); 7: materials 139-471; 8: the liquids 472-496 and the large patterns 497-536; 9: the see-through looks 537-561; 10: the breakable blocks 562-585 and the feature blocks 586-595 (a teleporter's "tp <link> <face>"); 11: mode spawn sets ("spawn koth-a ..."); 12: a teleporter's speed ("tp <link> <face> walk": out at no more than the run speed)
 
 struct Map {
     std::string name;

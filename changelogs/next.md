@@ -82,6 +82,7 @@ What's on `testing` since production 1.19.3. The release PR renames this file to
 
 ## Movement fixes
 - Wall teleporters keep your speed. Going in fast used to throw you out at a crawl about half the time (surfy too).
+- **Walk teleporters:** a teleporter can now let you out at walking speed instead of carrying all your speed (map editor: SPEED: CARRY / WALK on a teleporter; the one you go into decides). **Maps are now format 12**: older maps convert by themselves, but an older game can't open a map with a walk teleporter.
 - The grapple can't hook clip any more: it hits it and lets go, like nograpple. No more invisible hook points on map lids.
 
 ## Maps

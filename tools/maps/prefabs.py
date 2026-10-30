@@ -6,7 +6,7 @@ from collections import Counter
 OUT = None   # where save() writes (make_maps.py sets it)
 OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets", "overrides", "maps")
 MADE = []
-MAP_FORMAT = 11   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
+MAP_FORMAT = 12   # the "version" line every map starts with (src/game/map.h kMapFormatVersion)
 
 class M:
     def __init__(s, title, mode, sun=(0.45, 1.0, 0.3)):
@@ -19,6 +19,12 @@ class M:
         s.lines.append(f"{kw} {x0:g} {y0:g} {z0:g} {x1:g} {y1:g} {z1:g}")
         if mirror: s.lines.append(f"{kw} {-x1:g} {y0:g} {-z1:g} {-x0:g} {y1:g} {-z0:g}")
     def metal(s, *a, **k): s.box(*a, mat="metal", **k)
+    def teleporter(s, x0, y0, z0, x1, y1, z1, link, face, speed="carry"):
+        """a teleporter (map.h kMatTeleport): touch it and you come out of the next one with the same link (0-255) on
+        that one's exit face (0-5: +x -x +y -y +z -z). speed: "carry" keeps all your speed, "walk" (map format 12) caps
+        it at the run speed for whoever goes IN this one."""
+        assert speed in ("carry", "walk") and 0 <= link <= 255 and 0 <= face <= 5
+        s.lines.append(f"teleporter {x0:g} {y0:g} {z0:g} {x1:g} {y1:g} {z1:g} tp {link} {face}" + (" walk" if speed == "walk" else ""))
     def glow(s, *a, **k): s.box(*a, mat="glow", **k)
     # ---- rooms: floors with holes (pits / water / molten channels) and sunken areas ----
     def room(s, hx, hz, h=8, pits=(), sunken=(), style="hall", skyline=None, wall_base=None, walls=True, tile=None):

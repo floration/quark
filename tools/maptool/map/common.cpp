@@ -106,7 +106,7 @@ Json mapToJson(const Map& m) {
         o.set("mat", b.material); o.set("min", jvec(b.box.mn)); o.set("max", jvec(b.box.mx));
         if (b.shape == BRUSH_CUT) { o.set("shape", "cut"); o.set("cuts", jcuts(b)); }   // (a cut box: its planes, map.h)
         else if (b.shape != BRUSH_BOX) { o.set("shape", slopeWord(b.shape)); o.set("dir", (int)b.dir); if (b.up) o.set("up", (int)b.up); }   // (map format 5)
-        if (b.material == kMatTeleport) { o.set("link", (int)b.link); o.set("exitFace", (int)b.exitFace); }   // (map format 10)
+        if (b.material == kMatTeleport) { o.set("link", (int)b.link); o.set("exitFace", (int)b.exitFace); if (b.tpWalk) o.set("speed", "walk"); }   // (map format 10; speed: 12)
         (b.generated ? gen : br).push(std::move(o));
     }
     j.set("brushes", std::move(br));
@@ -233,6 +233,9 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
             const int link = b["link"].i(1), face = b["exitFace"].i(2);
             if (link < 0 || link > 255 || face < 0 || face >= kFaces) { err = "teleporter link " + std::to_string(link) + " / exitFace " + std::to_string(face) + " isn't 0..255 / 0..5"; return false; }
             br.link = (uint8_t)link; br.exitFace = (uint8_t)face;
+            const std::string sp = b["speed"].str("carry");   // (map format 12: "walk" caps the way out at the run speed)
+            if (sp != "carry" && sp != "walk") { err = "teleporter speed \"" + sp + "\" isn't carry / walk"; return false; }
+            br.tpWalk = sp == "walk";
         }
         m.brushes.push_back(br);
     }

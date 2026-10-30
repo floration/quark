@@ -754,6 +754,46 @@ static void testFeatureBlocks() {
         printf("  teleporter at 60 m/s: %d of 8 kept their speed (slowest %.2f)\n", kept, worst);
         CHECK(kept == 8);
     }
+    {   // a walk teleporter (map format 12, owner 2026-10-30): the same run into it at 60 m/s comes out at the run speed,
+        // along the exit face; walked into at less, out at no more than you went in
+        Map w;
+        std::string src = m.serialize();
+        const size_t at = src.find("tp 7 0\n");
+        CHECK(at != std::string::npos);
+        src.insert(at + 6, " walk");
+        CHECK(w.parse(src, &err) && w.brushes[9].tpWalk && !w.brushes[10].tpWalk);
+        const float run = moveBaseSpeed();
+        int capped = 0;
+        float lo = 1e9f, hi = 0;
+        for (int k = 0; k < 8; k++) {
+            MoveState s; s.pos = {-32.0f + k * 0.0075f, 0.5f, 31}; s.vel = {60, 0, 0};
+            UserCmd c; c.msec = 1;
+            bool out = false;
+            for (int t = 0; t < 60 && !out; t++) { pmove(s, c, w); out = s.pos.x > 30; }
+            const float v = out ? length(s.vel) : 0.0f;
+            capped += out && std::fabs(v - run) < 0.3f && s.vel.y > 0.9f * v;
+            lo = std::min(lo, v); hi = std::max(hi, v);
+        }
+        printf("  walk teleporter at 60 m/s: %d of 8 out at the run speed %.2f (%.2f..%.2f)\n", capped, run, lo, hi);
+        CHECK(capped == 8);
+        {   // slower than the run speed: kept (never faster than you went in)
+            MoveState s; s.pos = {-31.2f, 0.5f, 31}; s.vel = {4, 0, 0};
+            UserCmd c; c.msec = 1;
+            bool out = false;
+            float in = 0;   // (the speed going in: 4 m/s and what the fall added)
+            for (int t = 0; t < 400 && !out; t++) { in = length(s.vel); pmove(s, c, w); out = s.pos.x > 30; }
+            printf("  walk teleporter at 4 m/s: out %d at %.2f (in at %.2f)\n", (int)out, length(s.vel), in);
+            CHECK(out && in < moveBaseSpeed() && length(s.vel) < in + 0.05f);
+        }
+        Map r;   // written back with the word; an edit carries it
+        CHECK(w.serialize().find("tp 7 0 walk\n") != std::string::npos && r.parse(w.serialize(), &err) && r.brushes[9].tpWalk);
+        CHECK(describeMapObject(w, 'b', "set", 9).find(" p 7 0 walk") != std::string::npos);
+        Map e = m;
+        CHECK(applyMapEdit(e, describeMapObject(w, 'b', "set", 9)) && e.brushes[9].tpWalk);
+        CHECK(applyMapEdit(e, describeMapObject(m, 'b', "set", 9)) && !e.brushes[9].tpWalk);
+        Map bad;
+        CHECK(!bad.parse("box 0 0 0 1 1 1\nteleporter 0 0 0 1 1 1 tp 7 2 run\nspawn any 0 0 0\n", &err));   // (only "walk")
+    }
     {   // its link and face in the file, and in an edit
         Map r;
         CHECK(r.parse(m.serialize(), &err) && r.brushes[10].link == 7 && r.brushes[10].exitFace == 2 && r.brushes[9].exitFace == 0);
@@ -2257,6 +2297,14 @@ static void testMapConverter() {
         CHECK(c.parse("version 4\nacid -2 0 -2 2 0.3 2\n" + base) && c.warnings.empty() && c.brushes[0].material == kMatAcid && c.acid.size() == 1);
         CHECK(c.serialize().find("acid -2 0 -2 2 0.3 2\n") != std::string::npos && !c.boxSolid(playerBox({0, 0, 0}, false)) && c.inAcid(playerBox({0, 0, 0}, false)));
         CHECK(c.bounds.mx.y == 0 && c.raycast({0, 2, 0}, {0, -1, 0}, 10) > 1.99f);   // (shots and sight go through it to the floor)
+    }
+    {   // version 11 (before a teleporter's speed): only the version line changes; its teleporters carry all speed
+        const std::string v11 = "version 11\nteleporter -3 0 -3 -2 2 3 tp 4 0\nteleporter 2 0 -3 3 2 3 tp 4 1\n" + base;
+        std::string o;
+        CHECK(upgradeMapText(v11, &o) && o == "version " + std::to_string(kMapFormatVersion) + "\nteleporter -3 0 -3 -2 2 3 tp 4 0\nteleporter 2 0 -3 3 2 3 tp 4 1\n" + base);
+        Map a, b;
+        CHECK(a.parse(v11) && b.parse(o) && a.formatVersion == 11 && a.warnings.empty() && a.brushes.size() == b.brushes.size());
+        CHECK(a.brushes[0].material == kMatTeleport && !a.brushes[0].tpWalk && !b.brushes[1].tpWalk && b.brushes[1].link == 4 && a.serialize() == b.serialize());
     }
     for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
         std::string o;
