@@ -16,13 +16,14 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 54;   // 54: power (MODE_POWER 14: team pools in the ModeState fields powerPool names; an older client has no mode 14); 53: the 24 breakable blocks and 10 feature blocks (562-595, map format 10: breakables solid until the server breaks them, EV_DESTRUCT as a pane; crumble platforms' DESTRUCT_SHAKE / DESTRUCT_RESTORE; teleporters' link and face in edits; an older client can't read them); 52: the 25 see-through looks (537-561, map format 9: each stops players, shots or sight as kSemi says, in pmove and every ray; an older client can't read them); 51: the 25 liquids (472-496, map format 8: they move you in pmove, an older client would mispredict and can't read them); 50: materials 139-471, the picks of the earlier surface rounds (map format 7: an older client can't read their keywords); 49: plain brick, cobblestone and glass never break, the breakable ones and the 100 block looks are materials 36-138 (map format 6: an older client would let a plain pane break in its pmove and skip the new materials' boxes); 48: wedges and corners (map format 5: sloped solids collide, walk, slide and block rays in every pmove; an older client would mispredict a map with them; edit ops "b ... w|c <dir>"; also materials 20-35, and glass and blown-open brick: EV_DESTRUCT breaks change collision, a dash passes glass in pmove); 47: rocket riding: the grapple catches rockets (own movement state: hookTarget kHookRocket, opt bit 16, is followed by the u16 rocket id, its velocity (3 x f32) and its gravity (f32), so prediction flies the anchor with it; PlayerSnap hooked 1 + kHookRocket = on a rocket, its u16 id after hookPoint, which no older writer sends); 46: hits test two boxes, the body up to the head's bottom and the head (rayHitbox, pmove.h; nothing beside the head): the client's grapple prediction catches players the same way, so an older one would mispredict (no wire change: 45's bytes); 45: acid (own movement state: mods bit 64 = the u16 acidOutMs follows phaseMs, sent while it's below kAcidRearmMs, so prediction knows whether the next touch is a new contact); 44: movement equations (a custom mode's expr.<key>= lines, moveexpr.h: every client evaluates them in its own pmove, so an older one would mispredict), own movement state: mods bit 128 = a u16 ms since the last landing / take-off after the opt parts (p.air / p.ground; sent only while an equation counts it); 43: dash charges recharge (own movement state opt bit 4: the u8 is charges | recharging << 4, then the u16 cooldown, then each recharging charge's u16 ms left; sent when charges != 2 or a timer runs; opt bit 2 adds the f32 speed the dash started from, for the super dash's +5); 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
+constexpr uint16_t kProtocolVersion = 55;   // 55: the primary rocket's thrust (kRocketAccel, 4 m/s2 along its flight: every copy of a rocket's path flies with it, so an older client would mispredict rockets and rocket riding; own movement state: riding a rocket, the f32 thrust follows its gravity); 54: power (MODE_POWER 14: team pools in the ModeState fields powerPool names; an older client has no mode 14); 53: the 24 breakable blocks and 10 feature blocks (562-595, map format 10: breakables solid until the server breaks them, EV_DESTRUCT as a pane; crumble platforms' DESTRUCT_SHAKE / DESTRUCT_RESTORE; teleporters' link and face in edits; an older client can't read them); 52: the 25 see-through looks (537-561, map format 9: each stops players, shots or sight as kSemi says, in pmove and every ray; an older client can't read them); 51: the 25 liquids (472-496, map format 8: they move you in pmove, an older client would mispredict and can't read them); 50: materials 139-471, the picks of the earlier surface rounds (map format 7: an older client can't read their keywords); 49: plain brick, cobblestone and glass never break, the breakable ones and the 100 block looks are materials 36-138 (map format 6: an older client would let a plain pane break in its pmove and skip the new materials' boxes); 48: wedges and corners (map format 5: sloped solids collide, walk, slide and block rays in every pmove; an older client would mispredict a map with them; edit ops "b ... w|c <dir>"; also materials 20-35, and glass and blown-open brick: EV_DESTRUCT breaks change collision, a dash passes glass in pmove); 47: rocket riding: the grapple catches rockets (own movement state: hookTarget kHookRocket, opt bit 16, is followed by the u16 rocket id, its velocity (3 x f32) and its gravity (f32), so prediction flies the anchor with it; PlayerSnap hooked 1 + kHookRocket = on a rocket, its u16 id after hookPoint, which no older writer sends); 46: hits test two boxes, the body up to the head's bottom and the head (rayHitbox, pmove.h; nothing beside the head): the client's grapple prediction catches players the same way, so an older one would mispredict (no wire change: 45's bytes); 45: acid (own movement state: mods bit 64 = the u16 acidOutMs follows phaseMs, sent while it's below kAcidRearmMs, so prediction knows whether the next touch is a new contact); 44: movement equations (a custom mode's expr.<key>= lines, moveexpr.h: every client evaluates them in its own pmove, so an older one would mispredict), own movement state: mods bit 128 = a u16 ms since the last landing / take-off after the opt parts (p.air / p.ground; sent only while an equation counts it); 43: dash charges recharge (own movement state opt bit 4: the u8 is charges | recharging << 4, then the u16 cooldown, then each recharging charge's u16 ms left; sent when charges != 2 or a timer runs; opt bit 2 adds the f32 speed the dash started from, for the super dash's +5); 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
 constexpr uint16_t kSnapSyringeSince = 35;  // the snapshot header carries syringeAway from this protocol on (older demos are read without it)
 constexpr uint16_t kSnapDashChargesSince = 41;   // own movement state opt bit 4: the dash charges (u8) from here on, the dash cooldown (f32) before
 constexpr uint16_t kSnapDashCooldownSince = 42;  // ...and from here on also the dash cooldown (u16 ms) after the charges
 constexpr uint16_t kSnapDashRechargeSince = 43;  // ...and from here on the charge byte's high 4 bits count the recharging charges, their u16 ms after the cooldown; opt bit 2 ends with the dash's start speed (f32)
 constexpr uint16_t kSnapPhaseSince = 44;          // own movement state: mods bit 128 flags the u16 phaseMs (older demos: mods as it is, no phase)
 constexpr uint16_t kSnapAcidSince = 45;           // own movement state: mods bit 64 flags the u16 acidOutMs (older demos: none, never in acid)
+constexpr uint16_t kSnapRocketThrustSince = 55;   // own movement state: ...and after its gravity the rocket's thrust (f32; older demos: none)
 constexpr uint16_t kSnapRocketRideSince = 47;     // own movement state: hookTarget kHookRocket carries the rocket's id, velocity and gravity (older demos: no rocket, a hookTarget over kMaxPlayers is nothing)
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
@@ -262,6 +263,7 @@ struct WeaponExtra {
 struct WeaponAlt {        // the alt-fires (one weapon each)
     float scopedRefire;                                    // rifle: x refire while scoped
     float lobSpeed, lobGravity;                            // rocket lob: x speed, its drop (m/s2)
+    float rocketAccel;                                     // the primary rocket's thrust (m/s2 along its flight; kRocketAccel)
     float knifeThrowSpeed, knifeThrowGravity, knifeThrowLife, knifeAway, knifeGrow;
     int bounces; float bounceDamage;                       // shotgun ricochets
     float pullScale, pullDamage;                           // laser pull beam
@@ -447,25 +449,74 @@ inline float projectileGravity(int type, float gravMul, const WeaponDef& wd) {  
 inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity (a marker) for a rocket lob (its own drop), else 1
     return projectileGravity(type, gravMul, weaponDef(type));
 }
+// The primary rocket's thrust (owner, 2026-10-30: "an acceleration of 4 m/s^2 on top of its current velocity"): it
+// speeds up this much a second along the way it flies, from its launch speed, with no cap (5 s life: 48 -> 68 m/s at
+// the most; a rubber bounce turns it, the thrust follows). The lob doesn't (secondary unchanged). Weapon sets:
+// rocket.accel (weaponAlt().rocketAccel).
+constexpr float kRocketAccel = 4.0f;
+inline float projectileAccel(int type, float gravMul) {   // (m/s2 along its velocity; 0: none)
+    return type == WPN_ROCKET && gravMul == 1 ? weaponAlt().rocketAccel : 0.0f;
+}
+// How a projectile flies: its drop and its thrust (along its velocity), what every copy of its path is flown with
+// (the server's steps, the client's drawing and prediction, rocket riding's anchor). A float is a drop alone.
+struct ProjFlight {
+    float grav = 0, accel = 0;
+    ProjFlight(float g = 0, float a = 0) : grav(g), accel(a) {}
+};
+inline ProjFlight projectileFlight(int type, float gravMul) { return {projectileGravity(type, gravMul), projectileAccel(type, gravMul)}; }
+// One step's change of velocity (Server::stepProjectile, pmove's rocket anchor and its probe, Map::flyProjectile's slow-mo
+// steps: the same arithmetic everywhere): the drop, then the thrust along what that leaves.
+inline void projectileStepVel(Vec3& vel, const ProjFlight& f, float h) {
+    vel.y -= f.grav * h;
+    if (f.accel != 0) {
+        const float sp = length(vel);
+        if (sp > 1e-6f) vel += vel * (f.accel * h / sp);
+    }
+}
 // Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
 // pass, whatever t is), then the part of a step left over in a straight line. The client draws projectiles with it.
-inline void projectileExtrapolate(Vec3& pos, Vec3& vel, float gravity, float t) {
+// The closed form needs a constant acceleration: a drop, or a thrust with no drop (it then stays along the velocity,
+// a fixed vector). Both at once (only a weapon set giving the primary rocket a drop) turns the path: those are stepped.
+inline void projectileExtrapolate(Vec3& pos, Vec3& vel, const ProjFlight& f, float t) {
     const int n = t > 0 ? (int)(t / kMoveStep) : 0;
     const float h = kMoveStep, rest = t - n * kMoveStep;
-    pos += vel * (n * h);
-    pos.y -= gravity * h * h * (0.5f * (float)n * (float)(n + 1));
-    vel.y -= gravity * h * n;
+    if (f.accel != 0 && f.grav != 0) {
+        for (int k = 0; k < n; k++) { projectileStepVel(vel, f, h); pos += vel * h; }
+    } else {
+        Vec3 a(0, -f.grav, 0);
+        if (f.accel != 0) { const float sp = length(vel); if (sp > 1e-6f) a = vel * (f.accel / sp); }
+        pos += vel * (n * h);
+        pos += a * (h * h * (0.5f * (float)n * (float)(n + 1)));
+        vel += a * (h * n);
+    }
     if (rest > 0) pos += vel * rest;
 }
 // The same path run back t seconds (t >= 0): where those steps had it t seconds ago (rocket riding: a rocket where a
 // grapple's shooter saw it). The inverse of projectileExtrapolate's sum, the part of a step first.
-inline void projectileRewind(Vec3& pos, Vec3& vel, float gravity, float t) {
+inline void projectileRewind(Vec3& pos, Vec3& vel, const ProjFlight& f, float t) {
     const int n = t > 0 ? (int)(t / kMoveStep) : 0;
     const float h = kMoveStep, rest = t - n * kMoveStep;
     if (rest > 0) pos -= vel * rest;
+    if (f.accel != 0 && f.grav != 0) {
+        for (int k = 0; k < n; k++) {   // (each step undone: the move, the thrust along that velocity, the drop)
+            pos -= vel * h;
+            const float sp = length(vel);
+            if (sp > 1e-6f) vel -= vel * ((f.accel * h < sp ? f.accel * h : sp) / sp);
+            vel.y += f.grav * h;
+        }
+        return;
+    }
+    Vec3 a(0, -f.grav, 0);
+    if (f.accel != 0) { const float sp = length(vel); if (sp > 1e-6f) a = vel * (f.accel / sp); }
     pos -= vel * (n * h);
-    pos.y -= gravity * h * h * (0.5f * (float)n * (float)(n - 1));
-    vel.y += gravity * h * n;
+    pos += a * (h * h * (0.5f * (float)n * (float)(n - 1)));
+    vel -= a * (h * n);
+}
+// The time a projectile launched at `speed` with thrust `accel` (m/s2, along its path) takes to cover `dist` (bots
+// lead with it; the drop aside)
+inline float projectileFlightTime(float dist, float speed, float accel) {
+    if (accel <= 0) return speed > 0 ? dist / speed : 0.0f;
+    return (std::sqrt(speed * speed + 2 * accel * dist) - speed) / accel;
 }
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;

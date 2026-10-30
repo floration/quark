@@ -284,6 +284,7 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
     if (S.alt && S.weapon == WPN_KNIFE) { pSpeed = wa.knifeThrowSpeed; pGrav = wa.knifeThrowGravity; }
     if (S.alt && S.weapon == WPN_BUBBLE) pSpeed = 0.5f * (wa.streamSlow + wa.streamFast) * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
     if (S.weapon == WPN_ROCKET && !S.alt) pGrav = 0;   // (the primary flies straight: Projectile::gravMul)
+    const float pAccel = S.weapon == WPN_ROCKET && !S.alt ? wa.rocketAccel : 0.0f;   // (...and speeds up: projectileAccel)
     Json notes = Json::array();
     if (support) notes.push(std::string("the ") + weaponKey(S.weapon) + " does no damage: nothing to hit on the range");
     if (S.weapon == WPN_STICKY) notes.push("stickies are set off as soon as they arm (alt held with fire: the fastest a player could)");
@@ -423,12 +424,12 @@ void runOne(const Setup& S, const Rules& R, const std::string& sharedDir, RunOut
             Vec3 e = eyeOf(), p = aimPointOf(fk, 0);
             if (!hitscanLike && pSpeed > 0) {   // lead along the path, aim above for the drop (flight time iterated)
                 const Vec3 launch = e;
-                float tf = length(p - launch) / pSpeed;
+                float tf = projectileFlightTime(length(p - launch), pSpeed, pAccel);
                 for (int it = 0; it < 6; it++) {
                     Vec3 q = aimPointOf(fk, tf);
                     q.y += 0.5f * pGrav * tf * tf;
                     p = q;
-                    tf = length(p - launch) / pSpeed;
+                    tf = projectileFlightTime(length(p - launch), pSpeed, pAccel);
                 }
             }
             Vec3 d = p - e;

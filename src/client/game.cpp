@@ -2113,10 +2113,10 @@ void Game::frame(double dt) {
                 if ((c.buttons & BTN_GRAPPLE) && moveTuning().rocketRide)
                     for (const auto& q : predProj_)
                         if (q.live && !q.atWall && q.type == WPN_ROCKET && n < HookProbe::kRockets) {
-                            const float g = projectileGravity(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
+                            const ProjFlight g = projectileFlight(WPN_ROCKET, q.lob ? kRocketLobGravity : 1.0f);
                             Vec3 p = q.pos0, v = q.vel0;
                             net_.map().flyProjectile(p, v, g, (float)(time_ - q.born));
-                            rc[n++] = {p, v, g};
+                            rc[n++] = {p, v, g.grav, g.accel};
                         }
                 net_.setRocketCopies(rc, n);
             }
@@ -2820,7 +2820,7 @@ void Game::drawWorld(float alpha) {
     // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s; X5: your rockets,
     // bolts and thrown knives fly from the click, a predicted copy, until the server's arrives and takes over as far
     // along as the copy was)
-    auto projGravity = [](int type, bool lob) { return projectileGravity(type, lob ? kRocketLobGravity : 1.0f); };
+    auto projGravity = [](int type, bool lob) { return projectileFlight(type, lob ? kRocketLobGravity : 1.0f); };   // (the drop and the primary rocket's thrust)
     if (!alive) for (auto& q : predProj_) q.live = false;
     for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
         if (!q.live) continue;

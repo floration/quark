@@ -1412,8 +1412,8 @@ UserCmd botThinkDirect(Server& s, int id) {
             aimAt += b.velEst * (tf * b.leadFactor);
             aimAt.y += 0.5f * weaponAlt().knifeThrowGravity * tf * tf * b.dropFactor;
         }
-        if (wd.projectile) {
-            float tf = dist / wd.projSpeed;
+        if (wd.projectile) {   // (the primary rocket speeds up as it goes: its flight time with the thrust)
+            float tf = projectileFlightTime(dist, wd.projSpeed, w == WPN_ROCKET ? weaponAlt().rocketAccel : 0.0f);
             aimAt += b.velEst * (tf * b.leadFactor);
             if (w == WPN_ROCKET && sp.canLead) aimAt.y = perceived.y + sp.rocketFeetHeight; // splash at the feet
             if (wd.gravity > 0) aimAt.y += 0.5f * wd.gravity * tf * tf * b.dropFactor;

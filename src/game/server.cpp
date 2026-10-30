@@ -2674,7 +2674,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         if (!pr.active || pr.type != WPN_ROCKET || pr.stuck) continue;
         const Vec3 d = pr.pos - eye;
         if (dot(d, d) > reach * reach) continue;
-        const float g = projectileGravity(pr.type, pr.gravMul);
+        const ProjFlight g = projectileFlight(pr.type, pr.gravMul);
         Vec3 at = pr.pos;
         if (pr.owner != id) {
             if (!haveSeen) {
@@ -2686,7 +2686,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
             projectileRewind(at, v, g, (float)(timeMs_ - seen) * 0.001f);
         }
         const int k = probe.nr++;
-        probe.at[k] = at; probe.pos[k] = pr.pos; probe.vel[k] = pr.vel; probe.grav[k] = g; probe.rid[k] = pr.id;
+        probe.at[k] = at; probe.pos[k] = pr.pos; probe.vel[k] = pr.vel; probe.grav[k] = g.grav; probe.accel[k] = g.accel; probe.rid[k] = pr.id;
     }
 }
 
@@ -2705,7 +2705,7 @@ void Server::tickRocketRides() {
             hold = dist <= kGrappleRange * moveValue(p.move, MV_HOOK_RANGE, &map_) && !(dist > 1e-3f && map_.raycastAny(from, d / dist, dist));
         }
         if (hold) {
-            p.move.hookPoint = pr->pos; p.move.hookVel = pr->vel; p.move.hookGrav = projectileGravity(pr->type, pr->gravMul);
+            p.move.hookPoint = pr->pos; p.move.hookVel = pr->vel; p.move.hookGrav = projectileGravity(pr->type, pr->gravMul); p.move.hookAccel = projectileAccel(pr->type, pr->gravMul);
             continue;
         }
         p.move.flags &= ~MF_HOOKED;
@@ -3015,7 +3015,7 @@ void Server::stepProjectile(Projectile& pr) {
     {
         const WeaponDef& wd = weaponDef(pr.type);
         const float h = kMoveStep * map_.projectileRate(pr.pos);   // (a slow-mo field: half a step)
-        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * h;
+        projectileStepVel(pr.vel, {projectileGravity(pr.type, pr.gravMul, wd), projectileAccel(pr.type, pr.gravMul)}, h);   // (the drop, the primary rocket's thrust)
         Vec3 step = pr.vel * h;
         float len = length(step);
         if (len < 1e-6f) return;

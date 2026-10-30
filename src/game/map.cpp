@@ -1654,12 +1654,12 @@ void Map::buildRace() {
         if (b.material == kMatGate && !b.generated && raceCheckpoints.size() < kMaxMapCheckpoints) raceCheckpoints.push_back(b.box);
 }
 
-void Map::flyProjectile(Vec3& pos, Vec3& vel, float gravity, float t) const {
-    if (!hasSlow || t <= 0) { projectileExtrapolate(pos, vel, gravity, t); return; }
+void Map::flyProjectile(Vec3& pos, Vec3& vel, const ProjFlight& f, float t) const {
+    if (!hasSlow || t <= 0) { projectileExtrapolate(pos, vel, f, t); return; }
     constexpr float kStep = 0.002f;
     for (float left = t; left > 0; left -= kStep) {
         const float h = std::min(kStep, left) * projectileRate(pos);
-        vel.y -= gravity * h;
+        projectileStepVel(vel, f, h);
         pos += vel * h;
     }
 }
